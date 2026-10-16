@@ -207,11 +207,18 @@ export function PreferencesSection() {
             <TextField
               select
               fullWidth
-              // displayEmpty rides the Select slot (MUI 9's slotProps
-              // architecture): the "not chosen" choice carries the empty
-              // string, and without this the control renders blank instead
-              // of the option's own label.
-              slotProps={{ select: { displayEmpty: true } }}
+              slotProps={{
+                // displayEmpty rides the Select slot (MUI 9's slotProps
+                // architecture): the "not chosen" choice carries the empty
+                // string, and without this the control renders blank instead
+                // of the option's own label. The empty value is why the
+                // InputLabel is shrunk explicitly -- MUI floats the label on
+                // its own only when the select is filled, so in the "not
+                // chosen" state the label would otherwise sit on the
+                // placeholder and overlap it.
+                select: { displayEmpty: true },
+                inputLabel: { shrink: true },
+              }}
               label={t('preferences.language.label')}
               value={storedLocale}
               disabled={saving}
@@ -237,7 +244,13 @@ export function PreferencesSection() {
             <TextField
               select
               fullWidth
-              slotProps={{ select: { displayEmpty: true } }}
+              // Same two slots as the language select above: displayEmpty
+              // for the "not chosen" placeholder and an explicit shrink so
+              // the label floats above it instead of overlapping.
+              slotProps={{
+                select: { displayEmpty: true },
+                inputLabel: { shrink: true },
+              }}
               label={t('preferences.timezone.label')}
               value={storedTimezone}
               disabled={saving}

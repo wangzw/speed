@@ -142,6 +142,35 @@ describe('PreferencesSection', () => {
     await expectNoAxeViolations()
   })
 
+  it('floats both select labels above the not-chosen placeholder', async () => {
+    // A fresh account holds no preference, so both selects render the "not
+    // chosen" placeholder -- the state in which MUI leaves the InputLabel
+    // unshrunk and it overlaps the placeholder text. Both labels must be
+    // shrunk (floated) so the label and the value never occupy one line.
+    const { respond } = makeProfileResponder({})
+    mountSection(respond)
+
+    const language = await screen.findByRole('combobox', {
+      name: zhCN.preferences.language.label,
+    })
+    const timezone = screen.getByRole('combobox', {
+      name: zhCN.preferences.timezone.label,
+    })
+    // The placeholder really is showing: this is the overlap-prone state.
+    expect(language).toHaveTextContent(zhCN.preferences.language.notChosen)
+    expect(timezone).toHaveTextContent(zhCN.preferences.timezone.notChosen)
+
+    for (const control of [language, timezone]) {
+      // The InputLabel is the element the combobox's aria-labelledby points
+      // at; it must carry the shrink class so it floats above the value.
+      const labelId = control.getAttribute('aria-labelledby')
+      expect(labelId).toBeTruthy()
+      const label = document.getElementById(labelId as string)
+      expect(label).toHaveClass('MuiInputLabel-root')
+      expect(label).toHaveClass('MuiInputLabel-shrink')
+    }
+  })
+
   it('PATCHes the language first, then switches the instance (manual slot and account move together)', async () => {
     const { respond, stored } = makeProfileResponder({})
     const { rig, i18n } = mountSection(respond)
