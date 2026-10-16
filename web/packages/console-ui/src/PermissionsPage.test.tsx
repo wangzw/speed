@@ -132,6 +132,8 @@ describe('PermissionsPage', () => {
     await vi.waitFor(() => {
       expect(written).toEqual(['auditor'])
     })
+    // The landed create fills the page's standing success region.
+    expect(await screen.findByText('角色已保存')).toBeInTheDocument()
   })
 
   it('grants and revokes a permission on the selected role', async () => {
@@ -153,18 +155,20 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     await screen.findByText('editor')
-    await user.click(screen.getByRole('button', { name: '管理授权' }))
+    await user.click(screen.getByRole('button', { name: '管理授权（角色 editor）' }))
     await screen.findByText('deal')
     await user.click(screen.getByLabelText('权限'))
     await user.click(await screen.findByRole('option', { name: 'crm.deal.write' }))
     await user.click(screen.getByRole('button', { name: '授予' }))
-    await user.click(screen.getByRole('button', { name: '撤销' }))
+    await user.click(screen.getByRole('button', { name: '撤销授权 deal read' }))
     await vi.waitFor(() => {
       // Grant and revoke name the permission by its CODE, symmetrically:
       // the granted code is sent back on revoke through the catalog map.
       expect(granted).toEqual(['crm.deal.write'])
       expect(revoked).toEqual(['crm.deal.read'])
     })
+    // The landed revoke fills the page's standing success region.
+    expect(await screen.findByText('已撤销权限')).toBeInTheDocument()
   })
 
   it('revokes a grant whose resource is not the code segment', async () => {
@@ -187,9 +191,9 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     await screen.findByText('editor')
-    await user.click(screen.getByRole('button', { name: '管理授权' }))
+    await user.click(screen.getByRole('button', { name: '管理授权（角色 editor）' }))
     await screen.findByText('factor')
-    await user.click(screen.getByRole('button', { name: '撤销' }))
+    await user.click(screen.getByRole('button', { name: '撤销授权 factor reset' }))
     await vi.waitFor(() => {
       expect(revoked).toEqual(['authn.mfa.reset'])
     })
@@ -216,11 +220,13 @@ describe('PermissionsPage', () => {
     await user.type(screen.getByLabelText('账户'), 'acc-2')
     await user.type(screen.getByLabelText('角色'), 'viewer')
     await user.click(screen.getByRole('button', { name: '绑定' }))
-    await user.click(screen.getByRole('button', { name: '解绑' }))
+    await user.click(screen.getByRole('button', { name: '解绑账户 acc-1 的角色 editor' }))
     await vi.waitFor(() => {
       expect(bound).toEqual(['viewer'])
       expect(unbound).toEqual(['editor'])
     })
+    // The landed unbind fills the page's standing success region.
+    expect(await screen.findByText('角色已解绑')).toBeInTheDocument()
   })
 
   it('looks up an account bindings', async () => {
@@ -255,7 +261,7 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     await screen.findByText('editor')
-    await user.click(screen.getByRole('button', { name: '删除' }))
+    await user.click(screen.getByRole('button', { name: '删除角色 editor' }))
     // Deleting a role revokes its grants and bindings with it and cannot be
     // undone: the heavier two-step guard -- the first click only arms.
     const dialog = await screen.findByRole('dialog')
@@ -272,6 +278,8 @@ describe('PermissionsPage', () => {
     await vi.waitFor(() => {
       expect(removed).toEqual(['editor'])
     })
+    // The landed delete fills the page's standing success region.
+    expect(await screen.findByText('角色已删除')).toBeInTheDocument()
   })
 
   it('renders the retryable error placeholder when the roles read fails', async () => {

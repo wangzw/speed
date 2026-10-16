@@ -62,7 +62,7 @@ describe('SmsPage', () => {
     renderWithProviders(<SmsPage />, { operations })
     expect(await screen.findByText('login-code')).toBeInTheDocument()
     expect(screen.getByText('zh-CN: approved')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '停用' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '停用模板 login-code' })).toBeInTheDocument()
   })
 
   it('registers a template through the bundle', async () => {
@@ -124,8 +124,8 @@ describe('SmsPage', () => {
     })
     renderWithProviders(<SmsPage />, { operations })
     await screen.findByText('login-code')
-    await user.click(screen.getByRole('button', { name: '停用' }))
-    await user.click(screen.getByRole('button', { name: '移除' }))
+    await user.click(screen.getByRole('button', { name: '停用模板 login-code' }))
+    await user.click(screen.getByRole('button', { name: '移除模板 login-code' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: '确认' }))
     await vi.waitFor(() => {

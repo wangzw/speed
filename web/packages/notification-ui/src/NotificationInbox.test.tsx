@@ -127,12 +127,19 @@ describe('NotificationInbox', () => {
       { id: 'm2', title: 'Two', body: '', read: false },
     ])
     await screen.findByText('One')
+    // The confirmation is one standing status region: it is already in the
+    // tree, empty, before the write -- so the count lands as a change a
+    // screen reader announces, not a region born together with its text.
+    const notice = screen.getByRole('status')
+    expect(notice.textContent).toBe('')
     await userEvent.click(
       screen.getByRole('button', { name: zhCN.inbox.markAllRead }),
     )
-    expect(
-      await screen.findByText(zhCN.inbox.markAllReadDone.replace('{{n}}', '2')),
-    ).toBeInTheDocument()
+    const done = zhCN.inbox.markAllReadDone.replace('{{n}}', '2')
+    expect(await screen.findByText(done)).toBeInTheDocument()
+    // Still the same region (never a second born with its text), now filled.
+    expect(screen.getByRole('status')).toBe(notice)
+    expect(notice).toHaveTextContent(done)
     expect(
       rig.calls.some((call) => call.path === READ_ALL_PATH && call.method === 'POST'),
     ).toBe(true)

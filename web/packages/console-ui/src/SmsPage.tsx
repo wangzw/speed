@@ -128,6 +128,10 @@ export function SmsPage() {
             type="button"
             size="small"
             variant="outlined"
+            aria-label={t(
+              template.enabled ? 'sms.disableAria' : 'sms.enableAria',
+              { name: template.name },
+            )}
             disabled={setEnabled.isPending}
             onClick={() =>
               setEnabled.mutate({ name: template.name, enabled: !template.enabled })
@@ -140,6 +144,7 @@ export function SmsPage() {
             size="small"
             variant="outlined"
             color="error"
+            aria-label={t('sms.removeAria', { name: template.name })}
             disabled={removeTemplate.isPending}
             onClick={() =>
               confirm.ask({

@@ -310,10 +310,14 @@
         "submit": "Save role"
       },
       "manageGrants": "Manage grants",
+      "manageGrantsAria": "Manage grants (role {{role}})",
       "remove": "Delete",
+      "removeAria": "Delete role {{role}}",
       "removeTitle": "Delete role",
       "removeMessage": "Deleting role \"{{role}}\" revokes all of its grants and bindings.",
-      "removeConfirm": "Delete"
+      "removeConfirm": "Delete",
+      "saved": "Role saved",
+      "removed": "Role deleted"
     },
     "grants": {
       "title": "Grants",
@@ -336,7 +340,10 @@
         "action": "Action",
         "actions": "Actions"
       },
-      "revoke": "Revoke"
+      "revoke": "Revoke",
+      "revokeAria": "Revoke permission {{resource}} {{action}}",
+      "granted": "Permission granted",
+      "revoked": "Permission revoked"
     },
     "catalog": {
       "title": "Permission catalog",
@@ -374,7 +381,10 @@
         "role": "Role",
         "actions": "Actions"
       },
-      "unbind": "Unbind"
+      "unbind": "Unbind",
+      "unbindAria": "Unbind role {{role}} from account {{account}}",
+      "bound": "Role bound",
+      "unbound": "Role unbound"
     },
     "lookup": {
       "title": "Look up an account's bindings",
@@ -787,8 +797,11 @@
     "enabledYes": "Yes",
     "enabledNo": "No",
     "refreshMetadata": "Refresh metadata",
+    "refreshMetadataAria": "Refresh metadata ({{name}})",
     "reverifyDomains": "Re-verify domains",
+    "reverifyDomainsAria": "Re-verify domains ({{name}})",
     "delete": "Delete",
+    "deleteAria": "Delete provider {{name}}",
     "deleteTitle": "Delete SSO provider",
     "deleteMessage": "Delete the provider \"{{name}}\" and all of its domains.",
     "domains": {
@@ -848,7 +861,10 @@
     "enabledNo": "No",
     "enable": "Enable",
     "disable": "Disable",
+    "enableAria": "Enable template {{name}}",
+    "disableAria": "Disable template {{name}}",
     "remove": "Remove",
+    "removeAria": "Remove template {{name}}",
     "removeTitle": "Remove template",
     "removeMessage": "Remove the runtime SMS template \"{{name}}\".",
     "register": {

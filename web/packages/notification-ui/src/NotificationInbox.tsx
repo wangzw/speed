@@ -18,7 +18,6 @@
  */
 
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -30,6 +29,7 @@ import Typography from '@mui/material/Typography'
 import type { NotificationMessage } from '@speed/api-sdk'
 import {
   AsyncSection,
+  InlineSuccess,
   ListSkeleton,
   PageHeader,
   errorCodeOf,
@@ -101,13 +101,18 @@ export function NotificationInbox() {
         sx={{ mb: 2 }}
       />
 
-      {markedAll !== null && (
-        // A polite status region: the count of messages a landed write
-        // changed, announced without stealing focus.
-        <Alert severity="success" role="status" sx={{ mb: 2 }}>
-          {t('inbox.markAllReadDone', { n: markedAll })}
-        </Alert>
-      )}
+      {/* The read-all confirmation: one standing role="status" region
+          (ui-kit's InlineSuccess), mounted for the whole settled phase and
+          silent until a write lands -- a region born together with its text
+          is unreliable for a screen reader, so the region is there first and
+          the count fills it. */}
+      <Box sx={{ mb: 2 }}>
+        <InlineSuccess
+          message={
+            markedAll === null ? null : t('inbox.markAllReadDone', { n: markedAll })
+          }
+        />
+      </Box>
 
       <InlineError code={writeError} />
 

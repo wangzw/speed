@@ -310,10 +310,14 @@
         "submit": "保存角色"
       },
       "manageGrants": "管理授权",
+      "manageGrantsAria": "管理授权（角色 {{role}}）",
       "remove": "删除",
+      "removeAria": "删除角色 {{role}}",
       "removeTitle": "删除角色",
       "removeMessage": "删除角色「{{role}}」会一并撤销其全部授权与绑定。",
-      "removeConfirm": "删除"
+      "removeConfirm": "删除",
+      "saved": "角色已保存",
+      "removed": "角色已删除"
     },
     "grants": {
       "title": "授权",
@@ -336,7 +340,10 @@
         "action": "动作",
         "actions": "操作"
       },
-      "revoke": "撤销"
+      "revoke": "撤销",
+      "revokeAria": "撤销授权 {{resource}} {{action}}",
+      "granted": "已授予权限",
+      "revoked": "已撤销权限"
     },
     "catalog": {
       "title": "权限目录",
@@ -374,7 +381,10 @@
         "role": "角色",
         "actions": "操作"
       },
-      "unbind": "解绑"
+      "unbind": "解绑",
+      "unbindAria": "解绑账户 {{account}} 的角色 {{role}}",
+      "bound": "角色已绑定",
+      "unbound": "角色已解绑"
     },
     "lookup": {
       "title": "查询账户的绑定",
@@ -787,8 +797,11 @@
     "enabledYes": "是",
     "enabledNo": "否",
     "refreshMetadata": "刷新元数据",
+    "refreshMetadataAria": "刷新元数据（{{name}}）",
     "reverifyDomains": "重新验证域名",
+    "reverifyDomainsAria": "重新验证域名（{{name}}）",
     "delete": "删除",
+    "deleteAria": "删除提供方 {{name}}",
     "deleteTitle": "删除 SSO 提供方",
     "deleteMessage": "删除提供方「{{name}}」及其全部域名。",
     "domains": {
@@ -848,7 +861,10 @@
     "enabledNo": "否",
     "enable": "启用",
     "disable": "停用",
+    "enableAria": "启用模板 {{name}}",
+    "disableAria": "停用模板 {{name}}",
     "remove": "移除",
+    "removeAria": "移除模板 {{name}}",
     "removeTitle": "移除模板",
     "removeMessage": "移除运行期短信模板「{{name}}」。",
     "register": {

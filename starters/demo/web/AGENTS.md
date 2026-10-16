@@ -178,8 +178,8 @@ once. axe covers only the mechanically decidable part of WCAG (roughly 30-40%);
 the gate proves no regression, and does not replace manual review. See the
 frontend coding standards' Accessibility section.
 
-Two checks the jsdom gate cannot make, recorded so they are not read as
-"covered" (both need a real browser / a person):
+Checks the jsdom gate cannot make, recorded so they are not read as
+"covered" (each needs a real browser / a person):
 
 - **Color contrast (WCAG AA)**. jsdom performs no layout or color computation,
   so axe's `color-contrast` is indeterminate for every node. The gate excludes
@@ -188,6 +188,21 @@ Two checks the jsdom gate cannot make, recorded so they are not read as
   breadcrumb link at `/console/audit/sample [error]`, both chrome text over an
   emotion-styled background jsdom cannot resolve. Contrast there is a
   browser-side / manual check.
+- **Label in Name (WCAG 2.5.3)** and **ARIA required children (WCAG 1.3.1)**.
+  Both are inside the gate's rule set (axe ids `label-content-name-mismatch`,
+  `aria-required-children`) yet jsdom resolves each only to `incomplete`, so
+  the gate warns and registers them (`result.incomplete`) and never fails on
+  them. `label-content-name-mismatch` compares a control's visible text
+  against its accessible name and must read the visible text from a rendered
+  box, so it is indeterminate under jsdom — measured at 1 node on nearly every
+  route. `aria-required-children` (axe rates it critical) probes an element's
+  required descendants through visibility, likewise layout-bound — measured at
+  1 node on `/account [empty]`, the headerless empty placeholder's
+  `<ul role="list">`. A genuine 2.5.3 or 1.3.1 defect therefore cannot fail
+  this gate. Note the sweep's guard in `routes.test.tsx` asserts only that
+  `color-contrast` stays out, so these two rules run and report as
+  indeterminate rather than being swept out; both are browser-side / manual
+  checks like contrast.
 - **Touch-target size (≥44px, WCAG 2.5.5)** and **screen-reader behaviour
   (VoiceOver/NVDA)**. Neither is measurable in jsdom. MUI's default
   `IconButton` box is ~40px (and `size="small"` smaller), below the 44px

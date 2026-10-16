@@ -95,6 +95,7 @@ export function SsoPage() {
             type="button"
             size="small"
             variant="outlined"
+            aria-label={t('sso.refreshMetadataAria', { name: provider.name })}
             disabled={refreshMetadata.isPending}
             onClick={() =>
               refreshMetadata.mutate({ id: provider.id, tenant })
@@ -106,6 +107,7 @@ export function SsoPage() {
             type="button"
             size="small"
             variant="outlined"
+            aria-label={t('sso.reverifyDomainsAria', { name: provider.name })}
             disabled={reverifyDomains.isPending}
             onClick={() => reverifyDomains.mutate({ id: provider.id, tenant })}
           >
@@ -116,6 +118,7 @@ export function SsoPage() {
             size="small"
             variant="outlined"
             color="error"
+            aria-label={t('sso.deleteAria', { name: provider.name })}
             disabled={deleteProvider.isPending}
             onClick={() =>
               confirm.ask({

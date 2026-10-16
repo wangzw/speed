@@ -78,7 +78,7 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.click(screen.getByRole('button', { name: '删除' }))
+    await user.click(screen.getByRole('button', { name: '删除提供方 Acme IdP' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: '确认' }))
     await vi.waitFor(() => {
@@ -103,8 +103,8 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.click(screen.getByRole('button', { name: '刷新元数据' }))
-    await user.click(screen.getByRole('button', { name: '重新验证域名' }))
+    await user.click(screen.getByRole('button', { name: '刷新元数据（Acme IdP）' }))
+    await user.click(screen.getByRole('button', { name: '重新验证域名（Acme IdP）' }))
     await vi.waitFor(() => {
       expect(refreshed).toEqual(['idp-1'])
       expect(reverified).toEqual(['idp-1'])

@@ -40,6 +40,7 @@ import {
   ConfirmDialog,
   DataTable,
   EmptyState,
+  InlineSuccess,
   ListSkeleton,
   PageHeader,
   errorCodeOf,
@@ -92,6 +93,11 @@ export function PermissionsPage() {
   // The destructive action a confirm dialog guards.
   const [pendingRoleDelete, setPendingRoleDelete] = useState<string | null>(null)
 
+  // The confirmation a landed write fills into the page's success notice
+  // (one standing role="status" region); cleared before each attempt so a
+  // stale confirmation never lingers.
+  const [success, setSuccess] = useState<string | null>(null)
+
   const roles = operations.useRoles(tenant)
   const catalog = operations.usePermissions()
   const grants = operations.useGrants(tenant, selectedRole || undefined)
@@ -143,6 +149,7 @@ export function PermissionsPage() {
             type="button"
             size="small"
             variant="outlined"
+            aria-label={t('permissions.roles.manageGrantsAria', { role: role.role })}
             onClick={() => setSelectedRole(role.role)}
           >
             {t('permissions.roles.manageGrants')}
@@ -152,6 +159,7 @@ export function PermissionsPage() {
             size="small"
             variant="outlined"
             color="error"
+            aria-label={t('permissions.roles.removeAria', { role: role.role })}
             onClick={() => setPendingRoleDelete(role.role)}
           >
             {t('permissions.roles.remove')}
@@ -183,14 +191,22 @@ export function PermissionsPage() {
             size="small"
             variant="outlined"
             color="error"
+            aria-label={t('permissions.grants.revokeAria', {
+              resource: grant.resource,
+              action: grant.action,
+            })}
             disabled={revokePermission.isPending || code === null}
             onClick={() => {
               if (code !== null) {
-                revokePermission.mutate({
-                  tenant,
-                  role: selectedRole,
-                  permission: code,
-                })
+                setSuccess(null)
+                revokePermission.mutate(
+                  {
+                    tenant,
+                    role: selectedRole,
+                    permission: code,
+                  },
+                  { onSuccess: () => setSuccess(t('permissions.grants.revoked')) },
+                )
               }
             }}
           >
@@ -229,14 +245,22 @@ export function PermissionsPage() {
           size="small"
           variant="outlined"
           color="error"
+          aria-label={t('permissions.bindings.unbindAria', {
+            account: binding.account,
+            role: binding.role,
+          })}
           disabled={unbindRole.isPending}
-          onClick={() =>
-            unbindRole.mutate({
-              tenant,
-              account: binding.account,
-              role: binding.role,
-            })
-          }
+          onClick={() => {
+            setSuccess(null)
+            unbindRole.mutate(
+              {
+                tenant,
+                account: binding.account,
+                role: binding.role,
+              },
+              { onSuccess: () => setSuccess(t('permissions.bindings.unbound')) },
+            )
+          }}
         >
           {t('permissions.bindings.unbind')}
         </Button>
@@ -327,6 +351,7 @@ export function PermissionsPage() {
                 variant="contained"
                 disabled={writeRole.isPending}
                 onClick={() => {
+                  setSuccess(null)
                   writeRole.mutate(
                     {
                       tenant,
@@ -334,7 +359,12 @@ export function PermissionsPage() {
                       builtin: roleBuiltin,
                       descriptionKey: roleDescription,
                     },
-                    { onSuccess: () => setRoleName('') },
+                    {
+                      onSuccess: () => {
+                        setRoleName('')
+                        setSuccess(t('permissions.roles.saved'))
+                      },
+                    },
                   )
                 }}
               >
@@ -418,9 +448,15 @@ export function PermissionsPage() {
                     variant="contained"
                     disabled={grantPermissionMutation.isPending || grantPermission === ''}
                     onClick={() => {
+                      setSuccess(null)
                       grantPermissionMutation.mutate(
                         { tenant, role: selectedRole, permission: grantPermission },
-                        { onSuccess: () => setGrantPermission('') },
+                        {
+                          onSuccess: () => {
+                            setGrantPermission('')
+                            setSuccess(t('permissions.grants.granted'))
+                          },
+                        },
                       )
                     }}
                   >
@@ -526,9 +562,15 @@ export function PermissionsPage() {
                 variant="contained"
                 disabled={bindDisabled(bindRoleName, bindAccount)}
                 onClick={() => {
+                  setSuccess(null)
                   bindRole.mutate(
                     { tenant, account: bindAccount, role: bindRoleName },
-                    { onSuccess: () => setBindRoleName('') },
+                    {
+                      onSuccess: () => {
+                        setBindRoleName('')
+                        setSuccess(t('permissions.bindings.bound'))
+                      },
+                    },
                   )
                 }}
               >
@@ -604,6 +646,7 @@ export function PermissionsPage() {
           </Box>
 
           <InlineError code={writeErrorCode} />
+          <InlineSuccess message={success} />
 
           <ConfirmDialog
             open={pendingRoleDelete !== null}
@@ -620,6 +663,7 @@ export function PermissionsPage() {
             confirmLoading={removeRole.isPending}
             onConfirm={() => {
               if (pendingRoleDelete !== null) {
+                setSuccess(null)
                 removeRole.mutate(
                   { tenant, role: pendingRoleDelete },
                   {
@@ -628,6 +672,7 @@ export function PermissionsPage() {
                         setSelectedRole('')
                       }
                       setPendingRoleDelete(null)
+                      setSuccess(t('permissions.roles.removed'))
                     },
                   },
                 )
