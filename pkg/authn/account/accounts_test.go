@@ -593,6 +593,8 @@ func TestDisplayNameBoundRaisesTheLastCharacter(t *testing.T) {
 		{"alice", "alicf", true},
 		{"Á", "Â", true},               // a two-byte character is raised as a character
 		{"Alicia Á", "Alicia Â", true}, // and the raise keeps the leading ASCII as it is
+		{"\uD7FF", "\uE000", true},     // the character below the surrogate range is raised past it, not into it
+		{"A\uD7FF", "A\uE000", true},   // the surrogate range is skipped wherever the character sits
 		{max, "", false},               // the highest rune alone bounds nothing above it
 		{max + max, "", false},
 		{"A" + max, "B", true}, // a lower character is carried to and raised

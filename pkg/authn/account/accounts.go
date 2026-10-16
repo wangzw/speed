@@ -347,12 +347,13 @@ func (p *product) displayNameLowerRange() string {
 // begins no name the column holds, so no string is above it and the empty bound
 // closes the range to nothing. The prefix is read as written, so it may end in a
 // multi-byte character; the raise is over the last character and not its last
-// byte, so the bound is itself valid UTF-8 and the bytewise range it closes reads
-// exactly the names that begin with the prefix. A prefix whose last character is
-// the highest rune is carried to the character before it. A prefix that carries
-// past every character — each one the highest rune — has no string above it that
-// begins with it, and the second result is false. Every bound returned is valid
-// UTF-8.
+// byte, and it steps to the character above the last one — over the surrogate
+// code points, which no name holds — so the bound is itself valid UTF-8 and the
+// bytewise range it closes reads exactly the names that begin with the prefix. A
+// prefix whose last character is the highest rune is carried to the character
+// before it. A prefix that carries past every character — each one the highest
+// rune — has no string above it that begins with it, and the second result is
+// false. Every bound returned is valid UTF-8.
 func displayNameBound(prefix string) (string, bool) {
 	if !utf8.ValidString(prefix) {
 		// The prefix is not text the column holds, so it begins no stored name:
@@ -369,8 +370,15 @@ func displayNameBound(prefix string) (string, bool) {
 			prefix = prefix[:len(prefix)-size]
 			continue
 		}
+		next := last + 1
+		if next >= 0xD800 && next <= 0xDFFF {
+			// The characters between U+D7FF and U+E000 are the surrogate code
+			// points, which no UTF-8 string holds: the successor of the last
+			// character is the one above the gap.
+			next = 0xE000
+		}
 		var raised [utf8.UTFMax]byte
-		n := utf8.EncodeRune(raised[:], last+1)
+		n := utf8.EncodeRune(raised[:], next)
 		return prefix[:len(prefix)-size] + string(raised[:n]), true
 	}
 	return "", false
