@@ -132,8 +132,9 @@ env -C pkg golangci-lint run ./authz/policy/...
 ```
 
 The cases bring up a real database: SQLite through `pkg/internal/dbtest`, and
-PostgreSQL through `pkg/internal/pgpool/pgtest`, which starts a container and
-skips on a machine without docker. The migration cases run the module's own
+PostgreSQL through `pkg/internal/pgpool/pgtest`, which reaches the server the
+repository's compose stack brings up; those cases carry the `integration` tag,
+so a default run compiles none of them. The migration cases run the module's own
 files; `policy_test.go` drives the management surface over a handle with the
 tenant filter installed; `assembly_test.go` drives the policy and guard
 descriptors through a real registry, which is where what each callback takes up

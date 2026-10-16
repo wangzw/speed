@@ -1,0 +1,37 @@
+# The integration cases, on a schedule.
+#
+# They need PostgreSQL, Redis, NATS and memcached, which the compose file at the
+# repository root declares; `make test-integration` brings that stack up itself
+# and then runs every module's tagged cases. That is why this file carries no
+# command list of its own, exactly as ci.yml does not: the entry points live in
+# the Makefile, and a leg added there runs here without this file changing.
+#
+# They are not part of `make check`, and so not part of what gates a commit:
+# they are slower by orders of magnitude, and every case that needs no server is
+# already run on every push. This workflow is the periodic leg that covers the
+# rest.
+#
+# The cron is off the hour on purpose. The repository has no other scheduled
+# job, so this is politeness to the shared runners rather than a rule of its own.
+
+name: integration
+
+on:
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: jdx/mise-action@v4.3.0
+      # Both legs run even after an earlier one failed, so a red race leg does
+      # not hide a red one beneath it.
+      - run: make test-integration
+      - if: always()
+        run: make test-integration-race

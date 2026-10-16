@@ -1,18 +1,21 @@
 // Package memcachetest hands the tests a Memcached server to run against, and
 // every case a key space of its own on it.
 //
-// It drives the docker CLI through os/exec, for the same reason the other
-// fixtures do: a test-only container library would still land in this module's
-// dependency list.
+// The server is the one the repository's compose stack brings up, at a fixed
+// loopback address; this package starts nothing and manages no container. That
+// the stack is the only thing that starts it is what keeps the server's version
+// in one place instead of in the fixture.
 //
-// One container serves the whole machine under a fixed name and is left
-// running between test runs: every test binary of this checkout and of every
-// other checkout on the machine reaches the same server. Memcached has no
-// logical databases, so isolation is by key space rather than by server. Space
-// hands each case a prefix no other caller is handed, the implementation writes
-// it in front of every key's spelling, and nothing empties the server — a flush
-// takes every entry out from under whichever case another binary is running at
-// that moment, and that case fails as a key that vanished mid-case.
+// A machine that cannot reach the server fails these cases rather than skipping
+// them: a gate that is silently skipped wherever it is actually meant to run is
+// not a gate. The failure names the entry point that brings the stack up.
+//
+// Memcached has no logical databases, so isolation is by key space rather than
+// by server. Space hands each case a prefix no other caller is handed, the
+// implementation writes it in front of every key's spelling, and nothing
+// empties the server — a flush takes every entry out from under whichever case
+// another binary is running at that moment, and that case fails as a key that
+// vanished mid-case.
 //
 // The entries a case leaves behind are never read again. The server evicts
 // them as its memory fills, least recently used first, so they are the ones it
@@ -22,54 +25,39 @@
 package memcachetest
 
 import (
-	"context"
 	"crypto/rand"
-	"errors"
-	"fmt"
 	"net"
-	"os"
-	"os/exec"
-	"strings"
 	"testing"
 	"time"
 )
 
 const (
-	// containerName is fixed so that every test binary on this machine reuses
-	// one server rather than starting its own.
-	containerName = "speed-memcachetest"
-	// image is pinned: the cases lean on compare-and-swap and on add, and their
-	// behaviour is a property of a version.
-	image = "memcached:1.6-alpine"
-	// serverPort is Memcached's own.
-	serverPort = "11211"
-	// readyTimeout bounds the wait for a cold container to answer, the image
-	// pull included.
-	readyTimeout = 2 * time.Minute
-	// dockerTimeout bounds one docker invocation.
-	dockerTimeout = time.Minute
-	runningState  = "true"
-	// bringUpBound bounds the wait that follows a create or a start lost to
-	// another test binary, and bringUpInterval is how often it looks while it
-	// waits.
-	bringUpBound    = 30 * time.Second
-	bringUpInterval = 150 * time.Millisecond
+	// addr is where the compose stack publishes Memcached. It is fixed because
+	// nothing here discovers a port any more.
+	addr = "127.0.0.1:11211"
+	// readyTimeout bounds the wait for the server to accept connections. The
+	// stack is normally already healthy by the time a test binary starts --
+	// `make deps-up` waits for its healthchecks -- so this window is for the
+	// run that follows a bare `docker compose up -d`.
+	readyTimeout = 30 * time.Second
+	// readyInterval is how often the wait looks while it waits.
+	readyInterval = 150 * time.Millisecond
 	// spaceEnd closes every space. Memcached accepts it in a key, base32 does
 	// not contain it, and no spelling the implementation makes contains it.
 	spaceEnd = "."
 )
 
-// Addr returns the address of the shared server, starting it when no test
-// binary on the machine has yet.
+// Addr returns the address of the shared server, failing the case when nothing
+// answers there.
 //
 // The server holds every other case's entries too, and it is never emptied: a
 // case works in a Space of its own instead.
 func Addr(t *testing.T) string {
 	t.Helper()
-	requireDocker(t)
-	ensureServer(t)
-	addr := publishedAddr(t)
-	waitReady(t, addr)
+	if err := waitReady(); err != nil {
+		t.Fatalf("memcachetest: the Memcached test server at %s did not accept a connection within %s: %v\n"+
+			"run `make deps-up` from the repository root to bring the stack up", addr, readyTimeout, err)
+	}
 	return addr
 }
 
@@ -83,124 +71,26 @@ func Addr(t *testing.T) string {
 // with no space: base64url has no dot, and the digest's prefix ends in a
 // colon. Stores in two spaces therefore never meet on an entry, and neither do
 // a store in a space and one without.
-//
-// It reaches no server and needs no docker.
 func Space(t *testing.T) string {
 	t.Helper()
 	return rand.Text() + spaceEnd
 }
 
-func requireDocker(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath("docker"); err != nil {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("memcachetest: docker is required in CI and was not found: %v", err)
-		}
-		t.Skip("memcachetest: docker is not installed, and the cases that need a real Memcached are skipped")
-	}
-}
-
-// ensureServer leaves the shared server running, tolerating the window in
-// which another test binary on this machine is bringing it up.
+// waitReady dials the server until it accepts a connection or the bound is up.
 //
-// A container that is there but not running is started, never removed: it is
-// either an interrupted run's leftover or another binary's container a moment
-// before it comes up, and removing it would reach into that window and take
-// the other binary's server with it. A create can lose to another binary too:
-// docker refuses the duplicate name, and it takes the name before the
-// container can be looked at, so the loser spends a window being told there is
-// no such container and only then finds the winner's. The wait below is that
-// window, and the container it ends on is the winner's; a losing binary never
-// creates one of its own.
-func ensureServer(t *testing.T) {
-	t.Helper()
-	if running(t) {
-		return
-	}
-	var err error
-	if exists(t) {
-		_, err = docker(t, "start", containerName)
-	} else {
-		_, err = docker(t, "run", "-d", "--name", containerName, "-p", "0:"+serverPort, image)
-	}
-	if err == nil {
-		return
-	}
-	deadline := time.Now().Add(bringUpBound)
-	for time.Now().Before(deadline) {
-		if running(t) {
-			return
-		}
-		time.Sleep(bringUpInterval)
-	}
-	t.Fatalf("memcachetest: the %s container did not come up within %s: bringing it up failed with %v, "+
-		"and it is %s", containerName, bringUpBound, err, stateWords(t))
-}
-
-func running(t *testing.T) bool {
-	t.Helper()
-	out, err := docker(t, "inspect", "-f", "{{.State.Running}}", containerName)
-	return err == nil && strings.TrimSpace(out) == runningState
-}
-
-func exists(t *testing.T) bool {
-	t.Helper()
-	_, err := docker(t, "inspect", "-f", "{{.Name}}", containerName)
-	return err == nil
-}
-
-// stateWords reports what docker says the container's state is right now, for
-// the give-up message: the state, or why it could not be read.
-func stateWords(t *testing.T) string {
-	t.Helper()
-	out, err := docker(t, "inspect", "-f", "{{.State.Status}}", containerName)
-	if err != nil {
-		return fmt.Sprintf("not inspectable (%v)", err)
-	}
-	return strings.TrimSpace(out)
-}
-
-func publishedAddr(t *testing.T) string {
-	t.Helper()
-	out, err := docker(t, "port", containerName, serverPort)
-	if err != nil {
-		t.Fatalf("memcachetest: reading the published port: %v", err)
-	}
-	line := strings.TrimSpace(strings.Split(strings.TrimSpace(out), "\n")[0])
-	i := strings.LastIndex(line, ":")
-	if i < 0 {
-		t.Fatalf("memcachetest: docker port printed %q, which names no port", out)
-	}
-	return "127.0.0.1:" + line[i+1:]
-}
-
-func waitReady(t *testing.T, addr string) {
-	t.Helper()
+// A dial is enough here: Memcached answers no greeting and has no ping, and a
+// server that accepts a TCP connection is one the client can write to.
+func waitReady() error {
 	deadline := time.Now().Add(readyTimeout)
-	for time.Now().Before(deadline) {
+	for {
 		conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
 		if err == nil {
 			_ = conn.Close()
-			return
+			return nil
 		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	t.Fatalf("memcachetest: the server at %s did not accept connections within %s", addr, readyTimeout)
-}
-
-func docker(t *testing.T, args ...string) (string, error) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), dockerTimeout)
-	defer cancel()
-	//nolint:gosec // every argument is one of this file's own constants; nothing a case supplies reaches the command line
-	out, err := exec.CommandContext(ctx, "docker", args...).Output()
-	if err != nil {
-		// docker's own words are on stderr, and without them a failure here
-		// reads as a bare "exit status 125" with nothing to act on.
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			return string(out), fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exit.Stderr)))
+		if time.Now().After(deadline) {
+			return err
 		}
+		time.Sleep(readyInterval)
 	}
-	return string(out), err
 }

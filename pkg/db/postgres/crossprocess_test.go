@@ -1,3 +1,5 @@
+//go:build integration
+
 package postgres_test
 
 import (
@@ -172,8 +174,8 @@ func TestConcurrentFirstMigration(t *testing.T) {
 		// Without this the gate is empty rather than merely weak. The
 		// fixture only guarantees that the applier is slow; nothing
 		// guarantees that the other replica was there while it was
-		// working. A cold container, the second test leg, a slow exec —
-		// any of them make the second replica late, and a late replica
+		// working. A cold stack, the second integration leg, a slow
+		// exec — any of them make the second replica late, and a late replica
 		// reads a complete record table and prints noop whether there is
 		// a mutex or not.
 		startedWaiting, err := noop.at(markStart)

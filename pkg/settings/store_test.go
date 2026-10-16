@@ -886,10 +886,10 @@ func TestAListFailureNamesItsLayer(t *testing.T) {
 // absent table apart from the failures that are not it.
 //
 // TestTheStatementsRunOnPostgreSQL meets the PostgreSQL text live. The texts
-// are also pinned here, where no docker is needed, because the judgement is a
-// string match: a machine that skips the live case would otherwise leave a
-// flattened match unnoticed until it reached the one backend this module is
-// deployed against.
+// are also pinned here, where nothing has to be running, because the judgement
+// is a string match: the live case belongs to the integration layer alone, so a
+// flattened match would otherwise go unnoticed until it reached the one backend
+// this module is deployed against.
 func TestTheAbsentTableJudgement(t *testing.T) {
 	cases := []struct {
 		name string

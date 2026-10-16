@@ -26,7 +26,6 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/internal/dbtest"
-	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/settings"
 )
 
@@ -72,30 +71,41 @@ func applyMigrations(t testing.TB, handle *gorm.DB, dialect db.Dialect) {
 	}
 }
 
-// The dialects the cases run on, each named as its subtest is.
-var dialects = []db.Dialect{db.SQLite, db.Postgres}
+// dialectsUnderTest lists the engines this build's cases run on, each named as
+// its subtest is. PostgreSQL is appended by the integration build; see
+// account_integration_test.go.
+var dialectsUnderTest = []db.Dialect{db.SQLite}
+
+// databaseOpeners is how a case gets a database of its own per engine. The
+// PostgreSQL entry is contributed beside the dialect itself, by the integration
+// build.
+var databaseOpeners = map[db.Dialect]func(*testing.T) db.Database{
+	db.SQLite: func(t *testing.T) db.Database {
+		return dbtest.SQLite(t, filepath.Join(t.TempDir(), "account.db"), nil)
+	},
+}
 
 // openDatabase hands back the handle the engine's own module delivers over a
-// database of this test's own, with this module's migrations applied. The
-// PostgreSQL case skips on a machine without docker and fails where CI is set.
+// database of this test's own, with this module's migrations applied.
+//
+// A dialect with no opener is a programming error — dialectsUnderTest is the
+// only source of them — so it fails rather than reporting.
 func openDatabase(t *testing.T, dialect db.Dialect) *gorm.DB {
 	t.Helper()
-	var handle *gorm.DB
-	switch dialect {
-	case db.Postgres:
-		handle = quietly(dbtest.Postgres(t, pgtest.Acquire(t), nil).DB())
-	default:
-		handle = quietly(dbtest.SQLite(t, filepath.Join(t.TempDir(), "account.db"), nil).DB())
+	open, ok := databaseOpeners[dialect]
+	if !ok {
+		t.Fatalf("account: this build runs no case on the %s engine", dialect)
 	}
+	handle := quietly(open(t).DB())
 	applyMigrations(t, handle, dialect)
 	return handle
 }
 
-// forEachDialect runs a case on every dialect, each a subtest with a harness of
-// its own.
+// forEachDialect runs a case on every engine this build's cases run on, each a
+// subtest with a harness of its own.
 func forEachDialect(t *testing.T, run func(t *testing.T, h *harness)) {
 	t.Helper()
-	for _, dialect := range dialects {
+	for _, dialect := range dialectsUnderTest {
 		t.Run(string(dialect), func(t *testing.T) {
 			run(t, newHarness(t, dialect))
 		})

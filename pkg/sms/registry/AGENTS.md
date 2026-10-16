@@ -161,7 +161,8 @@ module it prints zero issues without loading the packages.
 Most cases bring up their own SQLite database through `pkg/internal/dbtest`,
 which delivers the handle the way an assembly does, and build the table from this
 module's own migration file. The cases that also run against PostgreSQL take a
-database on the shared container `pkg/internal/pgpool/pgtest` starts and skip on a
-machine without docker. The concurrency cases hold the pool to one connection so
+database on the server the compose stack brings up, through
+`pkg/internal/pgpool/pgtest`; those cases carry the `integration` tag, so a
+default run compiles none of them. The concurrency cases hold the pool to one connection so
 the writes serialise at the pool and their assertions are deterministic. No case
 needs a real carrier: a fake `sms.Provider` scripts the offer and review answers.

@@ -50,7 +50,7 @@ func secrecyReader(t *testing.T, body string) config.Reader {
 // the URL: the URL might never have reached the record at all, and an absence
 // alone would pass for the wrong reason.
 func TestTheURLIsRegisteredAsARedactionRule(t *testing.T) {
-	const secret = "nats://event-user:event-nats-password-4d2b7f@127.0.0.1:4222"
+	const secret = "nats://event-user:event-nats-password-4d2b7f@127.0.0.1:1"
 	path := filepath.Join(t.TempDir(), "log.json")
 	body := fmt.Sprintf(`{"event.nats":{"url":%q},`+
 		`"log":{"outputs":[{"to":"file","format":"json","path":%q}]}}`, secret, path)

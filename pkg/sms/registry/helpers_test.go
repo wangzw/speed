@@ -18,7 +18,6 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/internal/dbtest"
-	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/sms"
 )
 
@@ -295,11 +294,28 @@ func (r *rig) versionOf(name string) int64 {
 	return rows[0].Version
 }
 
-// The dialects the module runs on.
-const (
-	sqliteDialect   = "sqlite"
-	postgresDialect = "postgres"
-)
+// sqliteDialect is the dialect every run exercises; the integration build adds
+// PostgreSQL beside it.
+const sqliteDialect = "sqlite"
+
+// dialect is one engine a case iterates: its name, and how to reach an empty
+// database of the case's own on it.
+type dialect struct {
+	name string
+	open func(t *testing.T, items dbtest.Items) db.Database
+}
+
+// dialects lists the engines a case iterates, SQLite first.
+//
+// Only the engines whose fixture needs nothing installed belong here. The
+// integration build appends the ones that reach a server, so an untagged run
+// cannot name a dialect whose opener would fail for want of one.
+var dialects = []dialect{{
+	name: sqliteDialect,
+	open: func(t *testing.T, items dbtest.Items) db.Database {
+		return dbtest.SQLite(t, filepath.Join(t.TempDir(), "sms_registry.db"), items)
+	},
+}}
 
 // applyMigrations builds the module's table from the files it ships.
 func applyMigrations(t *testing.T, h *gorm.DB, dialect string) {
@@ -352,30 +368,30 @@ func openDialect(t *testing.T, dialect string) db.Database {
 	return openDialectItems(t, dialect, nil)
 }
 
-// openDialectItems is openDialect with input items configured beside the
-// locator, so a concurrency case can hold the pool to one connection and let
-// the writes serialise at the pool rather than at the engine's own lock.
+// openDialectItems delivers the database of the dialect with the module's table
+// built and input items configured beside the locator, so a concurrency case can
+// hold the pool to one connection and let the writes serialise at the pool
+// rather than at the engine's own lock.
+//
+// A dialect no engine of this build answers to is a programming error, since
+// dialects never names one.
 func openDialectItems(t *testing.T, dialect string, items dbtest.Items) db.Database {
 	t.Helper()
-	var database db.Database
-	switch dialect {
-	case sqliteDialect:
-		database = dbtest.SQLite(t, filepath.Join(t.TempDir(), "sms_registry.db"), items)
-	case postgresDialect:
-		database = dbtest.Postgres(t, pgtest.Acquire(t), items)
-	default:
-		t.Fatalf("no dialect %q", dialect)
+	for _, d := range dialects {
+		if d.name == dialect {
+			return d.open(t, items)
+		}
 	}
-	return database
+	t.Fatalf("no dialect %q", dialect)
+	return nil
 }
 
-// forEachDialect runs a case on SQLite and on PostgreSQL. The PostgreSQL leg is
-// skipped on a machine without docker, as every case on that engine is.
+// forEachDialect runs a case on every engine this build's cases run on.
 func forEachDialect(t *testing.T, run func(t *testing.T, database db.Database, dialect string)) {
 	t.Helper()
-	for _, dialect := range []string{sqliteDialect, postgresDialect} {
-		t.Run(dialect, func(t *testing.T) {
-			run(t, openDialect(t, dialect), dialect)
+	for _, d := range dialects {
+		t.Run(d.name, func(t *testing.T) {
+			run(t, openDialectItems(t, d.name, nil), d.name)
 		})
 	}
 }

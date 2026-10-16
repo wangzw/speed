@@ -15,6 +15,28 @@ import (
 // covers, and names the answer the filter owes it: the rows of the context's
 // tenant, a refusal, or GORM's own answer where the filter has nothing to add.
 
+// handleDialect is one dialect a case that runs on more than one runs on, with
+// how to open the handle it works over.
+type handleDialect struct {
+	name string
+	open func(*testing.T) *gorm.DB
+}
+
+// shapeDialects lists the dialects the cases about the filter's recognition of
+// a model run on, each an empty database with the filter installed. PostgreSQL
+// is appended by the tagged file, which is also where its opener lives: without
+// the tag it is not in the list, and no untagged case names it.
+var shapeDialects = []handleDialect{
+	{name: "sqlite", open: openShapesOnSQLite},
+}
+
+// filteredDialects lists the dialects the cases over a handle carrying the
+// orders table with the filter installed run on. PostgreSQL is appended by the
+// tagged file, as above.
+var filteredDialects = []handleDialect{
+	{name: "sqlite", open: open},
+}
+
 // crossContext is a context that crosses tenants on purpose.
 func crossContext() context.Context { return tenant.CrossTenant(context.Background()) }
 

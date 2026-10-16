@@ -112,7 +112,8 @@ GOWORK=off go -C pkg/kv build ./...   # the standalone leg, without the workspac
 ```
 
 The in-memory implementation needs nothing beyond the Go toolchain. A backend
-whose client is a container adds its own integration cases. A fixture for a
+that runs against a server of its own adds integration cases, which carry the
+`integration` tag and connect to the compose stack at the repository root. A fixture for a
 server another module tests against too is shared — `pkg/internal/pgpool/pgtest`
 for PostgreSQL, `pkg/internal/natstest` for NATS, `pkg/internal/redis/redistest`
 for Redis — so two modules cannot drift onto differently behaved servers. The

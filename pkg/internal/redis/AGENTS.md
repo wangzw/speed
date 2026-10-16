@@ -26,9 +26,12 @@ drift apart on what connecting means.
   this directory: the server it hands out is the one this unit's client reaches.
   Both backends' integration tests need a server to run against, and one shared
   fixture is what keeps two backends from drifting onto differently behaved
-  servers. This unit and the fixture both sit under the `pkg` module's
-  `internal/`, so nothing outside that module can import either. The same record
-  covers `pkg/internal/pgpool/pgtest` and `pkg/internal/natstest`.
+  servers. It starts nothing and manages no container — the server is the one
+  the repository root's compose file brings up — and a server that does not
+  answer fails the case rather than skipping it. This unit and the fixture both
+  sit under the `pkg` module's `internal/`, so nothing outside that module can
+  import either. The same record covers `pkg/internal/pgpool/pgtest` and
+  `pkg/internal/natstest`.
 
 ## Running it
 
@@ -52,5 +55,6 @@ GOWORK=off go -C pkg build ./internal/redis/...   # the standalone leg, without 
 ```
 
 The package's own cases need nothing beyond the Go toolchain; the scope above
-also reaches `pkg/internal/redis/redistest`, whose cases start a container through
-the docker CLI.
+also reaches `pkg/internal/redis/redistest`, whose cases need the external
+backends the repository root's compose file declares and carry the `integration`
+tag.

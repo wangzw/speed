@@ -75,8 +75,10 @@ path: run from outside the module it reports a typechecking error and still
 exits 0.
 
 The cases run on SQLite and on PostgreSQL. `dbtest.SQLite` needs nothing;
-`dbtest.Postgres` takes a database from `pkg/internal/pgpool/pgtest`, skips on a
-machine without Docker and fails where CI is set. A case that ends a
+`dbtest.Postgres` takes a database from `pkg/internal/pgpool/pgtest`, on the
+server the repository's compose stack brings up. The PostgreSQL leg carries the
+`integration` tag, so a default run compiles none of it, and an integration run
+fails when nothing answers there. A case that ends a
 `testClock`'s instant far from the real one will disagree with a statement that
 read the real clock, which is how a module that bypasses `internal/clock`
 fails here.

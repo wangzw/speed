@@ -24,7 +24,6 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/internal/dbtest"
-	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/settings"
 )
 
@@ -426,6 +425,11 @@ type dialectCase struct {
 	newDSN func(t *testing.T) string
 }
 
+// dialects lists the engines a case runs over, SQLite first.
+//
+// Only the engines whose fixture needs nothing installed belong here. The
+// integration build appends the ones that reach a server, so an untagged run
+// cannot name a dialect whose opener would fail for want of one.
 var dialects = []dialectCase{
 	{
 		name:    "sqlite",
@@ -434,12 +438,6 @@ var dialects = []dialectCase{
 		newDSN: func(t *testing.T) string {
 			return filepath.Join(t.TempDir(), "sessions.db") + "?_pragma=busy_timeout(5000)"
 		},
-	},
-	{
-		name:    "postgres",
-		dialect: db.Postgres,
-		open:    func(t *testing.T, dsn string) db.Database { return dbtest.Postgres(t, dsn, nil) },
-		newDSN:  func(t *testing.T) string { return pgtest.Acquire(t) },
 	},
 }
 

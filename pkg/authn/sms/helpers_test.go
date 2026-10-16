@@ -24,7 +24,6 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/internal/dbtest"
-	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/sms"
 )
@@ -616,11 +615,28 @@ func (r *rig) counter(name string, want ...attribute.KeyValue) int64 {
 	return total
 }
 
-// The dialects the module runs on.
-const (
-	sqliteDialect   = "sqlite"
-	postgresDialect = "postgres"
-)
+// sqliteDialect is the dialect every run exercises; the integration build adds
+// PostgreSQL beside it.
+const sqliteDialect = "sqlite"
+
+// dialect is one engine a case iterates: its name, and how to reach an empty
+// database of the case's own on it.
+type dialect struct {
+	name string
+	open func(t *testing.T) db.Database
+}
+
+// dialects lists the engines a case iterates, SQLite first.
+//
+// Only the engines whose fixture needs nothing installed belong here. The
+// integration build appends the ones that reach a server, so an untagged run
+// cannot name a dialect whose opener would fail for want of one.
+var dialects = []dialect{{
+	name: sqliteDialect,
+	open: func(t *testing.T) db.Database {
+		return dbtest.SQLite(t, filepath.Join(t.TempDir(), "sms.db"), dbtest.Items{"encryption-key": rootKey})
+	},
+}}
 
 // applyMigrations builds the module's table from the files it ships.
 func applyMigrations(t *testing.T, h *gorm.DB, dialect string) {
@@ -678,29 +694,29 @@ func openSQLite(t *testing.T) db.Database {
 }
 
 // openDialect delivers the database of the dialect with the module's table built.
+//
+// A dialect no engine of this build answers to is a programming error, since
+// dialects never names one.
 func openDialect(t *testing.T, dialect string) db.Database {
 	t.Helper()
-	var database db.Database
-	switch dialect {
-	case sqliteDialect:
-		database = dbtest.SQLite(t, filepath.Join(t.TempDir(), "sms.db"), dbtest.Items{"encryption-key": rootKey})
-	case postgresDialect:
-		database = dbtest.Postgres(t, pgtest.Acquire(t), dbtest.Items{"encryption-key": rootKey})
-	default:
-		t.Fatalf("no dialect %q", dialect)
+	for _, d := range dialects {
+		if d.name == dialect {
+			database := d.open(t)
+			handle := database.DB().Session(&gorm.Session{Logger: logger.Discard})
+			applyMigrations(t, handle, dialect)
+			return database
+		}
 	}
-	handle := database.DB().Session(&gorm.Session{Logger: logger.Discard})
-	applyMigrations(t, handle, dialect)
-	return database
+	t.Fatalf("no dialect %q", dialect)
+	return nil
 }
 
-// forEachDialect runs a case on SQLite and on PostgreSQL. The PostgreSQL leg is
-// skipped on a machine without docker, as every case on that engine is.
+// forEachDialect runs a case on every engine this build's cases run on.
 func forEachDialect(t *testing.T, run func(t *testing.T, database db.Database, dialect string)) {
 	t.Helper()
-	for _, dialect := range []string{sqliteDialect, postgresDialect} {
-		t.Run(dialect, func(t *testing.T) {
-			run(t, openDialect(t, dialect), dialect)
+	for _, d := range dialects {
+		t.Run(d.name, func(t *testing.T) {
+			run(t, openDialect(t, d.name), d.name)
 		})
 	}
 }

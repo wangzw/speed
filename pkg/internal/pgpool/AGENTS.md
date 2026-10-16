@@ -47,5 +47,6 @@ GOWORK=off go -C pkg build ./internal/pgpool/...   # the standalone leg, without
 ```
 
 The package's own cases need nothing beyond the Go toolchain; the scope above
-also reaches `pkg/internal/pgpool/pgtest`, whose cases start a container through
-the docker CLI.
+also reaches `pkg/internal/pgpool/pgtest`, whose cases need the external
+backends the repository root's compose file declares and carry the `integration`
+tag.

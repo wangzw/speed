@@ -158,9 +158,10 @@ Run `golangci-lint` from inside `pkg`: handed an absolute path from outside the
 module it prints zero issues without loading the packages.
 
 The cases drive a real assembly — the database module, the logging module, the
-roster module and this one — over SQLite and, where docker is available, over
-PostgreSQL on the shared container `pkg/internal/pgpool/pgtest` starts; the
-PostgreSQL leg skips on a machine without docker. Each case enters its tenant
+roster module and this one — over SQLite and over PostgreSQL, the latter on the
+server the compose stack brings up through `pkg/internal/pgpool/pgtest`. The
+PostgreSQL leg carries the `integration` tag, so a default run compiles none of
+it, and fails rather than skips when nothing answers there. Each case enters its tenant
 through the roster and acts through the delivered `notification.Inbox`. The route
 cases mount the module's own route set on a real gin engine and drive it with an
 identity in the request context.

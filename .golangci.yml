@@ -10,6 +10,11 @@ version: "2"
 run:
   timeout: 5m
   tests: true
+  # The integration cases carry a build tag, and a linter that does not take the
+  # tag never sees them: without this, everything that moved behind the tag
+  # leaves the static analysis as well as the commit gate's test run.
+  build-tags:
+    - integration
 
 linters:
   # "standard" is errcheck, govet, ineffassign, staticcheck and unused.

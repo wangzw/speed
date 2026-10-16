@@ -3,8 +3,6 @@ package catalog
 import (
 	"testing"
 
-	"gorm.io/gorm"
-
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -39,9 +37,9 @@ func (nullableTrail) TableName() string { return "trails" }
 // owns is told from one written with an empty tenant only by a type whose
 // tenant field can hold a null.
 func TestAReadOnlyModelReadsANullTenantColumnAsNoTenantsRow(t *testing.T) {
-	for name, open := range map[string]func(*testing.T) *gorm.DB{"sqlite": open, "postgres": openFilteredPostgres} {
-		t.Run(name, func(t *testing.T) {
-			handle := open(t)
+	for _, d := range filteredDialects {
+		t.Run(d.name, func(t *testing.T) {
+			handle := d.open(t)
 			if err := handle.Exec(
 				"CREATE TABLE trails (id BIGINT PRIMARY KEY, tenant_id TEXT NULL, action TEXT)").Error; err != nil {
 				t.Fatalf("creating the table: %v", err)

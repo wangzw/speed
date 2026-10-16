@@ -412,9 +412,9 @@ func concurrentRig(t *testing.T, dialect string) *rig {
 // register one name at once, and exactly one row survives while the rest are
 // told it already exists.
 func TestConcurrentRegisterSameName(t *testing.T) {
-	for _, dialect := range []string{sqliteDialect, postgresDialect} {
-		t.Run(dialect, func(t *testing.T) {
-			r := concurrentRig(t, dialect)
+	for _, d := range dialects {
+		t.Run(d.name, func(t *testing.T) {
+			r := concurrentRig(t, d.name)
 			const callers = 16
 			errs := make([]error, callers)
 			var wg sync.WaitGroup
@@ -456,9 +456,9 @@ func TestConcurrentRegisterSameName(t *testing.T) {
 // template to the same state at once, and the version is bumped once and the
 // change published once, because only the first call changes anything.
 func TestConcurrentSetEnabled(t *testing.T) {
-	for _, dialect := range []string{sqliteDialect, postgresDialect} {
-		t.Run(dialect, func(t *testing.T) {
-			r := concurrentRig(t, dialect)
+	for _, d := range dialects {
+		t.Run(d.name, func(t *testing.T) {
+			r := concurrentRig(t, d.name)
 			if _, err := r.s.Register(context.Background(), "otp", spec([]string{"code"}, map[string]string{"en": "c"})); err != nil {
 				t.Fatalf("registering: %v", err)
 			}
@@ -507,9 +507,9 @@ func TestConcurrentSetEnabled(t *testing.T) {
 // conditional on the version it read, so the loser of a race re-reads the row and
 // merges into it rather than overwriting it.
 func TestConcurrentRegisterMergesDifferentLanguages(t *testing.T) {
-	for _, dialect := range []string{sqliteDialect, postgresDialect} {
-		t.Run(dialect, func(t *testing.T) {
-			r := concurrentRig(t, dialect)
+	for _, d := range dialects {
+		t.Run(d.name, func(t *testing.T) {
+			r := concurrentRig(t, d.name)
 			locales := []string{"en", "zh"}
 			errs := make([]error, len(locales))
 			var wg sync.WaitGroup

@@ -96,8 +96,12 @@ make check
 
 ```
 go test -race ./authn/impersonation/...
+go test -tags=integration -race ./authn/impersonation/...
 ```
 
 The tests run over both dialects the store supports (SQLite and PostgreSQL)
-and need the same fixtures the rest of the repository uses; PostgreSQL cases
-acquire a database through `pkg/internal/pgpool/pgtest`.
+and need the same fixtures the rest of the repository uses. Only the SQLite leg
+belongs to a default run; the PostgreSQL leg needs the `integration` tag and the
+repository's compose stack, and acquires a database through
+`pkg/internal/pgpool/pgtest`, which fails rather than skips when nothing answers
+there.

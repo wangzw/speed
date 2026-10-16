@@ -17,20 +17,17 @@ import (
 	jsonformat "github.com/vislake/speed/pkg/config/format/json"
 	filesource "github.com/vislake/speed/pkg/config/source/file"
 	"github.com/vislake/speed/pkg/core"
-	dbpostgres "github.com/vislake/speed/pkg/db/postgres"
 	"github.com/vislake/speed/pkg/db/sqlite"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/memory"
 	speedhttp "github.com/vislake/speed/pkg/http"
-	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/notification"
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/catalog"
 )
 
-// engine is one database capability this module is exercised on. The PostgreSQL
-// one skips on a machine without docker.
+// engine is one database capability this module is exercised on.
 type engine struct {
 	name     string
 	database core.Module
@@ -38,18 +35,18 @@ type engine struct {
 	locate   func(t *testing.T) string
 }
 
+// engines lists the database capabilities a case is exercised on, SQLite first:
+// a case that names none of its own runs on engines[0].
+//
+// Only the engines whose fixture needs nothing installed belong here. The
+// integration build appends the ones that reach a server, so an untagged run
+// cannot name an engine whose locator would fail for want of one.
 var engines = []engine{
 	{
 		name:     "sqlite",
 		database: sqlite.Module(),
 		section:  "sqlite",
 		locate:   func(t *testing.T) string { return filepath.Join(t.TempDir(), "inbox.db") },
-	},
-	{
-		name:     "postgres",
-		database: dbpostgres.Module(),
-		section:  "postgres",
-		locate:   pgtest.Acquire,
 	},
 }
 
@@ -151,8 +148,7 @@ func (h host) drive(t *testing.T, action func(ctx context.Context, reg *core.Reg
 // so the drive still shuts down and the pool it opened is released.
 var errCaseFailed = errors.New("the case failed")
 
-// forEachEngine runs a case on every engine this module is exercised on. The
-// PostgreSQL leg is skipped on a machine without docker.
+// forEachEngine runs a case on every engine this module is exercised on.
 func forEachEngine(t *testing.T, run func(t *testing.T, e engine)) {
 	t.Helper()
 	for _, e := range engines {

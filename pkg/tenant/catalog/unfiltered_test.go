@@ -6,11 +6,9 @@ import (
 	"testing"
 
 	sqlitedriver "github.com/glebarez/sqlite"
-	pgdriver "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -24,27 +22,6 @@ const ordersDDL = "CREATE TABLE orders (tenant_id TEXT NOT NULL, id TEXT NOT NUL
 func openUnfiltered(t *testing.T) *gorm.DB {
 	t.Helper()
 	handle, err := gorm.Open(sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"),
-		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
-	if err != nil {
-		t.Fatalf("opening the handle: %v", err)
-	}
-	pool, err := handle.DB()
-	if err != nil {
-		t.Fatalf("reaching the handle's pool: %v", err)
-	}
-	t.Cleanup(func() { pool.Close() })
-	if err := handle.Exec(ordersDDL).Error; err != nil {
-		t.Fatalf("creating the table: %v", err)
-	}
-	return handle
-}
-
-// openUnfilteredPostgres is the same handle on the PostgreSQL fixture. The
-// driver there binds arguments itself rather than through database/sql's
-// converter, so the refusal has a second path to the statement to be proven on.
-func openUnfilteredPostgres(t *testing.T) *gorm.DB {
-	t.Helper()
-	handle, err := gorm.Open(pgdriver.Open(pgtest.Acquire(t)),
 		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Fatalf("opening the handle: %v", err)
@@ -85,10 +62,6 @@ func requireUnfilteredInsertRefused(t *testing.T, handle *gorm.DB) {
 
 func TestAnInsertWithNoFilterAndNoTenantFails(t *testing.T) {
 	requireUnfilteredInsertRefused(t, openUnfiltered(t))
-}
-
-func TestAnInsertWithNoFilterAndNoTenantFailsOnPostgres(t *testing.T) {
-	requireUnfilteredInsertRefused(t, openUnfilteredPostgres(t))
 }
 
 // A delete addressed by a key whose tenant half is empty names no tenant's

@@ -19,7 +19,6 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/internal/dbtest"
-	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
 // engine opens the database capability on one engine, the way an assembly
@@ -33,18 +32,15 @@ type engine struct {
 	open func(t *testing.T, dsn string) db.Database
 }
 
-// engines are the engines the capability delivers. The PostgreSQL one skips on
-// a machine without docker, unless CI is set.
+// engines are the engines the cases run on in this build. SQLite needs nothing
+// installed, so its leg is part of every run; the file behind the integration
+// tag appends PostgreSQL, whose leg reads and writes on the compose stack's
+// server.
 var engines = []engine{
 	{
 		name:   "sqlite",
 		locate: func(t *testing.T) string { return filepath.Join(t.TempDir(), "delivered.db") },
 		open:   func(t *testing.T, dsn string) db.Database { return dbtest.SQLite(t, dsn, nil) },
-	},
-	{
-		name:   "postgres",
-		locate: pgtest.Acquire,
-		open:   func(t *testing.T, dsn string) db.Database { return dbtest.Postgres(t, dsn, nil) },
 	},
 }
 

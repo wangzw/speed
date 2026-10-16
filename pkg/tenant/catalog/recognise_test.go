@@ -9,11 +9,9 @@ import (
 	"testing"
 
 	sqlitedriver "github.com/glebarez/sqlite"
-	pgdriver "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
@@ -605,14 +603,7 @@ var shapes = []shape{
 // embeds it where no one tenant column can be taken from it is refused
 // whatever the context, and one that does not embed it is a global table.
 func TestEveryDeclarationOfTheConventionIsRecognised(t *testing.T) {
-	dialects := []struct {
-		name string
-		open func(*testing.T) *gorm.DB
-	}{
-		{"sqlite", openShapesOnSQLite},
-		{"postgres", openShapesOnPostgres},
-	}
-	for _, d := range dialects {
+	for _, d := range shapeDialects {
 		t.Run(d.name, func(t *testing.T) {
 			handle := d.open(t)
 			for _, s := range shapes {
@@ -850,13 +841,6 @@ func openShapesOnSQLite(t *testing.T) *gorm.DB {
 	return filteredShapes(t, sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"))
 }
 
-// openShapesOnPostgres is an empty database of the PostgreSQL fixture with the
-// filter installed.
-func openShapesOnPostgres(t *testing.T) *gorm.DB {
-	t.Helper()
-	return filteredShapes(t, pgdriver.Open(pgtest.Acquire(t)))
-}
-
 func filteredShapes(t *testing.T, dialector gorm.Dialector) *gorm.DB {
 	t.Helper()
 	handle, err := gorm.Open(dialector, &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
@@ -891,14 +875,7 @@ func (shapeHolder) TableName() string { return "shape_holders" }
 // tenant on that column, and a join reaching a model no tenant column can be
 // taken from refuses the read, whatever its context.
 func TestAJoinIsRecognisedAsTheModelItReaches(t *testing.T) {
-	dialects := []struct {
-		name string
-		open func(*testing.T) *gorm.DB
-	}{
-		{"sqlite", openShapesOnSQLite},
-		{"postgres", openShapesOnPostgres},
-	}
-	for _, d := range dialects {
+	for _, d := range shapeDialects {
 		t.Run(d.name, func(t *testing.T) {
 			handle := d.open(t)
 			for _, s := range shapes {

@@ -245,13 +245,7 @@ var provStatements = []struct {
 // column qualified by the table's name and the rest of it written, and it
 // reaches the row its key names in the context's tenant and no other.
 func TestACallersConditionOnTheTenantColumnIsJudgedAsWritten(t *testing.T) {
-	for _, d := range []struct {
-		name string
-		open func(*testing.T) *gorm.DB
-	}{
-		{"sqlite", openShapesOnSQLite},
-		{"postgres", openShapesOnPostgres},
-	} {
+	for _, d := range shapeDialects {
 		t.Run(d.name, func(t *testing.T) {
 			handle := d.open(t)
 			if err := handle.Exec("CREATE TABLE prov_orders (tenant_id TEXT NOT NULL, id TEXT NOT NULL, " +

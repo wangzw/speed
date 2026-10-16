@@ -6,8 +6,10 @@
 #
 # The ports are the ones the testdata/ stack files point at, so a service
 # brought up here is reachable at the address its configuration already names.
-# The images are the ones this repository's own test fixtures pin, so a local
-# stack and a test container run the same software.
+#
+# The repository's own tests run against a stack of their own, declared by the
+# compose file at the repository root. That one publishes the same ports, so the
+# two cannot be up at the same time.
 services:
   postgres:
     image: postgres:17-alpine

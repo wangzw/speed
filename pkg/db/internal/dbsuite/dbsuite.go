@@ -40,24 +40,21 @@ type Fixture struct {
 }
 
 // contributed holds the fixtures other files in this package add.
-var contributed []func(t *testing.T) (Fixture, bool)
+var contributed []func(t *testing.T) Fixture
 
-// Contribute registers a fixture, normally from an init function. The second
-// result reports whether the dialect can run on this machine; a fixture that
-// needs a container reports false when there is none.
-func Contribute(fixture func(t *testing.T) (Fixture, bool)) {
+// Contribute registers a fixture, normally from an init function.
+func Contribute(fixture func(t *testing.T) Fixture) {
 	contributed = append(contributed, fixture)
 }
 
-// Fixtures gives every dialect available on this machine. SQLite is always
-// there: it needs a temporary file and nothing else.
+// Fixtures gives every dialect this build runs the suite on. SQLite needs a
+// temporary file and nothing else; PostgreSQL is contributed only by the
+// integration build, so a unit run neither lists it nor can reach it.
 func Fixtures(t *testing.T) []Fixture {
 	t.Helper()
 	out := []Fixture{{Dialect: "sqlite", Open: OpenSQLite}}
 	for _, contribute := range contributed {
-		if fixture, available := contribute(t); available {
-			out = append(out, fixture)
-		}
+		out = append(out, contribute(t))
 	}
 	return out
 }

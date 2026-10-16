@@ -1,3 +1,5 @@
+//go:build integration
+
 package pgtest_test
 
 import (
@@ -41,7 +43,7 @@ func TestEachAcquisitionGetsAnEmptyDatabase(t *testing.T) {
 
 // TestAcquiredDatabaseNamesCarryTheOwningProcess pins the naming this package's
 // housekeeping depends on: a run killed part-way leaves its databases on the
-// shared container, and the owning process id in the name is how a later run
+// shared server, and the owning process id in the name is how a later run
 // tells the leftovers of a dead process from the databases a live one is using
 // right now.
 func TestAcquiredDatabaseNamesCarryTheOwningProcess(t *testing.T) {

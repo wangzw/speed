@@ -126,18 +126,6 @@ func TestARawTargetSQLiteReadsAsTheTenantColumnIsJudged(t *testing.T) {
 		[]string{" tenant_id", "TENANT_ID ", `"Tenant_Id"`, "[tenant_id]", "tenant_id = 'globex', note"})
 }
 
-// PostgreSQL reads a name carrying its own double quotes as that quoted name.
-func TestAKeyPostgresReadsAsTheTenantColumnIsJudged(t *testing.T) {
-	requireEveryShapeRefused(t, openFilteredPostgres, keyedWrites, []string{`"tenant_id"`})
-}
-
-// PostgreSQL folds a bare raw name to lower case and skips the blanks around
-// it.
-func TestARawTargetPostgresReadsAsTheTenantColumnIsJudged(t *testing.T) {
-	requireEveryShapeRefused(t, openFilteredPostgres, rawWrites,
-		[]string{" tenant_id", "TeNaNt_Id", `"tenant_id"`, "tenant_id = 'globex', note"})
-}
-
 // grant is a scoped model whose own key is not named id, so GORM has no
 // primary field it prefers and renders the primary key placeholder as the
 // first column of the model — the tenant column.
@@ -279,10 +267,6 @@ func requirePatchesRefused(t *testing.T, open func(*testing.T) *gorm.DB, columns
 // that type is named like the tenant column.
 func TestAnUpdateFromAnotherTypeIsJudgedByTheColumnItWrites(t *testing.T) {
 	requirePatchesRefused(t, open, []string{"TENANT_ID", "Tenant_Id", "`tenant_id`", "tenant_id"})
-}
-
-func TestAnUpdateFromAnotherTypeIsJudgedByTheColumnItWritesOnPostgres(t *testing.T) {
-	requirePatchesRefused(t, openFilteredPostgres, []string{`"tenant_id"`, "tenant_id"})
 }
 
 // shadowed is a scoped model carrying, ahead of the convention, a field of its

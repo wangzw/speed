@@ -128,6 +128,7 @@ make check
 go -C pkg build ./authn/mfa/webauthn/...
 go -C pkg vet ./authn/mfa/webauthn/...
 go -C pkg test ./authn/mfa/webauthn/...
+go -C pkg test -tags=integration ./authn/mfa/webauthn/...
 go -C pkg test -race ./authn/mfa/webauthn/...
 env -C pkg golangci-lint run ./authn/mfa/webauthn/...
 ```
@@ -139,13 +140,14 @@ module it prints zero issues without loading the packages.
 (`pkg/internal/dbtest`) and a virtual authenticator — one ES256 key, one
 credential id, and the response bytes a client would produce — so the cases drive
 the real protocol end to end. `factor_test.go` and `method_test.go` cover the
-factor's ceremonies and the passkey login over that rig, on SQLite and on
-PostgreSQL; `register_test.go` covers the counter write-back, the clone flag and
-the startup probe. `config_test.go` covers the relying-party defaults and the
-id check. `assembly_test.go` drives a real registry through the descriptor and the
-real multi-factor module with stand-in modules for the exclusive capabilities,
-which is what holds the descriptor, the pending-row handoff and the
-registration-and-verification path together; the configuration reader is supplied
-to the registry, because only a host-supplied instance is reachable in `Prepare`.
+factor's ceremonies and the passkey login over that rig, on SQLite always and on
+PostgreSQL in an integration run; `register_test.go` covers the counter
+write-back, the clone flag and the startup probe. `config_test.go` covers the
+relying-party defaults and the id check. `assembly_test.go` drives a real
+registry through the descriptor and the real multi-factor module with stand-in
+modules for the exclusive capabilities, which is what holds the descriptor, the
+pending-row handoff and the registration-and-verification path together; the
+configuration reader is supplied to the registry, because only a host-supplied
+instance is reachable in `Prepare`.
 `surface_test.go` type-checks the package from source and holds the export
 surface.

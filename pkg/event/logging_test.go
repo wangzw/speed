@@ -16,10 +16,7 @@ import (
 	eventnats "github.com/vislake/speed/pkg/event/nats"
 	eventpostgres "github.com/vislake/speed/pkg/event/postgres"
 	eventredis "github.com/vislake/speed/pkg/event/redis"
-	"github.com/vislake/speed/pkg/internal/natstest"
 	"github.com/vislake/speed/pkg/internal/pgpool"
-	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
-	"github.com/vislake/speed/pkg/internal/redis/redistest"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -119,25 +116,27 @@ func failingSubscriber() core.Module {
 	}
 }
 
+// loggingBackend is one implementation the failure-logging rule is held to,
+// with how a case points it at a bus.
+type loggingBackend struct {
+	module string
+	point  func(t *testing.T) pointedAt
+}
+
+// loggingBackends are the implementations a case covers. Only the in-process
+// one is here: every other implementation reads and writes its events on a
+// server, and the file behind the integration tag appends those.
+var loggingBackends = []loggingBackend{
+	{memory.ModuleName, func(*testing.T) pointedAt { return pointedAt{} }},
+}
+
 // TestASubscriberFailureIsWrittenThroughTheAssemblysLogging pins where a
 // subscriber's failure is reported on every backend: through the Logger
 // capability the assembly delivers, so the record obeys its configured
 // destinations, format and redaction, rather than through the process default
 // logger, which that capability never replaces.
 func TestASubscriberFailureIsWrittenThroughTheAssemblysLogging(t *testing.T) {
-	cases := []struct {
-		module string
-		point  func(t *testing.T) pointedAt
-	}{
-		{memory.ModuleName, func(*testing.T) pointedAt { return pointedAt{} }},
-		{eventredis.ModuleName, func(t *testing.T) pointedAt {
-			addr, db := redistest.Acquire(t)
-			return pointedAt{redisAddr: addr, redisDB: db}
-		}},
-		{eventpostgres.ModuleName, func(t *testing.T) pointedAt { return pointedAt{dsn: pgtest.Acquire(t)} }},
-		{eventnats.ModuleName, func(t *testing.T) pointedAt { return pointedAt{natsURL: natstest.URL(t)} }},
-	}
-	for _, c := range cases {
+	for _, c := range loggingBackends {
 		t.Run(c.module, func(t *testing.T) {
 			logger := &recordingLogger{}
 			reg := core.New()

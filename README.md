@@ -30,6 +30,17 @@ Build, test and check everything in the workspace:
 make check
 ```
 
+`make check` runs the unit cases and needs nothing installed beyond the
+toolchain. The integration cases — the ones that run against PostgreSQL, Redis,
+NATS and memcached — carry the `integration` build tag and are not part of it;
+the backends they need come from the compose stack at the repository root:
+
+```
+make deps-up             # docker compose up -d --wait
+make test-integration    # brings that stack up, then runs the tagged cases
+make deps-down
+```
+
 `starters/demo` is the copyable product skeleton: a runnable program that
 assembles this repository's modules on five deployment stacks. Ask a command
 what it takes. The arguments it prints are the ones its modules declared as

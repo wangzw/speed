@@ -141,8 +141,9 @@ env -C pkg golangci-lint run ./authn/sms/...
 Run `golangci-lint` from inside `pkg`: handed an absolute path from outside the
 module it prints zero issues without loading the packages.
 
-The PostgreSQL leg of every dialect case needs docker and is skipped without it;
-the SQLite leg asks for nothing. `helpers_test.go` builds the product by hand over
+The PostgreSQL leg of every dialect case carries the `integration` tag and needs
+the repository's compose stack; a default run compiles none of it, and an
+integration run fails without it. The SQLite leg asks for nothing. `helpers_test.go` builds the product by hand over
 a real database handle (`pkg/internal/dbtest`) with a root key configured and
 every collaborator a case drives — the carrier, the bus, the audit sink, the
 settings store, the clock and the metric reader — each a stub whose answers the

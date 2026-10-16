@@ -382,13 +382,13 @@ GOWORK=off go -C pkg/db build ./...   # the standalone leg, without the workspac
 ```
 
 The SQLite cases need nothing beyond the Go toolchain: that driver is pure Go.
-The PostgreSQL cases run against a container — `postgres:17-alpine`, named
-`speed-pgtest`, started by the fixture on first use and left running, with a
-database of its own per case. A machine without docker skips them, and under
-`CI` that skip becomes a failure: those cases hold the gate on the cross-process
-migration mutex, and a gate that silently skips where it is meant to run is not a
-gate. `internal/dbhost` is the test host the multi-process cases build and run;
-`pkg/internal/pgpool/pgtest` is the container fixture, shared with the key-value and
+The PostgreSQL cases run against the server the repository's compose stack
+brings up, with a database of its own per case, and they carry the `integration`
+tag: a default run compiles none of them. An integration run that cannot reach
+the server fails these cases rather than skipping them: they hold the gate on
+the cross-process migration mutex, and a gate that silently skips where it is
+meant to run is not a gate. `internal/dbhost` is the test host the multi-process cases build and run;
+`pkg/internal/pgpool/pgtest` is the PostgreSQL fixture, shared with the key-value and
 event modules' postgres backends; `internal/dbsuite` holds the
 engine-neutral migration cases each engine's fixture is driven through, and the
 constraint-refusal, refused-commit, concurrent read-then-write, connection and

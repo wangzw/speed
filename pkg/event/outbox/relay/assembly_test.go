@@ -16,13 +16,10 @@ import (
 	filesource "github.com/vislake/speed/pkg/config/source/file"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
-	dbpostgres "github.com/vislake/speed/pkg/db/postgres"
 	"github.com/vislake/speed/pkg/db/sqlite"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/memory"
 	"github.com/vislake/speed/pkg/event/outbox"
-	eventpostgres "github.com/vislake/speed/pkg/event/postgres"
-	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -43,20 +40,6 @@ func sqliteStack(t *testing.T) stack {
 			"db": map[string]any{"sqlite": map[string]any{"dsn": filepath.Join(t.TempDir(), "delivered.db")}},
 		},
 	}
-}
-
-// postgresStack is the PostgreSQL engine and the bus whose outbox is a table in
-// the same database.
-func postgresStack(t *testing.T) (stack, string) {
-	dsn := pgtest.Acquire(t)
-	return stack{
-		database: dbpostgres.Module(),
-		bus:      eventpostgres.Module(),
-		section: map[string]any{
-			"db":    map[string]any{"postgres": map[string]any{"dsn": dsn}},
-			"event": map[string]any{"postgres": map[string]any{"dsn": dsn}},
-		},
-	}, dsn
 }
 
 // ordersModule stands for a host's module: it keeps the orders table, stages
@@ -201,63 +184,6 @@ func TestAnAssembledHostAnnouncesACommittedWriteThroughTheOutbox(t *testing.T) {
 		var payload placed
 		if err := event.DecodePayload(got[0].Payload, &payload); err != nil || payload.Amount != pastFloat {
 			t.Errorf("the subscriber decoded %+v (%v), want the amount %d exact", payload, err, pastFloat)
-		}
-		return nil
-	})
-}
-
-// A won deal whose announcement the bus refuses while the deal is moved is
-// counted once the bus takes events again: the event stays staged through the
-// refusals and is published once. The bus here keeps its own outbox in the same
-// PostgreSQL database, and a constraint on that outbox is what refuses the type.
-func TestAWinWhoseAnnouncementTheBusRefusedIsPublishedOnceItAcceptsAgain(t *testing.T) {
-	s, _ := postgresStack(t)
-	orders := &ordersModule{}
-	assembled(t, s, orders, func(ctx context.Context, reg *core.Registry) error {
-		database, err := core.Resolve[db.Database](reg)
-		if err != nil {
-			t.Errorf("resolving the database: %v", err)
-			return errCaseFailed
-		}
-		o, err := core.Resolve[outbox.Outbox](reg)
-		if err != nil {
-			t.Errorf("resolving the outbox: %v", err)
-			return errCaseFailed
-		}
-		handle := database.DB().WithContext(ctx)
-		refusal := `ALTER TABLE event_outbox ADD CONSTRAINT case_refuses_orders CHECK (type <> 'order.placed')`
-		if err := handle.Exec(refusal).Error; err != nil {
-			t.Errorf("making the bus refuse the type: %v", err)
-			return errCaseFailed
-		}
-		id := event.NewID()
-		if err := placeOrder(ctx, database, o, "o1", id, false); err != nil {
-			t.Errorf("placing the order while the bus refuses its announcement: %v", err)
-			return errCaseFailed
-		}
-		var attempts int
-		refused := eventually(func() bool {
-			return handle.Raw(`SELECT attempts FROM `+tableName+` WHERE event_id = ?`, id).Row().Scan(&attempts) == nil &&
-				attempts > 0
-		})
-		if !refused {
-			t.Errorf("the staged row never met the bus's refusal")
-			return errCaseFailed
-		}
-		if len(orders.events()) != 0 {
-			t.Errorf("the subscriber received %+v while the bus refused the type", orders.events())
-		}
-		if err := handle.Exec(`ALTER TABLE event_outbox DROP CONSTRAINT case_refuses_orders`).Error; err != nil {
-			t.Errorf("lifting the refusal: %v", err)
-			return errCaseFailed
-		}
-		if !eventually(func() bool { return len(orders.events()) > 0 }) {
-			t.Errorf("the announcement never reached its subscriber once the bus accepted again")
-			return errCaseFailed
-		}
-		time.Sleep(time.Second)
-		if got := idsOf(orders.events()); len(got) != 1 || got[0] != id {
-			t.Errorf("the subscriber received %v, want the refused announcement once, %s", got, id)
 		}
 		return nil
 	})

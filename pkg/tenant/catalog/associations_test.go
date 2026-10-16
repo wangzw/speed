@@ -231,14 +231,7 @@ var assocShapes = []assocShape{
 // tenant. Through one no one tenant column can be taken from, every statement
 // through the join table is refused whatever the context.
 func TestEveryAssociationShapeIsRecognised(t *testing.T) {
-	dialects := []struct {
-		name string
-		open func(*testing.T) *gorm.DB
-	}{
-		{"sqlite", openShapesOnSQLite},
-		{"postgres", openShapesOnPostgres},
-	}
-	for _, d := range dialects {
+	for _, d := range shapeDialects {
 		t.Run(d.name, func(t *testing.T) {
 			handle := d.open(t)
 			createAssociationSides(t, handle)
@@ -509,11 +502,9 @@ func requireLinks(t *testing.T, handle *gorm.DB, s assocShape, want string) {
 // condition put beside them keeps that WHERE a group of conditions rather than
 // a clause with its keyword.
 func TestALinkDeletionOfLoadedRecordsRuns(t *testing.T) {
-	for name, open := range map[string]func(*testing.T) *gorm.DB{
-		"sqlite": openShapesOnSQLite, "postgres": openShapesOnPostgres,
-	} {
-		t.Run(name, func(t *testing.T) {
-			handle := open(t)
+	for _, d := range shapeDialects {
+		t.Run(d.name, func(t *testing.T) {
+			handle := d.open(t)
 			createAssociationSides(t, handle)
 			s := assocShapes[0]
 			createJoinTable(t, handle, s)
@@ -533,11 +524,9 @@ func TestALinkDeletionOfLoadedRecordsRuns(t *testing.T) {
 // tenant half before GORM reads it, and the filter fills it inside the NOT:
 // the link to the record kept stays, and only the others go.
 func TestAReplacementKeepsTheRecordsItIsGivenInTheirTenant(t *testing.T) {
-	for name, open := range map[string]func(*testing.T) *gorm.DB{
-		"sqlite": openShapesOnSQLite, "postgres": openShapesOnPostgres,
-	} {
-		t.Run(name, func(t *testing.T) {
-			handle := open(t)
+	for _, d := range shapeDialects {
+		t.Run(d.name, func(t *testing.T) {
+			handle := d.open(t)
 			createAssociationSides(t, handle)
 			s := assocShapes[0]
 			createJoinTable(t, handle, s)
@@ -562,11 +551,9 @@ func TestAReplacementKeepsTheRecordsItIsGivenInTheirTenant(t *testing.T) {
 // the tenant column among them, and a write emptying the tenant column is
 // refused; the unscoped removal, which deletes the note, stays in the tenant.
 func TestAnAssociationByTheWholeKeyStaysInItsTenant(t *testing.T) {
-	for name, open := range map[string]func(*testing.T) *gorm.DB{
-		"sqlite": openShapesOnSQLite, "postgres": openShapesOnPostgres,
-	} {
-		t.Run(name, func(t *testing.T) {
-			handle := open(t)
+	for _, d := range shapeDialects {
+		t.Run(d.name, func(t *testing.T) {
+			handle := d.open(t)
 			createAssociationSides(t, handle)
 			acme := handle.WithContext(scopedContext("acme"))
 			notes := func() *gorm.Association { return acme.Model(keyedDeal()).Association("Notes") }
@@ -671,11 +658,9 @@ func (assocTextDeal) TableName() string { return "assoc_deals" }
 // written. The read itself, on an owner no statement goes through, is the
 // design's non-guarantee.
 func TestAnAssociationWhoseReadCannotBeHeldToATenantRefusesItsOwner(t *testing.T) {
-	for name, open := range map[string]func(*testing.T) *gorm.DB{
-		"sqlite": openShapesOnSQLite, "postgres": openShapesOnPostgres,
-	} {
-		t.Run(name, func(t *testing.T) {
-			handle := open(t)
+	for _, d := range shapeDialects {
+		t.Run(d.name, func(t *testing.T) {
+			handle := d.open(t)
 			createAssociationSides(t, handle)
 			for _, stmt := range []string{
 				"CREATE TABLE assoc_loose_tags (deal_id TEXT, tag_id TEXT)",
@@ -761,11 +746,9 @@ func TestAnAssociationWhoseReadCannotBeHeldToATenantRefusesItsOwner(t *testing.T
 // are read. A build that closes the read changes this case and the
 // non-guarantee together.
 func TestAnAssociationReadWithNoOwnerInTheStatementStaysGlobal(t *testing.T) {
-	for name, open := range map[string]func(*testing.T) *gorm.DB{
-		"sqlite": openShapesOnSQLite, "postgres": openShapesOnPostgres,
-	} {
-		t.Run(name, func(t *testing.T) {
-			handle := open(t)
+	for _, d := range shapeDialects {
+		t.Run(d.name, func(t *testing.T) {
+			handle := d.open(t)
 			createAssociationSides(t, handle)
 			for _, stmt := range []string{
 				"CREATE TABLE assoc_loose_tags (deal_id TEXT, tag_id TEXT)",

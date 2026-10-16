@@ -89,12 +89,6 @@ func TestARowWithoutATenantReportsTheRefusalThroughItsScan(t *testing.T) {
 	requireRowRefusal(t, handle)
 }
 
-func TestARowWithoutATenantReportsTheRefusalThroughItsScanOnPostgres(t *testing.T) {
-	handle := openFilteredPostgres(t)
-	seed(t, handle)
-	requireRowRefusal(t, handle)
-}
-
 // refusedRows are the two shapes a Row with no tenant is refused in.
 var refusedRows = map[string]func(tx *gorm.DB) *sql.Row{
 	"a read of the model": func(tx *gorm.DB) *sql.Row {
@@ -127,12 +121,6 @@ func requireRowRefusal(t *testing.T, handle *gorm.DB) {
 // a Row refused for its model as for one refused for its context.
 func TestARefusedRowTakesNoConnection(t *testing.T) {
 	handle := open(t)
-	seed(t, handle)
-	requireRowRefusedWithoutAConnection(t, handle)
-}
-
-func TestARefusedRowTakesNoConnectionOnPostgres(t *testing.T) {
-	handle := openFilteredPostgres(t)
 	seed(t, handle)
 	requireRowRefusedWithoutAConnection(t, handle)
 }
@@ -368,24 +356,6 @@ func TestASubqueryWithoutATenantFailsTheStatement(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
 	requireSubqueryRefusal(t, handle)
-}
-
-func TestASubqueryWithoutATenantFailsTheStatementOnPostgres(t *testing.T) {
-	handle := openFilteredPostgres(t)
-	seed(t, handle)
-	requireSubqueryRefusal(t, handle)
-}
-
-// openFilteredPostgres is the orders table on the PostgreSQL fixture with the
-// filter installed. The driver there binds arguments itself, so a refusal
-// carried as an argument has a second path to the statement to be proven on.
-func openFilteredPostgres(t *testing.T) *gorm.DB {
-	t.Helper()
-	handle := openUnfilteredPostgres(t)
-	if err := handle.Use(newFilter()); err != nil {
-		t.Fatalf("installing the filter: %v", err)
-	}
-	return handle
 }
 
 func requireSubqueryRefusal(t *testing.T, handle *gorm.DB) {

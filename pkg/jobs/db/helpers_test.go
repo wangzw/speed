@@ -16,19 +16,16 @@ import (
 	filesource "github.com/vislake/speed/pkg/config/source/file"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
-	dbpostgres "github.com/vislake/speed/pkg/db/postgres"
 	"github.com/vislake/speed/pkg/db/sqlite"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/memory"
-	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/jobs"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/catalog"
 )
 
-// engine is one database capability this module is exercised on. The PostgreSQL
-// one skips on a machine without docker, unless CI is set.
+// engine is one database capability this module is exercised on.
 type engine struct {
 	name     string
 	database core.Module
@@ -37,18 +34,15 @@ type engine struct {
 	locate  func(t *testing.T) string
 }
 
+// engines lists the capabilities this build runs the cases on. PostgreSQL is
+// appended by the tagged file, which is also where its locator lives: without
+// the tag it is not in the list, and no untagged case names it.
 var engines = []engine{
 	{
 		name:     "sqlite",
 		database: sqlite.Module(),
 		section:  "sqlite",
 		locate:   func(t *testing.T) string { return filepath.Join(t.TempDir(), "delivered.db") },
-	},
-	{
-		name:     "postgres",
-		database: dbpostgres.Module(),
-		section:  "postgres",
-		locate:   pgtest.Acquire,
 	},
 }
 

@@ -12,12 +12,10 @@ import (
 
 	casbinmodel "github.com/casbin/casbin/v3/model"
 	"github.com/glebarez/sqlite"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/db"
-	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/catalog"
 )
@@ -56,31 +54,6 @@ var sqliteDDL = []string{
 	`CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role)`,
 }
 
-var postgresDDL = []string{
-	`CREATE TABLE authz_roles (
-		tenant_id       TEXT NOT NULL CHECK (tenant_id <> ''),
-		role            TEXT NOT NULL,
-		builtin         BOOLEAN NOT NULL,
-		description_key TEXT NOT NULL,
-		created_at      TIMESTAMPTZ NOT NULL,
-		PRIMARY KEY (tenant_id, role))`,
-	`CREATE TABLE authz_grants (
-		tenant_id  TEXT NOT NULL CHECK (tenant_id <> ''),
-		role       TEXT NOT NULL,
-		resource   TEXT NOT NULL,
-		action     TEXT NOT NULL,
-		created_at TIMESTAMPTZ NOT NULL,
-		PRIMARY KEY (tenant_id, role, resource, action))`,
-	`CREATE INDEX authz_grants_by_object ON authz_grants (tenant_id, resource, action)`,
-	`CREATE TABLE authz_bindings (
-		tenant_id  TEXT NOT NULL CHECK (tenant_id <> ''),
-		account_id TEXT NOT NULL,
-		role       TEXT NOT NULL,
-		granted_at TIMESTAMPTZ NOT NULL,
-		PRIMARY KEY (tenant_id, account_id, role))`,
-	`CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role)`,
-}
-
 // sqliteSeq keeps each in-memory database of its own, so two handles opened in
 // one case do not share one by name.
 var sqliteSeq atomic.Int64
@@ -102,28 +75,21 @@ func sqliteDialect() dialect {
 	}
 }
 
-func postgresDialect() dialect {
-	return dialect{
-		name: "postgres",
-		open: func(t *testing.T) *gorm.DB {
-			t.Helper()
-			handle, err := gorm.Open(postgres.Open(pgtest.Acquire(t)), &gorm.Config{})
-			if err != nil {
-				t.Fatalf("opening the PostgreSQL handle: %v", err)
-			}
-			closePool(t, handle)
-			return handle
-		},
-		ddl: postgresDDL,
-	}
-}
+// allDialects lists how to reach every database the adapter is exercised on,
+// SQLite first.
+//
+// Only the engines whose fixture needs nothing installed belong here. The
+// integration build appends the ones that reach a server, so an untagged run
+// cannot name a database whose opener would fail for want of one.
+var allDialects = []func() dialect{sqliteDialect}
 
 // onEachDialect runs one case on every database the adapter is exercised on.
-// The PostgreSQL half skips itself where the machine cannot run it.
 func onEachDialect(t *testing.T, run func(t *testing.T, d dialect)) {
 	t.Helper()
-	t.Run("sqlite", func(t *testing.T) { run(t, sqliteDialect()) })
-	t.Run("postgres", func(t *testing.T) { run(t, postgresDialect()) })
+	for _, makeDialect := range allDialects {
+		d := makeDialect()
+		t.Run(d.name, func(t *testing.T) { run(t, d) })
+	}
 }
 
 func closePool(t *testing.T, handle *gorm.DB) {

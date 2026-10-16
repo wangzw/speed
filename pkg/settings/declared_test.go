@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
-
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 )
@@ -249,15 +247,7 @@ func TestDeclaredHandsOutTheCallersOwnListing(t *testing.T) {
 // the declared type's own text would read as a different value than the one
 // the key serves, or be refused when written back.
 func TestAListingDrivesAnAdministrativeSurfaceOnEveryDialect(t *testing.T) {
-	dialects := []struct {
-		name    string
-		dialect db.Dialect
-		open    func(t *testing.T) *gorm.DB
-	}{
-		{"sqlite", db.SQLite, open},
-		{"postgres", db.Postgres, openPostgres},
-	}
-	for _, d := range dialects {
+	for _, d := range dialectsUnderTest {
 		t.Run(d.name, func(t *testing.T) {
 			keys := tableOf(t, listingModules()...)
 			store := storeOn(t, d.open(t), d.dialect, keys, newRecordingBus())

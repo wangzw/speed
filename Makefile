@@ -30,10 +30,11 @@ PYTHON ?= python3
 each = for it in $(1); do echo "==> $(2) $$it"; $(3) || failed="$${failed:+$$failed; }$(2) $$it"; done
 each-end = if [ -n "$$failed" ]; then echo "failed: $$failed" >&2; exit 1; fi
 
-.PHONY: help modules build test test-race fmt lint tidy tidy-check repo-check tools-test check python-version modules-present web-check
+.PHONY: help modules deps-up deps-down build test test-race test-integration test-integration-race \
+        vet-integration fmt lint tidy tidy-check repo-check tools-test check python-version modules-present web-check
 
 help: ## List the entry points
-	@awk 'BEGIN{FS=":.*## "} /^[a-z][a-z-]*:.*## /{printf "  %-11s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN{FS=":.*## "} /^[a-z][a-z-]*:.*## /{printf "  %-21s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 modules: modules-present ## Print the module directories derived from go.work
 	@for m in $(MODULES); do echo $$m; done
@@ -42,15 +43,51 @@ build: modules-present ## Build every module, both in the workspace and standalo
 	@failed=; $(call each,$(MODULES),build,go -C $$it build ./...); \
 	  $(call each,$(MODULES),build standalone,GOWORK=off go -C $$it build ./...); $(each-end)
 
+# The four backends the integration cases run against -- PostgreSQL, Redis,
+# NATS and memcached -- are the test environment, not part of the tests: the
+# compose file at the repository root declares them, this brings that stack up,
+# and every case that needs them only connects. A case that cannot reach its
+# backend fails rather than skipping, which is why the integration legs below
+# depend on this and the unit legs above do not.
+#
+# `up --wait` returns once every service's healthcheck passes, so the cases
+# never race a container that is up but still initialising.
+deps-up: ## Bring the integration cases' backends up
+	@docker compose up -d --wait
+
+deps-down: ## Take the integration cases' backends down
+	@docker compose down
+
 # A test binary's own deadline bounds how long one module's suite may run; go
 # test's default is ten minutes, which a suite that drives a whole program end
 # to end exceeds under the race detector on a loaded machine. The bound is
 # generous on purpose: it is there to end a hung run, not to pace a slow one.
-test: modules-present ## Test every module
+#
+# A case that needs one of the backends carries the `integration` build tag, so
+# the two legs here run everything that needs nothing installed -- which is what
+# a commit is gated on. The tagged files are still compiled here, by
+# vet-integration below: a leg that stopped at "does not run" would let them rot
+# into not compiling at all.
+test: modules-present ## Test every module (unit cases only)
 	@failed=; $(call each,$(MODULES),test,go -C $$it test -timeout 30m ./...); $(each-end)
 
-test-race: modules-present ## Test every module under the race detector
+test-race: modules-present ## Test every module under the race detector (unit cases only)
 	@failed=; $(call each,$(MODULES),test -race,go -C $$it test -race -timeout 60m ./...); $(each-end)
+
+# The integration cases: they need the backends above, they are slower by
+# orders of magnitude, and they are run on a schedule rather than on every
+# commit. `make check` does not reach them.
+test-integration: modules-present deps-up ## Test every module's integration cases
+	@failed=; $(call each,$(MODULES),test integration,go -C $$it test -tags=integration -timeout 60m ./...); $(each-end)
+
+test-integration-race: modules-present deps-up ## Test every module's integration cases under the race detector
+	@failed=; $(call each,$(MODULES),test integration -race,go -C $$it test -race -tags=integration -timeout 90m ./...); $(each-end)
+
+# Compiles the tagged files without running them, so the unit gate still says
+# whether they build. Without it a change that breaks an integration case
+# compiles at every commit and is only found on the scheduled run.
+vet-integration: modules-present ## Compile every module's integration cases, running nothing
+	@failed=; $(call each,$(MODULES),vet integration,go -C $$it vet -tags=integration ./...); $(each-end)
 
 fmt: modules-present ## Format every module in place
 	@failed=; $(call each,$(MODULES),fmt,env -C $$it golangci-lint fmt ./...); $(each-end)
@@ -106,10 +143,11 @@ web-check: ## Run the frontend checks (pnpm install + lint, typecheck, test, bui
 	@pnpm -C web -r test
 	@pnpm -C web -r build
 
-check: ## Run everything CI runs
+check: ## Run everything a commit is gated on (no external service needed)
 	@$(MAKE) build
 	@$(MAKE) test
 	@$(MAKE) test-race
+	@$(MAKE) vet-integration
 	@$(MAKE) lint
 	@$(MAKE) tidy-check
 	@$(MAKE) repo-check

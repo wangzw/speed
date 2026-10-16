@@ -50,6 +50,6 @@ It is exercised through its callers, the packages whose tests import it, which
 go -C pkg test ./db/sqlite/... ./tenant/... ./settings/... ./ratelimit/... ./audit/... ./event/outbox/...
 ```
 
-It needs nothing but the Go toolchain for SQLite, and the docker CLI for the
-PostgreSQL cases, which `pgtest` skips on a machine without docker unless `CI`
-is set.
+It needs nothing but the Go toolchain for SQLite, and the external backends the
+repository root's compose file declares for the PostgreSQL cases, which carry
+the `integration` tag.

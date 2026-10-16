@@ -1,7 +1,8 @@
+//go:build integration
+
 package dbsuite
 
 import (
-	"os"
 	"testing"
 
 	pgdriver "gorm.io/driver/postgres"
@@ -15,29 +16,24 @@ import (
 // migration case runs against this engine too without any of them being
 // touched.
 //
-// The fixture is unavailable on a machine with no docker, and the suite then
-// runs on SQLite alone. Under CI that is a failure instead: a gate that is
-// silently skipped wherever it is meant to run is not a gate, and the
-// cross-process behaviour PostgreSQL carries has no other cover.
+// This file is the seam, and the build tag is why it is a file of its own: the
+// unit run's suite is SQLite alone — PostgreSQL is absent from the list rather
+// than skipped within it — while the integration run adds it. The cross-process
+// behaviour PostgreSQL carries has no other cover, so the engine may not be
+// dropped from a run that is meant to exercise it: there the fixture comes from
+// the repository's compose stack, and a case that cannot reach the server
+// fails.
 func init() {
-	Contribute(func(t *testing.T) (Fixture, bool) {
+	Contribute(func(t *testing.T) Fixture {
 		t.Helper()
-		if reason := pgtest.Skip(); reason != "" {
-			if _, underCI := os.LookupEnv("CI"); underCI {
-				t.Fatalf("CI is set, so running the migration suite without PostgreSQL would leave "+
-					"this engine unchecked: %s", reason)
-			}
-			t.Logf("the PostgreSQL fixture is unavailable, so the suite runs without it: %s", reason)
-			return Fixture{}, false
-		}
-		return Fixture{Dialect: "postgres", Open: OpenPostgres}, true
+		return Fixture{Dialect: "postgres", Open: OpenPostgres}
 	})
 }
 
 // OpenPostgres opens a handle on an empty PostgreSQL database, and closes it
 // when the test ends.
 //
-// Every call gets a database of its own on the shared container. The cases
+// Every call gets a database of its own on the shared server. The cases
 // assert on which tables exist and on what the record table holds, and neither
 // survives being shared with the packages go test runs in parallel or with make
 // check's second test leg.

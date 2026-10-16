@@ -349,8 +349,9 @@ go -C pkg/tenant test -race ./...
 
 The tests bring up their own database, except the cases that prove a refusal
 on the PostgreSQL driver as well: those take a database on the shared
-container through `pkg/internal/pgpool/pgtest`, which skips them on a machine
-without docker and fails them under CI. A roster is built over the handle the
+server the compose stack brings up, through `pkg/internal/pgpool/pgtest`; those
+cases carry the `integration` tag, so a default run compiles none of them. A
+roster is built over the handle the
 database module delivers, from `pkg/internal/dbtest`, so that it meets what an
 assembly hands it, and once over a handle opened with `gorm.Open`
 (`catalog/handles_test.go`); the filter's own cases build theirs by hand. `pkg/tenant/catalog/plugin_test.go` is where the filter's four

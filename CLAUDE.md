@@ -55,6 +55,7 @@ through `go.work` like every other.
 | `docs/design`, `docs/adr`, `docs/glossary.md` | The design authority. Chinese, per the language rule above. |
 | `tools/` | Repository self-checks. `tools/README.md` says what each one does. |
 | `Makefile`, `.mise.toml`, `.golangci.yml`, `.github/workflows/` | The engineering machinery: entry points, toolchain pins, lint configuration, CI. |
+| `compose.yaml` | The external backends the `integration`-tagged cases run against: PostgreSQL, Redis, NATS and memcached. The tests connect to it; it is the only thing that starts it. |
 | `.claude/skills/` | How the work is done. Each handbook's own description says what it covers; the ones that apply here are at the bottom of this file. |
 | `go/`, `docs/internal/`, `docs/site/` | An earlier implementation and its documentation. Nothing `make check` runs builds or checks them: every leg of it is scoped to the modules `go.work` lists. |
 

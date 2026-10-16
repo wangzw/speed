@@ -58,16 +58,22 @@ sys.exit(1 if where == "red" else 0)
 """
 
 # Each leg that loops over the modules, and the passes it makes over each
-# one: a pass is the tool, its subcommand, a flag the pass must carry, and
-# the GOWORK value it runs under.
-MODULE_LEGS: dict[str, list[tuple[str, str, str | None, str]]] = {
-    "build": [("go", "build", None, ""), ("go", "build", None, "off")],
-    "test": [("go", "test", None, "")],
-    "test-race": [("go", "test", "-race", "")],
-    "fmt": [("golangci-lint", "fmt", None, "")],
-    "lint": [("golangci-lint", "fmt", "--diff", ""), ("golangci-lint", "run", None, "")],
-    "tidy": [("go", "mod", "tidy", "off")],
-    "tidy-check": [("go", "mod", "-diff", "off")],
+# one: a pass is the tool, its subcommand, every flag the pass must carry, and
+# the GOWORK value it runs under. The flags are a tuple rather than one value
+# because two legs differ by exactly one flag — test-integration and
+# test-integration-race — and a pass that asserted only what the two share
+# would keep passing after a leg lost the flag that tells them apart.
+MODULE_LEGS: dict[str, list[tuple[str, str, tuple[str, ...], str]]] = {
+    "build": [("go", "build", (), ""), ("go", "build", (), "off")],
+    "test": [("go", "test", (), "")],
+    "test-race": [("go", "test", ("-race",), "")],
+    "test-integration": [("go", "test", ("-tags=integration",), "")],
+    "test-integration-race": [("go", "test", ("-race", "-tags=integration"), "")],
+    "vet-integration": [("go", "vet", ("-tags=integration",), "")],
+    "fmt": [("golangci-lint", "fmt", (), "")],
+    "lint": [("golangci-lint", "fmt", ("--diff",), ""), ("golangci-lint", "run", (), "")],
+    "tidy": [("go", "mod", ("tidy",), "off")],
+    "tidy-check": [("go", "mod", ("-diff",), "off")],
 }
 
 # Variables a parent make exports to its children. A case run by `make
@@ -82,7 +88,11 @@ class LoopingLegTests(unittest.TestCase):
         self.scratch = pathlib.Path(tmp.name)
         self.bin = self.scratch / "bin"
         self.bin.mkdir()
-        for tool in ("go", "golangci-lint"):
+        # docker is here for the same reason as the two below: the test legs
+        # bring the external backends up before they run, and without a stand-in
+        # this gate would drive the real daemon -- starting containers on
+        # whatever machine runs it, or failing where there is none.
+        for tool in ("go", "golangci-lint", "docker"):
             path = self.bin / tool
             path.write_text(STAND_IN.format(python=sys.executable), encoding="utf-8")
             path.chmod(0o755)
@@ -120,12 +130,12 @@ class LoopingLegTests(unittest.TestCase):
         lines = self.log.read_text(encoding="utf-8").splitlines()
         return [json.loads(line) for line in lines]
 
-    def ran(self, name: str, tool: str, sub: str, flag: str | None, gowork: str) -> bool:
+    def ran(self, name: str, tool: str, sub: str, flags: tuple[str, ...], gowork: str) -> bool:
         return any(
             c["dir"] == name
             and c["tool"] == tool
             and c["args"][:1] == [sub]
-            and (flag is None or flag in c["args"])
+            and all(flag in c["args"] for flag in flags)
             and c["gowork"] == gowork
             for c in self.calls()
         )
@@ -136,14 +146,14 @@ class LoopingLegTests(unittest.TestCase):
                 self.log.unlink(missing_ok=True)
                 result = self.make(leg, "red", "green")
                 self.assertNotEqual(result.returncode, 0, f"{leg} passed with a red module")
-                for tool, sub, flag, gowork in passes:
-                    pass_name = f"{tool} {sub} {flag or ''} GOWORK={gowork!r}"
+                for tool, sub, flags, gowork in passes:
+                    pass_name = f"{tool} {sub} {' '.join(flags)} GOWORK={gowork!r}"
                     self.assertTrue(
-                        self.ran("red", tool, sub, flag, gowork),
+                        self.ran("red", tool, sub, flags, gowork),
                         f"{leg} never ran {pass_name} in red:\n{result.stdout}{result.stderr}",
                     )
                     self.assertTrue(
-                        self.ran("green", tool, sub, flag, gowork),
+                        self.ran("green", tool, sub, flags, gowork),
                         f"{leg} stopped at red before {pass_name} in green:\n{result.stdout}{result.stderr}",
                     )
                 self.assertIn(str(self.scratch / "red"), result.stderr)

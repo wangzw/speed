@@ -97,5 +97,6 @@ go -C pkg test -race ./event/outbox/...
 ```
 
 The cases run on SQLite and on PostgreSQL. The PostgreSQL ones reach the shared
-container through `pkg/internal/pgpool/pgtest`, and skip on a machine without
-docker unless `CI` is set.
+server through `pkg/internal/pgpool/pgtest`. They carry the `integration` tag,
+so a default run compiles none of them, and they fail rather than skip when
+nothing answers there.

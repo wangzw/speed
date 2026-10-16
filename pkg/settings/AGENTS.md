@@ -181,8 +181,10 @@ GOWORK=off go -C pkg/settings build ./...   # the standalone leg, without the wo
 
 Most cases bring up their own SQLite database and ask for no service. The
 cases that run the statements against PostgreSQL take a database of their own
-on the shared container `pkg/internal/pgpool/pgtest` starts: they skip on a
-machine without docker, and fail instead where `CI` is set. Either way the
+on the server the compose stack brings up, through
+`pkg/internal/pgpool/pgtest`. They carry the `integration` tag, so a default run
+compiles none of them, and one that cannot reach the server fails rather than
+skipping. Either way the
 handle is the one the database module delivers, from `pkg/internal/dbtest`,
 so that the store meets what an assembly hands it, but for the case that runs
 it over a handle opened with `gorm.Open` (`connection_test.go`). The

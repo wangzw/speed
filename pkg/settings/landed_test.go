@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"gorm.io/gorm"
-
-	"github.com/vislake/speed/pkg/db"
 )
 
 // A write's result says what happened to the row, even when the caller's
@@ -24,15 +22,7 @@ import (
 // and an untouched table, or nil and a change this replica serves and
 // published.
 func TestAWritesResultMatchesWhatLanded(t *testing.T) {
-	dialects := []struct {
-		name    string
-		dialect db.Dialect
-		open    func(t *testing.T) *gorm.DB
-	}{
-		{"sqlite", db.SQLite, open},
-		{"postgres", db.Postgres, openPostgres},
-	}
-	for _, d := range dialects {
+	for _, d := range dialectsUnderTest {
 		t.Run(d.name+"/set", func(t *testing.T) {
 			handle := d.open(t)
 			bus := newRecordingBus()

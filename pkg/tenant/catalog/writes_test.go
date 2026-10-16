@@ -174,10 +174,6 @@ func TestAnUpsertByKeyRewritesTheContextTenantsOwnRow(t *testing.T) {
 	requireUpsertByKey(t, open(t))
 }
 
-func TestAnUpsertByKeyRewritesTheContextTenantsOwnRowOnPostgres(t *testing.T) {
-	requireUpsertByKey(t, openFilteredPostgres(t))
-}
-
 func requireUpsertByKey(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	seed(t, handle)
@@ -386,10 +382,6 @@ func TestAnUpsertAssigningTheColumnFromTheInsertedRowIsAllowed(t *testing.T) {
 // context tenant's own — into the tenant it names.
 func TestAnUpsertAssigningTheColumnFromAnythingElseOfTheInsertedRowIsRefused(t *testing.T) {
 	requireInsertedRowCopiesRefused(t, open)
-}
-
-func TestAnUpsertAssigningTheColumnFromAnythingElseOfTheInsertedRowIsRefusedOnPostgres(t *testing.T) {
-	requireInsertedRowCopiesRefused(t, openFilteredPostgres)
 }
 
 func requireInsertedRowCopiesRefused(t *testing.T, open func(*testing.T) *gorm.DB) {

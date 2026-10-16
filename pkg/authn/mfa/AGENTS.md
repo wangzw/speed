@@ -203,6 +203,7 @@ make check
 go -C pkg build ./authn/mfa/...
 go -C pkg vet ./authn/mfa/...
 go -C pkg test ./authn/mfa/...
+go -C pkg test -tags=integration ./authn/mfa/...
 go -C pkg test -race ./authn/mfa/...
 env -C pkg golangci-lint run ./authn/mfa/...
 ```
@@ -210,13 +211,16 @@ env -C pkg golangci-lint run ./authn/mfa/...
 Run `golangci-lint` from inside `pkg`: handed an absolute path from outside the
 module it prints zero issues without loading the packages.
 
-The PostgreSQL leg of every dialect case needs docker and is skipped without it;
-the SQLite leg asks for nothing. `helpers_test.go` builds the product by hand over
-a real database handle (`pkg/internal/dbtest`) with every collaborator a case
-drives — the account reads and writes, the back-off, the sessions, the bus, the
-audit sink, the settings store, the clock and the metric reader — each a stub
-whose answers the case chooses and whose calls it counts. `assembly_test.go`
+Only the SQLite leg of a dialect case belongs to a default run: the PostgreSQL
+leg needs the `integration` tag and the repository's compose stack, and fails
+rather than skips when nothing answers there. `helpers_test.go` builds the
+product by hand over a real database handle (`pkg/internal/dbtest`) with every
+collaborator a case drives — the account reads and writes, the back-off, the
+sessions, the bus, the audit sink, the settings store, the clock and the metric
+reader — each a stub whose answers the case chooses and whose calls it counts.
+`assembly_test.go`
 drives a real registry through the descriptor with stand-in modules for the
 exclusive capabilities, which is what holds the step each callback runs at and
 what the registry's own delivery check asserts. `dialect_test.go` runs the
-comparisons on both engines under a clock that does not read in UTC.
+comparisons on every engine the build runs on, under a clock that does not read
+in UTC.

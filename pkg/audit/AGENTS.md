@@ -201,5 +201,6 @@ they observe — the route a request was dispatched to, the status a client
 received, a connection a handler gave up — is the engine's, and a router built
 by hand would only show what the case built. The
 PostgreSQL cases take a database of their own on the shared fixture in
-`pkg/internal/pgpool/pgtest`, which starts a container through the docker CLI:
-they skip on a machine without docker, and fail instead where `CI` is set.
+`pkg/internal/pgpool/pgtest`, which reaches the server the repository's compose
+stack brings up. They carry the `integration` tag, so a default run compiles
+none of them, and one that cannot reach the server fails rather than skipping.

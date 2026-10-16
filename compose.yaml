@@ -1,0 +1,84 @@
+# The four external backends the pkg module's tests run against: PostgreSQL,
+# Redis, NATS and memcached. They are what the shared test fixtures under
+# pkg/internal/ connect to, and this is the only thing that starts them: a
+# fixture hands a case a database, a logical database index, a key space or a
+# bucket on a server that is already up, and never manages a container itself.
+#
+#   make deps-up        # docker compose up -d --wait
+#   make deps-down      # docker compose down
+#
+# Every service carries a healthcheck, and that is not decoration: `up --wait`
+# waits for a service to be *healthy* only when it declares one, and merely for
+# it to be running otherwise. A case that starts the moment the container is
+# running, with the server still initialising behind it, is the cold-start
+# flake the healthchecks exist to remove.
+#
+# The ports are fixed and bound to loopback, because they are the addresses the
+# fixtures dial. Two consequences: a machine already serving PostgreSQL on 5432
+# cannot bring this stack up, and starters/demo/compose.yaml -- the copyable
+# skeleton's own stack, which declares the same four services on the same ports
+# -- cannot be up at the same time as this one.
+#
+# The images are held to a major version rather than to a digest: the cases lean
+# on a PostgreSQL major's DDL behaviour inside a transaction, on Redis stream
+# consumer groups and SET's KEEPTTL, on JetStream's compare-and-swap and pull
+# consumers, and on memcached's compare-and-swap and add. Each of those is a
+# property of a version, so `docker compose pull` can move a server under the
+# cases by a minor release; a round that has to be reproducible to the byte
+# pins a digest here instead.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: speed
+      POSTGRES_PASSWORD: speed
+      POSTGRES_DB: speed
+    ports:
+      - "127.0.0.1:5432:5432"
+    # The server carries every test binary on the machine at once -- go test
+    # runs packages in parallel and several checkouts can run at once -- so it
+    # takes 500 clients rather than PostgreSQL's default of 100, which is sized
+    # for one application. A case refused a connection for want of one fails
+    # for a reason that is not its own.
+    command: ["-c", "max_connections=500"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U speed -d speed"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  # No logical databases are configured here: a default Redis offers 16, and
+  # the fixture hands all but the last one (its own lease database) out to
+  # cases.
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  # JetStream is on: both the NATS key-value store and the NATS event bus are
+  # built on it, and a server started without -js answers neither.
+  nats:
+    image: nats:2-alpine
+    command: ["-js"]
+    ports:
+      - "127.0.0.1:4222:4222"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 4222"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  memcached:
+    image: memcached:1.6-alpine
+    ports:
+      - "127.0.0.1:11211:11211"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 11211"]
+      interval: 2s
+      timeout: 5s
+      retries: 30

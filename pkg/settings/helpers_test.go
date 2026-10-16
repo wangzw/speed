@@ -197,3 +197,30 @@ func storeOf(t *testing.T, keys *keyTable, bus event.Bus) (*settingsStore, *gorm
 	}
 	return s, handle
 }
+
+// storeOn builds a store over a handle of the given dialect, with the snapshot
+// already loaded.
+func storeOn(t *testing.T, handle *gorm.DB, dialect db.Dialect, keys *keyTable, bus event.Bus) *settingsStore {
+	t.Helper()
+	s := newSettingsStore(keys, stubDatabase{handle: handle, dialect: dialect}, bus, moduleSettings{})
+	s.logger = discardLogger()
+	if err := s.load(context.Background()); err != nil {
+		t.Fatalf("loading the snapshot: %v", err)
+	}
+	return s
+}
+
+// dialectUnderTest is one dialect the cross-dialect cases run on, with how to
+// get a handle carrying this module's table on it.
+type dialectUnderTest struct {
+	name    string
+	dialect db.Dialect
+	open    func(t *testing.T) *gorm.DB
+}
+
+// dialectsUnderTest lists the dialects this build's cross-dialect cases run on.
+// PostgreSQL is appended by the tagged file, which is also where its opener
+// lives: without the tag it is not in the list, and no untagged case names it.
+var dialectsUnderTest = []dialectUnderTest{
+	{name: "sqlite", dialect: db.SQLite, open: open},
+}
