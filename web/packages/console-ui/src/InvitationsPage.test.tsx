@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { InvitationsPage } from './InvitationsPage.js'
 import type {
@@ -104,6 +104,30 @@ describe('InvitationsPage', () => {
     await user.click(screen.getByRole('button', { name: '发出邀请' }))
     await vi.waitFor(() => {
       expect(issued).toEqual(['new@example.com'])
+    })
+  })
+
+  it('takes the invitation expiry from a date-time field and sends the instant', async () => {
+    const user = userEvent.setup()
+    const expiresSent: (string | undefined)[] = []
+    const operations = withTenant({
+      issueInvitation: (input) => {
+        expiresSent.push(input.expiresAt)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    // The expiry is a date-time control, not a free-text box.
+    const expires = screen.getByLabelText('过期时间')
+    expect(expires).toHaveAttribute('type', 'datetime-local')
+    fireEvent.change(expires, { target: { value: '2026-11-01T12:00' } })
+    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    await vi.waitFor(() => {
+      expect(expiresSent).toEqual([
+        new Date('2026-11-01T12:00').toISOString(),
+      ])
     })
   })
 

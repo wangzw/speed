@@ -589,6 +589,7 @@
     "issue": {
       "emailLabel": "邮箱地址",
       "expiresLabel": "过期时间",
+      "expiresHelper": "按本机时区选择；留空用默认有效期。",
       "submit": "发出邀请"
     },
     "loading": "正在加载邀请",

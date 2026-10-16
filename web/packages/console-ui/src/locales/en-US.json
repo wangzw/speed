@@ -589,6 +589,7 @@
     "issue": {
       "emailLabel": "Email address",
       "expiresLabel": "Expires",
+      "expiresHelper": "Chosen in your local time zone; blank uses the default expiry.",
       "submit": "Send invitation"
     },
     "loading": "Loading invitations",

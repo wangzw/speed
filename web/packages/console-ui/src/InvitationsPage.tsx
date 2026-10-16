@@ -52,6 +52,20 @@ function statusLabel(status: string, t: (key: string) => string): string {
     : t('invitations.status.other')
 }
 
+/**
+ * The RFC 3339 instant a datetime-local value names, or undefined for an
+ * empty or unparseable one. The picker yields a zone-less local wall-clock
+ * value; the request carries the instant it names.
+ */
+function toInviteExpiry(value: string): string | undefined {
+  const trimmed = value.trim()
+  if (trimmed === '') {
+    return undefined
+  }
+  const instant = new Date(trimmed)
+  return Number.isNaN(instant.getTime()) ? undefined : instant.toISOString()
+}
+
 export function InvitationsPage() {
   const { t, i18n } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
@@ -259,9 +273,12 @@ export function InvitationsPage() {
               />
               <TextField
                 size="small"
+                type="datetime-local"
                 value={expiresAt}
                 onChange={(event) => setExpiresAt(event.target.value)}
                 label={t('invitations.issue.expiresLabel')}
+                helperText={t('invitations.issue.expiresHelper')}
+                slotProps={{ inputLabel: { shrink: true } }}
               />
               <Button
                 type="button"
@@ -272,7 +289,7 @@ export function InvitationsPage() {
                     {
                       tenant,
                       email,
-                      expiresAt: expiresAt.trim() === '' ? undefined : expiresAt,
+                      expiresAt: toInviteExpiry(expiresAt),
                     },
                     { onSuccess: () => setEmail('') },
                   )
