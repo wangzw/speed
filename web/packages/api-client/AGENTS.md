@@ -197,7 +197,11 @@ suite of its own.
 
 Deferred with reasons:
 
-- Uploads and SSE transports -- not shipped.
+- SSE and streaming responses -- not shipped (a response is read
+  whole; there is no streaming reader). Binary bodies and raw-byte
+  responses *are* carried: a `Blob` (or `ArrayBuffer`/typed array) body
+  travels verbatim, and a request declaring `responseType: 'blob'`
+  resolves its 2xx body as a `Blob`.
 
 ## Known limitations
 
