@@ -17,7 +17,10 @@
  *
  *   go -C starters/demo run . \
  *       --config file://$PWD/starters/demo/testdata/<stack>.yaml \
- *       <stack> gen --title speed -o contracts/api.json
+ *       <stack> gen --title speed -o ../../contracts/api.json
+ *
+ * `-o` is relative to the working directory `go -C` gives the child, which is
+ * starters/demo, so the path climbs out of the module to reach the root.
  *
  * `gen` merges the OpenAPI fragments the platform modules declare into one
  * document (pkg/ops/openapi.Merge over every module's http.Spec resource),

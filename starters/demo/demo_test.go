@@ -440,15 +440,25 @@ func TestServeAnswersTheProbes(t *testing.T) {
 		t.Errorf("the served document holds no paths:\n%s", document.body)
 	}
 
-	// The web endpoint answers for the bundle the binary embeds. A checkout
-	// that has not built the frontend embeds no entry document, and the host
-	// module's answer for that is 404 — an endpoint with nothing to serve
-	// rather than a process that will not start. The committed stand-in in
-	// web/dist keeps the embed compilable and is not a page, so 404 is what
-	// this asserts; a build that has run changes it to 200.
+	// The web endpoint answers for whatever bundle the binary embeds, and what
+	// that is depends on the checkout rather than on the code: the built
+	// frontend once the workspace has built it, and nothing servable before
+	// that. Both answers are the host module's — its entry document when the
+	// bundle carries one, the problem document for a bundle without an entry
+	// document when it does not — so the case pins the shape of each rather
+	// than a state the caller cannot control.
 	web := get(t, fmt.Sprintf("http://127.0.0.1:%d/", ports[4]))
-	if web.status != http.StatusNotFound {
-		t.Errorf("GET / on the web endpoint answered %d, want 404: the frontend has not been built in this checkout, so there is no entry document to serve", web.status)
+	switch web.status {
+	case http.StatusOK:
+		if !strings.Contains(string(web.body), "<!doctype html>") {
+			t.Errorf("GET / on the web endpoint answered 200 with a body that is not an HTML entry document:\n%s", web.body)
+		}
+	case http.StatusNotFound:
+		if !strings.Contains(string(web.body), `"status":404`) {
+			t.Errorf("GET / on the web endpoint answered 404 without the problem document:\n%s", web.body)
+		}
+	default:
+		t.Errorf("GET / on the web endpoint answered %d, want 200 with the built frontend or 404 without it", web.status)
 	}
 
 	// The platform baseline is assembled, and not merely the infrastructure the
