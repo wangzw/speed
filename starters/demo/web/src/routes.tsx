@@ -26,10 +26,21 @@ import type { ConsoleRouteTable } from '@speed/console-ui'
 import type { RouteTable } from '@speed/route-kit'
 import { Navigate } from 'react-router-dom'
 import { DemoNavLabel } from './nav-label.js'
+import {
+  AccountBindingCallbackPage,
+  AccountSettingsPage,
+} from './pages/account-page.js'
 import { HomePage } from './pages/home-page.js'
+import {
+  ACCOUNT_CALLBACK_PATH,
+  ACCOUNT_PATH,
+  CONSOLE_PREFIX,
+} from './paths.js'
 
-/** The path prefix the platform console's pages mount under. */
-export const CONSOLE_PREFIX = '/console'
+// The path constants live in src/paths.ts, shared with the chrome that
+// links into them; re-exported here so the route table stays the single
+// import site for the app's paths.
+export { ACCOUNT_CALLBACK_PATH, ACCOUNT_PATH, CONSOLE_PREFIX } from './paths.js'
 
 /**
  * Whether a declared path belongs to the console area. The console's pages are
@@ -63,12 +74,23 @@ const consoleIndexRoute: RouteTable = [
   },
 ]
 
-/** The business slot: the demo's own pages, which it does not have yet. */
+/** The business slot: the skeleton's placeholder page plus its account page. */
 export const businessRoutes: RouteTable = [
   {
     path: '/',
     view: () => <HomePage />,
     label: <DemoNavLabel labelKey="nav.home" />,
+  },
+  {
+    path: ACCOUNT_PATH,
+    view: () => <AccountSettingsPage />,
+    label: <DemoNavLabel labelKey="nav.account" />,
+  },
+  // Unlabelled: the binding callback is a completion point, not a
+  // destination in the navigation.
+  {
+    path: ACCOUNT_CALLBACK_PATH,
+    view: () => <AccountBindingCallbackPage />,
   },
 ]
 

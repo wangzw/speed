@@ -28,11 +28,13 @@
  *    dist usable across deployment topologies without a rebuild.
  */
 
+import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '@speed/account-ui'
 import { CONSOLE_UI_NAMESPACE, consoleUiResources } from '@speed/console-ui'
 import {
   bootstrapSpeedApp,
   type SpeedAppBootstrap,
 } from '@speed/product-shell/bootstrap'
+import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
 import { AppServicesProvider } from './app-services.js'
 import { DemoApp } from './app.js'
 import { applyDocumentMetadata } from './document-metadata.js'
@@ -53,6 +55,8 @@ export async function bootstrapDemoApp(
   const bootstrap = bootstrapSpeedApp(container, {
     namespaces: [
       { namespace: CONSOLE_UI_NAMESPACE, resources: consoleUiResources },
+      { namespace: ACCOUNT_UI_NAMESPACE, resources: accountUiResources },
+      { namespace: TENANCY_UI_NAMESPACE, resources: tenancyUiResources },
       { namespace: DEMO_NAMESPACE, resources: demoResources },
     ],
     providers: [

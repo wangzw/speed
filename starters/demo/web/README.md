@@ -129,8 +129,10 @@ wiring that a copied-out project drops**:
 | `src/main.tsx` | `bootstrapDemoApp`: reads the runtime API origin, then hands the app's declarative definition to `@speed/product-shell/bootstrap`'s `bootstrapSpeedApp`. |
 | `src/app.tsx` | `DemoApp`: the route provider around the shell switch -- the tenant shell or the console area, chosen by the URL. |
 | `src/routes.tsx` | The route table: the business slot plus the mounted console area. |
+| `src/paths.ts` | The app's own route paths, shared by the route table and the chrome that links into them. |
+| `src/chrome.tsx` | The shared top-bar chrome: the brand, the app-wide header actions (language switch, color-mode toggle), the tenant switcher and the avatar account menu. |
 | `src/console/console-area.tsx` | The platform console, the second shell, over `@speed/console-ui`. |
-| `src/pages/` | The app's pages; one placeholder stands in for a business domain. |
+| `src/pages/` | The app's pages: the business placeholder and the account page. |
 | `src/runtime-config.ts` | Reads the deployment's API origin from `runtime-config.json` at the deployment root (resolved against the entry document, not the current URL), falling back to same-origin. |
 | `src/document-metadata.ts` | Keeps `<html lang>` and the document title in step with the active language. |
 | `src/resources.ts`, `src/locales/` | The app's bilingual i18n bundle ("demo" namespace). |
@@ -187,6 +189,22 @@ The tenant navigation carries a console entry pointing at `/console`, which
 redirects to the console's first page; the console area itself gates each page
 on its permission code (composed host-side) and shows a "no access" state for a
 code the session is known to lack.
+
+### The account page and the app chrome
+
+The tenant area ships one account page (`/account`, in the navigation) that
+mounts `@speed/account-ui`'s four sections -- preferences, active sessions,
+social bindings and the step-up-gated two-step-verification setup -- under a
+`@speed/ui-kit` `PageHeader`. The social-bindings section takes the session and
+the channels the host offers; the skeleton configures none, so it lists
+existing bindings with no add area, and the binding-callback route is mounted
+beside the page for a product that configures a provider.
+
+The top bar carries the tenant switcher (over the app's placeholder tenant
+list), an app-wide language switch and a color-mode toggle, and an avatar
+account menu (profile / account settings / sign out), all from
+`src/chrome.tsx`. The language and color-mode controls appear in the console
+banner too; the tenant switcher does not (the console resolves no tenant).
 
 ## What to change when you copy this out
 

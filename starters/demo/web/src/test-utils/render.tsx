@@ -20,11 +20,13 @@ import { attachSession, createAuthSession } from '@speed/auth-core'
 import type { AuthSession } from '@speed/auth-core'
 import { createMemoryAccessTokenStore } from '@speed/api-client'
 import type { RequestFn } from '@speed/api-client'
+import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '@speed/account-ui'
 import { AUTH_UI_NAMESPACE, authUiResources } from '@speed/auth-ui'
 import { CONSOLE_UI_NAMESPACE, consoleUiResources } from '@speed/console-ui'
 import { createI18n, I18nextProvider, registerNamespace } from '@speed/i18n'
 import { LAYOUT_KIT_NAMESPACE, layoutKitResources } from '@speed/layout-kit'
 import { PRODUCT_SHELL_NAMESPACE, productShellResources } from '@speed/product-shell'
+import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
 import type { SpeedAppServices } from '@speed/product-shell/bootstrap'
 import { AppThemeProvider, UI_KIT_NAMESPACE, uiKitResources } from '@speed/ui-kit'
 import { AppServicesProvider } from '../app-services.js'
@@ -58,6 +60,8 @@ export function renderDemoApp(
   registerNamespace(i18n, AUTH_UI_NAMESPACE, authUiResources)
   registerNamespace(i18n, PRODUCT_SHELL_NAMESPACE, productShellResources)
   registerNamespace(i18n, CONSOLE_UI_NAMESPACE, consoleUiResources)
+  registerNamespace(i18n, ACCOUNT_UI_NAMESPACE, accountUiResources)
+  registerNamespace(i18n, TENANCY_UI_NAMESPACE, tenancyUiResources)
   registerNamespace(i18n, DEMO_NAMESPACE, demoResources)
 
   const queryClient = new QueryClient({

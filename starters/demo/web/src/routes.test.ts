@@ -6,6 +6,8 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  ACCOUNT_CALLBACK_PATH,
+  ACCOUNT_PATH,
   businessRoutes,
   CONSOLE_LANDING_PATH,
   CONSOLE_PREFIX,
@@ -15,9 +17,17 @@ import {
 } from './routes.js'
 
 describe('the route table', () => {
-  it('names the business slot at the root, labelled', () => {
-    expect(businessRoutes.map((route) => route.path)).toEqual(['/'])
-    expect(businessRoutes[0]?.label).toBeDefined()
+  it('names the business slot at the root and the account page, both labelled, beside the unlabelled callback', () => {
+    expect(businessRoutes.map((route) => route.path)).toEqual([
+      '/',
+      ACCOUNT_PATH,
+      ACCOUNT_CALLBACK_PATH,
+    ])
+    const [home, account, callback] = businessRoutes
+    expect(home?.label).toBeDefined()
+    expect(account?.label).toBeDefined()
+    // The callback is a completion point, not a navigation destination.
+    expect(callback?.label).toBeUndefined()
   })
 
   it('mounts every console page under the console prefix, labelled and permission-coded', () => {

@@ -32,7 +32,7 @@ import { ConsoleShell } from '@speed/console-ui'
 import { useTranslation } from '@speed/i18n'
 import { useNavigate } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
-import { AppBrand, UserMenu } from '../chrome.js'
+import { AppBrand, HeaderActions, UserMenu } from '../chrome.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 
 /** The tenant area's root: the app's business slot, which the console's exit
@@ -82,6 +82,7 @@ function ConsoleHeaderActions(): ReactElement {
       >
         {t('console.backToApp')}
       </Link>
+      <HeaderActions />
       <UserMenu />
     </Box>
   )

@@ -26,10 +26,11 @@
  * A URL no declaration matches renders the fallback page inside the tenant area.
  */
 
+import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
-import { useAuthState } from '@speed/auth-core'
+import { TenantProvider, useAuthState } from '@speed/auth-core'
 import type { AuthSnapshot } from '@speed/auth-core'
 import { SignInScreen } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
@@ -45,7 +46,13 @@ import {
 import type { RouteContext } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
 import { useAppServices } from './app-services.js'
-import { AppBrand, UserMenu } from './chrome.js'
+import {
+  AppBrand,
+  DEFAULT_TENANT_ID,
+  HeaderActions,
+  TenantMenu,
+  UserMenu,
+} from './chrome.js'
 import { ConsoleArea } from './console/console-area.js'
 import { DemoNavLabel } from './nav-label.js'
 import { DEMO_NAMESPACE } from './resources.js'
@@ -76,6 +83,14 @@ export function DemoApp(): ReactElement {
 function AppFrame(): ReactElement {
   const items = useNavItems()
   const navigate = useNavigate()
+  // The current tenant is a host fact (the server resolves it per request),
+  // held here and handed to the switcher, which reports a pick back. The
+  // tenant area mounts it on TenantProvider; a switch would update this
+  // state (and, in a product, the route and the departing tenant's cache).
+  const [tenantId, setTenantId] = useState<string | null>(DEFAULT_TENANT_ID)
+  // The desktop sidebar's collapse state, host-held: the shell renders the
+  // toggle (the collapse props are supplied) and reports each flip back.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   const consoleSelected = items.some(
     (item) => item.selected && isConsolePath(item.id),
@@ -124,16 +139,28 @@ function AppFrame(): ReactElement {
   ]
 
   return (
-    <ProductShell
-      navItems={navItems}
-      header={<AppBrand />}
-      userMenu={<UserMenu />}
-      signIn={<SignInView />}
-    >
-      <Box sx={{ p: 3 }}>
-        <RouteView />
-      </Box>
-    </ProductShell>
+    <TenantProvider tenantId={tenantId}>
+      <ProductShell
+        navItems={navItems}
+        header={<AppBrand />}
+        headerActions={<HeaderActions />}
+        sidebarCollapsed={sidebarCollapsed}
+        onSidebarCollapsedChange={setSidebarCollapsed}
+        // The tenant switcher sits in the userMenu slot (the design's
+        // placement for it) ahead of the account menu.
+        userMenu={
+          <>
+            <TenantMenu tenantId={tenantId} onTenantSelect={setTenantId} />
+            <UserMenu />
+          </>
+        }
+        signIn={<SignInView />}
+      >
+        <Box sx={{ p: 3 }}>
+          <RouteView />
+        </Box>
+      </ProductShell>
+    </TenantProvider>
   )
 }
 

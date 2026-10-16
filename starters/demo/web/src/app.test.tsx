@@ -18,6 +18,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import authUiEnUS from '../../../../web/packages/auth-ui/src/locales/en-US.json' with { type: 'json' }
 import authUiZhCN from '../../../../web/packages/auth-ui/src/locales/zh-CN.json' with { type: 'json' }
 import consoleUiEnUS from '../../../../web/packages/console-ui/src/locales/en-US.json' with { type: 'json' }
+import layoutKitEnUS from '../../../../web/packages/layout-kit/src/locales/en-US.json' with { type: 'json' }
 import uiKitEnUS from '../../../../web/packages/ui-kit/src/locales/en-US.json' with { type: 'json' }
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import demoZhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -214,22 +215,115 @@ describe('the console area', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('renders the same brand and sign-out action in its top bar as the tenant frame', async () => {
+  it('renders the same brand and account menu in its top bar as the tenant frame', async () => {
     window.history.replaceState({}, '', '/console/tenants')
+    const user = userEvent.setup()
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
     // The console frame is a different shell (no tenant switcher), but its
     // banner is the same chrome the tenant frame carries: the brand in the
-    // header's own type, and the sign-out action beside it.
-    const banner = await screen.findByRole('banner')
+    // header's own type, and the account menu beside it. The routed page's
+    // PageHeader is also a <header> element, so scope to the banner that
+    // carries the brand.
+    const brand = await screen.findByRole('heading', {
+      level: 6,
+      name: demoEnUS.app.title,
+    })
+    const banner = brand.closest('header')
+    expect(banner).not.toBeNull()
+
+    // The avatar trigger is named for the signed-in principal; its menu
+    // carries the profile / account-settings / sign-out entries.
+    await user.click(
+      within(banner as HTMLElement).getByRole('button', { name: 'Test User' }),
+    )
+    for (const name of [
+      demoEnUS.userMenu.profile,
+      demoEnUS.userMenu.accountSettings,
+      demoEnUS.userMenu.signOut,
+    ]) {
+      expect(screen.getByRole('menuitem', { name })).toBeInTheDocument()
+    }
+  })
+})
+
+describe('the tenant area header controls', () => {
+  it('switches the language from the header control', async () => {
+    const user = userEvent.setup()
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    await user.click(
+      screen.getByRole('button', { name: demoEnUS.languageSwitcher.label }),
+    )
+    const zhName = new Intl.DisplayNames(['en-US'], { type: 'language' }).of(
+      'zh-CN',
+    )
+    await user.click(screen.getByRole('menuitem', { name: zhName ?? 'zh-CN' }))
+
+    // The interface relabels into the chosen language: the brand, resolved
+    // from the demo namespace, now reads in Chinese.
     expect(
-      within(banner).getByRole('heading', {
+      await screen.findByRole('heading', {
         level: 6,
-        name: demoEnUS.app.title,
+        name: demoZhCN.app.title,
       }),
     ).toBeInTheDocument()
+  })
+
+  it('switches the tenant from the header switcher', async () => {
+    const user = userEvent.setup()
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    // The trigger shows the host's current tenant; picking another reports
+    // the choice and the trigger converges onto it.
+    await user.click(screen.getByRole('button', { name: 'Acme Inc.' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Globex Corp.' }))
     expect(
-      within(banner).getByRole('button', { name: authUiEnUS.signOut.label }),
+      screen.getByRole('button', { name: 'Globex Corp.' }),
+    ).toBeInTheDocument()
+  })
+
+  it('collapses and expands the sidebar from the header control', async () => {
+    const user = userEvent.setup()
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    // The desktop sidebar collapse toggle is present (the host supplies the
+    // collapse props); collapsing removes the permanent drawer and the
+    // toggle now offers to expand.
+    await user.click(
+      screen.getByRole('button', { name: layoutKitEnUS.appShell.collapseNav }),
+    )
+    expect(
+      screen.getByRole('button', { name: layoutKitEnUS.appShell.expandNav }),
+    ).toBeInTheDocument()
+  })
+
+  it('toggles the color mode from the header control', async () => {
+    const user = userEvent.setup()
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    // The control describes the action; after the flip it offers the other
+    // mode.
+    await user.click(
+      screen.getByRole('button', { name: demoEnUS.colorMode.toDark }),
+    )
+    expect(
+      screen.getByRole('button', { name: demoEnUS.colorMode.toLight }),
+    ).toBeInTheDocument()
+  })
+})
+
+describe('the account page', () => {
+  it('mounts the account surfaces in the tenant shell at /account', async () => {
+    window.history.replaceState({}, '', '/account')
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    // The account page's page header renders its title as the h1.
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.account.title,
+      }),
     ).toBeInTheDocument()
   })
 })

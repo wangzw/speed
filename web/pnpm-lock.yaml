@@ -35,6 +35,9 @@ importers:
       '@mui/material':
         specifier: ^9.4.0
         version: 9.5.0(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.0))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.0))(@types/react@19.3.0)(react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@speed/account-ui':
+        specifier: ^0.0.1
+        version: link:../../../web/packages/account-ui
       '@speed/auth-ui':
         specifier: ^0.0.1
         version: link:../../../web/packages/auth-ui
@@ -53,6 +56,9 @@ importers:
       '@speed/route-kit':
         specifier: ^0.0.1
         version: link:../../../web/packages/route-kit
+      '@speed/tenancy-ui':
+        specifier: ^0.0.1
+        version: link:../../../web/packages/tenancy-ui
       '@speed/ui-kit':
         specifier: ^0.0.1
         version: link:../../../web/packages/ui-kit

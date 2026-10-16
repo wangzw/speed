@@ -4,7 +4,8 @@
   },
   "nav": {
     "home": "Home",
-    "console": "Console"
+    "console": "Console",
+    "account": "Account settings"
   },
   "console": {
     "backToApp": "Back to app"
@@ -16,6 +17,23 @@
   "home": {
     "heading": "Your business pages start here",
     "body": "This skeleton ships no business domain. A product puts its pages under src/pages and names them in one place, the route table in src/routes.tsx, which feeds both the navigation and the rendered view."
+  },
+  "account": {
+    "title": "Account settings",
+    "description": "Manage your account: preferences, active sessions, linked sign-in methods and two-step verification."
+  },
+  "userMenu": {
+    "accountMenu": "Account menu",
+    "profile": "Profile",
+    "accountSettings": "Account settings",
+    "signOut": "Sign out"
+  },
+  "languageSwitcher": {
+    "label": "Change language"
+  },
+  "colorMode": {
+    "toDark": "Switch to dark theme",
+    "toLight": "Switch to light theme"
   },
   "notFound": {
     "heading": "Page not found",
