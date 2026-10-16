@@ -96,7 +96,14 @@ describe('ConsoleArea', () => {
         .map((link) => link.textContent),
     ).toEqual([
       consoleUiEnUS.tenants.title,
+      consoleUiEnUS.accounts.title,
+      consoleUiEnUS.sessions.title,
+      consoleUiEnUS.impersonations.title,
+      consoleUiEnUS.permissions.title,
+      consoleUiEnUS.invitations.title,
+      consoleUiEnUS.sso.title,
       consoleUiEnUS.settings.title,
+      consoleUiEnUS.sms.title,
       consoleUiEnUS.audit.title,
     ])
   })

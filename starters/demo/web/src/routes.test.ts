@@ -35,7 +35,14 @@ describe('the route table', () => {
   it('mounts every console page under the console prefix, labelled and permission-coded', () => {
     expect(consoleShellRoutes.map((route) => route.path)).toEqual([
       `${CONSOLE_PREFIX}/tenants`,
+      `${CONSOLE_PREFIX}/accounts`,
+      `${CONSOLE_PREFIX}/sessions`,
+      `${CONSOLE_PREFIX}/impersonations`,
+      `${CONSOLE_PREFIX}/permissions`,
+      `${CONSOLE_PREFIX}/invitations`,
+      `${CONSOLE_PREFIX}/sso`,
       `${CONSOLE_PREFIX}/settings`,
+      `${CONSOLE_PREFIX}/sms`,
       `${CONSOLE_PREFIX}/audit`,
     ])
     for (const route of consoleShellRoutes) {
