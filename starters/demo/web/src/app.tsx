@@ -51,6 +51,7 @@ import {
 import type { RouteContext } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
+import { useAppServices } from './app-services.js'
 import {
   AppBrand,
   getCurrentTenantId,
