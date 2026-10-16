@@ -45,6 +45,15 @@
     "navLabel": "Console navigation",
     "title": "Console"
   },
+  "nav": {
+    "groups": {
+      "overview": "Overview",
+      "identity": "Identity & access",
+      "tenants": "Tenants",
+      "platform": "Platform configuration",
+      "audit": "Audit"
+    }
+  },
   "common": {
     "refresh": "Refresh",
     "cancel": "Cancel",

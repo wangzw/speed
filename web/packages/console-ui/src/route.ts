@@ -48,6 +48,31 @@ export interface ConsoleRoute {
   readonly label?: ReactNode
   /** The permission code the page needs (data; this package never decides on it). */
   readonly permission?: string
+  /**
+   * Which navigation group this page belongs to, by a group id from the
+   * console's own group table (`ConsoleNavGroup`). It is data the console
+   * shell reads when it builds a grouped navigation; a host that passes
+   * no group table renders the flat single column and this field is
+   * ignored. Absent (or naming a group the table does not declare) leaves
+   * the page's entry ungrouped.
+   */
+  readonly group?: string
+}
+
+/**
+ * One console navigation group: a stable id, an already-translated
+ * heading, and an optional initial collapse state. The console shell
+ * renders groups in the order its group table lists them, each group's
+ * entries in declaration order beneath it. The shape is host-suppliable
+ * so a host can reorder or relabel the console's groups.
+ */
+export interface ConsoleNavGroup {
+  /** Stable identity, matching the `group` a declaration names. */
+  readonly id: string
+  /** The group's visible heading, resolved through the console-ui namespace. */
+  readonly label: ReactNode
+  /** Whether the group starts collapsed; absent means expanded. */
+  readonly defaultCollapsed?: boolean
 }
 
 /** The console's page set: a collection of declarations. */

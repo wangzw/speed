@@ -25,7 +25,7 @@ import { mockMatchMedia } from '@speed/test-utils/matchMedia'
 import layoutKitZhCN from '../../layout-kit/src/locales/zh-CN.json' with { type: 'json' }
 import consoleUiZhCN from './locales/zh-CN.json' with { type: 'json' }
 import { ConsoleShell } from './ConsoleShell.js'
-import type { ConsoleRoute } from './route.js'
+import type { ConsoleNavGroup, ConsoleRoute } from './route.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
   createConsoleOperations,
@@ -287,6 +287,101 @@ describe('ConsoleShell', () => {
       expect(
         screen.getByRole('button', { name: layoutKitZhCN.appShell.expandNav }),
       ).toHaveAttribute('aria-expanded', 'false')
+    })
+  })
+
+  describe('navigation groups', () => {
+    // Labelled declarations that name groups, plus one ungrouped entry. The
+    // group table orders the groups differently from the declaration order, so
+    // the grouped output cannot accidentally match the flat one.
+    const groupedRoutes: readonly ConsoleRoute[] = [
+      { path: '/', view: () => null, label: 'Overview', group: 'overview' },
+      { path: '/accounts', view: () => null, label: 'Accounts', group: 'identity' },
+      { path: '/roles', view: () => null, label: 'Roles', group: 'identity' },
+      { path: '/settings', view: () => null, label: 'Settings', group: 'platform' },
+      { path: '/help', view: () => null, label: 'Help' },
+    ]
+    const navGroups: readonly ConsoleNavGroup[] = [
+      { id: 'identity', label: 'Identity & access' },
+      { id: 'platform', label: 'Platform' },
+      { id: 'overview', label: 'Overview' },
+    ]
+
+    it('gathers the labelled declarations into their groups: groups in table order, entries in declaration order, ungrouped above', () => {
+      mockMatchMedia(true)
+      renderWithProviders(
+        <ConsoleShell
+          routes={groupedRoutes}
+          navGroups={navGroups}
+          title="Console"
+        >
+          <h1>Home</h1>
+        </ConsoleShell>,
+        { operations },
+      )
+      const nav = screen.getByRole('navigation')
+      // Group headings are the disclosure controls, in the table's order.
+      expect(
+        within(nav)
+          .getAllByRole('button')
+          .map((button) => button.textContent),
+      ).toEqual(['Identity & access', 'Platform', 'Overview'])
+      // The ungrouped entry sits above the groups; each group's entries keep
+      // their declaration order.
+      expect(
+        within(nav)
+          .getAllByRole('link')
+          .map((link) => link.textContent),
+      ).toEqual(['Help', 'Accounts', 'Roles', 'Settings', 'Overview'])
+    })
+
+    it('drops a group that no declaration names', () => {
+      mockMatchMedia(true)
+      renderWithProviders(
+        <ConsoleShell
+          routes={groupedRoutes}
+          navGroups={[...navGroups, { id: 'empty', label: 'Empty group' }]}
+          title="Console"
+        >
+          <h1>Home</h1>
+        </ConsoleShell>,
+        { operations },
+      )
+      const nav = screen.getByRole('navigation')
+      expect(
+        within(nav).queryByRole('button', { name: 'Empty group' }),
+      ).not.toBeInTheDocument()
+    })
+
+    it('keeps the flat single column when no group table is supplied', () => {
+      mockMatchMedia(true)
+      renderWithProviders(
+        <ConsoleShell routes={groupedRoutes} title="Console">
+          <h1>Home</h1>
+        </ConsoleShell>,
+        { operations },
+      )
+      const nav = screen.getByRole('navigation')
+      // Backward compatibility: the labelled declarations in declaration
+      // order, no group headings, no disclosure controls.
+      expect(within(nav).queryAllByRole('button')).toHaveLength(0)
+      expect(
+        within(nav)
+          .getAllByRole('link')
+          .map((link) => link.textContent),
+      ).toEqual(['Overview', 'Accounts', 'Roles', 'Settings', 'Help'])
+    })
+
+    it('has no axe violations with the grouped navigation', async () => {
+      mockMatchMedia(true)
+      renderWithProviders(
+        <ConsoleShell routes={groupedRoutes} navGroups={navGroups} title="Console">
+          <h1>Home</h1>
+          <p>body</p>
+        </ConsoleShell>,
+        { operations },
+      )
+      await expectNoAxeViolationsForPage()
     })
   })
 

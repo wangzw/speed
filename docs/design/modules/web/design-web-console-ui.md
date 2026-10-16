@@ -38,21 +38,35 @@
 
 ## 外部接口契约
 
-本包的公开面由 `web/packages/console-ui/src/index.ts` 导出：各管理面的页面声明集与页面组件、控制台壳、以及页面读写的操作束。页面声明的形状与壳的入参如下。
+本包的公开面由 `web/packages/console-ui/src/index.ts` 导出：各管理面的页面声明集与页面组件、控制台壳、导航分组表（`consoleNavGroups` 与 `ConsoleNavGroup`）、以及页面读写的操作束。页面声明的形状与壳的入参如下。
 
 ```tsx
 // 一份页面声明：形状即 route-kit 的 `RouteDeclaration`——路径 pattern、视图回调、
 // 可选导航标签、可选权限码。本包不 import `route-kit`，导出满足该结构的值。
+// `group` 是本包自加的额外可选字段：它指定该页归属的导航分组（见下），
+// 是数据；不在 route-kit 的形状里，故带 tag 的声明仍可赋值给 `RouteDeclaration`。
 interface ConsoleRoute {
   readonly path: string
   readonly view: (context: ConsoleRouteContext) => ReactNode
   readonly label?: ReactNode
   readonly permission?: string
+  readonly group?: string
+}
+
+// 一个导航分组：稳定 id、已翻译标题、可选初始折叠态。本包导出 `consoleNavGroups`
+// 作为缺省分组表；宿主也可传入自己的（改顺序或改标题）。
+interface ConsoleNavGroup {
+  readonly id: string
+  readonly label: ReactNode
+  readonly defaultCollapsed?: boolean
 }
 
 // 控制台壳：由带标签的声明派生平台导航，渲染宿主的路由内容。
 interface ConsoleShellProps {
   readonly routes: readonly ConsoleRoute[]
+  // 导航分组表：给了它即按分组渲染（组按表内顺序、组内按声明顺序，
+  // 无分组的声明排在组之前）；不给即维持扁平单列，现有宿主不变。
+  readonly navGroups?: readonly ConsoleNavGroup[]
   readonly children: ReactNode
   readonly title?: ReactNode
   readonly headerActions?: ReactNode
@@ -73,23 +87,25 @@ interface ConsoleShellProps {
 
 - **框架 prop 原样透传。** `sidebarCollapsed` / `onSidebarCollapsedChange` 是 `AppShell` 的桌面侧边栏收起对，被拾起后逐字转给 `AppShell`，本包不重解释。给出后者即在帧的顶栏渲染收起／展开按钮并回报每次翻转，不给即维持一直展开的常驻抽屉；收起态是宿主持有的普通值。租户侧的 [product-shell](design-web-product-shell.md) 用同一对 prop，两处外壳在这条上也同形。
 
+- **导航按分组表聚合。** 页面声明可带 `group`，指向本包分组表里的一个组；壳把带标签的声明按其 `group` 聚成 [layout-kit](design-web-layout-kit.md) 的 `AppShellNavGroup`（组内是导航项、标题即折叠控件），组的顺序与标题来自宿主传入的分组表，组内顺序即声明顺序。分组表经 `navGroups` prop 传入，本包另导出 `consoleNavGroups` 作为缺省：概览（仪表盘）／身份与访问（账户、会话、冒充、权限、邀请与成员、SSO）／租户（租户名册）／平台配置（设置、短信）／审计（审计）。未传分组表即维持扁平单列——十一个带标签的声明按声明顺序排成一组，现有宿主零改动；`group` 此时是数据、不起作用。无 `group` 或指向表外组的声明作为导航项排在组之前，空组（无声明指向）不渲染标题。组标题经 console-ui 命名空间解析（`nav.groups.*`），与页面标签同一套翻译路径。
+
 ### 页面声明
 
-一个管理面导出一份页面声明表，全部汇总为 `consoleRoutes`（导航顺序即下表顺序）。路径是相对控制台根的 pattern，导航标签是一个在渲染时经 console-ui 命名空间解析的 `ConsoleNavLabel`，权限码是该页数据所持的平台权限（数据；本包不据它判定）。**一个管理面可含多于一条声明**：列表页携带标签（进导航），详情页不带标签（可达但不列出），由列表行链入；下表列出带标签的各页，与导航一一对应。
+一个管理面导出一份页面声明表，全部汇总为 `consoleRoutes`（扁平导航顺序即下表顺序；按分组渲染时组的顺序由分组表给出）。路径是相对控制台根的 pattern，导航标签是一个在渲染时经 console-ui 命名空间解析的 `ConsoleNavLabel`，权限码是该页数据所持的平台权限（数据；本包不据它判定），`group` 是该页归属的导航分组（数据；见「导航按分组表聚合」）。**一个管理面可含多于一条声明**：列表页携带标签（进导航），详情页不带标签（可达但不列出），由列表行链入；下表列出带标签的各页，与导航一一对应。
 
-| 声明 | 路径 | 导航标签键 | 权限码 |
-|---|---|---|---|
-| `dashboardAdminRoutes` | `/` | `dashboard.title` | `tenant.read` |
-| `tenantAdminRoutes` | `/tenants` | `tenants.title` | `tenant.read` |
-| `accountsAdminRoutes` | `/accounts` | `accounts.title` | `authn.account.read` |
-| `sessionsAdminRoutes` | `/sessions` | `sessions.title` | `authn.session.read` |
-| `impersonationsAdminRoutes` | `/impersonations` | `impersonations.title` | `authn.impersonation.read` |
-| `permissionsAdminRoutes` | `/permissions` | `permissions.title` | `authz.role.read` |
-| `invitationsAdminRoutes` | `/invitations` | `invitations.title` | `authn.membership.manage` |
-| `ssoAdminRoutes` | `/sso` | `sso.title` | `authn.idp.manage` |
-| `settingsAdminRoutes` | `/settings` | `settings.title` | `settings.read` |
-| `smsAdminRoutes` | `/sms` | `sms.title` | `sms.template.read` |
-| `auditAdminRoutes` | `/audit` | `audit.title` | `audit.read` |
+| 声明 | 路径 | 导航标签键 | 权限码 | 分组 |
+|---|---|---|---|---|
+| `dashboardAdminRoutes` | `/` | `dashboard.title` | `tenant.read` | 概览 |
+| `tenantAdminRoutes` | `/tenants` | `tenants.title` | `tenant.read` | 租户 |
+| `accountsAdminRoutes` | `/accounts` | `accounts.title` | `authn.account.read` | 身份与访问 |
+| `sessionsAdminRoutes` | `/sessions` | `sessions.title` | `authn.session.read` | 身份与访问 |
+| `impersonationsAdminRoutes` | `/impersonations` | `impersonations.title` | `authn.impersonation.read` | 身份与访问 |
+| `permissionsAdminRoutes` | `/permissions` | `permissions.title` | `authz.role.read` | 身份与访问 |
+| `invitationsAdminRoutes` | `/invitations` | `invitations.title` | `authn.membership.manage` | 身份与访问 |
+| `ssoAdminRoutes` | `/sso` | `sso.title` | `authn.idp.manage` | 身份与访问 |
+| `settingsAdminRoutes` | `/settings` | `settings.title` | `settings.read` | 平台配置 |
+| `smsAdminRoutes` | `/sms` | `sms.title` | `sms.template.read` | 平台配置 |
+| `auditAdminRoutes` | `/audit` | `audit.title` | `audit.read` | 审计 |
 
 ### 页型的骨架
 
@@ -210,6 +226,7 @@ graph TD
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 控制台壳与声明面接入 | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell`、`ConsoleShellProps`；`web/packages/console-ui/src/route.ts` `ConsoleRoute`、`ConsoleRouteTable` |
+| 导航按分组表聚合（壳侧） | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell`、`buildNavEntries`；`web/packages/console-ui/src/route.ts` `ConsoleNavGroup`、`ConsoleRoute.group`；`web/packages/console-ui/src/nav-groups.tsx` `consoleNavGroups` |
 | 桌面侧边栏收起（框架 prop 对透传） | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `sidebarCollapsed`、`onSidebarCollapsedChange` |
 | 控制台仪表盘（租户 KPI、平台健康度与最近活动） | 已实现 | `web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage`；`web/packages/console-ui/src/routes.tsx` `dashboardAdminRoutes` |
 | 租户管理页（PageHeader 开篇） | 已实现 | `web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/console-ui/src/routes.tsx` `tenantAdminRoutes` |

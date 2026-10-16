@@ -69,12 +69,21 @@ host that holds the collapse state gives the operator the same
 host-controlled collapse the tenant-facing shell carries. Omit the pair and
 the sidebar stays open.
 
+The navigation is a flat single column by default -- one entry per
+labelled declaration, in declaration order. Pass `navGroups` (the
+package's own `consoleNavGroups`, or a host-supplied table) to group the
+pages by capability domain instead: each declaration names its group
+through its `group` field, and the shell renders the groups in the
+table's order with each group's entries in declaration order beneath it.
+Omit `navGroups` and the flat column is unchanged.
+
 ## What ships
 
 | Module | Exports |
 |---|---|
 | `ConsoleShell.tsx` | `ConsoleShell`, `ConsoleShellProps` |
-| `route.ts` | `ConsoleRoute`, `ConsoleRouteContext`, `ConsoleRouteParams`, `ConsoleRouteTable` |
+| `route.ts` | `ConsoleRoute`, `ConsoleRouteContext`, `ConsoleRouteParams`, `ConsoleRouteTable`, `ConsoleNavGroup` |
+| `nav-groups.tsx` | `consoleNavGroups` |
 | `operations.tsx` | `ConsoleOperations`, `consoleOperations`, `ConsoleOperationsProvider`, `useConsoleOperations`, `settingKeyRest`, the view row types, the write input types |
 | `routes.tsx` | `dashboardAdminRoutes`, `tenantAdminRoutes`, `accountsAdminRoutes`, `sessionsAdminRoutes`, `impersonationsAdminRoutes`, `permissionsAdminRoutes`, `invitationsAdminRoutes`, `ssoAdminRoutes`, `settingsAdminRoutes`, `smsAdminRoutes`, `auditAdminRoutes`, `consoleRoutes` |
 | `DashboardPage.tsx` | `DashboardPage` |

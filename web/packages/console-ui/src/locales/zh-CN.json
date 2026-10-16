@@ -45,6 +45,15 @@
     "navLabel": "控制台导航",
     "title": "控制台"
   },
+  "nav": {
+    "groups": {
+      "overview": "概览",
+      "identity": "身份与访问",
+      "tenants": "租户",
+      "platform": "平台配置",
+      "audit": "审计"
+    }
+  },
   "common": {
     "refresh": "刷新",
     "cancel": "取消",

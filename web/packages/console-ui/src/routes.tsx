@@ -30,8 +30,8 @@
  * authority.
  */
 
-import { useConsoleUiTranslation } from './internal/translation.js'
 import type { ConsoleRoute, ConsoleRouteTable } from './route.js'
+import { ConsoleNavLabel } from './internal/nav-label.js'
 import { DashboardPage } from './DashboardPage.js'
 import { TenantRosterPage } from './TenantRosterPage.js'
 import { TenantDetailPage } from './TenantDetailPage.js'
@@ -47,16 +47,6 @@ import { SsoPage } from './SsoPage.js'
 import { SmsPage } from './SmsPage.js'
 
 /**
- * A navigation label bound to a console-ui namespace key, resolved when
- * the label renders. Used inside the module-level declarations so they
- * stay plain values while their labels translate.
- */
-function ConsoleNavLabel({ labelKey }: { readonly labelKey: string }) {
-  const { t } = useConsoleUiTranslation()
-  return <>{t(labelKey)}</>
-}
-
-/**
  * The console landing (the root) renders the dashboard; it reads the
  * platform roster and the audit trail, so it is held to tenant.read (its
  * audit panel refuses on its own when the viewer lacks audit.read).
@@ -67,6 +57,7 @@ export const dashboardAdminRoutes: ConsoleRouteTable = [
     view: () => <DashboardPage />,
     label: <ConsoleNavLabel labelKey="dashboard.title" />,
     permission: 'tenant.read',
+    group: 'overview',
   },
 ] satisfies readonly ConsoleRoute[]
 
@@ -82,6 +73,7 @@ export const tenantAdminRoutes: ConsoleRouteTable = [
     view: (context) => <TenantRosterPage basePath={context.path} />,
     label: <ConsoleNavLabel labelKey="tenants.title" />,
     permission: 'tenant.read',
+    group: 'tenants',
   },
   {
     path: '/tenants/:id',
@@ -101,6 +93,7 @@ export const accountsAdminRoutes: ConsoleRouteTable = [
     view: () => <AccountsPage />,
     label: <ConsoleNavLabel labelKey="accounts.title" />,
     permission: 'authn.account.read',
+    group: 'identity',
   },
 ] satisfies readonly ConsoleRoute[]
 
@@ -111,6 +104,7 @@ export const sessionsAdminRoutes: ConsoleRouteTable = [
     view: () => <SessionsPage />,
     label: <ConsoleNavLabel labelKey="sessions.title" />,
     permission: 'authn.session.read',
+    group: 'identity',
   },
 ] satisfies readonly ConsoleRoute[]
 
@@ -121,6 +115,7 @@ export const impersonationsAdminRoutes: ConsoleRouteTable = [
     view: () => <ImpersonationsPage />,
     label: <ConsoleNavLabel labelKey="impersonations.title" />,
     permission: 'authn.impersonation.read',
+    group: 'identity',
   },
 ] satisfies readonly ConsoleRoute[]
 
@@ -131,6 +126,7 @@ export const permissionsAdminRoutes: ConsoleRouteTable = [
     view: () => <PermissionsPage />,
     label: <ConsoleNavLabel labelKey="permissions.title" />,
     permission: 'authz.role.read',
+    group: 'identity',
   },
 ] satisfies readonly ConsoleRoute[]
 
@@ -141,6 +137,7 @@ export const invitationsAdminRoutes: ConsoleRouteTable = [
     view: () => <InvitationsPage />,
     label: <ConsoleNavLabel labelKey="invitations.title" />,
     permission: 'authn.membership.manage',
+    group: 'identity',
   },
 ] satisfies readonly ConsoleRoute[]
 
@@ -151,6 +148,7 @@ export const ssoAdminRoutes: ConsoleRouteTable = [
     view: () => <SsoPage />,
     label: <ConsoleNavLabel labelKey="sso.title" />,
     permission: 'authn.idp.manage',
+    group: 'identity',
   },
 ] satisfies readonly ConsoleRoute[]
 
@@ -161,6 +159,7 @@ export const settingsAdminRoutes: ConsoleRouteTable = [
     view: () => <SettingsPage />,
     label: <ConsoleNavLabel labelKey="settings.title" />,
     permission: 'settings.read',
+    group: 'platform',
   },
 ] satisfies readonly ConsoleRoute[]
 
@@ -171,6 +170,7 @@ export const smsAdminRoutes: ConsoleRouteTable = [
     view: () => <SmsPage />,
     label: <ConsoleNavLabel labelKey="sms.title" />,
     permission: 'sms.template.read',
+    group: 'platform',
   },
 ] satisfies readonly ConsoleRoute[]
 
@@ -185,6 +185,7 @@ export const auditAdminRoutes: ConsoleRouteTable = [
     view: (context) => <AuditPage basePath={context.path} />,
     label: <ConsoleNavLabel labelKey="audit.title" />,
     permission: 'audit.read',
+    group: 'audit',
   },
   {
     path: '/audit/:id',

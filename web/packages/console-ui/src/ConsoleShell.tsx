@@ -35,6 +35,14 @@
  * host-controlled collapse in the console area that the tenant shell
  * carries.
  *
+ * The navigation is flat by default -- one entry per labelled declaration
+ * -- but a host may pass `navGroups` (the console's own group table,
+ * `consoleNavGroups`) to group the pages by capability domain: the shell
+ * folds each declaration into the group its `group` field names, groups
+ * in table order and entries in declaration order, giving the frame's
+ * `AppShell` the grouped navigation (`AppShellNavGroup`). Without the
+ * table the flat column is unchanged.
+ *
  * The shell reads no data and holds no operations: the pages it hosts
  * reach their reads and writes through the operations bundle the host
  * mounted (see operations.tsx), and the permissions the declarations
@@ -42,12 +50,18 @@
  */
 
 import type { ReactNode } from 'react'
+import { useMemo } from 'react'
 import Box from '@mui/material/Box'
 import type { SxProps, Theme } from '@mui/material/styles'
 import type { AuthSession } from '@speed/auth-core'
 import { AppShell } from '@speed/layout-kit'
-import type { AppShellNavItem, AppShellProps } from '@speed/layout-kit'
-import type { ConsoleRoute } from './route.js'
+import type {
+  AppShellNavEntry,
+  AppShellNavGroup,
+  AppShellNavItem,
+  AppShellProps,
+} from '@speed/layout-kit'
+import type { ConsoleNavGroup, ConsoleRoute } from './route.js'
 import { ConsoleNavigationProvider } from './internal/navigation.js'
 import { ConsoleInvitationLinkProvider } from './internal/invitation-link.js'
 import { ConsoleSessionProvider } from './internal/session.js'
@@ -72,6 +86,16 @@ export interface ConsoleShellProps extends AppShellCollapseProps {
    * route layer's, not the shell's.
    */
   readonly routes: readonly ConsoleRoute[]
+  /**
+   * The console's navigation group table: the order and headings the
+   * sidebar groups the labelled pages into, each declaration naming its
+   * group through its `group` field. Supplying it renders a grouped
+   * sidebar; omitting it keeps the flat single column the console has
+   * always shown, so an existing host is unchanged. A declaration whose
+   * `group` is absent, or names no group here, renders ungrouped (above
+   * the groups).
+   */
+  readonly navGroups?: readonly ConsoleNavGroup[]
   /** The host's routed content, rendered inside the `main` landmark. */
   readonly children: ReactNode
   /** The console title, rendered in the banner (host content). */
@@ -106,8 +130,63 @@ export interface ConsoleShellProps extends AppShellCollapseProps {
   readonly sx?: SxProps<Theme>
 }
 
+/** One plain navigation entry from a labelled declaration. */
+function navItemFor(
+  route: ConsoleRoute,
+  onNavigate: ((href: string) => void) | undefined,
+): AppShellNavItem {
+  return {
+    id: route.path,
+    href: route.path,
+    label: route.label,
+    onClick:
+      onNavigate === undefined
+        ? undefined
+        : (event) => {
+            event.preventDefault()
+            onNavigate(route.path)
+          },
+  }
+}
+
+/**
+ * The console's navigation entries. With no group table they are the
+ * labelled declarations as plain entries, in declaration order -- the
+ * flat single column. With one, those declarations gather into their
+ * groups: groups in table order, each group's entries in declaration
+ * order, and a declaration that names no group (or one the table omits)
+ * stays a plain entry above the groups. A group with no matching
+ * declaration is dropped, so an empty heading never renders.
+ */
+function buildNavEntries(
+  routes: readonly ConsoleRoute[],
+  navGroups: readonly ConsoleNavGroup[] | undefined,
+  onNavigate: ((href: string) => void) | undefined,
+): readonly AppShellNavEntry[] {
+  const labelled = routes.filter((route) => route.label !== undefined)
+  if (navGroups === undefined) {
+    return labelled.map((route) => navItemFor(route, onNavigate))
+  }
+  const groupIds = new Set(navGroups.map((group) => group.id))
+  const ungrouped = labelled.filter(
+    (route) => route.group === undefined || !groupIds.has(route.group),
+  )
+  const groups: AppShellNavGroup[] = navGroups
+    .map((group) => ({
+      id: group.id,
+      label: group.label,
+      defaultCollapsed: group.defaultCollapsed,
+      items: labelled
+        .filter((route) => route.group === group.id)
+        .map((route) => navItemFor(route, onNavigate)),
+    }))
+    .filter((group) => group.items.length > 0)
+  return [...ungrouped.map((route) => navItemFor(route, onNavigate)), ...groups]
+}
+
 export function ConsoleShell({
   routes,
+  navGroups,
   children,
   title,
   headerActions,
@@ -120,31 +199,22 @@ export function ConsoleShell({
 }: ConsoleShellProps) {
   const { t } = useConsoleUiTranslation()
 
-  // The platform navigation is the labelled declarations, in declaration
-  // order: a declaration without a label is a page that is reachable but
-  // not listed (a detail route, say), exactly as route-kit's registration
-  // seam defines. No entry is selected here -- selection needs path
-  // matching, which is the route layer's. A plain click is intercepted
-  // for the host (onNavigate) but the entry keeps its href, so it stays a
-  // real link.
-  const navItems: readonly AppShellNavItem[] = routes
-    .filter((route) => route.label !== undefined)
-    .map((route) => ({
-      id: route.path,
-      href: route.path,
-      label: route.label,
-      onClick:
-        onNavigate === undefined
-          ? undefined
-          : (event) => {
-              event.preventDefault()
-              onNavigate(route.path)
-            },
-    }))
+  // The platform navigation is the labelled declarations: a declaration
+  // without a label is a page that is reachable but not listed (a detail
+  // route, say), exactly as route-kit's registration seam defines. When a
+  // group table is supplied they gather into their groups (see
+  // buildNavEntries); without one they stay the flat single column. No
+  // entry is selected here -- selection needs path matching, which is the
+  // route layer's. A plain click is intercepted for the host (onNavigate)
+  // but the entry keeps its href, so it stays a real link.
+  const navEntries = useMemo(
+    () => buildNavEntries(routes, navGroups, onNavigate),
+    [routes, navGroups, onNavigate],
+  )
 
   return (
     <AppShell
-      navItems={navItems}
+      navItems={navEntries}
       navLabel={t('shell.navLabel')}
       header={title}
       headerActions={headerActions}

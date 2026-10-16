@@ -52,11 +52,13 @@
 
 export { CONSOLE_UI_NAMESPACE, consoleUiResources } from './resources.js'
 export type {
+  ConsoleNavGroup,
   ConsoleRoute,
   ConsoleRouteContext,
   ConsoleRouteParams,
   ConsoleRouteTable,
 } from './route.js'
+export { consoleNavGroups } from './nav-groups.js'
 export { ConsoleShell, type ConsoleShellProps } from './ConsoleShell.js'
 export {
   ConsoleSessionProvider,
