@@ -3,7 +3,12 @@
     "title": "Speed 示范"
   },
   "nav": {
-    "home": "首页"
+    "home": "首页",
+    "console": "控制台"
+  },
+  "signIn": {
+    "heading": "登录",
+    "subtitle": "使用你的账户继续。"
   },
   "home": {
     "heading": "业务页面从这里开始",

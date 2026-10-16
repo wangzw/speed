@@ -3,7 +3,12 @@
     "title": "Speed demo"
   },
   "nav": {
-    "home": "Home"
+    "home": "Home",
+    "console": "Console"
+  },
+  "signIn": {
+    "heading": "Sign in",
+    "subtitle": "Use your account to continue."
   },
   "home": {
     "heading": "Your business pages start here",

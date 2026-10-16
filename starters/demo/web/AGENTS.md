@@ -59,6 +59,20 @@ program beside this directory embeds with `go:embed` and serves through
   `@speed/product-shell`; the console area renders `@speed/console-ui` under
   `CONSOLE_PREFIX`. `src/app.tsx` picks the shell from the route table's
   selected entry, so a console page carries a label.
+- **The console has a host entry and a host route guard.** The tenant
+  navigation is the labelled entries outside the console path space plus the
+  host's own console entry (`src/app.tsx`), which points at `CONSOLE_PREFIX`;
+  `/console` itself redirects to the console's first page (`src/routes.tsx`).
+  The console area -- and only it, since the tenant area is gated by the shell
+  -- carries a `RouteGuard` over the matched page's permission code, composed
+  host-side.
+- **A page reload signs the viewer out.** The access token lives in memory and
+  the refresh token in the session's own closure (no refresh cookie), so a
+  reload starts anonymous. Both shells carry the same branch on the session
+  snapshot: an authenticated session turning anonymous -- a sign-out or a
+  refused refresh -- turns the page to the sign-in surface, so a request that
+  dies with its session never leaves a view stuck loading. Nothing persists a
+  credential to storage; this is the skeleton's shape, not a defect.
 
 ## Checks
 

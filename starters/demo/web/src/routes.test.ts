@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   businessRoutes,
+  CONSOLE_LANDING_PATH,
   CONSOLE_PREFIX,
   consoleShellRoutes,
   isConsolePath,
@@ -31,9 +32,17 @@ describe('the route table', () => {
     }
   })
 
-  it('combines both contributors into the product table', () => {
+  it('lands the console prefix itself on the console’s first page, unlabelled', () => {
+    const landing = routes.find((route) => route.path === CONSOLE_PREFIX)
+    // The landing carries no label, so it adds no navigation entry.
+    expect(landing).toBeDefined()
+    expect(landing?.label).toBeUndefined()
+    expect(CONSOLE_LANDING_PATH).toBe(`${CONSOLE_PREFIX}/tenants`)
+  })
+
+  it('combines the business slot, the console landing and the console pages', () => {
     expect(routes).toHaveLength(
-      businessRoutes.length + consoleShellRoutes.length,
+      businessRoutes.length + consoleShellRoutes.length + 1,
     )
   })
 })

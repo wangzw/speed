@@ -131,7 +131,8 @@ wiring that a copied-out project drops**:
 | `src/routes.tsx` | The route table: the business slot plus the mounted console area. |
 | `src/console/console-area.tsx` | The platform console, the second shell, over `@speed/console-ui`. |
 | `src/pages/` | The app's pages; one placeholder stands in for a business domain. |
-| `src/runtime-config.ts` | Reads the deployment's API origin from `runtime-config.json` beside the entry document, falling back to same-origin. |
+| `src/runtime-config.ts` | Reads the deployment's API origin from `runtime-config.json` at the deployment root (resolved against the entry document, not the current URL), falling back to same-origin. |
+| `src/document-metadata.ts` | Keeps `<html lang>` and the document title in step with the active language. |
 | `src/resources.ts`, `src/locales/` | The app's bilingual i18n bundle ("demo" namespace). |
 | `orval.config.ts`, `src/app-api/` | The app's own generation level: the second orval configuration and the surface it generates, plus the seam that surface calls (see "The API contract"). |
 | `AGENTS.md` | This directory's own contract for an agent working here. |
@@ -150,6 +151,21 @@ beside the bundle:
 ```json
 { "apiOrigin": "https://api.example.com" }
 ```
+
+### Sessions and the console
+
+The access token lives in memory and the refresh token in the session's own
+closure (no refresh cookie), so **a page reload starts a fresh anonymous
+session** -- the tenant shell then shows its sign-in surface and the console
+area its session gate. Both shells branch on the same session snapshot: an
+authenticated session that turns anonymous (a sign-out, or a refresh the server
+refused) turns the page to sign-in rather than a view that never settles.
+Nothing persists a credential to storage.
+
+The tenant navigation carries a console entry pointing at `/console`, which
+redirects to the console's first page; the console area itself gates each page
+on its permission code (composed host-side) and shows a "no access" state for a
+code the session is known to lack.
 
 ## What to change when you copy this out
 
