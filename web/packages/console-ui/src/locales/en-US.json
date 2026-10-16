@@ -22,7 +22,6 @@
     "unknown": "Something went wrong. Try again shortly."
   },
   "shell": {
-    "skipToContent": "Skip to content",
     "navLabel": "Console navigation",
     "title": "Console"
   },

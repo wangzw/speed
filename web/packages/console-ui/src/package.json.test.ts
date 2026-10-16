@@ -3,12 +3,14 @@
  *
  * The console renders over the host's React/MUI tree and reads its data
  * through react-query hooks the host supplies, so react, react-dom,
- * @mui/material, @emotion/* and @tanstack/react-query are peers; i18n
- * and ui-kit are regular dependencies. @speed/api-sdk is declared a
- * dependency per the console-ui design (the contract phase binds its
- * generated /tenant/admin, /settings/admin and /audit/admin operations
- * to the console operations bundle), and is a devDependency-visible
- * workspace link today.
+ * @mui/material, @emotion/* and @tanstack/react-query are peers; i18n,
+ * ui-kit and layout-kit are regular dependencies. @speed/api-sdk is
+ * declared a dependency per the console-ui design (the contract phase
+ * binds its generated /tenant/admin, /settings/admin and /audit/admin
+ * operations to the console operations bundle), and is a
+ * devDependency-visible workspace link today. @speed/layout-kit is the
+ * shared frame: the console's ConsoleShell renders the platform
+ * navigation inside AppShell rather than re-implementing the chrome.
  *
  * The manifest is read from disk, never imported as a module: vite
  * refuses to resolve a package's own package.json through the module
@@ -47,9 +49,10 @@ describe('package manifest', () => {
     expect(manifest.peerDependencies?.['@tanstack/react-query']).toBe('^5.0.0')
   })
 
-  it('declares i18n and ui-kit as regular dependencies', () => {
+  it('declares i18n, ui-kit and layout-kit as regular dependencies', () => {
     expect(manifest.dependencies?.['@speed/i18n']).toBe('workspace:*')
     expect(manifest.dependencies?.['@speed/ui-kit']).toBe('workspace:*')
+    expect(manifest.dependencies?.['@speed/layout-kit']).toBe('workspace:*')
   })
 
   it('declares api-sdk, the seam the contract phase binds', () => {

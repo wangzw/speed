@@ -337,6 +337,9 @@ importers:
       '@speed/i18n':
         specifier: workspace:*
         version: link:../i18n
+      '@speed/layout-kit':
+        specifier: workspace:*
+        version: link:../layout-kit
       '@speed/ui-kit':
         specifier: workspace:*
         version: link:../ui-kit

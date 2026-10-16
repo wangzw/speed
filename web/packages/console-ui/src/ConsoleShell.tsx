@@ -6,28 +6,29 @@
  * surfaces it renders are mounted on endpoints that do not resolve a
  * tenant, so the console has no tenant switcher and no tenant-scoped
  * query key. It carries the platform navigation derived from the page
- * declarations it is given, and renders the host's routed content in a
- * `main` landmark. It does no routing: it never matches a URL, never
- * builds a link from a path and never decides selection -- the
- * declarations are collected and rendered by the application's route
- * layer, and the console's navigation entries are links to each labelled
- * declaration's path. The entries stay real links (so a middle-click or a
- * copied URL reaches the path), but when the host supplies `onNavigate` a
- * plain click is handed to it instead of reloading the page, which is how
- * a host routes an entry in place without this package importing a
- * router.
+ * declarations it is given, and renders the host's routed content. It
+ * does no routing: it never matches a URL, never builds a link from a
+ * path and never decides selection -- the declarations are collected and
+ * rendered by the application's route layer, and the console's
+ * navigation entries are links to each labelled declaration's path. The
+ * entries stay real links (so a middle-click or a copied URL reaches the
+ * path), but when the host supplies `onNavigate` a plain click is handed
+ * to it instead of reloading the page, which is how a host routes an
+ * entry in place without this package importing a router.
  *
- * The frame is three landmarks in one shell: a `header` banner carrying
- * the console title and any host header actions, a `nav` landmark listing
- * the labelled declarations' pages, and a `main` landmark holding the
- * host content. The banner is `position: fixed`, matching the layout-kit
- * frame's own top bar, with a spacer below it that keeps the content
- * clear of the fixed bar; the skip link lives inside the banner (the
- * first focusable element) and moves focus to `main` in place, the same
- * technique the layout-kit frame uses: it focuses the landmark
- * programmatically rather than navigating to a fragment, because a
- * fragment would rewrite `location.hash` and, in a hash-routed host,
- * that fragment is the route itself.
+ * The frame is @speed/layout-kit's AppShell, the same frame the
+ * tenant-facing shell builds on: a fixed `header` banner carrying the
+ * console title and any host header actions, a responsive `nav` drawer
+ * over the platform navigation (a permanent drawer at md and up, a
+ * temporary overlay drawer with a toggle below it), and a `main`
+ * landmark holding the host content. Reusing AppShell is what keeps the
+ * two shells one shape -- a sidebar that stays put while the content
+ * scrolls, a hamburger drawer on a narrow viewport, and the content
+ * region as the single scroll layer -- so this package derives the
+ * navigation and hands it to the shared frame rather than re-implementing
+ * the chrome. The console names its own navigation landmark
+ * (`shell.navLabel`) through the frame's `navLabel` so the platform
+ * navigation stays distinguishable from any other shell's.
  *
  * The shell reads no data and holds no operations: the pages it hosts
  * reach their reads and writes through the operations bundle the host
@@ -35,16 +36,10 @@
  * carry are data the host reads to compose its own route guard.
  */
 
-import { useId, useRef } from 'react'
 import type { ReactNode } from 'react'
 import type { SxProps, Theme } from '@mui/material/styles'
-import AppBar from '@mui/material/AppBar'
-import Box from '@mui/material/Box'
-import Link from '@mui/material/Link'
-import List from '@mui/material/List'
-import ListItem from '@mui/material/ListItem'
-import Toolbar from '@mui/material/Toolbar'
-import { visuallyHiddenSx } from '@speed/ui-kit'
+import { AppShell } from '@speed/layout-kit'
+import type { AppShellNavItem } from '@speed/layout-kit'
 import type { ConsoleRoute } from './route.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 
@@ -76,13 +71,6 @@ export interface ConsoleShellProps {
   readonly sx?: SxProps<Theme>
 }
 
-/** One navigation entry derived from a labelled declaration. */
-interface NavEntry {
-  readonly key: string
-  readonly href: string
-  readonly label: ReactNode
-}
-
 export function ConsoleShell({
   routes,
   children,
@@ -92,120 +80,38 @@ export function ConsoleShell({
   sx,
 }: ConsoleShellProps) {
   const { t } = useConsoleUiTranslation()
-  const mainId = useId()
-  const mainRef = useRef<HTMLElement | null>(null)
 
   // The platform navigation is the labelled declarations, in declaration
   // order: a declaration without a label is a page that is reachable but
   // not listed (a detail route, say), exactly as route-kit's registration
   // seam defines. No entry is selected here -- selection needs path
-  // matching, which is the route layer's.
-  const navEntries: readonly NavEntry[] = routes
+  // matching, which is the route layer's. A plain click is intercepted
+  // for the host (onNavigate) but the entry keeps its href, so it stays a
+  // real link.
+  const navItems: readonly AppShellNavItem[] = routes
     .filter((route) => route.label !== undefined)
     .map((route) => ({
-      key: route.path,
+      id: route.path,
       href: route.path,
       label: route.label,
+      onClick:
+        onNavigate === undefined
+          ? undefined
+          : (event) => {
+              event.preventDefault()
+              onNavigate(route.path)
+            },
     }))
 
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100vh',
-        ...sx,
-      }}
+    <AppShell
+      navItems={navItems}
+      navLabel={t('shell.navLabel')}
+      header={title}
+      headerActions={headerActions}
+      sx={sx}
     >
-      <AppBar position="fixed" component="header">
-        <Link
-          href={`#${mainId}`}
-          onClick={(event) => {
-            event.preventDefault()
-            mainRef.current?.focus()
-          }}
-          sx={{
-            ...visuallyHiddenSx,
-            '&:focus': {
-              position: 'fixed',
-              top: 8,
-              left: 8,
-              bottom: 'auto',
-              zIndex: 1,
-              width: 'auto',
-              height: 'auto',
-              clip: 'auto',
-              clipPath: 'none',
-              p: 1,
-              bgcolor: 'background.paper',
-            },
-          }}
-        >
-          {t('shell.skipToContent')}
-        </Link>
-        <Toolbar sx={{ gap: 2 }}>
-          {title}
-          <Box sx={{ flexGrow: 1 }} />
-          {headerActions}
-        </Toolbar>
-      </AppBar>
-      <Toolbar />
-      <Box
-        sx={{
-          display: 'flex',
-          flexGrow: 1,
-          flexDirection: { xs: 'column', sm: 'row' },
-        }}
-      >
-        <Box
-          component="nav"
-          aria-label={t('shell.navLabel')}
-          sx={{
-            width: { xs: '100%', sm: 240 },
-            flexShrink: 0,
-            borderColor: 'divider',
-            borderRight: { sm: '1px solid' },
-            borderBottom: { xs: '1px solid', sm: 'none' },
-          }}
-        >
-          <List>
-            {navEntries.map((entry) => (
-              <ListItem key={entry.key} disablePadding>
-                <Link
-                  href={entry.href}
-                  underline="none"
-                  onClick={
-                    onNavigate === undefined
-                      ? undefined
-                      : (event) => {
-                          event.preventDefault()
-                          onNavigate(entry.href)
-                        }
-                  }
-                  sx={{
-                    display: 'block',
-                    width: '100%',
-                    px: 2,
-                    py: 1.5,
-                    color: 'text.primary',
-                  }}
-                >
-                  {entry.label}
-                </Link>
-              </ListItem>
-            ))}
-          </List>
-        </Box>
-        <Box
-          component="main"
-          id={mainId}
-          ref={mainRef}
-          tabIndex={-1}
-          sx={{ flexGrow: 1, minWidth: 0, p: 3 }}
-        >
-          {children}
-        </Box>
-      </Box>
-    </Box>
+      {children}
+    </AppShell>
   )
 }

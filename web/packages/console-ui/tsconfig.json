@@ -7,9 +7,10 @@
     // account-ui.
     //
     // The package renders the platform-staff console over the three
-    // backend administration surfaces, reads @speed/i18n translations
-    // and composes @speed/ui-kit components. src/ reaches those two
-    // through the sibling-source paths below, and reaches the generated
+    // backend administration surfaces, reads @speed/i18n translations,
+    // composes @speed/ui-kit components and builds its frame on
+    // @speed/layout-kit's AppShell. src/ reaches those three through the
+    // sibling-source paths below, and reaches the generated
     // surface of @speed/api-sdk (the shipped console operations bundle);
     // test-utils/ additionally binds a scripted request function into
     // api-sdk's runtime seam over @speed/api-client's RequestFn, and
@@ -34,8 +35,10 @@
       "@speed/i18n/mui-locale": ["../i18n/src/mui-locale.ts"],
       "@speed/i18n": ["../i18n/src/index.ts"],
       "@speed/tokens": ["../tokens/src/index.ts"],
+      "@speed/layout-kit": ["../layout-kit/src/index.ts"],
       "@speed/ui-kit": ["../ui-kit/src/index.ts"],
       "@speed/test-utils/axe": ["../../test-utils/src/axe.ts"],
+      "@speed/test-utils/matchMedia": ["../../test-utils/src/matchMedia.ts"],
       "@speed/test-utils/render": ["../../test-utils/src/render.tsx"],
       "@speed/test-utils/setup": ["../../test-utils/src/setup.ts"]
     }

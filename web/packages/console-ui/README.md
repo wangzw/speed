@@ -49,6 +49,13 @@ registration seam: each page is a declaration collected by the
 application's composition layer. The console imports no router and does
 no path matching.
 
+The frame itself is `@speed/layout-kit`'s `AppShell` -- the same frame
+the tenant-facing shell builds on: a fixed top bar, a responsive
+navigation sidebar (permanent on wide viewports, a hamburger drawer with
+an overlay on narrow ones) and a single scrolling content region. The
+console derives the platform navigation from the labelled declarations
+and hands it to that frame, so the two shells are one shape.
+
 ## What ships
 
 | Module | Exports |
@@ -80,7 +87,7 @@ already bound into the client (the same memory-token store the
 tenant-facing app uses), and the operator's permissions are the server's
 to judge -- the console renders the answer and never decides. The
 composition is the four parts of every authenticated host -- the
-bilingual i18n instance with both namespaces a rendered surface reads,
+bilingual i18n instance with every namespace a rendered surface reads,
 the query client, the console operations bundle, and the provider stack
 around the console -- plus the host's own route layer rendering the
 matched declaration's view inside the shell.
@@ -89,6 +96,7 @@ matched declaration's view inside the shell.
 import type { ReactElement } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createI18n, I18nextProvider, registerNamespace } from '@speed/i18n'
+import { LAYOUT_KIT_NAMESPACE, layoutKitResources } from '@speed/layout-kit'
 import {
   AppThemeProvider,
   UI_KIT_NAMESPACE,
@@ -111,6 +119,7 @@ const i18n = createI18n({
   navigatorLanguages: [],
 })
 registerNamespace(i18n, UI_KIT_NAMESPACE, uiKitResources)
+registerNamespace(i18n, LAYOUT_KIT_NAMESPACE, layoutKitResources)
 registerNamespace(i18n, CONSOLE_UI_NAMESPACE, consoleUiResources)
 
 const queryClient = new QueryClient({

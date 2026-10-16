@@ -17,10 +17,13 @@
  * seam first).
  *
  * The i18n instance is created per call through the shared createTestI18n
- * with both namespaces a rendered component reads registered: the
- * console-ui namespace for this package's own strings and the ui-kit
- * namespace, because the pages and the shell compose ui-kit components
- * whose built-in strings speak ui-kit-namespace keys.
+ * with every namespace a rendered component reads registered: the
+ * console-ui namespace for this package's own strings, the ui-kit
+ * namespace (the pages and the shell compose ui-kit components whose
+ * built-in strings speak ui-kit-namespace keys), and the layout-kit
+ * namespace (ConsoleShell renders @speed/layout-kit's AppShell frame,
+ * whose banner skip link and nav landmark labels speak layout-kit-namespace
+ * keys).
  */
 
 import { render } from '@testing-library/react'
@@ -28,6 +31,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactElement } from 'react'
 import { I18nextProvider, registerNamespace } from '@speed/i18n'
 import type { I18nInstance } from '@speed/i18n'
+import { LAYOUT_KIT_NAMESPACE, layoutKitResources } from '@speed/layout-kit'
 import {
   AppThemeProvider,
   UI_KIT_NAMESPACE,
@@ -60,11 +64,12 @@ export interface RenderWithProvidersResult extends BaseResult {
   readonly queryClient: QueryClient
 }
 
-/** Fresh bilingual instance with both namespaces registered. */
+/** Fresh bilingual instance with every namespace a render reads registered. */
 export function createConsoleUiI18n(language: string = 'zh-CN'): I18nInstance {
   const instance = createTestI18n(language)
   registerNamespace(instance, CONSOLE_UI_NAMESPACE, consoleUiResources)
   registerNamespace(instance, UI_KIT_NAMESPACE, uiKitResources)
+  registerNamespace(instance, LAYOUT_KIT_NAMESPACE, layoutKitResources)
   return instance
 }
 

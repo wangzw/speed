@@ -32,13 +32,19 @@ plumbing and is deliberately not exported.
 
 ## The second shell (the one thing this package's frame decides)
 
-`ConsoleShell` is the platform frame: a `header` banner (the console
-title and any host header actions), a `nav` landmark derived from the
-labelled declarations, and a `main` landmark holding the host's routed
-content. It is deliberately **not** `@speed/layout-kit`'s `AppShell`:
-this package does not depend on layout-kit, so the frame is built from
-MUI primitives directly, and it is simpler than the tenant-facing frame
-on purpose — no responsive drawer, no current-tenant affordances.
+`ConsoleShell` is the platform frame, rendered through `@speed/layout-kit`'s
+`AppShell`: a fixed `header` banner (the console title and any host header
+actions), a responsive `nav` drawer over the platform navigation (the
+labelled declarations), and a `main` landmark holding the host's routed
+content. The console names that `nav` landmark from its own namespace
+(`shell.navLabel`) through the frame's `navLabel`, so the platform
+navigation stays distinguishable from any other shell's. Reusing
+`AppShell` is what makes the two shells one shape — a sidebar that stays
+put while the content scrolls, a hamburger drawer on a narrow viewport
+rather than the navigation stacked above the content, and the content
+region as the single scroll layer. The frame carries no
+current-tenant affordances; that absence is the difference between the two
+shells, not the chrome.
 
 The shell does no routing. It never matches a URL, never builds a link
 from a path and never decides which navigation entry is selected: the
@@ -167,8 +173,8 @@ request body.
   control is not rendered.
 - **Framework peers stay peers.** `react`, `react-dom`, `@mui/material`,
   `@emotion/*` and `@tanstack/react-query` are peer (required)
-  dependencies; `i18n`, `ui-kit` and `api-sdk` are regular dependencies.
-  The manifest is pinned by `src/package.json.test.ts`.
+  dependencies; `i18n`, `ui-kit`, `layout-kit` and `api-sdk` are regular
+  dependencies. The manifest is pinned by `src/package.json.test.ts`.
 - **Every built-in string is a console-ui namespace key.** The
   `speed/no-literal-text` rule (workspace config) enforces it over
   `src/`; the two bundles under `src/locales/` carry identical leaf key
@@ -186,9 +192,10 @@ Unit tests are vitest + jsdom, one file per source under `src/`, shared
 helpers only in `test-utils/`. `renderWithProviders` mounts the unit
 under the tree a real host builds — `I18nextProvider` around `ui-kit`'s
 `AppThemeProvider` around `QueryClientProvider` around
-`ConsoleOperationsProvider` — with a fresh i18n instance (the console-ui
-and ui-kit namespaces registered), a fresh no-retry query client, and a
-caller-supplied operations bundle. `test-utils/operations.tsx` provides
+`ConsoleOperationsProvider` — with a fresh i18n instance (the console-ui,
+ui-kit and layout-kit namespaces registered, the last because the frame
+renders `AppShell`'s built-in strings), a fresh no-retry query client, and
+a caller-supplied operations bundle. `test-utils/operations.tsx` provides
 that bundle: `createConsoleOperations(backend)` builds real react-query
 hooks over a scripted in-memory backend (`makeConsoleBackend`), so the
 pages exercise genuine react-query states — the first-load pending
@@ -220,9 +227,6 @@ composition, with the operations bundle substituted from test-utils).
   package's reading of the modules' error surfaces and move when the
   mapping is fixed. A refusal outside the whitelist renders the generic
   failure text.
-- **Responsive frame.** The frame is a persistent sidebar (stacked on
-  narrow viewports), not a drawer: no `matchMedia`-driven responsive
-  behaviour is shipped.
 - **Audit detail view.** Only the list route is surfaced; a record's
   detail route (`GET /audit/admin/records/:id`) and an export surface are
   not. Export is another permission and another module's to carry.
