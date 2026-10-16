@@ -9,7 +9,10 @@
  * which lands the viewer in the console area. The console area carries the same
  * session gate (an anonymous viewer meets the sign-in surface, never a console
  * whose requests cannot answer) and a route guard over each page's permission
- * code.
+ * code. Its three tiers read the one platform permission set: the entry keys on
+ * one representative code, the area gate on any non-empty set, and each page's
+ * guard on its own code. A staff viewer whose set holds a permission other than
+ * the entry's code reads the three apart.
  */
 
 import { act, screen, within } from '@testing-library/react'
@@ -503,6 +506,127 @@ describe('the console area', () => {
     // resetting to open.
     expect(
       screen.getByRole('button', { name: layoutKitEnUS.appShell.expandNav }),
+    ).toBeInTheDocument()
+  })
+})
+
+describe('a staff viewer whose platform permission is not the entry code', () => {
+  // The three tiers of the console gate read the one platform permission set:
+  // the header entry keys on a single representative code (tenant.read), the
+  // area gate admits any non-empty set, and each page's route guard reads its
+  // own code. A principal whose platform set holds a permission other than
+  // tenant.read pins the three apart -- the set is non-empty (so the area
+  // admits) without satisfying the entry's representative code (so the entry
+  // stays hidden), which the tenant.read-only suites cannot distinguish.
+
+  /** A session whose platform set holds exactly these codes. */
+  const staff = (...codes: readonly string[]) =>
+    createTestSession(authenticatedSnapshot({ system: [...codes] }))
+
+  it('keeps the console entry hidden, though the area would admit them', async () => {
+    window.history.replaceState({}, '', '/')
+    renderDemoApp({ session: staff('audit.read') })
+
+    // The entry keys on tenant.read alone, so a principal holding only
+    // audit.read meets no way in -- even though the area gate (any platform
+    // permission) would admit them were the URL typed. This is the entry tier
+    // read apart from the area tier: the same set admits the area below.
+    const brand = await screen.findByRole('heading', {
+      level: 6,
+      name: demoEnUS.app.title,
+    })
+    const banner = brand.closest('header') as HTMLElement
+    expect(
+      within(banner).queryByRole('link', { name: demoEnUS.nav.console }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: demoEnUS.nav.console }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('admits the console area, which keys on holding any platform permission', async () => {
+    // A platform permission that no console entry or page carries: the set is
+    // non-empty, so the area gate admits the staff viewer, while every page's
+    // own code stays unheld. A gate narrowed to any one code -- tenant.read or
+    // a page's -- would bounce this viewer to the tenant home instead, so the
+    // frame's presence is what tells the criteria apart.
+    window.history.replaceState({}, '', '/console/audit')
+    renderDemoApp({ session: staff('tenant.write') })
+
+    expect(
+      await screen.findByRole('navigation', {
+        name: consoleUiEnUS.shell.navLabel,
+      }),
+    ).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/console/audit')
+    // The page's own code is unheld, so the route guard hides the page content
+    // inside the frame the area gate admitted.
+    expect(
+      await screen.findByText(uiKitEnUS.emptyState.noPermission.title),
+    ).toBeInTheDocument()
+  })
+
+  it('admits the page whose own code the principal holds', async () => {
+    window.history.replaceState({}, '', '/console/audit')
+    renderDemoApp({ session: staff('audit.read') })
+
+    // The area gate admits (any platform permission) and the audit page's own
+    // code (audit.read) is held, so the page renders inside the frame: the two
+    // tiers agree on a staff viewer who holds the page's code.
+    expect(
+      await screen.findByRole('navigation', {
+        name: consoleUiEnUS.shell.navLabel,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: consoleUiEnUS.audit.title,
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('turns them away from a page whose own code they lack, the frame intact', async () => {
+    window.history.replaceState({}, '', '/console/tenants')
+    renderDemoApp({ session: staff('audit.read') })
+
+    // The area admits them (any platform permission), but the roster page's
+    // code (tenant.read) is unheld, so the route guard denies that page in
+    // place: the console frame stays -- this is the innermost tier, not a
+    // whole-area denial -- and the page's own heading is replaced by the
+    // no-permission surface.
+    expect(
+      await screen.findByRole('navigation', {
+        name: consoleUiEnUS.shell.navLabel,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByText(uiKitEnUS.emptyState.noPermission.title),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', {
+        level: 1,
+        name: consoleUiEnUS.tenants.title,
+      }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('turns them away from the code-less tenant detail page too', async () => {
+    // The tenant detail declaration carries no code of its own; the guard
+    // resolves a page's permission from the selected (labelled) entry, so a
+    // URL below the roster's path is held to the roster's tenant.read. A
+    // viewer without it meets the no-permission surface inside the frame,
+    // never the detail page.
+    window.history.replaceState({}, '', '/console/tenants/xyz')
+    renderDemoApp({ session: staff('audit.read') })
+
+    expect(
+      await screen.findByRole('navigation', {
+        name: consoleUiEnUS.shell.navLabel,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByText(uiKitEnUS.emptyState.noPermission.title),
     ).toBeInTheDocument()
   })
 })
