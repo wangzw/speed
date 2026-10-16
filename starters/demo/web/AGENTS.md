@@ -16,7 +16,10 @@ program beside this directory embeds with `go:embed` and serves through
   only what varies per product -- the route table, the pages, the deployment's
   runtime origin, the app's own strings.
 - **No business domain.** `src/pages/` and the business slot in `src/routes.tsx`
-  are the place a product's own pages land; the skeleton ships one placeholder.
+  are the place a product's own pages land. The skeleton's own pages are the
+  starting page at `/` -- a card grid over the capabilities it assembles
+  (`src/pages/home-page.tsx`) -- and the account page; a product replaces the
+  starting page's cards with its own surfaces.
 - **The build order is frontend first, Go second.** The Go program embeds
   `../server/dist`, so that directory must exist and hold a file before the Go
   build runs -- which is why a checkout commits the stand-in `placeholder.txt`
@@ -38,6 +41,12 @@ program beside this directory embeds with `go:embed` and serves through
   (`src/locales/{en-US,zh-CN}.json`, identical leaf key sets). A navigation
   label that must translate reactively is a component (`src/nav-label.tsx`),
   because a declaration's label is a React element.
+- **The sign-in surface names where a fresh deployment's first account comes
+  from.** The skeleton folds registration into the sign-in flow and ships
+  neither SMS nor social sign-in, so a new deployment has no account and no way
+  to make one from the surface; `src/pages/sign-in-view.tsx` carries a note
+  under the form pointing at the server's `seed` command. A product that grows
+  its own registration replaces the note with it.
 - **Every backend call goes through a generated operation** -- the platform's,
   from `@speed/api-sdk`, or the app's own, from `src/app-api` -- over the
   request function the assembly binds into the runtime seam

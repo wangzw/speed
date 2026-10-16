@@ -13,11 +13,34 @@
   },
   "signIn": {
     "heading": "登录",
-    "subtitle": "使用你的账户继续。"
+    "subtitle": "使用你的账户继续。",
+    "firstAccount": {
+      "title": "还没有账号？",
+      "body": "本骨架把注册折进登录流程，且不含短信与社交登录，因此全新部署没有可登录的账号。先用服务端的 seed 命令写入第一个账号，再回到这里登录（见 starters/demo/AGENTS.md）。"
+    }
   },
   "home": {
-    "heading": "业务页面从这里开始",
-    "body": "这个骨架不带业务域。产品把自己的页面放在 src/pages 下，并在 src/routes.tsx 的路由表这一处点名，导航与渲染的视图都由它喂给。"
+    "heading": "开始使用",
+    "intro": "本骨架不带业务域；下列是平台开箱即用的能力，先四处看看，再长你自己的业务。",
+    "grow": "产品的自有页面放在 src/pages 下，并在 src/routes.tsx 的路由表这一处点名——导航与渲染的视图都由它喂给。",
+    "cards": {
+      "account": {
+        "title": "账户设置",
+        "description": "个人资料、密码、登录标识、偏好、活跃会话与两步验证。"
+      },
+      "console": {
+        "title": "控制台",
+        "description": "平台管理面：租户、账户、设置与审计等。"
+      },
+      "objects": {
+        "title": "对象存储",
+        "description": "当前租户的对象：列表、上传、下载与删除。"
+      },
+      "notifications": {
+        "title": "通知",
+        "description": "你的收件箱，以及每类通知的送达偏好。"
+      }
+    }
   },
   "account": {
     "title": "账户设置",

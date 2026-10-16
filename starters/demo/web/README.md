@@ -132,7 +132,7 @@ wiring that a copied-out project drops**:
 | `src/paths.ts` | The app's own route paths, shared by the route table and the chrome that links into them. |
 | `src/chrome.tsx` | The shared top-bar chrome: the brand, the app-wide header actions (language switch, color-mode toggle), the tenant switcher and the avatar account menu. |
 | `src/console/console-area.tsx` | The platform console, the second shell, over `@speed/console-ui`. |
-| `src/pages/` | The app's pages: the business placeholder and the account page. |
+| `src/pages/` | The app's pages: the starting page (the `/` card grid over the assembled capabilities) and the account page. |
 | `src/runtime-config.ts` | Reads the deployment's API origin from `runtime-config.json` at the deployment root (resolved against the entry document, not the current URL), falling back to same-origin. |
 | `src/document-metadata.ts` | Keeps `<html lang>` and the document title in step with the active language. |
 | `src/resources.ts`, `src/locales/` | The app's bilingual i18n bundle ("demo" namespace). |
@@ -264,6 +264,23 @@ account menu (profile / account settings / sign out), all from
 `src/chrome.tsx`. The language and color-mode controls appear in the console
 banner too; the tenant switcher does not (the console resolves no tenant).
 
+### The starting page and the first account
+
+The tenant area's landing (`/`) is the skeleton's front door, not a business
+surface: `src/pages/home-page.tsx` renders the platform's assembled
+capabilities as a card grid -- the account settings, the platform console, the
+object store and the notification centre -- each a real route the app already
+serves, over a note on where a product's own pages belong. A product replaces
+the cards with its own surfaces.
+
+Because the skeleton folds registration into the sign-in flow and ships
+neither SMS nor social sign-in, a fresh deployment is born with no account and
+no way to make one from the surface. The sign-in surface
+(`src/pages/sign-in-view.tsx`) therefore carries a note under the form saying
+where the first account comes from -- the server's `seed` command
+(`starters/demo/AGENTS.md`). A product that grows its own registration
+replaces the note with it.
+
 ## What to change when you copy this out
 
 - Rename the package (`package.json`'s `name`) and the app's title
@@ -274,7 +291,10 @@ banner too; the tenant switcher does not (the console resolves no tenant).
   `web/eslint.config.mjs`) -- outside this repository the packages resolve from
   `node_modules` and there is no `web/scripts` to import.
 - Replace the business slot: put your pages under `src/pages/` and name them in
-  `src/routes.tsx`.
+  `src/routes.tsx`. Replace the starting page's cards
+  (`src/pages/home-page.tsx`) with your own entry points, and replace the
+  sign-in note (`src/pages/sign-in-view.tsx`) with the registration the product
+  offers.
 - Retarget `api:gen` and `orval.config.ts` at your own setup: the script's
   fixup step points at the workspace's
   `web/scripts/orval-nodenext-fixup.mjs`, and its `gen` step writes

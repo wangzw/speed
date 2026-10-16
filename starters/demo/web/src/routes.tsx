@@ -51,6 +51,7 @@ export {
   ACCOUNT_CALLBACK_PATH,
   ACCOUNT_PATH,
   CONSOLE_PREFIX,
+  NOTIFICATIONS_PATH,
   OBJECTS_PATH,
 } from './paths.js'
 
@@ -113,10 +114,6 @@ export const businessRoutes: RouteTable = [
     view: () => <AccountBindingCallbackPage />,
   },
 ]
-
-/** The path the notification surface declares: the header bell's
- * navigation target, taken from the declaration so the two never drift. */
-export const NOTIFICATIONS_PATH: string = notificationRoutes[0]?.path ?? '/'
 
 /**
  * The auth callback route: where a redirect or enterprise provider's round

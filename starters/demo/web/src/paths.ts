@@ -2,12 +2,16 @@
  * The app's own route paths, in one place.
  *
  * The route table (src/routes.tsx) decides which pages live where; the
- * chrome (src/chrome.tsx) links into the account page and the console.
- * Keeping the path strings here lets both read the same constant instead
- * of each spelling the URL, and keeps the chrome from importing the route
- * table (which would form a cycle, the table importing the pages the
- * chrome wraps).
+ * chrome (src/chrome.tsx) links into the account page and the console, and
+ * the start page (src/pages/home-page.tsx) links into every capability.
+ * Keeping the path strings here lets them all read the same constant instead
+ * of each spelling the URL, and keeps a module the route table imports from
+ * importing the route table back (which would form a cycle). One path comes
+ * from the surface that declares it rather than being spelled here: the
+ * notification centre's, whose value lives in @speed/notification-ui.
  */
+
+import { notificationRoutes } from '@speed/notification-ui'
 
 /** The path prefix the platform console's pages mount under. */
 export const CONSOLE_PREFIX = '/console'
@@ -17,6 +21,13 @@ export const ACCOUNT_PATH = '/account'
 
 /** The tenant area's object storage page: the objectstore capability's face. */
 export const OBJECTS_PATH = '/objects'
+
+/**
+ * The notification centre's path, taken from the declaration the surface
+ * mounts from (@speed/notification-ui) -- the one source the route table, the
+ * header bell and the start page all read, so the three never drift.
+ */
+export const NOTIFICATIONS_PATH: string = notificationRoutes[0]?.path ?? '/'
 
 /**
  * The social-binding callback route the account page's bind flow returns

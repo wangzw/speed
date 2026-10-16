@@ -13,11 +13,34 @@
   },
   "signIn": {
     "heading": "Sign in",
-    "subtitle": "Use your account to continue."
+    "subtitle": "Use your account to continue.",
+    "firstAccount": {
+      "title": "No account yet?",
+      "body": "This skeleton folds registration into the sign-in flow and ships neither SMS nor social sign-in, so a fresh deployment has no account to sign in with. Write the first one with the server's seed command, then sign in here (see starters/demo/AGENTS.md)."
+    }
   },
   "home": {
-    "heading": "Your business pages start here",
-    "body": "This skeleton ships no business domain. A product puts its pages under src/pages and names them in one place, the route table in src/routes.tsx, which feeds both the navigation and the rendered view."
+    "heading": "Get started",
+    "intro": "This skeleton ships no business domain of its own. These are the platform capabilities that already work -- take a look around before you grow your own.",
+    "grow": "Your product's own pages land under src/pages and are named in one place, the route table in src/routes.tsx, which feeds both the navigation and the rendered view.",
+    "cards": {
+      "account": {
+        "title": "Account settings",
+        "description": "Your profile, password, sign-in identifiers, preferences, active sessions and two-step verification."
+      },
+      "console": {
+        "title": "Console",
+        "description": "The platform's management surface: tenants, accounts, settings and the audit trail."
+      },
+      "objects": {
+        "title": "Objects",
+        "description": "The current tenant's object storage: list, upload, download and delete."
+      },
+      "notifications": {
+        "title": "Notifications",
+        "description": "Your inbox, and how each kind of notification reaches you."
+      }
+    }
   },
   "account": {
     "title": "Account settings",

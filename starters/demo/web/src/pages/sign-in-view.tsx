@@ -13,9 +13,18 @@
  *
  * It reads the session through AppServices, so it is mounted only under the
  * app-services provider (src/app-services.tsx).
+ *
+ * A note below the form answers the one dead end this skeleton has: it folds
+ * registration into the sign-in flow and ships neither SMS nor social
+ * sign-in, so a fresh deployment is born with no account and no way to make
+ * one from the surface. The note says where the first account comes from (the
+ * server's `seed` command) -- the moment the dead end is felt is the moment
+ * to explain it. A product that grows its own registration replaces the note
+ * with it; the guidance is the skeleton's, not the product's.
  */
 
 import Box from '@mui/material/Box'
+import Divider from '@mui/material/Divider'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import { SignInScreen } from '@speed/auth-ui'
@@ -56,6 +65,17 @@ export function SignInView(): ReactElement {
           </Typography>
         </Box>
         <SignInScreen session={session} />
+        <Divider sx={{ mt: 3, mb: 2 }} />
+        <Typography
+          variant="subtitle2"
+          color="text.secondary"
+          sx={{ fontWeight: 600 }}
+        >
+          {t('signIn.firstAccount.title')}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          {t('signIn.firstAccount.body')}
+        </Typography>
       </Paper>
     </Box>
   )
