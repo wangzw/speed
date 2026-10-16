@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SessionsPage } from './SessionsPage.js'
 import type { ConsoleAccountSession } from './operations.js'
@@ -93,6 +93,8 @@ describe('SessionsPage', () => {
     await loadAccount(user)
     await screen.findByText('sess-1')
     await user.click(screen.getByRole('button', { name: '撤销' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
     await vi.waitFor(() => {
       expect(revoked).toEqual(['sess-1'])
     })

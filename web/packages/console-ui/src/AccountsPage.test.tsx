@@ -1,17 +1,20 @@
 /**
  * AccountsPage: the account-administration page.
  *
- * It lists accounts (narrowed by an identifier), opens one account's
- * detail (its fields, factors, secrets and sessions), and drives the
- * body-free writes -- delete, reset MFA, revoke sessions, revoke a secret,
- * revoke a session and remove a named identifier -- through the bundle.
+ * It lists accounts (narrowed by an identifier prefix and its kind),
+ * opens one account's detail (its fields, factors, secrets and sessions),
+ * and drives the body-free writes -- delete, reset MFA, revoke sessions,
+ * revoke a secret, revoke a session and remove a named identifier --
+ * through the bundle, each destructive one behind a confirmation.
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AccountsPage } from './AccountsPage.js'
+import { consoleOperations } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { bindConsoleRequest } from '../test-utils/request-rig.js'
 import {
   accountFixture,
   createConsoleOperations,
@@ -49,6 +52,17 @@ async function openDetail(user: ReturnType<typeof userEvent.setup>): Promise<voi
   await user.click(screen.getByRole('button', { name: '管理' }))
 }
 
+/** Confirms the open danger dialog (the confirm button labelled 确认), then
+ * waits for it to leave the tree so the next interaction is not blocked by
+ * the modal's aria-hidden background. */
+async function confirmDialog(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  const dialog = await screen.findByRole('dialog')
+  await user.click(within(dialog).getByRole('button', { name: '确认' }))
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+}
+
 describe('AccountsPage', () => {
   it('renders the empty state when no account matches', async () => {
     const operations = withAccounts({
@@ -65,6 +79,28 @@ describe('AccountsPage', () => {
     await search(user)
     expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
     expect(screen.getByText('已启用')).toBeInTheDocument()
+  })
+
+  it('sends the identifier prefix and its kind when the search is submitted', async () => {
+    const user = userEvent.setup()
+    const calls = bindConsoleRequest((call) => {
+      if (call.path === '/auth/admin/accounts') {
+        return { accounts: [], next_cursor: '' }
+      }
+      throw new Error(`unexpected request: ${call.path}`)
+    })
+    renderWithProviders(<AccountsPage />, { operations: consoleOperations })
+    await user.click(screen.getByLabelText('标识类型'))
+    await user.click(await screen.findByRole('option', { name: '邮箱' }))
+    await user.type(screen.getByLabelText('登录标识'), 'ada')
+    await user.click(screen.getByRole('button', { name: '查询' }))
+    await vi.waitFor(() => {
+      expect(calls).toContainEqual({
+        method: 'GET',
+        path: '/auth/admin/accounts',
+        query: { identifier_prefix: 'ada', identifier_kind: 'email' },
+      })
+    })
   })
 
   it('opens the account detail with its factors, secrets and sessions', async () => {
@@ -97,7 +133,17 @@ describe('AccountsPage', () => {
     expect(screen.getByText('sess-1')).toBeInTheDocument()
   })
 
-  it('deletes an account through the bundle', async () => {
+  it('surfaces a detail sub-read failure instead of an empty table', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      listAccountFactors: () => Promise.reject(new Error('boom')),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    expect(await screen.findByText('因子加载失败')).toBeInTheDocument()
+  })
+
+  it('confirms before deleting an account, then deletes it through the bundle', async () => {
     const user = userEvent.setup()
     const deleted: string[] = []
     const operations = withAccounts({
@@ -110,12 +156,15 @@ describe('AccountsPage', () => {
     await search(user)
     await screen.findByText('Ada Lovelace')
     await user.click(screen.getByRole('button', { name: '删除' }))
+    // The dialog gates the write: nothing fires until it is confirmed.
+    expect(deleted).toEqual([])
+    await confirmDialog(user)
     await vi.waitFor(() => {
       expect(deleted).toEqual(['acc-1'])
     })
   })
 
-  it('resets MFA and revokes sessions from the detail', async () => {
+  it('confirms before resetting MFA and revoking sessions', async () => {
     const user = userEvent.setup()
     const reset: string[] = []
     const revoked: string[] = []
@@ -132,14 +181,16 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
     await user.click(await screen.findByRole('button', { name: '重置 MFA' }))
+    await confirmDialog(user)
     await user.click(screen.getByRole('button', { name: '撤销全部会话' }))
+    await confirmDialog(user)
     await vi.waitFor(() => {
       expect(reset).toEqual(['acc-1'])
       expect(revoked).toEqual(['acc-1'])
     })
   })
 
-  it('revokes a secret and a session through the bundle', async () => {
+  it('confirms before revoking a secret and a session', async () => {
     const user = userEvent.setup()
     const secret: string[] = []
     const session: string[] = []
@@ -173,16 +224,21 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
     await screen.findByText('ci')
-    const revokeButtons = screen.getAllByRole('button', { name: '撤销' })
-    await user.click(revokeButtons[0]!)
-    await user.click(revokeButtons[1]!)
+    // The secrets table precedes the sessions table, so the first revoke
+    // button belongs to the secret and the second to the session.
+    await user.click(screen.getAllByRole('button', { name: '撤销' })[0]!)
+    await confirmDialog(user)
     await vi.waitFor(() => {
       expect(secret).toEqual(['sec-1'])
+    })
+    await user.click(screen.getAllByRole('button', { name: '撤销' })[1]!)
+    await confirmDialog(user)
+    await vi.waitFor(() => {
       expect(session).toEqual(['sess-1'])
     })
   })
 
-  it('removes a named identifier through the bundle', async () => {
+  it('confirms before removing a named identifier', async () => {
     const user = userEvent.setup()
     const removed: string[] = []
     const operations = withAccounts({
@@ -198,12 +254,13 @@ describe('AccountsPage', () => {
       'ada@example.com',
     )
     await user.click(screen.getByRole('button', { name: '移除' }))
+    await confirmDialog(user)
     await vi.waitFor(() => {
       expect(removed).toEqual(['ada@example.com'])
     })
   })
 
-  it('renders the retryable error placeholder when the read fails', async () => {
+  it('renders the retryable error placeholder when the list read fails', async () => {
     const user = userEvent.setup()
     const operations = withAccounts({
       listAccounts: () => Promise.reject(new Error('boom')),

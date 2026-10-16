@@ -4,9 +4,10 @@
  * Its read renders the settled records as a table, the recorded time
  * through Intl in the current language and explicitly in UTC (the zone the
  * view carries), the actor column as a readable identity resolved through
- * the account read (falling back to the recorded value), the server-side
- * filters applied on submit, cursor pagination, and a failed read
- * settling into the retryable error placeholder.
+ * the account read (falling back to the recorded value, marked unresolved
+ * when the read is refused), the server-side filters applied on submit,
+ * cursor pagination, and a failed read settling into the retryable error
+ * placeholder.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -117,6 +118,21 @@ describe('AuditPage', () => {
     )
     renderWithProviders(<AuditPage />, { operations })
     expect(await screen.findByText('system')).toBeInTheDocument()
+  })
+
+  it('marks an actor whose account read is refused as unresolved', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listRecords: () => Promise.resolve(page([record])),
+        getAccount: () => Promise.reject(new Error('forbidden')),
+      }),
+    )
+    renderWithProviders(<AuditPage />, { operations })
+    // The cell shows the recorded id, but labelled as unresolved rather
+    // than passed off as a resolved (or system) name.
+    const cell = await screen.findByLabelText(/身份未解析/)
+    expect(cell).toHaveTextContent('acc-1')
+    expect(cell).toHaveAttribute('title', '身份未解析（需账户读取权限）')
   })
 
   it('applies the action filter server-side on submit', async () => {

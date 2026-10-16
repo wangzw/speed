@@ -22,7 +22,11 @@
  * The actor column renders a readable identity, not the raw account
  * identifier: the actor cell resolves the account's display name through
  * the same bound surface and falls back to the recorded value when the
- * actor names no account (a system or import actor). The recorded time is
+ * actor names no account (a system or import actor). That resolution is a
+ * second read (GET /auth/admin/accounts/:id), gated on authn.account.read,
+ * which this page's audit.read does not imply: a viewer holding audit.read
+ * without account.read is refused it and the cell marks the value as
+ * unresolved rather than passing it off as a name. The recorded time is
  * rendered through Intl in the current language and explicitly in UTC,
  * the zone the view carries it in, never the process-local default; a
  * malformed timestamp renders no time rather than throwing. The record's
@@ -42,6 +46,7 @@ import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import { AsyncSection, DataTable, ListSkeleton, PageHeader } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import Typography from '@mui/material/Typography'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleAuditRecord } from './operations.js'
@@ -86,16 +91,39 @@ function toInstant(local: string): string | undefined {
 
 /**
  * One row's actor cell: the readable identity. It reads the account's
- * display name through the bound surface and shows it; while the read is
- * pending, or when the actor names no account (a system or import actor),
- * it shows the recorded value instead of a spinner, so the column is
- * never blank. The lookup is keyed by the account id, so a page of rows
- * that share an actor reuses one cached read.
+ * display name through the bound surface and shows it. The account read
+ * is gated on authn.account.read, which the page's own audit.read does
+ * not imply, so a viewer holding audit.read but not account.read is
+ * refused the lookup: the cell then shows the recorded value with a note
+ * that the identity could not be resolved, rather than passing the raw id
+ * off as a resolved (or system) actor. While the read is pending, or when
+ * the actor names no account (a system or import actor), it shows the
+ * recorded value instead of a spinner, so the column is never blank. The
+ * lookup is keyed by the account id, so a page of rows that share an
+ * actor -- and any re-render -- reuses one cached read.
  */
 function AuditActorCell({ actor }: { readonly actor: string }) {
+  const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const account = operations.useAccount({ id: actor })
-  return <>{account.data?.display_name ?? actor}</>
+  const name = account.data?.display_name
+  if (name !== undefined && name !== '') {
+    return <>{name}</>
+  }
+  if (account.isError) {
+    return (
+      <Typography
+        component="span"
+        variant="body2"
+        sx={{ fontStyle: 'italic' }}
+        title={t('audit.actorUnresolved')}
+        aria-label={`${actor} (${t('audit.actorUnresolved')})`}
+      >
+        {actor}
+      </Typography>
+    )
+  }
+  return <>{actor}</>
 }
 
 export function AuditPage() {

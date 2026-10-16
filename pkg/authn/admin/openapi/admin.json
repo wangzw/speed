@@ -8,9 +8,11 @@
         "summary": "List accounts, one page at a time",
         "parameters": [
           {"name": "status", "in": "query", "required": false, "schema": {"type": "string"}},
-          {"name": "identifier", "in": "query", "required": false, "schema": {"type": "string"}},
-          {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer"}},
-          {"name": "cursor", "in": "query", "required": false, "schema": {"type": "string"}}
+          {"name": "kind", "in": "query", "required": false, "schema": {"type": "string"}},
+          {"name": "identifier_prefix", "in": "query", "required": false, "schema": {"type": "string"}},
+          {"name": "identifier_kind", "in": "query", "required": false, "schema": {"type": "string"}},
+          {"name": "after", "in": "query", "required": false, "schema": {"type": "string"}},
+          {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer"}}
         ],
         "responses": {
           "200": {
@@ -334,7 +336,7 @@
         "parameters": [
           {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}},
           {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer"}},
-          {"name": "cursor", "in": "query", "required": false, "schema": {"type": "string"}}
+          {"name": "after", "in": "query", "required": false, "schema": {"type": "string"}}
         ],
         "responses": {
           "200": {
@@ -583,8 +585,9 @@
         "operationId": "authn.admin.impersonations.list",
         "summary": "List impersonation records, one page at a time",
         "parameters": [
+          {"name": "tenant", "in": "query", "required": true, "schema": {"type": "string"}},
           {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer"}},
-          {"name": "cursor", "in": "query", "required": false, "schema": {"type": "string"}}
+          {"name": "after", "in": "query", "required": false, "schema": {"type": "string"}}
         ],
         "responses": {
           "200": {

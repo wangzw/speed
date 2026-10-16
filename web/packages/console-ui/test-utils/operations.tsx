@@ -115,7 +115,9 @@ export interface ConsoleBackend {
   revokeSession: (input: ConsoleRevokeSessionInput) => Promise<void>
 
   // Impersonation surface.
-  listImpersonations: () => Promise<readonly ConsoleImpersonation[]>
+  listImpersonations: (
+    params: Parameters<ConsoleOperations['useImpersonations']>[0],
+  ) => Promise<readonly ConsoleImpersonation[]>
   revokeImpersonation: (input: ConsoleAccountRef) => Promise<void>
 
   // Invitation + membership surfaces (tenant-scoped).
@@ -555,10 +557,11 @@ export function createConsoleOperations(
       })
     },
 
-    useImpersonations: () =>
+    useImpersonations: (params) =>
       useQuery({
-        queryKey: IMPERSONATIONS_KEY,
-        queryFn: () => backend.listImpersonations(),
+        queryKey: [...IMPERSONATIONS_KEY, params],
+        queryFn: () => backend.listImpersonations(params),
+        enabled: params.tenant !== '',
       }),
     useRevokeImpersonation: () => {
       const client = useQueryClient()

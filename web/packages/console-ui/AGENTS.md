@@ -19,7 +19,9 @@ and neither of those packages belongs in its import graph.
 The pages whose routes carry the tenant as a path segment (authorization,
 invitations and membership, SSO) carry a **tenant selector** — an argument
 of the request, fed by the roster read, not the session's current tenant.
-It lives in `src/internal/tenant-scope.tsx` and holds no query key of the
+The impersonation page carries one too: its list read takes the tenant as
+a required query argument. The selector lives in
+`src/internal/tenant-scope.tsx` and holds no query key of the
 current-tenant kind.
 
 The package ships one entry (`src/index.ts`, the export set in the
@@ -226,5 +228,14 @@ composition, with the operations bundle substituted from test-utils).
 - **Audit detail view.** Only the list route is surfaced; a record's
   detail route (`GET /audit/admin/records/:id`) and an export surface are
   not. Export is another permission and another module's to carry.
+- **Batched audit-actor resolution.** The audit page's actor column
+  resolves each distinct account id through `GET /auth/admin/accounts/:id`
+  (react-query caches by id, so rows sharing an actor share one read and a
+  re-render reuses it), but a page of distinct actors fires one read per
+  actor: no batch account-read surface exists. Resolving a page in one
+  request needs a server surface this package does not have. The account
+  read is gated on `authn.account.read`, which the page's own `audit.read`
+  does not imply, so a viewer without it gets recorded ids marked
+  unresolved rather than readable identities.
 - **Storybook.** No preview harness exists; the components are covered by
   jsdom tests + axe, and color-contrast is verified nowhere.

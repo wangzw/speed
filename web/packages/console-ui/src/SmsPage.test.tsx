@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SmsPage } from './SmsPage.js'
 import type { ConsoleSmsTemplate } from './operations.js'
@@ -126,6 +126,8 @@ describe('SmsPage', () => {
     await screen.findByText('login-code')
     await user.click(screen.getByRole('button', { name: '停用' }))
     await user.click(screen.getByRole('button', { name: '移除' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
     await vi.waitFor(() => {
       expect(toggles).toEqual([false])
       expect(removed).toEqual(['login-code'])

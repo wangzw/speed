@@ -27,6 +27,7 @@ import {
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
@@ -47,6 +48,7 @@ export function SessionsPage() {
 
   const [accountDraft, setAccountDraft] = useState('')
   const [account, setAccount] = useState('')
+  const confirm = usePendingConfirm()
 
   const sessions = operations.useAccountSessions({
     id: account === '' ? undefined : account,
@@ -110,7 +112,16 @@ export function SessionsPage() {
           color="error"
           disabled={session.revoked || revokeSession.isPending}
           onClick={() =>
-            revokeSession.mutate({ accountId: account, sessionId: session.id })
+            confirm.ask({
+              title: t('sessions.revokeTitle'),
+              message: t('sessions.revokeMessage', { id: session.id }),
+              confirmLabel: t('common.confirm'),
+              run: () =>
+                revokeSession.mutate({
+                  accountId: account,
+                  sessionId: session.id,
+                }),
+            })
           }
         >
           {t('sessions.revoke')}
@@ -216,6 +227,8 @@ export function SessionsPage() {
           code={revokeSession.isError ? errorCodeOf(revokeSession.error) : null}
         />
       </Box>
+
+      <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
     </Box>
   )
 }

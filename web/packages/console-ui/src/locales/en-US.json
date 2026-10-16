@@ -29,6 +29,7 @@
   "common": {
     "refresh": "Refresh",
     "cancel": "Cancel",
+    "confirm": "Confirm",
     "tenant": "Tenant",
     "tenantNone": "None selected"
   },
@@ -97,6 +98,8 @@
       "save": "Save"
     },
     "remove": "Remove",
+    "removeTitle": "Remove setting",
+    "removeMessage": "Remove the current value of the setting \"{{key}}\".",
     "sensitive": "Yes"
   },
   "audit": {
@@ -128,7 +131,8 @@
       "reset": "Reset"
     },
     "prevPage": "Previous",
-    "nextPage": "Next"
+    "nextPage": "Next",
+    "actorUnresolved": "Identity unresolved (needs account read)"
   },
   "permissions": {
     "title": "Permissions",
@@ -238,6 +242,12 @@
   "accounts": {
     "title": "Accounts",
     "identifierLabel": "Login identifier",
+    "identifierKindLabel": "Identifier kind",
+    "identifierKind": {
+      "username": "Username",
+      "email": "Email",
+      "phone": "Phone"
+    },
     "search": "Search",
     "loading": "Loading accounts",
     "empty": {
@@ -261,6 +271,8 @@
     "mfaNo": "No",
     "manage": "Manage",
     "delete": "Delete",
+    "deleteTitle": "Delete account",
+    "deleteMessage": "Deleting account \"{{id}}\" also removes its identifiers, secrets and sessions.",
     "status": {
       "active": "Active",
       "disabled": "Disabled",
@@ -271,12 +283,32 @@
       "title": "Account \"{{id}}\"",
       "displayNameLine": "Display name: {{value}}",
       "statusLine": "Status: {{value}}",
-      "kindLine": "Kind: {{value}}"
+      "kindLine": "Kind: {{value}}",
+      "loading": "Loading the account detail",
+      "retry": "Retry",
+      "error": {
+        "title": "The account detail could not be loaded",
+        "description": "The account surface did not answer."
+      }
     },
     "resetMFA": "Reset MFA",
+    "resetMFATitle": "Reset MFA",
+    "resetMFAMessage": "Remove every factor this account has registered.",
     "revokeSessions": "Revoke all sessions",
+    "revokeSessionsTitle": "Revoke all sessions",
+    "revokeSessionsMessage": "Revoke every session this account currently has.",
     "factors": {
       "title": "Registered factors",
+      "loading": "Loading factors",
+      "retry": "Retry",
+      "error": {
+        "title": "Factors could not be loaded",
+        "description": "The account surface did not answer."
+      },
+      "empty": {
+        "title": "No factors",
+        "description": "This account has registered no factor yet."
+      },
       "column": {
         "kind": "Kind",
         "label": "Label",
@@ -285,6 +317,16 @@
     },
     "secrets": {
       "title": "Service secrets",
+      "loading": "Loading service secrets",
+      "retry": "Retry",
+      "error": {
+        "title": "Service secrets could not be loaded",
+        "description": "The account surface did not answer."
+      },
+      "empty": {
+        "title": "No service secrets",
+        "description": "This account has no service secret."
+      },
       "column": {
         "label": "Label",
         "expires": "Expires",
@@ -293,10 +335,22 @@
       },
       "revoked": "Revoked",
       "active": "Active",
-      "revoke": "Revoke"
+      "revoke": "Revoke",
+      "revokeTitle": "Revoke service secret",
+      "revokeMessage": "Revoke the service secret \"{{label}}\"."
     },
     "sessions": {
       "title": "Sessions",
+      "loading": "Loading sessions",
+      "retry": "Retry",
+      "error": {
+        "title": "Sessions could not be loaded",
+        "description": "The account surface did not answer."
+      },
+      "empty": {
+        "title": "No sessions",
+        "description": "This account has no session."
+      },
       "column": {
         "id": "Identifier",
         "created": "Created",
@@ -305,11 +359,15 @@
       },
       "revoked": "Revoked",
       "active": "Active",
-      "revoke": "Revoke"
+      "revoke": "Revoke",
+      "revokeTitle": "Revoke session",
+      "revokeMessage": "Revoke the session \"{{id}}\"."
     },
     "removeIdentifier": {
       "label": "Remove login identifier",
-      "submit": "Remove"
+      "submit": "Remove",
+      "confirmTitle": "Remove login identifier",
+      "confirmMessage": "Remove the login identifier \"{{identifier}}\" from this account."
     }
   },
   "sessions": {
@@ -347,10 +405,16 @@
     },
     "revoked": "Revoked",
     "active": "Active",
-    "revoke": "Revoke"
+    "revoke": "Revoke",
+    "revokeTitle": "Revoke session",
+    "revokeMessage": "Revoke the session \"{{id}}\"."
   },
   "impersonations": {
     "title": "Impersonations",
+    "needTenant": {
+      "title": "Choose a tenant",
+      "description": "Impersonation records are stored per tenant. Choose a tenant first."
+    },
     "loading": "Loading impersonation records",
     "empty": {
       "title": "No impersonation records",
@@ -411,7 +475,9 @@
       "revoked": "Revoked",
       "other": "Unknown"
     },
-    "revoke": "Revoke"
+    "revoke": "Revoke",
+    "revokeTitle": "Revoke invitation",
+    "revokeMessage": "Revoke the invitation sent to \"{{email}}\"."
   },
   "members": {
     "title": "Members",
@@ -436,7 +502,9 @@
     "activeNo": "No",
     "ssoExemptYes": "Yes",
     "ssoExemptNo": "No",
-    "remove": "Remove"
+    "remove": "Remove",
+    "removeTitle": "Remove member",
+    "removeMessage": "Remove the member \"{{account}}\" from this tenant."
   },
   "sso": {
     "title": "SSO providers",
@@ -466,13 +534,17 @@
     "refreshMetadata": "Refresh metadata",
     "reverifyDomains": "Re-verify domains",
     "delete": "Delete",
+    "deleteTitle": "Delete SSO provider",
+    "deleteMessage": "Delete the provider \"{{name}}\" and all of its domains.",
     "domains": {
       "title": "Domains",
       "note": "The provider view does not list domains; verify or remove a domain by name.",
       "providerLabel": "Provider",
       "domainLabel": "Domain",
       "verify": "Verify",
-      "remove": "Remove"
+      "remove": "Remove",
+      "removeTitle": "Remove domain",
+      "removeMessage": "Remove the domain \"{{domain}}\" from this provider."
     }
   },
   "sms": {
@@ -501,6 +573,8 @@
     "enable": "Enable",
     "disable": "Disable",
     "remove": "Remove",
+    "removeTitle": "Remove template",
+    "removeMessage": "Remove the runtime SMS template \"{{name}}\".",
     "register": {
       "title": "Register a template",
       "nameLabel": "Name",

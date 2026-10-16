@@ -43,6 +43,7 @@ import {
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { InlineError } from './internal/inline-error.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { settingKeyRest, useConsoleOperations } from './operations.js'
@@ -58,6 +59,7 @@ function SettingRowActions({ setting }: { readonly setting: ConsoleSetting }) {
   const setSetting = operations.useSetSetting()
   const removeSetting = operations.useRemoveSetting()
   const [value, setValue] = useState('')
+  const confirm = usePendingConfirm()
 
   // The route addresses an item by the namespace and the rest of the key
   // under it (the full key is <namespace>.<key>); the view carries the
@@ -65,12 +67,17 @@ function SettingRowActions({ setting }: { readonly setting: ConsoleSetting }) {
   // removed.
   const keyRest = settingKeyRest(setting.key, setting.namespace)
 
-  const remove = () => {
-    removeSetting.mutate({
-      namespace: setting.namespace,
-      key: keyRest,
+  const remove = () =>
+    confirm.ask({
+      title: t('settings.removeTitle'),
+      message: t('settings.removeMessage', { key: setting.key }),
+      confirmLabel: t('common.confirm'),
+      run: () =>
+        removeSetting.mutate({
+          namespace: setting.namespace,
+          key: keyRest,
+        }),
     })
-  }
 
   return (
     <Box
@@ -129,6 +136,7 @@ function SettingRowActions({ setting }: { readonly setting: ConsoleSetting }) {
           }
         />
       </Box>
+      <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
     </Box>
   )
 }

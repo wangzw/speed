@@ -33,6 +33,7 @@ import {
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { InlineError } from './internal/inline-error.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
@@ -64,6 +65,7 @@ function parseCodes(text: string): Record<string, string> {
 export function SmsPage() {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
+  const confirm = usePendingConfirm()
 
   const templates = operations.useSmsTemplates()
   const registerTemplate = operations.useRegisterSmsTemplate()
@@ -139,7 +141,14 @@ export function SmsPage() {
             variant="outlined"
             color="error"
             disabled={removeTemplate.isPending}
-            onClick={() => removeTemplate.mutate({ name: template.name })}
+            onClick={() =>
+              confirm.ask({
+                title: t('sms.removeTitle'),
+                message: t('sms.removeMessage', { name: template.name }),
+                confirmLabel: t('common.confirm'),
+                run: () => removeTemplate.mutate({ name: template.name }),
+              })
+            }
           >
             {t('sms.remove')}
           </Button>
@@ -353,6 +362,8 @@ export function SmsPage() {
       <Box sx={{ mt: 2 }}>
         <InlineError code={writeError} />
       </Box>
+
+      <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
     </Box>
   )
 }

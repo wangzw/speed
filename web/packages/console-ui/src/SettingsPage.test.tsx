@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SettingsPage } from './SettingsPage.js'
 import type { ConsoleSetting } from './operations.js'
@@ -114,6 +114,8 @@ describe('SettingsPage', () => {
     expect(writes).toContain('set:mail.retry=9')
 
     await user.click(screen.getByRole('button', { name: '移除' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
     expect(writes).toContain('remove:mail.retry')
   })
 

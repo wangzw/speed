@@ -37,6 +37,7 @@ import {
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { InlineError } from './internal/inline-error.js'
 import { TenantScope } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
@@ -50,6 +51,7 @@ export function SsoPage() {
   const [tenant, setTenant] = useState('')
   const [domainProvider, setDomainProvider] = useState('')
   const [domain, setDomain] = useState('')
+  const confirm = usePendingConfirm()
 
   const providers = operations.useSsoProviders(tenant)
   const deleteProvider = operations.useDeleteSsoProvider()
@@ -113,7 +115,14 @@ export function SsoPage() {
             variant="outlined"
             color="error"
             disabled={deleteProvider.isPending}
-            onClick={() => deleteProvider.mutate({ id: provider.id, tenant })}
+            onClick={() =>
+              confirm.ask({
+                title: t('sso.deleteTitle'),
+                message: t('sso.deleteMessage', { name: provider.name }),
+                confirmLabel: t('common.confirm'),
+                run: () => deleteProvider.mutate({ id: provider.id, tenant }),
+              })
+            }
           >
             {t('sso.delete')}
           </Button>
@@ -265,7 +274,13 @@ export function SsoPage() {
                   domain.trim() === ''
                 }
                 onClick={() =>
-                  removeDomain.mutate({ id: domainProvider, tenant, domain })
+                  confirm.ask({
+                    title: t('sso.domains.removeTitle'),
+                    message: t('sso.domains.removeMessage', { domain }),
+                    confirmLabel: t('common.confirm'),
+                    run: () =>
+                      removeDomain.mutate({ id: domainProvider, tenant, domain }),
+                  })
                 }
               >
                 {t('sso.domains.remove')}
@@ -278,6 +293,8 @@ export function SsoPage() {
           </Box>
         </>
       )}
+
+      <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
     </Box>
   )
 }

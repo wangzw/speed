@@ -126,6 +126,7 @@ describe('consoleOperations', () => {
     expect(calls).toContainEqual({
       method: 'GET',
       path: '/settings/admin/settings',
+      query: { layer: 'global' },
     })
   })
 
@@ -221,7 +222,7 @@ function AccountReads() {
   const factors = consoleOperations.useAccountFactors({ id: 'acc-1' })
   const secrets = consoleOperations.useAccountSecrets({ id: 'acc-1' })
   const sessions = consoleOperations.useAccountSessions({ id: 'acc-1' })
-  const impersonations = consoleOperations.useImpersonations()
+  const impersonations = consoleOperations.useImpersonations({ tenant: 'acme' })
   const settled = [accounts, account, factors, secrets, sessions, impersonations].every(
     (query) => query.isSuccess,
   )
@@ -347,7 +348,7 @@ describe('consoleOperations administration surfaces', () => {
       '/auth/admin/accounts/acc-1/sessions',
       '/auth/admin/impersonations',
     ]) {
-      expect(calls).toContainEqual({ method: 'GET', path })
+      expect(calls.some((c) => c.method === 'GET' && c.path === path)).toBe(true)
     }
   })
 

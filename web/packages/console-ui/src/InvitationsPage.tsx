@@ -33,6 +33,7 @@ import {
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
 import { TenantScope } from './internal/tenant-scope.js'
@@ -56,6 +57,7 @@ export function InvitationsPage() {
   const [tenant, setTenant] = useState('')
   const [email, setEmail] = useState('')
   const [expiresAt, setExpiresAt] = useState('')
+  const confirm = usePendingConfirm()
 
   const invitations = operations.useInvitations(tenant)
   const members = operations.useMembers(tenant)
@@ -97,7 +99,12 @@ export function InvitationsPage() {
           color="error"
           disabled={invitation.status !== 'pending' || revokeInvitation.isPending}
           onClick={() =>
-            revokeInvitation.mutate({ tenant, id: invitation.id })
+            confirm.ask({
+              title: t('invitations.revokeTitle'),
+              message: t('invitations.revokeMessage', { email: invitation.email }),
+              confirmLabel: t('common.confirm'),
+              run: () => revokeInvitation.mutate({ tenant, id: invitation.id }),
+            })
           }
         >
           {t('invitations.revoke')}
@@ -142,7 +149,12 @@ export function InvitationsPage() {
           color="error"
           disabled={removeMember.isPending}
           onClick={() =>
-            removeMember.mutate({ tenant, account: member.account })
+            confirm.ask({
+              title: t('members.removeTitle'),
+              message: t('members.removeMessage', { account: member.account }),
+              confirmLabel: t('common.confirm'),
+              run: () => removeMember.mutate({ tenant, account: member.account }),
+            })
           }
         >
           {t('members.remove')}
@@ -321,6 +333,8 @@ export function InvitationsPage() {
           <InlineError code={writeError} />
         </>
       )}
+
+      <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
     </Box>
   )
 }

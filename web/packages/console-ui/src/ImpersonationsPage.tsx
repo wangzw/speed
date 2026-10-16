@@ -2,12 +2,19 @@
  * ImpersonationsPage: the impersonation-record administration page of the
  * console.
  *
- * It lists the platform's impersonation records -- who is (or was)
+ * It lists a tenant's impersonation records -- who is (or was)
  * impersonating whom, in which tenant, and for how long -- and terminates
  * one still in force. The read is GET /auth/admin/impersonations and the
  * termination is DELETE /auth/admin/impersonations/:id; both are
  * operations on the console operations bundle, so the page builds no
  * client and writes no query key.
+ *
+ * The read names its tenant as a required query parameter (the route is
+ * tenant-scoped: the module refuses a request that names none and decides
+ * on the named tenant), so the page opens with a tenant selector fed by
+ * the platform roster, exactly as the authorization and SSO pages do with
+ * theirs, and keeps the read disabled until a tenant is chosen. The
+ * tenant is an argument of the request, not the session's current tenant.
  *
  * A record is in force while its `ended_at` is the zero instant (the
  * sentinel the view carries); the state column says so and the terminate
@@ -15,6 +22,7 @@
  * Intl. The page opens with ui-kit's PageHeader.
  */
 
+import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
@@ -22,6 +30,7 @@ import Typography from '@mui/material/Typography'
 import {
   AsyncSection,
   DataTable,
+  EmptyState,
   ListSkeleton,
   PageHeader,
   errorCodeOf,
@@ -29,6 +38,7 @@ import {
 import type { DataTableColumn } from '@speed/ui-kit'
 import { formatUtc, isZeroInstant } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
+import { TenantScope } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleImpersonation } from './operations.js'
@@ -37,7 +47,9 @@ export function ImpersonationsPage() {
   const { t, i18n } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
 
-  const impersonations = operations.useImpersonations()
+  const [tenant, setTenant] = useState('')
+
+  const impersonations = operations.useImpersonations({ tenant })
   const revokeImpersonation = operations.useRevokeImpersonation()
 
   const columns: DataTableColumn<ConsoleImpersonation>[] = [
@@ -125,39 +137,51 @@ export function ImpersonationsPage() {
         sx={{ mb: 2 }}
       />
 
-      <AsyncSection
-        pending={pending}
-        payload={rows}
-        empty={rows !== undefined && rows.length === 0}
-        headingLevel="h2"
-        loading={
-          <ListSkeleton
-            label={t('impersonations.loading')}
-            rows={[
-              <Skeleton key="a" variant="text" width="60%" />,
-              <Skeleton key="b" variant="text" width="44%" />,
-            ]}
-          />
-        }
-        errorState={{
-          title: t('impersonations.error.title'),
-          description: t('impersonations.error.description'),
-          retryLabel: t('impersonations.retry'),
-          onRetry: () => void impersonations.refetch(),
-        }}
-        emptyState={{
-          title: t('impersonations.empty.title'),
-          description: t('impersonations.empty.description'),
-        }}
-      >
-        {(settled) => (
-          <DataTable
-            rows={settled}
-            columns={columns}
-            rowKey={(record) => record.id}
-          />
-        )}
-      </AsyncSection>
+      <Box component="section" sx={{ mb: 3 }}>
+        <TenantScope value={tenant} onSelect={setTenant} />
+      </Box>
+
+      {tenant === '' ? (
+        <EmptyState
+          headingLevel="h2"
+          title={t('impersonations.needTenant.title')}
+          description={t('impersonations.needTenant.description')}
+        />
+      ) : (
+        <AsyncSection
+          pending={pending}
+          payload={rows}
+          empty={rows !== undefined && rows.length === 0}
+          headingLevel="h2"
+          loading={
+            <ListSkeleton
+              label={t('impersonations.loading')}
+              rows={[
+                <Skeleton key="a" variant="text" width="60%" />,
+                <Skeleton key="b" variant="text" width="44%" />,
+              ]}
+            />
+          }
+          errorState={{
+            title: t('impersonations.error.title'),
+            description: t('impersonations.error.description'),
+            retryLabel: t('impersonations.retry'),
+            onRetry: () => void impersonations.refetch(),
+          }}
+          emptyState={{
+            title: t('impersonations.empty.title'),
+            description: t('impersonations.empty.description'),
+          }}
+        >
+          {(settled) => (
+            <DataTable
+              rows={settled}
+              columns={columns}
+              rowKey={(record) => record.id}
+            />
+          )}
+        </AsyncSection>
+      )}
 
       <Box sx={{ mt: 2 }}>
         <InlineError

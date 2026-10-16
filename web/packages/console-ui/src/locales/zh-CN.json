@@ -29,6 +29,7 @@
   "common": {
     "refresh": "刷新",
     "cancel": "取消",
+    "confirm": "确认",
     "tenant": "租户",
     "tenantNone": "未选择"
   },
@@ -97,6 +98,8 @@
       "save": "保存"
     },
     "remove": "移除",
+    "removeTitle": "移除设置项",
+    "removeMessage": "移除设置项「{{key}}」的当前取值。",
     "sensitive": "是"
   },
   "audit": {
@@ -128,7 +131,8 @@
       "reset": "重置"
     },
     "prevPage": "上一页",
-    "nextPage": "下一页"
+    "nextPage": "下一页",
+    "actorUnresolved": "身份未解析（需账户读取权限）"
   },
   "permissions": {
     "title": "权限",
@@ -238,6 +242,12 @@
   "accounts": {
     "title": "账户",
     "identifierLabel": "登录标识",
+    "identifierKindLabel": "标识类型",
+    "identifierKind": {
+      "username": "用户名",
+      "email": "邮箱",
+      "phone": "手机号"
+    },
     "search": "查询",
     "loading": "正在加载账户",
     "empty": {
@@ -261,6 +271,8 @@
     "mfaNo": "否",
     "manage": "管理",
     "delete": "删除",
+    "deleteTitle": "删除账户",
+    "deleteMessage": "删除账户「{{id}}」会一并移除其全部标识、密钥与会话。",
     "status": {
       "active": "已启用",
       "disabled": "已停用",
@@ -271,12 +283,32 @@
       "title": "账户「{{id}}」",
       "displayNameLine": "显示名：{{value}}",
       "statusLine": "状态：{{value}}",
-      "kindLine": "类型：{{value}}"
+      "kindLine": "类型：{{value}}",
+      "loading": "正在加载账户详情",
+      "retry": "重试",
+      "error": {
+        "title": "账户详情加载失败",
+        "description": "账户面未应答。"
+      }
     },
     "resetMFA": "重置 MFA",
+    "resetMFATitle": "重置 MFA",
+    "resetMFAMessage": "移除该账户已注册的全部认证因子。",
     "revokeSessions": "撤销全部会话",
+    "revokeSessionsTitle": "撤销全部会话",
+    "revokeSessionsMessage": "撤销该账户当前的全部会话。",
     "factors": {
       "title": "已注册因子",
+      "loading": "正在加载因子",
+      "retry": "重试",
+      "error": {
+        "title": "因子加载失败",
+        "description": "账户面未应答。"
+      },
+      "empty": {
+        "title": "暂无因子",
+        "description": "该账户尚未注册任何认证因子。"
+      },
       "column": {
         "kind": "类型",
         "label": "标签",
@@ -285,6 +317,16 @@
     },
     "secrets": {
       "title": "服务密钥",
+      "loading": "正在加载服务密钥",
+      "retry": "重试",
+      "error": {
+        "title": "服务密钥加载失败",
+        "description": "账户面未应答。"
+      },
+      "empty": {
+        "title": "暂无服务密钥",
+        "description": "该账户没有服务密钥。"
+      },
       "column": {
         "label": "标签",
         "expires": "过期时间",
@@ -293,10 +335,22 @@
       },
       "revoked": "已撤销",
       "active": "有效",
-      "revoke": "撤销"
+      "revoke": "撤销",
+      "revokeTitle": "撤销服务密钥",
+      "revokeMessage": "撤销服务密钥「{{label}}」。"
     },
     "sessions": {
       "title": "会话",
+      "loading": "正在加载会话",
+      "retry": "重试",
+      "error": {
+        "title": "会话加载失败",
+        "description": "账户面未应答。"
+      },
+      "empty": {
+        "title": "暂无会话",
+        "description": "该账户没有会话。"
+      },
       "column": {
         "id": "标识",
         "created": "创建时间",
@@ -305,11 +359,15 @@
       },
       "revoked": "已撤销",
       "active": "有效",
-      "revoke": "撤销"
+      "revoke": "撤销",
+      "revokeTitle": "撤销会话",
+      "revokeMessage": "撤销会话「{{id}}」。"
     },
     "removeIdentifier": {
       "label": "移除登录标识",
-      "submit": "移除"
+      "submit": "移除",
+      "confirmTitle": "移除登录标识",
+      "confirmMessage": "从该账户移除登录标识「{{identifier}}」。"
     }
   },
   "sessions": {
@@ -347,10 +405,16 @@
     },
     "revoked": "已撤销",
     "active": "有效",
-    "revoke": "撤销"
+    "revoke": "撤销",
+    "revokeTitle": "撤销会话",
+    "revokeMessage": "撤销会话「{{id}}」。"
   },
   "impersonations": {
     "title": "冒充",
+    "needTenant": {
+      "title": "请选择租户",
+      "description": "冒充记录按租户存储，请先选择一个租户。"
+    },
     "loading": "正在加载冒充记录",
     "empty": {
       "title": "暂无冒充记录",
@@ -411,7 +475,9 @@
       "revoked": "已撤销",
       "other": "未知"
     },
-    "revoke": "撤销"
+    "revoke": "撤销",
+    "revokeTitle": "撤销邀请",
+    "revokeMessage": "撤销发给「{{email}}」的邀请。"
   },
   "members": {
     "title": "成员",
@@ -436,7 +502,9 @@
     "activeNo": "否",
     "ssoExemptYes": "是",
     "ssoExemptNo": "否",
-    "remove": "移除"
+    "remove": "移除",
+    "removeTitle": "移除成员",
+    "removeMessage": "从该租户移除成员「{{account}}」。"
   },
   "sso": {
     "title": "SSO 提供方",
@@ -466,13 +534,17 @@
     "refreshMetadata": "刷新元数据",
     "reverifyDomains": "重新验证域名",
     "delete": "删除",
+    "deleteTitle": "删除 SSO 提供方",
+    "deleteMessage": "删除提供方「{{name}}」及其全部域名。",
     "domains": {
       "title": "域名",
       "note": "提供方视图不列出域名，域名的验证与移除按名称进行。",
       "providerLabel": "提供方",
       "domainLabel": "域名",
       "verify": "验证",
-      "remove": "移除"
+      "remove": "移除",
+      "removeTitle": "移除域名",
+      "removeMessage": "从该提供方移除域名「{{domain}}」。"
     }
   },
   "sms": {
@@ -501,6 +573,8 @@
     "enable": "启用",
     "disable": "停用",
     "remove": "移除",
+    "removeTitle": "移除模板",
+    "removeMessage": "移除运行期短信模板「{{name}}」。",
     "register": {
       "title": "登记模板",
       "nameLabel": "名称",

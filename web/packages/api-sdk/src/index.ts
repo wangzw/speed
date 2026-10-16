@@ -976,14 +976,17 @@ limit?: number;
 
 export type AuthnAdminAccountsListParams = {
 status?: string;
-identifier?: string;
+kind?: string;
+identifier_prefix?: string;
+identifier_kind?: string;
+after?: string;
 limit?: number;
-cursor?: string;
 };
 
 export type AuthnAdminImpersonationsListParams = {
+tenant: string;
 limit?: number;
-cursor?: string;
+after?: string;
 };
 
 export type AuthnInviteListParams = {
@@ -998,7 +1001,7 @@ export type AuthnInviteIssueBody = {
 
 export type AuthnAdminMembersListParams = {
 limit?: number;
-cursor?: string;
+after?: string;
 };
 
 export type AuthnMfaFactors200 = {
@@ -3455,7 +3458,7 @@ export const useAuthnAdminAccountsStatus = <TError = void,
  * @summary List impersonation records, one page at a time
  */
 export const authnAdminImpersonationsList = (
-    params?: AuthnAdminImpersonationsListParams,
+    params: AuthnAdminImpersonationsListParams,
  signal?: AbortSignal
 ) => {
 
@@ -3477,7 +3480,7 @@ export const getAuthnAdminImpersonationsListQueryKey = (params?: AuthnAdminImper
     }
 
 
-export const getAuthnAdminImpersonationsListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = void>(params?: AuthnAdminImpersonationsListParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>, }
+export const getAuthnAdminImpersonationsListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = void>(params: AuthnAdminImpersonationsListParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -3504,7 +3507,7 @@ export type AuthnAdminImpersonationsListQueryError = void
  */
 
 export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = void>(
- params?: AuthnAdminImpersonationsListParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>, }
+ params: AuthnAdminImpersonationsListParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>, }
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 

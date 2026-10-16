@@ -1,21 +1,25 @@
 /**
  * The console operations seam: the read hooks and write mutations the
- * three administration pages consume, shipped over the generated
- * @speed/api-sdk administration operations.
+ * console pages consume, shipped over the generated @speed/api-sdk
+ * administration operations.
  *
  * The pages read and write through the operations bundle they get from
  * useConsoleOperations -- a plain object whose members are the
- * react-query read hooks and write mutations of the three admin
- * surfaces. The bundle the package ships (consoleOperations) is a thin
- * adapter over the generated operations of /tenant/admin, /settings/admin
- * and /audit/admin: the reads run the generated query options through
- * useQuery with a `select` that flattens the page envelope to the view
- * rows, and the writes call the generated mutation functions with one flat
- * input, invalidating the list the write belongs to through the generated
- * key factories. The hooks run on the host's QueryClient (the host
- * supplies it as it supplies the rest of the React tree), the mutations go
- * through the same bound client, and a console page never builds a
- * QueryClient of its own and never hand-writes a query key.
+ * react-query read hooks and write mutations of the administration
+ * surfaces the pages render: the tenant roster, settings and audit
+ * surfaces over /tenant/admin, /settings/admin and /audit/admin; the
+ * account, session, impersonation, invitation and membership and SSO
+ * surfaces over /auth and /authz/admin; and the SMS template surface over
+ * /sms/admin. The bundle the package ships (consoleOperations) is a thin
+ * adapter over those generated operations: the reads run the generated
+ * query options through useQuery with a `select` that flattens the page
+ * envelope to the view rows, and the writes call the generated mutation
+ * functions with one flat input, invalidating the list the write belongs
+ * to through the generated key factories. The hooks run on the host's
+ * QueryClient (the host supplies it as it supplies the rest of the React
+ * tree), the mutations go through the same bound client, and a console
+ * page never builds a QueryClient of its own and never hand-writes a
+ * query key.
  *
  * ConsoleOperationsProvider overrides the shipped bundle: a host that
  * wants different wiring, or a suite that scripts one, mounts its own and
@@ -23,22 +27,13 @@
  * read the shipped consoleOperations, so a host that composes the console
  * over a bound @speed/api-sdk client needs no binding of its own.
  *
- * The member set mirrors the three modules' route surfaces one for one:
- *
- *   /tenant/admin   GET /tenants, POST /tenants, PATCH /tenants/:id,
- *                   POST /tenants/:id/status
- *   /settings/admin GET /settings, GET /settings/:namespace,
- *                   PUT /settings/:namespace/:key,
- *                   DELETE /settings/:namespace/:key
- *   /audit/admin    GET /records
- *
- * The view types below are the generated response rows themselves
- * (TenantAdminTenant, SettingsAdminSetting, AuditAdminRecord): the
- * modules' OpenAPI fragments declare their 2xx bodies, so orval emits the
- * row shapes and the console names each for its own surface rather than
- * hand-writing a parallel model. Only the write *inputs* stay hand-written
- * -- they carry route parameters beside the body, which no single
- * generated type covers.
+ * The view types below are the generated response rows themselves of each
+ * surface (TenantAdminTenant, SettingsAdminSetting, AuditAdminRecord, the
+ * authn and authz admin views, SmsAdminTemplate): the modules' OpenAPI
+ * fragments declare their 2xx bodies, so orval emits the row shapes and
+ * the console names each for its own surface rather than hand-writing a
+ * parallel model. Only the write *inputs* stay hand-written -- they carry
+ * route parameters beside the body, which no single generated type covers.
  *
  * The settings reads and writes target the global layer: the console is
  * the platform-staff surface, and the global layer is the platform's --
@@ -573,9 +568,13 @@ export interface ConsoleOperations {
 
   // --- Impersonation surface (/auth/admin) ------------------------------
 
-  /** GET /auth/admin/impersonations -- one page of impersonation records. */
+  /**
+   * GET /auth/admin/impersonations -- one page of impersonation records.
+   * The read is tenant-scoped by a required query parameter, so it stays
+   * disabled while the caller names no tenant.
+   */
   readonly useImpersonations: (
-    params?: AuthnAdminImpersonationsListParams,
+    params: AuthnAdminImpersonationsListParams,
   ) => UseQueryResult<readonly ConsoleImpersonation[], unknown>
   /** DELETE /auth/admin/impersonations/:id -- terminate an impersonation. */
   readonly useRevokeImpersonation: () => UseMutationResult<
@@ -1037,6 +1036,10 @@ export const consoleOperations: ConsoleOperations = {
     useQuery({
       ...getAuthnAdminImpersonationsListQueryOptions(params),
       select: (page) => page.impersonations,
+      // The tenant is a required query parameter on the route, so an empty
+      // one would fire a request the module refuses as a shape it cannot
+      // read; the read stays disabled until the page names a tenant.
+      enabled: params.tenant !== '',
     }),
 
   useRevokeImpersonation: () => {

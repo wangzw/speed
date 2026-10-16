@@ -6,10 +6,13 @@
  * @speed/api-sdk surface, whose every call forwards to the request
  * function bound into the runtime seam (bindRequestFn, the same seam a
  * host's real client fills). This rig binds a scripted function there and
- * records the request leg of each generated call (the HTTP method and the
- * path -- query serialization is the transport's, asserted where it
- * matters). It is how the seam's own suite proves which endpoint each
- * member drives, without an HTTP transport.
+ * records the request leg of each generated call (the HTTP method, the
+ * path, and the query parameters the generated call carried -- the
+ * transport's serialization is its own, but the parameter *names and
+ * values* a caller supplies reach the seam as `options.query`). It is how
+ * the seam's own suite proves which endpoint each member drives, and how
+ * a page's suite proves the parameters it sends, without an HTTP
+ * transport.
  *
  * A scripted responder throws on an unpinned path, so a member wired to
  * the wrong endpoint fails the test rather than silently answering.
@@ -24,6 +27,8 @@ export interface ObservedCall {
   readonly method: string
   /** The request path without the base URL or query string. */
   readonly path: string
+  /** The query parameters the generated call carried, if any. */
+  readonly query?: RequestOptions['query']
 }
 
 /** One scripted endpoint: the value the generated call resolves with
@@ -43,8 +48,8 @@ export function bindConsoleRequest(
     options?: RequestOptions,
   ): Promise<T> => {
     const method = options?.method ?? 'GET'
-    calls.push({ method, path })
-    return (await respond({ method, path })) as T
+    calls.push({ method, path, query: options?.query })
+    return (await respond({ method, path, query: options?.query })) as T
   }) as RequestFn
   bindRequestFn(requestFn)
   return calls

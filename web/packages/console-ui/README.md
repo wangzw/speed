@@ -18,7 +18,8 @@ frame with one page each:
 - the **session surface** over `/auth/admin/accounts/:id/sessions` --
   list one account's sessions and revoke one;
 - the **impersonation surface** over `/auth/admin/impersonations` -- list
-  the records and terminate one;
+  a tenant's records (the read takes the tenant as a required query
+  argument) and terminate one;
 - the **authorization surface** over `/authz/admin` -- a tenant's roles,
   their grants, the permission catalog and the account bindings;
 - the **invitation and membership surface** over
@@ -29,17 +30,19 @@ frame with one page each:
 - the **settings read-write surface** over `/settings/admin`;
 - the **SMS template surface** over `/sms/admin`;
 - the **audit query** over `/audit/admin` -- filtered, cursor-paged, with
-  readable actor identities.
+  readable actor identities (resolved through the account read, which
+  needs `authn.account.read` beside the page's own `audit.read`).
 
 Each page opens with `@speed/ui-kit`'s `PageHeader`: the page title as the
 level-one heading, a breadcrumb trail from the console to the page, and a
 refresh action that re-reads the page's data.
 
 The pages whose routes carry the tenant as a path segment (authorization,
-invitations and membership, SSO) carry a tenant selector fed by the
-platform roster read. The tenant it names is an argument of the request,
-not the session's current tenant: the console still has no current-tenant
-concept.
+invitations and membership, SSO), and the impersonation page (whose read
+takes the tenant as a required query argument), carry a tenant selector
+fed by the platform roster read. The tenant it names is an argument of the
+request, not the session's current tenant: the console still has no
+current-tenant concept.
 
 Like the tenant-facing shell, the console reuses the declarative
 registration seam: each page is a declaration collected by the

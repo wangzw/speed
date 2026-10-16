@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SsoPage } from './SsoPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -73,6 +73,8 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
     await user.click(screen.getByRole('button', { name: '删除' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
     await vi.waitFor(() => {
       expect(deleted).toEqual(['idp-1'])
     })
@@ -124,6 +126,8 @@ describe('SsoPage', () => {
     await user.type(screen.getByLabelText('域名'), 'acme.com')
     await user.click(screen.getByRole('button', { name: '验证' }))
     await user.click(screen.getByRole('button', { name: '移除' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
     await vi.waitFor(() => {
       expect(verified).toEqual(['acme.com'])
       expect(removed).toEqual(['acme.com'])

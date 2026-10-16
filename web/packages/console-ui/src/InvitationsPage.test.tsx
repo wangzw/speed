@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { InvitationsPage } from './InvitationsPage.js'
 import type {
@@ -119,6 +119,8 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
     await screen.findByText('ada@example.com')
     await user.click(screen.getByRole('button', { name: '撤销' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
     await vi.waitFor(() => {
       expect(revoked).toEqual(['inv-1'])
     })
@@ -138,6 +140,8 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
     await screen.findByText('acc-1')
     await user.click(screen.getByRole('button', { name: '移除' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
     await vi.waitFor(() => {
       expect(removed).toEqual(['acc-1'])
     })
