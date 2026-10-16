@@ -44,6 +44,8 @@ import {
   principal,
   PROFILE_GET,
   snapshotLog,
+  SSO_DISCOVER,
+  ssoProviders,
   TOKEN_ISSUE,
   tokenResponse,
 } from '@speed/test-utils/session-harness'
@@ -168,6 +170,54 @@ describe('list methods', () => {
       }),
     })
     await expectProtocolViolation(missingMFA.session.listMethods(), missingMFA)
+  })
+})
+
+describe('discover sso', () => {
+  it('returns the entries the server answered for an email domain', async () => {
+    const harness = makeHarness({
+      [SSO_DISCOVER]: (call) => {
+        expect(call.options?.body).toEqual({ email: 'ada@acme.example' })
+        return ssoProviders([
+          { id: 'idp-1', name: 'Acme Okta', protocol: 'oidc' },
+        ])
+      },
+    })
+    const providers = await harness.session.discoverSso('ada@acme.example')
+    expect(providers).toEqual([
+      { id: 'idp-1', name: 'Acme Okta', protocol: 'oidc' },
+    ])
+    expect(harness.calls).toHaveLength(1)
+    expect(harness.calls[0]?.path).toBe('/auth/sso/discover')
+  })
+
+  it('resolves an empty list when nothing matches, never an error', async () => {
+    const harness = makeHarness({
+      [SSO_DISCOVER]: () => ssoProviders(),
+    })
+    await expect(harness.session.discoverSso('ada@nowhere.example')).resolves.toEqual(
+      [],
+    )
+  })
+
+  it('refuses a discover 2xx that is not the documented shape', async () => {
+    const harness = makeHarness({
+      [SSO_DISCOVER]: () => ({ notProviders: true }),
+    })
+    await expectProtocolViolation(
+      harness.session.discoverSso('ada@acme.example'),
+      harness,
+    )
+  })
+
+  it('refuses a discover 2xx whose provider entry drops a field', async () => {
+    const harness = makeHarness({
+      [SSO_DISCOVER]: () => ({ providers: [{ id: 'idp-1' }] }),
+    })
+    await expectProtocolViolation(
+      harness.session.discoverSso('ada@acme.example'),
+      harness,
+    )
   })
 })
 

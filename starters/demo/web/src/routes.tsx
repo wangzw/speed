@@ -30,6 +30,7 @@ import {
   AccountBindingCallbackPage,
   AccountSettingsPage,
 } from './pages/account-page.js'
+import { AuthCallbackPage } from './pages/auth-callback-page.js'
 import { HomePage } from './pages/home-page.js'
 import {
   ACCOUNT_CALLBACK_PATH,
@@ -41,6 +42,10 @@ import {
 // links into them; re-exported here so the route table stays the single
 // import site for the app's paths.
 export { ACCOUNT_CALLBACK_PATH, ACCOUNT_PATH, CONSOLE_PREFIX } from './paths.js'
+
+/** The route a social or enterprise provider's round trip lands on. The
+ * app renders its page outside the tenant shell (src/app.tsx). */
+export const AUTH_CALLBACK_PATH = '/auth/callback'
 
 /**
  * Whether a declared path belongs to the console area. The console's pages are
@@ -94,9 +99,24 @@ export const businessRoutes: RouteTable = [
   },
 ]
 
-/** The product's pages: the business slot plus the mounted console area. */
+/**
+ * The auth callback route: where a redirect or enterprise provider's round
+ * trip lands. Unlabelled (it adds no navigation entry); the app renders its
+ * page outside the tenant shell (src/app.tsx). It is inert until a
+ * deployment enables a redirect or enterprise method.
+ */
+export const authCallbackRoutes: RouteTable = [
+  {
+    path: AUTH_CALLBACK_PATH,
+    view: () => <AuthCallbackPage />,
+  },
+]
+
+/** The product's pages: the business slot, the callback route, and the
+ * mounted console area. */
 export const routes: RouteTable = [
   ...businessRoutes,
+  ...authCallbackRoutes,
   ...consoleIndexRoute,
   ...consoleShellRoutes,
 ]

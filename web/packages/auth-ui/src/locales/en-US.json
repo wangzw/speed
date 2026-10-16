@@ -22,12 +22,35 @@
     "factorTitle": "Choose how to verify",
     "enrollTitle": "Choose a factor to register",
     "unsupportedStep": "This step cannot be completed on this page.",
+    "passkeyHelp": "Complete the passkey ceremony on this device, then paste the result.",
+    "enrollTotpHelp": "Scan or copy this setup URI into your authenticator app.",
+    "credentialLabel": "Passkey response",
+    "codeLabel": "Authenticator code",
     "factorKind": {
       "totp": "Authenticator app",
       "sms": "SMS code",
       "webauthn": "Passkey",
       "other": "Other"
     }
+  },
+  "discovery": {
+    "loading": "Loading sign-in methods…",
+    "retry": "Try again"
+  },
+  "mode": {
+    "registerEntry": "Create an account",
+    "signInEntry": "Sign in",
+    "registerHint": "Your account is created the first time you sign in with one of these methods."
+  },
+  "enterprise": {
+    "emailLabel": "Work email",
+    "continue": "Continue",
+    "providersTitle": "Choose your organization",
+    "noProviders": "No sign-in is configured for that email. Check the address or continue another way.",
+    "editEmail": "Use a different email"
+  },
+  "passkey": {
+    "title": "or sign in with a passkey"
   },
   "social": {
     "title": "or continue with a social account",

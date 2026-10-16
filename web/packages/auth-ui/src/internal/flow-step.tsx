@@ -3,27 +3,31 @@
  *
  * After a channel form's own first fields were submitted, a login flow
  * can answer with another step instead of a completion -- the second
- * factor, a forced password change, a factor to register. This component
- * renders that step into branch fields, dispatching on the step's
- * `next.kind`, and reports the answer upward; it drives nothing itself
- * and holds no session.
+ * factor, a forced password change, a factor to register, a passkey
+ * ceremony. This component renders that step into branch fields,
+ * dispatching on the step's `next.kind`, and reports the answer upward;
+ * it drives nothing itself and holds no session.
  *
  *  - `challenge`  -> one text input per field the server asks for, plus
  *    the continue action. The label of a field the family knows by name
  *    (identifier, password, new_password, phone, code) comes from the
- *    bundle; an unknown name renders verbatim, so a server-side field
- *    the family has no wording for shows its own name rather than a
- *    translated guess.
+ *    bundle (see ./labels); an unknown name renders verbatim, so a
+ *    server-side field the family has no wording for shows its own name
+ *    rather than a translated guess.
  *  - `factor`     -> one button per offered second factor; choosing one
  *    sends its id and opens the factor's own challenge.
  *  - `enroll`     -> one button per registerable factor kind.
+ *  - `webauthn`   -> the factor's own JSON (a passkey's public-key
+ *    request options, TOTP's otpauth_uri), rendered as text -- this
+ *    package ships no WebAuthn dependency -- plus one free-text field for
+ *    the answer. The answer field's key follows the options: an
+ *    `otpauth_uri` option means a code (`code`), anything else a
+ *    credential (`credential`). The same surface renders a passkey
+ *    login's first step.
  *  - `complete`   -> nothing: the driver takes a ready step's result.
- *  - `webauthn`   -> a ceremony this surface cannot run; it renders an
- *    unavailable notice rather than a dead continue button (passkey
- *    ceremonies are the account surface's own, not the sign-in page's).
  *  - `redirect`   -> the host owns navigation; a redirect step that
  *    reaches this renderer (a callback route opened before the provider
- *    answered) renders the same notice.
+ *    answered) renders the unsupported notice.
  *
  * The factor and enroll checkboxes are the step's own: the challenge a
  * chosen factor opens carries no factor id, so the driver remembers the
@@ -34,26 +38,19 @@
  * and a server-supplied label wins over both.
  */
 
-import { useId } from 'react'
+import { useId, useState } from 'react'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
 import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
 import { useForm } from 'react-hook-form'
 import type { SubmitHandler } from 'react-hook-form'
 import type { AuthnField } from '@speed/auth-core'
 import { FormField, FormLayout } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './translation.js'
+import { fieldLabel } from './labels.js'
 import type { OpenFlowState } from './flow.js'
-
-/** The bundle keys of the field names the family knows. */
-const FIELD_LABEL_KEYS: Readonly<Record<string, string>> = {
-  identifier: 'passwordSignIn.identifierLabel',
-  password: 'passwordSignIn.passwordLabel',
-  new_password: 'passwordSignIn.newPasswordLabel',
-  phone: 'smsSignIn.phoneLabel',
-  code: 'smsSignIn.codeLabel',
-}
 
 /** The factor/enroll kinds the family has wording for. */
 const FACTOR_KINDS = ['totp', 'sms', 'webauthn'] as const
@@ -75,10 +72,7 @@ export function FlowStepFields({
   const { t } = useAuthUiTranslation()
   const labelId = useId()
 
-  const fieldLabel = (field: AuthnField): string => {
-    const key = FIELD_LABEL_KEYS[field.name]
-    return key === undefined ? field.name : t(key)
-  }
+  const labelOf = (field: AuthnField): string => fieldLabel(field, t)
 
   const kindLabel = (kind: string): string =>
     (FACTOR_KINDS as readonly string[]).includes(kind)
@@ -90,7 +84,7 @@ export function FlowStepFields({
       return (
         <ChallengeFields
           fields={step.next.fields}
-          fieldLabel={fieldLabel}
+          fieldLabel={labelOf}
           submit={t('signInFlow.submit')}
           busy={busy}
           onAnswer={onAnswer}
@@ -122,16 +116,95 @@ export function FlowStepFields({
           onChoose={(kind) => onAnswer({ kind })}
         />
       )
+    case 'webauthn':
+      return (
+        <WebauthnFields
+          options={step.next.options}
+          busy={busy}
+          submit={t('signInFlow.submit')}
+          onAnswer={onAnswer}
+        />
+      )
     case 'complete':
       // The driver takes a ready step's result; nothing renders here.
       return null
     default:
-      // webauthn and redirect: a step this surface cannot finish.
+      // redirect: the host owns navigation; a redirect step reaching this
+      // renderer (a callback route opened before the provider answered)
+      // renders the unsupported notice.
       return (
         <Alert severity="info" role="status" sx={{ width: '100%' }}>
           {t('signInFlow.unsupportedStep')}
         </Alert>
       )
+  }
+}
+
+/** The passkey ceremony step: the request options the server answered,
+ * rendered as text, plus one free-text field for the client's answer.
+ * The answer key follows the options (see the file header). */
+function WebauthnFields({
+  options,
+  busy,
+  submit,
+  onAnswer,
+}: {
+  readonly options: unknown
+  readonly busy: boolean
+  readonly submit: string
+  readonly onAnswer: (input: Record<string, string>) => void
+}) {
+  const { t } = useAuthUiTranslation()
+  const [value, setValue] = useState('')
+  const isTotp =
+    typeof options === 'object' &&
+    options !== null &&
+    'otpauth_uri' in options
+  const payloadKey = isTotp ? 'code' : 'credential'
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, width: '100%' }}>
+      <Typography variant="body2" color="text.secondary">
+        {isTotp ? t('signInFlow.enrollTotpHelp') : t('signInFlow.passkeyHelp')}
+      </Typography>
+      <Typography
+        variant="body2"
+        component="pre"
+        sx={{
+          fontFamily: 'monospace',
+          wordBreak: 'break-all',
+          whiteSpace: 'pre-wrap',
+          m: 0,
+        }}
+      >
+        {safeJson(options)}
+      </Typography>
+      <TextField
+        label={isTotp ? t('signInFlow.codeLabel') : t('signInFlow.credentialLabel')}
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        disabled={busy}
+        fullWidth
+        autoComplete="off"
+      />
+      <Button
+        type="button"
+        variant="contained"
+        disabled={busy || value.trim() === ''}
+        onClick={() => onAnswer({ [payloadKey]: value.trim() })}
+      >
+        {submit}
+      </Button>
+    </Box>
+  )
+}
+
+/** JSON for display; a value JSON cannot carry renders as its string form
+ * rather than throwing out of the render. */
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2) ?? String(value)
+  } catch {
+    return String(value)
   }
 }
 

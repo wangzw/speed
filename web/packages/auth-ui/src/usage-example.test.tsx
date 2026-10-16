@@ -59,6 +59,7 @@ import {
 import {
   authenticatedCompletion,
   completeFlow,
+  methodList,
   principal,
 } from '@speed/test-utils/session-harness'
 import { AUTH_UI_NAMESPACE, authUiResources } from './resources.js'
@@ -78,8 +79,16 @@ const SUBMIT_EN = enUS.passwordSignIn.submit
 
 const START_FLOW = '/auth/flows'
 const ANSWER_FLOW = '/auth/flows/answer'
+const METHODS = '/auth/methods'
 const ME = '/auth/me'
 const TOKEN = '/auth/token'
+
+/** The deployment's method document: both form channels, so the surface
+ * renders the tab strip. The sign-in surface reads it on mount. */
+const METHODS_BODY = methodList([
+  { name: 'password', kind: 'form' },
+  { name: 'sms', kind: 'form' },
+])
 
 /** The host's app view in the example: one protected action that reads
  * the caller's own profile through the generated /me operation -- routed,
@@ -133,6 +142,8 @@ describe('the README quick start, exercised over a real api-client', () => {
     let refreshAttempts = 0
     const rig = makeRealClientRig((call) => {
       switch (call.path) {
+        case METHODS:
+          return jsonResponse(200, METHODS_BODY)
         case START_FLOW:
           return jsonResponse(200, completeFlow(1))
         case ANSWER_FLOW:
@@ -191,11 +202,12 @@ describe('the README quick start, exercised over a real api-client', () => {
     )
     const user = userEvent.setup()
 
-    // Anonymous start: the sign-in surface in the instance's zh-CN.
-    expect(screen.getByRole('tab', { name: zhCN.passwordSignIn.title }))
+    // Anonymous start: the sign-in surface in the instance's zh-CN (the
+    // channels appear once the discovery read settles).
+    expect(await screen.findByRole('tab', { name: zhCN.passwordSignIn.title }))
       .toBeInTheDocument()
     await user.type(
-      screen.getByLabelText(IDENTIFIER_LABEL_ZH),
+      await screen.findByLabelText(IDENTIFIER_LABEL_ZH),
       'alice@example.com',
     )
     await user.type(screen.getByLabelText(PASSWORD_LABEL_ZH), 's3cret-pass')
@@ -250,6 +262,7 @@ describe('the README quick start, exercised over a real api-client', () => {
     // was never retried: the session-ended state is terminal until the
     // viewer signs in again.
     expect(rig.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      `GET ${METHODS}`,
       `POST ${START_FLOW}`,
       `POST ${ANSWER_FLOW}`,
       `GET ${ME}`,
@@ -263,16 +276,16 @@ describe('the README quick start, exercised over a real api-client', () => {
     // Sign in again: the gate hands the viewer back to the sign-in
     // surface.
     await user.click(screen.getByRole('button', { name: SIGN_IN_AGAIN_ZH }))
-    expect(screen.getByLabelText(IDENTIFIER_LABEL_ZH)).toBeInTheDocument()
+    expect(await screen.findByLabelText(IDENTIFIER_LABEL_ZH)).toBeInTheDocument()
 
     // The same surface in the other supported language.
     await act(async () => {
       await switchLanguage(i18n, 'en-US')
     })
-    expect(screen.getByRole('tab', { name: enUS.passwordSignIn.title }))
+    expect(await screen.findByRole('tab', { name: enUS.passwordSignIn.title }))
       .toBeInTheDocument()
-    expect(screen.getByLabelText(IDENTIFIER_LABEL_EN)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: SUBMIT_EN }))
+    expect(await screen.findByLabelText(IDENTIFIER_LABEL_EN)).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: SUBMIT_EN }))
       .toBeInTheDocument()
 
     warn.mockRestore()

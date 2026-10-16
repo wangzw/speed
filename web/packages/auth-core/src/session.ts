@@ -87,6 +87,7 @@ import {
   authnLoginStartAuthenticated,
   authnProfileGet,
   authnSessionLogout,
+  authnSsoDiscover,
   authnTokenIssue,
 } from '@speed/api-sdk'
 import type {
@@ -100,10 +101,11 @@ import type {
   AuthnLoginStartBody,
   AuthnLoginStep,
   AuthnLoginToken,
-  AuthnMethodDescriptor,
+  AuthnMethodDescriptor as AuthnMethodDescriptorModel,
   AuthnProfileIdentifier,
   AuthnProfileLink,
   AuthnProfileProfile,
+  AuthnSsoProvider as AuthnSsoProviderModel,
 } from '@speed/api-sdk'
 
 /** The permission domain a host-attached permission set belongs to.
@@ -187,6 +189,19 @@ export type AuthnFlowState =
  * rather than hard-coding a set. */
 export type AuthnMethodList = AuthnLoginMethods
 
+/** One login method as the discovery endpoint reports it (a member of
+ * GET /auth/methods' `methods`): the generated descriptor. `kind` names
+ * the rendering class (form, redirect, enterprise or webauthn), `label`
+ * the method's brand name where it has one, `fields` the inputs a form
+ * method's first step asks for, and `opens_account` whether the method
+ * may open an account for an identifier it does not yet know. */
+export type AuthnMethodDescriptor = AuthnMethodDescriptorModel
+
+/** One enterprise sign-in entry the email-domain discovery answers
+ * (POST /auth/sso/discover): the provider's opaque id, its display name
+ * and the protocol a flow for it speaks (oidc or saml). */
+export type AuthnSsoProvider = AuthnSsoProviderModel
+
 /** The observable session state. Immutable by convention: hosts read
  * it, they never mutate it. */
 export interface AuthSnapshot {
@@ -214,6 +229,13 @@ export interface AuthSession {
    * ApiError on failure, or a `client.protocol` error if the 2xx body
    * is not the documented shape. */
   listMethods(): Promise<AuthnMethodList>
+  /** The enterprise sign-in entries an email's domain maps to, for the
+   * emails-first discovery of a `enterprise` login method. Reads the
+   * deployment's own directory; an email with no matching, verified
+   * domain answers an empty list (never an error). Rejects the raw
+   * ApiError on failure, or a `client.protocol` error if the 2xx body is
+   * not the documented shape. */
+  discoverSso(email: string): Promise<AuthnSsoProvider[]>
   /** Starts a `purpose: 'login'` flow and returns its first step. Never
    * changes the session: the start of a flow is not a session. A 2xx
    * body that is not a valid flow state rejects with `client.protocol`
@@ -651,9 +673,9 @@ function parseIssuedTokens(
 /** Validates one method descriptor of the GET /auth/methods body. `name`
  * and `kind` are the required fields; the rest are carried as the wire
  * sends them (a method that opens with a form carries its `fields`). */
-function parseMethodDescriptor(value: unknown): AuthnMethodDescriptor {
+function parseMethodDescriptor(value: unknown): AuthnMethodDescriptorModel {
   const rec = asObject(value, 'methods entry is not an object')
-  const descriptor: AuthnMethodDescriptor = {
+  const descriptor: AuthnMethodDescriptorModel = {
     name: requireString(rec.name, 'method descriptor carries no name'),
     kind: requireString(rec.kind, 'method descriptor carries no kind'),
   }
@@ -694,6 +716,34 @@ function parseMethodList(body: unknown): AuthnMethodList {
       ),
     },
   }
+}
+
+/** Validates the POST /auth/sso/discover body into the enterprise
+ * sign-in entries it carries. The answer is always the same shape -- an
+ * empty list when an email's domain has no provider -- so a 2xx without
+ * a providers array is a contract violation, not "no providers". */
+function parseSsoProviders(body: unknown): AuthnSsoProviderModel[] {
+  const rec = asObject(body, 'sso discover 2xx carries no body document')
+  if (!Array.isArray(rec.providers)) {
+    throw protocolViolation('sso discover 2xx carries no providers array')
+  }
+  return rec.providers.map((entry) => {
+    const provider = asObject(entry, 'sso provider entry is not an object')
+    const protocol = requireString(
+      provider.protocol,
+      'sso provider carries no protocol',
+    )
+    if (protocol !== 'oidc' && protocol !== 'saml') {
+      throw protocolViolation(
+        `sso provider carries an unknown protocol ${protocol}`,
+      )
+    }
+    return {
+      id: requireString(provider.id, 'sso provider carries no id'),
+      name: requireString(provider.name, 'sso provider carries no name'),
+      protocol,
+    }
+  })
 }
 
 /** The permission-set shape that carries nothing: every anonymous
@@ -964,6 +1014,10 @@ export function createAuthSession(store: AccessTokenStore): AuthSession {
 
     async listMethods(): Promise<AuthnMethodList> {
       return parseMethodList(await authnLoginMethods())
+    },
+
+    async discoverSso(email: string): Promise<AuthnSsoProviderModel[]> {
+      return parseSsoProviders(await authnSsoDiscover({ email }))
     },
 
     async startFlow(request: AuthnLoginStartBody): Promise<AuthnFlowState> {

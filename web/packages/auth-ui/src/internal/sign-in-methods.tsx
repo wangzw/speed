@@ -1,0 +1,378 @@
+/**
+ * The discovery-driven channel renderers of the sign-in family.
+ *
+ * The screen collects a deployment's login methods into three rendering
+ * classes beyond the two known forms, and each class lives here:
+ *
+ *  - `DescriptorSignInForm` is the fallback form for a `form` method the
+ *    family has no bespoke component for: it renders the descriptor's own
+ *    first-step fields and starts that method's flow, then advances any
+ *    parked step through the shared step renderer. The two known form
+ *    methods (password, sms) keep their bespoke components; everything
+ *    else a deployment adds is driven by its descriptor.
+ *  - `EnterpriseSignIn` is an `enterprise` method's email-first entry: the
+ *    viewer gives an email, the session discovers the identity providers
+ *    its domain maps to (`session.discoverSso`), and picking one starts
+ *    that provider's flow, whose redirect step the host navigates.
+ *  - `PasskeySignIn` is a `webauthn` method's passkey button: it starts the
+ *    method's login flow and renders the ceremony step the flow answers
+ *    (see ./flow-step).
+ *
+ * Each drives its own slice of the session contract and renders every
+ * string from the auth-ui namespace; a brand name (a provider's own name)
+ * comes from the discovery document, not the bundle (see ./labels).
+ */
+
+import { useState } from 'react'
+import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import Divider from '@mui/material/Divider'
+import TextField from '@mui/material/TextField'
+import { useForm } from 'react-hook-form'
+import type { SubmitHandler } from 'react-hook-form'
+import type {
+  AuthSession,
+  AuthnField,
+  AuthnMethodDescriptor,
+  AuthnSsoProvider,
+} from '@speed/auth-core'
+import { FormField, FormLayout, errorCodeOf } from '@speed/ui-kit'
+import { useAuthUiTranslation } from './translation.js'
+import { fieldLabel, methodLabel } from './labels.js'
+import { InlineError } from './inline-error.js'
+import { FlowStepFields } from './flow-step.js'
+import { useFlowDriver } from './use-flow-driver.js'
+import { isOpenFlow } from './flow.js'
+
+/** The protocol code an answer that is not the expected redirect step
+ * renders (a contract-violating 2xx is not a successful start). */
+const UNEXPECTED_ANSWER = 'client.protocol'
+
+/**
+ * The generic form for a descriptor-only `form` method: one text input
+ * per first-step field, submitted as the flow's start input.
+ */
+export interface DescriptorSignInFormProps {
+  /** The session the method's login drives. */
+  readonly session: AuthSession
+  /** The method name the flow starts with. */
+  readonly method: string
+  /** The method's first-step fields, from its descriptor. */
+  readonly fields: readonly AuthnField[]
+  /** Fired once after the login commits; the host navigates. */
+  readonly onSignedIn?: () => void
+}
+
+export function DescriptorSignInForm({
+  session,
+  method,
+  fields,
+  onSignedIn,
+}: DescriptorSignInFormProps) {
+  const { t } = useAuthUiTranslation()
+  const defaults: Record<string, string> = {}
+  for (const field of fields) {
+    defaults[field.name] = ''
+  }
+  const form = useForm<Record<string, string>>({ defaultValues: defaults })
+  const [errorCode, setErrorCode] = useState<string | null>(null)
+
+  const driver = useFlowDriver(session, {
+    onFailure: setErrorCode,
+    onSettled: () => {
+      try {
+        onSignedIn?.()
+      } catch {
+        // A throwing host callback is not a login failure; see the
+        // bespoke channel forms for the same containment.
+      }
+    },
+  })
+
+  const onSubmit: SubmitHandler<Record<string, string>> = async (values) => {
+    setErrorCode(null)
+    await driver.start({
+      method,
+      delivery: 'token',
+      binding: 'cookie',
+      input: values,
+    })
+  }
+
+  if (driver.step !== null) {
+    return (
+      <>
+        <FlowStepFields
+          step={driver.step}
+          busy={driver.busy}
+          onAnswer={(input) => void driver.answer(input)}
+        />
+        <InlineError code={errorCode} />
+      </>
+    )
+  }
+
+  return (
+    <FormLayout
+      form={form}
+      onSubmit={onSubmit}
+      actions={
+        <Button
+          type="submit"
+          variant="contained"
+          disabled={form.formState.isSubmitting}
+        >
+          {t('signInFlow.submit')}
+        </Button>
+      }
+    >
+      {fields.map((field) => (
+        <FormField
+          key={field.name}
+          name={field.name}
+          required={field.required === true}
+          render={({ field: bound, invalid, errorText }) => (
+            <TextField
+              {...bound}
+              label={fieldLabel(field, t)}
+              type={
+                field.kind === 'password' || field.secret === true
+                  ? 'password'
+                  : 'text'
+              }
+              inputMode={field.kind === 'code' ? 'numeric' : undefined}
+              autoComplete="off"
+              fullWidth
+              error={invalid}
+              helperText={errorText ?? undefined}
+            />
+          )}
+        />
+      ))}
+      <InlineError code={errorCode} />
+    </FormLayout>
+  )
+}
+
+/**
+ * An `enterprise` method's email-first entry. The provider set is the
+ * server's (a domain's verified IdPs), so the entry renders exactly the
+ * providers the viewer's email maps to; the flow's redirect step is handed
+ * to the host to navigate.
+ */
+export interface EnterpriseSignInProps {
+  /** The session that discovers the providers and starts their flows. */
+  readonly session: AuthSession
+  /** The host callback route sent as the flow's `return_to`; omitted to
+   * let the server use its configured default. */
+  readonly returnTo?: string
+  /** Receives a provider's authorization URL once built; the host
+   * navigates. */
+  readonly onAuthorizeUrl?: (method: string, authorizeUrl: string) => void
+}
+
+export function EnterpriseSignIn({
+  session,
+  returnTo,
+  onAuthorizeUrl,
+}: EnterpriseSignInProps) {
+  const { t } = useAuthUiTranslation()
+  const form = useForm<{ email: string }>({ defaultValues: { email: '' } })
+  const [providers, setProviders] = useState<readonly AuthnSsoProvider[] | null>(
+    null,
+  )
+  const [busy, setBusy] = useState(false)
+  const [errorCode, setErrorCode] = useState<string | null>(null)
+
+  const discover: SubmitHandler<{ email: string }> = async ({ email }) => {
+    setErrorCode(null)
+    setBusy(true)
+    try {
+      setProviders(await session.discoverSso(email))
+    } catch (error) {
+      setErrorCode(errorCodeOf(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const authorize = async (provider: AuthnSsoProvider): Promise<void> => {
+    setErrorCode(null)
+    setBusy(true)
+    let authorizeUrl: string | null = null
+    let failure: string | null = null
+    try {
+      const request = {
+        method: provider.protocol,
+        delivery: 'token' as const,
+        binding: 'cookie' as const,
+        input: { provider: provider.id },
+        ...(returnTo === undefined ? {} : { return_to: returnTo }),
+      }
+      const reply = await session.startFlow(request)
+      authorizeUrl =
+        isOpenFlow(reply) && reply.next.kind === 'redirect' ? reply.next.url : null
+      if (authorizeUrl === null) {
+        failure = UNEXPECTED_ANSWER
+      }
+    } catch (error) {
+      failure = errorCodeOf(error)
+    } finally {
+      setBusy(false)
+    }
+    if (failure !== null) {
+      setErrorCode(failure)
+      return
+    }
+    if (authorizeUrl !== null) {
+      try {
+        onAuthorizeUrl?.(provider.protocol, authorizeUrl)
+      } catch {
+        // A throwing host callback is not an authorization failure; the
+        // URL was built, nothing here renders the host's error.
+      }
+    }
+  }
+
+  const editEmail = (): void => {
+    setErrorCode(null)
+    setProviders(null)
+  }
+
+  if (providers === null) {
+    return (
+      <FormLayout
+        form={form}
+        onSubmit={discover}
+        actions={
+          <Button type="submit" variant="contained" disabled={busy}>
+            {t('enterprise.continue')}
+          </Button>
+        }
+      >
+        <FormField
+          name="email"
+          required
+          render={({ field, invalid, errorText }) => (
+            <TextField
+              {...field}
+              label={t('enterprise.emailLabel')}
+              type="email"
+              autoComplete="email"
+              fullWidth
+              error={invalid}
+              helperText={errorText ?? undefined}
+            />
+          )}
+        />
+        <InlineError code={errorCode} />
+      </FormLayout>
+    )
+  }
+
+  if (providers.length === 0) {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}>
+        <Alert severity="info" role="status" sx={{ width: '100%' }}>
+          {t('enterprise.noProviders')}
+        </Alert>
+        <Button variant="text" onClick={editEmail}>
+          {t('enterprise.editEmail')}
+        </Button>
+      </Box>
+    )
+  }
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}>
+      <Alert severity="info" role="status" sx={{ width: '100%' }}>
+        {t('enterprise.providersTitle')}
+      </Alert>
+      {providers.map((provider) => (
+        <Button
+          key={provider.id}
+          variant="outlined"
+          fullWidth
+          disabled={busy}
+          onClick={() => void authorize(provider)}
+        >
+          {provider.name}
+        </Button>
+      ))}
+      <Button variant="text" onClick={editEmail}>
+        {t('enterprise.editEmail')}
+      </Button>
+      <InlineError code={errorCode} />
+    </Box>
+  )
+}
+
+/**
+ * A `webauthn` method's passkey button. Clicking it starts the method's
+ * login flow; the ceremony step the flow answers is rendered by the shared
+ * step renderer in place of the button, and the button returns when the
+ * step is abandoned.
+ */
+export interface PasskeySignInProps {
+  /** The session the passkey login drives. */
+  readonly session: AuthSession
+  /** The webauthn method's descriptor (its name and brand label). */
+  readonly method: AuthnMethodDescriptor
+  /** Fired once after the passkey login commits; the host navigates. */
+  readonly onSignedIn?: () => void
+}
+
+export function PasskeySignIn({
+  session,
+  method,
+  onSignedIn,
+}: PasskeySignInProps) {
+  const { t } = useAuthUiTranslation()
+  const [errorCode, setErrorCode] = useState<string | null>(null)
+
+  const driver = useFlowDriver(session, {
+    onFailure: setErrorCode,
+    onSettled: () => {
+      try {
+        onSignedIn?.()
+      } catch {
+        // Contained; see the bespoke channel forms.
+      }
+    },
+  })
+
+  const begin = async (): Promise<void> => {
+    setErrorCode(null)
+    await driver.start({
+      method: method.name,
+      delivery: 'token',
+      binding: 'cookie',
+    })
+  }
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}>
+      <Divider textAlign="center" sx={{ color: 'text.secondary' }}>
+        {t('passkey.title')}
+      </Divider>
+      {driver.step === null ? (
+        <Button
+          variant="outlined"
+          fullWidth
+          disabled={driver.busy}
+          onClick={() => void begin()}
+        >
+          {methodLabel(method, t)}
+        </Button>
+      ) : (
+        <FlowStepFields
+          step={driver.step}
+          busy={driver.busy}
+          onAnswer={(input) => void driver.answer(input)}
+        />
+      )}
+      <InlineError code={errorCode} />
+    </Box>
+  )
+}

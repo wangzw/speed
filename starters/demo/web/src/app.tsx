@@ -24,6 +24,9 @@
  *    code.
  *
  * A URL no declaration matches renders the fallback page inside the tenant area.
+ * The auth callback route (a provider's round trip) renders outside both frames,
+ * with no session gate: it lands before a session exists and finishes the flow
+ * itself.
  */
 
 import { useState } from 'react'
@@ -45,6 +48,7 @@ import {
 } from '@speed/route-kit'
 import type { RouteContext } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useAppServices } from './app-services.js'
 import {
   AppBrand,
@@ -55,8 +59,10 @@ import {
 } from './chrome.js'
 import { ConsoleArea } from './console/console-area.js'
 import { DemoNavLabel } from './nav-label.js'
+import { AuthCallbackPage } from './pages/auth-callback-page.js'
 import { DEMO_NAMESPACE } from './resources.js'
 import {
+  AUTH_CALLBACK_PATH,
   CONSOLE_PREFIX,
   consoleShellRoutes,
   isConsolePath,
@@ -91,6 +97,14 @@ function AppFrame(): ReactElement {
   // The desktop sidebar's collapse state, host-held: the shell renders the
   // toggle (the collapse props are supplied) and reports each flip back.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const { pathname } = useLocation()
+
+  // The auth callback route renders outside both shells: a provider's round
+  // trip lands here before a session exists, and the callback handler
+  // finishes the flow itself.
+  if (pathname === AUTH_CALLBACK_PATH) {
+    return <AuthCallbackPage />
+  }
 
   const consoleSelected = items.some(
     (item) => item.selected && isConsolePath(item.id),
@@ -233,9 +247,9 @@ function consoleGuardStatus(
  * The sign-in slot: the host's chrome around auth-ui's sign-in family. The
  * screen itself renders no heading, branding or layout -- those are host
  * content -- so the host frames it in a centered card with the brand and a
- * heading; the channel list declares only the password channel, because the
- * skeleton delivers no SMS code and offering a channel nothing can finish is a
- * promise no phone keeps.
+ * heading; the channels it offers come from the deployment's discovery
+ * document, so the skeleton renders whatever login methods the running
+ * deployment enables.
  */
 function SignInView(): ReactElement {
   const { session } = useAppServices()
@@ -268,7 +282,7 @@ function SignInView(): ReactElement {
             {t('signIn.subtitle')}
           </Typography>
         </Box>
-        <SignInScreen session={session} channels={['password']} />
+        <SignInScreen session={session} />
       </Paper>
     </Box>
   )

@@ -65,6 +65,7 @@ import {
   authenticatedCompletion,
   jsonResponse,
   makeRealClientRig,
+  methodList,
   openFlow,
   principal,
 } from '../test-utils/real-client.js'
@@ -72,10 +73,19 @@ import { ProductShell } from './components/ProductShell.js'
 
 const FLOWS_START = 'POST /auth/flows'
 const FLOWS_ANSWER = 'POST /auth/flows/answer'
+const METHODS = 'GET /auth/methods'
 const PROFILE = 'GET /auth/me'
 const LOGOUT = 'POST /auth/logout'
 const IDENTIFIER = 'alice@example.com'
 const PASSWORD = 'password-1'
+
+/** The deployment's method document: both form channels, so the surface
+ * renders the tab strip the quick start documents. The sign-in surface
+ * reads it on mount. */
+const METHODS_BODY = methodList([
+  { name: 'password', kind: 'form' },
+  { name: 'sms', kind: 'form' },
+])
 
 /** The host's tenant roster -- host data, the same fixture the tenancy-ui
  * README demo uses. The switcher renders these names as host content. */
@@ -95,6 +105,9 @@ const TENANTS: readonly TenantOption[] = [
 // the driver sends is the step:'complete' that takes the tokens.
 const rig = makeRealClientRig((call) => {
   const key = `${call.method} ${call.path}`
+  if (key === METHODS) {
+    return jsonResponse(200, METHODS_BODY)
+  }
   if (key === FLOWS_START) {
     return jsonResponse(200, openFlow({ state: 'ready', next: { kind: 'complete' } }))
   }
@@ -267,15 +280,18 @@ describe('README usage example', () => {
     )
     await screen.findByLabelText(authUiZhCN.passwordSignIn.identifierLabel)
 
-    // Every request the journey made, pinned in order: the login's flow
-    // start, its completion answer, the profile the completion read, and
-    // the logout. The tenant switch is the host's own state change and
+    // Every request the journey made, pinned in order: the first sign-in
+    // surface's method read, the login's flow start, completion answer and
+    // the profile the completion read, the logout, and the ended screen's
+    // method read. The tenant switch is the host's own state change and
     // sends nothing.
     expect(rig.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      METHODS,
       FLOWS_START,
       FLOWS_ANSWER,
       PROFILE,
       LOGOUT,
+      METHODS,
     ])
   })
 })

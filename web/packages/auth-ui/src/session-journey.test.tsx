@@ -31,6 +31,7 @@ import { renderWithProviders } from '../test-utils/render.js'
 import {
   authenticatedCompletion,
   completeFlow,
+  methodList,
   openFlow,
   principal,
 } from '@speed/test-utils/session-harness'
@@ -58,8 +59,16 @@ const PENDING_ZH = zhCN.socialCallback.pending
 const START_FLOW = '/auth/flows'
 const ANSWER_FLOW = '/auth/flows/answer'
 const CURRENT_FLOW = '/auth/flows/current'
+const METHODS = '/auth/methods'
 const ME = '/auth/me'
 const LOGOUT = '/auth/logout'
+
+/** The deployment's method document: both form channels. The sign-in
+ * surface reads it on mount, so every responder answers it. */
+const METHODS_BODY = methodList([
+  { name: 'password', kind: 'form' },
+  { name: 'sms', kind: 'form' },
+])
 
 /** The host's app content the journeys land in after a sign-in: a
  * heading and the sign-out action in app chrome. */
@@ -76,6 +85,8 @@ describe('session journeys over the composed sign-in family', () => {
   it('signs in with an SMS code, from the phone step to the app', async () => {
     const rig = makeRealClientRig((call) => {
       switch (call.path) {
+        case METHODS:
+          return jsonResponse(200, METHODS_BODY)
         case START_FLOW:
           // The sms method's start sends a code and asks for it back.
           return jsonResponse(
@@ -113,8 +124,9 @@ describe('session journeys over the composed sign-in family', () => {
     )
     const user = userEvent.setup()
 
-    // The SMS channel: the phone step begins the flow.
-    await user.click(screen.getByRole('tab', { name: SMS_TAB_ZH }))
+    // The SMS channel: the phone step begins the flow. The form channels
+    // appear once the discovery read settles.
+    await user.click(await screen.findByRole('tab', { name: SMS_TAB_ZH }))
     await user.type(screen.getByLabelText(PHONE_LABEL_ZH), PHONE)
     await user.click(screen.getByRole('button', { name: SEND_CODE_ZH }))
     // The sent notice announces the receiving number.
@@ -134,6 +146,7 @@ describe('session journeys over the composed sign-in family', () => {
     expect(
       rig.calls.map((call) => `${call.method} ${call.path}`),
     ).toEqual([
+      `GET ${METHODS}`,
       `POST ${START_FLOW}`,
       `POST ${ANSWER_FLOW}`,
       `POST ${ANSWER_FLOW}`,
@@ -141,13 +154,15 @@ describe('session journeys over the composed sign-in family', () => {
     ])
     // The start and the code answer of an anonymous SMS sign-in travel
     // credential-less.
-    expect(rig.calls[0]?.authorization).toBeNull()
     expect(rig.calls[1]?.authorization).toBeNull()
+    expect(rig.calls[2]?.authorization).toBeNull()
   })
 
   it('signs out from the app chrome and lands back on the sign-in surface', async () => {
     const rig = makeRealClientRig((call) => {
       switch (call.path) {
+        case METHODS:
+          return jsonResponse(200, METHODS_BODY)
         case START_FLOW:
           return jsonResponse(200, completeFlow(1))
         case ANSWER_FLOW:
@@ -173,7 +188,7 @@ describe('session journeys over the composed sign-in family', () => {
 
     // Sign in through the password channel to reach the app.
     await user.type(
-      screen.getByLabelText(IDENTIFIER_LABEL_ZH),
+      await screen.findByLabelText(IDENTIFIER_LABEL_ZH),
       'alice@example.com',
     )
     await user.type(screen.getByLabelText(PASSWORD_LABEL_ZH), 's3cret-pass')
@@ -193,6 +208,7 @@ describe('session journeys over the composed sign-in family', () => {
     expect(
       rig.calls.map((call) => `${call.method} ${call.path}`),
     ).toEqual([
+      `GET ${METHODS}`,
       `POST ${START_FLOW}`,
       `POST ${ANSWER_FLOW}`,
       `GET ${ME}`,
@@ -200,12 +216,12 @@ describe('session journeys over the composed sign-in family', () => {
     ])
     // The logout of an authenticated session travels with its access
     // token.
-    expect(rig.calls[3]?.authorization).toBe('Bearer access-1')
+    expect(rig.calls[4]?.authorization).toBe('Bearer access-1')
 
     // Sign in again from the ended screen: the gate hands the viewer
     // back to the sign-in surface.
     await user.click(screen.getByRole('button', { name: SIGN_IN_AGAIN_ZH }))
-    expect(screen.getByLabelText(IDENTIFIER_LABEL_ZH)).toBeInTheDocument()
+    expect(await screen.findByLabelText(IDENTIFIER_LABEL_ZH)).toBeInTheDocument()
   })
 
   it('completes a social sign-in from the authorize URL to the app', async () => {
@@ -225,6 +241,8 @@ describe('session journeys over the composed sign-in family', () => {
     })
     const rig = makeRealClientRig((call) => {
       switch (call.path) {
+        case METHODS:
+          return jsonResponse(200, METHODS_BODY)
         case START_FLOW:
           return jsonResponse(
             200,
@@ -287,8 +305,11 @@ describe('session journeys over the composed sign-in family', () => {
     const user = userEvent.setup()
 
     // The provider button begins the flow and hands the redirect URL to
-    // the host (the host opens it; the fixture captures it).
-    await user.click(screen.getByRole('button', { name: GOOGLE_LABEL_ZH }))
+    // the host (the host opens it; the fixture captures it). It appears
+    // once the discovery read settles.
+    await user.click(
+      await screen.findByRole('button', { name: GOOGLE_LABEL_ZH }),
+    )
     const gotAuthorizeUrl = await waitFor(() => {
       expect(capturedAuthorizeUrl).not.toBeNull()
       return capturedAuthorizeUrl ?? ''
@@ -296,8 +317,8 @@ describe('session journeys over the composed sign-in family', () => {
     expect(gotAuthorizeUrl).toBe(authorizeUrl)
     // The provider is the flow's method and the host callback route is
     // its return_to.
-    expect(rig.calls[0]?.rawBody).toContain('"method":"google"')
-    expect(rig.calls[0]?.rawBody).toContain(
+    expect(rig.calls[1]?.rawBody).toContain('"method":"google"')
+    expect(rig.calls[1]?.rawBody).toContain(
       `"return_to":"${CALLBACK_ROUTE}"`,
     )
 
@@ -322,6 +343,7 @@ describe('session journeys over the composed sign-in family', () => {
     expect(
       rig.calls.map((call) => `${call.method} ${call.path}`),
     ).toEqual([
+      `GET ${METHODS}`,
       `POST ${START_FLOW}`,
       `GET ${CURRENT_FLOW}`,
       `POST ${ANSWER_FLOW}`,

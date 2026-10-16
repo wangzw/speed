@@ -5,20 +5,19 @@
  * It mounts DemoApp -- the routing composition and the shell switch -- under a
  * fresh bilingual i18n instance with every namespace the app's views render
  * from, the ui-kit theme provider, a no-retry query client, and the
- * app-services provider carrying a panel session and a client that must not be
+ * app-services provider carrying a session and a client that must not be
  * called (a suite that drives the console pages overrides the shipped console
  * operations instead). The session is attached to the auth hooks, so the
- * shells read it: a fresh anonymous session by default -- the tenant shell then
- * fail-closes to its sign-in branch, exactly as a fresh visitor's page does --
- * and a suite that wants the authenticated frame passes its own (see
- * test-utils/session).
+ * shells read it: the test session by default (test-utils/session) -- an
+ * anonymous snapshot whose discovery reads resolve, so the sign-in surface
+ * renders without a network -- and a suite that wants the authenticated frame
+ * passes its own.
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, type RenderResult } from '@testing-library/react'
-import { attachSession, createAuthSession } from '@speed/auth-core'
+import { attachSession } from '@speed/auth-core'
 import type { AuthSession } from '@speed/auth-core'
-import { createMemoryAccessTokenStore } from '@speed/api-client'
 import type { RequestFn } from '@speed/api-client'
 import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '@speed/account-ui'
 import { AUTH_UI_NAMESPACE, authUiResources } from '@speed/auth-ui'
@@ -32,6 +31,7 @@ import { AppThemeProvider, UI_KIT_NAMESPACE, uiKitResources } from '@speed/ui-ki
 import { AppServicesProvider } from '../app-services.js'
 import { DemoApp } from '../app.js'
 import { DEMO_NAMESPACE, demoResources } from '../resources.js'
+import { createTestSession } from './session.js'
 
 export interface RenderDemoAppOptions {
   /** The instance's starting language; defaults to en-US. */
@@ -70,8 +70,7 @@ export function renderDemoApp(
   const api = (async () => {
     throw new Error('the render harness client must not be called')
   }) as RequestFn
-  const session =
-    options.session ?? createAuthSession(createMemoryAccessTokenStore())
+  const session = options.session ?? createTestSession()
   attachSession(session)
   const services: SpeedAppServices = { session, api, queryClient }
 

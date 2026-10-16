@@ -6,15 +6,26 @@
  * the authenticated frame, an attached permission set, a session that turns
  * anonymous mid-use -- without driving a real login flow. createTestSession
  * returns an AuthSession whose `set` replaces the snapshot and notifies
- * subscribers (a real session flip); its operation methods reject, since the
- * rendering suites never submit a form.
+ * subscribers (a real session flip). Its flow operations reject -- the
+ * rendering suites never submit a form -- while the reads the sign-in
+ * surface makes on mount (the method discovery, the enterprise provider
+ * discovery) resolve a small document so the surface renders.
  */
 
 import type {
   AuthSession,
   AuthSessionListener,
   AuthSnapshot,
+  AuthnMethodList,
 } from '@speed/auth-core'
+
+/** The method document the sign-in surface renders in these suites: the
+ * password channel, the only one the skeleton offers. */
+const FORM_METHODS: AuthnMethodList = {
+  methods: [{ name: 'password', kind: 'form' }],
+  signup: { enabled: false },
+  mfa: { factors: [] },
+}
 
 /** The test session: an AuthSession plus the flip control the suites drive. */
 export interface TestSession extends AuthSession {
@@ -85,7 +96,11 @@ export function createTestSession(
         listener(next)
       }
     },
-    listMethods: unused,
+    // The sign-in surface reads the deployment's methods on mount and the
+    // enterprise entry its providers; the flows themselves stay out of
+    // scope for a rendering suite.
+    listMethods: () => Promise.resolve(FORM_METHODS),
+    discoverSso: () => Promise.resolve([]),
     startFlow: unused,
     startAuthenticatedFlow: unused,
     answerFlow: unused,

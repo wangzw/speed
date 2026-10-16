@@ -49,6 +49,7 @@ export interface AuthSession {
   getSnapshot(): AuthSnapshot
   subscribe(listener: AuthSessionListener): () => void
   listMethods(): Promise<AuthnMethodList>
+  discoverSso(email: string): Promise<AuthnSsoProvider[]>
   startFlow(request: AuthnLoginStartBody): Promise<AuthnFlowState>
   startAuthenticatedFlow(request: AuthnLoginStartAuthenticatedBody): Promise<AuthnFlowState>
   answerFlow(request: AuthnLoginAnswerBody): Promise<AuthnFlowState>
@@ -61,32 +62,33 @@ export interface AuthSession {
 ```
 
 - **流程操作接生成面；只有完成签发令牌时改会话。** `startFlow`、`startAuthenticatedFlow`、`answerFlow`、`readFlow`、`abandonFlow` 把 `authn.login` 的流程操作转发给视图，交回该步的 `AuthnFlowState`。只有 `answerFlow` 落定一次签发令牌的完成时才提交令牌、改会话：一次 `purpose: 'login'` 的完成（`state: 'authenticated'`）建会话、转已认证；一次 `step-up` 的完成（`state: 'elevated'`）更新令牌、主体不变；`purpose: 'link'` 与 `enroll` 的完成（`state: 'linked'`、`state: 'enrolled'`）不改登录态。
-- **`listMethods` 读部署在场的登录方式名单。** 名单随部署的 `authn.login.disabled-methods` 设置与在场模块而变，前端不写死；消费视图用它渲染渠道。
+- **`listMethods` 读部署在场的登录方式发现文档。** 它转发 `GET /auth/methods` 并解析成方法描述符文档（每个方法自报渲染类别、线协议、品牌标签、首步字段与是否可开户，连同注册开关与部署级因素种类），随部署的 `authn.login.disabled-methods` 设置与在场模块而变，前端不写死；消费视图用它渲染渠道（[ADR-web-auth-channel-discovery-2026-10-16](../../../adr/adr-web-auth-channel-discovery-2026-10-16.md)、[ADR-authn-login-method-discovery-2026-10-16](../../../adr/adr-authn-login-method-discovery-2026-10-16.md)）。
+- **`discoverSso` 读一个邮箱域映射的企业提供方。** 它转发 `POST /auth/sso/discover`，交回 `{id, name, protocol}` 列表；应答恒同形同长，无匹配时为空列表，故「无匹配」是一次成功的空读而非错误。企业提供方清单不多进发现文档：它按域发现，不泄露账户存在性（[authn-sso](../authn/design-authn-sso.md)）。
 - **`logout` 结束会话。** 它调 `POST /auth/logout`（服务端撤销请求带来的会话），清本地令牌与主体、抬升世代、转匿名。
 - **`refresh` 用被持有的刷新令牌换新令牌对。** 走 `POST /auth/token` 的 `grant_type = refresh_token`，凭据为空（[api-client](design-web-api-client.md) 的凭据为空一档，即 `speedRequestCredentialless`）；其令牌的落地与世代守卫见「单飞刷新」与「世代守卫」。
 - **`setPermissionSet` 存防御性副本。** 传入的数组事后被改动不影响快照；`null` 清空该域。宿主应在每次登录与主体变更后重取 `/me` 派生的列表，而不是复用更早提交下取的列表。
 
 ### 生成的响应模型与解析守卫
 
-authn 片段的成功应答不带 schema，orval 因而把它们的返回类型生成为 `void`/`unknown`。本包在生成面之上手写下列响应模型，并为每个「2xx 必须携带文档」的操作配一个运行时解析守卫：守卫先校验体是对象、再校验其必需字段，任一项不过即拒为 `status: 200`、`code: client.protocol` 的 `ApiError`——一个契约违背的 2xx 不是成功。形状按线上字段名（snake_case）记：
+authn 片段在契约里宣告各自的 2xx 响应 schema，orval 因而把它们的返回类型生成为具名模型：流程态（`AuthnLoginFlow`、`AuthnLoginToken`、`AuthnLoginActionResult`）、一步（`AuthnLoginStep`）、`AuthnLoginField`、`AuthnLoginFactor`、`AuthnPrincipal`、`AuthnLoginMethods`（连同每种方法的描述符、注册开关与部署级因素种类）与 `AuthnSsoProvider`。本包从生成面取用这些模型，并在其上为每个「2xx 必须携带文档」的操作配一个运行时解析守卫：守卫先校验体是对象、再校验其必需字段，任一项不过即拒为 `status: 200`、`code: client.protocol` 的 `ApiError`——一个契约违背的 2xx 不是成功。
+
+本包把生成的 `AuthnLoginStep` 按 `kind` 收窄成一个判别联合 `AuthnStep`，使视图只读它自己那一步携带的字段；`AuthnFlowState` 把生成的流程应答按 `state` 收窄成开放流程（带 `seq` 与 `next`）与三类完成（`authenticated`、`elevated`、`linked`／`enrolled`）：
 
 ```ts
-export type AuthnFlowState =
-  | { seq: number; state: 'first' | 'processing' | 'second' | 'enroll' | 'ready'; next: AuthnStep }
-  | { state: 'authenticated'; token_type: 'Bearer'; access_token: string; expires_in: number; refresh_token: string }
-  | { state: 'elevated'; token_type: 'Bearer'; access_token: string; expires_in: number }
-  | { state: 'linked' | 'enrolled' }
-
 export type AuthnStep =
-  | { kind: 'challenge'; fields: readonly AuthnField[]; expires_in?: number; resend_after?: number }
-  | { kind: 'redirect'; url: string; method: string }
-  | { kind: 'factor'; factors: readonly AuthnFactorOption[] }
-  | { kind: 'enroll'; kinds: readonly string[] }
-  | { kind: 'complete' }
-  | { kind: 'webauthn'; options: unknown }
+  | (AuthnLoginStep & { kind: 'challenge'; fields: AuthnLoginField[] })
+  | (AuthnLoginStep & { kind: 'redirect'; url: string; method: string })
+  | (AuthnLoginStep & { kind: 'factor'; factors: AuthnLoginFactor[] })
+  | (AuthnLoginStep & { kind: 'enroll'; kinds: string[] })
+  | (AuthnLoginStep & { kind: 'complete' })
+  | (AuthnLoginStep & { kind: 'webauthn'; options: unknown })
+
+export type AuthnMethodList = AuthnLoginMethods        // methods：描述符数组，外加 signup 与 mfa
+export type AuthnMethodDescriptor = AuthnMethodDescriptorModel
+export type AuthnSsoProvider = AuthnSsoProviderModel
 ```
 
-`AuthnField`、`AuthnFactorOption`、`AuthnPrincipal`（`account_id`、`kind`、`display_name`、`mfa_required`、`password_set`、`created_at`、`attributes`、`locale`、`time_zone`、`identifiers`、`links`）与 `AuthnMethodList` 同为手写响应模型；主体模型逐字段取自 `GET /auth/me`（[authn-profile](../authn/design-authn-profile.md)）。这些模型是**消费侧的手写契约**：生成面宣告 schema 之后，它们随生成面收敛。
+`AuthnPrincipal` 逐字段取自 `GET /auth/me`（[authn-profile](../authn/design-authn-profile.md)）。`AuthnMethodList`、`AuthnMethodDescriptor` 与 `AuthnSsoProvider` 是发现面与企业发现面的生成模型，本包把它们经入口再导出（[ADR-web-auth-channel-discovery-2026-10-16](../../../adr/adr-web-auth-channel-discovery-2026-10-16.md)）。
 
 ### 失败契约的拒绝类型
 
@@ -152,7 +154,7 @@ export function evictTenantQueries(
 
 **`evictTenantQueries` 逐出离任租户的整棵子树**：按 `tenantQueryKey(tenantId)` 得到的键前缀移除。调用时机是宿主完成一次租户切换之后，用切换之前读到的离任租户 id——不用新租户 id，它什么都不命名。
 
-**稳定性承诺。** `createAuthSession`、`AuthSession`、`AuthSnapshot`、`AuthSessionListener`、`AuthDomain`、`AuthPermissionSets`、`OperationSupersededError`、`isOperationSuperseded`、`AuthnFlowState`、`AuthnStep`、`AuthnPrincipal`、`AuthnMethodList`、`TenantProvider` 与四个 hook 的名称与签名，以及本项的 `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries`，是宿主可见面。
+**稳定性承诺。** `createAuthSession`、`AuthSession`、`AuthSnapshot`、`AuthSessionListener`、`AuthDomain`、`AuthPermissionSets`、`OperationSupersededError`、`isOperationSuperseded`、`AuthnFlowState`、`AuthnStep`、`AuthnPrincipal`、`AuthnMethodList`、`AuthnMethodDescriptor`、`AuthnSsoProvider`、`TenantProvider` 与四个 hook 的名称与签名，以及本项的 `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries`，是宿主可见面。
 
 ## 依赖
 
@@ -183,9 +185,11 @@ stateDiagram-v2
 |---|---|---|
 | 快照 | `AuthSnapshot` | `state`、`principal`、按域权限表；按约定不可变 |
 | 权限表 | `AuthPermissionSets` | 每域一份 `readonly string[] \| null`，null 表示未知（对该域 fail-closed） |
-| 流程态 | `AuthnFlowState` | 手写响应模型：`seq`、`state`、`next` |
+| 流程态 | `AuthnFlowState` | 生成的流程应答按 `state` 收窄：开放流程带 `seq` 与 `next`，或三类完成 |
 | 一步 | `AuthnStep` | `next` 的判别联合：`challenge`／`redirect`／`factor`／`enroll`／`complete`／`webauthn` |
-| 主体 | `AuthnPrincipal` | 手写响应模型，逐字段取自 `GET /auth/me` |
+| 主体 | `AuthnPrincipal` | 生成模型，逐字段取自 `GET /auth/me` |
+| 发现文档 | `AuthnMethodList` | 生成模型：方法描述符数组，外加注册开关与部署级因素种类 |
+| 企业提供方 | `AuthnSsoProvider` | 生成模型：`id`、`name`、`protocol`（oidc 或 saml） |
 | 已校验的签发应答 | `IssuedTokens`（内部） | `accessToken`、`refreshToken`（未铸造时为 null）、`principal` |
 | 落败的竞态 | `OperationSupersededError` | 带当前（胜者）快照的拒绝 |
 | 租户 query 键 | `TenantQueryKey`（本项） | `tenantId` 与以租户标识为最外层段的键 |
@@ -235,6 +239,8 @@ stateDiagram-v2
 | 签发令牌的提交操作在并发中落败 | 拒绝 `OperationSupersededError`（`isApiError` 为 false），本操作令牌从不落地 |
 | 令牌签发 2xx 违背契约（缺令牌或字段畸形） | `status: 200`、`code: client.protocol` 的 `ApiError`，任一状态变更之前拒绝 |
 | 流程操作交回空 2xx 或形状不符的体 | `client.protocol` 拒绝（解析守卫），无状态变更 |
+| `listMethods()` 交回形状不符的发现文档 | `client.protocol` 拒绝（解析守卫），无状态变更 |
+| `discoverSso()` 交回形状不符的提供方列表 | `client.protocol` 拒绝（解析守卫），无状态变更 |
 | `readFlow()` 被拒（流程绑定缺失或流程已失效的 401） | resolve `null`，不拒绝 |
 | `abandonFlow()` 的流程已不在（401） | `DELETE flows/current` 幂等，resolve |
 | 登录完成宣告已认证但读 `GET /auth/me` 失败 | 清空存储并拒绝该次提交的 `ApiError`，不转已认证 |
@@ -266,7 +272,7 @@ stateDiagram-v2
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 会话状态机（流程驱动登录、登出、加强认证、刷新与世代守卫） | 已实现 | `web/packages/auth-core/src/session.ts` `createAuthSession` |
-| 手写响应模型与解析守卫 | 已实现 | `web/packages/auth-core/src/session.ts` `parseFlowState`、`parseStep`、`parsePrincipal`、`parseIssuedTokens`、`parseMethodList` |
+| 会话状态机（流程驱动登录、发现读取、登出、加强认证、刷新与世代守卫） | 已实现 | `web/packages/auth-core/src/session.ts` `createAuthSession` |
+| 生成响应模型的解析守卫 | 已实现 | `web/packages/auth-core/src/session.ts` `parseFlowState`、`parseStep`、`parsePrincipal`、`parseIssuedTokens`、`parseMethodList`、`parseMethodDescriptor`、`parseSsoProviders` |
 | 会话 hook 与通知桥 | 已实现 | `web/packages/auth-core/src/hooks.ts` `attachSession`、`useAuthState`、`usePermission` |
 | 租户上下文、租户作用域 query key 工厂与逐出助手 | 已实现 | `web/packages/auth-core/src/hooks.ts` `TenantProvider`、`useCurrentTenant`；`web/packages/auth-core/src/query-key.ts` `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries` |

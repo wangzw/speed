@@ -37,6 +37,7 @@ export {
 } from '@speed/test-utils/real-client'
 export {
   authenticatedCompletion,
+  methodList,
   openFlow,
   principal,
   tokenResponse,

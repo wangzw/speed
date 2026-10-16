@@ -2,21 +2,25 @@
  * Public entry of @speed/auth-ui.
  *
  * The sign-in component family over an @speed/auth-core session: the
- * password and SMS-code channels, the social sign-in section and its
- * callback handler, and SignInScreen assembling the channels behind a tab
- * strip -- each driving its own slice of the session's flow contract and
- * rendering every built-in string from the bilingual auth-ui namespace
- * (AUTH_UI_NAMESPACE + authUiResources, which the host registers alongside
- * ui-kit's). Components are controlled: the session comes in as a prop, a
- * successful sign-in fires the onSignedIn callback and the host navigates
- * -- nothing here reads storage, attaches a session or touches the
- * network directly. Helpers shared between the components live in
- * src/internal/ and are deliberately not exported.
+ * password and SMS-code channels, the social / redirect section and its
+ * callback handler, and SignInScreen assembling the deployment's login
+ * methods -- read from the discovery document and grouped by kind (forms
+ * behind a tab strip, redirects as buttons, an enterprise email-first
+ * entry, the passkey ceremony) -- each driving its own slice of the
+ * session's flow contract and rendering every built-in string from the
+ * bilingual auth-ui namespace (AUTH_UI_NAMESPACE + authUiResources, which
+ * the host registers alongside ui-kit's). Components are controlled: the
+ * session comes in as a prop, a successful sign-in fires the onSignedIn
+ * callback and the host navigates -- nothing here reads storage, attaches
+ * a session or touches the network directly. Helpers shared between the
+ * components live in src/internal/ and are deliberately not exported.
  *
- * There is no registration form: an account is created inside a login
- * flow's account-resolution step (or by invite, or by an administrator),
- * so a "registration" is a login flow's outcome under the deployment's
- * signup setting, not a form of its own.
+ * There is no separate registration form: an account is created inside a
+ * login flow's account-resolution step (or by invite, or by an
+ * administrator), so a "registration" is a login flow's outcome under the
+ * deployment's signup setting, not a form of its own. SignInScreen
+ * presents a "register" entry over the one flow where the deployment lets
+ * a first login open an account; the account still opens server-side.
  *
  * The session surface sits beside the sign-in family: SignOutButton
  * drives session.logout() from a click (a failed logout renders the
@@ -49,6 +53,7 @@ export {
 export {
   SignInScreen,
   type SignInChannel,
+  type SignInMode,
   type SocialSignInOptions,
   type SignInScreenProps,
 } from './SignInScreen.js'

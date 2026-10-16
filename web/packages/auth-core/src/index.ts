@@ -5,8 +5,9 @@
  *
  * createAuthSession wires the generated flows (login start / answer /
  * current / abandon, the authenticated-purpose start for link, step-up
- * and enroll, the methods listing, logout and the token endpoint a
- * refresh uses) into one observable session: an AccessTokenStore holds
+ * and enroll, the methods listing, the email-domain SSO discovery,
+ * logout and the token endpoint a refresh uses) into one observable
+ * session: an AccessTokenStore holds
  * the access token (the bridge into @speed/api-client, which reads the
  * same store on every send), the refresh token lives only inside the
  * session closure, and subscribers observe the AuthSnapshot
@@ -23,9 +24,10 @@
  *
  * The authn fragments declare their 2xx response schemas, so the
  * response models (AuthnFlowState, AuthnStep, AuthnField,
- * AuthnFactorOption, AuthnPrincipal, AuthnMethodList) are the generated
- * types; this package guards each body at runtime all the same, refusing
- * a contract-violating 2xx as client.protocol before any state change.
+ * AuthnFactorOption, AuthnPrincipal, AuthnMethodList, AuthnMethodDescriptor,
+ * AuthnSsoProvider) are the generated types; this package guards each
+ * body at runtime all the same, refusing a contract-violating 2xx as
+ * client.protocol before any state change.
  *
  * The hooks (hooks.ts) read one host-attached session: attachSession
  * binds it once at bootstrap (last bind wins), useAuthState exposes the
@@ -84,7 +86,9 @@ export type {
   AuthnFlowState,
   AuthnIdentifier,
   AuthnLink,
+  AuthnMethodDescriptor,
   AuthnMethodList,
   AuthnPrincipal,
+  AuthnSsoProvider,
   AuthnStep,
 } from './session.js'

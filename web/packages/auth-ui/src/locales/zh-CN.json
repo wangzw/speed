@@ -22,12 +22,35 @@
     "factorTitle": "请选择一种验证方式",
     "enrollTitle": "请选择要登记的方式",
     "unsupportedStep": "此步骤无法在本页完成。",
+    "passkeyHelp": "在本设备完成通行密钥仪式，然后粘贴结果。",
+    "enrollTotpHelp": "将以下设置 URI 扫描或复制到验证器应用。",
+    "credentialLabel": "通行密钥响应",
+    "codeLabel": "验证器验证码",
     "factorKind": {
       "totp": "验证器应用",
       "sms": "短信验证码",
       "webauthn": "通行密钥",
       "other": "其他方式"
     }
+  },
+  "discovery": {
+    "loading": "正在加载登录方式…",
+    "retry": "重试"
+  },
+  "mode": {
+    "registerEntry": "创建账户",
+    "signInEntry": "登录",
+    "registerHint": "首次用下列任一方式登录时会为你创建账户。"
+  },
+  "enterprise": {
+    "emailLabel": "工作邮箱",
+    "continue": "继续",
+    "providersTitle": "选择你的组织",
+    "noProviders": "该邮箱未配置登录途径，请检查地址或换一种方式。",
+    "editEmail": "换一个邮箱"
+  },
+  "passkey": {
+    "title": "或使用通行密钥登录"
   },
   "social": {
     "title": "或使用社交账号登录",

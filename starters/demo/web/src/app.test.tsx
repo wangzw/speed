@@ -23,6 +23,7 @@ import uiKitEnUS from '../../../../web/packages/ui-kit/src/locales/en-US.json' w
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import demoZhCN from './locales/zh-CN.json' with { type: 'json' }
 import { renderDemoApp } from './test-utils/render.js'
+import { AUTH_CALLBACK_PATH } from './routes.js'
 import {
   ANONYMOUS_SNAPSHOT,
   authenticatedSnapshot,
@@ -34,36 +35,55 @@ beforeEach(() => {
 })
 
 describe('the app at the root path', () => {
-  it('shows the host sign-in surface to a visitor without a session', () => {
+  it('shows the host sign-in surface to a visitor without a session', async () => {
     renderDemoApp()
 
     // The host's chrome frames auth-ui's screen: brand and heading above the
-    // password field.
+    // password field (which appears once the discovery read settles).
     expect(
       screen.getByRole('heading', { level: 1, name: demoEnUS.signIn.heading }),
     ).toBeInTheDocument()
     expect(
-      screen.getByLabelText(authUiEnUS.passwordSignIn.identifierLabel),
+      await screen.findByLabelText(authUiEnUS.passwordSignIn.identifierLabel),
     ).toBeInTheDocument()
     // The authenticated frame's business page is not rendered.
     expect(screen.queryByText(demoEnUS.home.heading)).not.toBeInTheDocument()
   })
 
-  it('offers only the password channel, with no tab strip', () => {
+  it('offers only the password channel, with no tab strip', async () => {
     renderDemoApp()
-    // No SMS axis is offered (the skeleton delivers no code), so there is
-    // nothing to switch between and no tablist.
+    // Wait for the surface (the discovery read resolves a document with the
+    // one channel). No SMS axis is offered (the skeleton delivers no code),
+    // so there is nothing to switch between and no tablist.
+    await screen.findByLabelText(authUiEnUS.passwordSignIn.identifierLabel)
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
   })
 
-  it('renders the sign-in surface in the active language', () => {
+  it('renders the sign-in surface in the active language', async () => {
     renderDemoApp({ language: 'zh-CN' })
 
     expect(
       screen.getByRole('heading', { level: 1, name: demoZhCN.signIn.heading }),
     ).toBeInTheDocument()
     expect(
-      screen.getByLabelText(authUiZhCN.passwordSignIn.identifierLabel),
+      await screen.findByLabelText(authUiZhCN.passwordSignIn.identifierLabel),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { level: 1, name: demoEnUS.signIn.heading }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('renders the auth callback route outside the tenant shell', async () => {
+    window.history.replaceState({}, '', AUTH_CALLBACK_PATH)
+    renderDemoApp()
+
+    // The callback handler mounts -- the operation-less test session's flow
+    // read fails, so it offers its retry -- and the shell's sign-in surface is
+    // nowhere: the callback route is not gated by the tenant shell.
+    expect(
+      await screen.findByRole('button', {
+        name: authUiEnUS.socialCallback.retry,
+      }),
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('heading', { level: 1, name: demoEnUS.signIn.heading }),

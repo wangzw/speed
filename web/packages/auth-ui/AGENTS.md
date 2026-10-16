@@ -1,16 +1,19 @@
 # AGENTS.md for `@speed/auth-ui`
 
 The sign-in component family of a speed frontend, over an
-`@speed/auth-core` session: the password and SMS-code channels, the
-social section and the callback handler that resumes its flow, assembled
-in `SignInScreen` behind a channel tab strip, plus `SignOutButton` and
-the `SessionEndedScreen` placeholder. The package sits at the same
+`@speed/auth-core` session: the deployment's login methods, read from the
+discovery document and grouped by kind -- the password and SMS-code forms
+behind a tab strip, the redirect section and the callback handler that
+resumes its flow, the enterprise email-first entry, the passkey ceremony
+-- assembled in `SignInScreen`, plus `SignOutButton` and the
+`SessionEndedScreen` placeholder. The package sits at the same
 auth-agnostic tier as `@speed/ui-kit` and `@speed/layout-kit`: it depends
 on nothing auth- or routing-shaped beyond auth-core's session and hooks,
 and it never decides what happens after a sign-in. There is no
 registration form -- an account is created inside a login flow's
 account-resolution step (or by invite, or by an administrator), so a
-"registration" is a login flow's outcome, not a form this package ships.
+"registration" is a login flow's outcome this package presents an entry
+for, not a form it ships.
 
 ## What this package is
 
@@ -19,7 +22,12 @@ account-resolution step (or by invite, or by an administrator), so a
   auth-core hooks, attaches or persists a session, reads storage,
   navigates, or touches HTTP. A successful sign-in fires the host's
   `onSignedIn` callback exactly once; the host observes session
-  transitions through its own auth-core hooks and navigates.
+  transitions through its own auth-core hooks and navigates. The one
+  read the surface makes on its own -- `SignInScreen`'s discovery of the
+  deployment's methods (`session.listMethods`) and providers
+  (`session.discoverSso`) -- goes through that same session prop, so it
+  is a session operation, not a hook consumption; a host that injects a
+  pre-fetched document passes `discovery` and the screen reads nothing.
 - **Host callbacks run after the verdict and are contained.** Every
   documented callback (`onSignedIn`, `onAuthorizeUrl`, `onSignIn`) fires
   only after the operation it follows settled, and a throwing callback is
@@ -43,19 +51,23 @@ account-resolution step (or by invite, or by an administrator), so a
 - **A sign-in is a server-side flow, driven step by step.** Every channel
   begins one with `session.startFlow` and advances it with
   `session.answerFlow`; only auth-core commits the session. The parked
-  steps (a forced password change, a second factor, a factor to register)
-  render through the shared step renderer (`src/internal/flow-step.tsx`)
-  and the shared stepping driver (`src/internal/use-flow-driver.ts`); a
-  `webauthn` or `redirect` step this surface cannot finish renders an
-  unavailable notice. A step the server answers `authn.flow_invalid`
-  returns the form to its channel's first step.
+  steps (a forced password change, a second factor, a factor to register,
+  a passkey ceremony) render through the shared step renderer
+  (`src/internal/flow-step.tsx`) and the shared stepping driver
+  (`src/internal/use-flow-driver.ts`); the `webauthn` step renders its
+  public-key request options as text with one free-text answer field (this
+  package ships no WebAuthn dependency), while a `redirect` step reaching
+  the renderer renders an unavailable notice. A step the server answers
+  `authn.flow_invalid` returns the form to its channel's first step.
 - **Headless logic lives in `@speed/auth-core`.** `startFlow`,
   `answerFlow`, `startAuthenticatedFlow`, `readFlow`, `abandonFlow`,
-  `listMethods`, `logout`, `refresh` -- the session contract this family
-  renders -- are auth-core's, along with the flow response models
-  (`AuthnFlowState`, `AuthnStep`, `AuthnField`, ...) it re-exports from
-  the generated surface. If an operation does not exist on the session, the right
-  home for it is auth-core's contract, not a fetch in this package.
+  `listMethods`, `discoverSso`, `logout`, `refresh` -- the session
+  contract this family renders -- are auth-core's, along with the flow
+  response and discovery models (`AuthnFlowState`, `AuthnStep`,
+  `AuthnField`, `AuthnMethodList`, `AuthnMethodDescriptor`,
+  `AuthnSsoProvider`, ...) it re-exports from the generated surface. If an
+  operation does not exist on the session, the right home for it is
+  auth-core's contract, not a fetch in this package.
 - **Every built-in string is bilingual and bundled.** All text renders
   from the `auth-ui` namespace (`AUTH_UI_NAMESPACE`, one `zh-CN.json` and
   one `en-US.json` under `src/locales/`, identical leaf key sets),
@@ -129,13 +141,14 @@ account-resolution step (or by invite, or by an administrator), so a
 ## Public surface
 
 Everything in `src/index.ts` is public: `SignInScreen` (with
-`SignInChannel` and `SocialSignInOptions`), the two channel components
-(`PasswordSignInForm`, `SMSSignInForm`), the social pair
-(`SocialSignInSection` with `SocialProvider`/`SocialProviderConfig`,
-`SocialCallbackHandler`), `SignOutButton`, `SessionEndedScreen`, and the
-resource pair (`AUTH_UI_NAMESPACE`, `authUiResources`). Prop tables and
-behaviour live in the README; `tsc -p tsconfig.json` type-checks every
-consumer-visible signature.
+`SignInChannel`, `SignInMode` and `SocialSignInOptions`), the two channel
+components (`PasswordSignInForm`, `SMSSignInForm`), the social pair
+(`SocialSignInSection` with `SocialProvider` -- a method-name `string`,
+not a closed set -- and `SocialProviderConfig`, `SocialCallbackHandler`),
+`SignOutButton`, `SessionEndedScreen`, and the resource pair
+(`AUTH_UI_NAMESPACE`, `authUiResources`). Prop tables and behaviour live in
+the README; `tsc -p tsconfig.json` type-checks every consumer-visible
+signature.
 
 ## Testing
 
@@ -170,10 +183,9 @@ callback route). Every component test asserts axe
 
 Recorded, with the current disposition, in the README's Known limitations
 and Deferrals sections. The load-bearing ones for a contributor: a
-registration is a login flow's outcome, not a form here; the
-authenticated-purpose surfaces (binding, step-up, factor enrollment) live
-in `@speed/account-ui`, and a `webauthn` step a login flow parks on
-renders an unavailable notice; the server exposes no full channel
-discovery, so the family renders exactly the channels the host composes;
-and session state does not survive a page load (auth-core's limit,
-inherited).
+registration is a login flow's outcome the surface presents an entry for,
+not a form here; the authenticated-purpose surfaces (binding, step-up,
+factor enrollment) live in `@speed/account-ui`; the login channels are the
+deployment's, read from the discovery document, so the family renders
+exactly the methods the running deployment enables; and session state does
+not survive a page load (auth-core's limit, inherited).

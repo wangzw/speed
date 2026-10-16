@@ -1,9 +1,11 @@
 # @speed/auth-ui
 
-The sign-in component family of a frontend built on speed: the password
-and SMS-code channels, the social sign-in section and the callback handler
-that resumes its flow, plus the sign-out action and the session-ended
-placeholder -- assembled in `SignInScreen` behind a channel tab strip.
+The sign-in component family of a frontend built on speed: the
+deployment's login methods, read from the discovery document and grouped
+by kind -- the password and SMS-code forms behind a tab strip, the social
+sign-in section and the callback handler that resumes its flow, the
+enterprise email-first entry, the passkey ceremony -- plus the sign-out
+action and the session-ended placeholder, assembled in `SignInScreen`.
 Every piece is a controlled component over an `@speed/auth-core` session
 passed in as a prop, at the same tier as `ui-kit` and `layout-kit`:
 components never consume the auth-core hooks, never read session state,
@@ -28,7 +30,7 @@ package ships.
 
 | Module | Exports |
 |---|---|
-| `SignInScreen.tsx` | `SignInScreen`, `SignInScreenProps`, `SignInChannel`, `SocialSignInOptions` |
+| `SignInScreen.tsx` | `SignInScreen`, `SignInScreenProps`, `SignInChannel`, `SignInMode`, `SocialSignInOptions` |
 | `PasswordSignInForm.tsx` | `PasswordSignInForm`, `PasswordSignInFormProps` |
 | `SMSSignInForm.tsx` | `SMSSignInForm`, `SMSSignInFormProps` |
 | `SocialSignInSection.tsx` | `SocialSignInSection`, `SocialSignInSectionProps`, `SocialProvider`, `SocialProviderConfig` |
@@ -183,13 +185,17 @@ until it settles; only auth-core commits the session (a token-issuing
 completion), so no component here holds login state.
 
 A step that does not complete immediately -- a forced password change, a
-required second factor, a factor to register -- is rendered by the shared
-step renderer (`src/internal/flow-step.tsx`): a `challenge` step renders
-one input per field the server asks for, a `factor` step renders one
-button per offered second factor, an `enroll` step one button per
-registerable kind, and a `ready` step (whose `next.kind` is `complete`) is
-taken automatically with `step: 'complete'`. A `webauthn` or `redirect`
-step this surface cannot finish renders an unavailable notice. The answer
+required second factor, a factor to register, a passkey ceremony -- is
+rendered by the shared step renderer (`src/internal/flow-step.tsx`): a
+`challenge` step renders one input per field the server asks for, a
+`factor` step renders one button per offered second factor, an `enroll`
+step one button per registerable kind, a `webauthn` step renders its
+public-key request options as text with one free-text answer field (this
+package ships no WebAuthn dependency), and a `ready` step (whose
+`next.kind` is `complete`) is
+taken automatically with `step: 'complete'`. A `redirect` step reaching the
+renderer (a callback route opened before the provider answered) renders an
+unavailable notice; the host owns navigation. The answer
 step name is a function of the record's live state (`answer` in `first`,
 `factor` in `second`, `enroll` in `enroll`, `complete` in `ready`), never
 of the rendered kind, so a factor's own challenge is still answered with
@@ -210,49 +216,58 @@ fresh flow, with the code's text in the banner.
 
 ## SignInScreen
 
-The assembled sign-in surface: the channel tab strip the host declares
-through `channels` (password or SMS code, labels from the bundle,
-password first) switches the form below it, and when `social` is given the
-social section renders under the form with its divider title between them.
-Switching channels unmounts the previous form, so its half-typed state and
-whole-attempt error are gone with it -- a deliberate reset: channel errors
-must not leak across surfaces. A successful sign-in on any channel fires
-`onSignedIn` once. The screen renders no heading of its own: the page
-above (branding, the heading, the sign-up link) is host content.
+The assembled sign-in surface. On mount it reads the deployment's login
+methods from the discovery document (`session.listMethods`; pass a
+`discovery` document to inject a pre-fetched one and skip the read) and
+groups the descriptors by `kind`:
 
-The channels offered are the host's to declare -- both are offered when
-`channels` is omitted. A deployment must not offer a channel it cannot
-finish: offering SMS sign-in while nothing can deliver a code is a promise
-no phone will ever keep, so a host whose SMS seam resolves to the console
-sender declares `['password']` rather than a captioned entrance nobody can
-walk through. One declared channel renders its form directly, with no tab
-strip at all: a tablist with nothing to switch between is not a choice, and
-its ARIA wiring would dangle.
+- `form` methods gather behind a tab strip (a single one renders without a
+  strip -- a tablist with nothing to switch between is not a choice);
+  password and SMS code keep their own forms, and any other form method is
+  driven by its descriptor's `fields`. Switching tabs unmounts the previous
+  form, so its half-typed state and whole-attempt error are gone with it --
+  a deliberate reset: channel errors must not leak across surfaces.
+- `redirect` methods render as buttons in the social block.
+- `enterprise` methods render an email-first entry that discovers the
+  viewer's identity providers (`session.discoverSso`).
+- `webauthn` methods render a passkey button and its ceremony step.
 
-The tab strip is wired to the mounted channel panel the ARIA tabs way:
-each `Tab` carries an id and `aria-controls` naming its own panel, and the
-mounted channel renders as the `role="tabpanel"` with that id and the tab
-as its `aria-labelledby` -- only the active panel exists in the DOM, since
+An unknown `kind` is ignored; a method name the family does not know still
+renders through its descriptor. A successful sign-in on any channel fires
+`onSignedIn` once. The screen renders no heading of its own: the page above
+(branding, the heading) is host content. `mode` is a presentational switch:
+a "register" entry appears (with a "sign in" entry back) where the
+deployment lets a first login open an account, but it runs the one sign-in
+flow -- the account opens server-side.
+
+While the read is in flight a `role="status"` notice shows; a failed read
+renders its error code in a banner with a retry button. The tab strip is
+wired to the mounted channel panel the ARIA tabs way: each `Tab` carries an
+id and `aria-controls` naming its own panel, and the mounted channel
+renders as the `role="tabpanel"` with that id and the tab as its
+`aria-labelledby` -- only the active panel exists in the DOM, since
 switching unmounts the previous form.
 
 | Prop | Type | Notes |
 |---|---|---|
 | `session` | `AuthSession` (required) | the session every channel on the screen drives |
-| `channels` | `readonly ('password' \| 'sms')[]` | the channels offered, in tab order; both by default, an empty list meaning "no opinion" |
-| `social` | `SocialSignInOptions` | the screen's social block; omitted to run without one |
-| `defaultChannel` | `'password' \| 'sms'` | the channel selected on first render; defaults to `'password'`, and falls back to the first offered channel when the named one is not offered |
+| `discovery` | `AuthnMethodList` | a pre-fetched discovery document to render instead of reading one; when given the screen fires no read |
+| `mode` | `'sign-in' \| 'register'` | the presentational mode; defaults to `'sign-in'` |
+| `social` | `SocialSignInOptions` | the redirect / enterprise block host config; omitted to run without one |
 | `onSignedIn` | `() => void` | fired once after a sign-in commits on any channel |
+| `channels` | `readonly ('password' \| 'sms')[]` | **deprecated**: still narrows the form strip for one major |
+| `defaultChannel` | `'password' \| 'sms'` | **deprecated**: the channel selected on first render |
 
-`SocialSignInOptions` carries the channels in the order the host wants
-them and the same `onAuthorizeUrl` seam `SocialSignInSection` takes:
+`SocialSignInOptions` carries the host callback route (sent as a redirect or
+enterprise flow's `return_to`) and the same `onAuthorizeUrl` seam
+`SocialSignInSection` takes. Its deprecated `providers` still overrides the
+redirect method set:
 
 ```ts
 export interface SocialSignInOptions {
-  readonly providers: readonly SocialProviderConfig[]
-  readonly onAuthorizeUrl?: (
-    provider: SocialProvider,
-    authorizeUrl: string,
-  ) => void
+  readonly providers?: readonly SocialProviderConfig[] // deprecated: the set comes from discovery
+  readonly returnTo?: string
+  readonly onAuthorizeUrl?: (provider: string, authorizeUrl: string) => void
 }
 ```
 
@@ -312,8 +327,13 @@ Only a fresh code (a resend, or a request for a changed phone) can sign in.
 
 ### SocialSignInSection
 
-One outlined button per configured provider, each answering the bundle's
-name for it (`social.provider.<provider>`). Clicking a provider begins
+One outlined button per configured provider, each answering the method's
+brand label where the discovery document gives one (a provider's own name,
+not translated), otherwise the bundle's name for it
+(`social.provider.<provider>`). The provider set is the deployment's;
+`SignInScreen` derives it from the discovery document's redirect methods,
+and a host may still drive this section directly with any method names.
+Clicking a provider begins
 that method's login flow (`session.startFlow`, the provider as the flow's
 `method`); the flow's first step for a social method is a `redirect` step
 carrying the provider's authorization URL, reported upward through
@@ -332,18 +352,15 @@ The provider's own redirect address is the server's: the method builds
 `redirect_uri` from the deployment's public URL, so the client sends no
 redirect_uri. What the config's `redirectUri` names is the host's own
 callback route, and it is sent as the flow's `return_to` so the provider's
-round trip lands the browser back on it.
+round trip lands the browser back on it; an empty `redirectUri` sends no
+`return_to` and lets the server use its configured default.
 
 ```ts
-export type SocialProvider =
-  | 'google'
-  | 'github'
-  | 'wechat'
-  | 'dingtalk'
-  | 'feishu'
+export type SocialProvider = string // a method name; the set is the deployment's
 
 export interface SocialProviderConfig {
   readonly provider: SocialProvider
+  readonly label?: string   // the method's brand name, from the discovery document
   readonly redirectUri: string
 }
 ```
@@ -439,7 +456,11 @@ enforced by registration):
 |---|---|
 | `passwordSignIn.*` | the password channel: title, field labels (identifier, password, new password), submit |
 | `smsSignIn.*` | the SMS channel: title, phone/code labels, send/resubmit/change-phone actions, the sent notice, the used-code notice |
-| `signInFlow.*` | the step renderer: the continue action, the factor/enroll titles, the factor-kind names (a guarded closed set plus an "other" label), the unavailable-step notice |
+| `signInFlow.*` | the step renderer: the continue action, the factor/enroll titles, the factor-kind names (a guarded closed set plus an "other" label), the passkey help and answer labels, the unavailable-step notice |
+| `discovery.*` | the sign-in surface: the loading notice and the retry action |
+| `mode.*` | the sign-in surface: the register / sign-in entries and the register hint |
+| `enterprise.*` | the enterprise entry: the email label, the continue action, the provider-picker title and the no-match notice |
+| `passkey.*` | the passkey entry: the divider title |
 | `social.*` | the social section: the divider title and one name per provider (`social.provider.<provider>`) |
 | `socialCallback.*` | the callback handler: the pending notice, the retry action |
 | `signOut.*` | the sign-out button: label and busy state |
@@ -566,18 +587,22 @@ namespace discipline over `src/` the same way it does in every package.
 - **No registration form.** An account has no signup endpoint of its own
   and is created inside a login flow's account-resolution step (or by an
   invite, or by an administrator), so a "registration" is a login flow's
-  outcome under the deployment's signup setting. A host that wants a
-  sign-up affordance composes it from the same sign-in surface.
+  outcome under the deployment's signup setting. `SignInScreen` presents a
+  register entry over the one flow where the deployment lets a first login
+  open an account; a host that wants more composes it from the same
+  sign-in surface.
 - **Account binding, step-up and factor enrollment are not this
   package's.** This family drives the login purpose; the authenticated
   purposes (`link`, `step-up`, `enroll`) and their screens live in
   `@speed/account-ui` (`SocialBindingsSection` + `BindingCallbackHandler`,
-  `MfaSection`). A passkey (`webauthn`) step that a login flow parks on
-  renders an unavailable notice here rather than running the ceremony.
-- **No channel discovery beyond the methods listing.** The login methods
-  endpoint names what the deployment offers, but this family still renders
-  exactly the channels the host composes: `SignInScreen` without the
-  `social` prop renders no social block, and any sign-up link above a real
+  `MfaSection`). A passkey (`webauthn`) step a login flow parks on renders
+  its ceremony here (the request options as text plus an answer field);
+  the authenticated passes render it in `@speed/account-ui`.
+- **The channels are the deployment's, not the host's.** `SignInScreen`
+  reads the discovery document (`session.listMethods`) and renders the
+  methods it names, so a host no longer declares a channel set; the
+  enterprise provider list is read per email (`session.discoverSso`) and
+  does not appear in the discovery document. Sign-up copy above a real
   sign-in page is host content, not a package export.
 - **Session state does not survive a page load, and the refresh token is
   JavaScript-visible in memory** -- auth-core's own known limitations,

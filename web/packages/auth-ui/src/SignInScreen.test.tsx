@@ -1,40 +1,47 @@
 /**
- * SignInScreen behaviour: the password channel is selected by default and
- * a successful password login fires onSignedIn once; the tab strip
- * switches to the SMS channel whose two-step flow then drives its own
- * requests, and switching channels unmounts the previous form -- its
- * half-typed state is gone on return. The social block renders only when
- * options are given, defaultChannel selects the first channel shown, the
- * en-US bundle renders on an English-starting instance, and the tree
- * passes axe. Text expectations read the bundle values, never inline
- * language.
+ * SignInScreen behaviour: the surface renders the deployment's login
+ * methods, read from the discovery document (injected here so no network
+ * is needed), grouped by kind -- forms behind a tab strip (a single form
+ * without one), redirect methods as buttons, the enterprise email-first
+ * entry, the passkey button and its ceremony step. The discovery read's
+ * loading and failure states, the register entry's visibility rule, the
+ * deprecated channel override, the unknown-kind / unknown-name fallbacks,
+ * the en-US bundle and an axe pass round it out. Text expectations read
+ * the bundle values, never inline language.
  */
 
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SignInScreen } from './SignInScreen.js'
-import type { SocialProviderConfig } from './SocialSignInSection.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
   LOGIN_ANSWER,
+  LOGIN_METHODS,
   LOGIN_START,
   PROFILE_GET,
+  SSO_DISCOVER,
+  apiError,
   authenticatedCompletion,
   completeFlow,
   makeHarness,
+  methodList,
   openFlow,
   principal,
+  ssoProviders,
 } from '@speed/test-utils/session-harness'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
-const PHONE = '+8613800138000'
+const PASS = 's3cret-pass'
+const MAIL = 'alice@example.com'
 
-const SOCIAL_PROVIDERS: readonly SocialProviderConfig[] = [
-  { provider: 'google', redirectUri: '/auth/social/callback' },
-]
+/** A discovery document with both form channels. */
+const BOTH_FORMS = methodList([
+  { name: 'password', kind: 'form' },
+  { name: 'sms', kind: 'form' },
+])
 
 /** A harness that completes a password flow and drives the SMS channel's
  * two steps, dispatching on the request method and step. */
@@ -64,88 +71,101 @@ function makeSignInHarness() {
 }
 
 describe('SignInScreen', () => {
-  it('show the password channel first and fire onSignedIn from its login', async () => {
-    const harness = makeSignInHarness()
-    const onSignedIn = vi.fn()
+  it('render the discovery-driven form channels behind a tab strip', () => {
+    const harness = makeHarness({})
     renderWithProviders(
-      <SignInScreen session={harness.session} onSignedIn={onSignedIn} />,
+      <SignInScreen session={harness.session} discovery={BOTH_FORMS} />,
     )
+    // The document's forms gather behind the strip; the password channel
+    // is selected first and no read was fired (the document was injected).
     expect(
       screen.getByRole('tab', { name: zhCN.passwordSignIn.title }),
     ).toHaveAttribute('aria-selected', 'true')
     expect(
+      screen.getByRole('tab', { name: zhCN.smsSignIn.title }),
+    ).toBeInTheDocument()
+    expect(
       screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
     ).toBeInTheDocument()
-    // Without social options no social divider appears.
-    expect(screen.queryByText(zhCN.social.title)).not.toBeInTheDocument()
+    expect(harness.calls).toHaveLength(0)
+  })
+
+  it('fire onSignedIn once from the password channel login', async () => {
+    const harness = makeSignInHarness()
+    const onSignedIn = vi.fn()
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={BOTH_FORMS}
+        onSignedIn={onSignedIn}
+      />,
+    )
     const user = userEvent.setup()
     await user.type(
       screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
-      'alice@example.com',
+      MAIL,
     )
-    await user.type(
-      screen.getByLabelText(zhCN.passwordSignIn.passwordLabel),
-      's3cret-pass',
-    )
+    await user.type(screen.getByLabelText(zhCN.passwordSignIn.passwordLabel), PASS)
     await user.click(
       screen.getByRole('button', { name: zhCN.passwordSignIn.submit }),
     )
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     expect(harness.store.get()).toBe('access-1')
+    // The password flow started with the password method.
+    expect(harness.calls[0]?.options?.body).toMatchObject({ method: 'password' })
   })
 
-  it('switch to the SMS channel, whose flow drives its own requests', async () => {
-    const harness = makeSignInHarness()
-    const onSignedIn = vi.fn()
+  it('render a single form channel without a tab strip', () => {
+    const harness = makeHarness({})
     renderWithProviders(
-      <SignInScreen session={harness.session} onSignedIn={onSignedIn} />,
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([{ name: 'password', kind: 'form' }])}
+      />,
     )
-    const user = userEvent.setup()
-    await user.click(
-      screen.getByRole('tab', { name: zhCN.smsSignIn.title }),
-    )
-    await user.type(screen.getByLabelText(zhCN.smsSignIn.phoneLabel), PHONE)
-    await user.click(
-      screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }),
-    )
-    await waitFor(() =>
-      expect(screen.getByLabelText(zhCN.smsSignIn.codeLabel)).toBeInTheDocument(),
-    )
-    await user.type(screen.getByLabelText(zhCN.smsSignIn.codeLabel), '123456')
-    await user.click(
-      screen.getByRole('button', { name: zhCN.smsSignIn.submit }),
-    )
-    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
-    // The sms start, the code answer and the result-taking complete.
-    expect(harness.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
-      'POST /auth/flows',
-      'POST /auth/flows/answer',
-      'POST /auth/flows/answer',
-      'GET /auth/me',
-    ])
-    expect(harness.calls[0]?.options?.body).toMatchObject({ method: 'sms' })
-  })
-
-  it('reset a half-typed channel when switching away and back', async () => {
-    const harness = makeSignInHarness()
-    renderWithProviders(<SignInScreen session={harness.session} />)
-    const user = userEvent.setup()
-    const identifier = screen.getByLabelText(zhCN.passwordSignIn.identifierLabel)
-    await user.type(identifier, 'alice@example.com')
-    expect(identifier).toHaveValue('alice@example.com')
-    await user.click(
-      screen.getByRole('tab', { name: zhCN.smsSignIn.title }),
-    )
-    await user.click(
-      screen.getByRole('tab', { name: zhCN.passwordSignIn.title }),
-    )
+    // A tablist with nothing to switch between is not a choice.
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
     expect(
       screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
-    ).toHaveValue('')
-    expect(harness.calls).toHaveLength(0)
+    ).toBeInTheDocument()
   })
 
-  it('render the social block under the form when options are given', async () => {
+  it('show the loading notice while the discovery read is in flight', () => {
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () => new Promise(() => {}),
+    })
+    renderWithProviders(<SignInScreen session={harness.session} />)
+    expect(screen.getByText(zhCN.discovery.loading)).toBeInTheDocument()
+  })
+
+  it('show the retry notice when the discovery read fails, and read again on retry', async () => {
+    let attempts = 0
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () => {
+        attempts += 1
+        if (attempts === 1) {
+          throw apiError(500, 'authn.unavailable')
+        }
+        return BOTH_FORMS
+      },
+    })
+    renderWithProviders(<SignInScreen session={harness.session} />)
+    // The failure renders the namespace text for the code, retryable.
+    expect(
+      await screen.findByText(zhCN.errors.authn.unavailable),
+    ).toBeInTheDocument()
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.discovery.retry }),
+    )
+    // The retry reads once more and the surface renders the forms.
+    expect(
+      await screen.findByLabelText(zhCN.passwordSignIn.identifierLabel),
+    ).toBeInTheDocument()
+    expect(attempts).toBe(2)
+  })
+
+  it('render redirect methods from discovery as buttons that hand over the authorize URL', async () => {
     const harness = makeHarness({
       [LOGIN_START]: () =>
         openFlow({
@@ -160,164 +180,239 @@ describe('SignInScreen', () => {
     renderWithProviders(
       <SignInScreen
         session={harness.session}
-        social={{ providers: SOCIAL_PROVIDERS, onAuthorizeUrl }}
+        discovery={methodList([
+          { name: 'password', kind: 'form' },
+          { name: 'google', kind: 'redirect', protocol: 'oidc', label: 'Google' },
+        ])}
+        social={{ onAuthorizeUrl }}
       />,
     )
+    // The brand label from the descriptor names the button.
     expect(screen.getByText(zhCN.social.title)).toBeInTheDocument()
     const user = userEvent.setup()
-    await user.click(
-      screen.getByRole('button', { name: zhCN.social.provider.google }),
-    )
+    await user.click(screen.getByRole('button', { name: 'Google' }))
     await waitFor(() => expect(onAuthorizeUrl).toHaveBeenCalledTimes(1))
-  })
-
-  it('open on the SMS channel when defaultChannel says so', async () => {
-    const harness = makeSignInHarness()
-    renderWithProviders(
-      <SignInScreen session={harness.session} defaultChannel="sms" />,
+    expect(onAuthorizeUrl).toHaveBeenCalledWith(
+      'google',
+      'https://accounts.google.com/o/oauth2/v2/auth',
     )
-    expect(
-      screen.getByRole('tab', { name: zhCN.smsSignIn.title }),
-    ).toHaveAttribute('aria-selected', 'true')
-    expect(
-      screen.getByLabelText(zhCN.smsSignIn.phoneLabel),
-    ).toBeInTheDocument()
-    expect(
-      screen.queryByLabelText(zhCN.passwordSignIn.identifierLabel),
-    ).not.toBeInTheDocument()
   })
 
-  it('render the en-US bundle on an English-starting instance', async () => {
-    const harness = makeSignInHarness()
+  it('render the enterprise email-first entry that discovers the providers', async () => {
+    const harness = makeHarness({
+      [SSO_DISCOVER]: (call) => {
+        expect(call.options?.body).toEqual({ email: MAIL })
+        return ssoProviders([
+          { id: 'idp-1', name: 'Acme Okta', protocol: 'oidc' },
+        ])
+      },
+      [LOGIN_START]: () =>
+        openFlow({
+          next: {
+            kind: 'redirect',
+            url: 'https://idp.example/auth',
+            method: 'GET',
+          },
+        }),
+    })
+    const onAuthorizeUrl = vi.fn()
     renderWithProviders(
       <SignInScreen
         session={harness.session}
-        social={{ providers: SOCIAL_PROVIDERS }}
+        discovery={methodList([
+          { name: 'password', kind: 'form' },
+          { name: 'oidc', kind: 'enterprise', protocol: 'oidc' },
+        ])}
+        social={{ returnTo: '/auth/sso/callback', onAuthorizeUrl }}
       />,
+    )
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText(zhCN.enterprise.emailLabel), MAIL)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.enterprise.continue }),
+    )
+    // The discovered provider renders as its own button.
+    await user.click(await screen.findByRole('button', { name: 'Acme Okta' }))
+    await waitFor(() => expect(onAuthorizeUrl).toHaveBeenCalledTimes(1))
+    expect(onAuthorizeUrl).toHaveBeenCalledWith('oidc', 'https://idp.example/auth')
+    // The flow started with the provider's protocol and id, returning to
+    // the host's callback route.
+    const start = harness.calls.find((call) => call.path === '/auth/flows')
+    expect(start?.options?.body).toMatchObject({
+      method: 'oidc',
+      input: { provider: 'idp-1' },
+      return_to: '/auth/sso/callback',
+    })
+  })
+
+  it('render the passkey button and drive its ceremony step to a sign-in', async () => {
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: { kind: 'webauthn', options: { challenge: 'abc', rpId: 'x' } },
+        }),
+      [LOGIN_ANSWER]: (call) =>
+        (call.options?.body as { step?: string }).step === 'complete'
+          ? authenticatedCompletion()
+          : completeFlow(2),
+      [PROFILE_GET]: () => principal(),
+    })
+    const onSignedIn = vi.fn()
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([
+          { name: 'password', kind: 'form' },
+          { name: 'passkey', kind: 'webauthn', label: 'Passkey' },
+        ])}
+        onSignedIn={onSignedIn}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Passkey' }))
+    // The ceremony step renders its own answer field.
+    const credential = await screen.findByLabelText(zhCN.signInFlow.credentialLabel)
+    await user.type(credential, 'attestation-response')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+    )
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
+    expect(harness.store.get()).toBe('access-1')
+    expect(harness.calls[0]?.options?.body).toMatchObject({ method: 'passkey' })
+  })
+
+  it('present the register entry only where a first login may open an account', async () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        )}
+      />,
+    )
+    const user = userEvent.setup()
+    // The entry appears (signup on and an account-opening method present)
+    // and toggles to the register side and back.
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mode.registerEntry }),
+    )
+    expect(
+      screen.getByText(zhCN.mode.registerHint),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: zhCN.mode.signInEntry }))
+    expect(screen.queryByText(zhCN.mode.registerHint)).not.toBeInTheDocument()
+  })
+
+  it('hide the register entry when the deployment opens no accounts', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [{ name: 'password', kind: 'form' }],
+          { signup: false },
+        )}
+      />,
+    )
+    expect(
+      screen.queryByRole('button', { name: zhCN.mode.registerEntry }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('ignore an unknown method kind without crashing', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([
+          { name: 'password', kind: 'form' },
+          { name: 'quantum', kind: 'telepathy' },
+        ])}
+      />,
+    )
+    expect(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+    ).toBeInTheDocument()
+  })
+
+  it('drive an unknown form method from its own descriptor fields', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([
+          {
+            name: 'magic',
+            kind: 'form',
+            fields: [
+              { name: 'identifier', kind: 'text', required: true },
+              { name: 'token', kind: 'password', secret: true },
+            ],
+          },
+        ])}
+      />,
+    )
+    // A known field shows translated wording, an unknown one its own name.
+    expect(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('token')).toBeInTheDocument()
+  })
+
+  it('honor the deprecated channels override to narrow the form strip', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={BOTH_FORMS}
+        channels={['password']}
+      />,
+    )
+    // The override drops the SMS channel: one form, no tab strip.
+    expect(
+      screen.queryByRole('tab', { name: zhCN.smsSignIn.title }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+    ).toBeInTheDocument()
+  })
+
+  it('render the en-US bundle on an English-starting instance', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen session={harness.session} discovery={BOTH_FORMS} />,
       { language: 'en-US' },
     )
     expect(
       screen.getByRole('tab', { name: enUS.passwordSignIn.title }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('tab', { name: enUS.smsSignIn.title }),
-    ).toBeInTheDocument()
-    expect(
       screen.getByLabelText(enUS.passwordSignIn.identifierLabel),
     ).toBeInTheDocument()
-    expect(screen.getByText(enUS.social.title)).toBeInTheDocument()
   })
 
   it('pass axe with no violations', async () => {
-    const harness = makeSignInHarness()
-    // Rendered under the page h1 a real host page supplies: the screen
-    // renders no heading of its own (branding and the page heading are
-    // host content above it), and page-has-heading-one is determinate
-    // in jsdom now (see the axe helper header) -- a scan without that
-    // context fails instead of passing by indeterminacy.
+    const harness = makeHarness({})
     renderWithProviders(
       <div>
         <h1>Sign in</h1>
-        <SignInScreen session={harness.session} social={{ providers: SOCIAL_PROVIDERS }} />
+        <SignInScreen
+          session={harness.session}
+          discovery={methodList(
+            [
+              { name: 'password', kind: 'form' },
+              { name: 'google', kind: 'redirect', protocol: 'oidc', label: 'Google' },
+              { name: 'passkey', kind: 'webauthn', label: 'Passkey' },
+            ],
+            { signup: true },
+          )}
+        />
       </div>,
     )
     await expectNoAxeViolations()
-  })
-
-  it('wire each channel tab to its own panel by id and aria-controls', async () => {
-    const harness = makeSignInHarness()
-    renderWithProviders(<SignInScreen session={harness.session} />)
-    const passwordTab = screen.getByRole('tab', {
-      name: zhCN.passwordSignIn.title,
-    })
-    const smsTab = screen.getByRole('tab', { name: zhCN.smsSignIn.title })
-    // Each tab names the panel it controls, and the ids are distinct.
-    expect(passwordTab).toHaveAttribute('aria-controls')
-    expect(smsTab).toHaveAttribute('aria-controls')
-    expect(passwordTab.getAttribute('aria-controls')).not.toBe(
-      smsTab.getAttribute('aria-controls'),
-    )
-    // The mounted channel renders as a tabpanel whose id the selected
-    // tab's aria-controls names, labelled by that tab.
-    const passwordPanel = screen.getByRole('tabpanel')
-    expect(passwordPanel).toHaveAttribute('id', passwordTab.getAttribute('aria-controls'))
-    expect(passwordPanel).toHaveAttribute(
-      'aria-labelledby',
-      passwordTab.id,
-    )
-    // Switching channels moves the tabpanel: the SMS panel now carries
-    // the SMS tab's id.
-    const user = userEvent.setup()
-    await user.click(smsTab)
-    const smsPanel = screen.getByRole('tabpanel')
-    expect(smsPanel).toHaveAttribute('id', smsTab.getAttribute('aria-controls'))
-    expect(smsPanel).toHaveAttribute('aria-labelledby', smsTab.id)
-    expect(
-      screen.queryByLabelText(zhCN.passwordSignIn.identifierLabel),
-    ).not.toBeInTheDocument()
-  })
-
-  it('offer only the channels the host declares: an undeclared channel is not offered at all', async () => {
-    const harness = makeSignInHarness()
-    const onSignedIn = vi.fn()
-    renderWithProviders(
-      <SignInScreen
-        session={harness.session}
-        channels={['password']}
-        onSignedIn={onSignedIn}
-      />,
-    )
-    // The undeclared channel leaves no trace: no tab to click and no
-    // form behind one -- the SMS surface cannot be reached, whatever a
-    // person tries.
-    expect(
-      screen.queryByRole('tab', { name: zhCN.smsSignIn.title }),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByLabelText(zhCN.smsSignIn.phoneLabel),
-    ).not.toBeInTheDocument()
-    // One offered channel renders its form directly, without a tab
-    // strip: a tablist with nothing to switch between is not a choice,
-    // and the password channel stays the screen it always was.
-    expect(
-      screen.queryByRole('tab', { name: zhCN.passwordSignIn.title }),
-    ).not.toBeInTheDocument()
-    const user = userEvent.setup()
-    await user.type(
-      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
-      'alice@example.com',
-    )
-    await user.type(
-      screen.getByLabelText(zhCN.passwordSignIn.passwordLabel),
-      's3cret-pass',
-    )
-    await user.click(
-      screen.getByRole('button', { name: zhCN.passwordSignIn.submit }),
-    )
-    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
-    // The password flow: the start, the ready step's result, and the
-    // profile read a login completion makes.
-    expect(harness.calls[0]?.options?.body).toMatchObject({ method: 'password' })
-    expect(harness.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
-      'POST /auth/flows',
-      'POST /auth/flows/answer',
-      'GET /auth/me',
-    ])
-  })
-
-  it('fall back to the first offered channel when defaultChannel is not offered', async () => {
-    const harness = makeSignInHarness()
-    renderWithProviders(
-      <SignInScreen session={harness.session} defaultChannel="sms" channels={['password']} />,
-    )
-    // The password form is up even though the screen was asked to open
-    // on a channel this deployment does not offer -- never a channel
-    // that cannot be reached.
-    expect(
-      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
-    ).toBeInTheDocument()
-    expect(
-      screen.queryByLabelText(zhCN.smsSignIn.phoneLabel),
-    ).not.toBeInTheDocument()
   })
 })

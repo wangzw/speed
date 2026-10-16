@@ -85,6 +85,7 @@ import {
   errorResponse,
   jsonResponse,
   makeRealClientRig,
+  methodList,
   openFlow,
   principal,
 } from '../test-utils/real-client.js'
@@ -92,10 +93,15 @@ import { ProductShell } from './components/ProductShell.js'
 
 const FLOWS_START = 'POST /auth/flows'
 const FLOWS_ANSWER = 'POST /auth/flows/answer'
+const METHODS = 'GET /auth/methods'
 const PROFILE = 'GET /auth/me'
 const TOKEN = 'POST /auth/token'
 const IDENTIFIER = 'alice@example.com'
 const PASSWORD = 'password-1'
+
+/** The deployment's method document: the password channel the journeys
+ * sign in with. The sign-in surface reads it on mount. */
+const METHODS_BODY = methodList([{ name: 'password', kind: 'form' }])
 
 /** The host's tenant roster -- host data, the same fixture the
  * tenancy-ui README demo uses. */
@@ -372,6 +378,9 @@ describe('host-side gating composition', () => {
     const onDenied = vi.fn()
     const rig = makeRealClientRig((call) => {
       const key = `${call.method} ${call.path}`
+      if (key === METHODS) {
+        return jsonResponse(200, METHODS_BODY)
+      }
       if (key === FLOWS_START) {
         return jsonResponse(
           200,
@@ -533,10 +542,12 @@ describe('host-side gating composition', () => {
       await screen.findByRole('heading', { name: 'Notes' }),
     ).toBeInTheDocument()
 
-    // Every request the journey made, pinned in order: the login's flow
-    // start, its completion answer and the profile it read. The tenant
-    // switch is the host's own state change and sends nothing.
+    // Every request the journey made, pinned in order: the sign-in
+    // surface's method read, the login's flow start, its completion
+    // answer and the profile it read. The tenant switch is the host's own
+    // state change and sends nothing.
     expect(rig.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      METHODS,
       FLOWS_START,
       FLOWS_ANSWER,
       PROFILE,
@@ -559,6 +570,9 @@ describe('host-side gating composition', () => {
       let profileCalls = 0
       const rig = makeRealClientRig((call) => {
         const key = `${call.method} ${call.path}`
+        if (key === METHODS) {
+          return jsonResponse(200, METHODS_BODY)
+        }
         if (key === FLOWS_START) {
           return jsonResponse(
             200,
@@ -641,15 +655,18 @@ describe('host-side gating composition', () => {
       expect(rig.store.get()).toBe('access-1')
 
       // Every request the journey made, pinned in order: the first
-      // login's flow start, answer and profile; the probe's refused
-      // profile and the credential-less refresh it triggered; then the
+      // sign-in surface's method read, the login's flow start, answer and
+      // profile; the probe's refused profile and the credential-less
+      // refresh it triggered; then the ended screen's method read and the
       // fresh login's flow start, answer and profile.
       expect(rig.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+        METHODS,
         FLOWS_START,
         FLOWS_ANSWER,
         PROFILE,
         PROFILE,
         TOKEN,
+        METHODS,
         FLOWS_START,
         FLOWS_ANSWER,
         PROFILE,

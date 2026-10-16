@@ -8,6 +8,8 @@ import { describe, expect, it } from 'vitest'
 import {
   ACCOUNT_CALLBACK_PATH,
   ACCOUNT_PATH,
+  AUTH_CALLBACK_PATH,
+  authCallbackRoutes,
   businessRoutes,
   CONSOLE_LANDING_PATH,
   CONSOLE_PREFIX,
@@ -50,9 +52,20 @@ describe('the route table', () => {
     expect(CONSOLE_LANDING_PATH).toBe(`${CONSOLE_PREFIX}/tenants`)
   })
 
-  it('combines the business slot, the console landing and the console pages', () => {
+  it('mounts the auth callback route at its own path, unlabelled', () => {
+    expect(authCallbackRoutes.map((route) => route.path)).toEqual([
+      AUTH_CALLBACK_PATH,
+    ])
+    // Unlabelled, so it adds no navigation entry.
+    expect(authCallbackRoutes[0]?.label).toBeUndefined()
+  })
+
+  it('combines the business slot, the callback route, the console landing and the console pages', () => {
     expect(routes).toHaveLength(
-      businessRoutes.length + consoleShellRoutes.length + 1,
+      businessRoutes.length +
+        authCallbackRoutes.length +
+        consoleShellRoutes.length +
+        1,
     )
   })
 })

@@ -1,37 +1,62 @@
 /**
- * SignInScreen: the assembled sign-in surface over the family's channels.
+ * SignInScreen: the assembled sign-in surface over the deployment's
+ * login methods.
  *
- * A channel tab strip -- password or SMS code, labels from the bundle,
- * the password channel first by default -- switches the sign-in form
- * below it; when social options are given, the social section renders
- * under the form with the divider title between them. Switching channels
- * unmounts the previous form, so its half-typed state and whole-attempt
- * error are gone with it -- a deliberate reset: channel errors must not
- * leak across surfaces. A successful sign-in on any channel fires
- * onSignedIn once. The tab strip is wired to the mounted channel panel
- * the ARIA tabs way: each Tab carries an id and the aria-controls of its
- * own panel, and the mounted channel renders as the role=tabpanel with
- * that id and the tab as its aria-labelledby -- only the active panel
- * exists in the DOM, since switching unmounts the previous form. The
- * screen renders no heading and nothing here navigates: the page above
- * (branding, the heading, the register link) is host content.
+ * The channels are the deployment's own: the screen reads the discovery
+ * document (`session.listMethods`, or a document the host injects) and
+ * renders exactly what it names -- the ways in are the server's, so a
+ * method enabled or disabled backend-side reaches the surface without a
+ * frontend change. The document's descriptors are grouped by `kind`:
  *
- * The channels themselves are the host's to declare through `channels`
- * (both offered by default): this package renders exactly the channels
- * the host composes, since no server the session talks to exposes a
- * channel discovery of its own. A deployment nothing can deliver an SMS
- * code to -- the seam resolves to the console sender, say -- leaves
- * 'sms' out of the list rather than offering a channel whose code can
- * never arrive. A single declared channel renders without a tab strip
- * at all: a tablist with nothing to switch between is not a choice.
+ *  - `form` methods gather behind a tab strip (a single one renders
+ *    without a strip -- a tablist with nothing to switch between is not a
+ *    choice). Password and SMS keep their bespoke forms; any other form
+ *    method is driven by its descriptor's own fields. Switching tabs
+ *    unmounts the previous form, so its half-typed state and whole-attempt
+ *    error are gone with it -- a deliberate reset: channel errors must not
+ *    leak across surfaces.
+ *  - `redirect` methods render as buttons (the social block); picking one
+ *    begins the method's flow and hands the host the authorization URL to
+ *    navigate.
+ *  - `enterprise` methods render an email-first entry that discovers the
+ *    viewer's identity providers before it leaves for one.
+ *  - `webauthn` methods render a passkey button that starts the method's
+ *    flow and renders the ceremony step.
+ *
+ * An unknown `kind` is ignored rather than rendered; a method whose name
+ * the family does not know still renders through its descriptor (see
+ * ./internal/labels), so the screen never crashes on a server-side method
+ * it has never seen.
+ *
+ * `mode` is a pure presentational switch over the one sign-in flow: the
+ * component presents a "register" entry (and a matching "sign in" entry
+ * back) where the deployment allows a first login to open an account
+ * (`discovery.signup.enabled` and at least one visible method carries
+ * `opens_account`). Registration is not a separate form -- it is a login
+ * flow's account-resolution outcome under the deployment's signup setting.
+ * A successful sign-in on any channel fires onSignedIn once. The screen
+ * renders no heading and nothing here navigates: the page above (branding,
+ * the heading) is host content.
+ *
+ * `discovery` lets a host inject a pre-fetched document (SSR, a test), in
+ * which case the screen fires no read of its own. The deprecated
+ * `channels` / `defaultChannel` props still narrow and select the form
+ * channels for one major.
  */
 
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import CircularProgress from '@mui/material/CircularProgress'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
-import type { AuthSession } from '@speed/auth-core'
+import Typography from '@mui/material/Typography'
+import type {
+  AuthSession,
+  AuthnMethodDescriptor,
+  AuthnMethodList,
+} from '@speed/auth-core'
 import { PasswordSignInForm } from './PasswordSignInForm.js'
 import { SMSSignInForm } from './SMSSignInForm.js'
 import { SocialSignInSection } from './SocialSignInSection.js'
@@ -39,19 +64,35 @@ import type {
   SocialProvider,
   SocialProviderConfig,
 } from './SocialSignInSection.js'
+import {
+  DescriptorSignInForm,
+  EnterpriseSignIn,
+  PasskeySignIn,
+} from './internal/sign-in-methods.js'
+import { useSignInDiscovery } from './internal/use-signin-discovery.js'
+import type { SignInDiscovery } from './internal/use-signin-discovery.js'
+import { methodLabel } from './internal/labels.js'
+import { InlineError } from './internal/inline-error.js'
 import { useAuthUiTranslation } from './internal/translation.js'
 
-/** The sign-in channels the screen toggles between. */
+/** The form-channel names the deprecated override recognises. */
 export type SignInChannel = 'password' | 'sms'
 
-/** The channels offered when the host declares none. */
-const DEFAULT_CHANNELS: readonly SignInChannel[] = ['password', 'sms']
+/** The presentational mode of the surface (both run the one sign-in flow). */
+export type SignInMode = 'sign-in' | 'register'
 
-/** The social block of the screen, rendered when given. */
+/** The social / redirect block of the screen. */
 export interface SocialSignInOptions {
-  /** The channels to render, in the order the host wants. */
-  readonly providers: readonly SocialProviderConfig[]
-  /** Receives each channel's authorization URL once built; the host
+  /**
+   * The redirect methods to render, in the order the host wants.
+   * @deprecated The redirect method set now comes from the discovery
+   * document; this override is honored for one major.
+   */
+  readonly providers?: readonly SocialProviderConfig[]
+  /** The host callback route sent as the flow's `return_to`; omitted to let
+   * the server use its configured default. */
+  readonly returnTo?: string
+  /** Receives each redirect method's authorization URL once built; the host
    * navigates. */
   readonly onAuthorizeUrl?: (provider: SocialProvider, authorizeUrl: string) => void
 }
@@ -59,103 +100,220 @@ export interface SocialSignInOptions {
 export interface SignInScreenProps {
   /** The session every channel on the screen drives. */
   readonly session: AuthSession
-  /** The social block of the screen; omitted to run without one. */
-  readonly social?: SocialSignInOptions
   /**
-   * The channels the screen offers, in tab order; both channels by
-   * default. A deployment must not offer a channel it cannot finish --
-   * offering SMS sign-in while nothing can deliver a code is a promise
-   * no phone will ever keep -- so a host with no working SMS delivery
-   * declares ['password'] and the screen renders the password channel
-   * alone, without a tab strip. An empty list means "no opinion" and
-   * falls back to both channels.
+   * A pre-fetched discovery document to render, instead of reading one (an
+   * SSR pass, a test). When given the screen fires no `listMethods` read.
    */
-  readonly channels?: readonly SignInChannel[]
-  /** The channel selected on first render; password by default. When
-   * the named channel is not offered, the first offered one is shown
-   * instead. */
-  readonly defaultChannel?: SignInChannel
+  readonly discovery?: AuthnMethodList
+  /** The presentational mode; `'sign-in'` by default. */
+  readonly mode?: SignInMode
   /** Fired once after a sign-in commits on any channel; the host
    * navigates. */
   readonly onSignedIn?: () => void
+  /** The redirect / enterprise block of the screen; omitted to run without
+   * one. */
+  readonly social?: SocialSignInOptions
+  /**
+   * The form channels to offer, by name.
+   * @deprecated The channels now come from the discovery document; this
+   * override still narrows the form strip for one major.
+   */
+  readonly channels?: readonly SignInChannel[]
+  /**
+   * The form channel selected on first render; password by default. When
+   * the named channel is not offered, the first offered one is shown.
+   * @deprecated The channel selection is presentational; still honored for
+   * one major.
+   */
+  readonly defaultChannel?: SignInChannel
 }
 
 export function SignInScreen({
   session,
+  discovery,
+  mode = 'sign-in',
+  onSignedIn,
   social,
   channels,
   defaultChannel = 'password',
-  onSignedIn,
 }: SignInScreenProps) {
   const { t } = useAuthUiTranslation()
-  const offered: readonly SignInChannel[] =
-    channels === undefined || channels.length === 0 ? DEFAULT_CHANNELS : channels
-  const [channel, setChannel] = useState<SignInChannel>(() =>
-    offered.includes(defaultChannel)
-      ? defaultChannel
-      : // An empty declaration fell back to DEFAULT_CHANNELS above, so
-        // the list is never empty here; 'password' is the unreachable
-        // index guard's answer, not a second default.
-        (offered[0] ?? 'password'),
-  )
-  // The id base of the tab/tabpanel pair per channel: each channel's
+  const [attempt, setAttempt] = useState(0)
+  const fetched = useSignInDiscovery(session, {
+    enabled: discovery === undefined,
+    attempt,
+  })
+  const state: SignInDiscovery =
+    discovery === undefined ? fetched : { status: 'ready', discovery }
+  const [activeMode, setActiveMode] = useState<SignInMode>(mode)
+  useEffect(() => {
+    setActiveMode(mode)
+  }, [mode])
+  // The id base of the tab/tabpanel pair per form channel: each channel's
   // tab names its panel through aria-controls, and the panel -- the
-  // mounted form, unmounted on switch so a channel's half-typed state
-  // and whole-attempt error reset with it -- answers through
-  // aria-labelledby.
+  // mounted form, unmounted on switch -- answers through aria-labelledby.
   const channelId = useId()
-  const tabIdOf = (value: SignInChannel): string => `${channelId}-${value}-tab`
-  const panelIdOf = (value: SignInChannel): string =>
-    `${channelId}-${value}-panel`
-  const channelTitle = (value: SignInChannel): string =>
-    value === 'password' ? t('passwordSignIn.title') : t('smsSignIn.title')
-  // The offered channel's form. A single offered channel renders it
-  // directly, with no tabpanel wrapper: there is no tab for a panel to
-  // answer to, so the ARIA tabs wiring would dangle.
-  const renderChannel = (value: SignInChannel): ReactNode =>
-    value === 'password' ? (
-      <PasswordSignInForm session={session} onSignedIn={onSignedIn} />
-    ) : (
-      <SMSSignInForm session={session} onSignedIn={onSignedIn} />
+  const [channel, setChannel] = useState<string | null>(null)
+
+  if (state.status === 'loading') {
+    return (
+      <Box
+        role="status"
+        sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}
+      >
+        <CircularProgress size={18} aria-hidden={true} />
+        <Typography>{t('discovery.loading')}</Typography>
+      </Box>
     )
+  }
+
+  if (state.status === 'error') {
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          gap: 1.5,
+          width: '100%',
+        }}
+      >
+        <InlineError code={state.code} />
+        <Button variant="outlined" onClick={() => setAttempt((value) => value + 1)}>
+          {t('discovery.retry')}
+        </Button>
+      </Box>
+    )
+  }
+
+  const doc = state.discovery
+  const formMethods = doc.methods
+    .filter((method) => method.kind === 'form')
+    .filter(
+      (method) =>
+        channels === undefined ||
+        channels.length === 0 ||
+        (channels as readonly string[]).includes(method.name),
+    )
+  const redirectMethods = doc.methods.filter((method) => method.kind === 'redirect')
+  const enterpriseMethods = doc.methods.filter(
+    (method) => method.kind === 'enterprise',
+  )
+  const webauthnMethods = doc.methods.filter((method) => method.kind === 'webauthn')
+
+  const formNames = formMethods.map((method) => method.name)
+  const selected =
+    channel !== null && formNames.includes(channel)
+      ? channel
+      : formNames.includes(defaultChannel)
+        ? defaultChannel
+        : (formNames[0] ?? '')
+  const activeDescriptor = formMethods.find((method) => method.name === selected)
+
+  const registerVisible =
+    doc.signup?.enabled === true &&
+    doc.methods.some((method) => method.opens_account === true)
+
+  const redirectConfigs: readonly SocialProviderConfig[] =
+    social?.providers ??
+    redirectMethods.map((method) => ({
+      provider: method.name,
+      label: method.label,
+      redirectUri: social?.returnTo ?? '',
+    }))
+
+  const tabIdOf = (name: string): string => `${channelId}-${name}-tab`
+  const panelIdOf = (name: string): string => `${channelId}-${name}-panel`
+
+  const renderForm = (method: AuthnMethodDescriptor): ReactNode => {
+    switch (method.name) {
+      case 'password':
+        return <PasswordSignInForm session={session} onSignedIn={onSignedIn} />
+      case 'sms':
+        return <SMSSignInForm session={session} onSignedIn={onSignedIn} />
+      default:
+        return (
+          <DescriptorSignInForm
+            session={session}
+            method={method.name}
+            fields={method.fields ?? []}
+            onSignedIn={onSignedIn}
+          />
+        )
+    }
+  }
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%' }}>
-      {offered.length > 1 ? (
+      {registerVisible ? (
+        <>
+          {activeMode === 'register' ? (
+            <Typography variant="body2" color="text.secondary">
+              {t('mode.registerHint')}
+            </Typography>
+          ) : null}
+          <Button
+            variant="text"
+            onClick={() =>
+              setActiveMode(activeMode === 'sign-in' ? 'register' : 'sign-in')
+            }
+          >
+            {activeMode === 'sign-in'
+              ? t('mode.registerEntry')
+              : t('mode.signInEntry')}
+          </Button>
+        </>
+      ) : null}
+      {formMethods.length > 1 ? (
         <Tabs
-          value={channel}
-          onChange={(_event, value: SignInChannel) => setChannel(value)}
+          value={selected}
+          onChange={(_event, value: string) => setChannel(value)}
           variant="fullWidth"
         >
-          {offered.map((value) => (
+          {formMethods.map((method) => (
             <Tab
-              key={value}
-              label={channelTitle(value)}
-              value={value}
-              id={tabIdOf(value)}
-              aria-controls={panelIdOf(value)}
+              key={method.name}
+              label={methodLabel(method, t)}
+              value={method.name}
+              id={tabIdOf(method.name)}
+              aria-controls={panelIdOf(method.name)}
             />
           ))}
         </Tabs>
       ) : null}
-      {offered.length > 1 ? (
+      {formMethods.length > 1 ? (
         <Box
           role="tabpanel"
-          id={panelIdOf(channel)}
-          aria-labelledby={tabIdOf(channel)}
+          id={panelIdOf(selected)}
+          aria-labelledby={tabIdOf(selected)}
         >
-          {renderChannel(channel)}
+          {activeDescriptor ? renderForm(activeDescriptor) : null}
         </Box>
-      ) : (
-        renderChannel(channel)
-      )}
-      {social !== undefined ? (
+      ) : activeDescriptor ? (
+        renderForm(activeDescriptor)
+      ) : null}
+      {redirectConfigs.length > 0 ? (
         <SocialSignInSection
           session={session}
-          providers={social.providers}
-          onAuthorizeUrl={social.onAuthorizeUrl}
+          providers={redirectConfigs}
+          onAuthorizeUrl={social?.onAuthorizeUrl}
         />
       ) : null}
+      {enterpriseMethods.length > 0 ? (
+        <EnterpriseSignIn
+          session={session}
+          returnTo={social?.returnTo}
+          onAuthorizeUrl={social?.onAuthorizeUrl}
+        />
+      ) : null}
+      {webauthnMethods.map((method) => (
+        <PasskeySignIn
+          key={method.name}
+          session={session}
+          method={method}
+          onSignedIn={onSignedIn}
+        />
+      ))}
     </Box>
   )
 }

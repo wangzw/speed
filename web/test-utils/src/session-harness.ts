@@ -49,6 +49,7 @@ export const LOGIN_START_AUTHENTICATED = 'POST /auth/flows/authenticated'
 export const LOGIN_ANSWER = 'POST /auth/flows/answer'
 export const LOGIN_CURRENT = 'GET /auth/flows/current'
 export const LOGIN_ABANDON = 'DELETE /auth/flows/current'
+export const SSO_DISCOVER = 'POST /auth/sso/discover'
 export const LOGOUT = 'POST /auth/logout'
 export const TOKEN_ISSUE = 'POST /auth/token'
 export const PROFILE_GET = 'GET /auth/me'
@@ -107,6 +108,15 @@ export function methodList(
     signup: { enabled: overrides.signup ?? false },
     mfa: { factors: [...(overrides.mfaFactors ?? [])] },
   }
+}
+
+/** The POST /auth/sso/discover body: the enterprise sign-in entries an
+ * email's domain maps to, always the same shape (empty when nothing
+ * matches). */
+export function ssoProviders(
+  providers: readonly { id: string; name: string; protocol: string }[] = [],
+): { providers: { id: string; name: string; protocol: string }[] } {
+  return { providers: providers.map((provider) => ({ ...provider })) }
 }
 
 type OpenState = 'first' | 'second' | 'enroll' | 'ready' | 'processing'

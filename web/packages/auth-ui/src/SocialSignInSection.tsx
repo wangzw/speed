@@ -1,9 +1,14 @@
 /**
  * SocialSignInSection: the social channels of the sign-in surface.
  *
- * One outlined button per configured provider, each answering the
- * bundle's name for it; the divider title above is the section's only
- * non-interactive text. Clicking a provider begins that method's login
+ * One outlined button per configured provider, each answering the method's
+ * brand label where the discovery document gives one (a provider's own
+ * name), otherwise the bundle's name for it; the divider title above is
+ * the section's only non-interactive text. The provider set is the
+ * deployment's -- the screen derives it from the discovery document's
+ * redirect methods -- so this section renders the channels it is handed
+ * without knowing their names in advance. Clicking a provider begins that
+ * method's login
  * flow (`session.startFlow`); the flow's first step for a social method is
  * a `redirect` step carrying the provider's authorization URL -- a pure
  * request, never a navigation: the URL is reported upward through
@@ -36,23 +41,27 @@ import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
 import type { AuthSession } from '@speed/auth-core'
 import { useAuthUiTranslation } from './internal/translation.js'
+import { methodLabel } from './internal/labels.js'
 import { errorCodeOf } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 import { isOpenFlow } from './internal/flow.js'
 
-/** The social sign-in channels the authn spec hosts. */
-export type SocialProvider =
-  | 'google'
-  | 'github'
-  | 'wechat'
-  | 'dingtalk'
-  | 'feishu'
+/** A redirect sign-in method's name. The set is the deployment's: the
+ * discovery document names the redirect methods, so this is a method name
+ * rather than a closed union. */
+export type SocialProvider = string
 
-/** One configured channel: which provider, and the host callback route
+/** One configured channel: which provider, the brand label to render it
+ * with (empty for a name-keyed translation), and the host callback route
  * the flow returns to once the server has handled the provider's round
  * trip. */
 export interface SocialProviderConfig {
   readonly provider: SocialProvider
+  /** The method's brand name (a provider's own name, not translated) where
+   * the discovery document carries one. */
+  readonly label?: string
+  /** The host callback route sent as the flow's `return_to`; empty lets the
+   * server use its configured default. */
   readonly redirectUri: string
 }
 
@@ -107,7 +116,7 @@ export function SocialSignInSection({
         method: provider,
         delivery: 'token',
         binding: 'cookie',
-        return_to: config.redirectUri,
+        ...(config.redirectUri === '' ? {} : { return_to: config.redirectUri }),
       })
       authorizeUrl =
         isOpenFlow(reply) && reply.next.kind === 'redirect'
@@ -162,7 +171,7 @@ export function SocialSignInSection({
           disabled={busyProviders.has(config.provider)}
           onClick={() => void authorize(config)}
         >
-          {t(`social.provider.${config.provider}`)}
+          {methodLabel({ name: config.provider, label: config.label }, t)}
         </Button>
       ))}
       <InlineError code={errorCode} />
