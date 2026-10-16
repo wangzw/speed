@@ -178,8 +178,11 @@ The two-step-verification surface. The authn factor routes list and
 remove factors (`GET /auth/factors`, `DELETE /auth/factors/{id}`);
 registration is not among them -- the one entry is the login engine's
 `enroll` purpose -- so the section renders the factors it reads and
-offers the two enrollment entries the spec hosts, each driving a
-`purpose: 'enroll'` flow.
+offers the enrollment entries THIS deployment carries, each driving a
+`purpose: 'enroll'` flow. Which kinds those are is the deployment's own
+answer: the section reads `GET /auth/methods`' `mfa.factors` once through
+`session.listMethods` and offers only the kinds it lists, so a deployment
+whose assembly has no passkey relying party shows no passkey entry.
 
 - Enroll. `session.startAuthenticatedFlow({purpose: 'enroll', input: {kind}})`
   opens the wizard; each reply's next step is rendered and answered
@@ -274,9 +277,10 @@ is `test-utils/real-client.ts`, the render harness
   starts at the first factor (an account with no usable strengthening
   factor) renders its challenge fields and is answerable, but the
   package's own callers only reach the factor step.
-- The enrollment entries are the two factor kinds the spec names (an
-  authenticator app, a passkey). The surface offers no kind discovery
-  beyond them.
+- The enrollment entries are the deployment's own answer: the surface
+  reads `GET /auth/methods`' `mfa.factors` through `session.listMethods`
+  and offers only the kinds it lists (an authenticator app, a passkey, and
+  whatever else an assembly records).
 
 ## Development
 

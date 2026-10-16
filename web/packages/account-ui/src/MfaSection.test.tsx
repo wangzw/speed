@@ -1,17 +1,20 @@
 /**
  * MfaSection behaviour: the factors read (GET /auth/factors), the remove
- * route (DELETE /auth/factors/{id}) and the `purpose: 'enroll'` flow
+ * route (DELETE /auth/factors/{id}), the deployment's method discovery
+ * (GET /auth/methods) and the `purpose: 'enroll'` flow
  * (POST /auth/flows/authenticated, POST /auth/flows/answer).
  *
  * What this suite pins: the factors render with their kind, label and
- * status beside the two enrollment entries; a remove DELETE-s the factor
- * and refetches the list; a remove refused with 401 step_up_required
- * opens the step-up dialog, and a won step-up re-runs exactly that
- * removal once; a 409 (last factor) renders its code text; and the TOTP
- * enrollment walks the flow -- the `webauthn` step's otpauth_uri is
- * rendered, the code is answered under `step: 'enroll'`, the ready step
- * is taken with `step: 'complete'` and the settled `enrolled` refetches
- * the factors.
+ * status beside the enrollment entries the deployment reports -- only the
+ * kinds GET /auth/methods' mfa.factors lists are offered, so a deployment
+ * without a passkey relying party shows no passkey entry; a remove
+ * DELETE-s the factor and refetches the list; a remove refused with 401
+ * step_up_required opens the step-up dialog, and a won step-up re-runs
+ * exactly that removal once; a 409 (last factor) renders its code text;
+ * and the TOTP enrollment walks the flow -- the `webauthn` step's
+ * otpauth_uri is rendered, the code is answered under `step: 'enroll'`,
+ * the ready step is taken with `step: 'complete'` and the settled
+ * `enrolled` refetches the factors.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -30,10 +33,21 @@ import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { MfaSection } from './MfaSection.js'
 
 const FACTORS_PATH = '/auth/factors'
+const METHODS_PATH = '/auth/methods'
 const FLOW_START = '/auth/flows/authenticated'
 const FLOW_ANSWER = '/auth/flows/answer'
 
 const OTPAUTH_URI = 'otpauth://totp/speed:ada?issuer=speed'
+
+/** The GET /auth/methods discovery document, carrying the deployment's
+ * enrollable factor kinds. */
+function methodsDoc(factors: readonly string[]): Record<string, unknown> {
+  return {
+    methods: [],
+    signup: { enabled: false },
+    mfa: { factors: [...factors] },
+  }
+}
 
 /** One factor row, in the factor fragment's own shape. */
 function factor(overrides: Record<string, unknown>): Record<string, unknown> {
@@ -57,6 +71,9 @@ function mount(respond: RealResponder) {
 describe('MfaSection', () => {
   it('renders the factors with their kind, label and status, and passes axe', async () => {
     const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
+      }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
           factors: [
@@ -83,9 +100,9 @@ describe('MfaSection', () => {
     ).toBeGreaterThan(0)
     expect(screen.getByText(zhCN.mfa.factor.status.active)).toBeTruthy()
     expect(screen.getByText(zhCN.mfa.factor.status.pending)).toBeTruthy()
-    // Both enrollment entries are offered.
+    // Both enrollment entries are offered (the deployment reports both).
     expect(
-      screen.getByRole('button', { name: zhCN.mfa.enroll.totp }),
+      await screen.findByRole('button', { name: zhCN.mfa.enroll.totp }),
     ).toBeTruthy()
     expect(
       screen.getByRole('button', { name: zhCN.mfa.enroll.webauthn }),
@@ -94,9 +111,36 @@ describe('MfaSection', () => {
     await expectNoAxeViolations()
   })
 
+  it('offers only the enrollment entries the deployment reports', async () => {
+    // This deployment took no passkey relying party: its discovery document
+    // lists totp alone, so the passkey entry is not offered -- the surface
+    // never offers a factor the deployment cannot complete.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    // The reported kind renders; the unreported one does not.
+    expect(
+      await screen.findByRole('button', { name: zhCN.mfa.enroll.totp }),
+    ).toBeTruthy()
+    expect(
+      screen.queryByRole('button', { name: zhCN.mfa.enroll.webauthn }),
+    ).toBeNull()
+  })
+
   it('removes a factor behind the confirm and refetches', async () => {
     let removed = false
     const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
+      }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
           factors: removed ? [] : [factor({})],
@@ -135,6 +179,9 @@ describe('MfaSection', () => {
 
   it('renders a last-factor refusal as code text', async () => {
     const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
+      }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, { factors: [factor({})] })
       }
@@ -166,6 +213,9 @@ describe('MfaSection', () => {
     let elevated = false
     let removed = false
     const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
+      }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
           factors: removed ? [] : [factor({})],
@@ -243,6 +293,9 @@ describe('MfaSection', () => {
   it('walks the TOTP enrollment flow and refetches the factors', async () => {
     let enrolled = false
     const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
           factors: enrolled ? [factor({ id: 'factor-new' })] : [],

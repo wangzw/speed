@@ -5,10 +5,17 @@
  * The authn factor surface lists and removes factors (GET /auth/factors,
  * DELETE /auth/factors/{id}); registration is not among its routes -- the
  * one entry for it is the login engine's `enroll` purpose. The section
- * therefore renders the factors it reads and offers the two enrollment
- * entries the spec hosts (an authenticator app, a passkey), each of which
- * opens a `purpose: 'enroll'` flow (session.startAuthenticatedFlow) whose
- * steps the wizard answers until the flow settles `enrolled`.
+ * therefore renders the factors it reads and offers the enrollment entries
+ * THIS deployment carries, each of which opens a `purpose: 'enroll'` flow
+ * (session.startAuthenticatedFlow) whose steps the wizard answers until the
+ * flow settles `enrolled`. Which kinds the deployment carries is its own
+ * answer (GET /auth/methods' `mfa.factors`, read once through
+ * session.listMethods), never a hard-coded set: a deployment whose assembly
+ * has no passkey relying party does not offer the passkey entry, so the
+ * surface never offers a factor it cannot complete. The read is a session
+ * operation on the session the section already drives -- the same seam the
+ * enroll flow uses -- and an unresolved read withholds the entries (fail
+ * closed) rather than guessing.
  *
  *  - Enroll. `startAuthenticatedFlow({purpose: 'enroll', input: {kind}})`
  *    opens the wizard; each reply's next step is rendered (FlowStep) and
@@ -36,7 +43,7 @@
  * answered.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -75,7 +82,10 @@ const KNOWN_FACTOR_KINDS = new Set<string>(['totp', 'webauthn', 'sms'])
  * mfa.factor.status. A value outside the list renders no chip. */
 const KNOWN_FACTOR_STATUSES = new Set<string>(['active', 'pending', 'disabled'])
 
-/** The enrollment entries: the factor kind each opens a flow for. */
+/** The enrollment entries this package can render, one bundle key each.
+ * Each is offered only when the deployment reports its kind (see the
+ * section header): the list is filtered against GET /auth/methods'
+ * `mfa.factors`, so an entry the deployment cannot carry never renders. */
 const ENROLL_ENTRIES = [
   { kind: 'totp', labelKey: 'mfa.enroll.totp' },
   { kind: 'webauthn', labelKey: 'mfa.enroll.webauthn' },
@@ -123,10 +133,46 @@ export function MfaSection({ session }: MfaSectionProps) {
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
   // Every failure answer: code text above the current view.
   const [banner, setBanner] = useState<string | null>(null)
+  // The deployment's enrollable factor kinds (GET /auth/methods'
+  // mfa.factors). null is unresolved -- still reading, or the read failed:
+  // the enroll entries are then withheld rather than guessed.
+  const [enrollableKinds, setEnrollableKinds] = useState<
+    readonly string[] | null
+  >(null)
+
+  // Read the deployment's factors once per session. The guard survives
+  // StrictMode's double effect invocation, so a settled answer is only
+  // written while this effect is still the live one.
+  useEffect(() => {
+    let active = true
+    setEnrollableKinds(null)
+    void (async () => {
+      try {
+        const methods = await session.listMethods()
+        if (active) {
+          setEnrollableKinds(methods.mfa.factors)
+        }
+      } catch {
+        // A failed discovery offers no entry (fail closed): the surface
+        // never offers a factor the deployment may not carry.
+        if (active) {
+          setEnrollableKinds([])
+        }
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [session])
 
   const factors = data?.factors
   const pending = isPending && data === undefined
   const busy = enrolling || removeMutation.isPending
+  // Only the entries the deployment reported are offered.
+  const enrollEntries =
+    enrollableKinds === null
+      ? []
+      : ENROLL_ENTRIES.filter((entry) => enrollableKinds.includes(entry.kind))
 
   function invalidateFactors(): Promise<void> {
     return queryClient.invalidateQueries({
@@ -362,37 +408,43 @@ export function MfaSection({ session }: MfaSectionProps) {
                 </Typography>
               )}
 
-              <Box
-                sx={{
-                  mt: 2,
-                  borderTop: '1px solid',
-                  borderColor: 'divider',
-                  pt: 2,
-                }}
-              >
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                  {t('mfa.enroll.sectionTitle')}
-                </Typography>
+              {enrollEntries.length > 0 && (
                 <Box
                   sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'flex-start',
-                    gap: 1,
+                    mt: 2,
+                    borderTop: '1px solid',
+                    borderColor: 'divider',
+                    pt: 2,
                   }}
                 >
-                  {ENROLL_ENTRIES.map((entry) => (
-                    <Button
-                      key={entry.kind}
-                      variant="outlined"
-                      disabled={busy}
-                      onClick={() => void startEnroll(entry.kind)}
-                    >
-                      {t(entry.labelKey)}
-                    </Button>
-                  ))}
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ mb: 1.5 }}
+                  >
+                    {t('mfa.enroll.sectionTitle')}
+                  </Typography>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'flex-start',
+                      gap: 1,
+                    }}
+                  >
+                    {enrollEntries.map((entry) => (
+                      <Button
+                        key={entry.kind}
+                        variant="outlined"
+                        disabled={busy}
+                        onClick={() => void startEnroll(entry.kind)}
+                      >
+                        {t(entry.labelKey)}
+                      </Button>
+                    ))}
+                  </Box>
                 </Box>
-              </Box>
+              )}
             </Box>
           )
         }

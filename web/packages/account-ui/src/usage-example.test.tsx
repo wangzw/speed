@@ -45,6 +45,7 @@ import { MfaSection } from './MfaSection.js'
 const PROFILE_PATH = '/auth/me'
 const SESSIONS_PATH = '/auth/sessions'
 const FACTORS_PATH = '/auth/factors'
+const METHODS_PATH = '/auth/methods'
 
 const PROVIDERS: readonly SocialProviderConfig[] = [
   { provider: 'github', redirectUri: 'https://app.example.test/cb/github' },
@@ -128,6 +129,14 @@ describe('the README quick start, exercised over a real api-client', () => {
                 created_at: '2026-01-01T00:00:00Z',
               },
             ],
+          })
+        case METHODS_PATH:
+          // The deployment carries only an authenticator app: the enroll
+          // entries follow this answer (the passkey entry is not offered).
+          return jsonResponse(200, {
+            methods: [],
+            signup: { enabled: false },
+            mfa: { factors: ['totp'] },
           })
       }
       throw new Error(`no scripted answer for ${call.method} ${call.path}`)

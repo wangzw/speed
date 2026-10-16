@@ -87,9 +87,13 @@ session as a required prop; the read-only ones take no props.
    factor route — it is the login engine's enroll purpose — so
    `MfaSection` never declares an enable operation; the factors are read
    from `GET /auth/factors` and removal is `DELETE /auth/factors/{id}`.
-   The spec ships no disable operation: the server answers it by listing
-   only live sessions. Do not invent operations the spec does not ship,
-   and do not let a section render a state the server never answers with.
+   The enrollment entries are the deployment's own answer too: the section
+   reads `GET /auth/methods`' `mfa.factors` (through `session.listMethods`)
+   and offers only those kinds, so it never offers a factor the assembly
+   cannot complete. The spec ships no disable operation: the server answers
+   it by listing only live sessions. Do not invent operations the spec
+   does not ship, and do not let a section render a state the server never
+   answers with.
 3. **No text outside the namespace, no key set drift, and guarded
    server vocabulary.** User-facing strings are added to both locale
    files in the same commit under their component's section; the
@@ -205,8 +209,9 @@ limitations and deferrals. The load-bearing ones for a contributor: the
 package ships no QR, clipboard or WebAuthn integration, so a passkey
 enrollment renders the browser's creation options as text and answers one
 free-text field, and the authenticator's `otpauth_uri` is manual-entry
-only; the enrollment entries are the two factor kinds the spec names,
-with no kind-discovery call beyond them; the session list renders the
+only; the enrollment entries are the deployment's discovered factor kinds
+(`GET /auth/methods`' `mfa.factors`), so an assembly without a passkey
+relying party shows no passkey entry; the session list renders the
 server's list (only live sessions, the current one never revocable here);
 session state does not survive a page load, the refresh token is
 JavaScript-visible in memory, and step-up elevation outlives exactly the
