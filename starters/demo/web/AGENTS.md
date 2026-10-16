@@ -178,6 +178,23 @@ once. axe covers only the mechanically decidable part of WCAG (roughly 30-40%);
 the gate proves no regression, and does not replace manual review. See the
 frontend coding standards' Accessibility section.
 
+Two checks the jsdom gate cannot make, recorded so they are not read as
+"covered" (both need a real browser / a person):
+
+- **Color contrast (WCAG AA)**. jsdom performs no layout or color computation,
+  so axe's `color-contrast` is indeterminate for every node. The gate excludes
+  it from its rule set (`src/a11y/scan.ts`'s `UNSWEEPABLE_RULES`); before the
+  exclusion the named undecidable nodes were the AppBar brand text at `/` and a
+  breadcrumb link at `/console/audit/sample [error]`, both chrome text over an
+  emotion-styled background jsdom cannot resolve. Contrast there is a
+  browser-side / manual check.
+- **Touch-target size (≥44px, WCAG 2.5.5)** and **screen-reader behaviour
+  (VoiceOver/NVDA)**. Neither is measurable in jsdom. MUI's default
+  `IconButton` box is ~40px (and `size="small"` smaller), below the 44px
+  target; the shipped theme sets no minimum target size, so a deployment that
+  requires it needs a theme-level minimum-size override. Both are manual /
+  user-side checks, not verified here.
+
 The app is also a leg of the workspace's `make web-check` and an input to the
 Go program's build (`go -C starters/demo/server build ./...`), which embeds the
 output.

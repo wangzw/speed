@@ -151,6 +151,14 @@ async function scanRoute(
   expect(container.innerHTML, `route ${path} [${mode}] rendered no markup`).not.toBe('')
   await settle()
   const result = await scanPage()
+  // The sweep must not surface color-contrast: it is excluded from the gate's
+  // rule set (jsdom performs no color computation, so it is indeterminate for
+  // every node -- see UNSWEEPABLE_RULES in ./scan.ts). A re-added contrast run
+  // would show up here as a regression rather than as the noise it once was.
+  expect(
+    result.incomplete.some((finding) => finding.rule === 'color-contrast'),
+    `route ${path} [${mode}] swept color-contrast, which jsdom cannot decide`,
+  ).toBe(false)
   for (const finding of result.incomplete) {
     console.warn(`[route-a11y] ${path} [${mode}] indeterminate: ${formatFinding(finding)}`)
   }

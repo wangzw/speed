@@ -163,11 +163,24 @@ export function getCurrentTenantAlias(): string | null {
   return rosterAliases.get(currentTenantId) ?? tenantAlias(currentTenantId)
 }
 
-/** The top bar's brand: the demo namespace's title, in the header's own type. */
+/**
+ * The top bar's brand: the demo namespace's title, in the header's own
+ * type. It carries the header's type but is NOT a heading element
+ * (`component="div"`, never the h6 role the variant would pick): the
+ * brand sits in the banner on every page, before the page's own h1, so a
+ * heading element here would enter the page outline ahead of the real
+ * title and invert the heading order. The header landmark already
+ * contains it, so it needs no landmark role of its own.
+ */
 export function AppBrand(): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
   return (
-    <Typography noWrap variant="h6" sx={{ color: 'inherit', fontWeight: 600 }}>
+    <Typography
+      noWrap
+      variant="h6"
+      component="div"
+      sx={{ color: 'inherit', fontWeight: 600 }}
+    >
       {t('app.title')}
     </Typography>
   )

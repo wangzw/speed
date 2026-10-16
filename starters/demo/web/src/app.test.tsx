@@ -57,6 +57,22 @@ describe('the app at the root path', () => {
     expect(screen.queryByText(demoEnUS.home.heading)).not.toBeInTheDocument()
   })
 
+  it('carries the brand in the banner as a non-heading', async () => {
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    const brand = await screen.findByText(demoEnUS.app.title)
+    const banner = brand.closest('header')
+    expect(banner).not.toBeNull()
+    // The brand sits in the banner on every page, ahead of the page's own
+    // h1: it must not be a heading element, or the page outline would lead
+    // with the brand and invert the heading order. Asserted at the element
+    // and against the whole banner, so no heading hides beside it either.
+    expect(brand.tagName).not.toBe('H6')
+    expect(
+      within(banner as HTMLElement).queryByRole('heading'),
+    ).not.toBeInTheDocument()
+  })
+
   it('offers only the password channel, with no tab strip', async () => {
     renderDemoApp()
     // Wait for the surface (the discovery read resolves a document with the
@@ -149,10 +165,7 @@ describe('the tenant shell with a session', () => {
       session: createTestSession(authenticatedSnapshot()),
     })
 
-    const brand = await screen.findByRole('heading', {
-      level: 6,
-      name: demoEnUS.app.title,
-    })
+    const brand = await screen.findByText(demoEnUS.app.title)
     const banner = brand.closest('header')
     expect(banner).not.toBeNull()
     expect(
@@ -169,10 +182,7 @@ describe('the tenant shell with a session', () => {
     const session = createTestSession(authenticatedSnapshot())
     renderDemoApp({ session })
 
-    const brand = await screen.findByRole('heading', {
-      level: 6,
-      name: demoEnUS.app.title,
-    })
+    const brand = await screen.findByText(demoEnUS.app.title)
     const banner = brand.closest('header') as HTMLElement
 
     expect(
@@ -440,10 +450,7 @@ describe('the console area', () => {
     // header's own type, and the account menu beside it. The routed page's
     // PageHeader is also a <header> element, so scope to the banner that
     // carries the brand.
-    const brand = await screen.findByRole('heading', {
-      level: 6,
-      name: demoEnUS.app.title,
-    })
+    const brand = await screen.findByText(demoEnUS.app.title)
     const banner = brand.closest('header')
     expect(banner).not.toBeNull()
 
@@ -531,10 +538,7 @@ describe('a staff viewer whose platform permission is not the entry code', () =>
     // audit.read meets no way in -- even though the area gate (any platform
     // permission) would admit them were the URL typed. This is the entry tier
     // read apart from the area tier: the same set admits the area below.
-    const brand = await screen.findByRole('heading', {
-      level: 6,
-      name: demoEnUS.app.title,
-    })
+    const brand = await screen.findByText(demoEnUS.app.title)
     const banner = brand.closest('header') as HTMLElement
     expect(
       within(banner).queryByRole('link', { name: demoEnUS.nav.console }),
@@ -647,10 +651,7 @@ describe('the tenant area header controls', () => {
     // The interface relabels into the chosen language: the brand, resolved
     // from the demo namespace, now reads in Chinese.
     expect(
-      await screen.findByRole('heading', {
-        level: 6,
-        name: demoZhCN.app.title,
-      }),
+      await screen.findByText(demoZhCN.app.title),
     ).toBeInTheDocument()
   })
 

@@ -39,9 +39,14 @@
  * silently return -- never a claim that a page is accessible. See the skill's
  * Accessibility section.
  *
- * jsdom caveats. color-contrast is disabled: jsdom performs no layout or color
- * computation, so a contrast result there is neither trustworthy nor
- * actionable (contrast lives in the theme and is verified browser-side).
+ * jsdom caveats. color-contrast is excluded from the rule set (see
+ * UNSWEEPABLE_RULES): jsdom performs no layout or color computation, so a
+ * contrast result there is neither trustworthy nor actionable -- the rule is
+ * indeterminate for every node, never a violation or a pass. (The named nodes
+ * measured in this gate were the AppBar brand text at `/` and a breadcrumb
+ * link at `/console/audit/sample [error]`, both chrome text over an
+ * emotion-styled background jsdom cannot resolve.) Contrast is a
+ * browser-side / manual check, never mechanically decidable here.
  * axe's page-context checks (page-has-heading-one, landmark-one-main) probe
  * for an open modal through a visibility filter that needs real geometry and,
  * failing that, `document.elementsFromPoint`; jsdom implements neither, so the
@@ -109,14 +114,40 @@ export const PAGE_STRUCTURE_RULES = [
 ] as const
 
 /**
- * The rule ids the gate runs: every rule the WCAG AA tags select, plus the
- * page-structure rules. axe expands only one runOnly selector at a time (its
- * `runOnly` is either a tag set or a rule list), so the WCAG set is resolved to
- * rule ids through axe's own metadata and the two lists are merged.
+ * The rules the gate never runs under jsdom, excluded from the rule set below.
+ *
+ * `color-contrast` is the one: jsdom performs no layout or color computation,
+ * so axe cannot resolve any element's effective foreground/background and
+ * every contrast node comes back INDETERMINATE (never a violation, never a
+ * pass). The `rules: { 'color-contrast': { enabled: false } }` option does not
+ * turn it off -- when `runOnly` is present axe runs exactly the rules it
+ * selects, and the `rules` disable is ignored -- so the rule must be dropped
+ * from the selected set instead (see `gateRuleIds`). Measured before this
+ * exclusion, the two named nodes were the AppBar brand text (`/` anonymous)
+ * and a breadcrumb/back link (`.MuiLink-underlineHover`, `/console/audit/sample
+ * [error]`) -- both chrome text over an emotion-styled background jsdom cannot
+ * compute. Color contrast is a browser-side / manual check (see the class
+ * header), never mechanically decidable here; a regression in it cannot be
+ * caught by this gate and is out of its scope, not silently passing.
+ */
+export const UNSWEEPABLE_RULES = ['color-contrast'] as const
+
+/**
+ * The rule ids the gate runs: every rule the WCAG AA tags select, minus the
+ * jsdom-undecidable ones (`UNSWEEPABLE_RULES`), plus the page-structure rules.
+ * axe expands only one runOnly selector at a time (its `runOnly` is either a
+ * tag set or a rule list), so the WCAG set is resolved to rule ids through
+ * axe's own metadata and the lists are merged.
  */
 function gateRuleIds(): string[] {
   const wcag = axe.getRules([...WCAG_AA_TAGS]).map((rule) => rule.ruleId)
-  return [...new Set([...wcag, ...PAGE_STRUCTURE_RULES])]
+  const unsweepable = new Set<string>(UNSWEEPABLE_RULES)
+  return [
+    ...new Set([
+      ...wcag.filter((id) => !unsweepable.has(id)),
+      ...PAGE_STRUCTURE_RULES,
+    ]),
+  ]
 }
 
 function toFinding(result: axe.Result): A11yFinding {
@@ -150,15 +181,14 @@ function ensureDocumentDefaults(): void {
 }
 
 /**
- * Runs axe over the current document under the given selector, with
- * color-contrast disabled (jsdom cannot compute it -- see the header).
+ * Runs axe over the current document under the given selector. color-contrast
+ * is kept out of the selector itself (see UNSWEEPABLE_RULES and gateRuleIds):
+ * jsdom cannot compute colors, so the rule would only ever report the
+ * indeterminate results this gate has no answer for.
  */
 async function runAxe(runOnly: axe.RunOptions['runOnly']): Promise<A11yScanResult> {
   ensureDocumentDefaults()
-  const result = await axe.run(document, {
-    runOnly,
-    rules: { 'color-contrast': { enabled: false } },
-  })
+  const result = await axe.run(document, { runOnly })
   return {
     violations: result.violations.map(toFinding),
     incomplete: result.incomplete.map(toFinding),
