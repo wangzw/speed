@@ -16,24 +16,29 @@ import (
 // shape the module refuses, so that a misspelled bound is reported rather than
 // swallowed by a read that ignores it.
 const (
-	paramSince  = "since"
-	paramUntil  = "until"
-	paramAction = "action"
-	paramCursor = "cursor"
-	paramLimit  = "limit"
+	paramSince   = "since"
+	paramUntil   = "until"
+	paramAction  = "action"
+	paramOutcome = "outcome"
+	paramActor   = "actor"
+	paramCursor  = "cursor"
+	paramLimit   = "limit"
 )
 
 // listParams is the set the list route accepts.
 var listParams = map[string]bool{
-	paramSince:  true,
-	paramUntil:  true,
-	paramAction: true,
-	paramCursor: true,
-	paramLimit:  true,
+	paramSince:   true,
+	paramUntil:   true,
+	paramAction:  true,
+	paramOutcome: true,
+	paramActor:   true,
+	paramCursor:  true,
+	paramLimit:   true,
 }
 
 // handleRecordList answers GET /audit/admin/records: one page of audit records,
-// narrowed by a time window and a set of actions, read newest first.
+// narrowed by a time window and sets of actions, outcomes and actors, read
+// newest first.
 //
 // The order is fixed: read the caller (401 with no identity) → ask the guard for
 // audit.read (a shortfall is the guard's own answer) → read the query parameters
@@ -105,9 +110,9 @@ func (p *product) handleRecordGet(c *gin.Context) {
 
 // listQuery reads the list route's query parameters into a read query. A
 // parameter the route does not accept, a time bound that is not RFC 3339, an
-// action that names nothing, and a limit that is not a non-negative integer are
-// each a 400. A limit above the read surface's maximum is not refused: the read
-// surface caps it.
+// action, outcome or actor that names nothing, and a limit that is not a
+// non-negative integer are each a 400. A limit above the read surface's maximum
+// is not refused: the read surface caps it.
 func (p *product) listQuery(c *gin.Context) (journal.Query, bool) {
 	if !onlyAccepted(c, listParams) {
 		p.bad(c)
@@ -136,6 +141,20 @@ func (p *product) listQuery(c *gin.Context) (journal.Query, bool) {
 			return journal.Query{}, false
 		}
 		q.Actions = append(q.Actions, action)
+	}
+	for _, outcome := range c.QueryArray(paramOutcome) {
+		if outcome == "" {
+			p.bad(c)
+			return journal.Query{}, false
+		}
+		q.Outcomes = append(q.Outcomes, outcome)
+	}
+	for _, actor := range c.QueryArray(paramActor) {
+		if actor == "" {
+			p.bad(c)
+			return journal.Query{}, false
+		}
+		q.Actors = append(q.Actors, actor)
 	}
 	q.After = c.Query(paramCursor)
 	if s := c.Query(paramLimit); s != "" {

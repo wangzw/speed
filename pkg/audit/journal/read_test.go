@@ -181,6 +181,73 @@ func TestQueryNarrowsByTimeAndAction(t *testing.T) {
 	}
 }
 
+// The outcome and actor filters are sets applied to the table; a row outside
+// the named set is left out, and both combine with each other and with the
+// action set.
+func TestQueryNarrowsByOutcomeAndActor(t *testing.T) {
+	handle := readHandle(t)
+	okAlice := insertEntry(t, handle, row{Action: "a.create", Actor: "alice", Outcome: "ok"})
+	failedAlice := insertEntry(t, handle, row{Action: "a.create", Actor: "alice", Outcome: "failed"})
+	okBob := insertEntry(t, handle, row{Action: "a.update", Actor: "bob", Outcome: "ok"})
+	system := insertEntry(t, handle, row{Action: "a.create", Actor: "", Outcome: "ok"})
+	journal := newTestJournal(handle, settings{})
+	ctx := tenant.CrossTenant(t.Context())
+
+	ids := func(q Query) map[uint64]bool {
+		t.Helper()
+		page, _, err := journal.Query(ctx, q)
+		if err != nil {
+			t.Fatalf("query %+v failed: %v", q, err)
+		}
+		got := map[uint64]bool{}
+		for _, r := range page {
+			got[r.ID] = true
+		}
+		return got
+	}
+	same := func(got map[uint64]bool, want ...uint64) bool {
+		if len(got) != len(want) {
+			return false
+		}
+		for _, id := range want {
+			if !got[id] {
+				return false
+			}
+		}
+		return true
+	}
+
+	if got := ids(Query{Outcomes: []string{"failed"}}); !same(got, failedAlice) {
+		t.Errorf("the outcome filter read %v, want only the failed row %d", got, failedAlice)
+	}
+	if got := ids(Query{Outcomes: []string{"ok"}}); !same(got, okAlice, okBob, system) {
+		t.Errorf("the outcome filter read %v, want the three ok rows", got)
+	}
+	if got := ids(Query{Actors: []string{"alice"}}); !same(got, okAlice, failedAlice) {
+		t.Errorf("the actor filter read %v, want alice's two rows", got)
+	}
+	if got := ids(Query{Actors: []string{"bob", "carol"}}); !same(got, okBob) {
+		t.Errorf("the actor set read %v, want only bob's row %d", got, okBob)
+	}
+	// An actor of the empty string is a row with no actor, so an empty item
+	// selects exactly those rows; the management route refuses an empty item
+	// before the read, so it is reachable through this read surface alone.
+	if got := ids(Query{Actors: []string{""}}); !same(got, system) {
+		t.Errorf("the actor filter read %v for an empty actor, want the row with no actor %d", got, system)
+	}
+	// Both filters together, and each with the action set.
+	if got := ids(Query{Outcomes: []string{"failed"}, Actors: []string{"alice"}}); !same(got, failedAlice) {
+		t.Errorf("the outcome and actor filters read %v, want only %d", got, failedAlice)
+	}
+	if got := ids(Query{Actions: []string{"a.update"}, Outcomes: []string{"ok"}, Actors: []string{"bob"}}); !same(got, okBob) {
+		t.Errorf("the action, outcome and actor filters read %v, want only bob's update %d", got, okBob)
+	}
+	// A value no row carries reads nothing.
+	if got := ids(Query{Outcomes: []string{"panic"}, Actors: []string{"nobody"}}); len(got) != 0 {
+		t.Errorf("a filter no row matches read %v, want nothing", got)
+	}
+}
+
 // A cross-tenant read reaches every tenant's rows and the rows that belong to
 // no tenant, and a row written without a tenant reads back with an empty one.
 func TestCrossTenantReadsEveryTenantAndNoTenant(t *testing.T) {

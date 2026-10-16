@@ -46,12 +46,14 @@ type Reader interface {
 
 // Query 是一次读的窄化条件。
 type Query struct {
-    ID      uint64    // 非零时只读这一行
-    Since   time.Time // 零值表示无下界
-    Until   time.Time // 零值表示无上界
-    Actions []string  // 空表示不过滤动作
-    After   string    // 上一页的游标；空表示从最新一行起
-    Limit   int       // 页大小；非正取缺省，超过上限取上限
+    ID       uint64    // 非零时只读这一行
+    Since    time.Time // 零值表示无下界
+    Until    time.Time // 零值表示无上界
+    Actions  []string  // 空表示不过滤动作
+    Outcomes []string  // 空表示不过滤结果
+    Actors   []string  // 空表示不过滤操作者
+    After    string    // 上一页的游标；空表示从最新一行起
+    Limit    int       // 页大小；非正取缺省，超过上限取上限
 }
 
 // Row 是审计表上的一行，按列读出：行标识、时间、主体、租户、来源通路、
@@ -110,8 +112,12 @@ type Row struct {
 | `since` | 时间下界（RFC 3339），含该时刻；缺省为无下界 |
 | `until` | 时间上界（RFC 3339），不含该时刻；缺省为无上界 |
 | `action` | 动作，可重复；给出时只读这些动作的行 |
+| `outcome` | 结果，可重复；给出时只读这些结果的行 |
+| `actor` | 操作者，可重复；给出时只读这些操作者的行 |
 | `cursor` | 上一页返回的游标；缺省从最新一行起 |
 | `limit` | 页大小；缺省为读面的缺省页大小，至多为读面的最大页大小 |
+
+**`action`、`outcome` 与 `actor` 都是可重复的相等集。** 每个给出一组时只读值与其中一项相等的行；一个空值是这个形状之外的值，与越出形状的参数一样是 400。三个集互相之间、与时间窗之间都按「与」合成。`actor` 取的是行上的操作者键；一行没有操作者时该列为空串，匿名或系统来源的行因而只有不给出 `actor` 时读到。
 
 **时间边界按 UTC 比对。** 审计模块把每一行的时间按 UTC 写；边界在解析时折到 UTC 再交给读面。
 
@@ -192,7 +198,7 @@ sequenceDiagram
 |---|---|---|
 | 记录视图 | `{id, tenant, occurred_at, actor, source, action, object, outcome, purpose, detail}` | 从读面的行逐字段构造；`tenant` 为空表示一行没有租户；`detail` 是键值表 |
 | 页 | `{entries, next}` | `entries` 是记录视图的列表，`next` 是下一页游标，末页为空串 |
-| 读面查询 | `journal.Query` | 时间窗、动作集、行标识、游标与页大小（见「外部接口契约」的读面） |
+| 读面查询 | `journal.Query` | 时间窗、动作集、结果集、操作者集、行标识、游标与页大小（见「外部接口契约」的读面） |
 
 视图与查询都是本模块自己的类型，不是读面的 `Row`：`Row` 是审计表上的一行（含行标识、主体、租户、来源通路、动作、对象、结果、用途与明细），而交出去的是它的字段化视图、收进来的是解析过的查询。
 
@@ -220,7 +226,7 @@ sequenceDiagram
 
 | 情形 | 表现 |
 |---|---|
-| 请求在形状上不可读（路径的 `id` 不是数字、时间边界不是 RFC 3339、`limit` 越界、出现本路由不接受的查询参数） | 400（`Problem.Type` 为 `urn:speed:audit:bad-request`），在读面之前 |
+| 请求在形状上不可读（路径的 `id` 不是数字、时间边界不是 RFC 3339、`limit` 越界、动作、结果或操作者取空值、出现本路由不接受的查询参数） | 400（`Problem.Type` 为 `urn:speed:audit:bad-request`），在读面之前 |
 | `GET /audit/admin/records/:id` 点名一行审计表不持有 | 404，不带 `Problem.Type` |
 | 读面读表失败 | 503，不带 `Problem.Type`，成因只进日志 |
 | guard 的拒答与故障 | 403 / 503，由 guard 写出 |

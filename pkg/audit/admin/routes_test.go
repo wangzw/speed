@@ -112,6 +112,8 @@ func TestAShapeRefusalComesBeforeTheRead(t *testing.T) {
 		"a negative limit":                            listRoute + "?limit=-1",
 		"a limit that is not a number":                listRoute + "?limit=many",
 		"an action that names nothing":                listRoute + "?action=",
+		"an outcome that names nothing":               listRoute + "?outcome=",
+		"an actor that names nothing":                 listRoute + "?actor=",
 		"a query parameter the route does not accept": listRoute + "?nope=1",
 		"a path that is not an identifier":            getRoute + "abc",
 		"a query parameter on the get route":          getRoute + "1?foo=bar",
@@ -188,6 +190,31 @@ func TestTheListAnswersAPageAndPassesTheQueryThrough(t *testing.T) {
 	}
 	if q.Limit != 5 {
 		t.Errorf("limit = %d, want 5", q.Limit)
+	}
+}
+
+// The list route hands the read surface the outcome and actor sets the request
+// carried, each narrowed to the rows it names, alongside the time window and the
+// action set.
+func TestTheListPassesOutcomeAndActorThrough(t *testing.T) {
+	r := newRig(t)
+	w := r.do(listRoute + "?outcome=ok&outcome=failed&actor=alice&actor=bob&action=a.create")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	called := r.reader.recorded()
+	if len(called) != 1 {
+		t.Fatalf("the table was read %d time(s), want once", len(called))
+	}
+	q := called[0].q
+	if strings.Join(q.Outcomes, ",") != "ok,failed" {
+		t.Errorf("outcomes = %v, want the two given", q.Outcomes)
+	}
+	if strings.Join(q.Actors, ",") != "alice,bob" {
+		t.Errorf("actors = %v, want the two given", q.Actors)
+	}
+	if strings.Join(q.Actions, ",") != "a.create" {
+		t.Errorf("actions = %v, want the one given", q.Actions)
 	}
 }
 

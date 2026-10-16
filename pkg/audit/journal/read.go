@@ -71,6 +71,13 @@ type Query struct {
 	Until time.Time
 	// Actions, when non-empty, reads only the rows whose action is one of these.
 	Actions []string
+	// Outcomes, when non-empty, reads only the rows whose outcome is one of
+	// these.
+	Outcomes []string
+	// Actors, when non-empty, reads only the rows whose actor is one of these.
+	// An actor is the acting identity's key; a row with no actor holds the empty
+	// string, so an item that is the empty string selects those rows.
+	Actors []string
 	// After is the previous page's cursor. Empty starts at the newest row.
 	After string
 	// Limit is the page size. A non-positive value takes DefaultPageSize; a
@@ -158,6 +165,12 @@ func (j *journal) Query(ctx context.Context, q Query) ([]Row, string, error) {
 	}
 	if len(q.Actions) > 0 {
 		tx = tx.Where("action IN ?", q.Actions)
+	}
+	if len(q.Outcomes) > 0 {
+		tx = tx.Where("outcome IN ?", q.Outcomes)
+	}
+	if len(q.Actors) > 0 {
+		tx = tx.Where("actor IN ?", q.Actors)
 	}
 	if q.After != "" {
 		after, err := strconv.ParseUint(q.After, 10, 64)

@@ -1154,6 +1154,14 @@ until?: string;
  */
 action?: string[];
 /**
+ * Narrow to rows whose outcome is one of these
+ */
+outcome?: string[];
+/**
+ * Narrow to rows whose actor is one of these
+ */
+actor?: string[];
+/**
  * Continue after the row this cursor names
  */
 cursor?: string;

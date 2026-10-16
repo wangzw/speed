@@ -10,6 +10,8 @@
           {"name": "since", "in": "query", "required": false, "schema": {"type": "string", "format": "date-time"}, "description": "Read rows at or after this instant, RFC 3339"},
           {"name": "until", "in": "query", "required": false, "schema": {"type": "string", "format": "date-time"}, "description": "Read rows at or before this instant, RFC 3339"},
           {"name": "action", "in": "query", "required": false, "schema": {"type": "array", "items": {"type": "string"}}, "style": "form", "explode": true, "description": "Narrow to rows carrying one of these actions"},
+          {"name": "outcome", "in": "query", "required": false, "schema": {"type": "array", "items": {"type": "string"}}, "style": "form", "explode": true, "description": "Narrow to rows whose outcome is one of these"},
+          {"name": "actor", "in": "query", "required": false, "schema": {"type": "array", "items": {"type": "string"}}, "style": "form", "explode": true, "description": "Narrow to rows whose actor is one of these"},
           {"name": "cursor", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Continue after the row this cursor names"},
           {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer", "minimum": 0}, "description": "The page's maximum size; the read surface caps it"}
         ],
@@ -18,7 +20,7 @@
             "description": "One page of records and the cursor of the next, empty on the last page",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuditAdminRecordPage"}}}
           },
-          "400": {"description": "A query parameter the route does not accept, a time bound that is not RFC 3339, an empty action, a limit that is not a non-negative integer, or a cursor the read surface did not hand out", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "400": {"description": "A query parameter the route does not accept, a time bound that is not RFC 3339, an empty action, outcome or actor, a limit that is not a non-negative integer, or a cursor the read surface did not hand out", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "403": {"description": "The caller holds no audit.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
