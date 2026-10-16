@@ -423,8 +423,11 @@ export function createConsoleOperations(
       return useMutation({
         mutationFn: (input: ConsoleSetTenantAliasInput) =>
           backend.setTenantAlias(input),
-        onSuccess: () => {
+        onSuccess: (_answer, input) => {
           void client.invalidateQueries({ queryKey: TENANTS_KEY })
+          // The detail read keys by id; the list key is not its prefix, so
+          // it is invalidated on its own (as the shipped bundle does).
+          void client.invalidateQueries({ queryKey: tenantKey(input.id) })
         },
       })
     },
@@ -433,8 +436,9 @@ export function createConsoleOperations(
       return useMutation({
         mutationFn: (input: ConsoleSetTenantStatusInput) =>
           backend.setTenantStatus(input),
-        onSuccess: () => {
+        onSuccess: (_answer, input) => {
           void client.invalidateQueries({ queryKey: TENANTS_KEY })
+          void client.invalidateQueries({ queryKey: tenantKey(input.id) })
         },
       })
     },

@@ -124,6 +124,18 @@ describe('ImpersonationsPage', () => {
     expect(await screen.findByText('冒充记录加载失败')).toBeInTheDocument()
   })
 
+  it('renders the permission placeholder with no retry when the read is refused with 403', async () => {
+    const user = userEvent.setup()
+    const operations = withPage({
+      listImpersonations: () =>
+        Promise.reject({ status: 403, code: 'client.http.403' }),
+    })
+    renderWithProviders(<ImpersonationsPage />, { operations })
+    await pickTenant(user)
+    expect(await screen.findByText('权限不足')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+  })
+
   it('has no axe violations', async () => {
     const user = userEvent.setup()
     const operations = withPage({

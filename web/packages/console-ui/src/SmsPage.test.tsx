@@ -144,6 +144,18 @@ describe('SmsPage', () => {
     expect(await screen.findByText('短信模板加载失败')).toBeInTheDocument()
   })
 
+  it('renders the permission placeholder with no retry when the read is refused with 403', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSmsTemplates: () =>
+          Promise.reject({ status: 403, code: 'client.http.403' }),
+      }),
+    )
+    renderWithProviders(<SmsPage />, { operations })
+    expect(await screen.findByText('权限不足')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+  })
+
   it('has no axe violations', async () => {
     const operations = withTemplates()
     renderWithProviders(<SmsPage />, { operations })

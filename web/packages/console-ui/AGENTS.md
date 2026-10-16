@@ -227,8 +227,9 @@ own suite (its reads, writes and failure branches, with an axe scan); the
 surface, driven over the request rig, plus the provider fallback and the
 key-splitting helper); `routes` (the declarations' paths, permissions and
 translated labels); `resources`, `internal/error-text`,
-`internal/identifier` and `internal/datetime` (bundle key parity,
-whitelist pairing, the identifier rule and the timestamp formatting);
+`internal/identifier`, `internal/datetime` and `internal/async-section`
+(bundle key parity, whitelist pairing, the identifier rule, the timestamp
+formatting and the 403/retry split);
 `package.json` (the manifest contract); and `usage-example` (the README's
 composition, with the operations bundle substituted from test-utils).
 

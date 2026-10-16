@@ -115,6 +115,7 @@ import {
   getSettingsAdminSettingsListQueryOptions,
   getSmsAdminTemplatesListQueryKey,
   getSmsAdminTemplatesListQueryOptions,
+  getTenantAdminTenantsGetQueryKey,
   getTenantAdminTenantsGetQueryOptions,
   getTenantAdminTenantsListQueryKey,
   getTenantAdminTenantsListQueryOptions,
@@ -919,9 +920,15 @@ export const consoleOperations: ConsoleOperations = {
     return useMutation({
       mutationFn: (input: ConsoleSetTenantAliasInput) =>
         tenantAdminTenantsSetAlias(input.id, { alias: input.alias }),
-      onSuccess: () => {
+      onSuccess: (_answer, input) => {
         void queryClient.invalidateQueries({
           queryKey: getTenantAdminTenantsListQueryKey(),
+        })
+        // The tenant's own detail read is a separate key that the list key
+        // does not prefix, so it is invalidated on its own: a rename or a
+        // status change made on the detail page refreshes that page's read.
+        void queryClient.invalidateQueries({
+          queryKey: getTenantAdminTenantsGetQueryKey(input.id),
         })
       },
     })
@@ -932,9 +939,12 @@ export const consoleOperations: ConsoleOperations = {
     return useMutation({
       mutationFn: (input: ConsoleSetTenantStatusInput) =>
         tenantAdminTenantsSetStatus(input.id, { status: input.status }),
-      onSuccess: () => {
+      onSuccess: (_answer, input) => {
         void queryClient.invalidateQueries({
           queryKey: getTenantAdminTenantsListQueryKey(),
+        })
+        void queryClient.invalidateQueries({
+          queryKey: getTenantAdminTenantsGetQueryKey(input.id),
         })
       },
     })

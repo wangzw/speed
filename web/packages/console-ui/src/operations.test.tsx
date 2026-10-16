@@ -22,6 +22,7 @@ import {
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { bindConsoleRequest } from '../test-utils/request-rig.js'
+import { recordFixture } from '../test-utils/operations.js'
 
 describe('useConsoleOperations', () => {
   it('falls back to the shipped bundle when no provider is mounted', async () => {
@@ -146,6 +147,164 @@ describe('consoleOperations', () => {
     expect(calls).toContainEqual({
       method: 'GET',
       path: '/audit/admin/records',
+    })
+  })
+
+  it('reads a single tenant from the generated detail endpoint', async () => {
+    const calls = bindConsoleRequest((call) => {
+      if (call.path === '/tenant/admin/tenants/acme') {
+        return { tenant: { id: 'acme', alias: 'Acme', status: 'active' } }
+      }
+      throw new Error(`unexpected request: ${call.path}`)
+    })
+    function Detail() {
+      const { data } = consoleOperations.useTenant({ id: 'acme' })
+      return <p>{data ? `tenant:${data.alias}` : 'loading'}</p>
+    }
+    renderWithProviders(<Detail />, { operations: consoleOperations })
+    expect(await screen.findByText('tenant:Acme')).toBeInTheDocument()
+    expect(calls).toContainEqual({
+      method: 'GET',
+      path: '/tenant/admin/tenants/acme',
+    })
+  })
+
+  it('reads a single audit record from the generated detail endpoint', async () => {
+    const calls = bindConsoleRequest((call) => {
+      if (call.path === '/audit/admin/records/rec-1') {
+        return recordFixture({ id: 'rec-1' })
+      }
+      throw new Error(`unexpected request: ${call.path}`)
+    })
+    function Detail() {
+      const { data } = consoleOperations.useAuditRecord({ id: 'rec-1' })
+      return <p>{data ? `record:${data.id}` : 'loading'}</p>
+    }
+    renderWithProviders(<Detail />, { operations: consoleOperations })
+    expect(await screen.findByText('record:rec-1')).toBeInTheDocument()
+    expect(calls).toContainEqual({
+      method: 'GET',
+      path: '/audit/admin/records/rec-1',
+    })
+  })
+
+  it('drives the tenant detail write endpoints', async () => {
+    const user = userEvent.setup()
+    const calls = bindConsoleRequest(answer)
+    function Writes() {
+      const alias = consoleOperations.useSetTenantAlias()
+      const status = consoleOperations.useSetTenantStatus()
+      return (
+        <>
+          <button
+            onClick={() => alias.mutate({ id: 'acme', alias: 'Acme Inc' })}
+          >
+            setAlias
+          </button>
+          <button
+            onClick={() => status.mutate({ id: 'acme', status: 'disabled' })}
+          >
+            setStatus
+          </button>
+        </>
+      )
+    }
+    renderWithProviders(<Writes />, { operations: consoleOperations })
+    await user.click(screen.getByRole('button', { name: 'setAlias' }))
+    await user.click(screen.getByRole('button', { name: 'setStatus' }))
+    await waitFor(() => {
+      expect(calls).toContainEqual({
+        method: 'PATCH',
+        path: '/tenant/admin/tenants/acme',
+      })
+      expect(calls).toContainEqual({
+        method: 'POST',
+        path: '/tenant/admin/tenants/acme/status',
+      })
+    })
+  })
+
+  it('drives the settings write endpoints', async () => {
+    const user = userEvent.setup()
+    const calls = bindConsoleRequest(answer)
+    function Writes() {
+      const set = consoleOperations.useSetSetting()
+      const remove = consoleOperations.useRemoveSetting()
+      return (
+        <>
+          <button
+            onClick={() =>
+              set.mutate({ namespace: 'mail', key: 'mail.retry', value: '5' })
+            }
+          >
+            setSetting
+          </button>
+          <button
+            onClick={() =>
+              remove.mutate({ namespace: 'mail', key: 'mail.retry' })
+            }
+          >
+            removeSetting
+          </button>
+        </>
+      )
+    }
+    renderWithProviders(<Writes />, { operations: consoleOperations })
+    await user.click(screen.getByRole('button', { name: 'setSetting' }))
+    await user.click(screen.getByRole('button', { name: 'removeSetting' }))
+    await waitFor(() => {
+      expect(calls).toContainEqual({
+        method: 'PUT',
+        path: '/settings/admin/settings/mail/mail.retry',
+        query: { layer: 'global' },
+      })
+      expect(calls).toContainEqual({
+        method: 'DELETE',
+        path: '/settings/admin/settings/mail/mail.retry',
+        query: { layer: 'global' },
+      })
+    })
+  })
+
+  it('refreshes the detail read after a status write, which the list key does not cover', async () => {
+    const user = userEvent.setup()
+    const calls = bindConsoleRequest((call) => {
+      if (call.method === 'GET' && call.path === '/tenant/admin/tenants/acme') {
+        return { tenant: { id: 'acme', alias: 'Acme', status: 'active' } }
+      }
+      if (call.method === 'POST' && call.path === '/tenant/admin/tenants/acme/status') {
+        return undefined
+      }
+      throw new Error(`unexpected request: ${call.method} ${call.path}`)
+    })
+    const detailReads = (): number =>
+      calls.filter(
+        (call) =>
+          call.method === 'GET' && call.path === '/tenant/admin/tenants/acme',
+      ).length
+    function Detail() {
+      const query = consoleOperations.useTenant({ id: 'acme' })
+      const status = consoleOperations.useSetTenantStatus()
+      return (
+        <>
+          <p>{query.data ? `tenant:${query.data.alias}` : 'loading'}</p>
+          <button
+            onClick={() => status.mutate({ id: 'acme', status: 'disabled' })}
+          >
+            disable
+          </button>
+        </>
+      )
+    }
+    renderWithProviders(<Detail />, { operations: consoleOperations })
+    await screen.findByText('tenant:Acme')
+    expect(detailReads()).toBe(1)
+    await user.click(screen.getByRole('button', { name: 'disable' }))
+    // The detail key ['/tenant/admin/tenants/acme'] is not prefixed by the
+    // list key ['/tenant/admin/tenants'], so the write must invalidate it
+    // on its own or the detail page keeps the pre-write value.
+    await waitFor(() => {
+      expect(detailReads()).toBeGreaterThan(1)
     })
   })
 })

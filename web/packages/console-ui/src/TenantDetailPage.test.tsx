@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TenantDetailPage } from './TenantDetailPage.js'
+import type { ConsoleTenant } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
   createConsoleOperations,
@@ -69,6 +70,31 @@ describe('TenantDetailPage', () => {
 
     await user.click(screen.getByRole('button', { name: '停用' }))
     expect(calls).toEqual(['acme:disabled'])
+  })
+
+  it('refreshes the detail read after a status change so the control flips', async () => {
+    const user = userEvent.setup()
+    let status: ConsoleTenant['status'] = 'active'
+    const getTenant = vi.fn(() =>
+      Promise.resolve(tenantFixture({ id: 'acme', status })),
+    )
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        getTenant,
+        setTenantStatus: (input) => {
+          status = input.status
+          return Promise.resolve()
+        },
+      }),
+    )
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    await screen.findByText('已启用')
+
+    await user.click(screen.getByRole('button', { name: '停用' }))
+    // The write invalidates the detail read, so it refetches and the
+    // control re-labels from the settled status (停用 -> 启用).
+    expect(await screen.findByRole('button', { name: '启用' })).toBeInTheDocument()
+    expect(getTenant.mock.calls.length).toBeGreaterThan(1)
   })
 
   it('links back to the roster when given the roster path', async () => {
