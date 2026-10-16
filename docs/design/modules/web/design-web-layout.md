@@ -148,5 +148,5 @@ graph TD
 | 数据表的列优先级降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx` |
 | 数据表超宽的容器内滚动兜底 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable` |
 | 组件级容器查询 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx` |
-| 窄视口逐档降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx`；`web/packages/layout-kit/src/components/AppShell.tsx` `AppShell` |
+| 窄视口逐档降级 | 部分实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx`；`web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx` |
 | 指针能力查询 | 部分实现 | `web/packages/ui-kit/src/internal/pointer.ts`；`web/packages/ui-kit/src/components/DataTable.tsx` `touchTargetSx` |
