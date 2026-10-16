@@ -74,7 +74,8 @@
     "title": "删除这个对象？",
     "message": "对象 {{id}} 及其字节将被删除，此操作不可撤销。",
     "confirm": "删除",
-    "cancel": "取消"
+    "cancel": "取消",
+    "deleted": "对象已删除"
   },
   "detail": {
     "title": "对象详情",

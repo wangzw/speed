@@ -74,7 +74,8 @@
     "title": "Delete this object?",
     "message": "Object {{id}} and its bytes will be removed. This cannot be undone.",
     "confirm": "Delete",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "deleted": "Object deleted"
   },
   "detail": {
     "title": "Object details",

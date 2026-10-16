@@ -19,8 +19,9 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
 import { renderWithProviders } from '../test-utils/render.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import {
@@ -246,7 +247,21 @@ describe('ObjectsPage', () => {
     // Nothing has been deleted yet: the control only asked.
     expect(rig.calls.some((call) => call.method === 'DELETE')).toBe(false)
 
+    // Deleting an object discards its bytes for good, so the confirmation
+    // carries the heavier two-step guard: the first click only arms.
+    const confirmAgain = (
+      uiKitResources['en-US'] as unknown as {
+        readonly confirmDialog: { readonly confirmAgainLabel: string }
+      }
+    ).confirmDialog.confirmAgainLabel
     await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    expect(rig.calls.some((call) => call.method === 'DELETE')).toBe(false)
+    await act(async () => {
+      await new Promise((resolve) =>
+        setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
+      )
+    })
+    await user.click(within(dialog).getByRole('button', { name: confirmAgain }))
     await waitFor(() => {
       expect(
         rig.calls.some(
@@ -255,6 +270,9 @@ describe('ObjectsPage', () => {
       ).toBe(true)
     })
     expect(await screen.findByText('No objects yet')).toBeInTheDocument()
+    // The landed delete confirms itself in the page's status region, rather
+    // than succeeding silently.
+    expect(await screen.findByText('Object deleted')).toBeInTheDocument()
   })
 
   it('opens the details dialog and reads the single object', async () => {

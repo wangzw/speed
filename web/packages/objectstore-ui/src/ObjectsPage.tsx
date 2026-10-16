@@ -38,6 +38,7 @@ import {
   ConfirmDialog,
   DataTable,
   FileUploader,
+  InlineSuccess,
   ListSkeleton,
   PageHeader,
   errorCodeOf,
@@ -93,6 +94,8 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
 
   const [detailId, setDetailId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  // The confirmation a landed action fills into the page's success notice.
+  const [actionDone, setActionDone] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<StoredObject | null>(null)
 
   const download = (object: StoredObject): void => {
@@ -109,10 +112,14 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
       return
     }
     setActionError(null)
+    setActionDone(null)
     removeObject.mutate(
       { id: object.id },
       {
-        onSuccess: () => invalidate(),
+        onSuccess: () => {
+          invalidate()
+          setActionDone(t('delete.deleted'))
+        },
         onError: (error) => setActionError(errorCodeOf(error)),
       },
     )
@@ -244,6 +251,7 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
         </Typography>
         <Box sx={{ mb: 1 }}>
           <InlineError code={actionError} />
+          <InlineSuccess message={actionDone} />
         </Box>
         <ObjectAsyncSection<StoredObject[]>
           pending={pending}
@@ -310,6 +318,9 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
       <ConfirmDialog
         open={pendingDelete !== null}
         variant="danger"
+        // Deleting an object removes its stored bytes for good and cannot be
+        // undone from the interface: the heavier two-step arm.
+        doubleConfirm
         title={t('delete.title')}
         message={
           pendingDelete === null
