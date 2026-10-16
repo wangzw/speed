@@ -6,7 +6,9 @@ account page — the self-service write surfaces (`ProfileSection` over the
 profile's `PATCH /auth/me`, `PasswordSection` over `PUT /auth/password`,
 `PhoneSection` over the two-step `POST /auth/phone` and
 `/auth/phone/verify`, and `IdentifiersSection` over the profile's own
-identifiers and `DELETE /auth/identifiers/{id}`), `PreferencesSection`
+identifiers, its add face's `POST /auth/identifiers` and
+`/auth/identifiers/verify`, and `DELETE /auth/identifiers/{id}`),
+`PreferencesSection`
 (the language-and-timezone selects over the profile's own `PATCH
 /auth/me`), `SessionsSection` (the live-sessions list with per-session
 and bulk revocation), `SocialBindingsSection` plus

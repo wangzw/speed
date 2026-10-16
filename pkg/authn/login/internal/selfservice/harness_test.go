@@ -95,6 +95,7 @@ func newHarness(t *testing.T, cfgs ...func(*config)) *harness {
 		logs:     &logCapture{},
 		clockNow: now,
 	}
+	h.kv.now = func() time.Time { return h.clockNow }
 	deps := selfservice.Deps{
 		Accounts:        h.accounts,
 		Admin:           h.admin,

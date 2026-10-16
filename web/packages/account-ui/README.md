@@ -157,8 +157,23 @@ Lists the account's sign-in identifiers -- read off the profile's
 list route -- each with its kind (email, phone or username) and its
 verified or unverified state. A row's remove action sits behind the
 ui-kit danger confirm and sends `DELETE /auth/identifiers/{id}`; a refusal
-(the account's last way in is the 409 `conflict`) renders its code text. A
-successful removal refetches the profile.
+(the account's last way in is the 409 `conflict`) renders its code text.
+
+Below the list an add face adds one identifier the caller chooses, its kind
+`username` or `email` (a phone is added through its own two-step surface).
+A username is a login name with no ownership to prove, so
+`POST /auth/identifiers` writes it in one step and the answer reports the
+addition. An email is a contact address, so the add sends a code to it (the
+answer is state `pending`) and the code is submitted through
+`POST /auth/identifiers/verify`; only the matching code writes the address.
+The email branch is unavailable on a deployment with no email channel (a
+503 `unavailable`). Every write -- add, verify and remove -- asks for fresh
+authentication: a 401 `authn.insufficient_user_authentication` opens the
+step-up dialog with the write remembered, and a won challenge re-runs that
+one write. A write that lands -- a username add, an email's verification or a
+removal, not the code-send step, which writes nothing -- refetches the
+profile and the session list, because these routes revoke the account's
+other sessions.
 
 ## PreferencesSection
 

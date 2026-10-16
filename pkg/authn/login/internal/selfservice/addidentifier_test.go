@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
 // pendingEmail mirrors the record the email branch keeps in the store, so a test
@@ -17,9 +19,7 @@ type pendingEmail struct {
 	Account    string `json:"account"`
 	Email      string `json:"email"`
 	CodeDigest string `json:"code_digest"`
-	SentAt     int64  `json:"sent_at"`
 	ExpiresAt  int64  `json:"expires_at"`
-	Attempts   int    `json:"attempts"`
 }
 
 // pendingEmailKey is the one key of the pending email verification in the store,
@@ -36,6 +36,22 @@ func pendingEmailKey(h *harness) (string, pendingEmail, bool) {
 		return key, rec, true
 	}
 	return "", pendingEmail{}, false
+}
+
+// pendingAttempts is the failed-attempt count kept against a pending
+// verification, read off the count's own key, or 0 when nothing is counted.
+func pendingAttempts(h *harness) float64 {
+	for _, key := range h.kv.keys() {
+		if !strings.HasPrefix(key, "authn:email-attempts:") {
+			continue
+		}
+		v, err := strconv.ParseFloat(string(h.kv.values[key]), 64)
+		if err != nil {
+			return -1
+		}
+		return v
+	}
+	return 0
 }
 
 // emailHarness is a harness with the email branch switched on.
@@ -211,6 +227,25 @@ func TestAResendAfterTheIntervalSendsAgain(t *testing.T) {
 	}
 }
 
+// TestAResendFromAnotherSessionIsThrottledByAddress holds that the resend window
+// is held against the address rather than the session. A second session naming
+// the same address within the interval is a 429, so the route cannot be turned
+// into a flood of messages to one address by opening another session.
+func TestAResendFromAnotherSessionIsThrottledByAddress(t *testing.T) {
+	h := emailHarness(t)
+	if w := h.post("/identifiers", addBody("email", "ada@example.com")); w.Code != http.StatusOK {
+		t.Fatalf("the first add answered %d", w.Code)
+	}
+	h.as(authntest.WithSession("sess-2"))
+	w := h.post("/identifiers", addBody("email", "Ada@Example.com"))
+	if w.Code != http.StatusTooManyRequests || problemType(t, w) != "throttled" {
+		t.Fatalf("a second session's add answered %d %s, want 429 throttled", w.Code, w.Body)
+	}
+	if len(h.email.sent) != 1 {
+		t.Errorf("a throttled resend still sent: %d messages", len(h.email.sent))
+	}
+}
+
 // TestAWrongCodeIsRejectedAndCounted holds that a code that does not match is
 // login-failed, that no identifier is written, and that the attempt is counted
 // against the pending record.
@@ -229,12 +264,11 @@ func TestAWrongCodeIsRejectedAndCounted(t *testing.T) {
 	if len(h.admin.added) != 0 {
 		t.Errorf("a wrong code wrote an identifier: %+v", h.admin.added)
 	}
-	_, rec, ok := pendingEmailKey(h)
-	if !ok {
+	if _, _, ok := pendingEmailKey(h); !ok {
 		t.Fatal("the pending record was dropped on a wrong code")
 	}
-	if rec.Attempts != 1 {
-		t.Errorf("attempts = %d, want 1", rec.Attempts)
+	if got := pendingAttempts(h); got != 1 {
+		t.Errorf("attempts = %v, want 1", got)
 	}
 }
 
@@ -260,6 +294,33 @@ func TestTheRecordIsSpentAfterTheAttemptsAreUsedUp(t *testing.T) {
 	w := h.post("/identifiers/verify", verifyBody(real))
 	if w.Code != http.StatusUnauthorized || problemType(t, w) != "flow-invalid" {
 		t.Fatalf("answer = %d %s, want 401 flow-invalid once the record is spent", w.Code, w.Body)
+	}
+}
+
+// TestAWrongCodeAdvancesTheCountByAnAtomicIncrement holds the shape the attempt
+// bound needs under concurrency: a wrong code advances a count of its own
+// through the store's atomic increment. A count kept as a field of the record is
+// advanced by reading it, adding one and writing it back, and concurrent wrong
+// codes each read the same value and write back the same one, so every count but
+// one is lost and the bound no longer holds. The count therefore lives on a key
+// of its own, advanced without a read-modify-write of anything.
+func TestAWrongCodeAdvancesTheCountByAnAtomicIncrement(t *testing.T) {
+	h := emailHarness(t)
+	h.post("/identifiers", addBody("email", "ada@example.com"))
+	real := h.email.sent[0].code
+	wrong := "000000"
+	if wrong == real {
+		wrong = "111111"
+	}
+
+	increments := h.log.count("kv.IncrByFloatWithTTL")
+	h.post("/identifiers/verify", verifyBody(wrong))
+
+	if got := h.log.count("kv.IncrByFloatWithTTL") - increments; got != 1 {
+		t.Errorf("the count was advanced by an atomic increment %d times, want 1", got)
+	}
+	if got := pendingAttempts(h); got != 1 {
+		t.Errorf("the count on its own key is %v, want 1", got)
 	}
 }
 

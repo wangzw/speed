@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -286,12 +287,15 @@ func (f *fakeEmail) SendCode(_ context.Context, to, code string, ttl time.Durati
 }
 
 // fakeKV is an in-memory kv.KV that keeps the expiry each key was stored with,
-// and fails on demand. The operations the routes do not use are refused.
+// honours that expiry against the harness clock, and fails on demand. The
+// operations the routes do not use are refused.
 type fakeKV struct {
 	log     *callLog
 	mu      sync.Mutex
+	now     func() time.Time
 	values  map[string][]byte
 	ttls    map[string]time.Duration
+	expires map[string]time.Time
 	getErr  error
 	setErr  error
 	delErr  error
@@ -302,7 +306,43 @@ type fakeKV struct {
 var _ kv.KV = (*fakeKV)(nil)
 
 func newFakeKV(log *callLog) *fakeKV {
-	return &fakeKV{log: log, values: map[string][]byte{}, ttls: map[string]time.Duration{}}
+	return &fakeKV{
+		log:     log,
+		values:  map[string][]byte{},
+		ttls:    map[string]time.Duration{},
+		expires: map[string]time.Time{},
+	}
+}
+
+// alive reports whether key holds a live value, dropping an entry whose expiry
+// has passed. The caller holds the lock.
+func (f *fakeKV) alive(key string) bool {
+	if _, ok := f.values[key]; !ok {
+		return false
+	}
+	if f.now == nil {
+		return true
+	}
+	exp, ok := f.expires[key]
+	if !ok || f.now().Before(exp) {
+		return true
+	}
+	delete(f.values, key)
+	delete(f.ttls, key)
+	delete(f.expires, key)
+	return false
+}
+
+// store writes value under key with ttl and records when it lapses. The caller
+// holds the lock.
+func (f *fakeKV) store(key string, value []byte, ttl time.Duration) {
+	f.values[key] = append([]byte(nil), value...)
+	f.ttls[key] = ttl
+	if ttl > 0 && f.now != nil {
+		f.expires[key] = f.now().Add(ttl)
+	} else {
+		delete(f.expires, key)
+	}
 }
 
 func (f *fakeKV) Get(_ context.Context, key string) ([]byte, bool, error) {
@@ -312,8 +352,10 @@ func (f *fakeKV) Get(_ context.Context, key string) ([]byte, bool, error) {
 	if f.getErr != nil {
 		return nil, false, f.getErr
 	}
-	v, ok := f.values[key]
-	return append([]byte(nil), v...), ok, nil
+	if !f.alive(key) {
+		return nil, false, nil
+	}
+	return append([]byte(nil), f.values[key]...), true, nil
 }
 
 func (f *fakeKV) Set(_ context.Context, key string, value []byte, ttl time.Duration) error {
@@ -324,8 +366,7 @@ func (f *fakeKV) Set(_ context.Context, key string, value []byte, ttl time.Durat
 		return f.setErr
 	}
 	f.sets++
-	f.values[key] = append([]byte(nil), value...)
-	f.ttls[key] = ttl
+	f.store(key, value, ttl)
 	return nil
 }
 
@@ -339,6 +380,7 @@ func (f *fakeKV) Delete(_ context.Context, key string) error {
 	f.deletes++
 	delete(f.values, key)
 	delete(f.ttls, key)
+	delete(f.expires, key)
 	return nil
 }
 
@@ -356,16 +398,47 @@ var errUnused = errors.New("fakeKV: operation the routes do not use")
 
 func (f *fakeKV) IncrByFloat(context.Context, string, float64) (float64, error) { return 0, errUnused }
 
-func (f *fakeKV) IncrByFloatWithTTL(context.Context, string, float64, time.Duration) (float64, error) {
-	return 0, errUnused
+func (f *fakeKV) IncrByFloatWithTTL(_ context.Context, key string, delta float64, ttl time.Duration) (float64, error) {
+	f.log.add("kv.IncrByFloatWithTTL")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.setErr != nil {
+		return 0, f.setErr
+	}
+	var current float64
+	if f.alive(key) {
+		v, err := strconv.ParseFloat(string(f.values[key]), 64)
+		if err != nil {
+			return 0, kv.ErrNotNumeric
+		}
+		current = v
+	} else {
+		// A missing key starts from zero and takes ttl as its expiry; an existing
+		// key keeps the expiry it already has, so ttl is ignored here.
+		f.store(key, []byte("0"), ttl)
+	}
+	current += delta
+	f.values[key] = []byte(strconv.FormatFloat(current, 'f', -1, 64))
+	return current, nil
 }
 
 func (f *fakeKV) CompareAndSwap(context.Context, string, []byte, []byte) (bool, error) {
 	return false, errUnused
 }
 
-func (f *fakeKV) SetIfAbsent(context.Context, string, []byte, time.Duration) (bool, error) {
-	return false, errUnused
+func (f *fakeKV) SetIfAbsent(_ context.Context, key string, value []byte, ttl time.Duration) (bool, error) {
+	f.log.add("kv.SetIfAbsent")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.setErr != nil {
+		return false, f.setErr
+	}
+	if f.alive(key) {
+		return false, nil
+	}
+	f.sets++
+	f.store(key, value, ttl)
+	return true, nil
 }
 
 type fakeBus struct {
