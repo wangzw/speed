@@ -76,6 +76,7 @@
     "confirmTitle": "Unlink this social account?",
     "confirmMessage": "You will no longer be able to sign in with this social account. It can be linked again later.",
     "confirmLabel": "Unlink",
+    "unlinked": "Social account unlinked",
     "addSectionTitle": "Link another account",
     "empty": {
       "title": "No linked social accounts yet",
@@ -151,6 +152,7 @@
     "title": "Preferences",
     "loading": "Loading preferences",
     "saveFailed": "Your change could not be saved to your account.",
+    "saved": "Preferences saved",
     "language": {
       "label": "Language",
       "notChosen": "Not chosen (use your device's language)",

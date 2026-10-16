@@ -52,11 +52,12 @@
  * offline -- keeps the section header and the loading skeleton; the
  * block must never silently vanish while the answer has not arrived.
  * Settled states render one ui-kit EmptyState with the section header
- * hidden, so the heading order never skips a level: an answer listing
- * zero bindings renders the empty variant, while a load that failed --
- * and a successful answer that omits the optional links key, as
- * unreadable as an error and never grounds for a "no linked accounts"
- * claim or an add area -- render the error variant with a retry button.
+ * hidden: an answer listing zero bindings renders the empty variant as a
+ * headerless status placeholder (emptyHeadingLevel="none", so it does not
+ * enter the page outline), while a load that failed -- and a successful
+ * answer that omits the optional links key, as unreadable as an error and
+ * never grounds for a "no linked accounts" claim or an add area -- render
+ * the error variant with a retry button.
  * The one exception is a first-run account with an unbound configured
  * provider: there a genuinely empty list is exactly the add area's cue,
  * so the header stays and the add area is the whole of the content.
@@ -78,6 +79,7 @@ import {
   AsyncSection,
   ConfirmDialog,
   errorCodeOf,
+  InlineSuccess,
   ListSkeleton,
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
@@ -122,7 +124,10 @@ export interface SocialBindingsSectionProps {
 }
 
 /** The transient outcome of an unbind action, rendered above the list. */
-type Notice = { readonly kind: 'unbind-failed'; readonly code: string } | null
+type Notice =
+  | { readonly kind: 'unbind-failed'; readonly code: string }
+  | { readonly kind: 'unbind-done' }
+  | null
 
 /**
  * The provider values the authn identity surface answers with, one
@@ -255,10 +260,10 @@ export function SocialBindingsSection({
     (config) => !boundProviders.has(config.provider),
   )
   const hasAddArea = rows !== undefined && available.length > 0
-  // Empty list with nothing to offer: the EmptyState's own title stands
-  // in for the section header (headingLevel="h2" below keeps it at the
-  // hidden header's own level, rather than skipping to EmptyState's h6
-  // default), so the heading order never skips a level.
+  // Empty list with nothing to offer: the EmptyState's own empty placeholder
+  // shows with the section header hidden. The placeholder is a status, not a
+  // section, so it renders headerless (emptyHeadingLevel="none" below) and
+  // does not enter the page outline.
   const showEmptyState = rows !== undefined && rows.length === 0 && !hasAddArea
   const showHeader =
     pending || (rows !== undefined && (rows.length > 0 || hasAddArea))
@@ -268,6 +273,7 @@ export function SocialBindingsSection({
     try {
       await unbindMutation.mutateAsync(linkId)
       setUnbindTarget(null)
+      setNotice({ kind: 'unbind-done' })
       await queryClient.invalidateQueries({
         queryKey: getAuthnProfileGetQueryKey(),
       })
@@ -315,6 +321,12 @@ export function SocialBindingsSection({
         </Box>
       )}
 
+      {/* The section header is hidden while the empty placeholder shows, but
+          the empty placeholder is a status, not a section: a heading here
+          ("No linked social accounts") would still enter the page outline as
+          a chapter. It renders headerless as one role="status" region
+          (emptyHeadingLevel="none") instead, and the page's heading order is
+          left to its real headings. */}
       <AsyncSection
         pending={pending}
         payload={rows}
@@ -330,10 +342,16 @@ export function SocialBindingsSection({
           title: t('bindings.empty.title'),
           description: t('bindings.empty.description'),
         }}
+        emptyHeadingLevel="none"
       >
         {(settledRows) => (
           <Box>
             {notice?.kind === 'unbind-failed' && <InlineError code={notice.code} />}
+            {/* The landed unbind's confirmation, in a standing polite live
+                region mounted empty until an unbind lands. */}
+            <InlineSuccess
+              message={notice?.kind === 'unbind-done' ? t('bindings.unlinked') : null}
+            />
             {/* The binding rows are one real list, as the sessions rows
                 are: a screen-reader user hears each binding as one item
                 of a numbered set. The notice above and the add area

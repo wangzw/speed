@@ -18,7 +18,6 @@
 import { describe, expect, it } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
   errorResponse,
@@ -33,10 +32,6 @@ import { SessionsSection } from './SessionsSection.js'
 
 const SESSIONS_PATH = '/auth/sessions'
 const PROFILE_PATH = '/auth/me'
-
-const UI_KIT_ZH = uiKitResources['zh-CN'] as unknown as {
-  readonly confirmDialog: { readonly confirmAgainLabel: string }
-}
 
 /** The profile read the timezone chain issues beside the list. */
 const PROFILE = jsonResponse(200, { time_zone: '' })
@@ -226,21 +221,12 @@ describe('SessionsSection', () => {
       }),
     )
     const dialog = await screen.findByRole('dialog')
+    // Signing out other devices is recoverable, so it carries the single
+    // confirming click -- not the heavier two-step arm an irreversible
+    // delete uses: one click here fires the revoke.
     await user.click(
       within(dialog).getByRole('button', {
         name: zhCN.sessions.revokeOthers.confirmLabel,
-      }),
-    )
-    // The first click arms the confirm; the deliberate second waits out
-    // the lockout window inside act, exactly as a user would.
-    await act(async () => {
-      await new Promise((resolve) =>
-        setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
-      )
-    })
-    await user.click(
-      within(dialog).getByRole('button', {
-        name: UI_KIT_ZH.confirmDialog.confirmAgainLabel,
       }),
     )
 

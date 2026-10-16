@@ -106,12 +106,42 @@ describe('ProfileSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', { name: zhCN.profile.save }),
-    )
+    const field = await screen.findByRole('textbox', {
+      name: zhCN.profile.displayName.label,
+    })
+    await user.clear(field)
+    await user.type(field, 'Grace')
+    await user.click(screen.getByRole('button', { name: zhCN.profile.save }))
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
+  })
+
+  it('disables the save button while the field still holds the account name', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ display_name: 'Ada' }))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const save = await screen.findByRole('button', { name: zhCN.profile.save })
+    // Nothing changed yet: the save is inert, so a stray click cannot fire a
+    // no-op PATCH.
+    expect(save).toBeDisabled()
+
+    const field = screen.getByRole('textbox', {
+      name: zhCN.profile.displayName.label,
+    })
+    await user.type(field, '!')
+    expect(save).toBeEnabled()
+
+    // Restoring the account's own name disables it again.
+    await user.clear(field)
+    await user.type(field, 'Ada')
+    expect(save).toBeDisabled()
   })
 
   it('gates a step_up_required save behind the dialog and re-runs it once', async () => {

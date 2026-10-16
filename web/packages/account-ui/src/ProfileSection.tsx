@@ -12,7 +12,10 @@
  * The section reads GET /auth/me for the stored name, seeds the field from
  * it and PATCHes a one-field body on save. The write is not fired on every
  * keystroke: it goes out from the save button, so a half-typed name never
- * lands on the account.
+ * lands on the account, and the button is disabled while the field still
+ * holds the account's own name (a save with nothing changed would fire a
+ * no-op PATCH) -- the same no-change-disabled convention the console's
+ * account-detail save controls set.
  *
  * The route admits a caller only with the freshness the account's factors
  * call for (a fresh multi-factor authentication when the account has an
@@ -182,7 +185,11 @@ export function ProfileSection({ session }: ProfileSectionProps) {
             <Button
               type="submit"
               variant="contained"
-              disabled={patchProfile.isPending}
+              // Disabled while the field still holds the account's own name:
+              // a save with nothing changed would fire a no-op PATCH, and the
+              // console account detail's save controls set the same
+              // no-change-disabled convention.
+              disabled={patchProfile.isPending || name === (data?.display_name ?? '')}
             >
               {t('profile.save')}
             </Button>

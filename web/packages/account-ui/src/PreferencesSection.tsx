@@ -59,7 +59,7 @@ import {
   useAuthnProfilePatch,
 } from '@speed/api-sdk'
 import { readSupportedLanguages, switchLanguage } from '@speed/i18n'
-import { AsyncSection, errorCodeOf } from '@speed/ui-kit'
+import { AsyncSection, errorCodeOf, InlineSuccess } from '@speed/ui-kit'
 import { useAccountUiErrorText } from './internal/error-text.js'
 import { useProfileQuery } from './internal/queries.js'
 import { useAccountUiTranslation } from './internal/translation.js'
@@ -99,6 +99,7 @@ export function PreferencesSection() {
   const { data, isPending, refetch } = useProfileQuery()
   const patchProfile = useAuthnProfilePatch()
   const [failureCode, setFailureCode] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
 
   const languageOptions = useMemo(
     () => readSupportedLanguages(i18n),
@@ -127,6 +128,7 @@ export function PreferencesSection() {
    * and only the failure alert renders. */
   async function saveLocale(locale: string): Promise<void> {
     setFailureCode(null)
+    setSaved(false)
     try {
       await patchProfile.mutateAsync({ data: { locale } })
       // The empty string IS the clearing value, not a language: a
@@ -143,6 +145,7 @@ export function PreferencesSection() {
       await queryClient.invalidateQueries({
         queryKey: getAuthnProfileGetQueryKey(),
       })
+      setSaved(true)
     } catch (error) {
       setFailureCode(errorCodeOf(error))
     }
@@ -150,11 +153,13 @@ export function PreferencesSection() {
 
   async function saveTimezone(timezone: string): Promise<void> {
     setFailureCode(null)
+    setSaved(false)
     try {
       await patchProfile.mutateAsync({ data: { time_zone: timezone } })
       await queryClient.invalidateQueries({
         queryKey: getAuthnProfileGetQueryKey(),
       })
+      setSaved(true)
     } catch (error) {
       setFailureCode(errorCodeOf(error))
     }
@@ -203,6 +208,11 @@ export function PreferencesSection() {
                 </Typography>
               </Alert>
             )}
+
+            {/* The landed write's confirmation, in a polite status region (a
+                write here is immediate, so a silent success would leave the
+                operator unsure the choice took). */}
+            <InlineSuccess message={saved ? t('preferences.saved') : null} />
 
             <TextField
               select

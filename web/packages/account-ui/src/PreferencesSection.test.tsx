@@ -200,6 +200,11 @@ describe('PreferencesSection', () => {
     expect(
       await screen.findByRole('heading', { name: enUS.preferences.title }),
     ).toBeTruthy()
+    // The landed write confirms itself in the status region (resolved in the
+    // now-current language), rather than succeeding silently.
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      enUS.preferences.saved,
+    )
   })
 
   it('clears the language preference without switching the device language', async () => {

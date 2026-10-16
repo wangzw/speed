@@ -125,8 +125,10 @@ Edits the account's display name through the profile write
 `PATCH /auth/me` (the same route the preferences section writes its
 language and time zone through). It reads `GET /auth/me` for the stored
 name, lets the field track that value until the user edits it, and
-PATCHes a one-field body from the save button. A successful save fills a
-`role="status"` notice and refetches the profile.
+PATCHes a one-field body from the save button, which is disabled while
+the field still holds the account's own name (a save with nothing changed
+would be a no-op PATCH). A successful save fills a `role="status"` notice
+and refetches the profile.
 
 ### PasswordSection
 
@@ -206,8 +208,10 @@ The current session (the request's own) carries a badge and no revoke
 affordance; every other row has a row-end sign-out button
 (`DELETE /auth/sessions/{id}`). The section-top "sign out other devices"
 action (`DELETE /auth/sessions`) revokes every other session at once and
-sits behind the ui-kit danger double-confirm; its answer's revoked count
-is surfaced in a success notice. Every successful revoke invalidates the
+sits behind the ui-kit danger confirm -- a single confirming click, not
+the heavier two-step arm, because the action is recoverable (a signed-out
+device signs in again); its answer's revoked count is surfaced in a
+success notice. Every successful revoke invalidates the
 list query, so the rows converge on the server's answer. The section
 takes no props.
 
@@ -216,8 +220,9 @@ takes no props.
 The social-account bindings surface. The bound identities are the
 profile's `links` field (`GET /auth/me`); each row names the provider and
 its email. A row with an id has an unlink action
-(`DELETE /auth/links/{id}`) behind the ui-kit danger confirm; a refused
-unbind renders its code text above the list.
+(`DELETE /auth/links/{id}`) behind the ui-kit danger confirm; a landed
+unbind is confirmed in a `role="status"` notice above the list, and a
+refused one renders its code text there.
 
 The add area renders one button per configured provider that is not
 already bound. A channel's label is the method's brand label where the
@@ -355,7 +360,7 @@ is `test-utils/real-client.ts`, the render harness
 |---|---|---|
 | `@speed/auth-core` | dependency | the `AuthSession` type and the flow operations (`startAuthenticatedFlow`, `answerFlow`, `readFlow`) |
 | `@speed/api-sdk` | dependency | the generated react-query hooks, mutations and query-key constructors |
-| `@speed/ui-kit` | dependency | `ConfirmDialog`, `EmptyState`, `AsyncSection`, `InlineError`/`errorCodeOf`, `ListSkeleton` |
+| `@speed/ui-kit` | dependency | `ConfirmDialog`, `EmptyState`, `AsyncSection`, `InlineError`/`errorCodeOf`, `InlineSuccess`, `ListSkeleton` |
 | `@speed/i18n` | dependency | namespace registration and the translation hooks |
 | `@tanstack/react-query` | peer | the host's QueryClient and its hooks |
 | `react`, `react-dom`, `@mui/material`, `@emotion/*` | peer | the host's React/MUI tree |

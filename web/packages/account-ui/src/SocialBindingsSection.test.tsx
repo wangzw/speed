@@ -93,6 +93,32 @@ describe('SocialBindingsSection', () => {
     await expectNoAxeViolations()
   })
 
+  it('renders the empty placeholder headerless as a status region', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profile([]))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    // No configured channels and no bound links: the section's content is the
+    // empty placeholder alone.
+    renderWithProviders(
+      <SocialBindingsSection session={rig.session} providers={[]} />,
+    )
+
+    const emptyTitle = await screen.findByText(zhCN.bindings.empty.title)
+    // The empty placeholder is a status, not a section: its title must not
+    // enter the page heading outline, and the placeholder is a polite status
+    // region instead.
+    expect(
+      screen.queryByRole('heading', { name: zhCN.bindings.empty.title }),
+    ).toBeNull()
+    expect(emptyTitle.closest('[role="status"]')).not.toBeNull()
+    await expectNoAxeViolations()
+  })
+
   it('unlinks a binding and refetches the profile', async () => {
     let unlinked = false
     const respond: RealResponder = (call: RealCall) => {
@@ -142,6 +168,9 @@ describe('SocialBindingsSection', () => {
     // gone with it). The confirm dialog's exit transition must finish
     // before the page behind it is queryable by role again.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    // The landed unbind confirms itself in the standing status region rather
+    // than succeeding silently.
+    expect(await screen.findByText(zhCN.bindings.unlinked)).toBeTruthy()
     expect(
       screen.queryByRole('button', {
         name: zhCN.bindings.unbindAriaWithProvider.replace(

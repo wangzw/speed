@@ -19,12 +19,13 @@
  * without a second confirmation -- a signed-out session is low-loss (its
  * owner can simply sign in again) and the row itself is never the current
  * one. The section-top action, "sign out other devices", revokes every
- * other session at once (DELETE /auth/sessions) and is the heavier
- * gesture: it sits behind the ui-kit danger ConfirmDialog with double
- * confirm. The server itself skips the current session; the answer's
- * revoked count is surfaced in a success notice. After every successful
- * revoke the list query is invalidated, so the rows converge on the
- * server's answer (a revoked session drops off the listing).
+ * other session at once (DELETE /auth/sessions) behind the ui-kit danger
+ * ConfirmDialog; a single confirming click, not the heavier two-step arm,
+ * because the action is recoverable -- a signed-out device signs in again.
+ * The server itself skips the current session; the answer's revoked count
+ * is surfaced in a success notice. After every successful revoke the list
+ * query is invalidated, so the rows converge on the server's answer (a
+ * revoked session drops off the listing).
  *
  * The section takes no props: whose sessions these are, and the right to
  * revoke them, come from the caller's bound client and its access token;
@@ -531,7 +532,6 @@ export function SessionsSection() {
         title={t('sessions.revokeOthers.confirmTitle')}
         message={t('sessions.revokeOthers.confirmMessage')}
         variant="danger"
-        doubleConfirm
         confirmLabel={t('sessions.revokeOthers.confirmLabel')}
         confirmLoading={revokeOthersMutation.isPending}
         onCancel={() => setOthersConfirmOpen(false)}
