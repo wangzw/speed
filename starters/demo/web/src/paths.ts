@@ -15,6 +15,9 @@ export const CONSOLE_PREFIX = '/console'
 /** The tenant area's account page: the account-management surfaces. */
 export const ACCOUNT_PATH = '/account'
 
+/** The tenant area's object storage page: the objectstore capability's face. */
+export const OBJECTS_PATH = '/objects'
+
 /**
  * The social-binding callback route the account page's bind flow returns
  * to and whose completion the handler owns.

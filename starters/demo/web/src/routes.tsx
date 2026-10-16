@@ -34,17 +34,24 @@ import {
 import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
 import { HomePage } from './pages/home-page.js'
+import { ObjectStoreHostPage } from './pages/objects-page.js'
 import {
   ACCOUNT_CALLBACK_PATH,
   ACCOUNT_PATH,
   CONSOLE_PREFIX,
   INVITATION_PREFIX,
+  OBJECTS_PATH,
 } from './paths.js'
 
 // The path constants live in src/paths.ts, shared with the chrome that
 // links into them; re-exported here so the route table stays the single
 // import site for the app's paths.
-export { ACCOUNT_CALLBACK_PATH, ACCOUNT_PATH, CONSOLE_PREFIX } from './paths.js'
+export {
+  ACCOUNT_CALLBACK_PATH,
+  ACCOUNT_PATH,
+  CONSOLE_PREFIX,
+  OBJECTS_PATH,
+} from './paths.js'
 
 /** The route a social or enterprise provider's round trip lands on. The
  * app renders its page outside the tenant shell (src/app.tsx). */
@@ -86,6 +93,11 @@ export const businessRoutes: RouteTable = [
     path: ACCOUNT_PATH,
     view: () => <AccountSettingsPage />,
     label: <DemoNavLabel labelKey="nav.account" />,
+  },
+  {
+    path: OBJECTS_PATH,
+    view: () => <ObjectStoreHostPage />,
+    label: <DemoNavLabel labelKey="nav.objects" />,
   },
   // Unlabelled: the binding callback is a completion point, not a
   // destination in the navigation.

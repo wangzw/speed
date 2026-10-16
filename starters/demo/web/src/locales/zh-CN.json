@@ -5,7 +5,8 @@
   "nav": {
     "home": "首页",
     "console": "控制台",
-    "account": "账户设置"
+    "account": "账户设置",
+    "objects": "对象存储"
   },
   "console": {
     "backToApp": "返回应用"

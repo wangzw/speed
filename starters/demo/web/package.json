@@ -21,6 +21,7 @@
     "@speed/console-ui": "^0.0.1",
     "@speed/i18n": "^0.0.1",
     "@speed/layout-kit": "^0.0.1",
+    "@speed/objectstore-ui": "^0.0.1",
     "@speed/product-shell": "^0.0.1",
     "@speed/route-kit": "^0.0.1",
     "@speed/tenancy-ui": "^0.0.1",

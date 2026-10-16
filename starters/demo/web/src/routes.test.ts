@@ -16,20 +16,23 @@ import {
   consoleShellRoutes,
   invitationRoutes,
   isConsolePath,
+  OBJECTS_PATH,
   routes,
 } from './routes.js'
 import { INVITATION_PREFIX } from './paths.js'
 
 describe('the route table', () => {
-  it('names the business slot at the root and the account page, both labelled, beside the unlabelled callback', () => {
+  it('names the business slot, the account page and the object page, all labelled but the callback', () => {
     expect(businessRoutes.map((route) => route.path)).toEqual([
       '/',
       ACCOUNT_PATH,
+      OBJECTS_PATH,
       ACCOUNT_CALLBACK_PATH,
     ])
-    const [home, account, callback] = businessRoutes
+    const [home, account, objects, callback] = businessRoutes
     expect(home?.label).toBeDefined()
     expect(account?.label).toBeDefined()
+    expect(objects?.label).toBeDefined()
     // The callback is a completion point, not a navigation destination.
     expect(callback?.label).toBeUndefined()
   })
