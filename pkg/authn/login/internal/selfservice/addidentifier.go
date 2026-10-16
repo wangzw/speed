@@ -94,11 +94,12 @@ func emailCodeMatches(want, got string) bool {
 
 // emailCode draws a six-digit code from the system's entropy source.
 func emailCode() (string, error) {
-	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
+	bound := new(big.Int).Exp(big.NewInt(10), big.NewInt(emailCodeDigits), nil)
+	n, err := rand.Int(rand.Reader, bound)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%06d", n.Int64()), nil
+	return fmt.Sprintf("%0*d", emailCodeDigits, n.Int64()), nil
 }
 
 // normalizeEmail lowercases and trims an address and reports whether it is one
