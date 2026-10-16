@@ -44,6 +44,7 @@ describe('auth-ui resources', () => {
   it('document the shipped sections (one per component family with built-in text)', () => {
     const sections = Object.keys(authUiResources['zh-CN']!).sort()
     expect(sections).toEqual([
+      'acceptInvitation',
       'discovery',
       'enterprise',
       'errors',

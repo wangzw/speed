@@ -75,6 +75,30 @@
     "description": "Your sign-in is no longer valid. Sign in again to continue.",
     "signInAction": "Sign in again"
   },
+  "acceptInvitation": {
+    "title": "Accept invitation",
+    "loading": "Loading the invitation…",
+    "invited": "You have been invited to join the tenant \"{{tenant}}\".",
+    "email": "Invitation sent to: {{email}}",
+    "expires": "Expires: {{expires}}",
+    "accept": "Accept",
+    "retry": "Retry",
+    "accepted": {
+      "title": "Invitation accepted",
+      "description": "You are now a member of the tenant."
+    },
+    "missing": {
+      "title": "Invitation not found",
+      "description": "This invitation link is invalid or no longer exists."
+    },
+    "unavailable": {
+      "title": "Invitation no longer valid",
+      "description": "This invitation has expired, been revoked, or already been accepted."
+    },
+    "error": {
+      "title": "The invitation could not be loaded"
+    }
+  },
   "errors": {
     "authn": {
       "bad_request": "The request could not be accepted. Please check it and try again.",

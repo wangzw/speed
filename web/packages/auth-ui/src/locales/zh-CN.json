@@ -75,6 +75,30 @@
     "description": "你的登录状态已失效，请重新登录后继续。",
     "signInAction": "重新登录"
   },
+  "acceptInvitation": {
+    "title": "接受邀请",
+    "loading": "正在读取邀请…",
+    "invited": "你被邀请加入租户「{{tenant}}」。",
+    "email": "邀请发送至：{{email}}",
+    "expires": "有效期至：{{expires}}",
+    "accept": "接受",
+    "retry": "重试",
+    "accepted": {
+      "title": "邀请已接受",
+      "description": "你已成为该租户的成员。"
+    },
+    "missing": {
+      "title": "邀请不存在",
+      "description": "该邀请链接无效或已被删除。"
+    },
+    "unavailable": {
+      "title": "邀请已失效",
+      "description": "该邀请已过期、已撤销或已被接受。"
+    },
+    "error": {
+      "title": "邀请读取失败"
+    }
+  },
   "errors": {
     "authn": {
       "bad_request": "请求无效，请检查后重试。",
