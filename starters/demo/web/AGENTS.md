@@ -97,13 +97,17 @@ program beside this directory embeds with `go:embed` and serves through
   holds the route paths the chrome links into, shared with the route table.
 - **The account page mounts the account-ui family.** `src/pages/account-page.tsx`
   composes `@speed/account-ui`'s sections -- the self-service writes (profile,
-  password, phone, identifiers), then preferences, sessions, social bindings and
+  password, identifiers), then preferences, sessions, social bindings and
   MFA -- under a `@speed/ui-kit` `PageHeader`, at `/account` in the tenant
-  navigation; the skeleton configures no social provider, so the bindings
-  section lists existing bindings with no add area, and the binding-callback
-  route is mounted beside it for a product that configures one. `src/main.tsx`
-  registers the extra namespaces (console-ui, account-ui, tenancy-ui, demo)
-  beside the four the assembly registers automatically.
+  navigation. The phone write is deliberately left out: its two routes are
+  registered only when the deployment delivers an SMS code provider, which this
+  skeleton's baseline does not (the SMS family needs a carrier's credentials, so
+  a product adds it), and a section whose submit would answer 404 is a write the
+  page cannot keep. The skeleton configures no social provider either, so the
+  bindings section lists existing bindings with no add area, and the
+  binding-callback route is mounted beside it for a product that configures one.
+  `src/main.tsx` registers the extra namespaces (console-ui, account-ui,
+  tenancy-ui, demo) beside the four the assembly registers automatically.
 - **A page reload signs the viewer out.** The access token lives in memory and
   the refresh token in the session's own closure (no refresh cookie), so a
   reload starts anonymous. The two areas then show different surfaces: the

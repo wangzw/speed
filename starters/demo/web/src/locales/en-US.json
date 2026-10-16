@@ -20,7 +20,7 @@
   },
   "account": {
     "title": "Account settings",
-    "description": "Manage your account: your profile, password, phone number, sign-in identifiers, preferences, active sessions, linked sign-in methods and two-step verification."
+    "description": "Manage your account: your profile, password, sign-in identifiers, preferences, active sessions, linked sign-in methods and two-step verification."
   },
   "userMenu": {
     "accountMenu": "Account menu",

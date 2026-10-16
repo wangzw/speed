@@ -207,9 +207,12 @@ code the session is known to lack.
 ### The account page and the app chrome
 
 The tenant area ships one account page (`/account`, in the navigation) that
-mounts `@speed/account-ui`'s four sections -- preferences, active sessions,
+mounts `@speed/account-ui`'s sections -- the self-service writes (display
+name, password and sign-in identifiers), then preferences, active sessions,
 social bindings and the step-up-gated two-step-verification setup -- under a
-`@speed/ui-kit` `PageHeader`. The social-bindings section takes the session and
+`@speed/ui-kit` `PageHeader`. The phone write is not mounted: its two routes
+are registered only when the deployment delivers an SMS code provider, which
+this skeleton's baseline does not. The social-bindings section takes the session and
 the channels the host offers; the skeleton configures none, so it lists
 existing bindings with no add area, and the binding-callback route is mounted
 beside the page for a product that configures a provider.

@@ -73,7 +73,7 @@ interface MfaSectionProps {
 |---|---|
 | `@speed/auth-core` | 流程操作与本部署方法发现的 `AuthSession` 类型与操作（`startAuthenticatedFlow`、`answerFlow`、`readFlow`、`listMethods`） |
 | `@speed/api-sdk` | 每次读的生成 react-query 钩子、每次写的生成 mutation、查询键构造器，以及档案读取（`authnProfileGet`）与社交回跳读取（`authnLoginCurrent`）的调用 |
-| `@speed/ui-kit` | `ConfirmDialog`、`EmptyState` 与表单原语 |
+| `@speed/ui-kit` | `AsyncSection`、`ConfirmDialog`、`ListSkeleton` 与跨面状态原语（`errorCodeOf`、`InlineError`、`visuallyHiddenSx`） |
 | `@speed/i18n` | 命名空间注册与文案的翻译钩子 |
 | `@tanstack/react-query` | peer（必需）：宿主供给的 QueryClient 与它上面的钩子 |
 | `react`、`react-dom`、`@mui/material`、`@emotion/*` | peer（必需）：宿主拥有的 React／MUI 树 |

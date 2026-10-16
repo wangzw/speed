@@ -5,12 +5,22 @@
  * screen: the page, its heading and the surrounding chrome are the host's.
  * This page is that host composition -- a ui-kit PageHeader naming the
  * page, then the sections the package exports (the self-service writes: the
- * display name, the password, the phone number and the sign-in
- * identifiers; then preferences, active sessions, social bindings, and the
- * step-up-gated two-step-verification setup). Each section renders its own
- * async state (loading, empty, error) from the account-ui namespace, so
- * nothing here repeats a spinner or an error block; the catalog's states
- * are the sections' own.
+ * display name, the password and the sign-in identifiers; then
+ * preferences, active sessions, social bindings, and the step-up-gated
+ * two-step-verification setup). Each section renders its own async state
+ * (loading, empty, error) from the account-ui namespace, so nothing here
+ * repeats a spinner or an error block; the catalog's states are the
+ * sections' own.
+ *
+ * The phone write (account-ui's PhoneSection) is deliberately not mounted.
+ * Its two routes are registered only when the deployment delivers an SMS
+ * code provider (an assembly that names authn.sms), and this skeleton's
+ * baseline carries no SMS family -- the family needs a carrier's
+ * credentials, so it is a product's to add (see AGENTS.md and the
+ * server's baseline criterion). A section whose submit would be answered
+ * 404 is a write the page cannot keep, so the skeleton offers none; a
+ * product that adds the SMS family puts PhoneSection here beside the other
+ * writes.
  *
  * The social-bindings section takes the assembled session (it starts the
  * `link` flow the callback completes) and the channels the host offers.
@@ -35,7 +45,6 @@ import {
   IdentifiersSection,
   MfaSection,
   PasswordSection,
-  PhoneSection,
   PreferencesSection,
   ProfileSection,
   SessionsSection,
@@ -48,7 +57,7 @@ import { useAppServices } from '../app-services.js'
 import { ACCOUNT_PATH } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 
-/** The account-management page: the four account-ui sections under a page header. */
+/** The account-management page: the account-ui sections under a page header. */
 export function AccountSettingsPage(): ReactElement {
   const { session } = useAppServices()
   const { t } = useTranslation(DEMO_NAMESPACE)
@@ -60,7 +69,6 @@ export function AccountSettingsPage(): ReactElement {
       />
       <ProfileSection session={session} />
       <PasswordSection session={session} />
-      <PhoneSection session={session} />
       <IdentifiersSection session={session} />
       <PreferencesSection />
       <SessionsSection />
