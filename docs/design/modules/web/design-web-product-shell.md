@@ -28,7 +28,7 @@
 ```ts
 export interface ProductShellProps {
   // AppShell 的框架 prop 原样透传（经 Pick<AppShellProps, ...> 声明）
-  readonly navItems: readonly AppShellNavItem[]
+  readonly navItems: readonly AppShellNavEntry[]    // 分组与带 children 的嵌套项原样转发给 AppShell，本包不为它们新增行为
   readonly header?: ReactNode
   readonly headerActions?: ReactNode
   readonly userMenu?: ReactNode
