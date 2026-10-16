@@ -23,7 +23,11 @@
   },
   "shell": {
     "skipToContent": "跳到内容",
-    "navLabel": "控制台导航"
+    "navLabel": "控制台导航",
+    "title": "控制台"
+  },
+  "common": {
+    "refresh": "刷新"
   },
   "tenants": {
     "title": "租户",

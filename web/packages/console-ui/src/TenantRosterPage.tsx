@@ -27,9 +27,11 @@
  * draft on its own -- so the next edit starts empty; a refused write
  * keeps the input so it can be corrected and retried.
  *
- * The page renders a level-one heading (it is the page), and the async
- * section's placeholders render at the next level down, so the heading
- * order never skips.
+ * The page opens with ui-kit's PageHeader: the page title as the level-one
+ * heading, a breadcrumb trail from the console to this page, and a
+ * refresh action that re-reads the roster. The async section's
+ * placeholders render at the next level down, so the heading order never
+ * skips.
  */
 
 import { useState } from 'react'
@@ -38,7 +40,13 @@ import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { AsyncSection, DataTable, ListSkeleton, errorCodeOf } from '@speed/ui-kit'
+import {
+  AsyncSection,
+  DataTable,
+  ListSkeleton,
+  PageHeader,
+  errorCodeOf,
+} from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 import { isRejectedIdentifier } from './internal/identifier.js'
@@ -201,9 +209,24 @@ export function TenantRosterPage() {
 
   return (
     <Box>
-      <Typography variant="h1" sx={{ fontSize: '1.75rem', mb: 2 }}>
-        {t('tenants.title')}
-      </Typography>
+      <PageHeader
+        title={t('tenants.title')}
+        breadcrumbs={[
+          { label: t('shell.title') },
+          { label: t('tenants.title') },
+        ]}
+        actions={
+          <Button
+            type="button"
+            variant="outlined"
+            size="small"
+            onClick={() => void tenants.refetch()}
+          >
+            {t('common.refresh')}
+          </Button>
+        }
+        sx={{ mb: 2 }}
+      />
 
       <Box component="section" sx={{ mb: 3 }}>
         <Typography variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>

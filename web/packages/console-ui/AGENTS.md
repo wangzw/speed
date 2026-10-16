@@ -145,6 +145,11 @@ such split.
   `src/`; the two bundles under `src/locales/` carry identical leaf key
   sets, pinned by `src/resources.test.ts` and
   `src/internal/error-text.test.ts`.
+- **Each page opens with ui-kit's `PageHeader`.** The page title is the
+  level-one heading, a breadcrumb trail runs from the console to the
+  page, and a refresh action re-reads the page's data (its `refetch`).
+  The sections and `AsyncSection` placeholders continue from that `h1`
+  (`headingLevel="h2"`), so the heading order never skips.
 
 ## Testing
 

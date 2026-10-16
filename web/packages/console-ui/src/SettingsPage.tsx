@@ -23,7 +23,9 @@
  * lands clears the row's draft input so the next edit starts empty; a
  * refused write keeps the draft so it can be corrected and retried.
  *
- * The page renders a level-one heading and the async section's
+ * The page opens with ui-kit's PageHeader: the page title as the level-one
+ * heading, a breadcrumb trail from the console to this page, and a
+ * refresh action that re-reads the settings. The async section's
  * placeholders render one level down, so the heading order never skips.
  */
 
@@ -33,7 +35,13 @@ import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { AsyncSection, DataTable, ListSkeleton, errorCodeOf } from '@speed/ui-kit'
+import {
+  AsyncSection,
+  DataTable,
+  ListSkeleton,
+  PageHeader,
+  errorCodeOf,
+} from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
@@ -194,9 +202,24 @@ export function SettingsPage() {
 
   return (
     <Box>
-      <Typography variant="h1" sx={{ fontSize: '1.75rem', mb: 2 }}>
-        {t('settings.title')}
-      </Typography>
+      <PageHeader
+        title={t('settings.title')}
+        breadcrumbs={[
+          { label: t('shell.title') },
+          { label: t('settings.title') },
+        ]}
+        actions={
+          <Button
+            type="button"
+            variant="outlined"
+            size="small"
+            onClick={() => void settings.refetch()}
+          >
+            {t('common.refresh')}
+          </Button>
+        }
+        sx={{ mb: 2 }}
+      />
 
       <Box
         component="section"

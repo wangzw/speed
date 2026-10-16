@@ -17,6 +17,10 @@ with three pages:
   declared items, write one value, remove one override;
 - the **audit query** over `/audit/admin` -- list the journal's records.
 
+Each page opens with `@speed/ui-kit`'s `PageHeader`: the page title as the
+level-one heading, a breadcrumb trail from the console to the page, and a
+refresh action that re-reads the page's data.
+
 Like the tenant-facing shell, the console reuses the declarative
 registration seam: each page is a declaration collected by the
 application's composition layer. The console imports no router and does

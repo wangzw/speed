@@ -75,7 +75,10 @@ describe('README quick start', () => {
     })
     render(<ConsoleApp />)
 
-    const nav = screen.getByRole('navigation')
+    // The shell's own navigation is named; the roster page's PageHeader
+    // adds a second nav landmark (the breadcrumb trail), so target the
+    // shell's by its accessible name.
+    const nav = screen.getByRole('navigation', { name: '控制台导航' })
     expect(
       within(nav)
         .getAllByRole('link')

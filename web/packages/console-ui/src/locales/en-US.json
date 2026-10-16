@@ -23,7 +23,11 @@
   },
   "shell": {
     "skipToContent": "Skip to content",
-    "navLabel": "Console navigation"
+    "navLabel": "Console navigation",
+    "title": "Console"
+  },
+  "common": {
+    "refresh": "Refresh"
   },
   "tenants": {
     "title": "Tenants",

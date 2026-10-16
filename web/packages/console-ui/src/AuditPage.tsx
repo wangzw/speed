@@ -17,15 +17,17 @@
  * time rather than throwing. The record's own fields are journal data (not
  * a closed vocabulary the surface guards): they render as recorded.
  *
- * The page renders a level-one heading and the async section's
+ * The page opens with ui-kit's PageHeader: the page title as the level-one
+ * heading, a breadcrumb trail from the console to this page, and a
+ * refresh action that re-reads the journal. The async section's
  * placeholders render one level down, so the heading order never skips.
  */
 
 import { useMemo } from 'react'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
-import Typography from '@mui/material/Typography'
-import { AsyncSection, DataTable, ListSkeleton } from '@speed/ui-kit'
+import { AsyncSection, DataTable, ListSkeleton, PageHeader } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
@@ -99,9 +101,24 @@ export function AuditPage() {
 
   return (
     <Box>
-      <Typography variant="h1" sx={{ fontSize: '1.75rem', mb: 2 }}>
-        {t('audit.title')}
-      </Typography>
+      <PageHeader
+        title={t('audit.title')}
+        breadcrumbs={[
+          { label: t('shell.title') },
+          { label: t('audit.title') },
+        ]}
+        actions={
+          <Button
+            type="button"
+            variant="outlined"
+            size="small"
+            onClick={() => void records.refetch()}
+          >
+            {t('common.refresh')}
+          </Button>
+        }
+        sx={{ mb: 2 }}
+      />
 
       <AsyncSection
         pending={pending}

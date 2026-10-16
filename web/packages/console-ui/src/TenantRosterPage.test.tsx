@@ -11,8 +11,8 @@
  * invalid while a typed value breaks the identifier domain.
  */
 
-import { describe, expect, it } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TenantRosterPage } from './TenantRosterPage.js'
 import type { ConsoleTenant } from './operations.js'
@@ -132,6 +132,32 @@ describe('TenantRosterPage', () => {
     await user.type(screen.getByLabelText('新别名'), 'Acme Inc')
     await user.click(screen.getByRole('button', { name: '改名' }))
     expect(calls).toEqual(['acme:Acme Inc'])
+  })
+
+  it('opens with the page header: the title as h1, a breadcrumb trail, and a refresh action', async () => {
+    const tenants: ConsoleTenant[] = [
+      { id: 'acme', alias: 'Acme', status: 'active' },
+    ]
+    const listTenants = vi.fn(() => Promise.resolve(tenants))
+    const operations = createConsoleOperations(makeConsoleBackend({ listTenants }))
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    // The page title is the level-one heading.
+    expect(
+      screen.getByRole('heading', { level: 1, name: '租户' }),
+    ).toBeInTheDocument()
+    // The breadcrumb trail is its own navigation landmark, running from
+    // the console to this page.
+    const breadcrumbs = screen.getByRole('navigation')
+    expect(within(breadcrumbs).getByText('控制台')).toBeInTheDocument()
+    // The refresh action re-reads the roster.
+    const user = userEvent.setup()
+    const before = listTenants.mock.calls.length
+    await user.click(screen.getByRole('button', { name: '刷新' }))
+    await waitFor(() => {
+      expect(listTenants.mock.calls.length).toBeGreaterThan(before)
+    })
   })
 
   it('renders the roster as a table with column headers', async () => {
