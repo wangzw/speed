@@ -61,4 +61,8 @@ describe('package manifest', () => {
   it('declares api-sdk, the seam the contract phase binds', () => {
     expect(manifest.dependencies?.['@speed/api-sdk']).toBe('workspace:*')
   })
+
+  it('declares auth-core, the session the step-up-gated writes elevate', () => {
+    expect(manifest.dependencies?.['@speed/auth-core']).toBe('workspace:*')
+  })
 })

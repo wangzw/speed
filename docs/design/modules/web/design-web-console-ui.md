@@ -115,6 +115,7 @@ interface ConsoleShellProps {
 | 依赖 | 用途 |
 |---|---|
 | `@speed/api-sdk` | 各管理面端点的生成读钩子与写 mutation |
+| `@speed/auth-core` | 会话：抬高会话的步进（step-up）流程由它驱动——宿主把会话交给 `ConsoleShell`，页面在特权写被答 401 步进时打开重认证对话框、重放该写。仅此一处：本包不读当前租户 |
 | `@speed/ui-kit` | 主题、表单、对话框、数据表与空态原语 |
 | `@speed/layout-kit` | 外壳骨架：`AppShell` 的固定顶栏、响应式导航抽屉与内容区 |
 | `@speed/i18n` | 命名空间注册与文案的翻译钩子 |

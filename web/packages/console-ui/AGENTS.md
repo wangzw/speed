@@ -163,11 +163,16 @@ request body.
 
 - **No current tenant.** No current-tenant switcher, no
   current-tenant-scoped query key, no `useCurrentTenant`, no import of
-  `@speed/tenancy-ui` or `@speed/auth-core`. The console is the platform
-  side; the tenant side is a different shell. The tenant selector on the
-  pages whose routes carry the tenant as a **path segment** is not this:
-  it names an argument of the request and is fed by the roster read. A
-  change that wants to read "the current tenant" here is scope drift.
+  `@speed/tenancy-ui`, and no current-tenant reading. The console is the
+  platform side; the tenant side is a different shell. The tenant selector
+  on the pages whose routes carry the tenant as a **path segment** is not
+  this: it names an argument of the request and is fed by the roster read.
+  A change that wants to read "the current tenant" here is scope drift.
+  The console DOES depend on `@speed/auth-core` for one thing only: the
+  session whose step-up flow a privileged write elevates (the
+  `session` prop of `ConsoleShell`, published to the pages through
+  `ConsoleSessionProvider`, and `session.isStepUpShortfall`). That is the
+  session operation, not a tenant read; `useCurrentTenant` stays unused.
 - **No routing in package code.** No path matching, no `react-router`. The
   shell links each labelled entry to its declaration's path, and a page
   builds a detail link from its own matched path plus a row id; matching a

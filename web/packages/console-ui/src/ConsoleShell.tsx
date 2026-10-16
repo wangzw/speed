@@ -44,11 +44,13 @@
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import type { SxProps, Theme } from '@mui/material/styles'
+import type { AuthSession } from '@speed/auth-core'
 import { AppShell } from '@speed/layout-kit'
 import type { AppShellNavItem, AppShellProps } from '@speed/layout-kit'
 import type { ConsoleRoute } from './route.js'
 import { ConsoleNavigationProvider } from './internal/navigation.js'
 import { ConsoleInvitationLinkProvider } from './internal/invitation-link.js'
+import { ConsoleSessionProvider } from './internal/session.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 
 /** The AppShell chrome the console opts into beside its own: the desktop
@@ -94,6 +96,12 @@ export interface ConsoleShellProps extends AppShellCollapseProps {
    * route). Absent, the page shows the bare token instead.
    */
   readonly invitationLink?: (token: string) => string
+  /**
+   * The assembled session, published to the routed pages so a
+   * step-up-gated write can raise it. Absent, a page's step-up-gated
+   * writes fire unguarded and a refused one renders its error code.
+   */
+  readonly session?: AuthSession
   /** Extra styling merged onto the root layout box. */
   readonly sx?: SxProps<Theme>
 }
@@ -105,6 +113,7 @@ export function ConsoleShell({
   headerActions,
   onNavigate,
   invitationLink,
+  session,
   sidebarCollapsed,
   onSidebarCollapsedChange,
   sx,
@@ -153,11 +162,15 @@ export function ConsoleShell({
         {/* The content area carries the same padding the tenant shell's own
             content region applies (theme spacing 3 = 24px all round), so a
             page's heading, breadcrumb, table and form sit clear of the
-            sidebar and the banner rather than against them. */}
+            sidebar and the banner rather than against them. The session is
+            published to the routed pages so a step-up-gated write can raise
+            it. */}
         <Box sx={{ p: 3 }}>
-          <ConsoleInvitationLinkProvider invitationLink={invitationLink}>
-            {children}
-          </ConsoleInvitationLinkProvider>
+          <ConsoleSessionProvider session={session ?? null}>
+            <ConsoleInvitationLinkProvider invitationLink={invitationLink}>
+              {children}
+            </ConsoleInvitationLinkProvider>
+          </ConsoleSessionProvider>
         </Box>
       </ConsoleNavigationProvider>
     </AppShell>

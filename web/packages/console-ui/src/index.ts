@@ -59,6 +59,10 @@ export type {
 } from './route.js'
 export { ConsoleShell, type ConsoleShellProps } from './ConsoleShell.js'
 export {
+  ConsoleSessionProvider,
+  type ConsoleSessionProviderProps,
+} from './internal/session.js'
+export {
   ConsoleOperationsProvider,
   consoleOperations,
   useConsoleOperations,

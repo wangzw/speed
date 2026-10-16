@@ -29,6 +29,7 @@
 import { render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactElement } from 'react'
+import type { AuthSession } from '@speed/auth-core'
 import { I18nextProvider, registerNamespace } from '@speed/i18n'
 import type { I18nInstance } from '@speed/i18n'
 import { LAYOUT_KIT_NAMESPACE, layoutKitResources } from '@speed/layout-kit'
@@ -48,6 +49,7 @@ import type {
 import { CONSOLE_UI_NAMESPACE, consoleUiResources } from '../src/resources.js'
 import { ConsoleOperationsProvider } from '../src/operations.js'
 import type { ConsoleOperations } from '../src/operations.js'
+import { ConsoleSessionProvider } from '../src/internal/session.js'
 
 export interface RenderWithProvidersOptions extends BaseOptions {
   /**
@@ -57,6 +59,13 @@ export interface RenderWithProvidersOptions extends BaseOptions {
    * @speed/api-sdk surface over whatever request function is bound.
    */
   readonly operations?: ConsoleOperations
+  /**
+   * The session the console's step-up-gated writes elevate. Optional:
+   * supplying one mounts ConsoleSessionProvider, so a write a test
+   * answers with a step-up refusal opens the re-auth dialog; omitting it
+   * leaves the pages with no session to elevate.
+   */
+  readonly session?: AuthSession
 }
 
 export interface RenderWithProvidersResult extends BaseResult {
@@ -79,12 +88,18 @@ export function renderWithProviders(
   ui: ReactElement,
   options: RenderWithProvidersOptions = {},
 ): RenderWithProvidersResult {
-  const { language = 'zh-CN', i18n, operations } = options
+  const { language = 'zh-CN', i18n, operations, session } = options
   const instance = i18n ?? createConsoleUiI18n(language)
   const queryClient = createTestQueryClient()
-  const tree = operations === undefined ? ui : (
-    <ConsoleOperationsProvider operations={operations}>{ui}</ConsoleOperationsProvider>
-  )
+  let tree: ReactElement =
+    operations === undefined ? (
+      ui
+    ) : (
+      <ConsoleOperationsProvider operations={operations}>{ui}</ConsoleOperationsProvider>
+    )
+  if (session !== undefined) {
+    tree = <ConsoleSessionProvider session={session}>{tree}</ConsoleSessionProvider>
+  }
   const result = render(
     <I18nextProvider i18n={instance}>
       <AppThemeProvider i18n={instance}>

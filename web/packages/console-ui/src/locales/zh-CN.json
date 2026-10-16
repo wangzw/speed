@@ -32,6 +32,17 @@
     "tenant": "租户",
     "tenantNone": "未选择"
   },
+  "stepUp": {
+    "title": "需要重新验证",
+    "description": "该操作要求更强或更新的身份验证，请先完成一次验证。",
+    "starting": "正在开始验证…",
+    "submit": "验证",
+    "codeLabel": "验证码",
+    "credentialLabel": "凭证",
+    "codeHelp": "输入你的动态验证码。",
+    "credentialHelp": "按验证器提示完成操作。",
+    "redirectNotice": "该验证需要跳转到外部页面，本对话框不会自动跳转。"
+  },
   "tenants": {
     "title": "租户",
     "loading": "正在加载租户",

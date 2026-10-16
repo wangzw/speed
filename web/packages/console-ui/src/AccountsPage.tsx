@@ -62,6 +62,8 @@ import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
 import { FormWidth } from './internal/layout.js'
+import { useConsoleStepUp } from './internal/step-up-gate.js'
+import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type {
@@ -89,6 +91,7 @@ export function AccountsPage() {
   const { t, i18n } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const confirm = usePendingConfirm()
+  const stepUp = useConsoleStepUp()
 
   const [identifierDraft, setIdentifierDraft] = useState('')
   const [identifier, setIdentifier] = useState('')
@@ -121,6 +124,83 @@ export function AccountsPage() {
   const revokeSecret = operations.useRevokeSecret()
   const revokeSession = operations.useRevokeSession()
   const removeIdentifier = operations.useRemoveIdentifier()
+
+  // The step-up-gated writes each fire through the gate: a refusal the
+  // server answers while the session is still established (a strength
+  // shortfall) arms the dialog with a re-fire of the same write and clears
+  // the mutation's own error, so the dialog opens alone rather than beside
+  // the 401 banner.
+
+  function deleteOne(id: string): void {
+    deleteAccount.mutate(
+      { id },
+      {
+        onSuccess: () => {
+          if (selectedId === id) {
+            setSelectedId('')
+          }
+        },
+        onError: (error) => {
+          if (stepUp.intercept(error, () => deleteOne(id))) {
+            deleteAccount.reset()
+          }
+        },
+      },
+    )
+  }
+
+  function resetAllFactors(): void {
+    resetMFA.mutate(
+      { id: selectedId },
+      {
+        onError: (error) => {
+          if (stepUp.intercept(error, resetAllFactors)) {
+            resetMFA.reset()
+          }
+        },
+      },
+    )
+  }
+
+  function revokeAllSessions(): void {
+    revokeSessions.mutate(
+      { id: selectedId },
+      {
+        onError: (error) => {
+          if (stepUp.intercept(error, revokeAllSessions)) {
+            revokeSessions.reset()
+          }
+        },
+      },
+    )
+  }
+
+  function removeOne(identifier: string): void {
+    removeIdentifier.mutate(
+      { id: selectedId, identifier },
+      {
+        onSuccess: () => setIdentifierToRemove(''),
+        onError: (error) => {
+          if (stepUp.intercept(error, () => removeOne(identifier))) {
+            removeIdentifier.reset()
+          }
+        },
+      },
+    )
+  }
+
+  function revokeOneSecret(secret: string): void {
+    revokeSecret.mutate(
+      { id: selectedId, secret },
+      {
+        onError: (error) => {
+          if (stepUp.intercept(error, () => revokeOneSecret(secret))) {
+            revokeSecret.reset()
+          }
+        },
+      },
+    )
+  }
 
   const columns: DataTableColumn<ConsoleAccount>[] = [
     {
@@ -179,17 +259,7 @@ export function AccountsPage() {
                 title: t('accounts.deleteTitle'),
                 message: t('accounts.deleteMessage', { id: row.id }),
                 confirmLabel: t('common.confirm'),
-                run: () =>
-                  deleteAccount.mutate(
-                    { id: row.id },
-                    {
-                      onSuccess: () => {
-                        if (selectedId === row.id) {
-                          setSelectedId('')
-                        }
-                      },
-                    },
-                  ),
+                run: () => deleteOne(row.id),
               })
             }
           >
@@ -233,7 +303,7 @@ export function AccountsPage() {
               title: t('accounts.secrets.revokeTitle'),
               message: t('accounts.secrets.revokeMessage', { label: row.label }),
               confirmLabel: t('common.confirm'),
-              run: () => revokeSecret.mutate({ id: selectedId, secret: row.id }),
+              run: () => revokeOneSecret(row.id),
             })
           }
         >
@@ -482,7 +552,7 @@ export function AccountsPage() {
                   title: t('accounts.resetMFATitle'),
                   message: t('accounts.resetMFAMessage'),
                   confirmLabel: t('common.confirm'),
-                  run: () => resetMFA.mutate({ id: selectedId }),
+                  run: () => resetAllFactors(),
                 })
               }
             >
@@ -498,7 +568,7 @@ export function AccountsPage() {
                   title: t('accounts.revokeSessionsTitle'),
                   message: t('accounts.revokeSessionsMessage'),
                   confirmLabel: t('common.confirm'),
-                  run: () => revokeSessions.mutate({ id: selectedId }),
+                  run: () => revokeAllSessions(),
                 })
               }
             >
@@ -643,11 +713,7 @@ export function AccountsPage() {
                     identifier: identifierToRemove,
                   }),
                   confirmLabel: t('common.confirm'),
-                  run: () =>
-                    removeIdentifier.mutate(
-                      { id: selectedId, identifier: identifierToRemove },
-                      { onSuccess: () => setIdentifierToRemove('') },
-                    ),
+                  run: () => removeOne(identifierToRemove),
                 })
               }
             >
@@ -662,6 +728,15 @@ export function AccountsPage() {
       </Box>
 
       <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
+
+      {stepUp.session !== null && (
+        <StepUpChallenge
+          open={stepUp.gate.open}
+          session={stepUp.session}
+          onSuccess={stepUp.gate.succeed}
+          onCancel={stepUp.gate.cancel}
+        />
+      )}
     </Box>
   )
 }
@@ -958,6 +1033,7 @@ function AccountCreateForm() {
 function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
+  const stepUp = useConsoleStepUp()
   const patchAccount = operations.usePatchAccount()
   const setStatus = operations.useSetAccountStatus()
   const setMfaRequired = operations.useSetMFARequired()
@@ -966,16 +1042,24 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
   const createSecret = operations.useCreateSecret()
 
   const id = account.id
-  const [displayName, setDisplayName] = useState('')
-  const [attributes, setAttributes] = useState('')
-  const [protectedDraft, setProtectedDraft] = useState<'unchanged' | 'true' | 'false'>(
-    'unchanged',
-  )
-  const [statusDraft, setStatusDraft] = useState<'active' | 'disabled'>(
-    account.status === 'disabled' ? 'active' : 'disabled',
-  )
+  // Every control is seeded from the account as loaded, so a control shows
+  // the account's own value and a write fires only for a field the operator
+  // actually changed: a status or MFA change goes out only when it differs
+  // from the account's, and the patch carries only the fields that moved.
+  const currentStatus: 'active' | 'disabled' =
+    account.status === 'disabled' ? 'disabled' : 'active'
+  const currentAttributes =
+    account.attributes === undefined ? '' : JSON.stringify(account.attributes)
+  const currentProtected: 'true' | 'false' = account.protected ? 'true' : 'false'
+
+  const [statusDraft, setStatusDraft] = useState<'active' | 'disabled'>(currentStatus)
   const [mfaDraft, setMfaDraft] = useState<'true' | 'false'>(
-    account.mfa_required ? 'false' : 'true',
+    account.mfa_required ? 'true' : 'false',
+  )
+  const [displayName, setDisplayName] = useState(account.display_name)
+  const [attributes, setAttributes] = useState(currentAttributes)
+  const [protectedDraft, setProtectedDraft] = useState<'unchanged' | 'true' | 'false'>(
+    currentProtected,
   )
   const [tempPassword, setTempPassword] = useState('')
   const [identifierKind, setIdentifierKind] = useState<'username' | 'email'>('username')
@@ -986,6 +1070,116 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
 
   const attributesInvalid =
     attributes.trim() !== '' && parseStringMap(attributes) === null
+  const statusUnchanged = statusDraft === currentStatus
+  const mfaUnchanged = (mfaDraft === 'true') === account.mfa_required
+  const patchUnchanged =
+    displayName === account.display_name &&
+    attributes === currentAttributes &&
+    protectedDraft === currentProtected
+
+  // Each write fires through the step-up gate: a refusal the server answers
+  // while the session is still established arms the dialog with a re-fire
+  // of the same write, and the mutation's own error is cleared so the
+  // dialog opens alone.
+
+  function saveStatus(): void {
+    setStatus.mutate(
+      { id, status: statusDraft },
+      {
+        onError: (error) => {
+          if (stepUp.intercept(error, saveStatus)) {
+            setStatus.reset()
+          }
+        },
+      },
+    )
+  }
+
+  function saveMfa(): void {
+    setMfaRequired.mutate(
+      { id, required: mfaDraft === 'true' },
+      {
+        onError: (error) => {
+          if (stepUp.intercept(error, saveMfa)) {
+            setMfaRequired.reset()
+          }
+        },
+      },
+    )
+  }
+
+  function savePatch(): void {
+    const parsed = attributes.trim() === '' ? null : parseStringMap(attributes)
+    patchAccount.mutate(
+      {
+        id,
+        ...(displayName === account.display_name ? {} : { display_name: displayName }),
+        ...(attributes === currentAttributes || parsed === null
+          ? {}
+          : { attributes: parsed }),
+        ...(protectedDraft === currentProtected
+          ? {}
+          : { protected: protectedDraft === 'true' }),
+      },
+      {
+        onError: (error) => {
+          if (stepUp.intercept(error, savePatch)) {
+            patchAccount.reset()
+          }
+        },
+      },
+    )
+  }
+
+  function savePassword(): void {
+    resetPassword.mutate(
+      { id, password: tempPassword },
+      {
+        onSuccess: () => setTempPassword(''),
+        onError: (error) => {
+          if (stepUp.intercept(error, savePassword)) {
+            resetPassword.reset()
+          }
+        },
+      },
+    )
+  }
+
+  function addOne(): void {
+    addIdentifier.mutate(
+      { id, kind: identifierKind, value: identifierValue },
+      {
+        onSuccess: () => setIdentifierValue(''),
+        onError: (error) => {
+          if (stepUp.intercept(error, addOne)) {
+            addIdentifier.reset()
+          }
+        },
+      },
+    )
+  }
+
+  function createOne(): void {
+    createSecret.mutate(
+      {
+        id,
+        label: secretLabel,
+        ...(secretExpires === '' ? {} : { expires_at: secretExpires }),
+      },
+      {
+        onSuccess: (answer) => {
+          setCreatedSecret(answer.secret)
+          setSecretLabel('')
+          setSecretExpires('')
+        },
+        onError: (error) => {
+          if (stepUp.intercept(error, createOne)) {
+            createSecret.reset()
+          }
+        },
+      },
+    )
+  }
 
   const rowSx = {
     display: 'flex',
@@ -1019,8 +1213,8 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
         <Button
           type="button"
           variant="outlined"
-          disabled={setStatus.isPending}
-          onClick={() => setStatus.mutate({ id, status: statusDraft })}
+          disabled={setStatus.isPending || statusUnchanged}
+          onClick={() => saveStatus()}
         >
           {t('accounts.status.submit')}
         </Button>
@@ -1044,8 +1238,8 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
         <Button
           type="button"
           variant="outlined"
-          disabled={setMfaRequired.isPending}
-          onClick={() => setMfaRequired.mutate({ id, required: mfaDraft === 'true' })}
+          disabled={setMfaRequired.isPending || mfaUnchanged}
+          onClick={() => saveMfa()}
         >
           {t('accounts.mfa.submit')}
         </Button>
@@ -1091,27 +1285,8 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
         <Button
           type="button"
           variant="outlined"
-          disabled={patchAccount.isPending || attributesInvalid}
-          onClick={() => {
-            const parsed = attributes.trim() === '' ? null : parseStringMap(attributes)
-            patchAccount.mutate(
-              {
-                id,
-                ...(displayName === '' ? {} : { display_name: displayName }),
-                ...(parsed === null ? {} : { attributes: parsed }),
-                ...(protectedDraft === 'unchanged'
-                  ? {}
-                  : { protected: protectedDraft === 'true' }),
-              },
-              {
-                onSuccess: () => {
-                  setDisplayName('')
-                  setAttributes('')
-                  setProtectedDraft('unchanged')
-                },
-              },
-            )
-          }}
+          disabled={patchAccount.isPending || attributesInvalid || patchUnchanged}
+          onClick={() => savePatch()}
         >
           {t('accounts.patch.submit')}
         </Button>
@@ -1132,12 +1307,7 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
           type="button"
           variant="outlined"
           disabled={resetPassword.isPending || tempPassword === ''}
-          onClick={() =>
-            resetPassword.mutate(
-              { id, password: tempPassword },
-              { onSuccess: () => setTempPassword('') },
-            )
-          }
+          onClick={() => savePassword()}
         >
           {t('accounts.password.submit')}
         </Button>
@@ -1172,12 +1342,7 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
           type="button"
           variant="outlined"
           disabled={addIdentifier.isPending || identifierValue === ''}
-          onClick={() =>
-            addIdentifier.mutate(
-              { id, kind: identifierKind, value: identifierValue },
-              { onSuccess: () => setIdentifierValue('') },
-            )
-          }
+          onClick={() => addOne()}
         >
           {t('accounts.addIdentifier.submit')}
         </Button>
@@ -1204,22 +1369,7 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
           type="button"
           variant="outlined"
           disabled={createSecret.isPending || secretLabel === ''}
-          onClick={() =>
-            createSecret.mutate(
-              {
-                id,
-                label: secretLabel,
-                ...(secretExpires === '' ? {} : { expires_at: secretExpires }),
-              },
-              {
-                onSuccess: (answer) => {
-                  setCreatedSecret(answer.secret)
-                  setSecretLabel('')
-                  setSecretExpires('')
-                },
-              },
-            )
-          }
+          onClick={() => createOne()}
         >
           {t('accounts.createSecret.submit')}
         </Button>
@@ -1232,6 +1382,15 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
         <Typography variant="body2" sx={{ wordBreak: 'break-all', mb: 2 }}>
           {t('accounts.createSecret.handedOver', { secret: createdSecret })}
         </Typography>
+      )}
+
+      {stepUp.session !== null && (
+        <StepUpChallenge
+          open={stepUp.gate.open}
+          session={stepUp.session}
+          onSuccess={stepUp.gate.succeed}
+          onCancel={stepUp.gate.cancel}
+        />
       )}
     </>
   )

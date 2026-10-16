@@ -26,6 +26,7 @@ import type {
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { bindConsoleRequest } from '../test-utils/request-rig.js'
+import { createStepUpSession } from '../test-utils/session.js'
 import {
   accountFixture,
   createConsoleOperations,
@@ -72,6 +73,18 @@ async function confirmDialog(user: ReturnType<typeof userEvent.setup>): Promise<
   await waitFor(() => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
+}
+
+/** A 401 ApiError as the api-client delivers it: the authn step-up refusal
+ * carries no readable envelope, so the client synthesizes client.http.401,
+ * and the session discriminates it from a session end by the live snapshot. */
+function stepUpRefusal(): {
+  readonly status: number
+  readonly code: string
+  readonly message: string
+  readonly auth: boolean
+} {
+  return { status: 401, code: 'client.http.401', message: 'refused', auth: true }
 }
 
 describe('AccountsPage', () => {
@@ -314,10 +327,81 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    await user.click(await screen.findByRole('button', { name: '保存状态' }))
+    // The status control is seeded from the account (active), so the save
+    // is disabled until the operator picks a different status: a stray
+    // click can never disable an account the operator did not mean to.
+    const save = await screen.findByRole('button', { name: '保存状态' })
+    expect(save).toBeDisabled()
+    await user.click(screen.getByLabelText('状态'))
+    await user.click(await screen.findByRole('option', { name: '已停用' }))
+    await user.click(save)
     await vi.waitFor(() => {
       expect(calls).toEqual([{ id: 'acc-1', status: 'disabled' }])
     })
+  })
+
+  it('opens the step-up dialog on a refused write and replays it once elevated', async () => {
+    const user = userEvent.setup()
+    const session = createStepUpSession()
+    const startFlow = vi.spyOn(session, 'startAuthenticatedFlow')
+    const calls: ConsoleSetAccountStatusInput[] = []
+    let attempts = 0
+    const operations = withAccounts({
+      setAccountStatus: (input) => {
+        calls.push(input)
+        attempts += 1
+        // The first write is refused for a strength shortfall (a 401 while
+        // the session is still established); the replay after elevation
+        // succeeds.
+        return attempts === 1 ? Promise.reject(stepUpRefusal()) : Promise.resolve(accountFixture())
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations, session })
+    await openDetail(user)
+    const save = await screen.findByRole('button', { name: '保存状态' })
+    await user.click(screen.getByLabelText('状态'))
+    await user.click(await screen.findByRole('option', { name: '已停用' }))
+    await user.click(save)
+    // The refusal opens the re-auth dialog rather than a plain error, and
+    // the write is replayed exactly once.
+    await vi.waitFor(() => {
+      expect(startFlow).toHaveBeenCalled()
+    })
+    await vi.waitFor(() => {
+      expect(calls).toEqual([
+        { id: 'acc-1', status: 'disabled' },
+        { id: 'acc-1', status: 'disabled' },
+      ])
+    })
+    // The step-up elevated the session; it did not sign the operator out.
+    expect(session.getSnapshot().state).toBe('authenticated')
+  })
+
+  it('does not replay a 401 when the session itself ended', async () => {
+    const user = userEvent.setup()
+    const session = createStepUpSession()
+    session.signOut()
+    const startFlow = vi.spyOn(session, 'startAuthenticatedFlow')
+    const calls: ConsoleSetAccountStatusInput[] = []
+    const operations = withAccounts({
+      setAccountStatus: (input) => {
+        calls.push(input)
+        return Promise.reject(stepUpRefusal())
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations, session })
+    await openDetail(user)
+    const save = await screen.findByRole('button', { name: '保存状态' })
+    await user.click(screen.getByLabelText('状态'))
+    await user.click(await screen.findByRole('option', { name: '已停用' }))
+    await user.click(save)
+    // A 401 on a session that already ended is not a strength shortfall:
+    // the write fires once, no re-auth dialog opens, and no replay happens.
+    await vi.waitFor(() => {
+      expect(calls.length).toBe(1)
+    })
+    expect(startFlow).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('sets the MFA requirement through the bundle', async () => {
@@ -331,7 +415,13 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    await user.click(await screen.findByRole('button', { name: '保存要求' }))
+    // The control is seeded from the account (not required), so the save is
+    // disabled until the requirement changes.
+    const save = await screen.findByRole('button', { name: '保存要求' })
+    expect(save).toBeDisabled()
+    await user.click(screen.getByLabelText('MFA 要求'))
+    await user.click(await screen.findByRole('option', { name: '必须' }))
+    await user.click(save)
     await vi.waitFor(() => {
       expect(calls).toEqual([{ id: 'acc-1', required: true }])
     })
@@ -348,7 +438,13 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    await user.type(await screen.findByLabelText('新显示名'), 'Ada II')
+    // The display-name field is seeded from the account, and the save is
+    // disabled until it changes.
+    const name = await screen.findByLabelText('新显示名')
+    expect(name).toHaveValue('Operator')
+    expect(screen.getByRole('button', { name: '保存改动' })).toBeDisabled()
+    await user.clear(name)
+    await user.type(name, 'Ada II')
     await user.click(screen.getByRole('button', { name: '保存改动' }))
     await vi.waitFor(() => {
       expect(calls).toEqual([{ id: 'acc-1', display_name: 'Ada II' }])

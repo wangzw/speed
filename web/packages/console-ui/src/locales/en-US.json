@@ -32,6 +32,17 @@
     "tenant": "Tenant",
     "tenantNone": "None selected"
   },
+  "stepUp": {
+    "title": "Verify it's you",
+    "description": "This action asks for a stronger or more recent sign-in. Complete one verification to continue.",
+    "starting": "Starting verification…",
+    "submit": "Verify",
+    "codeLabel": "Verification code",
+    "credentialLabel": "Credential",
+    "codeHelp": "Enter your one-time code.",
+    "credentialHelp": "Follow the prompt from your authenticator.",
+    "redirectNotice": "This verification continues on an external page, which this dialog does not open."
+  },
   "tenants": {
     "title": "Tenants",
     "loading": "Loading tenants",

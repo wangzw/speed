@@ -58,6 +58,8 @@ import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { formatUtc, isZeroInstant } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
+import { useConsoleStepUp } from './internal/step-up-gate.js'
+import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { TenantScope } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
@@ -335,6 +337,7 @@ export function ImpersonationsPage() {
 function StartImpersonationForm() {
   const { t } = useConsoleUiTranslation()
   const queryClient = useQueryClient()
+  const stepUp = useConsoleStepUp()
   const startImpersonation = useAuthnImpersonationStart({
     mutation: {
       onSuccess: () => {
@@ -370,6 +373,15 @@ function StartImpersonationForm() {
           setTenant('')
           setReason('')
           setTtl('')
+        },
+        onError: (error) => {
+          // A refusal the server answers while the session is still
+          // established is a strength shortfall: arm the step-up dialog
+          // with a re-fire of the same start and clear the mutation's own
+          // error so the dialog opens alone.
+          if (stepUp.intercept(error, submit)) {
+            startImpersonation.reset()
+          }
         },
       },
     )
@@ -428,6 +440,15 @@ function StartImpersonationForm() {
           }
         />
       </Box>
+
+      {stepUp.session !== null && (
+        <StepUpChallenge
+          open={stepUp.gate.open}
+          session={stepUp.session}
+          onSuccess={stepUp.gate.succeed}
+          onCancel={stepUp.gate.cancel}
+        />
+      )}
     </Box>
   )
 }
