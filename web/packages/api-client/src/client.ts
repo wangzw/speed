@@ -61,7 +61,11 @@
  *      envelope's code (plus its traceId, params, message and details
  *      when the backend sent them -- code is the only required wire
  *      field), everything else gets the reserved client.* vocabulary
- *      from errors.ts. A request body that cannot be JSON-serialized
+ *      from errors.ts. A binary request body -- a Blob, ArrayBuffer or
+ *      typed array -- travels verbatim instead of being JSON-serialized,
+ *      and a request declaring `responseType: 'blob'` resolves its 2xx
+ *      body as raw bytes (a Blob) rather than parsing JSON. A request
+ *      body that cannot be JSON-serialized
  *      (a circular structure, a top-level function or symbol, a
  *      toJSON() that yields nothing) rejects as client.protocol before
  *      anything is sent.
@@ -156,8 +160,23 @@ export interface RequestOptions {
       | undefined
     >
   >
-  /** JSON request body; serialized with the JSON content type. */
+  /**
+   * The request body. A JSON value is serialized to text and sent with
+   * the JSON content type; a binary body -- a Blob, an ArrayBuffer or a
+   * typed array, the raw bytes a byte-moving endpoint like the
+   * objectstore content upload takes -- travels verbatim, never
+   * JSON-serialized, under whatever content type the caller set (the
+   * generated binary operation sets application/octet-stream). Every
+   * other value is JSON-serialized.
+   */
   body?: unknown
+  /**
+   * Read a 2xx body as raw bytes (a Blob) instead of JSON text -- the
+   * shape a byte-returning endpoint like the objectstore content
+   * download answers with; the generated binary operation sets it.
+   * Error responses and non-blob 2xx bodies still parse as JSON.
+   */
+  responseType?: 'blob'
   /**
    * Declares that this request needs a JSON document in its 2xx body:
    * an empty 2xx body (the client's own 204-style empty-success
@@ -341,6 +360,10 @@ interface HttpOutcome {
    * caller observes an early `timeout`/`aborted` result while the
    * platform tears the connection down. */
   readBody(): Promise<BodyReadResult>
+  /** Reads the body to the end as raw bytes (a Blob), for a request
+   * that declared `responseType: 'blob'`; settles early the same way
+   * readBody does when the attempt is aborted mid-read. */
+  readBlob(): Promise<BlobReadResult>
   /** Cancels the response body of a response the caller decided not
    * to consume (a retryable status being retried, a discarded 401):
    * the connection is released deterministically instead of staying
@@ -366,6 +389,18 @@ type BodyReadResult =
   | { kind: 'timeout'; cause: unknown }
   | { kind: 'aborted' }
   | { kind: 'failed'; cause: unknown }
+
+/** How a raw-byte body read inside an attempt's abort scope settled. */
+type BlobReadResult =
+  | { kind: 'blob'; blob: Blob }
+  | { kind: 'timeout'; cause: unknown }
+  | { kind: 'aborted' }
+  | { kind: 'failed'; cause: unknown }
+
+/** The serialized request body handed to the send: the JSON text, or
+ * the raw bytes of a binary body. Only the string form earns the JSON
+ * content-type default. */
+type WireBody = string | Blob | ArrayBuffer | ArrayBufferView
 
 /** The request never reached a usable response. */
 interface FailureOutcome {
@@ -499,6 +534,23 @@ function serializeBody(body: unknown): string {
     )
   }
   return serialized
+}
+
+/** Whether a value is a binary request body: the raw bytes a
+ * byte-moving operation sends verbatim instead of JSON-serializing.
+ * A Blob, an ArrayBuffer or an ArrayBuffer view (a typed array or a
+ * DataView) -- the shapes fetch accepts as a body and that
+ * JSON.stringify would otherwise mangle into an object literal. */
+function isBinaryBody(
+  value: unknown,
+): value is Blob | ArrayBuffer | ArrayBufferView {
+  if (typeof Blob !== 'undefined' && value instanceof Blob) {
+    return true
+  }
+  if (value instanceof ArrayBuffer) {
+    return true
+  }
+  return ArrayBuffer.isView(value)
 }
 
 /** Builds the wire URL: baseUrl + path, query parameters appended. An
@@ -781,7 +833,7 @@ export function createClient(options: ClientOptions): RequestFn {
     method: HttpMethod,
     url: string,
     requestOptions: RequestOptions,
-    bodyText: string | undefined,
+    body: WireBody | undefined,
     signal: AbortSignal | undefined,
   ): Promise<AttemptOutcome> => {
     const headers = new Headers(requestOptions.headers ?? {})
@@ -791,7 +843,7 @@ export function createClient(options: ClientOptions): RequestFn {
     if (!headers.has('accept')) {
       headers.set('accept', 'application/json')
     }
-    if (bodyText !== undefined && !headers.has('content-type')) {
+    if (typeof body === 'string' && !headers.has('content-type')) {
       headers.set('content-type', 'application/json')
     }
     // The language is read per attempt through the host's provider, the
@@ -936,7 +988,7 @@ export function createClient(options: ClientOptions): RequestFn {
       const response = await fetchFn(url, {
         method,
         headers,
-        body: bodyText,
+        body: body as BodyInit,
         signal: controller.signal,
       })
       const outcome: HttpOutcome = {
@@ -987,6 +1039,43 @@ export function createClient(options: ClientOptions): RequestFn {
           // is the controller abort itself, which conforming platforms
           // (real fetch) tie to the response body. The pending read is
           // simply dropped.
+          return result
+        },
+        readBlob: async (): Promise<BlobReadResult> => {
+          const reading = response.blob()
+          const result = await Promise.race<BlobReadResult>([
+            reading.then(
+              (blob): BlobReadResult => ({ kind: 'blob', blob }),
+              (cause: unknown): BlobReadResult => {
+                // The read rejected: classify by what aborted it, the
+                // same way readBody does for the text path.
+                if (timedOut) {
+                  return {
+                    kind: 'timeout',
+                    cause: new DOMException(
+                      'The operation was aborted.',
+                      'AbortError',
+                    ),
+                  }
+                }
+                if (signal?.aborted === true) {
+                  return { kind: 'aborted' }
+                }
+                return { kind: 'failed', cause }
+              },
+            ),
+            abortTrigger.then((): BlobReadResult =>
+              timedOut
+                ? {
+                    kind: 'timeout',
+                    cause: new DOMException(
+                      'The operation was aborted.',
+                      'AbortError',
+                    ),
+                  }
+                : { kind: 'aborted' },
+            ),
+          ])
           return result
         },
         cancelBody: () => cancelBody(response),
@@ -1109,25 +1198,30 @@ export function createClient(options: ClientOptions): RequestFn {
     // tests may not, so normalize before sending.
     throwIfAborted(signal)
 
-    // The body does not change between attempts: serialize once, up
-    // front, so a body that cannot be JSON-serialized (a circular
-    // structure, a top-level function or symbol, a toJSON() that
-    // yields nothing) fails as a coded client.protocol ApiError -- a
-    // request the client can never send -- instead of surfacing a
-    // bare TypeError out of the retry machinery or going out
-    // silently bodyless.
-    let bodyText: string | undefined
+    // The body does not change between attempts: settle its wire form
+    // once, up front. A binary body (a Blob, ArrayBuffer or typed
+    // array) travels verbatim. Everything else is JSON-serialized, and
+    // a body that cannot be JSON-serialized (a circular structure, a
+    // top-level function or symbol, a toJSON() that yields nothing)
+    // fails as a coded client.protocol ApiError -- a request the client
+    // can never send -- instead of surfacing a bare TypeError out of
+    // the retry machinery or going out silently bodyless.
+    let body: WireBody | undefined
     if (requestOptions.body !== undefined) {
-      try {
-        bodyText = serializeBody(requestOptions.body)
-      } catch (cause) {
-        throw new ApiError({
-          status: 0,
-          code: ERROR_CODE_PROTOCOL,
-          attempts: 0,
-          message: 'The request body could not be serialized as JSON.',
-          cause,
-        })
+      if (isBinaryBody(requestOptions.body)) {
+        body = requestOptions.body
+      } else {
+        try {
+          body = serializeBody(requestOptions.body)
+        } catch (cause) {
+          throw new ApiError({
+            status: 0,
+            code: ERROR_CODE_PROTOCOL,
+            attempts: 0,
+            message: 'The request body could not be serialized as JSON.',
+            cause,
+          })
+        }
       }
     }
 
@@ -1145,7 +1239,7 @@ export function createClient(options: ClientOptions): RequestFn {
         method,
         url,
         requestOptions,
-        bodyText,
+        body,
         signal,
       )
       if (outcome.kind === 'http') {
@@ -1160,6 +1254,34 @@ export function createClient(options: ClientOptions): RequestFn {
           }
 
           if (isSuccessStatus(outcome.status)) {
+            // A request that declared a raw-byte response resolves its
+            // 2xx body as a Blob, bypassing the JSON parse below; the
+            // same abort/retry discipline the text path runs applies.
+            if (requestOptions.responseType === 'blob') {
+              const read = await outcome.readBlob()
+              if (read.kind === 'aborted') {
+                throwIfAborted(signal)
+                throw new DOMException('The operation was aborted.', 'AbortError')
+              }
+              if (read.kind !== 'blob') {
+                const kind = read.kind === 'timeout' ? 'timeout' : 'network'
+                if (
+                  idempotent &&
+                  transientRetries < retryPolicy.maxAttempts - 1
+                ) {
+                  transientRetries += 1
+                  await sleep(
+                    retryDelayMs(transientRetries - 1, retryPolicy),
+                    signal,
+                  )
+                  throwIfAborted(signal)
+                  continue
+                }
+                throw failureError({ kind, cause: read.cause }, attempts)
+              }
+              throwIfAborted(signal)
+              return read.blob as T
+            }
             const read = await outcome.readBody()
             if (read.kind === 'aborted') {
               // The abort trigger only fires from the caller's signal;

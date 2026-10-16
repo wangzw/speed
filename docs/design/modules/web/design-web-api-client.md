@@ -24,7 +24,7 @@
 - **不持会话状态、不驱动会话。** 401 时调用的刷新钩子由宿主提供（`@speed/auth-core` 的会话刷新）；本包不持有会话，不决定会话存续。
 - **不构造 QueryClient、不定义查询键。** 本包只交一个请求函数；server 状态的缓存归 TanStack Query，由宿主拥有。
 - **不含用户可见文本，不带 i18n 资源。** 错误 `code` 是数据，由消费包在自己的文案目录里译成双语文本；上报消息是固定的英文串加 snake_case 属性；本包不渲染任何面向用户的文字。
-- **不做二进制与流式传输。** 上传与 SSE 传输不在本包内；本包读写的是 JSON 文本。
+- **带二进制正文与原始字节应答。** 请求正文为一个二进制值（`Blob`、`ArrayBuffer` 或类型化数组）时原样送出，不 JSON 序列化（对象存储的内容上传即此）；一次请求声明 `responseType: 'blob'` 时把 2xx 正文读成 `Blob`（对象存储的内容下载即此），错误应答仍按 JSON 信封解析。流式（SSE）不在本包内。
 
 ## 外部接口契约
 
@@ -84,7 +84,7 @@ export type UsePublicConfigResult
 
 **`RequestFn` 的契约，约束的主体是它的每次调用**：2xx 的 JSON 正文解析为 `T`，空的 2xx（204 式）解析为 `undefined`，除非请求声明了 `requireJsonBody`（此时空 2xx 以携带真实状态与尝试次数的 `client.protocol` 拒绝）；非 2xx 一律以 `ApiError` 拒绝；带信封的失败保留信封的 `code`（`code` 是唯一必需的线上字段，`traceId` 可选），其余取保留的 `client.*` 码；调用方取消以原生 `AbortError` 拒绝。请求路径必须是以 `/` 开头的绝对路径；带查询串的路径与 `query` 选项同时给出即按程序员错误拒绝。
 
-**`RequestOptions` 的字段**：`method`（缺省 `GET`）、`headers`、`omitAccessToken`、`query`（数组值按重复参数展开，供 Go 的 `r.URL.Query()` 解析）、`body`（JSON）、`requireJsonBody`、`signal`。
+**`RequestOptions` 的字段**：`method`（缺省 `GET`）、`headers`、`omitAccessToken`、`query`（数组值按重复参数展开，供 Go 的 `r.URL.Query()` 解析）、`body`（JSON，或一个原样送出的二进制值）、`responseType`（`'blob'` 即把 2xx 正文读成 `Blob`）、`requireJsonBody`、`signal`。
 
 **发送的默认头**：`accept` 缺省 `application/json`，有正文时 `content-type` 缺省 `application/json`；两者都只在调用方未自带时设置。
 
@@ -150,7 +150,7 @@ sequenceDiagram
 |---|---|---|
 | 请求函数 | `RequestFn` | `createClient` 的产物；泛型于解析结果类型 |
 | 客户端选项 | `ClientOptions` | 基地址、fetch、令牌存储、刷新钩子、超时、重试策略、上报端、语言提供者、租户提供者 |
-| 单次请求选项 | `RequestOptions` | 方法、头、`omitAccessToken`、查询、正文、`requireJsonBody`、取消信号 |
+| 单次请求选项 | `RequestOptions` | 方法、头、`omitAccessToken`、查询、正文（JSON 或二进制）、`responseType`、`requireJsonBody`、取消信号 |
 | 归一错误 | `ApiError` | `status`、`code`、`traceId`、`params`、`details`、`attempts`、`auth`（`status === 401`） |
 | 令牌存储 | `AccessTokenStore` | 同步的 `get`/`set`，仅内存；`set(null)` 即登出 |
 | 重试策略 | `RetryPolicy` | `maxAttempts`、`initialDelayMs`、`maxDelayMs` |

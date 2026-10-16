@@ -347,9 +347,11 @@ function useAppChrome(clientApi: RequestFn): AppChrome {
 
 ## What is deliberately not here
 
-- **Uploads, SSE and raw-byte responses** -- not shipped (the
-  transport reads and writes JSON text only; a binary body or
-  response never travels this client).
+- **SSE and streaming responses** -- not shipped (a response is read
+  whole; there is no streaming reader). Binary bodies and raw-byte
+  responses *are* carried: a `Blob` (or `ArrayBuffer`/typed array) body
+  travels verbatim, and a request declaring `responseType: 'blob'`
+  resolves its 2xx body as a `Blob`.
 - **A consumer is not packaged here** -- `@speed/api-sdk`, the
   orval-generated typed surface, calls into this package through its
   `src/runtime.ts` seam, and `@speed/auth-core` compile-consumes both

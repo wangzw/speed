@@ -22,6 +22,9 @@ export interface StandinCall {
   readonly headers: Headers
   /** Raw body text, when the client sent a string body. */
   readonly bodyText: string | undefined
+  /** The body, when the client sent a binary (Blob) body -- the
+   * byte-moving operation's raw bytes, never JSON-serialized. */
+  readonly bodyBlob: Blob | null
   /** The body parsed as JSON, when bodyText carried JSON. */
   readonly bodyJson: unknown
   /** The abort signal the client passed (its internal timeout
@@ -66,6 +69,18 @@ export function textResponse(
   extraHeaders?: Readonly<Record<string, string>>,
 ): Response {
   return new Response(text, { status, headers: { ...extraHeaders } })
+}
+
+/** A raw-byte response, like a content-download endpoint answers with. */
+export function blobResponse(
+  status: number,
+  bytes: BlobPart,
+  type: string,
+): Response {
+  return new Response(new Blob([bytes], { type }), {
+    status,
+    headers: { 'content-type': type },
+  })
 }
 
 /** A step that never answers on its own: only the client's timeout or
@@ -136,6 +151,10 @@ export function createStandinFetch(responder: StandinResponder): StandinFetch {
     const headers = new Headers(init?.headers)
     const bodyText =
       typeof init?.body === 'string' ? init.body : undefined
+    const bodyBlob =
+      typeof Blob !== 'undefined' && init?.body instanceof Blob
+        ? init.body
+        : null
     let bodyJson: unknown = undefined
     if (
       bodyText !== undefined &&
@@ -152,6 +171,7 @@ export function createStandinFetch(responder: StandinResponder): StandinFetch {
       method: init?.method ?? 'GET',
       headers,
       bodyText,
+      bodyBlob,
       bodyJson,
       signal: init?.signal ?? null,
     }

@@ -27,6 +27,7 @@ import {
 } from './index'
 import { createMemoryReporter } from '../test-utils/memory-reporter'
 import {
+  blobResponse,
   createStandinFetch,
   hang,
   jsonResponse,
@@ -552,6 +553,63 @@ describe('request shape', () => {
       expect(error.cause).toBeInstanceOf(TypeError)
       expect(standin.calls).toHaveLength(0)
     }
+  })
+
+  it('sends a binary (Blob) body verbatim, never JSON-serialized', async () => {
+    // A byte-moving operation (objectstore's content upload) hands the
+    // transport a Blob. It must travel as the raw bytes -- not through
+    // JSON.stringify, which would turn a Blob into the literal "{}" and
+    // send two bytes where the caller meant a file. The caller's own
+    // content type is honoured unchanged.
+    const standin = scriptedStandin(jsonResponse(204))
+    const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
+    const bytes = new Blob(['raw-bytes'], { type: 'application/octet-stream' })
+    await api('/objects/o-1/content', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/octet-stream' },
+      body: bytes,
+    })
+    const call = recorded(standin)
+    expect(call.method).toBe('PUT')
+    expect(call.bodyBlob).toBe(bytes)
+    expect(call.bodyText).toBeUndefined()
+    expect(call.headers.get('content-type')).toBe('application/octet-stream')
+  })
+
+  it('sends an ArrayBuffer body verbatim, never JSON-serialized', async () => {
+    const standin = scriptedStandin(jsonResponse(204))
+    const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
+    const buffer = new Uint8Array([1, 2, 3]).buffer
+    await api('/objects/o-1/content', { method: 'PUT', body: buffer })
+    const call = recorded(standin)
+    // The JSON path would have serialized an ArrayBuffer to "{}"; the
+    // binary path leaves bodyText unset.
+    expect(call.bodyText).toBeUndefined()
+    expect(call.bodyBlob).toBeNull()
+  })
+
+  it('resolves a raw-byte response as a Blob when responseType is blob', async () => {
+    const standin = scriptedStandin(
+      blobResponse(200, 'the-bytes', 'application/octet-stream'),
+    )
+    const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
+    const result = await api<Blob>('/objects/o-1/content', {
+      responseType: 'blob',
+    })
+    expect(result).toBeInstanceOf(Blob)
+    expect(await result.text()).toBe('the-bytes')
+  })
+
+  it('still parses a JSON error envelope for a blob-declaring request', async () => {
+    // The blob flag governs a 2xx body only: a refusal still reads its
+    // JSON envelope, so the failure carries the envelope's code.
+    const standin = scriptedStandin(jsonResponse(409, { code: 'objectstore.conflict' }))
+    const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
+    const error = await expectApiError(
+      api('/objects/o-1/content', { responseType: 'blob' }),
+    )
+    expect(error.status).toBe(409)
+    expect(error.code).toBe('objectstore.conflict')
   })
 
   it('encodes an array query value as repeated parameters, never comma-joined', async () => {
