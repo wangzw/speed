@@ -94,7 +94,6 @@ export function DescriptorSignInForm({
     setErrorCode(null)
     await driver.start({
       method,
-      delivery: 'token',
       binding: 'cookie',
       input: values,
     })
@@ -205,7 +204,6 @@ export function EnterpriseSignIn({
     try {
       const request = {
         method: provider.protocol,
-        delivery: 'token' as const,
         binding: 'cookie' as const,
         input: { provider: provider.id },
         ...(returnTo === undefined ? {} : { return_to: returnTo }),
@@ -346,7 +344,6 @@ export function PasskeySignIn({
     setErrorCode(null)
     await driver.start({
       method: method.name,
-      delivery: 'token',
       binding: 'cookie',
     })
   }

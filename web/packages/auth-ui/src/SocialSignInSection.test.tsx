@@ -86,6 +86,26 @@ describe('SocialSignInSection', () => {
     })
   })
 
+  it('name no token delivery on the start -- the session delivery is auth-core’s', async () => {
+    // auth-core forces the cookie session (`delivery: 'session'`) on
+    // startFlow, so the section names no delivery of its own. A `'token'`
+    // here would be dead today and a live contradiction to the cookie model
+    // the moment that override lifted.
+    const harness = makeHarness({
+      [LOGIN_START]: () => redirectFlow(GOOGLE_AUTH_URL),
+    })
+    const startFlow = vi.spyOn(harness.session, 'startFlow')
+    renderWithProviders(
+      <SocialSignInSection session={harness.session} providers={PROVIDERS} />,
+    )
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.social.provider.google }),
+    )
+    await waitFor(() => expect(startFlow).toHaveBeenCalledTimes(1))
+    expect(startFlow.mock.calls[0]?.[0]?.delivery).not.toBe('token')
+  })
+
   it('render a refused start in one alert and report nothing', async () => {
     const harness = makeHarness({
       [LOGIN_START]: () => {

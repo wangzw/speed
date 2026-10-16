@@ -88,6 +88,23 @@ describe('PasswordSignInForm', () => {
     expect(harness.store.get()).toBe('access-1')
   })
 
+  it('name no token delivery on the login start -- the session delivery is auth-core’s', async () => {
+    // auth-core forces the cookie session (`delivery: 'session'`) on
+    // startFlow, so this surface names no delivery of its own. A `'token'`
+    // here would be dead today (masked by that override) and a live
+    // contradiction to the cookie model the moment the override lifted.
+    const harness = makeHarness({
+      [LOGIN_START]: () => completeFlow(1),
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+      [PROFILE_GET]: () => principal(),
+    })
+    const startFlow = vi.spyOn(harness.session, 'startFlow')
+    renderWithProviders(<PasswordSignInForm session={harness.session} />)
+    await fillAndSubmit('alice@example.com', 's3cret-pass', ZH_LABELS)
+    await waitFor(() => expect(startFlow).toHaveBeenCalledTimes(1))
+    expect(startFlow.mock.calls[0]?.[0]?.delivery).not.toBe('token')
+  })
+
   it('disable the submit button while the login is in flight, re-enable after', async () => {
     let resolveStart: (value: unknown) => void = () => {}
     const harness = makeHarness({

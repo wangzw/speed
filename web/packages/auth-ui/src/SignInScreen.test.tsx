@@ -216,6 +216,7 @@ describe('SignInScreen', () => {
         }),
     })
     const onAuthorizeUrl = vi.fn()
+    const startFlow = vi.spyOn(harness.session, 'startFlow')
     renderWithProviders(
       <SignInScreen
         session={harness.session}
@@ -243,6 +244,9 @@ describe('SignInScreen', () => {
       input: { provider: 'idp-1' },
       return_to: '/auth/sso/callback',
     })
+    // The entry names no token delivery of its own: auth-core forces the
+    // cookie session (`delivery: 'session'`).
+    expect(startFlow.mock.calls[0]?.[0]?.delivery).not.toBe('token')
   })
 
   it('render the passkey button and drive its ceremony step to a sign-in', async () => {
@@ -260,6 +264,7 @@ describe('SignInScreen', () => {
       [PROFILE_GET]: () => principal(),
     })
     const onSignedIn = vi.fn()
+    const startFlow = vi.spyOn(harness.session, 'startFlow')
     renderWithProviders(
       <SignInScreen
         session={harness.session}
@@ -281,6 +286,9 @@ describe('SignInScreen', () => {
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     expect(harness.store.get()).toBe('access-1')
     expect(harness.calls[0]?.options?.body).toMatchObject({ method: 'passkey' })
+    // The passkey button names no token delivery of its own: auth-core
+    // forces the cookie session.
+    expect(startFlow.mock.calls[0]?.[0]?.delivery).not.toBe('token')
   })
 
   it('present the register entry only where a first login may open an account', async () => {
@@ -361,6 +369,40 @@ describe('SignInScreen', () => {
       screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
     ).toBeInTheDocument()
     expect(screen.getByLabelText('token')).toBeInTheDocument()
+  })
+
+  it('name no token delivery from a descriptor-driven form -- the session delivery is auth-core’s', async () => {
+    // A `form` method with no bespoke component is driven by its descriptor;
+    // its start names no token delivery of its own (auth-core forces the
+    // cookie session), like every other channel.
+    const harness = makeHarness({
+      [LOGIN_START]: () => completeFlow(1),
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+      [PROFILE_GET]: () => principal(),
+    })
+    const startFlow = vi.spyOn(harness.session, 'startFlow')
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([
+          {
+            name: 'magic',
+            kind: 'form',
+            fields: [{ name: 'identifier', kind: 'text', required: true }],
+          },
+        ])}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+      MAIL,
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+    )
+    await waitFor(() => expect(startFlow).toHaveBeenCalledTimes(1))
+    expect(startFlow.mock.calls[0]?.[0]?.delivery).not.toBe('token')
   })
 
   it('honor the deprecated channels override to narrow the form strip', () => {

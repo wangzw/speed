@@ -130,14 +130,14 @@ sequenceDiagram
     participant S as AuthSession
     participant H as 宿主回调
     U->>F: 提交
-    F->>S: startFlow({method, delivery:'token', binding:'cookie', input})
+    F->>S: startFlow({method, binding:'cookie', input})
     S-->>F: AuthnFlowState（next.kind 分派）
     loop 直到完成
         F->>S: answerFlow({seq, step, input})
         S-->>F: AuthnFlowState
     end
     alt 流程完成
-        S-->>F: 已认证（令牌已写入会话）
+        S-->>F: 已认证（cookie 会话建立）
         F->>H: onSignedIn（一次）
     else 操作被拒
         S-->>F: ApiError

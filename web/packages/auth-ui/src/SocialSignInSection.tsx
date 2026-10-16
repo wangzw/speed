@@ -114,7 +114,6 @@ export function SocialSignInSection({
     try {
       const reply = await session.startFlow({
         method: provider,
-        delivery: 'token',
         binding: 'cookie',
         ...(config.redirectUri === '' ? {} : { return_to: config.redirectUri }),
       })

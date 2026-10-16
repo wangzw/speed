@@ -84,7 +84,6 @@ export function PasswordSignInForm({
     setErrorCode(null)
     await driver.start({
       method: 'password',
-      delivery: 'token',
       binding: 'cookie',
       input: { identifier, password },
     })

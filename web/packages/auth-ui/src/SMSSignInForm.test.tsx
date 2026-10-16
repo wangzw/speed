@@ -78,6 +78,21 @@ describe('SMSSignInForm', () => {
     ).toHaveTextContent(zhCN.smsSignIn.sentNotice.replace('{{phone}}', PHONE))
   })
 
+  it('name no token delivery on the code request -- the session delivery is auth-core’s', async () => {
+    // The phone step starts the flow; auth-core forces the cookie session
+    // (`delivery: 'session'`), so the request names no delivery of its own.
+    // A `'token'` here would be dead today and a live contradiction to the
+    // cookie model the moment that override lifted.
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(),
+    })
+    const startFlow = vi.spyOn(harness.session, 'startFlow')
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    await sendCode()
+    await waitFor(() => expect(startFlow).toHaveBeenCalledTimes(1))
+    expect(startFlow.mock.calls[0]?.[0]?.delivery).not.toBe('token')
+  })
+
   it('answer the code and fire onSignedIn on completion', async () => {
     // The method answers a correct code with a ready step (taken with
     // `complete`), and that completion issues the tokens.

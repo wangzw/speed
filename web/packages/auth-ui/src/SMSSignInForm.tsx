@@ -132,7 +132,6 @@ export function SMSSignInForm({ session, onSignedIn }: SMSSignInFormProps) {
     sentToRef.current = phone
     const issued = await driver.start({
       method: 'sms',
-      delivery: 'token',
       binding: 'cookie',
       input: { phone },
     })
