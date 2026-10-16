@@ -76,7 +76,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/profile"
 	"github.com/vislake/speed/pkg/authn/session"
 	"github.com/vislake/speed/pkg/authn/sso"
-	"github.com/vislake/speed/pkg/authn/static"
 	"github.com/vislake/speed/pkg/authn/token"
 	authzadmin "github.com/vislake/speed/pkg/authz/admin"
 	authzguard "github.com/vislake/speed/pkg/authz/guard"
@@ -251,6 +250,18 @@ const webuiModuleName = webui.ModuleName
 // alone leaves none, and the second kind is what lets a copy show the step-up,
 // the elevation it grants and the write it unblocks.
 //
+// The static operator password table (authn.static) is the one capability the
+// criterion admits that this list leaves out. It needs no external service — a
+// configuration table alone — but it is the only backend that takes the Basic
+// scheme, and a browser opens its native credential prompt for a Basic or
+// Digest challenge on any 401. This skeleton's browser-facing traffic is the
+// frontend bundle, so a 401 carrying Basic would put a native password box in
+// front of a signed-in user the moment a session lapsed, in place of the
+// frontend's own end-of-session flow. The session cookie and the bearer token
+// carry every caller that reaches the guards here, so a copy that wants a
+// Basic-authenticated operator or probe adds this backend and its subject table
+// back deliberately.
+//
 // What differs between the two lists is the entry point. serve stands up the
 // HTTP entry point and names every module with a route or a middleware; worker
 // names the background modules that need neither a router nor a gateway — the
@@ -266,15 +277,14 @@ var (
 		webuiModuleName,
 		cors.ModuleName,
 
-		// The identity system: the gateway, its route mounter, the operator
-		// password table, the account store, the management routes, the session
-		// cookie, the login flow with its password method, the multi-factor
-		// register with its two factor kinds — the TOTP authenticator and the
-		// WebAuthn relying party — access tokens, impersonation records,
-		// invitations, the profile surface, and the enterprise provider register.
+		// The identity system: the gateway, its route mounter, the account
+		// store, the management routes, the session cookie, the login flow with
+		// its password method, the multi-factor register with its two factor
+		// kinds — the TOTP authenticator and the WebAuthn relying party — access
+		// tokens, impersonation records, invitations, the profile surface, and
+		// the enterprise provider register.
 		authnmount.ModuleName,
 		gate.ModuleName,
-		static.ModuleName,
 		authnaccount.ModuleName,
 		authnadmin.ModuleName,
 		session.ModuleName,

@@ -78,13 +78,6 @@ authn:
       # written by host name — a relying party id has to be a domain, so the
       # loopback address is localhost.
       public-url: "http://localhost:8080"
-  # DEV: the operators' password table. The entry is an Argon2id hash of the
-  # password "operator-dev-secret" for the subject "operator" (the account
-  # "static.operator"). Write your own with the static package's Hash and
-  # replace this entry before anything is exposed.
-  static:
-    subjects:
-      operator: "$argon2id$v=19$m=19456,t=2,p=1$xeAjr/xEt4mML0QaEhw8pw$Khjd7856RU6MatFxmOtE0YFZJLsC05yxX5HwJhpBXno"
   # DEV: the token signing key. The program generates one at
   # var/token-signing-key.pem, relative to the working directory, on the first
   # run and keeps it afterwards. Replace it with your own key material before a

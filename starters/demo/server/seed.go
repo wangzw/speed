@@ -64,10 +64,10 @@ type seedAccount struct {
 	// Password is the plaintext the credential is derived from. It and
 	// PasswordHash are alternatives, and one of them has to be given.
 	Password string `config:"password"`
-	// PasswordHash is the credential in the form the static package's Hash
-	// writes: a PHC entry, read as it stands and written without a plaintext
-	// passing through this configuration. It is what a deployment that does not
-	// want its operators' passwords in a file gives instead of Password.
+	// PasswordHash is the credential in the form the `pkg/authn/static` `Hash`
+	// helper writes: a PHC entry, read as it stands and written without a
+	// plaintext passing through this configuration. It is what a deployment that
+	// does not want its operators' passwords in a file gives instead of Password.
 	PasswordHash string `config:"password-hash"`
 	// DisplayName is the account's own name.
 	DisplayName string `config:"display-name"`
@@ -106,8 +106,8 @@ func (a seedAccount) check() error {
 // seedSchema declares the seed command's input items.
 //
 // The account list is one item and not a tree of them, because a list carries
-// no per-field metadata: the whole list is marked sensitive instead, the way the
-// static credential table is, since every entry under it holds a password.
+// no per-field metadata: the whole list is marked sensitive instead, since
+// every entry under it holds a password.
 func seedSchema() config.Schema {
 	return config.Schema{
 		Namespace: seedNamespace,

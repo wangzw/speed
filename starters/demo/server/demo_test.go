@@ -165,9 +165,6 @@ authn:
     mount:
       endpoint: account
       public-url: "http://localhost:8080"
-  static:
-    subjects:
-      operator: "$argon2id$v=19$m=19456,t=2,p=1$xeAjr/xEt4mML0QaEhw8pw$Khjd7856RU6MatFxmOtE0YFZJLsC05yxX5HwJhpBXno"
   token:
     algorithm: ES256
     signing-key-file: "%s"
@@ -666,6 +663,58 @@ func TestServeAnswersTheProbes(t *testing.T) {
 	// run reaching ready is what says its requirements were all satisfied.
 	if out := serve.output(); !strings.Contains(out, "notification.preferences: the preference routes are mounted") {
 		t.Errorf("serve reported no preference mount, so the preference matrix was not assembled:\n%s", out)
+	}
+}
+
+// TestTheGuardsOfferNoBasicChallenge holds that a 401 on a guarded endpoint
+// carries no Basic challenge.
+//
+// The static password table is the only backend that takes the Basic scheme,
+// and a browser opens its native credential prompt for a Basic challenge on any
+// 401 — so a session that lapsed on a guarded endpoint would raise a native
+// password box in front of a signed-in user instead of letting the frontend end
+// the session and return to its own login page. The demo wires no Basic backend,
+// so the challenge names Bearer alone and a browser has nothing to prompt from.
+func TestTheGuardsOfferNoBasicChallenge(t *testing.T) {
+	ports := freePorts(t, listenerCount)
+	config := writeConfig(t, ports)
+
+	if res := runCommand(t, config, "sqlite-memory", migrateCommand); res.err != nil {
+		t.Fatalf("migrate failed: %v\n%s", res.err, res.combined())
+	}
+	serve := start(t, config, "sqlite-memory", serveCommand)
+	serve.waitReady(t)
+
+	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
+	client := &http.Client{Timeout: 10 * time.Second}
+	// One guarded endpoint per gateway chain: the account endpoint, the admin
+	// endpoint and the api endpoint, whose chain also carries tenant resolution
+	// and the authorization guard.
+	for _, path := range []string{
+		"/auth/me",
+		"/tenant/admin/tenants",
+		"/api/v1/notifications/messages",
+	} {
+		req, err := http.NewRequest(http.MethodGet, base+path, nil)
+		if err != nil {
+			t.Fatalf("building GET %s: %v", path, err)
+		}
+		res, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusUnauthorized {
+			t.Errorf("GET %s answered %d, want 401", path, res.StatusCode)
+		}
+		challenge := res.Header.Get("Www-Authenticate")
+		if strings.Contains(challenge, "Basic") {
+			t.Errorf("GET %s answered a 401 with %q: a browser answers a Basic challenge with its "+
+				"native password prompt, so the guarded endpoints must carry none", path, challenge)
+		}
+		if !strings.Contains(challenge, "Bearer") {
+			t.Errorf("GET %s answered a 401 with %q, want a Bearer challenge", path, challenge)
+		}
 	}
 }
 

@@ -54,6 +54,19 @@ report the credential it returns. Enrolling the passkey and completing the
 step-up both work on the bundled UI (see "Re-authentication and impersonation on
 a fresh copy" below).
 
+**The baseline leaves out the static operator password table (`authn.static`),
+though the criterion would admit it: it needs no external service, only the
+table the configuration names.** It is the one backend that takes the Basic
+scheme, and a browser opens its native password prompt for a Basic or Digest
+challenge on any 401. This skeleton serves the frontend bundle to a browser, so
+a 401 carrying Basic — a lapsed session or token on a guarded endpoint — would
+put a native password box in front of a signed-in user instead of letting the
+frontend end the session and return to its own login page. The session cookie
+and the bearer token carry every caller the guards here reach, so the demo wires
+no Basic backend and `testdata/` carries no password table; a copy that wants a
+Basic-authenticated operator or probe adds `authn.static` and its
+`authn.static.subjects` table back itself.
+
 The baseline is written twice in `main.go`, as `baselineServe` and
 `baselineWorker`. `serve` stands the HTTP entry point up and names every module
 with a route or a middleware; `worker` names the background modules that need
@@ -100,17 +113,14 @@ The configuration under `server/testdata/` ships development values so a copy
 starts as it stands. Every one of them is marked `DEV` in the file it appears
 in; replace them all before a deployment serves real traffic:
 
-- **The operators' password table** (`authn.static.subjects`) holds an Argon2id
-  hash of the password `operator-dev-secret` for the subject `operator` (the
-  account `static.operator`). Write your own entry with the static package's
-  `Hash` and replace it. It is the credential the API endpoints accept over
-  HTTP basic; it is not a login for the frontend, which the seed's account is.
 - **The initial operators** (`seed.accounts`) are the accounts the `seed`
   command writes. Replace every one of them before a deployment serves real
   traffic. The sample configurations give each a plaintext password, which is
   the one development value here written in the clear; a deployment that will
-  not carry that gives a `password-hash` instead — the entry the static
-  package's `Hash` writes, the same form the password table above holds.
+  not carry that gives a `password-hash` instead — a PHC entry, the form
+  `pkg/authn/static`'s `Hash` helper writes. A seeded account signs in through
+  the login flow (`authn.login.password`) and the session cookie it hands out,
+  not through an Authorization scheme.
 - **The database encryption key** (`db.<engine>.encryption-key`) seals the
   columns a module encrypts at rest. Replace the `dev-only-change-me-…` value.
 
