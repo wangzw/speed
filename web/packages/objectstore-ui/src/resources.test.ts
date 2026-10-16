@@ -30,6 +30,10 @@ describe('objectstoreUiResources', () => {
   it('carries the error section the resolver navigates', () => {
     const keys = leafKeys(objectstoreUiResources['en-US'])
     expect(keys).toContain('errors.client.network')
+    expect(keys).toContain('errors.objectstore.bad_request')
+    expect(keys).toContain('errors.objectstore.not_found')
+    expect(keys).toContain('errors.objectstore.conflict')
+    expect(keys).toContain('errors.authz.forbidden')
     expect(keys).toContain('errors.http')
     expect(keys).toContain('errors.unknown')
   })

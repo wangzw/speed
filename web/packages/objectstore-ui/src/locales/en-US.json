@@ -5,6 +5,14 @@
       "timeout": "The request timed out. Please try again later.",
       "protocol": "The service returned an unexpected response. Please try again later."
     },
+    "objectstore": {
+      "bad_request": "The request could not be read. Check the object and try again.",
+      "not_found": "That object is no longer available. It may have been deleted or expired.",
+      "conflict": "The object's state does not allow this action right now."
+    },
+    "authz": {
+      "forbidden": "You do not have permission to do that."
+    },
     "http": "The request could not be completed (status {{status}}). Please try again.",
     "unknown": "Something went wrong. Please try again later."
   },

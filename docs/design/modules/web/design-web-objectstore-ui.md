@@ -110,7 +110,7 @@ sequenceDiagram
 
 **失败面是一个错误码白名单加一族按状态参数化的叶子。** 每次失败解析成一个错误码，渲染在一条 `role="alert"` 横幅里；白名单外的码渲染 `errors.unknown`，永不渲染裸键。
 
-**对象存储的拒绝以 RFC 9457 问题对象出行**（一个 `type` `urn:speed:objectstore:<码>`，正文不带 `code` 成员），而 api-client 的信封读取要求一个 `code`，故这些拒绝在客户端表现为 `client.http.<状态>`，经该族自己的参数化叶子解析文本。这是本面与模块错误形之间的缝：模块的 `objectstore.bad-request`／`not-found`／`conflict` 类型不进入 `ApiError.code`。
+**对象存储的拒绝以 RFC 9457 问题对象出行**（一个 `type` `urn:speed:objectstore:<码>`，正文不带 `code` 成员）；api-client 从该 `type` 推得模块码 `<模块>.<码>`（码段里的连字符归一为下划线，[api-client](design-web-api-client.md)），故这些拒绝在客户端表现为 `objectstore.bad_request`／`objectstore.not_found`／`objectstore.conflict`，各自在命名空间白名单里有一条叶子，渲染双语文本而非通用兜底。授权守卫的 403（`type` `urn:speed:authz:forbidden`）同样到达为 `authz.forbidden`：读路径按状态分到无权限空态，写路径（下载、删除）由该码的叶子渲染文本。
 
 | 情形 | 表现 |
 |---|---|

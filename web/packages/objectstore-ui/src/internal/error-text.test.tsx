@@ -45,14 +45,40 @@ describe('useObjectstoreUiErrorText', () => {
     expect(textFor('client.http.503')).toContain('503')
   })
 
-  it('falls back to the unknown text for an unlisted code', () => {
-    // The objectstore refusals arrive as client.http.<status> (their
-    // problem body carries no code), so a module code is not whitelisted
-    // and must render the generic fallback, never a raw key.
-    renderWithProviders(<Probe codes={['objectstore.conflict']} />, {
+  it('resolves the objectstore module refusals to their own text', () => {
+    // The module's refusals arrive as the code derived from their problem
+    // type urn:speed:objectstore:<code>, i.e. objectstore.not_found and
+    // friends, so each resolves to its own leaf, never the generic
+    // fallback.
+    renderWithProviders(
+      <Probe
+        codes={[
+          'objectstore.bad_request',
+          'objectstore.not_found',
+          'objectstore.conflict',
+        ]}
+      />,
+      { language: 'en-US' },
+    )
+    expect(textFor('objectstore.bad_request')).toMatch(/could not be read/i)
+    expect(textFor('objectstore.not_found')).toMatch(/no longer available/i)
+    expect(textFor('objectstore.conflict')).toMatch(/state does not allow/i)
+  })
+
+  it('resolves the authorization guard permission refusal', () => {
+    renderWithProviders(<Probe codes={['authz.forbidden']} />, {
       language: 'en-US',
     })
-    expect(textFor('objectstore.conflict')).toMatch(/went wrong/i)
+    expect(textFor('authz.forbidden')).toMatch(/permission/i)
+  })
+
+  it('falls back to the unknown text for an unlisted code', () => {
+    // A code outside the whitelist renders the shared fallback, never a
+    // raw key.
+    renderWithProviders(<Probe codes={['objectstore.future_code']} />, {
+      language: 'en-US',
+    })
+    expect(textFor('objectstore.future_code')).toMatch(/went wrong/i)
   })
 
   it('re-renders the resolved text when the language switches', async () => {

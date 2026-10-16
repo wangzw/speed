@@ -1,18 +1,22 @@
 /**
  * Error-code text resolution for the objectstore-ui namespace.
  *
- * Every reachable answer of the object page -- the transport-level codes
- * of the @speed/api-client contract (client.network / client.timeout /
- * client.protocol) and the bare-HTTP answers the api-client synthesizes
- * for a non-2xx with no readable code envelope -- maps, one leaf per
- * code, under the errors section. The objectstore module's refusals
- * travel as RFC 9457 problem details objects, whose machine-readable
- * kind is the type `urn:speed:objectstore:<code>` and whose body carries
- * no `code` member; the api-client's envelope reader requires a `code`,
- * so those refusals surface as client.http.<status> and resolve through
- * the parameterized http leaf here. A code outside the whitelist resolves
- * to errors.unknown, so the bundle can never render a raw key and a
- * missing translation never leaks another language's text.
+ * Every reachable answer of the object page maps, one leaf per code,
+ * under the errors section: the objectstore module's own refusal codes
+ * (`objectstore.bad_request` / `objectstore.not_found` /
+ * `objectstore.conflict`) and the platform authorization guard's
+ * permission refusal (`authz.forbidden`); the transport-level codes of
+ * the @speed/api-client contract (client.network / client.timeout /
+ * client.protocol); and the bare-HTTP answers the api-client synthesizes
+ * for a non-2xx with no module code (client.http.<status>). The
+ * objectstore module's refusals travel as RFC 9457 problem details
+ * objects whose machine-readable kind is the type
+ * `urn:speed:objectstore:<code>`; the api-client derives the
+ * `<module>.<code>` code from that type (dashes normalized to
+ * underscores), so a refusal surfaces as e.g. `objectstore.not_found`.
+ * A code outside the whitelist resolves to errors.unknown, so the bundle
+ * can never render a raw key and a missing translation never leaks
+ * another language's text.
  *
  * The key construction and the unknown fallback are the shared
  * resolver's (see @speed/i18n's error-text module). The bare-HTTP family
@@ -25,18 +29,32 @@ import { useObjectstoreUiTranslation } from './translation.js'
 
 /**
  * The bare-HTTP answer the api-client synthesizes for a non-2xx with no
- * readable code envelope: client.http.<status>. It is a family rather
- * than a fixed code (the status varies), so it resolves through its own
- * parameterized leaf instead of the fixed whitelist below.
+ * module code (neither a body `code` nor a `urn:speed:` problem type):
+ * client.http.<status>. It is a family rather than a fixed code (the
+ * status varies), so it resolves through its own parameterized leaf
+ * instead of the fixed whitelist below.
  */
 const HTTP_ERROR_CODE = /^client\.http\.(\d{3})$/
 
 /**
- * Every code with a dedicated errors-section text: the transport-level
- * failures of the api-client contract. Exported so the suite can pin the
- * whitelist-to-bundle pairing in both languages.
+ * Every code with a dedicated errors-section text: the objectstore
+ * module's own refusals, the authorization guard's permission refusal,
+ * and the transport-level failures of the api-client contract. Exported
+ * so the suite can pin the whitelist-to-bundle pairing in both languages.
  */
-export const ERROR_TEXT_CODES = [...CLIENT_TRANSPORT_ERROR_CODES] as const
+export const ERROR_TEXT_CODES = [
+  ...CLIENT_TRANSPORT_ERROR_CODES,
+  // pkg/objectstore/metadata's refusals: the problem types
+  // urn:speed:objectstore:{bad-request,not-found,conflict}, derived by the
+  // api-client to the objectstore.<code> shape below.
+  'objectstore.bad_request',
+  'objectstore.not_found',
+  'objectstore.conflict',
+  // The authorization guard's permission refusal
+  // (urn:speed:authz:forbidden): a read is branched to the no-permission
+  // empty state by status, and a refused write renders this code's text.
+  'authz.forbidden',
+] as const
 
 const KNOWN_CODES = new Set<string>(ERROR_TEXT_CODES)
 
