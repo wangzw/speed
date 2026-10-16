@@ -32,6 +32,7 @@ import { ConsoleShell } from '@speed/console-ui'
 import { useTranslation } from '@speed/i18n'
 import { useNavigate } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
+import { useAppServices } from '../app-services.js'
 import { AppBrand, HeaderActions, UserMenu } from '../chrome.js'
 import { invitationPath } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
@@ -63,12 +64,17 @@ export function ConsoleArea({
   onSidebarCollapsedChange,
 }: ConsoleAreaProps): ReactElement {
   const navigate = useNavigate()
+  const { session } = useAppServices()
   return (
     <ConsoleShell
       routes={routes}
       title={<AppBrand />}
       headerActions={<ConsoleHeaderActions />}
       onNavigate={navigate}
+      // The session a step-up-gated console write elevates: a privileged
+      // write refused for a strength shortfall opens the re-auth dialog,
+      // which drives this session's step-up flow.
+      session={session}
       // The console issues an invitation and shows the acceptance link for
       // the operator to hand over; the link points at this app's own landing
       // route, whose path only the host knows (src/paths).

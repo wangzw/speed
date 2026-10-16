@@ -109,6 +109,7 @@ export function createTestSession(
     logout: unused,
     restore: unused,
     refresh: unused,
+    isStepUpShortfall: () => false,
     setPermissionSet: unused,
   }
 }
