@@ -1,7 +1,8 @@
 /**
  * AccountsPage: the account-administration page.
  *
- * It lists accounts (narrowed by an identifier prefix and its kind),
+ * It lists accounts (narrowed by an identifier prefix and its kind, a
+ * display-name prefix, a status and a kind),
  * opens one account's detail (its fields, factors, secrets and sessions),
  * creates an account, and drives the detail writes -- status, MFA
  * requirement, patch, password reset, identifier add, secret create,
@@ -154,6 +155,26 @@ describe('AccountsPage', () => {
         method: 'GET',
         path: '/auth/admin/accounts',
         query: { status: 'disabled', kind: 'service' },
+      })
+    })
+  })
+
+  it('sends the display-name prefix when the search is submitted', async () => {
+    const user = userEvent.setup()
+    const calls = bindConsoleRequest((call) => {
+      if (call.path === '/auth/admin/accounts') {
+        return { accounts: [], next_cursor: '' }
+      }
+      throw new Error(`unexpected request: ${call.path}`)
+    })
+    renderWithProviders(<AccountsPage />, { operations: consoleOperations })
+    await user.type(screen.getByLabelText('显示名前缀'), 'Ada')
+    await user.click(screen.getByRole('button', { name: '查询' }))
+    await vi.waitFor(() => {
+      expect(calls).toContainEqual({
+        method: 'GET',
+        path: '/auth/admin/accounts',
+        query: { display_name_prefix: 'Ada' },
       })
     })
   })

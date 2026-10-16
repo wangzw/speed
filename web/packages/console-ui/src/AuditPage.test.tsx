@@ -158,6 +158,73 @@ describe('AuditPage', () => {
     })
   })
 
+  it('applies the outcome and actor filters server-side on submit', async () => {
+    const user = userEvent.setup()
+    const seen: { outcome?: string[]; actor?: string[] } = {}
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listRecords: (params) => {
+          seen.outcome = params?.outcome
+          seen.actor = params?.actor
+          return Promise.resolve(page([record]))
+        },
+      }),
+    )
+    renderWithProviders(<AuditPage />, { operations })
+    await screen.findByText('tenant.create')
+    await user.type(screen.getByLabelText('结果筛选'), 'ok, denied')
+    await user.type(screen.getByLabelText('操作者筛选'), 'acc-1')
+    await user.click(screen.getByRole('button', { name: '应用' }))
+    await vi.waitFor(() => {
+      expect(seen.outcome).toEqual(['ok', 'denied'])
+      expect(seen.actor).toEqual(['acc-1'])
+    })
+  })
+
+  it('clears the action, outcome and actor filters on reset', async () => {
+    const user = userEvent.setup()
+    const requests: Array<{
+      action?: string[]
+      outcome?: string[]
+      actor?: string[]
+    }> = []
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listRecords: (params) => {
+          requests.push({
+            action: params?.action,
+            outcome: params?.outcome,
+            actor: params?.actor,
+          })
+          return Promise.resolve(page([record]))
+        },
+      }),
+    )
+    renderWithProviders(<AuditPage />, { operations })
+    await screen.findByText('tenant.create')
+    await user.type(screen.getByLabelText('动作筛选'), 'tenant.create')
+    await user.type(screen.getByLabelText('结果筛选'), 'ok')
+    await user.type(screen.getByLabelText('操作者筛选'), 'acc-1')
+    await user.click(screen.getByRole('button', { name: '应用' }))
+    await vi.waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.action?.[0] === 'tenant.create' &&
+            request.outcome?.[0] === 'ok' &&
+            request.actor?.[0] === 'acc-1',
+        ),
+      ).toBe(true)
+    })
+    await user.click(screen.getByRole('button', { name: '重置' }))
+    await vi.waitFor(() => {
+      const last = requests.at(-1)
+      expect(last?.action ?? []).toEqual([])
+      expect(last?.outcome ?? []).toEqual([])
+      expect(last?.actor ?? []).toEqual([])
+    })
+  })
+
   it('pages forward with the cursor the read answered with', async () => {
     const user = userEvent.setup()
     const operations = createConsoleOperations(

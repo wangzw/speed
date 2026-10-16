@@ -278,7 +278,9 @@
       "since": "Since",
       "until": "Until",
       "action": "Action filter",
-      "actionPlaceholder": "Comma- or space-separated",
+      "outcome": "Outcome filter",
+      "actor": "Actor filter",
+      "valuePlaceholder": "Comma- or space-separated",
       "apply": "Apply",
       "reset": "Reset"
     },
@@ -405,6 +407,7 @@
     "title": "Accounts",
     "identifierLabel": "Login identifier",
     "identifierKindLabel": "Identifier kind",
+    "displayNamePrefixLabel": "Display name prefix",
     "identifierKind": {
       "username": "Username",
       "email": "Email",

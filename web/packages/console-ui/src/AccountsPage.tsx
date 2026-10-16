@@ -16,10 +16,12 @@
  * module's index is keyed by the two together (it refuses a prefix
  * without a kind): the toolbar carries a kind selector beside the prefix
  * box, and the applied filter is committed on submit so a keystroke never
- * fires a request. The toolbar also narrows the list by account status and
- * by account kind, the two other query parameters the module's list
- * endpoint declares; the module's read carries no display-name search, so
- * the page offers none rather than filtering a page the server returned.
+ * fires a request. The toolbar also narrows the list by a display-name
+ * prefix, by account status and by account kind, the other query
+ * parameters the module's list endpoint declares. The display-name prefix
+ * is the beginning of the stored name, compared as written (case-sensitive
+ * and un-normalized), so the box sends the operator's text unchanged. Each
+ * unset filter is left out of the request rather than sent empty.
  *
  * The list and the detail's four reads each stand behind their own
  * AsyncSection, so every one of them shows its loading, empty and
@@ -107,6 +109,8 @@ export function AccountsPage() {
   const [identifier, setIdentifier] = useState('')
   const [kindDraft, setKindDraft] = useState<IdentifierKind>('username')
   const [identifierKind, setIdentifierKind] = useState<IdentifierKind>('username')
+  const [displayNameDraft, setDisplayNameDraft] = useState('')
+  const [displayName, setDisplayName] = useState('')
   const [statusDraft, setStatusDraft] = useState('')
   const [status, setStatus] = useState('')
   const [accountKindDraft, setAccountKindDraft] = useState('')
@@ -127,10 +131,11 @@ export function AccountsPage() {
       ...(identifier === ''
         ? {}
         : { identifier_prefix: identifier, identifier_kind: identifierKind }),
+      ...(displayName === '' ? {} : { display_name_prefix: displayName }),
       ...(status === '' ? {} : { status }),
       ...(accountKind === '' ? {} : { kind: accountKind }),
     }),
-    [identifier, identifierKind, status, accountKind],
+    [identifier, identifierKind, displayName, status, accountKind],
   )
   const accounts = operations.useAccounts(accountParams)
   const account = operations.useAccount({
@@ -499,6 +504,12 @@ export function AccountsPage() {
           label={t('accounts.identifierLabel')}
         />
         <TextField
+          size="small"
+          value={displayNameDraft}
+          onChange={(event) => setDisplayNameDraft(event.target.value)}
+          label={t('accounts.displayNamePrefixLabel')}
+        />
+        <TextField
           select
           size="small"
           value={statusDraft}
@@ -534,6 +545,7 @@ export function AccountsPage() {
           onClick={() => {
             setIdentifier(identifierDraft.trim())
             setIdentifierKind(kindDraft)
+            setDisplayName(displayNameDraft.trim())
             setStatus(statusDraft)
             setAccountKind(accountKindDraft)
           }}

@@ -12,12 +12,13 @@
  * binds the generated /audit/admin operation to it -- so the page builds
  * no client and writes no query key. The query is narrowed server-side by
  * the filters the toolbar carries: a `since` and `until` bound (two
- * temporal bounds the single free-text filter box cannot express) and an
- * `action` set (comma- or space-separated), applied on submit so a
- * keystroke never fires a request. The rows page by cursor -- the read
- * answers with the next page's cursor -- so the footer advances through a
- * cursor stack the page keeps; the total is unknown (a keyset read does
- * not count), which the footer shows as its no-total wording.
+ * temporal bounds the single free-text filter box cannot express) and
+ * `action`, `outcome` and `actor` sets (each comma- or space-separated),
+ * applied on submit so a keystroke never fires a request. The rows page by
+ * cursor -- the read answers with the next page's cursor -- so the footer
+ * advances through a cursor stack the page keeps; the total is unknown (a
+ * keyset read does not count), which the footer shows as its no-total
+ * wording.
  *
  * The actor column renders a readable identity, not the raw account
  * identifier: the actor cell resolves the account's display name through
@@ -67,11 +68,11 @@ function parseDate(iso: string | undefined): Date | null {
 }
 
 /**
- * Splits the action filter's free text into the action set the read
- * takes: comma- or whitespace-separated names, blanks dropped. An empty
- * input means no action filter.
+ * Splits one filter's free text into the set the read takes: comma- or
+ * whitespace-separated names, blanks dropped. An empty input means no
+ * filter. The action, outcome and actor boxes share this shape.
  */
-function parseActions(text: string): string[] {
+function parseSet(text: string): string[] {
   return text
     .split(/[\s,]+/)
     .map((part) => part.trim())
@@ -136,15 +137,21 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
   const [since, setSince] = useState('')
   const [until, setUntil] = useState('')
   const [action, setAction] = useState('')
+  const [outcome, setOutcome] = useState('')
+  const [actor, setActor] = useState('')
   const [sinceDraft, setSinceDraft] = useState('')
   const [untilDraft, setUntilDraft] = useState('')
   const [actionDraft, setActionDraft] = useState('')
+  const [outcomeDraft, setOutcomeDraft] = useState('')
+  const [actorDraft, setActorDraft] = useState('')
   // The cursor stack: cursors[i] is the cursor that reads page i ('' is
   // the first page), and the page advances one index at a time.
   const [cursors, setCursors] = useState<readonly string[]>([''])
   const [page, setPage] = useState(0)
 
-  const appliedActions = useMemo(() => parseActions(action), [action])
+  const appliedActions = useMemo(() => parseSet(action), [action])
+  const appliedOutcomes = useMemo(() => parseSet(outcome), [outcome])
+  const appliedActors = useMemo(() => parseSet(actor), [actor])
   const cursor = cursors[page] ?? ''
 
   const params = useMemo(
@@ -152,10 +159,12 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       ...(since === '' ? {} : { since: toInstant(since) }),
       ...(until === '' ? {} : { until: toInstant(until) }),
       ...(appliedActions.length === 0 ? {} : { action: appliedActions }),
+      ...(appliedOutcomes.length === 0 ? {} : { outcome: appliedOutcomes }),
+      ...(appliedActors.length === 0 ? {} : { actor: appliedActors }),
       ...(cursor === '' ? {} : { cursor }),
       limit: DEFAULT_LIMIT,
     }),
-    [since, until, appliedActions, cursor],
+    [since, until, appliedActions, appliedOutcomes, appliedActors, cursor],
   )
 
   const records = operations.useAuditRecords(params)
@@ -244,6 +253,8 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
     setSince(sinceDraft)
     setUntil(untilDraft)
     setAction(actionDraft)
+    setOutcome(outcomeDraft)
+    setActor(actorDraft)
     setCursors([''])
     setPage(0)
   }
@@ -253,9 +264,13 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
     setSinceDraft('')
     setUntilDraft('')
     setActionDraft('')
+    setOutcomeDraft('')
+    setActorDraft('')
     setSince('')
     setUntil('')
     setAction('')
+    setOutcome('')
+    setActor('')
     setCursors([''])
     setPage(0)
   }
@@ -314,7 +329,21 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
           value={actionDraft}
           onChange={(event) => setActionDraft(event.target.value)}
           label={t('audit.filters.action')}
-          placeholder={t('audit.filters.actionPlaceholder')}
+          placeholder={t('audit.filters.valuePlaceholder')}
+        />
+        <TextField
+          size="small"
+          value={outcomeDraft}
+          onChange={(event) => setOutcomeDraft(event.target.value)}
+          label={t('audit.filters.outcome')}
+          placeholder={t('audit.filters.valuePlaceholder')}
+        />
+        <TextField
+          size="small"
+          value={actorDraft}
+          onChange={(event) => setActorDraft(event.target.value)}
+          label={t('audit.filters.actor')}
+          placeholder={t('audit.filters.valuePlaceholder')}
         />
         <Button type="button" variant="contained" onClick={applyFilters}>
           {t('audit.filters.apply')}
