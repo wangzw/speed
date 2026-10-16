@@ -27,8 +27,8 @@
 
 import Box from '@mui/material/Box'
 import Link from '@mui/material/Link'
-import type { ConsoleRouteTable } from '@speed/console-ui'
-import { ConsoleShell } from '@speed/console-ui'
+import type { ConsoleNavGroup, ConsoleRouteTable } from '@speed/console-ui'
+import { ConsoleShell, consoleNavGroups } from '@speed/console-ui'
 import { useTranslation } from '@speed/i18n'
 import { useNavigate } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
@@ -44,6 +44,13 @@ const TENANT_HOME_PATH = '/'
 export interface ConsoleAreaProps {
   /** The console's page declarations, whose labelled entries become its navigation. */
   readonly routes: ConsoleRouteTable
+  /**
+   * The console sidebar's group table. Defaults to console-ui's own
+   * `consoleNavGroups`, so the demo's console sidebar renders its eleven pages
+   * grouped by capability domain; a host that wants a flat column passes an
+   * explicit value only by overriding this.
+   */
+  readonly navGroups?: readonly ConsoleNavGroup[]
   /** The routed console page, rendered inside the frame's main landmark. */
   readonly children: ReactNode
   /**
@@ -59,6 +66,7 @@ export interface ConsoleAreaProps {
 
 export function ConsoleArea({
   routes,
+  navGroups,
   children,
   sidebarCollapsed,
   onSidebarCollapsedChange,
@@ -68,6 +76,9 @@ export function ConsoleArea({
   return (
     <ConsoleShell
       routes={routes}
+      // The console's own group table groups the eleven pages by capability
+      // domain, so the sidebar reads as sections rather than one long list.
+      navGroups={navGroups ?? consoleNavGroups}
       title={<AppBrand />}
       headerActions={<ConsoleHeaderActions />}
       onNavigate={navigate}

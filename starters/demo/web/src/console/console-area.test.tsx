@@ -96,22 +96,38 @@ describe('ConsoleArea', () => {
     expect(screen.getByText('console page')).toBeInTheDocument()
   })
 
-  it('derives the platform navigation from the labelled console declarations', () => {
+  it('groups the platform navigation by the console group table', () => {
     renderConsoleArea()
     const nav = screen.getByRole('navigation')
+    // The group headings are the disclosure controls, in the group table's
+    // order -- so the sidebar reads as sections rather than one long list.
+    expect(
+      within(nav)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual([
+      consoleUiEnUS.nav.groups.overview,
+      consoleUiEnUS.nav.groups.identity,
+      consoleUiEnUS.nav.groups.tenants,
+      consoleUiEnUS.nav.groups.platform,
+      consoleUiEnUS.nav.groups.audit,
+    ])
+    // The entries gather under their groups: groups in table order, entries in
+    // declaration order within each group (the identity group holds the account
+    // surfaces in the order the console declares them).
     expect(
       within(nav)
         .getAllByRole('link')
         .map((link) => link.textContent),
     ).toEqual([
       consoleUiEnUS.dashboard.title,
-      consoleUiEnUS.tenants.title,
       consoleUiEnUS.accounts.title,
       consoleUiEnUS.sessions.title,
       consoleUiEnUS.impersonations.title,
       consoleUiEnUS.permissions.title,
       consoleUiEnUS.invitations.title,
       consoleUiEnUS.sso.title,
+      consoleUiEnUS.tenants.title,
       consoleUiEnUS.settings.title,
       consoleUiEnUS.sms.title,
       consoleUiEnUS.audit.title,
