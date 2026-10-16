@@ -115,15 +115,17 @@ const demoSeedSection = `seed:
 
 // demoConfig is the sqlite-memory configuration a case writes: the two listener
 // addresses, the token signing key, the object store's root and the database
-// locator, with the ports filled in. It is the file testdata/sqlite-memory.yaml
-// holds, with those filled in, so a case exercises the same config a person runs
-// by hand — and one account more: the case that seeds signs in with two, one
-// given a plaintext password and one given a hash, and the sample files carry
-// only the first shape so that a copy starts with one operator to replace rather
-// than two. The platform sections are the baseline every stack carries; the case
-// that reads the platform's own routes holds that they are assembled, and the
-// case that reads an undeclared route on a guarded endpoint holds that it is
-// not.
+// locator, with those filled in. Apart from the seed section, it is the file
+// testdata/sqlite-memory.yaml holds verbatim — the public address among it, so the
+// WebAuthn relying party the sample binds is the one a case runs on — so a case
+// exercises the same config a person runs by hand, and one account more: the case
+// that seeds signs in with two, one given a plaintext password and one given a
+// hash, and the sample files carry only the first shape so that a copy starts with
+// one operator to replace rather than two. The platform sections are the baseline
+// every stack carries; the case that reads the platform's own routes holds that
+// they are assembled, and the case that reads an undeclared route on a guarded
+// endpoint holds that it is not. A case of its own holds the template to the
+// sample's WebAuthn block, so the two do not drift apart again.
 const demoConfig = `http:
   listeners:
     backend:
@@ -162,7 +164,7 @@ authn:
     endpoints: [api, account, admin]
     mount:
       endpoint: account
-      public-url: "https://demo.test"
+      public-url: "http://localhost:8080"
   static:
     subjects:
       operator: "$argon2id$v=19$m=19456,t=2,p=1$xeAjr/xEt4mML0QaEhw8pw$Khjd7856RU6MatFxmOtE0YFZJLsC05yxX5HwJhpBXno"
@@ -172,6 +174,11 @@ authn:
   mfa:
     totp:
       issuer: demo
+    webauthn:
+      rp-id: localhost
+      rp-name: demo
+      origins:
+        - "http://localhost:8080"
 tenant:
   resolve:
     endpoints: [api]
@@ -1044,4 +1051,56 @@ func TestTheSeedRefusesATenantNamedThePlatformDomain(t *testing.T) {
 		t.Errorf("the seed's failure does not name the reserved platform domain (%q):\n%s",
 			authz.ErrPlatformDomainTaken, res.combined())
 	}
+}
+
+// TestTheConfigTemplateMirrorsTheSampleFile holds the configuration a case runs
+// to the sample file it documents itself as mirroring. The template is a second
+// copy of the platform sections, and a section written into the sample alone —
+// the WebAuthn relying party is the one this guards — would be a deliverable a
+// copy runs and no case does, so the second factor that turns a step-up into a
+// completable flow would be exercised by nothing here. The comparison is against
+// the sample file's own text rather than a constant, so a change to the sample
+// obliges the template to follow it.
+func TestTheConfigTemplateMirrorsTheSampleFile(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "sqlite-memory.yaml"))
+	if err != nil {
+		t.Fatalf("reading the sample configuration: %v", err)
+	}
+	block := yamlBlock(string(raw), "webauthn:")
+	if block == "" {
+		t.Fatalf("testdata/sqlite-memory.yaml carries no webauthn block to mirror")
+	}
+	rendered := configBody(t, []int{8080, 8083}, ":memory:")
+	if !strings.Contains(rendered, block) {
+		t.Errorf("the configuration template does not carry the sample file's webauthn block, so a copy's "+
+			"relying party is not what a case exercises; want the template to hold:\n%s\nrendered:\n%s",
+			block, rendered)
+	}
+}
+
+// yamlBlock answers the block a key opens: the key's own line and every
+// following line indented more deeply than it, which is the mapping or sequence
+// beneath that key. The key is matched on its trimmed text, so the caller passes
+// the key with its trailing colon; the empty string means the document holds no
+// such key.
+func yamlBlock(doc, key string) string {
+	lines := strings.Split(doc, "\n")
+	for i, line := range lines {
+		if strings.TrimSpace(line) != key {
+			continue
+		}
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+		block := []string{line}
+		for _, next := range lines[i+1:] {
+			if strings.TrimSpace(next) == "" {
+				break
+			}
+			if len(next)-len(strings.TrimLeft(next, " ")) <= indent {
+				break
+			}
+			block = append(block, next)
+		}
+		return strings.Join(block, "\n")
+	}
+	return ""
 }

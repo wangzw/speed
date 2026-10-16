@@ -43,11 +43,17 @@ reached at — an item `testdata/` carries, not a credential or a service — so
 starts with nothing external and passes the test above. It is named here so the
 skeleton can show what the platform's management surface is for: a step-up asks
 for a factor kind the session has not already proved, and with TOTP as the only
-kind a session that signed in with TOTP has nothing left to raise it, so no
-step-up-gated write can ever complete (see "Re-authentication and impersonation
-on a fresh copy" below). TOTP beside WebAuthn is what turns the step-up, the
-elevation it grants and the write it unblocks into something a copy can
-demonstrate.
+kind a session that signed in with TOTP has nothing left to raise itself with, so
+the step-up start is refused. TOTP beside WebAuthn gives the step-up a factor
+kind to offer, and WebAuthn is the one the bundled deployment carries.
+
+The bundled frontend carries the flow to the passkey's challenge and no further:
+`@speed/console-ui` and `@speed/account-ui` render a factor's WebAuthn payload as
+its options in text with one free-text answer field and ship no WebAuthn
+integration, and neither a creation nor an assertion is something a person pastes
+into a field. Completing the step-up on a copy — and enrolling the passkey it
+needs — therefore takes a WebAuthn client outside the bundled UI (see
+"Re-authentication and impersonation on a fresh copy" below).
 
 The baseline is written twice in `main.go`, as `baselineServe` and
 `baselineWorker`. `serve` stands the HTTP entry point up and names every module
@@ -294,22 +300,33 @@ here for the step-up. A step-up (`purpose: 'step-up'`) asks for a factor whose
 authentication methods are disjoint from the session's, so an operator who
 signed in with password and TOTP carries a session that proved `otp` and cannot
 raise itself with another TOTP. WebAuthn's method (`webauthn`) is disjoint from
-it, so the step-up start answers a `factor` step offering the passkey, its
-completion elevates the session (`Sessions.Elevate`), and the step-up-gated
-write the operator tried re-runs against the raised session. A step-up-gated
-operator write -- an account-status or factor write, an impersonation start --
-is completed on this copy by a step-up dialog rather than by a fresh sign-in.
+it, so the step-up start answers a `factor` step offering the passkey, and its
+completion elevates the session (`Sessions.Elevate`), re-running the step-up-gated
+write the operator tried -- an account-status or factor write, or an impersonation
+start.
 
-Two things order a hand-run demonstration. The passkey has to be enrolled
+Both halves of the WebAuthn ceremony are outside the bundled frontend.
+`@speed/console-ui` and `@speed/account-ui` render a factor's WebAuthn payload as
+its options in text with one free-text answer field and ship no WebAuthn
+integration, so the enrollment wizard expects a pasted attestation and the
+step-up dialog expects a pasted assertion: the enrollment stops at the creation
+options and the step-up stops at the request options, and neither a creation nor
+an assertion is something a person pastes. Enrolling the passkey and completing
+the step-up on this copy both take a WebAuthn client outside the bundled UI -- a
+browser with a platform authenticator driving `navigator.credentials.create` /
+`get` against the options, or a product that adds the ceremony to its own
+frontend. The bundled UI reaches both challenges, and the second factor kind is
+what makes the step-up start answer a factor step rather than refuse for want of
+one.
+
+Two things order a hand-run of the sequence. The passkey has to be enrolled
 *before* the session that raises itself: a step-up accepts only a factor enabled
 before the session's authentication time, so a passkey enrolled under a session
 is not offered to that same session. And the write has to be attempted with a
 session that is no longer fresh: the gate is a fresh local multi-factor, its
 window is the setting `authn.mfa.recent-window` (ten minutes by default), and a
 just-completed multi-factor sign-in satisfies it directly, so the dialog appears
-only once the window has passed. Enroll TOTP and the passkey, sign out and back
-in with TOTP, and a step-up-gated write after that window is what shows the
-sequence.
+only once the window has passed.
 
 Impersonation carries one gate of its own: its actor must hold an active
 non-SMS factor activated at least `authn.mfa.sensitive-min-age` (24 hours by
