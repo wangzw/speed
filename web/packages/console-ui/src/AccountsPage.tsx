@@ -16,7 +16,10 @@
  * module's index is keyed by the two together (it refuses a prefix
  * without a kind): the toolbar carries a kind selector beside the prefix
  * box, and the applied filter is committed on submit so a keystroke never
- * fires a request.
+ * fires a request. The toolbar also narrows the list by account status and
+ * by account kind, the two other query parameters the module's list
+ * endpoint declares; the module's read carries no display-name search, so
+ * the page offers none rather than filtering a page the server returned.
  *
  * The list and the detail's four reads each stand behind their own
  * AsyncSection, so every one of them shows its loading, empty and
@@ -37,7 +40,7 @@
  * PageHeader.
  */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -81,6 +84,12 @@ const ACCOUNT_STATUSES = new Set<string>(['active', 'disabled', 'deleted'])
 const IDENTIFIER_KINDS = ['username', 'email', 'phone'] as const
 type IdentifierKind = (typeof IDENTIFIER_KINDS)[number]
 
+/** The account kinds the list read narrows by, in the order the filter offers them. */
+const ACCOUNT_KINDS = ['user', 'service'] as const
+
+/** The account statuses the list read narrows by, in the order the filter offers them. */
+const FILTER_STATUSES = ['active', 'disabled', 'deleted'] as const
+
 function statusLabel(status: string, t: (key: string) => string): string {
   return ACCOUNT_STATUSES.has(status)
     ? t(`accounts.status.${status}`)
@@ -97,14 +106,28 @@ export function AccountsPage() {
   const [identifier, setIdentifier] = useState('')
   const [kindDraft, setKindDraft] = useState<IdentifierKind>('username')
   const [identifierKind, setIdentifierKind] = useState<IdentifierKind>('username')
+  const [statusDraft, setStatusDraft] = useState('')
+  const [status, setStatus] = useState('')
+  const [accountKindDraft, setAccountKindDraft] = useState('')
+  const [accountKind, setAccountKind] = useState('')
   const [selectedId, setSelectedId] = useState('')
   const [identifierToRemove, setIdentifierToRemove] = useState('')
 
-  const accounts = operations.useAccounts(
-    identifier === ''
-      ? undefined
-      : { identifier_prefix: identifier, identifier_kind: identifierKind },
+  // The applied filters, committed together on submit so a keystroke never
+  // fires a request. The identifier prefix is sent with its kind (the
+  // module's index is keyed by the two together); the status and kind
+  // filters are each sent on their own, and an unset one is omitted.
+  const accountParams = useMemo(
+    () => ({
+      ...(identifier === ''
+        ? {}
+        : { identifier_prefix: identifier, identifier_kind: identifierKind }),
+      ...(status === '' ? {} : { status }),
+      ...(accountKind === '' ? {} : { kind: accountKind }),
+    }),
+    [identifier, identifierKind, status, accountKind],
   )
+  const accounts = operations.useAccounts(accountParams)
   const account = operations.useAccount({
     id: selectedId === '' ? undefined : selectedId,
   })
@@ -448,12 +471,44 @@ export function AccountsPage() {
           onChange={(event) => setIdentifierDraft(event.target.value)}
           label={t('accounts.identifierLabel')}
         />
+        <TextField
+          select
+          size="small"
+          value={statusDraft}
+          onChange={(event) => setStatusDraft(event.target.value)}
+          label={t('accounts.filter.status')}
+          sx={{ minWidth: 140 }}
+        >
+          <MenuItem value="">{t('accounts.filter.all')}</MenuItem>
+          {FILTER_STATUSES.map((value) => (
+            <MenuItem key={value} value={value}>
+              {t(`accounts.status.${value}`)}
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          select
+          size="small"
+          value={accountKindDraft}
+          onChange={(event) => setAccountKindDraft(event.target.value)}
+          label={t('accounts.filter.kind')}
+          sx={{ minWidth: 140 }}
+        >
+          <MenuItem value="">{t('accounts.filter.all')}</MenuItem>
+          {ACCOUNT_KINDS.map((value) => (
+            <MenuItem key={value} value={value}>
+              {t(`accounts.create.kind.${value}`)}
+            </MenuItem>
+          ))}
+        </TextField>
         <Button
           type="button"
           variant="contained"
           onClick={() => {
             setIdentifier(identifierDraft.trim())
             setIdentifierKind(kindDraft)
+            setStatus(statusDraft)
+            setAccountKind(accountKindDraft)
           }}
         >
           {t('accounts.search')}

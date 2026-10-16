@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import { DashboardPage } from './DashboardPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
@@ -53,6 +53,76 @@ describe('DashboardPage', () => {
     const recent = await screen.findByRole('heading', { level: 2, name: '最近活动' })
     expect(recent).toBeInTheDocument()
     expect(await screen.findByText('tenant.read')).toBeInTheDocument()
+  })
+
+  it('derives the platform health row from the windowed audit read', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        // The sign-in health read narrows by the login action; the activity
+        // read carries only the window. Each answers with its own page.
+        listRecords: (params) =>
+          params?.action?.includes('authn.login')
+            ? Promise.resolve({
+                entries: [
+                  recordFixture({ id: 'l1', action: 'authn.login' }),
+                  recordFixture({ id: 'l2', action: 'authn.login' }),
+                ],
+                next: '',
+              })
+            : Promise.resolve({
+                entries: [recordFixture({ id: 'r1' })],
+                next: '',
+              }),
+      }),
+    )
+    renderWithProviders(<DashboardPage />, { operations })
+    const health = await screen.findByRole('heading', {
+      level: 2,
+      name: '平台健康度',
+    })
+    const section = health.closest('section') as HTMLElement
+    expect(
+      await within(section).findByText('近 24 小时登录（成功）'),
+    ).toBeInTheDocument()
+    expect(within(section).getByText('2')).toBeInTheDocument()
+    expect(within(section).getByText('近 24 小时审计活动')).toBeInTheDocument()
+    expect(within(section).getByText('1')).toBeInTheDocument()
+  })
+
+  it('reports a windowed health count as a lower bound when the page has a next cursor', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listRecords: (params) =>
+          params?.action?.includes('authn.login')
+            ? Promise.resolve({
+                entries: [recordFixture({ id: 'l1', action: 'authn.login' })],
+                next: 'cur-2',
+              })
+            : Promise.resolve({ entries: [], next: '' }),
+      }),
+    )
+    renderWithProviders(<DashboardPage />, { operations })
+    const health = await screen.findByRole('heading', {
+      level: 2,
+      name: '平台健康度',
+    })
+    const section = health.closest('section') as HTMLElement
+    // A page that carries a next cursor is a lower bound, shown with a "+".
+    expect(await within(section).findByText('1+')).toBeInTheDocument()
+  })
+
+  it('renders the retryable placeholder when the health read fails', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listRecords: (params) =>
+          params?.action?.includes('authn.login')
+            ? Promise.reject(new Error('boom'))
+            : Promise.resolve({ entries: [], next: '' }),
+      }),
+    )
+    renderWithProviders(<DashboardPage />, { operations })
+    expect(await screen.findByText('平台健康度加载失败')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when the roster read is refused with 403', async () => {

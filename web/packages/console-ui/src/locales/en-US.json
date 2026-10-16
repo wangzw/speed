@@ -99,6 +99,17 @@
       "active": "Active",
       "disabled": "Disabled"
     },
+    "health": {
+      "title": "Platform health",
+      "loading": "Loading platform health",
+      "error": {
+        "title": "Platform health could not be loaded",
+        "description": "The audit surface did not answer."
+      },
+      "logins": "Successful sign-ins (24h)",
+      "activity": "Audit records (24h)",
+      "note": "Counts cover the newest page of the trailing 24 hours; a trailing \"+\" means more records exist beyond it."
+    },
     "recent": {
       "title": "Recent activity",
       "loading": "Loading recent activity",
@@ -349,6 +360,11 @@
       "phone": "Phone"
     },
     "search": "Search",
+    "filter": {
+      "status": "Status filter",
+      "kind": "Kind filter",
+      "all": "All"
+    },
     "loading": "Loading accounts",
     "empty": {
       "title": "No accounts",

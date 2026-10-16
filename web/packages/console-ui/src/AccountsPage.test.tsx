@@ -127,6 +127,47 @@ describe('AccountsPage', () => {
     })
   })
 
+  it('sends the status and kind filters when the search is submitted', async () => {
+    const user = userEvent.setup()
+    const calls = bindConsoleRequest((call) => {
+      if (call.path === '/auth/admin/accounts') {
+        return { accounts: [], next_cursor: '' }
+      }
+      throw new Error(`unexpected request: ${call.path}`)
+    })
+    renderWithProviders(<AccountsPage />, { operations: consoleOperations })
+    await user.click(screen.getByLabelText('状态筛选'))
+    await user.click(await screen.findByRole('option', { name: '已停用' }))
+    await user.click(screen.getByLabelText('类型筛选'))
+    await user.click(await screen.findByRole('option', { name: '服务' }))
+    await user.click(screen.getByRole('button', { name: '查询' }))
+    await vi.waitFor(() => {
+      expect(calls).toContainEqual({
+        method: 'GET',
+        path: '/auth/admin/accounts',
+        query: { status: 'disabled', kind: 'service' },
+      })
+    })
+  })
+
+  it('omits the status and kind filters when they are left at all', async () => {
+    const user = userEvent.setup()
+    const calls = bindConsoleRequest((call) => {
+      if (call.path === '/auth/admin/accounts') {
+        return { accounts: [], next_cursor: '' }
+      }
+      throw new Error(`unexpected request: ${call.path}`)
+    })
+    renderWithProviders(<AccountsPage />, { operations: consoleOperations })
+    await user.click(screen.getByRole('button', { name: '查询' }))
+    await vi.waitFor(() => {
+      const call = calls.find((entry) => entry.path === '/auth/admin/accounts')
+      expect(call).toBeDefined()
+      // No filter is set, so the generated call carries no query parameter.
+      expect(call?.query ?? {}).toEqual({})
+    })
+  })
+
   it('opens the account detail with its factors, secrets and sessions', async () => {
     const user = userEvent.setup()
     const operations = withAccounts({

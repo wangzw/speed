@@ -99,6 +99,17 @@
       "active": "已启用",
       "disabled": "已停用"
     },
+    "health": {
+      "title": "平台健康度",
+      "loading": "正在加载平台健康度",
+      "error": {
+        "title": "平台健康度加载失败",
+        "description": "审计面未应答。"
+      },
+      "logins": "近 24 小时登录（成功）",
+      "activity": "近 24 小时审计活动",
+      "note": "计数取近 24 小时窗口的最近一页；末尾带「+」表示该页之后仍有记录。"
+    },
     "recent": {
       "title": "最近活动",
       "loading": "正在加载最近活动",
@@ -349,6 +360,11 @@
       "phone": "手机号"
     },
     "search": "查询",
+    "filter": {
+      "status": "状态筛选",
+      "kind": "类型筛选",
+      "all": "全部"
+    },
     "loading": "正在加载账户",
     "empty": {
       "title": "暂无账户",

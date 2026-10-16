@@ -2,13 +2,18 @@
  * DashboardPage: the console's landing page.
  *
  * The console root renders a dashboard rather than a redirect: a KPI row
- * summarising the platform, and a list of the most recent audit activity.
- * The administration surfaces declare no statistics endpoint, so the
- * counts are derived from the list reads the console already has: the
- * roster read returns the whole roster (a tenant count is its length, and
- * the enabled/disabled split its statuses), and the audit query read
- * returns the newest page of records, which the recent-activity list
- * shows. Nothing here invents an aggregate the contract does not carry.
+ * summarising the roster, a platform-health row, and a list of the most
+ * recent audit activity. The administration surfaces declare no statistics
+ * endpoint, so every figure is derived from a list read the console already
+ * has. The roster read returns the whole roster (a tenant count is its
+ * length, and the enabled/disabled split its statuses). The platform-health
+ * row is derived from the audit query read, the one read that spans the
+ * whole platform: it counts the records of the trailing 24 hours, and the
+ * successful sign-ins among them (the audit action authn.login). Those
+ * counts come from the newest page of a windowed read, so a page that
+ * carries a next cursor reports its count as a lower bound ("N+"). The
+ * recent-activity list shows the newest page of records outright. Nothing
+ * here invents an aggregate the contract does not carry.
  *
  * Each surface renders through the console async section, so a refused
  * read (403) shows the permission placeholder without a retry and every
@@ -16,6 +21,8 @@
  * with ui-kit's PageHeader.
  */
 
+import { useMemo } from 'react'
+import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Paper from '@mui/material/Paper'
@@ -32,8 +39,17 @@ import type { ConsoleAuditRecord, ConsoleTenant } from './operations.js'
 /** How many of the newest audit records the recent-activity list shows. */
 const RECENT_LIMIT = 5
 
+/** The audit action a successful sign-in records (pkg/authn/login). */
+const LOGIN_ACTION = 'authn.login'
+
+/** The platform-health window: the trailing 24 hours. */
+const HEALTH_WINDOW_MS = 24 * 60 * 60 * 1000
+
+/** The page size of the platform-health reads; a full page reports as a bound. */
+const HEALTH_LIMIT = 100
+
 /** One KPI card: a label and a large count. */
-function KpiCard({ label, value }: { readonly label: string; readonly value: number }) {
+function KpiCard({ label, value }: { readonly label: string; readonly value: ReactNode }) {
   return (
     <Paper
       component="li"
@@ -50,31 +66,66 @@ function KpiCard({ label, value }: { readonly label: string; readonly value: num
   )
 }
 
+/** The KPI row: the list of cards, wrapping on a narrow viewport. */
+function KpiRow({ children }: { readonly children: ReactNode }) {
+  return (
+    <Box
+      component="ul"
+      sx={{
+        listStyle: 'none',
+        margin: 0,
+        padding: 0,
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 2,
+      }}
+    >
+      {children}
+    </Box>
+  )
+}
+
+/**
+ * A windowed count label: the plain count, or the count with a trailing "+"
+ * when the read answered with a next cursor, so a page-bounded count is shown
+ * as the lower bound it is rather than as a total.
+ */
+function countLabel(count: number, bounded: boolean): string {
+  return bounded ? `${count}+` : String(count)
+}
+
 export function DashboardPage() {
   const { t, i18n } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const tenants = operations.useTenants()
   const records = operations.useAuditRecords({ limit: RECENT_LIMIT })
 
+  // The platform-health reads: the trailing 24 hours of audit records, and the
+  // successful sign-ins among them. The window instant is computed once per
+  // mount, so the query key (which carries it) does not change every render.
+  const since = useMemo(
+    () => new Date(Date.now() - HEALTH_WINDOW_MS).toISOString(),
+    [],
+  )
+  const healthActivity = operations.useAuditRecords({
+    since,
+    limit: HEALTH_LIMIT,
+  })
+  const healthLogins = operations.useAuditRecords({
+    since,
+    action: [LOGIN_ACTION],
+    limit: HEALTH_LIMIT,
+  })
+
   const kpi = (settled: readonly ConsoleTenant[]) => {
     const active = settled.filter((tenant) => tenant.status === 'active').length
     const disabled = settled.filter((tenant) => tenant.status === 'disabled').length
     return (
-      <Box
-        component="ul"
-        sx={{
-          listStyle: 'none',
-          margin: 0,
-          padding: 0,
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 2,
-        }}
-      >
+      <KpiRow>
         <KpiCard label={t('dashboard.kpi.tenants')} value={settled.length} />
         <KpiCard label={t('dashboard.kpi.active')} value={active} />
         <KpiCard label={t('dashboard.kpi.disabled')} value={disabled} />
-      </Box>
+      </KpiRow>
     )
   }
 
@@ -108,6 +159,26 @@ export function DashboardPage() {
   const tenantsPending = tenants.isPending && tenantsRows === undefined
   const recordsPending = records.isPending && recordsRows === undefined
 
+  const activityEntries = healthActivity.data?.entries
+  const loginEntries = healthLogins.data?.entries
+  const healthPending =
+    (healthActivity.isPending && activityEntries === undefined) ||
+    (healthLogins.isPending && loginEntries === undefined)
+  const healthError = healthActivity.error ?? healthLogins.error
+  const health =
+    activityEntries !== undefined && loginEntries !== undefined
+      ? {
+          activity: countLabel(
+            activityEntries.length,
+            (healthActivity.data?.next ?? '') !== '',
+          ),
+          logins: countLabel(
+            loginEntries.length,
+            (healthLogins.data?.next ?? '') !== '',
+          ),
+        }
+      : undefined
+
   return (
     <Box>
       <PageHeader
@@ -120,6 +191,8 @@ export function DashboardPage() {
             size="small"
             onClick={() => {
               void tenants.refetch()
+              void healthActivity.refetch()
+              void healthLogins.refetch()
               void records.refetch()
             }}
           >
@@ -150,6 +223,56 @@ export function DashboardPage() {
           }}
         >
           {kpi}
+        </ConsoleAsyncSection>
+      </Box>
+
+      <Box component="section" sx={{ mb: 3 }}>
+        <Typography component="h2" variant="h6" sx={{ mb: 1 }}>
+          {t('dashboard.health.title')}
+        </Typography>
+        <ConsoleAsyncSection
+          pending={healthPending}
+          payload={health}
+          error={healthError}
+          empty={false}
+          headingLevel="h3"
+          loading={
+            <ListSkeleton
+              label={t('dashboard.health.loading')}
+              rows={[<Skeleton key="a" variant="text" width="52%" />]}
+            />
+          }
+          errorState={{
+            title: t('dashboard.health.error.title'),
+            description: t('dashboard.health.error.description'),
+            retryLabel: t('dashboard.retry'),
+            onRetry: () => {
+              void healthActivity.refetch()
+              void healthLogins.refetch()
+            },
+          }}
+        >
+          {(settled) => (
+            <>
+              <KpiRow>
+                <KpiCard
+                  label={t('dashboard.health.logins')}
+                  value={settled.logins}
+                />
+                <KpiCard
+                  label={t('dashboard.health.activity')}
+                  value={settled.activity}
+                />
+              </KpiRow>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ mt: 1 }}
+              >
+                {t('dashboard.health.note')}
+              </Typography>
+            </>
+          )}
         </ConsoleAsyncSection>
       </Box>
 
