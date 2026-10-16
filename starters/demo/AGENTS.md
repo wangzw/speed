@@ -275,6 +275,23 @@ journal's requests — is a decision to revisit as a product's own routes grow.
 the operations surface is `pkg/ops`, which mounts its three routes on the
 endpoint `ops.endpoint` names and expects no guard there.
 
+### Re-authentication and impersonation on a fresh copy
+
+The baseline names one factor kind, TOTP, and the operator signs in with it. A
+step-up (`purpose: 'step-up'`) asks for a factor whose authentication methods
+are disjoint from the session's, so a session that already proved TOTP at
+sign-in has no factor that may raise it: the step-up start is answered 401
+(`insufficient_user_authentication`). A step-up-gated operator write -- an
+account-status or factor write, an impersonation start -- is therefore
+satisfied on this copy by a fresh multi-factor sign-in, not by the console's
+step-up dialog; the dialog says the session must be re-established when its
+start is refused, rather than offering a retry.
+
+Impersonation carries one gate of its own: its actor must hold an active
+non-SMS factor activated at least `authn.mfa.sensitive-min-age` (24 hours by
+default) before now, so an operator whose only factor was enrolled minutes ago
+cannot start an impersonation until that factor matures. A freshly seeded copy
+cannot demonstrate a started impersonation.
 
 ## The stacks
 

@@ -21,8 +21,13 @@
  * session, the login-shaped `state: 'authenticated'` (the cookie
  * rotated) for the cookie-delivered one -- is the completion the caller
  * re-runs its refused action on, and `onElevated` fires once. A refusal
- * resolves to its code and renders as one banner; a fresh answer is
- * retryable, and the flow stays open.
+ * of an answer resolves to its code and renders as one banner; a fresh
+ * answer is retryable, and the flow stays open. A refusal of the start
+ * itself -- a 401 while the session is still established
+ * (isStepUpShortfall) -- is the deployment declining to raise this
+ * session at all, which no step can satisfy: it parks on 'unavailable'
+ * so the caller tells the operator to re-establish the session rather
+ * than retry a verification that cannot come.
  *
  * The step-up flow is named with no method: an account that has a usable
  * factor enters at the factor step, which is the case a step-up-gated
@@ -47,8 +52,15 @@ export interface AuthnFlowAnswer {
 }
 
 /** The challenge's local phase: the flow is starting, is parked on a
- * step, the last answer failed, or the flow settled the elevation. */
-export type StepUpPhase = 'idle' | 'starting' | 'step' | 'failed' | 'elevated'
+ * step, the last answer failed, the deployment cannot raise the session,
+ * or the flow settled the elevation. */
+export type StepUpPhase =
+  | 'idle'
+  | 'starting'
+  | 'step'
+  | 'failed'
+  | 'unavailable'
+  | 'elevated'
 
 /** The state and the one command a step-up-gated surface reads. */
 export interface StepUpState {
@@ -126,8 +138,18 @@ export function useStepUp(
         settle(state)
       } catch (error) {
         if (run === runRef.current) {
-          setErrorCode(codeOf(error))
-          setPhase('failed')
+          if (session.isStepUpShortfall(error)) {
+            // A 401 on the start of a step-up, while the session is still
+            // established, is the deployment's refusal to raise it at all:
+            // there is no factor that may strengthen this session (a
+            // single-factor-kind assembly offers none). No step can be
+            // rendered and no answer retried -- the session must be
+            // re-established instead.
+            setPhase('unavailable')
+          } else {
+            setErrorCode(codeOf(error))
+            setPhase('failed')
+          }
         }
       }
     })()

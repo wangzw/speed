@@ -15,11 +15,15 @@
  * flow on opening and parks on its first step; this dialog renders that
  * step (FlowStep) and forwards each answer. Completion settles the
  * elevation on the session -- the cookie rotated, or an elevated token --
- * and the hook fires `onSuccess`. A failure resolves through the console's
- * code whitelist and renders as one banner; the flow stays open and a
- * fresh answer is retryable. The dialog never signs in and never
- * navigates: a dead session shows its code text and the console's session
- * gate converges.
+ * and the hook fires `onSuccess`. A failure of an answer resolves through
+ * the console's code whitelist and renders as one banner; the flow stays
+ * open and a fresh answer is retryable. A refusal of the start itself (a
+ * 401 while the session is still established -- the hook's 'unavailable'
+ * phase) means the deployment has no factor that can raise the session:
+ * the dialog says so and points the operator at re-establishing the
+ * session, instead of a retry that cannot succeed. The dialog never signs
+ * in and never navigates: a dead session shows its code text and the
+ * console's session gate converges.
  */
 
 import { useId, useRef } from 'react'
@@ -93,6 +97,10 @@ export function StepUpChallenge({
   }
 
   const starting = phase === 'starting'
+  // The deployment cannot raise the session at all (no factor that may
+  // strengthen it): no step will come, so the dialog tells the operator to
+  // re-establish the session rather than offer a retry that cannot succeed.
+  const unavailable = phase === 'unavailable'
 
   return (
     <Dialog open={open} onClose={onCancel} aria-labelledby={titleId} maxWidth="xs" fullWidth>
@@ -105,6 +113,10 @@ export function StepUpChallenge({
         {starting ? (
           <Typography variant="body2" sx={{ mt: 2 }}>
             {t('stepUp.starting')}
+          </Typography>
+        ) : unavailable ? (
+          <Typography variant="body2" sx={{ mt: 2 }}>
+            {t('stepUp.cannotElevate')}
           </Typography>
         ) : (
           <Box sx={{ mt: 1 }}>

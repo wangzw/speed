@@ -37,6 +37,7 @@
     "description": "This action asks for a stronger or more recent sign-in. Complete one verification to continue.",
     "starting": "Starting verification…",
     "submit": "Verify",
+    "cannotElevate": "This deployment has no verification step that can raise your session, so it cannot satisfy this action here. Sign out and sign back in to continue.",
     "codeLabel": "Verification code",
     "credentialLabel": "Credential",
     "codeHelp": "Enter your one-time code.",

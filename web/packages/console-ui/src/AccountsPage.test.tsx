@@ -451,6 +451,34 @@ describe('AccountsPage', () => {
     })
   })
 
+  it('does not write the protected flag for the control\'s unchanged sentinel', async () => {
+    const user = userEvent.setup()
+    const calls: ConsolePatchAccountInput[] = []
+    const operations = withAccounts({
+      // A protected account: selecting the 「保持不变」 sentinel must not
+      // write the opposite (protected:false), which would silently drop the
+      // account's impersonation guard.
+      getAccount: () => Promise.resolve(accountFixture({ protected: true })),
+      patchAccount: (input) => {
+        calls.push(input)
+        return Promise.resolve(accountFixture({ protected: true }))
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    // Move the display name so the save fires; leave the protected control at
+    // its sentinel.
+    const name = await screen.findByLabelText('新显示名')
+    await user.clear(name)
+    await user.type(name, 'Ada II')
+    await user.click(screen.getByLabelText('受保护'))
+    await user.click(await screen.findByRole('option', { name: '保持不变' }))
+    await user.click(screen.getByRole('button', { name: '保存改动' }))
+    await vi.waitFor(() => {
+      expect(calls).toEqual([{ id: 'acc-1', display_name: 'Ada II' }])
+    })
+  })
+
   it('resets a password through the bundle', async () => {
     const user = userEvent.setup()
     const calls: ConsoleResetPasswordInput[] = []

@@ -83,6 +83,23 @@ function flowSession(): {
   return { session, answers }
 }
 
+/** A session whose step-up flow is refused at the start with a 401 while the
+ * session is still established: the deployment offers no factor that may raise
+ * it (a single-factor-kind assembly), so no step can ever come. */
+function refusingStartSession(): AuthSession {
+  return {
+    ...flowSession().session,
+    isStepUpShortfall: () => true,
+    startAuthenticatedFlow: () =>
+      Promise.reject({
+        status: 401,
+        code: 'client.http.401',
+        message: 'refused',
+        auth: true,
+      }),
+  }
+}
+
 describe('StepUpChallenge', () => {
   it('resends the chosen factor alongside the code of its challenge', async () => {
     const user = userEvent.setup()
@@ -106,5 +123,23 @@ describe('StepUpChallenge', () => {
     // The factor-choice answer carries the id; the code answer carries the
     // same id again beside the code.
     expect(answers).toEqual([{ factor: 'f1' }, { code: '123456', factor: 'f1' }])
+  })
+
+  it('says the session must be re-established when a step-up cannot raise it', async () => {
+    const session = refusingStartSession()
+    renderWithProviders(
+      <StepUpChallenge
+        open
+        session={session}
+        onSuccess={() => undefined}
+        onCancel={() => undefined}
+      />,
+    )
+    // The start is refused: the dialog tells the operator to re-establish the
+    // session and does not present the generic retryable 401 line.
+    expect(
+      await screen.findByText(/本部署没有可提升当前会话的验证步骤/),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/HTTP 401/)).toBeNull()
   })
 })

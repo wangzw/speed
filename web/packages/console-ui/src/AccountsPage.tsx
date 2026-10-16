@@ -1072,10 +1072,15 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
     attributes.trim() !== '' && parseStringMap(attributes) === null
   const statusUnchanged = statusDraft === currentStatus
   const mfaUnchanged = (mfaDraft === 'true') === account.mfa_required
+  // The protected control keeps its 'unchanged' sentinel: selecting it, or
+  // leaving the control at the account's own value, is a no-op, and the patch
+  // carries a protected field only for a real change.
+  const protectedUnchanged =
+    protectedDraft === 'unchanged' || protectedDraft === currentProtected
   const patchUnchanged =
     displayName === account.display_name &&
     attributes === currentAttributes &&
-    protectedDraft === currentProtected
+    protectedUnchanged
 
   // Each write fires through the step-up gate: a refusal the server answers
   // while the session is still established arms the dialog with a re-fire
@@ -1117,9 +1122,7 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
         ...(attributes === currentAttributes || parsed === null
           ? {}
           : { attributes: parsed }),
-        ...(protectedDraft === currentProtected
-          ? {}
-          : { protected: protectedDraft === 'true' }),
+        ...(protectedUnchanged ? {} : { protected: protectedDraft === 'true' }),
       },
       {
         onError: (error) => {

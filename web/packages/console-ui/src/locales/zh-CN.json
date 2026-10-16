@@ -37,6 +37,7 @@
     "description": "该操作要求更强或更新的身份验证，请先完成一次验证。",
     "starting": "正在开始验证…",
     "submit": "验证",
+    "cannotElevate": "本部署没有可提升当前会话的验证步骤，因此无法在此满足该操作。请退出登录后重新登录再试。",
     "codeLabel": "验证码",
     "credentialLabel": "凭证",
     "codeHelp": "输入你的动态验证码。",
