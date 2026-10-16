@@ -88,7 +88,7 @@ interface ConsoleShellProps {
 - **仪表盘**（`DashboardPage`）：控制台根的路由（`/`）。一行等宽的指标卡，其下是最近活动列表。指标由已有的列表读拼出——名册读返回完整的租户集，租户总数即其长度、启用与停用的计数即其状态分布；最近活动取审计查询读的最新一页（`useAuditRecords` 带 `limit`）。平台不声明统计端点，故页面不发明契约不携带的聚合值。
 - **列表页**（`TenantRosterPage`、`AccountsPage`、`SessionsPage`、`ImpersonationsPage`、`PermissionsPage`、`InvitationsPage`、`SsoPage`、`SmsPage`、`AuditPage`）：页头、工具栏或写入区、数据表、分页。
 - **详情页**（`TenantDetailPage`、`AuditDetailPage`）：标题区加主栏与固定宽侧栏。主栏承载主体与其写入，侧栏承载标识与回链。路径是列表页路径加一段 `:id`（`/tenants/:id`、`/audit/:id`），声明不带标签，故不进导航。列表页接收声明传入的该列表页匹配路径（`basePath`），据此为每行构造详情链接 `${basePath}/${id}`；详情页接收 `parentHref`（匹配路径去掉 id 段），据此回链列表页。
-- **设置页**（`SettingsPage`）：一条二级导航（按 namespace 分组，取出自全量设置读）、一段限宽表单、底部一条粘性保存条。
+- **设置页**（`SettingsPage`）：一条二级导航（按 namespace 分组，取出自全量设置读）、一张占满内容区的分页表（键／类型／当前值／操作）、底部一条粘性保存条。
 
 **页内导航复用壳的接缝。** 控制台壳把它的 `onNavigate` 经内部上下文交给它渲染的页内容；页内的详情链接经该回调就地路由（不做整页重载，否则内存态会话会丢），壳未给回调时是普通链接。这条接缝与壳自身的导航项同一来源，故二者重载与否的行为一致。
 

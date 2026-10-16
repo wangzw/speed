@@ -52,6 +52,27 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('textbox', { name: 'mail.retry' })).toBeInTheDocument()
   })
 
+  it('renders the items in a table and pages a large declared set', async () => {
+    const many: ConsoleSetting[] = Array.from({ length: 12 }, (_, index) => ({
+      ...item,
+      key: `mail.key-${index}`,
+      value: `${index}`,
+      written: `${index}`,
+    }))
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listSettings: () => Promise.resolve(many) }),
+    )
+    const { container } = renderWithProviders(<SettingsPage />, { operations })
+    await screen.findByDisplayValue('0')
+
+    // A data table, not a single unbounded column...
+    expect(container.querySelector('table')).not.toBeNull()
+    // ...whose first page holds the default ten rows, leaving the rest for
+    // the next page rather than running the whole set down the viewport.
+    expect(screen.getAllByRole('textbox')).toHaveLength(10)
+    expect(screen.queryByDisplayValue('11')).toBeNull()
+  })
+
   it("renders a sensitive item's masked value as the server sent it", async () => {
     const masked: ConsoleSetting = {
       ...item,

@@ -155,6 +155,12 @@
   },
   "settings": {
     "title": "Settings",
+    "column": {
+      "key": "Key",
+      "type": "Type",
+      "value": "Current value",
+      "actions": "Actions"
+    },
     "nav": {
       "label": "Namespace navigation",
       "all": "All namespaces"

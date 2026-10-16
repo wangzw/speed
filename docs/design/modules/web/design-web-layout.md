@@ -43,7 +43,7 @@
 内容区按页型取两种宽度：
 
 - **全宽**：表格页与仪表盘占满内容区，宽度即信息量。
-- **受限宽**：表单页与设置页收在一段居中的窄宽（640–960px），使输入控件不随视口拉长。
+- **受限宽**：表单收在一段居中的窄宽（640–960px），使输入控件不随视口拉长。
 
 两种宽度在同一产品里并存，由页面的容器显式区分。
 
@@ -53,7 +53,7 @@
 
 - **列表页**：页头、工具栏、表格、分页。工具栏在行被选中时整条切换为批量操作条。
 - **详情页**：标题区、标签页，其下分主栏与侧栏——主栏承载主体，侧栏（固定宽）承载元信息。
-- **设置页**：二级导航（比主侧栏窄）与表单并列，表单限宽，底部固定一条保存条。
+- **设置页**：二级导航（比主侧栏窄）与一张占满内容区的表并列，底部固定一条保存条。
 - **仪表盘**：一行等宽的指标卡，其下是图表区与活动列表。
 
 ### 断点标度
@@ -142,7 +142,7 @@ graph TD
 | 内容区的宽度分岔 | 已实现 | `web/packages/console-ui/src/internal/layout.tsx` `DetailLayout`、`FormWidth` |
 | 列表页骨架 | 已实现 | `web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage` |
 | 详情页骨架（主栏与侧栏） | 已实现 | `web/packages/console-ui/src/internal/layout.tsx` `DetailLayout`；`web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
-| 设置页骨架（二级导航与表单） | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage` |
+| 设置页骨架（二级导航与表） | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage` |
 | 仪表盘骨架 | 已实现 | `web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage` |
 | 数据表的列优先级降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx` |
 | 数据表超宽的容器内滚动兜底 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable` |

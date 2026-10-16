@@ -155,6 +155,12 @@
   },
   "settings": {
     "title": "设置",
+    "column": {
+      "key": "键",
+      "type": "类型",
+      "value": "当前值",
+      "actions": "操作"
+    },
     "nav": {
       "label": "命名空间导航",
       "all": "全部命名空间"
