@@ -23,6 +23,7 @@ python3 tools/check_markdown_examples.py
 python3 tools/check_workflow_refs.py
 python3 tools/check_conflict_markers.py
 python3 tools/check_observability_readiness.py
+python3 tools/check_test_tiers.py
 ```
 
 Their own test suites run together, from the repository root:
@@ -119,3 +120,25 @@ and what is missing), 2 infrastructure error (the root is not a directory,
 `pkg/` is missing, no Go file was read, or a positive control saw an empty
 set).
 
+
+`check_test_tiers.py` — holds the two rulings of the test-tier decision
+that nothing else in the tree holds, each of which fails silently. A
+build tag no leg passes takes its file out of every leg at once: `go vet
+./...` and `go vet -tags=integration ./...` both exit 0 on a file tagged
+`intergration`, and `go test -tags=integration` then reports no test
+files, so the cases are gone with nothing red anywhere. The gate reads
+the tags from the Makefile's `-tags=` flags and from its `-race` — a leg
+passing the race detector establishes that tag, and a target merely named
+`test-race` does not — and fails a file whose constraint names anything
+else, which is the same finding whichever side the misspelling is on. The
+second ruling is that a backend which cannot be reached fails a case
+rather than skipping it, and `go test` exits 0 on a binary whose cases
+all skipped: a non-test Go file that imports `testing` and calls a skip
+method is a finding, since that is where a fixture's skip has to live,
+while a `_test.go` file is left alone because a case may skip for a
+reason of its own. Tags are read from the head of a file, before its
+package clause, which is where Go reads them — a comment quoting one
+below the clause is prose. Exit codes: 0 clean, 1 a finding (each with
+file, line and what it is), 2 infrastructure error (the root is not a
+directory, the Makefile passes no tag, or a check found no subject at all
+— the integration layer gone, or no library to read).
