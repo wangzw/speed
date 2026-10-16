@@ -97,7 +97,10 @@
     },
     "error": {
       "title": "邀请读取失败"
-    }
+    },
+    "displayNameLabel": "显示名",
+    "passwordLabel": "口令",
+    "newAccountHint": "仅当被邀请的地址尚无账户时使用；该地址已有账户时留空即可。"
   },
   "errors": {
     "authn": {

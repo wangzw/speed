@@ -12,14 +12,17 @@
  * reloading the page.
  */
 
-import { QueryClient } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { RequestFn } from '@speed/api-client'
+import type { ReactNode } from 'react'
+import type { RequestFn, RequestOptions } from '@speed/api-client'
+import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { createI18n, I18nextProvider, registerNamespace } from '@speed/i18n'
 import {
   CONSOLE_UI_NAMESPACE,
+  InvitationsPage,
   consoleUiResources,
 } from '@speed/console-ui'
 import { LAYOUT_KIT_NAMESPACE, layoutKitResources } from '@speed/layout-kit'
@@ -29,6 +32,7 @@ import { AppThemeProvider, UI_KIT_NAMESPACE, uiKitResources } from '@speed/ui-ki
 import consoleUiEnUS from '../../../../../web/packages/console-ui/src/locales/en-US.json' with { type: 'json' }
 import { AppServicesProvider } from '../app-services.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
+import { invitationPath } from '../paths.js'
 import { DEMO_NAMESPACE, demoResources } from '../resources.js'
 import { consoleShellRoutes } from '../routes.js'
 import { createTestSession } from '../test-utils/session.js'
@@ -38,7 +42,7 @@ afterEach(() => {
   window.history.replaceState({}, '', '/')
 })
 
-function renderConsoleArea() {
+function renderConsoleArea(children: ReactNode = <p>console page</p>) {
   const i18n = createI18n({
     supportedLanguages: ['zh-CN', 'en-US'],
     defaultLanguage: 'en-US',
@@ -73,11 +77,13 @@ function renderConsoleArea() {
     <I18nextProvider i18n={i18n}>
       <AppThemeProvider i18n={i18n}>
         <AppServicesProvider services={services}>
-          <RouteProvider table={[]} fallback={() => null}>
-            <ConsoleArea routes={consoleShellRoutes}>
-              <p>console page</p>
-            </ConsoleArea>
-          </RouteProvider>
+          <QueryClientProvider client={services.queryClient}>
+            <RouteProvider table={[]} fallback={() => null}>
+              <ConsoleArea routes={consoleShellRoutes}>
+                {children}
+              </ConsoleArea>
+            </RouteProvider>
+          </QueryClientProvider>
         </AppServicesProvider>
       </AppThemeProvider>
     </I18nextProvider>,
@@ -134,5 +140,66 @@ describe('ConsoleArea', () => {
     const exit = screen.getByRole('link', { name: demoEnUS.console.backToApp })
     await user.click(exit)
     expect(window.location.pathname).toBe('/')
+  })
+
+  it("turns an issued invitation's token into this app's landing link", async () => {
+    const requestFn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
+      const method = options?.method ?? 'GET'
+      if (path === '/tenant/admin/tenants' && method === 'GET') {
+        return Promise.resolve({
+          tenants: [{ id: 'acme', alias: 'Acme', status: 'active' }],
+        } as T)
+      }
+      if (
+        path === '/auth/admin/tenants/acme/invitations' &&
+        method === 'POST'
+      ) {
+        return Promise.resolve({
+          invitation: {
+            id: 'inv-1',
+            tenant: 'acme',
+            email: 'new@example.com',
+            status: 'pending',
+            invited_by: 'staff-1',
+            expires_at: '2026-10-20T00:00:00Z',
+            accepted_at: '0001-01-01T00:00:00Z',
+            created_at: '2026-10-15T12:00:00Z',
+          },
+          token: 'spd_inv_x',
+        } as T)
+      }
+      return Promise.resolve(undefined as T)
+    }
+    bindRequestFn(requestFn)
+    const user = userEvent.setup()
+    renderConsoleArea(<InvitationsPage />)
+
+    await user.click(screen.getByLabelText(consoleUiEnUS.common.tenant))
+    await user.click(await screen.findByRole('option', { name: 'Acme' }))
+    await user.type(
+      await screen.findByLabelText(consoleUiEnUS.invitations.issue.emailLabel),
+      'new@example.com',
+    )
+    await user.click(
+      screen.getByRole('button', {
+        name: consoleUiEnUS.invitations.issue.submit,
+      }),
+    )
+
+    // The issued token is turned into the app's own landing link (the host's
+    // invitationPath), not dropped: the dead-code path is wired.
+    expect(
+      await screen.findByText(
+        consoleUiEnUS.invitations.issued.link.replace(
+          '{{email}}',
+          'new@example.com',
+        ),
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        `${window.location.origin}${invitationPath('spd_inv_x')}`,
+      ),
+    ).toBeInTheDocument()
   })
 })

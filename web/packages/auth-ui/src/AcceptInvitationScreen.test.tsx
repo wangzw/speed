@@ -76,6 +76,32 @@ describe('AcceptInvitationScreen', () => {
     expect(onAccepted).toHaveBeenCalledTimes(1)
   })
 
+  it('passes a display name and password for an address with no account yet', async () => {
+    const acceptInvitation = vi.fn(() => Promise.resolve())
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({ acceptInvitation })}
+      />,
+    )
+    await user.type(
+      await screen.findByLabelText(zhCN.acceptInvitation.displayNameLabel),
+      'Ada Lovelace',
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.acceptInvitation.passwordLabel),
+      's3cret-pass',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
+    )
+    expect(acceptInvitation).toHaveBeenCalledWith('tok-1', {
+      displayName: 'Ada Lovelace',
+      password: 's3cret-pass',
+    })
+  })
+
   it('reports a refused acceptance with the answer code and stays retryable', async () => {
     const acceptInvitation = vi.fn(() =>
       Promise.reject({ status: 409, code: 'authn.conflict' }),

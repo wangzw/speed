@@ -97,7 +97,10 @@
     },
     "error": {
       "title": "The invitation could not be loaded"
-    }
+    },
+    "displayNameLabel": "Display name",
+    "passwordLabel": "Password",
+    "newAccountHint": "Only used when the invited address has no account yet; leave blank to accept on the account it already has."
   },
   "errors": {
     "authn": {

@@ -9,11 +9,18 @@
  * invitation operations, the same host-supplied-operations shape every
  * auth-ui component drives.
  *
- * The host gates who may accept: the screen is meant to be mounted for a
- * signed-in viewer, and the host renders its own sign-in / register surface
- * ahead of it (the demo host does so, src/pages/accept-invitation-page.tsx).
- * The screen itself reads nothing from storage and consumes no auth-core
- * hook; the accept endpoint needs no credential of its own.
+ * The acceptance is public: the accept endpoint needs no credential of its
+ * own -- the token is the whole credential -- and the membership lands on the
+ * invited address's account, not on whoever is signed in. A host may render
+ * its own sign-in / register surface ahead of the screen (the demo host does
+ * so, src/pages/accept-invitation-page.tsx); that is a composition choice,
+ * not what authorizes or binds the acceptance. The screen itself reads
+ * nothing from storage and consumes no auth-core hook.
+ *
+ * When the invited address has no account yet the acceptance creates one, so
+ * the screen offers an optional display name and password for that case (the
+ * accept body's display_name and password); both are ignored when the address
+ * already has an account, so leaving them blank accepts on the existing one.
  *
  * The two read failures the contract names get their own text: a bare 404
  * ("no such invitation") and a 409 ("expired, revoked or already accepted");
@@ -28,6 +35,7 @@ import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
+import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { errorCodeOf } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
@@ -109,6 +117,11 @@ export function AcceptInvitationScreen({
   const [state, setState] = useState<ScreenState>({ status: 'loading' })
   const [accepting, setAccepting] = useState(false)
   const [acceptError, setAcceptError] = useState<string | null>(null)
+  // The display name and password for an address that has no account yet;
+  // both optional, and ignored by the backend when the address already has
+  // an account.
+  const [displayName, setDisplayName] = useState('')
+  const [password, setPassword] = useState('')
 
   // One read per attempt; a cancelled closure (unmount, or a retry while a
   // read is in flight) never writes state.
@@ -135,7 +148,11 @@ export function AcceptInvitationScreen({
   const accept = (): void => {
     setAccepting(true)
     setAcceptError(null)
-    invitations.acceptInvitation(token, {}).then(
+    const input: AcceptInvitationInput = {
+      ...(displayName.trim() === '' ? {} : { displayName: displayName.trim() }),
+      ...(password === '' ? {} : { password }),
+    }
+    invitations.acceptInvitation(token, input).then(
       () => {
         setAccepting(false)
         setState((prev) =>
@@ -233,6 +250,22 @@ export function AcceptInvitationScreen({
         </Box>
       ) : (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <TextField
+            size="small"
+            value={displayName}
+            onChange={(event) => setDisplayName(event.target.value)}
+            label={t('acceptInvitation.displayNameLabel')}
+          />
+          <TextField
+            size="small"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            label={t('acceptInvitation.passwordLabel')}
+          />
+          <Typography variant="caption" color="text.secondary">
+            {t('acceptInvitation.newAccountHint')}
+          </Typography>
           <Button
             variant="contained"
             disabled={accepting}

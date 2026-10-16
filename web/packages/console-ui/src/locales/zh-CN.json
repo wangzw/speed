@@ -640,7 +640,11 @@
     },
     "revoke": "撤销",
     "revokeTitle": "撤销邀请",
-    "revokeMessage": "撤销发给「{{email}}」的邀请。"
+    "revokeMessage": "撤销发给「{{email}}」的邀请。",
+    "issued": {
+      "link": "把这条接受链接交给「{{email}}」：",
+      "token": "「{{email}}」的接受令牌（链接由宿主构造）："
+    }
   },
   "members": {
     "title": "成员",

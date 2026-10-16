@@ -33,6 +33,7 @@ import { useTranslation } from '@speed/i18n'
 import { useNavigate } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
 import { AppBrand, HeaderActions, UserMenu } from '../chrome.js'
+import { invitationPath } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 
 /** The tenant area's root: the app's business slot, which the console's exit
@@ -54,6 +55,10 @@ export function ConsoleArea({ routes, children }: ConsoleAreaProps): ReactElemen
       title={<AppBrand />}
       headerActions={<ConsoleHeaderActions />}
       onNavigate={navigate}
+      // The console issues an invitation and shows the acceptance link for
+      // the operator to hand over; the link points at this app's own landing
+      // route, whose path only the host knows (src/paths).
+      invitationLink={invitationPath}
     >
       {children}
     </ConsoleShell>

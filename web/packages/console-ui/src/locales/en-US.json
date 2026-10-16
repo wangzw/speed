@@ -640,7 +640,11 @@
     },
     "revoke": "Revoke",
     "revokeTitle": "Revoke invitation",
-    "revokeMessage": "Revoke the invitation sent to \"{{email}}\"."
+    "revokeMessage": "Revoke the invitation sent to \"{{email}}\".",
+    "issued": {
+      "link": "Hand this acceptance link to {{email}}:",
+      "token": "Hand this acceptance token to {{email}} (the host builds the link):"
+    }
   },
   "members": {
     "title": "Members",

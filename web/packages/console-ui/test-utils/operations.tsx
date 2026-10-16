@@ -59,6 +59,7 @@ import type {
   ConsoleInvitationPage,
   ConsoleInvitationRef,
   ConsoleIssueInvitationInput,
+  ConsoleIssuedInvitation,
   ConsoleMember,
   ConsoleMemberRef,
   ConsoleOfferSmsTemplateInput,
@@ -149,7 +150,9 @@ export interface ConsoleBackend {
 
   // Invitation + membership surfaces (tenant-scoped).
   listInvitations: (tenant: string) => Promise<ConsoleInvitationPage>
-  issueInvitation: (input: ConsoleIssueInvitationInput) => Promise<void>
+  issueInvitation: (
+    input: ConsoleIssueInvitationInput,
+  ) => Promise<ConsoleIssuedInvitation>
   revokeInvitation: (input: ConsoleInvitationRef) => Promise<void>
   listMembers: (tenant: string) => Promise<readonly ConsoleMember[]>
   removeMember: (input: ConsoleMemberRef) => Promise<void>
@@ -243,7 +246,7 @@ export function makeConsoleBackend(
     revokeImpersonation: () => Promise.resolve(),
 
     listInvitations: () => Promise.resolve({ invitations: [], next_cursor: '' }),
-    issueInvitation: () => Promise.resolve(),
+    issueInvitation: () => Promise.resolve(issuedInvitationFixture()),
     revokeInvitation: () => Promise.resolve(),
     listMembers: () => Promise.resolve([]),
     removeMember: () => Promise.resolve(),
@@ -334,6 +337,27 @@ export function providerFixture(
     allow_sha1: false,
     merge_existing: false,
     version: 1,
+    ...overrides,
+  }
+}
+
+/** The issued invitation an issue answers with: the pending row plus the
+ * one-time token. */
+export function issuedInvitationFixture(
+  overrides: Partial<ConsoleIssuedInvitation> = {},
+): ConsoleIssuedInvitation {
+  return {
+    invitation: {
+      id: 'inv-1',
+      tenant: 'acme',
+      email: 'ada@example.com',
+      status: 'pending',
+      invited_by: 'staff-1',
+      expires_at: '2026-10-20T00:00:00Z',
+      accepted_at: '0001-01-01T00:00:00Z',
+      created_at: '2026-10-15T12:00:00Z',
+    },
+    token: 'spd_inv_test_token',
     ...overrides,
   }
 }

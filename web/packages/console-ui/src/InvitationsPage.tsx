@@ -38,10 +38,15 @@ import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
+import { useConsoleInvitationLink } from './internal/invitation-link.js'
 import { TenantScope } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
-import type { ConsoleInvitation, ConsoleMember } from './operations.js'
+import type {
+  ConsoleInvitation,
+  ConsoleIssuedInvitation,
+  ConsoleMember,
+} from './operations.js'
 
 /** The invitation status's label, guarding the closed set. */
 const INVITATION_STATUSES = new Set<string>(['pending', 'accepted', 'revoked'])
@@ -69,10 +74,14 @@ function toInviteExpiry(value: string): string | undefined {
 export function InvitationsPage() {
   const { t, i18n } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
+  const invitationLink = useConsoleInvitationLink()
 
   const [tenant, setTenant] = useState('')
   const [email, setEmail] = useState('')
   const [expiresAt, setExpiresAt] = useState('')
+  // The invitation just issued, held so its acceptance token -- handed out
+  // once -- can be shown as the invitee's link rather than dropped.
+  const [issued, setIssued] = useState<ConsoleIssuedInvitation | null>(null)
   const confirm = usePendingConfirm()
 
   const invitations = operations.useInvitations(tenant)
@@ -291,13 +300,39 @@ export function InvitationsPage() {
                       email,
                       expiresAt: toInviteExpiry(expiresAt),
                     },
-                    { onSuccess: () => setEmail('') },
+                    {
+                      onSuccess: (answer) => {
+                        setEmail('')
+                        setIssued(answer)
+                      },
+                    },
                   )
                 }}
               >
                 {t('invitations.issue.submit')}
               </Button>
             </Box>
+            {issued != null && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="body2">
+                  {invitationLink === undefined
+                    ? t('invitations.issued.token', {
+                        email: issued.invitation.email,
+                      })
+                    : t('invitations.issued.link', {
+                        email: issued.invitation.email,
+                      })}
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{ wordBreak: 'break-all', fontFamily: 'monospace' }}
+                >
+                  {invitationLink === undefined
+                    ? issued.token
+                    : acceptanceUrl(invitationLink(issued.token))}
+                </Typography>
+              </Box>
+            )}
             <ConsoleAsyncSection
               pending={invitationsPending}
               payload={invitationRows}
@@ -390,6 +425,20 @@ function firstErrorCode(errors: readonly unknown[]): string | null {
     }
   }
   return null
+}
+
+/**
+ * The absolute URL for a host-built acceptance link: the builder may return
+ * a host-relative path (the landing route) or an absolute URL, and the
+ * operator copies it whole, so a path is resolved against the current origin.
+ * A value that will not resolve is shown as it came.
+ */
+function acceptanceUrl(link: string): string {
+  try {
+    return new URL(link, window.location.origin).toString()
+  } catch {
+    return link
+  }
 }
 
 /**

@@ -2,12 +2,15 @@
  * The invitation landing (/invitations/:token): the public route an
  * invitee's link points at.
  *
- * The page gates on the session: an anonymous viewer meets the host's
- * sign-in surface, and a signed-in viewer meets the accept screen, whose two
- * invitation operations reach the backend through the app's generated SDK
- * surface (src/app-api). The suite binds a scripted request function over the
- * api-sdk runtime seam so the real generated operations run against
- * responses it controls; accepting then navigates the viewer home.
+ * The host gates the landing on a session: an anonymous viewer meets the
+ * host's sign-in surface, and a signed-in viewer meets the accept screen,
+ * whose two invitation operations reach the backend through the app's
+ * generated SDK surface (src/app-api). The accept surface itself is public
+ * -- the token is the whole credential -- so that gate is the host's
+ * composition, not what binds the acceptance. The suite binds a scripted
+ * request function over the api-sdk runtime seam so the real generated
+ * operations run against responses it controls; accepting then navigates
+ * the viewer home.
  */
 
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -72,8 +75,8 @@ describe('the invitation landing', () => {
   it('shows the host sign-in surface to an anonymous viewer', () => {
     renderDemoApp()
 
-    // The invitee must accept as themselves: an anonymous viewer meets the
-    // sign-in / register surface, never the accept screen.
+    // The host gates the landing on a session: an anonymous viewer meets
+    // the sign-in / register surface, never the accept screen.
     expect(
       screen.getByRole('heading', { level: 1, name: demoEnUS.signIn.heading }),
     ).toBeInTheDocument()

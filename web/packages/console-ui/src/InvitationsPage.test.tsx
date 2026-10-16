@@ -20,9 +20,11 @@ import type {
 import { renderWithProviders } from '../test-utils/render.js'
 import {
   createConsoleOperations,
+  issuedInvitationFixture,
   makeConsoleBackend,
   type ConsoleBackend,
 } from '../test-utils/operations.js'
+import { ConsoleInvitationLinkProvider } from './internal/invitation-link.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 
 const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
@@ -95,7 +97,7 @@ describe('InvitationsPage', () => {
     const operations = withTenant({
       issueInvitation: (input) => {
         issued.push(input.email)
-        return Promise.resolve()
+        return Promise.resolve(issuedInvitationFixture())
       },
     })
     renderWithProviders(<InvitationsPage />, { operations })
@@ -129,6 +131,54 @@ describe('InvitationsPage', () => {
         new Date('2026-11-01T12:00').toISOString(),
       ])
     })
+
+  it('shows the acceptance link for the invitation just issued', async () => {
+    const user = userEvent.setup()
+    const operations = withTenant({
+      issueInvitation: () =>
+        Promise.resolve(
+          issuedInvitationFixture({
+            invitation: {
+              ...issuedInvitationFixture().invitation,
+              email: 'new@example.com',
+            },
+          }),
+        ),
+    })
+    renderWithProviders(
+      <ConsoleInvitationLinkProvider
+        invitationLink={(token) => `/invitations/${token}`}
+      >
+        <InvitationsPage />
+      </ConsoleInvitationLinkProvider>,
+      { operations },
+    )
+    await pickTenant(user)
+    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    // The one-time token is turned into the host's acceptance link, not dropped.
+    expect(
+      await screen.findByText('把这条接受链接交给「new@example.com」：'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        `${window.location.origin}/invitations/spd_inv_test_token`,
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the bare token when the host supplies no link builder', async () => {
+    const user = userEvent.setup()
+    const operations = withTenant()
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    // With no builder the token is still surfaced, never silently dropped.
+    expect(
+      await screen.findByText('「ada@example.com」的接受令牌（链接由宿主构造）：'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('spd_inv_test_token')).toBeInTheDocument()
   })
 
   it('revokes a pending invitation through the bundle', async () => {

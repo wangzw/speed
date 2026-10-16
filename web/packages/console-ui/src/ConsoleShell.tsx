@@ -43,6 +43,7 @@ import { AppShell } from '@speed/layout-kit'
 import type { AppShellNavItem } from '@speed/layout-kit'
 import type { ConsoleRoute } from './route.js'
 import { ConsoleNavigationProvider } from './internal/navigation.js'
+import { ConsoleInvitationLinkProvider } from './internal/invitation-link.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 
 export interface ConsoleShellProps {
@@ -69,6 +70,14 @@ export interface ConsoleShellProps {
    * page load, which a host whose session lives in memory loses.
    */
   readonly onNavigate?: (href: string) => void
+  /**
+   * Builds the acceptance link for an issued invitation's token -- a
+   * host-relative path or an absolute URL. The console's invitation page
+   * shows it after a successful issue so the operator can hand the invitee
+   * a working link, which needs a path only the host knows (the landing
+   * route). Absent, the page shows the bare token instead.
+   */
+  readonly invitationLink?: (token: string) => string
   /** Extra styling merged onto the root layout box. */
   readonly sx?: SxProps<Theme>
 }
@@ -79,6 +88,7 @@ export function ConsoleShell({
   title,
   headerActions,
   onNavigate,
+  invitationLink,
   sx,
 }: ConsoleShellProps) {
   const { t } = useConsoleUiTranslation()
@@ -115,13 +125,20 @@ export function ConsoleShell({
     >
       {/* The same in-place navigation seam the entries use, published to
           the routed pages so a detail link routes in place rather than
-          reloading the page (see internal/navigation). */}
+          reloading the page (see internal/navigation), and the host's
+          invitation-link builder, published so a page can show an issued
+          acceptance link the host knows how to build (see
+          internal/invitation-link). */}
       <ConsoleNavigationProvider onNavigate={onNavigate}>
         {/* The content area carries the same padding the tenant shell's own
             content region applies (theme spacing 3 = 24px all round), so a
             page's heading, breadcrumb, table and form sit clear of the
             sidebar and the banner rather than against them. */}
-        <Box sx={{ p: 3 }}>{children}</Box>
+        <Box sx={{ p: 3 }}>
+          <ConsoleInvitationLinkProvider invitationLink={invitationLink}>
+            {children}
+          </ConsoleInvitationLinkProvider>
+        </Box>
       </ConsoleNavigationProvider>
     </AppShell>
   )

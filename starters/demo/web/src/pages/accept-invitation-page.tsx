@@ -3,13 +3,18 @@
  *
  * An administrator issues an invitation from the console, which hands the
  * invitee a link to /invitations/:token. This page is that link's landing.
- * The invitee accepts as themselves, so the page gates on the session the
- * way the console area does: a viewer who is not signed in meets the host's
- * sign-in / register surface (and re-renders onto the accept screen the
- * moment the session flips); a signed-in viewer meets auth-ui's
- * AcceptInvitationScreen, whose two invitation operations this page binds to
- * the app's generated SDK surface (src/app-api, the platform document's
- * operations). On acceptance the page navigates home.
+ * The accept surface is public and the token is the whole credential: the
+ * membership lands on the invited address's account, not on whoever happens
+ * to be signed in (pkg/authn/invite binds it by the invited address). The
+ * host nevertheless gates the landing on a session the way the console area
+ * does -- an anonymous viewer meets the host's sign-in / register surface
+ * (and re-renders onto the accept screen the moment the session flips), so
+ * the invitee arrives with an identity of their own -- but that gate is a
+ * composition choice, not what authorizes or binds the acceptance. A
+ * signed-in viewer meets auth-ui's AcceptInvitationScreen, whose two
+ * invitation operations this page binds to the app's generated SDK surface
+ * (src/app-api, the platform document's operations). On acceptance the page
+ * navigates home.
  *
  * The route is public and sits outside both shells (the invitee arrives
  * before any session exists), so the app renders its page directly
@@ -57,9 +62,12 @@ export function AcceptInvitationPage({
     [],
   )
 
-  // The invitee accepts as themselves: an anonymous viewer meets the host's
-  // sign-in / register surface first, and the session flip re-renders this
-  // page onto the accept screen.
+  // The host renders its sign-in / register surface ahead of the accept
+  // screen so the invitee arrives with a session of their own; the accept
+  // surface itself is public and the token is the whole credential -- the
+  // membership binds to the invited address, not to this session. An
+  // anonymous viewer meets the sign-in surface, and the session flip
+  // re-renders this page onto the accept screen.
   if (snapshot.state !== 'authenticated') {
     return <SignInView />
   }

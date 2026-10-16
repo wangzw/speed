@@ -158,6 +158,7 @@ import type {
   AuthnAdminSession,
   AuthnAdminVerifyToken,
   AuthnInviteInvitation,
+  AuthnInviteIssued,
   AuthnInviteListParams,
   AuthnInvitePage,
   AuthzAdminBindingView,
@@ -409,6 +410,10 @@ export type ConsoleCreateSecretInput = AuthnAdminSecretCreate & {
 
 /** One invitation of a tenant (GET .../tenants/:tenant/invitations). */
 export type ConsoleInvitation = AuthnInviteInvitation
+
+/** The one-time handover an invitation issue answers with (POST .../invitations):
+ * the invitation view plus the acceptance token, which is handed out once. */
+export type ConsoleIssuedInvitation = AuthnInviteIssued
 
 /** One tenant member (GET .../tenants/:tenant/members). */
 export type ConsoleMember = AuthnAdminMember
@@ -753,9 +758,10 @@ export interface ConsoleOperations {
     tenant: string,
     params?: AuthnInviteListParams,
   ) => UseQueryResult<ConsoleInvitationPage, unknown>
-  /** POST .../tenants/:tenant/invitations -- invite an address. */
+  /** POST .../tenants/:tenant/invitations -- invite an address. The answer
+   * carries the acceptance token, handed out once to give to the invitee. */
   readonly useIssueInvitation: () => UseMutationResult<
-    void,
+    ConsoleIssuedInvitation,
     unknown,
     ConsoleIssueInvitationInput
   >
@@ -1396,13 +1402,16 @@ export const consoleOperations: ConsoleOperations = {
   useIssueInvitation: () => {
     const queryClient = useQueryClient()
     return useMutation({
+      // The answer carries the acceptance token, which the page reads to
+      // show the invitee's link; it is handed out only once, so it must not
+      // be discarded here.
       mutationFn: (input: ConsoleIssueInvitationInput) =>
         authnInviteIssue(input.tenant, {
           email: input.email,
           ...(input.expiresAt === undefined
             ? {}
             : { expires_at: input.expiresAt }),
-        }).then(() => undefined),
+        }),
       onSuccess: (_answer, input) => {
         void queryClient.invalidateQueries({
           queryKey: getAuthnInviteListQueryKey(input.tenant),

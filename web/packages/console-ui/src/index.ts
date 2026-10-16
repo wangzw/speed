@@ -109,6 +109,7 @@ export {
   type ConsoleInvitationPage,
   type ConsoleMember,
   type ConsoleIssueInvitationInput,
+  type ConsoleIssuedInvitation,
   type ConsoleInvitationRef,
   type ConsoleMemberRef,
   type ConsoleWriteMemberInput,
