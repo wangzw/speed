@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
+import { ApiError } from '@speed/api-client'
 import type {
   EventStreamHandle,
   EventStreamOpener,
@@ -97,6 +98,42 @@ describe('NotificationStreamProvider', () => {
         vi.advanceTimersByTime(2000)
       })
       expect(opened.length).toBeGreaterThanOrEqual(2)
+      expect(opened[1]?.path).toBe(STREAM_PATH)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reconnects at the base delay when a failure fires onError then onClose', async () => {
+    vi.useFakeTimers()
+    try {
+      const { opened, opener } = fakeOpener()
+      renderWithProviders(
+        <NotificationStreamProvider openStream={opener}>
+          <div>content</div>
+        </NotificationStreamProvider>,
+      )
+      expect(opened).toHaveLength(1)
+      // The transport reports a failure through onError and then always
+      // through onClose (event-stream.ts settle()): both fire for one
+      // dropped connection. The single drop must schedule one reconnect at
+      // the base delay -- a provider that subscribes to onError too would
+      // schedule twice, landing the first retry at 2s (the doubled step)
+      // and skipping the 1s base.
+      act(() => {
+        opened[0]?.options.onError?.(
+          new ApiError({ status: 0, code: 'client.network', attempts: 1 }),
+        )
+        opened[0]?.options.onClose?.()
+      })
+      act(() => {
+        vi.advanceTimersByTime(999)
+      })
+      expect(opened).toHaveLength(1)
+      act(() => {
+        vi.advanceTimersByTime(1)
+      })
+      expect(opened).toHaveLength(2)
       expect(opened[1]?.path).toBe(STREAM_PATH)
     } finally {
       vi.useRealTimers()

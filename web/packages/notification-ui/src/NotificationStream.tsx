@@ -152,8 +152,12 @@ function NotificationStreamSubscriber({
         },
         // A failure and a clean server end both mean "reconnect": the
         // transport neither retries nor reconnects (see event-stream.ts),
-        // so the policy lives here.
-        onError: () => schedule(),
+        // so the policy lives here. Both terminal states surface through
+        // onClose -- the transport fires it for a failure too, right after
+        // onError -- so subscribing to onClose alone reconnects exactly
+        // once per drop. Subscribing to onError as well would schedule
+        // twice per failure, skipping the base delay and doubling the
+        // backoff step.
         onClose: () => schedule(),
       })
     }
