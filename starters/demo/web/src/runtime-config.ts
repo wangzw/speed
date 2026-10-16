@@ -4,10 +4,11 @@
  * One built dist is shared across deployment topologies (a single process
  * serving API and page, or a page on a static host with the API elsewhere), so
  * the API origin is not baked into the bundle: it is read at startup from
- * runtime-config.json, fetched by its relative path so the read never needs an
- * already-resolved origin to resolve one. When the file is absent, unreadable,
- * or carries no origin, the caller falls back to the page's own origin (the
- * same-origin deployment shape).
+ * runtime-config.json, fetched at the deployment root so the read never needs
+ * an already-resolved origin to resolve one and a deep link cannot shift it
+ * under the page's own path. When the file is absent, unreadable, or carries
+ * no origin, the caller falls back to the page's own origin (the same-origin
+ * deployment shape).
  *
  * This module is the app's one hand-written request, and the reason
  * eslint.config.mjs exempts it from the no-direct-http rule: it reads a static
@@ -18,6 +19,19 @@
 
 /** The file the deployment places beside the entry document. */
 export const RUNTIME_CONFIG_FILE = 'runtime-config.json'
+
+/**
+ * The absolute URL the config is read from: the file at the deployment root,
+ * under the entry document's own origin. It is resolved against the document
+ * base with a root-absolute path, NOT left for fetch to resolve against the
+ * current URL: a deep link such as /console/tenants would otherwise shift the
+ * read to /console/runtime-config.json. The read still never needs an
+ * already-resolved API origin (the whole point of reading a file rather than
+ * asking the API), so the same-origin and cross-origin shapes both hold.
+ */
+export function runtimeConfigUrl(): string {
+  return new URL(`/${RUNTIME_CONFIG_FILE}`, document.baseURI).href
+}
 
 /** The origin the app should reach the API at, when the deployment names one. */
 export interface RuntimeConfig {
@@ -33,7 +47,7 @@ export interface RuntimeConfig {
 export async function loadRuntimeConfig(): Promise<RuntimeConfig> {
   let response: Response
   try {
-    response = await fetch(RUNTIME_CONFIG_FILE, { cache: 'no-store' })
+    response = await fetch(runtimeConfigUrl(), { cache: 'no-store' })
   } catch {
     return {}
   }

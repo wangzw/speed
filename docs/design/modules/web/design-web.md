@@ -77,7 +77,9 @@ interface SpeedAppDefinition {
 
 ### 运行期的 API origin 注入
 
-`bootstrapSpeedApp` 的 `baseUrl` 缺省是 `window.location.origin`，即假设前后端同源。跨域部署要在运行期注入：产物在入口文档旁带一份 `runtime-config.json`，应用入口以相对路径取它，把其中的 API origin 作为 `baseUrl` 传给 `bootstrapSpeedApp`；文件不存在时回落到同源（[ADR-web-runtime-config-2026-10-15](../../../adr/adr-web-runtime-config-2026-10-15.md)）。相对路径不依赖已解析的 origin，因而不陷入「取配置本身需要配置」的循环。`api-client` 的 `config-fetcher` 帮不上这件事：它经 API 取配置，本身就需要 `baseUrl`。
+`bootstrapSpeedApp` 的 `baseUrl` 缺省是 `window.location.origin`，即假设前后端同源。跨域部署要在运行期注入：产物在入口文档旁带一份 `runtime-config.json`，应用入口取它、把其中的 API origin 作为 `baseUrl` 传给 `bootstrapSpeedApp`；文件不存在、不可读或没有 origin 时回落到同源（[ADR-web-runtime-config-2026-10-15](../../../adr/adr-web-runtime-config-2026-10-15.md)）。这份文件按**入口文档所在源下的根路径**解析，不按当前 URL 解析：深链接（如控制台页的 `/console/tenants`）因而仍取到根下的文件，而不是它自己目录下的同名文件。该解析不依赖已解析的 origin，故不陷入「取配置本身需要配置」的循环；它也不随部署拓扑变化，故同一份产物在合一拓扑与分离拓扑下共用。`api-client` 的 `config-fetcher` 帮不上这件事：它经 API 取配置，本身就需要 `baseUrl`。
+
+**是否配置 CORS 由部署拓扑决定。** 合一拓扑是单端口同源：产物与 API 由同一个进程在同一个源答出，浏览器不发跨域请求，部署面里因而没有 CORS 这一环——demo 骨架即此拓扑。分离拓扑把前端交静态主机、后端只做 API，两者异源，跨域请求才出现，CORS 在此时进入部署面。跨域部署是受支持的形态，但它不是 demo 骨架的形态。
 
 ### 新增三件的契约
 

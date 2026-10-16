@@ -108,7 +108,7 @@ export function createQueryClient(): QueryClient
 
 **`SpeedAppDefinition` 的各项即本包定义的可变面。** `namespaces` 是应用自己的命名空间（装配自身组合的四个族命名空间自动注册，不得在此重复列出，否则双重注册抛错）；`providers` 是标准 provider 栈与视图之间的应用级 provider，最外层在前；`view` 是视图根（通常是宿主槽齐备的 `ProductShell` 组合）；`sessionEnded` 覆盖出厂的会话结束动作；`baseUrl` 是客户端基地址。
 
-**`baseUrl` 缺省是 `window.location.origin`，即假设同源部署**——页面与 API 由同一个源提供。**跨域部署要在运行期给出该源地址**：产物在入口文档旁带一份 `runtime-config.json`，应用入口以相对路径取它、把其中的 origin 作为 `baseUrl` 传给本包；取不到时回落到同源。机制归 [design-web](design-web.md) 与 [ADR-web-runtime-config-2026-10-15](../../../adr/adr-web-runtime-config-2026-10-15.md)；本包只消费注入后的值，不自行发现源。
+**`baseUrl` 缺省是 `window.location.origin`，即假设同源部署**——页面与 API 由同一个源提供。**跨域部署要在运行期给出该源地址**：产物在入口文档旁带一份 `runtime-config.json`，应用入口取它（按入口文档所在源下的根路径解析）、把其中的 origin 作为 `baseUrl` 传给本包；取不到时回落到同源。机制归 [design-web](design-web.md) 与 [ADR-web-runtime-config-2026-10-15](../../../adr/adr-web-runtime-config-2026-10-15.md)；本包只消费注入后的值，不自行发现源。
 
 **`watchSessionEnd` 与 `createQueryClient` 是给手工组装宿主的导出。** 一个不在 `bootstrapSpeedApp` 之下的视图级测试台或自定义组合，用同一份 `createQueryClient` 与同一条 `watchSessionEnd` 策略，而不是重建一份可能与本包漂移的副本。
 

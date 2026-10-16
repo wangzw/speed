@@ -1,13 +1,14 @@
 /**
  * loadRuntimeConfig: the deployment's API origin read, and every way it falls
- * back to same-origin. The file is fetched by its relative path so the read
- * never needs an origin to resolve one; a missing file, a network failure, a
- * non-2xx answer and an unreadable or origin-less body each yield an empty
- * configuration.
+ * back to same-origin. The file is fetched at the deployment root, resolved
+ * against the document base rather than the current URL, so the read never
+ * needs an origin to resolve one and a deep link cannot shift it under its own
+ * path; a missing file, a network failure, a non-2xx answer and an unreadable
+ * or origin-less body each yield an empty configuration.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { loadRuntimeConfig, RUNTIME_CONFIG_FILE } from './runtime-config.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { loadRuntimeConfig } from './runtime-config.js'
 
 type FetchResult = {
   ok: boolean
@@ -26,12 +27,21 @@ function stubFetch(answer: FetchResult | (() => Promise<FetchResult>)) {
   return mock
 }
 
+/** The path the requested URL resolves to against the current document. */
+function requestedPath(mock: ReturnType<typeof stubFetch>): string {
+  return new URL(String(mock.mock.calls[0]?.[0]), document.baseURI).pathname
+}
+
+beforeEach(() => {
+  window.history.replaceState({}, '', '/')
+})
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
 describe('loadRuntimeConfig', () => {
-  it('reads the file by its relative path and returns the named origin', async () => {
+  it('reads the file at the deployment root and returns the named origin', async () => {
     const fetchMock = stubFetch({
       ok: true,
       json: async () => ({ apiOrigin: 'https://api.example.com' }),
@@ -41,7 +51,18 @@ describe('loadRuntimeConfig', () => {
       apiOrigin: 'https://api.example.com',
     })
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock.mock.calls[0]?.[0]).toBe(RUNTIME_CONFIG_FILE)
+    expect(requestedPath(fetchMock)).toBe('/runtime-config.json')
+  })
+
+  it('reads the file at the root even under a deep-link path', async () => {
+    // A deep link such as /console/tenants must not shift the read under
+    // its own directory: a bare relative fetch would resolve to
+    // /console/runtime-config.json here and miss the file.
+    window.history.replaceState({}, '', '/console/tenants')
+    const fetchMock = stubFetch({ ok: true, json: async () => ({}) })
+
+    await loadRuntimeConfig()
+    expect(requestedPath(fetchMock)).toBe('/runtime-config.json')
   })
 
   it('falls back to no origin when the file is absent', async () => {
