@@ -24,6 +24,11 @@ The API is the package's godoc.
   impersonation check and the missing-`Decider` refusal come before any read,
   so a deployment with no `Decider` tells a caller nothing about which objects
   exist.
+- **The account list route's query parameters are a closed set.** A parameter
+  the list route does not accept is a 400, answered before the read, so a
+  misspelled filter is reported rather than swallowed by a read that ignores it;
+  an accepted filter given empty is no filter. The display-name prefix is a byte
+  prefix of the stored name and is case-sensitive.
 - **The tenant of a tenant-level action is resolved here.** The routes whose
   path carries no tenant (`sso/providers/:id` and its domains and metadata, and
   `impersonations/:id`) read the object's own tenant before asking the

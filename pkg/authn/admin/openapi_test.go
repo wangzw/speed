@@ -14,7 +14,9 @@ import (
 // the only source a generated client is built from, and the design leaves the
 // two free to drift with no failure signal at run time. The check drives the
 // module's own Init, through the real route-mounting module, and compares what
-// it registered there with what it declared.
+// it registered there with what it declared. Given the accepted sets of the
+// three paged routes, it also holds each one's declared query parameters to what
+// its handler reads.
 //
 // The fragment declares the whole management surface, and Init mounts one group
 // of it per capability it takes up there, so the assembly carries every group's
@@ -40,5 +42,10 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 		Module: Module(),
 		Stubs:  stubs,
 		Config: config,
+		QueryParams: map[routecontract.Route]map[string]bool{
+			{Method: "GET", Path: "/auth/admin/accounts"}:                accountListParams,
+			{Method: "GET", Path: "/auth/admin/tenants/:tenant/members"}: {"limit": true, "after": true},
+			{Method: "GET", Path: "/auth/admin/impersonations"}:          {"tenant": true, "limit": true, "after": true},
+		},
 	})
 }

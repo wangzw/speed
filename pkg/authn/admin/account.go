@@ -39,6 +39,21 @@ func accountViewOf(a authn.Account) accountView {
 	}
 }
 
+// accountListParams is the set of query parameters the account list route
+// accepts, a closed set. A name not among them is a shape the module refuses, so
+// that a misspelled filter is reported rather than swallowed by a read that
+// ignores it. The set is what the OpenAPI fragment declares and what accountQuery
+// reads.
+var accountListParams = map[string]bool{
+	"status":              true,
+	"kind":                true,
+	"identifier_prefix":   true,
+	"identifier_kind":     true,
+	"display_name_prefix": true,
+	"after":               true,
+	"limit":               true,
+}
+
 // handleAccountList answers GET /admin/accounts: one page of accounts, filtered
 // by status, kind and an identifier prefix. The action is account.read.
 func (m *product) handleAccountList(c *gin.Context) {
@@ -65,9 +80,16 @@ func (m *product) handleAccountList(c *gin.Context) {
 	c.JSON(200, gin.H{"accounts": views, "next_cursor": next})
 }
 
-// accountQuery reads the list's query parameters. A filter it does not know, or
-// an identifier prefix without a kind, is a 400.
+// accountQuery reads the list's query parameters into a read query. A parameter
+// the route does not accept, a filter it does not know, or an identifier prefix
+// without a kind is a 400. An empty value of an accepted filter — including an
+// empty display_name_prefix — is no filter, the same reading status, kind and
+// after take.
 func (m *product) accountQuery(c *gin.Context) (authn.AccountQuery, bool) {
+	if !onlyAccepted(c, accountListParams) {
+		m.bad(c)
+		return authn.AccountQuery{}, false
+	}
 	var q authn.AccountQuery
 	if s := c.Query("status"); s != "" {
 		st, ok := statusOf(s)
@@ -109,6 +131,17 @@ func (m *product) accountQuery(c *gin.Context) (authn.AccountQuery, bool) {
 		q.Limit = n
 	}
 	return q, true
+}
+
+// onlyAccepted reports whether every query parameter on the request is in the
+// accepted set. A nil set accepts none.
+func onlyAccepted(c *gin.Context, accepted map[string]bool) bool {
+	for key := range c.Request.URL.Query() {
+		if !accepted[key] {
+			return false
+		}
+	}
+	return true
 }
 
 // createBody is the request of a create.

@@ -574,6 +574,25 @@ func TestListByDisplayNamePrefixMatchesTheStoredName(t *testing.T) {
 	})
 }
 
+// The bound that closes a display-name range raises the prefix's last character,
+// not its last byte: a prefix that ends in a multi-byte character must yield a
+// bound that is itself valid UTF-8, or the range reads a byte sequence the
+// database rejects and the answer is an outage rather than a shorter page.
+func TestDisplayNameBoundRaisesTheLastCharacter(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"", ""},
+		{"A", "B"},
+		{"Ali", "Alj"},
+		{"alice", "alicf"},
+		{"Á", "Â"},               // a two-byte character is raised as a character
+		{"Alicia Á", "Alicia Â"}, // and the raise keeps the leading ASCII as it is
+	} {
+		if got := displayNameBound(c.in); got != c.want {
+			t.Errorf("displayNameBound(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestAccountFieldsAreWrittenOnTheAccountThatIsThere(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()

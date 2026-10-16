@@ -456,6 +456,41 @@ func TestTheAccountListParsesTheDisplayNamePrefix(t *testing.T) {
 	}
 }
 
+// TestTheAccountListRefusesAQueryParameterItDoesNotAccept holds the list's
+// closed parameter set: a parameter the route does not know is a 400, so a
+// misspelled filter is reported rather than swallowed by a read that ignores it
+// and answers an unfiltered page.
+func TestTheAccountListRefusesAQueryParameterItDoesNotAccept(t *testing.T) {
+	r := newRig(t)
+	for _, q := range []string{"?nope=1", "?displayname_prefix=Ali", "?statuss=active", "?user=alice"} {
+		rec := r.do(http.MethodGet, "/auth/admin/accounts"+q, nil, fresh()...)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", q, rec.Code)
+		}
+	}
+	if r.accounts.listCalls != 0 {
+		t.Errorf("the account list read ran %d time(s) on a refused query, want no read", r.accounts.listCalls)
+	}
+}
+
+// TestTheAccountListReadsAnEmptyFilterAsNoFilter holds that an accepted filter
+// given empty — including an empty display_name_prefix — is no filter: the read
+// still runs, with nothing narrowed by it.
+func TestTheAccountListReadsAnEmptyFilterAsNoFilter(t *testing.T) {
+	r := newRig(t)
+	rec := r.do(http.MethodGet, "/auth/admin/accounts?display_name_prefix=&status=&after=", nil, fresh()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	q := r.accounts.lastList()
+	if q.DisplayNamePrefix != "" || q.Status != nil || q.After != "" {
+		t.Errorf("an empty filter read as prefix=%q status=%v after=%q, want no filter", q.DisplayNamePrefix, q.Status, q.After)
+	}
+	if r.accounts.listCalls != 1 {
+		t.Errorf("the read ran %d time(s), want once", r.accounts.listCalls)
+	}
+}
+
 // TestPagedRoutesRefuseANegativeLimit holds that a negative limit is a 400 on
 // every paged route and that zero is accepted: zero asks for no explicit bound,
 // which the capability reads as its default page size.

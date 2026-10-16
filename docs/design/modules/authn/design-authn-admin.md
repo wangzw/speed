@@ -162,7 +162,7 @@ type ScopeGuard interface {
 
 | 组 | 方法 路径 | 动作 | 额外要求 |
 |---|---|---|---|
-| 账户 | `GET\|POST B/admin/accounts` | `account.read`、`account.create` | 列表键集分页（`Accounts.List`），可按状态、种类、标识前缀、显示名前缀过滤，标识前缀精确到一种标识类型；创建服务账户另要 `client.manage`；强制审计 |
+| 账户 | `GET\|POST B/admin/accounts` | `account.read`、`account.create` | 列表键集分页（`Accounts.List`），可按状态、种类、标识前缀、显示名前缀过滤，标识前缀精确到一种标识类型；列表的查询参数是封闭集，出现集合外的参数即 400，已接受的过滤给空值即不过滤（显示名前缀按字节前缀、大小写敏感）；创建服务账户另要 `client.manage`；强制审计 |
 | 账户 | `GET\|PATCH\|DELETE B/admin/accounts/:id` | `account.read`、`account.update`、`account.delete` | `PATCH` 改显示名、属性与 `protected`（`SetDisplayName`、`SetAttributes`、`SetProtected`）；删除要新鲜的本地多因素；强制审计 |
 | 因素与口令 | `POST B/admin/accounts/:id/password` | `account.update` | 管理员提交临时口令，是请求体，从不回显、不进日志与审计，缺省置 `must_change`；发起者新鲜的本地多因素且 `MFA.Seasoned`；强制审计；成功后撤销该账户的全部会话 |
 | 账户 | `POST B/admin/accounts/:id/identifiers`、`DELETE B/admin/accounts/:id/identifiers/:identifier` | `account.update` | 添加用户名（登录名）与管理员断言的邮箱，邮箱的 `verified_via` 为 `admin`，不作自动关联与并入的依据；强制审计 |

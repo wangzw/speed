@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/db"
 )
 
 // checkID refuses an identifier that cannot name an account.
@@ -231,8 +233,9 @@ func (p *product) ListServiceSecrets(ctx context.Context, id authn.AccountID) ([
 // is. A deleted account is left out unless the query asks for the status. A
 // listing by an identifier prefix reads a range of the identifier index, which
 // every engine does the same way, and never matches by pattern. A listing by a
-// display-name prefix compares the display name as written — no index covers the
-// column, so it scans the table rather than reading an index range.
+// display-name prefix compares the display name as written, by its bytes, the
+// same range on every collation the database was created with — no index covers
+// the column, so it scans the table rather than reading an index range.
 func (p *product) List(ctx context.Context, q authn.AccountQuery) ([]authn.Account, string, error) {
 	limit := q.EffectiveLimit()
 	tx := p.conn(ctx).Model(&accountRow{})
@@ -264,10 +267,12 @@ func (p *product) List(ctx context.Context, q authn.AccountQuery) ([]authn.Accou
 	}
 	if q.DisplayNamePrefix != "" {
 		// The display name is stored as written and is compared the same way, so
-		// the prefix is a byte prefix of the stored name and its case matters.
-		// No index covers the column, so this scans the table.
-		tx = tx.Where("display_name >= ? AND display_name < ?",
-			q.DisplayNamePrefix, displayNameBound(q.DisplayNamePrefix))
+		// the prefix is a byte prefix of the stored name and its case matters. The
+		// comparison is pinned to the byte collation on PostgreSQL: left to the
+		// database's own collation it would fold case and accents and read rows
+		// that are not a byte prefix of the name. No index covers the column, so
+		// this scans the table.
+		tx = tx.Where(p.displayNameRange(), q.DisplayNamePrefix, displayNameBound(q.DisplayNamePrefix))
 	}
 	if q.After != "" {
 		tx = tx.Where("id > ?", q.After)
@@ -296,20 +301,49 @@ func (p *product) List(ctx context.Context, q authn.AccountQuery) ([]authn.Accou
 	return out, next, nil
 }
 
-// displayNameBound is the least string above every string that begins with
-// prefix, which is the prefix with its last byte raised by one. A display name
-// is stored as written and may be any UTF-8 text, so unlike an identifier prefix
-// the last byte is not known to be ASCII; a last byte of 0xFF — which no valid
-// UTF-8 sequence ends in, so the read matches nothing there — is dropped and the
-// raise carried to the byte before it instead, and a prefix that is every byte
-// 0xFF bounds below nothing.
-func displayNameBound(prefix string) string {
-	for i := len(prefix) - 1; i >= 0; i-- {
-		if prefix[i] < 0xff {
-			return prefix[:i] + string(prefix[i]+1)
-		}
+// displayNameRange is the predicate that reads a range of display names by their
+// bytes, so that the range a prefix listing reads is the same range whatever
+// collation the column carries now or the database was created with. PostgreSQL
+// orders text under the database's own collation by default, which folds case
+// and accents, so the comparison is pinned to the C (byte) collation there — the
+// same collation the identifier column is declared with. SQLite compares text
+// byte by byte already and has no C collation, so its predicate is written
+// plain. Both carry two placeholders, the prefix and its upper bound.
+func (p *product) displayNameRange() string {
+	if p.dialect == db.Postgres {
+		return `display_name COLLATE "C" >= ? AND display_name COLLATE "C" < ?`
 	}
-	return ""
+	return "display_name >= ? AND display_name < ?"
+}
+
+// displayNameBound is the least string above every string that begins with
+// prefix: the prefix with its last character raised to the next one. A display
+// name is stored as written and may be any UTF-8 text, so the prefix may end in
+// a multi-byte character; the raise is over the last character and not its last
+// byte, so that the bound stays valid UTF-8 and the bytewise range it closes
+// reads exactly the names that begin with the prefix. A prefix whose last
+// character is the highest rune, or which ends in a byte that begins no rune, is
+// carried to the character before it, and a prefix that raises to nothing bounds
+// below nothing.
+func displayNameBound(prefix string) string {
+	if prefix == "" {
+		return ""
+	}
+	last, size := utf8.DecodeLastRuneInString(prefix)
+	if last == utf8.RuneError && size == 1 {
+		// The last byte begins no rune. Raise it, dropping a byte that cannot be
+		// raised and carrying to the byte before it.
+		if b := prefix[len(prefix)-1]; b != 0xff {
+			return prefix[:len(prefix)-1] + string([]byte{b + 1})
+		}
+		return displayNameBound(prefix[:len(prefix)-1])
+	}
+	if last == utf8.MaxRune {
+		return displayNameBound(prefix[:len(prefix)-size])
+	}
+	var raised [utf8.UTFMax]byte
+	n := utf8.EncodeRune(raised[:], last+1)
+	return prefix[:len(prefix)-size] + string(raised[:n])
 }
 
 // markPasswords sets PasswordSet on a page of accounts with one query for the
