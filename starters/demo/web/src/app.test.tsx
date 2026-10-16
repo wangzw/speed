@@ -135,6 +135,54 @@ describe('the tenant shell with a session', () => {
       screen.queryByRole('link', { name: demoEnUS.nav.console }),
     ).not.toBeInTheDocument()
   })
+
+  it('keeps the console entry hidden while the platform permission set is unknown', async () => {
+    // An authenticated session whose platform set is still unknown (null): the
+    // state the host leaves the session in before it has read the caller's
+    // platform permissions. usePermission fails closed on an unknown set, so
+    // the entry is absent -- a member never sees it for the moment before the
+    // set lands.
+    renderDemoApp({
+      session: createTestSession(authenticatedSnapshot()),
+    })
+
+    const brand = await screen.findByRole('heading', {
+      level: 6,
+      name: demoEnUS.app.title,
+    })
+    const banner = brand.closest('header')
+    expect(banner).not.toBeNull()
+    expect(
+      within(banner as HTMLElement).queryByRole('link', {
+        name: demoEnUS.nav.console,
+      }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('reveals the console entry once the platform permission set lands', async () => {
+    // The attach-then-appear transition the host drives through
+    // setPermissionSet: the set flips from unknown (null) to a known one
+    // holding the entry's code, and the entry appears where it was hidden.
+    const session = createTestSession(authenticatedSnapshot())
+    renderDemoApp({ session })
+
+    const brand = await screen.findByRole('heading', {
+      level: 6,
+      name: demoEnUS.app.title,
+    })
+    const banner = brand.closest('header') as HTMLElement
+
+    expect(
+      within(banner).queryByRole('link', { name: demoEnUS.nav.console }),
+    ).not.toBeInTheDocument()
+
+    act(() => {
+      session.set(authenticatedSnapshot({ system: ['tenant.read'] }))
+    })
+    expect(
+      await within(banner).findByRole('link', { name: demoEnUS.nav.console }),
+    ).toBeInTheDocument()
+  })
 })
 
 describe('the console area', () => {
