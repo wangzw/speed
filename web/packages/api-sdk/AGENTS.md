@@ -110,15 +110,6 @@ Deferred with reasons:
   in this repository's history and its tree carries the complete merged
   document and every fragment; the module proxy's cache covers only 17
   of the 21 modules -- but nothing is wired yet.
-- Raw-byte transport -- not shipped: the spec's byte-carrying
-  operations (sharing's access-content route, storage's
-  object-content read) generate typed operations with orval's
-  `responseType: 'blob'` shape, but the bound api-client transport
-  reads and writes JSON text only, so the binding reads that option
-  for type-completeness and never forwards it (runtime.ts's
-  forward()). A host that must move bytes uses its own mechanism --
-  browser navigation for a share link, a byte-capable client of its
-  own -- never this JSON transport.
 - Release-time packaging of the merged spec into the published SDK --
   not implemented (release machinery); do not claim it lives here.
 

@@ -67,8 +67,9 @@ interface OrvalCall {
     >
   >
   data?: unknown
-  /** Raw-byte responses (spec-level axios shape); the seam's
-   * JSON-text transport cannot carry them -- see forward() below. */
+  /** Raw-byte response (spec-level axios shape): the seam forwards it
+   * as the transport's `responseType: 'blob'`, so the 2xx body resolves
+   * as a Blob. See forward() below. */
   responseType?: 'blob'
   signal?: AbortSignal
 }
@@ -117,15 +118,14 @@ function forward<T>(call: OrvalCall, omitAccessToken: boolean): Promise<T> {
       '[speed-api-sdk] no request function bound: call bindRequestFn(createClient(...)) once at bootstrap before any generated hook runs.',
     )
   }
-  // `call.responseType` is deliberately not forwarded: RequestOptions
-  // has no responseType, because the api-client transport reads and
-  // writes JSON text only (binary bodies and responses are deferred
-  // there -- its README's "What is deliberately not here"). The
-  // generated operations for raw-byte endpoints keep the type orval
-  // emits from the spec (`responseType: 'blob'`, Blob-typed result);
-  // a host that must move bytes uses its own mechanism (browser
-  // navigation for share links, a byte-capable client of its own),
-  // never this JSON seam.
+  // `call.responseType` is forwarded as the transport's blob flag: an
+  // operation whose spec answers raw bytes (objectstore's content
+  // download) declares `responseType: 'blob'`, and the @speed/api-client
+  // transport reads that 2xx body as a Blob. It is added only when the
+  // operation declared it, so an ordinary call's options object keeps
+  // its exact shape. Binary request bodies need no flag: a Blob handed
+  // as `data` reaches the transport as `body`, which sends it verbatim
+  // (objectstore's content upload).
   const options: RequestOptions = {
     method: call.method,
     headers: call.headers,
@@ -135,6 +135,9 @@ function forward<T>(call: OrvalCall, omitAccessToken: boolean): Promise<T> {
   }
   if (omitAccessToken) {
     options.omitAccessToken = true
+  }
+  if (call.responseType !== undefined) {
+    options.responseType = call.responseType
   }
   return requestFn<T>(call.url, options)
 }

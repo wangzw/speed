@@ -51,9 +51,9 @@ interface OrvalCall {
 }
 ```
 
-`forward` 把 `OrvalCall` 映射为 `api-client` 的 `{ method, headers, query, body, signal }`（`params` 到 `query`，`data` 到 `body`），并仅在声明凭据为空时附上 `omitAccessToken`。
+`forward` 把 `OrvalCall` 映射为 `api-client` 的 `{ method, headers, query, body, signal }`（`params` 到 `query`，`data` 到 `body`），仅在声明凭据为空时附上 `omitAccessToken`，仅在操作声明了原始字节应答时附上 `responseType`。
 
-**`responseType` 有意不转发。** `api-client` 的传输只读写 JSON 文本，没有 `responseType`；契约里带字节的操作生成的类型保留 orval 的那种形状（`responseType: 'blob'`、`Blob` 结果类型），但接缝为类型的完整读它、从不转发它。需要搬字节的宿主用自己机制（分享链接用浏览器导航），绝不这条 JSON 接缝。
+**`responseType` 仅在声明时转发。** 契约里带字节的操作生成 `responseType: 'blob'`；接缝把它转发为 `api-client` 的同名请求选项，传输据此把 2xx 正文读成 `Blob`（[api-client](design-web-api-client.md) 的二进制路径）。它只在该操作声明时出现，故普通调用的选项对象逐字段不变。请求方向的字节无需标志：一个作为 `data` 交来的 `Blob` 到达传输即为 `body`，原样送出。
 
 **未声明的 `requireJsonBody`。** 接缝在任何操作上都不声明 `requestOptions.requireJsonBody`：一个操作的运行期响应类型在此被擦除，接缝无从知道该操作是否声明了响应体，而无条件要求一个 JSON 文档会破坏合法的空成功操作（204 式删除、只需受理的应答）——那些操作本应解析为 `undefined`。因而**文档的存在性是消费方的守卫**：一个必须在 2xx 体里携带文档的操作，自己校验该体（在触及任何字段之前）并把空 2xx 拒为 `client.protocol`。
 
@@ -138,7 +138,7 @@ sequenceDiagram
 | 请求函数返回的 `ApiError` | 照原样传回生成调用点（码与形状不在此改变） |
 | 调用方取消 | 原生 `AbortError` 照原样传回（标准查询取消语义） |
 | 一个响应声明了文档却收到空 2xx | 接缝不拦；由消费方自己按其守卫拒为 `client.protocol`（见「转发的形状」） |
-| 契约里带字节的操作被经此接缝调用 | 类型上成立、传输上不支持：`responseType` 未转发，字节不被搬运 |
+| 契约里带字节的操作被经此接缝调用 | `responseType: 'blob'` 被转发，传输把 2xx 正文读成 `Blob`；二进制请求体原样送出 |
 
 本包不重试、不降级、不合成错误：瞬时重试属 `api-client`，带码的应答是重复无法挽回的确定答复。
 

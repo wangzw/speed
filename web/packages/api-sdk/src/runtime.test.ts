@@ -102,6 +102,33 @@ describe('bindRequestFn / speedRequest', () => {
     expect(calls[0]?.options?.omitAccessToken).toBeUndefined()
   })
 
+  it('forwards a raw-byte response flag as the transport blob responseType', async () => {
+    // A byte-returning operation (objectstore's content download)
+    // declares responseType: 'blob'; the seam forwards it so the client
+    // reads the 2xx body as a Blob instead of JSON text.
+    await speedRequest<Blob>({
+      url: '/api/v1/objects/o-1/content',
+      method: 'GET',
+      responseType: 'blob',
+    })
+    expect(calls).toEqual([
+      {
+        path: '/api/v1/objects/o-1/content',
+        options: { method: 'GET', responseType: 'blob' },
+      },
+    ])
+  })
+
+  it('never sets responseType on an ordinary call', async () => {
+    // Exact-shape assertion: only an operation that declared the flag
+    // carries it, so an ordinary call's options keep their shape.
+    await speedRequest<unknown>({ url: '/api/v1/notes', method: 'GET' })
+    expect(calls).toEqual([
+      { path: '/api/v1/notes', options: { method: 'GET' } },
+    ])
+    expect(calls[0]?.options?.responseType).toBeUndefined()
+  })
+
   it('declares the credential-less flag on speedRequestCredentialless calls', async () => {
     const body = { refresh_token: 'stale' }
     await speedRequestCredentialless<unknown>({
