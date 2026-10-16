@@ -89,6 +89,8 @@ type AppShellChromeProps = Pick<
   | 'userMenu'
   | 'mobileOpen'
   | 'onMobileOpenChange'
+  | 'sidebarCollapsed'
+  | 'onSidebarCollapsedChange'
   | 'sidebarWidth'
   | 'sx'
 >
@@ -130,6 +132,8 @@ export function ProductShell({
   userMenu,
   mobileOpen,
   onMobileOpenChange,
+  sidebarCollapsed,
+  onSidebarCollapsedChange,
   sidebarWidth,
   sx,
   signIn,
@@ -212,6 +216,8 @@ export function ProductShell({
           userMenu={userMenu}
           mobileOpen={mobileOpen}
           onMobileOpenChange={onMobileOpenChange}
+          sidebarCollapsed={sidebarCollapsed}
+          onSidebarCollapsedChange={onSidebarCollapsedChange}
           sidebarWidth={sidebarWidth}
           sx={sx}
         >
