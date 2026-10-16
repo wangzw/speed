@@ -4,7 +4,10 @@
 
 The first DOM-rendering package: the `createAppTheme` theme factory that
 maps the merged token tree onto an MUI v9 theme, `AppThemeProvider`
-(theme + MUI locale linkage + CssBaseline), and the controlled
+(theme + MUI locale linkage + color mode + CssBaseline; the active
+`AppThemeMode` -- `'light'`/`'dark'` -- is read and flipped through
+`useAppThemeMode`, the dark surface reading the neutral ramp from its dark
+end), and the controlled
 components (`PageHeader`, `EmptyState`, `ConfirmDialog`, `FormField`,
 `FormLayout`, `DataTable`, `FileUploader`, `InlineError`,
 `ListSkeleton`, `AsyncSection`) that render only the state hosts give
@@ -111,7 +114,11 @@ plumbing and deliberately not exported.
   the identical template: undefined by default, exactly the
   always-visible column, so an existing consumer that sets no column's
   priority is byte-for-byte unaffected; only a column that opts in
-  gets the breakpoint-keyed hide/show.
+  gets the breakpoint-keyed hide/show. The color mode follows the same
+  template: `createAppTheme`'s third `mode` argument and
+  `AppThemeProvider`'s `defaultMode` both default to `'light'`, exactly
+  the previous always-light theme, and `useAppThemeMode` is a new
+  export -- so every existing host is byte-for-byte unaffected.
 
 ## Testing
 

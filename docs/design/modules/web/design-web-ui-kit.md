@@ -24,16 +24,26 @@
 ### 主题工厂
 
 ```ts
+export type AppThemeMode = 'light' | 'dark'
+
 export interface AppTheme {
   readonly tokens: SpeedTokens   // 合并后的 token 树
   readonly theme: Theme          // 由它建成、无本地化的 MUI 主题
 }
-export function createAppTheme(projectTokens?: TokensOverride, tenantOverrides?: TokensOverride): AppTheme
+export function createAppTheme(projectTokens?: TokensOverride, tenantOverrides?: TokensOverride, mode?: AppThemeMode): AppTheme
+
+export interface AppThemeModeControl {
+  readonly mode: AppThemeMode
+  readonly setMode: (mode: AppThemeMode) => void
+  readonly toggleMode: () => void
+}
+export function useAppThemeMode(): AppThemeModeControl
 
 export interface AppThemeProviderProps {
   readonly i18n: I18nInstance
   readonly projectTokens?: TokensOverride
   readonly tenantOverrides?: TokensOverride
+  readonly defaultMode?: AppThemeMode
   readonly children?: ReactNode
 }
 export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
@@ -41,9 +51,11 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 
 **分层是 token 树自己的纪律逐层叠加**：内置默认、项目层、租户层，每层都是对下一层的差异，经 token 包的 `deepMerge` 合并。`createAppTheme` 的覆写层入参按序应用（各为差异，可选，undefined 的层整层跳过），产出一份合并树与一份由它建成的主题。
 
+**颜色模式是第三个入参，缺省 `'light'`。** 它设定 `palette.mode`；`'dark'` 时把背景、文本与分隔线改从中性色阶的深端取值——token 树只带一套表面色（浅色），而中性色阶是完整标度，故深色表面是同一套 token 换个方向读，而非第二份写死的调色板；六个语义角色两种模式共用（它们的色调自带 light/dark 变体）。缺省即原行为，未传该入参的宿主逐字节不受影响。
+
 **返回的主题无本地化，是有意的**：MUI 的内建文本随语言变化，故本地化合并发生在渲染期——`AppThemeProvider` 把活动语言的 MUI 本地化并到基础主题上，或宿主自行 `createTheme(appTheme.theme, muiLocaleFor(i18n.language))`。
 
-**`AppThemeProvider` 的契约**：它持有主题装配（记忆化，使一组覆写只建一次合并树与主题）、MUI 本地化联动（订阅 `languageChanged`，使 MUI 内建文本随每次切换更新；本地化合并落在 token 映射之后，使 MUI 组件默认不覆盖 token），以及全局重置（渲染一次主题感知的 `CssBaseline`）。它刻意不渲染 `I18nextProvider`、不注册命名空间：两者属于宿主启动。
+**`AppThemeProvider` 的契约**：它持有主题装配（记忆化，使一组覆写加一个模式只建一次合并树与主题）、MUI 本地化联动（订阅 `languageChanged`，使 MUI 内建文本随每次切换更新；本地化合并落在 token 映射之后，使 MUI 组件默认不覆盖 token）、颜色模式状态（活动模式是 provider 自己的状态，起始为 `defaultMode`，经 `useAppThemeMode` 暴露 `mode`／`setMode`／`toggleMode`；切换即重建主题，子树随之重渲染），以及全局重置（渲染一次主题感知的 `CssBaseline`）。它刻意不渲染 `I18nextProvider`、不注册命名空间：两者属于宿主启动。
 
 ### 受控组件
 
@@ -113,8 +125,8 @@ sequenceDiagram
     participant Inst as i18n 实例
     participant MUI as ThemeProvider
 
-    Host->>Provider: i18n、projectTokens、tenantOverrides
-    Provider->>Factory: createAppTheme(projectTokens, tenantOverrides) 记忆化
+    Host->>Provider: i18n、projectTokens、tenantOverrides、defaultMode
+    Provider->>Factory: createAppTheme(projectTokens, tenantOverrides, mode) 记忆化
     Factory-->>Provider: AppTheme(tokens、无本地化 theme)
     Provider->>Inst: 订阅 languageChanged，并取当前 language
     Inst-->>Provider: 活动语言
@@ -123,6 +135,7 @@ sequenceDiagram
     Inst-->>Provider: languageChanged
     Provider->>Provider: 重取语言、重并本地化
     Provider->>MUI: 新主题
+    Note over Host,MUI: useAppThemeMode 的 setMode/toggleMode 改 provider 状态，重跑 createAppTheme 并换主题
 ```
 
 ## 核心数据结构
@@ -214,8 +227,8 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 主题工厂与分层合并 | 已实现 | `web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme`、`AppTheme` |
-| 主题provider与本地化联动 | 已实现 | `web/packages/ui-kit/src/theme/AppThemeProvider.tsx` `AppThemeProvider` |
+| 主题工厂与分层合并（含颜色模式） | 已实现 | `web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme`、`AppTheme`、`AppThemeMode` |
+| 主题provider、本地化联动与颜色模式 | 已实现 | `web/packages/ui-kit/src/theme/AppThemeProvider.tsx` `AppThemeProvider`、`useAppThemeMode`、`AppThemeModeControl` |
 | 页头与空态 | 已实现 | `web/packages/ui-kit/src/components/PageHeader.tsx` `PageHeader`；`web/packages/ui-kit/src/components/EmptyState.tsx` `EmptyState` |
 | 确认弹窗与双次确认 | 已实现 | `web/packages/ui-kit/src/components/ConfirmDialog.tsx` `ConfirmDialog`、`CONFIRM_ARM_LOCKOUT_MS` |
 | 表单家族与校验错误契约 | 已实现 | `web/packages/ui-kit/src/components/FormField.tsx` `FormField`、`REQUIRED_ERROR_KEY`；`web/packages/ui-kit/src/components/FormLayout.tsx` `FormLayout`；`web/packages/ui-kit/src/internal/validation-error.ts` `resolveValidationError` |

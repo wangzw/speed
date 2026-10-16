@@ -11,16 +11,30 @@ import { useEffect } from 'react'
 import { useTheme } from '@mui/material/styles'
 import type { Theme } from '@mui/material/styles'
 import { enUS, zhCN } from '@mui/material/locale'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createI18n, I18nextProvider, switchLanguage } from '@speed/i18n'
 import { defaultTokens } from '@speed/tokens'
 import type { TokensOverride } from '@speed/tokens'
-import { AppThemeProvider } from './AppThemeProvider.js'
+import {
+  AppThemeProvider,
+  useAppThemeMode,
+  type AppThemeModeControl,
+} from './AppThemeProvider.js'
 import { createUiKitI18n, renderWithProviders } from '../../test-utils/render.js'
 
 /** Read the theme MUI context hands the tree at render time. */
 function ThemeProbe({ onTheme }: { onTheme: (theme: Theme) => void }) {
   onTheme(useTheme())
+  return null
+}
+
+/** Capture the provider's color-mode control at render time. */
+function ModeProbe({
+  onControl,
+}: {
+  onControl: (control: AppThemeModeControl) => void
+}) {
+  onControl(useAppThemeMode())
   return null
 }
 
@@ -171,6 +185,56 @@ describe('AppThemeProvider', () => {
   it('renders children inside the theme context', () => {
     const { getByText } = renderWithProviders(<div>child content</div>)
     expect(getByText('child content')).toBeInTheDocument()
+  })
+
+  it('starts in light mode and exposes a toggle that re-assembles the theme dark', () => {
+    let seen: Theme | undefined
+    let control: AppThemeModeControl | undefined
+    renderWithProviders(
+      <>
+        <ThemeProbe onTheme={(t) => (seen = t)} />
+        <ModeProbe onControl={(c) => (control = c)} />
+      </>,
+    )
+    expect(control?.mode).toBe('light')
+    expect(seen?.palette.mode).toBe('light')
+    const neutral = defaultTokens.color.neutral
+
+    act(() => {
+      control?.toggleMode()
+    })
+    expect(control?.mode).toBe('dark')
+    expect(seen?.palette.mode).toBe('dark')
+    expect(seen?.palette.background.default).toBe(neutral[900])
+
+    act(() => {
+      control?.setMode('light')
+    })
+    expect(seen?.palette.mode).toBe('light')
+  })
+
+  it('starts dark when defaultMode is dark', () => {
+    let seen: Theme | undefined
+    const i18n = createUiKitI18n('zh-CN')
+    render(
+      <I18nextProvider i18n={i18n}>
+        <AppThemeProvider i18n={i18n} defaultMode="dark">
+          <ThemeProbe onTheme={(t) => (seen = t)} />
+        </AppThemeProvider>
+      </I18nextProvider>,
+    )
+    expect(seen?.palette.mode).toBe('dark')
+  })
+
+  it('throws when the mode hook is read without a provider above', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect(() => render(<ModeProbe onControl={() => undefined} />)).toThrow(
+        /AppThemeProvider/,
+      )
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 
   it('renders with a language outside the MUI locale table, using the en-US MUI locale fallback', () => {

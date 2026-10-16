@@ -46,6 +46,16 @@
  * hosts composing their own theme do the same via
  * createTheme(appTheme.theme, muiLocaleFor(i18n.language)).
  *
+ * The color mode is the third argument (default 'light'). It sets
+ * palette.mode and, for 'dark', swaps background/text/divider onto the
+ * neutral ramp's dark end -- the token tree carries one set of surface
+ * colors (a light palette), while the neutral ramp is a full scale, so a
+ * dark surface is the same tokens read from the other end rather than a
+ * second hardcoded palette. The six semantic roles keep their tokens in
+ * both modes (their tones carry explicit light/dark variants). The
+ * default is 'light', so every existing caller that omits the argument
+ * renders byte-for-byte as before.
+ *
  * MUI 9 notes verified against the installed 9.4.0 at implementation
  * time: css variables are off by default (theme.vars is absent), so no
  * cssVariables setup is needed for a plain palette theme; createTheme
@@ -78,6 +88,14 @@ const REM_BASE = 16
 /** The token elevation slots in ascending order (their numeric key order). */
 const ELEVATION_SLOTS = [1, 2, 4, 8, 16, 24] as const
 
+/**
+ * The two color modes a speed theme ships. The token tree defines the
+ * surface colors for one mode (a light palette); the dark mode reads the
+ * neutral ramp from its dark end for background/text/divider, so a mode
+ * change needs no second palette.
+ */
+export type AppThemeMode = 'light' | 'dark'
+
 /** What the factory hands back: the merged tokens and the theme built from them. */
 export interface AppTheme {
   /**
@@ -105,10 +123,13 @@ export interface AppTheme {
  * `projectTokens` and `tenantOverrides` are the two override layers on
  * top of the built-in defaults, applied in that order (each diff-only).
  * Both are optional; a layer that is undefined is skipped entirely.
+ * `mode` selects the color mode (default 'light'); see the module doc
+ * comment for what the dark mode derives.
  */
 export function createAppTheme(
   projectTokens?: TokensOverride,
   tenantOverrides?: TokensOverride,
+  mode: AppThemeMode = 'light',
 ): AppTheme {
   // deepMerge skips undefined overrides by contract; drop empty layers
   // before the call so an omitted layer never reaches the type signature.
@@ -116,7 +137,7 @@ export function createAppTheme(
     (layer): layer is TokensOverride => layer !== undefined,
   )
   const tokens = deepMerge(defaultTokens, ...layers)
-  return { tokens, theme: createTheme(tokensToThemeOptions(tokens)) }
+  return { tokens, theme: createTheme(tokensToThemeOptions(tokens, mode)) }
 }
 
 function rem(px: number): string {
@@ -176,8 +197,51 @@ function shadowRamp(shadows: ShadowTokens): ThemeOptions['shadows'] {
   return ramp as unknown as ThemeOptions['shadows']
 }
 
+/**
+ * The palette surface colors for a mode. The light mode maps the token
+ * tree's own text/background/divider values directly; the dark mode reads
+ * the same neutral ramp from its dark end (surfaces dark, text light),
+ * because the token tree carries a single light palette while the ramp is
+ * a full scale. The semantic roles are shared by both modes.
+ */
+function surfacePalette(
+  tokens: SpeedTokens,
+  mode: AppThemeMode,
+): Pick<PaletteOptions, 'text' | 'background' | 'divider'> {
+  if (mode === 'light') {
+    return {
+      text: {
+        primary: tokens.color.text.primary,
+        secondary: tokens.color.text.secondary,
+        disabled: tokens.color.text.disabled,
+      },
+      background: {
+        default: tokens.color.background.default,
+        paper: tokens.color.background.paper,
+      },
+      divider: tokens.color.divider,
+    }
+  }
+  const neutral = tokens.color.neutral
+  return {
+    text: {
+      primary: neutral[50],
+      secondary: neutral[300],
+      disabled: neutral[500],
+    },
+    background: {
+      default: neutral[900],
+      paper: neutral[800],
+    },
+    divider: neutral[700],
+  }
+}
+
 /** Map merged speed tokens onto the MUI theme options surface. */
-function tokensToThemeOptions(tokens: SpeedTokens): ThemeOptions {
+function tokensToThemeOptions(
+  tokens: SpeedTokens,
+  mode: AppThemeMode,
+): ThemeOptions {
   const t = tokens.typography
   const heading = (px: number) => ({
     fontSize: rem(px),
@@ -193,7 +257,7 @@ function tokensToThemeOptions(tokens: SpeedTokens): ThemeOptions {
   })
   return {
     palette: {
-      mode: 'light',
+      mode,
       primary: roleOptions(tokens.color.semantic.primary),
       secondary: roleOptions(tokens.color.semantic.secondary),
       error: roleOptions(tokens.color.semantic.error),
@@ -201,16 +265,7 @@ function tokensToThemeOptions(tokens: SpeedTokens): ThemeOptions {
       info: roleOptions(tokens.color.semantic.info),
       success: roleOptions(tokens.color.semantic.success),
       grey: neutralAsGrey(tokens.color.neutral),
-      text: {
-        primary: tokens.color.text.primary,
-        secondary: tokens.color.text.secondary,
-        disabled: tokens.color.text.disabled,
-      },
-      background: {
-        default: tokens.color.background.default,
-        paper: tokens.color.background.paper,
-      },
-      divider: tokens.color.divider,
+      ...surfacePalette(tokens, mode),
     },
     typography: {
       fontFamily: t.fontFamily.sans,

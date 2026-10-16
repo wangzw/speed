@@ -1,20 +1,26 @@
 /**
  * AppThemeProvider: composes the MUI theme runtime for an app.
  *
- * It owns three concerns:
+ * It owns four concerns:
  *
- * 1. Theme assembly -- createAppTheme(projectTokens, tenantOverrides)
- *    merges the three token layers; the provider memoizes the result so
- *    the merged tree and the locale-free theme are built once per
- *    override set (hosts that rebuild override objects every render
- *    should memoize them, or pass module-level constants).
+ * 1. Theme assembly -- createAppTheme(projectTokens, tenantOverrides,
+ *    mode) merges the three token layers; the provider memoizes the
+ *    result so the merged tree and the locale-free theme are built once
+ *    per (override set, mode) (hosts that rebuild override objects every
+ *    render should memoize them, or pass module-level constants).
  * 2. MUI locale linkage -- the provider merges the MUI locale matching
  *    the active i18n language onto the base theme (createTheme's second
  *    argument), and subscribes to 'languageChanged' so MUI built-in
  *    texts (table pagination labels, date picker strings, ...) follow
  *    every language switch. The locale merge lands after the token
  *    mapping, so MUI component defaults never overwrite theme tokens.
- * 3. Global reset -- CssBaseline renders the theme-aware baseline
+ * 3. Color mode -- the provider holds the active AppThemeMode in local
+ *    state (starting at defaultMode, 'light') and exposes it, with a
+ *    setter and a toggle, through useAppThemeMode. A mode change
+ *    re-assembles the theme; every child under the provider re-renders
+ *    with the new palette. The default is 'light', so a host that never
+ *    reads the hook sees exactly the previous behavior.
+ * 4. Global reset -- CssBaseline renders the theme-aware baseline
  *    (background color from theme.palette.background.default, no body
  *    margin) once, under the same theme context as the children.
  *
@@ -24,7 +30,14 @@
  * app's i18n instance as a prop and reads only its language events.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import type { ReactNode } from 'react'
 import { createTheme, ThemeProvider } from '@mui/material/styles'
 import CssBaseline from '@mui/material/CssBaseline'
@@ -34,6 +47,7 @@ import { muiLocaleFor } from '@speed/i18n/mui-locale'
 import type { I18nInstance } from '@speed/i18n'
 import type { TokensOverride } from '@speed/tokens'
 import { createAppTheme } from './createAppTheme.js'
+import type { AppThemeMode } from './createAppTheme.js'
 
 /**
  * The MUI localization for the active language, or the en-US MUI locale
@@ -54,6 +68,38 @@ function muiLocaleForOrDefault(language: string): Localization {
   }
 }
 
+/**
+ * The color-mode surface useAppThemeMode exposes: the active mode, a
+ * setter and a toggle. Backed by the provider's own state.
+ */
+export interface AppThemeModeControl {
+  /** The active color mode. */
+  readonly mode: AppThemeMode
+  /** Switch to an explicit mode. */
+  readonly setMode: (mode: AppThemeMode) => void
+  /** Flip between 'light' and 'dark'. */
+  readonly toggleMode: () => void
+}
+
+/** The provider's mode control; null until an AppThemeProvider is mounted. */
+const AppThemeModeContext = createContext<AppThemeModeControl | null>(null)
+
+/**
+ * The active color mode and its controls, read from the nearest
+ * AppThemeProvider. Throws when no provider is mounted above -- the same
+ * loud failure a missing host tree gets elsewhere, rather than a silent
+ * no-op toggle.
+ */
+export function useAppThemeMode(): AppThemeModeControl {
+  const control = useContext(AppThemeModeContext)
+  if (control === null) {
+    throw new Error(
+      'useAppThemeMode must be called within an AppThemeProvider',
+    )
+  }
+  return control
+}
+
 export interface AppThemeProviderProps {
   /** The app's i18n instance (createI18n result). MUI built-in texts follow its language. */
   readonly i18n: I18nInstance
@@ -61,6 +107,8 @@ export interface AppThemeProviderProps {
   readonly projectTokens?: TokensOverride
   /** Tenant-layer token overrides, applied over the project layer. */
   readonly tenantOverrides?: TokensOverride
+  /** The color mode the tree starts in; defaults to 'light'. */
+  readonly defaultMode?: AppThemeMode
   readonly children?: ReactNode
 }
 
@@ -73,11 +121,28 @@ export function AppThemeProvider({
   i18n,
   projectTokens,
   tenantOverrides,
+  defaultMode = 'light',
   children,
 }: AppThemeProviderProps) {
+  // The active color mode is the provider's own state, promoted through
+  // useAppThemeMode so any descendant can flip it. It starts at
+  // defaultMode ('light'), so a host that never reads the hook renders
+  // exactly as before.
+  const [mode, setModeState] = useState<AppThemeMode>(defaultMode)
+  const setMode = useCallback((next: AppThemeMode) => {
+    setModeState(next)
+  }, [])
+  const toggleMode = useCallback(() => {
+    setModeState((current) => (current === 'light' ? 'dark' : 'light'))
+  }, [])
+  const modeControl = useMemo<AppThemeModeControl>(
+    () => ({ mode, setMode, toggleMode }),
+    [mode, setMode, toggleMode],
+  )
+
   const base = useMemo(
-    () => createAppTheme(projectTokens, tenantOverrides),
-    [projectTokens, tenantOverrides],
+    () => createAppTheme(projectTokens, tenantOverrides, mode),
+    [projectTokens, tenantOverrides, mode],
   )
   // The active MUI locale language, kept in step with the i18n instance.
   // The initial useState(i18n.language) snapshot cannot be the whole story:
@@ -110,9 +175,11 @@ export function AppThemeProvider({
   )
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      {children}
-    </ThemeProvider>
+    <AppThemeModeContext.Provider value={modeControl}>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        {children}
+      </ThemeProvider>
+    </AppThemeModeContext.Provider>
   )
 }

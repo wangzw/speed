@@ -22,8 +22,8 @@ string lives in the bilingual `ui-kit` namespace registered through
 
 | Module | Exports |
 |---|---|
-| `theme/createAppTheme.ts` | `createAppTheme`, `AppTheme` |
-| `theme/AppThemeProvider.tsx` | `AppThemeProvider`, `AppThemeProviderProps` |
+| `theme/createAppTheme.ts` | `createAppTheme`, `AppTheme`, `AppThemeMode` |
+| `theme/AppThemeProvider.tsx` | `AppThemeProvider`, `AppThemeProviderProps`, `useAppThemeMode`, `AppThemeModeControl` |
 | `components/PageHeader.tsx` | `PageHeader`, `PageHeaderProps`, `PageHeaderBreadcrumb` |
 | `components/EmptyState.tsx` | `EmptyState`, `EmptyStateProps`, `EmptyStateVariant`, `EmptyStateHeadingLevel` |
 | `components/ConfirmDialog.tsx` | `ConfirmDialog`, `ConfirmDialogProps`, `ConfirmDialogVariant`, `CONFIRM_ARM_LOCKOUT_MS` |
@@ -282,9 +282,33 @@ documented usage cannot drift from the API.
 Token layers are diffs, applied over the built-in defaults in order:
 
 ```ts
-const appTheme = createAppTheme(projectTokens, tenantOverrides)
+const appTheme = createAppTheme(projectTokens, tenantOverrides, mode)
 // appTheme.tokens -- the merged token tree
 // appTheme.theme  -- the locale-free MUI theme built from it
+```
+
+The third argument is the color mode (`'light' | 'dark'`, default
+`'light'`), which sets `palette.mode`. The token tree defines one set of
+surface colors (a light palette) and the neutral ramp is a full scale, so
+the dark mode reads the ramp from its dark end for background / text /
+divider rather than carrying a second palette; the six semantic roles are
+shared by both modes. `AppThemeProvider` holds the active mode in its own
+state (starting at its `defaultMode` prop, `'light'`) and exposes the mode
+with a setter and a toggle through `useAppThemeMode` -- a host renders its
+own mode control against that hook and the whole subtree re-renders with
+the new palette:
+
+```tsx
+import { useAppThemeMode } from '@speed/ui-kit'
+
+function ModeToggle() {
+  const { mode, toggleMode } = useAppThemeMode()
+  return (
+    <button type="button" onClick={toggleMode}>
+      {mode === 'dark' ? 'Light' : 'Dark'}
+    </button>
+  )
+}
 ```
 
 Each layer is optional and merges copy-on-write through the tokens
@@ -319,8 +343,9 @@ never throws mid-render: the i18n supported set is host-chosen and may
 include languages the two MUI mappings do not cover, and MUI's built-in
 texts then fall back to the en-US MUI locale while the app's own
 translations keep rendering in the active language. Its props are the
-i18n instance, the optional two token layers, and children. Hosts
-composing their own theme tree do the same merge explicitly:
+i18n instance, the optional two token layers, the initial color mode
+(`defaultMode`, default `'light'`), and children. Hosts composing their
+own theme tree do the same merge explicitly:
 
 ```ts
 import { createTheme } from '@mui/material/styles'

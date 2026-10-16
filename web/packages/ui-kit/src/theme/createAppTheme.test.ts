@@ -137,6 +137,38 @@ describe('createAppTheme token-to-theme mapping', () => {
   })
 })
 
+describe('createAppTheme color modes', () => {
+  it('defaults to light: the token tree surface colors map directly', () => {
+    const { theme } = createAppTheme()
+    expect(theme.palette.mode).toBe('light')
+    expect(theme.palette.background.default).toBe(
+      defaultTokens.color.background.default,
+    )
+    expect(theme.palette.background.paper).toBe(
+      defaultTokens.color.background.paper,
+    )
+    expect(theme.palette.text.primary).toBe(defaultTokens.color.text.primary)
+  })
+
+  it('reads the neutral ramp for surfaces in dark mode, sharing the semantic roles', () => {
+    const { theme } = createAppTheme(undefined, undefined, 'dark')
+    const neutral = defaultTokens.color.neutral
+    expect(theme.palette.mode).toBe('dark')
+    expect(theme.palette.background.default).toBe(neutral[900])
+    expect(theme.palette.background.paper).toBe(neutral[800])
+    expect(theme.palette.text.primary).toBe(neutral[50])
+    expect(theme.palette.text.secondary).toBe(neutral[300])
+    expect(theme.palette.text.disabled).toBe(neutral[500])
+    expect(theme.palette.divider).toBe(neutral[700])
+    // The semantic roles are the same tokens in both modes.
+    expect(theme.palette.primary.main).toBe(
+      defaultTokens.color.semantic.primary.main,
+    )
+    // The neutral ramp maps onto grey identically in both modes.
+    expect(theme.palette.grey[100]).toBe(neutral[100])
+  })
+})
+
 describe('createAppTheme layering', () => {
   it('applies project tokens over the defaults and tenant overrides over the project', () => {
     const project: TokensOverride = {
