@@ -31,7 +31,7 @@ each = for it in $(1); do echo "==> $(2) $$it"; $(3) || failed="$${failed:+$$fai
 each-end = if [ -n "$$failed" ]; then echo "failed: $$failed" >&2; exit 1; fi
 
 .PHONY: help modules deps-up deps-down build test test-race test-integration test-integration-race \
-        vet-integration fmt lint tidy tidy-check repo-check tools-test check python-version modules-present web-check
+        vet-integration fmt lint tidy tidy-check repo-check tools-test check python-version modules-present web-check web-a11y
 
 help: ## List the entry points
 	@awk 'BEGIN{FS=":.*## "} /^[a-z][a-z-]*:.*## /{printf "  %-21s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -136,12 +136,23 @@ python-version:
 # why it is a separate root). `check` runs it like every other leg: the root
 # .mise.toml pins the Node and pnpm it needs, so `mise install` provides the
 # toolchain and both halves of the tree share one entry point.
-web-check: ## Run the frontend checks (pnpm install + lint, typecheck, test, build)
+#
+# The route-level accessibility sweep (web-a11y) is its own leg beside lint,
+# typecheck and test: it renders the assembled app at every route in three data
+# states and runs axe-core over each, so it is slower than the unit suites and
+# produces a report of its own. The demo host's default `test` run excludes
+# src/a11y/** and this leg runs only it (starters/demo/web/vitest.a11y.config.ts),
+# so the sweep is not run twice.
+web-check: ## Run the frontend checks (pnpm install + lint, typecheck, test, a11y, build)
 	@pnpm -C web install --frozen-lockfile
 	@pnpm -C web -r lint
 	@pnpm -C web -r typecheck
 	@pnpm -C web -r test
+	@$(MAKE) web-a11y
 	@pnpm -C web -r build
+
+web-a11y: ## Run the frontend's route-level accessibility sweep
+	@pnpm -C web --filter demo-web run test:a11y
 
 check: ## Run everything a commit is gated on (no external service needed)
 	@$(MAKE) build

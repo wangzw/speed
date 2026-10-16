@@ -167,6 +167,40 @@ const billingEnabled = useFeature('billing');        // api-client
 - Color contrast meets WCAG AA (4.5:1 body, 3:1 large text). **DO NOT** convey state through color alone — pair it with an icon or text.
 - Support browser font scaling. **DO NOT** define font sizes in `px` — use rem or MUI typography variants.
 
+### The route-level accessibility gate
+
+Two tiers of mechanical accessibility scanning ship. Each package's suites scan
+their own components (`@speed/test-utils/axe`). Above them, the demo host's
+`starters/demo/web/src/a11y/routes.test.tsx` scans **whole routes**: it walks the
+application's route table, renders the assembled app at every path — the tenant
+shell and the console shell alike — in three data states (populated, empty,
+error), and runs axe-core over each through the harness in `src/a11y/scan.ts`. A
+product gains coverage for a new route by adding it to the route table; the sweep
+needs no change.
+
+- **It is its own frontend-gate leg.** The root Makefile's `web-a11y` (the demo
+  Makefile's `web-a11y`), beside lint / typecheck / test, runs
+  `pnpm --filter demo-web test:a11y`. The demo's ordinary `test` run excludes
+  `src/a11y/**` and this leg runs only it (`vitest.a11y.config.ts`), so the sweep
+  runs once.
+- **Rule set**: WCAG 2.1 level AA — the tags `wcag2a`, `wcag2aa`, `wcag21a`,
+  `wcag21aa`. Best-practice rules run as a separate advisory pass, reported and
+  never failing.
+- **Threshold**: a `serious` or `critical` axe violation fails the gate, naming
+  the route and state and listing the findings by rule id, impact and node count;
+  a `moderate`, `minor` or null-impact violation is warned and registered in the
+  run's report — **never silently dropped** (warnings are first-class).
+- **What it proves, and what it does not.** axe is a mechanical check covering
+  only the decidable subset of WCAG — the industry working estimate is 30–40%. It
+  cannot judge reading order, whether an accessible name is a *good* name,
+  whether a heading level fits *its page*, or whether two inline controls share a
+  confusing name. This repository's own history is the proof: the component scans
+  were green when a human review still found a heading-order inversion and
+  duplicate inline-control names those scans could not see. The gate's value is
+  **regression** — a defect once removed cannot silently return — never a claim
+  that a page is accessible. Automated scanning does **not** replace manual
+  review.
+
 ## 9. TypeScript
 
 - The single source of truth for backend-related types is `@speed/api-sdk`. **DO NOT** hand-write response types.
@@ -205,6 +239,7 @@ console.log('checkout failed for plan ' + planId);
 | Tier | Tooling | Scope |
 |---|---|---|
 | Unit / component | Vitest + Testing Library | hook logic, component behaviour |
+| Page / route accessibility | Vitest + axe-core (jsdom) | the assembled app at every route, both shells, in each data state — the demo host's `web-a11y` leg (§8) |
 | End-to-end | Playwright | the host application's journeys (the host lives outside `web/`, as a delivered consumer project does) |
 
 **File and directory layout — not optional:**
@@ -232,6 +267,7 @@ Comments and TSDoc describe the code's **current state only**: no history or cha
 - [ ] No hardcoded colors or pixel values; everything through theme tokens
 - [ ] Query keys are tenant-namespaced
 - [ ] Icon-only buttons have `aria-label`
+- [ ] The route-level accessibility gate is green (`make web-a11y`); a new route is swept automatically because the sweep walks the route table
 - [ ] New public components are checked rendering in both languages and carry prop docs
 - [ ] Correct in both light and dark mode
 - [ ] peerDependencies not accidentally moved into dependencies
