@@ -8,9 +8,9 @@ tier as `@speed/ui-kit` -- no business, tenant, or auth-mechanism
 semantics live here. `RouteGuard` in particular takes its
 allow/deny/pending decision as a plain `status` value, never a
 callback it invokes and never a concrete authentication or routing
-import, so `product-shell` (shipped -- this package's first consumer)
-and the platform-staff `admin-shell` (not shipped) share this exact
-package while wiring in two different authorization sources. Every built-in string renders from the
+import, so `product-shell` (the tenant-facing shell) and the
+platform-staff console `@speed/console-ui` both build their frame on
+this exact package while `RouteGuard` is composed host-side. Every built-in string renders from the
 bilingual `layout-kit` namespace registered through `@speed/i18n`, the
 same discipline `ui-kit` established, and the workspace's
 `no-literal-text` ESLint rule refuses inline text in this package's
@@ -107,6 +107,7 @@ different hosts use different routers.
 | `header` | `ReactNode` | start-of-AppBar content (logo, product name) |
 | `headerActions` | `ReactNode` | end-of-AppBar content (search, notifications) |
 | `userMenu` | `ReactNode` | far end-of-AppBar content (account menu trigger) |
+| `navLabel` | `string` | the navigation landmark's accessible name (and the temporary drawer's dialog name); defaults to the `appShell.navLabel` string. A host mounting AppShell beside a second shell's navigation supplies a distinguishing name so the landmarks do not read alike |
 | `children` | `ReactNode` (required) | the content region, rendered inside the `main` landmark |
 | `mobileOpen` / `onMobileOpenChange` | `boolean` / `(open: boolean) => void` | optional controlled pair for the mobile drawer; omit both to let AppShell manage the toggle itself (the one interaction-local exception, matching `ui-kit`'s `ConfirmDialog` double-confirm arm -- the same carve-out covers the uncontrolled temporary drawer closing itself when a nav item is activated; a controlled host keeps the existing contract, closing through its own next render) |
 | `sidebarCollapsed` / `onSidebarCollapsedChange` | `boolean` / `(collapsed: boolean) => void` | optional controlled pair for the desktop sidebar; omit both for the always-open permanent drawer (byte-for-byte unchanged). Supplying `onSidebarCollapsedChange` renders the collapse/expand toggle in the AppBar; `sidebarCollapsed` (default `false`) is honored only at `md` and up -- the mobile drawer is unaffected |

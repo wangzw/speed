@@ -118,6 +118,15 @@ export interface AppShellProps {
   readonly headerActions?: ReactNode
   /** Far end-of-AppBar content: typically an account/user menu trigger. */
   readonly userMenu?: ReactNode
+  /**
+   * The navigation landmark's accessible name -- and the name of the
+   * temporary drawer, which opens as a modal `nav` labelled by it.
+   * Already-translated host text; defaults to this package's own
+   * `appShell.navLabel`. A host that mounts a shell beside another
+   * shell's own navigation supplies a distinguishing name so neither
+   * landmark reads as the other in the accessibility tree.
+   */
+  readonly navLabel?: string
   /** The content region, rendered inside the `main` landmark. */
   readonly children: ReactNode
   /**
@@ -221,6 +230,7 @@ export function AppShell({
   header,
   headerActions,
   userMenu,
+  navLabel,
   children,
   mobileOpen: mobileOpenProp,
   onMobileOpenChange,
@@ -233,6 +243,13 @@ export function AppShell({
   const theme = useTheme()
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'))
   const mainContentId = useId()
+
+  // The navigation landmark's name is host-suppliable (navLabel) so a
+  // host mounting this frame beside a second shell's navigation can keep
+  // the two landmarks distinguishable; absent one, the package's own
+  // bilingual label names it, the behavior every host that never sets
+  // navLabel already gets.
+  const resolvedNavLabel = navLabel ?? t('appShell.navLabel')
 
   // The desktop sidebar collapse is entirely host-controlled: the state
   // is the `sidebarCollapsed` prop, and the toggle reports the flipped
@@ -322,7 +339,7 @@ export function AppShell({
   // temporary variant passes the close transition -- see the module doc
   // comment for who owns it in which mode.
   const navContent = (onNavigate?: () => void) => (
-    <Box component="nav" aria-label={t('appShell.navLabel')} sx={{ width: '100%', boxSizing: 'border-box' }}>
+    <Box component="nav" aria-label={resolvedNavLabel} sx={{ width: '100%', boxSizing: 'border-box' }}>
       <NavList navItems={navItems} onNavigate={onNavigate} />
     </Box>
   )
@@ -472,9 +489,9 @@ export function AppShell({
             // on the OPEN state by the suite's open-drawer axe scan,
             // which only a named drawer can pass. The drawer IS the
             // navigation, so its dialog name reuses the nav landmark's
-            // own bilingual label rather than inventing a fourth
-            // appShell string.
-            slotProps={{ paper: { 'aria-label': t('appShell.navLabel') } }}
+            // own label (host-supplied or the package default) rather
+            // than inventing a fourth appShell string.
+            slotProps={{ paper: { 'aria-label': resolvedNavLabel } }}
             sx={{
               '& .MuiDrawer-paper': {
                 boxSizing: 'border-box',

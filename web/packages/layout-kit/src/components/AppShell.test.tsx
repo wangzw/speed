@@ -522,6 +522,23 @@ describe('AppShell', () => {
       expect(getByRole('main')).toBeInTheDocument()
     })
 
+    it('names the nav landmark from a host-supplied navLabel, so a host mounting a second shell keeps the landmarks distinguishable', () => {
+      mockMatchMedia(true)
+      const { getByRole, queryByRole } = renderWithProviders(
+        <AppShell navItems={NAV_ITEMS} navLabel="Console navigation">
+          content
+        </AppShell>,
+      )
+      expect(
+        getByRole('navigation', { name: 'Console navigation' }),
+      ).toBeInTheDocument()
+      // The package default no longer names this landmark once the host
+      // supplies its own.
+      expect(
+        queryByRole('navigation', { name: zhCN.appShell.navLabel }),
+      ).not.toBeInTheDocument()
+    })
+
     it('makes the main landmark focusable so the skip link actually moves focus there', () => {
       mockMatchMedia(true)
       const { getByRole } = renderWithProviders(

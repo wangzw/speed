@@ -38,6 +38,7 @@ export interface AppShellProps {
   readonly header?: ReactNode
   readonly headerActions?: ReactNode
   readonly userMenu?: ReactNode
+  readonly navLabel?: string                        // 导航地标（与临时抽屉）的可及名，缺省 appShell.navLabel
   readonly children: ReactNode
   readonly mobileOpen?: boolean                    // 与下一项成对，控制态
   readonly onMobileOpenChange?: (open: boolean) => void
@@ -67,6 +68,7 @@ export function Avatar(props: AvatarProps): ReactElement
 - **`AppShell` 的桌面侧边栏收起是宿主显式选择的受控面。** `sidebarCollapsed` 是收起态，`onSidebarCollapsedChange` 是收起开关的回报通道；给出后者即在顶栏渲染收起／展开按钮，两者都省略即维持一直展开的常驻抽屉（未选择该能力的宿主逐字节不变）。收起只在 `md` 及以上生效，移动（临时）抽屉不受影响。收起态是宿主持有的普通值，本包不在内部推导。
 
 - **槽位原样渲染。** `header`、`headerActions`、`userMenu`、`children` 渲染宿主交来的内容本身；某个槽缺席就什么都不渲染，不代以占位。
+- **导航地标的名字可由宿主给出。** `navLabel` 是导航地标与临时抽屉的可及名，宿主已翻译好；缺省取本包的 `appShell.navLabel`。宿主在另一套外壳的导航旁再挂一个本帧时给出区分名，使两个地标在无障碍树里互不混淆。
 - **移动抽屉的开合是唯一的交互局部状态。** `mobileOpen` 与 `onMobileOpenChange` 成对给出时是受控的；都省略时由 AppShell 内部管理（非受控）。从临时抽屉越到常驻抽屉（视口从 `md` 以下越到 `md` 及以上）时，移动抽屉的开合被复位为关，经同一个 `onMobileOpenChange` 通道报出。
 - **`selected` 由宿主算。** AppShell 不做路径匹配，`aria-current` 与选中样式都取自这个值。
 
@@ -101,7 +103,7 @@ export const layoutKitResources: Readonly<Record<string, ResourceBundle>>
 
 宿主在 `createI18n` 之后用 `registerNamespace` 恰好注册一次（重复注册抛错，故不得发生在组件或 provider 内）。本包渲染自身文字经 `useLayoutKitTranslation`，从 `src/locales/zh-CN.json` 与 `en-US.json` 这对叶子键集相同的双语文件读取。
 
-**稳定性承诺。** `AppShell`、`AppShellProps`、`AppShellNavItem`、`RouteGuard`、`RouteGuardProps`、`RouteGuardStatus`、`Avatar`、`AvatarProps` 的字段与方法集，`LAYOUT_KIT_NAMESPACE`、`layoutKitResources`，以及 `sidebarWidth` 缺省值 `280`、缺省拒绝态与等待态的形状，是宿主可见面。加导出、改签名或改 prop 名是以下游消费者的不兼容变更。收起能力是纯附加的可选 prop 对，未传该对的宿主行为不变。
+**稳定性承诺。** `AppShell`、`AppShellProps`、`AppShellNavItem`、`RouteGuard`、`RouteGuardProps`、`RouteGuardStatus`、`Avatar`、`AvatarProps` 的字段与方法集，`LAYOUT_KIT_NAMESPACE`、`layoutKitResources`，以及 `sidebarWidth` 缺省值 `280`、缺省拒绝态与等待态的形状，是宿主可见面。加导出、改签名或改 prop 名是以下游消费者的不兼容变更。收起能力是纯附加的可选 prop 对，`navLabel` 是纯附加的可选 prop，两者都未传时宿主行为不变。
 
 ## 依赖
 

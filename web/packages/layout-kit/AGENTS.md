@@ -10,11 +10,14 @@ route/content gate driven entirely by a host-injected status) and `Avatar`
 tree on request). All are fully controlled and props-driven, carry no
 business or tenant semantics, and — the property that matters most for
 this package — carry no opinion about *how* a host authenticates or
-authorizes a user. `product-shell` (shipped, this package's first
-consumer) and the platform-staff `admin-shell` (not shipped) share
-this exact package while wiring in two different authorization
-sources; that only stays true if nothing here ever imports a concrete
-one. Built-in user-facing strings live in the
+authorizes a user. `product-shell` (the tenant-facing shell) and the
+platform-staff console `@speed/console-ui` are the shipped consumers,
+both building their frame on this package's `AppShell` while `RouteGuard`
+is composed host-side; that only stays true if nothing here ever imports
+a concrete one. `AppShell` names its navigation landmark from the
+package's own `appShell.navLabel` by default, overridable through the
+additive `navLabel` prop a host uses to keep two shells' landmarks
+distinguishable. Built-in user-facing strings live in the
 bilingual `layout-kit` namespace; the repo's text discipline (both
 languages, identical key sets, nothing inline) is enforced over this
 package's `src` by the workspace's own `speed/no-literal-text` ESLint
@@ -31,7 +34,7 @@ rule. The public surface is `src/index.ts`; everything under
   package: an `auth-core` or router import here, however small, would
   force every consumer shell onto one authorization mechanism
   and defeat the reason this package exists as a separate layer from
-  `product-shell`/`admin-shell`. If a change looks like it needs one,
+  `product-shell`/`console-ui`. If a change looks like it needs one,
   stop and push the decision back onto the host's `status` computation
   instead.
 - **No dependency on `auth-core`, `api-client`, `api-sdk`, or any
@@ -185,9 +188,10 @@ at all (see the Storybook deferral below).
 - **`auth-core` wiring**: no auth package is imported here by design
   (see the non-negotiable rules); the Quick start's `status` stub is
   deliberate, and the host-injected `status` value is the only wire.
-- **`admin-shell`**: not shipped; this package ships the shared chrome
-  the platform-staff shell would compose. `product-shell` is this
-  package's first consumer, composing `AppShell` as its authenticated
+- **`admin-shell`**: the platform-staff console ships as
+  `@speed/console-ui`, which builds its frame on `AppShell` (the frame
+  `product-shell` uses) and leaves `RouteGuard` to hosts.
+  `product-shell` composes `AppShell` as its authenticated
   frame while leaving `RouteGuard` to hosts -- its gated-journey suite
   composes the gate inside the shell's children, fed a status the
   fixture host computes from the role lists it attached, the exact
