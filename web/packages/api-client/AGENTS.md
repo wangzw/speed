@@ -54,20 +54,24 @@ this one may issue HTTP requests itself.
   Null/empty means "nothing to announce" and the header stays absent.
 - **Every failure rejects an `ApiError`** -- except caller
   cancellation, which rejects the raw `AbortError` (never retried,
-  never wrapped). Envelope-bearing non-2xx responses surface the
-  envelope's code plus its traceId/params/message/details whenever the
-  backend sent them (`code` is the only required wire field --
-  `parseEnvelope` must never demand `traceId`, which no backend sends);
-  everything else synthesizes a reserved `client.*` code
-  (`client.network`, `client.timeout`, `client.protocol`,
-  `client.http.<status>`). The reservation is a parse-time mechanism,
-  not a convention: server codes are module-scoped and `client` is no
-  module's domain, so `parseEnvelope` refuses any code starting with
-  `client.` -- a backend or intermediary cannot forge an envelope that
-  reads as this client's own transport diagnosis. `isTransportFailure`
-  is the exported predicate consumers use to distinguish this client's
-  genuine transport failures (`status` 0 -- unanswerable by any HTTP
-  response) from server-answered errors.
+  never wrapped). A non-2xx response with a readable error body surfaces
+  its code -- the body's own `code` string, or the code derived from its
+  RFC 9457 problem `type` (`urn:speed:<module>:<code>` ->
+  `<module>.<code>`, each dash of the code part normalized to an
+  underscore) -- plus its traceId/params/message/details whenever the
+  backend sent them (`parseEnvelope` must never demand `traceId`, which
+  no backend sends); a body with neither a `code` nor a `urn:speed:`
+  `type` synthesizes a reserved `client.*` code (`client.network`,
+  `client.timeout`, `client.protocol`, `client.http.<status>`). The
+  reservation is a parse-time mechanism, not a convention: server codes
+  are module-scoped and `client` is no module's domain, so
+  `parseEnvelope` refuses any code -- however it arrived, a literal
+  `code` or a `urn:speed:client:*` type -- starting with `client.`; a
+  backend or intermediary cannot forge an envelope that reads as this
+  client's own transport diagnosis. `isTransportFailure` is the exported
+  predicate consumers use to distinguish this client's genuine transport
+  failures (`status` 0 -- unanswerable by any HTTP response) from
+  server-answered errors.
 - **Refresh is once per request, single-flight -- and credentialed-only.**
   The hook fires only for a refused request that itself presented a
   credential: a bearer token from the store, or -- when
@@ -225,16 +229,16 @@ suite of its own.
 ## Known limitations
 
 - **No backend sends `traceId`, so an `ApiError` never carries one
-  against the real API.** `code` is the envelope's only required
-  field; `traceId` is optional (parsed and surfaced when present,
-  omitted from reporter attributes when absent), so the `{code,
-  params}` bodies every module's error writer actually encodes keep
-  their codes end to end. `config-fetcher.test.ts`'s two traceId-less
-  fixture tests and `client.test.ts`'s backend-shaped envelope test
-  pin the literal wire shape. The correlation half -- a backend-wide
-  change for every module's error writer to emit a real `traceId`
-  (sourced from request tracing), so user reports can be tied to
-  server logs -- is not implemented.
+  against the real API.** A refusable body's code comes from its own
+  `code` string or from the RFC 9457 problem `type` every module's error
+  writer actually writes (`urn:speed:<module>:<code>`); `traceId` is
+  optional (parsed and surfaced when present, omitted from reporter
+  attributes when absent), so those bodies keep their codes end to end.
+  `config-fetcher.test.ts`'s two traceId-less fixture tests and
+  `client.test.ts`'s `{code, params}` envelope test pin the literal wire
+  shape. The correlation half -- a backend-wide change for every module's
+  error writer to emit a real `traceId` (sourced from request tracing), so
+  user reports can be tied to server logs -- is not implemented.
 
 ## Public surface
 

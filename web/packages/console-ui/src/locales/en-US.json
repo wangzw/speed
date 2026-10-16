@@ -5,7 +5,20 @@
       "session_revoked": "Your session was revoked. Sign in again.",
       "token_expired": "Your sign-in expired. Sign in again.",
       "refresh_token_invalid": "Your sign-in is no longer valid. Sign in again.",
-      "refresh_token_reused": "Unusual activity was detected. Sign in again."
+      "refresh_token_reused": "Unusual activity was detected. Sign in again.",
+      "bad_request": "The server could not read this request. Check the form and try again.",
+      "unsupported_region": "That region is not supported for this operation.",
+      "conflict": "That change conflicts with the account's current state.",
+      "forbidden": "You do not have permission to do that.",
+      "impersonation_restricted": "This is not allowed while impersonating."
+    },
+    "authz": {
+      "bad_request": "The server could not read this request. Check the form and try again.",
+      "conflict": "That change conflicts with an existing role or binding.",
+      "forbidden": "You do not have permission to do that."
+    },
+    "audit": {
+      "bad_request": "The server could not read this request. Check the form and try again."
     },
     "client": {
       "network": "The network is unavailable. Check your connection and try again.",
@@ -14,10 +27,17 @@
       "http": "The server answered HTTP {{status}}. Try again shortly."
     },
     "tenant": {
+      "bad_request": "The server could not read this request. Check the form and try again.",
       "conflict": "That identifier or alias is already taken by another tenant."
     },
     "settings": {
+      "bad_request": "The server could not read this request. Check the form and try again.",
       "invalid_value": "That value is outside this setting's declared range."
+    },
+    "sms": {
+      "bad_request": "The server could not read this request. Check the form and try again.",
+      "conflict": "A template with that name already exists.",
+      "config_template": "This template is backed by a configuration and cannot be changed here."
     },
     "unknown": "Something went wrong. Try again shortly."
   },

@@ -53,9 +53,11 @@ default and upper bound).
 - The object view carries no declaration name (the module stores none), so
   the list shows the object's `id`, not the uploaded file's name.
 - The objectstore refusals travel as RFC 9457 problem objects (a `type`,
-  no `code`), so the frontend surfaces them as `client.http.<status>` and
-  resolves their text through the namespace's error text (the
-  `client.http.<status>` family, plus the transport codes).
+  no `code`), which the api-client maps to the module code derived from
+  that `type`: `objectstore.bad_request` / `objectstore.not_found` /
+  `objectstore.conflict`, and `authz.forbidden` for a refused write. The
+  namespace's error text resolves each to its own bilingual leaf (plus
+  the transport codes).
 - Everything the page renders is bilingual (`zh-CN` + `en-US`) through the
   `objectstore-ui` namespace; override wording by registering your own
   bundle under the same namespace.

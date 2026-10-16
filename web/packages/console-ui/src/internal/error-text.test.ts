@@ -97,4 +97,40 @@ describe('console-ui error text', () => {
         .unknown,
     )
   })
+
+  it('resolves every module refusal a write can be answered with to its own text', () => {
+    // The api-client derives a module code from a refusal's RFC 9457
+    // problem `type` (urn:speed:<module>:<code>), so a console write the
+    // server refuses arrives as one of these codes; each must render its
+    // own leaf rather than collapse into the generic fallback the surface
+    // showed while no module code reached it.
+    const i18n = createConsoleUiI18n('en-US')
+    const { result } = renderHook(() => useConsoleUiErrorText(), {
+      wrapper: ({ children }: { readonly children: ReactNode }) =>
+        createElement(I18nextProvider, { i18n }, children),
+    })
+    const unknown = (
+      consoleUiResources['en-US'] as { errors: { unknown: string } }
+    ).errors.unknown
+    for (const code of [
+      'tenant.bad_request',
+      'authz.bad_request',
+      'authz.conflict',
+      'authz.forbidden',
+      'authn.bad_request',
+      'authn.unsupported_region',
+      'authn.conflict',
+      'authn.forbidden',
+      'authn.impersonation_restricted',
+      'audit.bad_request',
+      'settings.bad_request',
+      'sms.bad_request',
+      'sms.conflict',
+      'sms.config_template',
+    ]) {
+      const text = result.current(code)
+      expect(text, code).not.toBe(unknown)
+      expect(text, code).not.toContain(code)
+    }
+  })
 })

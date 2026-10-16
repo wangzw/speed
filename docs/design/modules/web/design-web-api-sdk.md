@@ -14,7 +14,7 @@
 
 - **不做 HTTP。** 生成的代码不做网络调用；每次调用经 mutator 转发给宿主绑定的 `@speed/api-client` 的请求函数。工作区里除 `api-client` 外没有一处手写 `fetch`/`axios`（`speed/no-direct-http` 规则，白名单只有 `api-client`）；本包的 `src/` 每次重生成后都必须仍通过该规则。
 - **不认识租户。** 生成面里没有租户头、没有租户查询键，认证片段也不带任何租户字段：认证的请求与应答里没有 `tenant_id`，租户在请求期由服务端的解析层按端解析。租户查询键的分段是消费方壳的纪律（[auth-core](design-web-auth-core.md)）。
-- **不含用户可见文本，不带 i18n 资源。** 错误以 spec 的 `{code, params}` 信封形状类型化；码由消费包的文案目录译成双语文本。
+- **不含用户可见文本，不带 i18n 资源。** 错误以契约的 RFC 9457 问题对象类型化（机器可读的类在 `type`，取值 `urn:speed:<模块>:<码>`）；码由消费包的文案目录译成双语文本。
 - **不构造 QueryClient。** `react` 与 `@tanstack/react-query` 是 peer，宿主共享一个 QueryClient/Provider；本包从不构造。
 - **不接受手工编辑。** `src/index.ts` 从不手改，也不在 `src/` 里另加一个源码文件来补生成的缺口：工具的问题归工具（见「核心算法与流程」的生成一节）。
 

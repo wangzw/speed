@@ -11,16 +11,17 @@
  * can never render a raw key and a missing translation never leaks
  * another language's text or an English fallback.
  *
- * The surfaces' own codes are the module-scoped refusals the three
- * administration modules answer their writes with: a roster registration
- * or rename colliding with an existing identifier or alias (tenant conflict),
- * a settings write whose value is outside the item's declared domain, and
- * the shape refusals of a body the handler cannot read. The bundle key is
- * the colon-free frontend code (i18next's default namespace separator is
- * ':'), and how the backend's RFC 9457 problem `type` becomes that code
- * is the API contract's to fix -- the codes below are the console's
- * reading of the modules' error surfaces and are recorded on the package's
- * AGENTS.md as a contract-phase item.
+ * The surfaces' own codes are the module-scoped refusals the
+ * administration modules answer their writes with: the shape refusals of a
+ * body the handler cannot read, the collisions a registration, rename or
+ * domain claim is answered with, the 403 a denied or impersonation-
+ * restricted write is answered with, and a setting write whose value is
+ * outside the item's declared domain. A module answers a refusal with an
+ * RFC 9457 problem object whose machine-readable kind is its `type`
+ * (`urn:speed:<module>:<code>`), and the @speed/api-client derives the
+ * colon-free frontend code `<module>.<code>` from it (each dash in the
+ * code part normalized to an underscore), the key i18next resolves under
+ * the errors section below.
  *
  * The whitelist composes the shared families every protected surface can
  * be answered with -- the session-lifecycle and client-transport codes
@@ -61,13 +62,42 @@ export const ERROR_TEXT_CODES = [
   // refresh is refused.
   ...SESSION_LIFECYCLE_ERROR_CODES,
   ...CLIENT_TRANSPORT_ERROR_CODES,
-  // tenant admin: the 409 the roster answers a registration or rename
-  // colliding with an existing identifier or alias (a shape refusal is a
-  // 400 the module names bad-request -- it has no console-specific text).
+  // The module-scoped refusals the administration surfaces answer their
+  // writes with, one leaf per code (the api-client derives each
+  // <module>.<code> from the module's RFC 9457 problem `type`).
+  //
+  // tenant admin: a 400 shape refusal and the 409 a registration or
+  // rename colliding with an existing identifier or alias is answered
+  // with.
+  'tenant.bad_request',
   'tenant.conflict',
-  // settings admin: the 422 a write whose value is outside the declared
-  // item's domain is answered with (its own shape refusal is a 400).
+  // authz admin: a 400 shape refusal, the 409 a role or binding
+  // collision is answered with, and the 403 the authorization guard
+  // refuses a write the caller is not permitted to make with.
+  'authz.bad_request',
+  'authz.conflict',
+  'authz.forbidden',
+  // authn admin (accounts, impersonations, invitations, members, sso): a
+  // 400 shape refusal, the 400 an unsupported region is answered with,
+  // the 409 an account, domain or factor collision is answered with, and
+  // the 403 a denied or impersonation-restricted write is answered with.
+  'authn.bad_request',
+  'authn.unsupported_region',
+  'authn.conflict',
+  'authn.forbidden',
+  'authn.impersonation_restricted',
+  // audit admin: the 400 a malformed query is answered with.
+  'audit.bad_request',
+  // settings admin: a 400 shape refusal and the 422 a write whose value
+  // is outside the declared item's domain is answered with.
+  'settings.bad_request',
   'settings.invalid_value',
+  // sms admin: a 400 shape refusal, the 409 a name collision is answered
+  // with, and the 409 a name backed by a configuration template is
+  // answered with.
+  'sms.bad_request',
+  'sms.conflict',
+  'sms.config_template',
 ] as const
 
 /**

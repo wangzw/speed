@@ -5,13 +5,14 @@
  * exactly as a consumer would use them: pass the RequestFn, get back
  * a typed response or a rejected ApiError/AbortError.
  *
- * A note on the envelope tests below: client.ts's parseEnvelope treats
- * `code` as the envelope's only required field and `traceId` as
- * optional, so the two wire shapes a consumer can actually meet are
- * both exercised -- the traceId-bearing bodies of the "surfaces a
- * non-2xx envelope ... with its code" tests (a backend that sends a
- * trace id, for correlation) and the bare `{code, params}` bodies of
- * the "carries the real go/config error shape" tests, which pin the
+ * A note on the envelope tests below: client.ts's parseEnvelope reads a
+ * body as an error envelope on the code it denotes (its own `code`
+ * string, or the code derived from a `urn:speed:` problem `type`) and
+ * treats `traceId` as optional, so the two wire shapes a consumer can
+ * actually meet are both exercised -- the traceId-bearing bodies of the
+ * "surfaces a non-2xx envelope ... with its code" tests (a backend that
+ * sends a trace id, for correlation) and the bare `{code, params}` bodies
+ * of the "carries the real go/config error shape" tests, which pin the
  * literal go/config wire shape: go/config/http.go's `errorEnvelope`
  * encodes only `{code, params}`, never a `traceId`. A real failure
  * against either shape must surface the module's real code.

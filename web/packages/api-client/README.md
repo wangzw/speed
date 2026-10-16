@@ -188,16 +188,20 @@ function useAppChrome(clientApi: RequestFn): AppChrome {
 
 ## What it does
 
-- **One error type.** Every failed request rejects an `ApiError`.
-  Responses carrying the API's envelope (`{ code, traceId?, params?,
-  message?, details? }`) surface the envelope's fields verbatim. `code`
-  is the only required wire field -- `traceId` is optional and surfaced
-  for correlation when a backend sends one; the backend sends
-  `{code, params}` only, so requiring anything beyond `code` would
-  discard every real module code into the `client.` fallback. Responses
-  without a valid envelope (a proxy error page, a 500 from an upstream
-  that is not JSON with a `code`, a timeout, a dead network) get a
-  synthesized code in the reserved `client.` namespace:
+- **One error type.** Every failed request rejects an `ApiError`. A
+  non-2xx with a readable error body surfaces that code plus its
+  traceId/params/message/details verbatim: the code is the body's own
+  `code` string, or the module code derived from the body's RFC 9457
+  problem `type` (`urn:speed:<module>:<code>` -> `<module>.<code>`, each
+  dash of the code part normalized to an underscore) -- the shape the
+  backend writes a refusal with. `traceId` is optional and surfaced for
+  correlation when a backend sends one; no backend sends one, so a body
+  carrying a `code` or a `urn:speed:` `type` is a valid error body on its
+  own (requiring `traceId` would discard every real module code into the
+  `client.` fallback). Responses without a readable error body (a proxy
+  error page, a 500 from an upstream that is not JSON, a body with
+  neither a `code` nor a `urn:speed:` `type`, a timeout, a dead network)
+  get a synthesized code in the reserved `client.` namespace:
   `client.network`, `client.timeout`, `client.protocol` (a 2xx whose
   body is not a JSON object or array -- or an empty 2xx when the
   request declared `requireJsonBody` -- or a request body that cannot
@@ -206,9 +210,10 @@ function useAppChrome(clientApi: RequestFn): AppChrome {
   `client.http.<status>`. `error.attempts` reports how many HTTP
   attempts were made. The namespace is reserved by mechanism, not just
   by convention: server codes are module-scoped (`authn.*`, `notes.*`)
-  and `client` is no module's domain, so an envelope whose `code`
-  starts with `client.` is refused at parse time and surfaces as the
-  honest `client.http.<status>` instead -- a misbehaving backend or
+  and `client` is no module's domain, so a code -- however it arrived, a
+  literal `code` or a `urn:speed:client:*` type -- that starts with
+  `client.` is refused at parse time and surfaces as the honest
+  `client.http.<status>` instead -- a misbehaving backend or
   intermediary cannot make a session error read as "the request timed
   out". `isTransportFailure(error)` is the exported predicate that
   answers whether an error is genuinely this client's own transport
@@ -373,10 +378,10 @@ const handle = api.openEventStream('/api/v1/notifications/stream', {
 | `ServerSentEvent` | type | One parsed event: `event` (defaults to `message`), `data`, optional `id`/`retry`. |
 | `EventStreamOptions` | type | `onEvent` (required), `onOpen`, `onError`, `onClose`, `signal`. |
 | `EventStreamHandle` | type | `{ close() }` -- ends the stream; the caller's own cancellation fires no `onError`/`onClose`. |
-| `ApiError` | class | The one error type. `status` (0 when no response arrived), `code`, `traceId?`, `params?`, `details?`, `attempts`, `auth` (true exactly for HTTP 401), `message` (envelope message or an English diagnostic). |
+| `ApiError` | class | The one error type. `status` (0 when no response arrived), `code` (the error body's own `code`, or the module code the client derives from its RFC 9457 problem `type`), `traceId?`, `params?`, `details?`, `attempts`, `auth` (true exactly for HTTP 401), `message` (an error body's message or an English diagnostic). |
 | `isApiError(value)` | function | Type guard; accepts `instanceof` and structurally identical errors (a second copy of the library). |
 | `isTransportFailure(value)` | function | Answers whether an error is genuinely this client's own transport-layer failure (`client.network`/`client.timeout` with `status` 0 -- the one status no HTTP response can carry). Consumer whitelists distinguishing "the request never completed" from server-answered errors should consult this, never a bare code match. |
-| `ERROR_CODE_NETWORK` / `ERROR_CODE_TIMEOUT` / `ERROR_CODE_PROTOCOL` | const | Reserved `client.` codes; an envelope that borrows the prefix is refused at parse time. |
+| `ERROR_CODE_NETWORK` / `ERROR_CODE_TIMEOUT` / `ERROR_CODE_PROTOCOL` | const | Reserved `client.` codes; a code that borrows the prefix -- a literal `code` or a `urn:speed:client:*` type -- is refused at parse time. |
 | `httpErrorCode(status)` | function | Shapes a bare non-2xx status into `client.http.<status>`. |
 | `FieldError` | type | `{ field, code, params? }` -- one field-level validation failure in `details`. |
 | `AccessTokenStore` | type | The sync `get`/`set` seam hosts implement (or use the memory store). |

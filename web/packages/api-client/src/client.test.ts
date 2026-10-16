@@ -1004,9 +1004,9 @@ describe('401 and the refresh hook', () => {
   })
 
   it('reports a traceId-less refresh-failure envelope with its real code', async () => {
-    // The 401 path of the same backend-shaped envelope regression: a
-    // code-only body must keep its real module code through the
-    // refresh-failure report, and the report's attrs must not carry an
+    // The 401 path of the same legacy `{code, params}` envelope
+    // regression: a code-only body must keep its real module code through
+    // the refresh-failure report, and the report's attrs must not carry an
     // undefined-valued traceId key when the envelope had none.
     const memory = createMemoryReporter()
     const store = createMemoryAccessTokenStore()
@@ -2223,15 +2223,13 @@ describe('error normalization', () => {
     expect(error.attempts).toBe(1)
   })
 
-  it('parses a real backend-shaped envelope: code and params, no traceId', async () => {
-    // The wire shape every module's handler actually writes: a
-    // {code, params} body with no traceId (go/authn/middleware.go's
-    // errorBody, and every module's own writeError, encode only those
-    // two fields -- the OpenAPI fragments document {code, params} as
-    // the error contract). traceId is optional, kept only for
-    // correlation when a backend sends one; the code of a traceId-less
-    // body must not be discarded into client.http.<status>, or every
-    // real backend error would degrade to the generic fallback.
+  it('parses a legacy {code, params} envelope: code and params, no traceId', async () => {
+    // The legacy envelope an earlier backend wrote: a {code, params} body
+    // with no traceId. parseEnvelope reads a body as an error envelope on
+    // the code it denotes -- its own `code` string, or the code derived
+    // from a `urn:speed:` problem `type` (what the current backend writes)
+    // -- so a traceId-less {code, params} body keeps its code rather than
+    // degrading into client.http.<status>.
     const standin = scriptedStandin(
       jsonResponse(400, {
         code: 'authn.password_too_short',

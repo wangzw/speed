@@ -208,6 +208,14 @@ request body.
   `src/`; the two bundles under `src/locales/` carry identical leaf key
   sets, pinned by `src/resources.test.ts` and
   `src/internal/error-text.test.ts`.
+- **The error-text whitelist covers every module code a write can be
+  answered with.** A console write the server refuses surfaces as the
+  module code the api-client derives from the refusal's RFC 9457 problem
+  `type` (`<module>.<code>`, each dash of the code part normalized to an
+  underscore); the whitelist carries one leaf per language for each
+  reachable code, so a refusal renders its own text rather than the
+  generic fallback. A new write surface extends the whitelist with the
+  codes it can meet.
 - **Each page opens with ui-kit's `PageHeader`.** The page title is the
   level-one heading, a breadcrumb trail runs from the console to the
   page, and a refresh action re-reads the page's data (its `refetch`).
@@ -247,15 +255,6 @@ composition, with the operations bundle substituted from test-utils).
 
 ## Deferrals (recorded, do not re-open silently)
 
-- **The refusal-code mapping.** The shipped bundle reads the generated
-  `@speed/api-sdk` admin operations, so those are wired. Still open is
-  the wire shape of a refusal: a module answers RFC 9457 problem details
-  with a `type` URN, and how that `type` becomes the frontend `code` the
-  api-client derives is not settled — the error-text whitelist's
-  colon-free codes (`tenant.conflict`, `settings.invalid_value`) are this
-  package's reading of the modules' error surfaces and move when the
-  mapping is fixed. A refusal outside the whitelist renders the generic
-  failure text.
 - **Audit export surface.** An export route is not surfaced; export is
   another permission and another module's to carry.
 - **Batched audit-actor resolution.** The audit page's actor column

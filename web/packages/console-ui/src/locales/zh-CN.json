@@ -5,7 +5,20 @@
       "session_revoked": "会话已被撤销，请重新登录。",
       "token_expired": "登录已过期，请重新登录。",
       "refresh_token_invalid": "登录状态已失效，请重新登录。",
-      "refresh_token_reused": "检测到异常活动，请重新登录。"
+      "refresh_token_reused": "检测到异常活动，请重新登录。",
+      "bad_request": "服务端无法读取该请求，请检查表单后重试。",
+      "unsupported_region": "此操作不支持该地区。",
+      "conflict": "该改动与账户的当前状态冲突。",
+      "forbidden": "你没有执行此操作的权限。",
+      "impersonation_restricted": "模拟登录期间不允许此操作。"
+    },
+    "authz": {
+      "bad_request": "服务端无法读取该请求，请检查表单后重试。",
+      "conflict": "该改动与现有角色或绑定冲突。",
+      "forbidden": "你没有执行此操作的权限。"
+    },
+    "audit": {
+      "bad_request": "服务端无法读取该请求，请检查表单后重试。"
     },
     "client": {
       "network": "网络连接不可用，请检查网络后重试。",
@@ -14,10 +27,17 @@
       "http": "服务返回了 HTTP {{status}} 错误，请稍后重试。"
     },
     "tenant": {
+      "bad_request": "服务端无法读取该请求，请检查表单后重试。",
       "conflict": "该标识或别名已被其他租户占用。"
     },
     "settings": {
+      "bad_request": "服务端无法读取该请求，请检查表单后重试。",
       "invalid_value": "该值不在该设置项声明的取值范围内。"
+    },
+    "sms": {
+      "bad_request": "服务端无法读取该请求，请检查表单后重试。",
+      "conflict": "同名模板已存在。",
+      "config_template": "该模板由配置提供，无法在此修改。"
     },
     "unknown": "出了点问题，请稍后重试。"
   },
