@@ -136,6 +136,72 @@ describe('StepUpChallenge', () => {
     expect(answers).toEqual([{ factor: 'f1' }, { code: '123456', factor: 'f1' }])
   })
 
+  it('answers a passkey step-up under the factor step, driven by its options', async () => {
+    const user = userEvent.setup()
+    const requests: Array<{ step: string | undefined; input?: Readonly<Record<string, string>> }> = []
+    const session: AuthSession = {
+      ...flowSession().session,
+      startAuthenticatedFlow: () =>
+        Promise.resolve<AuthnFlowState>({
+          seq: 1,
+          state: 'second',
+          next: {
+            kind: 'webauthn',
+            options: { challenge: 'Y2hhbGxlbmdl', allowCredentials: [] },
+          },
+        }),
+      answerFlow: (request) => {
+        requests.push({ step: request.step, input: request.input })
+        return Promise.resolve<AuthnFlowState>({
+          state: 'authenticated',
+          session: { id: 'sess-1', expires_at: '2026-10-17T00:00:00Z' },
+        })
+      },
+    }
+    const get = vi.fn().mockResolvedValue({
+      id: 'AQID',
+      rawId: new Uint8Array([1, 2, 3]).buffer,
+      type: 'public-key',
+      response: {
+        clientDataJSON: new Uint8Array([4]).buffer,
+        authenticatorData: new Uint8Array([5]).buffer,
+        signature: new Uint8Array([6]).buffer,
+        userHandle: null,
+      },
+      getClientExtensionResults: () => ({}),
+      authenticatorAttachment: 'platform',
+    })
+    const original = Object.getOwnPropertyDescriptor(window.navigator, 'credentials')
+    Object.defineProperty(window.navigator, 'credentials', {
+      value: { get, create: vi.fn() },
+      configurable: true,
+    })
+    try {
+      const onSuccess = vi.fn()
+      renderWithProviders(
+        <StepUpChallenge
+          open
+          session={session}
+          onSuccess={onSuccess}
+          onCancel={() => undefined}
+        />,
+      )
+      // The passkey step drives the ceremony; its answer travels under the
+      // second factor's step (`factor`), not the enrollment one.
+      await user.click(await screen.findByRole('button', { name: '验证' }))
+      await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+    } finally {
+      if (original === undefined) {
+        delete (window.navigator as { credentials?: unknown }).credentials
+      } else {
+        Object.defineProperty(window.navigator, 'credentials', original)
+      }
+    }
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.step).toBe('factor')
+    expect(requests[0]?.input?.credential).toContain('AQID')
+  })
+
   it('offers a re-login when the deployment cannot complete the step-up', async () => {
     const user = userEvent.setup()
     const logout = vi.fn(() => Promise.resolve())

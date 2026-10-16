@@ -60,9 +60,11 @@
     "cannotElevate": "This deployment cannot complete this step-up. Sign in again for a stronger verification.",
     "relogin": "Sign in again",
     "codeLabel": "Verification code",
-    "credentialLabel": "Credential",
     "codeHelp": "Enter your one-time code.",
-    "credentialHelp": "Follow the prompt from your authenticator.",
+    "passkeyPrompt": "Use your device to present a passkey.",
+    "passkeyUnsupported": "This browser cannot carry out a passkey ceremony.",
+    "passkeyCancelled": "The passkey prompt was dismissed. Try again.",
+    "passkeyFailed": "The passkey ceremony did not complete.",
     "redirectNotice": "This verification continues on an external page, which this dialog does not open."
   },
   "tenants": {

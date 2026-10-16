@@ -18,18 +18,19 @@
  *    identifier travels under `factor` as the field `factor`.
  *  - `enroll`: the factor kinds the assembly takes in; the chosen kind
  *    travels under `enroll` as the field `kind`.
- *  - `webauthn`: the factor's own JSON (TOTP's `otpauth_uri`, a passkey's
- *    creation options) rendered as text, plus one free-text field for the
- *    answer. The field's key is the factor's: an `otpauth_uri` option
- *    means a code (`code`), anything else a credential (`credential`).
+ *  - `webauthn`: the factor's own JSON. TOTP's otpauth_uri is rendered as
+ *    text beside a code field; a passkey's request options are driven by
+ *    the WebAuthn ceremony (./webauthn), whose credential is reported
+ *    under the answer step the CALLER names -- the record's state decides
+ *    it, so the second factor of a step-up answers under `factor`.
  *  - `complete`: a single confirm that takes the flow's result with
  *    `step: 'complete'`.
- *  - `redirect`: an external URL, reported upward; the component never
- *    navigates.
+ *  - `redirect`: an external URL; the component never navigates.
  */
 
 import { useState } from 'react'
 import type { FormEvent } from 'react'
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import TextField from '@mui/material/TextField'
@@ -37,28 +38,30 @@ import Typography from '@mui/material/Typography'
 import type { AuthnStep } from '@speed/auth-core'
 import type { AuthnFlowAnswer } from '@speed/auth-core'
 import { useConsoleUiTranslation } from './translation.js'
+import { WebauthnError, runWebauthn, webauthnStepOf } from './webauthn.js'
 
 export interface FlowStepProps {
   /** The step to render. */
   readonly step: AuthnStep
   /**
-   * The answer step a `challenge` step's input travels under: `answer` in
-   * the flow's first factor, `factor` in its second. Ignored by every
-   * other step kind.
+   * The answer step a step travels under: `answer` in the flow's first
+   * factor, `factor` in its second, `enroll` in its registration. A
+   * `challenge` step's input and a `webauthn` step's credential both use
+   * it, because the record's state decides which steps are compatible.
    */
-  readonly challengeStep: string
+  readonly answerStep: string
   readonly submitLabel: string
   readonly onSubmit: (answer: AuthnFlowAnswer) => void
 }
 
 export function FlowStep({
   step,
-  challengeStep,
+  answerStep,
   submitLabel,
   onSubmit,
 }: FlowStepProps) {
   const { t } = useConsoleUiTranslation()
-  // The free-text answer of a `webauthn` step, and the typed values of a
+  // The free-text answer of a TOTP code field, and the typed values of a
   // `challenge` step's fields.
   const [values, setValues] = useState<Record<string, string>>({})
 
@@ -117,60 +120,62 @@ export function FlowStep({
   }
 
   if (step.kind === 'webauthn') {
-    // The factor's own JSON: TOTP's otpauth_uri, or a passkey's creation
-    // options. The key of the answer follows it.
     const options = step.options
-    const isTotp =
-      typeof options === 'object' && options !== null && 'otpauth_uri' in options
-    const payloadKey = isTotp ? 'code' : 'credential'
-    return (
-      <Box sx={{ mt: 2 }}>
-        <Typography variant="body2" color="text.secondary">
-          {isTotp ? t('stepUp.codeHelp') : t('stepUp.credentialHelp')}
-        </Typography>
-        <Typography
-          variant="body2"
-          component="pre"
-          sx={{
-            fontFamily: 'monospace',
-            wordBreak: 'break-all',
-            whiteSpace: 'pre-wrap',
-            mt: 1,
-            mb: 1.5,
-          }}
-        >
-          {safeJson(options)}
-        </Typography>
-        <TextField
-          label={isTotp ? t('stepUp.codeLabel') : t('stepUp.credentialLabel')}
-          value={values[payloadKey] ?? ''}
-          onChange={(event) => setValues({ ...values, [payloadKey]: event.target.value })}
-          fullWidth
-          autoComplete="one-time-code"
-        />
-        <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
-          <Button
-            type="button"
-            variant="contained"
-            disabled={(values[payloadKey] ?? '').trim() === ''}
-            onClick={() =>
-              onSubmit({
-                step: 'enroll',
-                input: { [payloadKey]: (values[payloadKey] ?? '').trim() },
-              })
-            }
+    if (webauthnStepOf(options) === 'totp') {
+      // TOTP's enrollment shows the otpauth_uri to add to an authenticator
+      // app, then takes the six-digit code the app shows.
+      return (
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="body2" color="text.secondary">
+            {t('stepUp.codeHelp')}
+          </Typography>
+          <Typography
+            variant="body2"
+            component="pre"
+            sx={{
+              fontFamily: 'monospace',
+              wordBreak: 'break-all',
+              whiteSpace: 'pre-wrap',
+              mt: 1,
+              mb: 1.5,
+            }}
           >
-            {submitLabel}
-          </Button>
+            {safeJson(options)}
+          </Typography>
+          <TextField
+            label={t('stepUp.codeLabel')}
+            value={values.code ?? ''}
+            onChange={(event) => setValues({ ...values, code: event.target.value })}
+            fullWidth
+            autoComplete="one-time-code"
+          />
+          <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
+            <Button
+              type="button"
+              variant="contained"
+              disabled={(values.code ?? '').trim() === ''}
+              onClick={() => onSubmit({ step: answerStep, input: { code: (values.code ?? '').trim() } })}
+            >
+              {submitLabel}
+            </Button>
+          </Box>
         </Box>
-      </Box>
+      )
+    }
+    return (
+      <PasskeyPrompt
+        options={options}
+        answerStep={answerStep}
+        submitLabel={submitLabel}
+        onSubmit={onSubmit}
+      />
     )
   }
 
   // challenge: one text field per requested field, submitted together.
   const handleSubmit = (event: FormEvent): void => {
     event.preventDefault()
-    onSubmit({ step: challengeStep, input: { ...values } })
+    onSubmit({ step: answerStep, input: { ...values } })
   }
 
   return (
@@ -196,6 +201,76 @@ export function FlowStep({
       </Box>
     </Box>
   )
+}
+
+interface PasskeyPromptProps {
+  readonly options: unknown
+  readonly answerStep: string
+  readonly submitLabel: string
+  readonly onSubmit: (answer: AuthnFlowAnswer) => void
+}
+
+/** The passkey ceremony step: one button that drives the browser's
+ * WebAuthn ceremony and reports the credential it returns. A browser
+ * without WebAuthn, a dismissed prompt and a failed ceremony each render
+ * their own message rather than a silent no-op. */
+function PasskeyPrompt({
+  options,
+  answerStep,
+  submitLabel,
+  onSubmit,
+}: PasskeyPromptProps) {
+  const { t } = useConsoleUiTranslation()
+  const [working, setWorking] = useState(false)
+  const [errorKey, setErrorKey] = useState<string | null>(null)
+
+  async function run(): Promise<void> {
+    setWorking(true)
+    setErrorKey(null)
+    try {
+      const credential = await runWebauthn(options)
+      onSubmit({ step: answerStep, input: { credential } })
+    } catch (failure) {
+      setErrorKey(webauthnErrorKey(failure))
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  return (
+    <Box sx={{ mt: 2 }}>
+      <Typography variant="body2" color="text.secondary">
+        {t('stepUp.passkeyPrompt')}
+      </Typography>
+      {errorKey !== null && (
+        <Box sx={{ mt: 1 }}>
+          <Alert severity="error" role="alert">
+            {t(errorKey)}
+          </Alert>
+        </Box>
+      )}
+      <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
+        <Button type="button" variant="contained" disabled={working} onClick={() => void run()}>
+          {submitLabel}
+        </Button>
+      </Box>
+    </Box>
+  )
+}
+
+/** The bundle key of the message a failed ceremony renders. */
+function webauthnErrorKey(failure: unknown): string {
+  if (failure instanceof WebauthnError) {
+    switch (failure.reason) {
+      case 'unsupported':
+        return 'stepUp.passkeyUnsupported'
+      case 'cancelled':
+        return 'stepUp.passkeyCancelled'
+      default:
+        return 'stepUp.passkeyFailed'
+    }
+  }
+  return 'stepUp.passkeyFailed'
 }
 
 /** The step's payload as readable text; a non-serializable value reads as

@@ -60,9 +60,11 @@
     "cannotElevate": "本部署无法完成此次升级，请重新登录以获得更高的验证强度。",
     "relogin": "重新登录",
     "codeLabel": "验证码",
-    "credentialLabel": "凭证",
     "codeHelp": "输入你的动态验证码。",
-    "credentialHelp": "按验证器提示完成操作。",
+    "passkeyPrompt": "用你的设备出示通行密钥。",
+    "passkeyUnsupported": "此浏览器无法进行通行密钥仪式。",
+    "passkeyCancelled": "通行密钥提示已取消，请重试。",
+    "passkeyFailed": "通行密钥仪式未能完成。",
     "redirectNotice": "该验证需要跳转到外部页面，本对话框不会自动跳转。"
   },
   "tenants": {

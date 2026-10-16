@@ -140,7 +140,7 @@ export function StepUpChallenge({
                     // the step identity clears its per-answer state.
                     key={`${seq ?? 0}-${step.kind}`}
                     step={step}
-                    challengeStep="factor"
+                    answerStep="factor"
                     submitLabel={t('stepUp.submit')}
                     onSubmit={handleAnswer}
                   />
