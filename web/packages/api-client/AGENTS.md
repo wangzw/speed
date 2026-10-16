@@ -24,9 +24,19 @@ this one may issue HTTP requests itself.
   Do not add a storage-backed token store; the refresh token's home is
   the session layer above this package (the authn API returns it in the
   token-issuing response bodies, never a cookie or this store).
-- **No tenant header exists.** Tenant context travels inside the access
-  token; the API layer derives it from token claims. Never add
-  `x-tenant-id` or similar, and never accept a caller-supplied tenant.
+- **The tenant travels as a transport header, read per attempt.**
+  `ClientOptions.tenantProvider` (wired by the host -- product-shell's
+  bootstrap passes its `SpeedAppDefinition.tenantProvider`) is read on
+  every attempt and announced as `X-Tenant` when set. The tenant is a
+  request-time routing fact, NOT a claim of the access token (the token
+  carries no tenant): the backend's tenant resolution layer reads the
+  tenant name off the request surface, so a request to a tenant-scoped
+  endpoint must carry it, and the skeleton's stacks resolve it from this
+  header. The per-attempt read is the point: a retry issued after a
+  tenant switch must announce the tenant the user is now acting in, the
+  same discipline the bearer-token and language reads observe. Never
+  overwrite a caller-supplied `x-tenant`; a null/empty answer (or no
+  provider) leaves the header absent.
 - **fetch is injectable and never implicit at call time.** The client
   captures the environment's global `fetch` at construction (throwing a
   clear error when absent) and `ClientOptions.fetch` overrides it.
@@ -131,10 +141,11 @@ per-key mapping layer over them, because the generated type for the
 public-config body can only be a record of dynamic keys -- the per-key
 typing the hooks expose cannot come from generation. A generated
 operation must agree with the two constants here on the paths. Neither
-function accepts a tenant argument -- the endpoints carry no tenant on the
-wire: which tenant (if any) the request maps to is the server host's own
-wiring, through go/config's host-injected request-to-tenant resolver, with
-platform defaults when nothing matches.
+function accepts a tenant argument -- these endpoints resolve the tenant
+from the request host, not from the `X-Tenant` header the transport
+announces elsewhere: which tenant (if any) the request maps to is the
+server host's own wiring, through go/config's host-injected
+request-to-tenant resolver, with platform defaults when nothing matches.
 
 `usePublicConfig` / `useFeature` live in `src/react.ts`, exported from
 the isolated `./react` subpath. The manifest declares `react` as a

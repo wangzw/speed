@@ -66,9 +66,14 @@
  *      toJSON() that yields nothing) rejects as client.protocol before
  *      anything is sent.
  *
- * The tenant never appears here: no tenant header exists anywhere in
- * the package -- tenant context travels in the access token, and
- * nothing in this file reads or stores data beyond the current request.
+ * The tenant is a transport channel here, not a claim of the access
+ * token: the client announces the host's current tenant as the
+ * `X-Tenant` header, read per attempt from `tenantProvider` -- the
+ * routing fact the backend's tenant resolution layer reads off the
+ * request surface. A request declaring no provider, or whose provider
+ * answers null/empty, carries no tenant header; a caller-supplied
+ * `x-tenant` is the caller's own and is never overwritten. Nothing in
+ * this file reads or stores data beyond the current request.
  */
 
 import {
@@ -277,7 +282,33 @@ export interface ClientOptions {
    * probe, a fixed-copy fetch -- keeps it.
    */
   languageProvider?: () => string | null
+  /**
+   * The tenant every request announces as the `X-Tenant` header: the
+   * host returns its current tenant identifier -- the routing fact the
+   * backend's tenant resolution layer reads on the endpoints it guards
+   * -- or null/empty for "none to announce". The tenant is not a claim
+   * of the access token (the token carries none): the server resolves
+   * it off the request surface (a header, a subdomain label or a path
+   * segment, per its configuration), so a request to a tenant-scoped
+   * endpoint must carry it. This is the transport channel for that
+   * value; the skeleton's stacks resolve the tenant from this header
+   * (`X-Tenant` in the demo configuration).
+   *
+   * Read per attempt, like the bearer token and the language, so a
+   * retry issued after a tenant switch carries the tenant the user is
+   * now acting in. A caller-supplied `x-tenant` on the request's own
+   * headers is never overwritten (the same guard the accept/content-
+   * type and accept-language defaults observe): a request that names
+   * its own tenant keeps it. A null/empty answer leaves the header
+   * absent.
+   */
+  tenantProvider?: () => string | null
 }
+
+/** The header every tenant-scoped request announces the tenant under.
+ * Lower case, the canonical form a `Headers` lookup and a Go
+ * `r.Header.Get` both fold to. */
+const TENANT_HEADER = 'x-tenant'
 
 /** Statuses transient-retried on idempotent methods. */
 const RETRYABLE_STATUSES = new Set([429, 502, 503, 504])
@@ -738,6 +769,7 @@ export function createClient(options: ClientOptions): RequestFn {
   }
   const reporter = options.reporter ?? createConsoleReporter()
   const languageProvider = options.languageProvider
+  const tenantProvider = options.tenantProvider
 
   /** One HTTP attempt: token attach, timeout abort, caller-abort
    * passthrough. Rejects raw only for caller cancellation. The
@@ -772,6 +804,18 @@ export function createClient(options: ClientOptions): RequestFn {
       const language = languageProvider?.() ?? null
       if (language !== null && language !== '') {
         headers.set('accept-language', language)
+      }
+    }
+    // The tenant is read per attempt through the host's provider, the same
+    // per-attempt discipline the token and language reads observe: a retry
+    // issued after a tenant switch announces the tenant the user is now
+    // acting in. A caller-supplied x-tenant is the caller's, never
+    // overwritten. Null/empty means "nothing to announce" and the header
+    // stays absent.
+    if (!headers.has(TENANT_HEADER)) {
+      const tenant = tenantProvider?.() ?? null
+      if (tenant !== null && tenant !== '') {
+        headers.set(TENANT_HEADER, tenant)
       }
     }
     // The token is read per attempt: a retry after a successful refresh

@@ -179,6 +179,10 @@ bootstrapSpeedApp(document.getElementById('root')!, {
     context.evictAllQueries()
     clearMyDraft()
   },
+  // Optional: the tenant every request announces as the X-Tenant header
+  // — the host's current tenant (its routing fact), read per attempt.
+  // Omit it when the app makes no tenant-scoped calls.
+  tenantProvider: () => currentTenantId,
 })
 ```
 
@@ -191,7 +195,8 @@ module catalog's own words instead of the raw key; a memory access-token
 store feeding the auth-core session over the generated authn
 operations, attached before render; one `@speed/api-client` client
 over the environment's fetch with the session refresh as its
-401-refresh leg, bound into the api-sdk runtime seam; the no-retry
+401-refresh leg and the definition's `tenantProvider` as its `X-Tenant`
+source, bound into the api-sdk runtime seam; the no-retry
 query client and the session-end strategy; then the provider stack —
 I18nextProvider around `AppThemeProvider` around
 `QueryClientProvider`, then your providers around your view. It

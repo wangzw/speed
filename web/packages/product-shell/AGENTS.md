@@ -63,13 +63,15 @@ is the only authority the machine reads.
 `bootstrapSpeedApp(container, definition)` is the one call a delivered
 app's main module makes: it takes the app's declarative definition —
 the app's own i18n namespaces, app-level providers, the view root, an
-optional session-end override, an optional baseUrl — and wires the
+optional session-end override, an optional baseUrl, an optional
+tenantProvider — and wires the
 whole entry composition a host used to hand-derive: a fresh bilingual
 i18n instance (the family's four namespaces registered automatically
 from the packages the assembly composes), the memory-token session
 attached over the generated authn operations, the one client bound
 into the api-sdk runtime binding with the session refresh as its
-401-refresh leg, the no-retry query client (`createQueryClient`, also
+401-refresh leg and the definition's tenantProvider as its `X-Tenant`
+source, the no-retry query client (`createQueryClient`, also
 exported), the session-end strategy (`watchSessionEnd`) and the
 provider stack — I18nextProvider around `AppThemeProvider` around
 `QueryClientProvider`, then the declared providers around the declared

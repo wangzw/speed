@@ -171,8 +171,9 @@ function useAppChrome(clientApi: RequestFn): AppChrome {
   `fetchSystemFeatures` (above) remains the direct route to that
   endpoint for a caller that genuinely wants it standalone.
 - Neither hook accepts or infers a tenant -- both endpoints resolve
-  tenant from the request's **host**, not from the access token, so a
-  logged-in user's tenant switch has no bearing on this cache.
+  tenant from the request's **host** (not from the `X-Tenant` header the
+  client announces elsewhere), so a logged-in user's tenant switch has no
+  bearing on this cache.
 
 ## What it does
 
@@ -213,8 +214,10 @@ function useAppChrome(clientApi: RequestFn): AppChrome {
   that (see `@speed/api-sdk`); the request then carries only its own
   headers, so without a caller-supplied `authorization` it travels
   credential-less, and a caller-supplied one is the caller's own,
-  untouched by the store. No tenant header exists anywhere: tenant
-  context travels inside the access token.
+  untouched by the store. Tenant context does not travel in the token
+  (the access token carries no tenant claim); the client announces it
+  as the `X-Tenant` header, read per attempt from
+  `ClientOptions.tenantProvider` -- see "Tenant announcement" below.
 - **Silent 401 refresh, once per request -- bearer-only.** When a
   request that *presented a bearer token* answers 401 and a
   `refreshAccessToken` hook is configured, the client runs one refresh
@@ -290,6 +293,31 @@ function useAppChrome(clientApi: RequestFn): AppChrome {
   (an SMS code's language, a contact verification message). API
   responses themselves are never localized -- they stay code+params for
   the client to translate.
+- **Tenant announcement (a transport channel, not a claim of the
+  token).** `ClientOptions.tenantProvider` supplies the tenant every
+  request announces as the `X-Tenant` header:
+
+  ```ts
+  const api = createClient({
+    baseUrl: '/api/v1',
+    // The host returns its current tenant (its routing fact); the value
+    // is announced on every request and read per attempt.
+    tenantProvider: () => currentTenantId,
+  })
+  ```
+
+  The tenant is a request-time routing fact, not a claim of the access
+  token (the token carries none): the backend's tenant resolution layer
+  reads the tenant name off the request surface (a header, a subdomain
+  label or a path segment, per its configuration), so a request to a
+  tenant-scoped endpoint must carry it -- the skeleton's stacks resolve
+  it from this header. The provider is read on EVERY attempt, the same
+  per-attempt discipline the bearer-token and language reads observe, so
+  a request retried after a tenant switch carries the tenant the user is
+  now acting in. It never overwrites a caller-supplied `x-tenant`
+  header, and a null/empty answer (or no provider at all) leaves the
+  header absent. A host with no tenant-scoped traffic leaves the
+  provider out.
 
 ## Public surface
 

@@ -3,8 +3,9 @@
  *
  * Both endpoints resolve tenant entirely server-side, from the
  * request's host (go/config/http.go's ConfigGetPublicConfig /
- * ConfigGetSystemFeatures) -- never from a header or query parameter --
- * so neither function below accepts a tenant argument of any kind.
+ * ConfigGetSystemFeatures) -- not from the `X-Tenant` header the
+ * transport announces elsewhere, nor a query parameter -- so neither
+ * function below accepts a tenant argument of any kind.
  * Passing one would be a silent no-op at best.
  *
  * The path constants mirror go/config's own PathPublic /

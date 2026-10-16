@@ -163,6 +163,15 @@ export interface SpeedAppDefinition {
   /** The client's base URL. Defaults to the page's own origin, the
    * same-origin deployment shape. */
   readonly baseUrl?: string
+  /** The tenant every request announces as the `X-Tenant` header: the
+   * host returns its current tenant identifier (its routing fact), read
+   * per attempt so a request after a tenant switch carries the tenant
+   * the user is now acting in. Passed straight to the client's
+   * `tenantProvider`; absent, or answering null/empty, no tenant header
+   * is sent. This is the transport channel for tenant context -- the
+   * tenant is not a claim of the access token -- and the backend's
+   * tenant resolution layer reads it off the request surface. */
+  readonly tenantProvider?: () => string | null
 }
 
 /** What the assembly produced, for hosts and harnesses that act on the
@@ -305,6 +314,11 @@ export function bootstrapSpeedApp(
     // serves as "requester is recipient" content (an SMS code, the type
     // directory) renders in it.
     languageProvider: () => i18n.language,
+    // The host's current tenant (its routing fact), announced as X-Tenant
+    // on every request, read per attempt. Absent from the definition, no
+    // tenant header is sent -- a host with no tenant-scoped traffic leaves
+    // it out.
+    tenantProvider: definition.tenantProvider,
   })
   bindRequestFn(client)
 

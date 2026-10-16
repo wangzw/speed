@@ -48,8 +48,10 @@ and `src/` must keep passing it on every regeneration.
   replaces the previous function, last bind wins, no once-guard (tests
   and hot reload rebind).
 - **No tenant header and no tenant query key exist in generated
-  code.** Tenant context travels inside the access token -- never in
-  a header -- and query keys are bare spec paths. No `tenant_id` field
+  code.** Tenant context is attached by the transport, never by a
+  generated operation (`@speed/api-client`'s `tenantProvider` value
+  travels as the `X-Tenant` header), and query keys are bare spec paths.
+  No `tenant_id` field
   appears in the generated types either: the tenant a request acts in is
   a server-resolved routing fact, not a body or response field, so no
   fragment carries a `tenant_id` -- the identity surface's login, SMS and

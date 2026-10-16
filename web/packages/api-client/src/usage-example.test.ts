@@ -140,8 +140,8 @@ describe('README usage example', () => {
     expect(call.url).toBe('/api/v1/notes?page=1')
     expect(call.method).toBe('GET')
     expect(call.headers.get('accept')).toBe('application/json')
-    // The memory store starts empty: no Authorization header, and no
-    // tenant header exists anywhere in this package.
+    // The memory store starts empty (no Authorization), and this client
+    // configures no tenantProvider, so no tenant header either.
     expect(call.headers.has('authorization')).toBe(false)
     expect(call.headers.has('x-tenant-id')).toBe(false)
     // The happy path reports nothing.

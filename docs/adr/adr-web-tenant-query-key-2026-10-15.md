@@ -8,7 +8,7 @@
 
 多租户下，一个用户在某个租户下读到的数据不能出现在另一个租户的界面里：切换租户之后，前一个租户的缓存必须逐出，否则新租户的界面会显示旧租户的数据。
 
-生成面刻意与租户无关。`@speed/api-sdk` 是 orval 生成的（`web/packages/api-sdk/src/index.ts`），它的 query key 是裸的 spec 路径，不带租户维度；`web/packages/api-sdk/AGENTS.md` 记下这条——生成代码里没有租户头、没有租户 query key，租户上下文只经访问令牌传递，`tenant_id` 只在认证片段的类型里出现。
+生成面刻意与租户无关。`@speed/api-sdk` 是 orval 生成的（`web/packages/api-sdk/src/index.ts`），它的 query key 是裸的 spec 路径，不带租户维度；`web/packages/api-sdk/AGENTS.md` 记下这条——生成代码里没有租户头、没有租户 query key，`tenant_id` 只在认证片段的类型里出现。租户由传输层统一挂在请求上：`@speed/api-client` 的 `tenantProvider` 的值接成 `X-Tenant` 头，不经任一生成操作，生成面因而仍与租户无关。
 
 今天的租户分域是消费者壳的纪律，不是框架能力：`web/packages/tenancy-ui/README.md` 把 `queryClient.removeQueries({ queryKey: ['tenant', oldId] })` 写成宿主在 `TenantSwitcher` 的 `onSwitched` 里的工作，参考应用里是宿主自己写的一份键形状加逐出。键形状与逐出时机因而会按宿主数各写一遍。
 
@@ -32,7 +32,7 @@
 
 - 工厂把租户标识作为最外层段拼在生成的裸 spec 键之上，一个租户下的全部读共用一个前缀。
 - 逐出助手在租户切换提交后按该前缀逐出前一个租户的键。
-- `@speed/api-sdk` 的生成面不变：query key 仍是裸 spec 路径，无租户头、无租户 query key；租户上下文仍只经访问令牌传递。
+- `@speed/api-sdk` 的生成面不变：query key 仍是裸 spec 路径，无租户头、无租户 query key；租户由传输层统一挂在请求上（`X-Tenant`，`@speed/api-client` 的 `tenantProvider` 接），不经生成面。
 - 会话结束的整棵逐出（`web/packages/product-shell/src/bootstrap.tsx` 的 `bootstrapSpeedApp` 会话结束默认）与租户逐出并存：租户切换逐出租户段，会话结束逐出整棵缓存。
 
 ## 后果
@@ -48,4 +48,4 @@
 ## 失效条件
 
 - 若 orval 或其继任者原生支持 query key 前缀或 transformer，工厂可以退回生成层，本决策要重新评估。
-- 若租户上下文不再只经访问令牌传递——例如改为显式租户头——生成面与租户无关这一前提不再成立。
+- 若租户标识成为生成面的**逐操作参数**（而非由传输层统一挂在请求上）——生成面与租户无关这一前提不再成立。

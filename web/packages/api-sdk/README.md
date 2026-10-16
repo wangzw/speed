@@ -81,9 +81,10 @@ bindRequestFn(
 ```
 
 Transport concerns (base URL, access-token store, refresh, retry,
-timeout, reporter) are entirely the host's `createClient`
-configuration; generated code carries none of them, no tenant header
-exists anywhere, and generated query keys are plain path strings
+timeout, reporter, the language and tenant headers) are entirely the
+host's `createClient` configuration; generated code carries none of
+them (the tenant the transport announces as `X-Tenant` included), and
+generated query keys are plain path strings
 without a tenant prefix -- tenant query-key namespacing is a
 consumer-shell discipline.
 

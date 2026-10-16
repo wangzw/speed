@@ -144,6 +144,7 @@ describe('bootstrapSpeedApp', () => {
     readonly path: string
     readonly origin: string
     readonly acceptLanguage: string | null
+    readonly tenant: string | null
   }>
   let realFetch: typeof globalThis.fetch
   let realLanguages: readonly string[] | undefined
@@ -191,6 +192,7 @@ describe('bootstrapSpeedApp', () => {
           path: url.pathname,
           origin: url.origin,
           acceptLanguage: new Headers(init?.headers).get('accept-language'),
+          tenant: new Headers(init?.headers).get('x-tenant'),
         })
         return respond({
           method: init?.method ?? 'GET',
@@ -306,6 +308,56 @@ describe('bootstrapSpeedApp', () => {
       boot.root.unmount()
     })
     container.remove()
+  })
+
+  it('sends the definition tenantProvider value as X-Tenant, read per request, and no header without one', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    let tenant: string | null = 'acme'
+    const boot = await mountApp(container, {
+      view: <div />,
+      tenantProvider: () => tenant,
+    })
+
+    // Every request the session wiring drives announces the host's current
+    // tenant -- the routing fact the backend's tenant resolution layer reads
+    // on the api endpoint.
+    await act(async () => {
+      await signIn(boot.session)
+    })
+    expect(observed.length).toBeGreaterThan(0)
+    expect(observed.every((call) => call.tenant === 'acme')).toBe(true)
+
+    // The provider is read per request, so a switch moves what subsequent
+    // requests announce rather than going stale.
+    const beforeSwitch = observed.length
+    tenant = 'globex'
+    await act(async () => {
+      await signIn(boot.session)
+    })
+    const afterSwitch = observed.slice(beforeSwitch)
+    expect(afterSwitch.length).toBeGreaterThan(0)
+    expect(afterSwitch.every((call) => call.tenant === 'globex')).toBe(true)
+
+    await act(async () => {
+      boot.root.unmount()
+    })
+    container.remove()
+
+    // A definition with no tenantProvider announces no tenant at all.
+    observed = []
+    const bare = document.createElement('div')
+    document.body.appendChild(bare)
+    const bareBoot = await mountApp(bare, { view: <div /> })
+    await act(async () => {
+      await signIn(bareBoot.session)
+    })
+    expect(observed.length).toBeGreaterThan(0)
+    expect(observed.every((call) => call.tenant === null)).toBe(true)
+    await act(async () => {
+      bareBoot.root.unmount()
+    })
+    bare.remove()
   })
 
   it('registers the declared namespaces on top of the family four, and threads the assembled services through the providers in declared order', async () => {

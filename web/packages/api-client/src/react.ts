@@ -26,9 +26,10 @@
  *   there is nothing left to distinguish, so neither hook special-cases
  *   it.
  * - No tenant-switch revalidation. Both endpoints resolve tenant from
- *   the request's *host*, never from the access token, so a token
- *   refresh or a tenant switch (which only changes token claims) has
- *   no bearing on this cache. This is a deliberate non-feature.
+ *   the request's *host*, never from the access token or the `X-Tenant`
+ *   header the transport announces elsewhere, so a token refresh or a
+ *   tenant switch has no bearing on this cache. This is a deliberate
+ *   non-feature.
  * - No auto-polling or window-focus revalidation. `refresh()` is the
  *   explicit revalidation lever, and a *failed* first load is
  *   automatically retried by the next subscriber (below), so a

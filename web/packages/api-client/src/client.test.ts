@@ -1,6 +1,7 @@
 /**
  * Contract tests for the whole request lifecycle createClient wires:
- * bearer attachment without any tenant header, the single-flight silent
+ * bearer attachment, the tenant header (announced from the host's
+ * tenantProvider, absent without one), the single-flight silent
  * 401 refresh (at most one refresh per request, one retry on any
  * method), transient retry only for idempotent methods with the pure
  * backoff maths pinned in retry.test.ts, caller cancellation passing
@@ -234,7 +235,7 @@ describe('construction validation', () => {
 })
 
 describe('request shape', () => {
-  it('attaches the bearer token and nothing tenant-shaped', async () => {
+  it('attaches the bearer token and no tenant header without a provider', async () => {
     const store = createMemoryAccessTokenStore()
     store.set('token-1')
     const standin = scriptedStandin(jsonResponse(200, { ok: true }))
@@ -250,9 +251,10 @@ describe('request shape', () => {
     expect(call.headers.get('authorization')).toBe('Bearer token-1')
     expect(call.headers.get('accept')).toBe('application/json')
     expect(call.headers.has('content-type')).toBe(false)
-    // Exactly the two documented headers go out -- and the tenant never
-    // appears as a header: it travels in the access-token claims, so
-    // nothing tenant-shaped may exist here.
+    // Exactly the two documented headers go out -- a client with no
+    // tenantProvider announces no tenant, so nothing tenant-shaped may
+    // exist here. (A provider is what adds x-tenant; see the tenant
+    // tests below.)
     expect([...call.headers.keys()].sort()).toEqual([
       'accept',
       'authorization',
@@ -399,6 +401,71 @@ describe('request shape', () => {
     await expect(pending).resolves.toEqual({ ok: true })
     expect(recorded(standin, 0).headers.get('accept-language')).toBe('zh-CN')
     expect(recorded(standin, 1).headers.get('accept-language')).toBe('en-US')
+  })
+
+  it('announces the tenant provider value and leaves the header absent for null/empty', async () => {
+    const standin = scriptedStandin(
+      jsonResponse(200, { ok: true }),
+      jsonResponse(200, { ok: true }),
+      jsonResponse(200, { ok: true }),
+      jsonResponse(200, { ok: true }),
+    )
+    let tenant: string | null = 'acme'
+    const api = createClient({
+      baseUrl: BASE_URL,
+      fetch: standin.fetch,
+      tenantProvider: () => tenant,
+    })
+    await api<{ ok: boolean }>('/objects')
+    expect(recorded(standin, 0).headers.get('x-tenant')).toBe('acme')
+
+    tenant = null
+    await api<{ ok: boolean }>('/objects')
+    expect(recorded(standin, 1).headers.has('x-tenant')).toBe(false)
+
+    tenant = ''
+    await api<{ ok: boolean }>('/objects')
+    expect(recorded(standin, 2).headers.has('x-tenant')).toBe(false)
+
+    // No provider at all: nothing to announce, no header.
+    const bare = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
+    await bare<{ ok: boolean }>('/objects')
+    expect(recorded(standin, 3).headers.has('x-tenant')).toBe(false)
+  })
+
+  it('never overwrites a caller-supplied x-tenant', async () => {
+    const standin = scriptedStandin(jsonResponse(200, { ok: true }))
+    const api = createClient({
+      baseUrl: BASE_URL,
+      fetch: standin.fetch,
+      tenantProvider: () => 'acme',
+    })
+    await api<{ ok: boolean }>('/objects', {
+      headers: { 'X-Tenant': 'globex' },
+    })
+    expect(recorded(standin).headers.get('x-tenant')).toBe('globex')
+  })
+
+  it('reads the tenant per attempt, so a retry carries the switched tenant', async () => {
+    let tenant: string | null = 'acme'
+    const standin = scriptedStandin(
+      textResponse(503, 'Service Unavailable'),
+      jsonResponse(200, { ok: true }),
+    )
+    const api = createClient({
+      baseUrl: BASE_URL,
+      fetch: standin.fetch,
+      retryPolicy: zeroDelay(2),
+      tenantProvider: () => tenant,
+    })
+    // The switch lands between the first attempt and its retry: the retry
+    // must announce the tenant the user is acting in NOW, not the one the
+    // request started with.
+    const pending = api<{ ok: boolean }>('/objects')
+    tenant = 'globex'
+    await expect(pending).resolves.toEqual({ ok: true })
+    expect(recorded(standin, 0).headers.get('x-tenant')).toBe('acme')
+    expect(recorded(standin, 1).headers.get('x-tenant')).toBe('globex')
   })
 
   it('strips trailing slashes from baseUrl and appends the path verbatim', async () => {

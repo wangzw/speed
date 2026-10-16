@@ -2,11 +2,11 @@
 
 ## 职责
 
-前端唯一的**手写 HTTP 运行时**，包 `web/packages/api-client`。`createClient` 把若干可注入的接缝——可注入的 `fetch`、仅内存的访问令牌存储、401 刷新钩子、重试策略、每次交换的超时、结构化上报端、语言提供者——接成一个请求函数 `RequestFn`；前端的每一次 HTTP 调用都经它发出，每一次失败都以 `ApiError` 拒绝。
+前端唯一的**手写 HTTP 运行时**，包 `web/packages/api-client`。`createClient` 把若干可注入的接缝——可注入的 `fetch`、仅内存的访问令牌存储、401 刷新钩子、重试策略、每次交换的超时、结构化上报端、语言提供者、租户提供者——接成一个请求函数 `RequestFn`；前端的每一次 HTTP 调用都经它发出，每一次失败都以 `ApiError` 拒绝。
 
-- **它为什么存在。** 契约的生成面（[api-sdk](design-web-api-sdk.md)、orval 的产物）产出的是**形状**——类型与每端点的函数、Query hook——它不产出**传输**。生成面把每次调用交给一个手写的适配器（`@speed/api-sdk` 的 `./runtime` 接缝），由适配器转发给本包的请求函数；宿主在装配处（[product-shell](design-web-product-shell.md) 的 `bootstrapSpeedApp`）以 `bindRequestFn` 把客户端绑进那条接缝。传输（基地址、令牌、刷新、重试、超时、上报、语言）因此只在一处定义。工作区里除本包外没有任何一处手写 `fetch`/`axios`，这条由 `web/eslint.config.mjs` 的 `speed/no-direct-http` 规则守住，而白名单里只有本包。
+- **它为什么存在。** 契约的生成面（[api-sdk](design-web-api-sdk.md)、orval 的产物）产出的是**形状**——类型与每端点的函数、Query hook——它不产出**传输**。生成面把每次调用交给一个手写的适配器（`@speed/api-sdk` 的 `./runtime` 接缝），由适配器转发给本包的请求函数；宿主在装配处（[product-shell](design-web-product-shell.md) 的 `bootstrapSpeedApp`）以 `bindRequestFn` 把客户端绑进那条接缝。传输（基地址、令牌、刷新、重试、超时、上报、语言、租户）因此只在一处定义。工作区里除本包外没有任何一处手写 `fetch`/`axios`，这条由 `web/eslint.config.mjs` 的 `speed/no-direct-http` 规则守住，而白名单里只有本包。
 - **每次尝试接令牌。** 请求函数在每次发送时从访问令牌存储读一次当前令牌，接成 `Authorization: Bearer <token>`；一次请求可声明 `omitAccessToken`，声明后完全不读存储、不接任何存储令牌。令牌只在内存：本包没有任何存储 API，令牌不落 `localStorage`/`sessionStorage`/IndexedDB/cookie。
-- **无租户头。** 本包不设置也不读取任何租户头；租户上下文只经访问令牌传递（[ADR-web-tenant-query-key-2026-10-15](../../../adr/adr-web-tenant-query-key-2026-10-15.md)）。
+- **租户按尝试播报，且不在令牌里。** 宿主交来一个租户提供者，本包每次尝试读一次，接成 `X-Tenant` 头；租户是请求期的路由事实，不在访问令牌的声明里，后端解析层正是从请求面（按配置取头、子域或路径）读它。未配提供者、或提供者答空时该头缺席；调用方自带的 `x-tenant` 不覆盖。
 - **静默的 401 单飞刷新。** 配了刷新钩子时，一次**带了 bearer 令牌**的 401 触发一次刷新（并发的 401 共享同一次在飞刷新），随后原请求重试恰一次；凭据为空的 401 不经刷新路径，原样抛出。
 - **仅幂等、仅瞬时的重试。** `GET`／`HEAD`／`OPTIONS` 上的 429（honour `Retry-After`）、502／503／504、网络失败与超时按策略重试，其余一律不重试。
 - **每次交换一条超时，调用方取消原样透传。** `timeoutMs` 界定一次 HTTP 交换（一次发送加其正文读取）；调用方传入的 `AbortSignal` 取消时以原生 `AbortError` 拒绝，不包裹、不重试。
@@ -19,7 +19,7 @@
 ### 非职责
 
 - **不生成类型与端点函数。** 每端点的类型、函数与 Query hook 由 orval 从契约生成，落在 [api-sdk](design-web-api-sdk.md)。本包对 spec 无关：它不认识任何端点路径、请求体或响应类型，只接受一个路径串与一组请求选项。
-- **不认识租户。** 本包不读、不存、不传任何租户标识；无租户头，租户在令牌里。查询键的租户分段是框架别处的事（[ADR-web-tenant-query-key-2026-10-15](../../../adr/adr-web-tenant-query-key-2026-10-15.md)）。
+- **不认识租户，只播报宿主给的租户。** 本包不推导、不存租户标识，只在每次尝试把宿主经租户提供者交来的值接成 `X-Tenant` 头；租户从哪来（路由、会话）是宿主的事实，本包不决定。查询键的租户分段是框架别处的事（[ADR-web-tenant-query-key-2026-10-15](../../../adr/adr-web-tenant-query-key-2026-10-15.md)）。
 - **不落存储。** 本包没有存储接缝，宿主因而无法配置令牌持久化；访问令牌只在内存，重载页面即登出直到会话层重建会话。刷新令牌的家在会话层（[auth-core](design-web-auth-core.md)），不在本包。
 - **不持会话状态、不驱动会话。** 401 时调用的刷新钩子由宿主提供（`@speed/auth-core` 的会话刷新）；本包不持有会话，不决定会话存续。
 - **不构造 QueryClient、不定义查询键。** 本包只交一个请求函数；server 状态的缓存归 TanStack Query，由宿主拥有。
@@ -80,6 +80,7 @@ export type UsePublicConfigResult
 | `retryPolicy` | 瞬时重试的次数与延时；缺省 `DEFAULT_RETRY_POLICY`；`maxAttempts < 1` 或非整数、延时为负或非有限即抛错 |
 | `reporter` | 结构化诊断接收端；缺省 `createConsoleReporter()` |
 | `languageProvider` | 每次尝试读一次，返回当前语言或 `null`/空串表示「无可播报」；接成 `accept-language`，不覆盖调用方自带的该头 |
+| `tenantProvider` | 每次尝试读一次，返回当前租户或 `null`/空串表示「无可播报」；接成 `X-Tenant`，不覆盖调用方自带的 `x-tenant` |
 
 **`RequestFn` 的契约，约束的主体是它的每次调用**：2xx 的 JSON 正文解析为 `T`，空的 2xx（204 式）解析为 `undefined`，除非请求声明了 `requireJsonBody`（此时空 2xx 以携带真实状态与尝试次数的 `client.protocol` 拒绝）；非 2xx 一律以 `ApiError` 拒绝；带信封的失败保留信封的 `code`（`code` 是唯一必需的线上字段，`traceId` 可选），其余取保留的 `client.*` 码；调用方取消以原生 `AbortError` 拒绝。请求路径必须是以 `/` 开头的绝对路径；带查询串的路径与 `query` 选项同时给出即按程序员错误拒绝。
 
@@ -148,7 +149,7 @@ sequenceDiagram
 | 概念 | 类型 | 说明 |
 |---|---|---|
 | 请求函数 | `RequestFn` | `createClient` 的产物；泛型于解析结果类型 |
-| 客户端选项 | `ClientOptions` | 基地址、fetch、令牌存储、刷新钩子、超时、重试策略、上报端、语言提供者 |
+| 客户端选项 | `ClientOptions` | 基地址、fetch、令牌存储、刷新钩子、超时、重试策略、上报端、语言提供者、租户提供者 |
 | 单次请求选项 | `RequestOptions` | 方法、头、`omitAccessToken`、查询、正文、`requireJsonBody`、取消信号 |
 | 归一错误 | `ApiError` | `status`、`code`、`traceId`、`params`、`details`、`attempts`、`auth`（`status === 401`） |
 | 令牌存储 | `AccessTokenStore` | 同步的 `get`/`set`，仅内存；`set(null)` 即登出 |
@@ -187,9 +188,13 @@ sequenceDiagram
 
 `languageProvider` 在每次尝试读一次，接成 `accept-language`（`null`/空串即不设该头），且不覆盖调用方自带的该头。每次尝试读是这条的设计点：语言切换后重试的请求播报用户当前所看的语言，与令牌的每次尝试读同一纪律。
 
+### 租户的按尝试读取
+
+`tenantProvider` 在每次尝试读一次，接成 `X-Tenant`（`null`/空串即不设该头），且不覆盖调用方自带的 `x-tenant`。租户是请求期的路由事实，**不在访问令牌的声明里**：后端解析层按配置从请求面（头、子域或路径）读租户名，指向受租户保护的端点的请求因此必须带上它，demo 的栈正是从该头解析。每次尝试读是这条的设计点：切租户后重试的请求播报用户当前所处的租户，与令牌、语言同一纪律。租户从哪来（宿主的路由、会话）是宿主的事实，本包不推导。
+
 ### 配置端点的取回
 
-`fetchPublicConfig`／`fetchSystemFeatures` 是预认证端点的按键映射层，经同一 `RequestFn` 发出，并以 `requireJsonBody` 拒绝空 2xx——go/config 的端点总是写一份 JSON 文档，一个空应答是坏的，而解析成 `undefined` 会冒充成那份类型化文档直到消费方读到它的一个字段。取回函数不接受租户参数：端点不带线上租户，租户由服务端从请求 host 解析。
+`fetchPublicConfig`／`fetchSystemFeatures` 是预认证端点的按键映射层，经同一 `RequestFn` 发出，并以 `requireJsonBody` 拒绝空 2xx——go/config 的端点总是写一份 JSON 文档，一个空应答是坏的，而解析成 `undefined` 会冒充成那份类型化文档直到消费方读到它的一个字段。取回函数不接受租户参数：这两个端点从请求 host 解析租户，不读传输播报的 `X-Tenant` 头。
 
 ## 错误与失败语义
 
@@ -231,6 +236,7 @@ sequenceDiagram
 - **`retryPolicy`**：改瞬时重试的预算与延时；`{ maxAttempts: 1, ... }` 关闭瞬时重试。
 - **`reporter`**：把诊断接到宿主的管道；`Reporter` 的 `error` 通道是宿主自身的调用点。
 - **`languageProvider`**：把客户端的语言播报接到宿主的 i18n 实例。
+- **`tenantProvider`**：把客户端的租户播报接到宿主当前租户（宿主的路由事实）。
 
 **新增一个预认证端点的手写取回**即在 `config-fetcher.ts` 加一个常量与一个封装，与生成面保持路径一致。
 
@@ -238,7 +244,7 @@ sequenceDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 请求函数与生命周期、令牌与语言按尝试读 | 已实现 | `web/packages/api-client/src/client.ts` `createClient`、`RequestFn`、`RequestOptions`、`ClientOptions` |
+| 请求函数与生命周期、令牌与语言与租户按尝试读 | 已实现 | `web/packages/api-client/src/client.ts` `createClient`、`RequestFn`、`RequestOptions`、`ClientOptions` |
 | 归一错误与保留码词表、传输失败判据 | 已实现 | `web/packages/api-client/src/errors.ts` `ApiError`、`ERROR_CODE_NETWORK`、`ERROR_CODE_TIMEOUT`、`ERROR_CODE_PROTOCOL`、`httpErrorCode`、`isApiError`、`isTransportFailure` |
 | 仅内存的访问令牌存储 | 已实现 | `web/packages/api-client/src/access-token.ts` `createMemoryAccessTokenStore`、`AccessTokenStore` |
 | 重试策略与纯退避函数 | 已实现 | `web/packages/api-client/src/retry.ts` `DEFAULT_RETRY_POLICY`、`retryDelayMs`、`retryAfterDelayMs` |
