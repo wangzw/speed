@@ -13,13 +13,17 @@
  * (src/main.tsx's bootstrapSpeedApp call), so this area mounts no provider of
  * its own. A product that must change that wiring mounts console-ui's
  * ConsoleOperationsProvider here instead.
+ *
+ * The frame's top bar is the same chrome the tenant frame carries -- the brand
+ * and the sign-out action (src/chrome) -- so the two shells read as one
+ * product's chrome rather than two, even though this one has no tenant
+ * switcher.
  */
 
 import type { ConsoleRouteTable } from '@speed/console-ui'
 import { ConsoleShell } from '@speed/console-ui'
-import { useTranslation } from '@speed/i18n'
 import type { ReactElement, ReactNode } from 'react'
-import { DEMO_NAMESPACE } from '../resources.js'
+import { AppBrand, UserMenu } from '../chrome.js'
 
 export interface ConsoleAreaProps {
   /** The console's page declarations, whose labelled entries become its navigation. */
@@ -29,9 +33,12 @@ export interface ConsoleAreaProps {
 }
 
 export function ConsoleArea({ routes, children }: ConsoleAreaProps): ReactElement {
-  const { t } = useTranslation(DEMO_NAMESPACE)
   return (
-    <ConsoleShell routes={routes} title={t('app.title')}>
+    <ConsoleShell
+      routes={routes}
+      title={<AppBrand />}
+      headerActions={<UserMenu />}
+    >
       {children}
     </ConsoleShell>
   )

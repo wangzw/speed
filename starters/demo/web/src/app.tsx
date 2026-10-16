@@ -31,7 +31,7 @@ import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import { useAuthState } from '@speed/auth-core'
 import type { AuthSnapshot } from '@speed/auth-core'
-import { SignInScreen, SignOutButton } from '@speed/auth-ui'
+import { SignInScreen } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
 import { RouteGuard } from '@speed/layout-kit'
 import type { AppShellNavItem, RouteGuardStatus } from '@speed/layout-kit'
@@ -45,6 +45,7 @@ import {
 import type { RouteContext } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
 import { useAppServices } from './app-services.js'
+import { AppBrand, UserMenu } from './chrome.js'
 import { ConsoleArea } from './console/console-area.js'
 import { DemoNavLabel } from './nav-label.js'
 import { DEMO_NAMESPACE } from './resources.js'
@@ -201,16 +202,6 @@ function consoleGuardStatus(
   return set === null || set.includes(permission) ? 'allowed' : 'denied'
 }
 
-/** The AppBar brand: the demo namespace's title. */
-function AppBrand(): ReactElement {
-  const { t } = useTranslation(DEMO_NAMESPACE)
-  return (
-    <Typography noWrap variant="h6" sx={{ color: 'inherit', fontWeight: 600 }}>
-      {t('app.title')}
-    </Typography>
-  )
-}
-
 /**
  * The sign-in slot: the host's chrome around auth-ui's sign-in family. The
  * screen itself renders no heading, branding or layout -- those are host
@@ -254,12 +245,6 @@ function SignInView(): ReactElement {
       </Paper>
     </Box>
   )
-}
-
-/** The user menu: the assembled session's sign-out action. */
-function UserMenu(): ReactElement {
-  const { session } = useAppServices()
-  return <SignOutButton session={session} />
 }
 
 /** The fallback page for a URL no declaration matches. */

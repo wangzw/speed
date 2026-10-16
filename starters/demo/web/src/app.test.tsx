@@ -166,4 +166,23 @@ describe('the console area', () => {
       }),
     ).not.toBeInTheDocument()
   })
+
+  it('renders the same brand and sign-out action in its top bar as the tenant frame', async () => {
+    window.history.replaceState({}, '', '/console/tenants')
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    // The console frame is a different shell (no tenant switcher), but its
+    // banner is the same chrome the tenant frame carries: the brand in the
+    // header's own type, and the sign-out action beside it.
+    const banner = await screen.findByRole('banner')
+    expect(
+      within(banner).getByRole('heading', {
+        level: 6,
+        name: demoEnUS.app.title,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      within(banner).getByRole('button', { name: authUiEnUS.signOut.label }),
+    ).toBeInTheDocument()
+  })
 })
