@@ -155,6 +155,23 @@ type Case struct {
 	Stubs []core.Module
 	// Config is the whole configuration document the drive runs on, JSON.
 	Config map[string]any
+	// QueryParams names, for each operation of the module, the query parameters
+	// its handler accepts, keyed by the route written the way gin keeps a path
+	// in. A nil map leaves the parameter check off.
+	//
+	// When it is set, Check holds every operation's declared query parameters
+	// (those a fragment writes with "in": "query") to the set given here, in
+	// both directions: a parameter the fragment declares that the handler does
+	// not accept is a read a generated client would send and the process would
+	// ignore, and one the handler accepts that the fragment does not declare is
+	// a read a generated client cannot send. A route absent from the map accepts
+	// no query parameter, so an operation that declares one and is not listed
+	// fails. Path, header and cookie parameters are not compared.
+	//
+	// The set a case passes should be the one the handler closes over at run
+	// time where the module has such a set, so that the comparison is against
+	// what the process honors and not a second list kept beside it.
+	QueryParams map[Route]map[string]bool
 }
 
 // Check drives an assembly holding c.Module to Init and reports every
@@ -203,6 +220,9 @@ func Check(t *testing.T, c Case) {
 	}
 
 	compare(t, c.Module.Name, router.Routes(), declared(t, reg, c.Module.Name))
+	if c.QueryParams != nil {
+		compareParams(t, c.Module.Name, declaredParams(t, reg, c.Module.Name), c.QueryParams)
+	}
 }
 
 // declared reads back every operation the module declared in the fragments it
@@ -241,6 +261,128 @@ func operations(t *testing.T, module string, fragment []byte) []Route {
 		}
 	}
 	return out
+}
+
+// declaredParams reads, per operation of the module, the query parameters its
+// fragments declare with "in": "query". A route with no such parameter is left
+// out or maps to an empty set, which compareParams reads the same way.
+func declaredParams(t *testing.T, reg *core.Registry, module string) map[Route]map[string]bool {
+	t.Helper()
+	out := map[Route]map[string]bool{}
+	for _, res := range core.Resources[speedhttp.Spec](reg) {
+		if res.Module != module {
+			continue
+		}
+		readParams(t, module, res.Value.Document, out)
+	}
+	return out
+}
+
+// readParams adds one fragment's declared query parameters to into, keyed by the
+// operation they belong to. Only the parameters an operation writes in its own
+// "parameters" list are read: a parameter a path item writes above its methods
+// is not, and path, header and cookie parameters are skipped because the check is
+// about the query surface alone.
+func readParams(t *testing.T, module string, fragment []byte, into map[Route]map[string]bool) {
+	t.Helper()
+	var doc struct {
+		Paths map[string]map[string]json.RawMessage `json:"paths"`
+	}
+	if err := json.Unmarshal(fragment, &doc); err != nil {
+		t.Fatalf("routecontract: the fragment module %q declares is not a JSON object: %v", module, err)
+	}
+	for path, item := range doc.Paths {
+		for method, raw := range item {
+			upper := strings.ToUpper(method)
+			if !isHTTPMethod(upper) {
+				continue
+			}
+			var op struct {
+				Parameters []struct {
+					Name string `json:"name"`
+					In   string `json:"in"`
+				} `json:"parameters"`
+			}
+			if err := json.Unmarshal(raw, &op); err != nil {
+				t.Fatalf("routecontract: the %s operation on %s in a fragment module %q declares is not a JSON object: %v",
+					upper, path, module, err)
+			}
+			route := Route{Method: upper, Path: ginPath(path)}
+			for _, p := range op.Parameters {
+				if p.In != "query" {
+					continue
+				}
+				if into[route] == nil {
+					into[route] = map[string]bool{}
+				}
+				into[route][p.Name] = true
+			}
+		}
+	}
+}
+
+// paramSig is one query parameter of one operation: the route and the name.
+type paramSig struct {
+	Route Route
+	Name  string
+}
+
+// paramDifferences splits the two per-operation sets: the query parameters an
+// operation declares that its handler does not accept, and the ones its handler
+// accepts that no fragment declares. A route in either map and not the other is
+// compared against the empty set, so an operation that declares a query
+// parameter and is not listed, and a listed operation writing none, are both
+// caught. Both results are sorted by route then name, and both are empty when
+// every operation's two sets are one.
+func paramDifferences(declared, accepted map[Route]map[string]bool) (declaredOnly, acceptedOnly []paramSig) {
+	routes := map[Route]bool{}
+	for r := range declared {
+		routes[r] = true
+	}
+	for r := range accepted {
+		routes[r] = true
+	}
+	for r := range routes {
+		for name := range declared[r] {
+			if !accepted[r][name] {
+				declaredOnly = append(declaredOnly, paramSig{Route: r, Name: name})
+			}
+		}
+		for name := range accepted[r] {
+			if !declared[r][name] {
+				acceptedOnly = append(acceptedOnly, paramSig{Route: r, Name: name})
+			}
+		}
+	}
+	byRouteThenName := func(s []paramSig) {
+		sort.Slice(s, func(i, j int) bool {
+			if s[i].Route.key() != s[j].Route.key() {
+				return s[i].Route.key() < s[j].Route.key()
+			}
+			return s[i].Name < s[j].Name
+		})
+	}
+	byRouteThenName(declaredOnly)
+	byRouteThenName(acceptedOnly)
+	return declaredOnly, acceptedOnly
+}
+
+// compareParams holds each operation's declared query parameters to the set its
+// handler accepts, in both directions.
+func compareParams(t *testing.T, module string, declared, accepted map[Route]map[string]bool) {
+	t.Helper()
+
+	declaredOnly, acceptedOnly := paramDifferences(declared, accepted)
+	for _, d := range declaredOnly {
+		t.Errorf("the module %s declares the query parameter %q on %s in an OpenAPI fragment, which "+
+			"its handler does not accept. A generated client would send it and the process would "+
+			"ignore it, answering an unfiltered result under a name that looks honored", module, d.Name, d.Route)
+	}
+	for _, d := range acceptedOnly {
+		t.Errorf("the module %s accepts the query parameter %q on %s, which none of its OpenAPI "+
+			"fragments declares. A generated client has no way to send it, so the read it "+
+			"drives is unreachable", module, d.Name, d.Route)
+	}
 }
 
 // isHTTPMethod reports whether a method is one a route can be registered under.

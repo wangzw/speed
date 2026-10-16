@@ -78,6 +78,63 @@ func TestDifferencesIsSilentWhenTheTwoSetsAreOne(t *testing.T) {
 	}
 }
 
+// readParams reads an operation's declared query parameters and skips every
+// parameter that is not in the query, so that the per-operation set the
+// parameter check compares is the query surface alone; a parameter a path item
+// writes above its methods is not read either.
+func TestReadParamsReadsQueryParametersOnly(t *testing.T) {
+	into := map[Route]map[string]bool{}
+	readParams(t, "example", []byte(`{"paths":{
+		"/things/{id}": {"get": {"parameters":[
+			{"name": "id", "in": "path"},
+			{"name": "limit", "in": "query"},
+			{"name": "after", "in": "query"}
+		]}},
+		"/things": {"post": {"parameters": [{"name": "X-Token", "in": "header"}]}}
+	}}`), into)
+	get := into[Route{Method: "GET", Path: "/things/:id"}]
+	if !get["limit"] || !get["after"] || get["id"] {
+		t.Errorf("the get operation's query parameters are %v, want limit and after and no path parameter", get)
+	}
+	if _, ok := into[Route{Method: "POST", Path: "/things"}]; ok {
+		t.Errorf("a header parameter was read as a query parameter: %v", into)
+	}
+}
+
+// The parameter comparison is discriminating in both directions, and a route
+// present in only one of the two sets is compared against the empty set, so an
+// unaccepted declaration and an undeclared acceptance are both caught.
+func TestParamDifferencesReportsBothDirections(t *testing.T) {
+	list := Route{Method: "GET", Path: "/things"}
+	declared := map[Route]map[string]bool{
+		list:                            {"limit": true, "after": true, "bogus": true},
+		{Method: "GET", Path: "/extra"}: {"q": true},
+	}
+	accepted := map[Route]map[string]bool{
+		list:                                   {"limit": true, "after": true, "kind": true},
+		{Method: "GET", Path: "/onlyaccepted"}: {"z": true},
+	}
+	declaredOnly, acceptedOnly := paramDifferences(declared, accepted)
+	if want := []paramSig{{Route: Route{Method: "GET", Path: "/extra"}, Name: "q"}, {Route: list, Name: "bogus"}}; !reflect.DeepEqual(declaredOnly, want) {
+		t.Errorf("the declared parameters no handler accepts are %v, want %v", declaredOnly, want)
+	}
+	if want := []paramSig{{Route: Route{Method: "GET", Path: "/onlyaccepted"}, Name: "z"}, {Route: list, Name: "kind"}}; !reflect.DeepEqual(acceptedOnly, want) {
+		t.Errorf("the accepted parameters no fragment declares are %v, want %v", acceptedOnly, want)
+	}
+}
+
+// The comparison over two per-operation sets that are one reports nothing, which
+// is what the whole check comes to when the fragment and the handlers agree.
+func TestParamDifferencesIsSilentWhenTheTwoSetsAreOne(t *testing.T) {
+	sets := map[Route]map[string]bool{
+		{Method: "GET", Path: "/things"}: {"limit": true, "after": true},
+	}
+	declaredOnly, acceptedOnly := paramDifferences(sets, sets)
+	if len(declaredOnly) != 0 || len(acceptedOnly) != 0 {
+		t.Errorf("the same set compared against itself reported %v and %v", declaredOnly, acceptedOnly)
+	}
+}
+
 // Config merges two subtrees that write the same mapping, which is what lets a
 // fixture's "authn" section and a case's "authn.session" section live in one
 // document, and it panics when the two write the same leaf: one silently

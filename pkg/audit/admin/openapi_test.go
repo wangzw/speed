@@ -22,7 +22,8 @@ type seams struct {
 // the only source a generated client is built from, and the design leaves the
 // two free to drift with no failure signal at run time. The check drives the
 // module's own Init and compares what it registered there with what it
-// declared.
+// declared, and, given the list route's accepted set, that the fragment's query
+// parameters are exactly the ones the list handler honors.
 func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	routecontract.Check(t, routecontract.Case{
 		Module:    Module(),
@@ -33,6 +34,9 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 		},
 		Config: map[string]any{
 			ConfigNamespace: map[string]any{"endpoints": []string{"admin"}},
+		},
+		QueryParams: map[routecontract.Route]map[string]bool{
+			{Method: "GET", Path: "/audit/admin/records"}: listParams,
 		},
 	})
 }
