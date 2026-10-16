@@ -1,0 +1,92 @@
+{
+  "errors": {
+    "client": {
+      "network": "No network connection. Check your connection and try again.",
+      "timeout": "The request timed out. Please try again later.",
+      "protocol": "The service returned an unexpected response. Please try again later."
+    },
+    "http": "The request could not be completed (status {{status}}). Please try again.",
+    "unknown": "Something went wrong. Please try again later."
+  },
+  "page": {
+    "title": "Objects",
+    "description": "Upload files to this tenant's object store, list them, download them back or remove them.",
+    "refresh": "Refresh"
+  },
+  "list": {
+    "heading": "Stored objects",
+    "loading": "Loading objects",
+    "empty": {
+      "title": "No objects yet",
+      "description": "Upload a file above to store the first object for this tenant."
+    },
+    "error": {
+      "title": "The objects could not be loaded",
+      "description": "The object store did not answer. Try again in a moment."
+    },
+    "retry": "Try again",
+    "forbidden": {
+      "title": "No access to the object store",
+      "description": "Your account does not hold the permission this page needs."
+    },
+    "column": {
+      "id": "Object",
+      "state": "State",
+      "size": "Size",
+      "mime": "Type",
+      "created": "Created",
+      "actions": "Actions"
+    },
+    "previous": "Previous page",
+    "next": "Next page"
+  },
+  "state": {
+    "pending": "Pending",
+    "uploaded": "Uploaded",
+    "completed": "Completed",
+    "deleted": "Deleted",
+    "other": "Unknown"
+  },
+  "size": {
+    "bytes": "{{size}} B"
+  },
+  "actions": {
+    "download": "Download",
+    "downloadAria": "Download object {{id}}",
+    "details": "Details",
+    "delete": "Delete",
+    "deleteAria": "Delete object {{id}}"
+  },
+  "upload": {
+    "heading": "Upload",
+    "description": "Each file is declared, uploaded and then completed in turn. A file is stored under the tenant you are acting in.",
+    "rowError": "The upload failed."
+  },
+  "delete": {
+    "title": "Delete this object?",
+    "message": "Object {{id}} and its bytes will be removed. This cannot be undone.",
+    "confirm": "Delete",
+    "cancel": "Cancel"
+  },
+  "detail": {
+    "title": "Object details",
+    "loading": "Loading object details",
+    "error": {
+      "title": "The object could not be loaded",
+      "description": "The object store did not answer. Try again in a moment."
+    },
+    "retry": "Try again",
+    "field": {
+      "id": "Object ID",
+      "state": "State",
+      "size": "Size",
+      "mime": "Content type",
+      "checksum": "SHA-256",
+      "expires": "Expires",
+      "created": "Created",
+      "updated": "Updated"
+    },
+    "never": "Never",
+    "close": "Close"
+  }
+}

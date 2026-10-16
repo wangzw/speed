@@ -21,6 +21,7 @@
 | [tenancy-ui](design-web-tenancy-ui.md) | 租户切换控件 |
 | [product-shell](design-web-product-shell.md) | 租户侧装配壳与装配入口 `bootstrapSpeedApp` |
 | [console-ui](design-web-console-ui.md) | 平台侧控制台面组件族：租户、设置与审计三个管理面 |
+| [objectstore-ui](design-web-objectstore-ui.md) | 对象存储能力面：对象页（列表、上传、下载、删除、详情） |
 
 ## 实现状态
 
@@ -40,3 +41,4 @@
 | [tenancy-ui](design-web-tenancy-ui.md) | 已实现 |
 | [product-shell](design-web-product-shell.md) | 已实现 |
 | [console-ui](design-web-console-ui.md) | 已实现 |
+| [objectstore-ui](design-web-objectstore-ui.md) | 已实现 |

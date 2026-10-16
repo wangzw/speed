@@ -120,6 +120,7 @@ interface SpeedAppDefinition {
 | `product-shell` | 组装壳与装配入口 | `layout-kit`、`auth-ui`、`auth-core`、`i18n`（主出口的直接依赖；`./bootstrap` 出口另直接取 `api-client`、`api-sdk`、`ui-kit`） |
 | `route-kit` | 路由与导航独立层、声明式注册面 | 无 |
 | `console-ui` | 控制台面组件族，第二种壳 | `ui-kit`、`i18n`、`api-sdk` |
+| `objectstore-ui` | 对象存储能力面：对象页（列表、上传、下载、删除、详情） | `ui-kit`、`i18n`、`api-sdk`、`auth-core` |
 
 **`api-sdk` 是唯一 import 后端契约的包**，它只依赖 `api-client` 的请求函数类型，本身不 import 任何 UI 包。**`api-client` 不依赖任何同族包**，也不认识 tenant。**能力 UI 包之间同层不互依赖**：`auth-ui` 与 `account-ui` 各自定义 provider 词表。**`route-kit` 与 `product-shell` 都不 import 对方**，两者由应用的组合层分别消费。
 
@@ -155,6 +156,10 @@ graph TD
     console-ui --> ui-kit
     console-ui --> api-sdk
     console-ui --> i18n
+    objectstore-ui --> ui-kit
+    objectstore-ui --> i18n
+    objectstore-ui --> api-sdk
+    objectstore-ui --> auth-core
     product-shell --> layout-kit
     product-shell --> auth-ui
     product-shell --> auth-core
@@ -232,6 +237,7 @@ graph TD
 | 组装壳与装配入口 | 已实现 | `web/packages/product-shell/src/index.ts` `ProductShell`；`web/packages/product-shell/src/bootstrap.tsx` `bootstrapSpeedApp` |
 | 路由与导航独立层 | 已实现 | `web/packages/route-kit/src/index.ts` `RouteProvider`、`RouteView`、`RouteLink`、`useNavItems`、`useNavigate` |
 | 控制台面组件族 | 已实现 | `web/packages/console-ui/src/index.ts` `ConsoleShell`、`TenantRosterPage`、`SettingsPage`、`AuditPage` |
+| 对象存储能力面 | 已实现 | `web/packages/objectstore-ui/src/index.ts` `ObjectsPage`、`ObjectDetailDialog`；`web/packages/objectstore-ui/src/internal/queries.ts` |
 | 声明式注册面 | 已实现 | `web/packages/route-kit/src/types.ts` `RouteDeclaration`、`RouteTable`；`web/packages/console-ui/src/route.ts` `ConsoleRoute` |
 | 租户作用域的查询键工厂与逐出助手 | 已实现 | `web/packages/auth-core/src/query-key.ts` `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries` |
 | 运行期的 API origin 注入 | 已实现 | `starters/demo/web/src/runtime-config.ts` `loadRuntimeConfig`；`starters/demo/web/src/main.tsx` `bootstrapDemoApp` |

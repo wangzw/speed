@@ -1,0 +1,92 @@
+{
+  "errors": {
+    "client": {
+      "network": "网络连接不可用，请检查网络后重试。",
+      "timeout": "请求超时，请稍后再试。",
+      "protocol": "服务返回了无法识别的响应，请稍后再试。"
+    },
+    "http": "请求未能完成（状态码 {{status}}），请重试。",
+    "unknown": "出了点问题，请稍后再试。"
+  },
+  "page": {
+    "title": "对象存储",
+    "description": "上传文件到当前租户的对象存储，查看列表、下载取回或删除。",
+    "refresh": "刷新"
+  },
+  "list": {
+    "heading": "已存对象",
+    "loading": "正在加载对象",
+    "empty": {
+      "title": "还没有对象",
+      "description": "在上方上传一个文件，为当前租户存入第一个对象。"
+    },
+    "error": {
+      "title": "对象列表加载失败",
+      "description": "对象存储没有应答，请稍后重试。"
+    },
+    "retry": "重试",
+    "forbidden": {
+      "title": "无权访问对象存储",
+      "description": "你的账户不具备此页面所需的权限。"
+    },
+    "column": {
+      "id": "对象",
+      "state": "状态",
+      "size": "大小",
+      "mime": "类型",
+      "created": "创建时间",
+      "actions": "操作"
+    },
+    "previous": "上一页",
+    "next": "下一页"
+  },
+  "state": {
+    "pending": "待上传",
+    "uploaded": "已上传",
+    "completed": "已完成",
+    "deleted": "已删除",
+    "other": "未知"
+  },
+  "size": {
+    "bytes": "{{size}} 字节"
+  },
+  "actions": {
+    "download": "下载",
+    "downloadAria": "下载对象 {{id}}",
+    "details": "详情",
+    "delete": "删除",
+    "deleteAria": "删除对象 {{id}}"
+  },
+  "upload": {
+    "heading": "上传",
+    "description": "每个文件依次经历声明、上传、完成三步。文件存放在你当前所处的租户下。",
+    "rowError": "上传失败。"
+  },
+  "delete": {
+    "title": "删除这个对象？",
+    "message": "对象 {{id}} 及其字节将被删除，此操作不可撤销。",
+    "confirm": "删除",
+    "cancel": "取消"
+  },
+  "detail": {
+    "title": "对象详情",
+    "loading": "正在加载对象详情",
+    "error": {
+      "title": "对象详情加载失败",
+      "description": "对象存储没有应答，请稍后重试。"
+    },
+    "retry": "重试",
+    "field": {
+      "id": "对象标识",
+      "state": "状态",
+      "size": "大小",
+      "mime": "内容类型",
+      "checksum": "SHA-256",
+      "expires": "过期时间",
+      "created": "创建时间",
+      "updated": "更新时间"
+    },
+    "never": "永不",
+    "close": "关闭"
+  }
+}
