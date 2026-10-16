@@ -122,11 +122,16 @@ function AppFrame(): ReactElement {
   // Read the roster once a viewer is signed in, so the value announced as
   // X-Tenant is each tenant's CURRENT alias, not a name the placeholder fixed
   // and a rename has since moved. The read is the app's own generated
-  // operation on the platform's management surface, which the demo's operator
-  // holds; a viewer without it gets the placeholder's aliases and the demo's
-  // own deployment, as seeded, still answers. The tenant-scoped surfaces stay
-  // disabled until this settles, because their queries gate on the tenant
-  // being known (TenantProvider below).
+  // operation on the platform's management surface; it needs tenant.read in
+  // the platform domain, which the demo's operator holds but an ordinary member
+  // does not. A viewer answered 403 keeps the placeholder's aliases, which
+  // answer only while the roster's alias still equals them: this read is the
+  // only route to a renamed alias and no member-facing endpoint carries one, so
+  // after a rename such a viewer is refused 404 on every tenant-scoped call.
+  // The demo's own seed signs in the platform administrator alone, so the
+  // seeded deployment always answers. The tenant-scoped surfaces stay disabled
+  // until this settles, because their queries gate on the tenant being known
+  // (TenantProvider below).
   useEffect(() => {
     if (!authenticated) {
       return

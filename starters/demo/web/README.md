@@ -190,7 +190,24 @@ names apart: the switcher keys on the tenant id (`src/chrome.tsx`'s
 sends as `X-Tenant`. A rename moves the alias and leaves the id, so once a viewer
 is signed in the app reads the roster (`tenantAdminTenantsList`, its own
 generated operation) and announces each tenant's current alias rather than a name
-a placeholder fixed. A product whose `api` endpoint resolves the tenant
+a placeholder fixed.
+
+That read is `tenant.admin`'s management operation and needs `tenant.read` in the
+**platform** domain (`pkg/tenant/admin` holds the route to it), which the demo's
+operator has; a viewer without it -- an ordinary member, who holds only
+tenant-domain roles -- is answered 403, and the app keeps the placeholder aliases
+(`DEMO_TENANTS`). That fallback answers only while the roster's alias still equals
+the placeholder's value: the roster read is the app's only route to a renamed
+alias and no member-facing endpoint carries one, so once a tenant has been renamed
+a viewer without the permission announces a name the roster no longer holds and
+every tenant-scoped request is refused 404. The demo's own seed signs in the
+platform administrator alone, which holds every permission, so the seeded
+deployment always answers; a copy that signs in ordinary members must give them
+their own alias source -- the tenants their memberships name, each with its
+current alias, handed to `setTenantAliases` -- or keep each tenant's alias equal
+to the placeholder's.
+
+A product whose `api` endpoint resolves the tenant
 differently (a subdomain label, a path segment) repoints the server
 configuration and leaves this wiring alone -- the transport still announces the
 same value, and the copy decides where the server reads it.

@@ -136,8 +136,11 @@ export function tenantAlias(
  * announcing the old alias would be refused 404. So the app reads the roster
  * (its own generated operation) once a viewer is signed in and records each
  * tenant's current alias here (src/app.tsx), and the announced value prefers
- * it. The read is optional -- a viewer without it keeps the placeholder's
- * aliases, which serve the demo's own deployment as it is seeded.
+ * it. The read needs tenant.read in the platform domain, so it answers for the
+ * demo's operator but not for an ordinary member (403); a viewer without it
+ * keeps the placeholder's aliases, which answer only while the roster's alias
+ * still equals them -- after a rename such a viewer announces a stale name and
+ * is refused 404, because no member-facing endpoint carries the current alias.
  */
 let rosterAliases: ReadonlyMap<string, string> = new Map()
 
