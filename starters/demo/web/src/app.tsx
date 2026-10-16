@@ -37,6 +37,10 @@ import type { AuthSnapshot } from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
 import { RouteGuard } from '@speed/layout-kit'
 import type { AppShellNavItem, RouteGuardStatus } from '@speed/layout-kit'
+import {
+  NotificationBell,
+  NotificationStreamProvider,
+} from '@speed/notification-ui'
 import { ProductShell } from '@speed/product-shell'
 import {
   RouteProvider,
@@ -67,6 +71,7 @@ import {
   CONSOLE_PREFIX,
   consoleShellRoutes,
   isConsolePath,
+  NOTIFICATIONS_PATH,
   routes,
 } from './routes.js'
 
@@ -90,6 +95,13 @@ export function DemoApp(): ReactElement {
 function AppFrame(): ReactElement {
   const items = useNavItems()
   const navigate = useNavigate()
+  // The assembled client: its event-stream opener feeds the notification
+  // surface's live subscription below.
+  const { api } = useAppServices()
+  // The notification stream is authenticated; hold it open only once the
+  // session is, so an anonymous viewer on the sign-in surface never opens
+  // (and reconnects) a connection that can only 401.
+  const authenticated = useAuthState().state === 'authenticated'
   // The current tenant is a host fact (the server resolves it per request
   // from the request's tenant header). chrome.tsx holds the one value --
   // the client's tenantProvider reads it per request -- and this state
@@ -175,26 +187,45 @@ function AppFrame(): ReactElement {
 
   return (
     <TenantProvider tenantId={tenantId}>
-      <ProductShell
-        navItems={navItems}
-        header={<AppBrand />}
-        headerActions={<HeaderActions />}
-        sidebarCollapsed={sidebarCollapsed}
-        onSidebarCollapsedChange={setSidebarCollapsed}
-        // The tenant switcher sits in the userMenu slot (the design's
-        // placement for it) ahead of the account menu.
-        userMenu={
-          <>
-            <TenantMenu tenantId={tenantId} onTenantSelect={setTenantId} />
-            <UserMenu />
-          </>
-        }
-        signIn={<SignInView />}
+      {/* The live notification subscription: it opens the api client's
+          event-stream seam (the assembled client's openEventStream) for
+          the acting tenant and re-reads the unread count and message list
+          on every pushed frame. Mounted here, inside the tenant area,
+          because the notification endpoints are tenant-scoped. */}
+      <NotificationStreamProvider
+        openStream={api.openEventStream}
+        enabled={authenticated}
       >
-        <Box sx={{ p: 3 }}>
-          <RouteView />
-        </Box>
-      </ProductShell>
+        <ProductShell
+          navItems={navItems}
+          header={<AppBrand />}
+          // The notification bell rides the header actions slot beside the
+          // shared chrome; it opens the notification surface. It lives only
+          // in the tenant area (the console resolves no tenant, so its bell
+          // would have nothing to read).
+          headerActions={
+            <>
+              <NotificationBell onClick={() => navigate(NOTIFICATIONS_PATH)} />
+              <HeaderActions />
+            </>
+          }
+          sidebarCollapsed={sidebarCollapsed}
+          onSidebarCollapsedChange={setSidebarCollapsed}
+          // The tenant switcher sits in the userMenu slot (the design's
+          // placement for it) ahead of the account menu.
+          userMenu={
+            <>
+              <TenantMenu tenantId={tenantId} onTenantSelect={setTenantId} />
+              <UserMenu />
+            </>
+          }
+          signIn={<SignInView />}
+        >
+          <Box sx={{ p: 3 }}>
+            <RouteView />
+          </Box>
+        </ProductShell>
+      </NotificationStreamProvider>
     </TenantProvider>
   )
 }

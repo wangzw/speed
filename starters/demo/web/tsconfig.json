@@ -30,6 +30,7 @@
       "@speed/account-ui": ["../../../web/packages/account-ui/src/index.ts"],
       "@speed/console-ui": ["../../../web/packages/console-ui/src/index.ts"],
       "@speed/objectstore-ui": ["../../../web/packages/objectstore-ui/src/index.ts"],
+      "@speed/notification-ui": ["../../../web/packages/notification-ui/src/index.ts"],
       "@speed/product-shell/bootstrap": ["../../../web/packages/product-shell/src/bootstrap.tsx"],
       "@speed/product-shell": ["../../../web/packages/product-shell/src/index.ts"],
       "@speed/layout-kit": ["../../../web/packages/layout-kit/src/index.ts"],

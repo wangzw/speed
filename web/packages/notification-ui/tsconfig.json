@@ -1,0 +1,40 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src", "test-utils"],
+  "compilerOptions": {
+    // notification-ui is a DOM-rendering package: JSX compiles through the
+    // automatic runtime (react-jsx), same as ui-kit, auth-ui and layout-kit.
+    //
+    // The package renders its surfaces over an @speed/auth-core session
+    // (the current tenant for query-key namespacing), reads @speed/i18n
+    // translations, composes @speed/ui-kit components, consumes the
+    // generated notification operations of @speed/api-sdk through the
+    // shared-QueryClient contract, and opens the live stream through the
+    // @speed/api-client event-stream seam. src/ resolves those through the
+    // sibling-source paths below. The siblings' published "types" point
+    // into their dist/, which is never committed and not yet built in a
+    // fresh checkout, so type resolution maps every workspace specifier
+    // straight onto the sibling's source -- same pattern account-ui,
+    // auth-core and auth-ui use. Emitted dist/ keeps the bare specifiers,
+    // which consumers resolve against the real published packages. Keep
+    // this in lockstep with what src/ and test-utils/ import (the demo
+    // host's alias suite pins the shared map). List order matters: a
+    // subpath entry must be tried before its prefix (first match wins).
+    "jsx": "react-jsx",
+    "paths": {
+      "@speed/api-sdk/runtime": ["../api-sdk/src/runtime.ts"],
+      "@speed/api-sdk": ["../api-sdk/src/index.ts"],
+      "@speed/api-client": ["../api-client/src/index.ts"],
+      "@speed/auth-core": ["../auth-core/src/index.ts"],
+      "@speed/i18n/mui-locale": ["../i18n/src/mui-locale.ts"],
+      "@speed/i18n/platform-errors": ["../i18n/src/platform-errors.ts"],
+      "@speed/i18n": ["../i18n/src/index.ts"],
+      "@speed/tokens": ["../tokens/src/index.ts"],
+      "@speed/ui-kit": ["../ui-kit/src/index.ts"],
+      "@speed/test-utils/axe": ["../../test-utils/src/axe.ts"],
+      "@speed/test-utils/real-client": ["../../test-utils/src/real-client.ts"],
+      "@speed/test-utils/render": ["../../test-utils/src/render.tsx"],
+      "@speed/test-utils/setup": ["../../test-utils/src/setup.ts"]
+    }
+  }
+}

@@ -18,12 +18,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, type RenderResult } from '@testing-library/react'
 import { attachSession } from '@speed/auth-core'
 import type { AuthSession } from '@speed/auth-core'
-import type { RequestFn } from '@speed/api-client'
+import type { RequestFn, SpeedClient } from '@speed/api-client'
 import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '@speed/account-ui'
 import { AUTH_UI_NAMESPACE, authUiResources } from '@speed/auth-ui'
 import { CONSOLE_UI_NAMESPACE, consoleUiResources } from '@speed/console-ui'
 import { createI18n, I18nextProvider, registerNamespace } from '@speed/i18n'
 import { LAYOUT_KIT_NAMESPACE, layoutKitResources } from '@speed/layout-kit'
+import {
+  NOTIFICATION_UI_NAMESPACE,
+  notificationUiResources,
+} from '@speed/notification-ui'
 import { PRODUCT_SHELL_NAMESPACE, productShellResources } from '@speed/product-shell'
 import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
 import type { SpeedAppServices } from '@speed/product-shell/bootstrap'
@@ -44,6 +48,23 @@ export interface RenderDemoAppOptions {
   readonly session?: AuthSession
 }
 
+/**
+ * The render harness's stand-in client: it satisfies SpeedClient -- the
+ * request function plus the event-stream opener the notification
+ * subscription reads -- but throws if a request is actually issued, since
+ * a demo-app render must not reach the network. The opener is inert (it
+ * returns a handle whose close is a no-op), so a mounted
+ * NotificationStreamProvider opens nothing.
+ */
+export function createHarnessClient(): SpeedClient {
+  const request = (async () => {
+    throw new Error('the render harness client must not be called')
+  }) as RequestFn
+  return Object.assign(request, {
+    openEventStream: () => ({ close: () => undefined }),
+  })
+}
+
 /** Renders DemoApp under the app's provider tree. */
 export function renderDemoApp(
   options: RenderDemoAppOptions = {},
@@ -62,14 +83,13 @@ export function renderDemoApp(
   registerNamespace(i18n, CONSOLE_UI_NAMESPACE, consoleUiResources)
   registerNamespace(i18n, ACCOUNT_UI_NAMESPACE, accountUiResources)
   registerNamespace(i18n, TENANCY_UI_NAMESPACE, tenancyUiResources)
+  registerNamespace(i18n, NOTIFICATION_UI_NAMESPACE, notificationUiResources)
   registerNamespace(i18n, DEMO_NAMESPACE, demoResources)
 
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  const api = (async () => {
-    throw new Error('the render harness client must not be called')
-  }) as RequestFn
+  const api = createHarnessClient()
   const session = options.session ?? createTestSession()
   attachSession(session)
   const services: SpeedAppServices = { session, api, queryClient }

@@ -1,0 +1,73 @@
+{
+  "errors": {
+    "notification": {
+      "bad_request": "The request was not valid. Check it and try again.",
+      "message_not_found": "That notification no longer exists.",
+      "not_unsubscribable": "This is a required notification and cannot be turned off."
+    },
+    "authn": {
+      "session_not_found": "Your session has ended. Sign in again.",
+      "session_revoked": "Your session has ended. Sign in again.",
+      "token_expired": "Your session has ended. Sign in again.",
+      "refresh_token_invalid": "Your session has ended. Sign in again.",
+      "refresh_token_reused": "Your session has ended. Sign in again."
+    },
+    "client": {
+      "network": "The network is unavailable. Check your connection and try again.",
+      "timeout": "The request timed out. Try again in a moment.",
+      "protocol": "The service returned an unexpected response. Try again in a moment."
+    },
+    "unknown": "Something went wrong. Try again in a moment."
+  },
+  "bell": {
+    "label": "Notifications",
+    "labelWithCount": "Notifications: {{n}} unread"
+  },
+  "inbox": {
+    "title": "Notifications",
+    "loading": "Loading notifications",
+    "unread": "Unread",
+    "read": "Read",
+    "markRead": "Mark as read",
+    "markReadAria": "Mark the notification \"{{title}}\" as read",
+    "markAllRead": "Mark all as read",
+    "markAllReadPending": "Marking…",
+    "markAllReadDone": "Marked {{n}} notifications as read.",
+    "receivedAt": "{{time}}",
+    "empty": {
+      "title": "No notifications",
+      "description": "Notifications you receive will appear here."
+    },
+    "error": {
+      "title": "Could not load notifications",
+      "description": "Something went wrong while loading notifications. Try again in a moment."
+    },
+    "retry": "Retry"
+  },
+  "preferences": {
+    "title": "Notification preferences",
+    "description": "Choose which channels each kind of notification is delivered through.",
+    "loading": "Loading notification preferences",
+    "column": {
+      "type": "Notification type",
+      "channels": "Channels"
+    },
+    "channel": {
+      "in_app": "In-app",
+      "email": "Email",
+      "sms": "SMS"
+    },
+    "unsubscribableNote": "Required notification, cannot be turned off",
+    "channelToggleAria": "{{type}}: {{channel}}",
+    "saveFailed": "Could not save the notification preference.",
+    "empty": {
+      "title": "No configurable notification types",
+      "description": "Notification types you can configure will appear here."
+    },
+    "error": {
+      "title": "Could not load notification preferences",
+      "description": "Something went wrong while loading notification preferences. Try again in a moment."
+    },
+    "retry": "Retry"
+  }
+}

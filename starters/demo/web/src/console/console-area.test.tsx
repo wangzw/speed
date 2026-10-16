@@ -35,6 +35,7 @@ import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { invitationPath } from '../paths.js'
 import { DEMO_NAMESPACE, demoResources } from '../resources.js'
 import { consoleShellRoutes } from '../routes.js'
+import { createHarnessClient } from '../test-utils/render.js'
 import { createTestSession } from '../test-utils/session.js'
 import { ConsoleArea } from './console-area.js'
 
@@ -62,9 +63,7 @@ function renderConsoleArea(children: ReactNode = <p>console page</p>) {
   // provider even though the routed child here is a stand-in.
   const services: SpeedAppServices = {
     session: createTestSession(),
-    api: (async () => {
-      throw new Error('the render harness client must not be called')
-    }) as RequestFn,
+    api: createHarnessClient(),
     queryClient: new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     }),

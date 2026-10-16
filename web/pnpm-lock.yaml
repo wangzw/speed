@@ -50,9 +50,9 @@ importers:
       '@speed/layout-kit':
         specifier: ^0.0.1
         version: link:../../../web/packages/layout-kit
-      '@speed/objectstore-ui':
+      '@speed/notification-ui':
         specifier: ^0.0.1
-        version: link:../../../web/packages/objectstore-ui
+        version: link:../../../web/packages/notification-ui
       '@speed/product-shell':
         specifier: ^0.0.1
         version: link:../../../web/packages/product-shell
@@ -395,9 +395,6 @@ importers:
       react-dom:
         specifier: ^19.2.8
         version: 19.3.0(react@19.3.0)
-      react-hook-form:
-        specifier: 7.87.0
-        version: 7.87.0(react@19.3.0)
 
   packages/i18n:
     dependencies:
@@ -470,8 +467,11 @@ importers:
         specifier: ^19.2.8
         version: 19.3.0(react@19.3.0)
 
-  packages/objectstore-ui:
+  packages/notification-ui:
     dependencies:
+      '@speed/api-client':
+        specifier: workspace:*
+        version: link:../api-client
       '@speed/api-sdk':
         specifier: workspace:*
         version: link:../api-sdk
@@ -494,9 +494,6 @@ importers:
       '@mui/material':
         specifier: ^9.4.0
         version: 9.5.0(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.0))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.0))(@types/react@19.3.0)(react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@speed/api-client':
-        specifier: workspace:*
-        version: link:../api-client
       '@speed/test-utils':
         specifier: workspace:*
         version: link:../../test-utils
@@ -512,6 +509,9 @@ importers:
       '@testing-library/user-event':
         specifier: ^14.6.7
         version: 14.6.8(@testing-library/dom@10.4.2)
+      '@types/node':
+        specifier: ^26.4.1
+        version: 26.6.5
       '@types/react':
         specifier: ^19.2.18
         version: 19.3.0

@@ -1,0 +1,63 @@
+/**
+ * NotificationBell behaviour over GET /notifications/messages/unread-count:
+ * the unread count is carried on the accessible name ("Notifications: 3
+ * unread", or the bare label at zero), the badge prints the count, and
+ * activating the button calls the host's onClick. A failed read leaves the
+ * bell at zero without crashing.
+ */
+
+import { describe, expect, it, vi } from 'vitest'
+import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import zhCN from './locales/zh-CN.json' with { type: 'json' }
+import {
+  jsonResponse,
+  makeRealClientRigWithoutSession,
+  type RealResponder,
+} from '../test-utils/real-client.js'
+import { renderWithProviders } from '../test-utils/render.js'
+import { expectNoAxeViolations } from '../test-utils/axe.js'
+import { NotificationBell } from './NotificationBell.js'
+
+describe('NotificationBell', () => {
+  it('shows the unread count on the accessible name and the badge, and passes axe', async () => {
+    const respond: RealResponder = () => jsonResponse(200, { unread: 3 })
+    const rig = makeRealClientRigWithoutSession(respond)
+    rig.store.set('access-1')
+    const onClick = vi.fn()
+    renderWithProviders(<NotificationBell onClick={onClick} />)
+
+    const button = await screen.findByRole('button', {
+      name: zhCN.bell.labelWithCount.replace('{{n}}', '3'),
+    })
+    expect(button).toBeInTheDocument()
+    expect(button).toHaveTextContent('3')
+    await userEvent.click(button)
+    expect(onClick).toHaveBeenCalledTimes(1)
+    await expectNoAxeViolations()
+  })
+
+  it('renders the bare label with no badge when nothing is unread', async () => {
+    const respond: RealResponder = () => jsonResponse(200, { unread: 0 })
+    const rig = makeRealClientRigWithoutSession(respond)
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationBell onClick={() => undefined} />)
+    expect(
+      await screen.findByRole('button', { name: zhCN.bell.label }),
+    ).toBeInTheDocument()
+  })
+
+  it('stays at zero when the count read fails', async () => {
+    const respond: RealResponder = () => {
+      throw new Error('network down')
+    }
+    const rig = makeRealClientRigWithoutSession(respond)
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationBell onClick={() => undefined} />)
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: zhCN.bell.label }),
+      ).toBeInTheDocument(),
+    )
+  })
+})

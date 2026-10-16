@@ -35,6 +35,10 @@ import {
   objectstoreUiResources,
 } from '@speed/objectstore-ui'
 import {
+  NOTIFICATION_UI_NAMESPACE,
+  notificationUiResources,
+} from '@speed/notification-ui'
+import {
   bootstrapSpeedApp,
   type SpeedAppBootstrap,
 } from '@speed/product-shell/bootstrap'
@@ -66,6 +70,10 @@ export async function bootstrapDemoApp(
         resources: objectstoreUiResources,
       },
       { namespace: TENANCY_UI_NAMESPACE, resources: tenancyUiResources },
+      {
+        namespace: NOTIFICATION_UI_NAMESPACE,
+        resources: notificationUiResources,
+      },
       { namespace: DEMO_NAMESPACE, resources: demoResources },
     ],
     providers: [

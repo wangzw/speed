@@ -1,0 +1,73 @@
+{
+  "errors": {
+    "notification": {
+      "bad_request": "请求无效，请检查后重试。",
+      "message_not_found": "该通知已不存在。",
+      "not_unsubscribable": "这是必要的通知，无法关闭。"
+    },
+    "authn": {
+      "session_not_found": "登录状态已失效，请重新登录。",
+      "session_revoked": "登录状态已失效，请重新登录。",
+      "token_expired": "登录状态已失效，请重新登录。",
+      "refresh_token_invalid": "登录状态已失效，请重新登录。",
+      "refresh_token_reused": "登录状态已失效，请重新登录。"
+    },
+    "client": {
+      "network": "网络连接不可用，请检查网络后重试。",
+      "timeout": "请求超时，请稍后重试。",
+      "protocol": "服务返回了异常响应，请稍后重试。"
+    },
+    "unknown": "出了点问题，请稍后重试。"
+  },
+  "bell": {
+    "label": "通知",
+    "labelWithCount": "通知：{{n}} 条未读"
+  },
+  "inbox": {
+    "title": "通知",
+    "loading": "正在加载通知",
+    "unread": "未读",
+    "read": "已读",
+    "markRead": "标记为已读",
+    "markReadAria": "将通知“{{title}}”标记为已读",
+    "markAllRead": "全部标记为已读",
+    "markAllReadPending": "正在标记…",
+    "markAllReadDone": "已将 {{n}} 条通知标记为已读。",
+    "receivedAt": "{{time}}",
+    "empty": {
+      "title": "暂无通知",
+      "description": "你收到的通知将显示在这里。"
+    },
+    "error": {
+      "title": "无法加载通知",
+      "description": "加载通知时出了问题，请稍后重试。"
+    },
+    "retry": "重试"
+  },
+  "preferences": {
+    "title": "通知偏好",
+    "description": "选择每类通知通过哪些渠道送达。",
+    "loading": "正在加载通知偏好",
+    "column": {
+      "type": "通知类型",
+      "channels": "渠道"
+    },
+    "channel": {
+      "in_app": "站内信",
+      "email": "邮件",
+      "sms": "短信"
+    },
+    "unsubscribableNote": "必要通知，无法退订",
+    "channelToggleAria": "{{type}}：{{channel}}",
+    "saveFailed": "保存通知偏好失败。",
+    "empty": {
+      "title": "暂无可配置的通知类型",
+      "description": "可供配置的通知类型将显示在这里。"
+    },
+    "error": {
+      "title": "无法加载通知偏好",
+      "description": "加载通知偏好时出了问题，请稍后重试。"
+    },
+    "retry": "重试"
+  }
+}

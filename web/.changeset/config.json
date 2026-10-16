@@ -13,6 +13,7 @@
       "@speed/auth-ui",
       "@speed/account-ui",
       "@speed/console-ui",
+      "@speed/notification-ui",
       "@speed/tenancy-ui",
       "@speed/product-shell"
     ]

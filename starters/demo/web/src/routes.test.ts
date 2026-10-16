@@ -17,24 +17,31 @@ import {
   invitationRoutes,
   isConsolePath,
   OBJECTS_PATH,
+  NOTIFICATIONS_PATH,
   routes,
 } from './routes.js'
 import { INVITATION_PREFIX } from './paths.js'
 
 describe('the route table', () => {
-  it('names the business slot, the account page and the object page, all labelled but the callback', () => {
+  it('names the business slot, the account page, the object page and the notification center, all labelled, beside the unlabelled callback', () => {
     expect(businessRoutes.map((route) => route.path)).toEqual([
       '/',
       ACCOUNT_PATH,
       OBJECTS_PATH,
+      NOTIFICATIONS_PATH,
       ACCOUNT_CALLBACK_PATH,
     ])
-    const [home, account, objects, callback] = businessRoutes
-    expect(home?.label).toBeDefined()
-    expect(account?.label).toBeDefined()
-    expect(objects?.label).toBeDefined()
+    const labelled = new Map(
+      businessRoutes
+        .filter((route) => route.label !== undefined)
+        .map((route) => [route.path, route.label]),
+    )
+    expect(labelled.has('/')).toBe(true)
+    expect(labelled.has(ACCOUNT_PATH)).toBe(true)
+    expect(labelled.has(OBJECTS_PATH)).toBe(true)
+    expect(labelled.has(NOTIFICATIONS_PATH)).toBe(true)
     // The callback is a completion point, not a navigation destination.
-    expect(callback?.label).toBeUndefined()
+    expect(labelled.has(ACCOUNT_CALLBACK_PATH)).toBe(false)
   })
 
   it('mounts every console page under the console prefix', () => {

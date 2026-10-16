@@ -25,6 +25,7 @@
 
 import { consoleRoutes } from '@speed/console-ui'
 import type { ConsoleRouteTable } from '@speed/console-ui'
+import { notificationRoutes } from '@speed/notification-ui'
 import type { RouteTable } from '@speed/route-kit'
 import { DemoNavLabel } from './nav-label.js'
 import {
@@ -82,7 +83,9 @@ export const consoleShellRoutes: ConsoleRouteTable = consoleRoutes.map(
 export const CONSOLE_LANDING_PATH =
   consoleShellRoutes[0]?.path ?? CONSOLE_PREFIX
 
-/** The business slot: the skeleton's placeholder page plus its account page. */
+/** The business slot: the skeleton's placeholder page, its account page,
+ * and the notification center (@speed/notification-ui's declaration, whose
+ * view renders the header bell's destination). */
 export const businessRoutes: RouteTable = [
   {
     path: '/',
@@ -99,6 +102,10 @@ export const businessRoutes: RouteTable = [
     view: () => <ObjectStoreHostPage />,
     label: <DemoNavLabel labelKey="nav.objects" />,
   },
+  // The notification surface: the same declarative seam as the console's
+  // pages -- notification-ui exports a structurally route-kit declaration,
+  // so it drops straight into the table.
+  ...notificationRoutes,
   // Unlabelled: the binding callback is a completion point, not a
   // destination in the navigation.
   {
@@ -106,6 +113,10 @@ export const businessRoutes: RouteTable = [
     view: () => <AccountBindingCallbackPage />,
   },
 ]
+
+/** The path the notification surface declares: the header bell's
+ * navigation target, taken from the declaration so the two never drift. */
+export const NOTIFICATIONS_PATH: string = notificationRoutes[0]?.path ?? '/'
 
 /**
  * The auth callback route: where a redirect or enterprise provider's round
