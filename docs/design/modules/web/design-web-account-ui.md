@@ -19,7 +19,7 @@
 - **不拥有查询客户端。** 每次读经 `@speed/api-sdk` 的生成 react-query 钩子，跑在宿主拥有的 QueryClient 上；本包从不自造 QueryClient，也不手写查询键，失效一律用导出的查询键构造器。
 - **不读存储、不 attach 会话、不导航、不直接触网。** 会话只在一条生在流程之上、由本包节驱动的会话操作存在时以属性传入——绑定添加区起一条 `purpose: 'link'` 流程（`session.startAuthenticatedFlow`）与两步验证挑战起一条 `purpose: 'step-up'` 流程（同）。没有会话操作要驱动的节不接会话属性。
 - **不发明规格没有的操作。** 认证的因素面只提供列出与删除（`GET`/`DELETE /auth/factors`），登记的入口是流程；故 `MfaSection` 的状态经读发现，登记走流程，不声明一个不存在的启用端点。
-- **不 import `@speed/auth-ui`。** 同层包互不 import；`SocialProvider`、`SocialProviderConfig` 是本包自己的定义，与 auth-ui 的同名类型逐字一致并保持同步，渠道集以 authn 规格为共同来源。
+- **不 import `@speed/auth-ui`。** 同层包互不 import；`SocialProvider`、`SocialProviderConfig` 是本包自己的定义，与 auth-ui 的同名类型逐字一致并保持同步。`SocialProvider` 是部署的登录方法名（字符串，不是名字闭集），`SocialProviderConfig` 带方法自己的品牌标签。
 - **不做服务端判定的替代。** 权限、租户隔离与账户归属都由服务端判定；本包只渲染应答。
 
 ## 外部接口契约
@@ -42,7 +42,7 @@ interface MfaSectionProps {
 
 **查询键构造器是公开面。** 失效用本包导出的查询键构造器（如 `getAuthnSessionListQueryKey`），不经手写键。账户自己的标识与绑定读自 `GET /auth/me`（其 `identifiers` 与 `links` 字段），无独立的清单端点，故无对应查询键。
 
-**稳定性承诺。** 公开面是上述导出集；`SocialProvider`、`SocialProviderConfig` 的形状与 auth-ui 的一致，渠道集以 authn 规格为共同来源。文档化的用法由 `web/packages/account-ui/src/usage-example.test.tsx` 端到端编译并运行，故 README 的装配不能与 API 漂移。
+**稳定性承诺。** 公开面是上述导出集；`SocialProvider`（方法名字符串）、`SocialProviderConfig` 的形状与 auth-ui 的一致。文档化的用法由 `web/packages/account-ui/src/usage-example.test.tsx` 端到端编译并运行，故 README 的装配不能与 API 漂移。
 
 ## 依赖
 
@@ -84,7 +84,7 @@ sequenceDiagram
 | 概念 | 形状 | 说明 |
 |---|---|---|
 | 时区链 | `resolveTimeZone` | 存下的偏好，否则设备时区，否则 UTC；每个时间渲染都显式传 `timeZone` |
-| 渠道词表 | `SocialProvider`、`SocialProviderConfig` | 本包自己的定义，与 auth-ui 的同名类型同步 |
+| 渠道词表 | `SocialProvider`、`SocialProviderConfig` | 本包自己的定义，与 auth-ui 的同名类型同步；`SocialProvider` 是方法名字符串，`SocialProviderConfig` 带方法自己的品牌标签 |
 | 加强认证流程 | `StepUpFlow` | 一条 `purpose: 'step-up'` 流程的驱动；成功后重跑被门控的动作 |
 | 命名空间 | `accountUiResources` | `zh-CN` 与 `en-US` 两份目录，叶子键集相同 |
 

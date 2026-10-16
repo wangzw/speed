@@ -135,9 +135,9 @@ session as a required prop; the read-only ones take no props.
 7. **`@speed/auth-ui` is never imported.** Same-layer packages do not
    import each other. `SocialProvider`/`SocialProviderConfig` are this
    package's own definitions, copied to match auth-ui's and kept in sync
-   with them — the authn spec is the shared source of truth for the
-   provider set, and a channel added to the spec lands in both copies
-   together.
+   with them — `SocialProvider` is a deployment login-method name (a
+   `string`, not a closed set; the WeChat pair arrives as `wechat.web` /
+   `wechat.mp`), and the same name lands in both copies together.
 8. **The README's quick start is executed, not aspirational.**
    `src/usage-example.test.tsx` compiles and runs the documented
    composition (real api-client, genuine `Response` objects from a

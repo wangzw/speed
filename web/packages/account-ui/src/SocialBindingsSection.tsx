@@ -42,9 +42,10 @@
  * The provider vocabulary is deliberately not imported from @speed/auth-ui
  * (same-layer packages never import each other): SocialProvider and
  * SocialProviderConfig are copied here, shaped identically to auth-ui's
- * own definitions, and must be kept in sync with them -- the authn spec
- * is the shared source of truth for the provider set, and a social
- * channel added to the spec lands in both packages' copies together.
+ * own definitions, and must be kept in sync with them -- a social channel
+ * is a deployment login-method name (a method-name string, not a closed
+ * set; the WeChat pair arrives as `wechat.web` / `wechat.mp`), and the
+ * same name lands in both packages' copies together.
  *
  * An unresolved load -- the first load in flight, or parked by
  * react-query's default networkMode 'online' while the device is
@@ -84,24 +85,26 @@ import { useProfileQuery } from './internal/queries.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 
 /**
- * The social sign-in channels the authn spec hosts -- the account-ui
- * copy of @speed/auth-ui's SocialProvider, kept in sync with it (the
- * same-layer rule forbids importing the sign-in package).
+ * A social sign-in method's name -- the account-ui copy of
+ * @speed/auth-ui's SocialProvider, kept in sync with it (the same-layer
+ * rule forbids importing the sign-in package). The set is the
+ * deployment's: a social channel is a login-method name (the WeChat pair
+ * arrives as `wechat.web` / `wechat.mp`), so this is a method name rather
+ * than a closed union.
  */
-export type SocialProvider =
-  | 'google'
-  | 'github'
-  | 'wechat'
-  | 'dingtalk'
-  | 'feishu'
+export type SocialProvider = string
 
 /**
- * One configured channel: which provider, and the redirect URI the
+ * One configured channel: which provider, the brand label to render it
+ * with (empty for a name-keyed translation), and the redirect URI the
  * host's callback route listens on. The account-ui copy of auth-ui's
  * SocialProviderConfig, kept in sync with it.
  */
 export interface SocialProviderConfig {
   readonly provider: SocialProvider
+  /** The method's brand name (a provider's own name, not translated)
+   * where the host supplies one. */
+  readonly label?: string
   readonly redirectUri: string
 }
 
@@ -123,8 +126,8 @@ type Notice = { readonly kind: 'unbind-failed'; readonly code: string } | null
 
 /**
  * The provider values the authn identity surface answers with, one
- * bundle key each under bindings.provider. t() is only ever called with
- * a value on this list -- anything else either carries the enterprise
+ * bundle key each under bindings.provider. A bound row calls t() only
+ * for a value on this list -- anything else either carries the enterprise
  * OIDC_PROVIDER_PREFIX below (the live oidc: family, dynamic per
  * tenant, mapped by its prefix and never enumerable) or renders the
  * generic bindings.provider.other label.
@@ -147,6 +150,39 @@ const KNOWN_PROVIDERS = new Set<string>([
  * tenant's binding from another's).
  */
 const OIDC_PROVIDER_PREFIX = 'oidc:'
+
+/**
+ * The bundle keys of the social method names the family has wording for.
+ * A configured channel is a deployment login-method name, so a name the
+ * family knows renders its label and a name outside the map renders the
+ * generic other label.
+ */
+const PROVIDER_LABEL_KEYS: Readonly<Record<string, string>> = {
+  google: 'bindings.provider.google',
+  github: 'bindings.provider.github',
+  wechat: 'bindings.provider.wechat',
+  'wechat.web': 'bindings.provider.wechat',
+  'wechat.mp': 'bindings.provider.wechat',
+  dingtalk: 'bindings.provider.dingtalk',
+  feishu: 'bindings.provider.feishu',
+}
+
+/**
+ * A configured channel's display label: the method's brand name where the
+ * host supplies one, otherwise the bundle's wording for a method the
+ * family knows, otherwise the generic other label -- the same guarded
+ * vocabulary the bound rows render provider values with, never a raw
+ * bundle key.
+ */
+function configuredProviderLabel(
+  config: SocialProviderConfig,
+  t: (key: string) => string,
+): string {
+  if (config.label !== undefined && config.label !== '') {
+    return config.label
+  }
+  return t(PROVIDER_LABEL_KEYS[config.provider] ?? 'bindings.provider.other')
+}
 
 /** The pending-state placeholder: rows shaped like the content rows,
  * read aloud as one loading announcement, never a fake heading. */
@@ -409,7 +445,7 @@ export function SocialBindingsSection({
                 busy={busyProvider !== null}
                 authorizeError={authorizeError}
                 sectionLabel={t('bindings.addSectionTitle')}
-                providerLabel={(provider) => t(`bindings.provider.${provider}`)}
+                providerLabel={(config) => configuredProviderLabel(config, t)}
                 onAuthorize={handleAuthorize}
               />
             )}
@@ -453,7 +489,7 @@ function AddArea({
   readonly busy: boolean
   readonly authorizeError: string | null
   readonly sectionLabel: string
-  readonly providerLabel: (provider: SocialProvider) => string
+  readonly providerLabel: (config: SocialProviderConfig) => string
   readonly onAuthorize: (config: SocialProviderConfig) => void
 }) {
   return (
@@ -480,7 +516,7 @@ function AddArea({
             disabled={busy}
             onClick={() => onAuthorize(config)}
           >
-            {providerLabel(config.provider)}
+            {providerLabel(config)}
           </Button>
         ))}
       </Box>

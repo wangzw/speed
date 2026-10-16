@@ -127,7 +127,10 @@ its email. A row with an id has an unlink action
 unbind renders its code text above the list.
 
 The add area renders one button per configured provider that is not
-already bound. Clicking starts a `purpose: 'link'` flow on the session
+already bound. A channel's label is the method's brand label where the
+host supplies one, otherwise the bundle's name for a method the family
+knows, otherwise the generic other label. Clicking a button starts a
+`purpose: 'link'` flow on the session
 (`session.startAuthenticatedFlow`); the flow's first `redirect` step
 carries the provider's authorization URL, which is reported upward
 through `onAuthorizeUrl` -- the section never navigates. The host
@@ -143,10 +146,12 @@ interface SocialBindingsSectionProps {
 }
 ```
 
-`SocialProvider` and `SocialProviderConfig` are this package's own
-definitions, shaped identically to `@speed/auth-ui`'s and kept in sync
-with them -- same-tier packages never import each other, and the authn
-spec is the shared source of truth for the provider set.
+`SocialProvider` is a method-name `string` -- the set is the
+deployment's, not a closed union (a social channel is a login-method
+name such as `wechat.web`) -- and `SocialProviderConfig` carries the
+method's brand label. Both are this package's own definitions, shaped
+identically to `@speed/auth-ui`'s and kept in sync with them -- same-tier
+packages never import each other.
 
 ## BindingCallbackHandler
 

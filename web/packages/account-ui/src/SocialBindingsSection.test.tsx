@@ -250,4 +250,37 @@ describe('SocialBindingsSection', () => {
       input: { redirect_uri: WECHAT_REDIRECT_URI },
     })
   })
+
+  it('renders a configured method by its brand label or bundle name, never a raw key', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profile([]))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    // A deployment's method names, not a closed set: the WeChat web channel
+    // is `wechat.web`, a host may give a channel a brand label, and a
+    // method the family has no wording for still must not leak a raw key.
+    const providers: readonly SocialProviderConfig[] = [
+      { provider: 'wechat.web', redirectUri: WECHAT_REDIRECT_URI },
+      { provider: 'acme-sso', label: 'Acme SSO', redirectUri: WECHAT_REDIRECT_URI },
+      { provider: 'mystery', redirectUri: WECHAT_REDIRECT_URI },
+    ]
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <SocialBindingsSection session={rig.session} providers={providers} />,
+    )
+
+    // `wechat.web` resolves to the bundle's WeChat name, the host's brand
+    // label renders verbatim, and the unknown method falls to the generic
+    // other label -- never a raw bundle key.
+    expect(
+      await screen.findByRole('button', { name: zhCN.bindings.provider.wechat }),
+    ).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Acme SSO' })).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: zhCN.bindings.provider.other }),
+    ).toBeTruthy()
+  })
 })

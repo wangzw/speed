@@ -24,8 +24,9 @@
  * 'step-up'` flows the same way. The provider vocabulary
  * (SocialProvider/SocialProviderConfig) is this package's own
  * definition, copied to match @speed/auth-ui's and kept in sync with it
- * -- same-layer packages never import each other, and the authn spec is
- * the shared source of truth for the provider set.
+ * -- same-layer packages never import each other, and a social channel
+ * is a deployment login-method name (`SocialProvider` is a string, not a
+ * closed set).
  */
 
 export { ACCOUNT_UI_NAMESPACE, accountUiResources } from './resources.js'
