@@ -256,9 +256,11 @@ package -- see the AGENTS.md non-negotiable rules.
   the AGENTS.md non-negotiable rules). The prop shape needs no change
   for any authorization source: a host only computes a
   `RouteGuardStatus` and passes it in.
-- **`admin-shell`**: out of scope here; this package ships only the
-  shared chrome the platform-staff shell would assemble.
-  `product-shell`, this package's first consumer, composes `AppShell`
+- **`admin-shell`**: the platform-staff console ships as
+  `@speed/console-ui`, which builds its frame on `AppShell` (see
+  AGENTS.md); this package ships only the
+  shared chrome the shells assemble.
+  `product-shell`, the tenant-facing consumer, composes `AppShell`
   as its authenticated frame, and its gated-journey suite proves the
   `RouteGuard` composition shape -- a stand-in host mounting the gate
   inside the shell's children and feeding it a status it computes
