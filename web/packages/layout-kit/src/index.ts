@@ -16,6 +16,7 @@ export {
   type AppShellNavItem,
   type AppShellProps,
 } from './components/AppShell.js'
+export { Avatar, type AvatarProps } from './components/Avatar.js'
 export {
   RouteGuard,
   type RouteGuardProps,

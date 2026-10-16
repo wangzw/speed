@@ -28,6 +28,12 @@
  * being squeezed or clipped -- AppShell still renders only what the
  * host gives it (no auto-collapsing overflow menu is invented here,
  * consistent with this package's host-injected-everything design). The
+ * desktop sidebar's collapse is the opposite kind of change: an
+ * explicit, host-controlled pair (`sidebarCollapsed` /
+ * `onSidebarCollapsedChange`) that a host opts into, never an implicit
+ * responsive behavior -- omitting it renders the always-open permanent
+ * drawer unchanged, and the toggle button appears only when the host
+ * supplies the change callback. The
  * mobile (temporary) Drawer's paper width is capped to
  * `min(sidebarWidth, 85vw)`, and the nav content rendered inside it
  * fills that paper (`width: 100%`) rather than re-declaring
@@ -75,7 +81,12 @@ import ListItemText from '@mui/material/ListItemText'
 import Toolbar from '@mui/material/Toolbar'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { useLayoutKitTranslation } from '../internal/translation.js'
-import { CloseIcon, MenuIcon } from '../internal/icons.js'
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  CloseIcon,
+  MenuIcon,
+} from '../internal/icons.js'
 
 /**
  * One navigation entry. The host owns `selected` (computed from
@@ -122,6 +133,22 @@ export interface AppShellProps {
    * permanent and the mobile open state should be false.
    */
   readonly onMobileOpenChange?: (open: boolean) => void
+  /**
+   * Desktop sidebar collapse state (the permanent drawer at md and up).
+   * Omit to keep the sidebar always open -- the previous behavior, and
+   * the one every host that never opts in is byte-for-byte unaffected
+   * by. Pass it (with onSidebarCollapsedChange) for a sidebar the user
+   * can collapse to reclaim the content width; the mobile (temporary)
+   * drawer is unaffected.
+   */
+  readonly sidebarCollapsed?: boolean
+  /**
+   * Fired when the sidebar collapse state should change. Supplying it
+   * renders the desktop collapse/expand toggle button in the AppBar;
+   * omitting it renders no toggle (a host that collapses its sidebar
+   * programmatically reports nothing).
+   */
+  readonly onSidebarCollapsedChange?: (collapsed: boolean) => void
   /** Drawer width in px, both variants. Defaults to 280. */
   readonly sidebarWidth?: number
   /** Extra styling merged onto the root layout box. */
@@ -197,6 +224,8 @@ export function AppShell({
   children,
   mobileOpen: mobileOpenProp,
   onMobileOpenChange,
+  sidebarCollapsed = false,
+  onSidebarCollapsedChange,
   sidebarWidth = DEFAULT_SIDEBAR_WIDTH,
   sx,
 }: AppShellProps) {
@@ -204,6 +233,16 @@ export function AppShell({
   const theme = useTheme()
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'))
   const mainContentId = useId()
+
+  // The desktop sidebar collapse is entirely host-controlled: the state
+  // is the `sidebarCollapsed` prop, and the toggle reports the flipped
+  // value through onSidebarCollapsedChange. Supplying that callback is
+  // what opts a host into the affordance (and renders the toggle);
+  // omitting it renders exactly the always-open permanent drawer every
+  // existing host already gets. The collapse is honored only at md and
+  // up -- the mobile (temporary) drawer keeps its own open state.
+  const collapseToggleEnabled = onSidebarCollapsedChange !== undefined
+  const desktopCollapsed = isDesktop && sidebarCollapsed
 
   // Interaction-only state, the same carve-out ConfirmDialog's double-
   // confirm arm relies on: promoted to fully controlled the moment the
@@ -367,6 +406,24 @@ export function AppShell({
               {mobileOpen ? <CloseIcon /> : <MenuIcon />}
             </IconButton>
           )}
+          {isDesktop && collapseToggleEnabled && (
+            <IconButton
+              color="inherit"
+              edge="start"
+              aria-label={
+                sidebarCollapsed
+                  ? t('appShell.expandNav')
+                  : t('appShell.collapseNav')
+              }
+              aria-expanded={!sidebarCollapsed}
+              onClick={() =>
+                onSidebarCollapsedChange?.(!sidebarCollapsed)
+              }
+              sx={{ marginRight: 2 }}
+            >
+              {sidebarCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+            </IconButton>
+          )}
           <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', minWidth: 0 }}>
             {header}
           </Box>
@@ -388,19 +445,21 @@ export function AppShell({
       </AppBar>
       <Box
         sx={{
-          width: { md: sidebarWidth },
+          width: { md: sidebarCollapsed ? 0 : sidebarWidth },
           flexShrink: { md: 0 },
         }}
       >
         {isDesktop ? (
-          <Drawer
-            variant="permanent"
-            open
-            sx={{ '& .MuiDrawer-paper': { boxSizing: 'border-box', width: sidebarWidth } }}
-          >
-            {spacer}
-            {navContent()}
-          </Drawer>
+          sidebarCollapsed ? null : (
+            <Drawer
+              variant="permanent"
+              open
+              sx={{ '& .MuiDrawer-paper': { boxSizing: 'border-box', width: sidebarWidth } }}
+            >
+              {spacer}
+              {navContent()}
+            </Drawer>
+          )
         ) : (
           <Drawer
             variant="temporary"
@@ -453,7 +512,9 @@ export function AppShell({
         sx={{
           flexGrow: 1,
           minWidth: 0,
-          width: { md: `calc(100% - ${sidebarWidth}px)` },
+          width: {
+            md: desktopCollapsed ? '100%' : `calc(100% - ${sidebarWidth}px)`,
+          },
         }}
       >
         {spacer}

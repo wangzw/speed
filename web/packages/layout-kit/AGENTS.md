@@ -3,9 +3,11 @@
 ## What this package is
 
 Shared app chrome at the same architectural tier as `@speed/ui-kit`:
-`AppShell` (a responsive header, nav drawer and content region) and
-`RouteGuard` (a route/content gate driven entirely by a host-injected
-status). Both are fully controlled and props-driven, carry no
+`AppShell` (a responsive header, nav drawer and content region, plus an
+opt-in host-controlled desktop sidebar collapse), `RouteGuard` (a
+route/content gate driven entirely by a host-injected status) and `Avatar`
+(a presentational identity chip -- image or initials, off the accessibility
+tree on request). All are fully controlled and props-driven, carry no
 business or tenant semantics, and — the property that matters most for
 this package — carry no opinion about *how* a host authenticates or
 authorizes a user. `product-shell` (shipped, this package's first
@@ -52,7 +54,11 @@ rule. The public surface is `src/index.ts`; everything under
   auto-collapsing overflow menu or similar new behavior here —
   AppShell renders only what the host gives it, and a genuine need
   for host-computed overflow behavior belongs to the host composing
-  this package, not to AppShell itself.
+  this package, not to AppShell itself. The desktop sidebar collapse is
+  not that: it is an explicit, host-controlled prop pair
+  (`sidebarCollapsed` / `onSidebarCollapsedChange`) a host opts into,
+  never an implicit responsive behavior — omitting it keeps the
+  always-open permanent drawer.
 - **This package makes zero HTTP calls.** There is no scope in which
   it legitimately needs to — if a change wants to fetch anything, that
   is a sign scope has drifted; stop and re-read the package README's

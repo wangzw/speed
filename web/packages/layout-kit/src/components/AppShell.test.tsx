@@ -83,6 +83,35 @@ function ControlledDrawerHost({
   )
 }
 
+// The controlled-collapse host: the collapse state lives here, AppShell
+// reports every flip through onSidebarCollapsedChange, and nothing else
+// writes it -- the shape a real controlled consumer renders.
+function ControlledCollapseHost({
+  initialCollapsed,
+  onCollapseChange,
+}: {
+  readonly initialCollapsed: boolean
+  readonly onCollapseChange: (collapsed: boolean) => void
+}) {
+  const [collapsed, setCollapsed] = useState(initialCollapsed)
+  const reportCollapse = useCallback(
+    (next: boolean) => {
+      onCollapseChange(next)
+      setCollapsed(next)
+    },
+    [onCollapseChange],
+  )
+  return (
+    <AppShell
+      navItems={NAV_ITEMS}
+      sidebarCollapsed={collapsed}
+      onSidebarCollapsedChange={reportCollapse}
+    >
+      content
+    </AppShell>
+  )
+}
+
 describe('AppShell', () => {
   describe('nav items', () => {
     it('renders each item label and wires href/selected from the host, never computing them itself', () => {
@@ -368,6 +397,87 @@ describe('AppShell', () => {
         media.changeMatches(false)
       })
       expect(onMobileOpenChange).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('collapsible sidebar', () => {
+    it('renders no collapse toggle and keeps the permanent drawer when the host does not opt in', () => {
+      mockMatchMedia(true)
+      const { queryByRole, getByRole } = renderWithProviders(
+        <AppShell navItems={NAV_ITEMS}>content</AppShell>,
+      )
+      expect(
+        queryByRole('button', { name: zhCN.appShell.collapseNav }),
+      ).not.toBeInTheDocument()
+      expect(
+        queryByRole('button', { name: zhCN.appShell.expandNav }),
+      ).not.toBeInTheDocument()
+      // The always-open permanent drawer is unchanged.
+      expect(
+        getByRole('navigation', { name: zhCN.appShell.navLabel }),
+      ).toBeInTheDocument()
+    })
+
+    it('reports the flipped value from the toggle and hides the drawer once the host collapses it', async () => {
+      mockMatchMedia(true)
+      const onCollapseChange = vi.fn()
+      const user = userEvent.setup()
+      const { getByRole, queryByRole } = renderWithProviders(
+        <ControlledCollapseHost
+          initialCollapsed={false}
+          onCollapseChange={onCollapseChange}
+        />,
+      )
+      const toggle = getByRole('button', { name: zhCN.appShell.collapseNav })
+      expect(toggle).toHaveAttribute('aria-expanded', 'true')
+      await user.click(toggle)
+
+      expect(onCollapseChange).toHaveBeenCalledTimes(1)
+      expect(onCollapseChange).toHaveBeenCalledWith(true)
+      // Collapsed: the permanent drawer is gone and the toggle now offers
+      // to expand.
+      expect(
+        queryByRole('navigation', { name: zhCN.appShell.navLabel }),
+      ).not.toBeInTheDocument()
+      expect(
+        getByRole('button', { name: zhCN.appShell.expandNav }),
+      ).toHaveAttribute('aria-expanded', 'false')
+    })
+
+    it('expands again from the collapsed state', async () => {
+      mockMatchMedia(true)
+      const user = userEvent.setup()
+      const { getByRole, queryByRole } = renderWithProviders(
+        <ControlledCollapseHost
+          initialCollapsed
+          onCollapseChange={() => undefined}
+        />,
+      )
+      expect(
+        queryByRole('navigation', { name: zhCN.appShell.navLabel }),
+      ).not.toBeInTheDocument()
+      await user.click(getByRole('button', { name: zhCN.appShell.expandNav }))
+      expect(
+        getByRole('navigation', { name: zhCN.appShell.navLabel }),
+      ).toBeInTheDocument()
+    })
+
+    it('leaves the mobile drawer and its own toggle untouched by the collapse state', () => {
+      mockMatchMedia(false)
+      const { getByRole, queryByRole } = renderWithProviders(
+        <ControlledCollapseHost
+          initialCollapsed
+          onCollapseChange={() => undefined}
+        />,
+      )
+      // Below md the collapse affordance is absent; the mobile nav toggle
+      // is the one that renders.
+      expect(
+        queryByRole('button', { name: zhCN.appShell.collapseNav }),
+      ).not.toBeInTheDocument()
+      expect(
+        getByRole('button', { name: zhCN.appShell.openNav }),
+      ).toBeInTheDocument()
     })
   })
 

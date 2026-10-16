@@ -21,6 +21,7 @@ same discipline `ui-kit` established, and the workspace's
 | Module | Exports |
 |---|---|
 | `components/AppShell.tsx` | `AppShell`, `AppShellProps`, `AppShellNavItem` |
+| `components/Avatar.tsx` | `Avatar`, `AvatarProps` |
 | `components/RouteGuard.tsx` | `RouteGuard`, `RouteGuardProps`, `RouteGuardStatus` |
 | `resources.ts` | `LAYOUT_KIT_NAMESPACE`, `layoutKitResources` |
 
@@ -108,11 +109,33 @@ different hosts use different routers.
 | `userMenu` | `ReactNode` | far end-of-AppBar content (account menu trigger) |
 | `children` | `ReactNode` (required) | the content region, rendered inside the `main` landmark |
 | `mobileOpen` / `onMobileOpenChange` | `boolean` / `(open: boolean) => void` | optional controlled pair for the mobile drawer; omit both to let AppShell manage the toggle itself (the one interaction-local exception, matching `ui-kit`'s `ConfirmDialog` double-confirm arm -- the same carve-out covers the uncontrolled temporary drawer closing itself when a nav item is activated; a controlled host keeps the existing contract, closing through its own next render) |
+| `sidebarCollapsed` / `onSidebarCollapsedChange` | `boolean` / `(collapsed: boolean) => void` | optional controlled pair for the desktop sidebar; omit both for the always-open permanent drawer (byte-for-byte unchanged). Supplying `onSidebarCollapsedChange` renders the collapse/expand toggle in the AppBar; `sidebarCollapsed` (default `false`) is honored only at `md` and up -- the mobile drawer is unaffected |
 | `sidebarWidth` | `number` | drawer width in px, both variants; defaults to 280 |
 | `sx` | `SxProps<Theme>` | escape hatch, merged onto the root layout box |
 
 Slots render exactly the content passed in -- an omitted slot renders
-nothing, never a placeholder.
+nothing, never a placeholder. The desktop sidebar collapse is an
+explicit, host-controlled pair, not an implicit responsive behavior: a
+host that omits it keeps the always-open permanent drawer, and the toggle
+appears only when the host supplies the change callback.
+
+## Avatar
+
+The identity chip: an image when `src` is given (and loads), else up to two
+uppercase initials from `name` (first and last word). A named,
+non-decorative avatar reads as its name (`role="img"` with `aria-label`),
+so a name-only avatar announces the name, not its bare initials; a
+`decorative` avatar leaves the accessibility tree entirely, for when a
+wrapping control (an `aria-label`led button next to the account name)
+already carries the identity.
+
+| Prop | Type | Notes |
+|---|---|---|
+| `name` | `string` | display name; supplies the initials and (unless decorative) the accessible name |
+| `src` | `string` | image URL; the initials render when it is absent or fails to load |
+| `size` | `number` | side length in px; defaults to 40 |
+| `decorative` | `boolean` | leave the glyph out of the accessibility tree; defaults to false |
+| `sx` | `SxProps<Theme>` | escape hatch, merged onto the avatar |
 
 **Narrow-viewport protections (CSS-only, no prop changes)**: the
 mobile (temporary) Drawer's paper
@@ -193,6 +216,7 @@ separate boolean "loading" flag that could disagree with "allowed".
 | `appShell.skipToContent` | the visually-hidden skip-to-content link |
 | `appShell.navLabel` | the nav drawer landmark's accessible name |
 | `appShell.openNav` / `appShell.closeNav` | the mobile nav toggle button's `aria-label`, by state |
+| `appShell.collapseNav` / `appShell.expandNav` | the desktop sidebar collapse/expand toggle button's `aria-label`, by state |
 | `routeGuard.pending` | the default pending spinner's `aria-label` |
 
 `routeGuard`'s denied fallback carries no text of its own -- it is

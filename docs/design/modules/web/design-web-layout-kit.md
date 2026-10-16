@@ -2,9 +2,10 @@
 
 ## 职责
 
-与认证无关的应用外壳，包 `web/packages/layout-kit`。交付 `AppShell` 与 `RouteGuard`，以及它们渲染自身文字所用的双语命名空间。
+与认证无关的应用外壳，包 `web/packages/layout-kit`。交付 `AppShell`、`RouteGuard` 与 `Avatar`，以及它们渲染自身文字所用的双语命名空间。
 
-- `AppShell` 交付一块响应式应用外壳：一个固定的顶部栏（`header`/banner 地标）、一个随视口变化的导航抽屉（`nav` 地标，`md` 断点及以上常驻、以下为临时覆盖式），以及一个 `main` 内容区。它把宿主交来的导航项、头部内容与子节点原样摆进这些地标，自身不做任何路由判定。
+- `AppShell` 交付一块响应式应用外壳：一个固定的顶部栏（`header`/banner 地标）、一个随视口变化的导航抽屉（`nav` 地标，`md` 断点及以上常驻、以下为临时覆盖式），以及一个 `main` 内容区。它把宿主交来的导航项、头部内容与子节点原样摆进这些地标，自身不做任何路由判定。桌面侧边栏可收起——一个由宿主显式选择的受控面（见下）。
+- `Avatar` 交付一个纯展示的身份块：有图渲染图、无图取名字首字母，可对无障碍树隐身（外层控件自带标签）。
 - `RouteGuard` 按宿主算好的一个状态值（`RouteGuardStatus`）决定是否放行子节点。三态互斥——放行、等待、拒绝——等待态与拒绝态各有一个缺省占位，可由宿主整体替换。
 - 两者都不认识任何具体的认证或路由机制。`RouteGuard` 的判决是一个由宿主计算并传入的普通值，不是一个它去调用的回调；`AppShell` 的导航项（含哪一项选中）完全由宿主算好。这层「宿主注入一切」的形状，使租户侧装配壳与平台侧外壳能共用同一个包而各自接上不同的授权来源：授权来源一变，本包不变。
 
@@ -14,7 +15,7 @@
 - **不发任何 HTTP 请求。** 本包是外壳与门，取数归宿主与其数据层。
 - **不持业务与租户语义。** 导航项标签、头部、用户菜单、子节点都是宿主内容，本包不发明它们，也不认识「租户」这个概念。
 - **不做认证机制本身。** 登录、登出、会话读取与权限求值都不在本包内；`RouteGuard` 只按传入的判决渲染。把某个授权来源接上 `RouteGuard` 是宿主的组装工作。
-- **不发明新的宿主可见行为来应付窄视口。** 窄视口防护是纯附加样式，不新增也不改动任何 prop；AppShell 只渲染宿主交来的内容，没有自动收起的溢出菜单这类隐式行为。
+- **不发明新的宿主可见行为来应付窄视口。** 窄视口防护是纯附加样式，不新增也不改动任何 prop；AppShell 只渲染宿主交来的内容，没有自动收起的溢出菜单这类隐式行为。桌面侧边栏的收起与之相反：是一个宿主显式选择的受控 prop 对，不是隐式的响应式行为。
 
 ## 外部接口契约
 
@@ -40,12 +41,30 @@ export interface AppShellProps {
   readonly children: ReactNode
   readonly mobileOpen?: boolean                    // 与下一项成对，控制态
   readonly onMobileOpenChange?: (open: boolean) => void
+  readonly sidebarCollapsed?: boolean              // 桌面侧边栏收起态，缺省 false
+  readonly onSidebarCollapsedChange?: (collapsed: boolean) => void
   readonly sidebarWidth?: number                   // 缺省 280
   readonly sx?: SxProps<Theme>
 }
 
 export function AppShell(props: AppShellProps): ReactElement
 ```
+
+### Avatar
+
+```ts
+export interface AvatarProps {
+  readonly name?: string        // 显示名；无图时取其首字母
+  readonly src?: string         // 图片 URL；缺省或加载失败时退回首字母
+  readonly size?: number        // 边长 px，缺省 40
+  readonly decorative?: boolean // 为真时移出无障碍树（外层控件自带标签）
+  readonly sx?: SxProps<Theme>
+}
+export function Avatar(props: AvatarProps): ReactElement
+```
+
+- **一个纯展示的身份块，不持状态、不发请求。** 有 `src` 时渲染图片（其 `alt` 即 `name`）；否则由 `name` 取最多两个大写首字母（首词与末词）。带名且非装饰时，它暴露 `name` 为其可及名（`role="img"` 加 `aria-label`），使有名无图的头像读作名字而非裸首字母；`decorative` 为真时整块移出无障碍树，由包着它的控件（一个 `aria-label` 的按钮）承担唯一播报。
+- **`AppShell` 的桌面侧边栏收起是宿主显式选择的受控面。** `sidebarCollapsed` 是收起态，`onSidebarCollapsedChange` 是收起开关的回报通道；给出后者即在顶栏渲染收起／展开按钮，两者都省略即维持一直展开的常驻抽屉（未选择该能力的宿主逐字节不变）。收起只在 `md` 及以上生效，移动（临时）抽屉不受影响。收起态是宿主持有的普通值，本包不在内部推导。
 
 - **槽位原样渲染。** `header`、`headerActions`、`userMenu`、`children` 渲染宿主交来的内容本身；某个槽缺席就什么都不渲染，不代以占位。
 - **移动抽屉的开合是唯一的交互局部状态。** `mobileOpen` 与 `onMobileOpenChange` 成对给出时是受控的；都省略时由 AppShell 内部管理（非受控）。从临时抽屉越到常驻抽屉（视口从 `md` 以下越到 `md` 及以上）时，移动抽屉的开合被复位为关，经同一个 `onMobileOpenChange` 通道报出。
@@ -82,7 +101,7 @@ export const layoutKitResources: Readonly<Record<string, ResourceBundle>>
 
 宿主在 `createI18n` 之后用 `registerNamespace` 恰好注册一次（重复注册抛错，故不得发生在组件或 provider 内）。本包渲染自身文字经 `useLayoutKitTranslation`，从 `src/locales/zh-CN.json` 与 `en-US.json` 这对叶子键集相同的双语文件读取。
 
-**稳定性承诺。** `AppShell`、`AppShellProps`、`AppShellNavItem`、`RouteGuard`、`RouteGuardProps`、`RouteGuardStatus` 的字段与方法集，`LAYOUT_KIT_NAMESPACE`、`layoutKitResources`，以及 `sidebarWidth` 缺省值 `280`、缺省拒绝态与等待态的形状，是宿主可见面。加导出、改签名或改 prop 名是以下游消费者的不兼容变更。
+**稳定性承诺。** `AppShell`、`AppShellProps`、`AppShellNavItem`、`RouteGuard`、`RouteGuardProps`、`RouteGuardStatus`、`Avatar`、`AvatarProps` 的字段与方法集，`LAYOUT_KIT_NAMESPACE`、`layoutKitResources`，以及 `sidebarWidth` 缺省值 `280`、缺省拒绝态与等待态的形状，是宿主可见面。加导出、改签名或改 prop 名是以下游消费者的不兼容变更。收起能力是纯附加的可选 prop 对，未传该对的宿主行为不变。
 
 ## 依赖
 
@@ -169,5 +188,7 @@ classDiagram
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | `AppShell`（响应式头部、导航抽屉、内容区与地标） | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`、`AppShellProps`、`AppShellNavItem` |
+| 桌面侧边栏收起（受控 prop 对） | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `sidebarCollapsed`、`onSidebarCollapsedChange` |
+| 身份块 Avatar | 已实现 | `web/packages/layout-kit/src/components/Avatar.tsx` `Avatar`、`AvatarProps` |
 | `RouteGuard`（按注入状态放行的三态门） | 已实现 | `web/packages/layout-kit/src/components/RouteGuard.tsx` `RouteGuard`、`RouteGuardProps`、`RouteGuardStatus` |
 | 双语命名空间资源 | 已实现 | `web/packages/layout-kit/src/resources.ts` `LAYOUT_KIT_NAMESPACE`、`layoutKitResources` |
