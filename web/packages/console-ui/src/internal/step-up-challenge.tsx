@@ -17,13 +17,15 @@
  * elevation on the session -- the cookie rotated, or an elevated token --
  * and the hook fires `onSuccess`. A failure of an answer resolves through
  * the console's code whitelist and renders as one banner; the flow stays
- * open and a fresh answer is retryable. A refusal of the start itself (a
- * 401 while the session is still established -- the hook's 'unavailable'
- * phase) means the deployment has no factor that can raise the session:
- * the dialog says so and points the operator at re-establishing the
- * session, instead of a retry that cannot succeed. The dialog never signs
- * in and never navigates: a dead session shows its code text and the
- * console's session gate converges.
+ * open and a fresh answer is retryable. A refusal of the start itself (the
+ * hook's 'unavailable' phase -- a 401 insufficient_user_authentication, or
+ * a 400 for a deployment with no factor to raise the session) means this
+ * deployment cannot complete the step-up at all: the dialog says so and
+ * offers a re-login -- it ends the session through the session's own
+ * logout, and the host's session gate converges on its sign-in surface --
+ * instead of a verification that cannot come. The dialog never signs in
+ * and never navigates on its own: a dead session shows its code text and
+ * the console's session gate converges.
  */
 
 import { useId, useRef } from 'react'
@@ -97,45 +99,64 @@ export function StepUpChallenge({
   }
 
   const starting = phase === 'starting'
-  // The deployment cannot raise the session at all (no factor that may
-  // strengthen it): no step will come, so the dialog tells the operator to
-  // re-establish the session rather than offer a retry that cannot succeed.
+  // This deployment cannot raise the session at all (no factor that may
+  // strengthen it): no step will come, so the dialog says so and offers a
+  // re-login rather than a verification that cannot succeed.
   const unavailable = phase === 'unavailable'
+
+  // The unavailable phase's one action: end the session -- forgetting the
+  // refused write, as a cancel does -- so the host's session gate converges
+  // on its sign-in surface, where the operator signs in again for a stronger
+  // verification. The session clears its local state even if the revoke is
+  // refused, so a failure here needs no retry.
+  function handleRelogin(): void {
+    onCancel()
+    void session.logout().catch(() => undefined)
+  }
 
   return (
     <Dialog open={open} onClose={onCancel} aria-labelledby={titleId} maxWidth="xs" fullWidth>
       <DialogTitle id={titleId}>{t('stepUp.title')}</DialogTitle>
       <DialogContent>
-        <Typography variant="body2" color="text.secondary">
-          {t('stepUp.description')}
-        </Typography>
-        <InlineError code={errorCode} />
-        {starting ? (
-          <Typography variant="body2" sx={{ mt: 2 }}>
-            {t('stepUp.starting')}
-          </Typography>
-        ) : unavailable ? (
-          <Typography variant="body2" sx={{ mt: 2 }}>
+        {unavailable ? (
+          <Typography variant="body2" color="text.secondary">
             {t('stepUp.cannotElevate')}
           </Typography>
         ) : (
-          <Box sx={{ mt: 1 }}>
-            {step !== null ? (
-              <FlowStep
-                // A fresh step resets the fields: keying the renderer on
-                // the step identity clears its per-answer state.
-                key={`${seq ?? 0}-${step.kind}`}
-                step={step}
-                challengeStep="factor"
-                submitLabel={t('stepUp.submit')}
-                onSubmit={handleAnswer}
-              />
-            ) : null}
-          </Box>
+          <>
+            <Typography variant="body2" color="text.secondary">
+              {t('stepUp.description')}
+            </Typography>
+            <InlineError code={errorCode} />
+            {starting ? (
+              <Typography variant="body2" sx={{ mt: 2 }}>
+                {t('stepUp.starting')}
+              </Typography>
+            ) : (
+              <Box sx={{ mt: 1 }}>
+                {step !== null ? (
+                  <FlowStep
+                    // A fresh step resets the fields: keying the renderer on
+                    // the step identity clears its per-answer state.
+                    key={`${seq ?? 0}-${step.kind}`}
+                    step={step}
+                    challengeStep="factor"
+                    submitLabel={t('stepUp.submit')}
+                    onSubmit={handleAnswer}
+                  />
+                ) : null}
+              </Box>
+            )}
+          </>
         )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onCancel}>{t('common.cancel')}</Button>
+        {unavailable ? (
+          <Button variant="contained" onClick={handleRelogin}>
+            {t('stepUp.relogin')}
+          </Button>
+        ) : null}
       </DialogActions>
     </Dialog>
   )

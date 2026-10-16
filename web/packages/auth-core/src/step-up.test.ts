@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 /**
  * step-up.test.ts -- useStepUp, the headless driver of a re-authentication
- * challenge. The distinction this suite pins: a start refused 401 while the
- * session is still established (isStepUpShortfall) is the deployment declining
- * to raise the session -- no factor may strengthen it in a single-factor-kind
- * assembly -- so the challenge parks on 'unavailable'; a start refused for any
- * other reason stays on 'failed' with its resolved code, retryable. A caller
+ * challenge. The distinction this suite pins: a start the deployment declines
+ * to raise -- a 401 while the session is still established (isStepUpShortfall),
+ * or a 400 (the start named no method the deployment could take, which is an
+ * account with no factor at all) -- parks the challenge on 'unavailable'; a
+ * start refused for any other reason, or a 400 on a session that is no longer
+ * established, stays on 'failed' with its resolved code, retryable. A caller
  * renders the two differently (re-establish the session vs. retry).
  *
  * The session is a minimal hand-rolled AuthSession so the start's refusal is
@@ -28,13 +29,16 @@ function unused(): never {
 }
 
 /** A session whose step-up start rejects with `startError`, classifying a
- * shortfall exactly as auth-core's own session does. */
-function session(startError: unknown): AuthSession {
-  const snapshot: AuthSnapshot = {
+ * shortfall exactly as auth-core's own session does. The snapshot defaults to
+ * established; an anonymous one models a refusal that ended the session. */
+function session(
+  startError: unknown,
+  snapshot: AuthSnapshot = {
     state: 'authenticated',
     principal: null,
     permissionSets: { tenant: null, system: null },
-  }
+  },
+): AuthSession {
   return {
     getSnapshot: () => snapshot,
     subscribe: () => () => undefined,
@@ -54,6 +58,12 @@ function session(startError: unknown): AuthSession {
   }
 }
 
+const ANONYMOUS: AuthSnapshot = {
+  state: 'anonymous',
+  principal: null,
+  permissionSets: { tenant: null, system: null },
+}
+
 describe('useStepUp', () => {
   it('parks on unavailable when the start is a step-up shortfall', async () => {
     const refusal = {
@@ -66,6 +76,38 @@ describe('useStepUp', () => {
     await waitFor(() => {
       expect(result.current.phase).toBe('unavailable')
     })
+  })
+
+  it('parks on unavailable when the start names no method the deployment could take', async () => {
+    // The deployment has no factor to raise the session with: the step-up
+    // start, issued with no method, is answered 400 (pkg/authn/login's
+    // stepUpStart, which reports a method not taken in).
+    const refusal = {
+      status: 400,
+      code: 'client.http.400',
+      message: 'refused',
+      auth: false,
+    }
+    const { result } = renderHook(() => useStepUp(session(refusal), true, () => undefined))
+    await waitFor(() => {
+      expect(result.current.phase).toBe('unavailable')
+    })
+  })
+
+  it('stays on failed with its code when a 400 lands on a session no longer established', async () => {
+    const refusal = {
+      status: 400,
+      code: 'client.http.400',
+      message: 'refused',
+      auth: false,
+    }
+    const { result } = renderHook(() =>
+      useStepUp(session(refusal, ANONYMOUS), true, () => undefined),
+    )
+    await waitFor(() => {
+      expect(result.current.phase).toBe('failed')
+    })
+    expect(result.current.errorCode).toBe('client.http.400')
   })
 
   it('stays on failed with its code when the start is refused for another reason', async () => {

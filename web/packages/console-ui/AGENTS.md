@@ -171,7 +171,9 @@ request body.
   The console DOES depend on `@speed/auth-core` for one thing only: the
   session whose step-up flow a privileged write elevates (the
   `session` prop of `ConsoleShell`, published to the pages through
-  `ConsoleSessionProvider`, and `session.isStepUpShortfall`). That is the
+  `ConsoleSessionProvider`, `session.isStepUpShortfall` for the gate, and
+  `session.logout` for the challenge's re-login when this deployment
+  cannot raise the session). That is the
   session operation, not a tenant read; `useCurrentTenant` stays unused.
 - **No routing in package code.** No path matching, no `react-router`. The
   shell links each labelled entry to its declaration's path, and a page

@@ -23,11 +23,14 @@
  * re-runs its refused action on, and `onElevated` fires once. A refusal
  * of an answer resolves to its code and renders as one banner; a fresh
  * answer is retryable, and the flow stays open. A refusal of the start
- * itself -- a 401 while the session is still established
- * (isStepUpShortfall) -- is the deployment declining to raise this
- * session at all, which no step can satisfy: it parks on 'unavailable'
- * so the caller tells the operator to re-establish the session rather
- * than retry a verification that cannot come.
+ * itself is the deployment declining to raise this session at all, which
+ * no step can satisfy: it answers 401 (insufficient_user_authentication
+ * -- the account has factors, but none whose methods may strengthen this
+ * session) or 400 (the start named no method the deployment could take,
+ * the answer an account with no factor at all meets, since a step-up is
+ * started without one), and either way parks the challenge on
+ * 'unavailable' so the caller tells the operator to re-establish the
+ * session rather than retry a verification that cannot come.
  *
  * The step-up flow is named with no method: an account that has a usable
  * factor enters at the factor step, which is the case a step-up-gated
@@ -80,6 +83,28 @@ export interface StepUpState {
  * for a non-ApiError. */
 function codeOf(error: unknown): string {
   return isApiError(error) ? error.code : 'client.unknown'
+}
+
+/**
+ * Whether a refusal of the step-up start is this deployment declining to
+ * raise the session at all. Two answers carry that meaning, and no step
+ * can satisfy either: a 401 `insufficient_user_authentication` -- the
+ * account has factors, but none whose methods may strengthen this session,
+ * so the start names none (the session's own isStepUpShortfall); and a
+ * 400 -- the start named no method the deployment could take, which is
+ * where an account with no factor at all lands, since the flow is started
+ * without a method. Both are read only while the session stays
+ * established: a refusal that ended the session is a dead session, not an
+ * unraisable one, and its code text renders instead. Any other status is
+ * an ordinary failure the caller may retry.
+ */
+function startUnavailable(session: AuthSession, error: unknown): boolean {
+  return (
+    session.isStepUpShortfall(error) ||
+    (isApiError(error) &&
+      error.status === 400 &&
+      session.getSnapshot().state === 'authenticated')
+  )
 }
 
 /**
@@ -138,13 +163,10 @@ export function useStepUp(
         settle(state)
       } catch (error) {
         if (run === runRef.current) {
-          if (session.isStepUpShortfall(error)) {
-            // A 401 on the start of a step-up, while the session is still
-            // established, is the deployment's refusal to raise it at all:
-            // there is no factor that may strengthen this session (a
-            // single-factor-kind assembly offers none). No step can be
-            // rendered and no answer retried -- the session must be
-            // re-established instead.
+          if (startUnavailable(session, error)) {
+            // The deployment declined to raise this session: no factor may
+            // strengthen it. No step can be rendered and no answer retried
+            // -- the session must be re-established instead.
             setPhase('unavailable')
           } else {
             setErrorCode(codeOf(error))

@@ -8,6 +8,11 @@
  * challenge is answered under the `factor` step with the chosen factor's
  * identifier resent alongside the code (pkg/authn/login's applyFactor
  * re-reads the factor from the answer).
+ *
+ * The other assertion is the deployment that cannot raise the session: a
+ * step-up start refused with a 400 (no factor to elevate with) parks the
+ * flow on 'unavailable', and the dialog names the situation and offers a
+ * re-login rather than a verification step.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -21,7 +26,11 @@ import type {
 } from '@speed/auth-core'
 import { StepUpChallenge } from './step-up-challenge.js'
 import { renderWithProviders } from '../../test-utils/render.js'
-import { AUTHENTICATED_SNAPSHOT } from '../../test-utils/session.js'
+import {
+  AUTHENTICATED_SNAPSHOT,
+  createStepUpSession,
+  type StepUpTestSession,
+} from '../../test-utils/session.js'
 
 /** A session whose step-up flow offers one factor, then asks for its code,
  * then settles elevated; it records every answer's input. */
@@ -83,20 +92,22 @@ function flowSession(): {
   return { session, answers }
 }
 
-/** A session whose step-up flow is refused at the start with a 401 while the
- * session is still established: the deployment offers no factor that may raise
- * it (a single-factor-kind assembly), so no step can ever come. */
-function refusingStartSession(): AuthSession {
+/** A session whose step-up start is refused with a 400 while the session
+ * stays established: the deployment has no factor to raise it with (the
+ * start names no method the deployment could take), so no step can ever
+ * come. The shortfall classifier is auth-core's own, so a 400 is not read
+ * as a strength shortfall -- only the hook's 400 branch reaches it. */
+function refusingStartSession(logout: () => Promise<void>): StepUpTestSession {
   return {
-    ...flowSession().session,
-    isStepUpShortfall: () => true,
+    ...createStepUpSession(),
     startAuthenticatedFlow: () =>
       Promise.reject({
-        status: 401,
-        code: 'client.http.401',
+        status: 400,
+        code: 'client.http.400',
         message: 'refused',
-        auth: true,
+        auth: false,
       }),
+    logout,
   }
 }
 
@@ -125,21 +136,30 @@ describe('StepUpChallenge', () => {
     expect(answers).toEqual([{ factor: 'f1' }, { code: '123456', factor: 'f1' }])
   })
 
-  it('says the session must be re-established when a step-up cannot raise it', async () => {
-    const session = refusingStartSession()
+  it('offers a re-login when the deployment cannot complete the step-up', async () => {
+    const user = userEvent.setup()
+    const logout = vi.fn(() => Promise.resolve())
+    const onCancel = vi.fn()
     renderWithProviders(
       <StepUpChallenge
         open
-        session={session}
+        session={refusingStartSession(logout)}
         onSuccess={() => undefined}
-        onCancel={() => undefined}
+        onCancel={onCancel}
       />,
     )
-    // The start is refused: the dialog tells the operator to re-establish the
-    // session and does not present the generic retryable 401 line.
+    // The start is refused: the dialog names the situation and offers the
+    // way out, not a verification the deployment cannot satisfy and not the
+    // raw status the answer carried.
     expect(
-      await screen.findByText(/本部署没有可提升当前会话的验证步骤/),
+      await screen.findByText(/本部署无法完成此次升级/),
     ).toBeInTheDocument()
-    expect(screen.queryByText(/HTTP 401/)).toBeNull()
+    expect(screen.queryByText(/请先完成一次验证/)).toBeNull()
+    expect(screen.queryByText(/HTTP 400/)).toBeNull()
+    // The re-login ends the session (the host's session gate converges on its
+    // sign-in surface) and forgets the refused write, as a cancel does.
+    await user.click(screen.getByRole('button', { name: '重新登录' }))
+    expect(logout).toHaveBeenCalledTimes(1)
+    expect(onCancel).toHaveBeenCalledTimes(1)
   })
 })
