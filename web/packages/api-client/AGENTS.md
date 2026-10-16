@@ -103,6 +103,17 @@ this one may issue HTTP requests itself.
   catalogs.
 - **The `speed/no-direct-http` rule whitelists this package.** New
   HTTP-touching code belongs here; keep the whitelist single.
+- **The event-stream opener is a member of the client, not a second
+  transport.** `createClient` returns a `SpeedClient` (a `RequestFn` plus
+  `openEventStream`); the opener is built inside the same closure so it
+  reads the identical seams (fetch, token store, tenant and language
+  providers, the single-flight refresh). Do not build a second wiring of
+  those seams, and do not fold streaming back into the request function:
+  a stream has no per-exchange timeout and no idempotent retry budget.
+  The opener applies the seams per connection, refreshes and retries once
+  on a bearer `401`, parses the `text/event-stream` framing, and -- by
+  contract -- neither times out nor reconnects; reconnecting is the
+  caller's policy.
 - **React exists only behind the `./react` subpath.** `src/react.ts`
   is the one file in this package that may `import` from `react`; the
   main entry (`src/index.ts`) stays dependency-free, mirroring
@@ -195,13 +206,14 @@ effective Public values and feature flags through
 `requiredFeature`-style consumer needs. The package ships no browser-tier
 suite of its own.
 
-Deferred with reasons:
+## Transports
 
-- SSE and streaming responses -- not shipped (a response is read
-  whole; there is no streaming reader). Binary bodies and raw-byte
-  responses *are* carried: a `Blob` (or `ArrayBuffer`/typed array) body
-  travels verbatim, and a request declaring `responseType: 'blob'`
-  resolves its 2xx body as a `Blob`.
+- Binary bodies and raw-byte responses travel the request function (a
+  `Blob`/`ArrayBuffer`/typed array body goes verbatim; a request declaring
+  `responseType: 'blob'` reads a 2xx body as a `Blob`), and server-sent event
+  streams open through the separate `SpeedClient.openEventStream` member -- a
+  stream is not a request/response exchange, so it does not ride the JSON
+  request function with its per-exchange timeout and idempotent retry budget.
 
 ## Known limitations
 

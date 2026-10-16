@@ -62,7 +62,7 @@ export interface SpeedAppNamespace {
 
 export interface SpeedAppServices {
   readonly session: AuthSession
-  readonly api: RequestFn
+  readonly api: SpeedClient
   readonly queryClient: QueryClient
 }
 
@@ -162,7 +162,7 @@ stateDiagram-v2
 | 分支 | 组件内部判别式 | `frame`（已认证）/ `ended`（曾进过应用）/ `signIn`（全新或未接会话） |
 | 外壳 prop | `ProductShellProps` | 框架 prop 透传加 `signIn`/`sessionEnded`/`children` 三槽 |
 | 应用定义 | `SpeedAppDefinition` | `namespaces`、`providers`、`view`、`sessionEnded`、`baseUrl`、`tenantProvider` |
-| 装配服务 | `SpeedAppServices` | `session`、`api`（即 `RequestFn`）、`queryClient`，交给定义的 provider |
+| 装配服务 | `SpeedAppServices` | `session`、`api`（即 `SpeedClient`：`RequestFn` 加事件流开启器 `openEventStream`）、`queryClient`，交给定义的 provider |
 | 会话结束上下文 | `SpeedSessionEndContext` | `session`、`queryClient`、`evictAllQueries` 三项 |
 | 装配产物 | `SpeedAppBootstrap` | `root`、`i18n`、`queryClient`、`session` 四项 |
 
@@ -189,7 +189,7 @@ stateDiagram-v2
 
 1. **i18n** —— 一份全新的双语实例（`?lang=` 参数、已存选择、navigator 语言、`en-US` 兜底），注册本包组合的四个族命名空间（ui-kit、layout-kit、auth-ui、product-shell），并以平台错误文案包（`@speed/i18n/platform-errors`）为实例的兜底命名空间；再把定义的 `namespaces` 逐个注册。注册先于渲染，且每个命名空间恰好一次。
 2. **会话** —— 一个内存访问令牌存储（凭据不落存储）喂给 auth-core 的会话状态机，跑在生成的 authn 操作上，经 `attachSession` 接上。一次刷新按约定转回匿名启动。
-3. **客户端** —— `createClient` 建立在环境的 `fetch` 上，以会话的静默刷新作 401 刷新腿，以 i18n 实例作语言源（每次尝试读一次，故语言切换后重试的请求播报用户当前所看的语言），以定义的 `tenantProvider` 作租户源（每次尝试读一次，接成 `X-Tenant`，故切租户后重试的请求播报用户当前所处的租户）；再经 `bindRequestFn` 绑进 api-sdk 的运行时接缝，此后一切 API 流量都是生成代码的流量。
+3. **客户端** —— `createClient` 建立在环境的 `fetch` 上，以会话的静默刷新作 401 刷新腿，以 i18n 实例作语言源（每次尝试读一次，故语言切换后重试的请求播报用户当前所看的语言），以定义的 `tenantProvider` 作租户源（每次尝试读一次，接成 `X-Tenant`，故切租户后重试的请求播报用户当前所处的租户）；再经 `bindRequestFn` 绑进 api-sdk 的运行时接缝，此后一切 API 流量都是生成代码的流量。`createClient` 的产物是 `SpeedClient`：请求函数加事件流开启器 `openEventStream`，后者随 `SpeedAppServices.api` 交给宿主，供需要服务端推送的面打开一条长连接（同一组接缝，不另接一套传输）。
 4. **QueryClient 与会话结束策略** —— 无重试的 `createQueryClient`，加 `watchSessionEnd` 的出厂缺省：会话一结束即逐出离任主体读过的全部缓存。
 5. **provider 栈** —— `I18nextProvider` 包 `AppThemeProvider` 包 `QueryClientProvider`，再加定义的 `providers`（最外层在前）包定义的 `view`。
 

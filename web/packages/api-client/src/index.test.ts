@@ -17,6 +17,9 @@ import type {
   ApiErrorInit,
   ClientOptions,
   ConfigFetchOptions,
+  EventStreamHandle,
+  EventStreamOpener,
+  EventStreamOptions,
   FieldError,
   HttpMethod,
   PublicConfigResponse,
@@ -24,6 +27,8 @@ import type {
   RequestFn,
   RequestOptions,
   RetryPolicy,
+  ServerSentEvent,
+  SpeedClient,
   SystemFeaturesResponse,
 } from './index'
 
@@ -116,6 +121,22 @@ const requestFn: RequestFn = async <T>(
   void options
   return undefined as T
 }
+const serverSentEvent: ServerSentEvent = { event: 'message', data: '{}' }
+const eventStreamHandle: EventStreamHandle = { close: () => {} }
+const eventStreamOptions: EventStreamOptions = {
+  onEvent: () => {},
+  signal: undefined,
+}
+const eventStreamOpener: EventStreamOpener = (path, options) => {
+  void path
+  void options
+  return eventStreamHandle
+}
+// A SpeedClient is a RequestFn (the streaming member is additive), so a
+// host that only issues requests keeps its existing typing. Returning a
+// SpeedClient where a RequestFn is expected must typecheck.
+const speedClientAsRequestFn: (client: SpeedClient) => RequestFn = (client) =>
+  client
 void accessTokenStore
 void reporter
 void retryPolicy
@@ -128,6 +149,11 @@ void requestFn
 void configFetchOptions
 void publicConfigResponse
 void systemFeaturesResponse
+void serverSentEvent
+void eventStreamHandle
+void eventStreamOptions
+void eventStreamOpener
+void speedClientAsRequestFn
 
 /** Shape-drift guards: each must keep erroring as long as the pinned
  * constraint holds. The @ts-expect-error comment turns a guard that
@@ -161,6 +187,8 @@ const missingPublicFeatures: PublicConfigResponse = { config: {} }
 
 // @ts-expect-error -- guard: SystemFeaturesResponse.features is required
 const missingSystemFeatures: SystemFeaturesResponse = {}
+// @ts-expect-error -- guard: EventStreamOptions requires an onEvent callback
+const missingOnEvent: EventStreamOptions = {}
 void missingBaseUrl
 void missingSetMethod
 void outOfUnionMethod
@@ -171,3 +199,4 @@ void missingFieldName
 void missingWarnMethod
 void missingPublicFeatures
 void missingSystemFeatures
+void missingOnEvent

@@ -27,7 +27,14 @@ export type {
   HttpMethod,
   RequestFn,
   RequestOptions,
+  SpeedClient,
 } from './client.js'
+export type {
+  EventStreamHandle,
+  EventStreamOpener,
+  EventStreamOptions,
+  ServerSentEvent,
+} from './event-stream.js'
 export {
   createMemoryAccessTokenStore,
 } from './access-token.js'

@@ -96,6 +96,8 @@ import {
   type RetryPolicy,
 } from './retry.js'
 import { createConsoleReporter, type Reporter } from './reporter.js'
+import { createEventStreamOpener, type EventStreamOpener } from './event-stream.js'
+import { applySeamHeaders } from './seams.js'
 
 /** HTTP methods the request function accepts. */
 export type HttpMethod =
@@ -207,6 +209,21 @@ export type RequestFn = <T>(
   path: string,
   options?: RequestOptions,
 ) => Promise<T>
+
+/**
+ * What createClient returns: the request function plus the server-sent
+ * event opener built over the same seams. `RequestFn` remains the type
+ * every generated operation's runtime seam and every hand-written layer
+ * is written against, so a `SpeedClient` is usable wherever a
+ * `RequestFn` is -- the streaming member is additive. Reaching the
+ * stream opener goes through this member rather than a second factory,
+ * so fetch, the token store, the tenant and language providers and the
+ * refresh hook are the client's own and are never wired twice.
+ */
+export type SpeedClient = RequestFn & {
+  /** Opens a server-sent event stream (see event-stream.ts). */
+  readonly openEventStream: EventStreamOpener
+}
 
 /** Everything createClient needs. */
 export interface ClientOptions {
@@ -323,11 +340,6 @@ export interface ClientOptions {
    */
   tenantProvider?: () => string | null
 }
-
-/** The header every tenant-scoped request announces the tenant under.
- * Lower case, the canonical form a `Headers` lookup and a Go
- * `r.Header.Get` both fold to. */
-const TENANT_HEADER = 'x-tenant'
 
 /** Statuses transient-retried on idempotent methods. */
 const RETRYABLE_STATUSES = new Set([429, 502, 503, 504])
@@ -764,12 +776,14 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 }
 
 /**
- * Creates the request function. Construction is where configuration
- * mistakes surface (bad baseUrl, unusable fetch, malformed policy);
- * every request afterwards rejects ApiError or the caller's own
- * AbortError, never a configuration error.
+ * Creates the client. Construction is where configuration mistakes
+ * surface (bad baseUrl, unusable fetch, malformed policy); every request
+ * afterwards rejects ApiError or the caller's own AbortError, never a
+ * configuration error. The returned value is the request function
+ * (`RequestFn`) with the event-stream opener attached
+ * (`SpeedClient.openEventStream`), both built over the same seams.
  */
-export function createClient(options: ClientOptions): RequestFn {
+export function createClient(options: ClientOptions): SpeedClient {
   if (typeof options.baseUrl !== 'string' || options.baseUrl === '') {
     throw programmerError(
       'createClient requires a non-empty baseUrl (host + optional prefix; see the README).',
@@ -846,48 +860,18 @@ export function createClient(options: ClientOptions): RequestFn {
     if (typeof body === 'string' && !headers.has('content-type')) {
       headers.set('content-type', 'application/json')
     }
-    // The language is read per attempt through the host's provider, the
-    // same per-attempt discipline the token read below observes: a retry
-    // issued after a language switch announces the new language, and a
-    // caller-supplied accept-language is the caller's, never
-    // overwritten. Null/empty means "nothing to announce" and the
-    // header stays absent.
-    if (!headers.has('accept-language')) {
-      const language = languageProvider?.() ?? null
-      if (language !== null && language !== '') {
-        headers.set('accept-language', language)
-      }
-    }
-    // The tenant is read per attempt through the host's provider, the same
-    // per-attempt discipline the token and language reads observe: a retry
-    // issued after a tenant switch announces the tenant the user is now
-    // acting in. A caller-supplied x-tenant is the caller's, never
-    // overwritten. Null/empty means "nothing to announce" and the header
-    // stays absent.
-    if (!headers.has(TENANT_HEADER)) {
-      const tenant = tenantProvider?.() ?? null
-      if (tenant !== null && tenant !== '') {
-        headers.set(TENANT_HEADER, tenant)
-      }
-    }
-    // The token is read per attempt: a retry after a successful refresh
-    // picks up the fresh token without extra plumbing. A request that
-    // declares omitAccessToken skips the read entirely -- no store token
-    // is attached no matter what the store holds (a session's own
-    // refresh request authenticates with the refresh token in its body),
-    // and its 401 therefore counts as a credential-less one. The
-    // request's own headers are untouched by the omission: a
-    // caller-supplied authorization header is the caller's, not the
-    // store's, and travels as given.
-    const omitToken = requestOptions.omitAccessToken === true
-    let attachedToken = false
-    if (!omitToken) {
-      const token = tokenStore?.get() ?? null
-      attachedToken = token !== null && token !== ''
-      if (attachedToken) {
-        headers.set('authorization', `Bearer ${token}`)
-      }
-    }
+    // The language, tenant and bearer-token seam headers are applied by
+    // applySeamHeaders (seams.ts), read per attempt so a retry after a
+    // language or tenant switch or a token refresh announces the value
+    // current at that attempt, and never overwriting a caller-supplied
+    // header. It reports whether a bearer token was attached -- the gate
+    // the 401 refresh path below reads (only a refused attempt that
+    // presented one may refresh).
+    const attachedToken = applySeamHeaders(
+      headers,
+      { accessTokenStore: tokenStore, languageProvider, tenantProvider },
+      { omitAccessToken: requestOptions.omitAccessToken === true },
+    )
 
     const controller = new AbortController()
     let timedOut = false
@@ -1496,7 +1480,16 @@ export function createClient(options: ClientOptions): RequestFn {
     }
   }
 
-  return request
+  const openEventStream = createEventStreamOpener({
+    baseUrl,
+    fetch: fetchFn,
+    accessTokenStore: tokenStore,
+    languageProvider,
+    tenantProvider,
+    refresh: refreshOnce,
+  })
+
+  return Object.assign(request, { openEventStream })
 }
 
 function isSuccessStatus(status: number): boolean {

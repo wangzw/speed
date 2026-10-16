@@ -14,6 +14,7 @@
 - **语言按尝试播报。** 宿主交来一个语言提供者，本包每次尝试读一次，接成 `accept-language`，是传输通道而非响应本地化开关。
 - **结构化上报。** 本包自身只在刷新失败时经 `Reporter` 报一条警告；终态失败以 `ApiError` 拒绝，由调用方决定是否上报。
 - **预认证配置端点的手写取回。** go/config 的公开端点在生成面之外另有一条按键映射的手写封装。
+- **服务端事件流。** `createClient` 除请求函数外交出 `openEventStream`：经同一组接缝（fetch、令牌存储、租户与语言提供者、静默刷新）打开一条 `text/event-stream` 长连接，把 SSE 帧解析成事件交给调用方。它与请求函数分开承载，因为它不是一次请求/响应交换——无每次交换的超时、无幂等重试预算，也不重连。
 - **`./react` 子路径。** 配置钩子在独立子路径下，使主入口保持无 React 依赖。
 
 ### 非职责
@@ -24,17 +25,39 @@
 - **不持会话状态、不驱动会话。** 401 时调用的刷新钩子由宿主提供（`@speed/auth-core` 的会话刷新）；本包不持有会话，不决定会话存续。
 - **不构造 QueryClient、不定义查询键。** 本包只交一个请求函数；server 状态的缓存归 TanStack Query，由宿主拥有。
 - **不含用户可见文本，不带 i18n 资源。** 错误 `code` 是数据，由消费包在自己的文案目录里译成双语文本；上报消息是固定的英文串加 snake_case 属性；本包不渲染任何面向用户的文字。
-- **带二进制正文与原始字节应答。** 请求正文为一个二进制值（`Blob`、`ArrayBuffer` 或类型化数组）时原样送出，不 JSON 序列化（对象存储的内容上传即此）；一次请求声明 `responseType: 'blob'` 时把 2xx 正文读成 `Blob`（对象存储的内容下载即此），错误应答仍按 JSON 信封解析。流式（SSE）不在本包内。
+- **带二进制正文与原始字节应答。** 请求正文为一个二进制值（`Blob`、`ArrayBuffer` 或类型化数组）时原样送出，不 JSON 序列化（对象存储的内容上传即此）；一次请求声明 `responseType: 'blob'` 时把 2xx 正文读成 `Blob`（对象存储的内容下载即此），错误应答仍按 JSON 信封解析。
+- **服务端事件流由 `openEventStream` 承载。** 流式应答不是一次请求/应答交换，故不骑请求函数（它有逐次交换的超时与幂等重试预算，流没有），而由独立成员 `openEventStream` 经同一套接缝（fetch、令牌、租户、语言、单飞刷新）开启（见职责与外部接口契约）。
 
 ## 外部接口契约
 
 ### 主入口交付的符号
 
 ```ts
-export function createClient(options: ClientOptions): RequestFn
+export function createClient(options: ClientOptions): SpeedClient
 
 export type RequestFn = <T>(path: string, options?: RequestOptions) => Promise<T>
 export type HttpMethod = 'GET' | 'HEAD' | 'OPTIONS' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+
+/** createClient 的产物：请求函数加事件流开启器。可赋给 RequestFn。 */
+export type SpeedClient = RequestFn & {
+  openEventStream(path: string, options?: EventStreamOptions): EventStreamHandle
+}
+
+export type EventStreamOpener = (path: string, options: EventStreamOptions) => EventStreamHandle
+export interface EventStreamOptions {
+  onEvent: (event: ServerSentEvent) => void
+  onOpen?: () => void
+  onError?: (error: ApiError) => void
+  onClose?: () => void
+  signal?: AbortSignal
+}
+export interface ServerSentEvent {
+  readonly event: string   // 缺省 message
+  readonly data: string
+  readonly id?: string
+  readonly retry?: number
+}
+export interface EventStreamHandle { close(): void }
 
 export function createMemoryAccessTokenStore(): AccessTokenStore
 
@@ -94,7 +117,24 @@ export type UsePublicConfigResult
 
 ### 稳定性承诺
 
-主入口与 `./react` 子路径的导出集、各导出类型的字段与方法集、`createClient` 选项的语义、`RequestFn` 与 `RequestOptions` 的契约、保留码词表与保留的 `client.*` 前缀，是本包对消费方的契约。加导出、改签名、改字段名、改缺省头或不兼容地改保留码是不兼容变更。主入口的导出集由 `src/index.test.ts` 的精确清单钉住，类型面有编译期漂移守卫。
+主入口与 `./react` 子路径的导出集、各导出类型的字段与方法集、`createClient` 选项的语义、`RequestFn` 与 `RequestOptions` 的契约、`SpeedClient` 与其 `openEventStream` 成员、保留码词表与保留的 `client.*` 前缀，是本包对消费方的契约。加导出、改签名、改字段名、改缺省头或不兼容地改保留码是不兼容变更。主入口的导出集由 `src/index.test.ts` 的精确清单钉住，类型面有编译期漂移守卫。
+
+### 事件流的契约
+
+`openEventStream(path, options)` 对每个调用打开一次 `GET`：接同一组接缝头（`accept-language`、`X-Tenant`、bearer 令牌，按次读），再加 `accept: text/event-stream`。回应按下列规则处置：
+
+- **2xx**：调 `onOpen`，读 `response.body` 流，按 `text/event-stream` 的组帧（空行分帧、字段首个冒号分键值、无 `data` 行的帧丢弃、事件名缺省 `message`）解析成 `ServerSentEvent`，逐帧调 `onEvent`；流被服务端正常收尾时调 `onClose`。
+- **401 且带了 bearer 令牌且配了刷新钩子且此前未刷新过**：调一次刷新，成功即以新令牌重试一次；失败则读信封、以 `onError` 上报，再调 `onClose`。
+- **其余非 2xx**：读信封（`code` 唯一必需字段），以 `onError` 上报 `ApiError`（信封码或 `client.http.<status>`），再调 `onClose`。
+- **传输失败**：以 `client.network` 的 `ApiError` 上报，再调 `onClose`。
+
+**调用方自己的取消不上报。** `close()` 或已中止的 `signal` 结束连接，既不调 `onError` 也不调 `onClose`。`onError` 与 `onClose` 各至多一次，且 `onClose` 是「可以重连了」的信号：本包不重连，重连是消费方的策略。
+
+### 事件流的非保证
+
+- **无每次交换的超时。** 一条长连接没有可界定的交换边界，宿主需要超时须自己接线。
+- **不重试、不重连、不补发。** 一次失败即一次失败，一条断开的连接即断开；要拿到确定内容的消费方回读。
+- **不做回压。** 帧按到达顺序交给 `onEvent`；消费方自己控制读取节奏。
 
 ## 依赖
 
@@ -244,7 +284,8 @@ sequenceDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 请求函数与生命周期、令牌与语言与租户按尝试读 | 已实现 | `web/packages/api-client/src/client.ts` `createClient`、`RequestFn`、`RequestOptions`、`ClientOptions` |
+| 请求函数与生命周期、令牌与语言与租户按尝试读 | 已实现 | `web/packages/api-client/src/client.ts` `createClient`、`SpeedClient`、`RequestFn`、`RequestOptions`、`ClientOptions`；`web/packages/api-client/src/seams.ts` `applySeamHeaders` |
+| 服务端事件流开启器 | 已实现 | `web/packages/api-client/src/event-stream.ts` `createEventStreamOpener`、`EventStreamOpener`、`EventStreamOptions`、`ServerSentEvent`、`EventStreamHandle` |
 | 归一错误与保留码词表、传输失败判据 | 已实现 | `web/packages/api-client/src/errors.ts` `ApiError`、`ERROR_CODE_NETWORK`、`ERROR_CODE_TIMEOUT`、`ERROR_CODE_PROTOCOL`、`httpErrorCode`、`isApiError`、`isTransportFailure` |
 | 仅内存的访问令牌存储 | 已实现 | `web/packages/api-client/src/access-token.ts` `createMemoryAccessTokenStore`、`AccessTokenStore` |
 | 重试策略与纯退避函数 | 已实现 | `web/packages/api-client/src/retry.ts` `DEFAULT_RETRY_POLICY`、`retryDelayMs`、`retryAfterDelayMs` |

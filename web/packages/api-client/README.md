@@ -319,12 +319,46 @@ function useAppChrome(clientApi: RequestFn): AppChrome {
   header absent. A host with no tenant-scoped traffic leaves the
   provider out.
 
+## Server-sent events (`openEventStream`)
+
+`createClient` returns a `SpeedClient` -- the request function plus an
+`openEventStream(path, options)` member built over the same seams (the
+injected fetch, the memory token store, the tenant and language
+providers, the single-flight refresh). It opens one `GET`, applies the
+seam headers plus `accept: text/event-stream`, refreshes and retries once
+on a bearer `401` (as the request loop does), then reads the
+`text/event-stream` framing into `ServerSentEvent`s and calls `onEvent`
+per frame. Non-2xx answers, transport failures and protocol violations
+surface an `ApiError` through `onError`; the caller's own `close()` or an
+aborted `signal` fires nothing.
+
+It is deliberately **not** the request function: a streaming response is
+not a request/response exchange, so it has no per-exchange timeout and no
+idempotent retry budget. It also does **not** reconnect -- a dropped or
+ended connection reports once through `onError`/`onClose` and reconnecting
+is the caller's policy (so a choice like "pause while the tab is hidden"
+lives in the consumer, not here).
+
+```ts
+const handle = api.openEventStream('/api/v1/notifications/stream', {
+  onEvent: (event) => { if (event.event === 'message') refetch() },
+  onError: (error) => reporter.error('notification stream failed', { code: error.code }),
+  onClose: () => scheduleReconnect(),
+})
+// later: handle.close()
+```
+
 ## Public surface
 
 | Export | Kind | Purpose |
 | --- | --- | --- |
-| `createClient(options)` | function | Builds the request function. Construction validates configuration (baseUrl, fetch availability, retry policy, timeout) and fails fast on mistakes. |
+| `createClient(options)` | function | Builds the client. Construction validates configuration (baseUrl, fetch availability, retry policy, timeout) and fails fast on mistakes. Returns a `SpeedClient`: the request function with the event-stream opener attached. |
 | `RequestFn` | type | `<T>(path, options?) => Promise<T>` -- the returned function; call it as `api<T,>(path)` in TSX files. |
+| `SpeedClient` | type | `RequestFn & { openEventStream }` -- what `createClient` returns. Assignable wherever a `RequestFn` is (the streaming member is additive). |
+| `EventStreamOpener` | type | `(path, options) => EventStreamHandle` -- opens one server-sent-event stream over the client's seams. |
+| `ServerSentEvent` | type | One parsed event: `event` (defaults to `message`), `data`, optional `id`/`retry`. |
+| `EventStreamOptions` | type | `onEvent` (required), `onOpen`, `onError`, `onClose`, `signal`. |
+| `EventStreamHandle` | type | `{ close() }` -- ends the stream; the caller's own cancellation fires no `onError`/`onClose`. |
 | `ApiError` | class | The one error type. `status` (0 when no response arrived), `code`, `traceId?`, `params?`, `details?`, `attempts`, `auth` (true exactly for HTTP 401), `message` (envelope message or an English diagnostic). |
 | `isApiError(value)` | function | Type guard; accepts `instanceof` and structurally identical errors (a second copy of the library). |
 | `isTransportFailure(value)` | function | Answers whether an error is genuinely this client's own transport-layer failure (`client.network`/`client.timeout` with `status` 0 -- the one status no HTTP response can carry). Consumer whitelists distinguishing "the request never completed" from server-answered errors should consult this, never a bare code match. |
@@ -347,11 +381,6 @@ function useAppChrome(clientApi: RequestFn): AppChrome {
 
 ## What is deliberately not here
 
-- **SSE and streaming responses** -- not shipped (a response is read
-  whole; there is no streaming reader). Binary bodies and raw-byte
-  responses *are* carried: a `Blob` (or `ArrayBuffer`/typed array) body
-  travels verbatim, and a request declaring `responseType: 'blob'`
-  resolves its 2xx body as a `Blob`.
 - **A consumer is not packaged here** -- `@speed/api-sdk`, the
   orval-generated typed surface, calls into this package through its
   `src/runtime.ts` seam, and `@speed/auth-core` compile-consumes both

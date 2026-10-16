@@ -71,7 +71,7 @@ import type { ReactElement, ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Root } from 'react-dom/client'
 import { createClient, createMemoryAccessTokenStore } from '@speed/api-client'
-import type { RequestFn } from '@speed/api-client'
+import type { SpeedClient } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { attachSession, createAuthSession } from '@speed/auth-core'
 import type { AuthSession } from '@speed/auth-core'
@@ -100,16 +100,19 @@ export interface SpeedAppNamespace {
 }
 
 /** The services the assembled composition passes to the definition's
- * providers. `api` is the client as the RequestFn it structurally is --
- * the same value every generated operation reaches through the bound
- * runtime seam, shareable with hand-written per-key layers
- * (@speed/api-client/react). */
+ * providers. `api` is the client as a `SpeedClient` -- structurally the
+ * `RequestFn` every generated operation reaches through the bound runtime
+ * seam, plus the event-stream opener (`openEventStream`) a surface opens a
+ * server-sent-event stream through. Both share the one set of seams (the
+ * token store, the tenant and language providers, the refresh hook), so a
+ * host reaches the stream opener here rather than wiring a second
+ * transport. */
 export interface SpeedAppServices {
   /** The attached session views drive sign-in, tenant switch and
    * sign-out through. */
   readonly session: AuthSession
   /** The client the assembly bound into the api-sdk runtime seam. */
-  readonly api: RequestFn
+  readonly api: SpeedClient
   /** The query client the provider stack serves. */
   readonly queryClient: QueryClient
 }
