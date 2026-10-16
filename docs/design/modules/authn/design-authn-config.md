@@ -201,6 +201,8 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 | `authn.login.disabled-methods` | 字符串，JSON 数组 | `[]` | 登录方式名的数组 | | 移除成员 |
 | `authn.login.delivery-modes` | 字符串，JSON 数组 | `["session","token"]` | 缺省集合的子集 | | 加入成员 |
 | `authn.login.ip-limit` | 整数 | `0`，关闭 | 0 到 10000，每分钟 | | 改为 0，或增大 |
+| `authn.login.email-code-ttl` | `time.Duration` | `10m` | 1m 到 30m | | 增大 |
+| `authn.login.email-resend-interval` | `time.Duration` | `60s` | 30s 到 10m | | 减小 |
 | `authn.sms.allowed-prefixes` | 字符串，JSON 数组 | `[]`，空即一律拒绝发送 | E.164 前缀的数组 | | 加入成员 |
 | `authn.sms.code-length` | 整数 | `6` | 6 到 8 | | 减小 |
 | `authn.sms.code-ttl` | `time.Duration` | `5m` | 1m 到 10m | | 增大 |

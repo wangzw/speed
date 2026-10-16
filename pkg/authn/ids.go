@@ -255,15 +255,18 @@ type Account = model.Account
 type Verification = model.Verification
 
 // The ways an identifier's ownership was established. VerifiedViaSMSCode,
-// VerifiedViaInvite and VerifiedViaIDPPrefix followed by a provider identifier
-// are proofs; the other two only record a fact an administrator or an import
-// asserted, and are never grounds for automatic linking or an enterprise merge.
+// VerifiedViaEmailCode, VerifiedViaInvite and VerifiedViaIDPPrefix followed by a
+// provider identifier are proofs; the other three only record a fact an
+// administrator, an import or the account's own holder asserted, and are never
+// grounds for automatic linking or an enterprise merge.
 const (
 	VerifiedViaSMSCode          = model.VerifiedViaSMSCode
+	VerifiedViaEmailCode        = model.VerifiedViaEmailCode
 	VerifiedViaIDPPrefix        = model.VerifiedViaIDPPrefix
 	VerifiedViaInvite           = model.VerifiedViaInvite
 	VerifiedViaAdmin            = model.VerifiedViaAdmin
 	VerifiedViaImportUnverified = model.VerifiedViaImportUnverified
+	VerifiedViaSelf             = model.VerifiedViaSelf
 )
 
 // CreateAccount is what creating an account takes. Its Clone returns a copy that

@@ -22,14 +22,17 @@ func registered(m *mounttest.Mounter) []string {
 	return out
 }
 
-// TestTheRoutesAreTheseAndNoOthers holds the set of routes: there is no route
-// that adds an email address or a username by itself, and no route for a flow.
-// The account's own profile is not among them; it is the profile module's.
+// TestTheRoutesAreTheseAndNoOthers holds the set of routes: how the account's
+// own credentials are changed and how a login identifier is added or removed,
+// with no route for a flow. The account's own profile is not among them; it is
+// the profile module's.
 func TestTheRoutesAreTheseAndNoOthers(t *testing.T) {
 	h := newHarness(t)
 	want := []string{
 		"DELETE /identifiers/:id",
 		"DELETE /links/:id",
+		"POST /identifiers",
+		"POST /identifiers/verify",
 		"POST /phone",
 		"POST /phone/verify",
 		"PUT /password",
@@ -59,10 +62,18 @@ func TestEveryRouteIsGuardedAndNoneIsImpersonable(t *testing.T) {
 
 // TestThePhoneRoutesAreMountedOnlyWithSMSCodes holds that without the SMS
 // capability the two phone routes are absent and the rest are there. A request
-// to an absent route is the engine's 404, not a handler's answer.
+// to an absent route is the engine's 404, not a handler's answer. The identifier
+// routes are mounted whatever the channels, so an unknown path is the only thing
+// that is absent.
 func TestThePhoneRoutesAreMountedOnlyWithSMSCodes(t *testing.T) {
 	h := newHarness(t, func(c *config) { c.noSMS = true })
-	want := []string{"DELETE /identifiers/:id", "DELETE /links/:id", "PUT /password"}
+	want := []string{
+		"DELETE /identifiers/:id",
+		"DELETE /links/:id",
+		"POST /identifiers",
+		"POST /identifiers/verify",
+		"PUT /password",
+	}
 	if got := registered(h.m); !slices.Equal(got, want) {
 		t.Fatalf("routes without SMSCodes = %v, want %v", got, want)
 	}
@@ -98,6 +109,14 @@ func TestNewNamesWhatIsMissing(t *testing.T) {
 		{"sms without kv", func(d *selfservice.Deps) { d.KV = nil }, "KV"},
 		{"sms without throttle", func(d *selfservice.Deps) { d.Throttle = nil }, "Throttle"},
 		{"no sms needs neither", func(d *selfservice.Deps) { d.SMSCodes, d.KV, d.Throttle = nil, nil, nil }, ""},
+		{"email without kv", func(d *selfservice.Deps) {
+			d.SMSCodes, d.Throttle = nil, nil
+			d.EmailSender, d.KV = &fakeEmail{}, nil
+		}, "KV"},
+		{"email with kv needs no throttle", func(d *selfservice.Deps) {
+			d.SMSCodes, d.Throttle = nil, nil
+			d.EmailSender = &fakeEmail{}
+		}, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

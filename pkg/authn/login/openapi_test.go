@@ -31,6 +31,7 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 		(*authn.MFA)(nil),
 		(*authn.LoginMethod)(nil),
 		(*authn.SMSCodes)(nil),
+		(*authn.EmailCodeSender)(nil),
 	)...)
 	routecontract.Check(t, routecontract.Case{
 		Module: Module(),

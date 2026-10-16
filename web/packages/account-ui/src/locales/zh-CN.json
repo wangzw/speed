@@ -242,6 +242,31 @@
       "title": "无法加载登录标识",
       "description": "加载登录标识时出了问题，请稍后重试。"
     },
-    "retry": "重试"
+    "retry": "重试",
+    "add": {
+      "open": "添加标识",
+      "title": "添加登录标识",
+      "kind": {
+        "label": "类型",
+        "email": "邮箱",
+        "username": "用户名"
+      },
+      "value": {
+        "labelEmail": "邮箱地址",
+        "labelUsername": "用户名",
+        "helperEmail": "我们会向该地址发送验证码以证明它属于你。",
+        "helperUsername": "3 到 64 个字符：字母、数字、点、连字符或下划线。"
+      },
+      "submitEmail": "发送验证码",
+      "submitUsername": "添加",
+      "cancel": "取消",
+      "sent": "验证码已发送至 {{value}}。",
+      "code": {
+        "label": "验证码"
+      },
+      "verify": "验证",
+      "change": "换一个值",
+      "added": "登录标识已添加。"
+    }
   }
 }

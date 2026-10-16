@@ -266,6 +266,25 @@ func (f *fakeSMS) Verify(_ context.Context, challengeID, code string) error {
 	return f.verifyErr
 }
 
+type sendEmailCall struct {
+	to, code, locale string
+	ttl              time.Duration
+}
+
+// fakeEmail stands in for the email code channel. It records the messages it was
+// handed and fails on demand.
+type fakeEmail struct {
+	log  *callLog
+	sent []sendEmailCall
+	err  error
+}
+
+func (f *fakeEmail) SendCode(_ context.Context, to, code string, ttl time.Duration, locale string) error {
+	f.log.add("email.SendCode")
+	f.sent = append(f.sent, sendEmailCall{to: to, code: code, locale: locale, ttl: ttl})
+	return f.err
+}
+
 // fakeKV is an in-memory kv.KV that keeps the expiry each key was stored with,
 // and fails on demand. The operations the routes do not use are refused.
 type fakeKV struct {

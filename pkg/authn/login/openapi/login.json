@@ -502,6 +502,115 @@
         }
       }
     },
+    "/auth/identifiers": {
+      "post": {
+        "operationId": "authn.login.addIdentifier",
+        "summary": "Add one of the caller's own login identifiers",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["kind", "value"],
+                "properties": {
+                  "kind": {"type": "string", "description": "The identifier kind to add: username or email; a phone is added through /auth/phone"},
+                  "value": {"type": "string", "description": "The login name or address to add"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A username was added; or a code was sent to an address and its answer is still to come",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnLoginIdentifierState"}}}
+          },
+          "400": {
+            "description": "The body could not be read, or the kind or the value is outside its domain",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "401": {
+            "description": "No usable credential, or the freshness a change of what proves the account asks for",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "403": {
+            "description": "The identity is impersonating, which the route refuses",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "409": {
+            "description": "The login name or address belongs to another account",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "415": {
+            "description": "The request body is not application/json",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "429": {
+            "description": "Too many attempts; retry after the stated delay",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "503": {
+            "description": "A dependency could not answer, or the deployment offers no email channel",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
+        }
+      }
+    },
+    "/auth/identifiers/verify": {
+      "post": {
+        "operationId": "authn.login.verifyIdentifier",
+        "summary": "Verify the code sent to an email address being added",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["code"],
+                "properties": {
+                  "code": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The address was verified and added to the account",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnLoginIdentifierState"}}}
+          },
+          "400": {
+            "description": "The body could not be read, or the code is wrong",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "401": {
+            "description": "No usable credential, or no pending verification for this session",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "403": {
+            "description": "The identity is impersonating, which the route refuses",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "409": {
+            "description": "The address belongs to another account",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "415": {
+            "description": "The request body is not application/json",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "429": {
+            "description": "Too many attempts; retry after the stated delay",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "503": {
+            "description": "A dependency could not answer",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
+        }
+      }
+    },
     "/auth/links/{id}": {
       "delete": {
         "operationId": "authn.login.unlink",
@@ -660,6 +769,15 @@
         "properties": {
           "expires_in": {"type": "integer", "description": "How long the code lives, in seconds"},
           "resend_after": {"type": "integer", "description": "How soon another code may be asked for, in seconds"}
+        }
+      },
+      "AuthnLoginIdentifierState": {
+        "type": "object",
+        "required": ["state"],
+        "properties": {
+          "state": {"type": "string", "enum": ["added", "pending"], "description": "added when the identifier is written; pending when a code was sent to an address and its answer is still to come"},
+          "expires_in": {"type": "integer", "description": "How long the code lives, in seconds; absent when the state is added"},
+          "resend_after": {"type": "integer", "description": "How soon another code may be asked for, in seconds; absent when the state is added"}
         }
       },
       "Problem": {

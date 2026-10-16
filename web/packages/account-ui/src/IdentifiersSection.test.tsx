@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import { identifier, profileBody } from '../test-utils/fixtures.js'
@@ -264,5 +264,218 @@ describe('IdentifiersSection', () => {
 
     expect(await screen.findByText(zhCN.identifiers.error.title)).toBeTruthy()
     expect(screen.queryByText(zhCN.identifiers.empty.title)).toBeNull()
+  })
+
+  it('adds a username in one step and refetches the profile', async () => {
+    let added = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: added
+              ? [identifier({ id: 'id-user', kind: 'username', value: 'ada2' })]
+              : [],
+          }),
+        )
+      }
+      if (call.method === 'POST' && call.path === '/auth/identifiers') {
+        added = true
+        return jsonResponse(200, { state: 'added' })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    fireEvent.mouseDown(
+      screen.getByRole('combobox', { name: zhCN.identifiers.add.kind.label }),
+    )
+    await user.click(
+      screen.getByRole('option', { name: zhCN.identifiers.add.kind.username }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelUsername),
+      'ada2',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitUsername }),
+    )
+
+    await waitFor(() =>
+      expect(screen.getByText(zhCN.identifiers.add.added)).toBeTruthy(),
+    )
+    const posts = rig.calls.filter(
+      (call) => call.method === 'POST' && call.path === '/auth/identifiers',
+    )
+    expect(posts).toHaveLength(1)
+    expect(posts[0]?.body).toEqual({ kind: 'username', value: 'ada2' })
+    await waitFor(() => expect(screen.getByText('ada2')).toBeTruthy())
+  })
+
+  it('adds an email through the code step', async () => {
+    let verified = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: verified
+              ? [identifier({ id: 'id-email', kind: 'email', value: 'ada@x.test' })]
+              : [],
+          }),
+        )
+      }
+      if (call.method === 'POST' && call.path === '/auth/identifiers') {
+        return jsonResponse(200, {
+          state: 'pending',
+          expires_in: 600,
+          resend_after: 60,
+        })
+      }
+      if (call.method === 'POST' && call.path === '/auth/identifiers/verify') {
+        verified = true
+        return jsonResponse(200, { state: 'added' })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+      'ada@x.test',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+    )
+
+    // The pending answer moves the form to the code step.
+    await user.type(
+      await screen.findByLabelText(zhCN.identifiers.add.code.label),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.verify }),
+    )
+
+    await waitFor(() =>
+      expect(screen.getByText(zhCN.identifiers.add.added)).toBeTruthy(),
+    )
+    const verifies = rig.calls.filter(
+      (call) =>
+        call.method === 'POST' && call.path === '/auth/identifiers/verify',
+    )
+    expect(verifies).toHaveLength(1)
+    expect(verifies[0]?.body).toEqual({ code: '123456' })
+  })
+
+  it('renders a no-channel refusal of an email add as its code text', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      if (call.method === 'POST' && call.path === '/auth/identifiers') {
+        return errorResponse(503, 'authn.unavailable')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+      'ada@x.test',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+    )
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.unavailable)
+  })
+
+  it('gates a step_up_required email add behind the dialog and re-runs it once', async () => {
+    let elevated = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      if (call.method === 'POST' && call.path === '/auth/identifiers') {
+        if (!elevated) {
+          return errorResponse(401, 'authn.insufficient_user_authentication')
+        }
+        return jsonResponse(200, {
+          state: 'pending',
+          expires_in: 600,
+          resend_after: 60,
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'second',
+          next: {
+            kind: 'factor',
+            factors: [{ id: 'factor-1', kind: 'totp', label: 'App' }],
+          },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number }
+        if (body.seq === 1) {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'second',
+            next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
+          })
+        }
+        elevated = true
+        return jsonResponse(200, {
+          state: 'elevated',
+          token_type: 'Bearer',
+          access_token: 'access-2',
+          expires_in: 3600,
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+      'ada@x.test',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+    )
+
+    // The 401 opens the step-up dialog; winning it re-runs the add.
+    await screen.findByRole('button', { name: 'App' })
+    await user.click(screen.getByRole('button', { name: 'App' }))
+    await user.type(await screen.findByLabelText('code'), '123456')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    await screen.findByLabelText(zhCN.identifiers.add.code.label)
+    expect(
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === '/auth/identifiers',
+      ),
+    ).toHaveLength(2)
   })
 })

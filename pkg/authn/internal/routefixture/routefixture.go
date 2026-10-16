@@ -93,6 +93,7 @@ type (
 	tokens           struct{ authn.Tokens }
 	decider          struct{ authn.Decider }
 	smsCodes         struct{ authn.SMSCodes }
+	emailCodeSender  struct{ authn.EmailCodeSender }
 	auditCap         struct{ audit.Audit }
 	settingsStore    struct{ settings.Store }
 )
@@ -178,8 +179,11 @@ var standIns = map[core.Token]func() core.Module{
 	(*authn.Decider)(nil):       func() core.Module { return standIn("decider", &decider{}, (*authn.Decider)(nil)) },
 	(*authn.Impersonation)(nil): func() core.Module { return standIn("impersonation", &impersonation{}, (*authn.Impersonation)(nil)) },
 	(*authn.SMSCodes)(nil):      func() core.Module { return standIn("sms-codes", &smsCodes{}, (*authn.SMSCodes)(nil)) },
-	(*audit.Audit)(nil):         func() core.Module { return standIn("audit", &auditCap{}, (*audit.Audit)(nil)) },
-	(*settings.Store)(nil):      func() core.Module { return standIn("settings-store", &settingsStore{}, (*settings.Store)(nil)) },
+	(*authn.EmailCodeSender)(nil): func() core.Module {
+		return standIn("email-code-sender", &emailCodeSender{}, (*authn.EmailCodeSender)(nil))
+	},
+	(*audit.Audit)(nil):    func() core.Module { return standIn("audit", &auditCap{}, (*audit.Audit)(nil)) },
+	(*settings.Store)(nil): func() core.Module { return standIn("settings-store", &settingsStore{}, (*settings.Store)(nil)) },
 }
 
 // Seams is the stand-in set for exactly the capabilities named, which are the

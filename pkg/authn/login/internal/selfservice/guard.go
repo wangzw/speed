@@ -158,7 +158,11 @@ func (r *routes) engaged(ctx context.Context, scope authn.ThrottleScope) {
 }
 
 func logWarn(ctx context.Context, msg string, err error) {
-	log.FromContext(ctx).Warn(moduleName+": "+msg, slog.String("cause", err.Error()))
+	attrs := []any{}
+	if err != nil {
+		attrs = append(attrs, slog.String("cause", err.Error()))
+	}
+	log.FromContext(ctx).Warn(moduleName+": "+msg, attrs...)
 }
 
 func logError(ctx context.Context, msg string, err error) {

@@ -71,17 +71,21 @@ func (a Account) Clone() Account {
 }
 
 // The ways an identifier's ownership was established, as Verification.Via and
-// Identifier.VerifiedVia write them. SMS-code, invite and idp:<provider> are
-// proofs: the phone received a code, the invited address's link was delivered
-// and presented, the provider declared the address verified. Admin and
-// import-unverified only record a fact an administrator or an import asserted;
-// they are never grounds for automatic linking or an enterprise merge.
+// Identifier.VerifiedVia write them. SMS-code, email-code, invite and
+// idp:<provider> are proofs: the phone received a code, the address received and
+// presented a code, the invited address's link was delivered and presented, the
+// provider declared the address verified. Admin, import-unverified and self only
+// record a fact an administrator, an import or the account's own holder
+// asserted; a proof they are not, and they are never grounds for automatic
+// linking or an enterprise merge.
 const (
 	VerifiedViaSMSCode          = "sms-code"
+	VerifiedViaEmailCode        = "email-code"
 	VerifiedViaIDPPrefix        = "idp:" // followed by the provider's identifier
 	VerifiedViaInvite           = "invite"
 	VerifiedViaAdmin            = "admin"
 	VerifiedViaImportUnverified = "import-unverified"
+	VerifiedViaSelf             = "self"
 )
 
 // Verification says how the ownership of an identifier at creation was
@@ -91,12 +95,13 @@ type Verification struct {
 	Via string // written to verified_via
 }
 
-// Valid reports whether Via is one of sms-code, invite, admin and
-// import-unverified, or idp: followed by a provider identifier of 1 to 64 bytes
-// drawn from [A-Za-z0-9._-].
+// Valid reports whether Via is one of sms-code, email-code, invite, admin,
+// import-unverified and self, or idp: followed by a provider identifier of 1 to
+// 64 bytes drawn from [A-Za-z0-9._-].
 func (v Verification) Valid() bool {
 	switch v.Via {
-	case VerifiedViaSMSCode, VerifiedViaInvite, VerifiedViaAdmin, VerifiedViaImportUnverified:
+	case VerifiedViaSMSCode, VerifiedViaEmailCode, VerifiedViaInvite, VerifiedViaAdmin,
+		VerifiedViaImportUnverified, VerifiedViaSelf:
 		return true
 	}
 	id, ok := strings.CutPrefix(v.Via, VerifiedViaIDPPrefix)
@@ -108,10 +113,11 @@ func (v Verification) Valid() bool {
 }
 
 // Proves reports whether the verification is a proof of ownership, which is
-// sms-code, invite and idp:<provider>. The unproven channels, admin and
-// import-unverified, and a value that is not valid at all, read false.
+// sms-code, email-code, invite and idp:<provider>. The unproven channels, admin,
+// import-unverified and self, and a value that is not valid at all, read false.
 func (v Verification) Proves() bool {
-	return v.Valid() && v.Via != VerifiedViaAdmin && v.Via != VerifiedViaImportUnverified
+	return v.Valid() && v.Via != VerifiedViaAdmin && v.Via != VerifiedViaImportUnverified &&
+		v.Via != VerifiedViaSelf
 }
 
 // CreateAccount is what creating an account takes. An email and a phone must

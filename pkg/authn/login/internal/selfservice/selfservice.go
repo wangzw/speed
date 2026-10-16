@@ -51,9 +51,18 @@ type Deps struct {
 	KV       kv.KV
 	Throttle authn.Throttle
 
-	// Settings is read for authn.mfa.recent-window and for the two authn.sms
-	// durations the phone routes answer with. Without it, or when a read fails
-	// or lands outside the setting's domain, the declared default is used.
+	// EmailSender is the channel a self-service email verification code goes out
+	// over. It switches the email branch of POST /identifiers on: without it an
+	// email address cannot be added self-service, and the branch answers that the
+	// deployment offers no channel. With it, KV is required as well, for the
+	// pending record.
+	EmailSender authn.EmailCodeSender
+
+	// Settings is read for authn.mfa.recent-window, for the two authn.sms
+	// durations the phone routes answer with, and for the two authn.login
+	// email-code durations the email route answers with. Without it, or when a
+	// read fails or lands outside the setting's domain, the declared default is
+	// used.
 	Settings settings.Store
 	// Bus and Audit are optional: without them the event and the audit row are
 	// not written.
@@ -93,6 +102,9 @@ func New(d Deps) (*Service, error) {
 		need("KV", d.KV == nil)
 		need("Throttle", d.Throttle == nil)
 	}
+	if d.EmailSender != nil {
+		need("KV", d.KV == nil)
+	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("authn.login: the account self-service routes need %s", strings.Join(missing, ", "))
 	}
@@ -118,6 +130,8 @@ func (s *Service) Mount(m mount.Mounter) {
 		m.Guarded(http.MethodPost, "/phone", r.startPhone)
 		m.Guarded(http.MethodPost, "/phone/verify", r.verifyPhone)
 	}
+	m.Guarded(http.MethodPost, "/identifiers", r.addIdentifier)
+	m.Guarded(http.MethodPost, "/identifiers/verify", r.verifyIdentifier)
 	m.Guarded(http.MethodDelete, "/identifiers/:id", r.removeIdentifier)
 	m.Guarded(http.MethodDelete, "/links/:id", r.unlink)
 }

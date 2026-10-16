@@ -27,6 +27,8 @@ const (
 	disabledMethodsKey = "disabled-methods"
 	deliveryModesKey   = "delivery-modes"
 	ipLimitKey         = "ip-limit"
+	emailCodeTTLKey    = "email-code-ttl"
+	emailResendKey     = "email-resend-interval"
 
 	disabledMethodsPath = ModuleName + "." + disabledMethodsKey
 	deliveryModesPath   = ModuleName + "." + deliveryModesKey
@@ -45,6 +47,15 @@ const (
 	// maxIPLimit is the most source-address pre-throttle starts per minute, the
 	// setting's own unit.
 	maxIPLimit = 10000
+
+	// The domain of the self-service email-code lifetime and of the interval
+	// before another code may be asked for. They are the login module's, read by
+	// the self-service email routes.
+	minEmailCodeTTL = time.Minute
+	maxEmailCodeTTL = 30 * time.Minute
+
+	minEmailResend = 30 * time.Second
+	maxEmailResend = 10 * time.Minute
 )
 
 // The closed set of delivery modes, and the two the value-name set names.
@@ -71,6 +82,8 @@ type options struct {
 	DisabledMethods string        `config:"disabled-methods"`
 	DeliveryModes   string        `config:"delivery-modes"`
 	IPLimit         int           `config:"ip-limit"`
+	EmailCodeTTL    time.Duration `config:"email-code-ttl"`
+	EmailResend     time.Duration `config:"email-resend-interval"`
 }
 
 // defaults is the declared default of each setting, and the value a tuning read
@@ -83,12 +96,16 @@ var defaults = options{
 	DisabledMethods: "[]",
 	DeliveryModes:   `["session","token"]`,
 	IPLimit:         0,
+	EmailCodeTTL:    10 * time.Minute,
+	EmailResend:     60 * time.Second,
 }
 
 // The domains of the settings this module declares.
-func flowTTLInDomain(d time.Duration) bool    { return d >= minFlowTTL && d <= maxFlowTTL }
-func callBudgetInDomain(d time.Duration) bool { return d >= minCallBudget && d <= maxCallBudget }
-func ipLimitInDomain(n int) bool              { return n >= 0 && n <= maxIPLimit }
+func flowTTLInDomain(d time.Duration) bool      { return d >= minFlowTTL && d <= maxFlowTTL }
+func callBudgetInDomain(d time.Duration) bool   { return d >= minCallBudget && d <= maxCallBudget }
+func ipLimitInDomain(n int) bool                { return n >= 0 && n <= maxIPLimit }
+func emailCodeTTLInDomain(d time.Duration) bool { return d >= minEmailCodeTTL && d <= maxEmailCodeTTL }
+func emailResendInDomain(d time.Duration) bool  { return d >= minEmailResend && d <= maxEmailResend }
 
 // deliveryModesTextInDomain reports whether a JSON array of strings is a legal
 // value of the delivery-modes setting.
@@ -169,6 +186,18 @@ func settingsSchema() settings.Schema {
 				Description: "a coarse per-flow token starts per minute from one source address, zero " +
 					"turning the layer off",
 				Domain: settings.DomainOf("whole numbers from 0 to 10000", ipLimitInDomain),
+			},
+			emailCodeTTLKey: {
+				Description: "how long a self-service email verification code lives, from " +
+					minEmailCodeTTL.String() + " to " + maxEmailCodeTTL.String(),
+				Domain: settings.DomainOf("durations from "+minEmailCodeTTL.String()+" to "+maxEmailCodeTTL.String(),
+					emailCodeTTLInDomain),
+			},
+			emailResendKey: {
+				Description: "how soon another self-service email verification code may be asked for, from " +
+					minEmailResend.String() + " to " + maxEmailResend.String(),
+				Domain: settings.DomainOf("durations from "+minEmailResend.String()+" to "+maxEmailResend.String(),
+					emailResendInDomain),
 			},
 		},
 	}

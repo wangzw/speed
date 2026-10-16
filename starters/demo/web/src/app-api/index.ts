@@ -529,6 +529,26 @@ export interface AuthnLoginFlow {
   next: AuthnLoginStep;
 }
 
+/**
+ * added when the identifier is written; pending when a code was sent to an address and its answer is still to come
+ */
+export type AuthnLoginIdentifierStateState = typeof AuthnLoginIdentifierStateState[keyof typeof AuthnLoginIdentifierStateState];
+
+
+export const AuthnLoginIdentifierStateState = {
+  added: 'added',
+  pending: 'pending',
+} as const;
+
+export interface AuthnLoginIdentifierState {
+  /** added when the identifier is written; pending when a code was sent to an address and its answer is still to come */
+  state: AuthnLoginIdentifierStateState;
+  /** How long the code lives, in seconds; absent when the state is added */
+  expires_in?: number;
+  /** How soon another code may be asked for, in seconds; absent when the state is added */
+  resend_after?: number;
+}
+
 export interface AuthnLoginMFA {
   /** The kinds of second factor the deployment takes in */
   factors: string[];
@@ -1213,6 +1233,17 @@ export type AuthnLoginStartAuthenticatedBody = {
   return_to?: string;
   binding?: string;
   input?: AuthnLoginStartAuthenticatedBodyInput;
+};
+
+export type AuthnLoginAddIdentifierBody = {
+  /** The identifier kind to add: username or email; a phone is added through /auth/phone */
+  kind: string;
+  /** The login name or address to add */
+  value: string;
+};
+
+export type AuthnLoginVerifyIdentifierBody = {
+  code: string;
 };
 
 export type AuthnImpersonationStartBody = {
@@ -6103,6 +6134,134 @@ export function useAuthnLoginCurrent<TData = Awaited<ReturnType<typeof authnLogi
 
 
 
+
+/**
+ * @summary Add one of the caller's own login identifiers
+ */
+export const authnLoginAddIdentifier = (
+    authnLoginAddIdentifierBody: AuthnLoginAddIdentifierBody,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnLoginIdentifierState>(
+      {url: `/auth/identifiers`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnLoginAddIdentifierBody, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnLoginAddIdentifierMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginAddIdentifier>>, TError,{data: AuthnLoginAddIdentifierBody}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnLoginAddIdentifier>>, TError,{data: AuthnLoginAddIdentifierBody}, TContext> => {
+
+const mutationKey = ['authnLoginAddIdentifier'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnLoginAddIdentifier>>, {data: AuthnLoginAddIdentifierBody}> = (props) => {
+          const {data} = props ?? {};
+
+          return  authnLoginAddIdentifier(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnLoginAddIdentifierMutationResult = NonNullable<Awaited<ReturnType<typeof authnLoginAddIdentifier>>>
+    export type AuthnLoginAddIdentifierMutationBody = AuthnLoginAddIdentifierBody
+    export type AuthnLoginAddIdentifierMutationError = Problem
+
+    /**
+ * @summary Add one of the caller's own login identifiers
+ */
+export const useAuthnLoginAddIdentifier = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginAddIdentifier>>, TError,{data: AuthnLoginAddIdentifierBody}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnLoginAddIdentifier>>,
+        TError,
+        {data: AuthnLoginAddIdentifierBody},
+        TContext
+      > => {
+      return useMutation(getAuthnLoginAddIdentifierMutationOptions(options), queryClient);
+    }
+
+/**
+ * @summary Verify the code sent to an email address being added
+ */
+export const authnLoginVerifyIdentifier = (
+    authnLoginVerifyIdentifierBody: AuthnLoginVerifyIdentifierBody,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnLoginIdentifierState>(
+      {url: `/auth/identifiers/verify`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnLoginVerifyIdentifierBody, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnLoginVerifyIdentifierMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginVerifyIdentifier>>, TError,{data: AuthnLoginVerifyIdentifierBody}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnLoginVerifyIdentifier>>, TError,{data: AuthnLoginVerifyIdentifierBody}, TContext> => {
+
+const mutationKey = ['authnLoginVerifyIdentifier'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnLoginVerifyIdentifier>>, {data: AuthnLoginVerifyIdentifierBody}> = (props) => {
+          const {data} = props ?? {};
+
+          return  authnLoginVerifyIdentifier(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnLoginVerifyIdentifierMutationResult = NonNullable<Awaited<ReturnType<typeof authnLoginVerifyIdentifier>>>
+    export type AuthnLoginVerifyIdentifierMutationBody = AuthnLoginVerifyIdentifierBody
+    export type AuthnLoginVerifyIdentifierMutationError = Problem
+
+    /**
+ * @summary Verify the code sent to an email address being added
+ */
+export const useAuthnLoginVerifyIdentifier = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginVerifyIdentifier>>, TError,{data: AuthnLoginVerifyIdentifierBody}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnLoginVerifyIdentifier>>,
+        TError,
+        {data: AuthnLoginVerifyIdentifierBody},
+        TContext
+      > => {
+      return useMutation(getAuthnLoginVerifyIdentifierMutationOptions(options), queryClient);
+    }
 
 /**
  * @summary Remove one of the caller's own identifiers

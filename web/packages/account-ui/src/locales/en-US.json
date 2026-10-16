@@ -242,6 +242,31 @@
       "title": "Could not load sign-in identifiers",
       "description": "Something went wrong while loading your sign-in identifiers. Please try again."
     },
-    "retry": "Retry"
+    "retry": "Retry",
+    "add": {
+      "open": "Add identifier",
+      "title": "Add a sign-in identifier",
+      "kind": {
+        "label": "Type",
+        "email": "Email",
+        "username": "Username"
+      },
+      "value": {
+        "labelEmail": "Email address",
+        "labelUsername": "Username",
+        "helperEmail": "A code will be sent to this address to prove it is yours.",
+        "helperUsername": "3 to 64 characters: letters, digits, dot, dash or underscore."
+      },
+      "submitEmail": "Send code",
+      "submitUsername": "Add",
+      "cancel": "Cancel",
+      "sent": "A verification code was sent to {{value}}.",
+      "code": {
+        "label": "Verification code"
+      },
+      "verify": "Verify",
+      "change": "Use a different value",
+      "added": "The sign-in identifier has been added."
+    }
   }
 }

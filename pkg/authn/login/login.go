@@ -162,6 +162,7 @@ type product struct {
 	// Optional capabilities, taken up by Init and read-only afterwards.
 	tokens      authn.Tokens
 	smsCodes    authn.SMSCodes
+	emailSender authn.EmailCodeSender
 	sso         authn.SSOProviders
 	provisioner authn.Provisioner
 	store       settings.Store
@@ -230,6 +231,9 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	}
 	if p.smsCodes, err = optional[authn.SMSCodes](reg, "the SMS code capability"); err != nil {
+		return err
+	}
+	if p.emailSender, err = optional[authn.EmailCodeSender](reg, "the email code channel"); err != nil {
 		return err
 	}
 	if p.sso, err = optional[authn.SSOProviders](reg, "the enterprise provider register"); err != nil {
@@ -370,18 +374,19 @@ func (p *product) buildResolver(reader config.Reader) error {
 // buildSelfservice builds the account self-service routes.
 func (p *product) buildSelfservice() error {
 	svc, err := selfservice.New(selfservice.Deps{
-		Accounts:  p.accounts,
-		Admin:     p.admin,
-		Passwords: p.passwords,
-		Sessions:  p.sessions,
-		MFA:       p.mfa,
-		SMSCodes:  p.smsCodes,
-		KV:        p.kv,
-		Throttle:  p.throttle,
-		Settings:  p.store,
-		Bus:       p.bus,
-		Audit:     p.audit,
-		Clock:     p.clock,
+		Accounts:    p.accounts,
+		Admin:       p.admin,
+		Passwords:   p.passwords,
+		Sessions:    p.sessions,
+		MFA:         p.mfa,
+		SMSCodes:    p.smsCodes,
+		KV:          p.kv,
+		Throttle:    p.throttle,
+		EmailSender: p.emailSender,
+		Settings:    p.store,
+		Bus:         p.bus,
+		Audit:       p.audit,
+		Clock:       p.clock,
 	})
 	if err != nil {
 		return fmt.Errorf("%s%s: %w", diagnosticPrefix, ModuleName, err)
@@ -432,6 +437,10 @@ func (p *product) diagnose(reg *core.Registry) {
 	}
 	if p.smsCodes == nil {
 		p.logger.Info(diagnosticPrefix + "no SMS code capability takes part, so the phone self-service routes are not mounted")
+	}
+	if p.emailSender == nil {
+		p.logger.Info(diagnosticPrefix + "no email code channel takes part, so an email address cannot be added on the " +
+			"self-service face")
 	}
 	if p.sso == nil {
 		p.logger.Info(diagnosticPrefix + "no enterprise provider register takes part, so an IdP-initiated sign-in is refused")

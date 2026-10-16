@@ -82,6 +82,9 @@ var seamSignatures = map[string][]string{
 	"Provisioner": {
 		"Provision(ctx context.Context, p CreateAccount, via string) (CreateAccount, error)",
 	},
+	"EmailCodeSender": {
+		"SendCode(ctx context.Context, to, code string, ttl time.Duration, locale string) error",
+	},
 	"Sessions": {
 		"Create(ctx context.Context, in NewSession) (Issued, error)",
 		"Get(ctx context.Context, id SessionID) (SessionInfo, error)",

@@ -106,11 +106,13 @@ func TestVerificationAcceptsTheClosedSetOfWays(t *testing.T) {
 		proves bool
 	}{
 		{"sms-code", true, true},
+		{"email-code", true, true},
 		{"invite", true, true},
 		{"idp:0198f0aa-0000-7000-8000-000000000001", true, true},
 		{"idp:google", true, true},
 		{"admin", true, false},
 		{"import-unverified", true, false},
+		{"self", true, false},
 		{"", false, false},
 		{"idp:", false, false},
 		{"idp", false, false},
@@ -121,6 +123,9 @@ func TestVerificationAcceptsTheClosedSetOfWays(t *testing.T) {
 		{"IDP:google", false, false},
 		{"SMS-code", false, false},
 		{"sms-code ", false, false},
+		{"email-code ", false, false},
+		{"E-mail-code", false, false},
+		{"Self", false, false},
 		{"import", false, false},
 		{"unverified", false, false},
 		{"jit", false, false},
@@ -225,9 +230,11 @@ func TestTheClosedStringSetsAreFrozen(t *testing.T) {
 		{ProvisioningJIT, "jit"},
 		{ProvisioningPreprovisioned, "preprovisioned"},
 		{VerifiedViaSMSCode, "sms-code"},
+		{VerifiedViaEmailCode, "email-code"},
 		{VerifiedViaIDPPrefix, "idp:"},
 		{VerifiedViaAdmin, "admin"},
 		{VerifiedViaImportUnverified, "import-unverified"},
+		{VerifiedViaSelf, "self"},
 	} {
 		if c[0] != c[1] {
 			t.Errorf("constant reads %q, want %q", c[0], c[1])

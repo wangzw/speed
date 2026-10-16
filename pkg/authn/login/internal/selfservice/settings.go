@@ -13,7 +13,8 @@ import (
 // The settings this package reads, each with the default its declaring module
 // states and the domain that module holds a written value to. authn.mfa owns
 // the first and authn.sms the other two; this package reads them and declares
-// none.
+// none. authn.login owns the email-code pair, which the email self-service route
+// reads and this package declares none of either.
 const (
 	keyRecentWindow     = "authn.mfa.recent-window"
 	defaultRecentWindow = 10 * time.Minute
@@ -29,6 +30,16 @@ const (
 	defaultResendInterval = 60 * time.Second
 	minResendInterval     = 30 * time.Second
 	maxResendInterval     = 10 * time.Minute
+
+	keyEmailCodeTTL     = "authn.login.email-code-ttl"
+	defaultEmailCodeTTL = 10 * time.Minute
+	minEmailCodeTTL     = time.Minute
+	maxEmailCodeTTL     = 30 * time.Minute
+
+	keyEmailResendInterval     = "authn.login.email-resend-interval"
+	defaultEmailResendInterval = 60 * time.Second
+	minEmailResendInterval     = 30 * time.Second
+	maxEmailResendInterval     = 10 * time.Minute
 )
 
 // durations reads duration settings from the store. A read that fails and a

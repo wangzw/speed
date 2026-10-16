@@ -48,16 +48,19 @@ type harness struct {
 	mfa      *fakeMFA
 	throttle *fakeThrottle
 	sms      *fakeSMS
+	email    *fakeEmail
 	kv       *fakeKV
 	bus      *fakeBus
 	audit    *fakeAudit
 	settings *fakeSettings
 	engaged  []authn.ThrottleScope
 	logs     *logCapture
+	clockNow time.Time
 }
 
 type config struct {
 	noSMS         bool
+	email         bool // the email self-service branch is switched on (EmailSender and KV)
 	impersonable  bool // every route is registered as impersonable, as a wrong registration would
 	mutateDeps    func(*selfservice.Deps)
 	withoutOptins bool // no settings, bus or audit
@@ -84,11 +87,13 @@ func newHarness(t *testing.T, cfgs ...func(*config)) *harness {
 		mfa:      &fakeMFA{log: log},
 		throttle: &fakeThrottle{log: log},
 		sms:      &fakeSMS{log: log},
+		email:    &fakeEmail{log: log},
 		kv:       newFakeKV(log),
 		bus:      &fakeBus{},
 		audit:    &fakeAudit{},
 		settings: &fakeSettings{values: map[string]time.Duration{}, errs: map[string]error{}},
 		logs:     &logCapture{},
+		clockNow: now,
 	}
 	deps := selfservice.Deps{
 		Accounts:        h.accounts,
@@ -96,13 +101,17 @@ func newHarness(t *testing.T, cfgs ...func(*config)) *harness {
 		Passwords:       h.pw,
 		Sessions:        h.sessions,
 		MFA:             h.mfa,
-		Clock:           func() time.Time { return now },
+		Clock:           func() time.Time { return h.clockNow },
 		ThrottleEngaged: func(_ context.Context, scope authn.ThrottleScope) { h.engaged = append(h.engaged, scope) },
 	}
 	if !cfg.noSMS {
 		deps.SMSCodes = h.sms
 		deps.KV = h.kv
 		deps.Throttle = h.throttle
+	}
+	if cfg.email {
+		deps.EmailSender = h.email
+		deps.KV = h.kv
 	}
 	if !cfg.withoutOptins {
 		deps.Settings = h.settings
@@ -235,8 +244,8 @@ func (w *lockedWriter) Write(p []byte) (int, error) {
 	return w.c.buf.Write(p)
 }
 
-// mutating is the five routes that change how the account is proven, with a
-// request body each of them accepts.
+// mutating is the routes that change how the account is proven, with a request
+// body each of them accepts.
 var mutating = []struct {
 	name string
 	req  request
@@ -244,6 +253,8 @@ var mutating = []struct {
 	{"PUT /password", request{method: http.MethodPut, path: "/password", body: `{"new_password":"correct horse"}`}},
 	{"POST /phone", request{method: http.MethodPost, path: "/phone", body: `{"phone":"+8613800000000"}`}},
 	{"POST /phone/verify", request{method: http.MethodPost, path: "/phone/verify", body: `{"code":"123456"}`}},
+	{"POST /identifiers", request{method: http.MethodPost, path: "/identifiers", body: `{"kind":"username","value":"ada2"}`}},
+	{"POST /identifiers/verify", request{method: http.MethodPost, path: "/identifiers/verify", body: `{"code":"123456"}`}},
 	{"DELETE /identifiers/:id", request{method: http.MethodDelete, path: "/identifiers/ident-1"}},
 	{"DELETE /links/:id", request{method: http.MethodDelete, path: "/links/link-1"}},
 }
