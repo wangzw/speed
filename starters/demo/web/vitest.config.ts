@@ -21,7 +21,10 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test-utils/setup.ts'],
     // Vitest's own defaults are restated because naming `exclude` replaces
-    // them rather than extending them.
-    exclude: ['**/node_modules/**', '**/dist/**'],
+    // them rather than extending them. src/a11y/** (the route-level
+    // accessibility sweep) is excluded here and run by its own config
+    // (vitest.a11y.config.ts) as a separate frontend-gate leg, so the two
+    // never scan the same routes twice.
+    exclude: ['**/node_modules/**', '**/dist/**', 'src/a11y/**'],
   },
 })

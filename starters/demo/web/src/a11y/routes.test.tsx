@@ -1,0 +1,245 @@
+/**
+ * The route-level accessibility gate.
+ *
+ * It walks the application's own route table -- the copied product's `routes`,
+ * so a page added there is scanned without this file changing -- and renders
+ * the assembled app at each route's path, sweeping the tenant shell and the
+ * console shell alike. Every route is swept in the three states a page reaches
+ * (the scripted backends in ./backends.ts): populated, empty and error. Each
+ * render is scanned by ./scan.ts and judged by impact:
+ *
+ *   - a `serious` or `critical` axe violation fails the gate, naming the route
+ *     and state and listing the findings by rule id, impact and node count;
+ *   - a `moderate`, `minor` or no-impact violation is warned and registered
+ *     (never silently dropped), and the whole run prints a per-route report.
+ *
+ * This is the page tier above the packages' component scans: the units here
+ * are whole routes -- chrome and page together -- so a landmark, heading or
+ * naming defect that only appears when the two compose is caught where it
+ * lives. axe covers only the mechanically decidable part of WCAG (see
+ * ./scan.ts and the skill's Accessibility section); this gate proves no
+ * regression, never that a page is accessible.
+ */
+
+import { act } from '@testing-library/react'
+import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { bindRequestFn } from '@speed/api-sdk/runtime'
+import { routes } from '../routes.js'
+import { renderDemoApp } from '../test-utils/render.js'
+import {
+  authenticatedSnapshot,
+  createTestSession,
+} from '../test-utils/session.js'
+import {
+  DEFAULT_TENANT_ID,
+  setCurrentTenantId,
+  setTenantAliases,
+} from '../chrome.js'
+import { createBackend } from './backends.js'
+import type { BackendMode } from './backends.js'
+import { formatFinding, formatFindings, isFailing, runBestPracticePass, scanPage } from './scan.js'
+import type { A11yFinding } from './scan.js'
+
+/**
+ * Every platform permission code a console page's route guard checks, so the
+ * staff session passes every guard and each console page renders inside the
+ * frame rather than the no-permission surface. The set is drawn from the
+ * console-ui declarations' own permission codes.
+ */
+const CONSOLE_PERMISSION_CODES = [
+  'tenant.read',
+  'authn.account.read',
+  'authn.session.read',
+  'authn.impersonation.read',
+  'authz.role.read',
+  'authn.membership.manage',
+  'authn.idp.manage',
+  'settings.read',
+  'sms.template.read',
+  'audit.read',
+] as const
+
+/** A platform-staff session holding every console permission code. */
+function staffSession() {
+  return createTestSession(
+    authenticatedSnapshot({ system: [...CONSOLE_PERMISSION_CODES] }),
+  )
+}
+
+/** The three states each route is swept in. */
+const MODES: readonly BackendMode[] = ['data', 'empty', 'error']
+
+/**
+ * Replaces a declaration's `:name` parameter with a concrete segment, so a
+ * path pattern becomes a URL the router matches and the backend answers.
+ */
+function concretize(pattern: string): string {
+  return pattern.replace(/:[A-Za-z_][A-Za-z0-9_]*/g, 'sample')
+}
+
+/** The distinct URL paths the app's route table declares. */
+const ROUTE_PATHS = [...new Set(routes.map((route) => concretize(route.path)))]
+
+/** One scanned route/state combination's violations, for the closing report. */
+interface ScanRecord {
+  readonly path: string
+  /** The backend state the route was scanned in, or 'anonymous'. */
+  readonly mode: BackendMode | 'anonymous'
+  readonly findings: readonly A11yFinding[]
+}
+
+const records: ScanRecord[] = []
+
+/**
+ * Lets the page's data reads settle before the scan: the scripted backend
+ * resolves immediately, so a microtask and a macrotask flushed inside act are
+ * enough for react-query to hand the page its data and React to re-render.
+ */
+async function settle(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await Promise.resolve()
+  })
+}
+
+/**
+ * Renders one route in one state, scans it, and records the outcome. Returns
+ * the outcome so a caller can assert on it.
+ */
+async function scanRoute(
+  path: string,
+  mode: BackendMode,
+): Promise<readonly A11yFinding[]> {
+  bindRequestFn(createBackend(mode))
+  window.history.replaceState({}, '', path)
+  const { container } = renderDemoApp({ session: staffSession() })
+  // A route that rendered no markup at all is a broken sweep, not an
+  // accessible page: fail rather than scan an empty document.
+  expect(container.innerHTML, `route ${path} [${mode}] rendered no markup`).not.toBe('')
+  await settle()
+  const result = await scanPage()
+  for (const finding of result.incomplete) {
+    console.warn(`[route-a11y] ${path} [${mode}] indeterminate: ${formatFinding(finding)}`)
+  }
+  records.push({ path, mode, findings: result.violations })
+  return result.violations
+}
+
+/** Warns and registers every non-failing (moderate/minor/no-impact) finding. */
+function warnNonFailing(
+  path: string,
+  mode: BackendMode | 'anonymous',
+  findings: readonly A11yFinding[],
+): void {
+  for (const finding of findings) {
+    console.warn(`[route-a11y] ${path} [${mode}] advisory: ${formatFinding(finding)}`)
+  }
+}
+
+beforeEach(() => {
+  window.history.replaceState({}, '', '/')
+  setCurrentTenantId(DEFAULT_TENANT_ID)
+  setTenantAliases(new Map())
+})
+
+describe('route-level accessibility (WCAG 2.1 AA)', () => {
+  it('enumerates the app route table', () => {
+    // The sweep's coverage is the route table; an empty or shrunken one would
+    // scan nothing and pass. Pin the shape the composition ships.
+    expect(ROUTE_PATHS.length).toBeGreaterThan(0)
+    expect(ROUTE_PATHS).toContain('/')
+    expect(ROUTE_PATHS).toContain('/console')
+  })
+
+  for (const path of ROUTE_PATHS) {
+    for (const mode of MODES) {
+      it(`${mode}: ${path}`, async () => {
+        const findings = await scanRoute(path, mode)
+        const failing = findings.filter(isFailing)
+        warnNonFailing(path, mode, findings.filter((f) => !isFailing(f)))
+        if (failing.length > 0) {
+          expect.fail(
+            `route ${path} [${mode}] has ${failing.length} serious/critical axe violation(s):\n` +
+              formatFindings(failing),
+          )
+        }
+        // The best-practice pass runs once per route (data mode only): it is
+        // advisory -- reported, never failed -- so it does not gate.
+        if (mode === 'data') {
+          const advisory = await runBestPracticePass()
+          for (const finding of advisory.violations) {
+            console.warn(
+              `[route-a11y] ${path} [best-practice] advisory: ${formatFinding(finding)}`,
+            )
+          }
+        }
+      })
+    }
+  }
+
+  it('scans the anonymous sign-in surface at the tenant root', async () => {
+    bindRequestFn(createBackend('data'))
+    window.history.replaceState({}, '', '/')
+    const { container } = renderDemoApp()
+    expect(container.innerHTML).not.toBe('')
+    await settle()
+    const result = await scanPage()
+    for (const finding of result.incomplete) {
+      console.warn(`[route-a11y] / (anonymous) indeterminate: ${formatFinding(finding)}`)
+    }
+    records.push({ path: '/', mode: 'anonymous', findings: result.violations })
+    const failing = result.violations.filter(isFailing)
+    warnNonFailing('/', 'anonymous', result.violations.filter((f) => !isFailing(f)))
+    if (failing.length > 0) {
+      expect.fail(
+        `route / [anonymous] has ${failing.length} serious/critical axe violation(s):\n` +
+          formatFindings(failing),
+      )
+    }
+  })
+
+  it('scans the not-found fallback inside the tenant shell', async () => {
+    bindRequestFn(createBackend('data'))
+    window.history.replaceState({}, '', '/no-such-route')
+    const { container } = renderDemoApp({ session: staffSession() })
+    expect(container.innerHTML).not.toBe('')
+    await settle()
+    const result = await scanPage()
+    records.push({ path: '/no-such-route', mode: 'data', findings: result.violations })
+    const failing = result.violations.filter(isFailing)
+    warnNonFailing('/no-such-route', 'data', result.violations.filter((f) => !isFailing(f)))
+    if (failing.length > 0) {
+      expect.fail(
+        `route /no-such-route [data] has ${failing.length} serious/critical axe violation(s):\n` +
+          formatFindings(failing),
+      )
+    }
+  })
+
+  afterAll(() => {
+    // The closing report: every scanned route/state and its violations by
+    // rule id, impact and node count. Printed so a warning is visible in the
+    // suite output, never only asserted away.
+    const lines = [
+      `[route-a11y] scanned ${records.length} route/state combination(s)`,
+    ]
+    let total = 0
+    for (const record of records) {
+      total += record.findings.length
+      if (record.findings.length === 0) {
+        continue
+      }
+      lines.push(`${record.path} [${record.mode}]:`)
+      for (const finding of record.findings) {
+        lines.push(formatFinding(finding))
+      }
+    }
+    lines.push(
+      total === 0
+        ? '[route-a11y] no violations (the WCAG 2.1 AA gate holds)'
+        : `[route-a11y] ${total} violation(s) across the swept routes`,
+    )
+    console.log(lines.join('\n'))
+  })
+})

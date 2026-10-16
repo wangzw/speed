@@ -29,7 +29,7 @@ GOMODULE := server
 FRONTEND := web
 
 .PHONY: help build test test-race fmt lint tidy tidy-check \
-        web-install web-lint web-typecheck web-test web-build check
+        web-install web-lint web-typecheck web-test web-a11y web-build check
 
 help: ## List the entry points
 	@awk 'BEGIN{FS=":.*## "} /^[a-z][a-z-]*:.*## /{printf "  %-13s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -70,6 +70,9 @@ web-typecheck: ## Typecheck the frontend
 web-test: ## Test the frontend
 	pnpm -C $(FRONTEND) test
 
+web-a11y: ## Run the frontend's route-level accessibility sweep
+	pnpm -C $(FRONTEND) test:a11y
+
 web-build: ## Build the frontend into server/dist
 	pnpm -C $(FRONTEND) build
 
@@ -86,4 +89,5 @@ check: ## Run everything above
 	  $(MAKE) web-lint || failed="$${failed:+$$failed; }web-lint"; \
 	  $(MAKE) web-typecheck || failed="$${failed:+$$failed; }web-typecheck"; \
 	  $(MAKE) web-test || failed="$${failed:+$$failed; }web-test"; \
+	  $(MAKE) web-a11y || failed="$${failed:+$$failed; }web-a11y"; \
 	  if [ -n "$$failed" ]; then echo "failed: $$failed" >&2; exit 1; fi

@@ -71,9 +71,15 @@ export function authenticatedSnapshot(options: {
   }
 }
 
-/** Every operation is out of scope for a rendering suite. */
-function unused(): never {
-  throw new Error('the test session drives no operation')
+/**
+ * A rejected flow operation: every session operation is out of scope for a
+ * rendering suite. It REJECTS rather than throwing synchronously, because the
+ * views await or `.catch` these calls (`void session.abandonFlow().catch(...)`,
+ * the step-up flow's cleanup) -- a synchronous throw would escape past the
+ * handler the call expects.
+ */
+function rejecting(): Promise<never> {
+  return Promise.reject(new Error('the test session drives no operation'))
 }
 
 /** A session whose snapshot `set` mutates and notifies; operations reject. */
@@ -98,18 +104,21 @@ export function createTestSession(
     },
     // The sign-in surface reads the deployment's methods on mount and the
     // enterprise entry its providers; the flows themselves stay out of
-    // scope for a rendering suite.
+    // scope for a rendering suite, so every flow operation rejects.
     listMethods: () => Promise.resolve(FORM_METHODS),
     discoverSso: () => Promise.resolve([]),
-    startFlow: unused,
-    startAuthenticatedFlow: unused,
-    answerFlow: unused,
-    readFlow: unused,
-    abandonFlow: unused,
-    logout: unused,
-    restore: unused,
-    refresh: unused,
+    startFlow: rejecting,
+    startAuthenticatedFlow: rejecting,
+    answerFlow: rejecting,
+    readFlow: rejecting,
+    abandonFlow: rejecting,
+    logout: rejecting,
+    restore: rejecting,
+    refresh: rejecting,
     isStepUpShortfall: () => false,
-    setPermissionSet: unused,
+    // Host-attached permissions are out of scope here: the suites set the
+    // snapshot's permission lists directly, so attaching is a no-op rather
+    // than a rejection the host would have to catch.
+    setPermissionSet: () => undefined,
   }
 }
