@@ -117,7 +117,7 @@ interface ConsoleShellProps {
 
 ```mermaid
 graph TD
-    pages["控制台页面\n名册 · 账户 · 会话 · 冒充 · 权限\n邀请与成员 · SSO · 设置 · 短信 · 审计"]
+    pages["控制台页面\n概览 · 名册（含详情）· 审计（含详情）\n账户 · 会话 · 冒充 · 权限 · 邀请与成员 · SSO · 设置 · 短信"]
     decl["页面声明\n路径 · 视图 · 标签 · 权限"]
     collect["应用的组合层\nroute-kit 的收集方"]
     api["@speed/api-sdk\n生成操作"]
