@@ -49,6 +49,49 @@ the working tree clean. Until the frontend is built the directory holds no
 entry document, and `pkg/webui` answers 404 to every request rather than
 failing to start.
 
+## The API contract
+
+The typed API surface comes from two generation levels, and `api:gen` runs the
+app's own:
+
+```
+pnpm api:gen                        # or: pnpm --filter demo-web api:gen, from web/
+```
+
+It runs three legs in order:
+
+1. The Go host's `gen` command merges the OpenAPI fragments the binary's imports
+   reach and writes the merged document to `contracts/api.json` at the
+   repository root (`starters/demo/main.go`'s `genDocument`).
+2. `pnpm dlx orval@8.17.0 --config orval.config.ts` generates this app's own
+   surface from that document into `src/app-api/index.ts`.
+3. `node ../../../web/scripts/orval-nodenext-fixup.mjs src/app-api/index.ts
+   src/app-api/runtime.ts` rewrites the generated mutator import to its explicit
+   `.js` form.
+
+orval is never a dependency of this workspace: `pnpm dlx` fetches the pinned
+version on demand and it stays out of `web/pnpm-lock.yaml`.
+
+| Level | Configuration | Input | Output |
+|---|---|---|---|
+| platform | `web/orval.config.ts` | `contracts/api.json` | the published `@speed/api-sdk`, in `web/packages/api-sdk/src/index.ts` |
+| app | `orval.config.ts` (this directory) | `contracts/api.json` | `src/app-api/index.ts` |
+
+The platform level belongs to the package library and produces the package the
+shell packages import; the app level belongs to the app and produces a surface
+inside it. Both read `contracts/api.json` -- the document the host's `gen`
+command writes, carrying every fragment the binary's imports reach, so the
+platform fragments plus the app's own, should it declare any. This starter
+declares none, so the two levels cover the same operations. Both levels reach the backend
+through the same seam: `src/app-api/runtime.ts` re-exports the mutators
+`@speed/api-sdk/runtime` exports, so the one `bindRequestFn` call at bootstrap
+serves both generated surfaces and no generated or bridge file performs HTTP
+itself.
+
+`src/app-api/index.ts` is generated output carrying a DO-NOT-EDIT header, and it
+is committed -- regenerating it produces the same file. `src/app-api/runtime.ts`
+is the one hand-written file there, and orval's output paths never cover it.
+
 ## Where the dependencies come from
 
 This app declares its dependency on the published `@speed/*` packages by
@@ -86,6 +129,7 @@ wiring that a copied-out project drops**:
 | `src/pages/` | The app's pages; one placeholder stands in for a business domain. |
 | `src/runtime-config.ts` | Reads the deployment's API origin from `runtime-config.json` beside the entry document, falling back to same-origin. |
 | `src/resources.ts`, `src/locales/` | The app's bilingual i18n bundle ("demo" namespace). |
+| `orval.config.ts`, `src/app-api/` | The app's own generation level: the second orval configuration and the surface it generates, plus the seam that surface calls (see "The API contract"). |
 | `dist/` | The build output the Go program embeds (see above). |
 | `AGENTS.md` | This directory's own contract for an agent working here. |
 
@@ -115,6 +159,11 @@ beside the bundle:
   `node_modules` and there is no `web/scripts` to import.
 - Replace the business slot: put your pages under `src/pages/` and name them in
   `src/routes.tsx`.
+- Retarget `api:gen` and `orval.config.ts` at your own setup: the script's
+  fixup step points at the workspace's
+  `web/scripts/orval-nodenext-fixup.mjs`, and its `gen` step writes
+  `contracts/api.json` at the repository root (the document path
+  `orval.config.ts` reads, and the input the platform level uses too).
 - Keep the console area only if the product has a platform-staff face; drop it
   and its `@speed/console-ui` dependency otherwise.
 
