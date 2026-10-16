@@ -145,8 +145,8 @@ graph TD
 | 详情页骨架（主栏与侧栏） | 未实现 | — |
 | 设置页骨架（二级导航与表单） | 未实现 | — |
 | 仪表盘骨架 | 未实现 | — |
-| 数据表的列优先级降级 | 部分实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx` |
+| 数据表的列优先级降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx` |
 | 数据表超宽的容器内滚动兜底 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable` |
-| 组件级容器查询 | 未实现 | — |
-| 窄视口逐档降级 | 未实现 | — |
-| 指针能力查询 | 未实现 | — |
+| 组件级容器查询 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx` |
+| 窄视口逐档降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx`；`web/packages/layout-kit/src/components/AppShell.tsx` `AppShell` |
+| 指针能力查询 | 部分实现 | `web/packages/ui-kit/src/internal/pointer.ts`；`web/packages/ui-kit/src/components/DataTable.tsx` `touchTargetSx` |
