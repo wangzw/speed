@@ -11,7 +11,7 @@
           {"name": "kind", "in": "query", "required": false, "schema": {"type": "string"}},
           {"name": "identifier_prefix", "in": "query", "required": false, "schema": {"type": "string"}},
           {"name": "identifier_kind", "in": "query", "required": false, "schema": {"type": "string"}},
-          {"name": "display_name_prefix", "in": "query", "required": false, "schema": {"type": "string"}, "description": "The account's display name by its leading bytes, case-sensitive; absent or empty selects every display name"},
+          {"name": "display_name_prefix", "in": "query", "required": false, "schema": {"type": "string"}, "description": "The account's display name by its leading bytes, case-sensitive; must be valid UTF-8 text; absent or empty selects every display name"},
           {"name": "after", "in": "query", "required": false, "schema": {"type": "string"}},
           {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer"}}
         ],

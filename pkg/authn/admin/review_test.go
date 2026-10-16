@@ -456,6 +456,32 @@ func TestTheAccountListParsesTheDisplayNamePrefix(t *testing.T) {
 	}
 }
 
+// TestTheAccountListRefusesANonUTF8DisplayNamePrefix holds that the display-name
+// prefix is text: a byte sequence that is not valid UTF-8 is a 400 and the read
+// is never made, rather than a filter the read hands to the database, which
+// rejects it and answers an outage instead of the shape error the caller caused.
+func TestTheAccountListRefusesANonUTF8DisplayNamePrefix(t *testing.T) {
+	r := newRig(t)
+	for _, q := range []string{"?display_name_prefix=%BF", "?display_name_prefix=caf%C3", "?display_name_prefix=%FF%FE"} {
+		rec := r.do(http.MethodGet, "/auth/admin/accounts"+q, nil, fresh()...)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", q, rec.Code)
+		}
+	}
+	if r.accounts.listCalls != 0 {
+		t.Errorf("the account list read ran %d time(s) on a non-UTF-8 prefix, want no read", r.accounts.listCalls)
+	}
+
+	// A prefix that is valid UTF-8 text reaches the read as written.
+	rec := r.do(http.MethodGet, "/auth/admin/accounts?display_name_prefix=Ali", nil, fresh()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a valid prefix: status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if q := r.accounts.lastList(); q.DisplayNamePrefix != "Ali" {
+		t.Errorf("display name prefix = %q, want the one given", q.DisplayNamePrefix)
+	}
+}
+
 // TestTheAccountListRefusesAQueryParameterItDoesNotAccept holds the list's
 // closed parameter set: a parameter the route does not know is a 400, so a
 // misspelled filter is reported rather than swallowed by a read that ignores it

@@ -3,6 +3,7 @@ package admin
 import (
 	"strconv"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
@@ -81,10 +82,10 @@ func (m *product) handleAccountList(c *gin.Context) {
 }
 
 // accountQuery reads the list's query parameters into a read query. A parameter
-// the route does not accept, a filter it does not know, or an identifier prefix
-// without a kind is a 400. An empty value of an accepted filter — including an
-// empty display_name_prefix — is no filter, the same reading status, kind and
-// after take.
+// the route does not accept, a filter it does not know, an identifier prefix
+// without a kind, or a display-name prefix that is not text is a 400. An empty
+// value of an accepted filter — including an empty display_name_prefix — is no
+// filter, the same reading status, kind and after take.
 func (m *product) accountQuery(c *gin.Context) (authn.AccountQuery, bool) {
 	if !onlyAccepted(c, accountListParams) {
 		m.bad(c)
@@ -120,7 +121,16 @@ func (m *product) accountQuery(c *gin.Context) (authn.AccountQuery, bool) {
 		}
 		q.IdentifierKind, q.IdentifierPrefix = ik, prefix
 	}
-	q.DisplayNamePrefix = c.Query("display_name_prefix")
+	if p := c.Query("display_name_prefix"); p != "" {
+		// A display name is stored as text, so a prefix that is not text is a
+		// shape the route refuses here rather than a byte sequence the read would
+		// hand to the database, which rejects it and answers an outage.
+		if !utf8.ValidString(p) {
+			m.bad(c)
+			return authn.AccountQuery{}, false
+		}
+		q.DisplayNamePrefix = p
+	}
 	q.After = c.Query("after")
 	if s := c.Query("limit"); s != "" {
 		n, err := strconv.Atoi(s)

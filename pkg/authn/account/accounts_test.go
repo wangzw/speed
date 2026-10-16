@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -577,20 +578,108 @@ func TestListByDisplayNamePrefixMatchesTheStoredName(t *testing.T) {
 // The bound that closes a display-name range raises the prefix's last character,
 // not its last byte: a prefix that ends in a multi-byte character must yield a
 // bound that is itself valid UTF-8, or the range reads a byte sequence the
-// database rejects and the answer is an outage rather than a shorter page.
+// database rejects and the answer is an outage rather than a shorter page. A
+// prefix that is every character the highest rune has no bound above it.
 func TestDisplayNameBoundRaisesTheLastCharacter(t *testing.T) {
-	for _, c := range []struct{ in, want string }{
-		{"", ""},
-		{"A", "B"},
-		{"Ali", "Alj"},
-		{"alice", "alicf"},
-		{"Á", "Â"},               // a two-byte character is raised as a character
-		{"Alicia Á", "Alicia Â"}, // and the raise keeps the leading ASCII as it is
+	const max = "\U0010FFFF"
+	for _, c := range []struct {
+		in    string
+		want  string
+		bound bool
+	}{
+		{"", "", false}, // no prefix names no name
+		{"A", "B", true},
+		{"Ali", "Alj", true},
+		{"alice", "alicf", true},
+		{"Á", "Â", true},               // a two-byte character is raised as a character
+		{"Alicia Á", "Alicia Â", true}, // and the raise keeps the leading ASCII as it is
+		{max, "", false},               // the highest rune alone bounds nothing above it
+		{max + max, "", false},
+		{"A" + max, "B", true}, // a lower character is carried to and raised
+		{"Ali" + max, "Alj", true},
 	} {
-		if got := displayNameBound(c.in); got != c.want {
-			t.Errorf("displayNameBound(%q) = %q, want %q", c.in, got, c.want)
+		got, bounded := displayNameBound(c.in)
+		if got != c.want || bounded != c.bound {
+			t.Errorf("displayNameBound(%q) = %q, %v, want %q, %v", c.in, got, bounded, c.want, c.bound)
 		}
 	}
+}
+
+// A bound is computed on the read seam directly, not only behind the route's
+// shape check, and every bound it returns must be valid UTF-8: a byte sequence
+// the database rejects would turn a shorter page into an outage. A prefix that
+// is not valid UTF-8 begins no name the column holds.
+func TestDisplayNameBoundIsAlwaysValidUTF8(t *testing.T) {
+	for _, in := range []string{
+		"\xbf",         // a lone continuation byte
+		"\xff",         // a byte that is no rune and cannot be raised
+		"\xff\xfe",     // two of them
+		"A\xbf",        // ASCII then a stray continuation byte
+		"caf\xc3",      // a truncated two-byte character at the end
+		"\xe4\xb8",     // a truncated three-byte character
+		"\xf4\x8f\xbf", // a truncated four-byte character
+		"a\x80b\xc0",   // a byte that begins no rune in the middle and at the end
+	} {
+		if utf8.ValidString(in) {
+			t.Fatalf("the case %q is valid UTF-8; it does not exercise the branch", in)
+		}
+		got, _ := displayNameBound(in)
+		if !utf8.ValidString(got) {
+			t.Errorf("displayNameBound(%q) = %q, which is not valid UTF-8", in, got)
+		}
+	}
+}
+
+// A display-name prefix whose every character is the highest rune has no bound
+// above it, and the names it begins are exactly those at or above it. The read
+// must return those rows rather than the empty set a degenerate upper bound — the
+// empty string — would close it to. This is the whole point of the branch: the
+// names are silently dropped otherwise, with no error to see.
+func TestListByAnUppermostDisplayNamePrefixReadsItsNames(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		const max = "\U0010FFFF"
+		create := func(display, username string) authn.AccountID {
+			t.Helper()
+			a, err := h.p.Create(ctx, authn.CreateAccount{DisplayName: display, Username: username, Via: "admin"})
+			if err != nil {
+				t.Fatalf("creating %q: %v", display, err)
+			}
+			return a.ID
+		}
+		upper := create(max+"Zoe", "zoe-upper")
+		create("Alice", "alice-plain")
+		create("Zoe", "zoe-plain")
+
+		page, _, err := h.p.List(ctx, authn.AccountQuery{DisplayNamePrefix: max})
+		if err != nil {
+			t.Fatalf("listing display_name_prefix=%q: %v", max, err)
+		}
+		got := make([]string, 0, len(page))
+		for _, a := range page {
+			got = append(got, a.ID.String())
+		}
+		if !slices.Equal(got, []string{upper.String()}) {
+			t.Errorf("the uppermost prefix listed %v, want only %s", got, upper)
+		}
+	})
+}
+
+// A prefix that is not valid UTF-8 is text the column never holds, so the read
+// seam returns no name for it rather than handing the database a byte sequence it
+// rejects. The management route refuses such a prefix as a shape error before it
+// reaches here.
+func TestListByANonUTF8DisplayNamePrefixReadsNothing(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		if _, err := h.p.Create(ctx, authn.CreateAccount{DisplayName: "€uro", Username: "euro", Via: "admin"}); err != nil {
+			t.Fatalf("creating the account: %v", err)
+		}
+		page, next, err := h.p.List(ctx, authn.AccountQuery{DisplayNamePrefix: "\xbf"})
+		if err != nil || len(page) != 0 || next != "" {
+			t.Errorf("a non-UTF-8 prefix read %d account(s), next %q, %v, want none", len(page), next, err)
+		}
+	})
 }
 
 func TestAccountFieldsAreWrittenOnTheAccountThatIsThere(t *testing.T) {
