@@ -231,6 +231,13 @@ function AccountReads() {
 
 /** Buttons firing every account / session / impersonation write. */
 function AccountWrites() {
+  const createAccount = consoleOperations.useCreateAccount()
+  const patchAccount = consoleOperations.usePatchAccount()
+  const setStatus = consoleOperations.useSetAccountStatus()
+  const setMFARequired = consoleOperations.useSetMFARequired()
+  const resetPassword = consoleOperations.useResetPassword()
+  const addIdentifier = consoleOperations.useAddIdentifier()
+  const createSecret = consoleOperations.useCreateSecret()
   const del = consoleOperations.useDeleteAccount()
   const removeIdentifier = consoleOperations.useRemoveIdentifier()
   const resetMFA = consoleOperations.useResetMFA()
@@ -240,6 +247,13 @@ function AccountWrites() {
   const revokeImpersonation = consoleOperations.useRevokeImpersonation()
   return (
     <>
+      <button onClick={() => createAccount.mutate({ kind: 'user' })}>createAccount</button>
+      <button onClick={() => patchAccount.mutate({ id: 'acc-1', display_name: 'X' })}>patchAccount</button>
+      <button onClick={() => setStatus.mutate({ id: 'acc-1', status: 'disabled' })}>setStatus</button>
+      <button onClick={() => setMFARequired.mutate({ id: 'acc-1', required: true })}>setMFARequired</button>
+      <button onClick={() => resetPassword.mutate({ id: 'acc-1', password: 'p' })}>resetPassword</button>
+      <button onClick={() => addIdentifier.mutate({ id: 'acc-1', kind: 'username', value: 'x' })}>addIdentifier</button>
+      <button onClick={() => createSecret.mutate({ id: 'acc-1', label: 'l' })}>createSecret</button>
       <button onClick={() => del.mutate({ id: 'acc-1' })}>del</button>
       <button onClick={() => removeIdentifier.mutate({ id: 'acc-1', identifier: 'ada@example.com' })}>removeIdentifier</button>
       <button onClick={() => resetMFA.mutate({ id: 'acc-1' })}>resetMFA</button>
@@ -265,7 +279,12 @@ function TenantReads() {
 function TenantWrites() {
   const issue = consoleOperations.useIssueInvitation()
   const revoke = consoleOperations.useRevokeInvitation()
+  const writeMember = consoleOperations.useWriteMember()
+  const setMemberSsoExempt = consoleOperations.useSetMemberSsoExempt()
   const removeMember = consoleOperations.useRemoveMember()
+  const createProvider = consoleOperations.useCreateSsoProvider()
+  const updateProvider = consoleOperations.useUpdateSsoProvider()
+  const claimDomain = consoleOperations.useClaimSsoDomain()
   const deleteProvider = consoleOperations.useDeleteSsoProvider()
   const removeDomain = consoleOperations.useRemoveSsoDomain()
   const verifyDomain = consoleOperations.useVerifySsoDomain()
@@ -275,7 +294,12 @@ function TenantWrites() {
     <>
       <button onClick={() => issue.mutate({ tenant: 'acme', email: 'a@b.co', expiresAt: undefined })}>issue</button>
       <button onClick={() => revoke.mutate({ tenant: 'acme', id: 'inv-1' })}>revokeInvite</button>
+      <button onClick={() => writeMember.mutate({ tenant: 'acme', account: 'acc-1', active: true, sso_exempt: false })}>writeMember</button>
+      <button onClick={() => setMemberSsoExempt.mutate({ tenant: 'acme', account: 'acc-1', sso_exempt: true })}>setMemberSsoExempt</button>
       <button onClick={() => removeMember.mutate({ tenant: 'acme', account: 'acc-1' })}>removeMember</button>
+      <button onClick={() => createProvider.mutate({ tenant: 'acme', protocol: 'oidc', name: 'n', provisioning: 'p' })}>createProvider</button>
+      <button onClick={() => updateProvider.mutate({ id: 'idp-1', tenant: 'acme', protocol: 'oidc', name: 'n', provisioning: 'p' })}>updateProvider</button>
+      <button onClick={() => claimDomain.mutate({ id: 'idp-1', tenant: 'acme', domain: 'acme.com' })}>claimDomain</button>
       <button onClick={() => deleteProvider.mutate({ id: 'idp-1', tenant: 'acme' })}>deleteProvider</button>
       <button onClick={() => removeDomain.mutate({ id: 'idp-1', tenant: 'acme', domain: 'acme.com' })}>removeDomain</button>
       <button onClick={() => verifyDomain.mutate({ id: 'idp-1', tenant: 'acme', domain: 'acme.com' })}>verifyDomain</button>
@@ -356,10 +380,17 @@ describe('consoleOperations administration surfaces', () => {
     const user = userEvent.setup()
     const calls = bindConsoleRequest(answer)
     renderWithProviders(<AccountWrites />, { operations: consoleOperations })
-    for (const name of ['del', 'removeIdentifier', 'resetMFA', 'revokeSessions', 'revokeSecret', 'revokeSession', 'revokeImpersonation']) {
+    for (const name of ['createAccount', 'patchAccount', 'setStatus', 'setMFARequired', 'resetPassword', 'addIdentifier', 'createSecret', 'del', 'removeIdentifier', 'resetMFA', 'revokeSessions', 'revokeSecret', 'revokeSession', 'revokeImpersonation']) {
       await user.click(screen.getByRole('button', { name }))
     }
     await waitFor(() => {
+      expect(calls).toContainEqual({ method: 'POST', path: '/auth/admin/accounts' })
+      expect(calls).toContainEqual({ method: 'PATCH', path: '/auth/admin/accounts/acc-1' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/auth/admin/accounts/acc-1/status' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/auth/admin/accounts/acc-1/mfa-required' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/auth/admin/accounts/acc-1/password' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/auth/admin/accounts/acc-1/identifiers' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/auth/admin/accounts/acc-1/secrets' })
       expect(calls).toContainEqual({ method: 'DELETE', path: '/auth/admin/accounts/acc-1' })
       expect(calls).toContainEqual({ method: 'DELETE', path: '/auth/admin/accounts/acc-1/identifiers/ada@example.com' })
       expect(calls).toContainEqual({ method: 'POST', path: '/auth/admin/accounts/acc-1/mfa-reset' })
@@ -388,12 +419,17 @@ describe('consoleOperations administration surfaces', () => {
     const user = userEvent.setup()
     const calls = bindConsoleRequest(answer)
     renderWithProviders(<TenantWrites />, { operations: consoleOperations })
-    for (const name of ['issue', 'revokeInvite', 'removeMember', 'deleteProvider', 'removeDomain', 'verifyDomain', 'refresh', 'reverify']) {
+    for (const name of ['issue', 'revokeInvite', 'writeMember', 'setMemberSsoExempt', 'removeMember', 'createProvider', 'updateProvider', 'claimDomain', 'deleteProvider', 'removeDomain', 'verifyDomain', 'refresh', 'reverify']) {
       await user.click(screen.getByRole('button', { name }))
     }
     await waitFor(() => {
       expect(calls).toContainEqual({ method: 'POST', path: '/auth/admin/tenants/acme/invitations' })
       expect(calls).toContainEqual({ method: 'DELETE', path: '/auth/admin/tenants/acme/invitations/inv-1' })
+      expect(calls).toContainEqual({ method: 'PUT', path: '/auth/admin/tenants/acme/members/acc-1' })
+      expect(calls).toContainEqual({ method: 'PUT', path: '/auth/admin/tenants/acme/members/acc-1/sso-exempt' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/auth/admin/tenants/acme/sso/providers' })
+      expect(calls).toContainEqual({ method: 'PUT', path: '/auth/admin/sso/providers/idp-1' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/auth/admin/sso/providers/idp-1/domains' })
       expect(calls).toContainEqual({ method: 'DELETE', path: '/auth/admin/tenants/acme/members/acc-1' })
       expect(calls).toContainEqual({ method: 'DELETE', path: '/auth/admin/sso/providers/idp-1' })
       expect(calls).toContainEqual({ method: 'DELETE', path: '/auth/admin/sso/providers/idp-1/domains/acme.com' })
