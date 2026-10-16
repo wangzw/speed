@@ -581,7 +581,24 @@
     },
     "inForce": "生效中",
     "ended": "已结束（{{reason}}）",
-    "terminate": "终止"
+    "terminate": "终止",
+    "current": {
+      "title": "当前冒充",
+      "loading": "正在读取冒充状态",
+      "none": "当前未冒充任何账户。",
+      "target": "被冒充账户：{{target}}",
+      "tenant": "租户：{{tenant}}",
+      "ends": "结束时间：{{ends}}",
+      "end": "结束冒充"
+    },
+    "start": {
+      "title": "发起冒充",
+      "accountLabel": "目标账户",
+      "tenantLabel": "租户标识",
+      "reasonLabel": "理由",
+      "ttlLabel": "有效期（秒）",
+      "submit": "发起冒充"
+    }
   },
   "invitations": {
     "title": "邀请与成员",

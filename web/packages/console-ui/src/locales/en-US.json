@@ -581,7 +581,24 @@
     },
     "inForce": "In force",
     "ended": "Ended ({{reason}})",
-    "terminate": "Terminate"
+    "terminate": "Terminate",
+    "current": {
+      "title": "Current impersonation",
+      "loading": "Loading the impersonation status",
+      "none": "You are not impersonating any account.",
+      "target": "Impersonated account: {{target}}",
+      "tenant": "Tenant: {{tenant}}",
+      "ends": "Ends: {{ends}}",
+      "end": "End impersonation"
+    },
+    "start": {
+      "title": "Start an impersonation",
+      "accountLabel": "Target account",
+      "tenantLabel": "Tenant identifier",
+      "reasonLabel": "Reason",
+      "ttlLabel": "TTL (seconds)",
+      "submit": "Start impersonation"
+    }
   },
   "invitations": {
     "title": "Invitations and members",
