@@ -16,11 +16,14 @@
  * The frame is three landmarks in one shell: a `header` banner carrying
  * the console title and any host header actions, a `nav` landmark listing
  * the labelled declarations' pages, and a `main` landmark holding the
- * host content. A skip link (the first focusable element) moves focus to
- * `main` in place, the same technique the layout-kit frame uses: it
- * focuses the landmark programmatically rather than navigating to a
- * fragment, because a fragment would rewrite `location.hash` and, in a
- * hash-routed host, that fragment is the route itself.
+ * host content. The banner is `position: fixed`, matching the layout-kit
+ * frame's own top bar, with a spacer below it that keeps the content
+ * clear of the fixed bar; the skip link lives inside the banner (the
+ * first focusable element) and moves focus to `main` in place, the same
+ * technique the layout-kit frame uses: it focuses the landmark
+ * programmatically rather than navigating to a fragment, because a
+ * fragment would rewrite `location.hash` and, in a hash-routed host,
+ * that fragment is the route itself.
  *
  * The shell reads no data and holds no operations: the pages it hosts
  * reach their reads and writes through the operations bundle the host
@@ -99,37 +102,39 @@ export function ConsoleShell({
         ...sx,
       }}
     >
-      <Link
-        href={`#${mainId}`}
-        onClick={(event) => {
-          event.preventDefault()
-          mainRef.current?.focus()
-        }}
-        sx={{
-          ...visuallyHiddenSx,
-          '&:focus': {
-            position: 'fixed',
-            top: 8,
-            left: 8,
-            zIndex: 1,
-            width: 'auto',
-            height: 'auto',
-            clip: 'auto',
-            clipPath: 'none',
-            p: 1,
-            bgcolor: 'background.paper',
-          },
-        }}
-      >
-        {t('shell.skipToContent')}
-      </Link>
-      <AppBar position="static" component="header">
+      <AppBar position="fixed" component="header">
+        <Link
+          href={`#${mainId}`}
+          onClick={(event) => {
+            event.preventDefault()
+            mainRef.current?.focus()
+          }}
+          sx={{
+            ...visuallyHiddenSx,
+            '&:focus': {
+              position: 'fixed',
+              top: 8,
+              left: 8,
+              bottom: 'auto',
+              zIndex: 1,
+              width: 'auto',
+              height: 'auto',
+              clip: 'auto',
+              clipPath: 'none',
+              p: 1,
+              bgcolor: 'background.paper',
+            },
+          }}
+        >
+          {t('shell.skipToContent')}
+        </Link>
         <Toolbar sx={{ gap: 2 }}>
           {title}
           <Box sx={{ flexGrow: 1 }} />
           {headerActions}
         </Toolbar>
       </AppBar>
+      <Toolbar />
       <Box
         sx={{
           display: 'flex',
