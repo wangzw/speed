@@ -282,6 +282,54 @@ describe('ObjectsPage', () => {
     expect(within(dialog).getByText('aaaa')).toBeInTheDocument()
   })
 
+  it('retries a failed upload and removes the settled row', async () => {
+    const user = userEvent.setup()
+    let createAttempts = 0
+    const stored = { ...OBJECT_A, id: 'o-retry', mime: 'text/plain', size: 5 }
+    makeObjectStoreRig((call) => {
+      if (call.method === 'GET' && call.path === LIST_PATH) {
+        return jsonResponse(200, { objects: [], next_cursor: '' })
+      }
+      if (call.method === 'POST' && call.path === LIST_PATH) {
+        createAttempts += 1
+        if (createAttempts === 1) {
+          return problemResponse(503, 'urn:speed:objectstore:unavailable')
+        }
+        return jsonResponse(201, { object: { ...stored, state: 'pending' } })
+      }
+      if (call.method === 'PUT' && call.path === `${LIST_PATH}/o-retry/content`) {
+        return noContentResponse()
+      }
+      if (
+        call.method === 'POST' &&
+        call.path === `${LIST_PATH}/o-retry/complete`
+      ) {
+        return jsonResponse(200, { object: stored })
+      }
+      throw new Error(`unexpected request ${call.method} ${call.path}`)
+    })
+    const { container } = renderWithProviders(<ObjectsPage />, {
+      language: 'en-US',
+    })
+    await screen.findByText('No objects yet')
+
+    const input = container.querySelector('input[type="file"]')
+    await user.upload(input as HTMLInputElement, new File(['hello'], 'retry-me.txt', { type: 'text/plain' }))
+
+    // The first attempt fails; the row offers a retry.
+    expect(await screen.findByText('Upload failed')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => {
+      expect(screen.getByText('Uploaded')).toBeInTheDocument()
+    })
+
+    // The settled row is removable.
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    await waitFor(() => {
+      expect(screen.queryByText('retry-me.txt')).not.toBeInTheDocument()
+    })
+  })
+
   it('renders in Chinese when the active language is zh-CN', async () => {
     makeObjectStoreRig(() => jsonResponse(200, { objects: [OBJECT_A], next_cursor: '' }))
     renderWithProviders(<ObjectsPage />, { language: 'zh-CN' })
