@@ -13,3 +13,8 @@
 # file a build never touches, force-added despite this rule. See web/README.md.
 /web/node_modules/
 /server/dist/
+
+# The compiled server binary: a `go build` (or `go run`'s cached build) run in
+# server/ leaves it beside the module, named for the package. It is a build
+# artifact, not source.
+/server/demo

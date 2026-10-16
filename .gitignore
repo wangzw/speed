@@ -36,6 +36,12 @@ dist/
 *.db-journal
 *.sqlite
 
+# Runtime state a deployment writes beside the program it runs from: the token
+# signing key generated on the first run, the local object-store root. It
+# belongs to a deployment, not to the source tree. A program started from the
+# repository root lands it here (the demo's own copy is under server/).
+/var/
+
 # Hugo build output for docs/site/ (docs/site/README.md) -- generated
 # by `hugo --minify`,
 # never committed. Hugo's default resource cache directory and its build
