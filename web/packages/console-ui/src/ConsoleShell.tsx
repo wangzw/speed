@@ -37,6 +37,7 @@
  */
 
 import type { ReactNode } from 'react'
+import Box from '@mui/material/Box'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { AppShell } from '@speed/layout-kit'
 import type { AppShellNavItem } from '@speed/layout-kit'
@@ -116,7 +117,11 @@ export function ConsoleShell({
           the routed pages so a detail link routes in place rather than
           reloading the page (see internal/navigation). */}
       <ConsoleNavigationProvider onNavigate={onNavigate}>
-        {children}
+        {/* The content area carries the same padding the tenant shell's own
+            content region applies (theme spacing 3 = 24px all round), so a
+            page's heading, breadcrumb, table and form sit clear of the
+            sidebar and the banner rather than against them. */}
+        <Box sx={{ p: 3 }}>{children}</Box>
       </ConsoleNavigationProvider>
     </AppShell>
   )

@@ -94,6 +94,26 @@ describe('ConsoleShell', () => {
     expect(within(main).getByText('body')).toBeInTheDocument()
   })
 
+  it('pads the content region so a page does not butt against the chrome', () => {
+    renderWithProviders(
+      <ConsoleShell routes={routes} title="Console">
+        <h1>Home</h1>
+      </ConsoleShell>,
+      { operations },
+    )
+    // The page content sits inside the content region's padded container,
+    // clear of the sidebar and the banner -- the same inset the tenant
+    // shell's content region applies. Without it the heading's parent is
+    // the bare main landmark and the page hugs the sidebar's right edge.
+    const main = screen.getByRole('main')
+    const heading = screen.getByRole('heading', { level: 1, name: 'Home' })
+    expect(heading.parentElement).not.toBe(main)
+    expect(heading.parentElement).toHaveStyle({
+      paddingTop: '24px',
+      paddingLeft: '24px',
+    })
+  })
+
   it('renders the title and the header actions in the banner', () => {
     renderWithProviders(
       <ConsoleShell
