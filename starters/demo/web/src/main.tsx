@@ -35,6 +35,7 @@ import {
 } from '@speed/product-shell/bootstrap'
 import { AppServicesProvider } from './app-services.js'
 import { DemoApp } from './app.js'
+import { applyDocumentMetadata } from './document-metadata.js'
 import { DEMO_NAMESPACE, demoResources } from './resources.js'
 import { loadRuntimeConfig } from './runtime-config.js'
 
@@ -49,7 +50,7 @@ export async function bootstrapDemoApp(
   container: Element,
 ): Promise<DemoAppBootstrap> {
   const { apiOrigin } = await loadRuntimeConfig()
-  return bootstrapSpeedApp(container, {
+  const bootstrap = bootstrapSpeedApp(container, {
     namespaces: [
       { namespace: CONSOLE_UI_NAMESPACE, resources: consoleUiResources },
       { namespace: DEMO_NAMESPACE, resources: demoResources },
@@ -64,4 +65,9 @@ export async function bootstrapDemoApp(
     view: <DemoApp />,
     baseUrl: apiOrigin,
   })
+  // The entry document's <html lang> and title follow the language the
+  // assembly resolved, so an interface rendered in Chinese is announced as
+  // Chinese rather than the static build-time default.
+  applyDocumentMetadata(bootstrap.i18n)
+  return bootstrap
 }
