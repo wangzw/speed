@@ -13,9 +13,12 @@ The configuration declares two sets: **listeners**, one socket each, and
 **endpoints**, one middleware chain and route table each, hung on a listener by
 name. A registrant takes an endpoint up by name and binds its routes and layers
 there; several endpoints may share one listener's socket. A listener carries a
-dispatch handler that routes each `(method, path)` to the endpoint that
-registered it, falling back to the listener's one catch-all endpoint when there
-is one.
+dispatch handler that routes each request by static path prefix: a request that
+falls under an endpoint's prefix — derived from the endpoint's registered routes
+— is answered by that endpoint's engine even when no route registered the path,
+so a mistyped API path gets that endpoint's own 404 rather than the catch-all's
+200, and only a path under no endpoint's prefix reaches the listener's one
+catch-all endpoint.
 
 The API is the package's godoc, plus the runnable examples in `example_test.go`.
 Read `Middleware`'s field comments before adding a seat to a layer.
@@ -143,8 +146,8 @@ the startup (`ErrStageConflict`), so the boundary cannot be moved by an edge.
 
 ## Shape of a module
 
-A module takes the `Router` capability up in its `Init` callback, looks a
-listening endpoint up by the name configuration gave it, and binds routes and
+A module takes the `Router` capability up in its `Init` callback, looks an
+endpoint up by the name configuration gave it, and binds routes and
 middleware layers there. A layer declares the stage it belongs to, and within
 that stage states what it stands for with `Provides`; the `After` and `Before`
 of the other layers name those statements. The fields belong together: a layer

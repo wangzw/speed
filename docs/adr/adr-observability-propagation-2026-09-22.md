@@ -10,7 +10,7 @@
 
 上游库的默认复合传播器是空的：进程的默认传递器是一个零委托的复合传播器（`propagation.NewCompositeTextMapPropagator`，`go.opentelemetry.io/otel/internal/global` 的 noop 委托），注入与提取都静默空转，不报错。
 
-`pkg/http` 只有入站侧：它组装每个监听端的链（`http.Endpoint.Use` 逐端登记中间件），没有出站客户端的概念；出站请求由各调用点自己构造。
+`pkg/http` 只有入站侧：它组装每个端点的链（`http.Endpoint.Use` 逐端登记中间件），没有出站客户端的概念；出站请求由各调用点自己构造。
 
 `ADR-log-context-2026-09-13` 确立了关联字段由产生它的模块绑定、经上下文传递的形态：产生字段的模块在自己的注入点绑定，下游从上下文取用，根包不认识任何字段（[ADR-log-context-2026-09-13](adr-log-context-2026-09-13.md)）。跨度上下文属同一形态，本记录定的是它的构造位置，以及两侧各由谁承载。
 

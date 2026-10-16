@@ -383,10 +383,11 @@ func (r *router) serve() error {
 			return err
 		}
 		// The dispatch sits outside every endpoint's chain, so a request the
-		// dispatch itself answers — a 404 with no fallback, a 405 — carries the
-		// injected logger, ErrorResponder and Resolver only if the context is
-		// built here. An endpoint's own base builds the same context again; the
-		// values are the same, so injecting twice is injecting once.
+		// dispatch itself answers — a 404 with no fallback — carries the injected
+		// logger, ErrorResponder and Resolver only if the context is built here.
+		// A request the dispatch hands to an endpoint, a method-not-allowed one
+		// among them, reaches that endpoint's base, which builds the same context
+		// again; the values are the same, so injecting twice is injecting once.
 		handler := injectContext(dispatch, r.injected, r.responder, r.resolver)
 		if err := l.start(l.settings, handler, r.logger); err != nil {
 			return err
