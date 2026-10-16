@@ -22,6 +22,7 @@ import {
   CONSOLE_UI_NAMESPACE,
   consoleUiResources,
 } from '@speed/console-ui'
+import { LAYOUT_KIT_NAMESPACE, layoutKitResources } from '@speed/layout-kit'
 import type { SpeedAppServices } from '@speed/product-shell/bootstrap'
 import { RouteProvider } from '@speed/route-kit'
 import { AppThemeProvider, UI_KIT_NAMESPACE, uiKitResources } from '@speed/ui-kit'
@@ -46,6 +47,9 @@ function renderConsoleArea() {
     navigatorLanguages: [],
   })
   registerNamespace(i18n, UI_KIT_NAMESPACE, uiKitResources)
+  // The console frame is layout-kit's AppShell, whose banner strings speak
+  // the layout-kit namespace.
+  registerNamespace(i18n, LAYOUT_KIT_NAMESPACE, layoutKitResources)
   registerNamespace(i18n, CONSOLE_UI_NAMESPACE, consoleUiResources)
   registerNamespace(i18n, DEMO_NAMESPACE, demoResources)
 
@@ -95,6 +99,7 @@ describe('ConsoleArea', () => {
         .getAllByRole('link')
         .map((link) => link.textContent),
     ).toEqual([
+      consoleUiEnUS.dashboard.title,
       consoleUiEnUS.tenants.title,
       consoleUiEnUS.accounts.title,
       consoleUiEnUS.sessions.title,

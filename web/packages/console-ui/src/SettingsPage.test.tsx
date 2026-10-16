@@ -1,13 +1,15 @@
 /**
  * SettingsPage: the settings read-write page.
  *
- * Its read renders the settled items as a table (a sensitive item's value
- * arriving already masked from the server renders as-is), the namespace
- * filter narrows the read, and its writes drive the operations bundle -- a
- * set and a remove each call the matching operation, and a refused write
- * renders the answer's code text (a value outside the domain reading the
- * invalid-value text). A save that lands clears the row's draft input; a
- * refused save keeps it.
+ * Its read renders the settled items as a width-limited form (a sensitive
+ * item's value arriving already masked from the server renders as-is), the
+ * secondary navigation groups them by namespace and narrows the read, and
+ * its sticky save bar drives the writes -- one PUT per changed item, a
+ * remove calling the remove operation. A refused write renders the
+ * answer's code text (a value outside the domain reading the invalid-value
+ * text); a landed save clears the item's draft; a refused save keeps it. A
+ * refused read (403) renders the permission placeholder without a retry,
+ * every other failure the retryable error placeholder.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -46,11 +48,11 @@ describe('SettingsPage', () => {
       makeConsoleBackend({ listSettings: () => Promise.resolve([item]) }),
     )
     renderWithProviders(<SettingsPage />, { operations })
-    expect(await screen.findByText('mail.retry')).toBeInTheDocument()
-    expect(screen.getByText('5')).toBeInTheDocument()
+    expect(await screen.findByDisplayValue('5')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'mail.retry' })).toBeInTheDocument()
   })
 
-  it('renders a sensitive item\'s masked value as the server sent it', async () => {
+  it("renders a sensitive item's masked value as the server sent it", async () => {
     const masked: ConsoleSetting = {
       ...item,
       key: 'mail.password',
@@ -63,32 +65,33 @@ describe('SettingsPage', () => {
       makeConsoleBackend({ listSettings: () => Promise.resolve([masked]) }),
     )
     renderWithProviders(<SettingsPage />, { operations })
-    expect(await screen.findByText('mail.password')).toBeInTheDocument()
-    expect(screen.getByText('********')).toBeInTheDocument()
-    expect(screen.getByText('是')).toBeInTheDocument()
+    expect(await screen.findByDisplayValue('********')).toBeInTheDocument()
   })
 
-  it('applies the namespace filter to the read', async () => {
+  it('lists the namespaces in the secondary navigation and narrows the read on selection', async () => {
     const user = userEvent.setup()
     const seen: (string | undefined)[] = []
     const operations = createConsoleOperations(
       makeConsoleBackend({
         listSettings: (namespace) => {
           seen.push(namespace)
-          return Promise.resolve([])
+          return Promise.resolve(namespace === 'mail' ? [item] : [item])
         },
       }),
     )
     renderWithProviders(<SettingsPage />, { operations })
-    await screen.findByText('暂无设置')
+    await screen.findByDisplayValue('5')
 
-    await user.type(screen.getByLabelText('命名空间'), 'mail')
-    await user.click(screen.getByRole('button', { name: '加载' }))
+    // The navigation offers the "all namespaces" entry plus each declared
+    // namespace (derived from the whole-set read).
+    const nav = screen.getByRole('navigation', { name: '命名空间导航' })
+    expect(within(nav).getByText('全部命名空间')).toBeInTheDocument()
+    await user.click(within(nav).getByText('mail'))
 
-    expect(seen).toContain('mail')
+    await waitFor(() => expect(seen).toContain('mail'))
   })
 
-  it('writes and removes a setting through the row controls', async () => {
+  it('writes every changed item from the sticky save bar', async () => {
     const user = userEvent.setup()
     const writes: string[] = []
     const operations = createConsoleOperations(
@@ -98,6 +101,28 @@ describe('SettingsPage', () => {
           writes.push(`set:${input.namespace}.${input.key}=${input.value}`)
           return Promise.resolve()
         },
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    const input = await screen.findByDisplayValue('5')
+
+    // Nothing changed yet, so the save bar's action is inert.
+    const save = screen.getByRole('button', { name: '保存改动' })
+    expect(save).toBeDisabled()
+
+    await user.clear(input)
+    await user.type(input, '9')
+    await user.click(save)
+    // The route addresses the item by the namespace and the key rest.
+    expect(writes).toContain('set:mail.retry=9')
+  })
+
+  it('removes a setting through the row control after confirmation', async () => {
+    const user = userEvent.setup()
+    const writes: string[] = []
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSettings: () => Promise.resolve([item]),
         removeSetting: (input) => {
           writes.push(`remove:${input.namespace}.${input.key}`)
           return Promise.resolve()
@@ -105,13 +130,7 @@ describe('SettingsPage', () => {
       }),
     )
     renderWithProviders(<SettingsPage />, { operations })
-    await screen.findByText('mail.retry')
-
-    await user.type(screen.getByLabelText('新值'), '9')
-    await user.click(screen.getByRole('button', { name: '保存' }))
-    // The route addresses the item by the namespace and the rest of the
-    // key under it (the full key is mail.retry).
-    expect(writes).toContain('set:mail.retry=9')
+    await screen.findByDisplayValue('5')
 
     await user.click(screen.getByRole('button', { name: '移除' }))
     const dialog = await screen.findByRole('dialog')
@@ -124,19 +143,21 @@ describe('SettingsPage', () => {
     const operations = createConsoleOperations(
       makeConsoleBackend({
         listSettings: () => Promise.resolve([item]),
-        setSetting: () =>
-          Promise.reject({ code: 'settings.invalid_value' }),
+        setSetting: () => Promise.reject({ code: 'settings.invalid_value' }),
       }),
     )
     renderWithProviders(<SettingsPage />, { operations })
-    await screen.findByText('mail.retry')
+    const input = await screen.findByDisplayValue('5')
 
-    await user.type(screen.getByLabelText('新值'), 'x')
-    await user.click(screen.getByRole('button', { name: '保存' }))
+    await user.clear(input)
+    await user.type(input, 'x')
+    await user.click(screen.getByRole('button', { name: '保存改动' }))
 
     expect(
       await screen.findByText('该值不在该设置项声明的取值范围内。'),
     ).toBeInTheDocument()
+    // A refused save keeps the draft for a retry.
+    expect(input).toHaveValue('x')
   })
 
   it('renders the retryable error placeholder when the read fails', async () => {
@@ -150,56 +171,15 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
   })
 
-  it('renders the declared items as a table with column headers', async () => {
-    const operations = createConsoleOperations(
-      makeConsoleBackend({ listSettings: () => Promise.resolve([item]) }),
-    )
-    renderWithProviders(<SettingsPage />, { operations })
-    await screen.findByText('mail.retry')
-    for (const name of ['键', '类型', '当前值', '操作']) {
-      expect(
-        screen.getByRole('columnheader', { name }),
-      ).toBeInTheDocument()
-    }
-    expect(screen.getByRole('cell', { name: 'int' })).toBeInTheDocument()
-  })
-
-  it('clears the draft value once a save lands', async () => {
-    const user = userEvent.setup()
+  it('renders the permission placeholder with no retry when the read is refused with 403', async () => {
     const operations = createConsoleOperations(
       makeConsoleBackend({
-        listSettings: () => Promise.resolve([item]),
-        setSetting: () => Promise.resolve(),
+        listSettings: () => Promise.reject({ status: 403, code: 'client.http.403' }),
       }),
     )
     renderWithProviders(<SettingsPage />, { operations })
-    await screen.findByText('mail.retry')
-
-    const input = screen.getByLabelText('新值')
-    await user.type(input, '9')
-    await user.click(screen.getByRole('button', { name: '保存' }))
-
-    await waitFor(() => expect(input).toHaveValue(''))
-  })
-
-  it('keeps the draft value when a save is refused', async () => {
-    const user = userEvent.setup()
-    const operations = createConsoleOperations(
-      makeConsoleBackend({
-        listSettings: () => Promise.resolve([item]),
-        setSetting: () =>
-          Promise.reject({ code: 'settings.invalid_value' }),
-      }),
-    )
-    renderWithProviders(<SettingsPage />, { operations })
-    await screen.findByText('mail.retry')
-
-    const input = screen.getByLabelText('新值')
-    await user.type(input, 'x')
-    await user.click(screen.getByRole('button', { name: '保存' }))
-
-    await screen.findByText('该值不在该设置项声明的取值范围内。')
-    expect(input).toHaveValue('x')
+    expect(await screen.findByText('权限不足')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
   })
 
   it('has no axe violations', async () => {
@@ -207,7 +187,7 @@ describe('SettingsPage', () => {
       makeConsoleBackend({ listSettings: () => Promise.resolve([item]) }),
     )
     renderWithProviders(<SettingsPage />, { operations })
-    await screen.findByText('mail.retry')
+    await screen.findByDisplayValue('5')
     await expectNoAxeViolations()
   })
 })

@@ -69,8 +69,95 @@
     "disable": "Disable",
     "identifierHelper": "No spaces or other whitespace"
   },
+  "forbidden": {
+    "title": "Not permitted",
+    "description": "You do not have permission to view this content."
+  },
+  "dashboard": {
+    "title": "Overview",
+    "loading": "Loading the overview",
+    "error": {
+      "title": "The overview could not be loaded",
+      "description": "The data surface did not answer."
+    },
+    "retry": "Retry",
+    "kpi": {
+      "tenants": "Tenants",
+      "active": "Active",
+      "disabled": "Disabled"
+    },
+    "recent": {
+      "title": "Recent activity",
+      "loading": "Loading recent activity",
+      "empty": {
+        "title": "No activity",
+        "description": "There is no audit record yet."
+      },
+      "error": {
+        "title": "Recent activity could not be loaded",
+        "description": "The audit surface did not answer."
+      },
+      "column": {
+        "time": "Time",
+        "action": "Action",
+        "outcome": "Outcome",
+        "actor": "Actor"
+      }
+    }
+  },
+  "tenantDetail": {
+    "title": "Tenant \"{{id}}\"",
+    "back": "Back to the roster",
+    "loading": "Loading the tenant",
+    "error": {
+      "title": "The tenant could not be loaded",
+      "description": "The roster did not answer."
+    },
+    "retry": "Retry",
+    "summary": "Summary",
+    "field": {
+      "id": "Identifier",
+      "alias": "Alias",
+      "status": "Status"
+    },
+    "actions": {
+      "title": "Actions",
+      "renameLabel": "New alias",
+      "renameSubmit": "Rename",
+      "enable": "Enable",
+      "disable": "Disable"
+    }
+  },
+  "auditDetail": {
+    "title": "Audit record",
+    "back": "Back to the audit query",
+    "loading": "Loading the audit record",
+    "error": {
+      "title": "The audit record could not be loaded",
+      "description": "The audit surface did not answer."
+    },
+    "retry": "Retry",
+    "summary": "Record",
+    "detailTitle": "Detail",
+    "field": {
+      "id": "Identifier",
+      "tenant": "Tenant",
+      "occurredAt": "Time",
+      "actor": "Actor",
+      "source": "Source",
+      "action": "Action",
+      "object": "Object",
+      "outcome": "Outcome",
+      "purpose": "Purpose",
+      "detail": "Detail"
+    }
+  },
   "settings": {
     "title": "Settings",
+    "nav": {
+      "label": "Namespace navigation",
+      "all": "All namespaces"
+    },
     "loading": "Loading settings",
     "empty": {
       "title": "No settings",
@@ -81,20 +168,14 @@
       "description": "The settings surface did not answer."
     },
     "retry": "Retry",
-    "namespace": {
-      "label": "Namespace",
-      "placeholder": "All namespaces",
-      "apply": "Load"
+    "field": {
+      "currentValue": "Current value",
+      "newValue": "New value",
+      "sensitive": "Sensitive value masked"
     },
-    "column": {
-      "key": "Key",
-      "type": "Type",
-      "value": "Current value",
-      "actions": "Actions"
-    },
-    "value": {
-      "label": "New value",
-      "save": "Save"
+    "saveBar": {
+      "save": "Save changes",
+      "pending": "{{count}} pending"
     },
     "remove": "Remove",
     "removeTitle": "Remove setting",

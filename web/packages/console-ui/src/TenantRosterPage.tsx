@@ -41,14 +41,15 @@ import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
-  AsyncSection,
   DataTable,
   ListSkeleton,
   PageHeader,
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import { ConsoleAsyncSection } from './internal/async-section.js'
 import { InlineError } from './internal/inline-error.js'
+import { ConsoleLink } from './internal/navigation.js'
 import { isRejectedIdentifier } from './internal/identifier.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
@@ -151,7 +152,7 @@ function TenantRowActions({ tenant }: { readonly tenant: ConsoleTenant }) {
   )
 }
 
-export function TenantRosterPage() {
+export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const tenants = operations.useTenants()
@@ -164,16 +165,26 @@ export function TenantRosterPage() {
 
   // The columns the table renders: a row's read-only fields and its write
   // controls. Status carries a priority, so a narrow viewport sheds it
-  // before the identifier, the alias and the controls.
+  // before the identifier, the alias and the controls. When the host
+  // supplies the roster's own path (basePath), the identifier links to
+  // that tenant's detail page; without it the cell is plain text.
   const columns: DataTableColumn<ConsoleTenant>[] = [
     {
       id: 'id',
       header: t('tenants.column.id'),
-      cell: (tenant) => (
-        <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-          {tenant.id}
-        </Typography>
-      ),
+      cell: (tenant) =>
+        basePath === undefined ? (
+          <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
+            {tenant.id}
+          </Typography>
+        ) : (
+          <ConsoleLink
+            href={`${basePath}/${encodeURIComponent(tenant.id)}`}
+            sx={{ wordBreak: 'break-all' }}
+          >
+            {tenant.id}
+          </ConsoleLink>
+        ),
     },
     {
       id: 'alias',
@@ -285,9 +296,10 @@ export function TenantRosterPage() {
         </Box>
       </Box>
 
-      <AsyncSection
+      <ConsoleAsyncSection
         pending={pending}
         payload={rows}
+        error={tenants.error}
         empty={rows !== undefined && rows.length === 0}
         headingLevel="h2"
         loading={
@@ -317,7 +329,7 @@ export function TenantRosterPage() {
             rowKey={(tenant) => tenant.id}
           />
         )}
-      </AsyncSection>
+      </ConsoleAsyncSection>
     </Box>
   )
 }

@@ -3,13 +3,15 @@
 ## What this package is
 
 The platform-staff console — the second shell. It renders the platform's
-backend administration surfaces as one console frame with one page each:
-the tenant roster (`/tenant/admin`), the account, session and
-impersonation surfaces (`/auth/admin`), the authorization surface
-(`/authz/admin`), the invitation and membership surface
-(`/auth/admin/tenants/:tenant/...`), the SSO surface (`/auth/admin/sso`),
-the settings read-write surface (`/settings/admin`), the SMS template
-surface (`/sms/admin`) and the audit query (`/audit/admin`).
+backend administration surfaces as one console frame: the tenant roster
+(`/tenant/admin`), the account, session and impersonation surfaces
+(`/auth/admin`), the authorization surface (`/authz/admin`), the
+invitation and membership surface (`/auth/admin/tenants/:tenant/...`),
+the SSO surface (`/auth/admin/sso`), the settings read-write surface
+(`/settings/admin`), the SMS template surface (`/sms/admin`) and the
+audit query (`/audit/admin`). The console root renders a dashboard, and
+the tenant roster and the audit query each link a row to that record's
+detail page.
 
 Those endpoints are mounted on hosts that do not resolve a tenant, so the
 console has **no current-tenant switcher and no current-tenant query
@@ -58,16 +60,23 @@ this package importing a router.
 
 ## The page declarations
 
-Each administration capability contributes one declaration to the
-declarative registration seam (`tenantAdminRoutes`, `accountsAdminRoutes`,
-`sessionsAdminRoutes`, `impersonationsAdminRoutes`,
-`permissionsAdminRoutes`, `invitationsAdminRoutes`, `ssoAdminRoutes`,
-`settingsAdminRoutes`, `smsAdminRoutes`, `auditAdminRoutes`, or the whole
-set as `consoleRoutes`). A declaration carries a path pattern, a view, an
-optional navigation label and the permission code the page's data is held
-to (`tenant.read`, `authn.account.read`, `authn.session.read`,
+Each administration capability contributes declarations to the
+declarative registration seam (`dashboardAdminRoutes`,
+`tenantAdminRoutes`, `accountsAdminRoutes`, `sessionsAdminRoutes`,
+`impersonationsAdminRoutes`, `permissionsAdminRoutes`,
+`invitationsAdminRoutes`, `ssoAdminRoutes`, `settingsAdminRoutes`,
+`smsAdminRoutes`, `auditAdminRoutes`, or the whole set as
+`consoleRoutes`). A capability may contribute more than one declaration:
+a list page carries a navigation label and a detail page (the tenant
+detail, the audit detail) does not, so it is reachable from a row without
+appearing in the navigation. A declaration carries a path pattern, a
+view, an optional navigation label and the permission code the page's
+data is held to (`tenant.read`, `authn.account.read`, `authn.session.read`,
 `authn.impersonation.read`, `authz.role.read`, `authn.membership.manage`,
 `authn.idp.manage`, `settings.read`, `sms.template.read`, `audit.read`).
+A list declaration's view carries the page's own matched path (`basePath`)
+so the page links each row to `${basePath}/${id}`; a detail declaration's
+view carries the id and the parent path (`parentHref`).
 The shapes in `src/route.ts` are kept structurally identical to
 `@speed/route-kit`'s registration surface so a declaration this package
 exports is assignable to route-kit's `RouteDeclaration` **without
@@ -111,7 +120,7 @@ What the pages reach through the bundle, grouped by surface:
 
 | Members | Routes |
 |---|---|
-| `useTenants`, `useCreateTenant`, `useSetTenantAlias`, `useSetTenantStatus` | `/tenant/admin/tenants` (list / create / alias / status) |
+| `useTenants`, `useTenant`, `useCreateTenant`, `useSetTenantAlias`, `useSetTenantStatus` | `/tenant/admin/tenants[/:id]` (list / get / create / alias / status) |
 | `usePermissions`, `useRoles`, `useWriteRole`, `useRemoveRole`, `useGrants`, `useGrantPermission`, `useRevokePermission`, `useBindings`, `useAccountBindings`, `useBindRole`, `useUnbindRole` | `/authz/admin/permissions`, `/authz/admin/tenants/:tenant/roles[/:role[/grants[/:permission]]]`, `/authz/admin/tenants/:tenant/bindings[/:account[/:role]]` |
 | `useAccounts`, `useAccount`, `useAccountFactors`, `useAccountSecrets`, `useAccountSessions`, `useCreateAccount`, `usePatchAccount`, `useSetAccountStatus`, `useSetMFARequired`, `useResetPassword`, `useAddIdentifier`, `useCreateSecret`, `useDeleteAccount`, `useRemoveIdentifier`, `useResetMFA`, `useRevokeAccountSessions`, `useRevokeSecret`, `useRevokeSession` | `/auth/admin/accounts[/:id[/factors|/secrets[/:secret]|/sessions|/identifiers/:identifier|/mfa-reset|/revoke-sessions|/status|/mfa-required|/password|/identifiers]]`, `/auth/admin/sessions/:id` |
 | `useImpersonations`, `useRevokeImpersonation` | `/auth/admin/impersonations[/:id]` |
@@ -119,7 +128,7 @@ What the pages reach through the bundle, grouped by surface:
 | `useSsoProviders`, `useSsoProvider`, `useCreateSsoProvider`, `useUpdateSsoProvider`, `useClaimSsoDomain`, `useDeleteSsoProvider`, `useRemoveSsoDomain`, `useVerifySsoDomain`, `useRefreshSsoMetadata`, `useReverifySsoDomains` | `/auth/admin/tenants/:tenant/sso/providers`, `/auth/admin/sso/providers/:id[/domains[/:domain[/verify]]|/metadata/refresh|/reverify-domains]` |
 | `useSettings`, `useSetSetting`, `useRemoveSetting` | `/settings/admin/settings[/:namespace[/:key]]` |
 | `useSmsTemplates`, `useRegisterSmsTemplate`, `useOfferSmsTemplate`, `useSetSmsTemplateEnabled`, `useRemoveSmsTemplate` | `/sms/admin/templates[/submissions|/:name[/enabled]]` |
-| `useAuditRecords` | `/audit/admin/records` |
+| `useAuditRecords`, `useAuditRecord` | `/audit/admin/records[/:id]` |
 
 The view types are the generated response rows of each module's admin
 surface, named for the console's own pages; only the write inputs stay
@@ -154,12 +163,13 @@ request body.
   pages whose routes carry the tenant as a **path segment** is not this:
   it names an argument of the request and is fed by the roster read. A
   change that wants to read "the current tenant" here is scope drift.
-- **No routing in package code.** No path matching, no link
-  construction, no `react-router`. `ConsoleShell` derives the navigation
-  from labelled declarations and links each to its path; matching a URL
-  to a view is the application's route layer's. `onNavigate` is a host
-  callback the frame invokes on a click, not a routing mechanism this
-  package owns.
+- **No routing in package code.** No path matching, no `react-router`. The
+  shell links each labelled entry to its declaration's path, and a page
+  builds a detail link from its own matched path plus a row id; matching a
+  URL to a view is the application's route layer's. `onNavigate` is a host
+  callback the frame invokes on a click — and publishes to its routed pages
+  through an internal context, so a page's detail link routes in place
+  too — not a routing mechanism this package owns.
 - **The pages read and write only through the operations bundle.** No
   page constructs a `QueryClient`, and none writes a query key. A query
   key is whatever a generated hook carries; a read's parameter is the
@@ -167,6 +177,12 @@ request body.
 - **No second masking and no client-side authorization.** A sensitive
   setting's value arrives masked from the server and renders as-is; the
   permission a declaration carries is never a gate this package applies.
+- **A read's failure branches on the answer.** A refused read — HTTP 403,
+  or a bare 403 surfaced as the `client.http.403` code — renders the
+  permission placeholder with no retry (`ConsoleAsyncSection` in
+  `src/internal/async-section.tsx`); any other failure renders the retryable
+  error placeholder. The branch reads the answer the server wrote, never a
+  route-level permission read.
 - **Every write goes through a generated operation.** No page hand-writes
   a `fetch` or an endpoint path; a request body the generated client does
   not send is not hand-written here — the fragment declares it or the
@@ -227,9 +243,8 @@ composition, with the operations bundle substituted from test-utils).
   package's reading of the modules' error surfaces and move when the
   mapping is fixed. A refusal outside the whitelist renders the generic
   failure text.
-- **Audit detail view.** Only the list route is surfaced; a record's
-  detail route (`GET /audit/admin/records/:id`) and an export surface are
-  not. Export is another permission and another module's to carry.
+- **Audit export surface.** An export route is not surfaced; export is
+  another permission and another module's to carry.
 - **Batched audit-actor resolution.** The audit page's actor column
   resolves each distinct account id through `GET /auth/admin/accounts/:id`
   (react-query caches by id, so rows sharing an actor share one read and a

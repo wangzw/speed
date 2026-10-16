@@ -1,73 +1,122 @@
 /**
  * SettingsPage: the settings read-write page of the console.
  *
- * It reads the declared settings (all namespaces, or one when the
- * namespace filter is applied), writes one item's value and removes one
- * item's override. The judgement a write lands under is layered and
- * server-side (the tenant layer in that tenant's domain, the global
- * layer on the platform) -- this page renders the answer and nothing
- * else.
+ * The declared settings are grouped by namespace, and the page presents
+ * them the way the layout design's settings archetype does: a secondary
+ * navigation (narrower than the shell's own sidebar) listing the
+ * namespaces, beside a width-limited form, with a sticky save bar at the
+ * bottom. Choosing a namespace narrows the read to that namespace
+ * (GET /settings/admin/settings/:namespace over the global layer); the
+ * "all namespaces" entry reads the whole declared set. The namespaces in
+ * the navigation come from that whole-set read, so a namespace shows up
+ * as soon as any of its items is declared.
  *
- * The items render as a table (key, type, current value and the row's
- * write controls), through ui-kit's DataTable; the columns shed the
- * least important first as the viewport narrows. Every read and write is
- * an operation on the console operations bundle -- the host binds the
- * generated /settings/admin operations to it -- so the page builds no
- * client and writes no query key. A sensitive item's value arrives
- * already masked by the server; the page renders the masked text as-is
- * and never masks a second time. A failed list render settles into the
- * retryable error placeholder; a failed write renders the answer's code
- * text in one banner beside the offending control, resolved from the
- * console-ui namespace's whitelist (a value outside the item's declared
- * domain reads the invalid-value text), never a raw key. A save that
- * lands clears the row's draft input so the next edit starts empty; a
- * refused write keeps the draft so it can be corrected and retried.
+ * The judgement a write lands under is layered and server-side (the
+ * tenant layer in that tenant's domain, the global layer on the
+ * platform); this page renders the answer and nothing else. Every read
+ * and write is an operation on the console operations bundle, so the page
+ * builds no client and writes no query key. A sensitive item's value
+ * arrives already masked by the server; the page renders the masked text
+ * as-is and never masks a second time.
  *
- * The page opens with ui-kit's PageHeader: the page title as the level-one
- * heading, a breadcrumb trail from the console to this page, and a
- * refresh action that re-reads the settings. The async section's
- * placeholders render one level down, so the heading order never skips.
+ * Editing an item fills its draft; the sticky save bar writes every
+ * changed item (one PUT each) and stays disabled until something changed.
+ * A refused write renders the answer's code text in one banner, resolved
+ * from the console-ui whitelist (a value outside the item's declared
+ * domain reads the invalid-value text), never a raw key; a landed write
+ * clears that item's draft so the next edit starts empty. A refused read
+ * settles into the permission placeholder (403) or the retryable error
+ * placeholder (any other failure). The page opens with ui-kit's
+ * PageHeader, so the heading order never skips.
  */
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import List from '@mui/material/List'
+import ListItem from '@mui/material/ListItem'
+import ListItemButton from '@mui/material/ListItemButton'
+import ListItemText from '@mui/material/ListItemText'
+import Paper from '@mui/material/Paper'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import {
-  AsyncSection,
-  DataTable,
-  ListSkeleton,
-  PageHeader,
-  errorCodeOf,
-} from '@speed/ui-kit'
-import type { DataTableColumn } from '@speed/ui-kit'
+import { ListSkeleton, PageHeader, errorCodeOf } from '@speed/ui-kit'
+import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { InlineError } from './internal/inline-error.js'
+import { FormWidth } from './internal/layout.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { settingKeyRest, useConsoleOperations } from './operations.js'
 import type { ConsoleSetting } from './operations.js'
 
-/**
- * One row's write controls: the draft value input, save and remove. The
- * draft lives here, per row; a landed save clears it.
- */
-function SettingRowActions({ setting }: { readonly setting: ConsoleSetting }) {
+/** The sentinel the "all namespaces" navigation entry selects. */
+const ALL = ''
+
+export function SettingsPage() {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
+  const [selected, setSelected] = useState<string>(ALL)
+  // The per-item drafts, keyed by the item's full key. An absent entry (or
+  // one equal to the item's value) is unchanged.
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+
+  // The whole declared set, read for the namespace navigation (its
+  // namespaces are the grouping the page offers).
+  const allSettings = operations.useSettings(undefined)
+  // The selected namespace's items (the whole set for the "all" entry).
+  const settings = operations.useSettings(selected === ALL ? undefined : selected)
   const setSetting = operations.useSetSetting()
   const removeSetting = operations.useRemoveSetting()
-  const [value, setValue] = useState('')
   const confirm = usePendingConfirm()
 
-  // The route addresses an item by the namespace and the rest of the key
-  // under it (the full key is <namespace>.<key>); the view carries the
-  // full key, so the rest is the full key with the namespace prefix
-  // removed.
-  const keyRest = settingKeyRest(setting.key, setting.namespace)
+  // A namespace change starts a fresh form: no draft belongs to a
+  // namespace the operator has left.
+  useEffect(() => {
+    setDrafts({})
+  }, [selected])
 
-  const remove = () =>
+  const namespaces = useMemo(() => {
+    const set = new Set<string>()
+    for (const setting of allSettings.data ?? []) {
+      set.add(setting.namespace)
+    }
+    return [...set].sort((a, b) => a.localeCompare(b))
+  }, [allSettings.data])
+
+  const items = settings.data
+  const pending = settings.isPending && items === undefined
+
+  const changedItems = (settled: readonly ConsoleSetting[]): readonly ConsoleSetting[] =>
+    settled.filter(
+      (setting) =>
+        drafts[setting.key] !== undefined && drafts[setting.key] !== setting.value,
+    )
+
+  const save = (settled: readonly ConsoleSetting[]) => {
+    for (const setting of changedItems(settled)) {
+      const value = drafts[setting.key] ?? ''
+      setSetting.mutate(
+        {
+          namespace: setting.namespace,
+          key: settingKeyRest(setting.key, setting.namespace),
+          value,
+        },
+        {
+          // A landed write clears that item's draft; a refused one keeps it
+          // so the value can be corrected and retried.
+          onSuccess: () =>
+            setDrafts((previous) => {
+              const next = { ...previous }
+              delete next[setting.key]
+              return next
+            }),
+        },
+      )
+    }
+  }
+
+  const remove = (setting: ConsoleSetting) => {
     confirm.ask({
       title: t('settings.removeTitle'),
       message: t('settings.removeMessage', { key: setting.key }),
@@ -75,147 +124,22 @@ function SettingRowActions({ setting }: { readonly setting: ConsoleSetting }) {
       run: () =>
         removeSetting.mutate({
           namespace: setting.namespace,
-          key: keyRest,
+          key: settingKeyRest(setting.key, setting.namespace),
         }),
     })
+  }
 
-  return (
-    <Box
-      sx={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'flex-end',
-        columnGap: 2,
-        rowGap: 1,
-      }}
-    >
-      <TextField
-        size="small"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        label={t('settings.value.label')}
-      />
-      <Button
-        type="button"
-        size="small"
-        variant="outlined"
-        disabled={setSetting.isPending}
-        onClick={() => {
-          setSetting.mutate(
-            {
-              namespace: setting.namespace,
-              key: keyRest,
-              value,
-            },
-            // A landed write clears the draft so the next edit starts
-            // empty; a refused write keeps it for a retry.
-            { onSuccess: () => setValue('') },
-          )
-        }}
-      >
-        {t('settings.value.save')}
-      </Button>
-      <Button
-        type="button"
-        size="small"
-        variant="outlined"
-        color="error"
-        disabled={removeSetting.isPending}
-        onClick={remove}
-      >
-        {t('settings.remove')}
-      </Button>
-      <Box sx={{ flexBasis: '100%' }}>
-        <InlineError
-          code={
-            setSetting.isError
-              ? errorCodeOf(setSetting.error)
-              : removeSetting.isError
-                ? errorCodeOf(removeSetting.error)
-                : null
-          }
-        />
-      </Box>
-      <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
-    </Box>
-  )
-}
-
-export function SettingsPage() {
-  const { t } = useConsoleUiTranslation()
-  const operations = useConsoleOperations()
-  // The applied namespace filter: an empty selection reads all namespaces.
-  const [namespace, setNamespace] = useState('')
-  const [draft, setDraft] = useState('')
-  const settings = operations.useSettings(
-    namespace.trim() === '' ? undefined : namespace.trim(),
-  )
-
-  // The columns the table renders: a row's read-only fields and its write
-  // controls. Type and value carry a priority, so a narrow viewport sheds
-  // them before the key and the controls.
-  const columns: DataTableColumn<ConsoleSetting>[] = [
-    {
-      id: 'key',
-      header: t('settings.column.key'),
-      cell: (setting) => (
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'baseline',
-            columnGap: 1,
-            minWidth: 0,
-          }}
-        >
-          <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-            {setting.key}
-          </Typography>
-          {setting.sensitive && (
-            <Typography variant="caption" color="text.secondary">
-              {t('settings.sensitive')}
-            </Typography>
-          )}
-        </Box>
-      ),
-    },
-    {
-      id: 'type',
-      header: t('settings.column.type'),
-      priority: 'low',
-      cell: (setting) => (
-        <Typography variant="body2" color="text.secondary">
-          {setting.type}
-        </Typography>
-      ),
-    },
-    {
-      id: 'value',
-      header: t('settings.column.value'),
-      priority: 'medium',
-      cell: (setting) => (
-        <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-          {setting.value}
-        </Typography>
-      ),
-    },
-    {
-      id: 'actions',
-      header: t('settings.column.actions'),
-      cell: (setting) => <SettingRowActions setting={setting} />,
-    },
-  ]
-
-  const rows = settings.data
-  const pending = settings.isPending && rows === undefined
+  const writeError = setSetting.isError
+    ? errorCodeOf(setSetting.error)
+    : removeSetting.isError
+      ? errorCodeOf(removeSetting.error)
+      : null
 
   return (
     <Box>
       <PageHeader
         title={t('settings.title')}
-        breadcrumbs={[
-          { label: t('shell.title') },
-          { label: t('settings.title') },
-        ]}
+        breadcrumbs={[{ label: t('shell.title') }, { label: t('settings.title') }]}
         actions={
           <Button
             type="button"
@@ -230,65 +154,159 @@ export function SettingsPage() {
       />
 
       <Box
-        component="section"
         sx={{
-          mb: 3,
           display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'flex-end',
-          columnGap: 2,
-          rowGap: 1,
+          flexDirection: { xs: 'column', md: 'row' },
+          gap: 3,
+          alignItems: 'flex-start',
         }}
       >
-        <TextField
-          size="small"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          label={t('settings.namespace.label')}
-          placeholder={t('settings.namespace.placeholder')}
-        />
-        <Button
-          type="button"
-          variant="contained"
-          onClick={() => setNamespace(draft)}
+        <Box
+          component="nav"
+          aria-label={t('settings.nav.label')}
+          sx={{
+            width: { xs: '100%', md: '13rem' },
+            flexShrink: 0,
+          }}
         >
-          {t('settings.namespace.apply')}
-        </Button>
+          <Paper variant="outlined">
+            <List dense>
+              <ListItem disablePadding>
+                <ListItemButton
+                  selected={selected === ALL}
+                  onClick={() => setSelected(ALL)}
+                >
+                  <ListItemText primary={t('settings.nav.all')} />
+                </ListItemButton>
+              </ListItem>
+              {namespaces.map((namespace) => (
+                <ListItem key={namespace} disablePadding>
+                  <ListItemButton
+                    selected={selected === namespace}
+                    onClick={() => setSelected(namespace)}
+                  >
+                    <ListItemText primary={namespace} />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+          </Paper>
+        </Box>
+
+        <FormWidth>
+          <ConsoleAsyncSection
+            pending={pending}
+            payload={items}
+            error={settings.error}
+            empty={items !== undefined && items.length === 0}
+            headingLevel="h2"
+            loading={
+              <ListSkeleton
+                label={t('settings.loading')}
+                rows={[
+                  <Skeleton key="a" variant="text" width="58%" />,
+                  <Skeleton key="b" variant="text" width="44%" />,
+                ]}
+              />
+            }
+            errorState={{
+              title: t('settings.error.title'),
+              description: t('settings.error.description'),
+              retryLabel: t('settings.retry'),
+              onRetry: () => void settings.refetch(),
+            }}
+            emptyState={{
+              title: t('settings.empty.title'),
+              description: t('settings.empty.description'),
+            }}
+          >
+            {(settled) => {
+              const changed = changedItems(settled)
+              return (
+                <Box>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 2,
+                      mb: 3,
+                    }}
+                  >
+                    {settled.map((setting) => (
+                      <Box key={setting.key}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          value={drafts[setting.key] ?? setting.value}
+                          onChange={(event) =>
+                            setDrafts((previous) => ({
+                              ...previous,
+                              [setting.key]: event.target.value,
+                            }))
+                          }
+                          label={setting.key}
+                          helperText={`${t('settings.field.currentValue')}: ${setting.value}${
+                            setting.sensitive
+                              ? ` · ${t('settings.field.sensitive')}`
+                              : ''
+                          }`}
+                        />
+                        <Box sx={{ mt: 0.5 }}>
+                          <Button
+                            type="button"
+                            size="small"
+                            variant="text"
+                            color="error"
+                            disabled={removeSetting.isPending}
+                            onClick={() => remove(setting)}
+                          >
+                            {t('settings.remove')}
+                          </Button>
+                        </Box>
+                      </Box>
+                    ))}
+                  </Box>
+
+                  {/* The sticky save bar: one write per changed item. */}
+                  <Box
+                    component="div"
+                    sx={{
+                      position: 'sticky',
+                      bottom: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'flex-end',
+                      gap: 2,
+                      paddingY: 2,
+                      borderTop: 1,
+                      borderColor: 'divider',
+                      backgroundColor: 'background.default',
+                    }}
+                  >
+                    {changed.length > 0 && (
+                      <Typography variant="body2" color="text.secondary">
+                        {t('settings.saveBar.pending', { count: changed.length })}
+                      </Typography>
+                    )}
+                    <Button
+                      type="button"
+                      variant="contained"
+                      disabled={changed.length === 0 || setSetting.isPending}
+                      onClick={() => save(settled)}
+                    >
+                      {t('settings.saveBar.save')}
+                    </Button>
+                  </Box>
+
+                  <InlineError code={writeError} />
+                </Box>
+              )
+            }}
+          </ConsoleAsyncSection>
+        </FormWidth>
       </Box>
 
-      <AsyncSection
-        pending={pending}
-        payload={rows}
-        empty={rows !== undefined && rows.length === 0}
-        headingLevel="h2"
-        loading={
-          <ListSkeleton
-            label={t('settings.loading')}
-            rows={[
-              <Skeleton key="a" variant="text" width="58%" />,
-              <Skeleton key="b" variant="text" width="44%" />,
-            ]}
-          />
-        }
-        errorState={{
-          title: t('settings.error.title'),
-          description: t('settings.error.description'),
-          retryLabel: t('settings.retry'),
-          onRetry: () => void settings.refetch(),
-        }}
-        emptyState={{
-          title: t('settings.empty.title'),
-          description: t('settings.empty.description'),
-        }}
-      >
-        {(settled) => (
-          <DataTable
-            rows={settled}
-            columns={columns}
-            rowKey={(setting) => `${setting.namespace}.${setting.key}`}
-          />
-        )}
-      </AsyncSection>
+      <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
     </Box>
   )
 }

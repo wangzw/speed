@@ -103,8 +103,8 @@ describe('the tenant shell with a session', () => {
     expect(consoleEntry).toBeInTheDocument()
 
     await user.click(consoleEntry)
-    // The entry points at the console prefix, which redirects to the console's
-    // first page: the console frame's own navigation appears.
+    // The entry points at the console prefix, which renders the console's
+    // dashboard: the console frame's own navigation appears.
     expect(
       await screen.findByRole('navigation', {
         name: consoleUiEnUS.shell.navLabel,

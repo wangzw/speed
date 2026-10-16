@@ -47,13 +47,13 @@ import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
-  AsyncSection,
   DataTable,
   ListSkeleton,
   PageHeader,
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
@@ -385,9 +385,10 @@ export function AccountsPage() {
         </Button>
       </Box>
 
-      <AsyncSection
+      <ConsoleAsyncSection
         pending={pending}
         payload={rows}
+        error={accounts.error}
         empty={rows !== undefined && rows.length === 0}
         headingLevel="h2"
         loading={
@@ -413,7 +414,7 @@ export function AccountsPage() {
         {(settled) => (
           <DataTable rows={settled} columns={columns} rowKey={(row) => row.id} />
         )}
-      </AsyncSection>
+      </ConsoleAsyncSection>
 
       {selectedId !== '' && (
         <Box component="section" sx={{ mt: 3 }}>
@@ -425,9 +426,10 @@ export function AccountsPage() {
             {t('accounts.detail.title', { id: selectedId })}
           </Typography>
 
-          <AsyncSection
+          <ConsoleAsyncSection
             pending={account.isPending && account.data === undefined}
             payload={account.data}
+            error={account.error}
             empty={false}
             headingLevel="h3"
             loading={
@@ -463,7 +465,7 @@ export function AccountsPage() {
                 </Typography>
               </Box>
             )}
-          </AsyncSection>
+          </ConsoleAsyncSection>
 
           <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 1, rowGap: 1, mb: 2 }}>
             <Button
@@ -506,9 +508,10 @@ export function AccountsPage() {
           <Typography component="h3" variant="subtitle1" sx={{ mb: 1 }}>
             {t('accounts.factors.title')}
           </Typography>
-          <AsyncSection
+          <ConsoleAsyncSection
             pending={factors.isPending && factors.data === undefined}
             payload={factors.data}
+            error={factors.error}
             empty={factors.data !== undefined && factors.data.length === 0}
             headingLevel="h3"
             loading={
@@ -535,14 +538,15 @@ export function AccountsPage() {
                 rowKey={(row) => `${row.kind}:${row.label}`}
               />
             )}
-          </AsyncSection>
+          </ConsoleAsyncSection>
 
           <Typography component="h3" variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
             {t('accounts.secrets.title')}
           </Typography>
-          <AsyncSection
+          <ConsoleAsyncSection
             pending={secrets.isPending && secrets.data === undefined}
             payload={secrets.data}
+            error={secrets.error}
             empty={secrets.data !== undefined && secrets.data.length === 0}
             headingLevel="h3"
             loading={
@@ -569,14 +573,15 @@ export function AccountsPage() {
                 rowKey={(row) => row.id}
               />
             )}
-          </AsyncSection>
+          </ConsoleAsyncSection>
 
           <Typography component="h3" variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
             {t('accounts.sessions.title')}
           </Typography>
-          <AsyncSection
+          <ConsoleAsyncSection
             pending={sessions.isPending && sessions.data === undefined}
             payload={sessions.data}
+            error={sessions.error}
             empty={sessions.data !== undefined && sessions.data.length === 0}
             headingLevel="h3"
             loading={
@@ -603,7 +608,7 @@ export function AccountsPage() {
                 rowKey={(row) => row.id}
               />
             )}
-          </AsyncSection>
+          </ConsoleAsyncSection>
 
           <Box
             sx={{

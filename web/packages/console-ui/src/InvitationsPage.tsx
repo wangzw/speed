@@ -27,7 +27,6 @@ import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
-  AsyncSection,
   DataTable,
   EmptyState,
   ListSkeleton,
@@ -35,6 +34,7 @@ import {
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
@@ -281,9 +281,10 @@ export function InvitationsPage() {
                 {t('invitations.issue.submit')}
               </Button>
             </Box>
-            <AsyncSection
+            <ConsoleAsyncSection
               pending={invitationsPending}
               payload={invitationRows}
+              error={invitations.error}
               empty={invitationRows !== undefined && invitationRows.length === 0}
               headingLevel="h3"
               loading={
@@ -310,7 +311,7 @@ export function InvitationsPage() {
                   rowKey={(invitation) => invitation.id}
                 />
               )}
-            </AsyncSection>
+            </ConsoleAsyncSection>
           </Box>
 
           <Box component="section" sx={{ mb: 3 }}>
@@ -322,9 +323,10 @@ export function InvitationsPage() {
               {t('members.title')}
             </Typography>
             <MemberWriteForm tenant={tenant} />
-            <AsyncSection
+            <ConsoleAsyncSection
               pending={membersPending}
               payload={memberRows}
+              error={members.error}
               empty={memberRows !== undefined && memberRows.length === 0}
               headingLevel="h3"
               loading={
@@ -351,7 +353,7 @@ export function InvitationsPage() {
                   rowKey={(member) => member.account}
                 />
               )}
-            </AsyncSection>
+            </ConsoleAsyncSection>
           </Box>
 
           <InlineError code={writeError} />

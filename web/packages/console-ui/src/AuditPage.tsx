@@ -44,9 +44,11 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
-import { AsyncSection, DataTable, ListSkeleton, PageHeader } from '@speed/ui-kit'
+import { DataTable, ListSkeleton, PageHeader } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import Typography from '@mui/material/Typography'
+import { ConsoleAsyncSection } from './internal/async-section.js'
+import { ConsoleLink } from './internal/navigation.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleAuditRecord } from './operations.js'
@@ -126,7 +128,7 @@ function AuditActorCell({ actor }: { readonly actor: string }) {
   return <>{actor}</>
 }
 
-export function AuditPage() {
+export function AuditPage({ basePath }: { readonly basePath?: string }) {
   const { t, i18n } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
 
@@ -202,7 +204,17 @@ export function AuditPage() {
     {
       id: 'action',
       header: t('audit.column.action'),
-      cell: (record) => record.action,
+      // When the host supplies the audit query's own path (basePath), the
+      // action links to that record's detail page; without it the cell is
+      // plain text.
+      cell: (record) =>
+        basePath === undefined ? (
+          record.action
+        ) : (
+          <ConsoleLink href={`${basePath}/${encodeURIComponent(record.id)}`}>
+            {record.action}
+          </ConsoleLink>
+        ),
     },
     {
       id: 'outcome',
@@ -312,9 +324,10 @@ export function AuditPage() {
         </Button>
       </Box>
 
-      <AsyncSection
+      <ConsoleAsyncSection
         pending={pending}
         payload={rows}
+        error={records.error}
         empty={rows !== undefined && rows.length === 0}
         headingLevel="h2"
         loading={
@@ -344,7 +357,7 @@ export function AuditPage() {
             rowKey={(record) => record.id}
           />
         )}
-      </AsyncSection>
+      </ConsoleAsyncSection>
 
       <Box
         sx={{

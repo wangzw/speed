@@ -78,6 +78,7 @@ import {
   authzAdminGrantsPut,
   authzAdminRolesDelete,
   authzAdminRolesPut,
+  getAuditAdminRecordsGetQueryOptions,
   getAuditAdminRecordsListQueryOptions,
   getAuthnAdminAccountsFactorsQueryKey,
   getAuthnAdminAccountsFactorsQueryOptions,
@@ -114,6 +115,7 @@ import {
   getSettingsAdminSettingsListQueryOptions,
   getSmsAdminTemplatesListQueryKey,
   getSmsAdminTemplatesListQueryOptions,
+  getTenantAdminTenantsGetQueryOptions,
   getTenantAdminTenantsListQueryKey,
   getTenantAdminTenantsListQueryOptions,
   settingsAdminSettingsRemove,
@@ -194,6 +196,12 @@ export type ConsoleAuditRecord = AuditAdminRecord
 /** One page of audit records: the rows and the next-page cursor. */
 export type ConsoleAuditPage = AuditAdminRecordPage
 
+/** An audit-record target for a read that stays disabled while no id is chosen. */
+export interface ConsoleAuditRecordQuery {
+  /** The record id, or undefined to read nothing. */
+  readonly id: string | undefined
+}
+
 /** One page of accounts: the rows and the next-page cursor. */
 export type ConsoleAccountPage = AuthnAdminAccountList
 
@@ -219,6 +227,12 @@ export interface ConsoleSetTenantAliasInput {
 export interface ConsoleSetTenantStatusInput {
   readonly id: string
   readonly status: ConsoleTenantStatus
+}
+
+/** A tenant target for a read that stays disabled while no id is chosen. */
+export interface ConsoleTenantQuery {
+  /** The tenant id, or undefined to read nothing. */
+  readonly id: string | undefined
 }
 
 /**
@@ -532,6 +546,10 @@ export interface ConsoleSetSmsTemplateEnabledInput {
 export interface ConsoleOperations {
   /** GET /tenant/admin/tenants -- the whole roster, in the roster's order. */
   readonly useTenants: () => UseQueryResult<readonly ConsoleTenant[], unknown>
+  /** GET /tenant/admin/tenants/:id -- one tenant (disabled while no id). */
+  readonly useTenant: (
+    query: ConsoleTenantQuery,
+  ) => UseQueryResult<ConsoleTenant, unknown>
   /** POST /tenant/admin/tenants -- register a tenant not registered yet. */
   readonly useCreateTenant: () => UseMutationResult<
     ConsoleTenant,
@@ -575,6 +593,10 @@ export interface ConsoleOperations {
   readonly useAuditRecords: (
     params?: AuditAdminRecordsListParams,
   ) => UseQueryResult<ConsoleAuditPage, unknown>
+  /** GET /audit/admin/records/:id -- one audit record (disabled while no id). */
+  readonly useAuditRecord: (
+    query: ConsoleAuditRecordQuery,
+  ) => UseQueryResult<ConsoleAuditRecord, unknown>
 
   // --- Authorization surface (/authz/admin, tenant-scoped) --------------
 
@@ -870,6 +892,13 @@ export const consoleOperations: ConsoleOperations = {
       select: (page) => page.tenants,
     }),
 
+  useTenant: ({ id }) =>
+    useQuery({
+      ...getTenantAdminTenantsGetQueryOptions(id ?? ''),
+      select: (envelope) => envelope.tenant,
+      enabled: id !== undefined && id !== '',
+    }),
+
   useCreateTenant: () => {
     const queryClient = useQueryClient()
     return useMutation({
@@ -960,6 +989,12 @@ export const consoleOperations: ConsoleOperations = {
 
   useAuditRecords: (params) =>
     useQuery({ ...getAuditAdminRecordsListQueryOptions(params) }),
+
+  useAuditRecord: ({ id }) =>
+    useQuery({
+      ...getAuditAdminRecordsGetQueryOptions(id ?? ''),
+      enabled: id !== undefined && id !== '',
+    }),
 
   // --- Authorization surface (/authz/admin, tenant-scoped) --------------
 

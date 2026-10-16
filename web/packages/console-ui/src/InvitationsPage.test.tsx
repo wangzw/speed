@@ -201,6 +201,20 @@ describe('InvitationsPage', () => {
     expect(await screen.findByText('邀请加载失败')).toBeInTheDocument()
   })
 
+  it('renders the permission placeholder with no retry when a read is refused with 403', async () => {
+    const user = userEvent.setup()
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.reject({ status: 403, code: 'client.http.403' }),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    // The refusal is a permission denial, not a load failure: the
+    // permission text, and no retry (a retry would only be refused again).
+    expect(await screen.findByText('权限不足')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+  })
+
   it('has no axe violations', async () => {
     const user = userEvent.setup()
     const operations = withTenant({

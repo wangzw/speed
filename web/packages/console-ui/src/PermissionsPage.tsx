@@ -37,7 +37,6 @@ import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
-  AsyncSection,
   ConfirmDialog,
   DataTable,
   EmptyState,
@@ -46,6 +45,7 @@ import {
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import { ConsoleAsyncSection } from './internal/async-section.js'
 import { InlineError } from './internal/inline-error.js'
 import { TenantScope } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
@@ -332,9 +332,10 @@ export function PermissionsPage() {
               </Button>
             </Box>
 
-            <AsyncSection
+            <ConsoleAsyncSection
               pending={rolesPending}
               payload={roleRows}
+              error={roles.error}
               empty={roleRows !== undefined && roleRows.length === 0}
               headingLevel="h3"
               loading={
@@ -364,7 +365,7 @@ export function PermissionsPage() {
                   rowKey={(role) => role.role}
                 />
               )}
-            </AsyncSection>
+            </ConsoleAsyncSection>
           </Box>
 
           <Box component="section" sx={{ mb: 3 }}>
@@ -416,9 +417,10 @@ export function PermissionsPage() {
                     {t('permissions.grants.add')}
                   </Button>
                 </Box>
-                <AsyncSection
+                <ConsoleAsyncSection
                   pending={grants.isPending && grants.data === undefined}
                   payload={grants.data}
+                  error={grants.error}
                   empty={grants.data !== undefined && grants.data.length === 0}
                   headingLevel="h3"
                   loading={
@@ -445,16 +447,17 @@ export function PermissionsPage() {
                       rowKey={(grant) => `${grant.resource}:${grant.action}`}
                     />
                   )}
-                </AsyncSection>
+                </ConsoleAsyncSection>
               </>
             )}
           </Box>
 
           <Box component="section" sx={{ mb: 3 }}>
             <SectionHeading>{t('permissions.catalog.title')}</SectionHeading>
-            <AsyncSection
+            <ConsoleAsyncSection
               pending={catalog.isPending && catalog.data === undefined}
               payload={catalog.data}
+              error={catalog.error}
               empty={catalog.data !== undefined && catalog.data.length === 0}
               headingLevel="h3"
               loading={
@@ -481,7 +484,7 @@ export function PermissionsPage() {
                   rowKey={(entry) => entry.permission}
                 />
               )}
-            </AsyncSection>
+            </ConsoleAsyncSection>
           </Box>
 
           <Box component="section" sx={{ mb: 3 }}>
@@ -522,9 +525,10 @@ export function PermissionsPage() {
                 {t('permissions.bindings.bind')}
               </Button>
             </Box>
-            <AsyncSection
+            <ConsoleAsyncSection
               pending={bindings.isPending && bindings.data === undefined}
               payload={bindings.data}
+              error={bindings.error}
               empty={bindings.data !== undefined && bindings.data.length === 0}
               headingLevel="h3"
               loading={
@@ -551,7 +555,7 @@ export function PermissionsPage() {
                   rowKey={(binding) => `${binding.account}:${binding.role}`}
                 />
               )}
-            </AsyncSection>
+            </ConsoleAsyncSection>
           </Box>
 
           <Box component="section" sx={{ mb: 3 }}>

@@ -37,6 +37,7 @@ import type {
   ConsoleAddIdentifierInput,
   ConsoleAuditPage,
   ConsoleAuditRecord,
+  ConsoleAuditRecordQuery,
   ConsoleBinding,
   ConsoleBindingRef,
   ConsoleClaimSsoDomainInput,
@@ -81,6 +82,7 @@ import type {
   ConsoleSsoProviderRef,
   ConsoleSsoProviderQuery,
   ConsoleTenant,
+  ConsoleTenantQuery,
   ConsoleWriteRoleInput,
 } from '../src/operations.js'
 
@@ -88,6 +90,7 @@ import type {
 export interface ConsoleBackend {
   // Tenant roster + settings + audit (the platform-side three).
   listTenants: () => Promise<readonly ConsoleTenant[]>
+  getTenant: (query: ConsoleTenantQuery) => Promise<ConsoleTenant>
   createTenant: (input: ConsoleCreateTenantInput) => Promise<ConsoleTenant>
   setTenantAlias: (input: ConsoleSetTenantAliasInput) => Promise<void>
   setTenantStatus: (input: ConsoleSetTenantStatusInput) => Promise<void>
@@ -99,6 +102,7 @@ export interface ConsoleBackend {
   listRecords: (
     params?: Parameters<ConsoleOperations['useAuditRecords']>[0],
   ) => Promise<ConsoleAuditPage>
+  getRecord: (query: ConsoleAuditRecordQuery) => Promise<ConsoleAuditRecord>
 
   // Authorization surface (tenant-scoped).
   listPermissions: () => Promise<readonly ConsolePermission[]>
@@ -187,6 +191,7 @@ export function makeConsoleBackend(
   })
   return {
     listTenants: () => Promise.resolve([]),
+    getTenant: () => Promise.resolve(tenantFixture()),
     createTenant: (input) =>
       Promise.resolve({ id: input.id, alias: input.alias, status: 'active' }),
     setTenantAlias: () => Promise.resolve(),
@@ -195,6 +200,7 @@ export function makeConsoleBackend(
     setSetting: () => Promise.resolve(),
     removeSetting: () => Promise.resolve(),
     listRecords: () => Promise.resolve(emptyPage<ConsoleAuditRecord>()),
+    getRecord: () => Promise.resolve(recordFixture()),
 
     listPermissions: () => Promise.resolve([]),
     listRoles: () => Promise.resolve([]),
@@ -281,6 +287,37 @@ export function accountFixture(
   }
 }
 
+/** A minimal tenant row for the default detail read. */
+export function tenantFixture(
+  overrides: Partial<ConsoleTenant> = {},
+): ConsoleTenant {
+  return {
+    id: 'acme',
+    alias: 'Acme',
+    status: 'active',
+    ...overrides,
+  }
+}
+
+/** A minimal audit record for the default detail read. */
+export function recordFixture(
+  overrides: Partial<ConsoleAuditRecord> = {},
+): ConsoleAuditRecord {
+  return {
+    id: 'rec-1',
+    tenant: 'acme',
+    occurred_at: '2026-10-15T12:00:00Z',
+    actor: 'acc-1',
+    source: 'console',
+    action: 'tenant.read',
+    object: 'acme',
+    outcome: 'allowed',
+    purpose: 'administration',
+    detail: {},
+    ...overrides,
+  }
+}
+
 /** A minimal SSO provider row for the default detail read. */
 export function providerFixture(
   overrides: Partial<ConsoleSsoProvider> = {},
@@ -302,7 +339,13 @@ export function providerFixture(
 }
 
 const TENANTS_KEY = ['console-test', 'tenants'] as const
+function tenantKey(id: string) {
+  return ['console-test', 'tenant', id] as const
+}
 const AUDIT_KEY = ['console-test', 'audit'] as const
+function auditRecordKey(id: string) {
+  return ['console-test', 'audit-record', id] as const
+}
 function settingsKey(namespace: string | undefined) {
   return ['console-test', 'settings', namespace ?? null] as const
 }
@@ -359,6 +402,12 @@ export function createConsoleOperations(
   return {
     useTenants: () =>
       useQuery({ queryKey: TENANTS_KEY, queryFn: () => backend.listTenants() }),
+    useTenant: (query: ConsoleTenantQuery) =>
+      useQuery({
+        queryKey: tenantKey(query.id ?? ''),
+        queryFn: () => backend.getTenant(query),
+        enabled: query.id !== undefined && query.id !== '',
+      }),
     useCreateTenant: () => {
       const client = useQueryClient()
       return useMutation({
@@ -417,6 +466,12 @@ export function createConsoleOperations(
       useQuery({
         queryKey: [...AUDIT_KEY, params ?? null],
         queryFn: () => backend.listRecords(params),
+      }),
+    useAuditRecord: (query: ConsoleAuditRecordQuery) =>
+      useQuery({
+        queryKey: auditRecordKey(query.id ?? ''),
+        queryFn: () => backend.getRecord(query),
+        enabled: query.id !== undefined && query.id !== '',
       }),
 
     usePermissions: () =>

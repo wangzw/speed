@@ -32,9 +32,12 @@
 
 import { useConsoleUiTranslation } from './internal/translation.js'
 import type { ConsoleRoute, ConsoleRouteTable } from './route.js'
+import { DashboardPage } from './DashboardPage.js'
 import { TenantRosterPage } from './TenantRosterPage.js'
+import { TenantDetailPage } from './TenantDetailPage.js'
 import { SettingsPage } from './SettingsPage.js'
 import { AuditPage } from './AuditPage.js'
+import { AuditDetailPage } from './AuditDetailPage.js'
 import { PermissionsPage } from './PermissionsPage.js'
 import { AccountsPage } from './AccountsPage.js'
 import { SessionsPage } from './SessionsPage.js'
@@ -53,13 +56,41 @@ function ConsoleNavLabel({ labelKey }: { readonly labelKey: string }) {
   return <>{t(labelKey)}</>
 }
 
-/** The tenant-roster page's declaration, held to tenant.read. */
+/**
+ * The console landing (the root) renders the dashboard; it reads the
+ * platform roster and the audit trail, so it is held to tenant.read (its
+ * audit panel refuses on its own when the viewer lacks audit.read).
+ */
+export const dashboardAdminRoutes: ConsoleRouteTable = [
+  {
+    path: '/',
+    view: () => <DashboardPage />,
+    label: <ConsoleNavLabel labelKey="dashboard.title" />,
+    permission: 'tenant.read',
+  },
+] satisfies readonly ConsoleRoute[]
+
+/**
+ * The tenant pages: the roster and one tenant's detail. The detail
+ * declaration is unlabelled (it is reached from a row, not the
+ * navigation), and its view carries the roster's path (the matched path
+ * with the tenant segment removed) so the detail page can link back.
+ */
 export const tenantAdminRoutes: ConsoleRouteTable = [
   {
     path: '/tenants',
-    view: () => <TenantRosterPage />,
+    view: (context) => <TenantRosterPage basePath={context.path} />,
     label: <ConsoleNavLabel labelKey="tenants.title" />,
     permission: 'tenant.read',
+  },
+  {
+    path: '/tenants/:id',
+    view: (context) => (
+      <TenantDetailPage
+        id={context.params.id ?? ''}
+        parentHref={context.path.replace(/\/[^/]+$/, '')}
+      />
+    ),
   },
 ] satisfies readonly ConsoleRoute[]
 
@@ -143,13 +174,26 @@ export const smsAdminRoutes: ConsoleRouteTable = [
   },
 ] satisfies readonly ConsoleRoute[]
 
-/** The audit-query page's declaration, held to audit.read. */
+/**
+ * The audit pages: the query and one record's detail. The detail
+ * declaration is unlabelled (reached from a row), and its view carries the
+ * query's path so the detail page can link back.
+ */
 export const auditAdminRoutes: ConsoleRouteTable = [
   {
     path: '/audit',
-    view: () => <AuditPage />,
+    view: (context) => <AuditPage basePath={context.path} />,
     label: <ConsoleNavLabel labelKey="audit.title" />,
     permission: 'audit.read',
+  },
+  {
+    path: '/audit/:id',
+    view: (context) => (
+      <AuditDetailPage
+        id={context.params.id ?? ''}
+        parentHref={context.path.replace(/\/[^/]+$/, '')}
+      />
+    ),
   },
 ] satisfies readonly ConsoleRoute[]
 
@@ -160,6 +204,7 @@ export const auditAdminRoutes: ConsoleRouteTable = [
  * console's own pages are registered in one place.
  */
 export const consoleRoutes: ConsoleRouteTable = [
+  ...dashboardAdminRoutes,
   ...tenantAdminRoutes,
   ...accountsAdminRoutes,
   ...sessionsAdminRoutes,

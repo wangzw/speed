@@ -15,6 +15,8 @@
 - **短信模板**：运行期短信模板的读写，经 `/sms/admin`。
 - **审计查询**：审计记录的检索，经 `/audit/admin`（[audit.admin](../audit/design-audit-admin.md)、[ADR-audit-admin-2026-10-15](../../../adr/adr-audit-admin-2026-10-15.md)）。
 
+**控制台根（`/`）渲染仪表盘**，其指标与最近活动由名册读与审计读拼出；各管理面的列表页可链入其详情页。
+
 **每个页面以 ui-kit 的 `PageHeader` 开篇**：页标题即该页的一级标题，一条从控制台到该页的面包屑，以及一个重读该页数据的刷新动作（页头操作）。标题层级因此不跳级——`AsyncSection` 的占位与各节的次级标题都渲染在它之下。
 
 **它是平台侧的壳（第二种壳）。** 上述管理面挂在**不解析租户**的端上：名册是平台资产、审计表持有全部租户的行、设置的全局层是平台操作。故本包没有**当前租户**切换器，也就没有租户作用域的查询键——它不认识「当前租户」这个概念。
@@ -63,10 +65,11 @@ interface ConsoleShellProps {
 
 ### 页面声明
 
-每个管理面导出一份页面声明表，全部汇总为 `consoleRoutes`（导航顺序即下表顺序）。路径是相对控制台根的 pattern，导航标签是一个在渲染时经 console-ui 命名空间解析的 `ConsoleNavLabel`，权限码是该页数据所持的平台权限（数据；本包不据它判定）。
+一个管理面导出一份页面声明表，全部汇总为 `consoleRoutes`（导航顺序即下表顺序）。路径是相对控制台根的 pattern，导航标签是一个在渲染时经 console-ui 命名空间解析的 `ConsoleNavLabel`，权限码是该页数据所持的平台权限（数据；本包不据它判定）。**一个管理面可含多于一条声明**：列表页携带标签（进导航），详情页不带标签（可达但不列出），由列表行链入；下表列出带标签的各页，与导航一一对应。
 
 | 声明 | 路径 | 导航标签键 | 权限码 |
 |---|---|---|---|
+| `dashboardAdminRoutes` | `/` | `dashboard.title` | `tenant.read` |
 | `tenantAdminRoutes` | `/tenants` | `tenants.title` | `tenant.read` |
 | `accountsAdminRoutes` | `/accounts` | `accounts.title` | `authn.account.read` |
 | `sessionsAdminRoutes` | `/sessions` | `sessions.title` | `authn.session.read` |
@@ -77,6 +80,17 @@ interface ConsoleShellProps {
 | `settingsAdminRoutes` | `/settings` | `settings.title` | `settings.read` |
 | `smsAdminRoutes` | `/sms` | `sms.title` | `sms.template.read` |
 | `auditAdminRoutes` | `/audit` | `audit.title` | `audit.read` |
+
+### 页型的骨架
+
+控制台页按 [layout](design-web-layout.md) 的页型组装：
+
+- **仪表盘**（`DashboardPage`）：控制台根的路由（`/`）。一行等宽的指标卡，其下是最近活动列表。指标由已有的列表读拼出——名册读返回完整的租户集，租户总数即其长度、启用与停用的计数即其状态分布；最近活动取审计查询读的最新一页（`useAuditRecords` 带 `limit`）。平台不声明统计端点，故页面不发明契约不携带的聚合值。
+- **列表页**（`TenantRosterPage`、`AccountsPage`、`SessionsPage`、`ImpersonationsPage`、`PermissionsPage`、`InvitationsPage`、`SsoPage`、`SmsPage`、`AuditPage`）：页头、工具栏或写入区、数据表、分页。
+- **详情页**（`TenantDetailPage`、`AuditDetailPage`）：标题区加主栏与固定宽侧栏。主栏承载主体与其写入，侧栏承载标识与回链。路径是列表页路径加一段 `:id`（`/tenants/:id`、`/audit/:id`），声明不带标签，故不进导航。列表页接收声明传入的该列表页匹配路径（`basePath`），据此为每行构造详情链接 `${basePath}/${id}`；详情页接收 `parentHref`（匹配路径去掉 id 段），据此回链列表页。
+- **设置页**（`SettingsPage`）：一条二级导航（按 namespace 分组，取出自全量设置读）、一段限宽表单、底部一条粘性保存条。
+
+**页内导航复用壳的接缝。** 控制台壳把它的 `onNavigate` 经内部上下文交给它渲染的页内容；页内的详情链接经该回调就地路由（不做整页重载，否则内存态会话会丢），壳未给回调时是普通链接。这条接缝与壳自身的导航项同一来源，故二者重载与否的行为一致。
 
 ### 写入的请求参数由平台的 OpenAPI 片段声明
 
@@ -135,6 +149,10 @@ graph TD
 
 按租户寻址的读以租户选择器的取值为查询键的一段，故切租户即换键、旧租户的数据自行失效。取值为空时该读声明为禁用（不发出请求）；页面渲染一段说明，提示先选择租户。
 
+### 读的失败面：权限拒绝与其它失败
+
+每个读经 `ConsoleAsyncSection`（ui-kit 的 `AsyncSection` 在本包内的绑定）渲染。一个 403 是权限拒绝而非加载失败——面应答了，是拒绝——故渲染权限拒绝文案（console-ui 命名空间的 `forbidden.title` 与 `forbidden.description`），且不给重试动作；任何其它失败（5xx、传输错误）落回可重试的未应答占位，带重试。判定按应答本身做出（HTTP 状态 403，或无可读信封的裸 403 经 `client.http.403`），不按路由级权限读数——服务端写出 403，页面渲染应答。
+
 ### 审计查询的筛选与分页
 
 审计页把工具栏的 `since`、`until` 与 `action` 集合作为读的查询参数，在提交时应用（一次键入不触发请求）。审计读按游标分页：应答带出下一页的游标，页脚据此前进与后退；游标式读不数总数，故页脚不显示总数。
@@ -156,7 +174,8 @@ graph TD
 | 情形 | 表现 |
 |---|---|
 | 无身份 | 401，由服务端写出，宿主转入登录面 |
-| 权限不足 | 403，由服务端写出；路由级守卫由宿主组合 |
+| 权限不足 | 403，由服务端写出；页面渲染权限拒绝文案且不给重试（重试只会再被拒一次）；路由级守卫由宿主组合 |
+| 其它读失败（5xx、网络） | 可重试的未应答占位，带重试动作 |
 | 请求形状不可读 | 服务端写出 400，页面渲染错误码文本 |
 | 名册的登记冲突 | 409（`urn:speed:tenant:conflict`），页面渲染冲突文本 |
 | 敏感设置项 | 值由服务端遮蔽，页面渲染遮蔽串 |
@@ -169,7 +188,14 @@ graph TD
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 控制台壳与声明面接入 | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell`、`ConsoleShellProps`；`web/packages/console-ui/src/route.ts` `ConsoleRoute`、`ConsoleRouteTable` |
+| 控制台仪表盘（KPI 与最近活动） | 已实现 | `web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage`；`web/packages/console-ui/src/routes.tsx` `dashboardAdminRoutes` |
 | 租户管理页（PageHeader 开篇） | 已实现 | `web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/console-ui/src/routes.tsx` `tenantAdminRoutes` |
+| 租户详情页（主栏与侧栏） | 已实现 | `web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
+| 审计详情页（主栏与侧栏） | 已实现 | `web/packages/console-ui/src/AuditDetailPage.tsx` `AuditDetailPage` |
+| 设置页的二级导航与粘性保存条 | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage` |
+| 读的失败面（权限拒绝与其它失败分开） | 已实现 | `web/packages/console-ui/src/internal/async-section.tsx` `ConsoleAsyncSection`、`isForbidden` |
+| 页内导航接缝（详情链接就地路由） | 已实现 | `web/packages/console-ui/src/internal/navigation.tsx` `ConsoleNavigationProvider`、`ConsoleLink`；`web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell` |
+| 详情页的按 id 读 | 已实现 | `web/packages/console-ui/src/operations.tsx` `useTenant`、`useAuditRecord` |
 | 账户页（列出、详情、创建与全部写入） | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`、`AccountCreateForm`、`AccountDetailWrites`；`web/packages/console-ui/src/routes.tsx` `accountsAdminRoutes` |
 | 会话页（按账户列出与撤销） | 已实现 | `web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/routes.tsx` `sessionsAdminRoutes` |
 | 冒充页（列出与终止） | 已实现 | `web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/console-ui/src/routes.tsx` `impersonationsAdminRoutes` |

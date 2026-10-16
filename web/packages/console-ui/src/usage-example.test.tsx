@@ -75,6 +75,11 @@ describe('README quick start', () => {
       if (call.path === '/tenant/admin/tenants') {
         return { tenants: [{ id: 'acme', alias: 'Acme', status: 'active' }] }
       }
+      // The first page is the console dashboard, which also reads the
+      // newest audit activity.
+      if (call.path === '/audit/admin/records') {
+        return { entries: [], next: '' }
+      }
       throw new Error(`unexpected request: ${call.path}`)
     })
     render(<ConsoleApp />)
@@ -91,6 +96,7 @@ describe('README quick start', () => {
         .getAllByRole('link')
         .map((link) => link.textContent),
     ).toEqual([
+      '概览',
       '租户',
       '账户',
       '会话',
@@ -102,6 +108,7 @@ describe('README quick start', () => {
       '短信模板',
       '审计记录',
     ])
-    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    // The first page is the console dashboard; its tenant KPI renders.
+    expect(await screen.findByText('租户总数')).toBeInTheDocument()
   })
 })

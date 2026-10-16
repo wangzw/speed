@@ -9,10 +9,13 @@ switcher and no current-tenant query key**. It is not, and cannot be, a
 page of `@speed/tenancy-ui` or `@speed/product-shell`.
 
 It renders the platform's backend administration surfaces as one console
-frame with one page each:
+frame, the console root being a dashboard:
 
+- the **dashboard** at the console root (`/`) -- a KPI row derived from
+  the roster read (its length and status split) and the newest page of the
+  audit query as the recent-activity list;
 - the **tenant roster** over `/tenant/admin` -- list, register, rename,
-  enable/disable;
+  enable/disable, and a row opens that tenant's detail page;
 - the **account surface** over `/auth/admin/accounts` -- list, detail,
   and the writes whose request body the contract declares;
 - the **session surface** over `/auth/admin/accounts/:id/sessions` --
@@ -31,7 +34,11 @@ frame with one page each:
 - the **SMS template surface** over `/sms/admin`;
 - the **audit query** over `/audit/admin` -- filtered, cursor-paged, with
   readable actor identities (resolved through the account read, which
-  needs `authn.account.read` beside the page's own `audit.read`).
+  needs `authn.account.read` beside the page's own `audit.read`), and a
+  row opens that record's detail page.
+
+The tenant detail and audit detail pages are declared without a navigation
+label -- reachable from a list row, not listed in the navigation.
 
 Each page opens with `@speed/ui-kit`'s `PageHeader`: the page title as the
 level-one heading, a breadcrumb trail from the console to the page, and a
@@ -63,8 +70,10 @@ and hands it to that frame, so the two shells are one shape.
 | `ConsoleShell.tsx` | `ConsoleShell`, `ConsoleShellProps` |
 | `route.ts` | `ConsoleRoute`, `ConsoleRouteContext`, `ConsoleRouteParams`, `ConsoleRouteTable` |
 | `operations.tsx` | `ConsoleOperations`, `consoleOperations`, `ConsoleOperationsProvider`, `useConsoleOperations`, `settingKeyRest`, the view row types, the write input types |
-| `routes.tsx` | `tenantAdminRoutes`, `accountsAdminRoutes`, `sessionsAdminRoutes`, `impersonationsAdminRoutes`, `permissionsAdminRoutes`, `invitationsAdminRoutes`, `ssoAdminRoutes`, `settingsAdminRoutes`, `smsAdminRoutes`, `auditAdminRoutes`, `consoleRoutes` |
+| `routes.tsx` | `dashboardAdminRoutes`, `tenantAdminRoutes`, `accountsAdminRoutes`, `sessionsAdminRoutes`, `impersonationsAdminRoutes`, `permissionsAdminRoutes`, `invitationsAdminRoutes`, `ssoAdminRoutes`, `settingsAdminRoutes`, `smsAdminRoutes`, `auditAdminRoutes`, `consoleRoutes` |
+| `DashboardPage.tsx` | `DashboardPage` |
 | `TenantRosterPage.tsx` | `TenantRosterPage` |
+| `TenantDetailPage.tsx` | `TenantDetailPage`, `TenantDetailPageProps` |
 | `AccountsPage.tsx` | `AccountsPage` |
 | `SessionsPage.tsx` | `SessionsPage` |
 | `ImpersonationsPage.tsx` | `ImpersonationsPage` |
@@ -74,6 +83,7 @@ and hands it to that frame, so the two shells are one shape.
 | `SettingsPage.tsx` | `SettingsPage` |
 | `SmsPage.tsx` | `SmsPage` |
 | `AuditPage.tsx` | `AuditPage` |
+| `AuditDetailPage.tsx` | `AuditDetailPage`, `AuditDetailPageProps` |
 | `resources.ts` | `CONSOLE_UI_NAMESPACE`, `consoleUiResources` |
 
 Everything else (`src/internal/`) is shared plumbing -- the error-text
@@ -170,14 +180,22 @@ read that instead.
   Switching the current tenant is `@speed/tenancy-ui`'s. A tenant-named
   selector on the pages whose routes carry the tenant as a path segment
   names an argument of the request, not the session's current tenant.
-- **No routing.** It exports page declarations and never matches a URL,
-  builds a link from a path or decides navigation selection. Collecting
-  the declarations and rendering them is the application's route layer's.
-  The frame does expose one seam for the host's router: given an
-  `onNavigate` callback, a plain click on a navigation entry is handed to
-  it (with the entry's path) so the host routes the entry in place, while
-  the entry stays a real link for a middle-click or a copied URL. Absent
-  the callback, an entry is a plain link that navigates the browser.
+- **No routing.** It exports page declarations and never matches a URL or
+  decides navigation selection; collecting the declarations and rendering
+  them is the application's route layer's. It does link from a known path:
+  the frame links each navigation entry to its declaration's path, and a
+  list page links each row to that record's detail path. The frame exposes
+  one seam for the host's router: given an `onNavigate` callback, a plain
+  click on a navigation entry -- or on a page's detail link, which the frame
+  publishes the callback to -- is handed to it (with the target path) so the
+  host routes in place, while the link stays a real link for a middle-click
+  or a copied URL. Absent the callback, it is a plain link that navigates the
+  browser.
+- **No failure conflation.** A refused read (HTTP 403, or a bare 403
+  surfaced as the `client.http.403` code) renders the permission
+  placeholder with no retry; any other failure renders the retryable error
+  placeholder. The branch reads the answer the server wrote, not a
+  route-level permission read.
 - **No authorization decisions.** The permission code a declaration
   carries is data; the server decides on every request and the host
   composes any route guard. A page renders its write controls and lets

@@ -28,7 +28,6 @@ import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import {
-  AsyncSection,
   DataTable,
   EmptyState,
   ListSkeleton,
@@ -36,6 +35,7 @@ import {
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import { ConsoleAsyncSection } from './internal/async-section.js'
 import { formatUtc, isZeroInstant } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
 import { TenantScope } from './internal/tenant-scope.js'
@@ -148,9 +148,10 @@ export function ImpersonationsPage() {
           description={t('impersonations.needTenant.description')}
         />
       ) : (
-        <AsyncSection
+        <ConsoleAsyncSection
           pending={pending}
           payload={rows}
+          error={impersonations.error}
           empty={rows !== undefined && rows.length === 0}
           headingLevel="h2"
           loading={
@@ -180,7 +181,7 @@ export function ImpersonationsPage() {
               rowKey={(record) => record.id}
             />
           )}
-        </AsyncSection>
+        </ConsoleAsyncSection>
       )}
 
       <Box sx={{ mt: 2 }}>

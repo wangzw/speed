@@ -26,12 +26,12 @@ import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
-  AsyncSection,
   DataTable,
   ListSkeleton,
   PageHeader,
   errorCodeOf,
 } from '@speed/ui-kit'
+import { ConsoleAsyncSection } from './internal/async-section.js'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { InlineError } from './internal/inline-error.js'
@@ -325,9 +325,10 @@ export function SmsPage() {
         </Box>
       </Box>
 
-      <AsyncSection
+      <ConsoleAsyncSection
         pending={pending}
         payload={rows}
+        error={templates.error}
         empty={rows !== undefined && rows.length === 0}
         headingLevel="h2"
         loading={
@@ -357,7 +358,7 @@ export function SmsPage() {
             rowKey={(template) => template.name}
           />
         )}
-      </AsyncSection>
+      </ConsoleAsyncSection>
 
       <Box sx={{ mt: 2 }}>
         <InlineError code={writeError} />

@@ -19,7 +19,6 @@ import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
-  AsyncSection,
   DataTable,
   EmptyState,
   ListSkeleton,
@@ -27,6 +26,7 @@ import {
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
@@ -187,9 +187,10 @@ export function SessionsPage() {
           description={t('sessions.needAccount.description')}
         />
       ) : (
-        <AsyncSection
+        <ConsoleAsyncSection
           pending={pending}
           payload={rows}
+          error={sessions.error}
           empty={rows !== undefined && rows.length === 0}
           headingLevel="h2"
           loading={
@@ -219,7 +220,7 @@ export function SessionsPage() {
               rowKey={(session) => session.id}
             />
           )}
-        </AsyncSection>
+        </ConsoleAsyncSection>
       )}
 
       <Box sx={{ mt: 2 }}>

@@ -32,9 +32,11 @@ describe('the route table', () => {
     expect(callback?.label).toBeUndefined()
   })
 
-  it('mounts every console page under the console prefix, labelled and permission-coded', () => {
+  it('mounts every console page under the console prefix', () => {
     expect(consoleShellRoutes.map((route) => route.path)).toEqual([
+      CONSOLE_PREFIX,
       `${CONSOLE_PREFIX}/tenants`,
+      `${CONSOLE_PREFIX}/tenants/:id`,
       `${CONSOLE_PREFIX}/accounts`,
       `${CONSOLE_PREFIX}/sessions`,
       `${CONSOLE_PREFIX}/impersonations`,
@@ -44,19 +46,25 @@ describe('the route table', () => {
       `${CONSOLE_PREFIX}/settings`,
       `${CONSOLE_PREFIX}/sms`,
       `${CONSOLE_PREFIX}/audit`,
+      `${CONSOLE_PREFIX}/audit/:id`,
     ])
+    // Every labelled console page carries a permission code; the detail
+    // routes are unlabelled (reached from a row, not the navigation) and
+    // inherit the guard of the list they belong to.
     for (const route of consoleShellRoutes) {
-      expect(route.label, route.path).toBeDefined()
-      expect(route.permission, route.path).toBeTruthy()
+      if (route.label !== undefined) {
+        expect(route.permission, route.path).toBeTruthy()
+      }
     }
   })
 
-  it('lands the console prefix itself on the console’s first page, unlabelled', () => {
+  it('renders the dashboard at the console prefix itself, labelled', () => {
     const landing = routes.find((route) => route.path === CONSOLE_PREFIX)
-    // The landing carries no label, so it adds no navigation entry.
     expect(landing).toBeDefined()
-    expect(landing?.label).toBeUndefined()
-    expect(CONSOLE_LANDING_PATH).toBe(`${CONSOLE_PREFIX}/tenants`)
+    // The console root is the dashboard, a labelled page (it adds the
+    // console's own first navigation entry).
+    expect(landing?.label).toBeDefined()
+    expect(CONSOLE_LANDING_PATH).toBe(CONSOLE_PREFIX)
   })
 
   it('mounts the auth callback route at its own path, unlabelled', () => {
@@ -67,12 +75,11 @@ describe('the route table', () => {
     expect(authCallbackRoutes[0]?.label).toBeUndefined()
   })
 
-  it('combines the business slot, the callback route, the console landing and the console pages', () => {
+  it('combines the business slot, the callback route and the console pages', () => {
     expect(routes).toHaveLength(
       businessRoutes.length +
         authCallbackRoutes.length +
-        consoleShellRoutes.length +
-        1,
+        consoleShellRoutes.length,
     )
   })
 })

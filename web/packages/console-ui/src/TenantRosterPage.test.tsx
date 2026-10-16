@@ -256,6 +256,34 @@ describe('TenantRosterPage', () => {
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
   })
 
+  it('renders the permission placeholder with no retry when the read is refused with 403', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () => Promise.reject({ status: 403, code: 'client.http.403' }),
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    expect(await screen.findByText('权限不足')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+  })
+
+  it('links each row to the tenant detail when given the roster path', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () =>
+          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+      }),
+    )
+    renderWithProviders(<TenantRosterPage basePath="/console/tenants" />, {
+      operations,
+    })
+    await screen.findByText('Acme')
+    expect(screen.getByRole('link', { name: 'acme' })).toHaveAttribute(
+      'href',
+      '/console/tenants/acme',
+    )
+  })
+
   it('has no axe violations', async () => {
     const operations = createConsoleOperations(
       makeConsoleBackend({

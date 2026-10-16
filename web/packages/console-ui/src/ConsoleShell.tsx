@@ -41,6 +41,7 @@ import type { SxProps, Theme } from '@mui/material/styles'
 import { AppShell } from '@speed/layout-kit'
 import type { AppShellNavItem } from '@speed/layout-kit'
 import type { ConsoleRoute } from './route.js'
+import { ConsoleNavigationProvider } from './internal/navigation.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 
 export interface ConsoleShellProps {
@@ -111,7 +112,12 @@ export function ConsoleShell({
       headerActions={headerActions}
       sx={sx}
     >
-      {children}
+      {/* The same in-place navigation seam the entries use, published to
+          the routed pages so a detail link routes in place rather than
+          reloading the page (see internal/navigation). */}
+      <ConsoleNavigationProvider onNavigate={onNavigate}>
+        {children}
+      </ConsoleNavigationProvider>
     </AppShell>
   )
 }

@@ -139,11 +139,11 @@ graph TD
 | 侧栏的扁平导航项与选中态 | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShellNavItem` |
 | 侧栏的分组与二级嵌套 | 未实现 | — |
 | 断点标度等于所装 MUI 主题默认 | 已实现 | `web/packages/tokens/src/breakpoints.ts` `breakpointTokens` |
-| 内容区的宽度分岔 | 未实现 | — |
-| 列表页骨架 | 部分实现 | `web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage` |
-| 详情页骨架（主栏与侧栏） | 未实现 | — |
-| 设置页骨架（二级导航与表单） | 未实现 | — |
-| 仪表盘骨架 | 未实现 | — |
+| 内容区的宽度分岔 | 已实现 | `web/packages/console-ui/src/internal/layout.tsx` `DetailLayout`、`FormWidth` |
+| 列表页骨架 | 已实现 | `web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage` |
+| 详情页骨架（主栏与侧栏） | 已实现 | `web/packages/console-ui/src/internal/layout.tsx` `DetailLayout`；`web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
+| 设置页骨架（二级导航与表单） | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage` |
+| 仪表盘骨架 | 已实现 | `web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage` |
 | 数据表的列优先级降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx` |
 | 数据表超宽的容器内滚动兜底 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable` |
 | 组件级容器查询 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx` |

@@ -14,6 +14,7 @@ import {
   accountsAdminRoutes,
   auditAdminRoutes,
   consoleRoutes,
+  dashboardAdminRoutes,
   impersonationsAdminRoutes,
   invitationsAdminRoutes,
   permissionsAdminRoutes,
@@ -34,6 +35,7 @@ const operations = createConsoleOperations(makeConsoleBackend())
 
 /** The path / permission each single-page declaration carries. */
 const declarations: readonly [string, string, string][] = [
+  ['dashboard', dashboardAdminRoutes[0]?.path ?? '', 'tenant.read'],
   ['tenants', tenantAdminRoutes[0]?.path ?? '', 'tenant.read'],
   ['accounts', accountsAdminRoutes[0]?.path ?? '', 'authn.account.read'],
   ['sessions', sessionsAdminRoutes[0]?.path ?? '', 'authn.session.read'],
@@ -56,9 +58,11 @@ describe('console page declarations', () => {
     })
   }
 
-  it('combines every page in navigation order', () => {
+  it('combines every page in navigation order, the detail routes unlabelled', () => {
     expect(consoleRoutes.map((route) => route.path)).toEqual([
+      '/',
       '/tenants',
+      '/tenants/:id',
       '/accounts',
       '/sessions',
       '/impersonations',
@@ -68,7 +72,12 @@ describe('console page declarations', () => {
       '/settings',
       '/sms',
       '/audit',
+      '/audit/:id',
     ])
+    // The detail routes are reachable but not listed in the navigation.
+    for (const path of ['/tenants/:id', '/audit/:id']) {
+      expect(consoleRoutes.find((route) => route.path === path)?.label).toBeUndefined()
+    }
   })
 
   it('renders the translated navigation labels through the shell', () => {
@@ -84,6 +93,7 @@ describe('console page declarations', () => {
         .getAllByRole('link')
         .map((link) => link.textContent),
     ).toEqual([
+      '概览',
       '租户',
       '账户',
       '会话',

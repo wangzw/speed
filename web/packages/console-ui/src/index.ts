@@ -3,13 +3,14 @@
  *
  * The platform-staff console component family -- the second shell. It
  * renders the platform's backend administration surfaces as one console
- * frame with one page per surface: the tenant roster (/tenant/admin), the
- * account, session and impersonation surfaces (/auth/admin), the
- * authorization surface (/authz/admin), the invitation and membership
- * surface (/auth/admin/tenants/:tenant/...), the SSO surface
- * (/auth/admin/sso), the settings read-write surface (/settings/admin),
- * the SMS template surface (/sms/admin) and the audit query
- * (/audit/admin). Those endpoints do not resolve a tenant, so the console
+ * frame: the tenant roster (/tenant/admin), the account, session and
+ * impersonation surfaces (/auth/admin), the authorization surface
+ * (/authz/admin), the invitation and membership surface
+ * (/auth/admin/tenants/:tenant/...), the SSO surface (/auth/admin/sso),
+ * the settings read-write surface (/settings/admin), the SMS template
+ * surface (/sms/admin) and the audit query (/audit/admin). The console
+ * root renders a dashboard, and the tenant roster and the audit query each
+ * link a row to that record's detail page. Those endpoints do not resolve a tenant, so the console
  * has no tenant switcher and no tenant-scoped query key: it is not, and
  * cannot be, a page of @speed/tenancy-ui or @speed/product-shell. A page
  * whose route carries the tenant as a path segment (authorization,
@@ -66,9 +67,11 @@ export {
   type ConsoleOperationsProviderProps,
   type ConsoleTenant,
   type ConsoleTenantStatus,
+  type ConsoleTenantQuery,
   type ConsoleSetting,
   type ConsoleAuditRecord,
   type ConsoleAuditPage,
+  type ConsoleAuditRecordQuery,
   type ConsoleCreateTenantInput,
   type ConsoleSetTenantAliasInput,
   type ConsoleSetTenantStatusInput,
@@ -125,6 +128,7 @@ export {
   type ConsoleSetSmsTemplateEnabledInput,
 } from './operations.js'
 export {
+  dashboardAdminRoutes,
   tenantAdminRoutes,
   accountsAdminRoutes,
   sessionsAdminRoutes,
@@ -137,9 +141,18 @@ export {
   auditAdminRoutes,
   consoleRoutes,
 } from './routes.js'
+export { DashboardPage } from './DashboardPage.js'
 export { TenantRosterPage } from './TenantRosterPage.js'
+export {
+  TenantDetailPage,
+  type TenantDetailPageProps,
+} from './TenantDetailPage.js'
 export { SettingsPage } from './SettingsPage.js'
 export { AuditPage } from './AuditPage.js'
+export {
+  AuditDetailPage,
+  type AuditDetailPageProps,
+} from './AuditDetailPage.js'
 export { PermissionsPage } from './PermissionsPage.js'
 export { AccountsPage } from './AccountsPage.js'
 export { SessionsPage } from './SessionsPage.js'
