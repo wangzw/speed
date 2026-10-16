@@ -60,6 +60,57 @@ func StepPassed(p Pass) Step { return step.Passed(p) }
 // StepEnrolled answers that a factor has been registered. Only a factor uses it.
 func StepEnrolled(r FactorRecord) Step { return step.Enrolled(r) }
 
+// MethodKind is the class a client renders a login method by. It is how the
+// method is drawn, not how a flow advances: a form and a redirect both start a
+// flow, and a redirect and an enterprise entry both leave for an external
+// party. The set is closed.
+type MethodKind string
+
+// The rendering classes of a login method.
+const (
+	// MethodKindForm renders a form and starts a flow with what it submits.
+	MethodKindForm MethodKind = "form"
+	// MethodKindRedirect renders a button that starts a flow and hands the user
+	// agent the redirect step the method answers with.
+	MethodKindRedirect MethodKind = "redirect"
+	// MethodKindEnterprise renders an email-first entry that discovers the
+	// identity provider before it leaves for it.
+	MethodKindEnterprise MethodKind = "enterprise"
+	// MethodKindWebAuthn renders a passkey ceremony button, whose start answers
+	// the client a data step it completes before submitting.
+	MethodKindWebAuthn MethodKind = "webauthn"
+)
+
+// MethodProtocol is the wire protocol a redirect or enterprise method speaks.
+type MethodProtocol string
+
+// The protocols a redirect or enterprise method speaks.
+const (
+	MethodProtocolOAuth2 MethodProtocol = "oauth2"
+	MethodProtocolOIDC   MethodProtocol = "oidc"
+	MethodProtocolSAML   MethodProtocol = "saml"
+)
+
+// MethodDescriptor is what a login method reports about itself for the discovery
+// endpoint, so that a client renders the ways in without knowing their names.
+//
+// Name is the method's stable name. Kind is the class the client renders it by.
+// Protocol is the wire protocol a redirect or enterprise method speaks, and is
+// empty otherwise. Label is the method's brand name where it has one — a
+// provider's own name, which is not translated — and is empty for a client to
+// fall back to a name-keyed translation. Fields is the inputs the method's first
+// step asks for, being what Begin answers for a start that carries none, and is
+// empty for a method that does not open with a form. OpensAccount reports
+// whether the method may open an account for an identifier it does not yet know.
+type MethodDescriptor struct {
+	Name         string
+	Kind         MethodKind
+	Protocol     MethodProtocol
+	Label        string
+	Fields       []Field
+	OpensAccount bool
+}
+
 // LoginMethod is one kind of first factor: a password, an SMS code, a social or
 // enterprise redirect, a passkey. A module delivers it without claiming it, so
 // several stand side by side, and only the login engine takes them, with
@@ -85,6 +136,10 @@ type LoginMethod interface {
 	// metric attributes, and a published name never changes. It is unique across
 	// the assembly, and two methods with one name are ErrMethodConflict.
 	Name() string
+	// Describe reports how the method is drawn in the discovery document. It is
+	// a constant of the method: it reads no store and no configuration, and it
+	// carries no value a login would.
+	Describe() MethodDescriptor
 	// Begin starts a flow for a purpose.
 	Begin(ctx context.Context, s Start) (Step, error)
 	// Answer handles the client's answer to the previous step, or an external

@@ -8,7 +8,7 @@
         "summary": "List the login methods this deployment offers",
         "responses": {
           "200": {
-            "description": "The names of the enabled methods",
+            "description": "A descriptor per method taking part, whether registration is open, and the factor kinds the deployment offers",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnLoginMethods"}}}
           },
           "503": {
@@ -543,9 +543,37 @@
     "schemas": {
       "AuthnLoginMethods": {
         "type": "object",
-        "required": ["methods"],
+        "required": ["methods", "signup", "mfa"],
         "properties": {
-          "methods": {"type": "array", "items": {"type": "string"}, "description": "The names of the login methods taking part that are not turned off, sorted"}
+          "methods": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnMethodDescriptor"}, "description": "The methods taking part that are not turned off, one descriptor each, sorted by name"},
+          "signup": {"$ref": "#/components/schemas/AuthnLoginSignup"},
+          "mfa": {"$ref": "#/components/schemas/AuthnLoginMFA"}
+        }
+      },
+      "AuthnMethodDescriptor": {
+        "type": "object",
+        "required": ["name", "kind"],
+        "properties": {
+          "name": {"type": "string", "description": "The method's stable name"},
+          "kind": {"type": "string", "description": "How a client renders the method: form, redirect, enterprise or webauthn"},
+          "protocol": {"type": "string", "description": "The wire protocol a redirect or enterprise method speaks: oauth2, oidc or saml; empty otherwise"},
+          "label": {"type": "string", "description": "The method's brand name where it has one, otherwise empty for a name-keyed translation"},
+          "opens_account": {"type": "boolean", "description": "Whether the method may open an account for an identifier it does not yet know"},
+          "fields": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnLoginField"}, "description": "The inputs the method's first step asks for, empty for a method that does not open with a form"}
+        }
+      },
+      "AuthnLoginSignup": {
+        "type": "object",
+        "required": ["enabled"],
+        "properties": {
+          "enabled": {"type": "boolean", "description": "Whether a first login may open an account"}
+        }
+      },
+      "AuthnLoginMFA": {
+        "type": "object",
+        "required": ["factors"],
+        "properties": {
+          "factors": {"type": "array", "items": {"type": "string"}, "description": "The kinds of second factor the deployment takes in"}
         }
       },
       "AuthnLoginFlow": {

@@ -121,6 +121,7 @@ var seamSignatures = map[string][]string{
 	},
 	"LoginMethod": {
 		"Name() string",
+		"Describe() MethodDescriptor",
 		"Begin(ctx context.Context, s Start) (Step, error)",
 		"Answer(ctx context.Context, f FlowState, in StepInput) (Step, error)",
 	},

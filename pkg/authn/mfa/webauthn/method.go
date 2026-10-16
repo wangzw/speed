@@ -23,6 +23,16 @@ var (
 // Name is the method's stable name.
 func (p *product) Name() string { return methodName }
 
+// Describe reports the passkey method: a ceremony button whose start answers the
+// client a data step it completes before submitting. A passkey proves an account
+// that holds the credential and never opens one.
+func (p *product) Describe() authn.MethodDescriptor {
+	return authn.MethodDescriptor{
+		Name: methodName,
+		Kind: authn.MethodKindWebAuthn,
+	}
+}
+
 // Begin starts a passkey login: it answers with the discoverable assertion
 // options, which ask the client to pick a credential and prove the account with
 // it. The account is not named here and is found from the handle the client

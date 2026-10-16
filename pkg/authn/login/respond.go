@@ -74,9 +74,33 @@ type tokenReply struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-// methodsReply is the body of the methods listing.
+// methodDescriptorView is one login method in the discovery document.
+type methodDescriptorView struct {
+	Name         string      `json:"name"`
+	Kind         string      `json:"kind"`
+	Protocol     string      `json:"protocol,omitempty"`
+	Label        string      `json:"label,omitempty"`
+	OpensAccount bool        `json:"opens_account,omitempty"`
+	Fields       []fieldView `json:"fields,omitempty"`
+}
+
+// signupView says whether the deployment lets a first login open an account.
+type signupView struct {
+	Enabled bool `json:"enabled"`
+}
+
+// mfaView is the kinds of second factor the deployment takes in.
+type mfaView struct {
+	Factors []string `json:"factors"`
+}
+
+// methodsReply is the body of the methods listing: the descriptors of the
+// methods taking part that are not turned off, whether registration is open, and
+// the kinds of second factor the deployment offers.
 type methodsReply struct {
-	Methods []string `json:"methods"`
+	Methods []methodDescriptorView `json:"methods"`
+	Signup  signupView             `json:"signup"`
+	MFA     mfaView                `json:"mfa"`
 }
 
 // writeFlow writes a reply that keeps a flow open. flowToken is echoed only for
@@ -130,7 +154,7 @@ func (r *routes) nextOf(rec record) stepView {
 	case stateSecond:
 		return stepView{Kind: nextFactor, Factors: rec.MFA.Offered}
 	case stateEnroll:
-		return stepView{Kind: nextEnroll, Kinds: r.enrollKinds()}
+		return stepView{Kind: nextEnroll, Kinds: r.factorKinds()}
 	case stateDone:
 		return stepView{Kind: nextComplete}
 	default:
@@ -138,9 +162,10 @@ func (r *routes) nextOf(rec record) stepView {
 	}
 }
 
-// enrollKinds renders the factor kinds the assembly takes in for the enroll
-// next step. A module with none, which cannot reach here, offers none.
-func (r *routes) enrollKinds() []string {
+// factorKinds renders the factor kinds the assembly takes in, for the enroll
+// next step and for the discovery listing. A module with none, which cannot
+// reach here, offers none.
+func (r *routes) factorKinds() []string {
 	if r.mfa == nil {
 		return nil
 	}
@@ -177,8 +202,9 @@ func rfc3339(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
-// methods answers GET B/methods with the methods taking part that are not turned
-// off.
+// methods answers GET B/methods with the descriptors of the methods taking part
+// that are not turned off, in the order of their names, together with whether
+// registration is open and the kinds of second factor the deployment offers.
 func (r *routes) methods(c *gin.Context) {
 	disabled, err := r.settings.disabledMethods()
 	if err != nil {
@@ -189,13 +215,30 @@ func (r *routes) methods(c *gin.Context) {
 	for _, name := range disabled {
 		off[name] = true
 	}
-	out := make([]string, 0, len(r.methodNames))
+	out := make([]methodDescriptorView, 0, len(r.methodNames))
 	for _, name := range r.methodNames {
-		if !off[name] {
-			out = append(out, name)
+		if off[name] {
+			continue
 		}
+		out = append(out, descriptorView(r.product.methods[name].Describe()))
 	}
-	c.JSON(http.StatusOK, methodsReply{Methods: out})
+	c.JSON(http.StatusOK, methodsReply{
+		Methods: out,
+		Signup:  signupView{Enabled: r.signup},
+		MFA:     mfaView{Factors: r.factorKinds()},
+	})
+}
+
+// descriptorView copies a method's descriptor into the wire shape.
+func descriptorView(d authn.MethodDescriptor) methodDescriptorView {
+	return methodDescriptorView{
+		Name:         d.Name,
+		Kind:         string(d.Kind),
+		Protocol:     string(d.Protocol),
+		Label:        d.Label,
+		OpensAccount: d.OpensAccount,
+		Fields:       fieldViews(d.Fields),
+	}
 }
 
 // current answers GET B/flows/current with the state of the flow the request is

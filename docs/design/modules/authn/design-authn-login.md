@@ -51,6 +51,8 @@
 type LoginMethod interface {
 	// Name 是稳定名，出现在路由、流程记录、指标属性里；全局唯一，重名即 ErrMethodConflict。
 	Name() string
+	// Describe 自报该方法在发现端点里的描述符；它是纯常量，不读存储与配置。
+	Describe() MethodDescriptor
 	Begin(ctx context.Context, s Start) (Step, error)
 	// Answer 处理客户端对上一步的答复，或外部回跳（OAuth 的授权码、SAML 的断言）。
 	Answer(ctx context.Context, f FlowState, in StepInput) (Step, error)
@@ -145,7 +147,7 @@ type Proof struct {
 
 | 方法 路径 | 访问 | 作用 |
 |---|---|---|
-| `GET B/methods` | Open | 列出已纳入且未被 `disabled-methods` 关掉的登录方式 |
+| `GET B/methods` | Open | 列出已纳入且未被 `disabled-methods` 关掉的登录方式描述符，并发布注册开关与可用的第二因素种类 |
 | `POST B/flows` | Open | 开始 `login` 流程，body `{method, delivery, return_to, binding, input}`；不读 cookie；流程绑定在此建立 |
 | `POST B/flows/authenticated` | Required | 在已登录的身份上开始 `link`、`step-up` 或 `enroll`（body 同上加 `purpose`）；流程记录绑定当前账户与会话；冒充中拒绝；`enroll` 是因素登记的唯一入口；起始状态与前置要求见「在已登录身份上开始流程」 |
 | `POST B/flows/answer` | Open | 答复当前步，body `{seq, step, input}`；`step` 取 `answer`、`factor`、`enroll`、`complete`；要求流程绑定 |
@@ -160,6 +162,8 @@ type Proof struct {
 ### 请求与应答的形状
 
 请求体一律 `application/json`，否则 415；拒绝未知字段；体上限 64 KiB（SAML 回跳例外），超过上限归 400 `bad-request`（与体不合法同答，不为超限另立码）。经 `Mounter` 登记的处理器所写的响应带 `Cache-Control: no-store`：`Wrap` 在调用处理器之前写好该头，处理器可以覆盖它（如密钥集自带缓存头）。网关在处理器之前自产的 401/503，以及入口模块对 panic 的缺陷响应，不在这一范围内：前者不经 `Wrap`，后者由入口模块按它自己的缺陷应答形状处置，会删去 `Cache-Control` 一类表示性头。
+
+`GET B/methods` 的应答是方法描述符文档：`{"methods":[{name, kind, protocol, label, opens_account, fields}], "signup":{"enabled"}, "mfa":{"factors":[...]}}`。`methods` 按方法名排序，每项是一个方法自报的描述符：`kind` 是渲染类别（`form`/`redirect`/`enterprise`/`webauthn`），`protocol` 是 `redirect` 与 `enterprise` 类方法所讲的线协议（`oauth2`/`oidc`/`saml`，其余为空），`label` 是方法品牌名（如 `Google`、`WeChat`，缺失时客户端按方法名查 i18n 回退），`fields` 是该方法首步所要的字段（仅 `form` 类给出，取自 `Begin` 以空字段调用时所答的首个 prompt），`opens_account` 是该法能否在首登为未知标识开户。`signup.enabled` 由账户模块的注册开关 `authn.account.signup` 派生；`mfa.factors` 是装配收到的第二因素种类，属部署级，与 `GET B/factors` 所答的本人已登记因素语义不同。企业 SSO 的提供方清单不进此应答，仍走 `POST B/sso/discover`。
 
 成功应答是 `{"seq": 2, "state": "...", "next": {"kind": "..."}}`。`next.kind` 的取值是封闭集：
 
@@ -306,15 +310,24 @@ sequenceDiagram
 
 ### 接缝的类型
 
-`LoginMethod` 的 `Begin` 与 `Answer` 返回 `Step`；`Step` 的真身在内部包，根包只导出构造器；`Proof` 是 `StepProven` 的载荷。`FlowState` 与 `StepInput` 是引擎交给方法的只读输入。
+`LoginMethod` 的 `Begin` 与 `Answer` 返回 `Step`，`Describe` 返回 `MethodDescriptor`；`Step` 的真身在内部包，根包只导出构造器；`Proof` 是 `StepProven` 的载荷。`FlowState` 与 `StepInput` 是引擎交给方法的只读输入。
 
 ```mermaid
 classDiagram
     class LoginMethod {
         <<interface>>
         +Name() string
+        +Describe() MethodDescriptor
         +Begin(ctx, Start) Step
         +Answer(ctx, FlowState, StepInput) Step
+    }
+    class MethodDescriptor {
+        +Name string
+        +Kind MethodKind
+        +Protocol MethodProtocol
+        +Label string
+        +Fields Field
+        +OpensAccount bool
     }
     class Start {
         +Purpose string
@@ -361,6 +374,7 @@ classDiagram
     LoginMethod ..> FlowState : Answer 的输入
     LoginMethod ..> StepInput : Answer 的输入
     LoginMethod ..> Step : 回答
+    LoginMethod ..> MethodDescriptor : Describe 的返回
     Step o-- Proof : StepProven 携带
 ```
 

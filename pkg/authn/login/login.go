@@ -179,9 +179,11 @@ type product struct {
 
 	// Configuration read once, in Init: the trusted origins a return_to may
 	// name, whether the flow cookie keeps its __host- prefix and Secure
-	// attribute, and the origin the deployment is reached at.
+	// attribute, the origin the deployment is reached at, and whether a first
+	// login may open an account.
 	trustedOrigins []string
 	allowInsecure  bool
+	signup         bool
 
 	clock clock.Source
 }
@@ -347,6 +349,7 @@ func (p *product) buildResolver(reader config.Reader) error {
 	if err != nil {
 		return fmt.Errorf("%s%s: reading the account switches: %w", diagnosticPrefix, ModuleName, err)
 	}
+	p.signup = account.Signup == signupOpen
 	r, err := resolve.New(resolve.Config{
 		Accounts:    p.accounts,
 		Admin:       p.admin,

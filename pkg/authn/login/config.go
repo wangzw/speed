@@ -56,6 +56,11 @@ const (
 	maxReturnToBytes = 2048
 )
 
+// signupOpen is the account module's registration-switch value that lets a first
+// login open an account. The switch's other value, and any other, reads as
+// closed.
+const signupOpen = "open"
+
 // options carries the settings this module declares and their defaults, which
 // the settings module reads off it and which it never receives a value for. The
 // two lists are string items holding JSON, because a setting item is a scalar.

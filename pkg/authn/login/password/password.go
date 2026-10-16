@@ -104,6 +104,17 @@ func Module() core.Module {
 // Name is the method's stable name.
 func (m *method) Name() string { return methodName }
 
+// Describe reports the password method: a form whose first step asks for an
+// identifier and a password. A password proves an account it already knows and
+// never opens one.
+func (m *method) Describe() authn.MethodDescriptor {
+	return authn.MethodDescriptor{
+		Name:   methodName,
+		Kind:   authn.MethodKindForm,
+		Fields: descriptorFields(),
+	}
+}
+
 // Begin starts a flow. The start request's own fields are the credential when
 // the client sent both; otherwise the method asks for them.
 func (m *method) Begin(ctx context.Context, s authn.Start) (authn.Step, error) {
@@ -282,12 +293,18 @@ func unavailable(doing string, err error) authn.Step {
 	return authn.StepUnavailable(fmt.Errorf("authn.login.password: %s: %w", doing, err))
 }
 
+// descriptorFields is the two fields of a credential, which the first step asks
+// for and the descriptor previews.
+func descriptorFields() []authn.Field {
+	return []authn.Field{
+		{Name: fieldIdentifier, Kind: authn.FieldText, Required: true},
+		{Name: fieldPassword, Kind: authn.FieldPassword, Required: true, Secret: true},
+	}
+}
+
 // promptCredentials asks for the two fields of a credential.
 func promptCredentials() authn.Step {
-	return authn.StepPrompt(stepCredentials, nil,
-		authn.Field{Name: fieldIdentifier, Kind: authn.FieldText, Required: true},
-		authn.Field{Name: fieldPassword, Kind: authn.FieldPassword, Required: true, Secret: true},
-	)
+	return authn.StepPrompt(stepCredentials, nil, descriptorFields()...)
 }
 
 // promptNewPassword asks for the new password, with the state that says the old

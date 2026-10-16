@@ -623,7 +623,7 @@ flowchart TD
 
 ### 首登开户
 
-社交与短信登录是否开户，由 `authn.account.signup` 决定（放宽开关，仅取主配置源，默认不开户），取值是封闭集 `closed` 与 `open`。
+社交与短信登录是否开户，由 `authn.account.signup` 决定（放宽开关，仅取主配置源，默认不开户），取值是封闭集 `closed` 与 `open`。该开关的当前取值经登录发现端点 `GET B/methods` 的 `signup.enabled` 发布（[design-authn-login](design-authn-login.md)）。
 
 - `closed`：无绑定又无关联可走时，统一应答 `login-failed`。
 - `open`：建 `kind = user`、启用的账户，写绑定或手机标识，**不建任何成员关系**：账户能登录，访问任何租户资源得 404，成员关系要管理员或邀请授予。

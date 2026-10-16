@@ -141,6 +141,7 @@
 | 记录 | 日期 | 状态 |
 |---|---|---|
 | [登录引擎：方法只交出事实，流程记录放 kv，比较并交换由引擎做](adr-authn-login-flow-2026-10-10.md) | 2026-10-10 | 已接受 |
+| [登录方式的发现：渠道来源是后端发现端点，方法自带描述符](adr-authn-login-method-discovery-2026-10-16.md) | 2026-10-16 | 已接受 |
 | [短信验证码：挑战状态机归 SMSCodes，发送归顶层能力 sms.Sender](adr-authn-sms-2026-10-10.md) | 2026-10-10 | 已接受 |
 | [微信登录自写薄客户端，网站应用与公众号拆成两个模块](adr-authn-wechat-2026-10-10.md) | 2026-10-10 | 已接受 |
 | [社交与企业 OIDC 的校验桥：go-oidc 加 x/oauth2，state、PKCE、nonce 自做](adr-authn-oauth-flow-2026-10-10.md) | 2026-10-10 | 已接受 |

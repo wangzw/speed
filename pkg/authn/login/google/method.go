@@ -58,6 +58,18 @@ var (
 // Name is the method's stable name.
 func (p *product) Name() string { return methodName }
 
+// Describe reports the Google method: a redirect button that speaks OIDC and
+// opens an account for a Google identity no account holds yet.
+func (p *product) Describe() authn.MethodDescriptor {
+	return authn.MethodDescriptor{
+		Name:         methodName,
+		Kind:         authn.MethodKindRedirect,
+		Protocol:     authn.MethodProtocolOIDC,
+		Label:        "Google",
+		OpensAccount: true,
+	}
+}
+
 // Begin starts a flow: it draws the state, the PKCE verifier and the nonce,
 // keeps them in the flow's private state, and answers the authorization URL the
 // user agent leaves for. A provider that cannot be discovered is an outage, not

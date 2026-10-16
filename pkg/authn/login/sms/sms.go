@@ -129,6 +129,18 @@ func Module() core.Module {
 // Name is the method's stable name.
 func (m *method) Name() string { return methodName }
 
+// Describe reports the SMS method: a form whose first step asks for a phone
+// number. A code sent to a number nobody holds opens an account while the
+// account module's registration switch is open.
+func (m *method) Describe() authn.MethodDescriptor {
+	return authn.MethodDescriptor{
+		Name:         methodName,
+		Kind:         authn.MethodKindForm,
+		Fields:       descriptorFields(),
+		OpensAccount: true,
+	}
+}
+
 // Begin starts a flow. The start request's own phone field is the number when the
 // client sent it; otherwise the method asks for it.
 func (m *method) Begin(ctx context.Context, s authn.Start) (authn.Step, error) {
@@ -319,11 +331,17 @@ func unavailable(doing string, err error) authn.Step {
 	return authn.StepUnavailable(fmt.Errorf("authn.login.sms: %s: %w", doing, err))
 }
 
+// descriptorFields is the one field the first step asks for, which the descriptor
+// previews.
+func descriptorFields() []authn.Field {
+	return []authn.Field{
+		{Name: fieldPhone, Kind: authn.FieldPhone, Required: true},
+	}
+}
+
 // promptPhone asks for the phone number.
 func promptPhone() authn.Step {
-	return authn.StepPrompt(stepPhone, nil,
-		authn.Field{Name: fieldPhone, Kind: authn.FieldPhone, Required: true},
-	)
+	return authn.StepPrompt(stepPhone, nil, descriptorFields()...)
 }
 
 // promptCode asks for the code a sent message carries, with the state that names

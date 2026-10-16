@@ -219,6 +219,18 @@ func newMethod(cfg resolved, client *http.Client) *method {
 // Name is the method's stable name.
 func (m *method) Name() string { return methodName }
 
+// Describe reports the GitHub method: a redirect button that speaks OAuth 2.0
+// and opens an account for a GitHub identity no account holds yet.
+func (m *method) Describe() authn.MethodDescriptor {
+	return authn.MethodDescriptor{
+		Name:         methodName,
+		Kind:         authn.MethodKindRedirect,
+		Protocol:     authn.MethodProtocolOAuth2,
+		Label:        "GitHub",
+		OpensAccount: true,
+	}
+}
+
 // oauthConfig is the OAuth 2.0 configuration one exchange is run with.
 func (m *method) oauthConfig() *oauth2.Config {
 	return &oauth2.Config{

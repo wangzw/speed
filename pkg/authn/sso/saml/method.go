@@ -31,6 +31,17 @@ var (
 // Name is the method's stable name.
 func (p *product) Name() string { return methodName }
 
+// Describe reports the enterprise SAML method: an enterprise entry that
+// discovers the provider and leaves for it. It opens no account of its own; a
+// provider's trust settings and the account resolution decide that.
+func (p *product) Describe() authn.MethodDescriptor {
+	return authn.MethodDescriptor{
+		Name:     methodName,
+		Kind:     authn.MethodKindEnterprise,
+		Protocol: authn.MethodProtocolSAML,
+	}
+}
+
 // Begin starts a flow: it reads the provider row the start names, builds an
 // AuthnRequest for it, keeps the request's identifier, the RelayState and the
 // provider's identifier in the flow's private state, and answers the redirect

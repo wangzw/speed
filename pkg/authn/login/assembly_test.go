@@ -19,6 +19,10 @@ import (
 type stubMethod struct{ name string }
 
 func (m stubMethod) Name() string { return m.name }
+func (m stubMethod) Describe() authn.MethodDescriptor {
+	return authn.MethodDescriptor{Name: m.name, Kind: authn.MethodKindForm}
+}
+
 func (stubMethod) Begin(context.Context, authn.Start) (authn.Step, error) {
 	return authn.Step{}, nil
 }

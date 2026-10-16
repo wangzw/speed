@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -151,12 +153,22 @@ func (k *fakeKV) IncrByFloatWithTTL(_ context.Context, key string, delta float64
 // fakeMethod is a login method whose answers a case scripts per call.
 type fakeMethod struct {
 	name  string
+	desc  authn.MethodDescriptor
 	calls int
 	begin func(s authn.Start) (authn.Step, error)
 	ans   func(f authn.FlowState, in authn.StepInput) (authn.Step, error)
 }
 
 func (m *fakeMethod) Name() string { return m.name }
+
+// Describe reports the descriptor a case set, or a form named after the method.
+func (m *fakeMethod) Describe() authn.MethodDescriptor {
+	if m.desc.Name == "" {
+		return authn.MethodDescriptor{Name: m.name, Kind: authn.MethodKindForm}
+	}
+	return m.desc
+}
+
 func (m *fakeMethod) Begin(_ context.Context, s authn.Start) (authn.Step, error) {
 	m.calls++
 	if m.begin == nil {
@@ -184,6 +196,7 @@ type fakeMFA struct {
 	factors   []authn.FactorRecord
 	enroll    func(kind authn.FactorKind, in authn.StepInput) authn.Step
 	enrolls   []authn.StepInput
+	kinds     []authn.FactorKind
 }
 
 func (m *fakeMFA) Require(context.Context, authn.AccountID, authn.Proof) (authn.MFAOutcome, []authn.FactorRecord, error) {
@@ -212,7 +225,13 @@ func (m *fakeMFA) Enroll(_ context.Context, _ authn.FlowState, kind authn.Factor
 	}
 	return authn.StepEnrolled(authn.FactorRecord{ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive}), nil
 }
-func (m *fakeMFA) Kinds() []authn.FactorKind { return []authn.FactorKind{authn.FactorTOTP} }
+
+func (m *fakeMFA) Kinds() []authn.FactorKind {
+	if m.kinds != nil {
+		return m.kinds
+	}
+	return []authn.FactorKind{authn.FactorTOTP}
+}
 
 // fakeAccounts answers for a fixed set of accounts and the external bindings a
 // case registers.
@@ -386,6 +405,13 @@ func newRig(t *testing.T, m *fakeMethod) *rig {
 // case that needs a method shaped other than fakeMethod.
 func newRigMethod(t *testing.T, m authn.LoginMethod) *rig {
 	t.Helper()
+	return newRigMethods(t, m)
+}
+
+// newRigMethods builds a rig with the given methods, mounted through the test
+// mounter. It is what a case that needs more than one method builds on.
+func newRigMethods(t *testing.T, methods ...authn.LoginMethod) *rig {
+	t.Helper()
 	kv := newKV()
 	mfa := &fakeMFA{outcome: authn.MFANone, assurance: authn.MFAResult{Assurance: authn.AssuranceSingle}}
 	accounts := &fakeAccounts{
@@ -414,8 +440,10 @@ func newRigMethod(t *testing.T, m authn.LoginMethod) *rig {
 		trustedOrigins: []string{"https://app.example.org"},
 		allowInsecure:  true,
 	}
-	p.methods[m.Name()] = m
-	p.methodNames = []string{m.Name()}
+	for _, m := range methods {
+		p.methods[m.Name()] = m
+	}
+	p.methodNames = slices.Sorted(maps.Keys(p.methods))
 
 	r, err := resolve.New(resolve.Config{Accounts: accounts, Admin: admin, Memberships: stubMemberships{}})
 	if err != nil {

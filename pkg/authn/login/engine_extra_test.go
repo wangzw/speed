@@ -361,8 +361,9 @@ func TestMethodsAndCurrentBehave(t *testing.T) {
 	r := newRig(t, m)
 
 	listing := r.send(http.MethodGet, "/auth/methods", "")
-	if body := decode(t, listing.Body.String())["methods"].([]any); len(body) != 1 || body[0] != "password" {
-		t.Errorf("GET methods = %v, want [password]", listing.Body.String())
+	if body := decode(t, listing.Body.String())["methods"].([]any); len(body) != 1 ||
+		body[0].(map[string]any)["name"] != "password" {
+		t.Errorf("GET methods = %v, want one descriptor named password", listing.Body.String())
 	}
 
 	hidden := newRig(t, m)

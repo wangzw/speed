@@ -172,6 +172,7 @@ WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication
 
 - `Factor`、`MFA`、`FactorRecord`、`Pass`、`MFAOutcome`、`MFAResult` 的签名与上表的承诺是稳定面。
 - `FactorKind` 的取值是闭集，与 `authn_factors.kind` 的检查约束一致；新增种类要同时改根包常量、检查约束与迁移。
+- 可用的因素种类经登录发现端点 `GET B/methods` 的 `mfa.factors` 发布（[authn-login](design-authn-login.md)），属部署级：装配收哪些种类；本人已登记的因素另走 `GET B/factors`。
 - 保障等级的非零取值是闭集：单因素与多因素。新增取值时合成处仍只有 `MFA.Assurance`。
 - 因素行的零值状态是待确认；待确认的行永不用于验证。
 - 哨兵错误的名字见「错误与失败语义」，经 `errors.Is` 判别。

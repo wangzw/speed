@@ -46,6 +46,11 @@ func (m *redirectMethod) Name() string {
 	return m.name
 }
 
+// Describe reports a redirect method named after the method.
+func (m *redirectMethod) Describe() authn.MethodDescriptor {
+	return authn.MethodDescriptor{Name: m.Name(), Kind: authn.MethodKindRedirect, Protocol: authn.MethodProtocolOAuth2}
+}
+
 func (*redirectMethod) Begin(context.Context, authn.Start) (authn.Step, error) {
 	return authn.StepRedirect("idp", nil, "https://idp.example.org/auth"), nil
 }

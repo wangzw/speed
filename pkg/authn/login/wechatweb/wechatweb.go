@@ -141,6 +141,18 @@ func newMethod(client *wechat.Client, redirectURI string) *method {
 // Name is the method's stable name.
 func (m *method) Name() string { return methodName }
 
+// Describe reports the WeChat web method: a redirect button that speaks OAuth
+// 2.0 and opens an account for a WeChat identity no account holds yet.
+func (m *method) Describe() authn.MethodDescriptor {
+	return authn.MethodDescriptor{
+		Name:         methodName,
+		Kind:         authn.MethodKindRedirect,
+		Protocol:     authn.MethodProtocolOAuth2,
+		Label:        "WeChat",
+		OpensAccount: true,
+	}
+}
+
 // Begin starts a flow: it draws a fresh state, keeps its digest as the flow's
 // private state, and sends the user agent to the provider's authorization
 // address. It reads nothing from the start request.
