@@ -344,8 +344,9 @@ func (p *product) displayNameLowerRange() string {
 
 // displayNameBound returns the least string above every string that begins with
 // prefix, and whether such a string exists. A prefix that is not valid UTF-8
-// begins no name the column holds, so no string is above it and the empty bound
-// closes the range to nothing. The prefix is read as written, so it may end in a
+// begins no name the column holds and so selects nothing: the bound it returns
+// is the empty string, the second result true, and that empty bound closes the
+// range to nothing. The prefix is read as written, so it may end in a
 // multi-byte character; the raise is over the last character and not its last
 // byte, and it steps to the character above the last one — over the surrogate
 // code points, which no name holds — so the bound is itself valid UTF-8 and the
