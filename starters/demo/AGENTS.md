@@ -301,12 +301,16 @@ Under every stack:
   platform's own management surface reads, and each tenant under `seed.tenants`,
   so the console's tenant-addressed pages — members, invitations and SSO
   providers — answer out of the box; a platform-domain binding does not reach a
-  tenant domain. It is idempotent — an account, a tenant, a role, a grant or a
-  binding already there is left as it stands and reported as skipped — so it is
-  safe to run at every deployment. Nothing else is touched, and an account or a
-  tenant the configuration no longer names is neither disabled nor deleted. It
-  drives to `StageStart`, past the migrations, so a database that was never
-  migrated is one it can seed in a single command. A role and a binding come
+  tenant domain. The reserved platform domain (`system`) is not accepted under
+  `seed.tenants`: it names the platform's policy domain and not a tenant, and the
+  policy module refuses to start when the roster holds a tenant carrying it, so
+  the seed refuses the name before writing it rather than seeding a roster the
+  next serve would not start on. It is idempotent — an account, a tenant, a role,
+  a grant or a binding already there is left as it stands and reported as skipped
+  — so it is safe to run at every deployment. Nothing else is touched, and an
+  account or a tenant the configuration no longer names is neither disabled nor
+  deleted. It drives to `StageStart`, past the migrations, so a database that was
+  never migrated is one it can seed in a single command. A role and a binding come
   from here because no migration writes one: who a deployment's administrators
   are is the host's answer, and this command is where this host gives it.
 - **`gen`** merges the OpenAPI fragments the modules declare into one document
