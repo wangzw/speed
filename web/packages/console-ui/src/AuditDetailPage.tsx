@@ -58,7 +58,9 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
     ...(parentHref === undefined
       ? [{ label: t('audit.title') }]
       : [{ label: t('audit.title'), href: parentHref }]),
-    { label: t('auditDetail.title') },
+    // The trail's last step names the record, so it does not repeat the
+    // query page's own label ("审计记录 / 审计记录") above the title.
+    { label: t('auditDetail.crumb', { id }) },
   ]
 
   const main = (settled: ConsoleAuditRecord) => {

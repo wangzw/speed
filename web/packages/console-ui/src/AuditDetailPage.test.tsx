@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import { AuditDetailPage } from './AuditDetailPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
@@ -51,6 +51,26 @@ describe('AuditDetailPage', () => {
     expect(screen.getByRole('link', { name: '返回审计查询' })).toHaveAttribute(
       'href',
       '/console/audit',
+    )
+  })
+
+  it('names the record in the breadcrumb rather than repeating the query page', async () => {
+    const operations = createConsoleOperations(makeConsoleBackend())
+    renderWithProviders(
+      <AuditDetailPage id="rec-1" parentHref="/console/audit" />,
+      { operations },
+    )
+    await screen.findByRole('heading', { level: 1, name: '审计记录' })
+    const breadcrumb = screen.getByRole('navigation')
+    // The parent step keeps the query page's name and links back to it...
+    expect(
+      within(breadcrumb).getByRole('link', { name: '审计记录' }),
+    ).toHaveAttribute('href', '/console/audit')
+    // ...while the current step names the record itself, so the trail does
+    // not read "控制台 / 审计记录 / 审计记录".
+    expect(within(breadcrumb).getByText('记录「rec-1」')).toHaveAttribute(
+      'aria-current',
+      'page',
     )
   })
 

@@ -130,6 +130,7 @@
   },
   "auditDetail": {
     "title": "Audit record",
+    "crumb": "Record {{id}}",
     "back": "Back to the audit query",
     "loading": "Loading the audit record",
     "error": {

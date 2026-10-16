@@ -130,6 +130,7 @@
   },
   "auditDetail": {
     "title": "审计记录",
+    "crumb": "记录「{{id}}」",
     "back": "返回审计查询",
     "loading": "正在加载审计记录",
     "error": {
