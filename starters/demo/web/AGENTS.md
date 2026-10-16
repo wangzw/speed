@@ -55,6 +55,11 @@ program beside this directory embeds with `go:embed` and serves through
   from is fresh rather than a stale committed copy.
 - **The API origin is read at runtime, never baked in** (`src/runtime-config.ts`,
   falling back to same-origin). One build output serves every deployment topology.
+- **The app reaches the API at one origin, which must be a gateway.** The demo's
+  Go program mounts the api, account and admin surfaces on separate ports, so the
+  built bundle served straight from it renders for static browsing but cannot
+  sign in; a deployment fronts the bundle and those endpoints behind one origin
+  (as `pnpm dev` proxies in development). See README "One origin for the API".
 - **The two shells live in disjoint path spaces.** The tenant area renders
   `@speed/product-shell`; the console area renders `@speed/console-ui` under
   `CONSOLE_PREFIX`. `src/app.tsx` picks the shell from the route table's

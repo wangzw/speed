@@ -152,6 +152,27 @@ beside the bundle:
 { "apiOrigin": "https://api.example.com" }
 ```
 
+### One origin for the API
+
+The app reaches every backend call at a single origin -- the client base URL,
+same-origin by default or the `runtime-config.json` origin -- but the demo's Go
+program mounts the API, account and admin surfaces on separate ports
+(`http.endpoints` in `testdata/sqlite.yaml`). The one origin the app talks to is
+therefore a **gateway** that routes `/api`, `/auth`, `/tenant`, `/settings` and
+`/audit` to the endpoint each belongs to:
+
+- In development the vite dev server is that gateway: `pnpm dev` proxies those
+  prefixes onto the endpoints (the `DEMO_WEB_*_PROXY` variables above).
+- The demo's Go program ships no such gateway. Its `web` endpoint serves the
+  built bundle alone, so loading the bundle straight from the Go program
+  (`http://127.0.0.1:8084/`) renders for static browsing but cannot sign in:
+  `POST /auth/flows` goes back to the page's own origin, which mounts no authn
+  route, and no single `apiOrigin` reaches the demo's three API ports at once.
+
+A deployment that serves the built bundle must place it behind the same gateway
+that fronts the API -- one origin whose reverse proxy answers the bundle and the
+API endpoints -- and set `runtime-config.json`'s `apiOrigin` to that origin.
+
 ### Sessions and the console
 
 The access token lives in memory and the refresh token in the session's own
