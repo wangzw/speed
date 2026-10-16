@@ -349,6 +349,62 @@ func TestAPathUnderAnEndpointsPrefixIsAnsweredByThatEndpoint(t *testing.T) {
 	}
 }
 
+// TestAPathNoEndpointOwnsWithNoFallbackIsTheDispatchsOwn404 pins the dispatch's
+// own answer when a listener carries no fallback: a path under no endpoint's
+// prefix is answered by the dispatch itself, as a problem+json 404, rather than
+// by any endpoint. The listener here carries two endpoints with disjoint
+// prefixes and no catch-all, so a request under neither is owned by nobody and
+// there is no fallback to hand it to. Each endpoint's chain sets a marker header,
+// and the answer carries neither, which is what shows the dispatch wrote it and
+// no endpoint's chain ran.
+func TestAPathNoEndpointOwnsWithNoFallbackIsTheDispatchsOwn404(t *testing.T) {
+	serving := make(chan struct{}, 1)
+	mark := func(name string) gin.HandlerFunc {
+		return func(c *gin.Context) {
+			c.Header("X-Endpoint-Saw", name)
+			c.Next()
+		}
+	}
+	probe := &stageProbe{
+		name:     "probe.registers-two-disjoint-endpoints",
+		requires: requiresRouter(),
+		onInit: inOrder(
+			useLayer("a", Middleware{Name: "a.marker", Stage: StageGuard, Handler: mark("a")}),
+			useLayer("b", Middleware{Name: "b.marker", Stage: StageGuard, Handler: mark("b")}),
+			routeOn("a", nethttp.MethodGet, "/api/v1/things", filler),
+			routeOn("b", nethttp.MethodGet, "/other/things", filler),
+		),
+		onServe: func(*core.Registry) error {
+			serving <- struct{}{}
+			return nil
+		},
+	}
+	a := startAssembly(t, backendConfig("a", "b"), Module(), probe.module())
+	a.waitForOrEnd(t, serving, "the listener to be served")
+	r, err := routerFrom(a.reg)
+	if err != nil {
+		t.Fatalf("taking this module's product out of the registry: %v", err)
+	}
+	addr, err := boundAddr(r, "a")
+	if err != nil {
+		t.Fatalf("finding the address the listener bound: %v", err)
+	}
+
+	got, err := getResponse(context.Background(), addr, "/nowhere")
+	if err != nil {
+		t.Fatalf("the request for the unowned path failed: %v", err)
+	}
+	if got.status != nethttp.StatusNotFound {
+		t.Errorf("a path under no endpoint's prefix answered %d, want %d", got.status, nethttp.StatusNotFound)
+	}
+	if ct := got.header.Get("Content-Type"); !strings.HasPrefix(ct, "application/problem+json") {
+		t.Errorf("the dispatch's 404 carries Content-Type %q, want application/problem+json", ct)
+	}
+	if saw := got.header.Get("X-Endpoint-Saw"); saw != "" {
+		t.Errorf("the answer carries the endpoint marker %q; the request reached an endpoint's chain, not the dispatch", saw)
+	}
+}
+
 // TestTwoEndpointsWithTheSameStaticPrefixIsStartupFailure pins that one static
 // prefix belongs to one endpoint: the listener selects an endpoint by the
 // longest prefix a request falls under, so two endpoints owning the same prefix
@@ -436,6 +492,82 @@ func TestNestedStaticPrefixesPickTheLongestMatch(t *testing.T) {
 	}
 }
 
+// TestARootEndpointBesideACatchAllIsStartupFailure pins the one-whole-path-space
+// rule for a root endpoint: a route at "/" makes the endpoint own every path as a
+// prefix, the same whole space a catch-all endpoint covers. A listener carrying
+// both would hand every request to whichever the dispatch picked first and the
+// other would never be reached, so the startup ends naming the listener and the
+// two endpoints. Without the rule the root endpoint silently shadows the
+// catch-all: the catch-all is the fallback and owns no prefix, while the root
+// endpoint owns "/" and takes every request the catch-all would have answered.
+func TestARootEndpointBesideACatchAllIsStartupFailure(t *testing.T) {
+	probe := &stageProbe{
+		name:     "probe.registers-a-root-endpoint-and-a-catch-all",
+		requires: requiresRouter(),
+		onInit: inOrder(
+			routeOn("root", nethttp.MethodGet, "/", filler),
+			routeOn("web", nethttp.MethodGet, "/*path", filler),
+		),
+	}
+	a := startAssembly(t, backendConfig("root", "web"), Module(), probe.module())
+
+	runErr := a.stop(t)
+	if !errors.Is(runErr, ErrRouteConflict) {
+		t.Fatalf("a root endpoint beside a catch-all started up with %v, want ErrRouteConflict", runErr)
+	}
+	mustContain(t, runErr.Error(), `"backend"`, "the listener carrying both endpoints")
+	mustContain(t, runErr.Error(), `"root"`, "the endpoint registering the root")
+	mustContain(t, runErr.Error(), `"web"`, "the catch-all endpoint")
+}
+
+// TestAnEndpointRegisteringTheRootIsTheListenersFallback pins how a listener
+// treats an endpoint that registers the root "/": it covers the whole path space
+// — every path falls under "/" — so it is the listener's fallback, the endpoint
+// that answers the paths no other endpoint owns. Beside an endpoint owning a
+// deeper prefix the two coexist: the deeper prefix wins for a path under it, and
+// the root endpoint answers the rest, including "/" itself.
+func TestAnEndpointRegisteringTheRootIsTheListenersFallback(t *testing.T) {
+	serving := make(chan struct{}, 1)
+	probe := &stageProbe{
+		name:     "probe.registers-a-root-endpoint-beside-an-api",
+		requires: requiresRouter(),
+		onInit: inOrder(
+			routeOn("root", nethttp.MethodGet, "/", func(c *gin.Context) { c.String(nethttp.StatusOK, "root") }),
+			routeOn("api", nethttp.MethodGet, "/api/v1/things", func(c *gin.Context) { c.String(nethttp.StatusOK, "api") }),
+		),
+		onServe: func(*core.Registry) error {
+			serving <- struct{}{}
+			return nil
+		},
+	}
+	a := startAssembly(t, backendConfig("root", "api"), Module(), probe.module())
+	a.waitForOrEnd(t, serving, "the listener to be served")
+	r, err := routerFrom(a.reg)
+	if err != nil {
+		t.Fatalf("taking this module's product out of the registry: %v", err)
+	}
+	addr, err := boundAddr(r, "root")
+	if err != nil {
+		t.Fatalf("finding the address the listener bound: %v", err)
+	}
+
+	for _, tc := range []struct {
+		path string
+		want string
+	}{
+		{"/api/v1/things", "api"},
+		{"/", "root"},
+	} {
+		got, err := getResponse(context.Background(), addr, tc.path)
+		if err != nil {
+			t.Fatalf("the request for %q failed: %v", tc.path, err)
+		}
+		if got.status != nethttp.StatusOK || got.body != tc.want {
+			t.Errorf("%q answered %d %q, want 200 %q", tc.path, got.status, got.body, tc.want)
+		}
+	}
+}
+
 // TestAnEndpointWithNoStaticPrefixBesideOthersIsStartupFailure pins the other
 // half of prefix selection: an endpoint whose routes all begin with a dynamic
 // segment owns no prefix, so a listener carrying it beside another endpoint has
@@ -465,7 +597,9 @@ func TestAnEndpointWithNoStaticPrefixBesideOthersIsStartupFailure(t *testing.T) 
 // ownership: the literal segments it leads with, up to the first dynamic
 // segment, with a fully literal route of two or more segments contributing its
 // parent so the endpoint also answers paths beside its own routes. A route whose
-// first segment is already dynamic contributes nothing.
+// first segment is already dynamic contributes nothing, and neither does a route
+// at the root: an endpoint registering "/" covers the whole path space and is its
+// listener's fallback rather than a prefix owner.
 func TestRoutePrefix(t *testing.T) {
 	cases := []struct {
 		path string
@@ -478,7 +612,7 @@ func TestRoutePrefix(t *testing.T) {
 		{"/auth/login", "/auth", true},
 		{"/tenant/admin/tenants/:id/status", "/tenant/admin/tenants", true},
 		{"/health", "/health", true},
-		{"/", "/", true},
+		{"/", "", false},
 		{"/:tenant/things", "", false},
 		{"/*path", "", false},
 	}

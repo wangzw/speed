@@ -11,15 +11,19 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// catchAll reports whether any route this endpoint registered carries a
-// catch-all segment. Such an endpoint is a listener's fallback by construction:
-// its own route table covers whatever path arrives, so the dispatch hands it the
-// requests no endpoint owns. In gin a catch-all can sit beside no other route on
-// the same method tree. A catch-all is not a static prefix: it covers a whole
-// path space, so the fallback is left out of the prefix a listener routes by.
-func (e *endpoint) catchAll() bool {
+// coversWholePathSpace reports whether this endpoint answers every path on its
+// listener, which makes it the listener's fallback by construction: its routes
+// cover whatever path arrives, so the dispatch hands it the requests no endpoint
+// owns. Two route shapes do this. A catch-all route matches every path, and in
+// gin it can sit beside no other route on the same method tree. A route at the
+// root "/" matches only "/" itself, but "/" is a static prefix every path falls
+// under, so the endpoint's "/" owns the whole path space — the same space a
+// catch-all covers, reached through the prefix selector rather than the route
+// table. Either way the endpoint is out of the prefix a listener routes by: a
+// catch-all is not a static prefix, and the root is the fallback's own space.
+func (e *endpoint) coversWholePathSpace() bool {
 	for _, r := range e.routes {
-		if strings.Contains(r.path, "*") {
+		if strings.Contains(r.path, "*") || r.path == "/" {
 			return true
 		}
 	}
@@ -46,41 +50,43 @@ func (e *endpoint) catchAll() bool {
 // catch-all would answer 200. A route whose first segment is already dynamic
 // contributes no prefix.
 //
-// The fallback is the endpoint that receives a request no endpoint owns. A
-// catch-all endpoint is one by construction; so is the only endpoint of a
-// listener, because a listener with one endpoint has no routing to do — every
-// request belongs to that endpoint, and its prefixes are not consulted. The
-// fallback itself owns no prefix.
+// The fallback is the endpoint that receives a request no endpoint owns. An
+// endpoint whose routes cover the whole path space is one by construction — a
+// catch-all, or a route at the root "/"; so is the only endpoint of a listener,
+// because a listener with one endpoint has no routing to do — every request
+// belongs to that endpoint, and its prefixes are not consulted. The fallback
+// itself owns no prefix.
 //
 // Three things the listener cannot hold are refused here as startup failures,
-// all ErrRouteConflict and all naming the listener: a second catch-all endpoint;
-// two endpoints claiming the same (method, path); and two endpoints whose static
-// prefixes collide — the same prefix owned by two endpoints, or an endpoint
-// whose routes all begin with a dynamic segment, leaving it with no prefix to be
-// selected by at all. Prefixes that nest are not a collision: the longest one
-// wins, so an endpoint owning /api/v1 may stand beside one owning
-// /api/v1/internal.
+// all ErrRouteConflict and all naming the listener: a second endpoint covering
+// the whole path space; two endpoints claiming the same (method, path); and two
+// endpoints whose static prefixes collide — the same prefix owned by two
+// endpoints, or an endpoint whose routes all begin with a dynamic segment,
+// leaving it with no prefix to be selected by at all. Prefixes that nest are not
+// a collision: the longest one wins, so an endpoint owning /api/v1 may stand
+// beside one owning /api/v1/internal.
 func buildDispatch(name string, endpoints []*endpoint, localizer i18n.Localizer) (nethttp.Handler, error) {
-	var catchAlls []*endpoint
+	var fallbacks []*endpoint
 	for _, e := range endpoints {
-		if e.catchAll() {
-			catchAlls = append(catchAlls, e)
+		if e.coversWholePathSpace() {
+			fallbacks = append(fallbacks, e)
 		}
 	}
-	if len(catchAlls) > 1 {
-		return nil, fmt.Errorf("%w: listener %q carries two catch-all endpoints, %q and %q. "+
-			"A listener hands every request no endpoint owns to its one fallback endpoint, "+
-			"because a catch-all covers a whole path space and excludes every other route on the "+
-			"same method tree; a second catch-all has no request it could ever be reached by. "+
-			"Give each listener at most one endpoint whose routes carry a catch-all, or move one "+
-			"of them to another listener",
-			ErrRouteConflict, name, catchAlls[0].settings.name, catchAlls[1].settings.name)
+	if len(fallbacks) > 1 {
+		return nil, fmt.Errorf("%w: listener %q carries two endpoints covering its whole path "+
+			"space, %q and %q. A listener hands every request no endpoint owns to its one fallback "+
+			"endpoint, and an endpoint whose routes cover the whole path space leaves no path a "+
+			"second such endpoint could answer: a catch-all matches every path, and a route at \"/\" "+
+			"owns every path as a prefix, so the second has no request it could ever be reached by. "+
+			"Give each listener at most one endpoint covering the whole path space, or move one of "+
+			"them to another listener",
+			ErrRouteConflict, name, fallbacks[0].settings.name, fallbacks[1].settings.name)
 	}
 
 	var fallback *endpoint
 	switch {
-	case len(catchAlls) == 1:
-		fallback = catchAlls[0]
+	case len(fallbacks) == 1:
+		fallback = fallbacks[0]
 	case len(endpoints) == 1:
 		fallback = endpoints[0]
 	}
@@ -191,11 +197,11 @@ func (d *dispatch) owner(path string) *endpoint {
 // fallsUnder reports whether a request path lies at or below a static prefix:
 // equal to it, or continuing past it at a segment boundary. A bare string-prefix
 // match is not enough — "/apifoo" does not fall under "/api" — which is what
-// keeps an endpoint's ownership to its own segment subtree.
+// keeps an endpoint's ownership to its own segment subtree. No owned prefix is
+// "/": an endpoint registering the root is its listener's fallback and
+// contributes no prefix (see coversWholePathSpace), so the root needs no case
+// here.
 func fallsUnder(path, prefix string) bool {
-	if prefix == "/" {
-		return true
-	}
 	return path == prefix || strings.HasPrefix(path, prefix+"/")
 }
 
@@ -245,17 +251,19 @@ func parentPath(p string) string {
 }
 
 // routePrefix returns the static prefix one route contributes to its endpoint's
-// ownership, and false when it contributes none because its first segment is
-// already dynamic. A path under the prefix — even one no route registered — is
-// answered by the endpoint. A fully literal route of two or more segments
-// contributes its parent path, so the endpoint answers a path beside or under
-// its own routes instead of letting it reach a fallback; the endpoint's own
-// routes are then covered by that parent. A single-segment route contributes
-// itself.
+// ownership, and false when it contributes none. Nothing is contributed by a
+// route whose first segment is already dynamic, nor by a route at the root "/":
+// an endpoint registering the root covers its listener's whole path space and is
+// that listener's fallback, not a prefix owner (see coversWholePathSpace). A path
+// under a contributed prefix — even one no route registered — is answered by the
+// endpoint. A fully literal route of two or more segments contributes its parent
+// path, so the endpoint answers a path beside or under its own routes instead of
+// letting it reach a fallback; the endpoint's own routes are then covered by that
+// parent. A single-segment route contributes itself.
 func routePrefix(path string) (string, bool) {
 	segments := pathSegments(path)
 	if len(segments) == 0 {
-		return "/", true
+		return "", false
 	}
 	cut := len(segments)
 	for i, s := range segments {

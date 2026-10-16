@@ -210,15 +210,15 @@ the page without CORS. The `http.cors` policy the sample carries is therefore
 inert in this stack; it is kept as the starting point for a deployment that
 serves the frontend from an origin of its own.
 
-Sharing a listener with the `web` catch-all decides what an unmatched path is
-answered with. On the `backend` listener the `web` endpoint is the fallback: a
-request no endpoint registered is served the frontend bundle, so a `/api/...`
-path that no module registered returns the bundle's `index.html` as a 200
-`text/html` rather than a 404. A route that is registered is unaffected — it
-reaches its own endpoint's chain and answers as that chain decides (a 401, a
-404, its own payload). An API client, then, cannot read a 200 on a `/api/...`
-path as proof the route exists; a deployment that wants an unmatched API path to
-404 itself must not put a frontend catch-all on the API's listener.
+Sharing a listener with the `web` catch-all decides what a path under no
+endpoint's static prefix is answered with. On the `backend` listener the `web`
+endpoint is the fallback, so such a path is served the frontend bundle. A path
+that falls under an endpoint's prefix is not left to the bundle: that endpoint's
+chain answers it even when no route registered the path. A mistyped path under
+the api endpoint's prefix — `/api/v1`, which its routes establish — therefore
+reaches the api endpoint, not the bundle: with no credentials the gateway
+refuses it 401, and once admitted the api endpoint answers its own 404 (or its
+405 where the path exists but the method is not allowed).
 
 The baseline now ships the guards each endpoint carries, and the configuration
 under `server/testdata/` names them:

@@ -16,9 +16,10 @@ there; several endpoints may share one listener's socket. A listener carries a
 dispatch handler that routes each request by static path prefix: a request that
 falls under an endpoint's prefix — derived from the endpoint's registered routes
 — is answered by that endpoint's engine even when no route registered the path,
-so a mistyped API path gets that endpoint's own 404 rather than the catch-all's
-200, and only a path under no endpoint's prefix reaches the listener's one
-catch-all endpoint.
+so a mistyped API path gets that endpoint's own 404 rather than the fallback's
+200, and only a path under no endpoint's prefix reaches the listener's fallback
+endpoint — the one whose routes cover the whole path space, a catch-all route or
+a route at the root.
 
 The API is the package's godoc, plus the runnable examples in `example_test.go`.
 Read `Middleware`'s field comments before adding a seat to a layer.
