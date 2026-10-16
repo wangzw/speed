@@ -33,19 +33,25 @@
  *     happens before render; double registration throws, so each
  *     namespace appears exactly once.
  *
- *  2. The session -- a memory access-token store (the credential never
- *     touches storage) feeding the auth-core session state machine over
- *     the generated authn operations, attached with attachSession. A
- *     reload starts anonymous by contract.
+ *  2. The session -- the cookie-delivered auth-core session state
+ *     machine over the generated authn operations, attached with
+ *     attachSession. The credential is the server's httpOnly session
+ *     cookie, which the client's credential mode carries; nothing is
+ *     kept in memory here. The assembly calls restore() once at boot, so
+ *     a page load re-reads GET /auth/session and a still-valid cookie
+ *     keeps the user signed in instead of dropping them back to the
+ *     sign-in surface.
  *
  *  3. The client -- createClient over the environment's own fetch, with
- *     the session's silent refresh as the 401-refresh leg and the i18n
- *     instance as the language source (every request announces the
- *     instance's current language through accept-language, read per
- *     attempt, so the backend's requester-language tiers see exactly
- *     what the frontend chain resolved), bound into
- *     the api-sdk runtime seam every generated operation calls through.
- *     All API traffic is generated-code traffic from here on.
+ *     `credentials: 'same-origin'` so the session cookie travels on every
+ *     same-origin request (and a refused credentialed request engages the
+ *     session's silent restore leg) and the i18n instance as the
+ *     language source (every request announces the instance's current
+ *     language through accept-language, read per attempt, so the
+ *     backend's requester-language tiers see exactly what the frontend
+ *     chain resolved), bound into the api-sdk runtime seam every
+ *     generated operation calls through. All API traffic is
+ *     generated-code traffic from here on.
  *
  *  4. The query client and the session-end strategy -- the no-retry
  *     policy below, and watchSessionEnd's shipped default: the moment
@@ -70,7 +76,7 @@ import { StrictMode } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Root } from 'react-dom/client'
-import { createClient, createMemoryAccessTokenStore } from '@speed/api-client'
+import { createClient } from '@speed/api-client'
 import type { SpeedClient } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { attachSession, createAuthSession } from '@speed/auth-core'
@@ -302,14 +308,20 @@ export function bootstrapSpeedApp(
     registerNamespace(i18n, namespace, resources)
   }
 
-  const accessTokenStore = createMemoryAccessTokenStore()
-  const session = createAuthSession(accessTokenStore)
+  const session = createAuthSession()
   attachSession(session)
 
   const client = createClient({
     baseUrl: definition.baseUrl ?? window.location.origin,
-    accessTokenStore,
-    refreshAccessToken: () => session.refresh(),
+    // The session cookie is the credential: same-origin carries it on
+    // every request, and declaring the mode also makes a refused
+    // credentialed request engage the session hook below.
+    credentials: 'same-origin',
+    // The silent-401 leg: on a refused credentialed request, re-read the
+    // session (GET /auth/session). A cookie that still holds keeps the
+    // session and the request is retried once; one that does not ends the
+    // local session, so the shells fall back to sign-in.
+    refreshAccessToken: () => session.restore(),
     // The frontend negotiation chain's resolved value, transported: the
     // provider reads the instance per attempt (createClient's own
     // contract), so a request retried after a language switch announces
@@ -324,6 +336,12 @@ export function bootstrapSpeedApp(
     tenantProvider: definition.tenantProvider,
   })
   bindRequestFn(client)
+
+  // Restore the session the cookie names, once, at boot: a valid cookie
+  // keeps the user signed in across a reload. The read is fire-and-forget
+  // -- a transport failure at startup leaves the anonymous snapshot and the
+  // sign-in surface, which the next successful request or reload corrects.
+  void session.restore().catch(() => undefined)
 
   const queryClient = createQueryClient()
   watchSessionEnd(session, queryClient, definition.sessionEnded)

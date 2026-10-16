@@ -2,12 +2,12 @@
 
 ## 职责
 
-前端唯一的**手写 HTTP 运行时**，包 `web/packages/api-client`。`createClient` 把若干可注入的接缝——可注入的 `fetch`、仅内存的访问令牌存储、401 刷新钩子、重试策略、每次交换的超时、结构化上报端、语言提供者、租户提供者——接成一个请求函数 `RequestFn`；前端的每一次 HTTP 调用都经它发出，每一次失败都以 `ApiError` 拒绝。
+前端唯一的**手写 HTTP 运行时**，包 `web/packages/api-client`。`createClient` 把若干可注入的接缝——可注入的 `fetch`、可选的仅内存的访问令牌存储、凭据模式、401 刷新钩子、重试策略、每次交换的超时、结构化上报端、语言提供者、租户提供者——接成一个请求函数 `RequestFn`；前端的每一次 HTTP 调用都经它发出，每一次失败都以 `ApiError` 拒绝。
 
 - **它为什么存在。** 契约的生成面（[api-sdk](design-web-api-sdk.md)、orval 的产物）产出的是**形状**——类型与每端点的函数、Query hook——它不产出**传输**。生成面把每次调用交给一个手写的适配器（`@speed/api-sdk` 的 `./runtime` 接缝），由适配器转发给本包的请求函数；宿主在装配处（[product-shell](design-web-product-shell.md) 的 `bootstrapSpeedApp`）以 `bindRequestFn` 把客户端绑进那条接缝。传输（基地址、令牌、刷新、重试、超时、上报、语言、租户）因此只在一处定义。工作区里除本包外没有任何一处手写 `fetch`/`axios`，这条由 `web/eslint.config.mjs` 的 `speed/no-direct-http` 规则守住，而白名单里只有本包。
-- **每次尝试接令牌。** 请求函数在每次发送时从访问令牌存储读一次当前令牌，接成 `Authorization: Bearer <token>`；一次请求可声明 `omitAccessToken`，声明后完全不读存储、不接任何存储令牌。令牌只在内存：本包没有任何存储 API，令牌不落 `localStorage`/`sessionStorage`/IndexedDB/cookie。
+- **每次尝试接凭据。** 配了访问令牌存储时，请求函数在每次发送时从存储读一次当前令牌，接成 `Authorization: Bearer <token>`；一次请求可声明 `omitAccessToken`，声明后完全不读存储、不接任何存储令牌。cookie 会话不需要这一路：凭据是服务端的 httpOnly 会话 cookie，由浏览器按 `credentials` 模式（同源缺省即带上）附上，故 cookie 宿主完全不配存储。令牌只在内存：本包没有任何存储 API，令牌不落 `localStorage`/`sessionStorage`/IndexedDB/cookie。
 - **租户按尝试播报，且不在令牌里。** 宿主交来一个租户提供者，本包每次尝试读一次，接成 `X-Tenant` 头；租户是请求期的路由事实，不在访问令牌的声明里，后端解析层正是从请求面（按配置取头、子域或路径）读它。未配提供者、或提供者答空时该头缺席；调用方自带的 `x-tenant` 不覆盖。
-- **静默的 401 单飞刷新。** 配了刷新钩子时，一次**带了 bearer 令牌**的 401 触发一次刷新（并发的 401 共享同一次在飞刷新），随后原请求重试恰一次；凭据为空的 401 不经刷新路径，原样抛出。
+- **静默的 401 单飞刷新。** 配了刷新钩子时，一次**带了凭据**（bearer 令牌，或凭据模式声明了 cookie 时会带的同源 cookie）的 401 触发一次刷新（并发的 401 共享同一次在飞刷新），随后原请求重试恰一次；凭据为空的 401 不经刷新路径，原样抛出。
 - **仅幂等、仅瞬时的重试。** `GET`／`HEAD`／`OPTIONS` 上的 429（honour `Retry-After`）、502／503／504、网络失败与超时按策略重试，其余一律不重试。
 - **每次交换一条超时，调用方取消原样透传。** `timeoutMs` 界定一次 HTTP 交换（一次发送加其正文读取）；调用方传入的 `AbortSignal` 取消时以原生 `AbortError` 拒绝，不包裹、不重试。
 - **`ApiError` 归一。** 带信封的响应保留信封的 `code`（以及后端给了的 `traceId`／`params`／`message`／`details`）；其余失败取本包保留的 `client.*` 码。
@@ -97,8 +97,9 @@ export type UsePublicConfigResult
 |---|---|
 | `baseUrl` | scheme 加 host 加可选前缀；请求路径必须以 `/` 开头并原样接在其后。缺省或空串即 `createClient` 抛错。尾斜杠剥除。 |
 | `fetch` | fetch 实现；缺省取构造时捕获的 `globalThis.fetch`，两处都无即抛错（环境无 fetch 时快速失败，而非每次请求失败） |
-| `accessTokenStore` | 仅内存的令牌存储；缺席即请求不带 `Authorization`（公开配置类端点） |
-| `refreshAccessToken` | 静默 401 刷新钩子：成功存入新令牌返回 `true`（随后原请求重试一次）；只对带了 bearer 令牌的请求触发；并发 401 共享一次在飞刷新；每请求至多调用一次 |
+| `accessTokenStore` | 可选的仅内存令牌存储；缺席即请求不带 `Authorization`（cookie 会话与公开配置类端点都用这一档） |
+| `credentials` | fetch 的 `credentials` 模式，原样传给 fetch；缺席取浏览器缺省（`same-origin`，cookie 会话靠它带上同源 cookie）。声明 `'same-origin'`/`'include'` 同时把本客户端标为 cookie 带凭据：一次带了 cookie 的 401（除声明 `omitAccessToken` 者）与带了 bearer 令牌的请求同等触发刷新钩子 |
+| `refreshAccessToken` | 静默 401 刷新钩子：成功返回 `true`（随后原请求重试一次）；只对带了凭据（bearer 令牌，或 cookie 模式下的同源 cookie）的请求触发；并发 401 共享一次在飞刷新；每请求至多调用一次 |
 | `timeoutMs` | 一次交换的超时毫秒；缺席即不装内部超时；`<= 0` 或非有限值抛错 |
 | `retryPolicy` | 瞬时重试的次数与延时；缺省 `DEFAULT_RETRY_POLICY`；`maxAttempts < 1` 或非整数、延时为负或非有限即抛错 |
 | `reporter` | 结构化诊断接收端；缺省 `createConsoleReporter()` |
@@ -163,11 +164,11 @@ sequenceDiagram
     Req->>Req: 解析路径与查询串，序列化正文
     loop 尝试循环
         Req->>Store: 读当前令牌（除非 omitAccessToken）
-        Req->>Net: 发送（接 bearer、accept-language、每次交换超时）
+        Req->>Net: 发送（按凭据模式带 cookie／接 bearer、accept-language、每次交换超时）
         alt 2xx
             Net-->>Req: 正文
             Req-->>Caller: 解析结果（空体即 undefined）
-        else 401 且带了 bearer 令牌且配了钩子
+        else 401 且带了凭据且配了钩子
             Req->>Refresh: 一次单飞刷新（暂停本尝试超时）
             alt 刷新成功
                 Refresh-->>Req: true
@@ -189,7 +190,7 @@ sequenceDiagram
 | 概念 | 类型 | 说明 |
 |---|---|---|
 | 请求函数 | `RequestFn` | `createClient` 的产物；泛型于解析结果类型 |
-| 客户端选项 | `ClientOptions` | 基地址、fetch、令牌存储、刷新钩子、超时、重试策略、上报端、语言提供者、租户提供者 |
+| 客户端选项 | `ClientOptions` | 基地址、fetch、可选的令牌存储、凭据模式、刷新钩子、超时、重试策略、上报端、语言提供者、租户提供者 |
 | 单次请求选项 | `RequestOptions` | 方法、头、`omitAccessToken`、查询、正文（JSON 或二进制）、`responseType`、`requireJsonBody`、取消信号 |
 | 归一错误 | `ApiError` | `status`、`code`、`traceId`、`params`、`details`、`attempts`、`auth`（`status === 401`） |
 | 令牌存储 | `AccessTokenStore` | 同步的 `get`/`set`，仅内存；`set(null)` 即登出 |
@@ -213,7 +214,7 @@ sequenceDiagram
 
 ### 401 与静默刷新
 
-刷新路径的准入由下列条件共同构成：该请求配置了刷新钩子、该请求带了 bearer 令牌（`omitAccessToken` 或存储为空时不算）、且这次请求此前未刷新过。
+刷新路径的准入由下列条件共同构成：该请求配置了刷新钩子、该请求带了凭据（bearer 令牌，或凭据模式声明了 cookie 且未声明 `omitAccessToken` 时的同源 cookie）、且这次请求此前未刷新过。
 
 - **在任何时候，最多一次刷新在飞。** 并发的 401 汇入同一次在飞刷新；一次刷新完成后不记忆结果，下一个 401 起一次新的。
 - **刷新轮是与原交换分离的一次交换。** 原尝试的超时在刷新轮期间暂停、之后按剩余的预算重上；刷新轮自身不竞态任何信号，故一个中途放弃的发起者不会把一次可能成功的刷新对已在飞的等待者判成失败。
@@ -249,7 +250,7 @@ sequenceDiagram
 | 请求体不可序列化为 JSON | `ApiError`，`client.protocol`，早于任何发送 |
 | 路径不是以 `/` 开头的绝对路径，或路径自带查询串又与 `query` 并用 | 抛程序员错误（构造或调用期的配置错误，不是 `ApiError`） |
 | 调用方取消 | 原生 `AbortError`，不包裹、不重试 |
-| 401 且未配钩子／无 bearer 令牌／重试后再被拒 | `ApiError`（认证，`auth` 为真） |
+| 401 且未配钩子／无凭据（无 bearer 令牌，且凭据模式非 cookie 或声明了 `omitAccessToken`）／重试后再被拒 | `ApiError`（认证，`auth` 为真） |
 | 刷新失败 | 原 401 作为认证 `ApiError` 浮出，另报一条警告 |
 | 构造期配置错误（空 `baseUrl`、无可用 fetch、`maxAttempts < 1`、非法超时） | `createClient` 抛程序员错误（早于任何请求） |
 
@@ -271,8 +272,9 @@ sequenceDiagram
 本包的可变面是 `createClient` 的**可注入接缝**，每个接缝都以其注入点为准：
 
 - **`fetch`**：注入确定性替身（测试），或在无全局 fetch 的环境提供实现。
-- **`accessTokenStore`**：注入替换的令牌存储（仍须仅在内存，不落存储——本包没有存储接缝）。
-- **`refreshAccessToken`**：把静默刷新接到宿主的会话（`@speed/auth-core` 的会话刷新）；缺席即每个 401 原样浮出。
+- **`accessTokenStore`**：注入替换的令牌存储（仍须仅在内存，不落存储——本包没有存储接缝）；cookie 会话不注入。
+- **`credentials`**：声明客户端带 cookie（`'same-origin'`/`'include'`），使同源 cookie 随请求发送、且其 401 触发刷新钩子；跨源部署置 `'include'`。
+- **`refreshAccessToken`**：把静默刷新接到宿主的会话（`@speed/auth-core`）；cookie 会话接 `session.restore()`，令牌会话接 `session.refresh()`。缺席即每个 401 原样浮出。
 - **`retryPolicy`**：改瞬时重试的预算与延时；`{ maxAttempts: 1, ... }` 关闭瞬时重试。
 - **`reporter`**：把诊断接到宿主的管道；`Reporter` 的 `error` 通道是宿主自身的调用点。
 - **`languageProvider`**：把客户端的语言播报接到宿主的 i18n 实例。

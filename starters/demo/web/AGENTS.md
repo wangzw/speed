@@ -83,8 +83,7 @@ program beside this directory embeds with `go:embed` and serves through
   its navigation entries to the app's router through console-ui's `onNavigate`
   seam (`src/console/console-area.tsx`), and its banner carries an exit back to
   the tenant area beside the sign-out action. Both push a history entry instead
-  of reloading the page -- a reload would sign the operator out with the
-  memory-only token -- so neither the console pages nor the exit are a
+  of reloading the page, so neither the console pages nor the exit are a
   navigation dead end.
 - **The app composes its own chrome.** `src/chrome.tsx` holds the shared top-bar
   pieces the tenant frame and the console banner render: the brand, the
@@ -108,17 +107,20 @@ program beside this directory embeds with `go:embed` and serves through
   binding-callback route is mounted beside it for a product that configures one.
   `src/main.tsx` registers the extra namespaces (console-ui, account-ui,
   tenancy-ui, demo) beside the four the assembly registers automatically.
-- **A page reload signs the viewer out.** The access token lives in memory and
-  the refresh token in the session's own closure (no refresh cookie), so a
-  reload starts anonymous. The two areas then show different surfaces: the
-  tenant area is gated by product-shell, whose session-ended branch renders the
-  end screen with its own "sign in again" action for a session that turned
-  anonymous after having been authenticated (only a never-authenticated
-  visitor meets the sign-in surface); the console area carries its own session
-  gate, which sends any anonymous viewer -- including one whose authenticated
-  session just ended -- straight to the sign-in surface. Either way a request
-  that dies with its session never leaves a view stuck loading. Nothing
-  persists a credential to storage; this is the skeleton's shape, not a defect.
+- **A page reload keeps the viewer signed in.** The session is delivered as
+  the server's httpOnly cookie (the login flow requests `delivery: 'session'`,
+  the client sends it with `credentials: 'same-origin'`), so a reload
+  re-establishes the session from that cookie instead of dropping to anonymous.
+  The two areas still show different surfaces when a session genuinely ends
+  (a sign-out, or a cookie that no longer holds): the tenant area is gated by
+  product-shell, whose session-ended branch renders the end screen with its own
+  "sign in again" action for a session that turned anonymous after having been
+  authenticated (only a never-authenticated visitor meets the sign-in surface);
+  the console area carries its own session gate, which sends any anonymous
+  viewer -- including one whose authenticated session just ended -- straight to
+  the sign-in surface. Either way a request that dies with its session never
+  leaves a view stuck loading. Nothing persists a credential to storage; the
+  cookie is the browser's, not a script's.
 
 ## Checks
 

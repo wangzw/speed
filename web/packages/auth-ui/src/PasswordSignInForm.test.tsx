@@ -77,7 +77,7 @@ describe('PasswordSignInForm', () => {
     ])
     expect(harness.calls[0]?.options?.body).toMatchObject({
       method: 'password',
-      delivery: 'token',
+      delivery: 'session',
       binding: 'cookie',
       input: { identifier: 'alice@example.com', password: 's3cret-pass' },
     })

@@ -1,33 +1,42 @@
 /**
- * @speed/auth-core -- the browser session lifecycle as a memory-only
- * state machine over the generated authn flow surface of
- * @speed/api-sdk.
+ * @speed/auth-core -- the browser session lifecycle as a state machine
+ * over the generated authn flow surface of @speed/api-sdk, carried by
+ * the server's session cookie.
  *
  * createAuthSession wires the generated flows (login start / answer /
  * current / abandon, the authenticated-purpose start for link, step-up
- * and enroll, the methods listing, the email-domain SSO discovery,
- * logout and the token endpoint a refresh uses) into one observable
- * session: an AccessTokenStore holds
- * the access token (the bridge into @speed/api-client, which reads the
- * same store on every send), the refresh token lives only inside the
- * session closure, and subscribers observe the AuthSnapshot
- * transitions. Only a token-issuing completion -- a login completion
- * (state 'authenticated') or a step-up completion (state 'elevated')
- * -- changes the session. The failure contract is ApiError-based: a
- * request that fails rejects raw (tell apart with isApiError) and
- * changes nothing; refresh() is the silent path -- false for a refused
- * token (the session signs out), a raw rethrow for a transport/server
- * failure. A token-issuing commit that lost a concurrent race rejects
- * with OperationSupersededError (tell apart with
- * isOperationSuperseded) rather than silently resolving with the
- * winner's snapshot -- see session.ts.
+ * and enroll, the methods listing, the email-domain SSO discovery, the
+ * session read that restores a page load and the logout that ends it)
+ * into one observable session. The session is delivered as a cookie:
+ * the login flow is started with `delivery: 'session'`, so a completion
+ * answers `{state: 'authenticated', session: {id, expires_at}}` and the
+ * server sets its httpOnly cookie on the same response, which the
+ * browser attaches to every same-origin request by itself. A store-less
+ * session (the platform's own composition) therefore holds no credential
+ * at all; restore() reads GET /auth/session to re-establish the snapshot
+ * from that cookie (what keeps a refresh logged in, and what ends the
+ * local session when the cookie no longer holds). A host that passes an
+ * AccessTokenStore keeps the token path: a `delivery: 'token'`
+ * completion writes the access token into it and holds the minted
+ * refresh token in the closure, refreshed through refresh(). Subscribers
+ * observe the AuthSnapshot transitions. Only a session completion -- a
+ * login completion (state 'authenticated') or a step-up completion
+ * (state 'authenticated' for the cookie session, 'elevated' for the
+ * token one) -- changes the session. The failure contract is
+ * ApiError-based: a request that fails rejects raw (tell apart with
+ * isApiError) and changes nothing; restore() and refresh() are the silent
+ * paths -- false for a session that is no longer signed in (the session
+ * goes anonymous), a raw rethrow for a transport/server failure. A
+ * session-establishing commit that lost a concurrent race rejects with
+ * OperationSupersededError (tell apart with isOperationSuperseded) rather
+ * than silently resolving with the winner's snapshot -- see session.ts.
  *
  * The authn fragments declare their 2xx response schemas, so the
  * response models (AuthnFlowState, AuthnStep, AuthnField,
- * AuthnFactorOption, AuthnPrincipal, AuthnMethodList, AuthnMethodDescriptor,
- * AuthnSsoProvider) are the generated types; this package guards each
- * body at runtime all the same, refusing a contract-violating 2xx as
- * client.protocol before any state change.
+ * AuthnFactorOption, AuthnPrincipal, AuthnMethodList,
+ * AuthnMethodDescriptor, AuthnSsoProvider) are the generated types; this
+ * package guards each body at runtime all the same, refusing a
+ * contract-violating 2xx as client.protocol before any state change.
  *
  * The hooks (hooks.ts) read one host-attached session: attachSession
  * binds it once at bootstrap (last bind wins), useAuthState exposes the
@@ -50,12 +59,9 @@
  * QueryClient carries it (the factory calls its removeQueries, never
  * constructs one).
  *
- * No storage is written anywhere: the authn token responses carry the
- * refresh token in the body (the browser path delivers
- * `delivery: 'token'`; no refresh cookie exists), so the held token
- * survives only inside the session closure, and persistence of the
- * session across page loads is out of scope here (see README's Known
- * limitations).
+ * No storage is written anywhere: the credential is the server's
+ * httpOnly session cookie, which the browser manages and scripts cannot
+ * read; this package holds nothing of its own between requests.
  */
 
 export {
@@ -90,6 +96,7 @@ export type {
   AuthnMethodDescriptor,
   AuthnMethodList,
   AuthnPrincipal,
+  AuthnSessionView,
   AuthnSsoProvider,
   AuthnStep,
 } from './session.js'

@@ -1,7 +1,8 @@
 # @speed/api-client
 
 The hand-written HTTP runtime of the speed frontend: one `createClient`
-call wires injectable fetch, a memory-only access-token store, a silent
+call wires injectable fetch, an optional memory-only access-token store,
+the fetch credential mode (for a cookie-delivered session), a silent
 single-flight 401 refresh, a timeout, a conservative retry policy and a
 structured reporter into a single typed request function. It is the
 HTTP layer the generated `@speed/api-sdk` surface (the orval output of
@@ -11,7 +12,9 @@ this package is its single whitelist.
 
 The package ships no UI, no i18n resources and no storage API: error
 `code`s map to user-facing text in the consuming package's own
-catalogs, and the access token lives in memory only (see below).
+catalogs, and no credential is persisted (the bearer token lives in
+memory only; a cookie session is the browser's own httpOnly cookie --
+see below).
 
 ## Quick start
 
@@ -36,19 +39,27 @@ export async function loadNotes(): Promise<Note[]> {
     // (tests pass a deterministic stand-in); when omitted, the
     // environment's global fetch is captured at construction time.
     baseUrl: '/api/v1',
-    // The bearer token store starts empty: auth fills it in memory,
-    // never in storage (an access token in localStorage is a
-    // credential an XSS walks away with). With no token, requests go
-    // out without Authorization.
+    // The fetch credential mode. A cookie-delivered session (the
+    // platform default) relies on 'same-origin', which sends the
+    // server's session cookie with every same-origin request and makes
+    // a refused credentialed request eligible for the refresh hook
+    // below. Without an accessTokenStore no Authorization header is
+    // ever sent -- the cookie is the credential.
+    credentials: 'same-origin',
+    // Optional bearer store, for a host that authenticates with a
+    // token instead: it starts empty (auth fills it in memory, never in
+    // storage -- an access token in localStorage is a credential an XSS
+    // walks away with). A cookie host leaves it out.
     accessTokenStore: createMemoryAccessTokenStore(),
-    // Silent 401 refresh: @speed/auth-core supplies the real hook --
-    // `refreshAccessToken: () => session.refresh()` -- against the
-    // session-refresh operation of the generated authn surface (the
-    // held refresh token lives in the session closure, never in this
-    // store). It fires only for a refused request that carried a
-    // bearer token -- with the store empty there is no session to
-    // refresh, so the 401 rejects an ApiError with auth: true and
-    // hosts route it to sign-in.
+    // Silent 401 refresh: @speed/auth-core supplies the real hook. A
+    // cookie session wires `refreshAccessToken: () => session.restore()`
+    // (re-read GET /auth/session; a still-valid cookie keeps the request
+    // and it retries once, a dead one ends the session); a token session
+    // wires `() => session.refresh()`. It fires for a refused request
+    // that presented a credential -- a bearer token, or, with a cookie
+    // credential mode, the ambient cookie. With no session at all the
+    // 401 rejects an ApiError with auth: true and hosts route it to
+    // sign-in.
     refreshAccessToken: async () => false,
     // Abort requests slower than 10s. Transient retries follow
     // DEFAULT_RETRY_POLICY: idempotent methods only (GET/HEAD/OPTIONS),
@@ -218,27 +229,30 @@ function useAppChrome(clientApi: RequestFn): AppChrome {
   (the access token carries no tenant claim); the client announces it
   as the `X-Tenant` header, read per attempt from
   `ClientOptions.tenantProvider` -- see "Tenant announcement" below.
-- **Silent 401 refresh, once per request -- bearer-only.** When a
-  request that *presented a bearer token* answers 401 and a
+- **Silent 401 refresh, once per request -- credentialed-only.** When a
+  request that *presented a credential* answers 401 and a
   `refreshAccessToken` hook is configured, the client runs one refresh
   -- concurrent 401s share a single in-flight refresh promise, so a
   burst of expired-session requests triggers exactly one refresh --
   and retries the original request exactly once, any method, outside
-  the transient-retry budget. Refresh failure rejects the original 401
+  the transient-retry budget. A credential is a bearer token from the
+  store, or -- when `credentials` declares a cookie mode
+  (`'same-origin'`/`'include'`) -- the ambient cookie of a request not
+  declared `omitAccessToken`. Refresh failure rejects the original 401
   as an auth `ApiError` and reports `access token refresh failed`
   through the reporter. A 401 on a credential-less request means the
-  endpoint demands authentication, which refreshing cannot provide, so
+  endpoint demands authentication, which the hook cannot provide, so
   it surfaces untouched -- and that rule is load-bearing for the
-  session wiring: a session's own refresh request travels
+  session wiring: a session's own refresh/restore request travels
   credential-less by declaration (`omitAccessToken`, set on the
   generated refresh operation by `@speed/api-sdk`), so a refused
-  refresh token surfaces instead of re-entering the refresh path and
+  credential surfaces instead of re-entering the refresh path and
   awaiting itself -- and the store is never cleared to make it so, so
   concurrent requests keep presenting the token they hold throughout.
-  The refresh token itself is the host's business: a session layer
-  (@speed/auth-core) holds it in its closure -- the authn API returns
-  it in the response body and sets no refresh cookie -- and drives the
-  refresh operation; this package only defines the seam. The refresh
+  A cookie session's credential is the host's business in the same way:
+  @speed/auth-core holds nothing (the browser has the cookie) and wires
+  the hook to `session.restore()`, so a 401 re-reads the session; this
+  package only defines the seam. The refresh
   round is a separate exchange: `timeoutMs` bounds each HTTP exchange,
   never the time spent in the refresh hook, so a refresh that outlives
   the timeout cannot degrade the refused 401's own envelope (its code

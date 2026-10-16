@@ -10,11 +10,12 @@
  * The harness covers the whole authn flow surface -- the login flow
  * (start, answer, current, abandon), the authenticated-purpose start
  * (link / step-up / enroll), the methods listing, logout, the token
- * endpoint a refresh uses and the /me profile read a login completion
- * makes -- so a package's suite scripts only the operations its surface
- * drives. The endpoint path constants are literal request keys; a test
- * that scripts a body shape writes it with the builder the constant's
- * reply needs (openFlow, authenticatedCompletion, tokenResponse, ...).
+ * endpoint a token refresh uses, the session read a restore makes and
+ * the /me profile read a login completion makes -- so a package's suite
+ * scripts only the operations its surface drives. The endpoint path
+ * constants are literal request keys; a test that scripts a body shape
+ * writes it with the builder the constant's reply needs (openFlow,
+ * sessionCompletion, authenticatedCompletion, tokenResponse, ...).
  *
  * The response builders return the snake_case bodies the wire carries,
  * exactly as the server sends them; the session's runtime guards
@@ -53,6 +54,7 @@ export const SSO_DISCOVER = 'POST /auth/sso/discover'
 export const LOGOUT = 'POST /auth/logout'
 export const TOKEN_ISSUE = 'POST /auth/token'
 export const PROFILE_GET = 'GET /auth/me'
+export const SESSION_GET = 'GET /auth/session'
 
 /** The GET /auth/me profile the session reads for the principal after a
  * login completion. */
@@ -168,6 +170,51 @@ export function authenticatedCompletion(
   }
 }
 
+/** A cookie-delivered completion: the `AuthnLoginSession` body the
+ * server answers with its Set-Cookie on a `delivery: 'session'` login or
+ * step-up. */
+export function sessionCompletion(
+  overrides: { id?: string; expires_at?: string } = {},
+): AuthnFlowState {
+  return {
+    state: 'authenticated',
+    session: {
+      id: overrides.id ?? 'session-1',
+      expires_at: overrides.expires_at ?? '2026-01-01T01:00:00Z',
+    },
+  }
+}
+
+/** The GET /auth/session body. Defaults to the anonymous answer (nobody
+ * signed in); pass `{authenticated: true, ...}` for a signed-in session. */
+export function sessionView(
+  overrides: {
+    authenticated?: boolean
+    session_id?: string
+    account_id?: string
+    methods?: string[]
+    assurance?: 'none' | 'single' | 'multi'
+    auth_time?: string
+    provider?: string
+  } = {},
+): Record<string, unknown> {
+  const authenticated = overrides.authenticated ?? false
+  if (!authenticated) {
+    return { authenticated: false }
+  }
+  return {
+    authenticated: true,
+    session_id: overrides.session_id ?? 'session-1',
+    account_id: overrides.account_id ?? 'user-1',
+    methods: overrides.methods ?? ['pwd'],
+    assurance: overrides.assurance ?? 'single',
+    auth_time: overrides.auth_time ?? '2026-01-01T00:00:00Z',
+    ...(overrides.provider === undefined
+      ? {}
+      : { provider: overrides.provider }),
+  }
+}
+
 /** A step-up completion: an elevated access token, no new refresh
  * token. */
 export function elevatedCompletion(
@@ -259,6 +306,33 @@ export function makeHarness(script: Script = {}): Harness {
     // script object: a prototype-chain key such as 'constructor' or
     // 'toString' must take the same missing-handler path as any other
     // unknown key, never dispatch onto an inherited function.
+    const handler = Object.hasOwn(script, key) ? script[key] : undefined
+    if (handler === undefined) {
+      throw new Error(`no scripted handler for ${key}`)
+    }
+    return (await handler({ path, options })) as T
+  }) as RequestFn
+  bindRequestFn(requestFn)
+  return { session, store, calls }
+}
+
+/** Binds a scripted fake request function and creates a store-less
+ * session -- the cookie-delivered path: no AccessTokenStore is passed,
+ * so a token completion would not be persisted and the session relies on
+ * the ambient cookie (which the fake request function knows nothing of).
+ * The returned store is a fresh, unused memory store, present so a
+ * caller can assert the cookie path never writes a token. */
+export function makeCookieHarness(script: Script = {}): Harness {
+  const store = createMemoryAccessTokenStore()
+  const session = createAuthSession()
+  const calls: Call[] = []
+  const requestFn: RequestFn = (async <T>(
+    path: string,
+    options?: RequestOptions,
+  ): Promise<T> => {
+    const method = options?.method ?? 'GET'
+    const key = `${method} ${path}`
+    calls.push({ method, path, options })
     const handler = Object.hasOwn(script, key) ? script[key] : undefined
     if (handler === undefined) {
       throw new Error(`no scripted handler for ${key}`)

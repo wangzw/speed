@@ -775,6 +775,90 @@ describe('401 and the refresh hook', () => {
     expect(standin.calls).toHaveLength(1)
   })
 
+  it('engages the hook for a cookie-credentialed 401 with no bearer token', async () => {
+    // A cookie session attaches no bearer token, so the bearer-only rule
+    // alone would never run the hook. Declaring the credential mode to
+    // carry cookies makes a refused credentialed request eligible.
+    let hookCalls = 0
+    const standin = scriptedStandin(
+      jsonResponse(401, { ...SESSION_EXPIRED }),
+      jsonResponse(200, { ok: true }),
+    )
+    const api = createClient({
+      baseUrl: BASE_URL,
+      fetch: standin.fetch,
+      credentials: 'same-origin',
+      refreshAccessToken: async () => {
+        hookCalls += 1
+        return true
+      },
+    })
+    await expect(api<{ ok: boolean }>('/notes')).resolves.toEqual({ ok: true })
+    expect(hookCalls).toBe(1)
+    expect(standin.calls).toHaveLength(2)
+    // No bearer token was ever attached: the cookie is the credential.
+    expect(recorded(standin, 0).headers.get('authorization')).toBeNull()
+    expect(recorded(standin, 1).headers.get('authorization')).toBeNull()
+  })
+
+  it('does not engage the hook for a cookie-credentialed request declared omitAccessToken', async () => {
+    let hookCalls = 0
+    const standin = scriptedStandin(jsonResponse(401, { ...SESSION_EXPIRED }))
+    const api = createClient({
+      baseUrl: BASE_URL,
+      fetch: standin.fetch,
+      credentials: 'same-origin',
+      refreshAccessToken: async () => {
+        hookCalls += 1
+        return true
+      },
+    })
+    const error = await expectApiError(
+      api<{ ok: boolean }>('/auth/token', { omitAccessToken: true }),
+    )
+    expect(error.status).toBe(401)
+    expect(hookCalls).toBe(0)
+    expect(standin.calls).toHaveLength(1)
+  })
+
+  it('leaves the hook bearer-only without a cookie credential mode', async () => {
+    // No store and no cookie mode: the request presents no credential,
+    // so a 401 surfaces untouched.
+    let hookCalls = 0
+    const standin = scriptedStandin(jsonResponse(401, { ...SESSION_EXPIRED }))
+    const api = createClient({
+      baseUrl: BASE_URL,
+      fetch: standin.fetch,
+      refreshAccessToken: async () => {
+        hookCalls += 1
+        return true
+      },
+    })
+    const error = await expectApiError(api<{ ok: boolean }>('/notes'))
+    expect(error.status).toBe(401)
+    expect(hookCalls).toBe(0)
+    expect(standin.calls).toHaveLength(1)
+  })
+
+  it('passes the credentials mode through to fetch, and omits it when unset', async () => {
+    const seen: Array<RequestCredentials | undefined> = []
+    const fetchStub: typeof fetch = async (_input, init) => {
+      seen.push(init?.credentials)
+      return jsonResponse(200, { ok: true })
+    }
+    const withCookies = createClient({
+      baseUrl: BASE_URL,
+      fetch: fetchStub,
+      credentials: 'include',
+    })
+    await withCookies<{ ok: boolean }>('/notes')
+    expect(seen[0]).toBe('include')
+
+    const withoutMode = createClient({ baseUrl: BASE_URL, fetch: fetchStub })
+    await withoutMode<{ ok: boolean }>('/notes')
+    expect(seen[1]).toBeUndefined()
+  })
+
   it('refreshes once, retries the original request, and picks up the new token', async () => {
     const store = createMemoryAccessTokenStore()
     store.set('stale-token')

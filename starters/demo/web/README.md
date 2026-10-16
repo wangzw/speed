@@ -191,13 +191,15 @@ still announces the same value, and the copy decides where the server reads it.
 
 ### Sessions and the console
 
-The access token lives in memory and the refresh token in the session's own
-closure (no refresh cookie), so **a page reload starts a fresh anonymous
-session** -- the tenant shell then shows its sign-in surface and the console
-area its session gate. Both shells branch on the same session snapshot: an
-authenticated session that turns anonymous (a sign-out, or a refresh the server
-refused) turns the page to sign-in rather than a view that never settles.
-Nothing persists a credential to storage.
+The session is delivered as the server's httpOnly cookie: the login flow is
+started with `delivery: 'session'`, the server sets its cookie on the same
+response, and the client sends it with `credentials: 'same-origin'`. So **a
+page reload keeps the viewer signed in** -- the assembly re-reads
+`GET /auth/session` at boot and re-establishes the session from that cookie.
+Both shells branch on the same session snapshot: a session that genuinely ends
+(a sign-out, or a cookie that no longer holds) turns the page to sign-in rather
+than a view that never settles. Nothing persists a credential to storage; the
+cookie is the browser's, not a script's.
 
 The tenant navigation carries a console entry pointing at `/console`, which
 redirects to the console's first page; the console area itself gates each page

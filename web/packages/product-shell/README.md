@@ -191,11 +191,13 @@ instance (`?lang=` parameter, stored choice, navigator languages,
 zh-CN last) with the family four registered and the platform error-copy
 bundle (`@speed/i18n/platform-errors`) named as the fallback namespace,
 so a backend error code no package namespace covers resolves to the
-module catalog's own words instead of the raw key; a memory access-token
-store feeding the auth-core session over the generated authn
-operations, attached before render; one `@speed/api-client` client
-over the environment's fetch with the session refresh as its
-401-refresh leg and the definition's `tenantProvider` as its `X-Tenant`
+module catalog's own words instead of the raw key; the cookie-delivered
+auth-core session over the generated authn operations, attached before
+render and restored from `GET /auth/session` once at boot so a reload
+stays logged in; one `@speed/api-client` client
+over the environment's fetch with `credentials: 'same-origin'` (the
+session cookie on every request) and the session's `restore()` as its
+401-refresh leg, and the definition's `tenantProvider` as its `X-Tenant`
 source, bound into the api-sdk runtime seam; the no-retry
 query client and the session-end strategy; then the provider stack —
 I18nextProvider around `AppThemeProvider` around
@@ -204,9 +206,10 @@ returns `{ root, i18n, queryClient, session }` for hosts and harnesses
 that act on the composition.
 
 **The shipped session-end default**: the moment the session ends — a
-sign-out or a silently refused refresh, the same flip — the whole
+sign-out or a cookie that no longer holds (a refused credentialed
+request, the same flip) — the whole
 query cache is evicted. Every row was fetched under the departing
-principal's access token and the identity-domain rows live under bare
+principal and the identity-domain rows live under bare
 spec-path keys no tenant-scoped removal reaches, so nothing may
 outlive the session. A declared `sessionEnded` replaces that action
 (the context's `evictAllQueries()` is the default to compose it

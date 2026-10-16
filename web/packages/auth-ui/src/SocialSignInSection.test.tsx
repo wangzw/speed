@@ -77,7 +77,7 @@ describe('SocialSignInSection', () => {
     // flow's return_to (the server builds the provider's own redirect_uri).
     expect(harness.calls[0]?.options?.body).toMatchObject({
       method: 'google',
-      delivery: 'token',
+      delivery: 'session',
       binding: 'cookie',
       return_to: CALLBACK_URI,
     })

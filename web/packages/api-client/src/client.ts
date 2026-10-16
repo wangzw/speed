@@ -9,7 +9,10 @@
  *      the request declares `omitAccessToken`, in which case the store
  *      is never read and no store token is attached (a caller-supplied
  *      `authorization` header, when one is given, is the caller's own
- *      and travels untouched);
+ *      and travels untouched). A cookie-delivered session needs none of
+ *      this: the browser attaches the session cookie per the
+ *      `credentials` mode (the same-origin default carries it), so a
+ *      client configured for cookies leaves the store out entirely;
  *   2. send; a caller-supplied signal cancels the request raw (the
  *      AbortError reaches the caller, standard query-cancellation
  *      semantics -- nothing is wrapped or retried). Cancellation
@@ -19,8 +22,10 @@
  *      full, failed, or released), so a server that answers headers
  *      and then stalls its body cannot outlive either the timeout or
  *      an abort;
- *   3. on HTTP 401 from a request that presented a bearer token, with
- *      a refreshAccessToken hook configured: run one refresh,
+ *   3. on HTTP 401 from a request that presented a credential -- a
+ *      bearer token, or, when `credentials` declares cookie sessions,
+ *      the ambient cookie -- with a refreshAccessToken hook configured:
+ *      run one refresh,
  *      coalescing concurrent 401s onto a single in-flight refresh, and
  *      retry the original request exactly once (any method, outside
  *      the retry budget -- the refresh round performs no transient
@@ -266,15 +271,17 @@ export interface ClientOptions {
    * failure for the waiters already joined on it.
    *
    * The hook fires only for a refused request that itself presented a
-   * bearer token. A 401 on a credential-less request means the
-   * endpoint demands authentication that refreshing cannot provide,
-   * so it surfaces untouched -- and this rule is load-bearing for the
-   * session wiring: a session's own refresh operation declares the
-   * per-request `omitAccessToken` flag, so its request travels
-   * credential-less with the store never cleared, so when the refresh
-   * endpoint refuses a stale token the refusal surfaces instead of
-   * re-entering the refresh path, which would await the very refresh
-   * it is part of and deadlock. Any other client must keep its
+   * credential -- a bearer token from the store, or, when `credentials`
+   * declares cookie sessions (`'same-origin'`/`'include'`), the ambient
+   * cookie of a request not declared `omitAccessToken`. A 401 on a
+   * credential-less request means the endpoint demands authentication
+   * that refreshing cannot provide, so it surfaces untouched -- and this
+   * rule is load-bearing for the session wiring: a session's own refresh
+   * operation declares the per-request `omitAccessToken` flag, so its
+   * request travels credential-less with the store never cleared, so
+   * when the refresh endpoint refuses a stale token the refusal surfaces
+   * instead of re-entering the refresh path, which would await the very
+   * refresh it is part of and deadlock. Any other client must keep its
    * credential-less requests declared the same way for the same
    * reason: clearing the store instead would momentarily strip the
    * token from concurrent requests that still hold a valid one,
@@ -294,6 +301,24 @@ export interface ClientOptions {
    * is a separate exchange (a host's refresh request travels through
    * this same client and carries its own timeout). */
   timeoutMs?: number
+  /**
+   * The fetch `credentials` mode, passed straight to fetch. Absent, the
+   * browser default applies (`same-origin`), which is what a same-origin
+   * deployment relies on for a cookie-delivered session: the session
+   * cookie the server set travels on every same-origin request without
+   * this option. A deployment that serves the API from an origin of its
+   * own sets `'include'` so the cookie travels cross-origin too.
+   *
+   * Declaring it `'same-origin'` or `'include'` additionally marks the
+   * client as cookie-credentialed: a refused (401) request that presented
+   * a cookie -- every request except one declared `omitAccessToken` -- is
+   * then eligible for the `refreshAccessToken` hook, exactly as a
+   * bearer-attached request is. Without this, a cookie session's 401
+   * would never engage the hook, because no bearer token is attached.
+   * `'omit'` sends no credentials and leaves the hook bearer-only, so a
+   * public-config fetch stays out of the session path.
+   */
+  credentials?: RequestCredentials
   /** Transient-retry budget and timing; defaults to
    * DEFAULT_RETRY_POLICY. */
   retryPolicy?: RetryPolicy
@@ -836,6 +861,13 @@ export function createClient(options: ClientOptions): SpeedClient {
   const reporter = options.reporter ?? createConsoleReporter()
   const languageProvider = options.languageProvider
   const tenantProvider = options.tenantProvider
+  // The fetch credential mode (passed through per attempt, below). A mode
+  // that carries cookies marks the client cookie-credentialed: a refused
+  // request that presented the ambient cookie is then eligible for the
+  // session hook, exactly as a bearer-attached request is.
+  const credentials = options.credentials
+  const cookieCredentialed =
+    credentials === 'same-origin' || credentials === 'include'
 
   /** One HTTP attempt: token attach, timeout abort, caller-abort
    * passthrough. Rejects raw only for caller cancellation. The
@@ -974,6 +1006,10 @@ export function createClient(options: ClientOptions): SpeedClient {
         headers,
         body: body as BodyInit,
         signal: controller.signal,
+        // Only set when the host declared a mode: absent, fetch's own
+        // default (same-origin) applies, and the options object keeps the
+        // exact shape hosts assert on.
+        ...(credentials === undefined ? {} : { credentials }),
       })
       const outcome: HttpOutcome = {
         kind: 'http',
@@ -1345,19 +1381,25 @@ export function createClient(options: ClientOptions): SpeedClient {
           }
 
           if (outcome.status === 401) {
-            // Bearer-only: a credential-less 401 means authentication
-            // is required, which refreshing cannot provide -- and a
-            // session's own refresh request (sent credential-less)
-            // must never re-enter the refresh path or it awaits
-            // itself. The born-inside-refresh marker enforces the same
-            // rule at runtime: a refresh request whose host forgot the
-            // credential-less declaration presents the stale token, is
-            // refused with a token-bearing 401, and would otherwise
-            // join -- and await -- the very flight it is part of.
+            // The hook is for a request that presented a credential: a
+            // bearer token, or -- when `credentials` declares cookie
+            // sessions -- the ambient cookie of a request not declared
+            // omitAccessToken. A credential-less 401 means authentication
+            // is required, which the hook cannot provide -- and a
+            // session's own restore request (sent credential-less) must
+            // never re-enter the hook path or it awaits itself. The
+            // born-inside-refresh marker enforces the same rule at
+            // runtime: a hook request whose host forgot the
+            // credential-less declaration presents the stale credential,
+            // is refused, and would otherwise join -- and await -- the
+            // very flight it is part of.
+            const presentedCredential =
+              outcome.attachedToken ||
+              (cookieCredentialed && requestOptions.omitAccessToken !== true)
             if (
               !refreshed &&
               refreshOnce !== undefined &&
-              outcome.attachedToken &&
+              presentedCredential &&
               !bornInsideRefresh
             ) {
               refreshed = true

@@ -1,24 +1,27 @@
 # @speed/auth-core
 
-The browser session lifecycle as a headless, memory-only state machine
-over the generated authn flow surface of `@speed/api-sdk`.
-`createAuthSession` wires the generated operations -- the login flow
-(start, answer, current, abandon), the authenticated-purpose start for
-`link`, `step-up` and `enroll`, the methods listing, logout and the
-token endpoint a refresh uses -- to one observable session with a
-single in-memory access-token store as the bridge into
-`@speed/api-client`: a host that built its client with this same store
-and `refreshAccessToken: () => session.refresh()` gets silent refresh
-for free -- an expired-token 401 on any request runs one refresh, and
-the retried request carries the fresh token.
+The browser session lifecycle as a headless state machine over the
+generated authn flow surface of `@speed/api-sdk`, carried by the
+server's session cookie. `createAuthSession` wires the generated
+operations -- the login flow (start, answer, current, abandon), the
+authenticated-purpose start for `link`, `step-up` and `enroll`, the
+methods listing, the session read a reload restores from, logout, and
+the token endpoint a token-delivered refresh uses -- to one observable
+session.
 
-Login is a server-side flow the client advances, not one request: the
-session starts a flow, hands each step back to the view, and commits
-only when a step settles a token issuance. No UI and no storage writes:
-the access token lives in the caller-supplied store (in memory by
-design -- no storage API exists here; see Known limitations); the
-refresh token lives only inside the session closure and is never
-written anywhere; there is no `restore` (see Known limitations). React
+The session is delivered as a cookie. The login flow is started with
+`delivery: 'session'`, so a completion answers `{state: 'authenticated',
+session: {id, expires_at}}` and the server sets its httpOnly cookie on
+the same response, which the browser attaches to every same-origin
+request by itself. A store-less session -- the platform's own
+composition -- therefore holds no credential at all; `restore()` reads
+`GET /auth/session` to re-establish the snapshot, which is what keeps a
+page reload logged in and what ends the local session when the cookie no
+longer holds. A host that passes an `AccessTokenStore` keeps the token
+path instead: a `delivery: 'token'` completion writes the access token
+into that store (the same store `@speed/api-client` reads on every send)
+and holds the minted refresh token only inside the session closure,
+refreshed through `refresh()`. No storage is written either way. React
 hooks (`useAuthState`, `useCurrentTenant`, `usePermission`) read one
 session the host attaches with `attachSession`; react is a peer
 dependency, so only a host that already renders React carries it.
@@ -33,7 +36,7 @@ guards".
 
 | File | Exports |
 |---|---|
-| `session.ts` | `createAuthSession(store)`, `AuthSession`, `AuthSnapshot`, `AuthSessionListener`, `AuthDomain`, `AuthPermissionSets`, `AuthnPrincipal`, `AuthnFlowState`, `AuthnStep`, `AuthnField`, `AuthnFactorOption`, `AuthnMethodList`, `AuthnIdentifier`, `AuthnLink`, `OperationSupersededError`, `isOperationSuperseded` |
+| `session.ts` | `createAuthSession(store?)`, `AuthSession`, `AuthSnapshot`, `AuthSessionListener`, `AuthDomain`, `AuthPermissionSets`, `AuthnPrincipal`, `AuthnFlowState`, `AuthnStep`, `AuthnField`, `AuthnFactorOption`, `AuthnMethodList`, `AuthnIdentifier`, `AuthnLink`, `OperationSupersededError`, `isOperationSuperseded` |
 | `hooks.ts` | `attachSession(session)`, `useAuthState()`, `usePermission(domain, permission)`, `TenantProvider`, `useCurrentTenant()` |
 | `query-key.ts` | `tenantQueryKey(tenantId, ...tail)`, `useTenantQueryKey(bareKey)`, `TenantQueryKey`, `evictTenantQueries(queryClient, tenantId)` |
 
@@ -42,23 +45,26 @@ guards".
 ## Quick start
 
 ```ts
-import { createClient, createMemoryAccessTokenStore } from '@speed/api-client'
+import { createClient } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { createAuthSession } from '@speed/auth-core'
 
-const accessTokenStore = createMemoryAccessTokenStore()
-const session = createAuthSession(accessTokenStore)
+// The cookie path: no store, the session rides the browser's cookie.
+const session = createAuthSession()
 
 bindRequestFn(
   createClient({
-    baseUrl: 'https://api.example.com',
-    accessTokenStore,
-    refreshAccessToken: () => session.refresh(),
+    baseUrl: window.location.origin,
+    credentials: 'same-origin', // send the session cookie; make a 401 run restore()
+    refreshAccessToken: () => session.restore(),
   }),
 )
 
 // subscribe to state transitions once, at app bootstrap:
 session.subscribe((snapshot) => render(snapshot))
+
+// restore the session the cookie names, once, so a reload stays logged in:
+void session.restore()
 
 // render paths read the current snapshot:
 const snapshot = session.getSnapshot() // { state: 'anonymous', principal: null, ... }
@@ -101,13 +107,37 @@ await session.logout()
 
 On the identity already signed in, `startAuthenticatedFlow` starts a
 flow for `purpose: 'link'`, `'step-up'` or `'enroll'` on the same
-machine; a step-up completion re-mints the access token with the
-principal unchanged, and `link`/`enroll` completions leave the login
-state alone:
+machine. A `'step-up'` that completes keeps the principal and the
+permission sets (the same session continues: the server rotated the
+cookie for a cookie session, or minted a fresh access token for a token
+one), and `link`/`enroll` completions leave the login state alone:
 
 ```ts
 // Enroll a second factor: start with purpose 'enroll', drive the steps.
 const enrollment = await session.startAuthenticatedFlow({ purpose: 'enroll' })
+```
+
+## Restoring the session across a page load
+
+The cookie outlives the page, so a reload is no longer a sign-out.
+`restore()` reads `GET /auth/session`: a cookie that still names a
+session re-establishes the authenticated snapshot (reading the principal
+from `GET /auth/me`) and resolves `true`; a cookie that names nobody
+clears the local snapshot and resolves `false`. Call it once at
+bootstrap so a reload stays logged in. It is also the client's silent leg
+for a refused request -- wire it as `refreshAccessToken` alongside
+`credentials`, and a 401 re-reads the session (a still-valid cookie keeps
+the request and it retries once; a dead one ends the local session):
+
+```ts
+const session = createAuthSession()
+void session.restore() // at bootstrap: a valid cookie keeps the user in
+
+createClient({
+  baseUrl: window.location.origin,
+  credentials: 'same-origin',
+  refreshAccessToken: () => session.restore(),
+})
 ```
 
 ## React hooks
@@ -253,65 +283,73 @@ into the discriminated view a form renders.
   whose own request is refused still clears the local session and goes
   anonymous (a session it could not revoke is no longer trustworthy
   here either) and then rejects the raw `ApiError`.
-- A token-issuing commit -- a login completion or a step-up completion
-  -- has one rejection that is not an `ApiError`: when a concurrent
-  commit landed while this one was in flight, the request's own 2xx was
-  genuine but its answer no longer describes the session -- nothing of
-  it was applied -- and the operation rejects with
+- A session-establishing commit -- a login completion or a step-up
+  completion -- has one rejection that is not an `ApiError`: when a
+  concurrent commit landed while this one was in flight, the request's
+  own 2xx was genuine but its answer no longer describes the session --
+  nothing of it was applied -- and the operation rejects with
   `OperationSupersededError` instead of resolving with the winner's
   snapshot. Tell it apart with `isOperationSuperseded` (exported from
   this package; `isApiError` is false for it). Treat the answer
   accordingly: no one-shot side effect (a post-login redirect) may fire
   for an identity the session is not actually running under. A
-  superseded step-up carries an extra cost: its completion rotated the
-  tokens and consumed, server-side, the challenge it verified, so the
+  superseded token step-up carries an extra cost: its completion rotated
+  the tokens and consumed, server-side, the challenge it verified, so the
   caller must never re-offer that same second factor -- only a fresh
   flow can retry. The error's `snapshot` field carries the session's
   current (winning) state.
 - A body-carrying 2xx that violates the contract (missing tokens or
-  required fields, malformed fields) rejects with an `ApiError` of
-  `status: 200` and code `client.protocol`, again changing nothing.
+  session document, required fields, malformed fields) rejects with an
+  `ApiError` of `status: 200` and code `client.protocol`, again changing
+  nothing.
 - `readFlow()` resolves `null` for a 401 (no flow binding, or the flow
   is done or gone) and rethrows anything else. `abandonFlow()` resolves
   for a 401 (the flow is already gone -- the delete is idempotent) and
   rethrows anything else.
-- `refresh()` is the silent path. It resolves `true` when the store
-  holds a fresh token afterwards, `false` when there is nothing to
-  refresh, the held token was refused (the session is over and signs
-  out locally), or a concurrent commit replaced the session -- and a
-  transport or server-side failure rethrows the raw `ApiError` with the
-  store and the held tokens untouched (a refresh never clears them on
+- `restore()` is the cookie session's silent path. It resolves `true`
+  when the cookie still names a session (the snapshot is authenticated
+  afterwards), `false` when nobody is signed in -- a snapshot that was
+  authenticated goes anonymous (the session is over), and a 401 from the
+  read is treated the same -- and rethrows the raw `ApiError` for a
+  transport or server-side failure, leaving the local snapshot in place.
+- `refresh()` is the token session's silent path. It resolves `true`
+  when the store holds a fresh token afterwards, `false` when there is
+  nothing to refresh, the held token was refused (the session is over
+  and signs out locally), or a concurrent commit replaced the session --
+  and a transport or server-side failure rethrows the raw `ApiError` with
+  the store and the held tokens untouched (a refresh never clears them on
   the way out). Concurrent calls presenting the same held refresh token
-  share a single in-flight request.
-- A completed `logout` wins over a refresh that resolves after it, and a
-  committed login/step-up wins over a stale refresh: the losing pair's
-  access token and snapshot are never applied over the winner's -- with
-  one exception, the rotated refresh token itself, adopted into the
-  held slot when the winning commit kept the held token (a step-up
+  share a single in-flight request. A cookie session holds no refresh
+  token, so `refresh()` resolves `false` without a request there.
+- A completed `logout` wins over a refresh or restore that resolves
+  after it, and a committed login/step-up wins over a stale one: the
+  losing answer's snapshot is never applied over the winner's -- with
+  one exception, the rotated refresh token itself, adopted into the held
+  slot when the winning commit kept the held token (a token step-up
   mints no new one, and the server has already consumed the held token
   for that refresh).
 
 ## Known limitations
 
-- **No persistence across page loads.** The session is memory-only and
-  there is deliberately no `restore`: reloading the page starts
-  anonymous. The authn token responses carry the refresh token in the
-  body (the browser path delivers `delivery: 'token'`; no refresh cookie
-  exists), so nothing outside the session closure outlives the page --
-  a reload cannot re-establish the session, and the user signs in again.
-- **The refresh token is JavaScript-visible in memory.** No refresh
-  cookie hides it, so the session must hold the token its refresh
-  request takes in the body. The access token is likewise readable by
-  any script running in the page; no storage API exists here on purpose.
-- **`delivery: 'session'` is not modeled.** The browser path delivers a
-  token pair; a completion answered with a session document instead (a
-  cookie-delivered login) is refused by the guard as `client.protocol`,
-  because this session holds tokens, not a cookie session.
-- **The refresh request's credential-less declaration depends on the
-  generated artifact.** The design has the refresh travel without an
+- **The token path is opt-in.** The default (and the platform's own
+  composition) is the cookie session: `createAuthSession()` with no
+  store, `credentials` on the client and `restore()` at boot. A host that
+  passes an `AccessTokenStore` gets the token path instead, where the
+  access token is a memory cell and the refresh token is readable by any
+  script on the page (no refresh cookie hides it, and the token responses
+  carry it in the body). A cookie session holds neither: the credential
+  is the server's httpOnly cookie, which scripts cannot read.
+- **The `delivery` a view passes is normalized.** The login flow
+  (`startFlow`) is always started as a cookie session (`delivery:
+  'session'`) whatever the request carries, so a view that still names a
+  token delivery is overridden -- the browser path is the cookie one.
+  The `startAuthenticatedFlow` operations leave the delivery to the
+  caller, whose callers pass none (the server resolves its default, a
+  cookie session).
+- **The token refresh's credential-less declaration depends on the
+  generated artifact.** A token host's refresh travels without an
   Authorization header (`speedRequestCredentialless`). The
-  `web/orval.config.ts` per-operation override now names the current
-  operation id (`authn.token.issue`); a generated `api-sdk/src/index.ts`
-  produced before that fixup routes the token operation through the
-  bearer mutator instead. Regenerating the surface applies the
-  declaration.
+  `web/orval.config.ts` per-operation override names the operation id
+  (`authn.token.issue`); a generated `api-sdk/src/index.ts` produced
+  before that fixup routes the token operation through the bearer
+  mutator instead. Regenerating the surface applies the declaration.

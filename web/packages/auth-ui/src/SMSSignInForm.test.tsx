@@ -69,7 +69,7 @@ describe('SMSSignInForm', () => {
     expect(harness.calls[0]?.path).toBe('/auth/flows')
     expect(harness.calls[0]?.options?.body).toMatchObject({
       method: 'sms',
-      delivery: 'token',
+      delivery: 'session',
       binding: 'cookie',
       input: { phone: PHONE },
     })

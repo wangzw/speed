@@ -7,19 +7,29 @@ browser package.
 
 ## What this package is
 
-The session lifecycle of a browser client: `createAuthSession(store)`
+The session lifecycle of a browser client: `createAuthSession(store?)`
 in `src/session.ts` turns the generated authn operations of
-`@speed/api-sdk` into one observable memory-only state machine -- the
-login flow (start, answer, current, abandon), the authenticated-purpose
-start for `link`, `step-up` and `enroll`, the methods listing, logout
-and the token endpoint a refresh uses. A login is a server-side flow the
-view drives step by step; the flow operations never change the session,
-and only `answerFlow` commits, and only when a step settles a token
-issuance: a login completion (`state: 'authenticated'`) opens the
-session (writes the store, reads `GET /auth/me` for the principal), a
-step-up completion (`state: 'elevated'`) re-mints the access token with
-the principal unchanged, and a `link`/`enroll` completion
-(`state: 'linked'`/`'enrolled'`) leaves the login state alone.
+`@speed/api-sdk` into one observable state machine -- the login flow
+(start, answer, current, abandon), the authenticated-purpose start for
+`link`, `step-up` and `enroll`, the methods listing, the session read
+`restore()` makes, logout, and the token endpoint a token-delivered
+refresh uses. A login is a server-side flow the view drives step by step;
+the flow operations never change the session, and only `answerFlow`
+commits, and only when a step settles the session.
+
+The session is delivered as a cookie by default. `startFlow` is always
+started as a cookie session (`delivery: 'session'`), so a completion
+answers `{state: 'authenticated', session: {id, expires_at}}`; the server
+sets its httpOnly cookie, the browser attaches it, and `restore()` reads
+`GET /auth/session` to re-establish the snapshot after a reload (reading
+`GET /auth/me` for the principal). A store-less session holds no
+credential at all. A host that passes an `AccessTokenStore` keeps the
+token path: a `delivery: 'token'` login completion (state
+'authenticated') writes the access token into it and holds the minted
+refresh token in the closure, and a token step-up (state 'elevated')
+re-mints the access token with the principal unchanged; a
+`link`/`enroll` completion (`state: 'linked'`/`'enrolled'`) leaves the
+login state alone either way.
 
 The generated authn fragments declare their 2xx response schemas, so
 orval emits the response models. This package's `AuthnFlowState`,
@@ -39,10 +49,10 @@ in `src/query-key.ts` (`tenantQueryKey`, `useTenantQueryKey`,
 through `useCurrentTenant` and shapes a TanStack Query key from it, with
 `@tanstack/react-query` as a peer (the factory calls `removeQueries`,
 never constructs a `QueryClient`). The package sits directly above
-`@speed/api-client` (the access-token store it receives is the same
-store that package reads on every send) and `@speed/api-sdk` (the
-generated operations it calls). Never import either of those from below
-this layer.
+`@speed/api-client` (an optional access-token store it receives is the
+same store that package reads on every send for a token session; the
+cookie path passes none) and `@speed/api-sdk` (the generated operations
+it calls). Never import either of those from below this layer.
 
 ## Rules that are load-bearing here
 
@@ -63,10 +73,13 @@ this layer.
   `parseStep`, `parsePrincipal`, `parseIssuedTokens` and
   `parseMethodList` are the guards; every one of their refusal branches
   is pinned by a test.
-- **The session never writes storage, and the refresh token never
-  enters the store.** The access token is a memory credential by
-  design; the refresh token is closure-only. Any persistence a host
-  adds layers on top of this API; it does not reach into it.
+- **The session never writes storage, and (on the cookie path) holds no
+  credential at all.** The credential is the server's httpOnly session
+  cookie, which the browser manages and scripts cannot read; this package
+  reaches it only through @speed/api-client's credential mode. On the
+  opt-in token path the access token is a memory cell and the refresh
+  token is closure-only; any persistence a host adds layers on top of
+  this API, it does not reach into it.
 - **A failed request rejects raw and changes nothing -- except
   `logout`.** `ApiError` from `@speed/api-client` is the one error type
   a caller must tell apart (`isApiError`), and `client.protocol` is
@@ -74,51 +87,59 @@ this layer.
   exception: a logout whose own request is refused still clears locally
   and goes anonymous (a session it could not revoke is no longer
   trustworthy here either) and then rejects raw.
-- **A token-issuing commit that lost a concurrent race rejects with
+- **A session-establishing commit that lost a concurrent race rejects with
   `OperationSupersededError`.** A login completion or a step-up
   completion that lost the generation race retains the package's own
   `isOperationSuperseded` guard (its `snapshot` carries the winner's
   state). Consumers must handle it as the lost race it is -- no failure
   UI, and never a one-shot side effect (a redirect) for an identity the
   session is not actually running under; the winning call fires its own.
-  A superseded step-up carries a cost its caller must hear: its
+  A superseded token step-up carries a cost its caller must hear: its
   completion consumed, server-side, the challenge it verified, so the
   caller must never offer that same second factor again -- only a fresh
   flow.
-- **`refresh()` is the silent path.** It resolves `false` (never
-  rejects) when there is nothing to refresh, when the held token was
-  refused (the session signs out locally), or when a concurrent commit
-  replaced the session; it rethrows raw only for transport/server
+- **`restore()` and `refresh()` are the silent paths.** `restore()` (the
+  cookie session) resolves `true` when the cookie still names a session,
+  `false` (never rejects) when nobody is signed in -- a snapshot that was
+  authenticated goes anonymous, and a 401 from the read is treated the
+  same -- and rethrows raw only for a transport/server failure with the
+  local snapshot in place. `refresh()` (the token session) resolves
+  `false` (never rejects) when there is nothing to refresh, when the held
+  token was refused (the session signs out locally), or when a concurrent
+  commit replaced the session; it rethrows raw only for transport/server
   failures, with the store and the held tokens untouched. Refusal
   detection keys on a 4xx (`400` invalid_grant / `401` invalid_client)
   or a contract-violating 2xx -- the token endpoint answers an unusable
-  grant as `400`, not `401`.
-- **The generation guard is the concurrency invariant.** A token-issuing
-  commit captures the generation at entry and bumps it only on commit;
-  `refresh` never bumps, and a stale refresh response applies nothing
-  over the winner's state -- one adoption excepted: the rotated refresh
-  token still lands in the held slot when the winning commit kept the
-  held token (a step-up mints no new one, and the server has already
-  consumed the held token for that refresh). The adopted refresh's
-  resolution reflects who won: a same-principal winner (a step-up)
+  grant as `400`, not `401`. A cookie session holds no refresh token, so
+  `refresh()` resolves `false` there without a request.
+- **The generation guard is the concurrency invariant.** A
+  session-establishing commit captures the generation at entry and bumps
+  it only on commit; `restore` and `refresh` never bump, and a stale
+  answer applies nothing over the winner's state -- one adoption excepted:
+  the rotated refresh token still lands in the held slot when the winning
+  commit kept the held token (a token step-up mints no new one, and the
+  server has already consumed the held token for that refresh). The
+  adopted refresh's resolution reflects who won: a same-principal winner
   resolves `true`, so the api-client silent-401 hook retries safely. Do
   not "simplify" this into bump-on-entry or compare-free writes. The
   local clears are asymmetric on purpose: only logout bumps after its
-  clear (a refresh that resolves later must not resurrect the ended
-  session), while the refresh-side clears never bump -- the server's
-  refusal is the session's death, but a commit that started before the
-  refusal and settles after it is the session's legitimate successor and
-  must still commit. Logout's own pre-emption is handled too: a commit
+  clear (a restore or refresh that resolves later must not resurrect the
+  ended session), while the restore/refresh-side clears never bump -- the
+  server's answer is the session's death, but a commit that started
+  before it and settles after it is the session's legitimate successor
+  and must still commit. Logout's own pre-emption is handled too: a commit
   that replaced the held token (a different login) is a session the
   revocation never touched and stands, while a commit that kept it (a
-  step-up) continues the revoked session and the local state converges
-  to signed-out.
+  token step-up) continues the revoked session and the local state
+  converges to signed-out; a cookie session holds no token, so any commit
+  that landed while the logout was in flight is a different session and
+  stands.
 - **The permission sets are host-attached data with survival rules,
   never evaluation.** The session only carries the per-domain lists
   (`setPermissionSet`) and applies the rules in its header: a silent
-  refresh or a step-up keeps both lists, `link`/`enroll` keep them (they
-  do not change the login state), and a login -- even by the same
-  account -- or an anonymous transition clears both, and a failed
+  restore or refresh or a step-up keeps both lists, `link`/`enroll` keep
+  them (they do not change the login state), and a login -- even by the
+  same account -- or an anonymous transition clears both, and a failed
   operation changes nothing. Set membership is decided by the hooks and
   the shells, never here -- and never fetched from a server here either:
   the /me-derived lists belong to the host to attach. Because a login
@@ -155,29 +176,29 @@ this layer.
 - **Refresh is single-flight per held refresh token.** Presentations of
   the same held token share one in-flight request; a second parallel
   presentation of it reads as token theft to the authn server, so the
-  session serialises them itself. A call made after a step-up presents
-  the same held token and still shares that flight.
-- **The refresh request travels credential-less by declaration.** The
-  generated token operation is selected to carry `omitAccessToken` (the
-  `web/orval.config.ts` per-operation override names the current
-  operation id, `authn.token.issue`), and `runRefresh` never reads,
-  clears or restores the token store -- there is nothing to restore on a
-  rethrowable failure. Keep it that way: a clear-and-restore ordering
-  would re-arm the api-client bearer-only refresh rule against the
-  session's own refresh request. Note that the checked-in generated
+  session serialises them itself. A call made after a token step-up
+  presents the same held token and still shares that flight.
+- **A token host's refresh request travels credential-less by
+  declaration.** The generated token operation is selected to carry
+  `omitAccessToken` (the `web/orval.config.ts` per-operation override
+  names the current operation id, `authn.token.issue`), and `runRefresh`
+  never reads, clears or restores the token store -- there is nothing to
+  restore on a rethrowable failure. Keep it that way: a clear-and-restore
+  ordering would re-arm the api-client bearer-only refresh rule against
+  the session's own refresh request. Note that the checked-in generated
   surface must be regenerated for the override to take effect.
 
 ## Public surface
 
-`src/index.ts` exports `createAuthSession`; the session types
+`src/index.ts` exports `createAuthSession(store?)`; the session types
 (`AuthSession`, `AuthSnapshot`, `AuthSessionListener`, plus `AuthDomain`
 and `AuthPermissionSets`, the two names that parameterise the
 host-attached permission lists); the response models (`AuthnPrincipal`,
 `AuthnFlowState`, `AuthnStep`, `AuthnField`, `AuthnFactorOption`,
-`AuthnMethodList`, `AuthnIdentifier`, `AuthnLink`); the supersession
-rejection pair (`OperationSupersededError` and its
+`AuthnMethodList`, `AuthnIdentifier`, `AuthnLink`, `AuthnSessionView`);
+the supersession rejection pair (`OperationSupersededError` and its
 `isOperationSuperseded` guard -- the one non-`ApiError` rejection of the
-token-issuing commits); the hooks (`attachSession`, `useAuthState`,
+session-establishing commits); the hooks (`attachSession`, `useAuthState`,
 `usePermission`, `TenantProvider`, `useCurrentTenant`); and the
 tenant-scoped query-key convention (`tenantQueryKey`,
 `useTenantQueryKey`, `TenantQueryKey`, `evictTenantQueries`). Anything
@@ -222,17 +243,19 @@ to be public.
 
 ## Known limitations
 
-- No persistence across page loads and no `restore`: reloading starts
-  anonymous, by design -- nothing in this package writes storage (see the
-  session-storage rule above).
-- `delivery: 'token'` is the modeled browser path; a completion answered
-  with a session document instead (a cookie-delivered login) is refused
-  as `client.protocol`, since this session holds tokens, not a cookie
-  session.
-- The refresh token is JavaScript-visible in memory: the authn token
-  responses set no refresh cookie to hide it in.
-- The refresh request's credential-less declaration lives in the
-  generated surface: the `web/orval.config.ts` override has been
-  corrected to the current operation id, but a checked-in generated
+- The token path is opt-in. The default (and the platform's own
+  composition) is the cookie session: `createAuthSession()` with no
+  store, `credentials` on the client and `restore()` at boot -- a reload
+  stays logged in. A host that passes an `AccessTokenStore` gets the
+  token path instead, where the refresh token is JavaScript-visible in
+  memory (the authn token responses set no refresh cookie to hide it in)
+  and a reload starts anonymous unless the host restores it itself.
+- The `delivery` a view passes to `startFlow` is normalized to the cookie
+  session; a view that still names a token delivery is overridden.
+  `startAuthenticatedFlow` leaves the delivery to the caller, whose
+  callers pass none (the server resolves its default, a cookie session).
+- A token host's refresh request's credential-less declaration lives in
+  the generated surface: the `web/orval.config.ts` override names the
+  current operation id (`authn.token.issue`), but a checked-in generated
   `api-sdk/src/index.ts` produced before that fixup still routes the
   token operation through the bearer mutator. Regenerating applies it.

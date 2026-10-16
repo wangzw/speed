@@ -107,6 +107,7 @@ export function createTestSession(
     readFlow: unused,
     abandonFlow: unused,
     logout: unused,
+    restore: unused,
     refresh: unused,
     setPermissionSet: unused,
   }

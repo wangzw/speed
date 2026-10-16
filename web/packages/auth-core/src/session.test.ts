@@ -38,11 +38,15 @@ import {
   LOGIN_START,
   LOGIN_START_AUTHENTICATED,
   LOGOUT,
+  makeCookieHarness,
   makeHarness,
   methodList,
   openFlow,
   principal,
   PROFILE_GET,
+  SESSION_GET,
+  sessionCompletion,
+  sessionView,
   snapshotLog,
   SSO_DISCOVER,
   ssoProviders,
@@ -228,6 +232,7 @@ describe('start flow', () => {
         expect(call.options?.body).toEqual({
           method: 'password',
           purpose: 'login',
+          delivery: 'session',
         })
         return completeFlow(1)
       },
@@ -1251,6 +1256,183 @@ describe('logout pre-emption', () => {
     expect(harness.store.get()).toBeNull()
     expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
     expect(seen.at(-1)?.state).toBe('anonymous')
+  })
+})
+
+describe('cookie session (store-less)', () => {
+  const cookieLogin = {
+    [LOGIN_START]: () => completeFlow(),
+    [LOGIN_ANSWER]: () => sessionCompletion(),
+    [PROFILE_GET]: () => principal(),
+    [SESSION_GET]: () => sessionView({ authenticated: true }),
+  }
+
+  it('commits a cookie login completion without writing a token store', async () => {
+    const harness = makeCookieHarness(cookieLogin)
+    const seen = snapshotLog(harness.session)
+    await harness.session.startFlow({ method: 'password' })
+    const state = await harness.session.answerFlow({ seq: 2, step: 'complete' })
+    expect(state).toEqual({
+      state: 'authenticated',
+      session: { id: 'session-1', expires_at: '2026-01-01T01:00:00Z' },
+    })
+    expect(harness.session.getSnapshot()).toEqual({
+      state: 'authenticated',
+      principal: principal(),
+      permissionSets: { tenant: null, system: null },
+    })
+    // The cookie carries the credential: no access token was stored.
+    expect(harness.store.get()).toBeNull()
+    expect(seen.map((snapshot) => snapshot.state)).toEqual(['authenticated'])
+    expect(harness.calls.map((call) => call.path)).toEqual([
+      '/auth/flows',
+      '/auth/flows/answer',
+      '/auth/me',
+    ])
+  })
+
+  it('forces delivery to session whatever the caller asked for', async () => {
+    const harness = makeCookieHarness({
+      [LOGIN_START]: (call) => {
+        expect(call.options?.body).toEqual({
+          method: 'password',
+          delivery: 'session',
+        })
+        return completeFlow()
+      },
+    })
+    await harness.session.startFlow({ method: 'password', delivery: 'token' })
+  })
+
+  it('keeps a reload logged in: a fresh session restores from the cookie', async () => {
+    // The bug this session model fixes: a page reload once signed the
+    // user out, because the browser path held its credential in memory.
+    // A fresh session (a reload) reads GET /auth/session and, with the
+    // cookie still valid, re-establishes the authenticated snapshot.
+    const harness = makeCookieHarness({
+      [SESSION_GET]: () => sessionView({ authenticated: true }),
+      [PROFILE_GET]: () =>
+        principal({ account_id: 'acct-reload', display_name: 'Ada Reload' }),
+    })
+    expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
+    await expect(harness.session.restore()).resolves.toBe(true)
+    expect(harness.session.getSnapshot()).toEqual({
+      state: 'authenticated',
+      principal: principal({
+        account_id: 'acct-reload',
+        display_name: 'Ada Reload',
+      }),
+      permissionSets: { tenant: null, system: null },
+    })
+    expect(harness.calls.map((call) => call.path)).toEqual([
+      '/auth/session',
+      '/auth/me',
+    ])
+  })
+
+  it('restore() resolves false and stays anonymous when nobody is signed in', async () => {
+    const harness = makeCookieHarness({
+      [SESSION_GET]: () => sessionView({ authenticated: false }),
+    })
+    const seen = snapshotLog(harness.session)
+    await expect(harness.session.restore()).resolves.toBe(false)
+    expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
+    // No /me read follows an anonymous session, and no transition fired.
+    expect(harness.calls.map((call) => call.path)).toEqual(['/auth/session'])
+    expect(seen).toHaveLength(0)
+  })
+
+  it('restore() ends a session the cookie no longer names', async () => {
+    const harness = makeCookieHarness({
+      ...cookieLogin,
+      [SESSION_GET]: () => sessionView({ authenticated: false }),
+    })
+    await harness.session.startFlow({ method: 'password' })
+    await harness.session.answerFlow({ seq: 2, step: 'complete' })
+    expect(harness.session.getSnapshot().state).toBe('authenticated')
+    const seen = snapshotLog(harness.session)
+    await expect(harness.session.restore()).resolves.toBe(false)
+    expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
+    expect(seen.map((snapshot) => snapshot.state)).toEqual(['anonymous'])
+  })
+
+  it('restore() treats a 401 from the read as nobody signed in', async () => {
+    const harness = makeCookieHarness({
+      [SESSION_GET]: () => {
+        throw apiError(401, 'authn.session_expired')
+      },
+    })
+    await expect(harness.session.restore()).resolves.toBe(false)
+    expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
+  })
+
+  it('restore() rethrows a server-side failure and keeps the snapshot', async () => {
+    const refused = apiError(503, 'authn.unavailable')
+    const harness = makeCookieHarness({
+      [SESSION_GET]: () => {
+        throw refused
+      },
+    })
+    await expect(harness.session.restore()).rejects.toBe(refused)
+    expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
+  })
+
+  it('a cookie step-up keeps the principal and the permission sets', async () => {
+    const harness = makeCookieHarness({
+      ...cookieLogin,
+      [LOGIN_START_AUTHENTICATED]: () => completeFlow(),
+      [LOGIN_ANSWER]: () => sessionCompletion({ id: 'session-2' }),
+    })
+    await harness.session.startFlow({ method: 'password' })
+    await harness.session.answerFlow({ seq: 2, step: 'complete' })
+    harness.session.setPermissionSet('tenant', ['notes:read'])
+    harness.session.setPermissionSet('system', ['users:manage'])
+    const before = harness.session.getSnapshot()
+    const callsBefore = harness.calls.length
+    await harness.session.startAuthenticatedFlow({ purpose: 'step-up' })
+    const state = await harness.session.answerFlow({ seq: 3, step: 'complete' })
+    expect(state.state).toBe('authenticated')
+    // The principal stands and no /me read followed the step-up.
+    expect(harness.session.getSnapshot().principal).toBe(before.principal)
+    expect(harness.session.getSnapshot().permissionSets).toEqual({
+      tenant: ['notes:read'],
+      system: ['users:manage'],
+    })
+    expect(harness.calls.slice(callsBefore)).toHaveLength(2)
+  })
+
+  it('logout() ends the cookie session and goes anonymous', async () => {
+    const harness = makeCookieHarness({
+      ...cookieLogin,
+      [LOGOUT]: (call) => {
+        expect(call.options?.method).toBe('POST')
+      },
+    })
+    await harness.session.startFlow({ method: 'password' })
+    await harness.session.answerFlow({ seq: 2, step: 'complete' })
+    await harness.session.logout()
+    expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
+    // A cookie session holds no refresh token: refresh() is a no-op.
+    await expect(harness.session.refresh()).resolves.toBe(false)
+  })
+
+  it('a restore that resolves after a logout does not resurrect the session', async () => {
+    let releaseRestore!: () => void
+    const restoreGate = new Promise<void>((resolve) => {
+      releaseRestore = resolve
+    })
+    const harness = makeCookieHarness({
+      ...cookieLogin,
+      [LOGOUT]: () => undefined,
+      [SESSION_GET]: () => restoreGate.then(() => sessionView({ authenticated: true })),
+    })
+    await harness.session.startFlow({ method: 'password' })
+    await harness.session.answerFlow({ seq: 2, step: 'complete' })
+    const restoring = harness.session.restore()
+    await harness.session.logout()
+    releaseRestore()
+    await expect(restoring).resolves.toBe(false)
+    expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
   })
 })
 

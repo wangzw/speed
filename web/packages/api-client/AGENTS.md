@@ -9,7 +9,8 @@ safe to consume.
 
 The one place in the web workspace where hand-written HTTP happens: a
 typed request function built by `createClient`, with injectable fetch,
-a memory-only access-token store, silent single-flight 401 refresh,
+an optional memory-only access-token store, the fetch credential mode
+(for a cookie-delivered session), silent single-flight 401 refresh,
 timeout, conservative idempotent retry, and a structured reporter. The
 generated `@speed/api-sdk` (orval output of `web/orval.config.ts`) calls into
 this runtime through its `src/runtime.ts` binding; no package other than
@@ -67,13 +68,16 @@ this one may issue HTTP requests itself.
   is the exported predicate consumers use to distinguish this client's
   genuine transport failures (`status` 0 -- unanswerable by any HTTP
   response) from server-answered errors.
-- **Refresh is once per request, single-flight -- and bearer-only.**
+- **Refresh is once per request, single-flight -- and credentialed-only.**
   The hook fires only for a refused request that itself presented a
-  bearer token; a 401 on a credential-less request means the endpoint
-  demands authentication that refreshing cannot provide, so it
+  credential: a bearer token from the store, or -- when
+  `ClientOptions.credentials` declares a cookie mode
+  (`'same-origin'`/`'include'`) -- the ambient cookie of a request not
+  declared `omitAccessToken`. A 401 on a credential-less request means
+  the endpoint demands authentication that the hook cannot provide, so it
   surfaces untouched (never retried, no false `refresh failed`
-  warning) -- which is what keeps a session's own refresh request from
-  re-entering the refresh path and awaiting itself. A 401 with a
+  warning) -- which is what keeps a session's own refresh/restore request
+  from re-entering the refresh path and awaiting itself. A 401 with a
   configured hook triggers one refresh shared by concurrent 401s, then
   one retry of the original request (any method), outside the
   transient-retry budget. Hook failure reports `access token refresh
@@ -87,8 +91,9 @@ this one may issue HTTP requests itself.
   declaration (orval's `speedRequestCredentialless` mutator in
   @speed/api-sdk). Clearing the store instead would momentarily strip
   the token from concurrent requests that still hold a valid one,
-  turning their 401s into spurious auth failures under the bearer-only
-  rule above; do not reintroduce a store-clearing refresh wiring. The
+  turning their 401s into spurious auth failures under the
+  credentialed-only rule above; do not reintroduce a store-clearing
+  refresh wiring. The
   caller's own headers are never stripped by the declaration: a
   caller-supplied `authorization` header is the caller's, and survives.
 - **Retry is idempotent-only and transient-only.** GET/HEAD/OPTIONS on
@@ -195,9 +200,11 @@ hand-maintained contract and a payload violating it must fail softly.
 The runtime leg is real in-workspace: `@speed/api-sdk`, the
 orval-generated typed surface, calls into this runtime through its
 `src/runtime.ts` binding, and `@speed/auth-core` compile-consumes both
-(its session layer imports this package's `AccessTokenStore` interface,
-calls the generated authn operations through the bound request function,
-and fills the `refreshAccessToken` hook with `() => session.refresh()`).
+(its session layer imports this package's `AccessTokenStore` interface
+for the opt-in token path, calls the generated authn operations through
+the bound request function, and fills the `refreshAccessToken` hook --
+`() => session.restore()` on the cookie path, `() => session.refresh()`
+on the token one).
 `starters/demo/web` binds this client at runtime: its app-entry assembly
 (`@speed/product-shell/bootstrap`'s `bootstrapSpeedApp`) binds one real
 `createClient` over the environment's own fetch and reads the server's

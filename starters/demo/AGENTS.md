@@ -228,6 +228,15 @@ under `server/testdata/` names them:
   routes — login, session, registration, profile, the account-management routes,
   invitations, impersonation and the enterprise provider register — mount on the
   `account` endpoint under `authn.gate.mount.base-path` (`/auth` by default).
+  The login flow is delivered as a session cookie: the frontend's login flow
+  requests `delivery: 'session'` (and `@speed/auth-core` forces it), so a
+  completed login answers `{state: 'authenticated', session: {id, expires_at}}`
+  with a `Set-Cookie` and no token pair, and a page reload stays signed in by
+  re-reading `GET /auth/session`. The delivery set is a runtime setting
+  (`authn.login.delivery-modes`, default `["session","token"]`), not a
+  configuration item, so it is narrowed through the settings surface rather
+  than `testdata/`; this host's frontend already requests session for every
+  login.
 - Tenant resolution (`tenant.resolve`) and admission (`tenant.admission`) guard
   `api`; the authorization guard (`authz.guard`) enforces `api`; the rate limiter
   (`ratelimit`) limits `api`. Resolution reads the tenant from the request's

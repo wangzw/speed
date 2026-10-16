@@ -1,18 +1,38 @@
 /**
  * The browser session state machine: createAuthSession wires the
  * generated authn flow surface of @speed/api-sdk (the login / link /
- * step-up / enroll flow operations, the methods listing, logout, and
- * the token endpoint a refresh uses) into one memory-only session.
+ * step-up / enroll flow operations, the methods listing, the session
+ * read that restores a page load, logout, and the token endpoint a
+ * token-delivered refresh uses) into one observable session.
  *
- * What lives where:
- * - the access token lives in the caller-supplied AccessTokenStore
- *   (the same store the host's @speed/api-client reads on every send,
- *   so a login here is immediately visible to every request);
- * - the refresh token lives in this closure only. The authn token
- *   response carries it in the body (the browser path delivers
- *   `delivery: 'token'`; there is no refresh cookie), and the refresh
- *   request takes the held token in its body, so the session keeps its
- *   own copy and never writes the store on a refresh's way out.
+ * The session is delivered as a cookie. The login flow is started with
+ * `delivery: 'session'`, so a completion answers `{state:
+ * 'authenticated', session: {id, expires_at}}` and the server sets its
+ * httpOnly session cookie on the same response; the browser then
+ * attaches that cookie to every same-origin request on its own, so this
+ * package holds no credential for the cookie path -- there is no access
+ * token to keep in memory and no refresh token to hold in a closure.
+ * Every request the generated operations make rides the ambient cookie
+ * through @speed/api-client, whose configured credential mode
+ * (`credentials`) sends it. Because the cookie outlives the page, a
+ * reload no longer signs the user out: restore() reads GET /auth/session,
+ * and a session the cookie still names re-establishes the snapshot -- the
+ * point that keeps a refresh logged in. restore() is also the client's
+ * silent-401 leg: @speed/api-client's session hook runs it when a
+ * credentialed request is refused, and a cookie that no longer holds
+ * clears the local snapshot (the session is over) so the shells fall
+ * back to sign-in.
+ *
+ * A token-delivered completion is still accepted, for a host that starts
+ * its flow with `delivery: 'token'` and passes an AccessTokenStore: the
+ * access token lands in that store (the same store @speed/api-client
+ * reads on every send) and the minted refresh token lives only in this
+ * closure, so such a host gets the token-refresh path
+ * (refresh()). The platform's own composition (@speed/product-shell)
+ * does not wire a store: it forces the cookie path, so this package
+ * keeps no credential at all there. `delivery` is forced to 'session' on
+ * every flow this package starts, so the browser path is always the
+ * cookie one whatever a view asked for.
  *
  * Login is a server-side flow the client advances, not one request:
  * POST /auth/flows starts `purpose: 'login'`, POST /auth/flows/answer
@@ -23,48 +43,56 @@
  * same machine on the identity already signed in for `purpose: 'link'`,
  * `'step-up'` or `'enroll'`. Those operations never change the session
  * -- they only hand the step back to the view (see the interface docs).
- * Only `answerFlow` commits, and only when the step settles a token
- * issuance: a `purpose: 'login'` completion (state 'authenticated')
- * opens the session, a `step-up` completion (state 'elevated')
- * re-mints the access token with the principal unchanged, and a
- * `link`/`enroll` completion (state 'linked'/'enrolled') does not touch
- * the login state.
+ * Only `answerFlow` commits, and only when a step settles the session: a
+ * `purpose: 'login'` completion (state 'authenticated') opens the
+ * session, a `step-up` completion opens it too with the same session
+ * continuing -- the cookie rotated for a cookie session, a fresh access
+ * token (state 'elevated') for a token session -- and a `link`/`enroll`
+ * completion (state 'linked'/'enrolled') does not touch the login state.
+ * A cookie login and a cookie step-up carry the same session completion
+ * shape, so the package tells them apart by the purpose of the flow it
+ * started, not by the body.
  *
- * The response shapes now come from the generated surface: the authn
+ * The response shapes come from the generated surface: the authn
  * fragments declare their 2xx schemas, so the response models below
  * (`AuthnFlowState`, `AuthnStep`, `AuthnField`, `AuthnFactorOption`,
- * `AuthnPrincipal`, `AuthnMethodList`) are the generated types (or a
- * client-side narrowing of them), not hand-written copies. The package
- * still guards every body-carrying 2xx at runtime, because the generated
- * types erase at the seam: a body that is not an object, or that is
- * missing a required field, is refused as a `status: 200`, `code:
- * client.protocol` ApiError -- a contract violating 2xx is never a
- * successful login. The generated seam sets no `requireJsonBody` (see the
- * @speed/api-sdk runtime.ts doc), so an empty 2xx resolves as undefined
- * through it and the guard must catch that too, before the first property
- * access (a native TypeError is not an ApiError and would escape the
- * whole error contract).
+ * `AuthnPrincipal`, `AuthnMethodList`, `AuthnSessionView`) are the
+ * generated types (or a client-side narrowing of them), not hand-written
+ * copies. The package still guards every body-carrying 2xx at runtime,
+ * because the generated types erase at the seam: a body that is not an
+ * object, or that is missing a required field, is refused as a
+ * `status: 200`, `code: client.protocol` ApiError -- a contract
+ * violating 2xx is never a successful login. The generated seam sets no
+ * `requireJsonBody` (see the @speed/api-sdk runtime.ts doc), so an empty
+ * 2xx resolves as undefined through it and the guard must catch that
+ * too, before the first property access (a native TypeError is not an
+ * ApiError and would escape the whole error contract).
  *
  * The failure contract: a request that fails rejects the raw ApiError
- * (distinguishable with isApiError) and changes nothing. A token-
- * issuing commit -- a login completion or a step-up completion -- that
- * lost a concurrent generation race rejects with
+ * (distinguishable with isApiError) and changes nothing. A
+ * session-establishing commit -- a login completion or a step-up
+ * completion -- that lost a concurrent generation race rejects with
  * OperationSupersededError instead of silently resolving with the
- * winner's snapshot (see the class's doc comment). `refresh()` is the
- * silent path: it resolves true when the store holds a fresh token
+ * winner's snapshot (see the class's doc comment). `restore()` is the
+ * silent path for a cookie session: it resolves true when the cookie
+ * still names a session (the snapshot is authenticated afterwards),
+ * false when nobody is signed in (the session signs out locally), and
+ * rethrows raw only for a transport or server-side failure (the local
+ * snapshot stands). `refresh()` is the silent path for a token
+ * session: it resolves true when the store holds a fresh token
  * afterwards, false when there is nothing to refresh or the held token
- * was refused (the session signs out locally), and rethrows raw only
- * for a transport or server-side failure (the held tokens stand).
+ * was refused (the session signs out locally), and rethrows raw only for
+ * a transport or server-side failure (the held tokens stand).
  *
  * Permission sets: the snapshot additionally carries
  * setPermissionSet(domain, list) data -- host-attached lists. The
  * session never evaluates a list; it only applies the survival rules
- * when a principal change commits: a silent refresh or a step-up (the
- * same session continuing) keeps both lists, `link` and `enroll` keep
- * them (they do not change the login state), and a login -- even by
- * the same account -- or an anonymous transition clears both: a login
- * opens a fresh server session whose lists the host has not fetched
- * yet. A failed operation changes nothing, lists included.
+ * when a principal change commits: a silent restore or refresh or a
+ * step-up (the same session continuing) keeps both lists, `link` and
+ * `enroll` keep them (they do not change the login state), and a login
+ * -- even by the same account -- or an anonymous transition clears
+ * both: a login opens a fresh server session whose lists the host has
+ * not fetched yet. A failed operation changes nothing, lists included.
  *
  * The failure semantics of `logout` deliberately diverge from the
  * above: a logout whose own request is refused still clears the local
@@ -72,11 +100,7 @@
  * longer revoke is no longer trustworthy locally either.
  */
 
-import {
-  ApiError,
-  ERROR_CODE_PROTOCOL,
-  isApiError,
-} from '@speed/api-client'
+import { ApiError, ERROR_CODE_PROTOCOL, isApiError } from '@speed/api-client'
 import type { AccessTokenStore } from '@speed/api-client'
 import {
   authnLoginAbandon,
@@ -86,6 +110,7 @@ import {
   authnLoginStart,
   authnLoginStartAuthenticated,
   authnProfileGet,
+  authnSessionGet,
   authnSessionLogout,
   authnSsoDiscover,
   authnTokenIssue,
@@ -97,6 +122,7 @@ import type {
   AuthnLoginField,
   AuthnLoginFlow,
   AuthnLoginMethods,
+  AuthnLoginSession,
   AuthnLoginStartAuthenticatedBody,
   AuthnLoginStartBody,
   AuthnLoginStep,
@@ -105,6 +131,7 @@ import type {
   AuthnProfileIdentifier,
   AuthnProfileLink,
   AuthnProfileProfile,
+  AuthnSessionView as AuthnSessionViewModel,
   AuthnSsoProvider as AuthnSsoProviderModel,
 } from '@speed/api-sdk'
 
@@ -160,15 +187,32 @@ export type AuthnStep =
   | (AuthnLoginStep & { kind: 'complete' })
   | (AuthnLoginStep & { kind: 'webauthn'; options: unknown })
 
+/** A cookie-delivered completion: the generated `AuthnLoginSession`,
+ * `{state: 'authenticated', session: {id, expires_at}}`, which the server
+ * answers together with its Set-Cookie. A login and a step-up carry the
+ * same shape (see the file header). */
+type SessionCompletion = AuthnLoginSession & { state: 'authenticated' }
+
+/** A token-delivered login completion: the generated `AuthnLoginToken`
+ * narrowed to `authenticated` (a step-up carries `elevated`). The server
+ * sets no cookie and this package holds the tokens a token host wired a
+ * store for. */
+type TokenCompletion = AuthnLoginToken & { state: 'authenticated' }
+
+/** A token-delivered step-up completion: an elevated access token, no
+ * refresh token. */
+type ElevatedCompletion = Omit<AuthnLoginToken, 'refresh_token'> & {
+  state: 'elevated'
+}
+
 /** The state of a flow as the wire carries it. Each member is the
  * generated reply of the login answer narrowed to one outcome: an open
  * flow (the server is awaiting the next answer) is the generated
  * `AuthnLoginFlow` carrying a sequence number and the next step; a
- * completion that issued tokens is the generated `AuthnLoginToken` --
- * `authenticated` for a login, carrying the refresh token, and
- * `elevated` for a step-up, which mints no refresh token and the client
- * therefore does not keep; `AuthnLoginActionResult` settles a link or
- * enroll flow without touching the login state.
+ * settled completion is a cookie-delivered session (`SessionCompletion`)
+ * or a token-delivered pair (`TokenCompletion`/`ElevatedCompletion`);
+ * `AuthnLoginActionResult` settles a link or enroll flow without
+ * touching the login state.
  *
  * The open-flow `state` is the record's live state (pkg/authn/login
  * flow.go), the set `OPEN_FLOW_STATES` holds. The design's own
@@ -179,8 +223,9 @@ export type AuthnStep =
  * violation. */
 export type AuthnFlowState =
   | (AuthnLoginFlow & { state: OpenFlowState; next: AuthnStep })
-  | (AuthnLoginToken & { state: 'authenticated' })
-  | (Omit<AuthnLoginToken, 'refresh_token'> & { state: 'elevated' })
+  | SessionCompletion
+  | TokenCompletion
+  | ElevatedCompletion
   | AuthnLoginActionResult
 
 /** The login methods this deployment offers (GET /auth/methods): the
@@ -201,6 +246,12 @@ export type AuthnMethodDescriptor = AuthnMethodDescriptorModel
  * (POST /auth/sso/discover): the provider's opaque id, its display name
  * and the protocol a flow for it speaks (oidc or saml). */
 export type AuthnSsoProvider = AuthnSsoProviderModel
+
+/** Who is signed in on the session the request's cookie carries: the
+ * generated response model of GET /auth/session. `authenticated` is
+ * false when nobody is signed in; the rest of the fields are then
+ * absent. */
+export type AuthnSessionView = AuthnSessionViewModel
 
 /** The observable session state. Immutable by convention: hosts read
  * it, they never mutate it. */
@@ -236,27 +287,32 @@ export interface AuthSession {
    * ApiError on failure, or a `client.protocol` error if the 2xx body is
    * not the documented shape. */
   discoverSso(email: string): Promise<AuthnSsoProvider[]>
-  /** Starts a `purpose: 'login'` flow and returns its first step. Never
-   * changes the session: the start of a flow is not a session. A 2xx
-   * body that is not a valid flow state rejects with `client.protocol`
-   * before anything else happens. */
+  /** Starts a `purpose: 'login'` flow and returns its first step. The
+   * flow is always started as a cookie-delivered session, whatever
+   * `delivery` the request carries. Never changes the session: the start
+   * of a flow is not a session. A 2xx body that is not a valid flow
+   * state rejects with `client.protocol` before anything else happens. */
   startFlow(request: AuthnLoginStartBody): Promise<AuthnFlowState>
   /** Starts a flow on the identity already signed in, for `purpose:
-   * 'link'`, `'step-up'` or `'enroll'`. Same contract as startFlow:
+   * 'link'`, `'step-up'` or `'enroll'`. The `delivery` is left to the
+   * caller (the account surfaces do not set one, so the server resolves
+   * its default cookie session). Same contract as startFlow otherwise:
    * forwards to the server and returns the step, changing nothing. */
   startAuthenticatedFlow(
     request: AuthnLoginStartAuthenticatedBody,
   ): Promise<AuthnFlowState>
   /** Answers the current step of the flow the request is bound to and
    * returns the resulting flow state. This is the one operation that
-   * commits a token issuance: a `login` completion (state
-   * 'authenticated') opens the session, a `step-up` completion (state
-   * 'elevated') re-mints the access token with the principal unchanged,
-   * and a `link`/`enroll` completion changes nothing. A login
-   * completion re-reads GET /auth/me for the principal; if that read
-   * fails the store is cleared and the commit rejects. A token-issuing
-   * completion whose generation moved on -- a concurrent commit beat it
-   * -- rejects with OperationSupersededError (see the class). */
+   * commits the session: a `login` completion (state 'authenticated')
+   * opens the session -- the principal is re-read from GET /auth/me, and
+   * for a token delivery the freshly minted tokens are written; a
+   * `step-up` completion (state 'authenticated' for a cookie session
+   * with the cookie rotated, or 'elevated' for a token session with a
+   * fresh access token) keeps the principal and the permission sets with
+   * the same session continuing, and a `link`/`enroll` completion
+   * changes nothing. A session-establishing completion whose generation
+   * moved on -- a concurrent commit beat it -- rejects with
+   * OperationSupersededError (see the class). */
   answerFlow(request: AuthnLoginAnswerBody): Promise<AuthnFlowState>
   /** Reads the current step of the flow the request is bound to, so a
    * page refresh can resume it. Resolves null when there is no flow
@@ -267,20 +323,33 @@ export interface AuthSession {
    * binding, or the flow is already gone) resolves; other failures
    * reject raw. */
   abandonFlow(): Promise<void>
-  /** Ends the session: the server revokes it, the store empties and
-   * the snapshot returns to anonymous. A logout whose own request is
-   * refused still clears locally and rejects the raw ApiError -- a
-   * session it could not revoke is no longer trustworthy here either.
-   * A completed logout wins over a refresh that resolves after it. */
+  /** Ends the session: the server revokes it and (for a cookie session)
+   * clears the cookie, the store empties and the snapshot returns to
+   * anonymous. A logout whose own request is refused still clears
+   * locally and rejects the raw ApiError -- a session it could not
+   * revoke is no longer trustworthy here either. A completed logout
+   * wins over a refresh that resolves after it. */
   logout(): Promise<void>
-  /** Silently refreshes the access token with the held refresh token.
-   * Resolves true when the store holds a fresh token afterwards;
-   * resolves false when there is nothing to refresh, when the held
-   * token was refused (the session signs out locally), or when a
-   * concurrent commit replaced the session. A transport or server-side
+  /** Restores the session the request's cookie names, by reading
+   * GET /auth/session. Resolves true when a session is signed in
+   * afterwards -- the snapshot is authenticated and the principal is
+   * read from GET /auth/me -- which is what keeps a page reload logged
+   * in, and is also the leg @speed/api-client runs on a refused
+   * credentialed request. Resolves false when nobody is signed in (a
+   * snapshot that was authenticated goes anonymous -- the session is
+   * over -- and a 401 from the read is treated the same). A transport or
+   * server-side failure rethrows the raw ApiError and leaves the local
+   * snapshot in place. */
+  restore(): Promise<boolean>
+  /** Silently refreshes the access token with the held refresh token
+   * (a token session). Resolves true when the store holds a fresh token
+   * afterwards; resolves false when there is nothing to refresh, when
+   * the held token was refused (the session signs out locally), or when
+   * a concurrent commit replaced the session. A transport or server-side
    * failure rethrows the raw ApiError and leaves the held tokens in
    * place. Concurrent calls presenting the same held token share one
-   * in-flight request. */
+   * in-flight request. A cookie session holds no refresh token, so this
+   * resolves false without a request; its silent leg is restore(). */
   refresh(): Promise<boolean>
   /** Host-attached permission list for one domain: replaces the list
    * the snapshot carries with a defensive copy (mutating the caller's
@@ -294,20 +363,20 @@ export interface AuthSession {
 }
 
 /**
- * Rejects a token-issuing commit -- a login flow completion or a
+ * Rejects a session-establishing commit -- a login flow completion or a
  * step-up completion -- whose own request answered successfully but
  * was superseded by a concurrent commit that landed first. The request
  * itself did not fail (`isApiError(error)` is false for this) and the
- * session is not broken -- some commit's tokens are applied and the
- * session is authenticated under them -- but they are not necessarily
- * THIS caller's, so this caller must not treat its own 2xx as a commit
- * signal: no one-shot side effect (a post-login redirect) may fire for
- * an identity the session is not actually running under. A superseded
- * step-up carries an extra cost the caller must hear: its completion
- * rotated the tokens and consumed, server-side, the challenge it
- * verified, so the caller must never re-offer that same second factor
- * -- only a fresh flow can retry. `snapshot` carries the session's
- * current (winning) state at the moment of rejection.
+ * session is not broken -- some commit's session is established and the
+ * snapshot is authenticated -- but it is not necessarily THIS caller's,
+ * so this caller must not treat its own 2xx as a commit signal: no
+ * one-shot side effect (a post-login redirect) may fire for an identity
+ * the session is not actually running under. A superseded token step-up
+ * carries an extra cost the caller must hear: its completion rotated
+ * the tokens and consumed, server-side, the challenge it verified, so
+ * the caller must never re-offer that same second factor -- only a
+ * fresh flow can retry. `snapshot` carries the session's current
+ * (winning) state at the moment of rejection.
  */
 export class OperationSupersededError extends Error {
   readonly snapshot: AuthSnapshot
@@ -402,9 +471,7 @@ function requireBearer(value: unknown, detail: string): typeof BEARER {
   return BEARER
 }
 
-function optionalNumber(
-  value: unknown,
-): number | undefined {
+function optionalNumber(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined
 }
 
@@ -473,6 +540,49 @@ function parsePrincipal(body: unknown): AuthnPrincipal {
       : [],
     links: Array.isArray(links) ? links.map((entry) => parseLink(entry)) : [],
   }
+}
+
+/** Validates the GET /auth/session body into the generated session view.
+ * `authenticated` is the one required field; the rest are carried as the
+ * wire sends them (a false `authenticated` carries none of them). */
+function parseSessionView(body: unknown): AuthnSessionView {
+  const rec = asObject(body, 'session 2xx carries no body document')
+  if (typeof rec.authenticated !== 'boolean') {
+    throw protocolViolation('session 2xx carries no authenticated boolean')
+  }
+  const view: AuthnSessionView = { authenticated: rec.authenticated }
+  if (typeof rec.session_id === 'string') {
+    view.session_id = rec.session_id
+  }
+  if (typeof rec.account_id === 'string') {
+    view.account_id = rec.account_id
+  }
+  if (typeof rec.actor_id === 'string') {
+    view.actor_id = rec.actor_id
+  }
+  if (typeof rec.impersonating === 'boolean') {
+    view.impersonating = rec.impersonating
+  }
+  if (Array.isArray(rec.methods)) {
+    view.methods = rec.methods.filter(
+      (m): m is NonNullable<AuthnSessionView['methods']>[number] =>
+        typeof m === 'string',
+    )
+  }
+  if (
+    rec.assurance === 'none' ||
+    rec.assurance === 'single' ||
+    rec.assurance === 'multi'
+  ) {
+    view.assurance = rec.assurance
+  }
+  if (typeof rec.auth_time === 'string') {
+    view.auth_time = rec.auth_time
+  }
+  if (typeof rec.provider === 'string') {
+    view.provider = rec.provider
+  }
+  return view
 }
 
 function parseField(value: unknown): AuthnField {
@@ -575,14 +685,33 @@ function isOpenFlowState(state: string): state is OpenFlowState {
 /** Validates a flow reply into the client's flow-state union (the
  * generated reply types narrowed to one outcome each). The open-flow
  * shape is a number `seq` plus a `next` step; a settled completion
- * carries its outcome (and, for a token issuance, the tokens). A body
+ * carries its outcome. A `state: 'authenticated'` body is the
+ * cookie-delivered `AuthnLoginSession` when it carries a `session`
+ * document, and the token-delivered `AuthnLoginToken` when it carries
+ * the token pair instead; `state: 'elevated'` is a token step-up. A body
  * whose `state` is none of these -- or an empty 2xx -- is a protocol
  * violation, before any state change. */
 function parseFlowState(body: unknown): AuthnFlowState {
   const rec = asObject(body, 'flow reply carries no body document')
   const state = requireString(rec.state, 'flow reply carries no state')
   switch (state) {
-    case 'authenticated':
+    case 'authenticated': {
+      // A cookie session answers with a session document; a token session
+      // answers with the token pair. The presence of `session` decides.
+      if (rec.session !== undefined) {
+        const session = asObject(
+          rec.session,
+          'session completion carries no session document',
+        )
+        return {
+          state: 'authenticated',
+          session: {
+            id: requireString(session.id, 'session completion carries no id'),
+            expires_at:
+              typeof session.expires_at === 'string' ? session.expires_at : '',
+          },
+        }
+      }
       return {
         state: 'authenticated',
         token_type: requireBearer(
@@ -602,6 +731,7 @@ function parseFlowState(body: unknown): AuthnFlowState {
           'login completion carries no refresh_token string',
         ),
       }
+    }
     case 'elevated':
       return {
         state: 'elevated',
@@ -633,6 +763,14 @@ function parseFlowState(body: unknown): AuthnFlowState {
       }
     }
   }
+}
+
+/** Whether a settled flow reply is the cookie-delivered session
+ * completion (as opposed to a token-delivered login). */
+function isSessionCompletion(
+  state: AuthnFlowState,
+): state is SessionCompletion {
+  return 'session' in state
 }
 
 /** Validates a token-issuing body (the token endpoint) into the tokens
@@ -753,6 +891,19 @@ const NO_PERMISSION_SETS: AuthPermissionSets = {
   system: null,
 }
 
+/** The purpose a flow was started for, as far as this package tracks it
+ * to tell a cookie login completion from a cookie step-up completion
+ * (both answer the same session body). `login` and `step-up` are the two
+ * that settle a session; `link` and `enroll` settle an action result
+ * instead. */
+type FlowPurpose = 'login' | 'link' | 'step-up' | 'enroll'
+
+function normalizePurpose(purpose: string | undefined): FlowPurpose {
+  return purpose === 'link' || purpose === 'step-up' || purpose === 'enroll'
+    ? purpose
+    : 'login'
+}
+
 /** Whether a refusal of the held refresh token is terminal. The token
  * endpoint answers an unusable grant -- invalid, replayed or a revoked
  * session -- as an RFC 6749 §5.2 body with status 400 (`error:
@@ -773,25 +924,34 @@ function isRefreshRefusal(error: unknown): boolean {
 }
 
 /**
- * Creates the session over the caller's access-token store. The store
- * is the single bridge into @speed/api-client: a host that built its
- * client with this same store and refreshAccessToken: () =>
- * session.refresh() gets silent refresh for free -- an expired-token
- * 401 on any request runs one refresh, and the retried request carries
- * the fresh token.
+ * Creates the session. The store is optional and is the bridge into
+ * @speed/api-client for a token-delivered session: a host that starts
+ * its flow with `delivery: 'token'` and passes a store gets the token
+ * path, with `refreshAccessToken: () => session.refresh()` giving
+ * silent refresh for free. A host that leaves the store out (the
+ * platform's own composition) runs the cookie path: the login flow is
+ * started as a cookie session, the credential is the server's httpOnly
+ * cookie, and restore() re-establishes the session after a reload.
  */
-export function createAuthSession(store: AccessTokenStore): AuthSession {
+export function createAuthSession(store?: AccessTokenStore): AuthSession {
   let snapshot: AuthSnapshot = {
     state: 'anonymous',
     principal: null,
     permissionSets: NO_PERMISSION_SETS,
   }
   // The held refresh token: closure-only, never stored, never exposed.
+  // Only a token-delivered session holds one.
   let refreshToken: string | null = null
-  // The generation guard: a token-issuing commit bumps it; refresh
-  // never does. Writes are applied only when the captured generation
-  // still holds (see the file header).
+  // The generation guard: a session commit (a login or step-up
+  // completion) and a logout bump it; restore and refresh never do. A
+  // commit applies only when the generation captured at its entry still
+  // holds (see the file header).
   let generation = 0
+  // The purpose of the flow this session most recently advanced. The
+  // server answers a cookie login and a cookie step-up with the same
+  // session completion, so this is the only way to keep a step-up's
+  // principal and permission sets while a login clears them.
+  let pendingPurpose: FlowPurpose = 'login'
   // The single-flight refresh: at most one in-flight request per held
   // refresh token.
   let refreshFlight: { held: string; promise: Promise<boolean> } | null = null
@@ -810,17 +970,18 @@ export function createAuthSession(store: AccessTokenStore): AuthSession {
     }
   }
 
-  /** Clears everything local: the store, the held refresh token and
-   * the snapshot. Used by logout and by refresh when the server
-   * refuses the held token. The caller decides whether the clear ends
-   * its generation: logout clears and then bumps, so a refresh that
-   * started under the old generation cannot resurrect the ended
-   * session; the refresh-side clears deliberately do NOT bump -- the
-   * server's refusal is the session's death, but a commit that started
-   * before the refusal and settles after it is the session's
-   * legitimate successor and must still be able to commit. */
+  /** Clears everything local: the store (a token session), the held
+   * refresh token and the snapshot. Used by logout and by restore/refresh
+   * when the server says nobody is signed in. The caller decides whether
+   * the clear ends its generation: logout clears and then bumps, so a
+   * restore or refresh that started under the old generation cannot
+   * resurrect the ended session; the restore/refresh-side clears
+   * deliberately do NOT bump -- the server's answer is the session's
+   * death, but a commit that started before it and settles after it is
+   * the session's legitimate successor and must still be able to
+   * commit. */
   function clearLocal(): void {
-    store.set(null)
+    store?.set(null)
     refreshToken = null
     snapshot = {
       state: 'anonymous',
@@ -834,7 +995,7 @@ export function createAuthSession(store: AccessTokenStore): AuthSession {
    * snapshot's permission sets are retained: the same session
    * continues. */
   function commitTokens(issued: IssuedTokens): void {
-    store.set(issued.accessToken)
+    store?.set(issued.accessToken)
     if (issued.refreshToken !== null) {
       refreshToken = issued.refreshToken
     }
@@ -843,16 +1004,16 @@ export function createAuthSession(store: AccessTokenStore): AuthSession {
     }
   }
 
-  /** Commits a login completion: the store gets the new access token,
-   * the closure the minted refresh token, and the snapshot the freshly
-   * read principal with both permission domains cleared (a login opens
-   * a fresh server session, so nothing rides over from the previous
-   * one). */
+  /** Commits a login completion: the store gets the new access token (a
+   * token session), the closure the minted refresh token, and the
+   * snapshot the freshly read principal with both permission domains
+   * cleared (a login opens a fresh server session, so nothing rides over
+   * from the previous one). */
   function commitLogin(
     issued: IssuedTokens,
     principal: AuthnPrincipal,
   ): void {
-    store.set(issued.accessToken)
+    store?.set(issued.accessToken)
     if (issued.refreshToken !== null) {
       refreshToken = issued.refreshToken
     }
@@ -863,15 +1024,15 @@ export function createAuthSession(store: AccessTokenStore): AuthSession {
     }
   }
 
-  /** The commit of a login completion: the response is validated first
-   * (a contract-violating 2xx rejects even when a newer commit landed
-   * -- the caller deserves to know its own request failed), then
-   * applied only if no other commit won meanwhile. The principal is
-   * read from GET /auth/me with the freshly written token; if that read
-   * fails the store is cleared and the commit rejects. */
+  /** The commit of a token login completion: the response is validated
+   * first (a contract-violating 2xx rejects even when a newer commit
+   * landed -- the caller deserves to know its own request failed), then
+   * applied only if no other commit won meanwhile. The principal is read
+   * from GET /auth/me with the freshly written token; if that read fails
+   * the store is cleared and the commit rejects. */
   async function settleLogin(
     opGeneration: number,
-    state: Extract<AuthnFlowState, { state: 'authenticated' }>,
+    state: TokenCompletion,
   ): Promise<void> {
     const issued: IssuedTokens = {
       accessToken: state.access_token,
@@ -880,12 +1041,12 @@ export function createAuthSession(store: AccessTokenStore): AuthSession {
     if (generation !== opGeneration) {
       throw new OperationSupersededError(snapshot)
     }
-    store.set(issued.accessToken)
+    store?.set(issued.accessToken)
     let principal: AuthnPrincipal
     try {
       principal = parsePrincipal(await authnProfileGet())
     } catch (error) {
-      store.set(null)
+      store?.set(null)
       refreshToken = null
       throw error
     }
@@ -897,13 +1058,34 @@ export function createAuthSession(store: AccessTokenStore): AuthSession {
     notify()
   }
 
-  /** The commit of a step-up completion: the access token is replaced,
-   * the principal and the permission sets are kept (the same session
-   * continues), and no GET /auth/me read follows. Validation precedes
-   * the generation check, as for a login. */
+  /** The commit of a cookie login completion: the server set the cookie,
+   * so the session reads GET /auth/me for the freshly signed-in
+   * principal (riding the ambient cookie) and applies it with both
+   * permission domains cleared. No store is touched. */
+  async function settleLoginSession(opGeneration: number): Promise<void> {
+    if (generation !== opGeneration) {
+      throw new OperationSupersededError(snapshot)
+    }
+    const principal = parsePrincipal(await authnProfileGet())
+    if (generation !== opGeneration) {
+      throw new OperationSupersededError(snapshot)
+    }
+    snapshot = {
+      state: 'authenticated',
+      principal,
+      permissionSets: NO_PERMISSION_SETS,
+    }
+    generation += 1
+    notify()
+  }
+
+  /** The commit of a token step-up completion: the access token is
+   * replaced, the principal and the permission sets are kept (the same
+   * session continues), and no GET /auth/me read follows. Validation
+   * precedes the generation check, as for a login. */
   function settleElevated(
     opGeneration: number,
-    state: Extract<AuthnFlowState, { state: 'elevated' }>,
+    state: ElevatedCompletion,
   ): void {
     const issued: IssuedTokens = {
       accessToken: state.access_token,
@@ -913,6 +1095,22 @@ export function createAuthSession(store: AccessTokenStore): AuthSession {
       throw new OperationSupersededError(snapshot)
     }
     commitTokens(issued)
+    generation += 1
+    notify()
+  }
+
+  /** The commit of a cookie step-up completion: the server rotated the
+   * cookie, the principal and the permission sets are kept (the same
+   * session continues), and no GET /auth/me read follows. */
+  function settleElevatedSession(opGeneration: number): void {
+    if (generation !== opGeneration) {
+      throw new OperationSupersededError(snapshot)
+    }
+    snapshot = {
+      state: 'authenticated',
+      principal: snapshot.principal,
+      permissionSets: snapshot.permissionSets,
+    }
     generation += 1
     notify()
   }
@@ -952,8 +1150,8 @@ export function createAuthSession(store: AccessTokenStore): AuthSession {
     }
     if (generation !== capturedGeneration) {
       // A commit landed while the refresh was in flight and owns the
-      // session now. If it kept the held token -- a step-up mints no
-      // new refresh token -- this refresh's success still consumed the
+      // session now. If it kept the held token -- a token step-up mints
+      // no new refresh token -- this refresh's success still consumed the
       // token server-side, so the session adopts the rotated one or its
       // next refresh reads as a replay and dies. A commit that replaced
       // the token (a login) or ended the session (a logout) makes the
@@ -1021,26 +1219,51 @@ export function createAuthSession(store: AccessTokenStore): AuthSession {
     },
 
     async startFlow(request: AuthnLoginStartBody): Promise<AuthnFlowState> {
-      // A pure flow step: parsed and handed back, changing nothing.
-      return parseFlowState(await authnLoginStart(request))
+      // A pure flow step: parsed and handed back, changing nothing. The
+      // delivery is forced to the cookie session whatever the caller
+      // asked for -- this package's browser path is the cookie one.
+      pendingPurpose = normalizePurpose(request.purpose)
+      return parseFlowState(
+        await authnLoginStart({ ...request, delivery: 'session' }),
+      )
     },
 
+  /** Starts a flow on the identity already signed in, for `purpose:
+   * 'link'`, `'step-up'` or `'enroll'`. The `delivery` is left to the
+   * caller: the callers of this operation (the account surfaces) do not
+   * set one, so the server resolves its own default (a cookie session),
+   * and a cookie step-up rotates the cookie exactly as a login does. A
+   * 2xx body that is not a valid flow state rejects with `client.protocol`
+   * before anything else happens. */
     async startAuthenticatedFlow(
       request: AuthnLoginStartAuthenticatedBody,
     ): Promise<AuthnFlowState> {
+      pendingPurpose = normalizePurpose(request.purpose)
       return parseFlowState(await authnLoginStartAuthenticated(request))
     },
 
     async answerFlow(request: AuthnLoginAnswerBody): Promise<AuthnFlowState> {
       const opGeneration = generation
       const state = parseFlowState(await authnLoginAnswer(request))
-      // Only a token-issuing completion changes the session.
+      // Only a session completion changes the session.
       if (state.state === 'authenticated') {
-        await settleLogin(opGeneration, state)
+        if (isSessionCompletion(state)) {
+          if (pendingPurpose === 'step-up') {
+            settleElevatedSession(opGeneration)
+          } else {
+            await settleLoginSession(opGeneration)
+          }
+        } else {
+          await settleLogin(opGeneration, state)
+        }
+        pendingPurpose = 'login'
       } else if (state.state === 'elevated') {
         settleElevated(opGeneration, state)
+        pendingPurpose = 'login'
+      } else if (state.state === 'linked' || state.state === 'enrolled') {
+        pendingPurpose = 'login'
       }
-      // linked / enrolled / an open step: no state change.
+      // An open step: no state change.
       return state
     },
 
@@ -1073,8 +1296,8 @@ export function createAuthSession(store: AccessTokenStore): AuthSession {
     async logout(): Promise<void> {
       const opGeneration = generation
       // The refresh token of the session this logout speaks for: a
-      // commit that keeps it (a step-up) continues the very session the
-      // revocation ends.
+      // commit that keeps it (a token step-up) continues the very
+      // session the revocation ends.
       const revokedSessionToken = refreshToken
       let failure: unknown
       let failed = false
@@ -1090,15 +1313,17 @@ export function createAuthSession(store: AccessTokenStore): AuthSession {
       // session this logout ended, so the local state converges to
       // signed-out either way -- as does a logout whose own request
       // failed, since a session it could not revoke is no longer
-      // trustworthy here.
+      // trustworthy here. A cookie session holds no token, so any commit
+      // that landed while the logout was in flight is a different
+      // session and stands.
       const replaced =
         generation !== opGeneration &&
         (revokedSessionToken === null || refreshToken !== revokedSessionToken)
       if (!replaced) {
         clearLocal()
-        // Bump so that a refresh that started under this generation is
-        // dropped when it resolves: a refresh must not resurrect the
-        // session this logout ended.
+        // Bump so that a restore or refresh that started under this
+        // generation is dropped when it resolves: neither must
+        // resurrect the session this logout ended.
         generation += 1
         notify()
       }
@@ -1107,11 +1332,53 @@ export function createAuthSession(store: AccessTokenStore): AuthSession {
       }
     },
 
+    async restore(): Promise<boolean> {
+      const opGeneration = generation
+      let view: AuthnSessionView
+      try {
+        view = parseSessionView(await authnSessionGet())
+      } catch (error) {
+        if (isApiError(error) && error.status === 401) {
+          // A credential was presented but does not hold: nobody is
+          // signed in. Treat it as the anonymous answer, like an
+          // explicit authenticated:false.
+          view = { authenticated: false }
+        } else {
+          throw error
+        }
+      }
+      if (generation !== opGeneration) {
+        // A commit landed while the read was in flight and owns the
+        // session now; its state stands untouched.
+        return false
+      }
+      if (!view.authenticated) {
+        if (snapshot.state !== 'anonymous') {
+          clearLocal()
+          notify()
+        }
+        return false
+      }
+      const principal = parsePrincipal(await authnProfileGet())
+      if (generation !== opGeneration) {
+        return false
+      }
+      // The same session continues: the permission sets are kept.
+      snapshot = {
+        state: 'authenticated',
+        principal,
+        permissionSets: snapshot.permissionSets,
+      }
+      notify()
+      return true
+    },
+
     refresh(): Promise<boolean> {
       const held = refreshToken
       if (held === null) {
-        // Nothing to refresh; not even a store read -- and certainly no
-        // state change.
+        // Nothing to refresh (a cookie session never holds a refresh
+        // token); not even a store read -- and certainly no state
+        // change.
         return Promise.resolve(false)
       }
       const capturedGeneration = generation

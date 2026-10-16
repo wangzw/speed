@@ -64,6 +64,12 @@ const respond: RealResponder = (call) => {
   if (key === 'GET /auth/me') {
     return jsonResponse(200, principal())
   }
+  if (key === 'GET /auth/session') {
+    // The boot restore's read. Nobody is signed in by default, so the
+    // mounted view stays on the sign-in surface; a test that needs a
+    // remembered session overrides this responder.
+    return jsonResponse(200, { authenticated: false })
+  }
   if (key === 'POST /auth/token') {
     return jsonResponse(200, tokenResponse())
   }
@@ -145,13 +151,18 @@ describe('bootstrapSpeedApp', () => {
     readonly origin: string
     readonly acceptLanguage: string | null
     readonly tenant: string | null
+    readonly credentials: RequestCredentials | null
   }>
   let realFetch: typeof globalThis.fetch
   let realLanguages: readonly string[] | undefined
   let realLocalStorage: PropertyDescriptor | undefined
+  /** The responder the mounted client's fetch consults; tests override
+   * it to script a remembered session or another boot answer. */
+  let activeResponder: RealResponder
 
   beforeEach(() => {
     observed = []
+    activeResponder = respond
     realFetch = globalThis.fetch
     realLanguages = window.navigator.languages
     // Deterministic language: pin the navigator-languages leg of
@@ -193,8 +204,9 @@ describe('bootstrapSpeedApp', () => {
           origin: url.origin,
           acceptLanguage: new Headers(init?.headers).get('accept-language'),
           tenant: new Headers(init?.headers).get('x-tenant'),
+          credentials: init?.credentials ?? null,
         })
-        return respond({
+        return activeResponder({
           method: init?.method ?? 'GET',
           path: url.pathname,
           authorization: new Headers(init?.headers).get('authorization'),
@@ -249,6 +261,54 @@ describe('bootstrapSpeedApp', () => {
     })
     container.remove()
     expect(container.innerHTML).toBe('')
+  })
+
+  it('restores the session the cookie names at boot, announcing the cookie credential mode', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    // A page load with a still-valid session cookie: the boot read says
+    // signed in, and the principal is re-read from /auth/me.
+    activeResponder = (call) => {
+      if (call.path === '/auth/session') {
+        return jsonResponse(200, { authenticated: true, session_id: 's-1' })
+      }
+      return respond(call)
+    }
+    const boot = await mountApp(container, { view: <div /> })
+
+    // The reload kept the user logged in -- the bug this model fixes.
+    expect(boot.session.getSnapshot().state).toBe('authenticated')
+    expect(boot.session.getSnapshot().principal).not.toBeNull()
+
+    // The boot read and its /me follow both rode the cookie mode.
+    const sessionRead = observed.find((call) => call.path === '/auth/session')
+    expect(sessionRead?.credentials).toBe('same-origin')
+    const meRead = observed.find((call) => call.path === '/auth/me')
+    expect(meRead?.credentials).toBe('same-origin')
+
+    await act(async () => {
+      boot.root.unmount()
+    })
+    container.remove()
+  })
+
+  it('announces the same-origin credential mode on every request and sends no Authorization', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const boot = await mountApp(container, { view: <div /> })
+    await act(async () => {
+      await boot.session.startFlow({ method: 'password' })
+    })
+    // Every observed request carried the credential mode; none carried a
+    // bearer token (the cookie is the credential).
+    for (const call of observed) {
+      expect(call.credentials).toBe('same-origin')
+    }
+    expect(observed.some((call) => call.path === '/auth/flows')).toBe(true)
+    await act(async () => {
+      boot.root.unmount()
+    })
+    container.remove()
   })
 
   it('registers the platform error bundle as the fallback namespace', async () => {
