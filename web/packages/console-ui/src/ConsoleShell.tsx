@@ -123,7 +123,7 @@ export function ConsoleShell({
       >
         {t('shell.skipToContent')}
       </Link>
-      <AppBar position="static" component="header" color="default" elevation={0}>
+      <AppBar position="static" component="header">
         <Toolbar sx={{ gap: 2 }}>
           {title}
           <Box sx={{ flexGrow: 1 }} />
