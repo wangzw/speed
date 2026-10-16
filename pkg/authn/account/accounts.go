@@ -342,8 +342,9 @@ func (p *product) displayNameLowerRange() string {
 	return "display_name >= ?"
 }
 
-// displayNameBound returns the least string above every string that begins with
-// prefix, and whether such a string exists. A prefix that is not valid UTF-8
+// displayNameBound returns the least string above every stored display name that
+// begins with prefix, and whether such a bound exists at all -- the domain is the
+// names the column holds, not every possible string. A prefix that is not valid UTF-8
 // begins no name the column holds and so selects nothing: the bound it returns
 // is the empty string, the second result true, and that empty bound closes the
 // range to nothing. The prefix is read as written, so it may end in a
