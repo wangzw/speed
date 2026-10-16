@@ -79,6 +79,12 @@ import { summarizeUserAgent } from './internal/ua-summary.js'
  */
 const KNOWN_SESSION_KINDS = new Set<string>(['browser', 'token', 'service'])
 
+/**
+ * How many session rows one page shows. An account can accumulate many
+ * live sessions, so the list is paged rather than rendered whole.
+ */
+const SESSIONS_PER_PAGE = 8
+
 /** The transient outcome of a revoke action, rendered above the list. */
 type Notice =
   | { readonly kind: 'others-done'; readonly count: number }
@@ -159,6 +165,10 @@ export function SessionsSection() {
   const [othersConfirmOpen, setOthersConfirmOpen] = useState(false)
   const [notice, setNotice] = useState<Notice>(null)
   const [revokingId, setRevokingId] = useState<string | null>(null)
+  // The 1-based page of the session list. It is clamped against the page
+  // count on render below, so a revoke that shrinks the list can never
+  // leave the view on a page past the end.
+  const [page, setPage] = useState(1)
 
   // The display-timezone chain (stored profile preference -> device ->
   // UTC): the rows render in the account's chosen zone, not whatever
@@ -195,6 +205,12 @@ export function SessionsSection() {
   const hasRevocableOther =
     sessions !== undefined &&
     sessions.some((session) => session.id != null && session.current !== true)
+
+  // The page the list renders, clamped so a shrinking list (a revoke drops
+  // a row) never leaves the view past the last page.
+  const total = sessions?.length ?? 0
+  const pageCount = Math.max(1, Math.ceil(total / SESSIONS_PER_PAGE))
+  const currentPage = Math.min(page, pageCount)
 
   async function handleRevokeSession(sessionId: string): Promise<void> {
     if (busy || sessionId === revokingId) {
@@ -280,7 +296,13 @@ export function SessionsSection() {
           description: t('sessions.empty.description'),
         }}
       >
-        {(settledSessions) => (
+        {(settledSessions) => {
+          const start = (currentPage - 1) * SESSIONS_PER_PAGE
+          const pageSessions = settledSessions.slice(
+            start,
+            start + SESSIONS_PER_PAGE,
+          )
+          return (
           <Box>
             {notice?.kind === 'revoke-failed' && (
               <InlineError code={notice.code} />
@@ -317,7 +339,7 @@ export function SessionsSection() {
                 keeps the list semantics under WebKit, which strips them
                 from a list-style-none ul. */}
             <Box component="ul" role="list" sx={{ m: 0, p: 0, listStyle: 'none' }}>
-              {settledSessions.map((session, index) => {
+              {pageSessions.map((session, index) => {
                 const id = session.id ?? null
                 const current = session.current === true
                 const revocable = id !== null && !current
@@ -465,8 +487,43 @@ export function SessionsSection() {
                 )
               })}
             </Box>
+            {pageCount > 1 && (
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  columnGap: 2,
+                  mt: 2,
+                }}
+              >
+                <Button
+                  size="small"
+                  variant="outlined"
+                  disabled={currentPage <= 1}
+                  onClick={() => setPage(currentPage - 1)}
+                >
+                  {t('sessions.prevPage')}
+                </Button>
+                <Typography variant="body2" color="text.secondary">
+                  {t('sessions.pageIndicator', {
+                    page: currentPage,
+                    total: pageCount,
+                  })}
+                </Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  disabled={currentPage >= pageCount}
+                  onClick={() => setPage(currentPage + 1)}
+                >
+                  {t('sessions.nextPage')}
+                </Button>
+              </Box>
+            )}
           </Box>
-        )}
+          )
+        }}
       </AsyncSection>
 
       <ConfirmDialog

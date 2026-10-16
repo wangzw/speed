@@ -26,6 +26,9 @@
   },
   "sessions": {
     "title": "登录会话",
+    "prevPage": "上一页",
+    "nextPage": "下一页",
+    "pageIndicator": "第 {{page}} / {{total}} 页",
     "loading": "正在加载会话",
     "current": "当前会话",
     "kind": {

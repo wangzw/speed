@@ -142,6 +142,26 @@ describe('PreferencesSection', () => {
     await expectNoAxeViolations()
   })
 
+  it('caps the preference selects so they do not span the whole content width', async () => {
+    const { respond } = makeProfileResponder({})
+    mountSection(respond)
+
+    const language = await screen.findByRole('combobox', {
+      name: zhCN.preferences.language.label,
+    })
+    const timezone = screen.getByRole('combobox', {
+      name: zhCN.preferences.timezone.label,
+    })
+    // The width cap sits on the field root (the combobox is the inner
+    // input); both controls are limited to a comfortable select width
+    // (24rem = 384px) rather than stretching across the page.
+    for (const control of [language, timezone]) {
+      const root = control.closest('.MuiFormControl-root')
+      expect(root).not.toBeNull()
+      expect(root).toHaveStyle({ maxWidth: '384px' })
+    }
+  })
+
   it('floats both select labels above the not-chosen placeholder', async () => {
     // A fresh account holds no preference, so both selects render the "not
     // chosen" placeholder -- the state in which MUI leaves the InputLabel

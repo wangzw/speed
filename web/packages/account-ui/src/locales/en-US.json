@@ -26,6 +26,9 @@
   },
   "sessions": {
     "title": "Sessions",
+    "prevPage": "Previous",
+    "nextPage": "Next",
+    "pageIndicator": "Page {{page}} of {{total}}",
     "loading": "Loading sessions",
     "current": "Current session",
     "kind": {

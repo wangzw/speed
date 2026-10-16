@@ -207,6 +207,11 @@ export function PreferencesSection() {
             <TextField
               select
               fullWidth
+              // Both preference controls are short: a language tag or an
+              // IANA zone name does not need to span the whole content
+              // width, so each is capped to a comfortable select width and
+              // fills less than the row on a wide viewport.
+              sx={{ maxWidth: '24rem' }}
               slotProps={{
                 // displayEmpty rides the Select slot (MUI 9's slotProps
                 // architecture): the "not chosen" choice carries the empty
@@ -244,6 +249,9 @@ export function PreferencesSection() {
             <TextField
               select
               fullWidth
+              // Capped like the language select above: a zone name is short
+              // and the control need not span the content width.
+              sx={{ maxWidth: '24rem' }}
               // Same two slots as the language select above: displayEmpty
               // for the "not chosen" placeholder and an explicit shrink so
               // the label floats above it instead of overlapping.

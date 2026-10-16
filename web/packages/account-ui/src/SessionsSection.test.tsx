@@ -110,6 +110,48 @@ describe('SessionsSection', () => {
     await expectNoAxeViolations()
   })
 
+  it('pages a long session list instead of rendering every row at once', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: Array.from({ length: 12 }, (_, index) =>
+            session({ id: `session-${index}`, user_agent: '' }),
+          ),
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+    const user = userEvent.setup()
+
+    await screen.findByRole('heading', { name: zhCN.sessions.title })
+    // Pages of eight: only the first page's rows render, so twelve sessions
+    // do not all land in the tree.
+    expect(await screen.findAllByRole('listitem')).toHaveLength(8)
+    expect(
+      screen.getByText(
+        zhCN.sessions.pageIndicator
+          .replace('{{page}}', '1')
+          .replace('{{total}}', '2'),
+      ),
+    ).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: zhCN.sessions.prevPage }),
+    ).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: zhCN.sessions.nextPage }))
+    // The second page holds the remaining four rows.
+    await waitFor(() =>
+      expect(screen.getAllByRole('listitem')).toHaveLength(4),
+    )
+    expect(
+      screen.getByRole('button', { name: zhCN.sessions.nextPage }),
+    ).toBeDisabled()
+  })
+
   it('revokes one session and refetches, dropping the revoked row', async () => {
     let revoked = false
     const respond: RealResponder = (call: RealCall) => {
