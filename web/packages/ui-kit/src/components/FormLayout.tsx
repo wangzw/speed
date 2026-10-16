@@ -23,12 +23,21 @@
  * `columns={2}` switches the flow to a CSS Grid with two responsive
  * column tracks (`sm` -- 600px -- and up; a single track below it) so
  * each direct child (typically one FormField per cell) lays out two per
- * row on wider viewports and collapses to one column on narrow ones.
- * `sm` is chosen deliberately over `md`: a two-field row (e.g.
- * name/email) still has legible field widths as soon as a viewport
- * clears the phone/tablet-portrait boundary, and a form whose fields
- * genuinely need the full row can still pass `columns={1}` regardless
- * of viewport. The actions row spans every column track in grid mode so
+ * row once the form has room and collapses to one column when it does
+ * not.
+ *
+ * The trigger is the form's container, not the viewport: FormLayout
+ * wraps its flow in a box that declares `container-type: inline-size`,
+ * and the grid's two-track rule is a container query against that box.
+ * A form filling the content region and the same form in a narrow side
+ * panel therefore collapse at their own widths (the layout design's
+ * viewport-vs-container split: the shell follows the viewport, a
+ * component follows its container). `sm` -- 600px -- is the chosen
+ * container width over `md`: a two-field row (e.g. name/email) still
+ * has legible field widths as soon as the form clears the
+ * phone/tablet-portrait boundary, and a form whose fields genuinely
+ * need the full row can still pass `columns={1}` regardless of
+ * container. The actions row spans every column track in grid mode so
  * it always reads as one full-width row, matching its single-column
  * appearance.
  */
@@ -39,7 +48,7 @@ import { FormProvider } from 'react-hook-form'
 import type { FieldValues, SubmitHandler, UseFormReturn } from 'react-hook-form'
 
 /** The field-flow column count. 2 is a responsive CSS Grid (1 column
- * below the `sm` breakpoint, 2 at `sm` and up); 1 is the single-column
+ * below the container's `sm`, 2 from it up); 1 is the single-column
  * flex flow. */
 export type FormLayoutColumns = 1 | 2
 
@@ -63,8 +72,8 @@ export interface FormLayoutProps<TFieldValues extends FieldValues = FieldValues>
   /**
    * Field-flow column count. Defaults to 1 (the unconditional
    * single-column flow, for every consumer that omits this prop). See
-   * the module doc comment for the responsive breakpoint this switches
-   * on and the reasoning behind it.
+   * the module doc comment for the container width this switches on and
+   * the reasoning behind it.
    */
   readonly columns?: FormLayoutColumns
 }
@@ -112,7 +121,11 @@ export function FormLayout<TFieldValues extends FieldValues>({
   const flowSx = isGrid
     ? ({
         display: 'grid',
-        gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' },
+        // Container-keyed tracks: one column at the container's narrow
+        // end (the `@` shorthand's 0px baseline), two equal tracks from
+        // the container's `sm` up. The query resolves against the
+        // `containerSx` box below, so the form reflows by its own width.
+        gridTemplateColumns: { '@': '1fr', '@sm': 'repeat(2, 1fr)' },
         columnGap: spacing,
         rowGap: spacing,
         ...widthSx,
@@ -123,18 +136,28 @@ export function FormLayout<TFieldValues extends FieldValues>({
         gap: spacing,
         ...widthSx,
       } as const)
+  // The containment context the grid's container query resolves against.
+  // It is a plain block filling its parent, so the container's width is
+  // the width the host gives the form -- the form collapses in a narrow
+  // panel and stays two-column in a wide one, independent of the
+  // viewport.
+  const containerSx = { containerType: 'inline-size' } as const
   if (handleSubmit !== undefined) {
     return (
       <FormProvider {...form}>
-        <Box component="form" noValidate onSubmit={handleSubmit} sx={flowSx}>
-          {body}
+        <Box sx={containerSx}>
+          <Box component="form" noValidate onSubmit={handleSubmit} sx={flowSx}>
+            {body}
+          </Box>
         </Box>
       </FormProvider>
     )
   }
   return (
     <FormProvider {...form}>
-      <Box sx={flowSx}>{body}</Box>
+      <Box sx={containerSx}>
+        <Box sx={flowSx}>{body}</Box>
+      </Box>
     </FormProvider>
   )
 }

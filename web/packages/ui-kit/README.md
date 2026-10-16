@@ -471,17 +471,23 @@ larger form, a filters panel). Props: `form` (the host's
 omitting it (or passing `1` explicitly) renders the exact single-column
 flex flow -- zero behavior change for every existing consumer. Passing
 `columns={2}` switches the flow to a CSS Grid with two responsive
-column tracks: one track (a single column) below the `sm` breakpoint
-(600px), two equal tracks at `sm` and up. Each direct child (typically
+column tracks: one track (a single column) below the form's container
+`sm` (600px), two equal tracks from it up. Each direct child (typically
 one `FormField` per cell) becomes one grid cell in source order; the
 `actions` row spans every column track in grid mode
 (`gridColumn: '1 / -1'`) so it always reads as one full-width row,
-matching its single-column appearance. `sm` is the deliberate
-breakpoint, not `md`: a two-field row (name and email side by side,
-say) still has legible field widths as soon as a viewport clears the
-phone/tablet-portrait boundary, and a form whose fields genuinely need
-the full row width can still pass `columns={1}` regardless of viewport
--- there is no per-field override to a wider span.
+matching its single-column appearance.
+
+The trigger is the form's container, not the viewport: FormLayout wraps
+its flow in a box that declares `container-type: inline-size`, and the
+two-track rule is a container query against that box -- a form filling
+the content region and the same form in a narrow side panel collapse at
+their own widths, independent of the viewport. `sm` is the deliberate
+container width, not `md`: a two-field row (name and email side by
+side, say) still has legible field widths as soon as the form clears
+the phone/tablet-portrait boundary, and a form whose fields genuinely
+need the full row width can still pass `columns={1}` regardless of
+container -- there is no per-field override to a wider span.
 
 ```tsx
 <FormLayout
@@ -612,40 +618,57 @@ deliberately over-wide column set and asserting the wrapper is a real
 `TableContainer` would fail a test instead of silently regressing.
 
 **Column priority is the opt-in reflow alternative to that scroll
-fallback.** A column's `priority?: 'high' | 'medium' | 'low'` hides it
-below that tier's breakpoint on the same shared scale every other
-responsive surface in this repo reads from (`@speed/tokens`'
-`breakpoints.values`: xs:0/sm:600/md:900/lg:1200/xl:1536):
+fallback, and it is container-triggered.** The table's root box declares
+`container-type: inline-size`, so every responsive rule inside the table
+answers to the table's own width -- how wide the host placed it -- not
+the viewport: the same table filling the content region and squeezed
+into a narrow side panel sheds its columns at their own widths. A
+column's `priority?: 'high' | 'medium' | 'low'` hides it below that
+tier's container width on the same shared scale every other responsive
+surface in this repo reads from (`@speed/tokens`' `breakpoints.values`:
+xs:0/sm:600/md:900/lg:1200/xl:1536):
 
 | Priority | Visible from | Hidden below |
 |---|---|---|
-| `low` | `lg` (1200px) | `lg` -- the first column dropped as the viewport narrows |
+| `low` | `lg` (1200px) | `lg` -- the first column dropped as the container narrows |
 | `medium` | `md` (900px) | `md` |
-| `high` | `sm` (600px) | `sm` -- the last column dropped, only below the narrowest phone widths |
+| `high` | `sm` (600px) | `sm` -- the last column dropped, only below the narrowest panel widths |
 | unset (default) | always | never -- the exact behavior |
 
-A narrowing viewport therefore sheds the least important columns
+A narrowing container therefore sheds the least important columns
 first and keeps shedding until only the always-visible columns (no
-`priority` set) remain, even at `xs`. Omitting `priority` on every
-column renders with no visibility override at all -- a host that sets
-no column's priority sees byte-identical rendering on every viewport,
-and the `TableContainer` scroll fallback above still applies to it.
+`priority` set) remain, even at the container's narrow end. Omitting
+`priority` on every column renders with no visibility override at all --
+a host that sets no column's priority sees byte-identical rendering at
+every container width, and the `TableContainer` scroll fallback above
+still applies to it. The filter/toolbar row degrades by the same
+container: the filter input is 20rem wide from the container's `sm` up
+and fills the row below it.
 
-The hiding is pure CSS -- a breakpoint-keyed `display` value (`none`
-below the tier's breakpoint, `table-cell` -- a table cell's own default
-display, restored explicitly -- at and above it) on the header and
-body cell, never a JS layout decision. Unlike `AppShell`'s drawer-
-variant switch (`@speed/layout-kit`, a `useMediaQuery` boolean), a
-hidden table cell has no interactive state to preserve across the
-switch, so a `sx` breakpoint value does everything a JS re-render
-would, at no extra cost. `DataTable.test.tsx`'s "column priority"
-tests pin the three tiers' generated CSS (the same
-generated-CSS-text technique `FormLayout`'s `columns={2}` test uses,
-documented under Testing below) and that a prioritized column stays a
-real DOM column rather than being conditionally rendered away --
-jsdom evaluates neither real layout nor `@media`, so this proves the
-right declarations were wired in, not that a real viewport hides or
-shows the column correctly.
+The hiding is pure CSS -- a container-query-keyed `display` value
+(`none` at the container's narrow end, `table-cell` -- a table cell's
+own default display, restored explicitly -- at and above the tier's
+width) on the header and body cell, never a JS layout decision. Unlike
+`AppShell`'s drawer-variant switch (`@speed/layout-kit`, a
+`useMediaQuery` boolean), a hidden table cell has no interactive state
+to preserve across the switch, so an `sx` container query does
+everything a JS re-render would, at no extra cost. `DataTable.test.tsx`'s
+"column priority" tests pin the container declaration, the three tiers'
+generated CSS (the same generated-CSS-text technique `FormLayout`'s
+`columns={2}` test uses, documented under Testing below) and that a
+prioritized column stays a real DOM column rather than being
+conditionally rendered away -- jsdom evaluates neither real layout nor
+container queries, so this proves the right declarations, and the
+container that makes them live, were wired in, not that a real container
+hides or shows the column correctly.
+
+**Pointer capability is CSS-only and additive.** The row highlight is a
+hover affordance, so it is enabled only under
+`@media (hover: hover) and (pointer: fine)` -- a coarse pointer, even at
+a wide viewport, gets no highlight that would stick after a tap. The
+selection controls raise their hit area to the 44x44 touch-target floor
+under `@media (pointer: coarse)`. Both media features are spelled once in
+`src/internal/pointer.ts`.
 
 ```tsx
 const columns: DataTableColumn<Member>[] = [
@@ -656,14 +679,14 @@ const columns: DataTableColumn<Member>[] = [
     header: 'Email',
     cell: (row) => row.email,
   },
-  // Dropped first as the viewport narrows (hidden below `lg`).
+  // Dropped first as the container narrows (hidden below the container `lg`).
   {
     id: 'joinedAt',
     header: 'Joined',
     priority: 'low',
     cell: (row) => row.joinedAt,
   },
-  // Dropped last, only below the narrowest phone widths (`sm`).
+  // Dropped last, only below the narrowest panel widths (the container `sm`).
   {
     id: 'plan',
     header: 'Plan',
@@ -856,12 +879,12 @@ same rationale documented here.
 
 ## Deferrals and recorded decisions
 
-- **DataTable column-hiding / priority-reflow for narrow viewports**:
+- **DataTable column-hiding / priority-reflow for narrow containers**:
   shipped (see the DataTable section's Column priority subsection) --
   an opt-in `priority` field on `DataTableColumn` hides lower-priority
-  columns first as the viewport narrows through the shared breakpoint
-  scale, alongside the unaffected horizontal-scroll fallback for
-  columns that don't opt in.
+  columns first as the table's container narrows through the shared
+  breakpoint scale, alongside the unaffected horizontal-scroll fallback
+  for columns that don't opt in.
 - **Validation from generated types**: a zod resolver ships
   (`zodFormResolver`), and the validation-error contract is the seam it
   plugs into -- the resolver emits ui-kit keys, the family renders them.
@@ -895,13 +918,13 @@ From `web/packages/ui-kit`: `pnpm lint`, `pnpm typecheck`, `pnpm test`,
 (`renderWithProviders` builds the host tree -- fresh i18n instance per
 call, namespace registered -- `expectNoAxeViolations` runs axe -- and
 `@speed/test-utils/emitted-css`'s `emittedStyleText()` reads the CSS text emotion has
-injected into the document, used by the breakpoint-keyed sx
+injected into the document, used by the container- and media-keyed sx
 assertions the responsive tests need: jsdom evaluates neither real
-layout nor `@media` conditions, so those tests are property/snapshot
+layout nor container queries nor `@media` conditions, so those tests are property/snapshot
 proofs
 that the intended declaration was wired into the render, not proofs
-that either side of a breakpoint looks correct at a real viewport
-width). Bilingual fixtures are the shipped locale files under `src/locales/`,
+that either side of a breakpoint looks correct at a real viewport or
+container width). Bilingual fixtures are the shipped locale files under `src/locales/`,
 imported by sources and tests; `src/usage-example.test.tsx` compiles and
 executes the Quick start composition above, so the documented usage
 cannot drift from the API. The workspace `no-literal-text` rule and its

@@ -114,7 +114,7 @@ plumbing and deliberately not exported.
   the identical template: undefined by default, exactly the
   always-visible column, so an existing consumer that sets no column's
   priority is byte-for-byte unaffected; only a column that opts in
-  gets the breakpoint-keyed hide/show. The color mode follows the same
+  gets the container-query-keyed hide/show. The color mode follows the same
   template: `createAppTheme`'s third `mode` argument and
   `AppThemeProvider`'s `defaultMode` both default to `'light'`, exactly
   the previous always-light theme, and `useAppThemeMode` is a new
@@ -148,35 +148,46 @@ composition — host-owned queue, host AbortControllers, host transport
 transports and their fixture URLs live in test files only, and the
 workspace's `no-direct-http` rule keeps every fetch out of `src`.
 
-**Responsive sx assertions**: a plain, non-breakpoint-gated sx value
+**Responsive sx assertions**: a plain, non-gated sx value
 (`flexWrap: 'wrap'`, a fixed
 `width`) computes fine through jsdom's `getComputedStyle`, so those
 stay ordinary `toHaveStyle` assertions (`FileUploader`'s row action
-groups, `PageHeader`'s title/actions row). A breakpoint-keyed sx value
-(`FormLayout`'s `gridTemplateColumns` under `columns={2}`) compiles to
-a base rule plus an `@media` rule that jsdom cannot evaluate — there is
-no real viewport for either side to be "active" at — so those assert
+groups, `PageHeader`'s title/actions row). A gated sx value — a
+breakpoint-keyed or container-query-keyed one, or one behind a
+`@media (pointer: ...)`/`(hover: ...)` feature — compiles to a base
+rule plus an at-rule that jsdom cannot evaluate: there is
+no real viewport or container for either side to be "active" at — so
+those assert
 against `@speed/test-utils/emitted-css`'s `emittedStyleText()` instead: the
 actual generated CSS text, read across every `<style>` tag in the
 document. Both forms are property/snapshot proofs that the intended
 declaration was wired into the render; neither proves a layout looks
-correct at a real viewport width, which this package's jsdom suite
+correct at a real viewport or container width, which this package's
+jsdom suite
 cannot render at all (the README's Deferrals record the same
 browser-side visual gap).
 
-**DataTable column priority** reuses the same
-`emittedStyleText()` technique for its own breakpoint-keyed `display`
-value (see the README's Column priority subsection): one test per tier
-asserts the tier's exact `@media (min-width:...)` breakpoint and the
-`table-cell` restore value both appear in the generated CSS, plus a
-separate test proving a prioritized column stays a genuine DOM column
+**DataTable and FormLayout responsiveness is container-triggered**, so
+their suites pin both halves of the wiring with `emittedStyleText()`: the
+*container declaration* — `container-type:inline-size` on the box that
+makes the queries live, the failure the layout design records being a
+container query with no ancestor container, which never fires, so this
+assertion is the guard for it — and the *queries* (`@container
+(min-width:...)` with the tier's value). DataTable's column priority
+asserts the tier's exact container query and the
+`table-cell` restore value, proves the viewport `@media (min-width:1200px)`
+rule absent (so the display is keyed on the container, not the viewport),
+and proves a prioritized column stays a genuine DOM column
 rather than being conditionally rendered away (which the loading/empty
-rows' `colSpan` depends on). No other `sx` in this component is
-breakpoint-keyed, so those generated-CSS strings can only originate
-from this feature — the same non-collision reasoning `FormLayout`'s
-own test relies on. As with every `emittedStyleText()` assertion in
-this package, this proves the right declarations were wired in, not
-that a real viewport actually hides or shows the column.
+rows' `colSpan` depends on). The priority values sit on a `display`
+property and the filter row's width on a `width` property, so the two
+features' generated CSS does not collide; the filter test renders no
+prioritized column, so the only `@container` rule there is the filter's
+own. DataTable's pointer rules assert the `@media (pointer: coarse)`
+44x44 touch-target floor and the `@media (hover: hover) and (pointer:
+fine)` row-hover gate. As with every `emittedStyleText()` assertion in
+this package, these prove the right declarations were wired in, not
+that a real viewport or container actually hides or shows the column.
 
 ## Deferrals (recorded, do not re-open silently)
 

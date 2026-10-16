@@ -185,24 +185,47 @@ describe('FormLayout', () => {
       const { container } = renderWithProviders(<TwoColumnForm />)
       const form = container.querySelector('form')
       expect(form).toHaveStyle({ display: 'grid' })
-      // The responsive gridTemplateColumns is a breakpoint-keyed sx
-      // value (1fr below sm, two equal tracks at sm/600px and up), so
-      // jsdom's getComputedStyle (real layout and @media evaluation,
-      // neither of which jsdom does) cannot resolve which side is
-      // "active" -- there is no real viewport for either side to be
+      // The responsive gridTemplateColumns is a container-query-keyed sx
+      // value (1fr at the container's narrow end, two equal tracks from
+      // its `sm`/600px up), and jsdom evaluates neither real layout nor
+      // container queries, so getComputedStyle cannot resolve which side
+      // is "active" -- there is no real container for either side to be
       // active at. Reading the generated CSS text instead proves both
-      // declarations were wired into the render: this is a property/
-      // snapshot assertion, not a proof that either layout renders
-      // correctly at a real viewport width.
+      // declarations were wired into the render: a property/snapshot
+      // assertion, not a proof that either layout renders correctly at a
+      // real container width.
       const css = emittedStyleText()
       expect(css).toMatch(/grid-template-columns:1fr/)
-      expect(css).toMatch(/@media \(min-width:600px\)/)
+      expect(css).toMatch(/@container \(min-width:600px\)/)
       expect(css).toMatch(/grid-template-columns:repeat\(2,\s*1fr\)/)
       // The actions row spans every column track in grid mode. jsdom's
       // CSS engine does not resolve the `grid-column: 1 / -1` shorthand
       // through getComputedStyle, so this too is a generated-CSS-text
       // assertion rather than a toHaveStyle computed-style one.
       expect(css).toMatch(/grid-column:1\/-1/)
+    })
+
+    it('declares a containment context, so the grid column query can resolve -- the parent declaration without which it never fires', () => {
+      const onSubmit = vi.fn<SubmitHandler<MemberFormValues>>()
+      function TwoColumnForm() {
+        const form = useForm<MemberFormValues>({ mode: 'onSubmit' })
+        return (
+          <FormLayout form={form} onSubmit={onSubmit} columns={2}>
+            <FormField name="name" render={(s) => <TextFieldSlot state={s} label="Name" />} />
+          </FormLayout>
+        )
+      }
+      renderWithProviders(<TwoColumnForm />)
+      // The failure mode the layout design records: without
+      // `container-type` on an ancestor of the grid, its `@container`
+      // rule matches nothing and the form never collapses. The wrapper
+      // FormLayout renders carries the declaration, so the proof is that
+      // it reached the generated CSS.
+      const css = emittedStyleText()
+      expect(css).toMatch(/container-type:inline-size/)
+      // And the grid's rule is a container query, not a viewport one:
+      // keyed on the viewport it would be blind to a narrow panel.
+      expect(css).not.toContain('@media (min-width:600px)')
     })
 
     it('still submits the collected values with columns={2}, unchanged behavior', async () => {

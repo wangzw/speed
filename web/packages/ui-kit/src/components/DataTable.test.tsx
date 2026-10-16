@@ -810,27 +810,33 @@ describe('DataTable', () => {
     expect(cell?.className).toContain('MuiTableCell-sizeSmall')
   })
 
-  describe('column priority (responsive reflow)', () => {
-    // Same class of proof as FormLayout's `columns={2}` breakpoint-keyed
-    // grid test (see that file): a breakpoint-keyed `sx` value compiles
-    // to a base rule plus an `@media` rule, and jsdom evaluates neither
-    // real layout nor `@media` conditions -- there is no real viewport
-    // for either side to be "active" at, so `getComputedStyle`/
-    // `toHaveStyle` cannot resolve which one applies. Reading the
-    // generated CSS text instead proves the right declarations (hidden
-    // below the tier's breakpoint, restored at and above it) were wired
-    // into the render; it does not prove a real viewport actually hides
-    // or shows the column, which this package's jsdom suite cannot
-    // render at all. No other sx in this component is breakpoint-keyed,
-    // so the `@media (min-width:...)` and `table-cell` strings these
-    // tests look for can only come from this feature.
+  // The table is a CSS container: the root box declares
+  // `container-type: inline-size`, and every responsive rule inside is a
+  // container query, not a viewport `@media`. jsdom evaluates neither
+  // real layout nor container queries, so the proof below is
+  // property/snapshot -- the right declarations, and the container that
+  // makes them live, were wired into the render. It cannot prove a real
+  // container hides or shows a column, which this package's jsdom suite
+  // cannot render at all.
+  describe('component container (the context every rule below resolves against)', () => {
+    it('declares itself a container, so the rules inside it can resolve -- the parent declaration without which no container query fires', () => {
+      renderTable()
+      // The failure mode the layout design records: without
+      // `container-type` on an ancestor, every `@container` rule below
+      // matches nothing and the table never reflows. The root box carries
+      // the declaration, so the proof is that it reached the generated
+      // CSS.
+      expect(emittedStyleText()).toMatch(/container-type:inline-size/)
+    })
+  })
 
+  describe('column priority (container-triggered reflow)', () => {
     it('renders a column with no priority with no visibility override -- unaffected by the feature', () => {
       // BASE_COLUMNS sets no column's priority; this restates the
       // existing "applies column alignment and width to cells" contract
       // as the feature's backward-compatibility proof: a host that sets
-      // no column's priority sees byte-identical rendering, on every
-      // viewport.
+      // no column's priority sees byte-identical rendering, at every
+      // container width.
       const utils = renderTable()
       const creditCells = utils.container.querySelectorAll(
         'tbody td.MuiTableCell-alignRight',
@@ -839,43 +845,59 @@ describe('DataTable', () => {
       expect(utils.getByText('Ada')).toBeInTheDocument()
     })
 
-    it('hides a high-priority column below sm and restores it from sm up', () => {
+    it('hides a high-priority column at the container narrow end and restores it from sm up, keyed on the container', () => {
       const columns: DataTableColumn<Member>[] = [
         ...BASE_COLUMNS,
         { id: 'plan', header: 'Plan', priority: 'high', cell: () => 'Pro' },
       ]
       renderTable({ columns })
       const css = emittedStyleText()
-      expect(css).toMatch(/display:none/)
-      expect(css).toMatch(/@media \(min-width:600px\)/)
-      expect(css).toMatch(/display:table-cell/)
+      // The default is the container's 0px baseline; the restore is a
+      // container query at sm. Both are `@container`, so the column drops
+      // by the table's own width -- the previous viewport `@media` left
+      // it pinned to the viewport and blind to a narrow panel, which is
+      // exactly what a `@container` assertion here is checking against.
+      expect(css).toMatch(/@container \(min-width:0px\)\{[^}]*display:none/)
+      expect(css).toMatch(/@container \(min-width:600px\)\{[^}]*display:table-cell/)
     })
 
-    it('hides a medium-priority column below md', () => {
+    it('hides a medium-priority column at the container md', () => {
       const columns: DataTableColumn<Member>[] = [
         ...BASE_COLUMNS,
         { id: 'plan', header: 'Plan', priority: 'medium', cell: () => 'Pro' },
       ]
       renderTable({ columns })
       const css = emittedStyleText()
-      expect(css).toMatch(/@media \(min-width:900px\)/)
-      expect(css).toMatch(/display:table-cell/)
+      expect(css).toMatch(/@container \(min-width:900px\)\{[^}]*display:table-cell/)
     })
 
-    it('hides a low-priority column below lg', () => {
+    it('hides a low-priority column at the container lg', () => {
       const columns: DataTableColumn<Member>[] = [
         ...BASE_COLUMNS,
         { id: 'plan', header: 'Plan', priority: 'low', cell: () => 'Pro' },
       ]
       renderTable({ columns })
       const css = emittedStyleText()
-      expect(css).toMatch(/@media \(min-width:1200px\)/)
-      expect(css).toMatch(/display:table-cell/)
+      expect(css).toMatch(/@container \(min-width:1200px\)\{[^}]*display:table-cell/)
+    })
+
+    it('keys the column display on the container, never a viewport media query', () => {
+      // The same declarations pinned above, asserted from the other
+      // side: the column's hide/show is a container query, so the
+      // viewport-keyed rule the feature used to emit must not be present.
+      const columns: DataTableColumn<Member>[] = [
+        ...BASE_COLUMNS,
+        { id: 'plan', header: 'Plan', priority: 'low', cell: () => 'Pro' },
+      ]
+      renderTable({ columns })
+      const css = emittedStyleText()
+      expect(css).toContain('@container (min-width:1200px)')
+      expect(css).not.toContain('@media (min-width:1200px)')
     })
 
     it('keeps a prioritized column as a real DOM column (CSS-hidden, never conditionally removed)', () => {
       // Hiding is pure CSS, so the cell stays a genuine column in jsdom
-      // (which does not evaluate the @media rule either way) -- the
+      // (which does not evaluate the container query either way) -- the
       // point under test is that the column was never conditionally
       // rendered away, which the loading/empty rows' colSpan depends on,
       // and that an always-visible column alongside it is untouched.
@@ -898,6 +920,45 @@ describe('DataTable', () => {
       ]
       renderTable({ columns }, { heading: 'Members' })
       await expectNoAxeViolations()
+    })
+  })
+
+  describe('toolbar degradation (container-triggered)', () => {
+    it('gives the filter input a full-width row below the container sm and 20rem from it up', () => {
+      // The filter row is the table's toolbar. Its width is a
+      // container-keyed value: no priority column is in this render, so
+      // the only `@container` rule in the generated CSS is the filter's
+      // own (the root box's `container-type` is a declaration, not a
+      // query), which is what makes these strings attributable to it.
+      renderTable({ filter: { value: '', onValueChange: vi.fn() } })
+      const css = emittedStyleText()
+      expect(css).toMatch(/@container \(min-width:0px\)\{[^}]*width:100%/)
+      expect(css).toMatch(/@container \(min-width:600px\)\{[^}]*width:20rem/)
+    })
+  })
+
+  describe('pointer capability', () => {
+    it('raises the selection controls to the 44x44 touch-target floor under a coarse pointer', () => {
+      renderTable({
+        selectedRowKeys: [],
+        onSelectionChange: vi.fn(),
+      })
+      const css = emittedStyleText()
+      expect(css).toContain('@media (pointer: coarse)')
+      expect(css).toMatch(/@media \(pointer: coarse\)\{[^}]*min-(width|height):44px/)
+    })
+
+    it('enables the row hover highlight only under a fine, hovering pointer', () => {
+      renderTable()
+      const css = emittedStyleText()
+      // The row highlight is a hover affordance (see the component header
+      // note): gated to a fine, hovering pointer, so a coarse pointer --
+      // a touch device, even at a wide viewport -- gets no highlight that
+      // would stick after a tap.
+      expect(css).toContain('@media (hover: hover) and (pointer: fine)')
+      expect(css).toMatch(
+        /@media \(hover: hover\) and \(pointer: fine\)\{[^}]*:hover/,
+      )
     })
   })
 

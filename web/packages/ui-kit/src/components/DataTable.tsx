@@ -63,28 +63,50 @@
  * "horizontal-scroll container" test for the proof (a refactor that
  * drops `TableContainer` would fail it).
  *
+ * The whole table is a CSS container: the root box declares
+ * `container-type: inline-size`, so every responsive rule inside it
+ * answers to the table's own width -- how wide the host placed it --
+ * rather than the viewport. The same table filling the content region
+ * and squeezed into a narrow side panel therefore sheds its columns at
+ * their own widths (the layout design's viewport-vs-container split: the
+ * shell follows the viewport, a component follows its container). The
+ * nested table elements never re-declare `container-type`, so the
+ * nearest container ancestor of every cell is this root box.
+ *
  * Column priority (opt-in, additive) is the reflow alternative to that
  * scroll fallback: a column's `priority` ('high' | 'medium' | 'low')
- * hides it below that tier's breakpoint on the same shared scale
+ * hides it below that tier's width on the same shared scale
  * (@speed/tokens' breakpoints.values: xs:0/sm:600/md:900/lg:1200/xl:1536)
  * every other responsive surface in this repo reads from -- 'low' clears
- * at `lg`, 'medium' at `md`, 'high' at `sm`, so a narrowing viewport
- * sheds the least important columns first and keeps shedding until only
- * the always-visible ones (no `priority` set) remain, even at `xs`. A
+ * at `lg`, 'medium' at `md`, 'high' at `sm`, so a table narrowing sheds
+ * the least important columns first and keeps shedding until only the
+ * always-visible ones (no `priority` set) remain, even at `xs`. A
  * column with no `priority` renders with no visibility override at all,
  * so a host that sets no column's priority is byte-for-byte unaffected --
  * the TableContainer scroll fallback above still applies to it. The
- * hiding is pure CSS (a breakpoint-keyed `display` value on
+ * hiding is pure CSS (a container-query-keyed `display` value on
  * the cell), never a JS layout decision: unlike AppShell's drawer-variant
  * switch (@speed/layout-kit), a hidden table cell has no interactive
- * state to preserve across the switch, so there is nothing a `sx`
- * breakpoint value can't do that a `useMediaQuery` re-render would do
- * better, and CSS keeps every rendered breakpoint available to print/
+ * state to preserve across the switch, so there is nothing an `sx`
+ * container query can't do that a `useMediaQuery` re-render would do
+ * better, and CSS keeps every rendered width available to print/
  * devtools inspection rather than only the one JS measured at mount.
  * See DataTable.test.tsx's priority tests for what this proves and does
- * not (jsdom evaluates neither real layout nor `@media`, so the proof is
- * that the right declarations were wired in, not that a real viewport
- * renders correctly).
+ * not (jsdom evaluates neither real layout nor container queries, so the
+ * proof is that the right declarations -- and the container that makes
+ * them live -- were wired in, not that a real container renders
+ * correctly).
+ *
+ * The filter/toolbar row degrades by the same container: the filter
+ * input is 20rem wide at or above `sm` of the container and fills the
+ * row below it, so a table placed in a narrow panel gets a full-width
+ * filter instead of a 20rem field overflowing its edge.
+ *
+ * Pointer capability (additive, CSS-only): the row highlight is a hover
+ * affordance, so it is enabled only where a hovering pointer exists, and
+ * the selection controls raise their hit area to the 44x44 touch-target
+ * floor under `@media (pointer: coarse)`. See src/internal/pointer.ts
+ * for the two media features this gates on.
  *
  * Selection is enabled by passing `onSelectionChange`; `selectedRowKeys`
  * then holds the keys (from `rowKey`, index-keyed by default -- pass an
@@ -115,12 +137,17 @@ import type { SxProps, Theme } from '@mui/material/styles'
 import { EmptyState } from './EmptyState.js'
 import type { EmptyStateHeadingLevel } from './EmptyState.js'
 import { useUiKitTranslation } from '../internal/translation.js'
+import {
+  POINTER_COARSE_QUERY,
+  POINTER_FINE_HOVER_QUERY,
+  TOUCH_TARGET_MIN_PX,
+} from '../internal/pointer.js'
 import { visuallyHiddenSx } from '../visually-hidden.js'
 
 /**
  * Opt-in column visibility priority (see the header note for the full
- * cascade). Higher priority survives to narrower viewports: 'low' is the
- * first to be hidden as the viewport shrinks, 'high' the last, and a
+ * cascade). Higher priority survives to narrower containers: 'low' is the
+ * first to be hidden as the container shrinks, 'high' the last, and a
  * column with no priority is never hidden.
  */
 export type DataTableColumnPriority = 'high' | 'medium' | 'low'
@@ -139,10 +166,10 @@ export interface DataTableColumn<T> {
   readonly width?: number | string
   /**
    * Opt-in responsive visibility: hides this column below the tier's
-   * breakpoint as the viewport narrows (see DataTableColumnPriority and
-   * the component header note for the exact cascade). Omitting it keeps
-   * the column always visible -- the exact behavior, unaffected by this
-   * prop existing.
+   * width as the table's container narrows (see DataTableColumnPriority
+   * and the component header note for the exact cascade). Omitting it
+   * keeps the column always visible -- the exact behavior, unaffected by
+   * this prop existing.
    */
   readonly priority?: DataTableColumnPriority
   /** Renders one row's cell; rowIndex is the index within `rows`. */
@@ -236,11 +263,12 @@ function flip(direction: DataTableSortDirection): DataTableSortDirection {
 }
 
 /**
- * The breakpoint each priority tier stays visible from, on the shared
- * scale (@speed/tokens' breakpoints.values: sm:600/md:900/lg:1200). 'low'
- * clears the highest bar (visible only from `lg` up) so it is the first
- * dropped as the viewport narrows; 'high' clears the lowest bar (visible
- * from `sm` up) so it is the last dropped, hidden only below `sm`.
+ * The container width each priority tier stays visible from, on the
+ * shared scale (@speed/tokens' breakpoints.values: sm:600/md:900/lg:1200).
+ * 'low' clears the highest bar (visible only from `lg` up) so it is the
+ * first dropped as the container narrows; 'high' clears the lowest bar
+ * (visible from `sm` up) so it is the last dropped, hidden only below
+ * `sm`.
  */
 const PRIORITY_VISIBLE_FROM: Record<DataTableColumnPriority, 'sm' | 'md' | 'lg'> = {
   high: 'sm',
@@ -249,21 +277,37 @@ const PRIORITY_VISIBLE_FROM: Record<DataTableColumnPriority, 'sm' | 'md' | 'lg'>
 }
 
 /**
- * Renders a column's opt-in priority into a breakpoint-keyed `display`
- * sx value: `none` below the tier's breakpoint, `table-cell` (a
- * TableCell's own default display, restored explicitly since MUI's
- * breakpoint object only ever adds rules, never restores a browser
- * default) from it up. Returns undefined for a column with no priority,
- * so spreading its result into a cell's sx is a no-op -- the exact prior
- * sx shape, unaffected by this feature.
+ * Renders a column's opt-in priority into a container-query-keyed
+ * `display` sx value: `none` at the container's narrowest (the `@`
+ * shorthand's 0px baseline), `table-cell` (a TableCell's own default
+ * display, restored explicitly since MUI's container-query value only
+ * ever adds rules, never restores a browser default) from the tier's
+ * width up. The queries resolve against the nearest container ancestor
+ * -- the table's own root box, which declares
+ * `container-type: inline-size` -- so a column drops by the table's
+ * width, not the viewport's. Returns undefined for a column with no
+ * priority, so spreading its result into a cell's sx is a no-op -- the
+ * exact prior sx shape, unaffected by this feature.
  */
 function columnVisibilitySx(
   priority: DataTableColumnPriority | undefined,
-): { display: Partial<Record<'xs' | 'sm' | 'md' | 'lg', string>> } | undefined {
+): { display: Record<string, string> } | undefined {
   if (priority === undefined) return undefined
   const visibleFrom = PRIORITY_VISIBLE_FROM[priority]
-  return { display: { xs: 'none', [visibleFrom]: 'table-cell' } }
+  return { display: { '@': 'none', [`@${visibleFrom}`]: 'table-cell' } }
 }
+
+/**
+ * The touch-target floor for a control a finger drives: at least 44x44
+ * under `@media (pointer: coarse)`, and no override at all on a precise
+ * pointer, where the stock control size already applies.
+ */
+const touchTargetSx = {
+  [POINTER_COARSE_QUERY]: {
+    minWidth: TOUCH_TARGET_MIN_PX,
+    minHeight: TOUCH_TARGET_MIN_PX,
+  },
+} as const
 
 /**
  * The controlled table view. See the header note for the ownership
@@ -371,7 +415,12 @@ export function DataTable<T>({
       : null
 
   return (
-    <Box sx={{ width: '100%', ...sx }}>
+    // The root box is the table's containment context (`container-type`):
+    // the column-priority and filter rules below resolve against this
+    // box's width, so the component reflows to whatever width the host
+    // gives it. No nested element re-declares `container-type`, keeping
+    // this box the nearest container for every cell and the filter row.
+    <Box sx={{ width: '100%', containerType: 'inline-size', ...sx }}>
       {filter !== undefined && (
         <Box
           sx={{
@@ -390,7 +439,11 @@ export function DataTable<T>({
                 placeholder: t('dataTable.filterLabel'),
               },
             }}
-            sx={{ width: '20rem', maxWidth: '100%' }}
+            // Container-keyed width: 20rem once the table is at least `sm`
+            // wide, the full row below it -- the toolbar degradation, so a
+            // table in a narrow panel gets a full-width filter rather than
+            // a 20rem field past its edge.
+            sx={{ width: { '@': '100%', '@sm': '20rem' }, maxWidth: '100%' }}
           />
         </Box>
       )}
@@ -405,6 +458,7 @@ export function DataTable<T>({
                     indeterminate={someSelected}
                     onChange={toggleAll}
                     disabled={pageKeys.length === 0}
+                    sx={touchTargetSx}
                     slotProps={{
                       input: {
                         'aria-label': t('dataTable.selectAllRows'),
@@ -521,12 +575,25 @@ export function DataTable<T>({
             {rows.map((row, index) => {
               const key = keyOf(row, index)
               return (
-                <TableRow key={key} hover>
+                <TableRow
+                  key={key}
+                  // The row highlight is a hover affordance: enabled only
+                  // where a hovering, precise pointer exists (the layout
+                  // design draws hover interactions on pointer devices
+                  // only), so a touch device gets no highlight that would
+                  // otherwise stick after a tap.
+                  sx={{
+                    [POINTER_FINE_HOVER_QUERY]: {
+                      '&:hover': { backgroundColor: 'action.hover' },
+                    },
+                  }}
+                >
                   {selectable && (
                     <TableCell padding="checkbox">
                       <Checkbox
                         checked={selected.has(key)}
                         onChange={() => toggleRow(key)}
+                        sx={touchTargetSx}
                         slotProps={{
                           input: {
                             'aria-label': t('dataTable.selectRow', {
