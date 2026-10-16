@@ -13,15 +13,16 @@
  * leg does. The map is the one place a specifier is added or moved.
  *
  * Build: vite writes a browser bundle -- one entry document plus a
- * content-addressed assets/ subtree -- into dist/, the directory the Go program
- * embeds with go:embed (starters/demo/main.go) and serves through pkg/webui.
- * The build order is therefore frontend first, Go second.
+ * content-addressed assets/ subtree -- into server/dist, the directory the Go
+ * program beside this package embeds with go:embed
+ * (starters/demo/server/main.go) and serves through pkg/webui. The build order
+ * is therefore frontend first, Go second.
  *
  * Dev server: the demo's five traffic endpoints listen on separate ports
- * (starters/demo/testdata/*.yaml). The app talks to its own origin by default
- * (the client base URL falls back to window.location.origin), so this server
- * proxies the paths the app uses onto the demo's endpoints -- overridable
- * through the DEMO_WEB_*_PROXY variables when a run moves them.
+ * (starters/demo/server/testdata/*.yaml). The app talks to its own origin by
+ * default (the client base URL falls back to window.location.origin), so this
+ * server proxies the paths the app uses onto the demo's endpoints --
+ * overridable through the DEMO_WEB_*_PROXY variables when a run moves them.
  */
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
@@ -43,14 +44,18 @@ export default defineConfig({
     alias: speedAliases(),
   },
   build: {
-    // dist/ is not emptied before the build. It is the directory the Go
-    // program embeds, and it carries a committed stand-in file
-    // (dist/placeholder.txt) so that go:embed has something to embed: go:embed
+    // The bundle lands in the Go module beside this package, because go:embed
+    // reaches only files in the embedding package's own directory tree: a
+    // pattern may not climb out with `..`.
+    outDir: '../server/dist',
+    // That directory is not emptied before the build. It is the directory the
+    // Go program embeds, and it carries a committed stand-in file
+    // (placeholder.txt) so that go:embed has something to embed: go:embed
     // refuses a directory with no files. vite empties the outDir by default,
     // which would delete that stand-in and leave the checkout modified after
     // every build -- a check that dirties the tree. Keeping the stand-in means
     // the only cost is that a content-addressed bundle from an earlier build
-    // can linger under dist/assets/; everything there is git-ignored, so it is
+    // can linger under assets/; everything there is git-ignored, so it is
     // dead weight in a long-lived local checkout and nothing in the tree.
     emptyOutDir: false,
     // Without grouping the whole app lands in one 774 kB entry chunk

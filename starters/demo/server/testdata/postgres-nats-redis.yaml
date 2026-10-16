@@ -4,8 +4,8 @@
 # stacks apart:
 #
 #   docker compose -f starters/demo/compose.yaml up -d postgres redis nats
-#   go -C starters/demo run . --config file:testdata/postgres-nats-redis.yaml postgres-nats-redis migrate
-#   go -C starters/demo run . --config file:testdata/postgres-nats-redis.yaml postgres-nats-redis serve
+#   go -C starters/demo/server run . --config file:testdata/postgres-nats-redis.yaml postgres-nats-redis migrate
+#   go -C starters/demo/server run . --config file:testdata/postgres-nats-redis.yaml postgres-nats-redis serve
 #
 # The platform baseline above the backend section is the same as in
 # sqlite-memory.yaml; only the backend section below differs between the five

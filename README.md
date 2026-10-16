@@ -37,7 +37,7 @@ flags; the rest reaches them through the configuration file and the
 environment:
 
 ```
-go -C starters/demo run . sqlite-memory serve --help
+go -C starters/demo/server run . sqlite-memory serve --help
 ```
 
 Run it for real — every module in this repository, one process, no external
@@ -46,8 +46,8 @@ local file is written `file:testdata/…`, and the environment variable
 `DEMO_CONFIG` carries it in place of `--config`:
 
 ```
-go -C starters/demo run . --config file:testdata/sqlite-memory.yaml sqlite-memory migrate
-go -C starters/demo run . --config file:testdata/sqlite-memory.yaml sqlite-memory serve
+go -C starters/demo/server run . --config file:testdata/sqlite-memory.yaml sqlite-memory migrate
+go -C starters/demo/server run . --config file:testdata/sqlite-memory.yaml sqlite-memory serve
 ```
 
 The `sqlite-memory` stack needs nothing installed, so it is the one to start

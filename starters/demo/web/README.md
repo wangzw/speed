@@ -3,8 +3,9 @@
 The frontend application of the demo skeleton: the browser application a
 copied-out product grows from. It composes the platform's `@speed/*` packages
 into one program -- the session, the tenant-facing shell, the platform console
-and the routing between them -- and builds into `dist/`, which the Go program
-embeds with `go:embed` and serves through `pkg/webui`.
+and the routing between them -- and builds into `../server/dist`, which the Go
+program in the sibling directory embeds with `go:embed` and serves through
+`pkg/webui`.
 
 This directory is a pnpm workspace member of `web/` (see `web/pnpm-workspace.yaml`)
 and lives outside `web/` on purpose: a delivered consumer project's frontend
@@ -26,28 +27,31 @@ endpoint. The targets default to the `sqlite-memory` stack's ports
 (`127.0.0.1:8080/8081/8082`); override them with `DEMO_WEB_API_PROXY`,
 `DEMO_WEB_ACCOUNT_PROXY` and `DEMO_WEB_ADMIN_PROXY` when a run moves them.
 
-Run the backend first (`go -C starters/demo run . --config
+Run the backend first (`go -C starters/demo/server run . --config
 file:testdata/sqlite-memory.yaml sqlite-memory serve`), then `pnpm dev`.
 
 ## Build
 
 ```
-pnpm build                          # tsc typecheck, then vite build into dist/
+pnpm build                          # tsc typecheck, then vite build into ../server/dist
 ```
 
-The output is one entry document (`dist/index.html`) plus a content-addressed
-`dist/assets/` subtree. The Go program embeds `web/dist`, so **the frontend is
-built first and the Go binary second** -- that order is a hard constraint on
-the combined deployment, and it does not change when the bundle changes.
+The output is one entry document (`index.html`) plus a content-addressed
+`assets/` subtree, written into the Go module beside this directory: the Go
+program embeds `../server/dist`, so **the frontend is built first and the Go
+binary second** -- that order is a hard constraint on the combined deployment,
+and it does not change when the bundle changes. The bundle lands there rather
+than here because `go:embed` reaches only files under the embedding package's
+own directory and a pattern may not climb out with `..`.
 
-`dist/` is a build output and is git-ignored, but `go:embed` refuses to compile
-a directory with no files in it, so a checkout carries one committed stand-in
-there, `dist/placeholder.txt`. The build neither writes nor clears it (`vite`
-would empty the outDir by default; `vite.config.ts` turns that off), and
-everything the build does write under `dist/` is ignored, so building leaves
-the working tree clean. Until the frontend is built the directory holds no
-entry document, and `pkg/webui` answers 404 to every request rather than
-failing to start.
+`server/dist/` is a build output and is git-ignored, but `go:embed` refuses to
+compile a directory with no files in it, so a checkout carries one committed
+stand-in there, `placeholder.txt`. The build neither writes nor clears it
+(`vite` would empty the outDir by default; `vite.config.ts` sets the outDir and
+turns that off), and everything the build does write under it is ignored, so
+building leaves the working tree clean. Until the frontend is built the
+directory holds no entry document, and `pkg/webui` answers 404 to every request
+rather than failing to start.
 
 ## The API contract
 
@@ -62,7 +66,7 @@ It runs three legs in order:
 
 1. The Go host's `gen` command merges the OpenAPI fragments the binary's imports
    reach and writes the merged document to `contracts/api.json` at the
-   repository root (`starters/demo/main.go`'s `genDocument`).
+   repository root (`starters/demo/server/main.go`'s `genDocument`).
 2. `pnpm dlx orval@8.17.0 --config orval.config.ts` generates this app's own
    surface from that document into `src/app-api/index.ts`.
 3. `node ../../../web/scripts/orval-nodenext-fixup.mjs src/app-api/index.ts
@@ -130,12 +134,11 @@ wiring that a copied-out project drops**:
 | `src/runtime-config.ts` | Reads the deployment's API origin from `runtime-config.json` beside the entry document, falling back to same-origin. |
 | `src/resources.ts`, `src/locales/` | The app's bilingual i18n bundle ("demo" namespace). |
 | `orval.config.ts`, `src/app-api/` | The app's own generation level: the second orval configuration and the surface it generates, plus the seam that surface calls (see "The API contract"). |
-| `dist/` | The build output the Go program embeds (see above). |
 | `AGENTS.md` | This directory's own contract for an agent working here. |
 
 ### The API origin at runtime
 
-One `dist/` is shared across deployment topologies. The API origin is therefore
+One build output is shared across deployment topologies. The API origin is therefore
 not baked into the bundle: the app reads `runtime-config.json` from beside the
 entry document (by its relative path, so the read never needs an origin to
 resolve one) and passes its `apiOrigin` to the client base URL. When the file is
@@ -173,5 +176,5 @@ beside the bundle:
 pnpm lint        # eslint
 pnpm typecheck   # tsc --noEmit
 pnpm test        # vitest
-pnpm build       # tsc + vite build into dist/
+pnpm build       # tsc + vite build into ../server/dist
 ```

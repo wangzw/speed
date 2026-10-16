@@ -1,9 +1,9 @@
 # starters/demo/web
 
 The demo skeleton's frontend application. It composes the platform's `@speed/*`
-packages into one browser program and builds into `dist/`, which the Go program
-in the parent directory embeds with `go:embed` and serves through `pkg/webui`.
-See `README.md` for the layout and the commands.
+packages into one browser program and builds into `../server/dist`, which the Go
+program beside this directory embeds with `go:embed` and serves through
+`pkg/webui`. See `README.md` for the layout and the commands.
 
 ## Contract
 
@@ -18,13 +18,16 @@ See `README.md` for the layout and the commands.
 - **No business domain.** `src/pages/` and the business slot in `src/routes.tsx`
   are the place a product's own pages land; the skeleton ships one placeholder.
 - **The build order is frontend first, Go second.** The Go program embeds
-  `web/dist`, so `dist/` must exist and hold a file before the Go build runs --
-  which is why a checkout commits the stand-in `dist/placeholder.txt` there.
-  The build writes nothing to that name and does not clear the directory
-  (`vite.config.ts` disables vite's default outDir emptying), so the stand-in
-  survives every build.
-- **`dist/` is a build output.** It is git-ignored; the only tracked file in it
-  is the stand-in `dist/placeholder.txt` (committed with `git add -f`).
+  `../server/dist`, so that directory must exist and hold a file before the Go
+  build runs -- which is why a checkout commits the stand-in `placeholder.txt`
+  there. The build writes nothing to that name and does not clear the directory
+  (`vite.config.ts` sets the outDir and disables vite's default emptying), so
+  the stand-in survives every build.
+- **The build output lands in the Go module beside this one.** `go:embed` reaches
+  only files under the embedding package's own directory, so the bundle cannot
+  stay here and be embedded from there.
+- **`server/dist/` is a build output.** It is git-ignored; the only tracked file
+  in it is the stand-in `placeholder.txt` (committed with `git add -f`).
   Everything a build writes there is ignored, so building leaves the working
   tree clean. `pkg/webui` answers 404 to every request until the frontend is
   built, rather than failing to start.
@@ -51,7 +54,7 @@ See `README.md` for the layout and the commands.
   it. `api:gen` also runs the host's `gen` command, so the document it generates
   from is fresh rather than a stale committed copy.
 - **The API origin is read at runtime, never baked in** (`src/runtime-config.ts`,
-  falling back to same-origin). One `dist/` serves every deployment topology.
+  falling back to same-origin). One build output serves every deployment topology.
 - **The two shells live in disjoint path spaces.** The tenant area renders
   `@speed/product-shell`; the console area renders `@speed/console-ui` under
   `CONSOLE_PREFIX`. `src/app.tsx` picks the shell from the route table's
@@ -69,4 +72,5 @@ pnpm build
 ```
 
 The app is also a leg of the workspace's `make web-check` and an input to the
-Go program's build (`go -C starters/demo build ./...`), which embeds `dist/`.
+Go program's build (`go -C starters/demo/server build ./...`), which embeds the
+output.

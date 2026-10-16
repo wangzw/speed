@@ -1,4 +1,4 @@
-module github.com/vislake/speed/starters/demo
+module github.com/vislake/speed/starters/demo/server
 
 go 1.26.0
 
@@ -6,7 +6,7 @@ go 1.26.0
 // the sibling checkout inside this repository. A consumer of a published
 // version drops the replace directive and depends on the released version, as
 // the require directive below already states.
-replace github.com/vislake/speed/pkg => ../../pkg
+replace github.com/vislake/speed/pkg => ../../../pkg
 
 require github.com/vislake/speed/pkg v0.0.0
 

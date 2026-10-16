@@ -6,7 +6,7 @@
 
 ## 背景
 
-一份 `web/dist` 要在合一拓扑与分离拓扑下共用（[ADR-web-static-hosting-2026-10-15](adr-web-static-hosting-2026-10-15.md)、[ADR-web-two-build-artifacts-2026-10-15](adr-web-two-build-artifacts-2026-10-15.md)）：合一拓扑里产物内嵌进 Go 二进制、由本进程答出；分离拓扑里同一份产物交静态主机、后端只做 API。
+一份 `server/dist` 要在合一拓扑与分离拓扑下共用（[ADR-web-static-hosting-2026-10-15](adr-web-static-hosting-2026-10-15.md)、[ADR-web-two-build-artifacts-2026-10-15](adr-web-two-build-artifacts-2026-10-15.md)）：合一拓扑里产物内嵌进 Go 二进制、由本进程答出；分离拓扑里同一份产物交静态主机、后端只做 API。
 
 API 的 origin 因部署而异：与页面同源、在另一台主机、经反向代理挂在一条路径前缀下。今天的 origin 在装配期定下——`web/packages/product-shell/src/bootstrap.tsx` 的 `bootstrapSpeedApp` 取 `definition.baseUrl`，缺省 `window.location.origin`；一个不同源的部署要在应用源码里写死，或经构建期注入（vite 的 `import.meta.env`）。
 

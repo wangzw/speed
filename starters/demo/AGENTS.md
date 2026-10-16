@@ -8,7 +8,14 @@ host — and writes the command tree that says what each run may be.
 
 It is a starting point, not an evaluation host. The modules under `pkg/` deliver
 the seams; this program shows one way to put them together. It ships no business
-domain: `modules/` is the empty slot a product's own modules land in.
+domain: `server/modules/` is the empty slot a product's own modules land in.
+
+It is two trees under one directory. `server/` is the Go program — its own
+module, its configuration samples and the frontend bundle it embeds; `web/` is
+the frontend package, whose source and build tooling live there and whose build
+output lands in `server/dist/`. The build output sits inside the Go tree because
+`go:embed` reaches only files under the embedding package's own directory and a
+pattern may not climb out with `..`.
 
 ## The platform baseline
 
@@ -56,7 +63,7 @@ the ones the credential criterion keeps out of every run (`sms.admin`,
 `authn.sso.saml`): their fragments still describe the platform's API surface.
 Leaving one unimported would drop its operations from the merged document with
 no error — the document would simply be smaller than the platform contract.
-`main.go` carries these as blank imports beside a comment saying why; the
+`server/main.go` carries these as blank imports beside a comment saying why; the
 declarations of a module reached this way are collected by the stack node's
 `IncludeAllDeclarations`, and no `Include` names it.
 
@@ -65,16 +72,16 @@ declarations of a module reached this way are collected by the stack node's
 `authn.token.signing-key-file` names `var/token-signing-key.pem`, a path relative
 to the working directory. The program generates an ES256 key there on its first
 run and keeps it afterwards: a key regenerated on every start would invalidate
-every token already issued. The path is under `var/`, which `.gitignore` keeps out
-of the tree, so a generated key is never committed. A deployment replaces the file
+every token already issued. The path is under `server/var/`, which `.gitignore`
+keeps out of the tree, so a generated key is never committed. A deployment replaces the file
 with its own key material — the token package's `GenerateKey("ES256")` mints one
 to start from, and the token module itself neither generates nor rotates a key.
 
 ### Replace before serving real traffic
 
-The configuration under `testdata/` ships development values so a copy starts as
-it stands. Every one of them is marked `DEV` in the file it appears in; replace
-them all before a deployment serves real traffic:
+The configuration under `server/testdata/` ships development values so a copy
+starts as it stands. Every one of them is marked `DEV` in the file it appears
+in; replace them all before a deployment serves real traffic:
 
 - **The operators' password table** (`authn.static.subjects`) holds an Argon2id
   hash of the password `operator-dev-secret` for the subject `operator` (the
@@ -87,14 +94,15 @@ them all before a deployment serves real traffic:
 
 | Path | What it is |
 |---|---|
-| `main.go` | The command tree, the deployment-stack table, the baseline inclusion lists, the `gen` command, the placeholder command group, and `run()` |
-| `host.go` | The environment prefix, the host's own module (the `config.HostIdentity` resource), and the endpoint constants |
-| `signingkey.go` | The token signing key's path, and the first-run generation that puts a key there |
-| `modules/` | The slot for this product's business modules |
-| `web/` | The frontend application, built into `web/dist` and embedded by the Go program |
-| `testdata/` | One configuration per deployment stack |
+| `server/main.go` | The command tree, the deployment-stack table, the baseline inclusion lists, the `gen` command, the placeholder command group, and `run()` |
+| `server/host.go` | The environment prefix, the host's own module (the `config.HostIdentity` resource), and the endpoint constants |
+| `server/signingkey.go` | The token signing key's path, and the first-run generation that puts a key there |
+| `server/modules/` | The slot for this product's business modules |
+| `server/testdata/` | One configuration per deployment stack |
+| `server/dist/` | The frontend build output, embedded by the Go program |
+| `web/` | The frontend application's source and build; it writes into `server/dist` |
 | `compose.yaml` | The four external backends the non-memory stacks run on |
-| `.gitignore` | Keeps `var/` — the object store's local root and the generated token signing key — out of the tree |
+| `.gitignore` | Keeps the runtime state (`server/var/`) and the build output (`server/dist/`) out of the tree |
 
 ## Running it
 
@@ -109,22 +117,22 @@ after the command or before it, or through the environment variable
 `DEMO_CONFIG`.
 
 Two of the configuration's values are paths relative to the working directory —
-the token signing key and the object store's root — so run the program from
-`starters/demo`. The `sqlite-memory` stack needs nothing installed, so it is the
-one to start with:
+the token signing key and the object store's root — so run the program from its
+module directory, `starters/demo/server`. The `sqlite-memory` stack needs
+nothing installed, so it is the one to start with:
 
 ```
-# from the repository root; -C runs the program with starters/demo as its working directory
-go -C starters/demo run . --config file:testdata/sqlite-memory.yaml sqlite-memory migrate
-go -C starters/demo run . --config file:testdata/sqlite-memory.yaml sqlite-memory serve
+# from the repository root; -C runs the program with its module directory as the working directory
+go -C starters/demo/server run . --config file:testdata/sqlite-memory.yaml sqlite-memory migrate
+go -C starters/demo/server run . --config file:testdata/sqlite-memory.yaml sqlite-memory serve
 ```
 
-Or build once and run the binary from inside `starters/demo`, so the same
+Or build once and run the binary from inside `starters/demo/server`, so the same
 relative paths resolve:
 
 ```
-go -C starters/demo build -o ./demo .
-# then, with starters/demo as the working directory:
+go -C starters/demo/server build -o ./demo .
+# then, with starters/demo/server as the working directory:
 ./demo --config file:testdata/sqlite-memory.yaml sqlite-memory migrate
 ./demo --config file:testdata/sqlite-memory.yaml sqlite-memory serve
 ```
@@ -139,7 +147,7 @@ with SIGINT or SIGTERM; it drains in-flight requests first.
 `version` answers with the program's version and assembles nothing:
 
 ```
-go -C starters/demo run . version
+go -C starters/demo/server run . version
 ```
 
 `gen` writes the merged API document. Like every command under a stack it reads
@@ -147,18 +155,18 @@ that stack's configuration, so it is pointed at one too; it binds no port and
 constructs no module, so the configuration it reads is never connected to:
 
 ```
-go -C starters/demo run . --config file:testdata/sqlite-memory.yaml \
+go -C starters/demo/server run . --config file:testdata/sqlite-memory.yaml \
     sqlite-memory gen --title demo-api --version 1.2.3 -o /tmp/openapi.json
 ```
 
-The `serve` command's configuration is the sample under `testdata/`; the other
+The `serve` command's configuration is the sample under `server/testdata/`; the other
 four stacks differ from it only in the backend section, and `compose.yaml`
 brings those backends up:
 
 ```
 docker compose -f starters/demo/compose.yaml up -d
-go -C starters/demo run . --config file:testdata/postgres.yaml postgres migrate
-go -C starters/demo run . --config file:testdata/postgres.yaml postgres serve
+go -C starters/demo/server run . --config file:testdata/postgres.yaml postgres migrate
+go -C starters/demo/server run . --config file:testdata/postgres.yaml postgres serve
 ```
 
 ## Endpoints and guards
@@ -175,7 +183,7 @@ which class of traffic belongs where:
 | `web` | the frontend bundle; its catch-all route covers the endpoint's whole path space and it carries no other route |
 
 The baseline now ships the guards each endpoint carries, and the configuration
-under `testdata/` names them:
+under `server/testdata/` names them:
 
 - The gateway (`authn.gate`) guards `api`, `account` and `admin`. Its own
   routes — login, session, registration, profile, the account-management routes,
@@ -215,7 +223,7 @@ tells two of them apart is the table in `main.go` and nothing else:
 | `postgres-memcached-nats` | `db.postgres` | `kv.memcached` | `event.nats` | `observability.stdout` |
 
 The set is closed: a stack a product adds is a row in the `stacks` table, and a
-configuration under `testdata/` to go with it.
+configuration under `server/testdata/` to go with it.
 
 The engine is named on the stack node, so every command under the stack runs it.
 The key-value, event and export backends are named on the individual commands
@@ -250,20 +258,24 @@ Under every stack:
 
 ## Where to change what
 
-- **A new business module**: write it under `modules/` the way every module in
-  this repository is written — a descriptor registered from an `init` — and name
-  it on the commands in `main.go` that run it. The import is the wiring.
-- **The platform baseline**: `baselineServe` and `baselineWorker` in `main.go`
-  are the two lists a product grows from. A module dropped from them is a
-  capability the deployment does not carry; a module added is one it does, once
-  its required configuration items are written into `testdata/`.
+- **A new business module**: write it under `server/modules/` the way every
+  module in this repository is written — a descriptor registered from an `init` —
+  and name it on the commands in `server/main.go` that run it. The import is the
+  wiring.
+- **The platform baseline**: `baselineServe` and `baselineWorker` in
+  `server/main.go` are the two lists a product grows from. A module dropped from
+  them is a capability the deployment does not carry; a module added is one it
+  does, once its required configuration items are written into
+  `server/testdata/`.
 - **A new endpoint, guard or backend on an endpoint**: the endpoint is a
-  constant in `host.go` and an entry under `http.endpoints` in the configuration;
-  which modules guard it is the `Include` list of the command in `main.go`.
+  constant in `server/host.go` and an entry under `http.endpoints` in the
+  configuration; which modules guard it is the `Include` list of the command in
+  `server/main.go`.
 - **A new stack**: a row in the `stacks` table and a configuration under
-  `testdata/`.
-- **The frontend**: `web/`. The Go side embeds `web/dist` and serves it through
-  `pkg/webui`; it changes only if the bundle's shape changes.
+  `server/testdata/`.
+- **The frontend**: `web/`. Its build writes the bundle into `server/dist`, which
+  the Go side embeds and serves through `pkg/webui`; the Go side changes only if
+  the bundle's shape changes.
 
 ## Boundaries
 
@@ -273,22 +285,22 @@ Under every stack:
   `pkg/log.NamedFor` rather than reaching for the process default. This program
   writes none of those and changes none of their contracts.
 - **No business domain.** The skeleton carries no users, tenants, orders or any
-  other domain type. A product's domain lives in `modules/` and on the command
-  groups' leaves.
+  other domain type. A product's domain lives in `server/modules/` and on the
+  command groups' leaves.
 - **The command tree is this program's alone.** No module declares a command or
-  learns which one runs it; adding one is an edit to `main.go`.
-- **`main.go` writes the assembly, not the module contracts.** It calls
+  learns which one runs it; adding one is an edit to `server/main.go`.
+- **`server/main.go` writes the assembly, not the module contracts.** It calls
   `config.App`, `core.Module` and `core.Registry` and changes nothing about
   them; a module's own `AGENTS.md` is its contract.
 
 ## Running the checks
 
 ```
-go -C starters/demo build ./...
-GOWORK=off go -C starters/demo build ./...
-go -C starters/demo test ./...
-go -C starters/demo test -race ./...
-env -C starters/demo golangci-lint run ./...
+go -C starters/demo/server build ./...
+GOWORK=off go -C starters/demo/server build ./...
+go -C starters/demo/server test ./...
+go -C starters/demo/server test -race ./...
+env -C starters/demo/server golangci-lint run ./...
 ```
 
 The `GOWORK=off` build is the standalone one: a copy dropped outside this

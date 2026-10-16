@@ -2,11 +2,11 @@
 # key-value store and an in-memory event bus. Nothing here reaches a network,
 # so this configuration runs the whole baseline with no external service up.
 #
-# Run it from the starters/demo directory, so that every relative path in this
+# Run it from the starters/demo/server directory, so that every relative path in this
 # file — the token signing key, the object store's root — resolves:
 #
-#   go -C starters/demo run . --config file:testdata/sqlite-memory.yaml sqlite-memory migrate
-#   go -C starters/demo run . --config file:testdata/sqlite-memory.yaml sqlite-memory serve
+#   go -C starters/demo/server run . --config file:testdata/sqlite-memory.yaml sqlite-memory migrate
+#   go -C starters/demo/server run . --config file:testdata/sqlite-memory.yaml sqlite-memory serve
 #
 # The sections above the backend ones are the platform baseline and are the same
 # in all five stack files; only the backend section at the bottom differs.

@@ -1,14 +1,15 @@
 # Runtime state a copy produces: the object store's local root (objectstore.fs),
 # created at the path the configuration names when the first object is written,
-# and the token signing key the program generates on its first run. Both belong
-# to a deployment and not to the source tree.
-/var/
+# and the token signing key the program generates on its first run. Both land
+# beside the Go module the program runs from and belong to a deployment, not to
+# the source tree.
+/server/var/
 
 # The frontend's build outputs, which no checkout commits: the installed
 # dependency tree and the built bundle. Everything a build writes under
-# web/dist is ignored, so building the frontend leaves the working tree clean.
-# web/dist has to hold at least one file for go:embed to compile (the Go
-# program embeds web/dist), so web/dist/placeholder.txt is tracked -- the one
+# server/dist is ignored, so building the frontend leaves the working tree
+# clean. server/dist has to hold at least one file for go:embed to compile (the
+# Go program embeds dist/), so server/dist/placeholder.txt is tracked -- the one
 # file a build never touches, force-added despite this rule. See web/README.md.
 /web/node_modules/
-/web/dist/
+/server/dist/

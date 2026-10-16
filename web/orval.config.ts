@@ -13,14 +13,14 @@
  * version).
  *
  * Input is the committed merged document, contracts/api.json, produced by
- * the demo host's `gen` command from starters/demo:
+ * the demo host's `gen` command from starters/demo/server:
  *
- *   go -C starters/demo run . \
- *       --config file://$PWD/starters/demo/testdata/<stack>.yaml \
- *       <stack> gen --title speed -o ../../contracts/api.json
+ *   go -C starters/demo/server run . \
+ *       --config file://$PWD/starters/demo/server/testdata/<stack>.yaml \
+ *       <stack> gen --title speed -o ../../../contracts/api.json
  *
  * `-o` is relative to the working directory `go -C` gives the child, which is
- * starters/demo, so the path climbs out of the module to reach the root.
+ * starters/demo/server, so the path climbs out of the module to reach the root.
  *
  * `gen` merges the OpenAPI fragments the platform modules declare into one
  * document (pkg/ops/openapi.Merge over every module's http.Spec resource),

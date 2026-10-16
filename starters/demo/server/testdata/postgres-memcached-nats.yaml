@@ -4,8 +4,8 @@
 # store is a pure cache:
 #
 #   docker compose -f starters/demo/compose.yaml up -d postgres memcached nats
-#   go -C starters/demo run . --config file:testdata/postgres-memcached-nats.yaml postgres-memcached-nats migrate
-#   go -C starters/demo run . --config file:testdata/postgres-memcached-nats.yaml postgres-memcached-nats serve
+#   go -C starters/demo/server run . --config file:testdata/postgres-memcached-nats.yaml postgres-memcached-nats migrate
+#   go -C starters/demo/server run . --config file:testdata/postgres-memcached-nats.yaml postgres-memcached-nats serve
 #
 # The platform baseline above the backend section is the same as in
 # sqlite-memory.yaml; only the backend section below differs between the five

@@ -3,8 +3,8 @@
 # telemetry through OTLP rather than standard output:
 #
 #   docker compose -f starters/demo/compose.yaml up -d postgres redis nats
-#   go -C starters/demo run . --config file:testdata/postgres-redis-nats.yaml postgres-redis-nats migrate
-#   go -C starters/demo run . --config file:testdata/postgres-redis-nats.yaml postgres-redis-nats serve
+#   go -C starters/demo/server run . --config file:testdata/postgres-redis-nats.yaml postgres-redis-nats migrate
+#   go -C starters/demo/server run . --config file:testdata/postgres-redis-nats.yaml postgres-redis-nats serve
 #
 # The OTLP export backend needs a collector at the endpoint below. It is not
 # brought up by the compose file, and it is not a startup failure when nothing

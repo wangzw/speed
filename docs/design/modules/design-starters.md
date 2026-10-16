@@ -21,20 +21,24 @@
 
 ```
 starters/demo/
-  go.mod            # 独立 Go module：github.com/vislake/speed/starters/demo
-  main.go           # 命令树与 run()，只剩业务决定
-  host.go           # envPrefix、HostIdentity、端点常量
-  signingkey.go     # 签名密钥的路径与首次运行生成
-  modules/          # 业务模块的空位
-  web/              # 前端应用
-  testdata/         # 配置样例与夹具
-  var/              # 运行时产物：对象存储的本地根目录与生成的签名密钥
+  server/           # Go 程序，独立 module：github.com/vislake/speed/starters/demo/server
+    go.mod          # 取 pkg 模块；pkg 尚无发布版本时带一条指向兄弟检出的 replace
+    main.go         # 命令树与 run()，只剩业务决定
+    host.go         # envPrefix、HostIdentity、端点常量
+    signingkey.go   # 签名密钥的路径与首次运行生成
+    modules/        # 业务模块的空位
+    testdata/       # 配置样例与夹具
+    dist/           # 前端构建产物，被 go:embed 嵌进二进制
+    var/            # 运行时产物：对象存储的本地根目录与生成的签名密钥
+  web/              # 前端应用的源码与构建，产物写进 server/dist
   compose.yaml      # 部署栈外部后端的本地编排
-  .gitignore        # 把 var/ 挡在树外
+  .gitignore        # 把运行时产物与构建输出挡在树外
   AGENTS.md         # 示范自己的契约
 ```
 
-`AGENTS.md` 是示范自己的契约，随示范一起被拷走；`go.mod` 的 module 路径是 `github.com/vislake/speed/starters/demo`，使用者拷走后按自己的域改名。
+`AGENTS.md` 是示范自己的契约，随示范一起被拷走；`go.mod` 的 module 路径是 `github.com/vislake/speed/starters/demo/server`，使用者拷走后按自己的域改名。
+
+**Go 程序与前端源码各占一棵树，构建产物落在 Go 那一棵里。** `go:embed` 只嵌得到内嵌包自己目录树下的文件，模式里不许出现 `..`，所以二进制要嵌的那份产物只能住在 Go 程序所在目录之内：前端源码在 `web/`，构建产物写进 `server/dist/`。
 
 ### 命令树
 
@@ -101,8 +105,8 @@ starters/demo/
 graph TD
     src["starters/demo/web 源码"]
     build["一次构建"]
-    bin["API 二进制（内嵌 web/dist）"]
-    pack["前端静态包（web/dist）"]
+    bin["API 二进制（内嵌 server/dist）"]
+    pack["前端静态包（server/dist）"]
     one["合一部署：同一二进制服务 API 与前端"]
     two["分离部署：二进制只做 API，前端另行交付"]
     edge["CDN 或反向代理"]
@@ -125,13 +129,13 @@ graph TD
 
 **签名密钥**：`run()` 在驱动生命周期之前检查 `var/token-signing-key.pem`，缺则用 `pkg/authn/token` 的 `GenerateKey` 以 ES256 生成一份、以独占创建写入并限定属主读写，已有文件则原样沿用；写入面只落这条路径，密钥不进树。
 
-**构建**：先前端后 Go。前端构建出 `web/dist`，Go 构建把它嵌进二进制；同一个 `web/dist` 另作为静态包交付。
+**构建**：先前端后 Go。前端构建出 `server/dist`，Go 构建把它嵌进二进制；同一个 `server/dist` 另作为静态包交付。
 
 **`gen`**：静态级纳入取全部声明 → 合并各模块的 `http.Spec` 片段 → 写出文档。不推进生命周期。
 
 ## 扩展点
 
-- **业务模块**：使用者的模块落在 `modules/`，照 `pkg/` 的模块形态写（描述符加 `init` 登记），被 `main.go` 的命令树纳入。这是「加一个业务」在示范里的唯一动作。
+- **业务模块**：使用者的模块落在 `server/modules/`，照 `pkg/` 的模块形态写（描述符加 `init` 登记），被 `main.go` 的命令树纳入。这是「加一个业务」在示范里的唯一动作。
 - **命令组的叶子**：占位的组骨架供使用者按业务填一次性运维动作。
 - **前端的业务页面**：经路由包的声明式注册面接入（[web](web/README.md)）。
 
@@ -139,11 +143,11 @@ graph TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 目录骨架与 `go.mod` | 已实现 | `starters/demo/go.mod`、`starters/demo/AGENTS.md` |
-| 命令树与部署栈 | 已实现 | `starters/demo/main.go` `commandTree`、`addStack`；`starters/demo/host.go` `hostModule`、`servedEndpoints` |
-| 签名密钥的首次运行生成 | 已实现 | `starters/demo/signingkey.go` `ensureSigningKey`、`signingKeyPath`；`starters/demo/main.go` `run` |
-| 平台基线（`serve`/`worker` 的点名集与配置样例） | 已实现 | `starters/demo/main.go` `baselineServe`、`baselineWorker`；`starters/demo/testdata/` |
-| `gen` 命令 | 已实现 | `starters/demo/main.go` `genModule`、`genDocument` |
-| 前端产物的内嵌与托管（合一拓扑的 Go 侧） | 已实现 | `starters/demo/main.go` `webBundle`（`//go:embed web/dist`）、`webuiModuleName` |
+| 目录骨架与 `go.mod` | 已实现 | `starters/demo/server/go.mod`、`starters/demo/AGENTS.md` |
+| 命令树与部署栈 | 已实现 | `starters/demo/server/main.go` `commandTree`、`addStack`；`starters/demo/server/host.go` `hostModule`、`servedEndpoints` |
+| 签名密钥的首次运行生成 | 已实现 | `starters/demo/server/signingkey.go` `ensureSigningKey`、`signingKeyPath`；`starters/demo/server/main.go` `run` |
+| 平台基线（`serve`/`worker` 的点名集与配置样例） | 已实现 | `starters/demo/server/main.go` `baselineServe`、`baselineWorker`；`starters/demo/server/testdata/` |
+| `gen` 命令 | 已实现 | `starters/demo/server/main.go` `genModule`、`genDocument` |
+| 前端产物的内嵌与托管（合一拓扑的 Go 侧） | 已实现 | `starters/demo/server/main.go` `webBundle`（`//go:embed dist`）、`webuiModuleName` |
 | 前端应用本身（`web/` 的源码与构建） | 已实现 | `starters/demo/web/src/main.tsx` `bootstrapDemoApp`、`starters/demo/web/src/app.tsx` `DemoApp`、`starters/demo/web/src/routes.tsx` `routes`、`starters/demo/web/src/runtime-config.ts` `loadRuntimeConfig`；构建见 `starters/demo/web/vite.config.ts` |
 | 应用自己的第二级契约生成 | 已实现 | `starters/demo/web/orval.config.ts` `appApi`、`starters/demo/web/package.json` `api:gen`；产物 `starters/demo/web/src/app-api/index.ts`、接缝 `starters/demo/web/src/app-api/runtime.ts` |

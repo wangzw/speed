@@ -4,8 +4,8 @@
 # compose file beside this one:
 #
 #   docker compose -f starters/demo/compose.yaml up -d postgres
-#   go -C starters/demo run . --config file:testdata/postgres.yaml postgres migrate
-#   go -C starters/demo run . --config file:testdata/postgres.yaml postgres serve
+#   go -C starters/demo/server run . --config file:testdata/postgres.yaml postgres migrate
+#   go -C starters/demo/server run . --config file:testdata/postgres.yaml postgres serve
 #
 # The platform baseline above the backend section is the same as in
 # sqlite-memory.yaml; only the backend section below differs between the five

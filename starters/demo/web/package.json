@@ -2,12 +2,12 @@
   "name": "demo-web",
   "version": "0.0.0",
   "private": true,
-  "description": "The demo starter's web host: the browser application of the copyable product skeleton, built into web/dist and embedded into the Go binary by the demo program",
+  "description": "The demo starter's web host: the browser application of the copyable product skeleton, built into server/dist and embedded into the Go binary by the demo program",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json && vite build",
-    "api:gen": "go -C .. run . --config file:testdata/sqlite-memory.yaml sqlite-memory gen --title speed -o ../../contracts/api.json && pnpm dlx orval@8.17.0 --config orval.config.ts && node ../../../web/scripts/orval-nodenext-fixup.mjs src/app-api/index.ts src/app-api/runtime.ts",
+    "api:gen": "go -C ../server run . --config file:testdata/sqlite-memory.yaml sqlite-memory gen --title speed -o ../../../contracts/api.json && pnpm dlx orval@8.17.0 --config orval.config.ts && node ../../../web/scripts/orval-nodenext-fixup.mjs src/app-api/index.ts src/app-api/runtime.ts",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
