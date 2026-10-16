@@ -170,4 +170,22 @@ describe('EmptyState', () => {
     const violations = await runHeadingOrderCheck()
     expect(violations).toHaveLength(0)
   })
+
+  it('renders the title headerless in a status region when headingLevel is none', () => {
+    const { getByText, container } = renderWithProviders(
+      <div>
+        <h1>Page title</h1>
+        <EmptyState headingLevel="none" />
+      </div>,
+    )
+    // No heading element enters the outline -- the placeholder is a status,
+    // not a section -- and the whole placeholder is one role="status" region
+    // carrying the title.
+    expect(container.querySelector('h6')).toBeNull()
+    expect(container.querySelectorAll('h1, h2, h3, h4, h5, h6')).toHaveLength(1)
+    const status = container.querySelector('[role="status"]')
+    expect(status).not.toBeNull()
+    expect(status).toHaveTextContent(zhCN.emptyState.empty.title)
+    expect(getByText(zhCN.emptyState.empty.title)).toBeInTheDocument()
+  })
 })

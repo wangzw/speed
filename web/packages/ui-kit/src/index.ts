@@ -5,15 +5,17 @@
  * AppThemeProvider) that turns @speed/tokens into a MUI v9 theme, and the
  * fully controlled components (PageHeader, EmptyState, ConfirmDialog,
  * FormField, FormLayout, DataTable, FileUploader, InlineError,
- * ListSkeleton, AsyncSection) with their ui-kit-namespace translations
- * (UI_KIT_NAMESPACE + uiKitResources) for the host to register —
+ * InlineSuccess, ListSkeleton, AsyncSection) with their ui-kit-namespace
+ * translations (UI_KIT_NAMESPACE + uiKitResources) for the host to register —
  * FileUploader renders the queue the host owns as `rows` props while
  * uploads run in the host's own transport code. The form family's zod
  * bridge (zodFormResolver) ships beside the components so a host drives
  * RHF validation from one zod schema. The cross-surface state
  * primitives ship beside them: InlineError + errorCodeOf (the
- * whole-attempt failure banner), ListSkeleton and AsyncSection (the
- * pending/error/empty/content branches of an async read) and
+ * whole-attempt failure banner), InlineSuccess (its success twin, the
+ * mount-empty-then-fill role="status" notice), ListSkeleton and
+ * AsyncSection (the pending/error/empty/content branches of an async
+ * read) and
  * visuallyHiddenSx (the clip recipe for hidden live regions and file
  * inputs). Everything else stays internal: helpers shared between
  * components live in src/internal/ and are deliberately not exported.
@@ -39,6 +41,7 @@ export {
 export {
   EmptyState,
   type EmptyStateHeadingLevel,
+  type EmptyStateNoHeading,
   type EmptyStateProps,
   type EmptyStateVariant,
 } from './components/EmptyState.js'
@@ -84,6 +87,10 @@ export {
   errorCodeOf,
   type InlineErrorProps,
 } from './components/InlineError.js'
+export {
+  InlineSuccess,
+  type InlineSuccessProps,
+} from './components/InlineSuccess.js'
 export {
   ListSkeleton,
   type ListSkeletonProps,

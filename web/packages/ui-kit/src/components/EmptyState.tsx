@@ -30,6 +30,19 @@
  * style vary independently, the same split this package's other
  * multi-level headings (PageHeader's h1, a section's own h2) already
  * rely on.
+ *
+ * An EMPTY placeholder is a status, not a section: when it stands under
+ * a page heading that already names the space (a "Notifications" h1 with
+ * a "No notifications" placeholder below it), a second heading there
+ * would enter the page outline as a redundant chapter. A host in that
+ * shape passes `headingLevel="none"`, which renders the title as a
+ * non-heading element (a plain block, not a `<p>` -- a `<p>` styled like a
+ * heading would itself trip axe's p-as-heading rule) and wraps the whole
+ * placeholder in one `role="status"`
+ * region -- the placeholder is then announced politely without claiming a
+ * heading level, and the page's own heading order is left alone. The
+ * default stays a heading, so a placeholder that genuinely stands in for
+ * a hidden section header is unchanged.
  */
 
 import type { ReactNode } from 'react'
@@ -44,6 +57,13 @@ export type EmptyStateVariant = 'empty' | 'noPermission' | 'error'
 /** The semantic heading levels EmptyState's title can render as. */
 export type EmptyStateHeadingLevel = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
 
+/**
+ * The `headingLevel` value that renders the title as no heading at all:
+ * a plain block inside one `role="status"` region, for a placeholder
+ * that must not enter the page heading outline (see the file header).
+ */
+export type EmptyStateNoHeading = 'none'
+
 export interface EmptyStateProps {
   /** Which stock placeholder to render; defaults to 'empty'. */
   readonly variant?: EmptyStateVariant
@@ -56,12 +76,14 @@ export interface EmptyStateProps {
   /** Replaces the variant's stock icon. Keep it decorative (see header note). */
   readonly icon?: ReactNode
   /**
-   * The real heading element (`h1`-`h6`) the title renders as. Set this
-   * to whatever level continues the real page's own heading order at
-   * the point this EmptyState appears -- see this file's header comment.
-   * Defaults to 'h6' for backward compatibility.
+   * The real heading element (`h1`-`h6`) the title renders as -- whatever
+   * level continues the real page's own heading order at the point this
+   * EmptyState appears (see this file's header comment) -- or `'none'`
+   * for a placeholder that must not enter the heading outline, which
+   * renders the title as a plain block inside one `role="status"`
+   * region. Defaults to 'h6' for backward compatibility.
    */
-  readonly headingLevel?: EmptyStateHeadingLevel
+  readonly headingLevel?: EmptyStateHeadingLevel | EmptyStateNoHeading
   /** Extra styling applied to the placeholder box. */
   readonly sx?: SxProps<Theme>
 }
@@ -87,8 +109,13 @@ export function EmptyState({
 }: EmptyStateProps) {
   const { t } = useUiKitTranslation()
   const StockIcon = VARIANT_ICONS[variant]
+  const headerless = headingLevel === 'none'
   return (
     <Box
+      // A headerless placeholder is one polite status region -- it appears
+      // where a loading branch was, so a screen reader announces it without
+      // it claiming a heading level (see the file header).
+      role={headerless ? 'status' : undefined}
       sx={{
         display: 'flex',
         flexDirection: 'column',
@@ -101,7 +128,14 @@ export function EmptyState({
       }}
     >
       <Box sx={{ color: 'text.secondary' }}>{icon ?? <StockIcon />}</Box>
-      <Typography variant="h6" component={headingLevel}>
+      {/* A headerless title renders as a `<div>`, never a `<p>`: a `<p>`
+          styled like a heading (the h6 look this keeps) trips axe's
+          p-as-heading rule -- a real violation, not the exemption the
+          headerless form exists to earn. */}
+      <Typography
+        variant="h6"
+        component={headerless ? 'div' : headingLevel}
+      >
         {title ?? t(`emptyState.${variant}.title`)}
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ maxWidth: '46ch' }}>

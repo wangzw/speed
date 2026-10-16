@@ -26,7 +26,11 @@
 
 import type { ReactNode } from 'react'
 import Button from '@mui/material/Button'
-import { EmptyState, type EmptyStateHeadingLevel } from './EmptyState.js'
+import {
+  EmptyState,
+  type EmptyStateHeadingLevel,
+  type EmptyStateNoHeading,
+} from './EmptyState.js'
 
 /** The error placeholder's copy and its retry. */
 export interface AsyncSectionErrorState {
@@ -68,6 +72,15 @@ export interface AsyncSectionProps<Payload> {
   /** The heading element the placeholders' titles render as; defaults to
    * 'h2', the section-title level the placeholders stand in for. */
   readonly headingLevel?: EmptyStateHeadingLevel
+  /**
+   * The empty placeholder's own heading element, or `'none'` to render it
+   * headerless as one `role="status"` region (the error placeholder keeps
+   * `headingLevel`). An empty placeholder under a page heading that
+   * already names the space passes `'none'` so the placeholder does not
+   * re-enter the heading outline as a redundant chapter; defaults to
+   * `headingLevel`.
+   */
+  readonly emptyHeadingLevel?: EmptyStateHeadingLevel | EmptyStateNoHeading
   /** The settled content, built from the narrowed payload. */
   readonly children: (payload: Payload) => ReactNode
 }
@@ -81,6 +94,7 @@ export function AsyncSection<Payload>({
   errorState,
   emptyState,
   headingLevel = 'h2',
+  emptyHeadingLevel,
   children,
 }: AsyncSectionProps<Payload>) {
   if (pending) {
@@ -105,7 +119,7 @@ export function AsyncSection<Payload>({
         variant="empty"
         title={emptyState.title}
         description={emptyState.description}
-        headingLevel={headingLevel}
+        headingLevel={emptyHeadingLevel ?? headingLevel}
       />
     )
   }

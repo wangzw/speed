@@ -4,13 +4,14 @@ The platform's first DOM-rendering package: the theme factory that turns
 `@speed/tokens` into an MUI v9 theme (`createAppTheme`,
 `AppThemeProvider`), and the controlled components (`PageHeader`,
 `EmptyState`, `ConfirmDialog`, `FileUploader`, `FormField`,
-`FormLayout`, `DataTable`, `InlineError`, `ListSkeleton`,
+`FormLayout`, `DataTable`, `InlineError`, `InlineSuccess`, `ListSkeleton`,
 `AsyncSection`) that render only the state hosts give them --
 FileUploader renders the upload queue the host owns as `rows` props
 while the transfers themselves run in the host's own code. The
 cross-surface state primitives ship beside the components: the
 whole-attempt failure banner and its classifier
-(`InlineError` / `errorCodeOf`), the pending/error/empty/content
+(`InlineError` / `errorCodeOf`), its success twin (`InlineSuccess`, the
+mount-empty-then-fill `role="status"` notice), the pending/error/empty/content
 branches of an async read (`ListSkeleton`, `AsyncSection`) and the
 hidden-element style recipe (`visuallyHiddenSx`). Every
 built-in user-facing
@@ -25,7 +26,7 @@ string lives in the bilingual `ui-kit` namespace registered through
 | `theme/createAppTheme.ts` | `createAppTheme`, `AppTheme`, `AppThemeMode` |
 | `theme/AppThemeProvider.tsx` | `AppThemeProvider`, `AppThemeProviderProps`, `useAppThemeMode`, `AppThemeModeControl` |
 | `components/PageHeader.tsx` | `PageHeader`, `PageHeaderProps`, `PageHeaderBreadcrumb` |
-| `components/EmptyState.tsx` | `EmptyState`, `EmptyStateProps`, `EmptyStateVariant`, `EmptyStateHeadingLevel` |
+| `components/EmptyState.tsx` | `EmptyState`, `EmptyStateProps`, `EmptyStateVariant`, `EmptyStateHeadingLevel`, `EmptyStateNoHeading` |
 | `components/ConfirmDialog.tsx` | `ConfirmDialog`, `ConfirmDialogProps`, `ConfirmDialogVariant`, `CONFIRM_ARM_LOCKOUT_MS` |
 | `components/FileUploader.tsx` | `FileUploader`, `FileUploaderProps`, `FileUploaderRow`, `FileUploaderRowStatus` |
 | `components/FormField.tsx` | `FormField`, `FormFieldProps`, `FormFieldRenderState`, `REQUIRED_ERROR_KEY` |
@@ -33,6 +34,7 @@ string lives in the bilingual `ui-kit` namespace registered through
 | `zod-form-resolver.ts` | `zodFormResolver`, `INVALID_ERROR_KEY` |
 | `components/DataTable.tsx` | `DataTable`, `DataTableColumn`, `DataTableColumnPriority`, `DataTableSort`, `DataTableSortDirection`, `DataTableFilter`, `DataTablePagination`, `DataTableProps` |
 | `components/InlineError.tsx` | `InlineError`, `InlineErrorProps`, `errorCodeOf` |
+| `components/InlineSuccess.tsx` | `InlineSuccess`, `InlineSuccessProps` |
 | `components/ListSkeleton.tsx` | `ListSkeleton`, `ListSkeletonProps` |
 | `components/AsyncSection.tsx` | `AsyncSection`, `AsyncSectionProps`, `AsyncSectionErrorState`, `AsyncSectionEmptyState` |
 | `visually-hidden.ts` | `visuallyHiddenSx` |
@@ -422,6 +424,14 @@ same obligation extends to an empty `DataTable`'s stock placeholder:
 `DataTable` forwards the level through its own `emptyHeadingLevel`
 prop (default `'h6'`, unchanged for hosts that do not pass it).
 
+A placeholder that must NOT enter the heading outline -- an empty state
+sitting under a page heading that already names the space ("No
+notifications" under a "Notifications" h1) -- passes
+`headingLevel="none"`: the title then renders as a non-heading block (a
+`<div>`, never a `<p>` -- a styled `<p>` would itself trip axe's
+p-as-heading rule) and the whole placeholder becomes one `role="status"`
+region, announced politely without claiming a heading level.
+
 ### ConfirmDialog
 
 The controlled confirmation modal. `open` shows it, `onConfirm` /
@@ -766,6 +776,18 @@ keeps its code, anything else collapses to a code no resolver lists
 (rendered as the family's unknown fallback).
 Props: `code` (required, `string | null`), `resolve` (required).
 
+### InlineSuccess (the success banner)
+
+The positive twin of `InlineError`: the confirmation a landed write
+shows where a failure would show a banner. It is one `role="status"`
+region, mounted for the whole settled phase whether or not there is
+anything to confirm -- visually silent and clipped (never `display:none`,
+which would not be live) while the message is `null`, and filled when a
+write lands, so a screen reader announces a change to a region it already
+knows rather than one born together with its text. The text comes from
+the `message` prop (the surface family's own namespace); nothing renders
+for `null`. Props: `message` (required, `string | null`).
+
 ### ListSkeleton (the pending-state placeholder)
 
 The loading announcement of a list read: a `role="status"` region with
@@ -784,10 +806,13 @@ the empty placeholder (`emptyState`, optional for surfaces whose
 payload cannot be empty), otherwise the content callback renders with
 the narrowed payload. The placeholders are `EmptyState` at
 `headingLevel` (default `'h2'`, the section-title level they stand in
-for).
+for); `emptyHeadingLevel` (default `headingLevel`) overrides the EMPTY
+placeholder's own level, so a host whose empty placeholder must not
+enter the heading outline passes it `'none'` while the error placeholder
+keeps `headingLevel`.
 Props: `pending`, `payload`, `empty`, `loading`, `errorState`,
-`emptyState?`, `headingLevel?`, `children` (all required except the
-marked ones).
+`emptyState?`, `headingLevel?`, `emptyHeadingLevel?`, `children` (all
+required except the marked ones).
 
 ### visuallyHiddenSx (the hidden-element recipe)
 

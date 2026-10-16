@@ -152,4 +152,29 @@ describe('AsyncSection', () => {
       screen.getByRole('heading', { level: 3, name: EMPTY_STATE.title }),
     ).toBeInTheDocument()
   })
+
+  it('renders the empty placeholder headerless when emptyHeadingLevel is none', () => {
+    const { container } = renderWithProviders(
+      <AsyncSection
+        pending={false}
+        payload={[]}
+        empty
+        headingLevel="h2"
+        emptyHeadingLevel="none"
+        loading={<p>loading node</p>}
+        errorState={ERROR_STATE}
+        emptyState={EMPTY_STATE}
+      >
+        {(items: readonly string[]) => <p>content {items.join(',')}</p>}
+      </AsyncSection>,
+    )
+    // The empty placeholder carries no heading; the whole placeholder is one
+    // role="status" region instead. The error level is untouched.
+    expect(
+      screen.queryByRole('heading', { name: EMPTY_STATE.title }),
+    ).not.toBeInTheDocument()
+    expect(container.querySelector('[role="status"]')).toHaveTextContent(
+      EMPTY_STATE.title,
+    )
+  })
 })
