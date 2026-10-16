@@ -57,18 +57,68 @@ export {
   type ConsoleTenantStatus,
   type ConsoleSetting,
   type ConsoleAuditRecord,
+  type ConsoleAuditPage,
   type ConsoleCreateTenantInput,
   type ConsoleSetTenantAliasInput,
   type ConsoleSetTenantStatusInput,
   type ConsoleSetSettingInput,
   type ConsoleRemoveSettingInput,
+  type ConsolePermission,
+  type ConsoleRole,
+  type ConsoleGrant,
+  type ConsoleBinding,
+  type ConsoleWriteRoleInput,
+  type ConsoleRoleRef,
+  type ConsoleGrantRef,
+  type ConsoleBindingRef,
+  type ConsoleAccountBindingsQuery,
+  type ConsoleAccount,
+  type ConsoleAccountPage,
+  type ConsoleAccountFactor,
+  type ConsoleAccountSecret,
+  type ConsoleAccountSession,
+  type ConsoleImpersonation,
+  type ConsoleAccountRef,
+  type ConsoleAccountQuery,
+  type ConsoleRemoveIdentifierInput,
+  type ConsoleRevokeSecretInput,
+  type ConsoleRevokeSessionInput,
+  type ConsoleInvitation,
+  type ConsoleInvitationPage,
+  type ConsoleMember,
+  type ConsoleIssueInvitationInput,
+  type ConsoleInvitationRef,
+  type ConsoleMemberRef,
+  type ConsoleSsoProvider,
+  type ConsoleSsoProviderQuery,
+  type ConsoleSsoProviderRef,
+  type ConsoleSsoDomainRef,
+  type ConsoleSmsTemplate,
+  type ConsoleSmsTemplatePage,
+  type ConsoleRegisterSmsTemplateInput,
+  type ConsoleOfferSmsTemplateInput,
+  type ConsoleSetSmsTemplateEnabledInput,
 } from './operations.js'
 export {
   tenantAdminRoutes,
+  accountsAdminRoutes,
+  sessionsAdminRoutes,
+  impersonationsAdminRoutes,
+  permissionsAdminRoutes,
+  invitationsAdminRoutes,
+  ssoAdminRoutes,
   settingsAdminRoutes,
+  smsAdminRoutes,
   auditAdminRoutes,
   consoleRoutes,
 } from './routes.js'
 export { TenantRosterPage } from './TenantRosterPage.js'
 export { SettingsPage } from './SettingsPage.js'
 export { AuditPage } from './AuditPage.js'
+export { PermissionsPage } from './PermissionsPage.js'
+export { AccountsPage } from './AccountsPage.js'
+export { SessionsPage } from './SessionsPage.js'
+export { ImpersonationsPage } from './ImpersonationsPage.js'
+export { InvitationsPage } from './InvitationsPage.js'
+export { SsoPage } from './SsoPage.js'
+export { SmsPage } from './SmsPage.js'

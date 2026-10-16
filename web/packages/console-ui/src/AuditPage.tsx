@@ -10,12 +10,24 @@
  *
  * The read is an operation on the console operations bundle -- the host
  * binds the generated /audit/admin operation to it -- so the page builds
- * no client and writes no query key. A read that fails settles into the
- * retryable error placeholder. The recorded time is rendered through Intl
- * in the current language and explicitly in UTC, the zone the view carries
- * it in, never the process-local default; a malformed timestamp renders no
- * time rather than throwing. The record's own fields are journal data (not
- * a closed vocabulary the surface guards): they render as recorded.
+ * no client and writes no query key. The query is narrowed server-side by
+ * the filters the toolbar carries: a `since` and `until` bound (two
+ * temporal bounds the single free-text filter box cannot express) and an
+ * `action` set (comma- or space-separated), applied on submit so a
+ * keystroke never fires a request. The rows page by cursor -- the read
+ * answers with the next page's cursor -- so the footer advances through a
+ * cursor stack the page keeps; the total is unknown (a keyset read does
+ * not count), which the footer shows as its no-total wording.
+ *
+ * The actor column renders a readable identity, not the raw account
+ * identifier: the actor cell resolves the account's display name through
+ * the same bound surface and falls back to the recorded value when the
+ * actor names no account (a system or import actor). The recorded time is
+ * rendered through Intl in the current language and explicitly in UTC,
+ * the zone the view carries it in, never the process-local default; a
+ * malformed timestamp renders no time rather than throwing. The record's
+ * own fields are journal data (not a closed vocabulary the surface
+ * guards): they render as recorded.
  *
  * The page opens with ui-kit's PageHeader: the page title as the level-one
  * heading, a breadcrumb trail from the console to this page, and a
@@ -23,15 +35,19 @@
  * placeholders render one level down, so the heading order never skips.
  */
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
+import TextField from '@mui/material/TextField'
 import { AsyncSection, DataTable, ListSkeleton, PageHeader } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleAuditRecord } from './operations.js'
+
+/** The default page size (rows per cursor page). */
+const DEFAULT_LIMIT = 25
 
 /** Parses a server timestamp; null for an absent or malformed value so a
  * bad row can never reach Intl and throw. */
@@ -43,10 +59,93 @@ function parseDate(iso: string | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
+/**
+ * Splits the action filter's free text into the action set the read
+ * takes: comma- or whitespace-separated names, blanks dropped. An empty
+ * input means no action filter.
+ */
+function parseActions(text: string): string[] {
+  return text
+    .split(/[\s,]+/)
+    .map((part) => part.trim())
+    .filter((part) => part !== '')
+}
+
+/**
+ * A datetime-local value (the browser control's `YYYY-MM-DDTHH:mm`) as an
+ * RFC 3339 instant in UTC. An empty or unparseable value yields undefined
+ * (no bound) rather than an invalid request parameter.
+ */
+function toInstant(local: string): string | undefined {
+  if (local === '') {
+    return undefined
+  }
+  const date = new Date(local)
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
+}
+
+/**
+ * One row's actor cell: the readable identity. It reads the account's
+ * display name through the bound surface and shows it; while the read is
+ * pending, or when the actor names no account (a system or import actor),
+ * it shows the recorded value instead of a spinner, so the column is
+ * never blank. The lookup is keyed by the account id, so a page of rows
+ * that share an actor reuses one cached read.
+ */
+function AuditActorCell({ actor }: { readonly actor: string }) {
+  const operations = useConsoleOperations()
+  const account = operations.useAccount({ id: actor })
+  return <>{account.data?.display_name ?? actor}</>
+}
+
 export function AuditPage() {
   const { t, i18n } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
-  const records = operations.useAuditRecords()
+
+  // The applied filters (committed on submit) and their drafts.
+  const [since, setSince] = useState('')
+  const [until, setUntil] = useState('')
+  const [action, setAction] = useState('')
+  const [sinceDraft, setSinceDraft] = useState('')
+  const [untilDraft, setUntilDraft] = useState('')
+  const [actionDraft, setActionDraft] = useState('')
+  // The cursor stack: cursors[i] is the cursor that reads page i ('' is
+  // the first page), and the page advances one index at a time.
+  const [cursors, setCursors] = useState<readonly string[]>([''])
+  const [page, setPage] = useState(0)
+
+  const appliedActions = useMemo(() => parseActions(action), [action])
+  const cursor = cursors[page] ?? ''
+
+  const params = useMemo(
+    () => ({
+      ...(since === '' ? {} : { since: toInstant(since) }),
+      ...(until === '' ? {} : { until: toInstant(until) }),
+      ...(appliedActions.length === 0 ? {} : { action: appliedActions }),
+      ...(cursor === '' ? {} : { cursor }),
+      limit: DEFAULT_LIMIT,
+    }),
+    [since, until, appliedActions, cursor],
+  )
+
+  const records = operations.useAuditRecords(params)
+  const pageData = records.data
+
+  // Record the next page's cursor the read answered with, so the footer
+  // can advance to it. The cursor for page i+1 is only known once page i
+  // has answered, so the stack grows as pages are visited.
+  useEffect(() => {
+    const next = pageData?.next
+    if (next === undefined || next === '' || page + 1 < cursors.length) {
+      return
+    }
+    setCursors((previous) => {
+      const grown = [...previous]
+      grown[page + 1] = next
+      return grown
+    })
+  }, [pageData, page, cursors.length])
+
   // The view carries each record's time in UTC, so it is formatted in UTC
   // explicitly -- never the engine's implicit process-local default.
   const formatTime = useMemo(
@@ -86,7 +185,7 @@ export function AuditPage() {
       id: 'actor',
       header: t('audit.column.actor'),
       priority: 'medium',
-      cell: (record) => record.actor,
+      cell: (record) => <AuditActorCell actor={record.actor} />,
     },
     {
       id: 'object',
@@ -96,8 +195,30 @@ export function AuditPage() {
     },
   ]
 
-  const rows = records.data
-  const pending = records.isPending && rows === undefined
+  const rows = pageData?.entries
+  const hasNextPage = pageData?.next !== undefined && pageData.next !== ''
+  const pending = records.isPending && pageData === undefined
+
+  /** Applies the drafts as the active filters, resetting to the first page. */
+  const applyFilters = () => {
+    setSince(sinceDraft)
+    setUntil(untilDraft)
+    setAction(actionDraft)
+    setCursors([''])
+    setPage(0)
+  }
+
+  /** Clears every filter and returns to the first page. */
+  const resetFilters = () => {
+    setSinceDraft('')
+    setUntilDraft('')
+    setActionDraft('')
+    setSince('')
+    setUntil('')
+    setAction('')
+    setCursors([''])
+    setPage(0)
+  }
 
   return (
     <Box>
@@ -119,6 +240,49 @@ export function AuditPage() {
         }
         sx={{ mb: 2 }}
       />
+
+      <Box
+        component="section"
+        aria-label={t('audit.filters.label')}
+        sx={{
+          mb: 3,
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'flex-end',
+          columnGap: 2,
+          rowGap: 1,
+        }}
+      >
+        <TextField
+          size="small"
+          type="datetime-local"
+          value={sinceDraft}
+          onChange={(event) => setSinceDraft(event.target.value)}
+          label={t('audit.filters.since')}
+          slotProps={{ inputLabel: { shrink: true } }}
+        />
+        <TextField
+          size="small"
+          type="datetime-local"
+          value={untilDraft}
+          onChange={(event) => setUntilDraft(event.target.value)}
+          label={t('audit.filters.until')}
+          slotProps={{ inputLabel: { shrink: true } }}
+        />
+        <TextField
+          size="small"
+          value={actionDraft}
+          onChange={(event) => setActionDraft(event.target.value)}
+          label={t('audit.filters.action')}
+          placeholder={t('audit.filters.actionPlaceholder')}
+        />
+        <Button type="button" variant="contained" onClick={applyFilters}>
+          {t('audit.filters.apply')}
+        </Button>
+        <Button type="button" variant="outlined" onClick={resetFilters}>
+          {t('audit.filters.reset')}
+        </Button>
+      </Box>
 
       <AsyncSection
         pending={pending}
@@ -153,6 +317,41 @@ export function AuditPage() {
           />
         )}
       </AsyncSection>
+
+      <Box
+        sx={{
+          mt: 2,
+          display: 'flex',
+          alignItems: 'center',
+          columnGap: 2,
+        }}
+      >
+        <Button
+          type="button"
+          variant="outlined"
+          size="small"
+          disabled={page === 0}
+          onClick={() => setPage((current) => Math.max(0, current - 1))}
+        >
+          {t('audit.prevPage')}
+        </Button>
+        <Button
+          type="button"
+          variant="outlined"
+          size="small"
+          disabled={!hasNextPage}
+          onClick={() => {
+            setCursors((previous) => {
+              const grown = [...previous]
+              grown[page + 1] = pageData?.next ?? ''
+              return grown
+            })
+            setPage((current) => current + 1)
+          }}
+        >
+          {t('audit.nextPage')}
+        </Button>
+      </Box>
     </Box>
   )
 }

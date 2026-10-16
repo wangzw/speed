@@ -138,7 +138,7 @@ describe('consoleOperations', () => {
     })
     function Audit() {
       const { data } = consoleOperations.useAuditRecords()
-      return <p>{data ? `audit:${data.length}` : 'loading'}</p>
+      return <p>{data ? `audit:${data.entries.length}` : 'loading'}</p>
     }
     renderWithProviders(<Audit />, { operations: consoleOperations })
     expect(await screen.findByText('audit:0')).toBeInTheDocument()
@@ -164,5 +164,258 @@ describe('settingKeyRest', () => {
 
   it('leaves a key that does not carry the namespace prefix unchanged', () => {
     expect(settingKeyRest('retry', 'mail')).toBe('retry')
+  })
+})
+
+/**
+ * The administration surfaces' members, driven through the shipped bundle
+ * over the scripted request rig, so a member wired to the wrong endpoint
+ * fails here. A probe answers `{}` for every leg (the generated read's
+ * `select` then yields undefined, which is enough to settle the read);
+ * the assertion is on the recorded request legs.
+ */
+function answer(): unknown {
+  return {}
+}
+
+/** Mounts every tenant-scoped authorization read. */
+function AuthzReads() {
+  const permissions = consoleOperations.usePermissions()
+  const roles = consoleOperations.useRoles('acme')
+  const grants = consoleOperations.useGrants('acme', 'editor')
+  const bindings = consoleOperations.useBindings('acme')
+  const accountBindings = consoleOperations.useAccountBindings({
+    tenant: 'acme',
+    account: 'acc-1',
+  })
+  const settled = [permissions, roles, grants, bindings, accountBindings].every(
+    (query) => query.isSuccess,
+  )
+  return <p>{settled ? 'ready' : 'loading'}</p>
+}
+
+/** Buttons firing every authorization write. */
+function AuthzWrites() {
+  const writeRole = consoleOperations.useWriteRole()
+  const removeRole = consoleOperations.useRemoveRole()
+  const grant = consoleOperations.useGrantPermission()
+  const revoke = consoleOperations.useRevokePermission()
+  const bind = consoleOperations.useBindRole()
+  const unbind = consoleOperations.useUnbindRole()
+  return (
+    <>
+      <button onClick={() => writeRole.mutate({ tenant: 'acme', role: 'editor', builtin: false, descriptionKey: 'd' })}>writeRole</button>
+      <button onClick={() => removeRole.mutate({ tenant: 'acme', role: 'editor' })}>removeRole</button>
+      <button onClick={() => grant.mutate({ tenant: 'acme', role: 'editor', permission: 'deal:read' })}>grant</button>
+      <button onClick={() => revoke.mutate({ tenant: 'acme', role: 'editor', permission: 'deal:read' })}>revoke</button>
+      <button onClick={() => bind.mutate({ tenant: 'acme', account: 'acc-1', role: 'editor' })}>bind</button>
+      <button onClick={() => unbind.mutate({ tenant: 'acme', account: 'acc-1', role: 'editor' })}>unbind</button>
+    </>
+  )
+}
+
+/** Mounts every account / session / impersonation read. */
+function AccountReads() {
+  const accounts = consoleOperations.useAccounts()
+  const account = consoleOperations.useAccount({ id: 'acc-1' })
+  const factors = consoleOperations.useAccountFactors({ id: 'acc-1' })
+  const secrets = consoleOperations.useAccountSecrets({ id: 'acc-1' })
+  const sessions = consoleOperations.useAccountSessions({ id: 'acc-1' })
+  const impersonations = consoleOperations.useImpersonations()
+  const settled = [accounts, account, factors, secrets, sessions, impersonations].every(
+    (query) => query.isSuccess,
+  )
+  return <p>{settled ? 'ready' : 'loading'}</p>
+}
+
+/** Buttons firing every account / session / impersonation write. */
+function AccountWrites() {
+  const del = consoleOperations.useDeleteAccount()
+  const removeIdentifier = consoleOperations.useRemoveIdentifier()
+  const resetMFA = consoleOperations.useResetMFA()
+  const revokeSessions = consoleOperations.useRevokeAccountSessions()
+  const revokeSecret = consoleOperations.useRevokeSecret()
+  const revokeSession = consoleOperations.useRevokeSession()
+  const revokeImpersonation = consoleOperations.useRevokeImpersonation()
+  return (
+    <>
+      <button onClick={() => del.mutate({ id: 'acc-1' })}>del</button>
+      <button onClick={() => removeIdentifier.mutate({ id: 'acc-1', identifier: 'ada@example.com' })}>removeIdentifier</button>
+      <button onClick={() => resetMFA.mutate({ id: 'acc-1' })}>resetMFA</button>
+      <button onClick={() => revokeSessions.mutate({ id: 'acc-1' })}>revokeSessions</button>
+      <button onClick={() => revokeSecret.mutate({ id: 'acc-1', secret: 'sec-1' })}>revokeSecret</button>
+      <button onClick={() => revokeSession.mutate({ accountId: 'acc-1', sessionId: 'sess-1' })}>revokeSession</button>
+      <button onClick={() => revokeImpersonation.mutate({ id: 'imp-1' })}>revokeImpersonation</button>
+    </>
+  )
+}
+
+/** Mounts the invitation / membership / SSO reads. */
+function TenantReads() {
+  const invitations = consoleOperations.useInvitations('acme')
+  const members = consoleOperations.useMembers('acme')
+  const providers = consoleOperations.useSsoProviders('acme')
+  const provider = consoleOperations.useSsoProvider({ id: 'idp-1' })
+  const settled = [invitations, members, providers, provider].every((query) => query.isSuccess)
+  return <p>{settled ? 'ready' : 'loading'}</p>
+}
+
+/** Buttons firing the invitation / membership / SSO writes. */
+function TenantWrites() {
+  const issue = consoleOperations.useIssueInvitation()
+  const revoke = consoleOperations.useRevokeInvitation()
+  const removeMember = consoleOperations.useRemoveMember()
+  const deleteProvider = consoleOperations.useDeleteSsoProvider()
+  const removeDomain = consoleOperations.useRemoveSsoDomain()
+  const verifyDomain = consoleOperations.useVerifySsoDomain()
+  const refresh = consoleOperations.useRefreshSsoMetadata()
+  const reverify = consoleOperations.useReverifySsoDomains()
+  return (
+    <>
+      <button onClick={() => issue.mutate({ tenant: 'acme', email: 'a@b.co', expiresAt: undefined })}>issue</button>
+      <button onClick={() => revoke.mutate({ tenant: 'acme', id: 'inv-1' })}>revokeInvite</button>
+      <button onClick={() => removeMember.mutate({ tenant: 'acme', account: 'acc-1' })}>removeMember</button>
+      <button onClick={() => deleteProvider.mutate({ id: 'idp-1', tenant: 'acme' })}>deleteProvider</button>
+      <button onClick={() => removeDomain.mutate({ id: 'idp-1', tenant: 'acme', domain: 'acme.com' })}>removeDomain</button>
+      <button onClick={() => verifyDomain.mutate({ id: 'idp-1', tenant: 'acme', domain: 'acme.com' })}>verifyDomain</button>
+      <button onClick={() => refresh.mutate({ id: 'idp-1', tenant: 'acme' })}>refresh</button>
+      <button onClick={() => reverify.mutate({ id: 'idp-1', tenant: 'acme' })}>reverify</button>
+    </>
+  )
+}
+
+/** Mounts the SMS template read and its writes. */
+function SmsSurface() {
+  const templates = consoleOperations.useSmsTemplates()
+  const register = consoleOperations.useRegisterSmsTemplate()
+  const offer = consoleOperations.useOfferSmsTemplate()
+  const setEnabled = consoleOperations.useSetSmsTemplateEnabled()
+  const remove = consoleOperations.useRemoveSmsTemplate()
+  return (
+    <>
+      <p>{templates.isSuccess ? 'ready' : 'loading'}</p>
+      <button onClick={() => register.mutate({ name: 'n', params: ['p'], codes: { 'zh-CN': '1' } })}>register</button>
+      <button onClick={() => offer.mutate({ name: 'n', content: 'c', kind: 'k', locale: 'zh-CN', params: ['p'], remark: 'r' })}>offer</button>
+      <button onClick={() => setEnabled.mutate({ name: 'n', enabled: false })}>setEnabled</button>
+      <button onClick={() => remove.mutate({ name: 'n' })}>remove</button>
+    </>
+  )
+}
+
+describe('consoleOperations administration surfaces', () => {
+  it('drives the authorization read endpoints', async () => {
+    const calls = bindConsoleRequest(answer)
+    renderWithProviders(<AuthzReads />, { operations: consoleOperations })
+    expect(await screen.findByText('ready')).toBeInTheDocument()
+    for (const path of [
+      '/authz/admin/permissions',
+      '/authz/admin/tenants/acme/roles',
+      '/authz/admin/tenants/acme/roles/editor/grants',
+      '/authz/admin/tenants/acme/bindings',
+      '/authz/admin/tenants/acme/bindings/acc-1',
+    ]) {
+      expect(calls).toContainEqual({ method: 'GET', path })
+    }
+  })
+
+  it('drives the authorization write endpoints', async () => {
+    const user = userEvent.setup()
+    const calls = bindConsoleRequest(answer)
+    renderWithProviders(<AuthzWrites />, { operations: consoleOperations })
+    for (const name of ['writeRole', 'removeRole', 'grant', 'revoke', 'bind', 'unbind']) {
+      await user.click(screen.getByRole('button', { name }))
+    }
+    await waitFor(() => {
+      expect(calls).toContainEqual({ method: 'PUT', path: '/authz/admin/tenants/acme/roles/editor' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/authz/admin/tenants/acme/roles/editor' })
+      expect(calls).toContainEqual({ method: 'PUT', path: '/authz/admin/tenants/acme/roles/editor/grants/deal:read' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/authz/admin/tenants/acme/roles/editor/grants/deal:read' })
+      expect(calls).toContainEqual({ method: 'PUT', path: '/authz/admin/tenants/acme/bindings/acc-1/editor' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/authz/admin/tenants/acme/bindings/acc-1/editor' })
+    })
+  })
+
+  it('drives the account, session and impersonation read endpoints', async () => {
+    const calls = bindConsoleRequest(answer)
+    renderWithProviders(<AccountReads />, { operations: consoleOperations })
+    expect(await screen.findByText('ready')).toBeInTheDocument()
+    for (const path of [
+      '/auth/admin/accounts',
+      '/auth/admin/accounts/acc-1',
+      '/auth/admin/accounts/acc-1/factors',
+      '/auth/admin/accounts/acc-1/secrets',
+      '/auth/admin/accounts/acc-1/sessions',
+      '/auth/admin/impersonations',
+    ]) {
+      expect(calls).toContainEqual({ method: 'GET', path })
+    }
+  })
+
+  it('drives the account, session and impersonation write endpoints', async () => {
+    const user = userEvent.setup()
+    const calls = bindConsoleRequest(answer)
+    renderWithProviders(<AccountWrites />, { operations: consoleOperations })
+    for (const name of ['del', 'removeIdentifier', 'resetMFA', 'revokeSessions', 'revokeSecret', 'revokeSession', 'revokeImpersonation']) {
+      await user.click(screen.getByRole('button', { name }))
+    }
+    await waitFor(() => {
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/auth/admin/accounts/acc-1' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/auth/admin/accounts/acc-1/identifiers/ada@example.com' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/auth/admin/accounts/acc-1/mfa-reset' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/auth/admin/accounts/acc-1/revoke-sessions' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/auth/admin/accounts/acc-1/secrets/sec-1' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/auth/admin/sessions/sess-1' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/auth/admin/impersonations/imp-1' })
+    })
+  })
+
+  it('drives the invitation, membership and SSO read endpoints', async () => {
+    const calls = bindConsoleRequest(answer)
+    renderWithProviders(<TenantReads />, { operations: consoleOperations })
+    expect(await screen.findByText('ready')).toBeInTheDocument()
+    for (const path of [
+      '/auth/admin/tenants/acme/invitations',
+      '/auth/admin/tenants/acme/members',
+      '/auth/admin/tenants/acme/sso/providers',
+      '/auth/admin/sso/providers/idp-1',
+    ]) {
+      expect(calls).toContainEqual({ method: 'GET', path })
+    }
+  })
+
+  it('drives the invitation, membership and SSO write endpoints', async () => {
+    const user = userEvent.setup()
+    const calls = bindConsoleRequest(answer)
+    renderWithProviders(<TenantWrites />, { operations: consoleOperations })
+    for (const name of ['issue', 'revokeInvite', 'removeMember', 'deleteProvider', 'removeDomain', 'verifyDomain', 'refresh', 'reverify']) {
+      await user.click(screen.getByRole('button', { name }))
+    }
+    await waitFor(() => {
+      expect(calls).toContainEqual({ method: 'POST', path: '/auth/admin/tenants/acme/invitations' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/auth/admin/tenants/acme/invitations/inv-1' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/auth/admin/tenants/acme/members/acc-1' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/auth/admin/sso/providers/idp-1' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/auth/admin/sso/providers/idp-1/domains/acme.com' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/auth/admin/sso/providers/idp-1/domains/acme.com/verify' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/auth/admin/sso/providers/idp-1/metadata/refresh' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/auth/admin/sso/providers/idp-1/reverify-domains' })
+    })
+  })
+
+  it('drives the SMS template endpoints', async () => {
+    const user = userEvent.setup()
+    const calls = bindConsoleRequest(answer)
+    renderWithProviders(<SmsSurface />, { operations: consoleOperations })
+    await screen.findByText('ready')
+    for (const name of ['register', 'offer', 'setEnabled', 'remove']) {
+      await user.click(screen.getByRole('button', { name }))
+    }
+    await waitFor(() => {
+      expect(calls).toContainEqual({ method: 'GET', path: '/sms/admin/templates' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/sms/admin/templates' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/sms/admin/templates/submissions' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/sms/admin/templates/n/enabled' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/sms/admin/templates/n' })
+    })
   })
 })

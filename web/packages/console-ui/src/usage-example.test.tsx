@@ -83,7 +83,18 @@ describe('README quick start', () => {
       within(nav)
         .getAllByRole('link')
         .map((link) => link.textContent),
-    ).toEqual(['租户', '设置', '审计记录'])
+    ).toEqual([
+      '租户',
+      '账户',
+      '会话',
+      '冒充',
+      '权限',
+      '邀请与成员',
+      'SSO 提供方',
+      '设置',
+      '短信模板',
+      '审计记录',
+    ])
     expect(await screen.findByText('Acme')).toBeInTheDocument()
   })
 })

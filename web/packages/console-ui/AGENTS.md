@@ -2,19 +2,31 @@
 
 ## What this package is
 
-The platform-staff console — the second shell. It renders the three
-backend administration surfaces (the tenant roster over `/tenant/admin`,
-the settings read-write surface over `/settings/admin`, the audit query
-over `/audit/admin`) as one console frame with three pages. Those
-endpoints are mounted on hosts that do not resolve a tenant, so the
-console has **no tenant switcher and no tenant-scoped query key**: it is
-not a page of `@speed/tenancy-ui` or `@speed/product-shell`, and neither
-of those packages belongs in its import graph.
+The platform-staff console — the second shell. It renders the platform's
+backend administration surfaces as one console frame with one page each:
+the tenant roster (`/tenant/admin`), the account, session and
+impersonation surfaces (`/auth/admin`), the authorization surface
+(`/authz/admin`), the invitation and membership surface
+(`/auth/admin/tenants/:tenant/...`), the SSO surface (`/auth/admin/sso`),
+the settings read-write surface (`/settings/admin`), the SMS template
+surface (`/sms/admin`) and the audit query (`/audit/admin`).
+
+Those endpoints are mounted on hosts that do not resolve a tenant, so the
+console has **no current-tenant switcher and no current-tenant query
+key**: it is not a page of `@speed/tenancy-ui` or `@speed/product-shell`,
+and neither of those packages belongs in its import graph.
+
+The pages whose routes carry the tenant as a path segment (authorization,
+invitations and membership, SSO) carry a **tenant selector** — an argument
+of the request, fed by the roster read, not the session's current tenant.
+It lives in `src/internal/tenant-scope.tsx` and holds no query key of the
+current-tenant kind.
 
 The package ships one entry (`src/index.ts`, the export set in the
 README's "What ships") and no subpath. Everything under `src/internal/`
-— the error-text resolver, the `InlineError` binding and the translation
-hook — is family plumbing and is deliberately not exported.
+— the error-text resolver, the `InlineError` binding, the translation
+hook, the tenant selector and the timestamp formatter — is family
+plumbing and is deliberately not exported.
 
 ## The second shell (the one thing this package's frame decides)
 
@@ -24,7 +36,7 @@ labelled declarations, and a `main` landmark holding the host's routed
 content. It is deliberately **not** `@speed/layout-kit`'s `AppShell`:
 this package does not depend on layout-kit, so the frame is built from
 MUI primitives directly, and it is simpler than the tenant-facing frame
-on purpose — no responsive drawer, no tenant affordances.
+on purpose — no responsive drawer, no current-tenant affordances.
 
 The shell does no routing. It never matches a URL, never builds a link
 from a path and never decides which navigation entry is selected: the
@@ -34,22 +46,24 @@ navigation entries are links to each labelled declaration's path. The
 entries stay real links, but when the host supplies `onNavigate` a plain
 click is intercepted and handed to it (with the entry's path) instead of
 reloading the page — that is how a host routes an entry in place without
-this package importing a router. The frame therefore renders only what
-the host gives it — the labelled declarations for the navigation, an
-optional `onNavigate`, and `children` for the content.
+this package importing a router.
 
 ## The page declarations
 
 Each administration capability contributes one declaration to the
-declarative registration seam: `tenantAdminRoutes`, `settingsAdminRoutes`
-and `auditAdminRoutes`, or the three combined as `consoleRoutes`. A
-declaration carries a path pattern, a view, an optional navigation label
-and the permission code the page's data is held to (`tenant.read`,
-`settings.read`, `audit.read`). The shapes in `src/route.ts` are kept
-structurally identical to `@speed/route-kit`'s registration surface so a
-declaration this package exports is assignable to route-kit's
-`RouteDeclaration` **without importing route-kit** — same-tier packages
-never import one another.
+declarative registration seam (`tenantAdminRoutes`, `accountsAdminRoutes`,
+`sessionsAdminRoutes`, `impersonationsAdminRoutes`,
+`permissionsAdminRoutes`, `invitationsAdminRoutes`, `ssoAdminRoutes`,
+`settingsAdminRoutes`, `smsAdminRoutes`, `auditAdminRoutes`, or the whole
+set as `consoleRoutes`). A declaration carries a path pattern, a view, an
+optional navigation label and the permission code the page's data is held
+to (`tenant.read`, `authn.account.read`, `authn.session.read`,
+`authn.impersonation.read`, `authz.role.read`, `authn.membership.manage`,
+`authn.idp.manage`, `settings.read`, `sms.template.read`, `audit.read`).
+The shapes in `src/route.ts` are kept structurally identical to
+`@speed/route-kit`'s registration surface so a declaration this package
+exports is assignable to route-kit's `RouteDeclaration` **without
+importing route-kit** — same-tier packages never import one another.
 
 A declaration's label is a `ConsoleNavLabel` element, not a string: the
 declarations stay plain module-level values (the seam wants a value)
@@ -68,7 +82,7 @@ server is the authority, and the page must not invent a client-side gate.
 The pages read and write through the `ConsoleOperations` bundle the host
 mounts in `ConsoleOperationsProvider` (`useConsoleOperations`): a plain
 object whose members are the react-query read hooks and write mutations
-of the three admin surfaces. The hooks run on the host's query client,
+of the administration surfaces. The hooks run on the host's query client,
 the mutations go through the same bound client, and no page builds a
 query client of its own or writes a query key — the keys live inside the
 hooks the host binds.
@@ -76,66 +90,78 @@ hooks the host binds.
 Why the pages read through a bundle and not a direct `@speed/api-sdk`
 call each: the bundle is the substitution point. The shipped
 `consoleOperations` is a thin adapter over the generated `@speed/api-sdk`
-operations of the three admin surfaces (`/tenant/admin`,
-`/settings/admin`, `/audit/admin`): the reads run the generated query
-options through `useQuery` with a `select` that flattens the page
-envelope to the view rows, and the writes call the generated mutation
-functions and invalidate the list through the generated key factories.
-`@speed/api-sdk` is generated from the platform's merged contract
-(`contracts/api.json`), which carries all three surfaces, so the adapter
-imports real generated operations. The provider seam stays because a host
-may mount its own bundle and a suite does so to script one (see Testing).
+operations: the reads run the generated query options through `useQuery`
+with a `select` that flattens the page envelope to the view rows (or
+keeps the envelope when the page offers server-side pagination), and the
+writes call the generated mutation functions and invalidate the list
+through the generated key factories. A read whose route carries a
+parameter (a tenant, a role, an account) takes that parameter, so its
+generated query key namespaces by it; a read whose parameter is undefined
+declares itself disabled rather than firing a malformed request.
 
-What the pages reach through the bundle, one member per route of the
-three modules:
+What the pages reach through the bundle, grouped by surface:
 
-| Member | Route |
+| Members | Routes |
 |---|---|
-| `useTenants` | `GET /tenant/admin/tenants` |
-| `useCreateTenant` | `POST /tenant/admin/tenants` |
-| `useSetTenantAlias` | `PATCH /tenant/admin/tenants/:id` |
-| `useSetTenantStatus` | `POST /tenant/admin/tenants/:id/status` |
-| `useSettings` | `GET /settings/admin/settings[/:namespace]` |
-| `useSetSetting` | `PUT /settings/admin/settings/:namespace/:key` |
-| `useRemoveSetting` | `DELETE /settings/admin/settings/:namespace/:key` |
-| `useAuditRecords` | `GET /audit/admin/records` |
+| `useTenants`, `useCreateTenant`, `useSetTenantAlias`, `useSetTenantStatus` | `/tenant/admin/tenants` (list / create / alias / status) |
+| `usePermissions`, `useRoles`, `useWriteRole`, `useRemoveRole`, `useGrants`, `useGrantPermission`, `useRevokePermission`, `useBindings`, `useAccountBindings`, `useBindRole`, `useUnbindRole` | `/authz/admin/permissions`, `/authz/admin/tenants/:tenant/roles[/:role[/grants[/:permission]]]`, `/authz/admin/tenants/:tenant/bindings[/:account[/:role]]` |
+| `useAccounts`, `useAccount`, `useAccountFactors`, `useAccountSecrets`, `useAccountSessions`, `useDeleteAccount`, `useRemoveIdentifier`, `useResetMFA`, `useRevokeAccountSessions`, `useRevokeSecret`, `useRevokeSession` | `/auth/admin/accounts[/:id[/factors|/secrets[/:secret]|/sessions|/identifiers/:identifier|/mfa-reset|/revoke-sessions]]`, `/auth/admin/sessions/:id` |
+| `useImpersonations`, `useRevokeImpersonation` | `/auth/admin/impersonations[/:id]` |
+| `useInvitations`, `useIssueInvitation`, `useRevokeInvitation`, `useMembers`, `useRemoveMember` | `/auth/admin/tenants/:tenant/invitations[/:id]`, `/auth/admin/tenants/:tenant/members[/:account]` |
+| `useSsoProviders`, `useSsoProvider`, `useDeleteSsoProvider`, `useRemoveSsoDomain`, `useVerifySsoDomain`, `useRefreshSsoMetadata`, `useReverifySsoDomains` | `/auth/admin/tenants/:tenant/sso/providers`, `/auth/admin/sso/providers/:id[/domains/:domain[/verify]|/metadata/refresh|/reverify-domains]` |
+| `useSettings`, `useSetSetting`, `useRemoveSetting` | `/settings/admin/settings[/:namespace[/:key]]` |
+| `useSmsTemplates`, `useRegisterSmsTemplate`, `useOfferSmsTemplate`, `useSetSmsTemplateEnabled`, `useRemoveSmsTemplate` | `/sms/admin/templates[/submissions|/:name[/enabled]]` |
+| `useAuditRecords` | `/audit/admin/records` |
 
-The view types (`ConsoleTenant`, `ConsoleSetting`,
-`ConsoleAuditRecord`) are the generated response rows of each module's
-admin surface (`TenantAdminTenant`, `SettingsAdminSetting`,
-`AuditAdminRecord`), named for the console's own pages; only the write
-inputs stay hand-written, because they carry route parameters beside the
-body.
+The view types are the generated response rows of each module's admin
+surface, named for the console's own pages; only the write inputs stay
+hand-written, because they carry route parameters beside the body.
 
-One address detail the bundle encodes: the settings route addresses an
-item by its namespace and **the rest of the key under it** (`:key`), the
-full key being `<namespace>.<key>` — and a module name may itself contain
-a dot (`authn.session`), so the rest cannot be derived by splitting on the
-first dot. `settingKeyRest(fullKey, namespace)` computes the rest (the
-page uses it on a row's full key); the roster and audit routes carry no
-such split.
+The settings route addresses an item by its namespace and **the rest of
+the key under it** (`:key`), the full key being `<namespace>.<key>` — and
+a module name may itself contain a dot (`authn.session`), so the rest
+cannot be derived by splitting on the first dot. `settingKeyRest(fullKey,
+namespace)` computes the rest.
+
+### Writes whose request body the contract does not declare
+
+A write's request body comes from the platform OpenAPI fragment's
+`requestBody` for that endpoint. The account surface's create, patch,
+status, MFA-requirement, password-reset, identifier-add and secret-create
+writes, the SSO provider create/update and domain-claim, and the member
+write and SSO exemption have **no `requestBody` in the platform's
+fragment**, so the generated client sends no body for them and the pages
+render no control for those writes. The endpoints' handlers still decode
+a body; the fragment is what is missing. Adding those bodies belongs to
+the fragment, not to this package — the frontend never hand-writes a
+request body.
 
 ## Non-negotiable rules
 
-- **No tenant concept, anywhere.** No tenant switcher, no
-  tenant-scoped query key, no `useCurrentTenant`, no import of
+- **No current tenant.** No current-tenant switcher, no
+  current-tenant-scoped query key, no `useCurrentTenant`, no import of
   `@speed/tenancy-ui` or `@speed/auth-core`. The console is the platform
-  side; the tenant side is a different shell. A change that wants to
-  read "the current tenant" here is scope drift — that is tenancy-ui's.
+  side; the tenant side is a different shell. The tenant selector on the
+  pages whose routes carry the tenant as a **path segment** is not this:
+  it names an argument of the request and is fed by the roster read. A
+  change that wants to read "the current tenant" here is scope drift.
 - **No routing in package code.** No path matching, no link
   construction, no `react-router`. `ConsoleShell` derives the navigation
   from labelled declarations and links each to its path; matching a URL
   to a view is the application's route layer's. `onNavigate` is a host
   callback the frame invokes on a click, not a routing mechanism this
-  package owns — the host decides what a click does, this package just
-  reports which entry was activated.
+  package owns.
 - **The pages read and write only through the operations bundle.** No
-  page constructs a `QueryClient`, and none writes a query key. If a
-  change looks like it wants to `fetch`, add an HTTP concern or build a
-  key, that is scope drift — the read is an operation on the bundle.
+  page constructs a `QueryClient`, and none writes a query key. A query
+  key is whatever a generated hook carries; a read's parameter is the
+  argument the generated key factory takes.
 - **No second masking and no client-side authorization.** A sensitive
   setting's value arrives masked from the server and renders as-is; the
   permission a declaration carries is never a gate this package applies.
+- **Every write goes through a generated operation.** No page hand-writes
+  a `fetch` or an endpoint path; a request body the generated client does
+  not send is not hand-written here — the fragment declares it or the
+  control is not rendered.
 - **Framework peers stay peers.** `react`, `react-dom`, `@mui/material`,
   `@emotion/*` and `@tanstack/react-query` are peer (required)
   dependencies; `i18n`, `ui-kit` and `api-sdk` are regular dependencies.
@@ -164,39 +190,41 @@ that bundle: `createConsoleOperations(backend)` builds real react-query
 hooks over a scripted in-memory backend (`makeConsoleBackend`), so the
 pages exercise genuine react-query states — the first-load pending
 branch, a settled empty answer, a failed read, and a write whose success
-invalidates the list — with no HTTP transport.
+invalidates the list — with no HTTP transport. `test-utils/request-rig.ts`
+binds a scripted request function into the api-sdk runtime seam, so the
+shipped `consoleOperations` can be driven endpoint by endpoint.
 
-Suites: `ConsoleShell` (the three landmarks, the labelled-only
-navigation, the `onNavigate` seam, the in-place skip link, the page-tier
-axe scan);
-`TenantRosterPage`, `SettingsPage` and `AuditPage` (their reads, writes
-and failure branches, each with a widget-tier axe scan — the page
-renders its own h1); `routes` (the declarations' paths, permissions and
-translated labels through the shell); `resources` and
-`internal/error-text` (bundle key parity and whitelist pairing);
-`internal/identifier` (the identifier rule the roster's inputs mirror);
+Suites: `ConsoleShell` (the landmarks, the labelled-only navigation, the
+`onNavigate` seam, the skip link, the page-tier axe scan); each page's
+own suite (its reads, writes and failure branches, with an axe scan); the
+`operations` suite (the shipped bundle's generated bindings for every
+surface, driven over the request rig, plus the provider fallback and the
+key-splitting helper); `routes` (the declarations' paths, permissions and
+translated labels); `resources`, `internal/error-text`,
+`internal/identifier` and `internal/datetime` (bundle key parity,
+whitelist pairing, the identifier rule and the timestamp formatting);
 `package.json` (the manifest contract); and `usage-example` (the README's
-Quick start composition, with the operations bundle substituted from
-test-utils).
+composition, with the operations bundle substituted from test-utils).
 
 ## Deferrals (recorded, do not re-open silently)
 
 - **The refusal-code mapping.** The shipped bundle reads the generated
-  `@speed/api-sdk` admin operations, so those are wired (see "The
-  operations seam"). Still open is the wire shape of a refusal: the
-  module answers RFC 9457 problem details with a `type` URN, and how
-  that `type` becomes the frontend `code` the api-client derives is not
-  settled — the error-text whitelist's colon-free codes
-  (`tenant.conflict`, `settings.invalid_value`) are this package's
-  reading of the modules' error surfaces and move when the mapping is
-  fixed.
+  `@speed/api-sdk` admin operations, so those are wired. Still open is
+  the wire shape of a refusal: a module answers RFC 9457 problem details
+  with a `type` URN, and how that `type` becomes the frontend `code` the
+  api-client derives is not settled — the error-text whitelist's
+  colon-free codes (`tenant.conflict`, `settings.invalid_value`) are this
+  package's reading of the modules' error surfaces and move when the
+  mapping is fixed. A refusal outside the whitelist renders the generic
+  failure text.
+- **The missing fragment bodies.** The writes listed under "Writes whose
+  request body the contract does not declare" have no control until the
+  platform's OpenAPI fragment declares their `requestBody`.
 - **Responsive frame.** The frame is a persistent sidebar (stacked on
   narrow viewports), not a drawer: no `matchMedia`-driven responsive
-  behaviour is shipped. A drawer is additive and belongs to the frame if
-  a host needs one.
+  behaviour is shipped.
 - **Audit detail view.** Only the list route is surfaced; a record's
-  detail route (`GET /audit/admin/records/:id`) and an export surface
-  are not. Export is another permission and another module's to carry.
+  detail route (`GET /audit/admin/records/:id`) and an export surface are
+  not. Export is another permission and another module's to carry.
 - **Storybook.** No preview harness exists; the components are covered by
-  jsdom tests + axe, and color-contrast is verified nowhere — the same
-  as the packages below.
+  jsdom tests + axe, and color-contrast is verified nowhere.

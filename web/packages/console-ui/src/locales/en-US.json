@@ -27,7 +27,10 @@
     "title": "Console"
   },
   "common": {
-    "refresh": "Refresh"
+    "refresh": "Refresh",
+    "cancel": "Cancel",
+    "tenant": "Tenant",
+    "tenantNone": "None selected"
   },
   "tenants": {
     "title": "Tenants",
@@ -114,6 +117,407 @@
       "action": "Action",
       "object": "Object",
       "outcome": "Outcome"
+    },
+    "filters": {
+      "label": "Audit filters",
+      "since": "Since",
+      "until": "Until",
+      "action": "Action filter",
+      "actionPlaceholder": "Comma- or space-separated",
+      "apply": "Apply",
+      "reset": "Reset"
+    },
+    "prevPage": "Previous",
+    "nextPage": "Next"
+  },
+  "permissions": {
+    "title": "Permissions",
+    "needTenant": {
+      "title": "Choose a tenant",
+      "description": "Roles, grants and bindings are stored per tenant. Choose a tenant first."
+    },
+    "roles": {
+      "title": "Roles",
+      "loading": "Loading roles",
+      "empty": {
+        "title": "No roles",
+        "description": "This tenant declares no role yet."
+      },
+      "error": {
+        "title": "Roles could not be loaded",
+        "description": "The authorization surface did not answer."
+      },
+      "retry": "Retry",
+      "column": {
+        "role": "Role",
+        "builtin": "Built-in",
+        "description": "Description key",
+        "actions": "Actions"
+      },
+      "builtinYes": "Yes",
+      "builtinNo": "No",
+      "create": {
+        "roleLabel": "Role name",
+        "descriptionLabel": "Description key",
+        "builtinLabel": "Built-in role",
+        "submit": "Save role"
+      },
+      "manageGrants": "Manage grants",
+      "remove": "Delete",
+      "removeTitle": "Delete role",
+      "removeMessage": "Deleting role \"{{role}}\" revokes all of its grants and bindings.",
+      "removeConfirm": "Delete"
+    },
+    "grants": {
+      "title": "Grants",
+      "pickRole": "Select a role above to manage its grants.",
+      "forRole": "Grants of role \"{{role}}\"",
+      "permissionLabel": "Permission",
+      "add": "Grant",
+      "loading": "Loading grants",
+      "empty": {
+        "title": "No grants",
+        "description": "This role holds no permission yet."
+      },
+      "error": {
+        "title": "Grants could not be loaded",
+        "description": "The grants surface did not answer."
+      },
+      "retry": "Retry",
+      "column": {
+        "resource": "Resource",
+        "action": "Action",
+        "actions": "Actions"
+      },
+      "revoke": "Revoke"
+    },
+    "catalog": {
+      "title": "Permission catalog",
+      "loading": "Loading the permission catalog",
+      "empty": {
+        "title": "No permissions",
+        "description": "The platform declares no permission."
+      },
+      "error": {
+        "title": "The permission catalog could not be loaded",
+        "description": "The permission catalog did not answer."
+      },
+      "retry": "Retry",
+      "column": {
+        "permission": "Permission"
+      }
+    },
+    "bindings": {
+      "title": "Bindings",
+      "accountLabel": "Account",
+      "roleLabel": "Role",
+      "bind": "Bind",
+      "loading": "Loading bindings",
+      "empty": {
+        "title": "No bindings",
+        "description": "No account holds a role in this tenant yet."
+      },
+      "error": {
+        "title": "Bindings could not be loaded",
+        "description": "The bindings surface did not answer."
+      },
+      "retry": "Retry",
+      "column": {
+        "account": "Account",
+        "role": "Role",
+        "actions": "Actions"
+      },
+      "unbind": "Unbind"
+    },
+    "lookup": {
+      "title": "Look up an account's bindings",
+      "accountLabel": "Account identifier",
+      "apply": "Look up"
+    }
+  },
+  "accounts": {
+    "title": "Accounts",
+    "identifierLabel": "Login identifier",
+    "search": "Search",
+    "loading": "Loading accounts",
+    "empty": {
+      "title": "No accounts",
+      "description": "No account matches the query."
+    },
+    "error": {
+      "title": "Accounts could not be loaded",
+      "description": "The account surface did not answer."
+    },
+    "retry": "Retry",
+    "column": {
+      "id": "Identifier",
+      "kind": "Kind",
+      "displayName": "Display name",
+      "status": "Status",
+      "mfa": "MFA required",
+      "actions": "Actions"
+    },
+    "mfaYes": "Yes",
+    "mfaNo": "No",
+    "manage": "Manage",
+    "delete": "Delete",
+    "status": {
+      "active": "Active",
+      "disabled": "Disabled",
+      "deleted": "Deleted",
+      "other": "Unknown"
+    },
+    "detail": {
+      "title": "Account \"{{id}}\"",
+      "displayNameLine": "Display name: {{value}}",
+      "statusLine": "Status: {{value}}",
+      "kindLine": "Kind: {{value}}"
+    },
+    "resetMFA": "Reset MFA",
+    "revokeSessions": "Revoke all sessions",
+    "factors": {
+      "title": "Registered factors",
+      "column": {
+        "kind": "Kind",
+        "label": "Label",
+        "status": "Status"
+      }
+    },
+    "secrets": {
+      "title": "Service secrets",
+      "column": {
+        "label": "Label",
+        "expires": "Expires",
+        "state": "State",
+        "actions": "Actions"
+      },
+      "revoked": "Revoked",
+      "active": "Active",
+      "revoke": "Revoke"
+    },
+    "sessions": {
+      "title": "Sessions",
+      "column": {
+        "id": "Identifier",
+        "created": "Created",
+        "state": "State",
+        "actions": "Actions"
+      },
+      "revoked": "Revoked",
+      "active": "Active",
+      "revoke": "Revoke"
+    },
+    "removeIdentifier": {
+      "label": "Remove login identifier",
+      "submit": "Remove"
+    }
+  },
+  "sessions": {
+    "title": "Sessions",
+    "accountLabel": "Account identifier",
+    "load": "Load",
+    "needAccount": {
+      "title": "Name an account",
+      "description": "Sessions are listed per account. Enter an account identifier and load."
+    },
+    "loading": "Loading sessions",
+    "empty": {
+      "title": "No sessions",
+      "description": "This account has no session."
+    },
+    "error": {
+      "title": "Sessions could not be loaded",
+      "description": "The session surface did not answer."
+    },
+    "retry": "Retry",
+    "column": {
+      "id": "Identifier",
+      "kind": "Kind",
+      "assurance": "Assurance",
+      "created": "Created",
+      "lastSeen": "Last seen",
+      "expires": "Expires",
+      "state": "State",
+      "actions": "Actions"
+    },
+    "assurance": {
+      "none": "None",
+      "single": "Single factor",
+      "multi": "Multi-factor"
+    },
+    "revoked": "Revoked",
+    "active": "Active",
+    "revoke": "Revoke"
+  },
+  "impersonations": {
+    "title": "Impersonations",
+    "loading": "Loading impersonation records",
+    "empty": {
+      "title": "No impersonation records",
+      "description": "There is no impersonation record right now."
+    },
+    "error": {
+      "title": "Impersonation records could not be loaded",
+      "description": "The impersonation surface did not answer."
+    },
+    "retry": "Retry",
+    "column": {
+      "actor": "Actor",
+      "target": "Impersonated account",
+      "tenant": "Tenant",
+      "started": "Started",
+      "ends": "Ends",
+      "state": "State",
+      "actions": "Actions"
+    },
+    "inForce": "In force",
+    "ended": "Ended ({{reason}})",
+    "terminate": "Terminate"
+  },
+  "invitations": {
+    "title": "Invitations and members",
+    "needTenant": {
+      "title": "Choose a tenant",
+      "description": "Invitations and members are stored per tenant. Choose a tenant first."
+    },
+    "section": {
+      "title": "Invitations"
+    },
+    "issue": {
+      "emailLabel": "Email address",
+      "expiresLabel": "Expires",
+      "submit": "Send invitation"
+    },
+    "loading": "Loading invitations",
+    "empty": {
+      "title": "No invitations",
+      "description": "This tenant has no invitation yet."
+    },
+    "error": {
+      "title": "Invitations could not be loaded",
+      "description": "The invitation surface did not answer."
+    },
+    "retry": "Retry",
+    "column": {
+      "email": "Email",
+      "status": "Status",
+      "invitedBy": "Invited by",
+      "expires": "Expires",
+      "actions": "Actions"
+    },
+    "status": {
+      "pending": "Pending",
+      "accepted": "Accepted",
+      "revoked": "Revoked",
+      "other": "Unknown"
+    },
+    "revoke": "Revoke"
+  },
+  "members": {
+    "title": "Members",
+    "loading": "Loading members",
+    "empty": {
+      "title": "No members",
+      "description": "This tenant has no member yet."
+    },
+    "error": {
+      "title": "Members could not be loaded",
+      "description": "The membership surface did not answer."
+    },
+    "retry": "Retry",
+    "column": {
+      "account": "Account",
+      "active": "Active",
+      "ssoExempt": "SSO exempt",
+      "source": "Source",
+      "actions": "Actions"
+    },
+    "activeYes": "Yes",
+    "activeNo": "No",
+    "ssoExemptYes": "Yes",
+    "ssoExemptNo": "No",
+    "remove": "Remove"
+  },
+  "sso": {
+    "title": "SSO providers",
+    "needTenant": {
+      "title": "Choose a tenant",
+      "description": "SSO providers are stored per tenant. Choose a tenant first."
+    },
+    "loading": "Loading providers",
+    "empty": {
+      "title": "No providers",
+      "description": "This tenant registers no SSO provider yet."
+    },
+    "error": {
+      "title": "Providers could not be loaded",
+      "description": "The SSO surface did not answer."
+    },
+    "retry": "Retry",
+    "column": {
+      "name": "Name",
+      "protocol": "Protocol",
+      "enabled": "Enabled",
+      "version": "Version",
+      "actions": "Actions"
+    },
+    "enabledYes": "Yes",
+    "enabledNo": "No",
+    "refreshMetadata": "Refresh metadata",
+    "reverifyDomains": "Re-verify domains",
+    "delete": "Delete",
+    "domains": {
+      "title": "Domains",
+      "note": "The provider view does not list domains; verify or remove a domain by name.",
+      "providerLabel": "Provider",
+      "domainLabel": "Domain",
+      "verify": "Verify",
+      "remove": "Remove"
+    }
+  },
+  "sms": {
+    "title": "SMS templates",
+    "carrierNote": "The SMS administration surface is mounted only where a carrier is configured; without one, this page's reads fail.",
+    "loading": "Loading SMS templates",
+    "empty": {
+      "title": "No templates",
+      "description": "This process has no runtime SMS template yet."
+    },
+    "error": {
+      "title": "SMS templates could not be loaded",
+      "description": "The SMS surface did not answer (no carrier may be mounted)."
+    },
+    "retry": "Retry",
+    "column": {
+      "name": "Name",
+      "source": "Source",
+      "locales": "Languages",
+      "approvals": "Approvals",
+      "enabled": "Sendable",
+      "actions": "Actions"
+    },
+    "enabledYes": "Yes",
+    "enabledNo": "No",
+    "enable": "Enable",
+    "disable": "Disable",
+    "remove": "Remove",
+    "register": {
+      "title": "Register a template",
+      "nameLabel": "Name",
+      "paramsLabel": "Params",
+      "codesLabel": "Vendor codes",
+      "codesPlaceholder": "locale:code, comma-separated",
+      "submit": "Register"
+    },
+    "offer": {
+      "title": "Offer for review",
+      "nameLabel": "Name",
+      "kindLabel": "Kind",
+      "localeLabel": "Locale",
+      "paramsLabel": "Params",
+      "remarkLabel": "Remark",
+      "contentLabel": "Content",
+      "submit": "Offer"
     }
   }
 }

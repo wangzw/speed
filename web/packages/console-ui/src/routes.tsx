@@ -17,12 +17,17 @@
  * translate reactively with the host's language.
  *
  * The permission codes are the modules' own: the roster's reads are held
- * to tenant.read and the settings reads to settings.read; the audit
- * query is held to audit.read. They are data the host reads to compose
- * its own route guard (this package never decides on them); a page whose
- * writes carry a stronger permission (tenant.manage, settings.write)
- * renders its write controls and lets the server refuse a caller who
- * lacks it, rather than hiding them -- the server is the authority.
+ * to tenant.read, the settings reads to settings.read, the audit query to
+ * audit.read, the authorization surface to authz.role.read, the account
+ * surface to authn.account.read, the session surface to authn.session.read,
+ * the impersonation surface to authn.impersonation.read, the invitation
+ * and membership surface to authn.membership.manage, the SSO surface to
+ * authn.idp.manage and the SMS template surface to sms.template.read.
+ * They are data the host reads to compose its own route guard (this
+ * package never decides on them); a page whose writes carry a stronger
+ * permission renders its write controls and lets the server refuse a
+ * caller who lacks it, rather than hiding them -- the server is the
+ * authority.
  */
 
 import { useConsoleUiTranslation } from './internal/translation.js'
@@ -30,6 +35,13 @@ import type { ConsoleRoute, ConsoleRouteTable } from './route.js'
 import { TenantRosterPage } from './TenantRosterPage.js'
 import { SettingsPage } from './SettingsPage.js'
 import { AuditPage } from './AuditPage.js'
+import { PermissionsPage } from './PermissionsPage.js'
+import { AccountsPage } from './AccountsPage.js'
+import { SessionsPage } from './SessionsPage.js'
+import { ImpersonationsPage } from './ImpersonationsPage.js'
+import { InvitationsPage } from './InvitationsPage.js'
+import { SsoPage } from './SsoPage.js'
+import { SmsPage } from './SmsPage.js'
 
 /**
  * A navigation label bound to a console-ui namespace key, resolved when
@@ -51,6 +63,66 @@ export const tenantAdminRoutes: ConsoleRouteTable = [
   },
 ] satisfies readonly ConsoleRoute[]
 
+/** The account page's declaration, held to authn.account.read. */
+export const accountsAdminRoutes: ConsoleRouteTable = [
+  {
+    path: '/accounts',
+    view: () => <AccountsPage />,
+    label: <ConsoleNavLabel labelKey="accounts.title" />,
+    permission: 'authn.account.read',
+  },
+] satisfies readonly ConsoleRoute[]
+
+/** The session page's declaration, held to authn.session.read. */
+export const sessionsAdminRoutes: ConsoleRouteTable = [
+  {
+    path: '/sessions',
+    view: () => <SessionsPage />,
+    label: <ConsoleNavLabel labelKey="sessions.title" />,
+    permission: 'authn.session.read',
+  },
+] satisfies readonly ConsoleRoute[]
+
+/** The impersonation page's declaration, held to authn.impersonation.read. */
+export const impersonationsAdminRoutes: ConsoleRouteTable = [
+  {
+    path: '/impersonations',
+    view: () => <ImpersonationsPage />,
+    label: <ConsoleNavLabel labelKey="impersonations.title" />,
+    permission: 'authn.impersonation.read',
+  },
+] satisfies readonly ConsoleRoute[]
+
+/** The authorization page's declaration, held to authz.role.read. */
+export const permissionsAdminRoutes: ConsoleRouteTable = [
+  {
+    path: '/permissions',
+    view: () => <PermissionsPage />,
+    label: <ConsoleNavLabel labelKey="permissions.title" />,
+    permission: 'authz.role.read',
+  },
+] satisfies readonly ConsoleRoute[]
+
+/** The invitation/membership page's declaration, held to authn.membership.manage. */
+export const invitationsAdminRoutes: ConsoleRouteTable = [
+  {
+    path: '/invitations',
+    view: () => <InvitationsPage />,
+    label: <ConsoleNavLabel labelKey="invitations.title" />,
+    permission: 'authn.membership.manage',
+  },
+] satisfies readonly ConsoleRoute[]
+
+/** The SSO page's declaration, held to authn.idp.manage. */
+export const ssoAdminRoutes: ConsoleRouteTable = [
+  {
+    path: '/sso',
+    view: () => <SsoPage />,
+    label: <ConsoleNavLabel labelKey="sso.title" />,
+    permission: 'authn.idp.manage',
+  },
+] satisfies readonly ConsoleRoute[]
+
 /** The settings read-write page's declaration, held to settings.read. */
 export const settingsAdminRoutes: ConsoleRouteTable = [
   {
@@ -58,6 +130,16 @@ export const settingsAdminRoutes: ConsoleRouteTable = [
     view: () => <SettingsPage />,
     label: <ConsoleNavLabel labelKey="settings.title" />,
     permission: 'settings.read',
+  },
+] satisfies readonly ConsoleRoute[]
+
+/** The SMS-template page's declaration, held to sms.template.read. */
+export const smsAdminRoutes: ConsoleRouteTable = [
+  {
+    path: '/sms',
+    view: () => <SmsPage />,
+    label: <ConsoleNavLabel labelKey="sms.title" />,
+    permission: 'sms.template.read',
   },
 ] satisfies readonly ConsoleRoute[]
 
@@ -72,13 +154,20 @@ export const auditAdminRoutes: ConsoleRouteTable = [
 ] satisfies readonly ConsoleRoute[]
 
 /**
- * The whole console page set: the three administration pages in the
- * order they appear in the platform navigation. A host composing the
- * console spreads this into its route table (alongside any pages it adds
- * itself), so the console's own pages are registered in one place.
+ * The whole console page set: the administration pages in the order they
+ * appear in the platform navigation. A host composing the console spreads
+ * this into its route table (alongside any pages it adds itself), so the
+ * console's own pages are registered in one place.
  */
 export const consoleRoutes: ConsoleRouteTable = [
   ...tenantAdminRoutes,
+  ...accountsAdminRoutes,
+  ...sessionsAdminRoutes,
+  ...impersonationsAdminRoutes,
+  ...permissionsAdminRoutes,
+  ...invitationsAdminRoutes,
+  ...ssoAdminRoutes,
   ...settingsAdminRoutes,
+  ...smsAdminRoutes,
   ...auditAdminRoutes,
 ]

@@ -4,22 +4,42 @@ The platform-staff console of a frontend built on speed: the second
 shell. Where `@speed/product-shell` is the tenant-facing front door,
 this is the console platform operators use -- and the difference is the
 point. The administration surfaces it renders are mounted on endpoints
-that do not resolve a tenant, so the console has **no tenant switcher and
-no tenant-scoped query key**. It is not, and cannot be, a page of
-`@speed/tenancy-ui` or `@speed/product-shell`.
+that do not resolve a tenant, so the console has **no current-tenant
+switcher and no current-tenant query key**. It is not, and cannot be, a
+page of `@speed/tenancy-ui` or `@speed/product-shell`.
 
-It renders three backend administration surfaces as one console frame
-with three pages:
+It renders the platform's backend administration surfaces as one console
+frame with one page each:
 
 - the **tenant roster** over `/tenant/admin` -- list, register, rename,
   enable/disable;
-- the **settings read-write surface** over `/settings/admin` -- list the
-  declared items, write one value, remove one override;
-- the **audit query** over `/audit/admin` -- list the journal's records.
+- the **account surface** over `/auth/admin/accounts` -- list, detail,
+  and the writes whose request body the contract declares;
+- the **session surface** over `/auth/admin/accounts/:id/sessions` --
+  list one account's sessions and revoke one;
+- the **impersonation surface** over `/auth/admin/impersonations` -- list
+  the records and terminate one;
+- the **authorization surface** over `/authz/admin` -- a tenant's roles,
+  their grants, the permission catalog and the account bindings;
+- the **invitation and membership surface** over
+  `/auth/admin/tenants/:tenant/invitations` and `/members` -- a tenant's
+  invitations and members;
+- the **SSO surface** over `/auth/admin/sso/providers` -- a tenant's
+  providers and their domains;
+- the **settings read-write surface** over `/settings/admin`;
+- the **SMS template surface** over `/sms/admin`;
+- the **audit query** over `/audit/admin` -- filtered, cursor-paged, with
+  readable actor identities.
 
 Each page opens with `@speed/ui-kit`'s `PageHeader`: the page title as the
 level-one heading, a breadcrumb trail from the console to the page, and a
 refresh action that re-reads the page's data.
+
+The pages whose routes carry the tenant as a path segment (authorization,
+invitations and membership, SSO) carry a tenant selector fed by the
+platform roster read. The tenant it names is an argument of the request,
+not the session's current tenant: the console still has no current-tenant
+concept.
 
 Like the tenant-facing shell, the console reuses the declarative
 registration seam: each page is a declaration collected by the
@@ -32,16 +52,23 @@ no path matching.
 |---|---|
 | `ConsoleShell.tsx` | `ConsoleShell`, `ConsoleShellProps` |
 | `route.ts` | `ConsoleRoute`, `ConsoleRouteContext`, `ConsoleRouteParams`, `ConsoleRouteTable` |
-| `operations.tsx` | `ConsoleOperations`, `consoleOperations`, `ConsoleOperationsProvider`, `useConsoleOperations`, `settingKeyRest`, `ConsoleTenant`, `ConsoleSetting`, `ConsoleAuditRecord`, the write input types |
-| `routes.tsx` | `tenantAdminRoutes`, `settingsAdminRoutes`, `auditAdminRoutes`, `consoleRoutes` |
+| `operations.tsx` | `ConsoleOperations`, `consoleOperations`, `ConsoleOperationsProvider`, `useConsoleOperations`, `settingKeyRest`, the view row types, the write input types |
+| `routes.tsx` | `tenantAdminRoutes`, `accountsAdminRoutes`, `sessionsAdminRoutes`, `impersonationsAdminRoutes`, `permissionsAdminRoutes`, `invitationsAdminRoutes`, `ssoAdminRoutes`, `settingsAdminRoutes`, `smsAdminRoutes`, `auditAdminRoutes`, `consoleRoutes` |
 | `TenantRosterPage.tsx` | `TenantRosterPage` |
+| `AccountsPage.tsx` | `AccountsPage` |
+| `SessionsPage.tsx` | `SessionsPage` |
+| `ImpersonationsPage.tsx` | `ImpersonationsPage` |
+| `PermissionsPage.tsx` | `PermissionsPage` |
+| `InvitationsPage.tsx` | `InvitationsPage` |
+| `SsoPage.tsx` | `SsoPage` |
 | `SettingsPage.tsx` | `SettingsPage` |
+| `SmsPage.tsx` | `SmsPage` |
 | `AuditPage.tsx` | `AuditPage` |
 | `resources.ts` | `CONSOLE_UI_NAMESPACE`, `consoleUiResources` |
 
 Everything else (`src/internal/`) is shared plumbing -- the error-text
-resolver, the `InlineError` binding and the translation hook -- and is
-deliberately not exported.
+resolver, the `InlineError` binding, the translation hook, the tenant
+selector and the timestamp formatter -- and is deliberately not exported.
 
 ## Quick start
 
@@ -116,20 +143,21 @@ host supplies it as it supplies the rest of the tree); no page builds a
 query client of its own and none writes a query key.
 
 The package ships that bundle. `consoleOperations` is bound to the
-generated `@speed/api-sdk` surface -- the `/tenant/admin`,
-`/settings/admin` and `/audit/admin` operations of every read, through
-the generated query keys and the generated mutation functions -- so a host
-mounts it unchanged over a client already bound into the api-sdk runtime
-seam, and the pages never change. The provider is an override: a host that
-wants different wiring, or a suite that scripts a backend, mounts its own
-bundle and the pages read that instead.
+generated `@speed/api-sdk` surface -- every administration read and write
+across the modules' admin routes, through the generated query keys and
+the generated mutation functions -- so a host mounts it unchanged over a
+client already bound into the api-sdk runtime seam, and the pages never
+change. The provider is an override: a host that wants different wiring,
+or a suite that scripts a backend, mounts its own bundle and the pages
+read that instead.
 
 ## What this console does not do
 
-- **No tenant concept.** It has no tenant switcher and uses no
-  tenant-scoped query key: its endpoints do not resolve a tenant.
-  Switching the current tenant is `@speed/tenancy-ui`'s;
-  `@speed/product-shell`'s job.
+- **No current tenant.** It has no current-tenant switcher and uses no
+  current-tenant query key: its endpoints do not resolve a tenant.
+  Switching the current tenant is `@speed/tenancy-ui`'s. A tenant-named
+  selector on the pages whose routes carry the tenant as a path segment
+  names an argument of the request, not the session's current tenant.
 - **No routing.** It exports page declarations and never matches a URL,
   builds a link from a path or decides navigation selection. Collecting
   the declarations and rendering them is the application's route layer's.
@@ -148,3 +176,9 @@ bundle and the pages read that instead.
   query client, through the generated @speed/api-sdk operations the
   shipped `consoleOperations` bundle binds (or the bundle the host mounts
   instead).
+- **Only the writes the contract declares.** A write whose request body
+  the platform's OpenAPI fragment does not declare has no generated body
+  to send, so the page does not render its control. The account surface's
+  create/patch/status/MFA-requirement/password/identifier-add/secret-create
+  writes, the SSO provider create/update and domain claim, and the member
+  write and SSO exemption are held out for that reason.
