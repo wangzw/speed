@@ -607,8 +607,9 @@ func TestDisplayNameBoundRaisesTheLastCharacter(t *testing.T) {
 
 // A bound is computed on the read seam directly, not only behind the route's
 // shape check, and every bound it returns must be valid UTF-8: a byte sequence
-// the database rejects would turn a shorter page into an outage. A prefix that
-// is not valid UTF-8 begins no name the column holds.
+// the database rejects would turn a shorter page into an outage. The bytes that
+// begin no rune may fall anywhere in the prefix, not only at its end, so the
+// cases below put them in the middle, at the tail and alone alike.
 func TestDisplayNameBoundIsAlwaysValidUTF8(t *testing.T) {
 	for _, in := range []string{
 		"\xbf",         // a lone continuation byte
@@ -619,6 +620,10 @@ func TestDisplayNameBoundIsAlwaysValidUTF8(t *testing.T) {
 		"\xe4\xb8",     // a truncated three-byte character
 		"\xf4\x8f\xbf", // a truncated four-byte character
 		"a\x80b\xc0",   // a byte that begins no rune in the middle and at the end
+		"\xbfA",        // the offending byte is not the last one
+		"\x80xy",       // a stray continuation byte before a valid tail
+		"a\x80bc",      // it sits between valid characters
+		"\xffZ",        // a byte that is no rune before a valid tail
 	} {
 		if utf8.ValidString(in) {
 			t.Fatalf("the case %q is valid UTF-8; it does not exercise the branch", in)

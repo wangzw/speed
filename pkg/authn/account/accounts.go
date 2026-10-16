@@ -343,24 +343,26 @@ func (p *product) displayNameLowerRange() string {
 }
 
 // displayNameBound returns the least string above every string that begins with
-// prefix, and whether such a string exists. The prefix is read as written, so it
-// may end in a multi-byte character; the raise is over the last character and
-// not its last byte, so the bound is valid UTF-8 and the bytewise range it closes
-// reads exactly the names that begin with the prefix. A prefix whose last
-// character is the highest rune is carried to the character before it. A prefix
-// that carries past every character — each one the highest rune — has no string
-// above it that begins with it, and the second result is false. A prefix whose
-// last byte begins no rune is not valid UTF-8: it begins no name the column
-// holds, and the empty bound closes the range to nothing. Every bound returned is
-// valid UTF-8.
+// prefix, and whether such a string exists. A prefix that is not valid UTF-8
+// begins no name the column holds, so no string is above it and the empty bound
+// closes the range to nothing. The prefix is read as written, so it may end in a
+// multi-byte character; the raise is over the last character and not its last
+// byte, so the bound is itself valid UTF-8 and the bytewise range it closes reads
+// exactly the names that begin with the prefix. A prefix whose last character is
+// the highest rune is carried to the character before it. A prefix that carries
+// past every character — each one the highest rune — has no string above it that
+// begins with it, and the second result is false. Every bound returned is valid
+// UTF-8.
 func displayNameBound(prefix string) (string, bool) {
+	if !utf8.ValidString(prefix) {
+		// The prefix is not text the column holds, so it begins no stored name:
+		// the empty bound closes the range to nothing. Reading the whole prefix
+		// here answers the same wherever in it the bytes that begin no rune fall,
+		// so every bound returned is valid UTF-8.
+		return "", true
+	}
 	for prefix != "" {
 		last, size := utf8.DecodeLastRuneInString(prefix)
-		if last == utf8.RuneError && size == 1 {
-			// The last byte begins no rune: the prefix is not valid UTF-8 and
-			// begins no stored name. The empty bound closes the range to nothing.
-			return "", true
-		}
 		if last == utf8.MaxRune {
 			// The last character is the highest rune and cannot be raised: carry
 			// to the character before it.
