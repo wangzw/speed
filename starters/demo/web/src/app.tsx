@@ -29,7 +29,7 @@
  * itself.
  */
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import { TenantProvider, useAuthState } from '@speed/auth-core'
@@ -51,12 +51,15 @@ import {
 import type { RouteContext } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
+import { tenantAdminTenantsList } from './app-api/index.js'
 import { useAppServices } from './app-services.js'
 import {
   AppBrand,
+  DEFAULT_TENANT_ID,
   getCurrentTenantId,
   HeaderActions,
   setCurrentTenantId,
+  setTenantAliases,
   TenantMenu,
   UserMenu,
 } from './chrome.js'
@@ -104,17 +107,58 @@ function AppFrame(): ReactElement {
   // (and reconnects) a connection that can only 401.
   const authenticated = useAuthState().state === 'authenticated'
   // The current tenant is a host fact (the server resolves it per request
-  // from the request's tenant header). chrome.tsx holds the one value --
-  // the client's tenantProvider reads it per request -- and this state
-  // projects it for rendering; the setter writes the cell too, so the
-  // value a request announces and the value the chrome shows agree. The
-  // tenant area mounts it on TenantProvider; a switch would update this
-  // (and, in a product, the route and the departing tenant's cache).
+  // from the request's tenant header). chrome.tsx holds the two values that
+  // come off it -- the switcher's identity and the alias the request surface
+  // carries -- and this state projects the identity for rendering; the setter
+  // writes the cell too, so the value a request announces and the value the
+  // chrome shows agree. It starts empty and is settled once the roster below
+  // is read: a tenant-scoped request fired before then would announce the
+  // placeholder's alias, which a rename has left behind, and be refused 404.
   const [tenantId, setTenantIdState] = useState<string | null>(getCurrentTenantId())
-  const setTenantId = (id: string | null): void => {
+  const setTenantId = useCallback((id: string | null): void => {
     setCurrentTenantId(id)
     setTenantIdState(id)
-  }
+  }, [])
+  // Read the roster once a viewer is signed in, so the value announced as
+  // X-Tenant is each tenant's CURRENT alias, not a name the placeholder fixed
+  // and a rename has since moved. The read is the app's own generated
+  // operation on the platform's management surface, which the demo's operator
+  // holds; a viewer without it gets the placeholder's aliases and the demo's
+  // own deployment, as seeded, still answers. The tenant-scoped surfaces stay
+  // disabled until this settles, because their queries gate on the tenant
+  // being known (TenantProvider below).
+  useEffect(() => {
+    if (!authenticated) {
+      return
+    }
+    let cancelled = false
+    // Deferred into a promise: the generated operation reaches the api-sdk
+    // request seam, which throws synchronously when no request function is
+    // bound (a suite that mounts the app without the assembly). Deferring
+    // turns that into a rejection the catch below handles like any other
+    // failed read.
+    void Promise.resolve()
+      .then(() => tenantAdminTenantsList())
+      .then((answer) => {
+        if (cancelled) {
+          return
+        }
+        setTenantAliases(
+          new Map(answer.tenants.map((tenant) => [tenant.id, tenant.alias])),
+        )
+        const first = answer.tenants.find((tenant) => tenant.status === 'active')
+        setTenantId(first?.id ?? DEFAULT_TENANT_ID)
+      })
+      .catch(() => {
+        if (cancelled) {
+          return
+        }
+        setTenantId(DEFAULT_TENANT_ID)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [authenticated, setTenantId])
   // The desktop sidebar's collapse state, host-held and shared by both areas:
   // each frame renders the toggle (the collapse props are supplied) and reports
   // each flip here, so the collapse carries across the tenant/console switch.

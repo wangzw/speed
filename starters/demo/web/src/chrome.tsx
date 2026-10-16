@@ -40,40 +40,124 @@ import { ACCOUNT_PATH } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
 
 /**
+ * One tenant the switcher offers. Its two identifiers are distinct on
+ * purpose, and telling them apart is the whole reason this type is not
+ * tenancy-ui's TenantOption:
+ *
+ *  - `id` is the tenant's stable identity -- the value the switcher
+ *    compares a pick against and reports back (TenantOption.id). It is
+ *    what the chrome shows as "the current tenant".
+ *  - `alias` is the name the request surface carries. The server resolves
+ *    a request's tenant off its surface by this name (the resolve layer
+ *    reads the X-Tenant header and looks it up in the roster's alias
+ *    column), so the value the client announces (the tenantProvider, wired
+ *    in src/main.tsx) is this one and never `id`. A rename moves the alias
+ *    and leaves the id, so the two diverge over a tenant's life; announcing
+ *    the id would put every request behind a name the roster no longer
+ *    answers to, and the server would refuse it 404.
+ *
+ * `name` is the display label the switcher renders.
+ *
+ * It is tenancy-ui's TenantOption -- the switcher takes the list as that type,
+ * so DemoTenant drops straight in -- plus the alias, which the switcher neither
+ * reads nor shows.
+ */
+export interface DemoTenant extends TenantOption {
+  /** The name the request surface carries (the roster alias). */
+  readonly alias: string
+}
+
+/**
  * The tenant list the switcher offers. The skeleton carries no tenant
  * roster -- there is no membership source -- so the app supplies a
  * placeholder list; a product replaces it with the tenants its own
- * generated operations return. The current tenant is a routing fact the
- * server resolves per request, held here as host state.
+ * generated operations return (each row's id and alias are what the roster
+ * holds, so the two may differ after a rename). The current tenant is a
+ * routing fact the server resolves per request, held here as host state.
  */
-export const DEMO_TENANTS: readonly TenantOption[] = [
-  { id: 'acme', name: 'Acme Inc.' },
-  { id: 'globex', name: 'Globex Corp.' },
+export const DEMO_TENANTS: readonly DemoTenant[] = [
+  { id: 'acme', alias: 'acme', name: 'Acme Inc.' },
+  { id: 'globex', alias: 'globex', name: 'Globex Corp.' },
 ]
 
-/** The tenant the app resolves to before any switch: the placeholder list's first. */
+/**
+ * The tenant the app falls back to when the roster cannot be read: the
+ * placeholder list's first.
+ */
 export const DEFAULT_TENANT_ID: string | null = DEMO_TENANTS[0]?.id ?? null
 
 /**
- * The host's current tenant, held as a request-time fact. The server
- * resolves the tenant off the request surface (a header on the api
- * endpoint), so every tenant-scoped call must announce the tenant the user
- * is acting in; the client's tenantProvider reads this cell per request,
- * wired at bootstrap (src/main.tsx). It is the one place the host holds
- * the current tenant -- the tenant area's React state (src/app.tsx)
- * projects it for rendering, and a switch writes both, so the value a
- * request carries and the value the chrome shows never diverge.
+ * The host's current tenant, held as a request-time fact. Two values come
+ * off it and they must not be conflated: the identity the switcher compares
+ * against (currentTenantId) and the alias every tenant-scoped request
+ * announces (getCurrentTenantAlias). The server resolves the tenant off the
+ * request surface, so the call must carry the alias, not the id. It is the
+ * one place the host holds the current tenant -- the tenant area's React
+ * state (src/app.tsx) projects it for rendering, and a switch writes both,
+ * so the value a request carries and the value the chrome shows agree.
+ *
+ * It starts empty: the app settles it once the roster is read
+ * (src/app.tsx), which is what keeps a tenant-scoped request from firing
+ * before the current tenant's alias is known.
  */
-let currentTenantId: string | null = DEFAULT_TENANT_ID
+let currentTenantId: string | null = null
 
-/** The tenant the client announces on every request (the tenantProvider). */
+/** The tenant the switcher treats as current (its TenantOption.id). */
 export function getCurrentTenantId(): string | null {
   return currentTenantId
 }
 
-/** Records the host's current tenant; the switcher's pick lands here. */
+/** Records the host's current tenant; the switcher's pick (a tenant id) lands here. */
 export function setCurrentTenantId(tenantId: string | null): void {
   currentTenantId = tenantId
+}
+
+/**
+ * The alias -- the request-surface name -- of one tenant, in the given list
+ * (the placeholder by default); null when the id is null or not on the list.
+ * Kept separate from the tenant id so a rename (which moves the alias and not
+ * the id) cannot leak the id into the field the server resolves against.
+ */
+export function tenantAlias(
+  tenantId: string | null,
+  tenants: readonly DemoTenant[] = DEMO_TENANTS,
+): string | null {
+  if (tenantId === null) {
+    return null
+  }
+  return tenants.find((tenant) => tenant.id === tenantId)?.alias ?? null
+}
+
+/**
+ * The aliases the roster reported for known tenant ids, layered over the
+ * placeholder's own. The placeholder's list is what the switcher offers (the
+ * demo holds no roster of its own), but a name the placeholder fixed can go
+ * stale: a rename moves the alias and leaves the id, and a request that kept
+ * announcing the old alias would be refused 404. So the app reads the roster
+ * (its own generated operation) once a viewer is signed in and records each
+ * tenant's current alias here (src/app.tsx), and the announced value prefers
+ * it. The read is optional -- a viewer without it keeps the placeholder's
+ * aliases, which serve the demo's own deployment as it is seeded.
+ */
+let rosterAliases: ReadonlyMap<string, string> = new Map()
+
+/** Records the roster's current aliases, keyed by tenant id. */
+export function setTenantAliases(aliases: ReadonlyMap<string, string>): void {
+  rosterAliases = aliases
+}
+
+/**
+ * The value the client announces on every request as X-Tenant: the current
+ * tenant's ALIAS, the name the request surface carries -- the roster's current
+ * alias when the app has read it, the placeholder's otherwise. This is the
+ * tenantProvider the assembly reads per attempt (src/main.tsx); it is not
+ * getCurrentTenantId, whose value the switcher keys on.
+ */
+export function getCurrentTenantAlias(): string | null {
+  if (currentTenantId === null) {
+    return null
+  }
+  return rosterAliases.get(currentTenantId) ?? tenantAlias(currentTenantId)
 }
 
 /** The top bar's brand: the demo namespace's title, in the header's own type. */

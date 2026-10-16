@@ -178,16 +178,22 @@ API endpoints -- and set `runtime-config.json`'s `apiOrigin` to that origin.
 ### The tenant on the wire
 
 The backend's `api` endpoint is tenant-scoped: `tenant.resolve` reads the tenant
-from the request's `X-Tenant` header (`server/testdata/*.yaml`), so an `api`
-call that does not announce a tenant is refused 404. The tenant is a request-time
-routing fact, not a claim of the access token (the token carries none), so the
-client announces it as a header. `bootstrapDemoApp` wires the client's
-`tenantProvider` to the host's current tenant (`src/chrome.tsx` holds the one
-value, `getCurrentTenantId`; a switch in `src/app.tsx` writes it), which the
-client reads on every attempt and sends as `X-Tenant`. A product whose `api`
-endpoint resolves the tenant differently (a subdomain label, a path segment)
-repoints the server configuration and leaves this wiring alone -- the transport
-still announces the same value, and the copy decides where the server reads it.
+from the request's `X-Tenant` header (`server/testdata/*.yaml`) and looks the
+name up in the roster's **alias** column, so an `api` call that announces no
+tenant -- or a name the roster no longer holds -- is refused 404. The tenant is a
+request-time routing fact, not a claim of the access token (the token carries
+none), so the client announces it as a header. The host keeps the tenant's two
+names apart: the switcher keys on the tenant id (`src/chrome.tsx`'s
+`getCurrentTenantId`; a switch in `src/app.tsx` writes it), while
+`bootstrapDemoApp` wires the client's `tenantProvider` to the current tenant's
+**alias** (`getCurrentTenantAlias`), which the client reads on every attempt and
+sends as `X-Tenant`. A rename moves the alias and leaves the id, so once a viewer
+is signed in the app reads the roster (`tenantAdminTenantsList`, its own
+generated operation) and announces each tenant's current alias rather than a name
+a placeholder fixed. A product whose `api` endpoint resolves the tenant
+differently (a subdomain label, a path segment) repoints the server
+configuration and leaves this wiring alone -- the transport still announces the
+same value, and the copy decides where the server reads it.
 
 ### Sessions and the console
 
