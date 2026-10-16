@@ -115,7 +115,7 @@ describe('InvitationsPage', () => {
     const operations = withTenant({
       issueInvitation: (input) => {
         expiresSent.push(input.expiresAt)
-        return Promise.resolve()
+        return Promise.resolve(issuedInvitationFixture())
       },
     })
     renderWithProviders(<InvitationsPage />, { operations })
