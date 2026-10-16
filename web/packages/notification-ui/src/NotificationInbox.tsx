@@ -111,11 +111,17 @@ export function NotificationInbox() {
 
       <InlineError code={writeError} />
 
+      {/* The empty placeholder stands under the page's own "Notifications"
+          h1, which already names the space: a second heading here ("No
+          notifications") would re-enter the outline as a redundant chapter,
+          so the placeholder renders headerless as one role="status" region
+          (emptyHeadingLevel="none"). */}
       <AsyncSection<NotificationInboxPage>
         pending={pending}
         payload={pending ? undefined : page}
         empty={list.length === 0}
         headingLevel="h2"
+        emptyHeadingLevel="none"
         loading={
           <ListSkeleton
             label={t('inbox.loading')}

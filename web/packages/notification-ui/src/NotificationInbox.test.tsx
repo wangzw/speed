@@ -140,7 +140,16 @@ describe('NotificationInbox', () => {
 
   it('renders the empty placeholder when there are no messages', async () => {
     mount([])
-    expect(await screen.findByText(zhCN.inbox.empty.title)).toBeInTheDocument()
+    const emptyTitle = await screen.findByText(zhCN.inbox.empty.title)
+    expect(emptyTitle).toBeInTheDocument()
+    // The empty placeholder is a status, not a section: it must not enter the
+    // page heading outline (only the page's own "Notifications" h1 does), so
+    // its title carries no heading role, and the placeholder is a polite
+    // status region instead.
+    expect(
+      screen.queryByRole('heading', { name: zhCN.inbox.empty.title }),
+    ).not.toBeInTheDocument()
+    expect(emptyTitle.closest('[role="status"]')).not.toBeNull()
     // With nothing unread, the header action is disabled.
     expect(
       screen.getByRole('button', { name: zhCN.inbox.markAllRead }),
