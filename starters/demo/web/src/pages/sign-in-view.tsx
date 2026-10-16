@@ -67,6 +67,7 @@ export function SignInView(): ReactElement {
         <SignInScreen session={session} />
         <Divider sx={{ mt: 3, mb: 2 }} />
         <Typography
+          component="h2"
           variant="subtitle2"
           color="text.secondary"
           sx={{ fontWeight: 600 }}

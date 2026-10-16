@@ -25,10 +25,13 @@
  * administration reads (the roster, the audit query, the accounts list, the
  * permissions catalog, the settings and SMS surfaces) and the tenant area's
  * (the profile, sessions and factors the account page mounts, the object list,
- * the notification centre). Tenant-scoped pages whose read waits on a
- * tenant selector the sweep does not drive (impersonations, invitations,
- * SSO) still answer their selectors' roster read and render their
- * selector-plus-empty state; that is a real state, not a shell.
+ * the notification centre). The impersonations page also fires a caller-session
+ * read on mount -- GET /auth/impersonation, the operator's own impersonation
+ * status -- which is scripted here too, in data mode as a grant in force and in
+ * empty mode as the bare 404 the page reads as "not impersonating". Tenant-scoped
+ * pages whose read waits on a tenant selector the sweep does not drive
+ * (impersonations, invitations, SSO) still answer their selectors' roster read
+ * and render their selector-plus-empty state; that is a real state, not a shell.
  */
 
 import type { RequestFn } from '@speed/api-client'
@@ -38,9 +41,11 @@ import type {
   AuthnAdminAccount,
   AuthnAdminAccountList,
   AuthnAdminAccountEnvelope,
+  AuthnAdminImpersonation,
   AuthnAdminImpersonationList,
   AuthnAdminMemberList,
   AuthnAdminProviderList,
+  AuthnImpersonationGrantEnvelope,
   AuthnInvitePage,
   AuthnMfaFactors200,
   AuthnProfileProfile,
@@ -65,8 +70,26 @@ import type {
 /** The three states a route is swept in. */
 export type BackendMode = 'data' | 'empty' | 'error'
 
+/**
+ * A scripted refusal: the endpoint answers a bare 404 rather than a body. Some
+ * reads' real "empty" state IS a refusal, not an empty envelope -- the
+ * impersonation status read (GET /auth/impersonation) answers 404 when the
+ * caller has no impersonation in force, which the page reads as "not
+ * impersonating". Scripted as a resolved body it would instead surface a
+ * query error, so the endpoint's empty slot names this sentinel and the
+ * scripted request function rejects with a 404-shaped error the page handles.
+ */
+const NOT_FOUND = Symbol('scripted-not-found')
+
 /** An RFC 3339 instant, reused across the canned rows. */
 const INSTANT = '2026-01-01T00:00:00Z'
+
+/**
+ * The zero instant (0001-01-01T00:00:00Z): the sentinel the administration
+ * views read as "never" -- an impersonation still in force, an invitation not
+ * yet accepted.
+ */
+const ZERO_INSTANT = '0001-01-01T00:00:00Z'
 
 // --- The canned rows (data mode), typed against the generated shapes. -------
 
@@ -172,10 +195,45 @@ const PROFILE: AuthnProfileProfile = {
 
 // --- The data-mode bodies, keyed by the endpoint they answer. ---------------
 
+/**
+ * The caller's own impersonation grant, in force: the body the status read
+ * (GET /auth/impersonation) answers when one is active. The page renders it as
+ * the "current impersonation" surface (target, tenant, end instant, end
+ * action) and hides the start form while it holds.
+ */
+const IMPERSONATION_GRANT: AuthnImpersonationGrantEnvelope = {
+  grant: {
+    id: 'grant-1',
+    target: 'account-2',
+    tenant: 'acme',
+    started_at: INSTANT,
+    ends_at: INSTANT,
+  },
+}
+
+/**
+ * One impersonation record, in force: `ended_at` is the zero sentinel the
+ * views read as "still active", so the record row renders its state column as
+ * in force and offers the terminate action.
+ */
+const IMPERSONATION_RECORD: AuthnAdminImpersonation = {
+  id: 'imp-1',
+  actor: 'account-1',
+  target: 'account-2',
+  tenant: 'acme',
+  session_id: 'session-1',
+  started_at: INSTANT,
+  ends_at: INSTANT,
+  ended_at: ZERO_INSTANT,
+}
+
 interface RouteAnswer {
   /** The body the endpoint answers in data mode. */
   readonly data: unknown
-  /** The body the endpoint answers in empty mode. */
+  /**
+   * The body the endpoint answers in empty mode -- or NOT_FOUND when the
+   * endpoint's real empty state is a bare 404 rather than an empty envelope.
+   */
   readonly empty: unknown
 }
 
@@ -208,9 +266,10 @@ const EXACT: Readonly<Record<string, RouteAnswer>> = {
     { accounts: [], next_cursor: '' } satisfies AuthnAdminAccountList,
   ),
   '/auth/admin/impersonations': answer(
-    { impersonations: [], next_cursor: '' } satisfies AuthnAdminImpersonationList,
+    { impersonations: [IMPERSONATION_RECORD], next_cursor: '' } satisfies AuthnAdminImpersonationList,
     { impersonations: [], next_cursor: '' } satisfies AuthnAdminImpersonationList,
   ),
+  '/auth/impersonation': answer(IMPERSONATION_GRANT, NOT_FOUND),
   '/sms/admin/templates': answer(
     { templates: [SMS_TEMPLATE], next_cursor: '' } satisfies SmsAdminTemplatesList200,
     { templates: [], next_cursor: '' } satisfies SmsAdminTemplatesList200,
@@ -342,7 +401,10 @@ const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
   ],
 ]
 
-/** The body one endpoint answers in the given mode, or undefined if unscripted. */
+/**
+ * The body one endpoint answers in the given mode, or undefined if unscripted,
+ * or NOT_FOUND when the endpoint names a bare-404 empty state.
+ */
 function resolveBody(mode: 'data' | 'empty', url: string): unknown {
   const exact = EXACT[url]
   if (exact !== undefined) {
@@ -359,14 +421,24 @@ function resolveBody(mode: 'data' | 'empty', url: string): unknown {
 /**
  * The scripted request function for one mode. It is bound into the api-sdk
  * runtime seam (bindRequestFn) before a route renders, so every generated read
- * the page fires is answered from the table above.
+ * the page fires is answered from the table above. An endpoint whose answer is
+ * NOT_FOUND rejects with a 404-shaped error, the refusal the page reads as
+ * "no such resource".
  */
 export function createBackend(mode: BackendMode): RequestFn {
   const requestFn = <T,>(url: string): Promise<T> => {
     if (mode === 'error') {
       return Promise.reject(new Error(`scripted backend: ${url} refused`))
     }
-    return Promise.resolve(resolveBody(mode, url) as T)
+    const body = resolveBody(mode, url)
+    if (body === NOT_FOUND) {
+      return Promise.reject(
+        Object.assign(new Error(`scripted backend: ${url} not found`), {
+          status: 404,
+        }),
+      )
+    }
+    return Promise.resolve(body as T)
   }
   return requestFn as RequestFn
 }

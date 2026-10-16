@@ -184,12 +184,27 @@ needs no change.
   `src/a11y/**` and this leg runs only it (`vitest.a11y.config.ts`), so the sweep
   runs once.
 - **Rule set**: WCAG 2.1 level AA — the tags `wcag2a`, `wcag2aa`, `wcag21a`,
-  `wcag21aa`. Best-practice rules run as a separate advisory pass, reported and
-  never failing.
+  `wcag21aa` — **plus the page-structure rules** (`page-has-heading-one`,
+  `landmark-one-main`, `region`, `heading-order`). Those four carry only axe's
+  best-practice tag and no `wcag*` tag, so the gate runs them by rule id and
+  fails on them by rule: a landmark or heading defect that appears only in the
+  composition (the frame and the page together) is exactly what this tier is
+  for. The remaining best-practice rules run as a separate advisory pass,
+  reported and never failing.
 - **Threshold**: a `serious` or `critical` axe violation fails the gate, naming
   the route and state and listing the findings by rule id, impact and node count;
   a `moderate`, `minor` or null-impact violation is warned and registered in the
-  run's report — **never silently dropped** (warnings are first-class).
+  run's report — **never silently dropped** (warnings are first-class). The
+  page-structure rules fail regardless of impact (axe rates them only moderate,
+  so an impact-only threshold would warn and pass), and an indeterminate
+  (`incomplete`) result is warned, not failed.
+- **The two tiers fail differently, deliberately.** The component tier
+  (`@speed/test-utils/axe`) fails on *any* violation; the route tier above it
+  fails only on serious/critical findings plus any page-structure violation, and
+  treats `incomplete` as a warning. So the broader, page-level gate is looser on
+  impact than the component scans beneath it — **not** a superset of their
+  threshold — because it scans a whole assembled document where a mid-level
+  finding from the frame's chrome is noise the component scan would not raise.
 - **What it proves, and what it does not.** axe is a mechanical check covering
   only the decidable subset of WCAG — the industry working estimate is 30–40%. It
   cannot judge reading order, whether an accessible name is a *good* name,

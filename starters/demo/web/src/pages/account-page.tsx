@@ -83,12 +83,17 @@ export function AccountSettingsPage(): ReactElement {
  * `link` flow back and, on completion, returns the viewer to the account
  * page. With no provider configured no flow reaches here today; the route
  * exists so a product that configures one has the completion point wired.
+ * The page carries its own PageHeader (the one h1 for the route), because
+ * account-ui's handler renders none and the route still needs a
+ * page-level heading.
  */
 export function AccountBindingCallbackPage(): ReactElement {
   const { session } = useAppServices()
   const navigate = useNavigate()
+  const { t } = useTranslation(DEMO_NAMESPACE)
   return (
     <Box sx={{ maxWidth: 480 }}>
+      <PageHeader title={t('account.bindingCallback.title')} sx={{ mb: 3 }} />
       <BindingCallbackHandler
         session={session}
         onBound={() => navigate(ACCOUNT_PATH)}

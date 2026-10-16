@@ -80,6 +80,38 @@ function concretize(pattern: string): string {
 /** The distinct URL paths the app's route table declares. */
 const ROUTE_PATHS = [...new Set(routes.map((route) => concretize(route.path)))]
 
+/**
+ * The concrete paths the composition ships, pinned so a route that drops out
+ * of the table cannot leave the sweep silently -- the coverage guard below
+ * asserts each of these is still enumerated. Drawn from the app's route table:
+ * the business routes (the home page, the account page, the object store, the
+ * notification centre, the binding callback), the auth and invitation
+ * landings, and the console area under CONSOLE_PREFIX, every `:param`
+ * concretized to `sample` as `concretize` does.
+ */
+const EXPECTED_ROUTE_PATHS = [
+  '/',
+  '/account',
+  '/account/callback',
+  '/objects',
+  '/notifications',
+  '/auth/callback',
+  '/invitations/sample',
+  '/console',
+  '/console/tenants',
+  '/console/tenants/sample',
+  '/console/accounts',
+  '/console/sessions',
+  '/console/impersonations',
+  '/console/permissions',
+  '/console/invitations',
+  '/console/sso',
+  '/console/settings',
+  '/console/sms',
+  '/console/audit',
+  '/console/audit/sample',
+] as const
+
 /** One scanned route/state combination's violations, for the closing report. */
 interface ScanRecord {
   readonly path: string
@@ -145,11 +177,12 @@ beforeEach(() => {
 
 describe('route-level accessibility (WCAG 2.1 AA)', () => {
   it('enumerates the app route table', () => {
-    // The sweep's coverage is the route table; an empty or shrunken one would
-    // scan nothing and pass. Pin the shape the composition ships.
-    expect(ROUTE_PATHS.length).toBeGreaterThan(0)
-    expect(ROUTE_PATHS).toContain('/')
-    expect(ROUTE_PATHS).toContain('/console')
+    // The sweep's coverage is the route table; a route that drops out of it is
+    // scanned in no state and lets a defect live there silently. Pin every
+    // concrete path the composition ships so any one disappearing fails here.
+    // (The check requires the pinned paths be present, not that they be the
+    // only ones: a newly added route is scanned without the list changing.)
+    expect(ROUTE_PATHS).toEqual(expect.arrayContaining([...EXPECTED_ROUTE_PATHS]))
   })
 
   for (const path of ROUTE_PATHS) {

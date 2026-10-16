@@ -11,13 +11,21 @@
  *
  * Rule tags and thresholds. The gate runs the WCAG 2.1 level AA success
  * criteria -- `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa` (A plus AA, level A
- * applying at every level above it). Best-practice rules are NOT part of the
- * gate: they are a separate advisory pass (`runBestPracticePass`), reported so
- * a signal is not lost but never failing. The caller decides fail/warn by the
- * finding's IMPACT, not its tag: `serious` and `critical` fail the gate,
- * `moderate` and `minor` are warned and registered (see `isFailing`). A rule
- * whose impact axe leaves null is treated as a warning, reported rather than
- * silently dropped.
+ * applying at every level above it) -- PLUS the page-structure rules (see
+ * `PAGE_STRUCTURE_RULES`: a level-one heading, a single main landmark, landmark
+ * containment, heading order). Those four carry only axe's best-practice tag,
+ * so a tag-only gate would never run them; the gate runs them by rule id and
+ * fails on them by rule, because a page-structure defect is exactly the
+ * composition-tier signal this tier exists to catch. The remaining
+ * best-practice rules stay out: they are a separate advisory pass
+ * (`runBestPracticePass`), reported so a signal is not lost but never failing.
+ * For every other rule the caller decides fail/warn by the finding's IMPACT,
+ * not its tag: `serious` and `critical` fail the gate, `moderate` and `minor`
+ * are warned and registered (see `isFailing`). A rule whose impact axe leaves
+ * null is treated as a warning, reported rather than silently dropped. The
+ * net threshold is "a serious/critical WCAG violation, or any page-structure
+ * violation" -- the page-structure rules fail regardless of impact, since
+ * axe rates them only moderate.
  *
  * What axe covers, and what it does not. axe is a MECHANICAL check: it can
  * prove only the subset of accessibility that is decidable from the DOM -- the
@@ -40,8 +48,10 @@
  * probe throws and every such check would report "incomplete" -- passing by
  * indeterminacy no matter what rendered. The elementsFromPoint polyfill below
  * (an empty hit stack, the truthful answer for an engine that lays nothing
- * out) restores determinacy, so a page that renders no heading fails with a
- * real page-has-heading-one violation rather than passing incomplete.
+ * out) restores determinacy for those checks, and since the gate runs
+ * page-has-heading-one and landmark-one-main as page-structure rules, a page
+ * that renders no heading fails the gate with a real page-has-heading-one
+ * violation rather than passing incomplete.
  */
 
 import axe from 'axe-core'
@@ -78,6 +88,37 @@ export const WCAG_AA_TAGS = [
 /** The advisory rule set: reported, never failing. */
 export const BEST_PRACTICE_TAGS = ['best-practice'] as const
 
+/**
+ * The page-structure rules the gate runs and fails on beside the WCAG tags.
+ *
+ * axe 4.14 tags all four best-practice -- none carries a `wcag*` tag (measured:
+ * page-has-heading-one, landmark-one-main and heading-order carry
+ * `cat.semantics` + best-practice, region carries `cat.keyboard` + best-practice)
+ * -- so a tag-only gate never runs them: they fall into the advisory pass and
+ * warn, and the composition-tier defect the sweep claims to catch (a heading
+ * order that breaks across the frame boundary, a page with no main landmark)
+ * slips past the failing threshold. Running them here as gate rules closes
+ * that gap. Their axe impact is only moderate, so the gate fails them by rule
+ * id, not by impact (see `isFailing`).
+ */
+export const PAGE_STRUCTURE_RULES = [
+  'page-has-heading-one',
+  'landmark-one-main',
+  'region',
+  'heading-order',
+] as const
+
+/**
+ * The rule ids the gate runs: every rule the WCAG AA tags select, plus the
+ * page-structure rules. axe expands only one runOnly selector at a time (its
+ * `runOnly` is either a tag set or a rule list), so the WCAG set is resolved to
+ * rule ids through axe's own metadata and the two lists are merged.
+ */
+function gateRuleIds(): string[] {
+  const wcag = axe.getRules([...WCAG_AA_TAGS]).map((rule) => rule.ruleId)
+  return [...new Set([...wcag, ...PAGE_STRUCTURE_RULES])]
+}
+
 function toFinding(result: axe.Result): A11yFinding {
   return {
     rule: result.id,
@@ -109,15 +150,13 @@ function ensureDocumentDefaults(): void {
 }
 
 /**
- * Runs axe over the current document, scoped to the given rule tags, with
+ * Runs axe over the current document under the given selector, with
  * color-contrast disabled (jsdom cannot compute it -- see the header).
  */
-export async function scanPage(
-  tags: readonly string[] = WCAG_AA_TAGS,
-): Promise<A11yScanResult> {
+async function runAxe(runOnly: axe.RunOptions['runOnly']): Promise<A11yScanResult> {
   ensureDocumentDefaults()
   const result = await axe.run(document, {
-    runOnly: { type: 'tag', values: [...tags] },
+    runOnly,
     rules: { 'color-contrast': { enabled: false } },
   })
   return {
@@ -126,16 +165,30 @@ export async function scanPage(
   }
 }
 
+/**
+ * Runs the gate: the WCAG 2.1 level AA rules plus the page-structure rules
+ * (see `PAGE_STRUCTURE_RULES`), over the current document.
+ */
+export async function scanPage(): Promise<A11yScanResult> {
+  return runAxe({ type: 'rule', values: gateRuleIds() })
+}
+
 /** The advisory best-practice pass over the current document. */
 export async function runBestPracticePass(): Promise<A11yScanResult> {
-  return scanPage(BEST_PRACTICE_TAGS)
+  return runAxe({ type: 'tag', values: [...BEST_PRACTICE_TAGS] })
 }
 
 /**
- * Whether a finding fails the gate: axe's two highest impacts do. Everything
- * else -- moderate, minor, and a null impact -- is warned and registered.
+ * Whether a finding fails the gate. A page-structure finding always does: it
+ * is the composition-tier signal the gate exists to catch, and axe rates it
+ * only moderate, so an impact-only threshold would warn and pass. Every other
+ * finding fails when axe rates it `serious` or `critical`; the rest -- moderate,
+ * minor, and a null impact -- is warned and registered.
  */
 export function isFailing(finding: A11yFinding): boolean {
+  if ((PAGE_STRUCTURE_RULES as readonly string[]).includes(finding.rule)) {
+    return true
+  }
   return finding.impact === 'serious' || finding.impact === 'critical'
 }
 
