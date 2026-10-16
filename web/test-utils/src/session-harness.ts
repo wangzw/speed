@@ -74,11 +74,39 @@ export function principal(
   }
 }
 
-/** The GET /auth/methods body: the deployment's enabled method names. */
-export function methodList(methods: readonly string[]): {
-  methods: readonly string[]
+/** One method in a GET /auth/methods body: the required `name` and `kind`
+ * plus the optional descriptor fields the wire may carry. */
+export interface MethodDescriptorBody {
+  name: string
+  kind: string
+  protocol?: string
+  label?: string
+  opens_account?: boolean
+  fields?: { name: string; kind: string; required?: boolean; secret?: boolean }[]
+}
+
+/** The GET /auth/methods body: the deployment's enabled method
+ * descriptors, whether a first login may open an account, and the second
+ * factor kinds offered. A plain string is shorthand for a `form`
+ * descriptor of that name. */
+export function methodList(
+  methods: readonly (string | MethodDescriptorBody)[],
+  overrides: {
+    signup?: boolean
+    mfaFactors?: readonly string[]
+  } = {},
+): {
+  methods: MethodDescriptorBody[]
+  signup: { enabled: boolean }
+  mfa: { factors: string[] }
 } {
-  return { methods: [...methods] }
+  return {
+    methods: methods.map((entry) =>
+      typeof entry === 'string' ? { name: entry, kind: 'form' } : entry,
+    ),
+    signup: { enabled: overrides.signup ?? false },
+    mfa: { factors: [...(overrides.mfaFactors ?? [])] },
+  }
 }
 
 type OpenState = 'first' | 'second' | 'enroll' | 'ready' | 'processing'

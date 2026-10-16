@@ -100,6 +100,7 @@ import type {
   AuthnLoginStartBody,
   AuthnLoginStep,
   AuthnLoginToken,
+  AuthnMethodDescriptor,
   AuthnProfileIdentifier,
   AuthnProfileLink,
   AuthnProfileProfile,
@@ -647,15 +648,51 @@ function parseIssuedTokens(
   }
 }
 
+/** Validates one method descriptor of the GET /auth/methods body. `name`
+ * and `kind` are the required fields; the rest are carried as the wire
+ * sends them (a method that opens with a form carries its `fields`). */
+function parseMethodDescriptor(value: unknown): AuthnMethodDescriptor {
+  const rec = asObject(value, 'methods entry is not an object')
+  const descriptor: AuthnMethodDescriptor = {
+    name: requireString(rec.name, 'method descriptor carries no name'),
+    kind: requireString(rec.kind, 'method descriptor carries no kind'),
+  }
+  if (typeof rec.protocol === 'string') {
+    descriptor.protocol = rec.protocol
+  }
+  if (typeof rec.label === 'string') {
+    descriptor.label = rec.label
+  }
+  if (rec.opens_account === true) {
+    descriptor.opens_account = true
+  }
+  if (Array.isArray(rec.fields)) {
+    descriptor.fields = rec.fields.map((entry) => parseField(entry))
+  }
+  return descriptor
+}
+
 function parseMethodList(body: unknown): AuthnMethodList {
   const rec = asObject(body, 'methods 2xx carries no body document')
   if (!Array.isArray(rec.methods)) {
     throw protocolViolation('methods 2xx carries no methods array')
   }
+  const signup = asObject(rec.signup, 'methods 2xx carries no signup document')
+  if (typeof signup.enabled !== 'boolean') {
+    throw protocolViolation('methods signup carries no enabled boolean')
+  }
+  const mfa = asObject(rec.mfa, 'methods 2xx carries no mfa document')
+  if (!Array.isArray(mfa.factors)) {
+    throw protocolViolation('methods mfa carries no factors array')
+  }
   return {
-    methods: rec.methods.map((entry) =>
-      requireString(entry, 'methods entry is not a string'),
-    ),
+    methods: rec.methods.map((entry) => parseMethodDescriptor(entry)),
+    signup: { enabled: signup.enabled },
+    mfa: {
+      factors: mfa.factors.map((entry) =>
+        requireString(entry, 'mfa factor is not a string'),
+      ),
+    },
   }
 }
 

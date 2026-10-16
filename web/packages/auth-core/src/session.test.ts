@@ -113,10 +113,24 @@ describe('initial state', () => {
 describe('list methods', () => {
   it('returns the deployment list the server answered, not a hard-coded set', async () => {
     const harness = makeHarness({
-      [LOGIN_METHODS]: () => methodList(['password', 'wechat.web']),
+      [LOGIN_METHODS]: () =>
+        methodList(
+          [
+            'password',
+            { name: 'wechat.web', kind: 'redirect', protocol: 'oauth2' },
+          ],
+          { signup: true, mfaFactors: ['totp'] },
+        ),
     })
     const methods = await harness.session.listMethods()
-    expect(methods.methods).toEqual(['password', 'wechat.web'])
+    expect(methods).toEqual({
+      methods: [
+        { name: 'password', kind: 'form' },
+        { name: 'wechat.web', kind: 'redirect', protocol: 'oauth2' },
+      ],
+      signup: { enabled: true },
+      mfa: { factors: ['totp'] },
+    })
     expect(harness.calls).toHaveLength(1)
     expect(harness.calls[0]?.path).toBe('/auth/methods')
   })
@@ -126,6 +140,34 @@ describe('list methods', () => {
       [LOGIN_METHODS]: () => ({ notMethods: true }),
     })
     await expectProtocolViolation(harness.session.listMethods(), harness)
+  })
+
+  it('refuses a methods 2xx that drops a required descriptor field', async () => {
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [{ name: 'password' }],
+        signup: { enabled: true },
+        mfa: { factors: [] },
+      }),
+    })
+    await expectProtocolViolation(harness.session.listMethods(), harness)
+  })
+
+  it('refuses a methods 2xx that drops the signup or mfa summary', async () => {
+    const missingSignup = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [],
+        mfa: { factors: [] },
+      }),
+    })
+    await expectProtocolViolation(missingSignup.session.listMethods(), missingSignup)
+    const missingMFA = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [],
+        signup: { enabled: false },
+      }),
+    })
+    await expectProtocolViolation(missingMFA.session.listMethods(), missingMFA)
   })
 })
 
