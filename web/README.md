@@ -114,6 +114,11 @@ web/
                                              declaration; no tenant switcher and no
                                              tenant-scoped key, since its endpoints do not
                                              resolve a tenant
+    notification-ui/    @speed/notification-ui -- the notification center: the header bell,
+                                             the inbox with read/mark-all-read, the per-type
+                                             channel preference matrix, the composed page and
+                                             the live server-sent-event subscription, over the
+                                             generated notification operations
 ```
 
 Root `package.json` holds only what every package shares (typescript,
