@@ -13,6 +13,8 @@
 export { LAYOUT_KIT_NAMESPACE, layoutKitResources } from './resources.js'
 export {
   AppShell,
+  type AppShellNavEntry,
+  type AppShellNavGroup,
   type AppShellNavItem,
   type AppShellProps,
 } from './components/AppShell.js'

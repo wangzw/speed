@@ -38,7 +38,7 @@ import { emittedStyleText } from '@speed/test-utils/emitted-css'
 import { mockMatchMedia } from '@speed/test-utils/matchMedia'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { stubResizeObserver } from '../../test-utils/resize-observer.js'
-import { AppShell, type AppShellNavItem } from './AppShell.js'
+import { AppShell, type AppShellNavEntry, type AppShellNavItem } from './AppShell.js'
 
 // Some harnesses below put an app route into location.hash the way a
 // hash-routed host would; nothing else in this file reads the hash, but
@@ -779,6 +779,191 @@ describe('AppShell', () => {
         (drawerSpacer as Node).compareDocumentPosition(nav as Node) &
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy()
+    })
+  })
+
+  describe('navigation groups', () => {
+    // A grouped navigation: two titled, collapsible sections whose entries are
+    // ordinary links. Backward compatibility is the point of the flat test at
+    // the end -- an existing AppShellNavItem[] host renders exactly as before.
+    const GROUPED: readonly AppShellNavEntry[] = [
+      {
+        id: 'overview',
+        label: 'Overview',
+        items: [{ id: 'home', label: 'Home', href: '/home', selected: true }],
+      },
+      {
+        id: 'admin',
+        label: 'Administration',
+        items: [
+          { id: 'users', label: 'Users', href: '/users' },
+          { id: 'roles', label: 'Roles', href: '/roles' },
+        ],
+      },
+    ]
+
+    it('renders each group as a titled section whose heading is a disclosure over its entries', () => {
+      mockMatchMedia(true)
+      const { getByRole } = renderWithProviders(
+        <AppShell navItems={GROUPED}>content</AppShell>,
+      )
+      // The heading is the expand control, open by default.
+      expect(getByRole('button', { name: 'Overview' })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      )
+      // The entries beneath it are real links, selection preserved.
+      const home = getByRole('link', { name: 'Home' })
+      expect(home).toHaveAttribute('href', '/home')
+      expect(home).toHaveAttribute('aria-current', 'page')
+      expect(getByRole('link', { name: 'Roles' })).toHaveAttribute('href', '/roles')
+    })
+
+    it('collapses and expands a group: aria-expanded flips and its entries leave the accessibility tree', async () => {
+      mockMatchMedia(true)
+      const user = userEvent.setup()
+      const { getByRole, queryByRole } = renderWithProviders(
+        <AppShell navItems={GROUPED}>content</AppShell>,
+      )
+      expect(getByRole('link', { name: 'Users' })).toBeInTheDocument()
+
+      await user.click(getByRole('button', { name: 'Administration' }))
+      expect(getByRole('button', { name: 'Administration' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      )
+      // Collapsed: the group's own entries are gone from the a11y tree ...
+      expect(queryByRole('link', { name: 'Users' })).not.toBeInTheDocument()
+      expect(queryByRole('link', { name: 'Roles' })).not.toBeInTheDocument()
+      // ... while another group's entries are untouched.
+      expect(getByRole('link', { name: 'Home' })).toBeInTheDocument()
+
+      await user.click(getByRole('button', { name: 'Administration' }))
+      expect(getByRole('button', { name: 'Administration' })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      )
+      expect(getByRole('link', { name: 'Users' })).toBeInTheDocument()
+    })
+
+    it('starts a group collapsed when defaultCollapsed is set', () => {
+      mockMatchMedia(true)
+      const { getByRole, queryByRole } = renderWithProviders(
+        <AppShell
+          navItems={[
+            {
+              id: 'closed',
+              label: 'Closed group',
+              defaultCollapsed: true,
+              items: [{ id: 'hidden', label: 'Hidden entry', href: '/hidden' }],
+            },
+          ]}
+        >
+          content
+        </AppShell>,
+      )
+      expect(getByRole('button', { name: 'Closed group' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      )
+      expect(queryByRole('link', { name: 'Hidden entry' })).not.toBeInTheDocument()
+    })
+
+    it('nests an item with children as an indented list of real links, reusing selected/aria-current', () => {
+      mockMatchMedia(true)
+      const { getByRole } = renderWithProviders(
+        <AppShell
+          navItems={[
+            {
+              id: 'identity',
+              label: 'Identity',
+              children: [
+                { id: 'users', label: 'Users', href: '/users', selected: true },
+                { id: 'groups', label: 'Groups', href: '/groups' },
+              ],
+            },
+          ]}
+        >
+          content
+        </AppShell>,
+      )
+      // The parent is a disclosure (not a link), open by default.
+      expect(getByRole('button', { name: 'Identity' })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      )
+      // Each child is a real link, indented one level (theme spacing 4 = 32px).
+      const users = getByRole('link', { name: 'Users' })
+      expect(users).toHaveAttribute('href', '/users')
+      expect(users).toHaveStyle({ paddingLeft: '32px' })
+      expect(users).toHaveAttribute('aria-current', 'page')
+      const groups = getByRole('link', { name: 'Groups' })
+      expect(groups).toHaveAttribute('href', '/groups')
+      expect(groups).not.toHaveAttribute('aria-current')
+    })
+
+    it('collapses a parent with children, hiding the nested entries', async () => {
+      mockMatchMedia(true)
+      const user = userEvent.setup()
+      const { getByRole, queryByRole } = renderWithProviders(
+        <AppShell
+          navItems={[
+            {
+              id: 'parent',
+              label: 'Parent',
+              children: [{ id: 'child', label: 'Child', href: '/child' }],
+            },
+          ]}
+        >
+          content
+        </AppShell>,
+      )
+      expect(getByRole('link', { name: 'Child' })).toBeInTheDocument()
+      await user.click(getByRole('button', { name: 'Parent' }))
+      expect(getByRole('button', { name: 'Parent' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      )
+      expect(queryByRole('link', { name: 'Child' })).not.toBeInTheDocument()
+    })
+
+    it('renders a flat list unchanged when the host declares no groups or children', () => {
+      mockMatchMedia(true)
+      const { getByRole, queryAllByRole } = renderWithProviders(
+        <AppShell navItems={NAV_ITEMS}>content</AppShell>,
+      )
+      // Backward compatibility: the original AppShellNavItem[] shape renders
+      // the same links and introduces no disclosure controls.
+      expect(getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/home')
+      expect(getByRole('link', { name: 'Reports' })).toHaveAttribute('href', '/reports')
+      expect(queryAllByRole('button')).toHaveLength(0)
+    })
+
+    it('has no axe violations on the grouped and nested layout', async () => {
+      mockMatchMedia(true)
+      renderWithProviders(
+        <AppShell
+          navItems={[
+            ...GROUPED,
+            {
+              id: 'nested',
+              label: 'Nested section',
+              items: [
+                {
+                  id: 'identity',
+                  label: 'Identity',
+                  children: [
+                    { id: 'accounts', label: 'Accounts', href: '/accounts' },
+                  ],
+                },
+              ],
+            },
+          ]}
+        >
+          <h1>Main content</h1>
+        </AppShell>,
+      )
+      await expectNoAxeViolations()
     })
   })
 

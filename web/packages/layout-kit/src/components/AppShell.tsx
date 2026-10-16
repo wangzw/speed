@@ -21,6 +21,20 @@
  * exactly the host content passed in and nothing implicit -- an absent
  * slot renders nothing, never a placeholder.
  *
+ * The navigation has two optional levels beyond a flat list, both purely
+ * additive over the original `AppShellNavItem[]`. A `navItems` element
+ * may be an `AppShellNavGroup` -- a titled, collapsible section whose
+ * heading is itself the disclosure control (`aria-expanded` /
+ * `aria-controls`) and whose entries sit beneath it -- and a plain
+ * `AppShellNavItem` may carry `children`, turning it into an expandable
+ * parent whose child entries render indented, each a real link or
+ * button. Both reuse the leaf activation and the selected/`aria-current`
+ * convention unchanged, so a host that passes no groups and no children
+ * renders exactly the flat list it did before. A collapsed group or
+ * parent keeps its entries in the DOM under the `hidden` attribute, so
+ * assistive tech (and Testing Library's role queries) do not reach them
+ * while the section is closed.
+ *
  * Narrow-viewport protection (additive, CSS-only, no prop changes):
  * the Toolbar row and the `headerActions` group both carry a responsive
  * `flexWrap: 'wrap'` so a host that supplies several header actions
@@ -85,6 +99,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   CloseIcon,
+  ExpandMoreIcon,
   MenuIcon,
 } from '../internal/icons.js'
 
@@ -107,11 +122,50 @@ export interface AppShellNavItem {
   readonly onClick?: MouseEventHandler<HTMLElement>
   /** Whether this is the current page/section, computed by the host. */
   readonly selected?: boolean
+  /**
+   * Second-level nesting: the item's own child entries, each a real route.
+   * When set, the item becomes an expandable parent -- its row is a
+   * disclosure toggle (`aria-expanded` / `aria-controls`) whose children
+   * render as an indented list of normal navigation entries. The parent's
+   * own `href` / `onClick` / `selected` are not rendered: the routes live
+   * in the children, so a parent with children has no single destination
+   * of its own. Omit it for a plain leaf entry.
+   */
+  readonly children?: readonly AppShellNavItem[]
 }
 
+/**
+ * One titled, collapsible group of navigation entries: a heading that is
+ * itself the disclosure control (`aria-expanded` / `aria-controls`) over
+ * the `items` beneath it. Host content throughout -- the `label` is
+ * already translated and the `items` are ordinary navigation entries.
+ */
+export interface AppShellNavGroup {
+  /** Stable identity for the React key and the group's initial state. */
+  readonly id: string
+  /** The group's visible heading; host content, already translated. */
+  readonly label: ReactNode
+  /** The entries inside the group, in order. */
+  readonly items: readonly AppShellNavItem[]
+  /**
+   * Whether the group starts collapsed. Defaults to false (expanded), so
+   * a host that never sets it shows the group's entries.
+   */
+  readonly defaultCollapsed?: boolean
+}
+
+/** One navigation entry or grouped section, as the host declares it. */
+export type AppShellNavEntry = AppShellNavItem | AppShellNavGroup
+
 export interface AppShellProps {
-  /** The navigation entries rendered in the drawer, in order. */
-  readonly navItems: readonly AppShellNavItem[]
+  /**
+   * The navigation entries rendered in the drawer, in order. Each element
+   * is either a plain entry (`AppShellNavItem`) or a titled collapsible
+   * group (`AppShellNavGroup`); the union widens the previous
+   * `AppShellNavItem[]` shape, so an existing host that passes only plain
+   * entries is unchanged.
+   */
+  readonly navItems: readonly AppShellNavEntry[]
   /** Start-of-AppBar content: typically a logo or product name. */
   readonly header?: ReactNode
   /** End-of-AppBar content, before `userMenu`: search, notifications, and the like. */
@@ -166,56 +220,196 @@ export interface AppShellProps {
 
 const DEFAULT_SIDEBAR_WIDTH = 280
 
-function NavList({
-  navItems,
+/** Narrows a declared entry to a grouped section. */
+function isNavGroup(entry: AppShellNavEntry): entry is AppShellNavGroup {
+  return 'items' in entry
+}
+
+/**
+ * The chevron shown by a disclosure control, its direction reflecting the
+ * expanded state. Decorative: the control's own `aria-expanded` reports
+ * the state to assistive tech.
+ */
+function DisclosureChevron({ expanded }: { readonly expanded: boolean }) {
+  return (
+    <Box
+      component="span"
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        flexShrink: 0,
+        transform: expanded ? 'rotate(180deg)' : 'none',
+        transition: 'transform 150ms',
+      }}
+    >
+      <ExpandMoreIcon />
+    </Box>
+  )
+}
+
+/**
+ * One navigation entry. A leaf renders as a link (`href`) or a button
+ * (`onClick`); an entry carrying `children` renders as an expandable
+ * parent whose child entries nest below it. `indented` shifts a nested
+ * entry to the right so its level below the parent reads visually.
+ */
+function NavItemRow({
+  item,
   onNavigate,
+  indented = false,
 }: {
-  readonly navItems: readonly AppShellNavItem[]
+  readonly item: AppShellNavItem
   /**
-   * Fired after the item's own onClick, when it has one, on every item
-   * activation. The drawer variants decide what this means: the
-   * temporary drawer closes itself on it (uncontrolled), the permanent
-   * drawer passes none.
+   * Fired after the entry's own onClick, when it has one, on every
+   * activation. The drawer variants decide what this means: the temporary
+   * drawer closes itself on it (uncontrolled), the permanent drawer
+   * passes none. An expandable parent fires this only from its children --
+   * expanding the parent is not navigating.
    */
   readonly onNavigate?: () => void
+  /** Whether this entry sits one level below its parent. */
+  readonly indented?: boolean
 }) {
-  const activate = (event: MouseEvent<HTMLElement>, item: AppShellNavItem): void => {
+  // Called unconditionally (hook order): only the parent branch uses them.
+  const contentId = useId()
+  const [expanded, setExpanded] = useState(true)
+  const indentSx = indented ? { pl: 4 } : undefined
+
+  const activate = (event: MouseEvent<HTMLElement>): void => {
     item.onClick?.(event)
     onNavigate?.()
   }
+
+  const hasChildren = item.children !== undefined && item.children.length > 0
+  if (hasChildren) {
+    return (
+      <ListItem disablePadding sx={{ display: 'block' }}>
+        <ListItemButton
+          aria-expanded={expanded}
+          aria-controls={contentId}
+          onClick={() => {
+            setExpanded((previous) => !previous)
+          }}
+        >
+          {item.icon !== undefined && <ListItemIcon>{item.icon}</ListItemIcon>}
+          <ListItemText primary={item.label} />
+          <DisclosureChevron expanded={expanded} />
+        </ListItemButton>
+        <Box id={contentId} hidden={!expanded}>
+          <List disablePadding>
+            {(item.children ?? []).map((child) => (
+              <NavItemRow
+                key={child.id}
+                item={child}
+                onNavigate={onNavigate}
+                indented
+              />
+            ))}
+          </List>
+        </Box>
+      </ListItem>
+    )
+  }
+
+  const label = (
+    <>
+      {item.icon !== undefined && <ListItemIcon>{item.icon}</ListItemIcon>}
+      <ListItemText primary={item.label} />
+    </>
+  )
+  return (
+    <ListItem disablePadding>
+      {item.href !== undefined ? (
+        <ListItemButton
+          component="a"
+          href={item.href}
+          onClick={activate}
+          selected={item.selected ?? false}
+          aria-current={item.selected === true ? 'page' : undefined}
+          sx={indentSx}
+        >
+          {label}
+        </ListItemButton>
+      ) : (
+        <ListItemButton
+          onClick={activate}
+          selected={item.selected ?? false}
+          aria-current={item.selected === true ? 'page' : undefined}
+          sx={indentSx}
+        >
+          {label}
+        </ListItemButton>
+      )}
+    </ListItem>
+  )
+}
+
+/**
+ * One titled collapsible group: a heading that is itself the disclosure
+ * control over the group's entries. The entries stay ordinary navigation
+ * entries (each reusing the same link/button activation and
+ * selected/`aria-current` convention); `defaultCollapsed` seeds the
+ * initial state, and every later toggle is this control's own.
+ */
+function NavGroupItem({
+  group,
+  onNavigate,
+}: {
+  readonly group: AppShellNavGroup
+  readonly onNavigate?: () => void
+}) {
+  const contentId = useId()
+  const [expanded, setExpanded] = useState(!(group.defaultCollapsed ?? false))
+  return (
+    <ListItem disablePadding sx={{ display: 'block' }}>
+      <ListItemButton
+        aria-expanded={expanded}
+        aria-controls={contentId}
+        onClick={() => {
+          setExpanded((previous) => !previous)
+        }}
+      >
+        <ListItemText
+          primary={group.label}
+          slotProps={{
+            primary: { variant: 'subtitle2', color: 'text.secondary' },
+          }}
+        />
+        <DisclosureChevron expanded={expanded} />
+      </ListItemButton>
+      <Box id={contentId} hidden={!expanded}>
+        <List disablePadding>
+          {group.items.map((item) => (
+            <NavItemRow key={item.id} item={item} onNavigate={onNavigate} />
+          ))}
+        </List>
+      </Box>
+    </ListItem>
+  )
+}
+
+function NavList({
+  entries,
+  onNavigate,
+}: {
+  readonly entries: readonly AppShellNavEntry[]
+  /**
+   * Fired after a leaf entry's own onClick, when it has one, on every
+   * activation. The drawer variants decide what this means: the temporary
+   * drawer closes itself on it (uncontrolled), the permanent drawer
+   * passes none.
+   */
+  readonly onNavigate?: () => void
+}) {
   return (
     <List>
-      {navItems.map((item) => {
-        const label = (
-          <>
-            {item.icon !== undefined && <ListItemIcon>{item.icon}</ListItemIcon>}
-            <ListItemText primary={item.label} />
-          </>
-        )
-        return (
-          <ListItem key={item.id} disablePadding>
-            {item.href !== undefined ? (
-              <ListItemButton
-                component="a"
-                href={item.href}
-                onClick={(event) => activate(event, item)}
-                selected={item.selected ?? false}
-                aria-current={item.selected === true ? 'page' : undefined}
-              >
-                {label}
-              </ListItemButton>
-            ) : (
-              <ListItemButton
-                onClick={(event) => activate(event, item)}
-                selected={item.selected ?? false}
-                aria-current={item.selected === true ? 'page' : undefined}
-              >
-                {label}
-              </ListItemButton>
-            )}
-          </ListItem>
-        )
-      })}
+      {entries.map((entry) =>
+        isNavGroup(entry) ? (
+          <NavGroupItem key={entry.id} group={entry} onNavigate={onNavigate} />
+        ) : (
+          <NavItemRow key={entry.id} item={entry} onNavigate={onNavigate} />
+        ),
+      )}
     </List>
   )
 }
@@ -340,7 +534,7 @@ export function AppShell({
   // comment for who owns it in which mode.
   const navContent = (onNavigate?: () => void) => (
     <Box component="nav" aria-label={resolvedNavLabel} sx={{ width: '100%', boxSizing: 'border-box' }}>
-      <NavList navItems={navItems} onNavigate={onNavigate} />
+      <NavList entries={navItems} onNavigate={onNavigate} />
     </Box>
   )
 

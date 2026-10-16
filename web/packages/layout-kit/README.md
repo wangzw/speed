@@ -20,7 +20,7 @@ same discipline `ui-kit` established, and the workspace's
 
 | Module | Exports |
 |---|---|
-| `components/AppShell.tsx` | `AppShell`, `AppShellProps`, `AppShellNavItem` |
+| `components/AppShell.tsx` | `AppShell`, `AppShellProps`, `AppShellNavItem`, `AppShellNavGroup`, `AppShellNavEntry` |
 | `components/Avatar.tsx` | `Avatar`, `AvatarProps` |
 | `components/RouteGuard.tsx` | `RouteGuard`, `RouteGuardProps`, `RouteGuardStatus` |
 | `resources.ts` | `LAYOUT_KIT_NAMESPACE`, `layoutKitResources` |
@@ -97,13 +97,25 @@ navigation, which would rewrite `location.hash` and lose a
 hash-routed host's current route).
 
 AppShell carries no navigation logic of its own: `navItems` is a
-`readonly AppShellNavItem[]` the host computes in full, including
+`readonly AppShellNavEntry[]` the host computes in full, including
 which item is `selected` -- AppShell never does path-matching, since
 different hosts use different routers.
 
+An entry is either a plain `AppShellNavItem` or a titled, collapsible
+`AppShellNavGroup`. A group's heading is itself the disclosure control
+(`aria-expanded`), open by default unless `defaultCollapsed` is set, and
+its `items` sit beneath it. A plain item may carry `children`, which
+turns it into an expandable parent whose child entries render indented,
+each a real link or button; a parent with children is a disclosure, not a
+navigation row (its own `href` / `onClick` / `selected` are not
+rendered). Both levels reuse the leaf activation and the
+`selected`/`aria-current` convention. This is purely additive: an
+`AppShellNavItem[]` host that declares no groups and no children is
+byte-for-byte unchanged.
+
 | Prop | Type | Notes |
 |---|---|---|
-| `navItems` | `readonly AppShellNavItem[]` (required) | each item: `{ id, label, icon?, href?, onClick?, selected? }`; `href` renders a link, `onClick` fires regardless |
+| `navItems` | `readonly AppShellNavEntry[]` (required) | each element is an `AppShellNavItem` (`{ id, label, icon?, href?, onClick?, selected?, children? }`) or an `AppShellNavGroup` (`{ id, label, items, defaultCollapsed? }`); `href` renders a link, `onClick` fires regardless |
 | `header` | `ReactNode` | start-of-AppBar content (logo, product name) |
 | `headerActions` | `ReactNode` | end-of-AppBar content (search, notifications) |
 | `userMenu` | `ReactNode` | far end-of-AppBar content (account menu trigger) |

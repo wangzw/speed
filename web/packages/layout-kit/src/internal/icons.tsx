@@ -78,6 +78,26 @@ export function ChevronLeftIcon({ size = 24 }: IconProps) {
   )
 }
 
+/** The chevron pointing down: a collapsed navigation group's disclosure glyph. */
+export function ExpandMoreIcon({ size = 24 }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  )
+}
+
 /** The chevron pointing right: the desktop sidebar-expand toggle glyph. */
 export function ChevronRightIcon({ size = 24 }: IconProps) {
   return (
