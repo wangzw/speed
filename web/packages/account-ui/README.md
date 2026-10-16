@@ -279,10 +279,11 @@ whose assembly has no passkey relying party shows no passkey entry.
 
 - Enroll. `session.startAuthenticatedFlow({purpose: 'enroll', input: {kind}})`
   opens the wizard; each reply's next step is rendered and answered
-  (`session.answerFlow`). A `webauthn` step hands the factor its own JSON
-  -- TOTP's `otpauth_uri`, or a passkey's creation options -- which the
-  package renders as text (it ships no QR or WebAuthn dependency) beside
-  one free-text field. The settled `enrolled` refetches the factors.
+  (`session.answerFlow`). A `webauthn` step hands the factor its own JSON:
+  TOTP's `otpauth_uri` renders as text (the package ships no QR
+  dependency) beside a code field, and a passkey's creation options are
+  driven through the browser's WebAuthn API by `src/internal/webauthn.ts`.
+  The settled `enrolled` refetches the factors.
 - Remove. A row's action sends `DELETE /auth/factors/{id}` behind the
   danger confirm. The route asks for a fresh multi-factor
   authentication: an unelevated caller is answered 401
@@ -362,10 +363,10 @@ is `test-utils/real-client.ts`, the render harness
 
 ## Known limitations and deferrals
 
-- The passkey enrollment renders the browser's creation options as text
-  and answers one free-text field: the package ships no WebAuthn
-  integration, so a host that wants the real ceremony answers the flow
-  itself.
+- The passkey ceremony runs through the browser's WebAuthn API
+  (`navigator.credentials.create`/`get`, driven by `src/internal/webauthn.ts`),
+  so it needs a secure context with an authenticator; where the browser
+  offers none, the step renders its own message and the flow cannot proceed.
 - The step-up dialog covers the factor and challenge steps; a flow that
   starts at the first factor (an account with no usable strengthening
   factor) renders its challenge fields and is answerable, but the

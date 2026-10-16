@@ -247,7 +247,7 @@ export function BindingCallbackHandler({
           key={`${seq ?? 0}-${step.kind}`}
           step={step}
           busy={answering}
-          challengeStep={challengeStep}
+          answerStep={challengeStep}
           submitLabel={t('bindingCallback.continueLabel')}
           onSubmit={(answer) => void handleAnswer(answer)}
         />

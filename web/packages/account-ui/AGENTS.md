@@ -215,10 +215,10 @@ pinned in both languages by `src/internal/error-text.test.ts`.
 
 Recorded, with the current disposition, in the README's Known
 limitations and deferrals. The load-bearing ones for a contributor: the
-package ships no QR, clipboard or WebAuthn integration, so a passkey
-enrollment renders the browser's creation options as text and answers one
-free-text field, and the authenticator's `otpauth_uri` is manual-entry
-only; the enrollment entries are the deployment's discovered factor kinds
+package ships no QR or clipboard integration, so the authenticator's
+`otpauth_uri` is manual-entry only (the passkey ceremony itself runs
+through the browser's WebAuthn API, driven by `src/internal/webauthn.ts`);
+the enrollment entries are the deployment's discovered factor kinds
 (`GET /auth/methods`' `mfa.factors`), so an assembly without a passkey
 relying party shows no passkey entry; the session list renders the
 server's list (only live sessions, the current one never revocable here);

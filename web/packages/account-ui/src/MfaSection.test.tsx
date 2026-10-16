@@ -17,7 +17,7 @@
  * `enrolled` refetches the factors.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -367,5 +367,92 @@ describe('MfaSection', () => {
       input: { code: '123456' },
     })
     expect(answers[1]?.body).toEqual({ seq: 2, step: 'complete' })
+  })
+
+  it('walks a passkey enrollment, answering the credential under the enroll step', async () => {
+    let enrolled = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: enrolled ? [factor({ id: 'factor-new', kind: 'webauthn' })] : [],
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'enroll',
+          next: {
+            kind: 'webauthn',
+            options: {
+              challenge: 'Y2hhbGxlbmdl',
+              user: { id: 'AQID', name: 'ada' },
+              rp: { id: 'localhost', name: 'demo' },
+              pubKeyCredParams: [],
+            },
+          },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number; step: string }
+        if (body.step === 'enroll') {
+          return jsonResponse(200, { seq: 2, state: 'ready', next: { kind: 'complete' } })
+        }
+        enrolled = true
+        return jsonResponse(200, { state: 'enrolled' })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+    // The registration ceremony is the browser's own API: stub create() and
+    // hand back a credential shaped as it returns one.
+    const create = vi.fn().mockResolvedValue({
+      id: 'AQID',
+      rawId: new Uint8Array([1, 2, 3]).buffer,
+      type: 'public-key',
+      response: {
+        clientDataJSON: new Uint8Array([4]).buffer,
+        attestationObject: new Uint8Array([5]).buffer,
+        getTransports: () => ['internal'],
+      },
+      getClientExtensionResults: () => ({}),
+      authenticatorAttachment: 'platform',
+    })
+    const original = Object.getOwnPropertyDescriptor(window.navigator, 'credentials')
+    Object.defineProperty(window.navigator, 'credentials', {
+      value: { create, get: vi.fn() },
+      configurable: true,
+    })
+    try {
+      await user.click(
+        await screen.findByRole('button', { name: zhCN.mfa.enroll.webauthn }),
+      )
+      // The registration step drives navigator.credentials.create and
+      // reports the credential under the enroll step, not a free-text field.
+      await user.click(
+        await screen.findByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
+      )
+      await user.click(
+        await screen.findByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
+      )
+      await waitFor(() => expect(screen.getByText('My authenticator')).toBeTruthy())
+    } finally {
+      if (original === undefined) {
+        delete (window.navigator as { credentials?: unknown }).credentials
+      } else {
+        Object.defineProperty(window.navigator, 'credentials', original)
+      }
+    }
+    expect(create).toHaveBeenCalledTimes(1)
+    const answers = rig.calls.filter(
+      (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
+    )
+    expect(answers[0]?.body).toMatchObject({ seq: 1, step: 'enroll' })
+    expect(
+      (answers[0]?.body as { input?: { credential?: string } }).input?.credential,
+    ).toContain('AQID')
   })
 })

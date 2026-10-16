@@ -141,9 +141,11 @@
     "redirectNotice": "Continue in the window that opens to finish this step.",
     "continueLabel": "Continue",
     "enrollTotpHelp": "Add the content below to your authenticator app, then enter the 6-digit code the app shows.",
-    "enrollPasskeyHelp": "Follow the instructions the browser shows to register this passkey.",
     "codeLabel": "6-digit code",
-    "credentialLabel": "Passkey response"
+    "passkeyPrompt": "Use your device to register or present a passkey.",
+    "passkeyUnsupported": "This browser cannot carry out a passkey ceremony.",
+    "passkeyCancelled": "The passkey prompt was dismissed. Try again.",
+    "passkeyFailed": "The passkey ceremony did not complete."
   },
   "preferences": {
     "title": "Preferences",

@@ -304,7 +304,7 @@ export function MfaSection({ session }: MfaSectionProps) {
                 key={`${wizard.seq}-${wizard.step.kind}`}
                 step={wizard.step}
                 busy={enrolling}
-                challengeStep="enroll"
+                answerStep="enroll"
                 submitLabel={t('mfa.enroll.confirmLabel')}
                 onSubmit={(answer) => void answerEnroll(answer)}
               />

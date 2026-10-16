@@ -197,7 +197,7 @@ export function StepUpChallenge({
                 key={`${seq ?? 0}-${step.kind}`}
                 step={step}
                 busy={submitting}
-                challengeStep="factor"
+                answerStep="factor"
                 submitLabel={t('mfa.stepUp.confirmLabel')}
                 onSubmit={(answer) => void handleAnswer(answer)}
               />
