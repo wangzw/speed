@@ -14,9 +14,11 @@ import {
   CONSOLE_LANDING_PATH,
   CONSOLE_PREFIX,
   consoleShellRoutes,
+  invitationRoutes,
   isConsolePath,
   routes,
 } from './routes.js'
+import { INVITATION_PREFIX } from './paths.js'
 
 describe('the route table', () => {
   it('names the business slot at the root and the account page, both labelled, beside the unlabelled callback', () => {
@@ -75,10 +77,20 @@ describe('the route table', () => {
     expect(authCallbackRoutes[0]?.label).toBeUndefined()
   })
 
-  it('combines the business slot, the callback route and the console pages', () => {
+  it('mounts the invite-acceptance route under its prefix, unlabelled', () => {
+    expect(invitationRoutes.map((route) => route.path)).toEqual([
+      `${INVITATION_PREFIX}/:token`,
+    ])
+    // Unlabelled, so it adds no navigation entry; the app renders its page
+    // outside both shells (src/app.tsx).
+    expect(invitationRoutes[0]?.label).toBeUndefined()
+  })
+
+  it('combines the business slot, the callback and invitation routes and the console pages', () => {
     expect(routes).toHaveLength(
       businessRoutes.length +
         authCallbackRoutes.length +
+        invitationRoutes.length +
         consoleShellRoutes.length,
     )
   })

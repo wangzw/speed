@@ -31,11 +31,9 @@
 
 import { useState } from 'react'
 import Box from '@mui/material/Box'
-import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import { TenantProvider, useAuthState } from '@speed/auth-core'
 import type { AuthSnapshot } from '@speed/auth-core'
-import { SignInScreen } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
 import { RouteGuard } from '@speed/layout-kit'
 import type { AppShellNavItem, RouteGuardStatus } from '@speed/layout-kit'
@@ -49,7 +47,6 @@ import {
 import type { RouteContext } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
-import { useAppServices } from './app-services.js'
 import {
   AppBrand,
   getCurrentTenantId,
@@ -60,7 +57,10 @@ import {
 } from './chrome.js'
 import { ConsoleArea } from './console/console-area.js'
 import { DemoNavLabel } from './nav-label.js'
+import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
+import { SignInView } from './pages/sign-in-view.js'
+import { matchInvitationToken } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
 import {
   AUTH_CALLBACK_PATH,
@@ -112,6 +112,14 @@ function AppFrame(): ReactElement {
   // finishes the flow itself.
   if (pathname === AUTH_CALLBACK_PATH) {
     return <AuthCallbackPage />
+  }
+
+  // The invitation landing renders outside both shells too: an invitee
+  // arrives before any session exists, and the accept screen gates itself on
+  // the host's sign-in surface.
+  const invitationToken = matchInvitationToken(pathname)
+  if (invitationToken !== null) {
+    return <AcceptInvitationPage token={invitationToken} />
   }
 
   const consoleSelected = items.some(
@@ -249,51 +257,6 @@ function consoleGuardStatus(
   }
   const set = snapshot.permissionSets[CONSOLE_PERMISSION_DOMAIN]
   return set === null || set.includes(permission) ? 'allowed' : 'denied'
-}
-
-/**
- * The sign-in slot: the host's chrome around auth-ui's sign-in family. The
- * screen itself renders no heading, branding or layout -- those are host
- * content -- so the host frames it in a centered card with the brand and a
- * heading; the channels it offers come from the deployment's discovery
- * document, so the skeleton renders whatever login methods the running
- * deployment enables.
- */
-function SignInView(): ReactElement {
-  const { session } = useAppServices()
-  const { t } = useTranslation(DEMO_NAMESPACE)
-  return (
-    <Box
-      component="main"
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        bgcolor: 'background.default',
-        p: 2,
-      }}
-    >
-      <Paper elevation={2} sx={{ width: '100%', maxWidth: 400, p: 4 }}>
-        <Box sx={{ textAlign: 'center', mb: 3 }}>
-          <Typography
-            variant="subtitle1"
-            color="text.secondary"
-            sx={{ fontWeight: 600 }}
-          >
-            {t('app.title')}
-          </Typography>
-          <Typography component="h1" variant="h5" sx={{ mt: 0.5 }}>
-            {t('signIn.heading')}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            {t('signIn.subtitle')}
-          </Typography>
-        </Box>
-        <SignInScreen session={session} />
-      </Paper>
-    </Box>
-  )
 }
 
 /** The fallback page for a URL no declaration matches. */

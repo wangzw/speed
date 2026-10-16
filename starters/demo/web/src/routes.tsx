@@ -31,12 +31,14 @@ import {
   AccountBindingCallbackPage,
   AccountSettingsPage,
 } from './pages/account-page.js'
+import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
 import { HomePage } from './pages/home-page.js'
 import {
   ACCOUNT_CALLBACK_PATH,
   ACCOUNT_PATH,
   CONSOLE_PREFIX,
+  INVITATION_PREFIX,
 } from './paths.js'
 
 // The path constants live in src/paths.ts, shared with the chrome that
@@ -106,10 +108,28 @@ export const authCallbackRoutes: RouteTable = [
   },
 ]
 
-/** The product's pages: the business slot, the callback route, and the
- * mounted console area (the dashboard at the prefix itself). */
+/**
+ * The invite-acceptance route: the public landing an invitation link points
+ * at, `/invitations/<token>`. It is unlabelled (it adds no navigation entry)
+ * and the app renders its page outside both shells (src/app.tsx), because an
+ * invitee arrives before any session exists. It is inert until an
+ * administrator issues an invitation.
+ */
+export const invitationRoutes: RouteTable = [
+  {
+    path: `${INVITATION_PREFIX}/:token`,
+    view: (context) => (
+      <AcceptInvitationPage token={context.params.token ?? ''} />
+    ),
+  },
+]
+
+/** The product's pages: the business slot, the callback and invitation
+ * routes, and the mounted console area (the dashboard at the prefix
+ * itself). */
 export const routes: RouteTable = [
   ...businessRoutes,
   ...authCallbackRoutes,
+  ...invitationRoutes,
   ...consoleShellRoutes,
 ]

@@ -20,3 +20,34 @@ export const ACCOUNT_PATH = '/account'
  * to and whose completion the handler owns.
  */
 export const ACCOUNT_CALLBACK_PATH = '/account/callback'
+
+/**
+ * The public invite-acceptance route's prefix: an invitee's link lands on
+ * `/invitations/<token>`. The route is not a navigation destination (it is
+ * unlabelled and renders outside both shells, src/app.tsx), so it carries no
+ * entry in the app's navigation; the prefix and its matcher live here so the
+ * route table and the shell switch read the same shape.
+ */
+export const INVITATION_PREFIX = '/invitations'
+
+/** The path an invitation link points at for one token. */
+export function invitationPath(token: string): string {
+  return `${INVITATION_PREFIX}/${encodeURIComponent(token)}`
+}
+
+/**
+ * The token a path addresses, or null when the path is not an invitation
+ * landing (the prefix itself, a deeper path, or anything else). The matcher
+ * takes exactly one segment after the prefix.
+ */
+export function matchInvitationToken(pathname: string): string | null {
+  const prefix = `${INVITATION_PREFIX}/`
+  if (!pathname.startsWith(prefix)) {
+    return null
+  }
+  const rest = pathname.slice(prefix.length)
+  if (rest === '' || rest.includes('/')) {
+    return null
+  }
+  return decodeURIComponent(rest)
+}
