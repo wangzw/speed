@@ -169,6 +169,7 @@ and failure branches, each with a widget-tier axe scan — the page
 renders its own h1); `routes` (the declarations' paths, permissions and
 translated labels through the shell); `resources` and
 `internal/error-text` (bundle key parity and whitelist pairing);
+`internal/identifier` (the identifier rule the roster's inputs mirror);
 `package.json` (the manifest contract); and `usage-example` (the README's
 Quick start composition, with the operations bundle substituted from
 test-utils).
