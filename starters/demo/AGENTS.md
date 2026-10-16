@@ -47,13 +47,12 @@ kind a session that signed in with TOTP has nothing left to raise itself with, s
 the step-up start is refused. TOTP beside WebAuthn gives the step-up a factor
 kind to offer, and WebAuthn is the one the bundled deployment carries.
 
-The bundled frontend carries the flow to the passkey's challenge and no further:
-`@speed/console-ui` and `@speed/account-ui` render a factor's WebAuthn payload as
-its options in text with one free-text answer field and ship no WebAuthn
-integration, and neither a creation nor an assertion is something a person pastes
-into a field. Completing the step-up on a copy — and enrolling the passkey it
-needs — therefore takes a WebAuthn client outside the bundled UI (see
-"Re-authentication and impersonation on a fresh copy" below).
+The bundled frontend carries the passkey step to completion: `@speed/auth-ui`,
+`@speed/account-ui` and `@speed/console-ui` each drive the browser's WebAuthn
+ceremony (`navigator.credentials.create`/`get`) from the step's own options and
+report the credential it returns. Enrolling the passkey and completing the
+step-up both work on the bundled UI (see "Re-authentication and impersonation on
+a fresh copy" below).
 
 The baseline is written twice in `main.go`, as `baselineServe` and
 `baselineWorker`. `serve` stands the HTTP entry point up and names every module
@@ -305,19 +304,14 @@ completion elevates the session (`Sessions.Elevate`), re-running the step-up-gat
 write the operator tried -- an account-status or factor write, or an impersonation
 start.
 
-Both halves of the WebAuthn ceremony are outside the bundled frontend.
-`@speed/console-ui` and `@speed/account-ui` render a factor's WebAuthn payload as
-its options in text with one free-text answer field and ship no WebAuthn
-integration, so the enrollment wizard expects a pasted attestation and the
-step-up dialog expects a pasted assertion: the enrollment stops at the creation
-options and the step-up stops at the request options, and neither a creation nor
-an assertion is something a person pastes. Enrolling the passkey and completing
-the step-up on this copy both take a WebAuthn client outside the bundled UI -- a
-browser with a platform authenticator driving `navigator.credentials.create` /
-`get` against the options, or a product that adds the ceremony to its own
-frontend. The bundled UI reaches both challenges, and the second factor kind is
-what makes the step-up start answer a factor step rather than refuse for want of
-one.
+Both halves of the WebAuthn ceremony are in the bundled frontend. `@speed/auth-ui`,
+`@speed/account-ui` and `@speed/console-ui` each drive the browser's WebAuthn
+ceremony (`navigator.credentials.create` for a registration, `navigator.credentials.get`
+for an assertion) from the step's own public-key options and report the credential
+it returns: the enrollment wizard registers a passkey, and the step-up dialog
+presents an assertion, both against whatever platform or roaming authenticator the
+browser has. The second factor kind -- WebAuthn beside TOTP -- is what makes the
+step-up start answer a factor step rather than refuse for want of one.
 
 Two things order a hand-run of the sequence. The passkey has to be enrolled
 *before* the session that raises itself: a step-up accepts only a factor enabled
