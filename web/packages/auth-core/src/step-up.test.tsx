@@ -26,11 +26,16 @@ import {
 import type { AuthSession } from './session.js'
 import { useStepUp } from './step-up.js'
 
-/** A session established by a restore of a valid cookie. */
-async function authenticatedSession(): Promise<AuthSession> {
+/** A session established by a restore of a valid cookie. `script` adds
+ * handlers on top of the restore reads, so a test scripts the operation
+ * its surface drives against a real authenticated session. */
+async function authenticatedSession(
+  script: Parameters<typeof makeCookieHarness>[0] = {},
+): Promise<AuthSession> {
   const { session } = makeCookieHarness({
     [SESSION_GET]: () => sessionView({ authenticated: true }),
     [PROFILE_GET]: () => principal(),
+    ...script,
   })
   await session.restore()
   return session
@@ -109,6 +114,33 @@ describe('useStepUp', () => {
       expect(result.current.phase).toBe('failed')
     })
     expect(result.current.errorCode).toBe('authn.bad_request')
+    expect(onElevated).not.toHaveBeenCalled()
+  })
+
+  it('parks on unavailable for a 400 start while a real session stays authenticated', async () => {
+    // A real session, restored from a valid cookie, that meets a 400 when
+    // it starts the step-up: the deployment declined to raise it (an
+    // account with no factor at all), which no step can satisfy. The
+    // 'unavailable' branch reads the snapshot at the moment of the
+    // refusal, so the case pins what that read is made of -- the session
+    // the 400 did not end is still authenticated, and this is what tells
+    // the deployment-declined 400 apart from an ordinary failure the
+    // caller may retry.
+    const session = await authenticatedSession({
+      [LOGIN_START_AUTHENTICATED]: () => {
+        throw apiError(400, 'authn.bad_request')
+      },
+    })
+    const onElevated = vi.fn()
+    const { result, rerender } = renderHook(
+      ({ active }: { active: boolean }) => useStepUp(session, active, onElevated),
+      { initialProps: { active: false } },
+    )
+    rerender({ active: true })
+    await waitFor(() => {
+      expect(result.current.phase).toBe('unavailable')
+    })
+    expect(session.getSnapshot().state).toBe('authenticated')
     expect(onElevated).not.toHaveBeenCalled()
   })
 })
