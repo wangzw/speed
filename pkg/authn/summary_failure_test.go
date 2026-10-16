@@ -53,7 +53,7 @@ import (
 // summaryListening is the record the entry point writes once an endpoint's
 // address is bound, the only place outside the process that says which port the
 // operating system picked for an endpoint configured on port 0.
-const summaryListening = "an HTTP endpoint is listening"
+const summaryListening = "an HTTP listener is listening"
 
 // summaryRequestBound bounds each request a case sends.
 const summaryRequestBound = 5 * time.Second
@@ -90,7 +90,7 @@ func (c *summaryCapture) addressOf(endpoint string) string {
 		var name, address string
 		r.Attrs(func(a slog.Attr) bool {
 			switch a.Key {
-			case "endpoint":
+			case "listener":
 				name = a.Value.String()
 			case "address":
 				address = a.Value.String()
@@ -303,8 +303,11 @@ func runSummary(t *testing.T, use func(h *summaryHost)) {
 	keyPath := summarySigningKey(t)
 
 	document := map[string]any{
-		"db":       map[string]any{"sqlite": map[string]any{"dsn": dsn}},
-		"http":     map[string]any{"endpoints": map[string]any{"public": map[string]any{"address": "127.0.0.1:0"}}},
+		"db": map[string]any{"sqlite": map[string]any{"dsn": dsn}},
+		"http": map[string]any{
+			"listeners": map[string]any{"public": map[string]any{"address": "127.0.0.1:0"}},
+			"endpoints": map[string]any{"public": map[string]any{"listener": "public"}},
+		},
 		"settings": map[string]any{},
 		"event":    map[string]any{},
 		"authn": map[string]any{

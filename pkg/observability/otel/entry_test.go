@@ -125,7 +125,8 @@ func serve(t *testing.T, p *providers, register func(ep speedhttp.Endpoint), fn 
 	reg := core.New()
 	reg.Register(config.Module())
 	reg.Register(log.Module())
-	reg.Supply(jsonConfig(`{"endpoints":{"`+entryName+`":{"address":"`+addr+`"}}}`), config.ModuleName)
+	reg.Supply(jsonConfig(`{"listeners":{"`+entryName+`":{"address":"`+addr+`"}},`+
+		`"endpoints":{"`+entryName+`":{"listener":"`+entryName+`"}}}`), config.ModuleName)
 	reg.Supply(entryLogger{lg: slog.New(slog.NewJSONHandler(logs, nil))}, log.ModuleName)
 	reg.Register(speedhttp.Module())
 	reg.Register(core.Module{

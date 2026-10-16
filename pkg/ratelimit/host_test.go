@@ -264,12 +264,15 @@ func recordingLayer(l *limiter, made *decisions) speedhttp.Middleware {
 // choosing, with the trusted-proxy networks the case names when it names any.
 func loadReader(t *testing.T, opts hostOptions) config.Reader {
 	t.Helper()
-	endpoint := map[string]any{"address": "127.0.0.1:0"}
+	endpoint := map[string]any{"listener": guardedEndpoint}
 	if len(opts.trustedProxies) > 0 {
 		endpoint["trusted-proxies"] = opts.trustedProxies
 	}
 	document, err := json.Marshal(map[string]any{
-		"http": map[string]any{"endpoints": map[string]any{guardedEndpoint: endpoint}},
+		"http": map[string]any{
+			"listeners": map[string]any{guardedEndpoint: map[string]any{"address": "127.0.0.1:0"}},
+			"endpoints": map[string]any{guardedEndpoint: endpoint},
+		},
 	})
 	if err != nil {
 		t.Fatalf("marshalling the config document: %v", err)
@@ -429,7 +432,7 @@ func (*entryRecorder) Enabled(context.Context, slog.Level) bool { return true }
 func (r *entryRecorder) Handle(_ context.Context, rec slog.Record) error {
 	var key string
 	switch rec.Message {
-	case "an HTTP endpoint is listening":
+	case "an HTTP listener is listening":
 		key = "address"
 	case "an HTTP endpoint's chain is assembled":
 		key = "chain"

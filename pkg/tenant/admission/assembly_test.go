@@ -69,7 +69,7 @@ type fixture struct {
 }
 
 const defaultBody = `{
-	"http": {"endpoints": {"public": {"address": "127.0.0.1:0"}, "admin": {"address": "127.0.0.1:0"}}},
+	"http": {"listeners": {"public": {"address": "127.0.0.1:0"}, "admin": {"address": "127.0.0.1:0"}}, "endpoints": {"public": {"listener": "public"}, "admin": {"listener": "admin"}}},
 	"tenant": {"admission": {"endpoints": ["public"]}}
 }`
 

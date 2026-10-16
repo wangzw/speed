@@ -33,7 +33,7 @@ import (
 
 // listeningMsg is the record the entry point writes once an endpoint's address is
 // bound.
-const listeningMsg = "an HTTP endpoint is listening"
+const listeningMsg = "an HTTP listener is listening"
 
 // waitBound bounds every request these cases send.
 const waitBound = 5 * time.Second
@@ -224,7 +224,7 @@ func bearer(token string) func(*nethttp.Request) {
 // point wrote when it bound it.
 func boundAddress(logs *recorder, endpoint string) (string, error) {
 	for _, r := range logs.recordsOf() {
-		if r.Message == listeningMsg && attrText(r, "endpoint") == endpoint {
+		if r.Message == listeningMsg && attrText(r, "listener") == endpoint {
 			return attrText(r, "address"), nil
 		}
 	}
@@ -238,7 +238,7 @@ func runLive(t *testing.T, req authn.Requirement, use func(client *nethttp.Clien
 	t.Helper()
 
 	const body = `{"authn":{"gate":{"mount":{"public-url":"https://app.example.com"}}},` +
-		`"http":{"endpoints":{"main":{"address":"127.0.0.1:0"}}}}`
+		`"http":{"listeners":{"main":{"address":"127.0.0.1:0"}},"endpoints":{"main":{"listener":"main"}}}}`
 
 	gateModule, entry := gate.Module(), speedhttp.Module()
 	reader := authntest.ConfigReaderAll(t, body, gateModule, entry)

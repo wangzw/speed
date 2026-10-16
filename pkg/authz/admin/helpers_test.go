@@ -421,7 +421,7 @@ func (c *capturedLogs) address(endpoint string) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, rec := range *c.records {
-		if rec.msg == "an HTTP endpoint is listening" && rec.attrs["endpoint"] == endpoint {
+		if rec.msg == "an HTTP listener is listening" && rec.attrs["listener"] == endpoint {
 			return rec.attrs["address"]
 		}
 	}

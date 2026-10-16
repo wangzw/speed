@@ -474,7 +474,7 @@ func TestTheCatalogRouteShowsTheDeclaredPermissions(t *testing.T) {
 func TestTheManagementRoutesServeOnTheRealEntryPoint(t *testing.T) {
 	logs := newCapturedLogs()
 	body := `{
-		"http": {"endpoints": {"public": {"address": "127.0.0.1:0"}}},
+		"http": {"listeners": {"public": {"address": "127.0.0.1:0"}}, "endpoints": {"public": {"listener": "public"}}},
 		"authz": {"admin": {"endpoints": ["public"]}}
 	}`
 	module := Module()

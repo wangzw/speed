@@ -97,9 +97,14 @@ func servedRequests(t *testing.T, requests []string, routes func(speedhttp.Endpo
 			},
 		}},
 		sections: map[string]any{
-			"http": map[string]any{"endpoints": map[string]any{
-				requestEndpoint: map[string]any{"address": "127.0.0.1:0", "drain-timeout": "5s"},
-			}},
+			"http": map[string]any{
+				"listeners": map[string]any{
+					requestEndpoint: map[string]any{"address": "127.0.0.1:0", "drain-timeout": "5s"},
+				},
+				"endpoints": map[string]any{
+					requestEndpoint: map[string]any{"listener": requestEndpoint},
+				},
+			},
 			"audit": map[string]any{"journal": map[string]any{
 				"endpoints": []string{requestEndpoint},
 				"requests":  requests,
@@ -150,7 +155,7 @@ func listeningAddress(t *testing.T, logFile, endpoint string) (string, bool) {
 		if json.Unmarshal(line, &record) != nil {
 			continue
 		}
-		if record["msg"] == "an HTTP endpoint is listening" && record["endpoint"] == endpoint {
+		if record["msg"] == "an HTTP listener is listening" && record["listener"] == endpoint {
 			address, ok := record["address"].(string)
 			return address, ok
 		}

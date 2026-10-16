@@ -15,6 +15,7 @@ import (
 // failure unclassifiable.
 var sentinels = map[string]error{
 	"ErrUnknownEndpoint": ErrUnknownEndpoint,
+	"ErrUnknownListener": ErrUnknownListener,
 	"ErrRouteConflict":   ErrRouteConflict,
 	"ErrMiddlewareCycle": ErrMiddlewareCycle,
 	"ErrStageConflict":   ErrStageConflict,

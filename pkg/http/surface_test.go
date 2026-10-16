@@ -69,6 +69,7 @@ var exportedSurface = []string{
 	"var ErrRouteConflict",
 	"var ErrStageConflict",
 	"var ErrUnknownEndpoint",
+	"var ErrUnknownListener",
 }
 
 // The registration surface is expressed in gin's types: a route takes

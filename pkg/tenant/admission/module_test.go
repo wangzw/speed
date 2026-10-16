@@ -179,7 +179,7 @@ func TestInitFailures(t *testing.T) {
 	})
 	t.Run("an endpoint the entry point does not declare is ErrUnknownEndpoint and is named", func(t *testing.T) {
 		body := `{
-			"http": {"endpoints": {"public": {"address": "127.0.0.1:0"}}},
+			"http": {"listeners": {"public": {"address": "127.0.0.1:0"}}, "endpoints": {"public": {"listener": "public"}}},
 			"tenant": {"admission": {"endpoints": ["public", "typo"]}}
 		}`
 		err := fixture{body: body}.drive(t, core.StageInit, nil)
@@ -192,7 +192,7 @@ func TestInitFailures(t *testing.T) {
 	})
 	t.Run("a configuration the module cannot run on ends the drive before Init", func(t *testing.T) {
 		body := `{
-			"http": {"endpoints": {"public": {"address": "127.0.0.1:0"}}},
+			"http": {"listeners": {"public": {"address": "127.0.0.1:0"}}, "endpoints": {"public": {"listener": "public"}}},
 			"tenant": {"admission": {"endpoints": ["*"]}}
 		}`
 		if err := (fixture{body: body}).drive(t, core.StageInit, nil); !errors.Is(err, authn.ErrInvalidConfig) {

@@ -2,7 +2,7 @@
 
 ## 职责
 
-`ops` 是进程的运行面：把探针路由与一份合并后的 API 规格挂到配置点名的监听端上。它不交付任何功能——描述符里没有 `Provides`，它成为一个模块靠的是生命周期回调与它自己声明的 `speedhttp.Spec` 资源。
+`ops` 是进程的运行面：把探针路由与一份合并后的 API 规格挂到配置点名的端点上。它不交付任何功能——描述符里没有 `Provides`，它成为一个模块靠的是生命周期回调与它自己声明的 `speedhttp.Spec` 资源。
 
 路由是 `GET /health`、`GET /ready`、`GET /openapi.json`：`/health` 答进程存活，`/ready` 答进程可否服务，`/openapi.json` 答这个二进制提供哪些 API。它们挂在**不设防的端**上——探针不带凭据、不指名租户，因而不经过认证、租户解析或授权层，本模块也不在 handler 内判定权限。
 
@@ -11,7 +11,7 @@
 ### 非职责
 
 - **不交付任何功能。** 本模块不 `Provides` 任何接口，别的模块取不到它交出的东西；它只登记一段生命周期与一份资源声明。
-- **不做业务健康检查。** `/ready` 报告的是进程层可服务——各监听端在接受请求、数据库应答——不表示任何租户、任何业务已就绪，也不读业务状态。
+- **不做业务健康检查。** `/ready` 报告的是进程层可服务——各端点在接受请求、数据库应答——不表示任何租户、任何业务已就绪，也不读业务状态。
 - **不设防，不判定权限。** 与 [sms](design-sms.md) 的管理面相反，本模块的路由挂在探针端上，不做 handler 内判定：这里无对象可判——探针不带身份、不指名租户。
 - **不校验片段与模块实际登记的路由是否一致。** 两者是各自维护的事实，允许漂移，不一致不产生任何失败信号，与 `pkg/http` 的 `validateSpec` 同口径（见 [http](http/design-http.md)）。
 - **不重算合并结果。** 片段是静态声明，随二进制固定，`Init` 合并一次后不再重算，不订阅任何变更。
@@ -70,7 +70,7 @@ func Merge(specs []core.Resource[speedhttp.Spec], opts Options) ([]byte, error)
 | 探针 | `GET /ready` |
 | 文档 | `GET /openapi.json` |
 
-路由挂在配置点名的端上，该端由宿主装配为不设防。`/health` 不读任何东西，只答进程存活。`/ready` 检查本进程声明的每个监听端都在接受请求，并在有数据库时探它一次；任一失败在应答里逐项点名，好让探针的日志说得出是哪一半塌了。`/openapi.json` 答合并后的文档。
+路由挂在配置点名的端上，该端由宿主装配为不设防。`/health` 不读任何东西，只答进程存活。`/ready` 检查本进程声明的每个端点都在接受请求，并在有数据库时探它一次；任一失败在应答里逐项点名，好让探针的日志说得出是哪一半塌了。`/openapi.json` 答合并后的文档。
 
 ### 宿主可见面
 
@@ -166,7 +166,7 @@ sequenceDiagram
 | 存活应答 | `health` | `{status}`；`/health` 的正文 |
 | 就绪应答 | `readiness` | `{status, failures}`；`failures` 逐项点名失败的那一半 |
 
-**合并文档带扩展键 `x-fragments` 与 `x-endpoint`。** `x-fragments` 列出参与合并的每份片段的来源（模块与端）；每个 operation 上的 `x-endpoint` 记下这条 operation 服务在哪个端上——一份文档描述多个监听端，光凭路径说不出它由哪个端应答。
+**合并文档带扩展键 `x-fragments` 与 `x-endpoint`。** `x-fragments` 列出参与合并的每份片段的来源（模块与端）；每个 operation 上的 `x-endpoint` 记下这条 operation 服务在哪个端上——一份文档描述多个端点，光凭路径说不出它由哪个端应答。
 
 ## 核心算法与流程
 
@@ -198,7 +198,7 @@ sequenceDiagram
 
 ### 就绪判定
 
-`/ready` 每次请求现读本进程声明的每个监听端（`Router.Endpoints` 逐个取 `Endpoint`，`Accepting` 为假即算一个 failure），以及有数据库时的数据库（取连接池，`PingContext` 失败即算一个 failure）。任一 failure 即答 `503` 加逐项清单，全通过即答 `200`。
+`/ready` 每次请求现读本进程声明的每个端点（`Router.Endpoints` 逐个取 `Endpoint`，`Accepting` 为假即算一个 failure），以及有数据库时的数据库（取连接池，`PingContext` 失败即算一个 failure）。任一 failure 即答 `503` 加逐项清单，全通过即答 `200`。
 
 ## 错误与失败语义
 
@@ -208,7 +208,7 @@ sequenceDiagram
 | 片段不能被读成 JSON 对象 | `mergeSpecs` 报错并点名声明它的模块，启动失败 |
 | 同一 path 同一 method 被不同模块的片段声明 | 报错同时点名两个模块与各自的端，启动失败 |
 | components 同名不同内容 | 报错点名声明它的模块与那个名字，启动失败 |
-| 某个监听端不在接受请求 | `/ready` 答 `503`，`failures` 逐项点名 |
+| 某个端点不在接受请求 | `/ready` 答 `503`，`failures` 逐项点名 |
 | 数据库不应答 | `/ready` 答 `503`，`failures` 逐项点名 |
 | `/health` | 恒答 `200`，不读任何东西 |
 

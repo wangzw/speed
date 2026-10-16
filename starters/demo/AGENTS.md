@@ -202,6 +202,14 @@ which class of traffic belongs where:
 | `ops` | probes and documents; `GET /health`, `GET /ready`, `GET /openapi.json` |
 | `web` | the frontend bundle; its catch-all route covers the endpoint's whole path space and it carries no other route |
 
+The five endpoints hang on two listeners, which the configuration under
+`server/testdata/` declares: `api`, `account`, `admin` and `web` share the
+`backend` listener, and `ops` has its own. A listener is one socket, so the
+frontend bundle and the API are same-origin and a browser reaches the API from
+the page without CORS. The `http.cors` policy the sample carries is therefore
+inert in this stack; it is kept as the starting point for a deployment that
+serves the frontend from an origin of its own.
+
 The baseline now ships the guards each endpoint carries, and the configuration
 under `server/testdata/` names them:
 

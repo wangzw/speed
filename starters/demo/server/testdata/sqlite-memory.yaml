@@ -16,20 +16,28 @@
 # deployment serves real traffic; AGENTS.md lists them together.
 
 http:
-  endpoints:
-    api:
+  listeners:
+    backend:
       address: "127.0.0.1:8080"
-    account:
-      address: "127.0.0.1:8081"
-    admin:
-      address: "127.0.0.1:8082"
     ops:
       address: "127.0.0.1:8083"
+  endpoints:
+    api:
+      listener: backend
+    account:
+      listener: backend
+    admin:
+      listener: backend
+    ops:
+      listener: ops
     web:
-      address: "127.0.0.1:8084"
-  # The CORS layer guards the API endpoint: a separately deployed frontend
-  # reaches it from an origin of its own. Point allow-origins at the origins
-  # the product is served from.
+      listener: backend
+  # The CORS layer guards the api endpoint. This stack serves the frontend
+  # bundle from the same listener as the API, so a browser reaching the API from
+  # the page needs no CORS headers and this policy is not exercised here. It is
+  # kept as the starting point for a deployment that serves the frontend from an
+  # origin of its own: point allow-origins at the origins the product is served
+  # from.
   cors:
     endpoints:
       api:

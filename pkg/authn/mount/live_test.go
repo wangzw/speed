@@ -31,7 +31,7 @@ import (
 
 // listeningMsg is the record the entry point writes once an endpoint's address is
 // bound.
-const listeningMsg = "an HTTP endpoint is listening"
+const listeningMsg = "an HTTP listener is listening"
 
 // waitBound bounds every request these cases send.
 const waitBound = 5 * time.Second
@@ -164,8 +164,10 @@ const defaultPublicURL = "https://app.example.com"
 
 func (s liveStack) body(endpoints []string) string {
 	declared := make([]string, len(endpoints))
+	listeners := make([]string, len(endpoints))
 	for i, name := range endpoints {
-		declared[i] = strconv.Quote(name) + `:{"address":"127.0.0.1:0"}`
+		declared[i] = strconv.Quote(name) + `:{"listener":` + strconv.Quote(name) + `}`
+		listeners[i] = strconv.Quote(name) + `:{"address":"127.0.0.1:0"}`
 	}
 	publicURL := s.publicURL
 	if publicURL == "" {
@@ -179,7 +181,8 @@ func (s liveStack) body(endpoints []string) string {
 	if s.gateItems != "" {
 		items += "," + s.gateItems
 	}
-	return `{"authn":{"gate":{` + items + `}},"http":{"endpoints":{` + strings.Join(declared, ",") + `}}}`
+	return `{"authn":{"gate":{` + items + `}},"http":{"listeners":{` + strings.Join(listeners, ",") +
+		`},"endpoints":{` + strings.Join(declared, ",") + `}}}`
 }
 
 // live is what a case holds while the assembly serves.
@@ -351,7 +354,7 @@ func boundAddresses(logs *recorder, endpoints []string) (map[string]string, erro
 	found := make(map[string]string, len(endpoints))
 	for _, r := range logs.recordsOf() {
 		if r.Message == listeningMsg {
-			found[attrText(r, "endpoint")] = attrText(r, "address")
+			found[attrText(r, "listener")] = attrText(r, "address")
 		}
 	}
 	for _, name := range endpoints {

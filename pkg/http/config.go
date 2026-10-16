@@ -23,9 +23,12 @@ const configNamespace = "http"
 // is given.
 const configPath = configNamespace
 
-// endpointsItem is the key of the endpoint set, relative to the namespace. The
+// listenersItem is the key of the listener set, relative to the namespace. The
 // startup failure for a host that configured none names it, so the reader is
 // told which key to write.
+const listenersItem = "listeners"
+
+// endpointsItem is the key of the endpoint set, relative to the namespace.
 const endpointsItem = "endpoints"
 
 // reservedEndpointName is the endpoint name configuration cannot declare. A
@@ -37,22 +40,26 @@ const reservedEndpointName = "*"
 // exported: the surface carries net/http's types and this package's own, and a
 // configuration struct on it would make a host's file shape part of the API.
 type moduleConfig struct {
-	// Endpoints is one entry per listening endpoint, keyed by the endpoint
-	// name registrants use.
+	// Listeners is one entry per listening socket, keyed by the listener name
+	// endpoints reference. A listener is one address, one net.Listener and one
+	// net/http.Server; the endpoints hanging on it share that socket.
+	Listeners map[string]listenerConfig `config:"listeners"`
+	// Endpoints is one entry per routing endpoint, keyed by the endpoint name
+	// registrants use.
 	Endpoints map[string]endpointConfig `config:"endpoints"`
 }
 
-// endpointConfig is one listening endpoint as configuration gives it.
+// listenerConfig is one listening socket as configuration gives it.
 //
-// The durations and the body limit are pointers because the endpoint set is a
-// container leaf: the primary source replaces the whole map rather than merging
-// into it, so a value type could not tell "the key is absent" from "the key is
-// 0", and 0 is the legal way to switch most of the timeouts off. A duration is
-// written as a string time.ParseDuration accepts; config refuses a bare number,
-// because 300 would read as five minutes and mean three hundred nanoseconds.
-// Two of the durations refuse an explicit 0 instead of switching off, and
-// resolve says which and why.
-type endpointConfig struct {
+// The durations are pointers because the listener set is a container leaf: the
+// primary source replaces the whole map rather than merging into it, so a value
+// type could not tell "the key is absent" from "the key is 0", and 0 is the
+// legal way to switch most of the timeouts off. A duration is written as a
+// string time.ParseDuration accepts; config refuses a bare number, because 300
+// would read as five minutes and mean three hundred nanoseconds. Two of the
+// durations refuse an explicit 0 instead of switching off, and resolve says
+// which and why.
+type listenerConfig struct {
 	// Address is the address to listen on, in net.Listen's form, for
 	// example ":8080" or "127.0.0.1:8080".
 	Address string `config:"address"`
@@ -69,12 +76,38 @@ type endpointConfig struct {
 	// IdleTimeout bounds how long a kept-alive connection may sit idle, 0
 	// for no bound.
 	IdleTimeout *time.Duration `config:"idle-timeout"`
-	// DrainTimeout is how long the shutdown waits for this endpoint's
+	// DrainTimeout is how long the shutdown waits for this listener's
 	// in-flight requests. It is the other duration that cannot be switched
-	// off: it is
-	// the only bound the drain has, because the context Stop and Close
-	// receive has its cancellation stripped.
+	// off: it is the only bound the drain has, because the context Stop and
+	// Close receive has its cancellation stripped.
 	DrainTimeout *time.Duration `config:"drain-timeout"`
+
+	// TLSCertFile and TLSKeyFile are where the certificate and its key are
+	// read from. Both empty serves plain HTTP; one of them alone is a
+	// startup failure. Where the certificate comes from and when it is
+	// replaced are outside this module.
+	TLSCertFile string `config:"tls-cert-file"`
+	TLSKeyFile  string `config:"tls-key-file"`
+
+	// Unknown collects the keys of the entry that name none of the fields
+	// above. Configuration checks no key inside a container leaf, so without
+	// it a misspelled drain-timeout would vanish and the default would govern
+	// a listener its operator believed configured otherwise; resolve refuses
+	// the entry instead.
+	Unknown map[string]any `config:",remain"`
+}
+
+// endpointConfig is one routing endpoint as configuration gives it.
+//
+// An endpoint hangs on a listener by name and carries the settings that belong
+// to its own chain rather than to the socket: the request body limit its body
+// limit layer imposes, and the proxy networks and forwarded-address headers its
+// gin engine is built with.
+type endpointConfig struct {
+	// Listener names the listener this endpoint's socket is. The name has to
+	// match an entry under the listener set; resolve refuses one that does
+	// not.
+	Listener string `config:"listener"`
 
 	// MaxBodyBytes is the request body limit the body limit layer of the
 	// chain imposes, 0 for no limit. It applies to every handler on the
@@ -93,24 +126,18 @@ type endpointConfig struct {
 	// whose peer is one of TrustedProxies.
 	RemoteIPHeaders []string `config:"remote-ip-headers"`
 
-	// TLSCertFile and TLSKeyFile are where the certificate and its key are
-	// read from. Both empty serves plain HTTP; one of them alone is a
-	// startup failure. Where the certificate comes from and when it is
-	// replaced are outside this module.
-	TLSCertFile string `config:"tls-cert-file"`
-	TLSKeyFile  string `config:"tls-key-file"`
-
 	// Unknown collects the keys of the entry that name none of the fields
 	// above. Configuration checks no key inside a container leaf, so without
-	// it a misspelled drain-timeout or body limit would vanish and the
-	// default would govern an endpoint its operator believed configured
-	// otherwise; resolve refuses the entry instead.
+	// it a misspelled body limit would vanish and the default would govern an
+	// endpoint its operator believed configured otherwise; resolve refuses the
+	// entry instead.
 	Unknown map[string]any `config:",remain"`
 }
 
-// The defaults of the optional per-endpoint items, applied after decoding
-// rather than laid into the prototype: a container leaf is replaced as a whole,
-// so the prototype's values do not survive a host writing the endpoint set.
+// The defaults of the optional per-listener and per-endpoint items, applied
+// after decoding rather than laid into the prototype: a container leaf is
+// replaced as a whole, so the prototype's values do not survive a host writing
+// the listener or endpoint set.
 const (
 	defaultReadHeaderTimeout = 10 * time.Second
 	defaultReadTimeout       = 30 * time.Second
@@ -120,38 +147,42 @@ const (
 	defaultMaxBodyBytes      = int64(1 << 20)
 )
 
-// configDefaults is the prototype this module declares. The endpoint set is
-// empty in it: a default endpoint would open a port on every host that never
-// asked for one, and the "no endpoint is configured" startup failure could
-// never be taken.
+// configDefaults is the prototype this module declares. The listener and
+// endpoint sets are empty in it: a default listener would open a port on every
+// host that never asked for one, and the "no listener is configured" startup
+// failure could never be taken.
 var configDefaults = moduleConfig{}
 
 // schema is this module's input item declaration.
 //
-// endpoints takes the primary config source alone. It is a map, and such a leaf
-// has no flat form the environment or the command line could give; declaring
-// either of them on it is ErrInvalidSchema. The endpoint set is therefore
-// changed in the config file or the remote config centre, never by an
-// environment variable.
+// The listener set and the endpoint set take the primary config source alone.
+// Each is a map, and such a leaf has no flat form the environment or the
+// command line could give; declaring either of them on such a source is
+// ErrInvalidSchema. The two sets are therefore changed in the config file or the
+// remote config centre, never by an environment variable.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: configNamespace,
 		Mounts:    []config.Mount{{Value: &configDefaults}},
 		Items: map[string]config.Item{
+			listenersItem: {
+				Origins:     config.OriginPrimary,
+				Description: "the listening sockets, each with its own address, timeouts and TLS",
+			},
 			endpointsItem: {
 				Origins:     config.OriginPrimary,
-				Description: "the listening endpoints, each with its own address, timeouts and body limit",
+				Description: "the routing endpoints, each hanging on a listener and carrying its chain settings",
 			},
 		},
 	}
 }
 
-// endpointSettings is one endpoint's configuration, validated and completed:
+// listenerSettings is one listener's configuration, validated and completed:
 // every optional item carries a number, and a 0 means that item is switched
 // off, which is also what an explicit 0 in the configuration means. The header
 // timeout and the drain timeout never arrive as 0 — an explicit 0 for either is
 // refused before any of this is built.
-type endpointSettings struct {
+type listenerSettings struct {
 	name    string
 	address string
 
@@ -161,57 +192,71 @@ type endpointSettings struct {
 	idleTimeout       time.Duration
 	drainTimeout      time.Duration
 
-	maxBodyBytes int64
-
-	trustedProxies  []string
-	remoteIPHeaders []string
-
 	tlsCertFile string
 	tlsKeyFile  string
 }
 
-// tls reports whether this endpoint serves over TLS.
-func (s endpointSettings) tls() bool { return s.tlsCertFile != "" || s.tlsKeyFile != "" }
+// tls reports whether this listener serves over TLS.
+func (s listenerSettings) tls() bool { return s.tlsCertFile != "" || s.tlsKeyFile != "" }
 
-// resolve validates the configuration and fills in the optional items,
-// returning the endpoints in name order. The order is fixed so that a startup
-// failure, a diagnostic line and the order in which addresses are bound do not
-// depend on Go's map iteration.
-func (c moduleConfig) resolve() ([]endpointSettings, error) {
-	out := make([]endpointSettings, 0, len(c.Endpoints))
-	for _, name := range slices.Sorted(maps.Keys(c.Endpoints)) {
-		resolved, err := c.Endpoints[name].resolve(name)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, resolved)
-	}
-	return out, nil
+// endpointSettings is one endpoint's configuration, validated and completed:
+// the body limit carries a number, and the proxy settings are as written. The
+// endpoint remembers the listener it hangs on by name.
+type endpointSettings struct {
+	name         string
+	listenerName string
+
+	maxBodyBytes int64
+
+	trustedProxies  []string
+	remoteIPHeaders []string
 }
 
-// resolve validates one endpoint. Every message names the endpoint and the key
+// resolve validates the configuration and fills in the optional items,
+// returning the listeners and the endpoints, each in name order. The order is
+// fixed so that a startup failure, a diagnostic line and the order in which
+// addresses are bound do not depend on Go's map iteration. Every endpoint's
+// listener reference is checked here, against the listeners the same
+// configuration declared.
+func (c moduleConfig) resolve() ([]listenerSettings, []endpointSettings, error) {
+	listeners := make([]listenerSettings, 0, len(c.Listeners))
+	listenerNames := make(map[string]struct{}, len(c.Listeners))
+	for _, name := range slices.Sorted(maps.Keys(c.Listeners)) {
+		resolved, err := c.Listeners[name].resolve(name)
+		if err != nil {
+			return nil, nil, err
+		}
+		listeners = append(listeners, resolved)
+		listenerNames[name] = struct{}{}
+	}
+
+	endpoints := make([]endpointSettings, 0, len(c.Endpoints))
+	for _, name := range slices.Sorted(maps.Keys(c.Endpoints)) {
+		resolved, err := c.Endpoints[name].resolve(name, listenerNames, slices.Sorted(maps.Keys(c.Listeners)))
+		if err != nil {
+			return nil, nil, err
+		}
+		endpoints = append(endpoints, resolved)
+	}
+	return listeners, endpoints, nil
+}
+
+// resolve validates one listener. Every message names the listener and the key
 // to change: a startup failure that only says "missing address" leaves the host
-// to work out which of its endpoints it came from.
-func (e endpointConfig) resolve(name string) (endpointSettings, error) {
-	if name == reservedEndpointName {
-		return endpointSettings{}, fmt.Errorf(
-			"http: endpoint %q carries a name this module reserves: a list of endpoint names "+
-				"elsewhere writes it to mean every declared endpoint, so no endpoint can be "+
-				"called that. Rename the entry %q under %s.%s",
-			name, name, configNamespace, endpointsItem)
-	}
-	if len(e.Unknown) > 0 {
-		unknown := slices.Sorted(maps.Keys(e.Unknown))
-		return endpointSettings{}, fmt.Errorf(
-			"http: endpoint %q gives %s, which %s not among the keys an endpoint takes: %s. "+
+// to work out which of its listeners it came from.
+func (l listenerConfig) resolve(name string) (listenerSettings, error) {
+	if len(l.Unknown) > 0 {
+		unknown := slices.Sorted(maps.Keys(l.Unknown))
+		return listenerSettings{}, fmt.Errorf(
+			"http: listener %q gives %s, which %s not among the keys a listener takes: %s. "+
 				"Correct the spelling under %s.%s.%s",
-			name, quotedList(unknown), pluralVerb(len(unknown)), quotedList(endpointKeys()),
-			configNamespace, endpointsItem, name)
+			name, quotedList(unknown), pluralVerb(len(unknown)), quotedList(listenerKeys()),
+			configNamespace, listenersItem, name)
 	}
-	if e.Address == "" {
-		return endpointSettings{}, fmt.Errorf(
-			"http: endpoint %q gives no address to listen on. Write %s.%s.%s.address, "+
-				"for example \":8080\"", name, configNamespace, endpointsItem, name)
+	if l.Address == "" {
+		return listenerSettings{}, fmt.Errorf(
+			"http: listener %q gives no address to listen on. Write %s.%s.%s.address, "+
+				"for example \":8080\"", name, configNamespace, listenersItem, name)
 	}
 
 	// A negative duration is not the same mistake as 0: 0 switches the item
@@ -221,16 +266,16 @@ func (e endpointConfig) resolve(name string) (endpointSettings, error) {
 		key   string
 		given *time.Duration
 	}{
-		{"read-header-timeout", e.ReadHeaderTimeout},
-		{"read-timeout", e.ReadTimeout},
-		{"write-timeout", e.WriteTimeout},
-		{"idle-timeout", e.IdleTimeout},
-		{"drain-timeout", e.DrainTimeout},
+		{"read-header-timeout", l.ReadHeaderTimeout},
+		{"read-timeout", l.ReadTimeout},
+		{"write-timeout", l.WriteTimeout},
+		{"idle-timeout", l.IdleTimeout},
+		{"drain-timeout", l.DrainTimeout},
 	}
 	for _, d := range durations {
 		if d.given != nil && *d.given < 0 {
-			return endpointSettings{}, fmt.Errorf(
-				"http: endpoint %q gives %s the value %s; 0 switches the bound off and a "+
+			return listenerSettings{}, fmt.Errorf(
+				"http: listener %q gives %s the value %s; 0 switches the bound off and a "+
 					"positive duration sets it", name, d.key, *d.given)
 		}
 	}
@@ -246,13 +291,13 @@ func (e endpointConfig) resolve(name string) (endpointSettings, error) {
 		reason string
 	}{
 		{
-			"read-header-timeout", e.ReadHeaderTimeout, defaultReadHeaderTimeout,
+			"read-header-timeout", l.ReadHeaderTimeout, defaultReadHeaderTimeout,
 			"without it a client that sends its headers one byte at a time holds a " +
-				"connection open indefinitely, and the endpoint goes on reporting that " +
+				"connection open indefinitely, and the listener goes on reporting that " +
 				"it accepts requests while the connections pile up",
 		},
 		{
-			"drain-timeout", e.DrainTimeout, defaultDrainTimeout,
+			"drain-timeout", l.DrainTimeout, defaultDrainTimeout,
 			"without it the shutdown waits for ever on an in-flight request that cannot " +
 				"finish: the context Stop and Close receive has its cancellation " +
 				"stripped and the registry imposes no shutdown timeout of its own, so a " +
@@ -261,12 +306,65 @@ func (e endpointConfig) resolve(name string) (endpointSettings, error) {
 	}
 	for _, d := range cannotBeSwitchedOff {
 		if d.given != nil && *d.given == 0 {
-			return endpointSettings{}, fmt.Errorf(
-				"http: endpoint %q switches %s off with 0, and it is one of the two bounds "+
+			return listenerSettings{}, fmt.Errorf(
+				"http: listener %q switches %s off with 0, and it is one of the two bounds "+
 					"that have to stay on: %s. Give %s.%s.%s.%s a positive duration, or drop "+
 					"the key to take the default of %s",
-				name, d.key, d.reason, configNamespace, endpointsItem, name, d.key, d.def)
+				name, d.key, d.reason, configNamespace, listenersItem, name, d.key, d.def)
 		}
+	}
+	if (l.TLSCertFile == "") != (l.TLSKeyFile == "") {
+		return listenerSettings{}, fmt.Errorf(
+			"http: listener %q gives only one of tls-cert-file and tls-key-file. Give both to "+
+				"serve over TLS, or neither to serve plain HTTP", name)
+	}
+
+	return listenerSettings{
+		name:              name,
+		address:           l.Address,
+		readHeaderTimeout: valueOrDefault(l.ReadHeaderTimeout, defaultReadHeaderTimeout),
+		readTimeout:       valueOrDefault(l.ReadTimeout, defaultReadTimeout),
+		writeTimeout:      valueOrDefault(l.WriteTimeout, defaultWriteTimeout),
+		idleTimeout:       valueOrDefault(l.IdleTimeout, defaultIdleTimeout),
+		drainTimeout:      valueOrDefault(l.DrainTimeout, defaultDrainTimeout),
+		tlsCertFile:       l.TLSCertFile,
+		tlsKeyFile:        l.TLSKeyFile,
+	}, nil
+}
+
+// resolve validates one endpoint. Every message names the endpoint and the key
+// to change, and an endpoint naming a listener the configuration never declared
+// is refused here, naming the endpoint and the listeners that do exist, because
+// picking one of them is the fixing action.
+func (e endpointConfig) resolve(name string, listeners map[string]struct{}, listenerNames []string) (endpointSettings, error) {
+	if name == reservedEndpointName {
+		return endpointSettings{}, fmt.Errorf(
+			"http: endpoint %q carries a name this module reserves: a list of endpoint names "+
+				"elsewhere writes it to mean every declared endpoint, so no endpoint can be "+
+				"called that. Rename the entry %q under %s.%s",
+			name, name, configNamespace, endpointsItem)
+	}
+	if len(e.Unknown) > 0 {
+		unknown := slices.Sorted(maps.Keys(e.Unknown))
+		return endpointSettings{}, fmt.Errorf(
+			"http: endpoint %q gives %s, which %s not among the keys an endpoint takes: %s. "+
+				"Correct the spelling under %s.%s.%s",
+			name, quotedList(unknown), pluralVerb(len(unknown)), quotedList(endpointKeys()),
+			configNamespace, endpointsItem, name)
+	}
+	if e.Listener == "" {
+		return endpointSettings{}, fmt.Errorf(
+			"http: endpoint %q names no listener to hang on. Write %s.%s.%s.listener, one of "+
+				"the names under %s.%s", name, configNamespace, endpointsItem, name,
+			configNamespace, listenersItem)
+	}
+	if _, ok := listeners[e.Listener]; !ok {
+		return endpointSettings{}, fmt.Errorf(
+			"%w: endpoint %q hangs on the listener %q, which %s.%s does not declare. The "+
+				"listeners this configuration declares are %s. Either point the endpoint at one "+
+				"of them or add %q under %s.%s",
+			ErrUnknownListener, name, e.Listener, configNamespace, listenersItem,
+			declaredListeners(listenerNames), e.Listener, configNamespace, listenersItem)
 	}
 	if e.MaxBodyBytes != nil && *e.MaxBodyBytes < 0 {
 		return endpointSettings{}, fmt.Errorf(
@@ -289,26 +387,23 @@ func (e endpointConfig) resolve(name string) (endpointSettings, error) {
 				"\"10.0.0.0/8\", or drop the key to trust no proxy",
 			name, i, network)
 	}
-	if (e.TLSCertFile == "") != (e.TLSKeyFile == "") {
-		return endpointSettings{}, fmt.Errorf(
-			"http: endpoint %q gives only one of tls-cert-file and tls-key-file. Give both to "+
-				"serve over TLS, or neither to serve plain HTTP", name)
-	}
 
 	return endpointSettings{
-		name:              name,
-		address:           e.Address,
-		readHeaderTimeout: valueOrDefault(e.ReadHeaderTimeout, defaultReadHeaderTimeout),
-		readTimeout:       valueOrDefault(e.ReadTimeout, defaultReadTimeout),
-		writeTimeout:      valueOrDefault(e.WriteTimeout, defaultWriteTimeout),
-		idleTimeout:       valueOrDefault(e.IdleTimeout, defaultIdleTimeout),
-		drainTimeout:      valueOrDefault(e.DrainTimeout, defaultDrainTimeout),
-		maxBodyBytes:      valueOrDefault(e.MaxBodyBytes, defaultMaxBodyBytes),
-		trustedProxies:    e.TrustedProxies,
-		remoteIPHeaders:   e.RemoteIPHeaders,
-		tlsCertFile:       e.TLSCertFile,
-		tlsKeyFile:        e.TLSKeyFile,
+		name:            name,
+		listenerName:    e.Listener,
+		maxBodyBytes:    valueOrDefault(e.MaxBodyBytes, defaultMaxBodyBytes),
+		trustedProxies:  e.TrustedProxies,
+		remoteIPHeaders: e.RemoteIPHeaders,
 	}, nil
+}
+
+// declaredListeners renders the listener names for a message, saying so plainly
+// when there are none.
+func declaredListeners(names []string) string {
+	if len(names) == 0 {
+		return "none: the configuration declares no listener at all"
+	}
+	return quotedList(names)
 }
 
 // validTrustedProxy reports whether a trusted-proxies entry is a form gin
@@ -322,10 +417,22 @@ func validTrustedProxy(network string) bool {
 	return net.ParseIP(network) != nil
 }
 
+// listenerKeys lists the keys a listener entry takes, read off the carrier's
+// own tags so the message cannot drift from the fields.
+func listenerKeys() []string {
+	return keysOf[listenerConfig]()
+}
+
 // endpointKeys lists the keys an endpoint entry takes, read off the carrier's
 // own tags so the message cannot drift from the fields.
 func endpointKeys() []string {
-	t := reflect.TypeFor[endpointConfig]()
+	return keysOf[endpointConfig]()
+}
+
+// keysOf reads the config key of each field of a carrier type, so a message that
+// lists the keys a carrier takes cannot drift from the fields.
+func keysOf[T any]() []string {
+	t := reflect.TypeFor[T]()
 	keys := make([]string, 0, t.NumField())
 	for i := range t.NumField() {
 		key, _, _ := strings.Cut(t.Field(i).Tag.Get("config"), ",")

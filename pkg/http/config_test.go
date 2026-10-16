@@ -21,8 +21,8 @@ import (
 //
 // The module's own declaration is what is exercised: a stub reader would prove
 // the struct tags match the stub, while what has to hold is that config accepts
-// this declaration, treats the endpoint set as a container leaf and coerces the
-// durations by its own rule.
+// this declaration, treats the listener set and the endpoint set as container
+// leaves and coerces the durations by its own rule.
 //
 // Load is that path without a lifecycle behind it, and a reader is the whole of
 // what these cases want. Driving an assembly to obtain one would put the
@@ -63,54 +63,60 @@ func readThrough(t *testing.T, document string, declared config.Schema) (moduleC
 	return got, decodeErr, nil
 }
 
-// TestEndpointsIsPrimaryOnlyContainerLeaf pins the origin declaration. The
-// endpoint set is a map, which config classifies as a container leaf: the
-// primary source replaces it as a whole, its keys never reach the manifest, and
-// declaring an environment or command-line origin on it is ErrInvalidSchema.
-func TestEndpointsIsPrimaryOnlyContainerLeaf(t *testing.T) {
-	item, declared := schema().Items[endpointsItem]
-	if !declared {
-		t.Fatalf("the schema declares no %q item, so its origins are the default set", endpointsItem)
-	}
-	if item.Origins != config.OriginPrimary {
-		t.Errorf("the endpoint set declares the origins %v; only the primary source can give a "+
-			"container leaf", item.Origins)
-	}
+// TestTheSetsArePrimaryOnlyContainerLeaves pins the origin declaration. Each set
+// is a map, which config classifies as a container leaf: the primary source
+// replaces it as a whole, its keys never reach the manifest, and declaring an
+// environment or command-line origin on one is ErrInvalidSchema.
+func TestTheSetsArePrimaryOnlyContainerLeaves(t *testing.T) {
+	for item, field := range map[string]string{listenersItem: "Listeners", endpointsItem: "Endpoints"} {
+		declared, ok := schema().Items[item]
+		if !ok {
+			t.Fatalf("the schema declares no %q item, so its origins are the default set", item)
+		}
+		if declared.Origins != config.OriginPrimary {
+			t.Errorf("the %s set declares the origins %v; only the primary source can give a "+
+				"container leaf", item, declared.Origins)
+		}
 
-	field, ok := reflect.TypeFor[moduleConfig]().FieldByName("Endpoints")
-	if !ok {
-		t.Fatal("moduleConfig has no Endpoints field")
-	}
-	if field.Type.Kind() != reflect.Map {
-		t.Errorf("the endpoint set is a %s; a map is what makes it a container leaf config "+
-			"replaces as a whole", field.Type.Kind())
+		got, ok := reflect.TypeFor[moduleConfig]().FieldByName(field)
+		if !ok {
+			t.Fatalf("moduleConfig has no %s field", field)
+		}
+		if got.Type.Kind() != reflect.Map {
+			t.Errorf("the %s set is a %s; a map is what makes it a container leaf config "+
+				"replaces as a whole", item, got.Type.Kind())
+		}
 	}
 }
 
-// TestEnvOriginOnTheEndpointSetIsRefused is the other half of the same fact,
+// TestEnvOriginOnAContainerLeafIsRefused is the other half of the same fact,
 // and the half a declaration could get wrong: config refuses the declaration
 // outright rather than quietly deriving an environment variable nobody can use.
-func TestEnvOriginOnTheEndpointSetIsRefused(t *testing.T) {
+func TestEnvOriginOnAContainerLeafIsRefused(t *testing.T) {
 	defective := schema()
 	defective.Items = map[string]config.Item{
 		endpointsItem: {Origins: config.OriginPrimary | config.OriginEnv, Description: "x"},
 	}
 
-	_, _, runErr := readThrough(t, `{"http":{"endpoints":{}}}`, defective)
+	_, _, runErr := readThrough(t, `{"http":{"listeners":{"l":{"address":":1"}},"endpoints":{}}}`, defective)
 	if !errors.Is(runErr, config.ErrInvalidSchema) {
 		t.Fatalf("an environment origin on a container leaf was not refused: %v", runErr)
 	}
 }
 
-// TestEndpointsDecodeFromThePrimarySource pins the whole path: the declaration
+// TestTheSetsDecodeFromThePrimarySource pins the whole path: the declaration
 // this module registers is accepted, and a document written against it arrives
-// as the endpoints it describes.
-func TestEndpointsDecodeFromThePrimarySource(t *testing.T) {
+// as the listeners and endpoints it describes.
+func TestTheSetsDecodeFromThePrimarySource(t *testing.T) {
 	got, decodeErr, runErr := readThrough(t, `{
 		"http": {
+			"listeners": {
+				"backend": {"address": ":8080", "read-timeout": "45s"},
+				"ops":     {"address": "127.0.0.1:9090"}
+			},
 			"endpoints": {
-				"public": {"address": ":8080", "read-timeout": "45s"},
-				"admin":  {"address": "127.0.0.1:9090"}
+				"public": {"listener": "backend", "max-body-bytes": 10},
+				"metrics": {"listener": "ops"}
 			}
 		}
 	}`, schema())
@@ -121,52 +127,83 @@ func TestEndpointsDecodeFromThePrimarySource(t *testing.T) {
 		t.Fatalf("decoding this module's section: %v", decodeErr)
 	}
 
+	if len(got.Listeners) != 2 {
+		t.Fatalf("the document declares two listeners and %d arrived: %+v", len(got.Listeners), got.Listeners)
+	}
+	if got.Listeners["backend"].Address != ":8080" {
+		t.Errorf("the backend listener's address arrived as %q", got.Listeners["backend"].Address)
+	}
+	if read := got.Listeners["backend"].ReadTimeout; read == nil || *read != 45*time.Second {
+		t.Errorf("the backend listener's read-timeout arrived as %v", read)
+	}
+	if got.Listeners["ops"].ReadTimeout != nil {
+		t.Error("the ops listener gives no read-timeout, and one arrived anyway")
+	}
 	if len(got.Endpoints) != 2 {
 		t.Fatalf("the document declares two endpoints and %d arrived: %+v", len(got.Endpoints), got.Endpoints)
 	}
-	if got.Endpoints["public"].Address != ":8080" {
-		t.Errorf("the public endpoint's address arrived as %q", got.Endpoints["public"].Address)
+	if got.Endpoints["public"].Listener != "backend" {
+		t.Errorf("the public endpoint hangs on %q, want backend", got.Endpoints["public"].Listener)
 	}
-	if read := got.Endpoints["public"].ReadTimeout; read == nil || *read != 45*time.Second {
-		t.Errorf("the public endpoint's read-timeout arrived as %v", read)
-	}
-	if got.Endpoints["admin"].ReadTimeout != nil {
-		t.Error("the admin endpoint gives no read-timeout, and one arrived anyway")
+	if limit := got.Endpoints["public"].MaxBodyBytes; limit == nil || *limit != 10 {
+		t.Errorf("the public endpoint's max-body-bytes arrived as %v", limit)
 	}
 }
 
-// TestAMisspelledKeyInAnEndpointIsAStartupFailure pins the keys inside one
-// endpoint's entry. The endpoint set is a container leaf, whose inner keys
-// configuration does not check, so a misspelled drain-timeout or body limit
-// would be dropped and the default would govern an endpoint its operator
-// believed configured otherwise — a safety setting silently not in force.
-func TestAMisspelledKeyInAnEndpointIsAStartupFailure(t *testing.T) {
-	for _, key := range []string{"drain-timout", "max-body-bytez", "read_timeout"} {
+// TestAMisspelledKeyInAListenerIsAStartupFailure pins the keys inside one
+// listener's entry. The listener set is a container leaf, whose inner keys
+// configuration does not check, so a misspelled drain-timeout would be dropped
+// and the default would govern a listener its operator believed configured
+// otherwise — a safety setting silently not in force.
+func TestAMisspelledKeyInAListenerIsAStartupFailure(t *testing.T) {
+	for _, key := range []string{"drain-timout", "read_timeout", "addr"} {
 		got, decodeErr, runErr := readThrough(t,
-			`{"http":{"endpoints":{"public":{"address":":8080","`+key+`":"1s"}}}}`, schema())
+			`{"http":{"listeners":{"backend":{"address":":8080","`+key+`":"1s"}}}}`, schema())
 		if runErr != nil || decodeErr != nil {
 			t.Fatalf("%s: the section did not decode: %v", key, errors.Join(runErr, decodeErr))
 		}
-		_, err := got.resolve()
+		_, _, err := got.resolve()
+		if err == nil {
+			t.Errorf("a listener giving the key %q started, and the key was dropped", key)
+			continue
+		}
+		mustContain(t, err.Error(), `"`+key+`"`, "the key that is not one of the listener's")
+		mustContain(t, err.Error(), `"backend"`, "the listener the key was written under")
+		mustContain(t, err.Error(), "drain-timeout", "the keys a listener takes")
+	}
+
+	// The keys a listener does take, spelled as the declaration spells them,
+	// still decode.
+	got, decodeErr, runErr := readThrough(t, `{"http":{"listeners":{"backend":{
+		"address":":8080","read-header-timeout":"1s","read-timeout":"1s","write-timeout":"1s",
+		"idle-timeout":"1s","drain-timeout":"1s"}}}}`, schema())
+	if runErr != nil || decodeErr != nil {
+		t.Fatalf("the section did not decode: %v", errors.Join(runErr, decodeErr))
+	}
+	if _, _, err := got.resolve(); err != nil {
+		t.Errorf("a listener giving only its own keys was refused: %v", err)
+	}
+}
+
+// TestAMisspelledKeyInAnEndpointIsAStartupFailure is the same check for an
+// endpoint's entry: the endpoint keys are checked here, so a misspelled body
+// limit or listener reference does not vanish into a silent default.
+func TestAMisspelledKeyInAnEndpointIsAStartupFailure(t *testing.T) {
+	for _, key := range []string{"listner", "max-body-bytez", "trusted_proxies"} {
+		got, decodeErr, runErr := readThrough(t,
+			`{"http":{"listeners":{"backend":{"address":":8080"}},`+
+				`"endpoints":{"public":{"listener":"backend","`+key+`":"x"}}}}`, schema())
+		if runErr != nil || decodeErr != nil {
+			t.Fatalf("%s: the section did not decode: %v", key, errors.Join(runErr, decodeErr))
+		}
+		_, _, err := got.resolve()
 		if err == nil {
 			t.Errorf("an endpoint giving the key %q started, and the key was dropped", key)
 			continue
 		}
 		mustContain(t, err.Error(), `"`+key+`"`, "the key that is not one of the endpoint's")
 		mustContain(t, err.Error(), `"public"`, "the endpoint the key was written under")
-		mustContain(t, err.Error(), "drain-timeout", "the keys an endpoint takes")
-	}
-
-	// The keys an endpoint does take, spelled as the declaration spells them,
-	// still decode.
-	got, decodeErr, runErr := readThrough(t, `{"http":{"endpoints":{"public":{
-		"address":":8080","read-header-timeout":"1s","read-timeout":"1s","write-timeout":"1s",
-		"idle-timeout":"1s","drain-timeout":"1s","max-body-bytes":10}}}}`, schema())
-	if runErr != nil || decodeErr != nil {
-		t.Fatalf("the section did not decode: %v", errors.Join(runErr, decodeErr))
-	}
-	if _, err := got.resolve(); err != nil {
-		t.Errorf("an endpoint giving only its own keys was refused: %v", err)
+		mustContain(t, err.Error(), "max-body-bytes", "the keys an endpoint takes")
 	}
 }
 
@@ -178,8 +215,10 @@ func TestAMisspelledKeyInAnEndpointIsAStartupFailure(t *testing.T) {
 // whether it stands alone or beside endpoints that are fine.
 func TestTheWildcardIsNotAnEndpointName(t *testing.T) {
 	for name, document := range map[string]string{
-		"alone":       `{"http":{"endpoints":{"*":{"address":":8080"}}}}`,
-		"beside more": `{"http":{"endpoints":{"public":{"address":":8080"},"*":{"address":":9090"}}}}`,
+		"alone": `{"http":{"listeners":{"backend":{"address":":8080"}},` +
+			`"endpoints":{"*":{"listener":"backend"}}}}`,
+		"beside more": `{"http":{"listeners":{"backend":{"address":":8080"}},` +
+			`"endpoints":{"public":{"listener":"backend"},"*":{"listener":"backend"}}}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			got, decodeErr, runErr := readThrough(t, document, schema())
@@ -190,7 +229,7 @@ func TestTheWildcardIsNotAnEndpointName(t *testing.T) {
 				t.Fatalf("the entry named \"*\" did not reach the carrier: %v", got.Endpoints)
 			}
 
-			_, err := got.resolve()
+			_, _, err := got.resolve()
 			if err == nil {
 				t.Fatal("an endpoint named \"*\" resolved, and the name is the one every list of " +
 					"endpoint names writes for all of them")
@@ -202,13 +241,32 @@ func TestTheWildcardIsNotAnEndpointName(t *testing.T) {
 	}
 }
 
+// TestAnEndpointNamingAnUnknownListenerIsStartupFailure pins the reference check.
+// An endpoint hangs on a listener by name, and a name the configuration never
+// declared is a startup failure naming the endpoint, the listener it asked for
+// and the listeners that do exist, because picking one of them is the fixing
+// action.
+func TestAnEndpointNamingAnUnknownListenerIsStartupFailure(t *testing.T) {
+	_, _, err := moduleConfig{
+		Listeners: map[string]listenerConfig{"backend": {Address: ":8080"}},
+		Endpoints: map[string]endpointConfig{"public": {Listener: "frontend"}},
+	}.resolve()
+	if !errors.Is(err, ErrUnknownListener) {
+		t.Fatalf("an endpoint on an undeclared listener resolved with %v, want ErrUnknownListener", err)
+	}
+	mustContain(t, err.Error(), `"public"`, "the endpoint that hung on it")
+	mustContain(t, err.Error(), `"frontend"`, "the listener it named")
+	mustContain(t, err.Error(), `"backend"`, "the listeners that do exist")
+	mustContain(t, err.Error(), "http.listeners", "the key to write a listener under")
+}
+
 // TestDurationItemRejectsBareNumber pins config's rule for a duration, which
 // this module's field types opt into: a bare 300 reads as five minutes to a
 // person and means three hundred nanoseconds to the machine, so only the string
 // form is accepted.
 func TestDurationItemRejectsBareNumber(t *testing.T) {
 	_, decodeErr, runErr := readThrough(t,
-		`{"http":{"endpoints":{"public":{"address":":8080","read-timeout":300}}}}`, schema())
+		`{"http":{"listeners":{"backend":{"address":":8080","read-timeout":300}}}}`, schema())
 	// config coerces the primary source against the declared types while it
 	// builds the reader, so the refusal lands on the run rather than on the
 	// decode. Either way it is a refusal, and asserting on the pair keeps the
@@ -221,24 +279,24 @@ func TestDurationItemRejectsBareNumber(t *testing.T) {
 	mustContain(t, refusal.Error(), "read-timeout", "the item it was given for")
 }
 
-// TestEndpointDefaultsAppliedAfterDecode pins the three states of an optional
+// TestListenerDefaultsAppliedAfterDecode pins the three states of an optional
 // item. The defaults cannot live in the prototype: a container leaf is replaced
-// as a whole, so a document that declares any endpoint at all wipes them out.
-func TestEndpointDefaultsAppliedAfterDecode(t *testing.T) {
+// as a whole, so a document that declares any listener at all wipes them out.
+func TestListenerDefaultsAppliedAfterDecode(t *testing.T) {
 	off := time.Duration(0)
 	explicit := 5 * time.Second
-	cfg := moduleConfig{Endpoints: map[string]endpointConfig{
+	cfg := moduleConfig{Listeners: map[string]listenerConfig{
 		"absent":   {Address: ":1"},
 		"switched": {Address: ":2", IdleTimeout: &off},
 		"given":    {Address: ":3", IdleTimeout: &explicit},
 	}}
 
-	settings, err := cfg.resolve()
+	listeners, _, err := cfg.resolve()
 	if err != nil {
 		t.Fatalf("resolving: %v", err)
 	}
-	byName := make(map[string]endpointSettings, len(settings))
-	for _, s := range settings {
+	byName := make(map[string]listenerSettings, len(listeners))
+	for _, s := range listeners {
 		byName[s.name] = s
 	}
 
@@ -255,23 +313,36 @@ func TestEndpointDefaultsAppliedAfterDecode(t *testing.T) {
 	}
 }
 
-// TestEndpointsResolveInNameOrder pins the order everything downstream inherits:
-// the order endpoints are bound in, the order they are stopped in, and the order
-// a diagnostic lists them in. Left to map iteration, each run would differ.
-func TestEndpointsResolveInNameOrder(t *testing.T) {
-	cfg := moduleConfig{Endpoints: map[string]endpointConfig{
-		"public": {Address: ":1"}, "admin": {Address: ":2"}, "metrics": {Address: ":3"},
-	}}
-	settings, err := cfg.resolve()
+// TestTheSetsResolveInNameOrder pins the order everything downstream inherits:
+// the order listeners are bound and stopped in, the order endpoints are
+// assembled in, and the order a diagnostic lists them in. Left to map iteration,
+// each run would differ.
+func TestTheSetsResolveInNameOrder(t *testing.T) {
+	cfg := moduleConfig{
+		Listeners: map[string]listenerConfig{
+			"public": {Address: ":1"}, "admin": {Address: ":2"}, "metrics": {Address: ":3"},
+		},
+		Endpoints: map[string]endpointConfig{
+			"public": {Listener: "public"}, "admin": {Listener: "admin"}, "metrics": {Listener: "metrics"},
+		},
+	}
+	listeners, endpoints, err := cfg.resolve()
 	if err != nil {
 		t.Fatalf("resolving: %v", err)
 	}
-	got := make([]string, 0, len(settings))
-	for _, s := range settings {
-		got = append(got, s.name)
+	gotListeners := make([]string, 0, len(listeners))
+	for _, s := range listeners {
+		gotListeners = append(gotListeners, s.name)
 	}
-	if want := []string{"admin", "metrics", "public"}; !equalStrings(got, want) {
-		t.Errorf("the endpoints resolved in the order %v, and name order is %v", got, want)
+	if want := []string{"admin", "metrics", "public"}; !slices.Equal(gotListeners, want) {
+		t.Errorf("the listeners resolved in the order %v, and name order is %v", gotListeners, want)
+	}
+	gotEndpoints := make([]string, 0, len(endpoints))
+	for _, s := range endpoints {
+		gotEndpoints = append(gotEndpoints, s.name)
+	}
+	if want := []string{"admin", "metrics", "public"}; !slices.Equal(gotEndpoints, want) {
+		t.Errorf("the endpoints resolved in the order %v, and name order is %v", gotEndpoints, want)
 	}
 }
 
@@ -279,28 +350,28 @@ func TestEndpointsResolveInNameOrder(t *testing.T) {
 // message that only said "missing address" would leave the host counting
 // entries in its own file.
 func TestMissingAddressIsStartupFailure(t *testing.T) {
-	cfg := moduleConfig{Endpoints: map[string]endpointConfig{"admin": {}}}
-	_, err := cfg.resolve()
+	cfg := moduleConfig{Listeners: map[string]listenerConfig{"admin": {}}}
+	_, _, err := cfg.resolve()
 	if err == nil {
-		t.Fatal("an endpoint with no address was accepted")
+		t.Fatal("a listener with no address was accepted")
 	}
-	mustContain(t, err.Error(), `"admin"`, "the endpoint that has no address")
-	mustContain(t, err.Error(), "http.endpoints.admin.address", "the key to write")
+	mustContain(t, err.Error(), `"admin"`, "the listener that has no address")
+	mustContain(t, err.Error(), "http.listeners.admin.address", "the key to write")
 }
 
 // TestReadHeaderTimeoutAlwaysSet pins the bound on a server this module builds.
 // A server without it is held open indefinitely by a client sending its headers
-// one byte at a time, and the endpoint goes on reporting that it accepts
+// one byte at a time, and the listener goes on reporting that it accepts
 // requests while the connections pile up.
 func TestReadHeaderTimeoutAlwaysSet(t *testing.T) {
-	settings, err := moduleConfig{Endpoints: map[string]endpointConfig{
+	listeners, _, err := moduleConfig{Listeners: map[string]listenerConfig{
 		"public": {Address: "127.0.0.1:0"},
 	}}.resolve()
 	if err != nil {
 		t.Fatalf("resolving: %v", err)
 	}
 	logger, _ := newRecordingLogger()
-	l, _ := startTestEndpoint(t, settings[0], nethttp.NotFoundHandler(), logger)
+	l, _ := startTestEndpoint(t, listeners[0], nethttp.NotFoundHandler(), logger)
 
 	if l.server.ReadHeaderTimeout == 0 {
 		t.Error("the server was built without a header timeout")
@@ -313,11 +384,11 @@ func TestReadHeaderTimeoutAlwaysSet(t *testing.T) {
 
 // TestReadHeaderTimeoutCannotBeSwitchedOff pins one of the two bounds that have
 // no "off" state. The criterion is who carries the consequence of switching the
-// item off: this one is carried by whoever reaches the endpoint, not by the host
+// item off: this one is carried by whoever reaches the listener, not by the host
 // that wrote the 0, so the 0 is a configuration mistake and the message says why.
 func TestReadHeaderTimeoutCannotBeSwitchedOff(t *testing.T) {
 	off := time.Duration(0)
-	_, err := moduleConfig{Endpoints: map[string]endpointConfig{
+	_, _, err := moduleConfig{Listeners: map[string]listenerConfig{
 		"public": {Address: ":8080", ReadHeaderTimeout: &off},
 	}}.resolve()
 	if err == nil {
@@ -340,16 +411,16 @@ func TestReadHeaderTimeoutCannotBeSwitchedOff(t *testing.T) {
 // adr-http-shutdown names as the one that meets "a callback has to be bounded".
 func TestDrainTimeoutRefusesExplicitZero(t *testing.T) {
 	got, decodeErr, runErr := readThrough(t,
-		`{"http":{"endpoints":{"public":{"address":":8080","drain-timeout":"0s"}}}}`, schema())
+		`{"http":{"listeners":{"backend":{"address":":8080","drain-timeout":"0s"}}}}`, schema())
 	if runErr != nil {
 		t.Fatalf("the run failed: %v", runErr)
 	}
 	if decodeErr != nil {
 		t.Fatalf("decoding this module's section: %v", decodeErr)
 	}
-	given := got.Endpoints["public"].DrainTimeout
+	given := got.Listeners["backend"].DrainTimeout
 	if given == nil {
-		t.Fatal("config delivered an explicit \"0s\" as an absent key, so the endpoint would " +
+		t.Fatal("config delivered an explicit \"0s\" as an absent key, so the listener would " +
 			"silently take the default instead of being refused")
 	}
 	if *given != 0 {
@@ -358,12 +429,12 @@ func TestDrainTimeoutRefusesExplicitZero(t *testing.T) {
 
 	// resolve is what Prepare runs the decoded section through, so its
 	// refusal is the startup failure.
-	_, err := got.resolve()
+	_, _, err := got.resolve()
 	if err == nil {
 		t.Fatal("drain-timeout was switched off with 0")
 	}
 	mustContain(t, err.Error(), "drain-timeout", "the item that cannot be switched off")
-	mustContain(t, err.Error(), `"public"`, "the endpoint it was given on")
+	mustContain(t, err.Error(), `"backend"`, "the listener it was given on")
 	mustContain(t, err.Error(), "for ever", "why it cannot be switched off")
 }
 
@@ -372,69 +443,69 @@ func TestDrainTimeoutRefusesExplicitZero(t *testing.T) {
 // made the item mandatory, or refused it outright, would fail these two while
 // still passing the refusal test above.
 func TestDrainTimeoutAbsentTakesTheDefault(t *testing.T) {
-	settings, err := moduleConfig{Endpoints: map[string]endpointConfig{
+	listeners, _, err := moduleConfig{Listeners: map[string]listenerConfig{
 		"public": {Address: ":8080"},
 	}}.resolve()
 	if err != nil {
-		t.Fatalf("an endpoint that gives no drain-timeout was refused: %v", err)
+		t.Fatalf("a listener that gives no drain-timeout was refused: %v", err)
 	}
-	if settings[0].drainTimeout != defaultDrainTimeout {
+	if listeners[0].drainTimeout != defaultDrainTimeout {
 		t.Errorf("an absent drain-timeout resolved to %v, and the default is %v",
-			settings[0].drainTimeout, defaultDrainTimeout)
+			listeners[0].drainTimeout, defaultDrainTimeout)
 	}
 }
 
 func TestDrainTimeoutAcceptsAPositiveValue(t *testing.T) {
 	given := 90 * time.Second
-	settings, err := moduleConfig{Endpoints: map[string]endpointConfig{
+	listeners, _, err := moduleConfig{Listeners: map[string]listenerConfig{
 		"public": {Address: ":8080", DrainTimeout: &given},
 	}}.resolve()
 	if err != nil {
 		t.Fatalf("a positive drain-timeout was refused: %v", err)
 	}
-	if settings[0].drainTimeout != given {
-		t.Errorf("a drain-timeout of %v resolved to %v", given, settings[0].drainTimeout)
+	if listeners[0].drainTimeout != given {
+		t.Errorf("a drain-timeout of %v resolved to %v", given, listeners[0].drainTimeout)
 	}
 }
 
 // TestOtherDurationsStillAcceptExplicitZero pins that the exceptions are exactly
 // two. Every other duration takes 0 as "this bound is off", and the consequence
-// of switching one off is carried by the endpoint that asked for it. Refusing a
+// of switching one off is carried by the listener that asked for it. Refusing a
 // third item fails this test item by item.
 func TestOtherDurationsStillAcceptExplicitZero(t *testing.T) {
 	off := time.Duration(0)
 	cases := []struct {
 		key   string
-		give  func(*endpointConfig)
-		taken func(endpointSettings) time.Duration
+		give  func(*listenerConfig)
+		taken func(listenerSettings) time.Duration
 	}{
 		{
 			"read-timeout",
-			func(e *endpointConfig) { e.ReadTimeout = &off },
-			func(s endpointSettings) time.Duration { return s.readTimeout },
+			func(l *listenerConfig) { l.ReadTimeout = &off },
+			func(s listenerSettings) time.Duration { return s.readTimeout },
 		},
 		{
 			"write-timeout",
-			func(e *endpointConfig) { e.WriteTimeout = &off },
-			func(s endpointSettings) time.Duration { return s.writeTimeout },
+			func(l *listenerConfig) { l.WriteTimeout = &off },
+			func(s listenerSettings) time.Duration { return s.writeTimeout },
 		},
 		{
 			"idle-timeout",
-			func(e *endpointConfig) { e.IdleTimeout = &off },
-			func(s endpointSettings) time.Duration { return s.idleTimeout },
+			func(l *listenerConfig) { l.IdleTimeout = &off },
+			func(s listenerSettings) time.Duration { return s.idleTimeout },
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.key, func(t *testing.T) {
-			given := endpointConfig{Address: ":8080"}
+			given := listenerConfig{Address: ":8080"}
 			c.give(&given)
-			settings, err := moduleConfig{Endpoints: map[string]endpointConfig{
+			listeners, _, err := moduleConfig{Listeners: map[string]listenerConfig{
 				"public": given,
 			}}.resolve()
 			if err != nil {
 				t.Fatalf("an explicit 0 for %s was refused: %v", c.key, err)
 			}
-			if taken := c.taken(settings[0]); taken != 0 {
+			if taken := c.taken(listeners[0]); taken != 0 {
 				t.Errorf("an explicit 0 for %s resolved to %v; 0 is how the bound is "+
 					"switched off", c.key, taken)
 			}
@@ -447,25 +518,25 @@ func TestOtherDurationsStillAcceptExplicitZero(t *testing.T) {
 // would fail every request on it.
 func TestNegativeDurationIsRejected(t *testing.T) {
 	negative := -time.Second
-	_, err := moduleConfig{Endpoints: map[string]endpointConfig{
+	_, _, err := moduleConfig{Listeners: map[string]listenerConfig{
 		"public": {Address: ":8080", WriteTimeout: &negative},
 	}}.resolve()
 	if err == nil {
 		t.Fatal("a negative write-timeout was accepted")
 	}
 	mustContain(t, err.Error(), "write-timeout", "the item that was mistyped")
-	mustContain(t, err.Error(), `"public"`, "the endpoint it was given on")
+	mustContain(t, err.Error(), `"public"`, "the listener it was given on")
 }
 
 // TestHalfConfiguredTLSIsRejected pins the pair. One half alone is a mistake
-// either way round: serving plain HTTP on an endpoint the host meant to be
+// either way round: serving plain HTTP on a listener the host meant to be
 // encrypted is the failure that has to be loud.
 func TestHalfConfiguredTLSIsRejected(t *testing.T) {
-	for _, given := range []endpointConfig{
+	for _, given := range []listenerConfig{
 		{Address: ":8443", TLSCertFile: "/etc/cert.pem"},
 		{Address: ":8443", TLSKeyFile: "/etc/key.pem"},
 	} {
-		_, err := moduleConfig{Endpoints: map[string]endpointConfig{"public": given}}.resolve()
+		_, _, err := moduleConfig{Listeners: map[string]listenerConfig{"public": given}}.resolve()
 		if err == nil {
 			t.Fatalf("half a TLS configuration was accepted: %+v", given)
 		}
@@ -473,17 +544,18 @@ func TestHalfConfiguredTLSIsRejected(t *testing.T) {
 	}
 }
 
-// TestNoEndpointIsNotAFailure pins that an empty endpoint set resolves cleanly.
-// resolve only decodes and completes what is there; that a host with no
-// endpoint cannot run this module is judged in Prepare, which fails the startup
-// rather than letting an entry point start and serve nothing.
-func TestNoEndpointIsNotAFailure(t *testing.T) {
-	settings, err := moduleConfig{}.resolve()
+// TestEmptySetsResolve pins that empty sets resolve cleanly. resolve only
+// decodes and completes what is there; that a host with no listener cannot run
+// this module is judged in Prepare, which fails the startup rather than letting
+// an entry point start and serve nothing.
+func TestEmptySetsResolve(t *testing.T) {
+	listeners, endpoints, err := moduleConfig{}.resolve()
 	if err != nil {
-		t.Fatalf("an empty endpoint set failed to resolve: %v", err)
+		t.Fatalf("an empty configuration failed to resolve: %v", err)
 	}
-	if len(settings) != 0 {
-		t.Errorf("an empty endpoint set resolved to %d endpoints", len(settings))
+	if len(listeners) != 0 || len(endpoints) != 0 {
+		t.Errorf("an empty configuration resolved to %d listeners and %d endpoints",
+			len(listeners), len(endpoints))
 	}
 }
 
@@ -498,16 +570,20 @@ func TestNoEndpointIsNotAFailure(t *testing.T) {
 // check that accepts anything non-zero.
 func TestMaxBodyBytesHasThreeStatesAndRefusesANegativeOne(t *testing.T) {
 	zero, given, negative := int64(0), int64(7), int64(-1)
-	settings, err := moduleConfig{Endpoints: map[string]endpointConfig{
-		"absent": {Address: "127.0.0.1:0"},
-		"off":    {Address: "127.0.0.1:0", MaxBodyBytes: &zero},
-		"given":  {Address: "127.0.0.1:0", MaxBodyBytes: &given},
-	}}.resolve()
+	cfg := moduleConfig{
+		Listeners: map[string]listenerConfig{"backend": {Address: "127.0.0.1:0"}},
+		Endpoints: map[string]endpointConfig{
+			"absent": {Listener: "backend"},
+			"off":    {Listener: "backend", MaxBodyBytes: &zero},
+			"given":  {Listener: "backend", MaxBodyBytes: &given},
+		},
+	}
+	_, endpoints, err := cfg.resolve()
 	if err != nil {
 		t.Fatalf("resolving the three states: %v", err)
 	}
 	limits := map[string]int64{}
-	for _, s := range settings {
+	for _, s := range endpoints {
 		limits[s.name] = s.maxBodyBytes
 	}
 	for name, want := range map[string]int64{"absent": defaultMaxBodyBytes, "off": 0, "given": 7} {
@@ -516,9 +592,12 @@ func TestMaxBodyBytesHasThreeStatesAndRefusesANegativeOne(t *testing.T) {
 		}
 	}
 
-	_, err = moduleConfig{Endpoints: map[string]endpointConfig{
-		"public": {Address: "127.0.0.1:0", MaxBodyBytes: &negative},
-	}}.resolve()
+	_, _, err = moduleConfig{
+		Listeners: map[string]listenerConfig{"backend": {Address: "127.0.0.1:0"}},
+		Endpoints: map[string]endpointConfig{
+			"public": {Listener: "backend", MaxBodyBytes: &negative},
+		},
+	}.resolve()
 	if err == nil {
 		t.Fatal("a negative max-body-bytes was accepted")
 	}
@@ -526,31 +605,34 @@ func TestMaxBodyBytesHasThreeStatesAndRefusesANegativeOne(t *testing.T) {
 	mustContain(t, err.Error(), `endpoint "public"`, "the endpoint that gave it")
 }
 
-// TestTrustedProxiesAndRemoteIPHeadersDecodeAndResolve pins the two input items a
-// listener behind a proxy needs. They are handed to gin, which works out the
+// TestTrustedProxiesAndRemoteIPHeadersDecodeAndResolve pins the two input items an
+// endpoint behind a proxy needs. They are handed to gin, which works out the
 // client address from the forwarded headers; this module reads no header itself.
 // An entry is an address or a block, matching gin's own rule.
 func TestTrustedProxiesAndRemoteIPHeadersDecodeAndResolve(t *testing.T) {
 	got, decodeErr, runErr := readThrough(t, `{
-		"http": {"endpoints": {"public": {
-			"address": ":8080",
-			"trusted-proxies": ["10.0.0.0/8", "192.0.2.7"],
-			"remote-ip-headers": ["X-Forwarded-For", "X-Real-IP"]
-		}}}
+		"http": {
+			"listeners": {"backend": {"address": ":8080"}},
+			"endpoints": {"public": {
+				"listener": "backend",
+				"trusted-proxies": ["10.0.0.0/8", "192.0.2.7"],
+				"remote-ip-headers": ["X-Forwarded-For", "X-Real-IP"]
+			}}
+		}
 	}`, schema())
 	if runErr != nil || decodeErr != nil {
 		t.Fatalf("the section did not decode: %v", errors.Join(runErr, decodeErr))
 	}
 
-	settings, err := got.resolve()
+	_, endpoints, err := got.resolve()
 	if err != nil {
 		t.Fatalf("resolving: %v", err)
 	}
-	if want := []string{"10.0.0.0/8", "192.0.2.7"}; !slices.Equal(settings[0].trustedProxies, want) {
-		t.Errorf("trusted-proxies resolved to %v, want %v", settings[0].trustedProxies, want)
+	if want := []string{"10.0.0.0/8", "192.0.2.7"}; !slices.Equal(endpoints[0].trustedProxies, want) {
+		t.Errorf("trusted-proxies resolved to %v, want %v", endpoints[0].trustedProxies, want)
 	}
-	if want := []string{"X-Forwarded-For", "X-Real-IP"}; !slices.Equal(settings[0].remoteIPHeaders, want) {
-		t.Errorf("remote-ip-headers resolved to %v, want %v", settings[0].remoteIPHeaders, want)
+	if want := []string{"X-Forwarded-For", "X-Real-IP"}; !slices.Equal(endpoints[0].remoteIPHeaders, want) {
+		t.Errorf("remote-ip-headers resolved to %v, want %v", endpoints[0].remoteIPHeaders, want)
 	}
 }
 
@@ -559,15 +641,16 @@ func TestTrustedProxiesAndRemoteIPHeadersDecodeAndResolve(t *testing.T) {
 // reports by writing a forwarded header. The behaviour that follows is pinned
 // over a request in TestClientIPDoesNotTakeForwardingHeaders.
 func TestNoTrustedProxyIsTheDefault(t *testing.T) {
-	settings, err := moduleConfig{Endpoints: map[string]endpointConfig{
-		"public": {Address: ":8080"},
-	}}.resolve()
+	_, endpoints, err := moduleConfig{
+		Listeners: map[string]listenerConfig{"backend": {Address: ":8080"}},
+		Endpoints: map[string]endpointConfig{"public": {Listener: "backend"}},
+	}.resolve()
 	if err != nil {
 		t.Fatalf("resolving: %v", err)
 	}
-	if len(settings[0].trustedProxies) != 0 || len(settings[0].remoteIPHeaders) != 0 {
+	if len(endpoints[0].trustedProxies) != 0 || len(endpoints[0].remoteIPHeaders) != 0 {
 		t.Errorf("an endpoint naming no proxy resolved to trusted-proxies %v remote-ip-headers %v, want none",
-			settings[0].trustedProxies, settings[0].remoteIPHeaders)
+			endpoints[0].trustedProxies, endpoints[0].remoteIPHeaders)
 	}
 }
 
@@ -575,9 +658,12 @@ func TestNoTrustedProxyIsTheDefault(t *testing.T) {
 // network into a message naming the endpoint and the key, rather than letting it
 // surface as gin's parse error from inside the engine.
 func TestAnInvalidTrustedProxyIsStartupFailure(t *testing.T) {
-	_, err := moduleConfig{Endpoints: map[string]endpointConfig{
-		"public": {Address: ":8080", TrustedProxies: []string{"10.0.0.0/8", "not-a-network"}},
-	}}.resolve()
+	_, _, err := moduleConfig{
+		Listeners: map[string]listenerConfig{"backend": {Address: ":8080"}},
+		Endpoints: map[string]endpointConfig{
+			"public": {Listener: "backend", TrustedProxies: []string{"10.0.0.0/8", "not-a-network"}},
+		},
+	}.resolve()
 	if err == nil {
 		t.Fatal("an endpoint naming a value that is not an address or a block was accepted")
 	}

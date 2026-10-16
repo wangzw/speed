@@ -42,7 +42,7 @@ func at(t *testing.T, doc map[string]any, keys ...string) any {
 
 func TestOpsServesProbesAndTheMergedDocument(t *testing.T) {
 	host := startHost(t, hostOptions{config: `{
-		"http": {"endpoints": {"ops": {"address": "127.0.0.1:0"}}},
+		"http": {"listeners": {"ops": {"address": "127.0.0.1:0"}}, "endpoints": {"ops": {"listener": "ops"}}},
 		"ops": {"title": "the platform", "version": "1.2.3"}
 	}`})
 
@@ -105,7 +105,7 @@ func TestOpsServesProbesAndTheMergedDocument(t *testing.T) {
 func TestOpsReadinessNamesADatabaseFailure(t *testing.T) {
 	host := startHost(t, hostOptions{
 		config: `{
-			"http": {"endpoints": {"ops": {"address": "127.0.0.1:0"}}},
+			"http": {"listeners": {"ops": {"address": "127.0.0.1:0"}}, "endpoints": {"ops": {"listener": "ops"}}},
 			"ops": {"title": "t"}
 		}`,
 		database: brokenDatabase(t),
@@ -132,7 +132,7 @@ func TestOpsRoutesAndFragmentFollowTheConfiguredEndpoint(t *testing.T) {
 	// where the module's own operations are tagged, so the document says which
 	// endpoint answers them.
 	host := startHost(t, hostOptions{config: `{
-		"http": {"endpoints": {"internal": {"address": "127.0.0.1:0"}}},
+		"http": {"listeners": {"internal": {"address": "127.0.0.1:0"}}, "endpoints": {"internal": {"listener": "internal"}}},
 		"ops": {"endpoint": "internal", "title": "t"}
 	}`})
 

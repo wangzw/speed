@@ -18,11 +18,11 @@
  * (starters/demo/server/main.go) and serves through pkg/webui. The build order
  * is therefore frontend first, Go second.
  *
- * Dev server: the demo's five traffic endpoints listen on separate ports
- * (starters/demo/server/testdata/*.yaml). The app talks to its own origin by
- * default (the client base URL falls back to window.location.origin), so this
- * server proxies the paths the app uses onto the demo's endpoints --
- * overridable through the DEMO_WEB_*_PROXY variables when a run moves them.
+ * Dev server: the demo's backend listener carries the api, account and admin
+ * endpoints on one port (starters/demo/server/testdata/*.yaml). The app talks
+ * to its own origin by default (the client base URL falls back to
+ * window.location.origin), so this server proxies the paths the app uses onto
+ * that port -- overridable through DEMO_WEB_BACKEND_PROXY when a run moves it.
  */
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
@@ -34,10 +34,8 @@ const sibling = (path: string): string =>
 const appRoot = sibling('.')
 const workspaceRoot = sibling('../../../web')
 
-const apiProxy = process.env.DEMO_WEB_API_PROXY ?? 'http://127.0.0.1:8080'
-const accountProxy =
-  process.env.DEMO_WEB_ACCOUNT_PROXY ?? 'http://127.0.0.1:8081'
-const adminProxy = process.env.DEMO_WEB_ADMIN_PROXY ?? 'http://127.0.0.1:8082'
+const backendProxy =
+  process.env.DEMO_WEB_BACKEND_PROXY ?? 'http://127.0.0.1:8080'
 
 export default defineConfig({
   resolve: {
@@ -104,16 +102,16 @@ export default defineConfig({
     fs: {
       allow: [appRoot, workspaceRoot],
     },
-    // The proxy keys are matched in order, so the more specific path sits
-    // before its prefix: /auth/admin answers on the admin endpoint while the
-    // rest of /auth mounts on the account endpoint.
+    // Every path the app uses answers on the same backend listener, so every
+    // prefix proxies to the same origin; the paths are listed so a deployment
+    // that splits them again has the map already in place.
     proxy: {
-      '/api': { target: apiProxy },
-      '/auth/admin': { target: adminProxy },
-      '/auth': { target: accountProxy },
-      '/tenant': { target: adminProxy },
-      '/settings': { target: adminProxy },
-      '/audit': { target: adminProxy },
+      '/api': { target: backendProxy },
+      '/auth/admin': { target: backendProxy },
+      '/auth': { target: backendProxy },
+      '/tenant': { target: backendProxy },
+      '/settings': { target: backendProxy },
+      '/audit': { target: backendProxy },
     },
   },
 })

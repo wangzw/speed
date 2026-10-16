@@ -76,7 +76,7 @@ func getOverTLS(client *nethttp.Client, addr string) (*nethttp.Response, error) 
 // offers: HTTP/2, negotiated through ALPN, with HTTP/1.1 beside it.
 func TestATLSEndpointOffersHTTP2(t *testing.T) {
 	certFile, keyFile, roots := writeSelfSignedCertificate(t, t.TempDir())
-	s := testSettings("public")
+	s := testListener("public")
 	s.tlsCertFile, s.tlsKeyFile = certFile, keyFile
 	logger, _ := newRecordingLogger()
 	_, addr := startTestEndpoint(t, s, nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
@@ -115,7 +115,7 @@ func TestATLSEndpointOffersHTTP2(t *testing.T) {
 // with those streams still running.
 func TestAnHTTP2RequestIsDrained(t *testing.T) {
 	certFile, keyFile, roots := writeSelfSignedCertificate(t, t.TempDir())
-	s := testSettings("public")
+	s := testListener("public")
 	s.tlsCertFile, s.tlsKeyFile = certFile, keyFile
 	logger, _ := newRecordingLogger()
 

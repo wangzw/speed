@@ -206,7 +206,7 @@ func checkGinsProcessWideSettings() error {
 	validator := binding.Validator
 	debugWriter, errorWriter := gin.DefaultWriter, gin.DefaultErrorWriter
 
-	r := newRouter([]endpointSettings{testSettings("public")})
+	r := newRouter([]listenerSettings{testListener("backend")}, []endpointSettings{testSettings("public")})
 	r.open()
 	e, err := r.Endpoint("public")
 	if err != nil {
@@ -460,13 +460,13 @@ func pushOrNothing(c *gin.Context) {
 // call get through the chain.
 func TestThePusherOfAnHTTP2WriterReachesTheHandler(t *testing.T) {
 	certFile, keyFile, roots := writeSelfSignedCertificate(t, t.TempDir())
-	s := testSettings("public")
-	s.tlsCertFile, s.tlsKeyFile = certFile, keyFile
+	l := testListener("public")
+	l.tlsCertFile, l.tlsKeyFile = certFile, keyFile
 	logger, _ := newRecordingLogger()
-	handler := mustAssemble(t, s, nil, logger, func(e Endpoint) {
+	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
 		e.Route("GET", "/", pushOrNothing)
 	})
-	_, addr := startTestEndpoint(t, s, handler, logger)
+	_, addr := startTestEndpoint(t, l, handler, logger)
 
 	transport := &nethttp.Transport{
 		TLSClientConfig:   &tls.Config{RootCAs: roots, NextProtos: []string{"h2", "http/1.1"}, MinVersion: tls.VersionTLS12},
@@ -528,17 +528,17 @@ func TestThereIsNoPusherOnAnHTTP1Writer(t *testing.T) {
 // cannot give starts the response for gin, whether or not it succeeds.
 func TestAFailedHijackOverHTTP2LeavesTheResponseUnanswered(t *testing.T) {
 	certFile, keyFile, roots := writeSelfSignedCertificate(t, t.TempDir())
-	s := testSettings("public")
-	s.tlsCertFile, s.tlsKeyFile = certFile, keyFile
+	l := testListener("public")
+	l.tlsCertFile, l.tlsKeyFile = certFile, keyFile
 	logger, _ := newRecordingLogger()
-	handler := mustAssemble(t, s, nil, logger, func(e Endpoint) {
+	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
 		e.Route("GET", "/hijack", func(c *gin.Context) {
 			_, _, _ = c.Writer.Hijack()
 			panic("after the hijack failed")
 		})
 		e.Route("GET", "/plain", func(*gin.Context) { panic("with no hijack") })
 	})
-	_, addr := startTestEndpoint(t, s, handler, logger)
+	_, addr := startTestEndpoint(t, l, handler, logger)
 
 	transport := &nethttp.Transport{
 		TLSClientConfig:   &tls.Config{RootCAs: roots, NextProtos: []string{"h2", "http/1.1"}, MinVersion: tls.VersionTLS12},

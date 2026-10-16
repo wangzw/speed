@@ -252,16 +252,25 @@ func waitUntil(t *testing.T, what string, ok func() bool) {
 // waitDeadline bounds every wait in this package's tests.
 const waitDeadline = 5 * time.Second
 
-// testSettings is one endpoint's settings with the timeouts a test wants:
-// short enough that a hung assertion fails rather than hangs, long enough that
-// a loaded machine does not fail a passing one.
+// testSettings is one endpoint's settings: the body limit and the proxy
+// settings that belong to an endpoint's chain rather than to its listener.
 func testSettings(name string) endpointSettings {
 	return endpointSettings{
+		name:         name,
+		listenerName: "backend",
+		maxBodyBytes: defaultMaxBodyBytes,
+	}
+}
+
+// testListener is one listener's settings with the timeouts a test wants:
+// short enough that a hung assertion fails rather than hangs, long enough that
+// a loaded machine does not fail a passing one.
+func testListener(name string) listenerSettings {
+	return listenerSettings{
 		name:              name,
 		address:           "127.0.0.1:0",
 		readHeaderTimeout: 5 * time.Second,
 		drainTimeout:      5 * time.Second,
-		maxBodyBytes:      defaultMaxBodyBytes,
 	}
 }
 
@@ -575,15 +584,18 @@ func endpointFrom(reg *core.Registry, name string) (Endpoint, error) {
 	return e, nil
 }
 
-// boundAddr is the address an endpoint really bound, which is where a request
-// in these tests goes: the configuration asks for port 0 and the operating
-// system picks.
+// boundAddr is the address an endpoint's listener really bound, which is where a
+// request in these tests goes: the configuration asks for port 0 and the
+// operating system picks.
 func boundAddr(r *router, name string) (string, error) {
 	e, ok := r.endpoints[name]
 	if !ok {
 		return "", fmt.Errorf("endpoint %q is not declared in this assembly", name)
 	}
-	addr := e.socket.addr()
+	if e.listener == nil {
+		return "", fmt.Errorf("endpoint %q hangs on no listener in this assembly", name)
+	}
+	addr := e.listener.addr()
 	if addr == nil {
 		return "", fmt.Errorf("endpoint %q never bound an address", name)
 	}
@@ -675,12 +687,17 @@ func serveOnce(h nethttp.Handler, method, target string) *httptest.ResponseRecor
 // not care what it answers.
 func filler(c *gin.Context) { c.Status(nethttp.StatusNoContent) }
 
-// endpointsAt is a configuration with one endpoint per name, each on a
-// loopback port the operating system picks, sharing one drain timeout.
+// endpointsAt is a configuration with one endpoint per name, each on a listener
+// of its own named the same, on a loopback port the operating system picks,
+// sharing one drain timeout.
 func endpointsAt(drain time.Duration, names ...string) moduleConfig {
-	cfg := moduleConfig{Endpoints: make(map[string]endpointConfig, len(names))}
+	cfg := moduleConfig{
+		Listeners: make(map[string]listenerConfig, len(names)),
+		Endpoints: make(map[string]endpointConfig, len(names)),
+	}
 	for _, name := range names {
-		cfg.Endpoints[name] = endpointConfig{Address: "127.0.0.1:0", DrainTimeout: &drain}
+		cfg.Listeners[name] = listenerConfig{Address: "127.0.0.1:0", DrainTimeout: &drain}
+		cfg.Endpoints[name] = endpointConfig{Listener: name}
 	}
 	return cfg
 }

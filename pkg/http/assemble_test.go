@@ -46,7 +46,7 @@ func assembleEndpointWithResolver(t *testing.T, s endpointSettings, injected, lo
 	responder ErrorResponder, localizer i18n.Localizer, resolver i18n.Resolver, register func(Endpoint),
 ) (nethttp.Handler, error) {
 	t.Helper()
-	r := newRouter([]endpointSettings{s})
+	r := newRouter([]listenerSettings{testListener(s.listenerName)}, []endpointSettings{s})
 	r.open()
 	register(endpointOf(t, r, s.name))
 	r.seal()

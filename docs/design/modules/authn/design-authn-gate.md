@@ -4,7 +4,7 @@
 
 本文承载 `pkg/authn` 功能目录中的网关、路由挂载口与口令表，以及它们共同围绕的校验后端接缝。功能目录整体的职责、模块清单、身份与判决的形状、链上次序与非保证见 [design-authn](design-authn.md)。
 
-- 守住入口模块的受守端：对每个请求取出凭据，交给认领该凭据载体的那一个校验后端，把后端的判决收口为放行或一次拒绝响应。**受守端**指本网关在其上登记了认证层的监听端；**载体**指一条凭据的出处，即 `Authorization` 头里的 scheme 或一个 cookie 名；**载体键**指一个 scheme 或一个 cookie 名。
+- 守住入口模块的受守端：对每个请求取出凭据，交给认领该凭据载体的那一个校验后端，把后端的判决收口为放行或一次拒绝响应。**受守端**指本网关在其上登记了认证层的端点；**载体**指一条凭据的出处，即 `Authorization` 头里的 scheme 或一个 cookie 名；**载体键**指一个 scheme 或一个 cookie 名。
 - 定义校验后端的接缝：`Verifier`、`Accepts`、`Credential`、`Challenger`、`CookieClearer`，以及后端被纳入装配的准入条件。
 - 受理路由登记：`Exempt`（免认证）、`Optional`（可选认证）、`Impersonable`（允许冒充身份通过），并在请求期按已匹配的路由逐字比对。
 - 在写入身份之前复核后端交出的 `Principal`：形状与界限、账户命名空间、能力声明，以及冒充身份的范围；全部通过才盖章。
@@ -321,7 +321,7 @@ classDiagram
 
 ```mermaid
 flowchart TD
-    A["请求进入监听端"] --> B{"端在网关所守集合内"}
+    A["请求进入端点"] --> B{"端在网关所守集合内"}
     B -- 否 --> P0["放行 无身份 AccessUnknown"]
     B -- 是 --> C{"方法与 FullPath 命中 Exempt"}
     C -- 是 --> P1["放行 无身份 AccessOpen"]
@@ -543,7 +543,7 @@ sequenceDiagram
 
 - 列出各后端认领的 scheme（去重、字典序）；后端实现了 `Challenger` 就用它给出的挑战，否则每个 scheme 写成 `<Scheme 首字母大写> realm="<端名>"`。
 - **`Basic` 仅当有后端的 `Accepts().Schemes` 含 `basic` 时出现**，即 `authn.static` 在场；装配里没有后端认领 `basic` 时，浏览器不会为一条到不了任何后端的凭据弹出口令框。
-- realm 取该监听端的端名，写进头之前转义引号与反斜线、丢弃换行，否则配置里的一个引号能在挑战里多带出几个参数，一个换行能多带出一个响应头。
+- realm 取该端点的端名，写进头之前转义引号与反斜线、丢弃换行，否则配置里的一个引号能在挑战里多带出几个参数，一个换行能多带出一个响应头。
 - 请求带着某后端认领的凭据而被拒时，该后端的挑战用 `rejected=true` 重新生成；令牌后端写 `Bearer realm="…", error="invalid_token"`。这一条对网关自判的拒绝同样成立：出口检查不符与冒充范围不符，请求带着的仍是该后端认领的凭据，用普通挑战会让调用方去出示它已经出示过的凭据。凭据没有交给后端评判的拒绝用普通挑战：没有凭据、头不合规、没有后端认领该 scheme、被认领的 cookie 歧义、跨源检查不过。
 - 没有任何后端认领头 scheme（只有 cookie 的装配）时，RFC 9110 要求 401 至少带一个挑战，写 `Cookie realm="<端名>"`。「Cookie」不在 IANA 的 HTTP 认证方案登记表里，是一个约定而不是标准，没有标准客户端认识它，只为满足「401 必带挑战」而存在；浏览器对 `Basic`、`Digest` 之外的方案名不弹口令框。
 - 加强认证的挑战（`insufficient_user_authentication`）由 `guard.Require` 与 `tenant.admission` 另写，方案名取 `Identity.Challenge()`。authn 自己处理器答的 401 只带 `Bearer` 与 `Cookie` 挑战，不带 `Basic`。

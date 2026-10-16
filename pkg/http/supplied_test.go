@@ -42,7 +42,7 @@ var _ Router = wrappedRouter{}
 // TestASuppliedInstanceTakesThePlaceOfPrepareAndNew pins what a host gets by
 // supplying an instance for this module, observed through a whole assembly.
 //
-// The configuration declares no endpoint, the one premise Prepare turns a
+// The configuration declares no listener, the one premise Prepare turns a
 // startup down over. The first assembly supplies nothing and fails on it,
 // naming the key to write, which shows the premise is enforced there. The second
 // supplies an instance and starts: Prepare does not run for it. The instance is
@@ -52,10 +52,10 @@ func TestASuppliedInstanceTakesThePlaceOfPrepareAndNew(t *testing.T) {
 	control := startAssembly(t, moduleConfig{}, Module())
 	controlErr := control.stop(t)
 	if controlErr == nil {
-		t.Fatal("an assembly whose configuration declares no endpoint started up, so the run " +
+		t.Fatal("an assembly whose configuration declares no listener started up, so the run " +
 			"below says nothing about Prepare being skipped for a supplied instance")
 	}
-	mustContain(t, controlErr.Error(), "http.endpoints", "the configuration key to write")
+	mustContain(t, controlErr.Error(), "http.listeners", "the configuration key to write")
 
 	supplied := &foreignRouter{label: "the router the host wrote"}
 	taken := make(chan Router, 1)
@@ -137,7 +137,7 @@ func TestCallbacksLeaveAWrappedProductAlone(t *testing.T) {
 	if err := m.Serve(ctx, nil, wrapped); err != nil {
 		t.Fatalf("Serve over a wrapped product: %v", err)
 	}
-	if addr := inner.endpoints["public"].socket.addr(); addr != nil {
+	if addr := inner.endpoints["public"].listener.addr(); addr != nil {
 		t.Errorf("Serve bound %v for the router inside the wrapper, which is not this module's "+
 			"to serve", addr)
 	}

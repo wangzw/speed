@@ -329,12 +329,18 @@ func TestBindFailureRollsBackBoundEndpoints(t *testing.T) {
 		},
 	}
 
-	// The endpoints are bound in name order, so "a" comes up and "b" is the
+	// The listeners are bound in name order, so "a" comes up and "b" is the
 	// one that collides.
-	cfg := moduleConfig{Endpoints: map[string]endpointConfig{
-		"a": {Address: "127.0.0.1:0"},
-		"b": {Address: taken.Addr().String()},
-	}}
+	cfg := moduleConfig{
+		Listeners: map[string]listenerConfig{
+			"a": {Address: "127.0.0.1:0"},
+			"b": {Address: taken.Addr().String()},
+		},
+		Endpoints: map[string]endpointConfig{
+			"a": {Listener: "a"},
+			"b": {Listener: "b"},
+		},
+	}
 	a := startAssembly(t, cfg, Module(), watch.module())
 
 	// stop rather than wait: a startup that fails comes back on its own, so
@@ -369,12 +375,12 @@ func TestBindFailureRollsBackBoundEndpoints(t *testing.T) {
 	reopened.Close()
 }
 
-// TestShutdownAggregatesPerEndpointDrainFailures pins that the shutdown waits
-// for every endpoint and reports all of them, once each. One endpoint timing
+// TestShutdownAggregatesPerListenerDrainFailures pins that the shutdown waits
+// for every listener and reports all of them, once each. One listener timing
 // out neither shortens another's wait nor hides it: a shutdown report naming
-// one of two stuck endpoints sends its reader after the wrong configuration
-// key, and one naming the same endpoint twice reads like two failures.
-func TestShutdownAggregatesPerEndpointDrainFailures(t *testing.T) {
+// one of two stuck listeners sends its reader after the wrong configuration
+// key, and one naming the same listener twice reads like two failures.
+func TestShutdownAggregatesPerListenerDrainFailures(t *testing.T) {
 	gateA, gateB := newGateHandler(t), newGateHandler(t)
 	serving := make(chan struct{}, 1)
 	var (
@@ -429,13 +435,13 @@ func TestShutdownAggregatesPerEndpointDrainFailures(t *testing.T) {
 		t.Fatalf("a shutdown with a stuck request on each endpoint came back with %v, which "+
 			"is not a drain timeout", runErr)
 	}
-	mustContain(t, runErr.Error(), "endpoint \"a\"", "the first endpoint that did not drain")
-	mustContain(t, runErr.Error(), "endpoint \"b\"", "the second endpoint that did not drain")
+	mustContain(t, runErr.Error(), "listener \"a\"", "the first listener that did not drain")
+	mustContain(t, runErr.Error(), "listener \"b\"", "the second listener that did not drain")
 	mustContain(t, runErr.Error(), "drain-timeout", "the key whose value the reader has to raise")
 	for _, name := range []string{"a", "b"} {
-		reported := fmt.Sprintf("endpoint %q still had requests in flight", name)
+		reported := fmt.Sprintf("listener %q still had requests in flight", name)
 		if got := strings.Count(runErr.Error(), reported); got != 1 {
-			t.Errorf("the drain timeout of endpoint %q is reported %d times, want once: %v",
+			t.Errorf("the drain timeout of listener %q is reported %d times, want once: %v",
 				name, got, runErr)
 		}
 	}

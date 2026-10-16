@@ -32,23 +32,26 @@ func testProduct(t *testing.T, cfg moduleConfig) *router {
 	return r
 }
 
-// oneEndpoint is a configuration with a single endpoint on a loopback port the
-// operating system picks.
+// oneEndpoint is a configuration with a single endpoint on a listener of its
+// own named the same, on a loopback port the operating system picks.
 func oneEndpoint(name string) moduleConfig {
-	return moduleConfig{Endpoints: map[string]endpointConfig{name: {Address: "127.0.0.1:0"}}}
+	return moduleConfig{
+		Listeners: map[string]listenerConfig{name: {Address: "127.0.0.1:0"}},
+		Endpoints: map[string]endpointConfig{name: {Listener: name}},
+	}
 }
 
-// TestPrepareFailsWhenNoEndpointIsConfigured pins that a host which took this
-// module in but configured no endpoint gets a startup failure, not a stance.
+// TestPrepareFailsWhenNoListenerIsConfigured pins that a host which took this
+// module in but configured no listener gets a startup failure, not a stance.
 // An entry point that quietly does nothing is the failure the module-level
 // rule forbids, so the error names the key to write.
-func TestPrepareFailsWhenNoEndpointIsConfigured(t *testing.T) {
+func TestPrepareFailsWhenNoListenerIsConfigured(t *testing.T) {
 	_, err := prepare(&stubReader{}, nil)
 	if err == nil {
-		t.Fatal("Prepare with no endpoint configured succeeded, so this entry point would " +
+		t.Fatal("Prepare with no listener configured succeeded, so this entry point would " +
 			"start and serve nothing")
 	}
-	mustContain(t, err.Error(), "http.endpoints", "the configuration key to write")
+	mustContain(t, err.Error(), "http.listeners", "the configuration key to write")
 }
 
 // TestPrepareRefusesAnEndpointNamedWithTheWildcard pins where the reserved name
@@ -60,9 +63,12 @@ func TestPrepareFailsWhenNoEndpointIsConfigured(t *testing.T) {
 func TestPrepareRefusesAnEndpointNamedWithTheWildcard(t *testing.T) {
 	for name, cfg := range map[string]moduleConfig{
 		"alone": oneEndpoint("*"),
-		"beside another": {Endpoints: map[string]endpointConfig{
-			"public": {Address: "127.0.0.1:0"}, "*": {Address: "127.0.0.1:0"},
-		}},
+		"beside another": {
+			Listeners: map[string]listenerConfig{"public": {Address: "127.0.0.1:0"}},
+			Endpoints: map[string]endpointConfig{
+				"public": {Listener: "public"}, "*": {Listener: "public"},
+			},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			stance, err := prepare(&stubReader{cfg: cfg}, nil)
@@ -294,13 +300,13 @@ func TestPrepareTakesUpTheSuppliedReader(t *testing.T) {
 	supplyConfig(empty, moduleConfig{})
 	_, err = m.Prepare(context.Background(), empty)
 	if err == nil {
-		t.Fatal("Prepare with a supplied reader declaring no endpoint succeeded, so it did not " +
+		t.Fatal("Prepare with a supplied reader declaring no listener succeeded, so it did not " +
 			"read the reader the host supplied")
 	}
 	if errors.Is(err, core.ErrMissingProvider) {
 		t.Fatalf("Prepare did not find the reader that was supplied: %v", err)
 	}
-	mustContain(t, err.Error(), "http.endpoints", "the configuration key to write")
+	mustContain(t, err.Error(), "http.listeners", "the configuration key to write")
 }
 
 // TestImportingThisPackageCarriesALoggingModule pins the half of the optional
@@ -414,7 +420,7 @@ func TestServeBindsAndTheEndpointServes(t *testing.T) {
 	if !e.Accepting() {
 		t.Fatal("the endpoint reports that it is not accepting requests after Serve returned")
 	}
-	addr := product.endpoints["public"].socket.addr().String()
+	addr := product.endpoints["public"].listener.addr().String()
 	status, err := getStatus(ctx, addr, "/things")
 	if err != nil {
 		t.Fatalf("the bound endpoint refused a request: %v", err)
@@ -447,11 +453,17 @@ func TestBindFailureReleasesTheEndpointsAlreadyBound(t *testing.T) {
 	defer taken.Close()
 
 	m := Module()
-	// The endpoints are bound in name order, so "a" comes up and "b" fails.
-	product := testProduct(t, moduleConfig{Endpoints: map[string]endpointConfig{
-		"a": {Address: "127.0.0.1:0"},
-		"b": {Address: taken.Addr().String()},
-	}})
+	// The listeners are bound in name order, so "a" comes up and "b" fails.
+	product := testProduct(t, moduleConfig{
+		Listeners: map[string]listenerConfig{
+			"a": {Address: "127.0.0.1:0"},
+			"b": {Address: taken.Addr().String()},
+		},
+		Endpoints: map[string]endpointConfig{
+			"a": {Listener: "a"},
+			"b": {Listener: "b"},
+		},
+	})
 	ctx := context.Background()
 
 	if err := m.Migrate(ctx, nil, product); err != nil {
@@ -463,9 +475,9 @@ func TestBindFailureReleasesTheEndpointsAlreadyBound(t *testing.T) {
 
 	serveErr := m.Serve(ctx, nil, product)
 	if !errors.Is(serveErr, ErrListen) {
-		t.Fatalf("the second endpoint's bind failure did not end the startup: %v", serveErr)
+		t.Fatalf("the second listener's bind failure did not end the startup: %v", serveErr)
 	}
-	first := product.endpoints["a"].socket.addr().String()
+	first := product.endpoints["a"].listener.addr().String()
 	if !product.endpoints["a"].Accepting() {
 		t.Error("the endpoint that did bind is not accepting, so the failure was reported on the wrong one")
 	}

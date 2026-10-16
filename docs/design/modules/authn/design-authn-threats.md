@@ -143,7 +143,7 @@
 | 数据库转储 | 口令用 Argon2id；令牌只存哈希；TOTP 种子与 IdP 密钥用加密列；短信码存带密钥的摘要；签名私钥不在库里 | [design-authn-account](design-authn-account.md)、[design-authn-config](design-authn-config.md)、[design-db](../design-db.md) | 邮箱、手机、显示名是明文；加密列依赖 db 根密钥，根密钥与库一起失守则全失 |
 | `Host` 头注入与对外基址 | 基址只来自配置；从不用 `Host` 或转发头拼回跳地址、`iss`、ACS | [design-authn-config](design-authn-config.md)、[design-authn-login](design-authn-login.md) | 无已知剩余项 |
 | 跨租户访问：持合法凭据的调用方指名另一个租户 | `tenant.admission` 默认拒绝，非成员的应答与不存在的租户同形（404） | [design-tenant-admission](../tenant/design-tenant-admission.md) | 准入层的拒绝落在审计与限流之内：准入层在授权阶段，该阶段在记录与限流之内；装配后的真实次序未经运行核对（见[依赖未核实行为的假设](#依赖未核实行为的假设)） |
-| 监听端漏守、配置错误 | 默认守全部端，漏写的端同样被守；启动诊断列出展开后的清单与被开出的口子；放宽项各写一行 Warn；缺省值取最严 | [design-authn-gate](design-authn-gate.md)、[design-authn-config](design-authn-config.md) | 链上仍可有层绕过认证（非保证）：声明在鉴别阶段之外各阶段的层、阶段内被 `After`、`Before` 或 `Order` 排到网关之外的层，以及入口模块内建的请求上下文、访问日志与兜底层，都在网关之前；宿主仍可显式放宽 |
+| 端点漏守、配置错误 | 默认守全部端，漏写的端同样被守；启动诊断列出展开后的清单与被开出的口子；放宽项各写一行 Warn；缺省值取最严 | [design-authn-gate](design-authn-gate.md)、[design-authn-config](design-authn-config.md) | 链上仍可有层绕过认证（非保证）：声明在鉴别阶段之外各阶段的层、阶段内被 `After`、`Before` 或 `Order` 排到网关之外的层，以及入口模块内建的请求上下文、访问日志与兜底层，都在网关之前；宿主仍可显式放宽 |
 | 管理面被远程滥用 | 默认不可用：`authn.admin` 要宿主纳入并交付 `Decider` 与审计；强制审计 | [design-authn-admin](design-authn-admin.md) | 宿主交付的 `Decider` 有缺陷，则管理面有缺陷 |
 | 设置写权限被滥用来放宽安全项 | 放宽方向的开关（`signup`、`auto-link`、`check-session`）只取主配置源；其余可在运行期修改的安全项，由 authn 订阅 `settings.changed`，改到更宽松的取值时写 Warn 并记一条尽力档审计；`pkg/authn/AGENTS.md` 写明「`authn.*` 与 `tenant.admission.*` 设置不得对租户或普通管理员开放写权限」 | [design-authn-config](design-authn-config.md)、[design-settings](../settings/design-settings.md) | 事后可见、不能事前阻止；拿到设置写权限的主体仍能把 `throttle-*` 与短信预算调松。**接受** |
 | 预认证请求使表无界增长 | 每张会增长的表有持有者与清扫协程；`authn_throttles` 的行数上界是失败请求速率乘 `throttle-decay` | [design-authn-account](design-authn-account.md) | 匿名洪泛期间表会变大；缓解是来源地址层的前置减负（缺省关）与入口层限流。**接受** |
@@ -314,7 +314,7 @@ flowchart LR
 |---|---|---|
 | 统一应答与等时、诱饵派生 | 账户枚举、计时侧信道 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) |
 | 一次性凭据与流程的消费靠原子的条件写 | 断言重放、授权码重放、验证码重用、刷新令牌重用 | [design-authn](design-authn.md) 的设计原则；各模块文档 |
-| 默认拒绝 | 监听端漏守、管理面滥用、冒充、跨租户访问 | [design-authn-gate](design-authn-gate.md)、[design-authn-admin](design-authn-admin.md)、[design-tenant-admission](../tenant/design-tenant-admission.md) |
+| 默认拒绝 | 端点漏守、管理面滥用、冒充、跨租户访问 | [design-authn-gate](design-authn-gate.md)、[design-authn-admin](design-authn-admin.md)、[design-tenant-admission](../tenant/design-tenant-admission.md) |
 | 放宽项各是显式开关、缺省取最严、启动诊断各占一行 Warn | 配置错误、设置写权限滥用 | [design-authn-config](design-authn-config.md) |
 | 状态按丢失的方向放置 | 缓存或 kv 丢失导致校验被放宽 | [ADR-authn-state-placement-2026-10-10](../../../adr/adr-authn-state-placement-2026-10-10.md) |
 | 凭据与秘密不以明文落地：哈希、摘要、加密列、脱敏 | 数据库转储、秘密进入日志与事件 | [design-authn-account](design-authn-account.md)、[design-authn-events](design-authn-events.md) |

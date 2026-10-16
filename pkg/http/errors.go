@@ -18,21 +18,28 @@ var (
 	// because that is the fixing action; there is no fallback to a default
 	// endpoint.
 	ErrUnknownEndpoint = errors.New("http: endpoint name was never declared")
-	// ErrRouteConflict reports a route on one endpoint that gin refused to
-	// mount beside the others: two routes that conflict, or a refusal that
-	// no single mounted route reproduces, such as a chain of handlers longer
-	// than gin accepts once the endpoint's layers are counted. It surfaces
-	// while the routes are mounted in Serve, not at registration: a
-	// registration records a declaration, and conflict is a property of the
-	// mounted set.
+	// ErrUnknownListener reports an endpoint that hangs on a listener name the
+	// configuration never declared. The text names the endpoint, the listener
+	// it named and the listeners that do exist, because picking one of them is
+	// the fixing action.
+	ErrUnknownListener = errors.New("http: listener name was never declared")
+	// ErrRouteConflict reports a routing clash the module refused: two routes
+	// on one endpoint that gin would not mount beside the others, or two
+	// routes on one listener that the listener's dispatch cannot tell apart.
+	// It surfaces while the chains are assembled and the listeners bound in
+	// Serve, not at registration: a registration records a declaration, and
+	// conflict is a property of the mounted set.
 	//
-	// The text names both routes, each as its method and path, and the
-	// endpoint they are on, and not the registrants: the registration
+	// The text names both routes, each as its method and path, and the endpoint
+	// or the listener they are on, and not the registrants: the registration
 	// surface does not know who called it, the same reason a layer has to
 	// declare its own Provides. A method and a path are literals in the
 	// source, so naming them locates the call. When the refusal cannot be
 	// attributed to a pair, the text says so instead of naming one route as
-	// though that were the verdict.
+	// though that were the verdict. Two catch-all endpoints on one listener
+	// join this sentinel too: gin keeps a catch-all and any other route apart,
+	// so the listener can carry at most one endpoint whose routes end in a
+	// catch-all, and a second one has no route a request could reach it by.
 	ErrRouteConflict = errors.New("http: two routes on one endpoint conflict")
 	// ErrMiddlewareCycle reports that the After and Before constraints of
 	// an endpoint's middleware form a cycle, so no order satisfies them.
@@ -57,12 +64,12 @@ var (
 	// an object without an openapi field. The content beyond that shape is
 	// not checked here.
 	ErrInvalidSpec = errors.New("http: OpenAPI fragment has an unusable shape")
-	// ErrListen reports that an endpoint could not bind its address. It
+	// ErrListen reports that a listener could not bind its address. It
 	// wraps the underlying net error, so a caller can still reach for
 	// syscall.EADDRINUSE through it.
-	ErrListen = errors.New("http: endpoint could not bind its address")
-	// ErrDrainTimeout reports that an endpoint's in-flight requests had not
+	ErrListen = errors.New("http: listener could not bind its address")
+	// ErrDrainTimeout reports that a listener's in-flight requests had not
 	// finished when its configured drain timeout expired. The connections
 	// still open at that moment are cut.
-	ErrDrainTimeout = errors.New("http: endpoint did not drain within its timeout")
+	ErrDrainTimeout = errors.New("http: listener did not drain within its timeout")
 )

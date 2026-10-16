@@ -63,7 +63,7 @@ const (
 	// listeningMsg is the record the entry point writes once an endpoint's
 	// address is bound. It is the only place outside the process that says which
 	// port the system picked for an endpoint configured on port 0.
-	listeningMsg = "an HTTP endpoint is listening"
+	listeningMsg = "an HTTP listener is listening"
 )
 
 // waitLimit bounds every wait and every request, so a startup or a request that
@@ -193,11 +193,18 @@ func (c chain) body() string {
 		undeclared = `, "undeclared": "` + c.undeclared + `"`
 	}
 	return `{
-		"http": {"endpoints": {
-			"public": {"address": "127.0.0.1:0"},
-			"internal": {"address": "127.0.0.1:0"},
-			"plain": {"address": "127.0.0.1:0"}
-		}},
+		"http": {
+			"listeners": {
+				"public": {"address": "127.0.0.1:0"},
+				"internal": {"address": "127.0.0.1:0"},
+				"plain": {"address": "127.0.0.1:0"}
+			},
+			"endpoints": {
+				"public": {"listener": "public"},
+				"internal": {"listener": "internal"},
+				"plain": {"listener": "plain"}
+			}
+		},
 		"authn": {"gate": {"endpoints": ["public"]}},
 		"tenant": {
 			"resolve": {"endpoints": ["public"], "extractor": "header"},
@@ -452,7 +459,7 @@ func run(t *testing.T, c chain, enforcer *authztest.Enforcer, use func(l *live))
 	addresses := map[string]string{}
 	for _, rec := range logs.all() {
 		if rec.msg == listeningMsg {
-			addresses[rec.attrs["endpoint"]] = rec.attrs["address"]
+			addresses[rec.attrs["listener"]] = rec.attrs["address"]
 		}
 	}
 	for _, name := range []string{publicEndpoint, internalEndpoint, plainEndpoint} {

@@ -409,6 +409,20 @@ func (e *endpoint) conflictError(mounted []route, refused route, raised any) err
 // whose method the path does not allow and one that matches no route are bounded
 // too.
 func (e *endpoint) base(next nethttp.Handler, injected *slog.Logger, responder ErrorResponder, resolver i18n.Resolver) nethttp.Handler {
+	return injectContext(next, injected, responder, resolver)
+}
+
+// injectContext wraps next so that every request reaching it carries the
+// injected logger, the delivered ErrorResponder and the delivered Resolver in
+// its context. An endpoint puts it around its own engine; a listener puts it
+// around its dispatch, so that a listener-level 404 or 405 is written through
+// the same shape and the same resolver as an endpoint's own.
+//
+// With no Logger capability in the assembly nothing is injected and nothing
+// fails. With no ErrorResponder, Fail writes the default shape. With no Resolver
+// the default shape names no language. Any of the three being absent leaves the
+// others in place.
+func injectContext(next nethttp.Handler, injected *slog.Logger, responder ErrorResponder, resolver i18n.Resolver) nethttp.Handler {
 	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
 		if injected != nil || responder != nil || resolver != nil {
 			ctx := r.Context()

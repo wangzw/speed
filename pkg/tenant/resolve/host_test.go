@@ -147,7 +147,7 @@ func startHost(t *testing.T, opts hostOptions) *host {
 		t.Fatalf("the assembly did not reach Serve within %s", waitLimit)
 	}
 
-	listening := logs.withMessage("an HTTP endpoint is listening")
+	listening := logs.withMessage("an HTTP listener is listening")
 	if len(listening) != 1 {
 		t.Fatalf("the entry point wrote %d records of the address it bound, want 1: %+v", len(listening), listening)
 	}
@@ -160,9 +160,9 @@ func startHost(t *testing.T, opts hostOptions) *host {
 func loadReader(t *testing.T, extractor string) config.Reader {
 	t.Helper()
 	document := fmt.Sprintf(`{
-		"http": {"endpoints": {%q: {"address": "127.0.0.1:0"}}},
+		"http": {"listeners": {%q: {"address": "127.0.0.1:0"}}, "endpoints": {%q: {"listener": %q}}},
 		"tenant": {"resolve": {"endpoints": [%q], "extractor": %q}}
-	}`, guardedEndpoint, guardedEndpoint, extractor)
+	}`, guardedEndpoint, guardedEndpoint, guardedEndpoint, guardedEndpoint, extractor)
 
 	path := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {

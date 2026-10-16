@@ -15,7 +15,7 @@ import (
 
 // startTestEndpoint binds a listener on a loopback port and returns it with the
 // address it really got, tearing it down whatever the test does.
-func startTestEndpoint(t *testing.T, s endpointSettings, h nethttp.Handler, logger *slog.Logger) (*listener, string) {
+func startTestEndpoint(t *testing.T, s listenerSettings, h nethttp.Handler, logger *slog.Logger) (*listener, string) {
 	t.Helper()
 	l := &listener{}
 	if err := l.start(s, h, logger); err != nil {
@@ -55,7 +55,7 @@ func TestBindFailureIsStartupFailure(t *testing.T) {
 	}
 	defer taken.Close()
 
-	s := testSettings("public")
+	s := testListener("public")
 	s.address = taken.Addr().String()
 	logger, _ := newRecordingLogger()
 
@@ -80,7 +80,7 @@ func TestBindFailureKeepsTheUnderlyingNetError(t *testing.T) {
 	}
 	defer taken.Close()
 
-	s := testSettings("public")
+	s := testListener("public")
 	s.address = taken.Addr().String()
 	logger, _ := newRecordingLogger()
 
@@ -101,7 +101,7 @@ func TestBindFailureKeepsTheUnderlyingNetError(t *testing.T) {
 // is looking while the startup reports success.
 func TestTLSCertFailureIsSynchronous(t *testing.T) {
 	dir := t.TempDir()
-	s := testSettings("public")
+	s := testListener("public")
 	s.tlsCertFile = filepath.Join(dir, "absent.pem")
 	s.tlsKeyFile = filepath.Join(dir, "absent-key.pem")
 	logger, _ := newRecordingLogger()
@@ -125,7 +125,7 @@ func TestTLSCertFailureIsSynchronous(t *testing.T) {
 // the two paths in the text are what says which half to fix.
 func TestCertificateFailureIsAListenFailure(t *testing.T) {
 	dir := t.TempDir()
-	s := testSettings("public")
+	s := testListener("public")
 	s.tlsCertFile = filepath.Join(dir, "absent.pem")
 	s.tlsKeyFile = filepath.Join(dir, "absent-key.pem")
 	logger, _ := newRecordingLogger()
@@ -168,7 +168,7 @@ func TestCertificateFailureIsAListenFailure(t *testing.T) {
 func TestStopClosesListenerSynchronously(t *testing.T) {
 	gate := newGateHandler(t)
 	logger, _ := newRecordingLogger()
-	l, addr := startTestEndpoint(t, testSettings("public"), gate, logger)
+	l, addr := startTestEndpoint(t, testListener("public"), gate, logger)
 
 	inFlight := make(chan error, 1)
 	go func() { inFlight <- get("http://" + addr + "/") }()
@@ -216,7 +216,7 @@ func TestStopClosesListenerSynchronously(t *testing.T) {
 func TestCloseWaitsForDrain(t *testing.T) {
 	gate := newGateHandler(t)
 	logger, _ := newRecordingLogger()
-	l, addr := startTestEndpoint(t, testSettings("public"), gate, logger)
+	l, addr := startTestEndpoint(t, testListener("public"), gate, logger)
 
 	inFlight := make(chan error, 1)
 	go func() { inFlight <- get("http://" + addr + "/") }()
@@ -255,7 +255,7 @@ func TestCloseWaitsForDrain(t *testing.T) {
 func TestDrainTimeoutCutsInflight(t *testing.T) {
 	gate := newGateHandler(t)
 	logger, _ := newRecordingLogger()
-	s := testSettings("public")
+	s := testListener("public")
 	s.drainTimeout = 100 * time.Millisecond
 	l, addr := startTestEndpoint(t, s, gate, logger)
 
@@ -314,7 +314,7 @@ func TestAcceptLoopAnomalyFlipsAccepting(t *testing.T) {
 	broken := &failingListener{err: errors.New("the socket is beyond repair"), closed: make(chan struct{})}
 	l := &listener{listen: func(string, string) (net.Listener, error) { return broken, nil }}
 
-	if err := l.start(testSettings("public"), nethttp.NotFoundHandler(), logger); err != nil {
+	if err := l.start(testListener("public"), nethttp.NotFoundHandler(), logger); err != nil {
 		t.Fatalf("the bind itself failed, so the accept loop never ran: %v", err)
 	}
 	t.Cleanup(func() { _ = l.close(context.Background()) })
@@ -336,7 +336,7 @@ func TestAcceptLoopAnomalyFlipsAccepting(t *testing.T) {
 // stop would report an anomaly and the report would mean nothing.
 func TestNormalStopIsNotAnAnomalousExit(t *testing.T) {
 	logger, records := newRecordingLogger()
-	l, _ := startTestEndpoint(t, testSettings("public"), nethttp.NotFoundHandler(), logger)
+	l, _ := startTestEndpoint(t, testListener("public"), nethttp.NotFoundHandler(), logger)
 
 	if err := l.stop(context.Background()); err != nil {
 		t.Fatalf("Stop: %v", err)
@@ -374,7 +374,7 @@ func TestStopToleratesNeverBound(t *testing.T) {
 // closed as a failure.
 func TestStopIsIdempotent(t *testing.T) {
 	logger, _ := newRecordingLogger()
-	l, _ := startTestEndpoint(t, testSettings("public"), nethttp.NotFoundHandler(), logger)
+	l, _ := startTestEndpoint(t, testListener("public"), nethttp.NotFoundHandler(), logger)
 
 	if err := l.stop(context.Background()); err != nil {
 		t.Fatalf("the first Stop: %v", err)
@@ -392,7 +392,7 @@ func TestStopIsIdempotent(t *testing.T) {
 // supposed to release it.
 func TestCloseWithoutStop(t *testing.T) {
 	logger, _ := newRecordingLogger()
-	l, addr := startTestEndpoint(t, testSettings("public"), nethttp.NotFoundHandler(), logger)
+	l, addr := startTestEndpoint(t, testListener("public"), nethttp.NotFoundHandler(), logger)
 
 	if err := l.close(context.Background()); err != nil {
 		t.Fatalf("Close without a preceding Stop: %v", err)
@@ -444,7 +444,7 @@ func TestDrainsOfSeveralEndpointsRunTogether(t *testing.T) {
 
 	bound := make([]*listener, 0, endpoints)
 	for i := range endpoints {
-		s := testSettings(fmt.Sprintf("endpoint-%d", i))
+		s := testListener(fmt.Sprintf("endpoint-%d", i))
 		s.drainTimeout = budget
 		l, addr := startTestEndpoint(t, s, gate, logger)
 		bound = append(bound, l)
@@ -495,7 +495,7 @@ func TestDrainsOfSeveralEndpointsRunTogether(t *testing.T) {
 // a file descriptor the host never chose.
 func TestTheServersOwnRecordsGoToTheModulesLogger(t *testing.T) {
 	logger, records := newRecordingLogger()
-	l, _ := startTestEndpoint(t, testSettings("public"), nethttp.NotFoundHandler(), logger)
+	l, _ := startTestEndpoint(t, testListener("public"), nethttp.NotFoundHandler(), logger)
 
 	if l.server == nil || l.server.ErrorLog == nil {
 		t.Fatal("the listener's server was given no log of its own, so what net/http writes for " +

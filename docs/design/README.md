@@ -13,7 +13,7 @@ speed 是一个配置驱动的模块化应用程序框架，以 Go 库的形式�
 | [config](modules/design-config.md) | 启动必须项的加载：输入项收集、传输与格式扩展点、各来源的覆盖 |
 | [log](modules/design-log.md) | 结构化日志：处理链、内置的格式与目的地、上下文传递、脱敏、文件滚动与清理 |
 | [db](modules/design-db.md) | 数据库访问：连接的建立与关闭、迁移的收齐与应用、插件扩展点 |
-| [http](modules/http/README.md) | HTTP 入口：监听端、路由与中间件的登记、中间件排序、请求上下文、panic 兜底、停机排空；跨源层为其子模块 |
+| [http](modules/http/README.md) | HTTP 入口：监听与端点、路由与中间件的登记、监听级分派、中间件排序、请求上下文、panic 兜底、停机排空；跨源层为其子模块 |
 | [authn](modules/authn/README.md) | 认证：身份系统的职责边界、模块清单与依赖、身份与判决的形状、状态放置、链上次序；网关、账户、登录、会话、令牌、多因素、短信、企业 SSO、冒充、管理面、配置、事件、失败语义、威胁模型为其子模块 |
 | [tenant](modules/tenant/README.md) | 租户：请求面的租户解析、名册与生命周期、共享表加租户列的语句过滤；租户准入层为其子模块 |
 | [authz](modules/design-authz.md) | 授权：职责边界、模块清单与依赖、判定引擎与策略存储、中间件与路由声明、管理面、承接的权限点 |

@@ -9,6 +9,14 @@ order comes from, and the capability tokens it stands for, which is what another
 layer's constraints point at. The root package registers the module, named
 `http`, when it is initialised.
 
+The configuration declares two sets: **listeners**, one socket each, and
+**endpoints**, one middleware chain and route table each, hung on a listener by
+name. A registrant takes an endpoint up by name and binds its routes and layers
+there; several endpoints may share one listener's socket. A listener carries a
+dispatch handler that routes each `(method, path)` to the endpoint that
+registered it, falling back to the listener's one catch-all endpoint when there
+is one.
+
 The API is the package's godoc, plus the runnable examples in `example_test.go`.
 Read `Middleware`'s field comments before adding a seat to a layer.
 

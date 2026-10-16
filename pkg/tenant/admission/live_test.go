@@ -219,7 +219,7 @@ func (c chain) body() string {
 		mount = fmt.Sprintf(`,"mount":{"endpoint":%q}`, c.mountEndpoint)
 	}
 	return fmt.Sprintf(`{
-		"http": {"endpoints": {"public": {"address": "127.0.0.1:0"}, "admin": {"address": "127.0.0.1:0"}}},
+		"http": {"listeners": {"public": {"address": "127.0.0.1:0"}, "admin": {"address": "127.0.0.1:0"}}, "endpoints": {"public": {"listener": "public"}, "admin": {"listener": "admin"}}},
 		"authn": {"gate": {"endpoints": ["public", "admin"]%s}},
 		"tenant": {"resolve": {"endpoints": ["public"], "extractor": "header"},
 		           "admission": {"endpoints": %s}}
@@ -367,8 +367,8 @@ func (c chain) run(t *testing.T, use func(s *served)) error {
 		t.Fatalf("the assembly did not reach Serve within %s", waitLimit)
 	}
 	addresses := map[string]string{}
-	for _, rec := range logs.withMessage("an HTTP endpoint is listening") {
-		addresses[rec.attrs["endpoint"]] = rec.attrs["address"]
+	for _, rec := range logs.withMessage("an HTTP listener is listening") {
+		addresses[rec.attrs["listener"]] = rec.attrs["address"]
 	}
 	if use != nil {
 		use(&served{logs: logs, addresses: addresses})

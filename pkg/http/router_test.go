@@ -16,14 +16,19 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// testRouter builds a router over the named endpoints, with the gate still
-// shut, which is the state New leaves it in.
+// testRouter builds a router over the named endpoints, each on a listener of
+// its own named the same, with the gate still shut, which is the state New
+// leaves it in.
 func testRouter(names ...string) *router {
-	settings := make([]endpointSettings, 0, len(names))
+	listeners := make([]listenerSettings, 0, len(names))
+	endpoints := make([]endpointSettings, 0, len(names))
 	for _, name := range names {
-		settings = append(settings, testSettings(name))
+		listeners = append(listeners, testListener(name))
+		s := testSettings(name)
+		s.listenerName = name
+		endpoints = append(endpoints, s)
 	}
-	return newRouter(settings)
+	return newRouter(listeners, endpoints)
 }
 
 // endpointOf takes an endpoint out, failing the test if it is not there.

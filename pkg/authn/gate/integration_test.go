@@ -38,10 +38,10 @@ import (
 // come back the way a caller would see them.
 
 const (
-	// listening is the record the entry point writes once an endpoint's address
+	// listening is the record the entry point writes once a listener's address
 	// is bound, the only place outside the process that says which port the
-	// operating system picked for an endpoint configured on port 0.
-	listening = "an HTTP endpoint is listening"
+	// operating system picked for a listener configured on port 0.
+	listening = "an HTTP listener is listening"
 	// requestBound bounds each request a case sends, so one that would hang
 	// fails the case.
 	requestBound = 5 * time.Second
@@ -75,7 +75,7 @@ func (m *memory) addressOf(endpoint string) string {
 		var name, address string
 		r.Attrs(func(a slog.Attr) bool {
 			switch a.Key {
-			case "endpoint":
+			case "listener":
 				name = a.Value.String()
 			case "address":
 				address = a.Value.String()
@@ -194,8 +194,10 @@ func serve(t *testing.T, gateItems string, use func(h *host)) {
 
 	endpoints := []string{"public", "ops"}
 	declared := make([]string, len(endpoints))
+	listeners := make([]string, len(endpoints))
 	for i, name := range endpoints {
-		declared[i] = fmt.Sprintf("%q:{\"address\":\"127.0.0.1:0\"}", name)
+		declared[i] = fmt.Sprintf("%q:{\"listener\":%q}", name, name)
+		listeners[i] = fmt.Sprintf("%q:{\"address\":\"127.0.0.1:0\"}", name)
 	}
 	subjects, err := json.Marshal(table(t))
 	if err != nil {
@@ -203,7 +205,8 @@ func serve(t *testing.T, gateItems string, use func(h *host)) {
 	}
 	gateSection := `"gate":{` + gateItems + `}`
 	body := `{"authn":{` + gateSection + `,"static":{"subjects":` + string(subjects) + `}},` +
-		`"http":{"endpoints":{` + strings.Join(declared, ",") + `}}}`
+		`"http":{"listeners":{` + strings.Join(listeners, ",") + `},"endpoints":{` +
+		strings.Join(declared, ",") + `}}}`
 
 	gateModule, staticModule, entry := gate.Module(), static.Module(), speedhttp.Module()
 	reader := authntest.ConfigReaderAll(t, body, gateModule, staticModule, entry)

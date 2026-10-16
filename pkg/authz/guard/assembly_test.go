@@ -35,7 +35,7 @@ import (
 // assemblyBody is the configuration a default drive runs on: one endpoint of the
 // entry point, "public", which this module guards.
 const assemblyBody = `{
-	"http": {"endpoints": {"public": {"address": "127.0.0.1:0"}}},
+	"http": {"listeners": {"public": {"address": "127.0.0.1:0"}}, "endpoints": {"public": {"listener": "public"}}},
 	"authz": {"guard": {"endpoints": ["public"]}}
 }`
 
@@ -324,7 +324,7 @@ func TestAGuardWithNoEntryPointFailsAssembly(t *testing.T) {
 // startup rather than leaving a guard registered nowhere.
 func TestAGuardedEndpointTheEntryPointDoesNotServeFailsAssembly(t *testing.T) {
 	body := `{
-		"http": {"endpoints": {"public": {"address": "127.0.0.1:0"}}},
+		"http": {"listeners": {"public": {"address": "127.0.0.1:0"}}, "endpoints": {"public": {"listener": "public"}}},
 		"authz": {"guard": {"endpoints": ["public", "typo"]}}
 	}`
 	err := assembly{body: body}.drive(t, core.StageInit, nil)

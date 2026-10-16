@@ -78,12 +78,14 @@ starters/demo/
 
 端点是产品自己划的流量边界：`api`、`account`、`admin`、`ops`、`web`。哪个端装哪些层是配置，示范在这里说的是哪类流量属于哪个端。基线在这些端上装好网关、租户解析与准入、鉴权、限流、审计与平台管理面，逐端的装法写在 `testdata/` 的配置里。分离部署下拉起前端的那条通配路由独占 `web` 端（[webui](design-webui.md)）。
 
+**这些端点由两条监听承载。** 端点挂在监听上，一条监听是一个监听套接字，`pkg/http` 据此把多个端点并在一个地址上（[http](http/design-http.md)）。示范的 `testdata/` 配置里，`api`、`account`、`admin` 与 `web` 挂在 `backend` 监听上，`ops` 自开一条 `ops` 监听：前端与 API 因而同源，浏览器直接访问 `web` 与 `api` 无需 CORS。
+
 ### `main.go` 的保留内容
 
 `main.go` 与 `host.go` 只保留「这个产品自己做主」的东西：
 
 - **环境变量前缀与版本常量** 前缀经 `config.HostIdentity` 给进进程；版本常量写进 `version` 命令的应答与合并文档的 `info`。
-- **监听端点集合** 见上。
+- **端点点集合** 见上。
 - **命令树** `run()` 建命令树、执行、把结果转成退出码；命令树的纳名、栈表、命令组与深度是业务决定。
 - **ready 与 stopped 记录** 长跑命令在全部模块启动之后写一条 ready 记录、在退出时写一条 stopped 记录，供监管者与用例等待。
 

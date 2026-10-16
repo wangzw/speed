@@ -31,7 +31,8 @@ func (c wiredConfig) Decode(namespace string, target any) error {
 		cfg.Endpoints = []string{entryName}
 		return nil
 	}
-	return jsonConfig(`{"endpoints":{"`+entryName+`":{"address":"`+c.address+`"}}}`).Decode(namespace, target)
+	return jsonConfig(`{"listeners":{"`+entryName+`":{"address":"`+c.address+`"}},`+
+		`"endpoints":{"`+entryName+`":{"listener":"`+entryName+`"}}}`).Decode(namespace, target)
 }
 
 // recordingMetricExporter keeps the names of the instruments that reached it.

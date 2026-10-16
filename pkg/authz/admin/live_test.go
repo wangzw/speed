@@ -67,7 +67,7 @@ const (
 // listeningMsg is the record the entry point writes once an endpoint's address
 // is bound. It is the only place outside the process that says which port the
 // system picked for an endpoint configured on port zero.
-const listeningMsg = "an HTTP endpoint is listening"
+const listeningMsg = "an HTTP listener is listening"
 
 // waitLimit bounds every request and every wait, so that a request or a startup
 // that never answers fails the case with a message and not the binary at the
@@ -141,7 +141,7 @@ func (r *recorder) address(endpoint string) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, rec := range *r.records {
-		if rec.msg == listeningMsg && rec.attrs["endpoint"] == endpoint {
+		if rec.msg == listeningMsg && rec.attrs["listener"] == endpoint {
 			return rec.attrs["address"]
 		}
 	}
@@ -399,7 +399,7 @@ func (a assembly) serve(t *testing.T, use func(l *live)) {
 	}
 
 	body := `{
-		"http": {"endpoints": {"public": {"address": "127.0.0.1:0"}, "plain": {"address": "127.0.0.1:0"}}},
+		"http": {"listeners": {"public": {"address": "127.0.0.1:0"}, "plain": {"address": "127.0.0.1:0"}}, "endpoints": {"public": {"listener": "public"}, "plain": {"listener": "plain"}}},
 		"authn": {"gate": {"endpoints": ["public"]}},
 		"authz": {"guard": {"endpoints": ["public"]}, "admin": {"endpoints": ["public"]}}
 	}`
@@ -430,7 +430,7 @@ func (a assembly) serve(t *testing.T, use func(l *live)) {
 	}
 	if a.resolve {
 		body = `{
-			"http": {"endpoints": {"public": {"address": "127.0.0.1:0"}, "plain": {"address": "127.0.0.1:0"}}},
+			"http": {"listeners": {"public": {"address": "127.0.0.1:0"}, "plain": {"address": "127.0.0.1:0"}}, "endpoints": {"public": {"listener": "public"}, "plain": {"listener": "plain"}}},
 			"tenant": {"resolve": {"endpoints": ["public"], "extractor": "header"}},
 			"authn": {"gate": {"endpoints": ["public"]}},
 			"authz": {"guard": {"endpoints": ["public"]}, "admin": {"endpoints": ["public"]}}

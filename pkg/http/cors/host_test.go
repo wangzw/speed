@@ -143,12 +143,14 @@ func startHost(t *testing.T, corsPolicy string, register func(speedhttp.Endpoint
 }
 
 // loadReader loads the configuration this assembly runs on through the real
-// loader: the entry point declares one endpoint on a port of the system's
-// choosing, and the CORS module carries the given policy for that endpoint.
+// loader: the entry point declares one endpoint on a listener on a port of the
+// system's choosing, and the CORS module carries the given policy for that
+// endpoint.
 func loadReader(t *testing.T, corsPolicy string) config.Reader {
 	t.Helper()
 	document := fmt.Sprintf(
-		`{"http": {"endpoints": {%q: {"address": "127.0.0.1:0"}}}, "http.cors": {"endpoints": {%q: %s}}}`,
+		`{"http": {"listeners": {"backend": {"address": "127.0.0.1:0"}}, `+
+			`"endpoints": {%q: {"listener": "backend"}}}, "http.cors": {"endpoints": {%q: %s}}}`,
 		guardedEndpoint, guardedEndpoint, corsPolicy)
 
 	path := filepath.Join(t.TempDir(), "config.json")
@@ -339,7 +341,7 @@ func (*entryRecorder) Enabled(context.Context, slog.Level) bool { return true }
 func (r *entryRecorder) Handle(_ context.Context, rec slog.Record) error {
 	var key string
 	switch rec.Message {
-	case "an HTTP endpoint is listening":
+	case "an HTTP listener is listening":
 		key = "address"
 	case "an HTTP endpoint's chain is assembled":
 		key = "chain"

@@ -1075,7 +1075,7 @@ const waitLimit = 10 * time.Second
 // resolution layer guarding it with the header extractor, and this module
 // guarding the same endpoint.
 const liveBody = `{
-	"http": {"endpoints": {"public": {"address": "127.0.0.1:0"}}},
+	"http": {"listeners": {"public": {"address": "127.0.0.1:0"}}, "endpoints": {"public": {"listener": "public"}}},
 	"tenant": {"resolve": {"endpoints": ["public"], "extractor": "header"}},
 	"authz": {"guard": {"endpoints": ["public"]}}
 }`
@@ -1241,7 +1241,7 @@ func TestTheQueryNamesTheTenantIdentifierOnTheChain(t *testing.T) {
 
 	var address string
 	for _, rec := range logs.all() {
-		if rec.msg == "an HTTP endpoint is listening" && rec.attrs["endpoint"] == "public" {
+		if rec.msg == "an HTTP listener is listening" && rec.attrs["listener"] == "public" {
 			address = rec.attrs["address"]
 		}
 	}

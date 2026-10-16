@@ -551,7 +551,8 @@ func serveWithRealEngine(t *testing.T, register func(Endpoint)) string {
 	// Both schemas are declared to the real loader, because both modules read
 	// their own section of one configuration document.
 	reader := authntest.ConfigReaderAll(t,
-		`{"http":{"endpoints":{"public":{"address":"127.0.0.1:0"}}}}`,
+		`{"http":{"listeners":{"backend":{"address":"127.0.0.1:0"}},`+
+			`"endpoints":{"public":{"listener":"backend"}}}}`,
 		Module(), i18ncatalog.Module())
 	reg := core.New()
 	reg.Register(config.Module())

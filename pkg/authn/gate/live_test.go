@@ -33,7 +33,7 @@ import (
 // listeningMsg is the record the entry point writes once an endpoint's address
 // is bound. It is the only place outside the process that says which port the
 // operating system picked for an endpoint configured on port 0.
-const listeningMsg = "an HTTP endpoint is listening"
+const listeningMsg = "an HTTP listener is listening"
 
 // waitBound bounds every request these cases send, so that a request that
 // would hang fails the case instead of holding the binary.
@@ -210,11 +210,14 @@ func (noRules) AddPattern(string, log.Matcher) {}
 var _ log.Logger = recordingLogging{}
 
 // body is the configuration for the entry point and the gateway: one endpoint
-// per name on a loopback port the operating system picks, all of them guarded.
+// per name on a listener of its own on a loopback port the operating system
+// picks, all of them guarded.
 func (a liveAssembly) body(endpoints []string) string {
 	declared := make([]string, len(endpoints))
+	listeners := make([]string, len(endpoints))
 	for i, name := range endpoints {
-		declared[i] = strconv.Quote(name) + `:{"address":"127.0.0.1:0"}`
+		declared[i] = strconv.Quote(name) + `:{"listener":` + strconv.Quote(name) + `}`
+		listeners[i] = strconv.Quote(name) + `:{"address":"127.0.0.1:0"}`
 	}
 	var items []string
 	if a.guarded != nil {
@@ -234,7 +237,8 @@ func (a liveAssembly) body(endpoints []string) string {
 	if a.authnItems != "" {
 		authn += "," + a.authnItems
 	}
-	top := `{"authn":{` + authn + `},"http":{"endpoints":{` + strings.Join(declared, ",") + `}}`
+	top := `{"authn":{` + authn + `},"http":{"listeners":{` + strings.Join(listeners, ",") +
+		`},"endpoints":{` + strings.Join(declared, ",") + `}}`
 	if a.topItems != "" {
 		top += "," + a.topItems
 	}
@@ -365,7 +369,7 @@ func boundAddresses(logs *recorder, endpoints []string) (map[string]string, erro
 		if r.Message != listeningMsg {
 			continue
 		}
-		found[attrText(r, "endpoint")] = attrText(r, "address")
+		found[attrText(r, "listener")] = attrText(r, "address")
 	}
 	for _, name := range endpoints {
 		if found[name] == "" {

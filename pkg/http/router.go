@@ -3,6 +3,7 @@ package http
 import (
 	"fmt"
 	"log/slog"
+	nethttp "net/http"
 	pathpkg "path"
 	"slices"
 	"strings"
@@ -35,19 +36,23 @@ const (
 )
 
 // router is this module's product and the implementation of the Router
-// capability. It holds the endpoints configuration declared and the gate their
-// registration surfaces share.
+// capability. It holds the endpoints configuration declared, the listeners they
+// hang on, and the gate their registration surfaces share.
 //
-// The endpoint set is fixed at construction, so a lookup needs no lock; the
-// mutex covers the gate and the registrations, which arrive while the gate is
-// open, from whatever goroutine a registrant chose to use.
+// The listener and endpoint sets are fixed at construction, so a lookup needs
+// no lock; the mutex covers the gate and the registrations, which arrive while
+// the gate is open, from whatever goroutine a registrant chose to use.
 type router struct {
 	mu        sync.Mutex
 	phase     phase
+	listeners map[string]*listener
 	endpoints map[string]*endpoint
+	// listenerNames is the listener names in configuration order, kept for the
+	// order the listeners are assembled, bound and stopped in.
+	listenerNames []string
 	// names is the endpoint names in configuration order, kept for the
 	// messages that list what does exist and for the order the endpoints are
-	// assembled, bound and stopped in.
+	// assembled in.
 	names []string
 
 	// injected is the logger put into each request's context, nil when no
@@ -69,17 +74,28 @@ type router struct {
 
 var _ Router = (*router)(nil)
 
-// newRouter builds the endpoints from configuration. Nothing is bound here:
-// the address is bound in Serve, and until then an endpoint is a registration
-// surface with no listener behind it.
-func newRouter(settings []endpointSettings) *router {
+// newRouter builds the listeners and the endpoints from configuration. Nothing
+// is bound here: the address is bound in Serve, and until then a listener is a
+// declared socket with no net.Listener behind it and an endpoint is a
+// registration surface with no chain.
+func newRouter(listeners []listenerSettings, endpoints []endpointSettings) *router {
 	// The registration surface tries each route on an engine of its own, so
 	// gin's process-wide mode is settled before the first one exists.
 	setReleaseMode()
-	r := &router{endpoints: make(map[string]*endpoint, len(settings))}
-	for _, s := range settings {
-		r.endpoints[s.name] = &endpoint{settings: s, gate: r}
+	r := &router{
+		listeners: make(map[string]*listener, len(listeners)),
+		endpoints: make(map[string]*endpoint, len(endpoints)),
+	}
+	for _, s := range listeners {
+		r.listeners[s.name] = &listener{settings: s}
+		r.listenerNames = append(r.listenerNames, s.name)
+	}
+	for _, s := range endpoints {
+		l := r.listeners[s.listenerName]
+		e := &endpoint{settings: s, gate: r, listener: l}
+		r.endpoints[s.name] = e
 		r.names = append(r.names, s.name)
+		l.endpoints = append(l.endpoints, e)
 	}
 	return r
 }
@@ -203,20 +219,26 @@ type route struct {
 // path as they were registered.
 func (r route) String() string { return r.method + " " + r.path }
 
-// endpoint is one listening endpoint: the registration surface modules write
-// to, and the listener the chain is served from once Serve has bound it.
+// endpoint is one routing endpoint: the registration surface modules write to,
+// and the chain it is served from once Serve has assembled it. Its socket is the
+// listener it hangs on, which several endpoints may share.
 type endpoint struct {
 	settings endpointSettings
 	// gate is the module-wide registration gate. The endpoint's own
 	// registrations are recorded under its mutex.
 	gate *router
+	// listener is the socket this endpoint is served from. It is fixed at
+	// construction, from the endpoint's configured listener name.
+	listener *listener
 
 	routes []route
 	layers []layer
 
-	// socket carries everything that exists only between Serve and the end
-	// of the shutdown: the server, the listening socket and the drain.
-	socket listener
+	// handler is the assembled chain this endpoint serves requests with, set by
+	// Serve. The listener's dispatch handler hands it a request whose (method,
+	// path) this endpoint registered, or one no endpoint registered when this
+	// endpoint is the listener's catch-all.
+	handler nethttp.Handler
 }
 
 var _ Endpoint = (*endpoint)(nil)
@@ -336,4 +358,8 @@ func registeredLayer(mw Middleware) layer {
 // Accepting reports whether this endpoint is still taking requests. It is not
 // behind the gate and is safe to call from any goroutine at any moment: before
 // the address is bound and after Stop it reports false.
-func (e *endpoint) Accepting() bool { return e.socket.isAccepting() }
+//
+// The state is the listener's, not the endpoint's own: every endpoint on one
+// listener shares its socket, so they all report the same value. What is
+// per-endpoint is the chain, not the acceptance of connections.
+func (e *endpoint) Accepting() bool { return e.listener.isAccepting() }

@@ -21,11 +21,11 @@ pnpm dev                            # vite dev server
 `pnpm dev` serves the app with hot module replacement on vite's own port. The
 app talks to its own origin by default (the client base URL falls back to
 `window.location.origin`), and the dev server proxies the paths the app uses
-onto the demo's endpoints: `/api` to the api endpoint, `/auth` to the account
-endpoint, and `/auth/admin`, `/tenant`, `/settings` and `/audit` to the admin
-endpoint. The targets default to the `sqlite-memory` stack's ports
-(`127.0.0.1:8080/8081/8082`); override them with `DEMO_WEB_API_PROXY`,
-`DEMO_WEB_ACCOUNT_PROXY` and `DEMO_WEB_ADMIN_PROXY` when a run moves them.
+onto the demo's backend listener: the api, account and admin endpoints all
+answer on one port (`/api`, `/auth`, `/auth/admin`, `/tenant`, `/settings` and
+`/audit`). The target defaults to the `sqlite-memory` stack's backend listener
+(`127.0.0.1:8080`); override it with `DEMO_WEB_BACKEND_PROXY` when a run moves
+it.
 
 Run the backend first (`go -C starters/demo/server run . --config
 file:testdata/sqlite-memory.yaml sqlite-memory serve`), then `pnpm dev`.

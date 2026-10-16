@@ -39,11 +39,15 @@ import (
 // speedhttp.ModuleName.
 
 // exampleDocument is the configuration every example runs on: one listening
-// endpoint named public, on an address the operating system picks.
+// socket named backend, on an address the operating system picks, with one
+// routing endpoint named public hanging on it.
 const exampleDocument = `{
   "http": {
+    "listeners": {
+      "backend": {"address": "127.0.0.1:0"}
+    },
     "endpoints": {
-      "public": {"address": "127.0.0.1:0"}
+      "public": {"listener": "backend"}
     }
   }
 }`
@@ -302,7 +306,7 @@ func ExampleEndpoint_Route() {
 
 	// Output:
 	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=1 chain=http:context -> holdAllow -> http:access-log -> http:recovery -> http:body-limit
-	// INFO an HTTP endpoint is listening endpoint=public address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false
+	// INFO an HTTP listener is listening listener=backend address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false endpoints=[public]
 	// INFO an HTTP request was served endpoint=public method=GET route=/things/:id path=/things/7 status=200 size=10
 	// 200 {"id":"7"}
 }
@@ -364,7 +368,7 @@ func ExampleEndpoint_Use() {
 
 	// Output:
 	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 chain=http:context -> holdAllow -> http:access-log -> [observe] span(github.com/vislake/speed/pkg/http_test.spans) -> trace(github.com/vislake/speed/pkg/http_test.tracing) -> http:recovery -> http:body-limit
-	// INFO an HTTP endpoint is listening endpoint=public address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false
+	// INFO an HTTP listener is listening listener=backend address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false endpoints=[public]
 }
 
 // ExampleFail refuses a request from a handler. The response is the default
@@ -411,7 +415,7 @@ func ExampleFail() {
 
 	// Output:
 	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=1 chain=http:context -> holdAllow -> http:access-log -> http:recovery -> http:body-limit
-	// INFO an HTTP endpoint is listening endpoint=public address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false
+	// INFO an HTTP listener is listening listener=backend address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false endpoints=[public]
 	// INFO an HTTP request was served endpoint=public method=GET route=/things/:id path=/things/7 status=404 size=86
 	// 404 application/problem+json
 	// {"type":"about:blank","title":"Not Found","status":404,"detail":"there is no thing 7"}
@@ -462,7 +466,7 @@ func ExampleErrorResponder() {
 
 	// Output:
 	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 chain=http:context -> holdAllow -> http:access-log -> http:recovery -> http:body-limit
-	// INFO an HTTP endpoint is listening endpoint=public address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false
+	// INFO an HTTP listener is listening listener=backend address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false endpoints=[public]
 	// INFO an HTTP request was served endpoint=public method=GET route= path=/nowhere status=404 size=34
 	// 404 application/json
 	// {"code":404,"message":"Not Found"}

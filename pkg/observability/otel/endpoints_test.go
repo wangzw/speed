@@ -95,12 +95,19 @@ func (f endpointConfig) Decode(namespace string, target any) error {
 		}
 		return nil
 	}
-	doc := `{"endpoints":{`
+	doc := `{"listeners":{`
 	for i, name := range f.c.declared {
 		if i > 0 {
 			doc += ","
 		}
 		doc += `"` + name + `":{"address":"` + f.addresses[name] + `"}`
+	}
+	doc += `},"endpoints":{`
+	for i, name := range f.c.declared {
+		if i > 0 {
+			doc += ","
+		}
+		doc += `"` + name + `":{"listener":"` + name + `"}`
 	}
 	return jsonConfig(doc+`}}`).Decode(namespace, target)
 }

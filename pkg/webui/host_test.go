@@ -145,8 +145,11 @@ func loadReader(t *testing.T) config.Reader {
 	t.Helper()
 	document, err := json.Marshal(map[string]any{
 		"http": map[string]any{
-			"endpoints": map[string]any{
+			"listeners": map[string]any{
 				endpointName: map[string]any{"address": "127.0.0.1:0"},
+			},
+			"endpoints": map[string]any{
+				endpointName: map[string]any{"listener": endpointName},
 			},
 		},
 		"webui": map[string]any{"endpoint": endpointName},
@@ -199,7 +202,7 @@ type entryRecorder struct {
 func (*entryRecorder) Enabled(context.Context, slog.Level) bool { return true }
 
 func (r *entryRecorder) Handle(_ context.Context, rec slog.Record) error {
-	if rec.Message != "an HTTP endpoint is listening" {
+	if rec.Message != "an HTTP listener is listening" {
 		return nil
 	}
 	rec.Attrs(func(a slog.Attr) bool {

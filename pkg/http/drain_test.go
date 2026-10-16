@@ -18,15 +18,15 @@ import (
 // process for it.
 func TestTheBoundAddressIsReported(t *testing.T) {
 	logger, records := newRecordingLogger()
-	_, addr := startTestEndpoint(t, testSettings("public"), nethttp.NotFoundHandler(), logger)
+	_, addr := startTestEndpoint(t, testListener("public"), nethttp.NotFoundHandler(), logger)
 
 	attrs, found := records.first(listeningMsg)
 	if !found {
-		t.Fatalf("binding an endpoint wrote no %q record; the records were %v",
+		t.Fatalf("binding a listener wrote no %q record; the records were %v",
 			listeningMsg, records.at(slog.LevelInfo))
 	}
-	if attrs["endpoint"] != "public" {
-		t.Errorf("the record names endpoint %q, want %q", attrs["endpoint"], "public")
+	if attrs["listener"] != "public" {
+		t.Errorf("the record names listener %q, want %q", attrs["listener"], "public")
 	}
 	if attrs["address"] != addr {
 		t.Errorf("the record gives the address %q, want the one the socket bound, %q",
@@ -103,7 +103,7 @@ func openHijackedConnection(t *testing.T, addr string) {
 func TestTheDrainWaitsForAHijackedConnectionsHandler(t *testing.T) {
 	h := newHijackingHandler(t)
 	logger, _ := newRecordingLogger()
-	l, addr := startTestEndpoint(t, testSettings("public"), h, logger)
+	l, addr := startTestEndpoint(t, testListener("public"), h, logger)
 
 	openHijackedConnection(t, addr)
 	waitFor(t, h.entered, "the handler to take the connection over")
@@ -142,7 +142,7 @@ func TestTheDrainWaitsForAHijackedConnectionsHandler(t *testing.T) {
 func TestAHijackedHandlerPastTheDrainTimeoutIsReported(t *testing.T) {
 	h := newHijackingHandler(t)
 	logger, _ := newRecordingLogger()
-	s := testSettings("public")
+	s := testListener("public")
 	s.drainTimeout = 100 * time.Millisecond
 	l, addr := startTestEndpoint(t, s, h, logger)
 
@@ -207,7 +207,7 @@ func (h *streamingHandler) ServeHTTP(w nethttp.ResponseWriter, r *nethttp.Reques
 func TestALongLivedHandlerLearnsTheDrainHasBegun(t *testing.T) {
 	h := newStreamingHandler()
 	logger, _ := newRecordingLogger()
-	l, addr := startTestEndpoint(t, testSettings("public"), h, logger)
+	l, addr := startTestEndpoint(t, testListener("public"), h, logger)
 
 	go func() { _ = get("http://" + addr + "/") }()
 	waitFor(t, h.entered, "the stream to begin")
@@ -256,7 +256,7 @@ func TestTheDrainLeavesRequestContextsAlone(t *testing.T) {
 		}
 	})
 	logger, _ := newRecordingLogger()
-	l, addr := startTestEndpoint(t, testSettings("public"), h, logger)
+	l, addr := startTestEndpoint(t, testListener("public"), h, logger)
 
 	go func() { _ = get("http://" + addr + "/") }()
 	waitFor(t, entered, "the request to reach the handler")

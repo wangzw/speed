@@ -143,8 +143,11 @@ func TestAnEmptyBundleIsServedAsAnEmptyEndpoint(t *testing.T) {
 func TestAMissingEndpointFailsTheStartup(t *testing.T) {
 	document, err := json.Marshal(map[string]any{
 		"http": map[string]any{
-			"endpoints": map[string]any{
+			"listeners": map[string]any{
 				endpointName: map[string]any{"address": "127.0.0.1:0"},
+			},
+			"endpoints": map[string]any{
+				endpointName: map[string]any{"listener": endpointName},
 			},
 		},
 		// webui.endpoint is deliberately absent.

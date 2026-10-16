@@ -39,7 +39,7 @@ import (
 // listening is the record the entry point writes once an endpoint's address is
 // bound, the only place outside the process that says which port the operating
 // system picked for an endpoint configured on port 0.
-const listening = "an HTTP endpoint is listening"
+const listening = "an HTTP listener is listening"
 
 // requestBound bounds each request a case sends.
 const requestBound = 5 * time.Second
@@ -71,7 +71,7 @@ func (c *capture) addressOf(endpoint string) string {
 		var name, address string
 		r.Attrs(func(a slog.Attr) bool {
 			switch a.Key {
-			case "endpoint":
+			case "listener":
 				name = a.Value.String()
 			case "address":
 				address = a.Value.String()
@@ -138,9 +138,12 @@ func assemble(t *testing.T, use func(h *harness)) {
 	}
 
 	document := map[string]any{
-		"db":   map[string]any{"sqlite": map[string]any{"dsn": dsn}},
-		"http": map[string]any{"endpoints": map[string]any{"public": map[string]any{"address": "127.0.0.1:0"}}},
-		"kv":   map[string]any{"memory": map[string]any{"replicas": 1}},
+		"db": map[string]any{"sqlite": map[string]any{"dsn": dsn}},
+		"http": map[string]any{
+			"listeners": map[string]any{"public": map[string]any{"address": "127.0.0.1:0"}},
+			"endpoints": map[string]any{"public": map[string]any{"listener": "public"}},
+		},
+		"kv": map[string]any{"memory": map[string]any{"replicas": 1}},
 		"authn": map[string]any{
 			"gate": map[string]any{"mount": map[string]any{
 				"endpoint": "public", "base-path": "/auth",

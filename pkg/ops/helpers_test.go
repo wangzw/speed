@@ -30,7 +30,7 @@ import (
 // listeningMsg is the record the entry point writes once an endpoint's address
 // is bound. A case reads the address out of it, which is how it learns the port
 // the operating system picked for a 127.0.0.1:0 endpoint.
-const listeningMsg = "an HTTP endpoint is listening"
+const listeningMsg = "an HTTP listener is listening"
 
 // waitLimit bounds every wait in these cases, so a startup that never reaches
 // Serve fails the case with a message instead of the whole binary at the

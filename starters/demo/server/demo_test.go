@@ -109,29 +109,34 @@ const demoSeedSection = `seed:
       password-hash: "$argon2id$v=19$m=19456,t=2,p=1$xeAjr/xEt4mML0QaEhw8pw$Khjd7856RU6MatFxmOtE0YFZJLsC05yxX5HwJhpBXno"
       display-name: "Demo Ops"`
 
-// demoConfig is the sqlite-memory configuration a case writes: the five
-// endpoint addresses, the token signing key, the object store's root and the
-// database locator, with the ports filled in. It is the file
-// testdata/sqlite-memory.yaml holds, with those filled in, so a case exercises
-// the same config a person runs by hand — and one account more: the case that
-// seeds signs in with two, one given a plaintext password and one given a hash,
-// and the sample files carry only the first shape so that a copy starts with one
-// operator to replace rather than two. The platform sections are the baseline
-// every stack carries; the case that reads the platform's own routes holds that
-// they are assembled, and the case that reads an undeclared route on a guarded
-// endpoint holds that it is not.
+// demoConfig is the sqlite-memory configuration a case writes: the two listener
+// addresses, the token signing key, the object store's root and the database
+// locator, with the ports filled in. It is the file testdata/sqlite-memory.yaml
+// holds, with those filled in, so a case exercises the same config a person runs
+// by hand — and one account more: the case that seeds signs in with two, one
+// given a plaintext password and one given a hash, and the sample files carry
+// only the first shape so that a copy starts with one operator to replace rather
+// than two. The platform sections are the baseline every stack carries; the case
+// that reads the platform's own routes holds that they are assembled, and the
+// case that reads an undeclared route on a guarded endpoint holds that it is
+// not.
 const demoConfig = `http:
-  endpoints:
-    api:
-      address: "127.0.0.1:%d"
-    account:
-      address: "127.0.0.1:%d"
-    admin:
+  listeners:
+    backend:
       address: "127.0.0.1:%d"
     ops:
       address: "127.0.0.1:%d"
+  endpoints:
+    api:
+      listener: backend
+    account:
+      listener: backend
+    admin:
+      listener: backend
+    ops:
+      listener: ops
     web:
-      address: "127.0.0.1:%d"
+      listener: backend
   cors:
     endpoints:
       api:
@@ -216,6 +221,15 @@ event:
     replicas: 1
 `
 
+// The two listeners the configuration declares. The backend listener carries
+// the api, account, admin and web endpoints; the ops listener carries the ops
+// endpoint. A case that names one of them indexes the free ports by these.
+const (
+	backendListener = iota
+	opsListener
+	listenerCount
+)
+
 // freePorts hands back n ports that are free at the moment they are asked for.
 // The listeners are closed before the caller uses the ports, so a port could be
 // taken between here and there; in practice nothing else binds a port this
@@ -279,11 +293,11 @@ func writeConfigReplacing(t *testing.T, ports []int, dsn, old, new string) strin
 }
 
 // configBody is the configuration a case runs over: the template with the
-// case's ports, its token signing key, its object store root and its database
-// locator filled in. The key is minted for the case in a directory of its own,
-// named by an absolute path so the child resolves it whatever its working
-// directory, and the object store's root is a directory of the case's own, so a
-// run writes no bytes into the source tree.
+// case's two listener ports, its token signing key, its object store root and
+// its database locator filled in. The key is minted for the case in a directory
+// of its own, named by an absolute path so the child resolves it whatever its
+// working directory, and the object store's root is a directory of the case's
+// own, so a run writes no bytes into the source tree.
 func configBody(t *testing.T, ports []int, dsn string) string {
 	t.Helper()
 	key := filepath.Join(t.TempDir(), "token-signing-key.pem")
@@ -291,7 +305,7 @@ func configBody(t *testing.T, ports []int, dsn string) string {
 		t.Fatalf("minting the case's token signing key: %v", err)
 	}
 	objects := filepath.Join(t.TempDir(), "objects")
-	return fmt.Sprintf(demoConfig, ports[0], ports[1], ports[2], ports[3], ports[4], key, objects,
+	return fmt.Sprintf(demoConfig, ports[0], ports[1], key, objects,
 		demoSeedSection, dsn)
 }
 
@@ -535,7 +549,7 @@ func signIn(t *testing.T, accountBase, identifier, password string) string {
 // liveness and readiness probes answer 200 and the merged document holds the
 // operations the modules declared.
 func TestServeAnswersTheProbes(t *testing.T) {
-	ports := freePorts(t, len(servedEndpoints))
+	ports := freePorts(t, listenerCount)
 	config := writeConfig(t, ports)
 
 	if res := runCommand(t, config, "sqlite-memory", migrateCommand); res.err != nil {
@@ -545,7 +559,7 @@ func TestServeAnswersTheProbes(t *testing.T) {
 	serve := start(t, config, "sqlite-memory", serveCommand)
 	serve.waitReady(t)
 
-	opsBase := fmt.Sprintf("http://127.0.0.1:%d", ports[3])
+	opsBase := fmt.Sprintf("http://127.0.0.1:%d", ports[opsListener])
 
 	health := get(t, opsBase+"/health")
 	if health.status != http.StatusOK {
@@ -581,7 +595,7 @@ func TestServeAnswersTheProbes(t *testing.T) {
 	// bundle carries one, the problem document for a bundle without an entry
 	// document when it does not — so the case pins the shape of each rather
 	// than a state the caller cannot control.
-	web := get(t, fmt.Sprintf("http://127.0.0.1:%d/", ports[4]))
+	web := get(t, fmt.Sprintf("http://127.0.0.1:%d/", ports[backendListener]))
 	switch web.status {
 	case http.StatusOK:
 		if !strings.Contains(string(web.body), "<!doctype html>") {
@@ -602,7 +616,7 @@ func TestServeAnswersTheProbes(t *testing.T) {
 	// key the configuration names was read. A module missing from the assembly
 	// leaves the path undeclared, which the gateway refuses with 401 rather than
 	// 200, so each status distinguishes "assembled" from "not".
-	accountBase := fmt.Sprintf("http://127.0.0.1:%d", ports[1])
+	accountBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	for _, path := range []string{"/auth/methods", "/auth/jwks.json"} {
 		res := get(t, accountBase+path)
 		if res.status != http.StatusOK {
@@ -627,7 +641,7 @@ func TestServeAnswersTheProbes(t *testing.T) {
 // writing standard output, because the two are the two ways the command
 // delivers its result.
 func TestGenWritesTheMergedDocument(t *testing.T) {
-	config := writeConfig(t, freePorts(t, len(servedEndpoints)))
+	config := writeConfig(t, freePorts(t, listenerCount))
 
 	// merged is the part of the document a case asserts on.
 	type merged struct {
@@ -758,7 +772,7 @@ const (
 // database belongs to one of them. The seed carries the migrations with it — it
 // drives past them — so it is run on a database that was never migrated.
 func TestSeedBootstrapsTheConsole(t *testing.T) {
-	ports := freePorts(t, len(servedEndpoints))
+	ports := freePorts(t, listenerCount)
 	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "demo.db"))
 
 	first := runCommand(t, config, "sqlite", seedCommand)
@@ -797,8 +811,8 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 	serve := start(t, config, "sqlite", serveCommand)
 	serve.waitReady(t)
 
-	accountBase := fmt.Sprintf("http://127.0.0.1:%d", ports[1])
-	adminBase := fmt.Sprintf("http://127.0.0.1:%d", ports[2])
+	accountBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
+	adminBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	roster := func(t *testing.T, identifier string) response {
 		t.Helper()
 		token := signIn(t, accountBase, identifier, seedPassword)
@@ -859,7 +873,7 @@ func TestTheSeedRefusesAConfigurationItCannotWrite(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			ports := freePorts(t, len(servedEndpoints))
+			ports := freePorts(t, listenerCount)
 			config := writeConfigReplacing(t, ports, filepath.Join(t.TempDir(), "demo.db"), tc.old, tc.new)
 
 			res := runCommand(t, config, "sqlite", seedCommand)

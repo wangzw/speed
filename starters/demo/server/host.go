@@ -13,25 +13,12 @@ const envPrefix = "DEMO"
 // hostModuleName is the name the host's own module is registered under.
 const hostModuleName = "host"
 
-// The five listening endpoints. This is the product's own choice of traffic
-// boundary, and what this file says about them is which class of traffic
-// belongs where: the CRM-style API is scoped to a tenant, the account endpoint
-// serves a caller who has not chosen one, the admin endpoint serves the
-// platform's operators, the operations endpoint serves probes and documents,
-// and the web endpoint carries the frontend bundle. Which guards each one
-// carries is configuration, and a skeleton that has shipped no business module
-// yet mounts no guarded route on any of them.
-const (
-	apiEndpoint     = "api"
-	accountEndpoint = "account"
-	adminEndpoint   = "admin"
-	opsEndpoint     = "ops"
-	webEndpoint     = "web"
-)
-
-// servedEndpoints lists the endpoints in the order the readiness probe reads
-// them, and the order the assembly binds them in.
-var servedEndpoints = []string{apiEndpoint, accountEndpoint, adminEndpoint, opsEndpoint, webEndpoint}
+// The product's own traffic boundaries are the five endpoints api, account,
+// admin, ops and web, and the two listeners that carry them — the backend
+// listener carries api, account, admin and web, and the ops listener carries
+// ops. Both the endpoints and the listeners are configuration, declared under
+// server/testdata and explained in AGENTS.md; the program names none of them in
+// code.
 
 // init registers the host's own module. What a host hands the assembly travels
 // through the module mechanism like everything else: the identity is a resource

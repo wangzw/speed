@@ -35,7 +35,7 @@
 | 装配器 | assembler | 构造两个 provider、收取导出器、登记采集层的那个模块（`observability.otel`）。 |
 | 导出后端 | export backend | 交付一个导出器的模块，把信号交给一种目的地（`observability.otlp`、`observability.stdout`）。 |
 | 导出器 | exporter | 上游 SDK 的导出接口的一个实现，由导出后端在 `New` 中构造并交出。 |
-| 采集层 | instrumentation layer | 装配器登记到监听端上的中间件层的合称，由外层与守护层构成：跨度与计量由上游采集库产出，守护层补上它没有的日志关联字段与端名。 |
+| 采集层 | instrumentation layer | 装配器登记到端点上的中间件层的合称，由外层与守护层构成：跨度与计量由上游采集库产出，守护层补上它没有的日志关联字段与端名。 |
 | 外层 | outer layer | 采集层中位于外侧的那一层：上游采集库的中间件；在链上代表追踪与指标两个功能。 |
 | 守护层 | guard layer | 采集层中位于外层之内的那一层：把跨度的标识绑进日志上下文，给跨度写端名；不代表任何功能。 |
 | 上游采集库 | upstream gin instrumentation | `go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin`：为 gin 提供服务端跨度与请求计量的中间件，外层以它为基座。 |
@@ -107,7 +107,7 @@ const ModuleName = "observability.stdout"   // pkg/observability/stdout
 
 根包只 import 上游的追踪 API、指标 API、两个 SDK 导出接口所在的包。它不 import 本仓库的任何模块：类型别名不需要 `core`，两条工具函数不收也不交任何模块产物（功能标识由写 `Provides` 的那一方构造，`(*TracerProvider)(nil)` 指向的就是别名本身）。它同样不 import `pkg/config`（不声明配置）与 `pkg/log`（只给出字段名常量，不取 logger、不写记录）。
 
-各实现子包 import `pkg/core`（`init` 中登记）、`pkg/config`（声明并读取自己的配置）、根包，以及自己所绑的后端。`otlp` 另 import `pkg/log` 与 `pkg/internal/literal`（取 logger 用于明文头部与被忽略的标准变量的告警，并在 `New` 里把 `headers` 的每个值登记为日志的字面量匹配器）。装配器另 import `pkg/log`（取 logger 用于导出失败的日志行）、`pkg/http`（在监听端上登记采集层）、gin 与上游采集库（外层与守护层都是 `gin.HandlerFunc`，外层的中间件由上游采集库给出）。gin 已在 `pkg/http` 的依赖闭包里；上游采集库的闭包不在，随装配器进入宿主，它对 OpenTelemetry 各模块给出最低版本，宿主的 `go.mod` 按此对齐（[ADR-observability-request-layer-2026-10-11](../../adr/adr-observability-request-layer-2026-10-11.md)）。
+各实现子包 import `pkg/core`（`init` 中登记）、`pkg/config`（声明并读取自己的配置）、根包，以及自己所绑的后端。`otlp` 另 import `pkg/log` 与 `pkg/internal/literal`（取 logger 用于明文头部与被忽略的标准变量的告警，并在 `New` 里把 `headers` 的每个值登记为日志的字面量匹配器）。装配器另 import `pkg/log`（取 logger 用于导出失败的日志行）、`pkg/http`（在端点上登记采集层）、gin 与上游采集库（外层与守护层都是 `gin.HandlerFunc`，外层的中间件由上游采集库给出）。gin 已在 `pkg/http` 的依赖闭包里；上游采集库的闭包不在，随装配器进入宿主，它对 OpenTelemetry 各模块给出最低版本，宿主的 `go.mod` 按此对齐（[ADR-observability-request-layer-2026-10-11](../../adr/adr-observability-request-layer-2026-10-11.md)）。
 
 **装配器对日志功能的依赖是必需的。** 日志模块排他交付它的功能，而排他交付的提供者不被依赖闭包展开，因此运行级纳入装配器的命令都必须在命令树上点名日志模块或为它预置实例，否则启动以缺提供者失败。代价是命令树上多一行；换来的是一条能定位的启动失败，而不是日志静默落到进程根 logger 那条只写标准输出的链上。
 
@@ -224,7 +224,7 @@ type Config struct {
     } `config:"metric"`
 
     ShutdownTimeout time.Duration `config:"shutdown-timeout"`
-    Endpoints       []string       `config:"endpoints"`   // 在哪些监听端登记采集层；默认 ["*"]，即入口模块声明的每一个端
+    Endpoints       []string       `config:"endpoints"`   // 在哪些端点登记采集层；默认 ["*"]，即入口模块声明的每一个端
 }
 ```
 
@@ -308,7 +308,7 @@ type Config struct {
 
 `Init` 里的取用**由清单决定**：`endpoints` 为空时不取路由登记面。
 
-`endpoints` 为星号时取路由登记面，取不到的原因若是本次运行没有入口模块（`core.ErrMissingProvider`），本模块什么也不登记、也不失败：一个不暴露任何监听端的后台进程在默认配置下照常装配本模块，不要求入口模块在场。区分靠 `errors.Is` 对这一个哨兵；别的取用失败照常返回，例如两个都不声明排他的 `Router` 提供者并存、让取用无从选择（`core.ErrAmbiguousProvider`），吞掉它会让进程在没有任何一个端挂着采集层的情况下开始服务。入口模块交付 `Router` 是排他的，任何别的提供者与它并存都由注册表在解析阶段判成独占冲突，到不了这里。`endpoints` 写了具体端名时，取不到入口模块与端名未声明都是启动失败：写下端名就是要求那个端被采集。
+`endpoints` 为星号时取路由登记面，取不到的原因若是本次运行没有入口模块（`core.ErrMissingProvider`），本模块什么也不登记、也不失败：一个不暴露任何端点的后台进程在默认配置下照常装配本模块，不要求入口模块在场。区分靠 `errors.Is` 对这一个哨兵；别的取用失败照常返回，例如两个都不声明排他的 `Router` 提供者并存、让取用无从选择（`core.ErrAmbiguousProvider`），吞掉它会让进程在没有任何一个端挂着采集层的情况下开始服务。入口模块交付 `Router` 是排他的，任何别的提供者与它并存都由注册表在解析阶段判成独占冲突，到不了这里。`endpoints` 写了具体端名时，取不到入口模块与端名未声明都是启动失败：写下端名就是要求那个端被采集。
 
 这些启动失败都包一层再返回，包装保留原哨兵（`core.ErrMissingProvider`、`http.ErrUnknownEndpoint`、`core.ErrAmbiguousProvider` 仍可用 `errors.Is` 判别），文本点名 `observability.otel.endpoints`，并给出修复动作：清空这份清单，端名未声明时另可在入口模块的配置里声明该端；失败的原因是没有提供者时，另给出在命令树上纳入入口模块这一条。本模块不另造哨兵，包装的文本则是它自己的。
 
@@ -351,7 +351,7 @@ type Config struct {
 
 ### 采集层的跨度
 
-采集层在被登记的监听端上由外层与守护层构成，外层位于外侧（[ADR-observability-request-layer-2026-10-11](../../adr/adr-observability-request-layer-2026-10-11.md)）。两者都在观测阶段，观测阶段是链上各阶段中最外的一个，排在其余各阶段之外，采集层因而包在它们之外，位于请求上下文建立那一层之内、由 `http` 内建的兜底层之外；它因此看得到该端每一条请求，也看得到它之内每一层的耗时。外层取 `OrderOutermost`，是观测阶段最外侧的一层；外层在链上代表追踪与指标两个功能，守护层不代表任何功能，以 `After` 指向追踪 provider 的功能标识放在外层之内，不靠与外层相邻——这条约束是阶段内的（[ADR-observability-anchor-2026-09-22](../../adr/adr-observability-anchor-2026-09-22.md)）。阶段之间的先后由阶段次序给出，阶段内的先后由 `After`、`Before` 与 `Order` 给出：`After` 或 `Before` 指向另一阶段的层时只有与阶段次序一致才成立，不一致由 `pkg/http` 在启动时以 `ErrStageConflict` 拒绝。别的观测层可以落在外层与守护层之间：这样的层在观测阶段之内、位于兜底层之外，它之内抛出的 panic 不被兜底层接住，见[非保证](#非保证)的「位置」一条。
+采集层在被登记的端点上由外层与守护层构成，外层位于外侧（[ADR-observability-request-layer-2026-10-11](../../adr/adr-observability-request-layer-2026-10-11.md)）。两者都在观测阶段，观测阶段是链上各阶段中最外的一个，排在其余各阶段之外，采集层因而包在它们之外，位于请求上下文建立那一层之内、由 `http` 内建的兜底层之外；它因此看得到该端每一条请求，也看得到它之内每一层的耗时。外层取 `OrderOutermost`，是观测阶段最外侧的一层；外层在链上代表追踪与指标两个功能，守护层不代表任何功能，以 `After` 指向追踪 provider 的功能标识放在外层之内，不靠与外层相邻——这条约束是阶段内的（[ADR-observability-anchor-2026-09-22](../../adr/adr-observability-anchor-2026-09-22.md)）。阶段之间的先后由阶段次序给出，阶段内的先后由 `After`、`Before` 与 `Order` 给出：`After` 或 `Before` 指向另一阶段的层时只有与阶段次序一致才成立，不一致由 `pkg/http` 在启动时以 `ErrStageConflict` 拒绝。别的观测层可以落在外层与守护层之间：这样的层在观测阶段之内、位于兜底层之外，它之内抛出的 panic 不被兜底层接住，见[非保证](#非保证)的「位置」一条。
 
 **外层是上游采集库的中间件**，配置的是本模块的 tracer provider、meter provider 与传播器，服务端名留空，上游读作取自请求的 `Host`。它在观测阶段内取 `OrderOutermost`，位于该阶段最外侧。它的动作按序如下：
 
@@ -510,7 +510,7 @@ type Config struct {
 
 - **存在。** 本模块未被本次命令纳入、也没有预置实例时，两种信号都不存在，没有一层会拦下，也不进启动诊断——诊断不覆盖「已登记而未被本次命令纳入、也没有预置实例」这一档。察觉途径是注册表的按名查询：它对这样的名字给出禁用，原因写明它不在这条命令的参与集里。
 - **宿主为本模块预置的实例不是本模块的产物时，采集层不存在，而注册表答本模块在场。** `Init` 对这样的实例不做任何事（见[关停时的刷出](#关停时的刷出)）：不登记采集层；经那个实例是否还有信号产生，由预置的一方决定。按名查询答启用，查不出这一档。察觉途径是各端组装时写出的链清单里没有采集层。
-- **覆盖面。** 默认的星号覆盖入口模块声明的每一个端，本次运行没有入口模块时它什么也不登记，不失败也不进诊断。清单写了具体端名时，受采集的监听端由名单点名，漏写一个端不失败、不进诊断。察觉途径是各端组装时写出的链清单：漏挂的那一行少一个层名。按名查询的启用结果在这一档上没有判别力——它答的是模块的状态，不是某份声明挂在哪个端上。
+- **覆盖面。** 默认的星号覆盖入口模块声明的每一个端，本次运行没有入口模块时它什么也不登记，不失败也不进诊断。清单写了具体端名时，受采集的端点由名单点名，漏写一个端不失败、不进诊断。察觉途径是各端组装时写出的链清单：漏挂的那一行少一个层名。按名查询的启用结果在这一档上没有判别力——它答的是模块的状态，不是某份声明挂在哪个端上。
 - **位置。** 阶段之间的先后是框架的保证，阶段内的先后是偏好。外层不是链上最外层：`http` 内建的请求上下文、`holdAllow` 与访问日志都排在它之外，那一段的耗时与其中抛出的 panic 都不进跨度。守护层按 `After` 放置，不按相邻放置：别的观测层可以落在外层与守护层之间，这样的层是观测层的、位于兜底层之外，它之内抛出的 panic 不被兜底层接住；它直接穿过上游采集库与引擎抵达 `net/http`，连接被关闭，跨度带一个不含堆栈的 `exception` 事件而状态不设，请求不进任何直方图。察觉途径同上，链清单给出组装后的次序。
 - **采样。** `sample-ratio` 只决定本进程开始的追踪；带父跨度的请求由调用方的采样标志决定，而调用方不经认证即可写下它。一次请求有没有跨度因而不只取决于配置，这一档没有察觉途径。
 - **服务名。** 没有配置 `service-name`，环境变量（`OTEL_SERVICE_NAME`，以及 `OTEL_RESOURCE_ATTRIBUTES` 里的 `service.name`）也没有给出服务名时，服务名是 `unknown_service:<可执行文件名>`：这是上游表示「没有命名」的约定值，同一个可执行文件承载的不同服务在采集端同名。本模块不为这一档写启动说明；察觉途径是采集端看到的服务名带 `unknown_service:` 前缀。

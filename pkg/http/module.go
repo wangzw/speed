@@ -38,8 +38,9 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // one.
 //
 // Four packages are depended on. core carries the capability tokens, the
-// declared resources and the instance lookups; config is where the endpoints
-// are read from, through the reader its module delivers; log supplies the
+// declared resources and the instance lookups; config is where the listeners and
+// the endpoints are read from, through the reader its module delivers; log
+// supplies the
 // token of the optional dependency below and the context accessors the base
 // layer injects through; i18n supplies the token of the localizer that renders
 // this module's own refusals, its root package being standard-library only so
@@ -49,12 +50,12 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // before the drive begins. It exists from that call on, so Prepare and New take
 // it up with a lookup and this module declares it in no Requires: there is
 // nothing to order this module against, and neither Stop nor Close reads it. Its
-// absence is still a startup failure — the endpoints are read through it and
-// there is nothing to serve without them.
+// absence is still a startup failure — the listeners and endpoints are read
+// through it and there is nothing to serve without them.
 //
 // A host can supply an instance for this module too, to stand where its New
 // would have put the router. Prepare and New do not run for it, so the checks
-// Prepare makes are not made: the endpoint premise, and the shape of the
+// Prepare makes are not made: the listener premise, and the shape of the
 // fragments the modules declared. Only the router this module builds is acted
 // on. An instance of any other type, one the host wrote or one it wrapped around
 // a router, is left alone by every callback from Migrate to Close: the gate
@@ -110,7 +111,7 @@ func Module() core.Module {
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := core.Resolve[config.Reader](reg)
 			if err != nil {
-				return core.Enablement{}, fmt.Errorf("http: the listening endpoints are read "+
+				return core.Enablement{}, fmt.Errorf("http: the listeners and endpoints are read "+
 					"from configuration, and no reader was handed to the registry "+
 					"before the assembly began: %w", err)
 			}
@@ -120,7 +121,7 @@ func Module() core.Module {
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
 			reader, err := core.Resolve[config.Reader](reg)
 			if err != nil {
-				return nil, fmt.Errorf("http: the listening endpoints are read from "+
+				return nil, fmt.Errorf("http: the listeners and endpoints are read from "+
 					"configuration, and no reader was handed to the registry before "+
 					"the assembly began: %w", err)
 			}
@@ -217,7 +218,7 @@ func productOf(instance any) (*router, bool) {
 // stance.
 //
 // A module taken in at run level has to start, so not being able to start is a
-// failure and not a stance. With no endpoint configured there is no address to
+// failure and not a stance. With no listener configured there is no address to
 // serve on, and this returns an error naming the key to write; the alternative
 // — standing down — is what the module-level rule forbids, because a host that
 // named this entry point would otherwise get a process with no entry point and
@@ -226,43 +227,44 @@ func productOf(instance any) (*router, bool) {
 // The declared fragments are checked first, and over the available set: the
 // shape of a fragment is a static fact about the binary, so a malformed one has
 // to be reported whatever this run's configuration says. Checking it after the
-// endpoint premise would let a host that configured no endpoint hide a fragment
+// listener premise would let a host that configured no listener hide a fragment
 // another configuration of the same binary would reject.
 func prepare(reader config.Reader, specs []core.Resource[Spec]) (core.Enablement, error) {
-	settings, err := readSettings(reader)
+	listeners, _, err := readSettings(reader)
 	if err != nil {
 		return core.Enablement{}, err
 	}
 	if err := validateSpecs(specs); err != nil {
 		return core.Enablement{}, err
 	}
-	if len(settings) == 0 {
-		return core.Enablement{}, fmt.Errorf("http: no listening endpoint is configured: "+
-			"%s.%s is empty, so there is no address to serve on. Declare an endpoint under "+
-			"that key to run this entry point", configNamespace, endpointsItem)
+	if len(listeners) == 0 {
+		return core.Enablement{}, fmt.Errorf("http: no listener is configured: "+
+			"%s.%s is empty, so there is no address to serve on. Declare a listener under "+
+			"that key to run this entry point", configNamespace, listenersItem)
 	}
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
 // readSettings decodes this module's section and validates it. Prepare and New
-// both go through it, so the two see one set of endpoints and one set of
-// defaults.
-func readSettings(reader config.Reader) ([]endpointSettings, error) {
+// both go through it, so the two see one set of listeners and one set of
+// endpoints, and one set of defaults.
+func readSettings(reader config.Reader) ([]listenerSettings, []endpointSettings, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(configPath, &cfg); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	return cfg.resolve()
 }
 
-// newModule builds the product: one endpoint per configured entry, with the
-// gate still shut. Nothing is bound here — the address is bound in Serve.
+// newModule builds the product: one listener per configured entry and one
+// endpoint per configured entry, with the gate still shut. Nothing is bound
+// here — the addresses are bound in Serve.
 func newModule(reader config.Reader, injected *slog.Logger, responder ErrorResponder, localizer i18n.Localizer, resolver i18n.Resolver) (*router, error) {
-	settings, err := readSettings(reader)
+	listeners, endpoints, err := readSettings(reader)
 	if err != nil {
 		return nil, err
 	}
-	r := newRouter(settings)
+	r := newRouter(listeners, endpoints)
 	r.injected = injected
 	r.responder = responder
 	r.localizer = localizer
@@ -355,13 +357,16 @@ func resolverFor(reg *core.Registry) (i18n.Resolver, error) {
 	return delivered, nil
 }
 
-// serve assembles every endpoint's chain and binds its address.
+// serve assembles every endpoint's chain and binds every listener's address.
 //
 // Both are synchronous, so a failure of either terminates the startup rather
 // than surfacing later in a goroutine; the accept loops are what runs on their
-// own. An endpoint that fails leaves the ones bound before it listening, and
-// the rollback that follows the startup failure closes them: Stop and Close run
-// over every constructed instance whatever stage it reached.
+// own. An endpoint's chain is assembled first, because the listener's dispatch
+// handler routes to the assembled chains: it mounts each endpoint's routes and
+// hands every request it matches to that endpoint's chain. A failure leaves the
+// listeners bound before it listening, and the rollback that follows the startup
+// failure closes them: Stop and Close run over every constructed instance
+// whatever stage it reached.
 func (r *router) serve() error {
 	for _, name := range r.names {
 		e := r.endpoints[name]
@@ -369,14 +374,28 @@ func (r *router) serve() error {
 		if err != nil {
 			return err
 		}
-		if err := e.socket.start(e.settings, handler, r.logger); err != nil {
+		e.handler = handler
+	}
+	for _, name := range r.listenerNames {
+		l := r.listeners[name]
+		dispatch, err := buildDispatch(name, l.endpoints, r.localizer)
+		if err != nil {
+			return err
+		}
+		// The dispatch sits outside every endpoint's chain, so a request the
+		// dispatch itself answers — a 404 with no fallback, a 405 — carries the
+		// injected logger, ErrorResponder and Resolver only if the context is
+		// built here. An endpoint's own base builds the same context again; the
+		// values are the same, so injecting twice is injecting once.
+		handler := injectContext(dispatch, r.injected, r.responder, r.resolver)
+		if err := l.start(l.settings, handler, r.logger); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// stop closes every endpoint's socket, then waits for every endpoint to finish
+// stop closes every listener's socket, then waits for every listener to finish
 // draining, and reports the failures together.
 //
 // It returns only once the drains are over, because the modules the shutdown
@@ -389,20 +408,20 @@ func (r *router) serve() error {
 // keeps taking work from sources other than this entry point for as long as
 // the drain lasts.
 //
-// Every socket is closed before any drain is waited for, so no endpoint goes
-// on accepting while another one drains. The endpoints are then waited on one
+// Every socket is closed before any drain is waited for, so no listener goes
+// on accepting while another one drains. The listeners are then waited on one
 // after another, which is the same as waiting on them together: each drain has
-// been running since that endpoint's socket closed, so one endpoint timing out
+// been running since that listener's socket closed, so one listener timing out
 // does not shorten the wait of any other.
 func (r *router) stop(ctx context.Context) error {
 	var failures []error
-	for _, name := range r.names {
-		if err := r.endpoints[name].socket.stop(ctx); err != nil {
+	for _, name := range r.listenerNames {
+		if err := r.listeners[name].stop(ctx); err != nil {
 			failures = append(failures, err)
 		}
 	}
-	for _, name := range r.names {
-		if err := r.endpoints[name].socket.close(ctx); err != nil {
+	for _, name := range r.listenerNames {
+		if err := r.listeners[name].close(ctx); err != nil {
 			failures = append(failures, err)
 		}
 	}
@@ -415,8 +434,8 @@ func (r *router) stop(ctx context.Context) error {
 // sockets are closed and the drains waited for here.
 func (r *router) close(ctx context.Context) error {
 	var failures []error
-	for _, name := range r.names {
-		if err := r.endpoints[name].socket.close(ctx); err != nil {
+	for _, name := range r.listenerNames {
+		if err := r.listeners[name].close(ctx); err != nil {
 			failures = append(failures, err)
 		}
 	}

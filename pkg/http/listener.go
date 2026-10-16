@@ -14,27 +14,40 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// listener is everything about one endpoint that exists only between Serve and
-// the end of the shutdown: the server, the socket, and the drain.
+// listener is one listening socket together with everything about it that
+// exists only between Serve and the end of the shutdown: the server, the socket,
+// and the drain.
+//
+// One listener is one net.Listen and one net/http.Server. Several endpoints may
+// hang on it and share the socket; the handler the server serves is the
+// listener's dispatch, which routes a request to the endpoint that registered
+// its route (see dispatch.go).
 //
 // Closing the socket and waiting for the drain are two steps, stop and close,
-// so that the module's Stop can close every endpoint's socket before it waits
+// so that the module's Stop can close every listener's socket before it waits
 // for any of them. Its state is read by Accepting from any goroutine at any
 // moment and written by Serve, by those two steps and by the background drain,
 // so all of it is behind the mutex.
 type listener struct {
+	// settings is the configuration this listener binds: its name, address,
+	// timeouts and TLS, declared at construction and repeated by start.
+	settings listenerSettings
+	// endpoints are the endpoints hanging on this listener, in name order, set
+	// at construction. The startup log names them.
+	endpoints []*endpoint
+
 	mu sync.Mutex
 	// name and drainTimeout are copied from the settings when the address is
 	// bound, so the messages the background drain writes carry them without
-	// reaching back into the endpoint.
+	// reaching back into the settings.
 	name         string
 	drainTimeout time.Duration
 
 	server *nethttp.Server
 	socket net.Listener
 
-	// bound says the address was bound at least once. Stop and Close on an
-	// endpoint that never got there return nil: a startup failure rolls back
+	// bound says the address was bound at least once. Stop and Close on a
+	// listener that never got there return nil: a startup failure rolls back
 	// every constructed instance whatever stage it reached.
 	bound bool
 	// accepting is what Accepting reports. It goes false on Stop and on an
@@ -55,16 +68,16 @@ type listener struct {
 	drainErr error
 	// reported says drainErr has been handed to a caller already. The module's
 	// Stop waits for the drain and reports it, and its Close comes back to the
-	// same endpoint afterwards; a failure handed to both would reach the
+	// same listener afterwards; a failure handed to both would reach the
 	// shutdown's aggregate twice.
 	reported bool
 
-	// handlers counts the handler calls under way on this endpoint. The drain
+	// handlers counts the handler calls under way on this listener. The drain
 	// waits for it as well as for Shutdown, because Shutdown stops tracking a
 	// connection once its handler has hijacked it.
 	handlers inFlight
 
-	// logger is where this endpoint's own diagnostics go. It is the module's
+	// logger is where this listener's own diagnostics go. It is the module's
 	// logger, not the one injected into a request context.
 	logger *slog.Logger
 	// listen opens the socket. It is a field so that a test can hand in a
@@ -73,10 +86,10 @@ type listener struct {
 	listen func(network, address string) (net.Listener, error)
 }
 
-// listeningMsg is the record an endpoint writes once its address is bound.
-const listeningMsg = "an HTTP endpoint is listening"
+// listeningMsg is the record a listener writes once its address is bound.
+const listeningMsg = "an HTTP listener is listening"
 
-// start binds the address and puts the assembled handler behind it.
+// start binds the address and puts the assembled dispatch handler behind it.
 //
 // The bind is synchronous and the accept loop is not: the Serve callback must
 // not block, because the driver advances through the stage before it enters
@@ -85,7 +98,7 @@ const listeningMsg = "an HTTP endpoint is listening"
 // synchronous for the same reason, which is why the TLS listener is built here
 // instead of letting the server's own ServeTLS do it after the callback has
 // returned.
-func (l *listener) start(s endpointSettings, h nethttp.Handler, logger *slog.Logger) error {
+func (l *listener) start(s listenerSettings, h nethttp.Handler, logger *slog.Logger) error {
 	if logger == nil {
 		logger = log.Default()
 	}
@@ -96,7 +109,7 @@ func (l *listener) start(s endpointSettings, h nethttp.Handler, logger *slog.Log
 
 	socket, err := open("tcp", s.address)
 	if err != nil {
-		return fmt.Errorf("%w: endpoint %q on %q: %w", ErrListen, s.name, s.address, err)
+		return fmt.Errorf("%w: listener %q on %q: %w", ErrListen, s.name, s.address, err)
 	}
 	if s.tls() {
 		// A certificate that cannot be loaded joins ErrListen rather than
@@ -108,7 +121,7 @@ func (l *listener) start(s endpointSettings, h nethttp.Handler, logger *slog.Log
 		cert, certErr := tls.LoadX509KeyPair(s.tlsCertFile, s.tlsKeyFile)
 		if certErr != nil {
 			closeErr := socket.Close()
-			return errors.Join(fmt.Errorf("%w: endpoint %q could not load the certificate %q "+
+			return errors.Join(fmt.Errorf("%w: listener %q could not load the certificate %q "+
 				"with the key %q: %w", ErrListen, s.name, s.tlsCertFile, s.tlsKeyFile, certErr), closeErr)
 		}
 		socket = tls.NewListener(socket, &tls.Config{
@@ -153,6 +166,7 @@ func (l *listener) start(s endpointSettings, h nethttp.Handler, logger *slog.Log
 	socket = &onceCloser{Listener: socket}
 
 	l.mu.Lock()
+	l.settings = s
 	l.name = s.name
 	l.drainTimeout = s.drainTimeout
 	l.server = server
@@ -165,18 +179,30 @@ func (l *listener) start(s endpointSettings, h nethttp.Handler, logger *slog.Log
 	l.mu.Unlock()
 
 	// The address is reported as the socket bound it, beside the one the
-	// configuration gave: an endpoint on port 0 is handed a port by the
+	// configuration gave: a listener on port 0 is handed a port by the
 	// operating system, and this record is the one place outside the process
 	// that says which. The socket is bound already, so a client reading it may
-	// connect at once.
+	// connect at once. The endpoints on this listener are named so that a
+	// reader of the record knows what the socket now serves.
 	logger.Info(listeningMsg,
-		"endpoint", s.name,
+		"listener", s.name,
 		"address", socket.Addr().String(),
 		"configured", s.address,
-		"tls", s.tls())
+		"tls", s.tls(),
+		"endpoints", l.endpointNames())
 
 	go l.accept(server, socket)
 	return nil
+}
+
+// endpointNames lists the endpoint names hanging on this listener, in name
+// order, for the record written once the address is bound.
+func (l *listener) endpointNames() []string {
+	names := make([]string, 0, len(l.endpoints))
+	for _, e := range l.endpoints {
+		names = append(names, e.settings.name)
+	}
+	return names
 }
 
 // accept runs the accept loop and records how it ended.
@@ -198,9 +224,9 @@ func (l *listener) accept(server *nethttp.Server, socket net.Listener) {
 	if l.stopping || errors.Is(err, nethttp.ErrServerClosed) || errors.Is(err, net.ErrClosed) {
 		return
 	}
-	l.logger.Error("the accept loop of an HTTP endpoint exited on its own; "+
-		"the endpoint no longer accepts requests and the process keeps running",
-		"endpoint", l.name, "error", err)
+	l.logger.Error("the accept loop of an HTTP listener exited on its own; "+
+		"the listener no longer accepts requests and the process keeps running",
+		"listener", l.name, "error", err)
 }
 
 // stop closes the socket in the calling goroutine and leaves the drain running
@@ -227,12 +253,12 @@ func (l *listener) stop(ctx context.Context) error {
 
 	closeErr := socket.Close()
 	// The signal goes out once the socket is closed, so a handler that ends
-	// its response on it cannot be followed by a request the endpoint still
+	// its response on it cannot be followed by a request the listener still
 	// accepted.
 	close(draining)
 	go l.drain(ctx, server, drained, timeout)
 	if closeErr != nil {
-		return fmt.Errorf("http: endpoint %q could not close its listening socket: %w", name, closeErr)
+		return fmt.Errorf("http: listener %q could not close its listening socket: %w", name, closeErr)
 	}
 	return nil
 }
@@ -267,20 +293,20 @@ func (l *listener) drain(ctx context.Context, server *nethttp.Server, drained ch
 	case errors.Is(err, context.DeadlineExceeded):
 		// Shutdown gives up waiting but leaves the connections it was
 		// waiting for running. server.Close is what actually cuts them, and
-		// without it the caller is told the endpoint was cut while the
+		// without it the caller is told the listener was cut while the
 		// requests carry on. A hijacked connection is not among them: it
 		// belongs to its handler, and nothing here can cut it.
 		cutErr := server.Close()
-		err = fmt.Errorf("%w: endpoint %q still had requests in flight when its drain-timeout "+
+		err = fmt.Errorf("%w: listener %q still had requests in flight when its drain-timeout "+
 			"of %s expired, and the connections still open were cut. Raise %s.%s.%s.drain-timeout "+
-			"if the requests this endpoint serves legitimately take longer",
-			ErrDrainTimeout, l.name, timeout, configNamespace, endpointsItem, l.name)
+			"if the requests this listener serves legitimately take longer",
+			ErrDrainTimeout, l.name, timeout, configNamespace, listenersItem, l.name)
 		if cutErr != nil {
 			err = errors.Join(err, fmt.Errorf(
-				"http: endpoint %q could not cut its remaining connections: %w", l.name, cutErr))
+				"http: listener %q could not cut its remaining connections: %w", l.name, cutErr))
 		}
 	case err != nil:
-		err = fmt.Errorf("http: endpoint %q failed to drain: %w", l.name, err)
+		err = fmt.Errorf("http: listener %q failed to drain: %w", l.name, err)
 	}
 
 	l.mu.Lock()
