@@ -102,8 +102,9 @@ function AppFrame(): ReactElement {
     setCurrentTenantId(id)
     setTenantIdState(id)
   }
-  // The desktop sidebar's collapse state, host-held: the shell renders the
-  // toggle (the collapse props are supplied) and reports each flip back.
+  // The desktop sidebar's collapse state, host-held and shared by both areas:
+  // each frame renders the toggle (the collapse props are supplied) and reports
+  // each flip here, so the collapse carries across the tenant/console switch.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const { pathname } = useLocation()
 
@@ -128,7 +129,11 @@ function AppFrame(): ReactElement {
   if (consoleSelected) {
     return (
       <SessionGate>
-        <ConsoleArea routes={consoleShellRoutes}>
+        <ConsoleArea
+          routes={consoleShellRoutes}
+          sidebarCollapsed={sidebarCollapsed}
+          onSidebarCollapsedChange={setSidebarCollapsed}
+        >
           <ConsoleRouteGuard>
             <RouteView />
           </ConsoleRouteGuard>

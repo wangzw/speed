@@ -45,9 +45,23 @@ export interface ConsoleAreaProps {
   readonly routes: ConsoleRouteTable
   /** The routed console page, rendered inside the frame's main landmark. */
   readonly children: ReactNode
+  /**
+   * The desktop sidebar's collapse state, host-held. The console frame
+   * renders the collapse toggle and reports each flip through
+   * `onSidebarCollapsedChange`; the app holds one state for both areas so the
+   * collapse carries across the tenant/console switch.
+   */
+  readonly sidebarCollapsed?: boolean
+  /** Fired when the sidebar collapse state should change. */
+  readonly onSidebarCollapsedChange?: (collapsed: boolean) => void
 }
 
-export function ConsoleArea({ routes, children }: ConsoleAreaProps): ReactElement {
+export function ConsoleArea({
+  routes,
+  children,
+  sidebarCollapsed,
+  onSidebarCollapsedChange,
+}: ConsoleAreaProps): ReactElement {
   const navigate = useNavigate()
   return (
     <ConsoleShell
@@ -59,6 +73,8 @@ export function ConsoleArea({ routes, children }: ConsoleAreaProps): ReactElemen
       // the operator to hand over; the link points at this app's own landing
       // route, whose path only the host knows (src/paths).
       invitationLink={invitationPath}
+      sidebarCollapsed={sidebarCollapsed}
+      onSidebarCollapsedChange={onSidebarCollapsedChange}
     >
       {children}
     </ConsoleShell>

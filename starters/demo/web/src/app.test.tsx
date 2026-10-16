@@ -269,6 +269,52 @@ describe('the console area', () => {
       expect(screen.getByRole('menuitem', { name })).toBeInTheDocument()
     }
   })
+
+  it('collapses the console sidebar from the header control', async () => {
+    window.history.replaceState({}, '', '/console/tenants')
+    const user = userEvent.setup()
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    // The console frame carries the same host-controlled collapse the tenant
+    // frame does: the toggle is present, and collapsing removes the permanent
+    // drawer and the platform navigation with it.
+    expect(
+      await screen.findByRole('navigation', {
+        name: consoleUiEnUS.shell.navLabel,
+      }),
+    ).toBeInTheDocument()
+    await user.click(
+      screen.getByRole('button', { name: layoutKitEnUS.appShell.collapseNav }),
+    )
+    expect(
+      screen.getByRole('button', { name: layoutKitEnUS.appShell.expandNav }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps the sidebar collapse across the console/tenant switch', async () => {
+    window.history.replaceState({}, '', '/console/tenants')
+    const user = userEvent.setup()
+    renderDemoApp({
+      session: createTestSession(authenticatedSnapshot({ system: ['tenant.read'] })),
+    })
+
+    // Collapse in the console area.
+    await user.click(
+      screen.getByRole('button', { name: layoutKitEnUS.appShell.collapseNav }),
+    )
+    // Leave for the tenant area through the console banner's exit link: the
+    // navigation sidebar is gone, so the exit is the way back.
+    await user.click(screen.getByRole('link', { name: demoEnUS.console.backToApp }))
+    // The tenant frame comes up already collapsed: one host-held state feeds
+    // both areas, so the operator's collapse survives the switch rather than
+    // resetting to open.
+    expect(
+      screen.getByRole('button', { name: layoutKitEnUS.appShell.expandNav }),
+    ).toBeInTheDocument()
+  })
 })
 
 describe('the tenant area header controls', () => {
