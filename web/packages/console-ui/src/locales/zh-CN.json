@@ -59,7 +59,8 @@
       "submit": "改名"
     },
     "enable": "启用",
-    "disable": "停用"
+    "disable": "停用",
+    "identifierHelper": "不含空格等空白字符"
   },
   "settings": {
     "title": "设置",
@@ -80,7 +81,8 @@
     },
     "column": {
       "key": "键",
-      "value": "值",
+      "type": "类型",
+      "value": "当前值",
       "sensitive": "敏感",
       "actions": "操作"
     },

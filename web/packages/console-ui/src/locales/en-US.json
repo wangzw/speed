@@ -59,7 +59,8 @@
       "submit": "Rename"
     },
     "enable": "Enable",
-    "disable": "Disable"
+    "disable": "Disable",
+    "identifierHelper": "No spaces or other whitespace"
   },
   "settings": {
     "title": "Settings",
@@ -80,7 +81,8 @@
     },
     "column": {
       "key": "Key",
-      "value": "Value",
+      "type": "Type",
+      "value": "Current value",
       "sensitive": "Sensitive",
       "actions": "Actions"
     },

@@ -2,7 +2,8 @@
  * TenantRosterPage: the roster-administration page of the console.
  *
  * The platform side of the tenant story: it lists the whole roster (the
- * tenants the process serves), registers a tenant not registered yet,
+ * tenants the process serves) as a table (identifier, alias, status and
+ * the row's write controls), registers a tenant not registered yet,
  * renames a tenant's alias and enables or disables a tenant. Switching
  * the current session's tenant is the tenant-side action and lives in
  * @speed/tenancy-ui; managing the roster is this page, and the two share
@@ -18,6 +19,14 @@
  * offending control, resolved from the console-ui namespace's whitelist
  * (a roster collision reads the conflict text), never a raw key.
  *
+ * The identifier and alias inputs carry a helper that names the rule the
+ * backend holds them to (no blanks or control characters) and mark
+ * themselves as invalid while a typed value breaks it; the server still
+ * judges every write. A write that lands clears the input that carried
+ * it -- the create form's identifier and alias together, a row's rename
+ * draft on its own -- so the next edit starts empty; a refused write
+ * keeps the input so it can be corrected and retried.
+ *
  * The page renders a level-one heading (it is the page), and the async
  * section's placeholders render at the next level down, so the heading
  * order never skips.
@@ -29,8 +38,10 @@ import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { AsyncSection, ListSkeleton, errorCodeOf } from '@speed/ui-kit'
+import { AsyncSection, DataTable, ListSkeleton, errorCodeOf } from '@speed/ui-kit'
+import type { DataTableColumn } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
+import { isRejectedIdentifier } from './internal/identifier.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleTenant } from './operations.js'
@@ -52,8 +63,12 @@ function statusLabel(
     : t('tenants.status.other')
 }
 
-/** One roster row: its read-only fields and its rename/enable/disable controls. */
-function TenantRow({ tenant }: { readonly tenant: ConsoleTenant }) {
+/**
+ * One row's write controls: the rename draft and the enable/disable
+ * toggle. The draft lives here, per row; a landed rename clears it, while
+ * a typed value the identifier domain would refuse marks the input.
+ */
+function TenantRowActions({ tenant }: { readonly tenant: ConsoleTenant }) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const renameTenant = operations.useSetTenantAlias()
@@ -61,34 +76,27 @@ function TenantRow({ tenant }: { readonly tenant: ConsoleTenant }) {
   const [alias, setAlias] = useState('')
 
   const disabled = tenant.status === 'disabled'
+  // An empty draft is not-yet-an-error; a non-empty one the domain would
+  // refuse is.
+  const aliasRejected = alias !== '' && isRejectedIdentifier(alias)
 
   return (
     <Box
       sx={{
-        py: 1.5,
         display: 'flex',
         flexWrap: 'wrap',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         columnGap: 2,
         rowGap: 1,
       }}
     >
-      <Box sx={{ minWidth: 0, flexGrow: 1 }}>
-        <Typography variant="body1" sx={{ fontWeight: 500 }}>
-          {tenant.alias}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          {tenant.id}
-        </Typography>
-      </Box>
-      <Typography variant="body2" color="text.secondary">
-        {statusLabel(tenant.status, t)}
-      </Typography>
       <TextField
         size="small"
         value={alias}
         onChange={(event) => setAlias(event.target.value)}
         label={t('tenants.rename.label')}
+        error={aliasRejected}
+        helperText={t('tenants.identifierHelper')}
       />
       <Button
         type="button"
@@ -96,7 +104,12 @@ function TenantRow({ tenant }: { readonly tenant: ConsoleTenant }) {
         variant="outlined"
         disabled={renameTenant.isPending}
         onClick={() => {
-          renameTenant.mutate({ id: tenant.id, alias })
+          renameTenant.mutate(
+            { id: tenant.id, alias },
+            // A landed rename clears the draft so the next edit starts
+            // empty; a refused one keeps it for a retry.
+            { onSuccess: () => setAlias('') },
+          )
         }}
       >
         {t('tenants.rename.submit')}
@@ -138,6 +151,48 @@ export function TenantRosterPage() {
   const [newId, setNewId] = useState('')
   const [newAlias, setNewAlias] = useState('')
 
+  const idRejected = newId !== '' && isRejectedIdentifier(newId)
+  const aliasRejected = newAlias !== '' && isRejectedIdentifier(newAlias)
+
+  // The columns the table renders: a row's read-only fields and its write
+  // controls. Status carries a priority, so a narrow viewport sheds it
+  // before the identifier, the alias and the controls.
+  const columns: DataTableColumn<ConsoleTenant>[] = [
+    {
+      id: 'id',
+      header: t('tenants.column.id'),
+      cell: (tenant) => (
+        <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
+          {tenant.id}
+        </Typography>
+      ),
+    },
+    {
+      id: 'alias',
+      header: t('tenants.column.alias'),
+      cell: (tenant) => (
+        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+          {tenant.alias}
+        </Typography>
+      ),
+    },
+    {
+      id: 'status',
+      header: t('tenants.column.status'),
+      priority: 'medium',
+      cell: (tenant) => (
+        <Typography variant="body2" color="text.secondary">
+          {statusLabel(tenant.status, t)}
+        </Typography>
+      ),
+    },
+    {
+      id: 'actions',
+      header: t('tenants.column.actions'),
+      cell: (tenant) => <TenantRowActions tenant={tenant} />,
+    },
+  ]
+
   const rows = tenants.data
   // A load with no data yet -- the first fetch in flight, or one parked
   // by react-query's default networkMode 'online' while offline -- keeps
@@ -158,7 +213,7 @@ export function TenantRosterPage() {
           sx={{
             display: 'flex',
             flexWrap: 'wrap',
-            alignItems: 'flex-end',
+            alignItems: 'flex-start',
             columnGap: 2,
             rowGap: 1,
           }}
@@ -168,19 +223,33 @@ export function TenantRosterPage() {
             value={newId}
             onChange={(event) => setNewId(event.target.value)}
             label={t('tenants.create.idLabel')}
+            error={idRejected}
+            helperText={t('tenants.identifierHelper')}
           />
           <TextField
             size="small"
             value={newAlias}
             onChange={(event) => setNewAlias(event.target.value)}
             label={t('tenants.create.aliasLabel')}
+            error={aliasRejected}
+            helperText={t('tenants.identifierHelper')}
           />
           <Button
             type="button"
             variant="contained"
             disabled={createTenant.isPending}
             onClick={() => {
-              createTenant.mutate({ id: newId, alias: newAlias })
+              createTenant.mutate(
+                { id: newId, alias: newAlias },
+                // A landed registration clears both inputs so the form is
+                // ready for the next one; a refused one keeps them.
+                {
+                  onSuccess: () => {
+                    setNewId('')
+                    setNewAlias('')
+                  },
+                },
+              )
             }}
           >
             {t('tenants.create.submit')}
@@ -219,20 +288,11 @@ export function TenantRosterPage() {
         }}
       >
         {(settled) => (
-          <Box>
-            {settled.map((tenant, index) => (
-              <Box
-                key={tenant.id}
-                sx={
-                  index > 0
-                    ? { borderTop: '1px solid', borderColor: 'divider' }
-                    : undefined
-                }
-              >
-                <TenantRow tenant={tenant} />
-              </Box>
-            ))}
-          </Box>
+          <DataTable
+            rows={settled}
+            columns={columns}
+            rowKey={(tenant) => tenant.id}
+          />
         )}
       </AsyncSection>
     </Box>

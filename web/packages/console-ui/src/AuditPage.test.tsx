@@ -1,9 +1,10 @@
 /**
  * AuditPage: the audit-query page.
  *
- * Its read renders the settled records, the recorded time through Intl in
- * the current language and explicitly in UTC (the zone the view carries),
- * and a failed read settles into the retryable error placeholder.
+ * Its read renders the settled records as a table, the recorded time
+ * through Intl in the current language and explicitly in UTC (the zone the
+ * view carries), and a failed read settles into the retryable error
+ * placeholder.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -46,6 +47,19 @@ describe('AuditPage', () => {
     expect(screen.getByText('operator')).toBeInTheDocument()
     expect(screen.getByText('tenant/acme')).toBeInTheDocument()
     expect(screen.getByText('ok')).toBeInTheDocument()
+  })
+
+  it('renders records as a table with column headers', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listRecords: () => Promise.resolve([record]) }),
+    )
+    renderWithProviders(<AuditPage />, { operations })
+    await screen.findByText('tenant.create')
+    for (const name of ['时间', '动作', '结果', '操作者', '对象']) {
+      expect(
+        screen.getByRole('columnheader', { name }),
+      ).toBeInTheDocument()
+    }
   })
 
   it('formats the recorded time in UTC in the current language', async () => {

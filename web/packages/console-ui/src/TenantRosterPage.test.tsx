@@ -1,16 +1,18 @@
 /**
  * TenantRosterPage: the roster-administration page.
  *
- * Its read renders the settled list (with the roster's own status
- * spelling, a value outside the closed set falling to the generic label),
- * and its writes drive the operations bundle -- a successful create
- * invalidates the list and the new row appears, and a refused write
+ * Its read renders the settled list as a table (with the roster's own
+ * status spelling, a value outside the closed set falling to the generic
+ * label), and its writes drive the operations bundle -- a successful
+ * create invalidates the list and the new row appears, and a refused write
  * renders the answer's code text (a roster collision reading the conflict
- * text), never a raw key.
+ * text), never a raw key. A landed write clears the input that carried it;
+ * a refused one keeps it. The identifier and alias inputs mark themselves
+ * invalid while a typed value breaks the identifier domain.
  */
 
 import { describe, expect, it } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TenantRosterPage } from './TenantRosterPage.js'
 import type { ConsoleTenant } from './operations.js'
@@ -130,6 +132,91 @@ describe('TenantRosterPage', () => {
     await user.type(screen.getByLabelText('新别名'), 'Acme Inc')
     await user.click(screen.getByRole('button', { name: '改名' }))
     expect(calls).toEqual(['acme:Acme Inc'])
+  })
+
+  it('renders the roster as a table with column headers', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () =>
+          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+    for (const name of ['标识', '别名', '状态', '操作']) {
+      expect(
+        screen.getByRole('columnheader', { name }),
+      ).toBeInTheDocument()
+    }
+  })
+
+  it('clears the create inputs once a registration lands', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(makeConsoleBackend())
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('暂无租户')
+
+    await user.type(screen.getByLabelText('标识'), 'acme')
+    await user.type(screen.getByLabelText('别名'), 'Acme Inc')
+    await user.click(screen.getByRole('button', { name: '登记' }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('标识')).toHaveValue('')
+      expect(screen.getByLabelText('别名')).toHaveValue('')
+    })
+  })
+
+  it('keeps the create inputs when a registration is refused', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        createTenant: () => Promise.reject({ code: 'tenant.conflict' }),
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('暂无租户')
+
+    await user.type(screen.getByLabelText('标识'), 'acme')
+    await user.type(screen.getByLabelText('别名'), 'Acme')
+    await user.click(screen.getByRole('button', { name: '登记' }))
+
+    await screen.findByText('该标识或别名已被其他租户占用。')
+    expect(screen.getByLabelText('标识')).toHaveValue('acme')
+    expect(screen.getByLabelText('别名')).toHaveValue('Acme')
+  })
+
+  it('clears the rename input once a rename lands', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () =>
+          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+        setTenantAlias: () => Promise.resolve(),
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    const input = screen.getByLabelText('新别名')
+    await user.type(input, 'Acme Inc')
+    await user.click(screen.getByRole('button', { name: '改名' }))
+
+    await waitFor(() => expect(input).toHaveValue(''))
+  })
+
+  it('marks an identifier input invalid while it carries a blank', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(makeConsoleBackend())
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('暂无租户')
+
+    const input = screen.getByLabelText('标识')
+    await user.type(input, 'Acme 公司')
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+
+    await user.clear(input)
+    await user.type(input, 'acme')
+    expect(input).toHaveAttribute('aria-invalid', 'false')
   })
 
   it('renders the retryable error placeholder when the read fails', async () => {

@@ -1,16 +1,17 @@
 /**
  * SettingsPage: the settings read-write page.
  *
- * Its read renders the settled items (a sensitive item's value arriving
- * already masked from the server renders as-is), the namespace filter
- * narrows the read, and its writes drive the operations bundle -- a set
- * and a remove each call the matching operation, and a refused write
+ * Its read renders the settled items as a table (a sensitive item's value
+ * arriving already masked from the server renders as-is), the namespace
+ * filter narrows the read, and its writes drive the operations bundle -- a
+ * set and a remove each call the matching operation, and a refused write
  * renders the answer's code text (a value outside the domain reading the
- * invalid-value text).
+ * invalid-value text). A save that lands clears the row's draft input; a
+ * refused save keeps it.
  */
 
 import { describe, expect, it } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SettingsPage } from './SettingsPage.js'
 import type { ConsoleSetting } from './operations.js'
@@ -145,6 +146,58 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, { operations })
     expect(await screen.findByText('设置加载失败')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+  })
+
+  it('renders the declared items as a table with column headers', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listSettings: () => Promise.resolve([item]) }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    await screen.findByText('mail.retry')
+    for (const name of ['键', '类型', '当前值', '操作']) {
+      expect(
+        screen.getByRole('columnheader', { name }),
+      ).toBeInTheDocument()
+    }
+    expect(screen.getByRole('cell', { name: 'int' })).toBeInTheDocument()
+  })
+
+  it('clears the draft value once a save lands', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSettings: () => Promise.resolve([item]),
+        setSetting: () => Promise.resolve(),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    await screen.findByText('mail.retry')
+
+    const input = screen.getByLabelText('新值')
+    await user.type(input, '9')
+    await user.click(screen.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(input).toHaveValue(''))
+  })
+
+  it('keeps the draft value when a save is refused', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSettings: () => Promise.resolve([item]),
+        setSetting: () =>
+          Promise.reject({ code: 'settings.invalid_value' }),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    await screen.findByText('mail.retry')
+
+    const input = screen.getByLabelText('新值')
+    await user.type(input, 'x')
+    await user.click(screen.getByRole('button', { name: '保存' }))
+
+    await screen.findByText('该值不在该设置项声明的取值范围内。')
+    expect(input).toHaveValue('x')
   })
 
   it('has no axe violations', async () => {

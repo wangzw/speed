@@ -2,9 +2,11 @@
  * AuditPage: the audit-query page of the console.
  *
  * It reads the audit journal's records -- the platform's append-only
- * trail, whose rows span every tenant -- and renders them newest first.
- * The read surface carries no export: exporting is another permission and
- * another module's to carry, so this page only lists.
+ * trail, whose rows span every tenant -- and renders them newest first as
+ * a table (time, action, outcome, actor and object), through ui-kit's
+ * DataTable; the columns shed the least important first as the viewport
+ * narrows. The read surface carries no export: exporting is another
+ * permission and another module's to carry, so this page only lists.
  *
  * The read is an operation on the console operations bundle -- the host
  * binds the generated /audit/admin operation to it -- so the page builds
@@ -23,7 +25,8 @@ import { useMemo } from 'react'
 import Box from '@mui/material/Box'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
-import { AsyncSection, ListSkeleton } from '@speed/ui-kit'
+import { AsyncSection, DataTable, ListSkeleton } from '@speed/ui-kit'
+import type { DataTableColumn } from '@speed/ui-kit'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleAuditRecord } from './operations.js'
@@ -53,6 +56,43 @@ export function AuditPage() {
       }),
     [i18n.language],
   )
+
+  // The columns the table renders, in the order the record's fields read:
+  // when it happened, what it was, how it ended, who did it and to what.
+  // The actor and object columns carry a priority, so a narrow viewport
+  // sheds them before the action and the outcome.
+  const columns: DataTableColumn<ConsoleAuditRecord>[] = [
+    {
+      id: 'time',
+      header: t('audit.column.time'),
+      cell: (record) => {
+        const occurred = parseDate(record.occurred_at)
+        return occurred === null ? null : formatTime.format(occurred)
+      },
+    },
+    {
+      id: 'action',
+      header: t('audit.column.action'),
+      cell: (record) => record.action,
+    },
+    {
+      id: 'outcome',
+      header: t('audit.column.outcome'),
+      cell: (record) => record.outcome,
+    },
+    {
+      id: 'actor',
+      header: t('audit.column.actor'),
+      priority: 'medium',
+      cell: (record) => record.actor,
+    },
+    {
+      id: 'object',
+      header: t('audit.column.object'),
+      priority: 'low',
+      cell: (record) => record.object,
+    },
+  ]
 
   const rows = records.data
   const pending = records.isPending && rows === undefined
@@ -89,83 +129,13 @@ export function AuditPage() {
         }}
       >
         {(settled) => (
-          <Box>
-            {settled.map((record, index) => (
-              <AuditRow
-                key={record.id}
-                record={record}
-                first={index === 0}
-                formatTime={(date) => formatTime.format(date)}
-              />
-            ))}
-          </Box>
+          <DataTable
+            rows={settled}
+            columns={columns}
+            rowKey={(record) => record.id}
+          />
         )}
       </AsyncSection>
-    </Box>
-  )
-}
-
-function AuditRow({
-  record,
-  first,
-  formatTime,
-}: {
-  readonly record: ConsoleAuditRecord
-  readonly first: boolean
-  readonly formatTime: (date: Date) => string
-}) {
-  const occurred = parseDate(record.occurred_at)
-  return (
-    <Box
-      sx={{
-        py: 1.5,
-        minWidth: 0,
-        ...(first
-          ? {}
-          : { borderTop: '1px solid', borderColor: 'divider' }),
-      }}
-    >
-      <Box
-        sx={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'baseline',
-          columnGap: 2,
-          rowGap: 0.5,
-        }}
-      >
-        <Typography variant="body1" sx={{ fontWeight: 500 }}>
-          {record.action}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          {record.outcome}
-        </Typography>
-        {occurred !== null && (
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ marginLeft: 'auto', flexShrink: 0 }}
-          >
-            {formatTime(occurred)}
-          </Typography>
-        )}
-      </Box>
-      <Box
-        sx={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          columnGap: 2.5,
-          rowGap: 0.5,
-          mt: 0.5,
-        }}
-      >
-        <Typography variant="body2" color="text.secondary">
-          {record.actor}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          {record.object}
-        </Typography>
-      </Box>
     </Box>
   )
 }
