@@ -92,12 +92,16 @@ describe('SessionsPage', () => {
     renderWithProviders(<SessionsPage />, { operations })
     await loadAccount(user)
     await screen.findByText('sess-1')
-    await user.click(screen.getByRole('button', { name: '撤销' }))
+    // The revoke control names its own session id, so two rows' buttons are
+    // distinguishable.
+    await user.click(screen.getByRole('button', { name: '撤销会话 sess-1' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: '确认' }))
     await vi.waitFor(() => {
       expect(revoked).toEqual(['sess-1'])
     })
+    // The landed revoke fills the page's standing status region.
+    expect(await screen.findByText('会话已撤销')).toBeInTheDocument()
   })
 
   it('renders the retryable error placeholder when the read fails', async () => {

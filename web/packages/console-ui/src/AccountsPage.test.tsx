@@ -11,8 +11,9 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
 import { AccountsPage } from './AccountsPage.js'
 import { consoleOperations } from './operations.js'
 import type {
@@ -61,8 +62,15 @@ async function search(
 async function openDetail(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   await search(user)
   await screen.findByText('Ada Lovelace')
-  await user.click(screen.getByRole('button', { name: '管理' }))
+  await user.click(screen.getByRole('button', { name: '管理账户 acc-1' }))
 }
+
+/** The zh-CN label the confirm button shows once the two-step guard arms. */
+const CONFIRM_AGAIN_LABEL = (
+  uiKitResources['zh-CN'] as unknown as {
+    readonly confirmDialog: { readonly confirmAgainLabel: string }
+  }
+).confirmDialog.confirmAgainLabel
 
 /** Confirms the open danger dialog (the confirm button labelled 确认), then
  * waits for it to leave the tree so the next interaction is not blocked by
@@ -220,10 +228,26 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await search(user)
     await screen.findByText('Ada Lovelace')
-    await user.click(screen.getByRole('button', { name: '删除' }))
+    await user.click(screen.getByRole('button', { name: '删除账户 acc-1' }))
     // The dialog gates the write: nothing fires until it is confirmed.
     expect(deleted).toEqual([])
-    await confirmDialog(user)
+    // Deleting an account is irreversible and takes dependent records with
+    // it, so its confirmation carries the heavier two-step guard: the first
+    // click only arms, the deliberate second fires.
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    expect(deleted).toEqual([])
+    expect(
+      within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
+    ).toBeInTheDocument()
+    await act(async () => {
+      await new Promise((resolve) =>
+        setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
+      )
+    })
+    await user.click(
+      within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
+    )
     await vi.waitFor(() => {
       expect(deleted).toEqual(['acc-1'])
     })
@@ -289,14 +313,14 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
     await screen.findByText('ci')
-    // The secrets table precedes the sessions table, so the first revoke
-    // button belongs to the secret and the second to the session.
-    await user.click(screen.getAllByRole('button', { name: '撤销' })[0]!)
+    // Each revoke control names its own row (the secret's label, the
+    // session's id), so the two are picked apart by object, not by order.
+    await user.click(screen.getByRole('button', { name: '撤销密钥 ci' }))
     await confirmDialog(user)
     await vi.waitFor(() => {
       expect(secret).toEqual(['sec-1'])
     })
-    await user.click(screen.getAllByRole('button', { name: '撤销' })[1]!)
+    await user.click(screen.getByRole('button', { name: '撤销会话 sess-1' }))
     await confirmDialog(user)
     await vi.waitFor(() => {
       expect(session).toEqual(['sess-1'])
@@ -379,6 +403,47 @@ describe('AccountsPage', () => {
     await vi.waitFor(() => {
       expect(calls).toEqual([{ id: 'acc-1', status: 'disabled' }])
     })
+  })
+
+  it('announces a landed status change with a success notice', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      setAccountStatus: () => Promise.resolve(accountFixture()),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    await user.click(screen.getByLabelText('状态'))
+    await user.click(await screen.findByRole('option', { name: '已停用' }))
+    await user.click(screen.getByRole('button', { name: '保存状态' }))
+    // The landed write fills the page's standing status region, so a
+    // successful save is confirmed rather than silent.
+    expect(await screen.findByText('状态已保存')).toBeInTheDocument()
+  })
+
+  it('names each account row control with its own account', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccounts: () =>
+          Promise.resolve({
+            accounts: [
+              accountFixture({ id: 'acc-1', display_name: 'Ada' }),
+              accountFixture({ id: 'acc-2', display_name: 'Grace' }),
+            ],
+            next_cursor: '',
+          }),
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await screen.findByText('Ada')
+
+    // The two rows' manage/delete controls carry the account id in their
+    // accessible name -- no two identical "Delete" buttons.
+    expect(
+      screen.getByRole('button', { name: '管理账户 acc-1' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: '删除账户 acc-2' }),
+    ).toBeInTheDocument()
   })
 
   it('opens the step-up dialog on a refused write and replays it once elevated', async () => {

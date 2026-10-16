@@ -55,6 +55,7 @@ import {
   DataTable,
   FormField,
   FormLayout,
+  InlineSuccess,
   ListSkeleton,
   PageHeader,
   errorCodeOf,
@@ -112,6 +113,10 @@ export function AccountsPage() {
   const [accountKind, setAccountKind] = useState('')
   const [selectedId, setSelectedId] = useState('')
   const [identifierToRemove, setIdentifierToRemove] = useState('')
+  // The message a landed write fills into the page-level success notice (a
+  // polite live region); null while nothing has landed since the last
+  // attempt, and cleared at the start of each one.
+  const [success, setSuccess] = useState<string | null>(null)
 
   // The applied filters, committed together on submit so a keystroke never
   // fires a request. The identifier prefix is sent with its kind (the
@@ -155,6 +160,7 @@ export function AccountsPage() {
   // the 401 banner.
 
   function deleteOne(id: string): void {
+    setSuccess(null)
     deleteAccount.mutate(
       { id },
       {
@@ -162,6 +168,7 @@ export function AccountsPage() {
           if (selectedId === id) {
             setSelectedId('')
           }
+          setSuccess(t('accounts.deleted'))
         },
         onError: (error) => {
           if (stepUp.intercept(error, () => deleteOne(id))) {
@@ -173,9 +180,11 @@ export function AccountsPage() {
   }
 
   function resetAllFactors(): void {
+    setSuccess(null)
     resetMFA.mutate(
       { id: selectedId },
       {
+        onSuccess: () => setSuccess(t('accounts.mfaReset')),
         onError: (error) => {
           if (stepUp.intercept(error, resetAllFactors)) {
             resetMFA.reset()
@@ -186,9 +195,11 @@ export function AccountsPage() {
   }
 
   function revokeAllSessions(): void {
+    setSuccess(null)
     revokeSessions.mutate(
       { id: selectedId },
       {
+        onSuccess: () => setSuccess(t('accounts.sessionsRevoked')),
         onError: (error) => {
           if (stepUp.intercept(error, revokeAllSessions)) {
             revokeSessions.reset()
@@ -199,10 +210,14 @@ export function AccountsPage() {
   }
 
   function removeOne(identifier: string): void {
+    setSuccess(null)
     removeIdentifier.mutate(
       { id: selectedId, identifier },
       {
-        onSuccess: () => setIdentifierToRemove(''),
+        onSuccess: () => {
+          setIdentifierToRemove('')
+          setSuccess(t('accounts.identifierRemoved'))
+        },
         onError: (error) => {
           if (stepUp.intercept(error, () => removeOne(identifier))) {
             removeIdentifier.reset()
@@ -213,9 +228,11 @@ export function AccountsPage() {
   }
 
   function revokeOneSecret(secret: string): void {
+    setSuccess(null)
     revokeSecret.mutate(
       { id: selectedId, secret },
       {
+        onSuccess: () => setSuccess(t('accounts.secretRevoked')),
         onError: (error) => {
           if (stepUp.intercept(error, () => revokeOneSecret(secret))) {
             revokeSecret.reset()
@@ -267,6 +284,7 @@ export function AccountsPage() {
             type="button"
             size="small"
             variant="outlined"
+            aria-label={t('accounts.manageAria', { id: row.id })}
             onClick={() => setSelectedId(row.id)}
           >
             {t('accounts.manage')}
@@ -276,12 +294,17 @@ export function AccountsPage() {
             size="small"
             variant="outlined"
             color="error"
+            aria-label={t('accounts.deleteAria', { id: row.id })}
             disabled={deleteAccount.isPending}
             onClick={() =>
               confirm.ask({
                 title: t('accounts.deleteTitle'),
                 message: t('accounts.deleteMessage', { id: row.id }),
                 confirmLabel: t('common.confirm'),
+                // Deleting an account takes its identifiers, secrets and
+                // sessions with it and cannot be undone from the interface:
+                // the heavier two-step guard, never the plain single confirm.
+                doubleConfirm: true,
                 run: () => deleteOne(row.id),
               })
             }
@@ -320,6 +343,7 @@ export function AccountsPage() {
           size="small"
           variant="outlined"
           color="error"
+          aria-label={t('accounts.secrets.revokeAria', { label: row.label })}
           disabled={row.revoked || revokeSecret.isPending}
           onClick={() =>
             confirm.ask({
@@ -367,17 +391,20 @@ export function AccountsPage() {
           size="small"
           variant="outlined"
           color="error"
+          aria-label={t('accounts.sessions.revokeAria', { id: row.id })}
           disabled={row.revoked || revokeSession.isPending}
           onClick={() =>
             confirm.ask({
               title: t('accounts.sessions.revokeTitle'),
               message: t('accounts.sessions.revokeMessage', { id: row.id }),
               confirmLabel: t('common.confirm'),
-              run: () =>
-                revokeSession.mutate({
-                  accountId: selectedId,
-                  sessionId: row.id,
-                }),
+              run: () => {
+                setSuccess(null)
+                revokeSession.mutate(
+                  { accountId: selectedId, sessionId: row.id },
+                  { onSuccess: () => setSuccess(t('accounts.sessionRevoked')) },
+                )
+              },
             })
           }
         >
@@ -780,6 +807,7 @@ export function AccountsPage() {
 
       <Box sx={{ mt: 2 }}>
         <InlineError code={writeError} />
+        <InlineSuccess message={success} />
       </Box>
 
       <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
@@ -1122,6 +1150,9 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
   const [secretLabel, setSecretLabel] = useState('')
   const [secretExpires, setSecretExpires] = useState('')
   const [createdSecret, setCreatedSecret] = useState<string | null>(null)
+  // The landed write's confirmation, filled into the detail's success notice
+  // (a polite live region) and cleared at the start of the next attempt.
+  const [success, setSuccess] = useState<string | null>(null)
 
   const attributesInvalid =
     attributes.trim() !== '' && parseStringMap(attributes) === null
@@ -1143,9 +1174,11 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
   // dialog opens alone.
 
   function saveStatus(): void {
+    setSuccess(null)
     setStatus.mutate(
       { id, status: statusDraft },
       {
+        onSuccess: () => setSuccess(t('accounts.statusSaved')),
         onError: (error) => {
           if (stepUp.intercept(error, saveStatus)) {
             setStatus.reset()
@@ -1156,9 +1189,11 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
   }
 
   function saveMfa(): void {
+    setSuccess(null)
     setMfaRequired.mutate(
       { id, required: mfaDraft === 'true' },
       {
+        onSuccess: () => setSuccess(t('accounts.mfaSaved')),
         onError: (error) => {
           if (stepUp.intercept(error, saveMfa)) {
             setMfaRequired.reset()
@@ -1169,6 +1204,7 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
   }
 
   function savePatch(): void {
+    setSuccess(null)
     const parsed = attributes.trim() === '' ? null : parseStringMap(attributes)
     patchAccount.mutate(
       {
@@ -1180,6 +1216,7 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
         ...(protectedUnchanged ? {} : { protected: protectedDraft === 'true' }),
       },
       {
+        onSuccess: () => setSuccess(t('accounts.patchSaved')),
         onError: (error) => {
           if (stepUp.intercept(error, savePatch)) {
             patchAccount.reset()
@@ -1190,10 +1227,14 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
   }
 
   function savePassword(): void {
+    setSuccess(null)
     resetPassword.mutate(
       { id, password: tempPassword },
       {
-        onSuccess: () => setTempPassword(''),
+        onSuccess: () => {
+          setTempPassword('')
+          setSuccess(t('accounts.passwordReset'))
+        },
         onError: (error) => {
           if (stepUp.intercept(error, savePassword)) {
             resetPassword.reset()
@@ -1204,10 +1245,14 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
   }
 
   function addOne(): void {
+    setSuccess(null)
     addIdentifier.mutate(
       { id, kind: identifierKind, value: identifierValue },
       {
-        onSuccess: () => setIdentifierValue(''),
+        onSuccess: () => {
+          setIdentifierValue('')
+          setSuccess(t('accounts.identifierAdded'))
+        },
         onError: (error) => {
           if (stepUp.intercept(error, addOne)) {
             addIdentifier.reset()
@@ -1218,6 +1263,7 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
   }
 
   function createOne(): void {
+    setSuccess(null)
     createSecret.mutate(
       {
         id,
@@ -1441,6 +1487,12 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
           {t('accounts.createSecret.handedOver', { secret: createdSecret })}
         </Typography>
       )}
+
+      {/* The detail writes' success notice: one standing role="status" region
+          for whichever field-level write just landed. */}
+      <Box sx={{ mb: 2 }}>
+        <InlineSuccess message={success} />
+      </Box>
 
       {stepUp.session !== null && (
         <StepUpChallenge

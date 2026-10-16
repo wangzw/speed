@@ -98,10 +98,17 @@
     },
     "rename": {
       "label": "New alias",
-      "submit": "Rename"
+      "submit": "Rename",
+      "ariaWithId": "New alias for tenant {{id}}",
+      "submitAria": "Rename tenant {{id}}"
     },
     "enable": "Enable",
     "disable": "Disable",
+    "enableAria": "Enable tenant {{id}}",
+    "disableAria": "Disable tenant {{id}}",
+    "created": "Tenant registered",
+    "renamed": "Alias updated",
+    "statusSaved": "Tenant status updated",
     "identifierHelper": "No spaces or other whitespace"
   },
   "forbidden": {
@@ -233,6 +240,9 @@
     "remove": "Remove",
     "removeTitle": "Remove setting",
     "removeMessage": "Remove the current value of the setting \"{{key}}\".",
+    "removeAria": "Remove setting {{key}}",
+    "saved": "Setting saved",
+    "removed": "Setting removed",
     "sensitive": "Yes"
   },
   "audit": {
@@ -409,8 +419,22 @@
     "mfaNo": "No",
     "manage": "Manage",
     "delete": "Delete",
+    "manageAria": "Manage account {{id}}",
+    "deleteAria": "Delete account {{id}}",
     "deleteTitle": "Delete account",
     "deleteMessage": "Deleting account \"{{id}}\" also removes its identifiers, secrets and sessions.",
+    "created": "Account created",
+    "deleted": "Account deleted",
+    "mfaReset": "Factors reset",
+    "sessionsRevoked": "Sessions revoked",
+    "identifierRemoved": "Login identifier removed",
+    "secretRevoked": "Secret revoked",
+    "sessionRevoked": "Session revoked",
+    "statusSaved": "Status saved",
+    "mfaSaved": "MFA requirement saved",
+    "patchSaved": "Changes saved",
+    "passwordReset": "Password reset",
+    "identifierAdded": "Login identifier added",
     "status": {
       "label": "Status",
       "submit": "Save status",
@@ -532,6 +556,7 @@
       "revoked": "Revoked",
       "active": "Active",
       "revoke": "Revoke",
+      "revokeAria": "Revoke secret {{label}}",
       "revokeTitle": "Revoke service secret",
       "revokeMessage": "Revoke the service secret \"{{label}}\"."
     },
@@ -556,6 +581,7 @@
       "revoked": "Revoked",
       "active": "Active",
       "revoke": "Revoke",
+      "revokeAria": "Revoke session {{id}}",
       "revokeTitle": "Revoke session",
       "revokeMessage": "Revoke the session \"{{id}}\"."
     },
@@ -602,8 +628,10 @@
     "revoked": "Revoked",
     "active": "Active",
     "revoke": "Revoke",
+    "revokeAriaWithId": "Revoke session {{id}}",
     "revokeTitle": "Revoke session",
-    "revokeMessage": "Revoke the session \"{{id}}\"."
+    "revokeMessage": "Revoke the session \"{{id}}\".",
+    "revokedNotice": "Session revoked"
   },
   "impersonations": {
     "title": "Impersonations",

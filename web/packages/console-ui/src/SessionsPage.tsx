@@ -21,6 +21,7 @@ import Typography from '@mui/material/Typography'
 import {
   DataTable,
   EmptyState,
+  InlineSuccess,
   ListSkeleton,
   PageHeader,
   errorCodeOf,
@@ -49,6 +50,8 @@ export function SessionsPage() {
   const [accountDraft, setAccountDraft] = useState('')
   const [account, setAccount] = useState('')
   const confirm = usePendingConfirm()
+  // The confirmation a landed revoke fills into the page's success notice.
+  const [success, setSuccess] = useState<string | null>(null)
 
   const sessions = operations.useAccountSessions({
     id: account === '' ? undefined : account,
@@ -110,17 +113,20 @@ export function SessionsPage() {
           size="small"
           variant="outlined"
           color="error"
+          aria-label={t('sessions.revokeAriaWithId', { id: session.id })}
           disabled={session.revoked || revokeSession.isPending}
           onClick={() =>
             confirm.ask({
               title: t('sessions.revokeTitle'),
               message: t('sessions.revokeMessage', { id: session.id }),
               confirmLabel: t('common.confirm'),
-              run: () =>
-                revokeSession.mutate({
-                  accountId: account,
-                  sessionId: session.id,
-                }),
+              run: () => {
+                setSuccess(null)
+                revokeSession.mutate(
+                  { accountId: account, sessionId: session.id },
+                  { onSuccess: () => setSuccess(t('sessions.revokedNotice')) },
+                )
+              },
             })
           }
         >
@@ -227,6 +233,7 @@ export function SessionsPage() {
         <InlineError
           code={revokeSession.isError ? errorCodeOf(revokeSession.error) : null}
         />
+        <InlineSuccess message={success} />
       </Box>
 
       <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />

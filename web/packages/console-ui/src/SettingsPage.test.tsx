@@ -136,6 +136,8 @@ describe('SettingsPage', () => {
     await user.click(save)
     // The route addresses the item by the namespace and the key rest.
     expect(writes).toContain('set:mail.retry=9')
+    // The landed save confirms itself in the page's standing status region.
+    expect(await screen.findByText('设置已保存')).toBeInTheDocument()
   })
 
   it('removes a setting through the row control after confirmation', async () => {
@@ -153,10 +155,13 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, { operations })
     await screen.findByDisplayValue('5')
 
-    await user.click(screen.getByRole('button', { name: '移除' }))
+    // The row's remove control names its own setting key.
+    await user.click(screen.getByRole('button', { name: '移除设置项 mail.retry' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: '确认' }))
     expect(writes).toContain('remove:mail.retry')
+    // The landed remove fills the page's standing status region.
+    expect(await screen.findByText('设置项已移除')).toBeInTheDocument()
   })
 
   it('renders the invalid-value text when a write is refused', async () => {

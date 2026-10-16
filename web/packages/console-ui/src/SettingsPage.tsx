@@ -46,7 +46,13 @@ import Paper from '@mui/material/Paper'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { DataTable, ListSkeleton, PageHeader, errorCodeOf } from '@speed/ui-kit'
+import {
+  DataTable,
+  InlineSuccess,
+  ListSkeleton,
+  PageHeader,
+  errorCodeOf,
+} from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
@@ -71,6 +77,8 @@ export function SettingsPage() {
   // The table's page and page size.
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_ROWS_PER_PAGE)
+  // The confirmation a landed write fills into the page's success notice.
+  const [success, setSuccess] = useState<string | null>(null)
 
   // The whole declared set, read for the namespace navigation (its
   // namespaces are the grouping the page offers).
@@ -106,6 +114,7 @@ export function SettingsPage() {
     )
 
   const save = (settled: readonly ConsoleSetting[]) => {
+    setSuccess(null)
     for (const setting of changedItems(settled)) {
       const value = drafts[setting.key] ?? ''
       setSetting.mutate(
@@ -115,14 +124,17 @@ export function SettingsPage() {
           value,
         },
         {
-          // A landed write clears that item's draft; a refused one keeps it
-          // so the value can be corrected and retried.
-          onSuccess: () =>
+          // A landed write clears that item's draft (so the next edit starts
+          // empty) and confirms itself; a refused one keeps the draft so the
+          // value can be corrected and retried.
+          onSuccess: () => {
             setDrafts((previous) => {
               const next = { ...previous }
               delete next[setting.key]
               return next
-            }),
+            })
+            setSuccess(t('settings.saved'))
+          },
         },
       )
     }
@@ -133,11 +145,16 @@ export function SettingsPage() {
       title: t('settings.removeTitle'),
       message: t('settings.removeMessage', { key: setting.key }),
       confirmLabel: t('common.confirm'),
-      run: () =>
-        removeSetting.mutate({
-          namespace: setting.namespace,
-          key: settingKeyRest(setting.key, setting.namespace),
-        }),
+      run: () => {
+        setSuccess(null)
+        removeSetting.mutate(
+          {
+            namespace: setting.namespace,
+            key: settingKeyRest(setting.key, setting.namespace),
+          },
+          { onSuccess: () => setSuccess(t('settings.removed')) },
+        )
+      },
     })
   }
 
@@ -201,6 +218,7 @@ export function SettingsPage() {
           size="small"
           variant="text"
           color="error"
+          aria-label={t('settings.removeAria', { key: setting.key })}
           disabled={removeSetting.isPending}
           onClick={() => remove(setting)}
         >
@@ -359,6 +377,7 @@ export function SettingsPage() {
                   </Box>
 
                   <InlineError code={writeError} />
+                  <InlineSuccess message={success} />
                 </Box>
               )
             }}

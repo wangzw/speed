@@ -16,6 +16,12 @@
  * directly, as PermissionsPage's role removal does. The texts come from
  * the caller, so they resolve through the console-ui namespace and name
  * the concrete object.
+ *
+ * The guard's WEIGHT is the caller's: a `doubleConfirm` request is the
+ * heavier two-step arm (the first click only re-labels the button), set
+ * for a truly irreversible action -- a delete that takes other records
+ * with it -- and left off for a recoverable one, so a reversible action
+ * never carries a heavier guard than an irreversible one.
  */
 
 import { useState } from 'react'
@@ -29,7 +35,14 @@ export interface PendingConfirm {
   readonly message: string
   /** The confirming button's label. */
   readonly confirmLabel: string
-  /** Fires on the confirming click. */
+  /**
+   * The heavier two-step guard: the first confirming click only arms the
+   * button ("click again to confirm") and a deliberate second click fires.
+   * Set for a truly irreversible action (a delete that takes other records
+   * with it); leave it off for a recoverable one.
+   */
+  readonly doubleConfirm?: boolean
+  /** Fires on the confirming click (the second click under doubleConfirm). */
   readonly run: () => void
 }
 
@@ -74,6 +87,7 @@ export function PendingConfirmDialog({
     <ConfirmDialog
       open={pending !== null}
       variant="danger"
+      doubleConfirm={pending?.doubleConfirm ?? false}
       title={pending?.title}
       message={pending?.message}
       confirmLabel={pending?.confirmLabel}

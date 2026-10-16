@@ -608,6 +608,9 @@ export function PermissionsPage() {
           <ConfirmDialog
             open={pendingRoleDelete !== null}
             variant="danger"
+            // Deleting a role revokes its grants and bindings with it and
+            // cannot be undone from the interface: the heavier two-step arm.
+            doubleConfirm
             title={t('permissions.roles.removeTitle')}
             message={t('permissions.roles.removeMessage', {
               role: pendingRoleDelete ?? '',

@@ -98,10 +98,17 @@
     },
     "rename": {
       "label": "新别名",
-      "submit": "改名"
+      "submit": "改名",
+      "ariaWithId": "租户 {{id}} 的新别名",
+      "submitAria": "为租户 {{id}} 改名"
     },
     "enable": "启用",
     "disable": "停用",
+    "enableAria": "启用租户 {{id}}",
+    "disableAria": "停用租户 {{id}}",
+    "created": "租户已登记",
+    "renamed": "别名已更新",
+    "statusSaved": "租户状态已更新",
     "identifierHelper": "不含空格等空白字符"
   },
   "forbidden": {
@@ -233,6 +240,9 @@
     "remove": "移除",
     "removeTitle": "移除设置项",
     "removeMessage": "移除设置项「{{key}}」的当前取值。",
+    "removeAria": "移除设置项 {{key}}",
+    "saved": "设置已保存",
+    "removed": "设置项已移除",
     "sensitive": "是"
   },
   "audit": {
@@ -409,8 +419,22 @@
     "mfaNo": "否",
     "manage": "管理",
     "delete": "删除",
+    "manageAria": "管理账户 {{id}}",
+    "deleteAria": "删除账户 {{id}}",
     "deleteTitle": "删除账户",
     "deleteMessage": "删除账户「{{id}}」会一并移除其全部标识、密钥与会话。",
+    "created": "账户已创建",
+    "deleted": "账户已删除",
+    "mfaReset": "认证因子已重置",
+    "sessionsRevoked": "会话已全部撤销",
+    "identifierRemoved": "登录标识已移除",
+    "secretRevoked": "密钥已撤销",
+    "sessionRevoked": "会话已撤销",
+    "statusSaved": "状态已保存",
+    "mfaSaved": "MFA 要求已保存",
+    "patchSaved": "变更已保存",
+    "passwordReset": "口令已重置",
+    "identifierAdded": "登录标识已添加",
     "status": {
       "label": "状态",
       "submit": "保存状态",
@@ -532,6 +556,7 @@
       "revoked": "已撤销",
       "active": "有效",
       "revoke": "撤销",
+      "revokeAria": "撤销密钥 {{label}}",
       "revokeTitle": "撤销服务密钥",
       "revokeMessage": "撤销服务密钥「{{label}}」。"
     },
@@ -556,6 +581,7 @@
       "revoked": "已撤销",
       "active": "有效",
       "revoke": "撤销",
+      "revokeAria": "撤销会话 {{id}}",
       "revokeTitle": "撤销会话",
       "revokeMessage": "撤销会话「{{id}}」。"
     },
@@ -602,8 +628,10 @@
     "revoked": "已撤销",
     "active": "有效",
     "revoke": "撤销",
+    "revokeAriaWithId": "撤销会话 {{id}}",
     "revokeTitle": "撤销会话",
-    "revokeMessage": "撤销会话「{{id}}」。"
+    "revokeMessage": "撤销会话「{{id}}」。",
+    "revokedNotice": "会话已撤销"
   },
   "impersonations": {
     "title": "冒充",

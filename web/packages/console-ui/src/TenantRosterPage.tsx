@@ -24,8 +24,10 @@
  * themselves as invalid while a typed value breaks it; the server still
  * judges every write. A write that lands clears the input that carried
  * it -- the create form's identifier and alias together, a row's rename
- * draft on its own -- so the next edit starts empty; a refused write
- * keeps the input so it can be corrected and retried.
+ * draft on its own -- so the next edit starts empty, and it also fills a
+ * success notice (a polite live region), so a silent write never leaves
+ * the operator guessing; a refused write keeps the input so it can be
+ * corrected and retried.
  *
  * The page opens with ui-kit's PageHeader: the page title as the level-one
  * heading, a breadcrumb trail from the console to this page, and a
@@ -42,6 +44,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
   DataTable,
+  InlineSuccess,
   ListSkeleton,
   PageHeader,
   errorCodeOf,
@@ -76,6 +79,12 @@ function statusLabel(
  * One row's write controls: the rename draft and the enable/disable
  * toggle. The draft lives here, per row; a landed rename clears it, while
  * a typed value the identifier domain would refuse marks the input.
+ *
+ * Every control here repeats across the rows, so each carries the row's
+ * own tenant id in its accessible name (the input, the rename submit, the
+ * enable/disable toggle) -- a screen-reader user hears "rename tenant
+ * acme", never a bare "rename" indistinguishable from the row above. The
+ * row's landed writes surface through one shared success notice.
  */
 function TenantRowActions({ tenant }: { readonly tenant: ConsoleTenant }) {
   const { t } = useConsoleUiTranslation()
@@ -83,6 +92,7 @@ function TenantRowActions({ tenant }: { readonly tenant: ConsoleTenant }) {
   const renameTenant = operations.useSetTenantAlias()
   const setStatus = operations.useSetTenantStatus()
   const [alias, setAlias] = useState('')
+  const [success, setSuccess] = useState<string | null>(null)
 
   const disabled = tenant.status === 'disabled'
   // An empty draft is not-yet-an-error; a non-empty one the domain would
@@ -106,18 +116,30 @@ function TenantRowActions({ tenant }: { readonly tenant: ConsoleTenant }) {
         label={t('tenants.rename.label')}
         error={aliasRejected}
         helperText={t('tenants.identifierHelper')}
+        slotProps={{
+          htmlInput: {
+            'aria-label': t('tenants.rename.ariaWithId', { id: tenant.id }),
+          },
+        }}
       />
       <Button
         type="button"
         size="small"
         variant="outlined"
+        aria-label={t('tenants.rename.submitAria', { id: tenant.id })}
         disabled={renameTenant.isPending}
         onClick={() => {
+          setSuccess(null)
           renameTenant.mutate(
             { id: tenant.id, alias },
-            // A landed rename clears the draft so the next edit starts
-            // empty; a refused one keeps it for a retry.
-            { onSuccess: () => setAlias('') },
+            {
+              // A landed rename clears the draft so the next edit starts
+              // empty; a refused one keeps it for a retry.
+              onSuccess: () => {
+                setAlias('')
+                setSuccess(t('tenants.renamed'))
+              },
+            },
           )
         }}
       >
@@ -127,12 +149,21 @@ function TenantRowActions({ tenant }: { readonly tenant: ConsoleTenant }) {
         type="button"
         size="small"
         variant="outlined"
+        aria-label={
+          disabled
+            ? t('tenants.enableAria', { id: tenant.id })
+            : t('tenants.disableAria', { id: tenant.id })
+        }
         disabled={setStatus.isPending}
         onClick={() => {
-          setStatus.mutate({
-            id: tenant.id,
-            status: disabled ? 'active' : 'disabled',
-          })
+          setSuccess(null)
+          setStatus.mutate(
+            {
+              id: tenant.id,
+              status: disabled ? 'active' : 'disabled',
+            },
+            { onSuccess: () => setSuccess(t('tenants.statusSaved')) },
+          )
         }}
       >
         {disabled ? t('tenants.enable') : t('tenants.disable')}
@@ -147,6 +178,7 @@ function TenantRowActions({ tenant }: { readonly tenant: ConsoleTenant }) {
                 : null
           }
         />
+        <InlineSuccess message={success} />
       </Box>
     </Box>
   )
@@ -159,6 +191,7 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
   const createTenant = operations.useCreateTenant()
   const [newId, setNewId] = useState('')
   const [newAlias, setNewAlias] = useState('')
+  const [created, setCreated] = useState<string | null>(null)
 
   const idRejected = newId !== '' && isRejectedIdentifier(newId)
   const aliasRejected = newAlias !== '' && isRejectedIdentifier(newAlias)
@@ -273,6 +306,7 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
             variant="contained"
             disabled={createTenant.isPending}
             onClick={() => {
+              setCreated(null)
               createTenant.mutate(
                 { id: newId, alias: newAlias },
                 // A landed registration clears both inputs so the form is
@@ -281,6 +315,7 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
                   onSuccess: () => {
                     setNewId('')
                     setNewAlias('')
+                    setCreated(t('tenants.created'))
                   },
                 },
               )
@@ -293,6 +328,7 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
           <InlineError
             code={createTenant.isError ? errorCodeOf(createTenant.error) : null}
           />
+          <InlineSuccess message={created} />
         </Box>
       </Box>
 

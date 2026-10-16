@@ -8,8 +8,9 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { act, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
 import { PermissionsPage } from './PermissionsPage.js'
 import type {
   ConsoleBinding,
@@ -26,6 +27,13 @@ import {
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 
 const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
+
+/** The zh-CN label the confirm button shows once the two-step guard arms. */
+const CONFIRM_AGAIN_LABEL = (
+  uiKitResources['zh-CN'] as unknown as {
+    readonly confirmDialog: { readonly confirmAgainLabel: string }
+  }
+).confirmDialog.confirmAgainLabel
 
 function role(overrides: Partial<ConsoleRole> = {}): ConsoleRole {
   return {
@@ -248,8 +256,19 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     await screen.findByText('editor')
     await user.click(screen.getByRole('button', { name: '删除' }))
+    // Deleting a role revokes its grants and bindings with it and cannot be
+    // undone: the heavier two-step guard -- the first click only arms.
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: '删除' }))
+    expect(removed).toEqual([])
+    await act(async () => {
+      await new Promise((resolve) =>
+        setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
+      )
+    })
+    await user.click(
+      within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
+    )
     await vi.waitFor(() => {
       expect(removed).toEqual(['editor'])
     })

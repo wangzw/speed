@@ -108,8 +108,63 @@ describe('TenantRosterPage', () => {
     )
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
-    await user.click(screen.getByRole('button', { name: '停用' }))
+    // The row's enable/disable control names its own tenant, so it is not
+    // confusable with another row's toggle.
+    await user.click(
+      screen.getByRole('button', { name: '停用租户 acme' }),
+    )
     expect(calls).toEqual(['acme:disabled'])
+  })
+
+  it('names each row control with its own tenant', async () => {
+    const tenants: ConsoleTenant[] = [
+      { id: 'acme', alias: 'Acme', status: 'active' },
+      { id: 'globex', alias: 'Globex', status: 'active' },
+    ]
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listTenants: () => Promise.resolve(tenants) }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    // The two rows carry the same controls distinguished only by the tenant
+    // id baked into each accessible name -- never two identical "Rename"
+    // buttons.
+    expect(
+      screen.getByRole('button', { name: '为租户 acme 改名' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: '为租户 globex 改名' }),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('租户 acme 的新别名')).toBeInTheDocument()
+    expect(screen.getByLabelText('租户 globex 的新别名')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: '停用租户 acme' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: '停用租户 globex' }),
+    ).toBeInTheDocument()
+  })
+
+  it('announces a landed rename and a landed status change', async () => {
+    const user = userEvent.setup()
+    const tenants: ConsoleTenant[] = [
+      { id: 'acme', alias: 'Acme', status: 'active' },
+    ]
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () => Promise.resolve(tenants),
+        setTenantAlias: () => Promise.resolve(),
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    // The success notice is a standing status region: mounted clipped until a
+    // write lands, then filled with the confirmation. The rename's lands here.
+    await user.type(screen.getByLabelText('租户 acme 的新别名'), 'Acme Inc')
+    await user.click(screen.getByRole('button', { name: '为租户 acme 改名' }))
+    expect(await screen.findByText('别名已更新')).toBeInTheDocument()
   })
 
   it('renames a tenant through the row control', async () => {
@@ -129,8 +184,8 @@ describe('TenantRosterPage', () => {
     )
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
-    await user.type(screen.getByLabelText('新别名'), 'Acme Inc')
-    await user.click(screen.getByRole('button', { name: '改名' }))
+    await user.type(screen.getByLabelText('租户 acme 的新别名'), 'Acme Inc')
+    await user.click(screen.getByRole('button', { name: '为租户 acme 改名' }))
     expect(calls).toEqual(['acme:Acme Inc'])
   })
 
@@ -223,9 +278,9 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
-    const input = screen.getByLabelText('新别名')
+    const input = screen.getByLabelText('租户 acme 的新别名')
     await user.type(input, 'Acme Inc')
-    await user.click(screen.getByRole('button', { name: '改名' }))
+    await user.click(screen.getByRole('button', { name: '为租户 acme 改名' }))
 
     await waitFor(() => expect(input).toHaveValue(''))
   })
