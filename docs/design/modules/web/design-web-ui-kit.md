@@ -5,7 +5,7 @@
 本包是平台第一个渲染 DOM 的包。它交付：
 
 - **主题工厂**：`createAppTheme` 把合并后的 `@speed/tokens` token 树映射成一个 MUI v9 主题；`AppThemeProvider` 把主题、MUI 本地化联动与全局重置组成一个运行期。
-- **受控组件**：`PageHeader`、`EmptyState`、`ConfirmDialog`、`FormField`、`FormLayout`、`DataTable`、`FileUploader`、`InlineError`、`ListSkeleton`、`AsyncSection`，外加跨表面的状态原语（`errorCodeOf`、`visuallyHiddenSx`）。每个组件自带的文案来自 `ui-kit` 命名空间。
+- **受控组件**：`PageHeader`、`EmptyState`、`ConfirmDialog`、`FormField`、`FormLayout`、`DataTable`、`FileUploader`、`InlineError`、`InlineSuccess`、`ListSkeleton`、`AsyncSection`，外加跨表面的状态原语（`errorCodeOf`、`visuallyHiddenSx`）。每个组件自带的文案来自 `ui-kit` 命名空间。
 
 **受控契约是本包全部组件的共同契约**：每一份状态都由宿主持有、经 props 流入；组件把状态回显并抛出变更回调，从不取数、从不改数据、从不持业务状态——同一个组件因此在表单、弹窗与服务端渲染的页面里表现一致。唯一的交互局部状态是 `ConfirmDialog` 的双次确认待命（弹窗一关即复位），且必须能证明只在交互内存在。
 
@@ -64,15 +64,16 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 | 组件 | 输入 | 上报 |
 |---|---|---|
 | `PageHeader` | 标题（渲染为语义 `h1`）、可选面包屑、描述、动作区 | 面包屑链接的 `onClick` |
-| `EmptyState` | `variant`（`empty`/`noPermission`/`error`）、可覆写的标题与描述、动作、图标、`headingLevel` | 动作节点内的宿主回调 |
+| `EmptyState` | `variant`（`empty`/`noPermission`/`error`）、可覆写的标题与描述、动作、图标、`headingLevel`（`h1`–`h6` 或 `none`：`none` 把标题渲染为非标题元素、整块成为 `role="status"` 区域，用于不该进入目录层级的空/状态占位） | 动作节点内的宿主回调 |
 | `ConfirmDialog` | `open`、标题、消息、`variant`、`doubleConfirm`、标签、`confirmLoading` | `onConfirm`、`onCancel` |
 | `FormField` | `name`、`control`、`rules`、`defaultValue`、`required`、`render` | 经 `render` 暴露的绑定字段状态 |
 | `FormLayout` | `form`、子节点、`onSubmit`、动作行、间距、宽度、`columns` | `onSubmit`（经 RHF 校验后） |
 | `DataTable` | `rows`、`columns`、`rowKey`、`loading`、`sort`、`filter`、选择、分页、空态文案 | `onSortChange`、`filter.onValueChange`、`onSelectionChange`、分页回调 |
 | `FileUploader` | `rows`、选取/取消/重试/移除回调、`multiple`、`accept`、`allowDrop`、`disabled`、标签 | `onSelectFiles`、`onCancel`、`onRetry`、`onRemove` |
 | `InlineError` | `code`、`resolve` | — |
+| `InlineSuccess` | `message`（`null` 时静默，仍挂载一个裁剪的 `role="status"` 区域） | — |
 | `ListSkeleton` | `label`、`rows` | — |
-| `AsyncSection` | `pending`、`payload`、`empty`、`loading`、`errorState`、`emptyState`、`headingLevel`、`children` | `errorState.onRetry` |
+| `AsyncSection` | `pending`、`payload`、`empty`、`loading`、`errorState`、`emptyState`、`headingLevel`、`emptyHeadingLevel`（空占位自己的标题级，含 `none`）、`children` | `errorState.onRetry` |
 
 ### 表单校验桥
 
@@ -210,6 +211,7 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 | 校验错误消息是 `ui-kit` 命名空间的键 | 渲染其当前语言译文 |
 | 校验错误消息不是 `ui-kit` 键（宿主本地化文本或宿主码） | 原样渲染，不猜别的命名空间 |
 | 整次尝试失败经 `InlineError` 渲染 | 非空码渲染一个 `role="alert"` 的错误横幅，`null` 不渲染 |
+| 整次尝试成功经 `InlineSuccess` 渲染 | 始终挂载一个 `role="status"` 区域；`null` 时裁剪静默，非空时填文播报 |
 | `errorCodeOf` 收到非 ApiError 形状的抛出 | 坍缩到一个没有解析器会列出的码（`client.unknown`），由解析器渲染其未知兜底——操作只要抛了错就总有一个码可显示 |
 | 活动语言超出 MUI 映射表 | provider 落到 en-US MUI 本地化，不抛错；应用自身译文仍按活动语言渲染 |
 | `muiLocaleFor` 被直呼且标签未知 | 抛错（直呼者要主题装配期的响亮失败） |
@@ -235,5 +237,5 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 | 表单校验的 zod 解析桥 | 已实现 | `web/packages/ui-kit/src/zod-form-resolver.ts` `zodFormResolver`、`INVALID_ERROR_KEY` |
 | 数据表与列优先级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`、`columnVisibilitySx` |
 | 文件上传队列 | 已实现 | `web/packages/ui-kit/src/components/FileUploader.tsx` `FileUploader`、`FileUploaderRow` |
-| 跨表面状态原语 | 已实现 | `web/packages/ui-kit/src/components/InlineError.tsx` `InlineError`、`errorCodeOf`；`web/packages/ui-kit/src/components/ListSkeleton.tsx` `ListSkeleton`；`web/packages/ui-kit/src/components/AsyncSection.tsx` `AsyncSection`；`web/packages/ui-kit/src/visually-hidden.ts` `visuallyHiddenSx` |
+| 跨表面状态原语 | 已实现 | `web/packages/ui-kit/src/components/InlineError.tsx` `InlineError`、`errorCodeOf`；`web/packages/ui-kit/src/components/InlineSuccess.tsx` `InlineSuccess`；`web/packages/ui-kit/src/components/ListSkeleton.tsx` `ListSkeleton`；`web/packages/ui-kit/src/components/AsyncSection.tsx` `AsyncSection`；`web/packages/ui-kit/src/visually-hidden.ts` `visuallyHiddenSx` |
 | 文案命名空间与双语资源 | 已实现 | `web/packages/ui-kit/src/resources.ts` `UI_KIT_NAMESPACE`、`uiKitResources`；`web/packages/ui-kit/src/locales/zh-CN.json`、`en-US.json` |
