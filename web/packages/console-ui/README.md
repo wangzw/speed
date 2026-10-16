@@ -129,6 +129,11 @@ bundle and the pages read that instead.
 - **No routing.** It exports page declarations and never matches a URL,
   builds a link from a path or decides navigation selection. Collecting
   the declarations and rendering them is the application's route layer's.
+  The frame does expose one seam for the host's router: given an
+  `onNavigate` callback, a plain click on a navigation entry is handed to
+  it (with the entry's path) so the host routes the entry in place, while
+  the entry stays a real link for a middle-click or a copied URL. Absent
+  the callback, an entry is a plain link that navigates the browser.
 - **No authorization decisions.** The permission code a declaration
   carries is data; the server decides on every request and the host
   composes any route guard. A page renders its write controls and lets

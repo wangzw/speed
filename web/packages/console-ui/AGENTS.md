@@ -30,9 +30,13 @@ The shell does no routing. It never matches a URL, never builds a link
 from a path and never decides which navigation entry is selected: the
 declarations are collected and rendered by the application's route layer
 (a consumer of `@speed/route-kit`, or the host's own), and the console's
-navigation entries are plain links to each labelled declaration's path.
-The frame therefore renders only what the host gives it — the labelled
-declarations for the navigation, and `children` for the content.
+navigation entries are links to each labelled declaration's path. The
+entries stay real links, but when the host supplies `onNavigate` a plain
+click is intercepted and handed to it (with the entry's path) instead of
+reloading the page — that is how a host routes an entry in place without
+this package importing a router. The frame therefore renders only what
+the host gives it — the labelled declarations for the navigation, an
+optional `onNavigate`, and `children` for the content.
 
 ## The page declarations
 
@@ -121,7 +125,10 @@ such split.
 - **No routing in package code.** No path matching, no link
   construction, no `react-router`. `ConsoleShell` derives the navigation
   from labelled declarations and links each to its path; matching a URL
-  to a view is the application's route layer's.
+  to a view is the application's route layer's. `onNavigate` is a host
+  callback the frame invokes on a click, not a routing mechanism this
+  package owns — the host decides what a click does, this package just
+  reports which entry was activated.
 - **The pages read and write only through the operations bundle.** No
   page constructs a `QueryClient`, and none writes a query key. If a
   change looks like it wants to `fetch`, add an HTTP concern or build a
@@ -155,7 +162,8 @@ branch, a settled empty answer, a failed read, and a write whose success
 invalidates the list — with no HTTP transport.
 
 Suites: `ConsoleShell` (the three landmarks, the labelled-only
-navigation, the in-place skip link, the page-tier axe scan);
+navigation, the `onNavigate` seam, the in-place skip link, the page-tier
+axe scan);
 `TenantRosterPage`, `SettingsPage` and `AuditPage` (their reads, writes
 and failure branches, each with a widget-tier axe scan — the page
 renders its own h1); `routes` (the declarations' paths, permissions and

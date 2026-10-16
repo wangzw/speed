@@ -10,7 +10,7 @@
 
 **它是平台侧的壳（第二种壳）。** 上述管理面挂在**不解析租户**的端上：名册是平台资产、审计表持有全部租户的行、设置的全局层是平台操作。故本包没有租户切换器，也就没有租户作用域的查询键——它不认识「当前租户」这个概念。
 
-**它复用声明式注册面。** 每个页面导出的一份声明即 [route-kit](design-web-route-kit.md) 的 `RouteDeclaration`：路径 pattern、视图回调、可选导航标签、可选权限码（[ADR-web-route-seam-2026-10-15](../../../adr/adr-web-route-seam-2026-10-15.md)）。`permission` 是数据，本包不据它判定；`label` 缺席即该页不进导航。声明由应用的组合层收齐后交给路由层渲染；本包不 import `route-kit`，也不自己做路径匹配或导航。租户侧的 [product-shell](design-web-product-shell.md) 用同一份声明形状，两者只是壳不同。
+**它复用声明式注册面。** 每个页面导出的一份声明即 [route-kit](design-web-route-kit.md) 的 `RouteDeclaration`：路径 pattern、视图回调、可选导航标签、可选权限码（[ADR-web-route-seam-2026-10-15](../../../adr/adr-web-route-seam-2026-10-15.md)）。`permission` 是数据，本包不据它判定；`label` 缺席即该页不进导航。声明由应用的组合层收齐后交给路由层渲染；本包不 import `route-kit`，也不自己做路径匹配或导航。壳另交出一个 `onNavigate` 回调接缝：宿主给了它，帧内点一条导航项即把该项的路径交回调（由宿主的路由器就地跳转，不整页重载），不给则该项是整页链接。租户侧的 [product-shell](design-web-product-shell.md) 用同一份声明形状，两者只是壳不同。
 
 ### 非职责
 
@@ -41,6 +41,9 @@ interface ConsoleShellProps {
   readonly children: ReactNode
   readonly title?: ReactNode
   readonly headerActions?: ReactNode
+  // 帧内导航的点击回调：给了它即把被激活条目的路径交回调（宿主的路由器
+  // 就地跳转）；不给即该项是整页链接。
+  readonly onNavigate?: (href: string) => void
   readonly sx?: SxProps<Theme>
 }
 ```
@@ -59,7 +62,7 @@ interface ConsoleShellProps {
 | `@tanstack/react-query` | peer（必需）：宿主供给的 QueryClient |
 | `react`、`react-dom`、`@mui/material`、`@emotion/*` | peer（必需）：宿主拥有的 React／MUI 树 |
 
-**本包不 import `route-kit` 与 `tenancy-ui`。** 页面声明即 route-kit 的 `RouteDeclaration`，收集方在应用的组合层；本包没有租户切换器，故租户侧的控件不在这里出现。
+**本包不 import `route-kit` 与 `tenancy-ui`。** 页面声明即 route-kit 的 `RouteDeclaration`，收集方在应用的组合层；本包没有租户切换器，故租户侧的控件不在这里出现。壳交出的 `onNavigate` 是一个回调，由宿主接上它自己的路由器，本包与 `route-kit` 之间仍无 import 边。
 
 ## UML 图
 

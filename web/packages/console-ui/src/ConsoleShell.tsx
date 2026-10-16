@@ -10,8 +10,12 @@
  * `main` landmark. It does no routing: it never matches a URL, never
  * builds a link from a path and never decides selection -- the
  * declarations are collected and rendered by the application's route
- * layer, and the console's navigation entries are plain links to each
- * labelled declaration's path.
+ * layer, and the console's navigation entries are links to each labelled
+ * declaration's path. The entries stay real links (so a middle-click or a
+ * copied URL reaches the path), but when the host supplies `onNavigate` a
+ * plain click is handed to it instead of reloading the page, which is how
+ * a host routes an entry in place without this package importing a
+ * router.
  *
  * The frame is three landmarks in one shell: a `header` banner carrying
  * the console title and any host header actions, a `nav` landmark listing
@@ -58,6 +62,16 @@ export interface ConsoleShellProps {
   readonly title?: ReactNode
   /** Banner content after the title, typically the account menu (host content). */
   readonly headerActions?: ReactNode
+  /**
+   * Called with a navigation entry's path when that entry is activated by
+   * a plain click. Supplying it routes the entry in place through the
+   * host's router: the shell still renders the entry as a link (a
+   * middle-click or a copied URL stays a real navigation), but a plain
+   * click is intercepted and handed here instead of reloading the page.
+   * Absent, an entry is a plain link that navigates the browser -- a full
+   * page load, which a host whose session lives in memory loses.
+   */
+  readonly onNavigate?: (href: string) => void
   /** Extra styling merged onto the root layout box. */
   readonly sx?: SxProps<Theme>
 }
@@ -74,6 +88,7 @@ export function ConsoleShell({
   children,
   title,
   headerActions,
+  onNavigate,
   sx,
 }: ConsoleShellProps) {
   const { t } = useConsoleUiTranslation()
@@ -159,6 +174,14 @@ export function ConsoleShell({
                 <Link
                   href={entry.href}
                   underline="none"
+                  onClick={
+                    onNavigate === undefined
+                      ? undefined
+                      : (event) => {
+                          event.preventDefault()
+                          onNavigate(entry.href)
+                        }
+                  }
                   sx={{
                     display: 'block',
                     width: '100%',

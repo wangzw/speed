@@ -7,7 +7,7 @@
  * the skip link. It does no path matching and marks no entry selected.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ConsoleShell } from './ConsoleShell.js'
@@ -95,6 +95,21 @@ describe('ConsoleShell', () => {
     const banner = screen.getByRole('banner')
     expect(within(banner).getByText('Speed Console')).toBeInTheDocument()
     expect(within(banner).getByText('account')).toBeInTheDocument()
+  })
+
+  it('hands a navigation entry click to onNavigate instead of the page link', async () => {
+    const user = userEvent.setup()
+    const onNavigate = vi.fn()
+    renderWithProviders(
+      <ConsoleShell routes={routes} title="Console" onNavigate={onNavigate}>
+        <h1>Home</h1>
+      </ConsoleShell>,
+      { operations },
+    )
+    const nav = screen.getByRole('navigation')
+    await user.click(within(nav).getByRole('link', { name: 'Settings' }))
+    // The entry stays a link, but its click is the host's to route.
+    expect(onNavigate).toHaveBeenCalledWith('/settings')
   })
 
   it('moves focus to main from the skip link, without navigating', async () => {
