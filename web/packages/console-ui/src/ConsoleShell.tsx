@@ -28,7 +28,12 @@
  * navigation and hands it to the shared frame rather than re-implementing
  * the chrome. The console names its own navigation landmark
  * (`shell.navLabel`) through the frame's `navLabel` so the platform
- * navigation stays distinguishable from any other shell's.
+ * navigation stays distinguishable from any other shell's. Beside the
+ * navigation it passes the frame's desktop sidebar-collapse pair
+ * (`sidebarCollapsed` / `onSidebarCollapsedChange`) straight through, so a
+ * host that holds the collapse state gives the operator the same
+ * host-controlled collapse in the console area that the tenant shell
+ * carries.
  *
  * The shell reads no data and holds no operations: the pages it hosts
  * reach their reads and writes through the operations bundle the host
@@ -40,13 +45,24 @@ import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { AppShell } from '@speed/layout-kit'
-import type { AppShellNavItem } from '@speed/layout-kit'
+import type { AppShellNavItem, AppShellProps } from '@speed/layout-kit'
 import type { ConsoleRoute } from './route.js'
 import { ConsoleNavigationProvider } from './internal/navigation.js'
 import { ConsoleInvitationLinkProvider } from './internal/invitation-link.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 
-export interface ConsoleShellProps {
+/** The AppShell chrome the console opts into beside its own: the desktop
+ * sidebar-collapse pair, re-declared by Pick so a chrome change lands in
+ * AppShellProps only (single source of truth). The console carries the pair
+ * so its frame has the same host-controlled collapse the tenant shell does --
+ * the state is the host's, and the frame renders the toggle and reports each
+ * flip. */
+type AppShellCollapseProps = Pick<
+  AppShellProps,
+  'sidebarCollapsed' | 'onSidebarCollapsedChange'
+>
+
+export interface ConsoleShellProps extends AppShellCollapseProps {
   /**
    * The console's page declarations. The shell derives the platform
    * navigation from the declarations that carry a `label` and renders
@@ -89,6 +105,8 @@ export function ConsoleShell({
   headerActions,
   onNavigate,
   invitationLink,
+  sidebarCollapsed,
+  onSidebarCollapsedChange,
   sx,
 }: ConsoleShellProps) {
   const { t } = useConsoleUiTranslation()
@@ -121,6 +139,8 @@ export function ConsoleShell({
       navLabel={t('shell.navLabel')}
       header={title}
       headerActions={headerActions}
+      sidebarCollapsed={sidebarCollapsed}
+      onSidebarCollapsedChange={onSidebarCollapsedChange}
       sx={sx}
     >
       {/* The same in-place navigation seam the entries use, published to

@@ -17,6 +17,7 @@
  * hamburger toggle, never as a block stacked above the content.
  */
 
+import { useCallback, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -40,6 +41,34 @@ const routes: readonly ConsoleRoute[] = [
   // No label: reachable but not listed in the navigation.
   { path: '/audit/:id', view: () => null },
 ]
+
+// The controlled-collapse host: the collapse state lives here, ConsoleShell
+// reports every flip through onSidebarCollapsedChange, and nothing else writes
+// it -- the shape a real controlled consumer renders.
+function ControlledCollapseConsole({
+  onCollapseChange,
+}: {
+  readonly onCollapseChange: (collapsed: boolean) => void
+}) {
+  const [collapsed, setCollapsed] = useState(false)
+  const reportCollapse = useCallback(
+    (next: boolean) => {
+      onCollapseChange(next)
+      setCollapsed(next)
+    },
+    [onCollapseChange],
+  )
+  return (
+    <ConsoleShell
+      routes={routes}
+      title="Console"
+      sidebarCollapsed={collapsed}
+      onSidebarCollapsedChange={reportCollapse}
+    >
+      <h1>Home</h1>
+    </ConsoleShell>
+  )
+}
 
 describe('ConsoleShell', () => {
   it('renders a banner, a nav and a main landmark', () => {
@@ -208,6 +237,56 @@ describe('ConsoleShell', () => {
       expect(
         screen.queryByRole('button', { name: layoutKitZhCN.appShell.openNav }),
       ).not.toBeInTheDocument()
+    })
+  })
+
+  describe('collapsible sidebar', () => {
+    it('renders no collapse toggle when the host does not supply the collapse pair', () => {
+      mockMatchMedia(true)
+      renderWithProviders(
+        <ConsoleShell routes={routes} title="Console">
+          <h1>Home</h1>
+        </ConsoleShell>,
+        { operations },
+      )
+      // Without the host's collapse callback the frame renders no toggle and
+      // keeps the always-open permanent drawer -- the same opt-in contract the
+      // tenant frame carries.
+      expect(
+        screen.queryByRole('button', { name: layoutKitZhCN.appShell.collapseNav }),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: layoutKitZhCN.appShell.expandNav }),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.getByRole('navigation', { name: consoleUiZhCN.shell.navLabel }),
+      ).toBeInTheDocument()
+    })
+
+    it('renders the collapse toggle and reports the flip when the host supplies the pair', async () => {
+      mockMatchMedia(true)
+      const user = userEvent.setup()
+      const onCollapseChange = vi.fn()
+      renderWithProviders(
+        <ControlledCollapseConsole onCollapseChange={onCollapseChange} />,
+        { operations },
+      )
+      // The console passes the collapse pair straight through to the frame, so
+      // the desktop toggle is present and starts offering to collapse.
+      const toggle = screen.getByRole('button', {
+        name: layoutKitZhCN.appShell.collapseNav,
+      })
+      expect(toggle).toHaveAttribute('aria-expanded', 'true')
+      await user.click(toggle)
+      // The flip is the host's to hold: the shell reports it and the permanent
+      // drawer disappears, leaving the toggle offering to expand.
+      expect(onCollapseChange).toHaveBeenCalledWith(true)
+      expect(
+        screen.queryByRole('navigation', { name: consoleUiZhCN.shell.navLabel }),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.getByRole('button', { name: layoutKitZhCN.appShell.expandNav }),
+      ).toHaveAttribute('aria-expanded', 'false')
     })
   })
 

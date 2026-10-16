@@ -61,7 +61,13 @@ the tenant-facing shell builds on: a fixed top bar, a responsive
 navigation sidebar (permanent on wide viewports, a hamburger drawer with
 an overlay on narrow ones) and a single scrolling content region. The
 console derives the platform navigation from the labelled declarations
-and hands it to that frame, so the two shells are one shape.
+and hands it to that frame, so the two shells are one shape. It passes the
+frame's desktop sidebar-collapse pair (`sidebarCollapsed` /
+`onSidebarCollapsedChange`) straight through as well: give the frame the
+callback and it renders the collapse toggle and reports each flip, so a
+host that holds the collapse state gives the operator the same
+host-controlled collapse the tenant-facing shell carries. Omit the pair and
+the sidebar stays open.
 
 ## What ships
 

@@ -44,7 +44,12 @@ navigation stays distinguishable from any other shell's. Reusing
 `AppShell` is what makes the two shells one shape — a sidebar that stays
 put while the content scrolls, a hamburger drawer on a narrow viewport
 rather than the navigation stacked above the content, and the content
-region as the single scroll layer. The frame carries no
+region as the single scroll layer. The frame also carries the frame's
+desktop sidebar-collapse pair (`sidebarCollapsed` /
+`onSidebarCollapsedChange`), passed straight through: supplying the
+callback renders the collapse toggle and reports each flip, so a host
+that holds the collapse state gives the operator the same host-controlled
+collapse here that the tenant shell carries. The frame carries no
 current-tenant affordances; that absence is the difference between the two
 shells, not the chrome.
 
