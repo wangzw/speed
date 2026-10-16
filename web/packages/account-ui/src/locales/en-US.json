@@ -130,7 +130,9 @@
       "description": "This action requires you to verify your identity again.",
       "starting": "Starting verification…",
       "confirmLabel": "Verify",
-      "cancelLabel": "Cancel"
+      "cancelLabel": "Cancel",
+      "cannotElevate": "This deployment cannot complete this step-up. Sign in again for a stronger verification.",
+      "relogin": "Sign in again"
     },
     "error": {
       "title": "Could not load two-step verification",

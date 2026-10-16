@@ -1,35 +1,44 @@
 /**
  * StepUpChallenge: the re-verification dialog of the step-up-gated
- * surfaces (MfaSection opens it when an operation answers 401
- * authn.step_up_required).
+ * account surfaces (the profile and MFA sections open it when an
+ * operation answers 401 authn.insufficient_user_authentication).
  *
  * The dialog is controlled -- {open, session, onSuccess, onCancel} -- and
- * drives one `purpose: 'step-up'` flow on the session
- * (session.startAuthenticatedFlow, session.answerFlow). On opening it
- * starts the flow; the reply's next step is rendered (FlowStep) and each
- * answer advances the flow. An account with a usable factor enters at
- * the `factor` step and chooses one -- a six-digit TOTP or a passkey --
- * where the flow then asks for its proof; an account with none would
- * fall back to the first factor, which this dialog does not reach (its
- * callers gate an action the server already refused for want of a fresh
- * factor). Whatever the step asks for, the dialog validates nothing
- * client-side: the shape of the answer is the flow's business.
+ * drives one `purpose: 'step-up'` flow through @speed/auth-core's
+ * useStepUp hook, which owns the session operation. The hook starts the
+ * flow on opening and parks on its first step; the dialog renders that
+ * step (FlowStep) and forwards each answer. An account with a usable
+ * factor enters at the `factor` step and chooses one -- a six-digit TOTP
+ * or a passkey -- where the flow then asks for its proof. The chosen
+ * factor is remembered and re-named beside the field of the step that
+ * follows it: a challenge reply carries only the field the factor asks
+ * for, and the server re-reads the factor from the answer. Whatever the
+ * step asks for, the dialog validates nothing client-side: the shape of
+ * the answer is the flow's business.
  *
  * Completion settles the elevation on the session: a `step-up`
  * completion (state 'elevated' for a token-delivered session, and the
  * login-shaped 'authenticated' body for a cookie-delivered one) has
- * re-minted the access token, and onSuccess fires so the caller re-runs
- * the gated action. Failure answers resolve through the code whitelist
- * and render as one banner; the flow stays open and a fresh answer is
- * retryable. The dialog never signs in and never navigates: a dead
- * session shows its code text and the host's session gate converges.
+ * re-minted the access token, and the hook fires onSuccess so the caller
+ * re-runs the gated action. A refused answer resolves through the code
+ * whitelist and renders as one banner; the flow stays open and a fresh
+ * answer is retryable.
  *
- * While an answer is in flight every control is disabled, so an in-flight
- * answer cannot be double-submitted or abandoned mid-rotation.
- * Re-opening the dialog resets its state and starts a fresh flow.
+ * A refusal of the start itself is the deployment declining to raise this
+ * session at all, which no step can satisfy: the hook's 'unavailable'
+ * phase -- a 401 insufficient_user_authentication (the account has
+ * factors, but none whose methods may strengthen this session) or a 400
+ * (the start named no method the deployment could take, where an account
+ * with no factor at all lands, since a step-up is started without one).
+ * The dialog then says so and offers a re-login -- it ends the session
+ * through the session's own logout, and the host's session gate converges
+ * on its sign-in surface -- rather than a verification that cannot come.
+ *
+ * The dialog never signs in and never navigates on its own: a dead
+ * session shows its code text and the host's session gate converges.
  */
 
-import { useEffect, useId, useRef, useState } from 'react'
+import { useId, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -37,11 +46,10 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Typography from '@mui/material/Typography'
-import type { AuthSession, AuthnStep } from '@speed/auth-core'
-import { errorCodeOf } from '@speed/ui-kit'
+import type { AuthSession, AuthnFlowAnswer } from '@speed/auth-core'
+import { useStepUp } from '@speed/auth-core'
 import { InlineError } from './inline-error.js'
 import { FlowStep } from './flow-step.js'
-import type { FlowStepAnswer } from './flow-step.js'
 import { useAccountUiTranslation } from './translation.js'
 
 export interface StepUpChallengeProps {
@@ -55,10 +63,6 @@ export interface StepUpChallengeProps {
   readonly onCancel: () => void
 }
 
-/** The dialog's local phase: the flow is starting, is parked on a step,
- * or the last answer failed. */
-type Phase = 'starting' | 'step' | 'failed'
-
 export function StepUpChallenge({
   open,
   session,
@@ -67,148 +71,108 @@ export function StepUpChallenge({
 }: StepUpChallengeProps) {
   const { t } = useAccountUiTranslation()
   const titleId = useId()
+  const { phase, step, seq, errorCode, answer } = useStepUp(
+    session,
+    open,
+    onSuccess,
+  )
+  // The second factor the operator chose. The verification step that
+  // follows it (the code challenge) is answered under the `factor` step
+  // and must re-name the same factor alongside the field it asks for --
+  // a challenge reply carries only that field, and the server re-reads the
+  // factor from the answer.
+  const chosenFactor = useRef<string | null>(null)
 
-  const [phase, setPhase] = useState<Phase>('starting')
-  const [step, setStep] = useState<AuthnStep | null>(null)
-  const [seq, setSeq] = useState<number | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-  const [errorCode, setErrorCode] = useState<string | null>(null)
-  // A started flow is not cancelled on cleanup: StrictMode's
-  // mount/effect/cleanup/effect cycle would leave one start, so the
-  // first must be allowed to finish. Each opening takes a run token and
-  // a resolving start only acts when its token is still current.
-  const runRef = useRef(0)
-
-  useEffect(() => {
+  function handleAnswer(value: AuthnFlowAnswer): void {
     if (!open) {
       return
     }
-    const run = ++runRef.current
-    setPhase('starting')
-    setStep(null)
-    setSeq(null)
-    setSubmitting(false)
-    setErrorCode(null)
-    void (async () => {
-      try {
-        const state = await session.startAuthenticatedFlow({
-          purpose: 'step-up',
-        })
-        if (run !== runRef.current) {
-          return
-        }
-        if ('next' in state) {
-          setStep(state.next)
-          setSeq(state.seq)
-          setPhase('step')
-          return
-        }
-        if (state.state === 'elevated' || state.state === 'authenticated') {
-          onSuccess()
-          return
-        }
-        // 'linked' / 'enrolled': not a step-up outcome; the flow settled
-        // without elevating.
-        setErrorCode('client.unknown')
-        setPhase('failed')
-      } catch (error) {
-        if (run === runRef.current) {
-          setErrorCode(errorCodeOf(error))
-          setPhase('failed')
-        }
-      }
-    })()
-  }, [open, session, onSuccess])
+    const input = value.input ?? {}
+    if (input.factor !== undefined) {
+      // The factor-choice step: remember the chosen factor and forward.
+      chosenFactor.current = input.factor
+      answer(value)
+      return
+    }
+    if (value.step === 'factor' && chosenFactor.current !== null) {
+      // A `factor`-step challenge (the chosen factor's code, or its
+      // passkey): attach the factor's identifier the server re-reads.
+      answer({ ...value, input: { ...input, factor: chosenFactor.current } })
+      return
+    }
+    answer(value)
+  }
 
   if (!open) {
     return null
   }
 
-  async function handleAnswer(answer: FlowStepAnswer): Promise<void> {
-    if (submitting || seq === null) {
-      return
-    }
-    setSubmitting(true)
-    setErrorCode(null)
-    const run = runRef.current
-    try {
-      const state = await session.answerFlow({
-        seq,
-        step: answer.step,
-        input: answer.input,
-      })
-      if (run !== runRef.current) {
-        return
-      }
-      if ('next' in state) {
-        setStep(state.next)
-        setSeq(state.seq)
-        setPhase('step')
-        return
-      }
-      if (state.state === 'elevated' || state.state === 'authenticated') {
-        onSuccess()
-        return
-      }
-      // 'linked' / 'enrolled': not a step-up outcome.
-      setErrorCode('client.unknown')
-      setPhase('failed')
-    } catch (error) {
-      if (run === runRef.current) {
-        setErrorCode(errorCodeOf(error))
-        setPhase('failed')
-      }
-    } finally {
-      setSubmitting(false)
-    }
+  const starting = phase === 'starting'
+  // This deployment cannot raise the session at all (no factor that may
+  // strengthen it): no step will come, so the dialog says so and offers a
+  // re-login rather than a verification that cannot succeed.
+  const unavailable = phase === 'unavailable'
+
+  // The unavailable phase's one action: end the session -- forgetting the
+  // refused action, as a cancel does -- so the host's session gate
+  // converges on its sign-in surface, where the operator signs in again
+  // for a stronger verification. The session clears its local state even
+  // if the revoke is refused, so a failure here needs no retry.
+  function handleRelogin(): void {
+    onCancel()
+    void session.logout().catch(() => undefined)
   }
 
   return (
     <Dialog
       open={open}
-      // Any close request (Escape, backdrop) is a cancel while nothing
-      // is in flight; an in-flight answer cannot be abandoned.
-      onClose={() => {
-        if (!submitting) {
-          onCancel()
-        }
-      }}
+      onClose={onCancel}
       aria-labelledby={titleId}
       maxWidth="xs"
       fullWidth
     >
       <DialogTitle id={titleId}>{t('mfa.stepUp.title')}</DialogTitle>
       <DialogContent>
-        <Typography variant="body2" color="text.secondary">
-          {t('mfa.stepUp.description')}
-        </Typography>
-        <InlineError code={errorCode} />
-        {phase === 'starting' && (
-          <Typography variant="body2" sx={{ mt: 2 }}>
-            {t('mfa.stepUp.starting')}
+        {unavailable ? (
+          <Typography variant="body2" color="text.secondary">
+            {t('mfa.stepUp.cannotElevate')}
           </Typography>
-        )}
-        {phase !== 'starting' && (
-          <Box sx={{ mt: 1 }}>
-            {step !== null ? (
-              <FlowStep
-                // A fresh step resets the fields: keying the renderer on
-                // the step identity clears its per-answer state.
-                key={`${seq ?? 0}-${step.kind}`}
-                step={step}
-                busy={submitting}
-                answerStep="factor"
-                submitLabel={t('mfa.stepUp.confirmLabel')}
-                onSubmit={(answer) => void handleAnswer(answer)}
-              />
-            ) : null}
-          </Box>
+        ) : (
+          <>
+            <Typography variant="body2" color="text.secondary">
+              {t('mfa.stepUp.description')}
+            </Typography>
+            <InlineError code={errorCode} />
+            {starting ? (
+              <Typography variant="body2" sx={{ mt: 2 }}>
+                {t('mfa.stepUp.starting')}
+              </Typography>
+            ) : (
+              <Box sx={{ mt: 1 }}>
+                {step !== null ? (
+                  <FlowStep
+                    // A fresh step resets the fields: keying the renderer on
+                    // the step identity clears its per-answer state.
+                    key={`${seq ?? 0}-${step.kind}`}
+                    step={step}
+                    busy={false}
+                    answerStep="factor"
+                    submitLabel={t('mfa.stepUp.confirmLabel')}
+                    onSubmit={handleAnswer}
+                  />
+                ) : null}
+              </Box>
+            )}
+          </>
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onCancel} disabled={submitting}>
-          {t('mfa.stepUp.cancelLabel')}
-        </Button>
+        <Button onClick={onCancel}>{t('mfa.stepUp.cancelLabel')}</Button>
+        {unavailable ? (
+          <Button variant="contained" onClick={handleRelogin}>
+            {t('mfa.stepUp.relogin')}
+          </Button>
+        ) : null}
       </DialogActions>
     </Dialog>
   )

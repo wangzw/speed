@@ -130,7 +130,9 @@
       "description": "此操作需要你重新验证身份。",
       "starting": "正在开始验证…",
       "confirmLabel": "验证",
-      "cancelLabel": "取消"
+      "cancelLabel": "取消",
+      "cannotElevate": "本部署无法完成此次升级，请重新登录以获得更高的验证强度。",
+      "relogin": "重新登录"
     },
     "error": {
       "title": "无法加载两步验证",
