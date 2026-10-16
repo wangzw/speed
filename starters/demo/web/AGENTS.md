@@ -80,11 +80,15 @@ program beside this directory embeds with `go:embed` and serves through
   navigation dead end.
 - **A page reload signs the viewer out.** The access token lives in memory and
   the refresh token in the session's own closure (no refresh cookie), so a
-  reload starts anonymous. Both shells carry the same branch on the session
-  snapshot: an authenticated session turning anonymous -- a sign-out or a
-  refused refresh -- turns the page to the sign-in surface, so a request that
-  dies with its session never leaves a view stuck loading. Nothing persists a
-  credential to storage; this is the skeleton's shape, not a defect.
+  reload starts anonymous. The two areas then show different surfaces: the
+  tenant area is gated by product-shell, whose session-ended branch renders the
+  end screen with its own "sign in again" action for a session that turned
+  anonymous after having been authenticated (only a never-authenticated
+  visitor meets the sign-in surface); the console area carries its own session
+  gate, which sends any anonymous viewer -- including one whose authenticated
+  session just ended -- straight to the sign-in surface. Either way a request
+  that dies with its session never leaves a view stuck loading. Nothing
+  persists a credential to storage; this is the skeleton's shape, not a defect.
 
 ## Checks
 
