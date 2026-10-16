@@ -40,13 +40,11 @@ describe('the start page', () => {
   it('names the page and points a card at each assembled capability', () => {
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
-    // The page heading is the title, the intro sits under it, and the two
-    // guidance lines close the page.
+    // The page heading is the title and the intro sits under it.
     expect(
       screen.getByRole('heading', { level: 1, name: demoEnUS.home.heading }),
     ).toBeInTheDocument()
     expect(screen.getByText(demoEnUS.home.intro)).toBeInTheDocument()
-    expect(screen.getByText(demoEnUS.home.grow)).toBeInTheDocument()
 
     // One card per capability, each an anchor carrying the route it opens.
     expect(cardFor(demoEnUS.home.cards.account.title)).toHaveAttribute(
@@ -65,6 +63,17 @@ describe('the start page', () => {
       'href',
       NOTIFICATIONS_PATH,
     )
+  })
+
+  it('shows the signed-in viewer no source-tree copy', () => {
+    const { container } = renderDemoApp({
+      session: createTestSession(authenticatedSnapshot()),
+    })
+
+    // The landing faces a signed-in user, not the skeleton's author, so it
+    // never points at the source tree. The note that once did is a developer
+    // note, and it lives in README.md / AGENTS.md now.
+    expect(container.textContent ?? '').not.toMatch(/src\/pages|src\/routes\.tsx/)
   })
 
   it('opens the capability a card names, without a reload', async () => {

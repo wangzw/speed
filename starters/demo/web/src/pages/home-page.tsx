@@ -6,8 +6,7 @@
  * shows instead is the platform already assembled around it: one card per
  * capability that works out of the box (the account settings, the platform
  * console, the object store, the notification centre), each a real
- * destination into the app, over a short note on where a product's own pages
- * belong.
+ * destination into the app.
  *
  * Each card is an anchor carrying its target path, so a middle click or a
  * copy opens the destination too; a plain click is caught and routed, so the
@@ -95,9 +94,6 @@ export function HomePage(): ReactElement {
           </Card>
         ))}
       </Box>
-      <Typography variant="body2" color="text.secondary">
-        {t('home.grow')}
-      </Typography>
     </Box>
   )
 }

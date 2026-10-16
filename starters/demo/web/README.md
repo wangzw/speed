@@ -270,8 +270,7 @@ The tenant area's landing (`/`) is the skeleton's front door, not a business
 surface: `src/pages/home-page.tsx` renders the platform's assembled
 capabilities as a card grid -- the account settings, the platform console, the
 object store and the notification centre -- each a real route the app already
-serves, over a note on where a product's own pages belong. A product replaces
-the cards with its own surfaces.
+serves. A product replaces the cards with its own surfaces.
 
 Because the skeleton folds registration into the sign-in flow and ships
 neither SMS nor social sign-in, a fresh deployment is born with no account and
