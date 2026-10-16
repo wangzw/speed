@@ -32,10 +32,16 @@ Requirements documents are not used. Load the `document-standards` skill before 
 
 ## Commands
 
-Everything runs from the repository root through `make`, and the Makefile
-is the only place those commands are written down. `make help` lists the
-entry points, one line each; `make check` is the one CI calls. The
-toolchain they need comes from `mise install`, which reads `.mise.toml`.
+Everything runs from the repository root through `make`, and the root
+Makefile is the only place the repository's commands are written down.
+`make help` lists the entry points, one line each; `make check` is the one
+CI calls. The toolchain they need comes from `mise install`, which reads
+`.mise.toml`.
+
+`starters/demo` carries a Makefile of its own. That one is the copyable
+skeleton's entry point — what a tree lifted out of this repository runs —
+and not a second entry point here: the root `make check` covers that module
+through `go.work` like every other.
 
 ## Where things are
 

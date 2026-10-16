@@ -31,6 +31,7 @@ starters/demo/
     dist/           # 前端构建产物，被 go:embed 嵌进二进制
     var/            # 运行时产物：对象存储的本地根目录与生成的签名密钥
   web/              # 前端应用的源码与构建，产物写进 server/dist
+  Makefile          # 产品自己的构建入口，拷走后的树用它
   compose.yaml      # 部署栈外部后端的本地编排
   .gitignore        # 把运行时产物与构建输出挡在树外
   AGENTS.md         # 示范自己的契约
@@ -39,6 +40,8 @@ starters/demo/
 `AGENTS.md` 是示范自己的契约，随示范一起被拷走；`go.mod` 的 module 路径是 `github.com/vislake/speed/starters/demo/server`，使用者拷走后按自己的域改名。
 
 **Go 程序与前端源码各占一棵树，构建产物落在 Go 那一棵里。** `go:embed` 只嵌得到内嵌包自己目录树下的文件，模式里不许出现 `..`，所以二进制要嵌的那份产物只能住在 Go 程序所在目录之内：前端源码在 `web/`，构建产物写进 `server/dist/`。
+
+**产品自己的构建入口是示范自带的 `Makefile`。** 仓库的门禁入口是根 `Makefile`，它经 `go.work` 覆盖示范这个模块；拷出去的树上面什么都没有，它的构建、测试与静态检查命令因此写在示范自己的这一份里。`make help` 列出它跑什么，`make check` 全跑一遍，先前端后 Go——Go 构建内嵌产物，这个顺序是硬约束。**它是产品的入口，不是本仓库的入口**：仓库内跑的是根 `Makefile` 的 `make check`，前端腿在 `make web-check` 里。两条腿的输入由拷贝方提供、仓库不跑：`web-install` 把前端依赖装在包所在处（仓库内该包是 `web/` 工作区的成员，安装走工作区那份唯一的锁文件），`lint` 读模块目录向上最近的 `.golangci.yml`（仓库把它放在根）。
 
 ### 命令树
 
@@ -144,6 +147,7 @@ graph TD
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 目录骨架与 `go.mod` | 已实现 | `starters/demo/server/go.mod`、`starters/demo/AGENTS.md` |
+| 产品自带的构建入口 | 已实现 | `starters/demo/Makefile` |
 | 命令树与部署栈 | 已实现 | `starters/demo/server/main.go` `commandTree`、`addStack`；`starters/demo/server/host.go` `hostModule`、`servedEndpoints` |
 | 签名密钥的首次运行生成 | 已实现 | `starters/demo/server/signingkey.go` `ensureSigningKey`、`signingKeyPath`；`starters/demo/server/main.go` `run` |
 | 平台基线（`serve`/`worker` 的点名集与配置样例） | 已实现 | `starters/demo/server/main.go` `baselineServe`、`baselineWorker`；`starters/demo/server/testdata/` |

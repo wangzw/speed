@@ -94,6 +94,7 @@ in; replace them all before a deployment serves real traffic:
 
 | Path | What it is |
 |---|---|
+| `Makefile` | The product's own build entry point: `make help` lists it, `make check` runs it. What a copy uses; inside the repository the root Makefile is the entry point |
 | `server/main.go` | The command tree, the deployment-stack table, the baseline inclusion lists, the `gen` command, the placeholder command group, and `run()` |
 | `server/host.go` | The environment prefix, the host's own module (the `config.HostIdentity` resource), and the endpoint constants |
 | `server/signingkey.go` | The token signing key's path, and the first-run generation that puts a key there |
@@ -295,19 +296,28 @@ Under every stack:
 
 ## Running the checks
 
-```
-go -C starters/demo/server build ./...
-GOWORK=off go -C starters/demo/server build ./...
-go -C starters/demo/server test ./...
-go -C starters/demo/server test -race ./...
-env -C starters/demo/server golangci-lint run ./...
-```
+This directory carries its own `Makefile` — `make help` lists what it runs, and
+`make check` runs all of it, the frontend first and the Go program second
+because the Go build embeds the bundle. That file is the product's entry point:
+a tree lifted out of the repository has nothing above it, so its build, test and
+lint commands live there.
 
-The `GOWORK=off` build is the standalone one: a copy dropped outside this
-repository resolves `pkg` from its released version, so its `go.mod` and `go.sum`
-have to carry every dependency the imports reach. Run the linter from inside the
-module directory: a trailing absolute path is matched against the module root of
-the working directory and can report zero issues without loading the package.
+Two of its legs take an input a copy supplies and this repository does not:
+`web-install` installs the frontend's dependencies where the frontend package
+sits (inside the repository that package is a member of the workspace under
+`web/`, whose single lockfile the repository's install goes through instead),
+and `lint` reads the nearest `.golangci.yml` upward from the module directory
+(this repository keeps one at its root).
+
+**Inside this repository the entry point is the root Makefile.** `make check`
+from the repository root covers this module through `go.work` like every other
+module, and the frontend legs run as part of `make web-check`. A single leg
+against this module alone is `make -C starters/demo <target>`.
+
+The repository's own build leg adds a `GOWORK=off` build beside the workspace
+one. That is the standalone build: a copy dropped outside this repository
+resolves `pkg` from its released version, so its `go.mod` and `go.sum` have to
+carry every dependency the imports reach.
 
 The tests build the program once and run it as a real child process: they run
 `migrate` and `serve` on the `sqlite-memory` stack, read the probes and the
