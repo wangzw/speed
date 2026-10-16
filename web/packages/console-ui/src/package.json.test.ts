@@ -47,6 +47,9 @@ describe('package manifest', () => {
     expect(manifest.peerDependencies?.['react-dom']).toBe('^18.0.0 || ^19.0.0')
     expect(manifest.peerDependencies?.['@mui/material']).toBe('^9.0.0')
     expect(manifest.peerDependencies?.['@tanstack/react-query']).toBe('^5.0.0')
+    // The account-create form flows through ui-kit's form family, so the
+    // console drives react-hook-form directly and peers on it.
+    expect(manifest.peerDependencies?.['react-hook-form']).toBe('^7.0.0')
   })
 
   it('declares i18n, ui-kit and layout-kit as regular dependencies', () => {

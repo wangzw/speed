@@ -291,6 +291,18 @@ describe('AccountsPage', () => {
     })
   })
 
+  it('lays the create fields out through the form family instead of one crowded row', async () => {
+    const operations = withAccounts()
+    const { container } = renderWithProviders(<AccountsPage />, { operations })
+    // The create fields flow through ui-kit's FormLayout: a real <form>
+    // whose field flow is a grid, so the many fields wrap into rows
+    // rather than crowding a single flex line.
+    const form = container.querySelector('form')
+    expect(form).not.toBeNull()
+    expect(form).toHaveStyle({ display: 'grid' })
+    expect(within(form as HTMLElement).getByLabelText('显示名')).toBeInTheDocument()
+  })
+
   it('changes an account status through the bundle', async () => {
     const user = userEvent.setup()
     const calls: ConsoleSetAccountStatusInput[] = []

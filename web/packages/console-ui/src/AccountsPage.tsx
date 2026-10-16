@@ -46,8 +46,12 @@ import MenuItem from '@mui/material/MenuItem'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import { useForm } from 'react-hook-form'
+import type { SubmitHandler } from 'react-hook-form'
 import {
   DataTable,
+  FormField,
+  FormLayout,
   ListSkeleton,
   PageHeader,
   errorCodeOf,
@@ -57,6 +61,7 @@ import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
+import { FormWidth } from './internal/layout.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type {
@@ -698,31 +703,49 @@ function parseStringMap(text: string): Record<string, string> | null {
   }
 }
 
+/** The create form's fields, in the shape react-hook-form holds them. */
+type CreateAccountFields = {
+  kind: 'user' | 'service'
+  displayName: string
+  username: string
+  email: string
+  emailVia: VerifiedVia
+  phone: string
+  phoneVia: VerifiedVia
+  password: string
+  mfaRequired: boolean
+  attributes: string
+}
+
 /**
  * AccountCreateForm: the account-creation control (POST /auth/admin/accounts).
  * It names the fields the handler decodes into its create request; each is
- * optional but the kind, and a field left blank is not sent. The attribute
- * set is typed as a JSON object and marks the form when it does not parse.
- * A landed create clears the form; a refused one keeps it to correct.
+ * optional but the kind, and a field left blank is not sent. The fields flow
+ * through ui-kit's form family (FormLayout's responsive grid of FormField
+ * adapters), so they wrap into a form rather than crowding one row. The
+ * attribute set is typed as a JSON object and marks the field when it does
+ * not parse. A landed create clears the form; a refused one keeps it to
+ * correct.
  */
 function AccountCreateForm() {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const createAccount = operations.useCreateAccount()
 
-  const [kind, setKind] = useState<'user' | 'service'>('user')
-  const [displayName, setDisplayName] = useState('')
-  const [username, setUsername] = useState('')
-  const [email, setEmail] = useState('')
-  const [emailVia, setEmailVia] = useState<VerifiedVia>('')
-  const [phone, setPhone] = useState('')
-  const [phoneVia, setPhoneVia] = useState<VerifiedVia>('')
-  const [password, setPassword] = useState('')
-  const [mfaRequired, setMfaRequired] = useState(false)
-  const [attributes, setAttributes] = useState('')
-
-  const attributesInvalid =
-    attributes.trim() !== '' && parseStringMap(attributes) === null
+  const form = useForm<CreateAccountFields>({
+    defaultValues: {
+      kind: 'user',
+      displayName: '',
+      username: '',
+      email: '',
+      emailVia: '',
+      phone: '',
+      phoneVia: '',
+      password: '',
+      mfaRequired: false,
+      attributes: '',
+    },
+  })
 
   const viaOptions = (
     <>
@@ -734,140 +757,185 @@ function AccountCreateForm() {
     </>
   )
 
+  const onSubmit: SubmitHandler<CreateAccountFields> = (values) => {
+    const parsed =
+      values.attributes.trim() === '' ? null : parseStringMap(values.attributes)
+    createAccount.mutate(
+      {
+        kind: values.kind,
+        ...(values.displayName === '' ? {} : { display_name: values.displayName }),
+        ...(values.username === '' ? {} : { username: values.username }),
+        ...(values.email === '' ? {} : { email: values.email }),
+        ...(values.emailVia === '' ? {} : { email_verified_via: values.emailVia }),
+        ...(values.phone === '' ? {} : { phone: values.phone }),
+        ...(values.phoneVia === '' ? {} : { phone_verified_via: values.phoneVia }),
+        ...(values.password === '' ? {} : { password: values.password }),
+        ...(parsed === null ? {} : { attributes: parsed }),
+        ...(values.mfaRequired ? { mfa_required: true } : {}),
+      },
+      { onSuccess: () => form.reset() },
+    )
+  }
+
   return (
     <Box component="section" sx={{ mb: 3 }}>
       <Typography variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
         {t('accounts.create.title')}
       </Typography>
-      <Box
-        sx={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'flex-start',
-          columnGap: 2,
-          rowGap: 1,
-        }}
-      >
-        <TextField
-          select
-          size="small"
-          value={kind}
-          onChange={(event) => setKind(event.target.value as 'user' | 'service')}
-          label={t('accounts.create.kindLabel')}
-          sx={{ minWidth: 140 }}
-        >
-          <MenuItem value="user">{t('accounts.create.kind.user')}</MenuItem>
-          <MenuItem value="service">{t('accounts.create.kind.service')}</MenuItem>
-        </TextField>
-        <TextField
-          size="small"
-          value={displayName}
-          onChange={(event) => setDisplayName(event.target.value)}
-          label={t('accounts.create.displayNameLabel')}
-        />
-        <TextField
-          size="small"
-          value={username}
-          onChange={(event) => setUsername(event.target.value)}
-          label={t('accounts.create.usernameLabel')}
-        />
-        <TextField
-          size="small"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          label={t('accounts.create.emailLabel')}
-        />
-        <TextField
-          select
-          size="small"
-          value={emailVia}
-          onChange={(event) => setEmailVia(event.target.value as VerifiedVia)}
-          label={t('accounts.create.emailViaLabel')}
-          sx={{ minWidth: 180 }}
-        >
-          {viaOptions}
-        </TextField>
-        <TextField
-          size="small"
-          value={phone}
-          onChange={(event) => setPhone(event.target.value)}
-          label={t('accounts.create.phoneLabel')}
-        />
-        <TextField
-          select
-          size="small"
-          value={phoneVia}
-          onChange={(event) => setPhoneVia(event.target.value as VerifiedVia)}
-          label={t('accounts.create.phoneViaLabel')}
-          sx={{ minWidth: 180 }}
-        >
-          {viaOptions}
-        </TextField>
-        <TextField
-          size="small"
-          type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          label={t('accounts.create.passwordLabel')}
-        />
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={mfaRequired}
-              onChange={(event) => setMfaRequired(event.target.checked)}
-            />
+      <FormWidth>
+        <FormLayout
+          form={form}
+          onSubmit={onSubmit}
+          columns={2}
+          maxWidth={false}
+          actions={
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={createAccount.isPending}
+            >
+              {t('accounts.create.submit')}
+            </Button>
           }
-          label={t('accounts.create.mfaLabel')}
-        />
-        <TextField
-          size="small"
-          value={attributes}
-          onChange={(event) => setAttributes(event.target.value)}
-          label={t('accounts.create.attributesLabel')}
-          error={attributesInvalid}
-          helperText={t('accounts.create.attributesHelper')}
-          multiline
-          minRows={1}
-          sx={{ minWidth: 260 }}
-        />
-        <Button
-          type="button"
-          variant="contained"
-          disabled={createAccount.isPending || attributesInvalid}
-          onClick={() => {
-            const parsed = attributes.trim() === '' ? null : parseStringMap(attributes)
-            createAccount.mutate(
-              {
-                kind,
-                ...(displayName === '' ? {} : { display_name: displayName }),
-                ...(username === '' ? {} : { username }),
-                ...(email === '' ? {} : { email }),
-                ...(emailVia === '' ? {} : { email_verified_via: emailVia }),
-                ...(phone === '' ? {} : { phone }),
-                ...(phoneVia === '' ? {} : { phone_verified_via: phoneVia }),
-                ...(password === '' ? {} : { password }),
-                ...(parsed === null ? {} : { attributes: parsed }),
-                ...(mfaRequired ? { mfa_required: true } : {}),
-              },
-              {
-                onSuccess: () => {
-                  setDisplayName('')
-                  setUsername('')
-                  setEmail('')
-                  setEmailVia('')
-                  setPhone('')
-                  setPhoneVia('')
-                  setPassword('')
-                  setMfaRequired(false)
-                  setAttributes('')
-                },
-              },
-            )
-          }}
         >
-          {t('accounts.create.submit')}
-        </Button>
-      </Box>
+          <FormField
+            name="kind"
+            render={({ field }) => (
+              <TextField
+                {...field}
+                select
+                size="small"
+                fullWidth
+                label={t('accounts.create.kindLabel')}
+              >
+                <MenuItem value="user">{t('accounts.create.kind.user')}</MenuItem>
+                <MenuItem value="service">{t('accounts.create.kind.service')}</MenuItem>
+              </TextField>
+            )}
+          />
+          <FormField
+            name="displayName"
+            render={({ field }) => (
+              <TextField
+                {...field}
+                size="small"
+                fullWidth
+                label={t('accounts.create.displayNameLabel')}
+              />
+            )}
+          />
+          <FormField
+            name="username"
+            render={({ field }) => (
+              <TextField
+                {...field}
+                size="small"
+                fullWidth
+                label={t('accounts.create.usernameLabel')}
+              />
+            )}
+          />
+          <FormField
+            name="email"
+            render={({ field }) => (
+              <TextField
+                {...field}
+                size="small"
+                fullWidth
+                label={t('accounts.create.emailLabel')}
+              />
+            )}
+          />
+          <FormField
+            name="emailVia"
+            render={({ field }) => (
+              <TextField
+                {...field}
+                select
+                size="small"
+                fullWidth
+                label={t('accounts.create.emailViaLabel')}
+              >
+                {viaOptions}
+              </TextField>
+            )}
+          />
+          <FormField
+            name="phone"
+            render={({ field }) => (
+              <TextField
+                {...field}
+                size="small"
+                fullWidth
+                label={t('accounts.create.phoneLabel')}
+              />
+            )}
+          />
+          <FormField
+            name="phoneVia"
+            render={({ field }) => (
+              <TextField
+                {...field}
+                select
+                size="small"
+                fullWidth
+                label={t('accounts.create.phoneViaLabel')}
+              >
+                {viaOptions}
+              </TextField>
+            )}
+          />
+          <FormField
+            name="password"
+            render={({ field }) => (
+              <TextField
+                {...field}
+                size="small"
+                fullWidth
+                type="password"
+                label={t('accounts.create.passwordLabel')}
+              />
+            )}
+          />
+          <FormField
+            name="attributes"
+            rules={{
+              validate: (value) =>
+                value.trim() === '' ||
+                parseStringMap(value) !== null ||
+                t('accounts.create.attributesHelper'),
+            }}
+            render={({ field, invalid, errorText }) => (
+              <TextField
+                {...field}
+                size="small"
+                fullWidth
+                multiline
+                minRows={2}
+                label={t('accounts.create.attributesLabel')}
+                error={invalid}
+                helperText={errorText ?? t('accounts.create.attributesHelper')}
+              />
+            )}
+          />
+          <FormField
+            name="mfaRequired"
+            render={({ field }) => (
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={field.value}
+                    onChange={(event) => field.onChange(event.target.checked)}
+                    onBlur={field.onBlur}
+                    name={field.name}
+                  />
+                }
+                label={t('accounts.create.mfaLabel')}
+              />
+            )}
+          />
+        </FormLayout>
+      </FormWidth>
       <Box sx={{ mt: 1 }}>
         <InlineError
           code={createAccount.isError ? errorCodeOf(createAccount.error) : null}
