@@ -197,6 +197,9 @@ GOWORK=off go -C pkg/event build ./...   # the standalone leg, without the works
 ```
 
 The in-memory implementation needs nothing beyond the Go toolchain. A backend
-whose transport is a broker holds its own integration cases, and reaches the
-broker through the fixture it shares with the key-value module's backend of the
-same kind (`pkg/internal/natstest`).
+that runs against a server of its own adds integration cases, which carry the
+`integration` tag and connect to the compose stack at the repository root. A
+fixture for a server another module tests against too is shared —
+`pkg/internal/pgpool/pgtest` for PostgreSQL, `pkg/internal/natstest` for NATS,
+`pkg/internal/redis/redistest` for Redis — so two modules cannot drift onto
+differently behaved servers.
