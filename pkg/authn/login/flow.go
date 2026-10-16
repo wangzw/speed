@@ -42,12 +42,20 @@ const (
 // The maximum number of answers one flow accepts.
 const maxAnswers = 8
 
-// The greatest a method's private state may be, and the greatest a start field's
-// value may be. Both are the bounds the model states on the surface.
+// The greatest a method's private state may be, the greatest a start field's
+// value may be, the greatest an answer field's value may be, and the most fields
+// an input may carry. The surface states the private-state and start-field
+// bounds; the answer bound is the engine's own, and it is larger because an
+// answer may carry a WebAuthn credential.
 const (
 	maxPrivateBytes = 8 << 10
-	maxFieldBytes   = 512
-	maxStartFields  = 8
+	// maxStartFieldBytes bounds one field of a start request's input.
+	maxStartFieldBytes = 512
+	// maxAnswerFieldBytes bounds one field of a client's answer. A WebAuthn
+	// credential's JSON runs past a kilobyte, over the start bound; this stays
+	// far below the request body's own limit.
+	maxAnswerFieldBytes = 8 << 10
+	maxInputFields      = 8
 )
 
 // recordVersion is the format version this build writes and the only one it
@@ -78,11 +86,16 @@ type record struct {
 	Delivery    string       `json:"delivery,omitempty"`
 	ReturnTo    string       `json:"return_to,omitempty"`
 	Session     string       `json:"session,omitempty"`
-	Answers     int          `json:"answers"`
-	Sends       int          `json:"sends"`
-	Locale      string       `json:"locale,omitempty"`
-	CreatedAt   time.Time    `json:"created_at"`
-	ExpiresAt   time.Time    `json:"expires_at"`
+	// RequireMulti records, for a link or an enrollment, that the account held
+	// an active factor when the flow started: the completion re-checks the
+	// freshness the start fixed, so a registration's own factor -- made active
+	// during its last step -- does not raise the bar its own completion clears.
+	RequireMulti bool      `json:"require_multi,omitempty"`
+	Answers      int       `json:"answers"`
+	Sends        int       `json:"sends"`
+	Locale       string    `json:"locale,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	ExpiresAt    time.Time `json:"expires_at"`
 }
 
 // mfaState is the second-factor part of a flow. offered is the usable factors

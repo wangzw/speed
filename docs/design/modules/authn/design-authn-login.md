@@ -161,7 +161,7 @@ type Proof struct {
 
 ### 请求与应答的形状
 
-请求体一律 `application/json`，否则 415；拒绝未知字段；体上限 64 KiB（SAML 回跳例外），超过上限归 400 `bad-request`（与体不合法同答，不为超限另立码）。经 `Mounter` 登记的处理器所写的响应带 `Cache-Control: no-store`：`Wrap` 在调用处理器之前写好该头，处理器可以覆盖它（如密钥集自带缓存头）。网关在处理器之前自产的 401/503，以及入口模块对 panic 的缺陷响应，不在这一范围内：前者不经 `Wrap`，后者由入口模块按它自己的缺陷应答形状处置，会删去 `Cache-Control` 一类表示性头。
+请求体一律 `application/json`，否则 415；拒绝未知字段；体上限 64 KiB（SAML 回跳例外），超过上限归 400 `bad-request`（与体不合法同答，不为超限另立码）。开始请求的 `input`（`Start.Fields`）至多 8 个字段、每个至多 512 字符；答复的 `input`（`StepInput.Fields`）至多 8 个字段，每个的上界更大——通行密钥的凭据 JSON 超过 1 KiB——且仍远小于 64 KiB 的体上限；两者越界一律归 400 `bad-request`。经 `Mounter` 登记的处理器所写的响应带 `Cache-Control: no-store`：`Wrap` 在调用处理器之前写好该头，处理器可以覆盖它（如密钥集自带缓存头）。网关在处理器之前自产的 401/503，以及入口模块对 panic 的缺陷响应，不在这一范围内：前者不经 `Wrap`，后者由入口模块按它自己的缺陷应答形状处置，会删去 `Cache-Control` 一类表示性头。
 
 `GET B/methods` 的应答是方法描述符文档：`{"methods":[{name, kind, protocol, label, opens_account, fields}], "signup":{"enabled"}, "mfa":{"factors":[...]}}`。`methods` 按方法名排序，每项是一个方法自报的描述符：`kind` 是渲染类别（`form`/`redirect`/`enterprise`/`webauthn`），`protocol` 是 `redirect` 与 `enterprise` 类方法所讲的线协议（`oauth2`/`oidc`/`saml`，其余为空），`label` 是方法品牌名（如 `Google`、`WeChat`，缺失时客户端按方法名查 i18n 回退），`fields` 是该方法首步所要的字段（仅 `form` 类给出，取自 `Begin` 以空字段调用时所答的首个 prompt），`opens_account` 是该法能否在首登为未知标识开户。`signup.enabled` 由账户模块的注册开关 `authn.account.signup` 派生；`mfa.factors` 是装配收到的第二因素种类，属部署级，与 `GET B/factors` 所答的本人已登记因素语义不同。企业 SSO 的提供方清单不进此应答，仍走 `POST B/sso/discover`。
 
@@ -399,12 +399,13 @@ kv 键是 `authn:flow:<流程令牌的 SHA-256 十六进制>`。kv 不划分命�
 | `merged` | 本次账户解析是否发生了自动并入（A4 的自动关联、A5 的 `merge_existing`），完成时据此执行 A10 |
 | `delivery`、`return_to` | `session` 或 `token`；登录后的回跳，`Begin` 时校验，回跳时只用记录里的值 |
 | `session`、`answers`、`sends` | `session`：`link`、`step-up`、`enroll` 流程发起时的登录会话标识，完成时复核；`answers`：已接受的答复数，至多 8；`sends`：本流程已发的短信数，由引擎把方法与因素经 `Step.WithSends` 报告的条数累加进同一次比较并交换，上限与核对见「短信发送的每流程上限」 |
+| `require_multi` | `link` 与 `enroll` 在开始时取定的判据：账户当时有有效因素为真。完成复核按它读回同一份要求，见「在已登录身份上开始流程」的「完成时的复核」 |
 | `locale` | `Begin` 时取到的请求语言：`i18n.FromContext` 定下的那个（`localeOf`），取不到时为空串；没有 i18n 中间件的装配里 `localeOf` 退回读 `Accept-Language` 的第一个标签、原样带出。它原样交给 `SendCode.Locale`，由短信模块解析到载体声明的语言、落不到时用配置的默认语言 |
 | `created_at`、`expires_at` | 绝对到期，与键的生存期一致 |
 
 `state` 的取值是封闭集：`first`（第一因素）、`processing`（处理中，仅回跳类）、`second`（第二因素）、`enroll`（登记因素）、`ready`（就绪），以及终态墓碑 `done` 与 `failed`。墓碑与记录同寿，交换不改动过期。
 
-**记录格式与滚动升级。** 记录按拒绝未知字段解码，`v` 是格式版本，读到不认识的 `v` 一律拒绝。`provider` 是记录的可选字段，它不抬高 `v`：滚动升级期里，旧二进制读到带 `provider` 的记录会因未知字段被拒读，新二进制读到旧记录时 `provider` 为空即与回跳路径不符——两条路径都 fail-closed，被拒的是该次回跳，用户重新开始。在途流程因此作废，窗口有界：流程 TTL 至多 30 分钟。
+**记录格式与滚动升级。** 记录按拒绝未知字段解码，`v` 是格式版本，读到不认识的 `v` 一律拒绝。`provider` 与 `require_multi` 是记录的可选字段，都不抬高 `v`，缺省取各自的零值。滚动升级期里，旧二进制读到带 `provider` 的记录会因未知字段被拒读，新二进制读到旧记录时 `provider` 为空即与回跳路径不符——两条路径都 fail-closed，被拒的是该次回跳，用户重新开始。`require_multi` 缺省为假：新二进制读到缺该字段的旧记录时，完成复核按「账户无有效因素」取要求，对一份账户当时有有效因素的记录，这让完成按新鲜的第一因素核对，其窗口比开始时按的新鲜本地多因素更短，方向是更严而非放宽。在途流程因此作废或有界，窗口有界：流程 TTL 至多 30 分钟。
 
 流程记录里的 PKCE 校验串对持有 kv 读权限的人不是秘密：能读 kv 的人加上受害者的授权码才能完成交换，而授权码一次有效且短命、回调还要求流程绑定。kv 的读权限因此要按凭据对待。
 
@@ -463,7 +464,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 `step-up` 在 `first` 起始时，方法证明的账户必须等于记录的 `account`，否则落入 `failed`，401 `login-failed`；`link` 的外部身份不按绑定解析账户，账户取记录的 `account`。
 
-**完成时的复核**由 `complete` 在终态动作之前做，`link`、`step-up`、`enroll` 共用：`StatusFresh(记录的 session)` 有效、会话账户与记录的 `account` 一致、会话不在冒充中，任一项不过为 401 `flow-invalid`；`link` 与 `enroll` 另按上表的起始要求再核对一次，不满足为 401 `insufficient_user_authentication`（[ADR-authn-login-flow-2026-10-10](../../../adr/adr-authn-login-flow-2026-10-10.md)）。
+**完成时的复核**由 `complete` 在终态动作之前做，`link`、`step-up`、`enroll` 共用：`StatusFresh(记录的 session)` 有效、会话账户与记录的 `account` 一致、会话不在冒充中，任一项不过为 401 `flow-invalid`；`link` 与 `enroll` 另按上表的起始要求再核对一次，不满足为 401 `insufficient_user_authentication`；该要求取流程开始时账户有无有效因素取定的那一份（记录的 `require_multi`），使登记在其最后一步刚置启用的因素不抬高它自己完成所按的门槛（[ADR-authn-login-flow-2026-10-10](../../../adr/adr-authn-login-flow-2026-10-10.md)）。
 
 ### 答复与迁移
 

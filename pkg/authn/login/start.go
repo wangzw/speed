@@ -85,7 +85,7 @@ func (r *routes) startFlow(c *gin.Context) {
 		mount.Fail(c, mount.CodeBadRequest)
 		return
 	}
-	if verr := checkFields(req.Input); verr != nil {
+	if verr := checkFields(req.Input, maxStartFieldBytes); verr != nil {
 		r.fail(c, verr)
 		return
 	}
@@ -149,7 +149,7 @@ func (r *routes) startAuthenticated(c *gin.Context) {
 		mount.Fail(c, mount.CodeBadRequest)
 		return
 	}
-	if err := checkFields(req.Input); err != nil {
+	if err := checkFields(req.Input, maxStartFieldBytes); err != nil {
 		r.fail(c, err)
 		return
 	}
@@ -172,7 +172,8 @@ func (r *routes) startAuthenticated(c *gin.Context) {
 		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
 		return
 	}
-	if !r.startRequirement(c, ctx, id, req.Purpose) {
+	requireMulti, ok := r.startRequirement(c, ctx, id, req.Purpose)
+	if !ok {
 		return
 	}
 
@@ -197,17 +198,18 @@ func (r *routes) startAuthenticated(c *gin.Context) {
 	now := r.clock.Now()
 	ttl := r.settings.flowTTL()
 	rec := record{
-		Version:   recordVersion,
-		Purpose:   req.Purpose,
-		State:     stateFirst,
-		Binding:   tokenDigest(token),
-		Account:   string(id.Account()),
-		Session:   string(id.Session()),
-		Delivery:  delivery,
-		ReturnTo:  req.ReturnTo,
-		Locale:    localeOf(c),
-		CreatedAt: now,
-		ExpiresAt: now.Add(ttl),
+		Version:      recordVersion,
+		Purpose:      req.Purpose,
+		State:        stateFirst,
+		Binding:      tokenDigest(token),
+		Account:      string(id.Account()),
+		Session:      string(id.Session()),
+		Delivery:     delivery,
+		ReturnTo:     req.ReturnTo,
+		RequireMulti: requireMulti,
+		Locale:       localeOf(c),
+		CreatedAt:    now,
+		ExpiresAt:    now.Add(ttl),
 	}
 
 	var offered []factorView
@@ -292,21 +294,24 @@ func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, me
 
 // startRequirement checks the start requirement a purpose asks for. A link and
 // an enrollment ask for the account's security requirement; a step-up asks for
-// nothing beyond the identity the gateway stamped.
-func (r *routes) startRequirement(c *gin.Context, ctx context.Context, id authn.Identity, purpose string) bool {
+// nothing beyond the identity the gateway stamped. It also reports whether that
+// requirement was the fresh local multi-factor a factor-holding account asks
+// for, which the flow records so its completion is held to the same one.
+func (r *routes) startRequirement(c *gin.Context, ctx context.Context, id authn.Identity, purpose string) (requireMulti, ok bool) {
 	if purpose != authn.PurposeLink && purpose != authn.PurposeEnroll {
-		return true
+		return false, true
 	}
-	req, err := r.accountRequirement(ctx, id.Account())
+	requireMulti, err := r.accountHasActiveFactor(ctx, id.Account())
 	if err != nil {
 		r.fail(c, err)
-		return false
+		return false, false
 	}
+	req := r.requirementFor(requireMulti)
 	if !id.Satisfies(req, r.clock.Now()) {
 		mount.StepUpRequired(c, id, req)
-		return false
+		return false, false
 	}
-	return true
+	return requireMulti, true
 }
 
 // applyEnroll drives a registration step through the multi-factor module. kind is
@@ -372,14 +377,17 @@ func (r *routes) applyEnroll(c *gin.Context, token, echo string, rec record, raw
 	}
 }
 
-// checkFields holds the start input to its bounds.
-func checkFields(fields map[string]string) error {
-	if len(fields) > maxStartFields {
-		return fmt.Errorf("%w: the input holds more than %d fields", authn.ErrInvalidArgument, maxStartFields)
+// checkFields holds one request's input to its bounds: at most maxInputFields
+// fields, each at most maxBytes long. A start request's input is bounded by
+// maxStartFieldBytes; a client's answer by maxAnswerFieldBytes, which is larger
+// because an answer may carry a WebAuthn credential.
+func checkFields(fields map[string]string, maxBytes int) error {
+	if len(fields) > maxInputFields {
+		return fmt.Errorf("%w: the input holds more than %d fields", authn.ErrInvalidArgument, maxInputFields)
 	}
 	for _, v := range fields {
-		if len(v) > maxFieldBytes {
-			return fmt.Errorf("%w: an input field is longer than %d bytes", authn.ErrInvalidArgument, maxFieldBytes)
+		if len(v) > maxBytes {
+			return fmt.Errorf("%w: an input field is longer than %d bytes", authn.ErrInvalidArgument, maxBytes)
 		}
 	}
 	return nil

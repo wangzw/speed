@@ -76,7 +76,7 @@ func (r *routes) answer(c *gin.Context) {
 		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
 		return
 	}
-	if err := checkFields(req.Input); err != nil {
+	if err := checkFields(req.Input, maxAnswerFieldBytes); err != nil {
 		r.fail(c, err)
 		return
 	}

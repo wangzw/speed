@@ -127,6 +127,89 @@ func TestApplyEnrollForwardsTheClientInput(t *testing.T) {
 	}
 }
 
+// TestAnAnswerCarriesAFieldLargerThanAStartField holds the two input bounds
+// apart: a WebAuthn credential's JSON runs past the 512-byte bound a start
+// field carries, and an answer that carries one must reach the method rather
+// than be refused as a bad request. The start bound and the answer bound were
+// once the same constant, so a credential was refused 400 on every passkey
+// step.
+func TestAnAnswerCarriesAFieldLargerThanAStartField(t *testing.T) {
+	reached := false
+	m := &fakeMethod{
+		name: "passkey",
+		desc: authn.MethodDescriptor{Name: "passkey", Kind: authn.MethodKindWebAuthn},
+		begin: func(authn.Start) (authn.Step, error) {
+			return authn.StepData("passkey", nil, map[string]string{"challenge": "abc"}), nil
+		},
+		ans: func(_ authn.FlowState, in authn.StepInput) (authn.Step, error) {
+			reached = true
+			if len(in.Fields["credential"]) <= maxStartFieldBytes {
+				t.Errorf("the method saw a credential of %d bytes, not one clearing the start bound",
+					len(in.Fields["credential"]))
+			}
+			return authn.StepRefused(errors.New("done")), nil
+		},
+	}
+	r := newRig(t, m)
+	start := r.send(http.MethodPost, "/auth/flows", `{"method":"passkey"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+	seq := int(decode(t, start.Body.String())["seq"].(float64))
+	credential := strings.Repeat("A", 1100)
+	body := `{"seq":` + itoa(seq) + `,"step":"answer","input":{"credential":"` + credential + `"}}`
+	out := r.send(http.MethodPost, "/auth/flows/answer", body, "Cookie", cookie)
+	if out.Code == http.StatusBadRequest {
+		t.Fatalf("an answer carrying a %d-byte credential was refused as a bad request: %s", len(credential), out.Body.String())
+	}
+	if !reached {
+		t.Fatal("the answer never reached the method")
+	}
+}
+
+// TestASingleFactorEnrollmentCompletesAfterItsOwnFactorTurnsActive holds that a
+// registration does not fail on the very factor enablement it just caused: the
+// multi-factor module makes a pending factor active on the factor's last step,
+// before the engine's completion, and the completion's freshness re-check reads
+// the requirement the flow fixed at its start -- the fresh first factor a
+// factorless account asked for -- not one recomputed against the account's new
+// factor.
+func TestASingleFactorEnrollmentCompletesAfterItsOwnFactorTurnsActive(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	r := newRig(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	n := 0
+	r.mfa.enroll = func(_ authn.FactorKind, _ authn.StepInput) authn.Step {
+		n++
+		if n == 1 {
+			return authn.StepPrompt("confirm", nil, authn.Field{Name: "code", Kind: authn.FieldCode, Required: true})
+		}
+		// The last step enables the factor, as MFA.Enroll does: the account now
+		// holds an active factor by the time the completion's review runs.
+		r.mfa.factors = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive}}
+		return authn.StepEnrolled(authn.FactorRecord{ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive})
+	}
+
+	start := r.send(http.MethodPost, "/auth/flows/authenticated", `{"purpose":"enroll","input":{"kind":"totp"}}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+	seq := int(decode(t, start.Body.String())["seq"].(float64))
+	ans := r.send(http.MethodPost, "/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"enroll","input":{"code":"123456"}}`, "Cookie", cookie)
+	if ans.Code != http.StatusOK {
+		t.Fatalf("the enroll answer answered %d: %s", ans.Code, ans.Body.String())
+	}
+	nextSeq := int(decode(t, ans.Body.String())["seq"].(float64))
+	done := r.send(http.MethodPost, "/auth/flows/answer",
+		`{"seq":`+itoa(nextSeq)+`,"step":"complete"}`, "Cookie", cookie)
+	if done.Code != http.StatusOK {
+		t.Fatalf("the completion answered %d, want 200: %s", done.Code, done.Body.String())
+	}
+}
+
 // TestTheCompletionReviewRefusesAnotherAccountOrAnImpersonation holds the two
 // guards of the completion review that the session's own status feeds: a session
 // of another account and a session that is impersonating are both refused.
@@ -492,9 +575,9 @@ func TestTheAssuranceNamesAndTheIDPKeyBoundArePinned(t *testing.T) {
 // values, so a change to a constant is caught rather than followed by the test
 // that builds its boundary from it.
 func TestTheFlowBoundsArePinned(t *testing.T) {
-	if maxAnswers != 8 || maxStartFields != 8 || maxFieldBytes != 512 || maxReturnToBytes != 2048 {
-		t.Errorf("the flow bounds changed: answers %d, start fields %d, field bytes %d, return_to bytes %d",
-			maxAnswers, maxStartFields, maxFieldBytes, maxReturnToBytes)
+	if maxAnswers != 8 || maxInputFields != 8 || maxStartFieldBytes != 512 || maxAnswerFieldBytes != 8<<10 || maxReturnToBytes != 2048 {
+		t.Errorf("the flow bounds changed: answers %d, input fields %d, start field bytes %d, answer field bytes %d, return_to bytes %d",
+			maxAnswers, maxInputFields, maxStartFieldBytes, maxAnswerFieldBytes, maxReturnToBytes)
 	}
 }
 

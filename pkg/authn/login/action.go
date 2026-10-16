@@ -63,11 +63,7 @@ func (r *routes) review(c *gin.Context, rec record) bool {
 		return false
 	}
 	if rec.Purpose == authn.PurposeLink || rec.Purpose == authn.PurposeEnroll {
-		req, err := r.accountRequirement(ctx, authn.AccountID(rec.Account))
-		if err != nil {
-			r.fail(c, err)
-			return false
-		}
+		req := r.requirementFor(rec.RequireMulti)
 		if !statusIdentity(status).Satisfies(req, r.clock.Now()) {
 			mount.StepUpRequired(c, statusIdentity(status), req)
 			return false
@@ -76,20 +72,32 @@ func (r *routes) review(c *gin.Context, rec record) bool {
 	return true
 }
 
-// accountRequirement is the freshness a change of the account's credentials
-// asks for: a fresh local multi-factor authentication when the account has an
-// active factor, a fresh first factor otherwise.
-func (r *routes) accountRequirement(ctx context.Context, account authn.AccountID) (authn.Requirement, error) {
+// requirementFor is the freshness a link or an enrollment asks for, as the flow
+// fixed it at its start: the fresh local multi-factor an account that held an
+// active factor started under, or the fresh first factor an account without one
+// did. A completion reads this back rather than recomputing it, so a
+// registration's own factor -- made active during its last step -- does not
+// raise the bar its own completion clears.
+func (r *routes) requirementFor(requireMulti bool) authn.Requirement {
+	if requireMulti {
+		return authn.FreshLocalMulti(r.settings.recentWindow())
+	}
+	return authn.FreshFirstFactor()
+}
+
+// accountHasActiveFactor reports whether the account holds at least one active
+// factor, which is what decides the freshness a security action asks for.
+func (r *routes) accountHasActiveFactor(ctx context.Context, account authn.AccountID) (bool, error) {
 	factors, err := r.mfa.Factors(ctx, account)
 	if err != nil {
-		return authn.Requirement{}, fmt.Errorf("%w: %w", authn.ErrUnavailable, err)
+		return false, fmt.Errorf("%w: %w", authn.ErrUnavailable, err)
 	}
 	for _, f := range factors {
 		if f.Status == authn.FactorActive {
-			return authn.FreshLocalMulti(r.settings.recentWindow()), nil
+			return true, nil
 		}
 	}
-	return authn.FreshFirstFactor(), nil
+	return false, nil
 }
 
 // completeLogin makes the login session or issues the token pair, touches the

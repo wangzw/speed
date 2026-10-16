@@ -167,27 +167,43 @@ func validUTF8(s string) bool {
 }
 
 // TestCheckFieldsHoldsTheStartInputToItsBounds holds the field count and length
-// bounds.
+// bounds of a start request's input.
 func TestCheckFieldsHoldsTheStartInputToItsBounds(t *testing.T) {
-	if err := checkFields(nil); err != nil {
+	if err := checkFields(nil, maxStartFieldBytes); err != nil {
 		t.Errorf("an empty input is refused: %v", err)
 	}
 	ok := map[string]string{}
-	for i := 0; i < maxStartFields; i++ {
-		ok[string(rune('a'+i))] = strings.Repeat("x", maxFieldBytes)
+	for i := 0; i < maxInputFields; i++ {
+		ok[string(rune('a'+i))] = strings.Repeat("x", maxStartFieldBytes)
 	}
-	if err := checkFields(ok); err != nil {
+	if err := checkFields(ok, maxStartFieldBytes); err != nil {
 		t.Errorf("an input within the bounds is refused: %v", err)
 	}
 	tooMany := map[string]string{}
-	for i := 0; i < maxStartFields+1; i++ {
+	for i := 0; i < maxInputFields+1; i++ {
 		tooMany[string(rune('a'+i))] = "x"
 	}
-	if err := checkFields(tooMany); err == nil {
+	if err := checkFields(tooMany, maxStartFieldBytes); err == nil {
 		t.Error("an input with too many fields is accepted")
 	}
-	if err := checkFields(map[string]string{"a": strings.Repeat("x", maxFieldBytes+1)}); err == nil {
+	if err := checkFields(map[string]string{"a": strings.Repeat("x", maxStartFieldBytes+1)}, maxStartFieldBytes); err == nil {
 		t.Error("an input field over the length bound is accepted")
+	}
+}
+
+// TestTheAnswerFieldBoundIsLargerThanTheStartBound holds the two input bounds
+// apart: an answer may carry a WebAuthn credential, whose JSON runs past the
+// 512-byte bound a start field carries, so the answer bound is the larger one.
+func TestTheAnswerFieldBoundIsLargerThanTheStartBound(t *testing.T) {
+	credential := strings.Repeat("x", 1100)
+	if len(credential) <= maxStartFieldBytes {
+		t.Fatalf("the case does not exercise the gap: the credential is %d bytes", len(credential))
+	}
+	if err := checkFields(map[string]string{"credential": credential}, maxStartFieldBytes); err == nil {
+		t.Error("a credential-sized field is accepted under the start bound")
+	}
+	if err := checkFields(map[string]string{"credential": credential}, maxAnswerFieldBytes); err != nil {
+		t.Errorf("a credential-sized field is refused under the answer bound: %v", err)
 	}
 }
 
