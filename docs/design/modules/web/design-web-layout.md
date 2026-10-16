@@ -27,6 +27,35 @@
 
 区域的地标与实现见 [layout-kit](design-web-layout-kit.md)。
 
+### 侧栏的层次
+
+侧栏导航分四层：容器、分组、导航项、二级嵌套。
+
+- **容器**：固定宽度，或收为仅图标的窄态；窄态下每个图标以提示补足文案。
+- **分组**：一组导航项的标题，整组可折叠。
+- **导航项**：图标、标签与可选计数，选中态由宿主算。
+- **二级嵌套**：展开的子项，是真实路由，不是悬停浮层。
+
+分组与二级嵌套按导航规模选用：导航项少到无需分组时用扁平单列。
+
+### 内容区的宽度分岔
+
+内容区按页型取两种宽度：
+
+- **全宽**：表格页与仪表盘占满内容区，宽度即信息量。
+- **受限宽**：表单页与设置页收在一段居中的窄宽（640–960px），使输入控件不随视口拉长。
+
+两种宽度在同一产品里并存，由页面的容器显式区分。
+
+### 页型的骨架
+
+控制台页的骨架有下列几种，都以页头开篇（页头见 [console-ui](design-web-console-ui.md)）：
+
+- **列表页**：页头、工具栏、表格、分页。工具栏在行被选中时整条切换为批量操作条。
+- **详情页**：标题区、标签页，其下分主栏与侧栏——主栏承载主体，侧栏（固定宽）承载元信息。
+- **设置页**：二级导航（比主侧栏窄）与表单并列，表单限宽，底部固定一条保存条。
+- **仪表盘**：一行等宽的指标卡，其下是图表区与活动列表。
+
 ### 断点标度
 
 断点取值来自 tokens 的 `breakpoints.values`，等于所安装 MUI 主题的默认值（[tokens](design-web-tokens.md) 把这一相等钉住），标签为 `xs`、`sm`、`md`、`lg`、`xl`。响应式只在既有标度上取区间；新增数值刻度是对本设计的偏离。
@@ -108,7 +137,14 @@ graph TD
 | 外壳的区域划分与地标 | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShell` |
 | 外壳的视口两态（常驻侧栏 / 覆盖式抽屉） | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShell` |
 | 桌面侧栏的收起 | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `sidebarCollapsed` |
+| 侧栏的扁平导航项与选中态 | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShellNavItem` |
+| 侧栏的分组与二级嵌套 | 未实现 | — |
 | 断点标度等于所装 MUI 主题默认 | 已实现 | `web/packages/tokens/src/breakpoints.ts` `breakpointTokens` |
+| 内容区的宽度分岔 | 未实现 | — |
+| 列表页骨架 | 部分实现 | `web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage` |
+| 详情页骨架（主栏与侧栏） | 未实现 | — |
+| 设置页骨架（二级导航与表单） | 未实现 | — |
+| 仪表盘骨架 | 未实现 | — |
 | 数据表的列优先级降级 | 部分实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx` |
 | 数据表超宽的容器内滚动兜底 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable` |
 | 组件级容器查询 | 未实现 | — |
