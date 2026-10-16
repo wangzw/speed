@@ -312,6 +312,14 @@ var (
 		notificationstream.ModuleName,
 		notificationpreferences.ModuleName,
 		notificationdelivery.ModuleName,
+
+		// The host's own declaration of the notification surface's access. The
+		// notification capability declares no permission point, so its routes
+		// carry no gate and the authorization guard would refuse each 403; this
+		// module registers them open, which is the host's side of the decision.
+		// See notification.go.
+		notificationModuleName,
+
 		objectstorefs.ModuleName,
 		objectstoremeta.ModuleName,
 		outboxrelay.ModuleName,

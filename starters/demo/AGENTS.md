@@ -249,6 +249,20 @@ under `server/testdata/` names them:
 - The platform's management surfaces mount on `admin`: the roster
   (`tenant.admin`), the authorization catalog (`authz.admin`), the settings
   surface (`settings.admin`) and the journal's query routes (`audit.admin`).
+- The notification surface (`notification.inbox`, `notification.stream`,
+  `notification.preferences`) mounts on `api`. The capability declares no
+  permission point of its own, so its routes carry no gate and the authorization
+  guard, whose default is closed, would refuse each one 403. The host closes that
+  gap itself: `notification.access` (`server/notification.go`, named in
+  `baselineServe`) registers the notification routes open on the guard's
+  declaration surface, so the gateway still authenticates, the guard admits, and
+  each handler answers for the caller. They are open rather than on a permission
+  because they are scoped by the caller's identity — the inbox and the stream
+  read the caller's own account — and not by anyone's permission. The preference
+  routes read a recipient the host names on the request context
+  (`preferences.WithRecipient`); this skeleton declares no notification type, so
+  the matrix is empty and that step does not arise, and a product that declares
+  one supplies the recipient.
 - The journal (`audit.journal`) records the requests its `requests` list names
   on the endpoints its `endpoints` list names.
 - `ops` and `web` carry no gateway: the operations surface serves probes and the

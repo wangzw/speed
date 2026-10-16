@@ -878,6 +878,76 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 	}
 }
 
+// TestTheNotificationSurfaceIsReachable holds that the notification routes the
+// console's notification center calls answer a signed-in caller rather than the
+// authorization guard's 403.
+//
+// The notification capability declares no permission point of its own, so its
+// routes carry no gate and the guard, whose default is closed, refuses each one
+// 403 — which is what every route here answered before the host registered them
+// open. The case signs in as the administrator the seed writes and holds the
+// four reads reachable, then opens the stream and reads the event-stream answer
+// its handler writes before the first frame.
+func TestTheNotificationSurfaceIsReachable(t *testing.T) {
+	ports := freePorts(t, listenerCount)
+	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "demo.db"))
+
+	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
+		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
+	}
+
+	serve := start(t, config, "sqlite", serveCommand)
+	serve.waitReady(t)
+
+	// The api endpoint is tenant-scoped: the request announces the tenant the
+	// seed registered and the administrator is bound in, and carries the access
+	// token the login above handed out.
+	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
+	token := signIn(t, base, seedIdentifier, seedPassword)
+	headers := map[string]string{
+		"Authorization": "Bearer " + token,
+		"X-Tenant":      demoTenant,
+	}
+
+	for _, path := range []string{
+		"/api/v1/notifications/messages",
+		"/api/v1/notifications/messages/unread-count",
+		"/api/v1/notifications/preferences",
+		"/api/v1/notifications/types",
+	} {
+		res := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet, base+path, nil, headers)
+		if res.status != http.StatusOK {
+			t.Errorf("GET %s answered %d, want 200:\n%s", path, res.status, res.body)
+		}
+	}
+
+	// The stream is a long-lived SSE connection. Its handler writes the status
+	// and the event-stream content type before the first frame, so the client's
+	// Do returns once the connection is admitted and the case reads both without
+	// waiting for an event; cancelling the request's context ends the read.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	streamReq, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/v1/notifications/stream", nil)
+	if err != nil {
+		t.Fatalf("building the stream request: %v", err)
+	}
+	for name, value := range headers {
+		streamReq.Header.Set(name, value)
+	}
+	stream, err := http.DefaultClient.Do(streamReq)
+	if err != nil {
+		t.Fatalf("opening the notification stream: %v", err)
+	}
+	defer func() { _ = stream.Body.Close() }()
+	if stream.StatusCode != http.StatusOK {
+		t.Errorf("GET /api/v1/notifications/stream answered %d, want 200", stream.StatusCode)
+	}
+	if ct := stream.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Errorf("the notification stream answered content type %q, want text/event-stream", ct)
+	}
+	cancel()
+}
+
 // TestTheSeedRefusesAConfigurationItCannotWrite holds the two ways a seed whose
 // configuration is wrong used to pass for success: an account list that is not
 // there, and an account whose credential key is misspelled. Either one used to
