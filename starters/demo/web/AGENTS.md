@@ -96,13 +96,14 @@ program beside this directory embeds with `go:embed` and serves through
   menu but not the switcher (the console resolves no tenant). `src/paths.ts`
   holds the route paths the chrome links into, shared with the route table.
 - **The account page mounts the account-ui family.** `src/pages/account-page.tsx`
-  composes `@speed/account-ui`'s four sections (preferences, sessions, social
-  bindings, MFA) under a `@speed/ui-kit` `PageHeader`, at `/account` in the
-  tenant navigation; the skeleton configures no social provider, so the
-  bindings section lists existing bindings with no add area, and the
-  binding-callback route is mounted beside it for a product that configures
-  one. `src/main.tsx` registers the extra namespaces (console-ui, account-ui,
-  tenancy-ui, demo) beside the four the assembly registers automatically.
+  composes `@speed/account-ui`'s sections -- the self-service writes (profile,
+  password, phone, identifiers), then preferences, sessions, social bindings and
+  MFA -- under a `@speed/ui-kit` `PageHeader`, at `/account` in the tenant
+  navigation; the skeleton configures no social provider, so the bindings
+  section lists existing bindings with no add area, and the binding-callback
+  route is mounted beside it for a product that configures one. `src/main.tsx`
+  registers the extra namespaces (console-ui, account-ui, tenancy-ui, demo)
+  beside the four the assembly registers automatically.
 - **A page reload signs the viewer out.** The access token lives in memory and
   the refresh token in the session's own closure (no refresh cookie), so a
   reload starts anonymous. The two areas then show different surfaces: the
