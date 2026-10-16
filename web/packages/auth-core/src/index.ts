@@ -82,6 +82,12 @@ export {
   useTenantQueryKey,
 } from './query-key.js'
 export type { TenantQueryKey } from './query-key.js'
+export { useStepUp } from './step-up.js'
+export type {
+  AuthnFlowAnswer,
+  StepUpPhase,
+  StepUpState,
+} from './step-up.js'
 export type {
   AuthDomain,
   AuthPermissionSets,

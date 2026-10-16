@@ -351,6 +351,15 @@ export interface AuthSession {
    * in-flight request. A cookie session holds no refresh token, so this
    * resolves false without a request; its silent leg is restore(). */
   refresh(): Promise<boolean>
+  /** Whether a failure a request made under this session met is one a
+   * step-up would let the caller retry: an authentication refusal (an
+   * ApiError whose status is 401) while the session is still
+   * established. A refusal that also ended the session -- the client's
+   * silent restore leg, which ran on the refused request, went
+   * anonymous -- is not one: there is no session to elevate, and the
+   * caller's session gate is what converges. A non-ApiError, or an
+   * ApiError of another status, is never one. */
+  isStepUpShortfall(error: unknown): boolean
   /** Host-attached permission list for one domain: replaces the list
    * the snapshot carries with a defensive copy (mutating the caller's
    * array later changes nothing here); passing null clears the domain.
@@ -1407,6 +1416,18 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
       }
       promise.then(clearFlight, clearFlight)
       return promise
+    },
+
+    isStepUpShortfall(error: unknown): boolean {
+      // The session is still established exactly when the refusal was a
+      // strength shortfall rather than the end of the session: a refused
+      // request runs the client's restore leg, which flips an ended
+      // session anonymous before the error reaches the caller.
+      return (
+        isApiError(error) &&
+        error.status === 401 &&
+        snapshot.state === 'authenticated'
+      )
     },
 
     setPermissionSet(
