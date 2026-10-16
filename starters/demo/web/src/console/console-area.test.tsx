@@ -6,11 +6,16 @@
  * the host's title sits in the banner. The child stands in for the page the
  * router would render; the console pages' own data reads are the package's, not
  * this area's.
+ *
+ * The area wires the frame's navigation into the app's router (route-kit) and
+ * carries an exit back to the tenant area, both routing in place rather than
+ * reloading the page.
  */
 
 import { QueryClient } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { afterEach, describe, expect, it } from 'vitest'
 import type { RequestFn } from '@speed/api-client'
 import { createI18n, I18nextProvider, registerNamespace } from '@speed/i18n'
 import {
@@ -18,6 +23,7 @@ import {
   consoleUiResources,
 } from '@speed/console-ui'
 import type { SpeedAppServices } from '@speed/product-shell/bootstrap'
+import { RouteProvider } from '@speed/route-kit'
 import { AppThemeProvider, UI_KIT_NAMESPACE, uiKitResources } from '@speed/ui-kit'
 import consoleUiEnUS from '../../../../../web/packages/console-ui/src/locales/en-US.json' with { type: 'json' }
 import { AppServicesProvider } from '../app-services.js'
@@ -26,6 +32,10 @@ import { DEMO_NAMESPACE, demoResources } from '../resources.js'
 import { consoleShellRoutes } from '../routes.js'
 import { createTestSession } from '../test-utils/session.js'
 import { ConsoleArea } from './console-area.js'
+
+afterEach(() => {
+  window.history.replaceState({}, '', '/')
+})
 
 function renderConsoleArea() {
   const i18n = createI18n({
@@ -52,13 +62,18 @@ function renderConsoleArea() {
     }),
   }
 
+  // The area reads the router (route-kit's navigate) to route its navigation
+  // and its exit in place, so it renders under a RouteProvider as the app
+  // mounts it; the routed child is the stand-in, so the table stays empty.
   return render(
     <I18nextProvider i18n={i18n}>
       <AppThemeProvider i18n={i18n}>
         <AppServicesProvider services={services}>
-          <ConsoleArea routes={consoleShellRoutes}>
-            <p>console page</p>
-          </ConsoleArea>
+          <RouteProvider table={[]} fallback={() => null}>
+            <ConsoleArea routes={consoleShellRoutes}>
+              <p>console page</p>
+            </ConsoleArea>
+          </RouteProvider>
         </AppServicesProvider>
       </AppThemeProvider>
     </I18nextProvider>,
@@ -84,5 +99,28 @@ describe('ConsoleArea', () => {
       consoleUiEnUS.settings.title,
       consoleUiEnUS.audit.title,
     ])
+  })
+
+  it('routes a console navigation entry in place instead of reloading', async () => {
+    window.history.replaceState({}, '', '/console/tenants')
+    const user = userEvent.setup()
+    renderConsoleArea()
+
+    const nav = screen.getByRole('navigation')
+    await user.click(
+      within(nav).getByRole('link', { name: consoleUiEnUS.settings.title }),
+    )
+    // The entry went through the router: the URL moved without a page load.
+    expect(window.location.pathname).toBe('/console/settings')
+  })
+
+  it('offers an exit back to the tenant area that routes in place', async () => {
+    window.history.replaceState({}, '', '/console/tenants')
+    const user = userEvent.setup()
+    renderConsoleArea()
+
+    const exit = screen.getByRole('link', { name: demoEnUS.console.backToApp })
+    await user.click(exit)
+    expect(window.location.pathname).toBe('/')
   })
 })

@@ -167,6 +167,53 @@ describe('the console area', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('moves between console pages without reloading, keeping the session', async () => {
+    window.history.replaceState({}, '', '/console/tenants')
+    const user = userEvent.setup()
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({
+          system: ['tenant.read', 'settings.read', 'audit.read'],
+        }),
+      ),
+    })
+
+    // The roster page is up inside the console frame.
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: consoleUiEnUS.tenants.title,
+      }),
+    ).toBeInTheDocument()
+
+    // Activate another page from the console's own navigation.
+    const nav = screen.getByRole('navigation', {
+      name: consoleUiEnUS.shell.navLabel,
+    })
+    await user.click(
+      within(nav).getByRole('link', { name: consoleUiEnUS.settings.title }),
+    )
+
+    // The settings page renders in place: the console frame -- and the session
+    // behind it -- survived, so the click did not reload the page and sign the
+    // operator out to the sign-in surface.
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: consoleUiEnUS.settings.title,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', {
+        level: 1,
+        name: demoEnUS.signIn.heading,
+      }),
+    ).not.toBeInTheDocument()
+  })
+
   it('renders the same brand and sign-out action in its top bar as the tenant frame', async () => {
     window.history.replaceState({}, '', '/console/tenants')
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })

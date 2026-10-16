@@ -6,6 +6,9 @@
     "home": "Home",
     "console": "Console"
   },
+  "console": {
+    "backToApp": "Back to app"
+  },
   "signIn": {
     "heading": "Sign in",
     "subtitle": "Use your account to continue."

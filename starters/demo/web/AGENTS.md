@@ -71,6 +71,13 @@ program beside this directory embeds with `go:embed` and serves through
   The console area -- and only it, since the tenant area is gated by the shell
   -- carries a `RouteGuard` over the matched page's permission code, composed
   host-side.
+- **The console routes in place and offers an exit.** The console frame hands
+  its navigation entries to the app's router through console-ui's `onNavigate`
+  seam (`src/console/console-area.tsx`), and its banner carries an exit back to
+  the tenant area beside the sign-out action. Both push a history entry instead
+  of reloading the page -- a reload would sign the operator out with the
+  memory-only token -- so neither the console pages nor the exit are a
+  navigation dead end.
 - **A page reload signs the viewer out.** The access token lives in memory and
   the refresh token in the session's own closure (no refresh cookie), so a
   reload starts anonymous. Both shells carry the same branch on the session

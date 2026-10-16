@@ -6,6 +6,9 @@
     "home": "首页",
     "console": "控制台"
   },
+  "console": {
+    "backToApp": "返回应用"
+  },
   "signIn": {
     "heading": "登录",
     "subtitle": "使用你的账户继续。"
