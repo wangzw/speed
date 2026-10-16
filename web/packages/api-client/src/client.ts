@@ -63,9 +63,10 @@
  *      `requireJsonBody`, which refuses an empty 2xx as client.protocol
  *      with the exchange's real status and attempts), and every
  *      failure rejects an ApiError -- envelope errors keep the
- *      envelope's code (plus its traceId, params, message and details
- *      when the backend sent them -- code is the only required wire
- *      field), everything else gets the reserved client.* vocabulary
+ *      envelope's code (from its own `code` string or its RFC 9457
+ *      problem `type`, `urn:speed:<module>:<code>` -> `<module>.<code>`;
+ *      plus its traceId, params, message and details when the backend
+ *      sent them), everything else gets the reserved client.* vocabulary
  *      from errors.ts. A binary request body -- a Blob, ArrayBuffer or
  *      typed array -- travels verbatim instead of being JSON-serialized,
  *      and a request declaring `responseType: 'blob'` resolves its 2xx
@@ -91,6 +92,7 @@ import {
   ERROR_CODE_PROTOCOL,
   ERROR_CODE_TIMEOUT,
   httpErrorCode,
+  moduleCodeFromProblemType,
   type FieldError,
 } from './errors.js'
 import type { AccessTokenStore } from './access-token.js'
@@ -447,10 +449,12 @@ interface FailureOutcome {
 
 type AttemptOutcome = HttpOutcome | FailureOutcome
 
-/** A valid envelope, structurally checked. `code` is the one required
- * wire field; `traceId` is optional (undefined when the backend does
- * not send one -- the shape every module's handlers actually write is
- * `{code, params}`), as are `message`, `params` and `details`. */
+/** A valid envelope, structurally checked. `code` is resolved from the
+ * body's own `code` string or, absent one, from its RFC 9457 problem
+ * `type` (`urn:speed:<module>:<code>` -> `<module>.<code>`); it is the one
+ * required wire fact. `traceId` is optional (undefined when the backend
+ * does not send one -- the problem shape pkg/http writes carries none), as
+ * are `message`, `params` and `details`. */
 interface Envelope {
   code: string
   traceId: string | undefined
@@ -459,22 +463,44 @@ interface Envelope {
   details: FieldError[] | undefined
 }
 
+/** The code a parsed error body denotes, or undefined when it denotes
+ * none: its own `code` string when it carries one, otherwise the code
+ * derived from its RFC 9457 problem `type`
+ * (`urn:speed:<module>:<code>`). A `code` wins over a `type`, so a body
+ * that carries both is read the legacy way. The reserved-namespace rule
+ * is the caller's -- this returns whatever the body denotes. */
+function envelopeCode(candidate: Record<string, unknown>): string | undefined {
+  if (typeof candidate.code === 'string') {
+    return candidate.code
+  }
+  if (typeof candidate.type === 'string') {
+    return moduleCodeFromProblemType(candidate.type)
+  }
+  return undefined
+}
+
 /**
  * Parses a response body into the ApiError envelope, or undefined when
- * the body is empty, not JSON, not an object, lacks the required
- * `code` string, or carries a code in the reserved `client.` namespace
- * -- those stay bare and get a client.http.* code. The namespace rule
+ * the body is empty, not JSON, not an object, denotes no code (neither a
+ * `code` string nor a `urn:speed:` problem `type`), or resolves to a code
+ * in the reserved `client.` namespace -- those stay bare and get a
+ * client.http.* code. The code is the body's own `code` string when it
+ * carries one, otherwise it is derived from the RFC 9457 problem `type`
+ * the backend writes (`urn:speed:<module>:<code>` -> `<module>.<code>`,
+ * see errors.ts's moduleCodeFromProblemType): the problem shape pkg/http
+ * writes every module's refusal with. The namespace rule
  * is what makes the client.* vocabulary's "reserved" claim a mechanism
  * instead of documentation: server codes are module-scoped (errors.ts's
  * header), and `client` is no module's domain, so a `client.*` code
- * inside an envelope is a misbehaving backend or an intermediary
- * borrowing the vocabulary -- an HTTP response can only exist with a
- * real status, so an accepted `client.network`/`client.timeout`
+ * inside an envelope -- however it arrived, a literal `code` or a
+ * `urn:speed:client:*` type -- is a misbehaving backend or an intermediary
+ * borrowing the vocabulary; an HTTP response can only exist with a real
+ * status, so an accepted `client.network`/`client.timeout`
  * envelope would masquerade as this client's own transport diagnosis
  * (status 0, the one status no server can answer with) and mislead the
  * surfaces that render those codes. All other fields are optional: a
- * `{code, params}` body is a valid envelope even though it carries no
- * traceId.
+ * problem object or a `{code, params}` body is a valid envelope even
+ * though it carries no traceId.
  */
 function parseEnvelope(text: string | null): Envelope | undefined {
   if (text === null || text.trim() === '') {
@@ -490,11 +516,12 @@ function parseEnvelope(text: string | null): Envelope | undefined {
     return undefined
   }
   const candidate = parsed as Record<string, unknown>
-  if (typeof candidate.code !== 'string' || candidate.code.startsWith('client.')) {
+  const code = envelopeCode(candidate)
+  if (code === undefined || code.startsWith('client.')) {
     return undefined
   }
   const envelope: Envelope = {
-    code: candidate.code,
+    code,
     traceId: undefined,
     message: undefined,
     params: undefined,

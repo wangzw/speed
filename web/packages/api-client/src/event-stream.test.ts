@@ -175,6 +175,32 @@ describe('openEventStream', () => {
     expect(error).toMatchObject({ status: 403, code: 'rbac.permission_denied' })
   })
 
+  it('derives the code from an RFC 9457 problem type, like the request path', async () => {
+    const standin = createStandinFetch(
+      sequence(
+        jsonResponse(404, {
+          type: 'urn:speed:objectstore:not-found',
+          status: 404,
+          detail: 'The object is not available.',
+        }),
+      ),
+    )
+    const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
+    let error: unknown
+    api.openEventStream('/api/v1/notifications/stream', {
+      onEvent: () => undefined,
+      onError: (e) => {
+        error = e
+      },
+    })
+    await tick()
+    await tick()
+    expect(error).toMatchObject({
+      status: 404,
+      code: 'objectstore.not_found',
+    })
+  })
+
   it('fires no callbacks when the caller closes the stream', async () => {
     const open = openSseResponse()
     const standin = createStandinFetch(sequence(open.response))

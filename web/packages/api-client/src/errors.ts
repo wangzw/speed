@@ -1,29 +1,34 @@
 /**
  * The ApiError envelope and the reserved client.* code vocabulary.
  *
- * Every speed API answers non-2xx responses with one shared envelope:
+ * Every speed API answers a non-2xx response with an RFC 9457 problem
+ * details object -- the shape pkg/http writes for a module's refusals
+ * and for the entry point's own route and body refusals:
  *
- *   { code: string, traceId?: string,
- *     params?: object, message?: string, details?: FieldError[] }
+ *   { type: string, title?: string, status: number, detail?: string }
  *
- * `code` is the envelope's only required field; `traceId`, `params`,
- * `message` and `details` are optional, parsed whenever present. In
- * practice the backend sends `{code, params}` only: the module
- * handlers' shared error body carries no trace id (go/authn's
- * errorBody and every module's writeError encode just those two
- * fields, and the OpenAPI fragments document {code, params} as the
- * contract), so a client must trust a body's `code` on its own --
- * demanding `traceId` too would discard every real backend code into
- * the client.* fallback. `traceId` stays optional in the shape: when a
- * backend does send one it is surfaced on the ApiError and in the
- * reporter's attributes for correlating user reports to server logs.
- * `message` is an English log-triage fallback that must never be
- * rendered to users (frontends resolve `code` through the i18n
- * catalog instead). Responses that do not carry a valid envelope are
- * still errors, but they cannot be mapped onto module error codes --
- * they get a synthesized code in the reserved `client.` namespace
- * instead, so callers can tell "the API answered a real error" from
- * "the API layer itself broke":
+ * The machine-readable kind is the problem `type`, `urn:speed:<module>:<code>`
+ * (`urn:speed:objectstore:not-found`, `urn:speed:settings:invalid-value`).
+ * The client derives the `<module>.<code>` vocabulary the frontend's
+ * error-text resolvers whitelist from it -- see
+ * {@link moduleCodeFromProblemType} -- normalizing each dash in the code
+ * part to an underscore (`objectstore.not_found`, `settings.invalid_value`).
+ * A body may instead carry a plain `code` string directly (the
+ * `{code, params}` envelope an earlier backend wrote); a `code` that is a
+ * string and not in the reserved `client.` namespace then wins over the
+ * problem `type`. Either a valid `code` or a `urn:speed:` `type` is enough
+ * on its own; a body with neither -- the entry point's own refusal, whose
+ * problem carries `about:blank` or no type at all, a vendor problem URI --
+ * is not a module error and keeps the reserved `client.http.<status>`
+ * fallback. `traceId`, `params`, `message` and `details` are optional,
+ * parsed whenever present: `traceId` surfaces on the ApiError and in the
+ * reporter's attributes for correlating user reports to server logs, and
+ * `message` is an English log-triage fallback that must never be rendered
+ * to users (frontends resolve the code through the i18n catalog instead).
+ * Responses that do not carry a valid envelope are still errors, but they
+ * cannot be mapped onto module error codes -- they get a synthesized code
+ * in the reserved `client.` namespace instead, so callers can tell "the
+ * API answered a real error" from "the API layer itself broke":
  *
  *   client.network   -- the request never completed (DNS, refused,
  *                       TLS, CORS, mid-body read failure...).
@@ -46,9 +51,10 @@
  * specially (silent refresh, forced sign-out).
  *
  * One parse-time boundary makes "reserved" a mechanism rather than a
- * convention: an envelope whose `code` starts with `client.` is refused
- * (client.ts's parseEnvelope) and the failure is synthesized as
- * `client.http.<status>` instead. Server codes are module-scoped
+ * convention: an envelope whose resolved code -- the `code` it carries, or
+ * the code derived from its `urn:speed:` problem `type` -- starts with
+ * `client.` is refused (client.ts's parseEnvelope) and the failure is
+ * synthesized as `client.http.<status>` instead. Server codes are module-scoped
  * (`authn.*`, `notes.*`, ...), and `client` is no module's domain, so a
  * `client.*` code inside an envelope is a misbehaving backend or an
  * intermediary borrowing the reserved vocabulary -- accepted, it could
@@ -84,6 +90,37 @@ export const ERROR_CODE_PROTOCOL = 'client.protocol' as const
 /** Reserved code for a bare non-2xx response (no valid envelope). */
 export function httpErrorCode(status: number): string {
   return `client.http.${status}`
+}
+
+/** The RFC 9457 problem `type` this platform writes a module refusal
+ * under: `urn:speed:<module>:<code>`. */
+const PROBLEM_TYPE_CODE = /^urn:speed:([^:]+):(.+)$/
+
+/**
+ * The error code a problem-details `type` denotes, or undefined when the
+ * type is not this platform's. A `urn:speed:<module>:<code>` type
+ * (`urn:speed:objectstore:not-found`, `urn:speed:settings:invalid-value`)
+ * maps to the `<module>.<code>` vocabulary the frontend's error-text
+ * resolvers whitelist and the backend's catalogs key on, with each dash in
+ * the code part normalized to an underscore (`objectstore.not_found`,
+ * `settings.invalid_value`). A type outside the `urn:speed:` namespace --
+ * `about:blank`, a vendor problem URI -- denotes no code, so its caller
+ * keeps the bare-HTTP `client.http.<status>` fallback. The reserved
+ * `client.` namespace is the caller's check, not this function's: a
+ * `urn:speed:client:*` type derives a `client.*` code and is refused there
+ * exactly like a literal `client.*` `code`.
+ */
+export function moduleCodeFromProblemType(type: string): string | undefined {
+  const match = PROBLEM_TYPE_CODE.exec(type)
+  if (match === null) {
+    return undefined
+  }
+  const module = match[1]
+  const code = match[2]
+  if (module === undefined || code === undefined) {
+    return undefined
+  }
+  return `${module}.${code.replace(/-/g, '_')}`
 }
 
 /** Everything the ApiError constructor needs. */

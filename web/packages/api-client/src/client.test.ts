@@ -2247,6 +2247,80 @@ describe('error normalization', () => {
     expect(error.details).toBeUndefined()
   })
 
+  it('derives the module code from an RFC 9457 problem type', async () => {
+    // The shape pkg/http writes every module refusal with: an RFC 9457
+    // problem object whose machine-readable kind is its `type`,
+    // urn:speed:<module>:<code>, and which carries no `code` member. The
+    // client must derive the module code from the type, or the refusal
+    // (here a 404 from objectstore) degrades to the generic client.http.404.
+    const standin = scriptedStandin(
+      jsonResponse(404, {
+        type: 'urn:speed:objectstore:not-found',
+        title: 'Not Found',
+        status: 404,
+        detail: 'The object is not available.',
+      }),
+    )
+    const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
+    const error = await expectApiError(api<{ ok: boolean }>('/objects/missing'))
+    expect(error.status).toBe(404)
+    expect(error.code).toBe('objectstore.not_found')
+  })
+
+  it('normalizes dashes in the derived problem-type code to underscores', async () => {
+    // The frontend error-code vocabulary is the backend code with each
+    // dash replaced by an underscore (settings' `invalid-value` becomes the
+    // `settings.invalid_value` the console resolvers whitelist).
+    const standin = scriptedStandin(
+      jsonResponse(422, {
+        type: 'urn:speed:settings:invalid-value',
+        status: 422,
+        detail: 'Out of range.',
+      }),
+    )
+    const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
+    const error = await expectApiError(api<{ ok: boolean }>('/settings'))
+    expect(error.code).toBe('settings.invalid_value')
+  })
+
+  it('prefers a literal code over a problem type when a body carries both', async () => {
+    const standin = scriptedStandin(
+      jsonResponse(409, {
+        code: 'notes.conflict',
+        type: 'urn:speed:objectstore:conflict',
+      }),
+    )
+    const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
+    const error = await expectApiError(api<{ ok: boolean }>('/notes'))
+    expect(error.code).toBe('notes.conflict')
+  })
+
+  it('treats a problem type outside the urn:speed namespace as envelope-less', async () => {
+    // A vendor problem URI denotes no module code, so the failure keeps
+    // the bare client.http.<status> fallback.
+    const standin = scriptedStandin(
+      jsonResponse(500, {
+        type: 'https://example.com/problems/out-of-credit',
+        title: 'You do not have enough credit.',
+        status: 500,
+      }),
+    )
+    const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
+    const error = await expectApiError(api<{ ok: boolean }>('/notes'))
+    expect(error.code).toBe('client.http.500')
+  })
+
+  it('refuses a urn:speed:client:* type into the reserved fallback', async () => {
+    // The reserved-namespace rule applies to a code derived from a type
+    // exactly as it does to a literal `code`.
+    const standin = scriptedStandin(
+      jsonResponse(400, { type: 'urn:speed:client:timeout', status: 400 }),
+    )
+    const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
+    const error = await expectApiError(api<{ ok: boolean }>('/notes'))
+    expect(error.code).toBe('client.http.400')
+  })
+
   it('keeps a traceId-bearing envelope correlated when params are absent', async () => {
     // The optional-field counterpart: a body that does carry traceId
     // still surfaces it on the ApiError, so user reports can be

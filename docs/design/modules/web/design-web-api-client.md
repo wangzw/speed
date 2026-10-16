@@ -10,7 +10,7 @@
 - **静默的 401 单飞刷新。** 配了刷新钩子时，一次**带了凭据**（bearer 令牌，或凭据模式声明了 cookie 时会带的同源 cookie）的 401 触发一次刷新（并发的 401 共享同一次在飞刷新），随后原请求重试恰一次；凭据为空的 401 不经刷新路径，原样抛出。
 - **仅幂等、仅瞬时的重试。** `GET`／`HEAD`／`OPTIONS` 上的 429（honour `Retry-After`）、502／503／504、网络失败与超时按策略重试，其余一律不重试。
 - **每次交换一条超时，调用方取消原样透传。** `timeoutMs` 界定一次 HTTP 交换（一次发送加其正文读取）；调用方传入的 `AbortSignal` 取消时以原生 `AbortError` 拒绝，不包裹、不重试。
-- **`ApiError` 归一。** 带信封的响应保留信封的 `code`（以及后端给了的 `traceId`／`params`／`message`／`details`）；其余失败取本包保留的 `client.*` 码。
+- **`ApiError` 归一。** 后端以 RFC 9457 问题对象出行（机器可读的类在 `type`，取值 `urn:speed:<模块>:<码>`，正文不带 `code` 成员），本包从 `type` 推得模块码 `<模块>.<码>`（码段里的连字符归一为下划线，`urn:speed:objectstore:not-found` → `objectstore.not_found`），并保留后端给了的 `traceId`／`params`／`message`／`details`；带 `code` 成员的信封以 `code` 为准；两者都没有的应答取本包保留的 `client.*` 码。
 - **语言按尝试播报。** 宿主交来一个语言提供者，本包每次尝试读一次，接成 `accept-language`，是传输通道而非响应本地化开关。
 - **结构化上报。** 本包自身只在刷新失败时经 `Reporter` 报一条警告；终态失败以 `ApiError` 拒绝，由调用方决定是否上报。
 - **预认证配置端点的手写取回。** go/config 的公开端点在生成面之外另有一条按键映射的手写封装。
@@ -106,7 +106,7 @@ export type UsePublicConfigResult
 | `languageProvider` | 每次尝试读一次，返回当前语言或 `null`/空串表示「无可播报」；接成 `accept-language`，不覆盖调用方自带的该头 |
 | `tenantProvider` | 每次尝试读一次，返回当前租户或 `null`/空串表示「无可播报」；接成 `X-Tenant`，不覆盖调用方自带的 `x-tenant` |
 
-**`RequestFn` 的契约，约束的主体是它的每次调用**：2xx 的 JSON 正文解析为 `T`，空的 2xx（204 式）解析为 `undefined`，除非请求声明了 `requireJsonBody`（此时空 2xx 以携带真实状态与尝试次数的 `client.protocol` 拒绝）；非 2xx 一律以 `ApiError` 拒绝；带信封的失败保留信封的 `code`（`code` 是唯一必需的线上字段，`traceId` 可选），其余取保留的 `client.*` 码；调用方取消以原生 `AbortError` 拒绝。请求路径必须是以 `/` 开头的绝对路径；带查询串的路径与 `query` 选项同时给出即按程序员错误拒绝。
+**`RequestFn` 的契约，约束的主体是它的每次调用**：2xx 的 JSON 正文解析为 `T`，空的 2xx（204 式）解析为 `undefined`，除非请求声明了 `requireJsonBody`（此时空 2xx 以携带真实状态与尝试次数的 `client.protocol` 拒绝）；非 2xx 一律以 `ApiError` 拒绝；带信封的失败保留其码——正文自带的 `code`，或后端 RFC 9457 问题对象的 `type` 推得的 `<模块>.<码>`（`code` 与 `urn:speed:` 的 `type` 任一即可，`traceId` 可选），其余取保留的 `client.*` 码；调用方取消以原生 `AbortError` 拒绝。请求路径必须是以 `/` 开头的绝对路径；带查询串的路径与 `query` 选项同时给出即按程序员错误拒绝。
 
 **`RequestOptions` 的字段**：`method`（缺省 `GET`）、`headers`、`omitAccessToken`、`query`（数组值按重复参数展开，供 Go 的 `r.URL.Query()` 解析）、`body`（JSON，或一个原样送出的二进制值）、`responseType`（`'blob'` 即把 2xx 正文读成 `Blob`）、`requireJsonBody`、`signal`。
 
@@ -114,7 +114,7 @@ export type UsePublicConfigResult
 
 ### 保留码词表
 
-`client.network`（请求未到达可用响应）、`client.timeout`（本包的超时触发）、`client.http.<status>`（无可解析信封的非 2xx）、`client.protocol`（契约在任一方向被违反：非对象/数组的 2xx、声明了需要文档却是空 2xx、不可序列化的请求体）。**`client.*` 是保留命名空间**：`parseEnvelope` 在解析时拒绝任何以 `client.` 开头的信封码，改以 `client.http.<status>` 合成——服务器码是模块作用域的，`client` 不属于任何模块，因而一个信封里的 `client.*` 是行为不端的后端或中间人。`isTransportFailure` 是消费方据以区分本包真实传输失败（`status` 为 0，任何 HTTP 应答都造不出）与服务器应答错误的判据。
+`client.network`（请求未到达可用响应）、`client.timeout`（本包的超时触发）、`client.http.<status>`（无模块码的非 2xx——正文既无 `code` 成员，也无 `urn:speed:` 的 `type`）、`client.protocol`（契约在任一方向被违反：非对象/数组的 2xx、声明了需要文档却是空 2xx、不可序列化的请求体）。**`client.*` 是保留命名空间**：`parseEnvelope` 在解析时拒绝任何以 `client.` 开头的码——不论它来自 `code` 成员还是由 `urn:speed:client:*` 的 `type` 推得——改以 `client.http.<status>` 合成。服务器码是模块作用域的，`client` 不属于任何模块，因而一个信封里的 `client.*` 是行为不端的后端或中间人。`isTransportFailure` 是消费方据以区分本包真实传输失败（`status` 为 0，任何 HTTP 应答都造不出）与服务器应答错误的判据。
 
 ### 稳定性承诺
 
@@ -126,7 +126,7 @@ export type UsePublicConfigResult
 
 - **2xx**：调 `onOpen`，读 `response.body` 流，按 `text/event-stream` 的组帧（空行分帧、字段首个冒号分键值、无 `data` 行的帧丢弃、事件名缺省 `message`）解析成 `ServerSentEvent`，逐帧调 `onEvent`；流被服务端正常收尾时调 `onClose`。
 - **401 且带了 bearer 令牌且配了刷新钩子且此前未刷新过**：调一次刷新，成功即以新令牌重试一次；失败则读信封、以 `onError` 上报，再调 `onClose`。
-- **其余非 2xx**：读信封（`code` 唯一必需字段），以 `onError` 上报 `ApiError`（信封码或 `client.http.<status>`），再调 `onClose`。
+- **其余非 2xx**：读信封（正文自带的 `code`，或 RFC 9457 问题对象 `type` 推得的模块码），以 `onError` 上报 `ApiError`（模块码或 `client.http.<status>`），再调 `onClose`。
 - **传输失败**：以 `client.network` 的 `ApiError` 上报，再调 `onClose`。
 
 **调用方自己的取消不上报。** `close()` 或已中止的 `signal` 结束连接，既不调 `onError` 也不调 `onClose`。`onError` 与 `onClose` 各至多一次，且 `onClose` 是「可以重连了」的信号：本包不重连，重连是消费方的策略。
@@ -196,7 +196,7 @@ sequenceDiagram
 | 令牌存储 | `AccessTokenStore` | 同步的 `get`/`set`，仅内存；`set(null)` 即登出 |
 | 重试策略 | `RetryPolicy` | `maxAttempts`、`initialDelayMs`、`maxDelayMs` |
 | 上报端 | `Reporter` | `error`/`warn` 通道，固定消息加 snake_case 属性 |
-| 信封（内部） | `Envelope` | 结构校验后的响应错误体：唯一必需的 `code`，可选的 `traceId`/`params`/`message`/`details` |
+| 信封（内部） | `Envelope` | 结构校验后的响应错误体：码由正文的 `code` 或问题对象 `type`（`urn:speed:<模块>:<码>`）推得，可选的 `traceId`/`params`/`message`/`details` |
 
 **`ApiError` 的 `auth` 恰在 HTTP 401 时为真**，不论信封说了什么；配了刷新钩子的宿主只在刷新失败或重试后的请求再被拒时才见到它。
 
@@ -219,7 +219,7 @@ sequenceDiagram
 - **在任何时候，最多一次刷新在飞。** 并发的 401 汇入同一次在飞刷新；一次刷新完成后不记忆结果，下一个 401 起一次新的。
 - **刷新轮是与原交换分离的一次交换。** 原尝试的超时在刷新轮期间暂停、之后按剩余的预算重上；刷新轮自身不竞态任何信号，故一个中途放弃的发起者不会把一次可能成功的刷新对已在飞的等待者判成失败。
 - **凭据为空的 401 不经刷新。** 它意味着端点要求认证，而刷新给不出；它原样抛出。这条对会话装配是承重的：会话自身的刷新操作声明 `omitAccessToken`，凭据为空地出行，故刷新端点拒绝一个陈旧令牌时拒绝原样浮出，而不会重新进入刷新路径（那会 await 它自己所处的刷新）。
-- **刷新失败**使原 401 作为一个可区分的认证 `ApiError` 浮出，并经 `Reporter` 报一条 `access token refresh failed` 警告（带信封的 `code`，有 `traceId` 时一并带上，以关联服务端日志）。
+- **刷新失败**使原 401 作为一个可区分的认证 `ApiError` 浮出，并经 `Reporter` 报一条 `access token refresh failed` 警告（带该失败的码——信封的 `code` 或由 `type` 推得的模块码——有 `traceId` 时一并带上，以关联服务端日志）。
 
 ### 重试的判定与退避
 
@@ -241,8 +241,8 @@ sequenceDiagram
 
 | 情形 | 表现 |
 |---|---|
-| 非 2xx 且带有效信封 | `ApiError`，保留信封的 `code`（有则带 `traceId`/`params`/`message`/`details`） |
-| 非 2xx 且无可解析信封 | `ApiError`，`client.http.<status>` |
+| 非 2xx 且带有效信封（`code` 或 `urn:speed:` 的 `type`） | `ApiError`，码取正文的 `code` 或由 `type` 推得的模块码（有则带 `traceId`/`params`/`message`/`details`） |
+| 非 2xx 且无可解析信封（既无 `code` 也无 `urn:speed:` 的 `type`） | `ApiError`，`client.http.<status>` |
 | 请求未到达可用响应（DNS／拒连／TLS／CORS／读体中途失败） | `ApiError`，`client.network`、`status` 为 0 |
 | 本包的超时触发 | `ApiError`，`client.timeout`、`status` 为 0 |
 | 2xx 正文不是 JSON 对象或数组 | `ApiError`，`client.protocol` |
@@ -258,7 +258,7 @@ sequenceDiagram
 
 ### 非保证
 
-- **后端不发送 `traceId` 时，`ApiError` 不带它。** 信封的 `code` 是唯一必需字段，实际后端写出的形状是 `{code, params}`；把请求关联到服务端日志的 `traceId` 需要后端各模块的错误写出器统一发出它。
+- **后端不发送 `traceId` 时，`ApiError` 不带它。** 实际后端写出的是 RFC 9457 问题对象（`{type, title, status, detail}`，机器可读的类在 `type`），它不带 `traceId`；把请求关联到服务端日志的 `traceId` 需要后端各模块的问题写出统一发出它。
 - **配置取回的响应形状是手工维护的契约。** 公开配置体的类型只能是动态键的记录（schema 按模块可扩），按 key 的类型化在钩子里手工维护；一个违反该形状的载荷须软失败。
 
 ## 并发与事务边界

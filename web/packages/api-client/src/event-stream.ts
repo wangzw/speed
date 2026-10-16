@@ -32,6 +32,7 @@ import {
   ERROR_CODE_NETWORK,
   ERROR_CODE_PROTOCOL,
   httpErrorCode,
+  moduleCodeFromProblemType,
 } from './errors.js'
 import { applySeamHeaders, type SeamProviders } from './seams.js'
 
@@ -153,10 +154,11 @@ function createSseParser(dispatch: (event: ServerSentEvent) => void) {
   }
 }
 
-/** Reads the envelope's `code` out of an error body, or undefined when
- * the body is empty, not JSON, or lacks a string `code` -- the same
- * "code is the only required wire field" rule the request function's
- * envelope parse applies, reduced to what a stream error needs. */
+/** Reads the envelope's code out of an error body, or undefined when
+ * the body is empty, not JSON, denotes no code, or resolves to a code in
+ * the reserved `client.` namespace -- the same rule the request function's
+ * envelope parse applies (the body's own `code`, or the code derived from
+ * its RFC 9457 problem `type`), reduced to what a stream error needs. */
 function envelopeCode(text: string): string | undefined {
   if (text.trim() === '') {
     return undefined
@@ -166,8 +168,14 @@ function envelopeCode(text: string): string | undefined {
     if (typeof parsed !== 'object' || parsed === null) {
       return undefined
     }
-    const code = (parsed as Record<string, unknown>).code
-    return typeof code === 'string' && !code.startsWith('client.')
+    const candidate = parsed as Record<string, unknown>
+    const code =
+      typeof candidate.code === 'string'
+        ? candidate.code
+        : typeof candidate.type === 'string'
+          ? moduleCodeFromProblemType(candidate.type)
+          : undefined
+    return code !== undefined && !code.startsWith('client.')
       ? code
       : undefined
   } catch {

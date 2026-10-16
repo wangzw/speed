@@ -16,6 +16,7 @@ import {
   isTransportFailure,
   type FieldError,
 } from './index'
+import { moduleCodeFromProblemType } from './errors'
 
 const FIELD_ERRORS: readonly FieldError[] = [
   { field: 'credits', code: 'billing.insufficient_credits' },
@@ -256,5 +257,36 @@ describe('isTransportFailure', () => {
     expect(isTransportFailure(new Error('plain'))).toBe(false)
     expect(isTransportFailure({ status: 0 })).toBe(false)
     expect(isTransportFailure({ code: ERROR_CODE_NETWORK })).toBe(false)
+  })
+})
+
+describe('moduleCodeFromProblemType', () => {
+  it('derives <module>.<code> from a urn:speed problem type', () => {
+    expect(moduleCodeFromProblemType('urn:speed:objectstore:not-found')).toBe(
+      'objectstore.not_found',
+    )
+    expect(moduleCodeFromProblemType('urn:speed:authz:forbidden')).toBe(
+      'authz.forbidden',
+    )
+    expect(moduleCodeFromProblemType('urn:speed:tenant:conflict')).toBe(
+      'tenant.conflict',
+    )
+  })
+
+  it('normalizes every dash in the code part to an underscore', () => {
+    expect(moduleCodeFromProblemType('urn:speed:settings:invalid-value')).toBe(
+      'settings.invalid_value',
+    )
+    expect(
+      moduleCodeFromProblemType('urn:speed:notification:not-unsubscribable'),
+    ).toBe('notification.not_unsubscribable')
+  })
+
+  it('returns undefined for a type outside the urn:speed namespace', () => {
+    expect(moduleCodeFromProblemType('about:blank')).toBeUndefined()
+    expect(
+      moduleCodeFromProblemType('https://example.com/problems/out-of-credit'),
+    ).toBeUndefined()
+    expect(moduleCodeFromProblemType('urn:speed:objectstore')).toBeUndefined()
   })
 })
