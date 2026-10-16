@@ -116,10 +116,10 @@ export function PlanCard({ plan, selected = false, onSelect }: PlanCardProps) {
 
 After `switchTenant` succeeds, explicitly call `queryClient.removeQueries({ queryKey: ['tenant', oldId] })` so an operator switching tenants repeatedly does not accumulate every tenant's data in memory.
 
-### The tenant ID is not a request header
+### The tenant is announced as a request header, never a token claim
 
-- **DO NOT** put `tenantId` into request headers. Tenant context travels in the access token, and the server trusts only the token.
-- The session's current tenant (read from the owner's hook, `auth-core`'s `useCurrentTenant`) is used for exactly three things: query key namespacing, UI display, and as the argument to the switch-tenant call. It is not copied into a global store.
+- The tenant is a request-time routing fact: the backend resolves it from the request surface, and `@speed/api-client`'s `tenantProvider` seam announces the host's current tenant as the `X-Tenant` header on every attempt. It is not a claim of the access token — the server reads the header, not the token, for tenant-scoped endpoints.
+- The session's current tenant (read from the owner's hook, `auth-core`'s `useCurrentTenant`) is used for exactly these: query key namespacing, UI display, the `tenantProvider` value wired into the assembled client, and as the argument to the switch-tenant call. It is not copied into a global store.
 
 ### Token storage
 

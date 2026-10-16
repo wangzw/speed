@@ -20,12 +20,13 @@
  *
  * The convention lives here, in auth-core, because the tenant is this
  * package's own fact (ADR-web-tenant-query-key-2026-10-15): api-client
- * deliberately excludes the tenant from its contract -- no tenant header,
- * its hooks take and infer no tenant -- so routing the factory through it
- * would either import auth-core back, a cycle, or split one concept
- * across two packages. The factory evaluates nothing, fetches nothing and
- * decides nothing: whether a row should be fetched or shown stays the
- * host's and the server's.
+ * only broadcasts the host's tenant as transport (the tenantProvider
+ * value wired to the X-Tenant header), inferring and storing no tenant
+ * identifier, and its hooks take and infer no tenant -- so routing the
+ * factory through it would either import auth-core back, a cycle, or
+ * split one concept across two packages. The factory evaluates nothing,
+ * fetches nothing and decides nothing: whether a row should be fetched
+ * or shown stays the host's and the server's.
  *
  * The bare key a caller passes is whatever the read is named by -- a
  * generated getXQueryKey(...) result or a literal tail. Query keys are

@@ -44,10 +44,11 @@
  * segment, useTenantQueryKey derives the key and its enablement from
  * one hook call, and evictTenantQueries removes a departing tenant's
  * whole subtree once a switch commits. It belongs here because the
- * tenant is this package's own fact and api-client excludes the tenant
- * from its contract; @tanstack/react-query is a peer, so only a host
- * that already holds a QueryClient carries it (the factory calls its
- * removeQueries, never constructs one).
+ * tenant is this package's own fact and api-client only broadcasts the
+ * host's tenant as transport, inferring and storing none;
+ * @tanstack/react-query is a peer, so only a host that already holds a
+ * QueryClient carries it (the factory calls its removeQueries, never
+ * constructs one).
  *
  * No storage is written anywhere: the authn token responses carry the
  * refresh token in the body (the browser path delivers
