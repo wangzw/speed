@@ -96,24 +96,44 @@ describe('the app at the root path', () => {
 })
 
 describe('the tenant shell with a session', () => {
-  it('offers a console entry that lands in the console area', async () => {
+  it('offers a platform administrator a header console entry that lands in the console', async () => {
     const user = userEvent.setup()
-    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
-
-    const nav = screen.getByRole('navigation')
-    const consoleEntry = within(nav).getByRole('link', {
-      name: demoEnUS.nav.console,
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ system: ['tenant.read'] }),
+      ),
     })
-    expect(consoleEntry).toBeInTheDocument()
 
-    await user.click(consoleEntry)
-    // The entry points at the console prefix, which renders the console's
-    // dashboard: the console frame's own navigation appears.
+    // The entry is not a navigation item: the sidebar carries no way into the
+    // console.
+    const nav = screen.getByRole('navigation')
+    expect(
+      within(nav).queryByRole('link', { name: demoEnUS.nav.console }),
+    ).not.toBeInTheDocument()
+
+    // It rides the header instead. A plain click routes in place to the console
+    // prefix, which renders the console's dashboard: the console frame's own
+    // navigation appears.
+    const entry = screen.getByRole('link', { name: demoEnUS.nav.console })
+    await user.click(entry)
     expect(
       await screen.findByRole('navigation', {
         name: consoleUiEnUS.shell.navLabel,
       }),
     ).toBeInTheDocument()
+  })
+
+  it('offers an ordinary member no console entry anywhere', () => {
+    renderDemoApp({
+      session: createTestSession(authenticatedSnapshot({ system: [] })),
+    })
+
+    // The member's platform permission set is known and does not hold the
+    // entry's code, so neither the sidebar nor the header carries a console
+    // entry: there is no way into the console to be found.
+    expect(
+      screen.queryByRole('link', { name: demoEnUS.nav.console }),
+    ).not.toBeInTheDocument()
   })
 })
 
@@ -175,12 +195,17 @@ describe('the console area', () => {
     ).toBeInTheDocument()
   })
 
-  it('denies a page whose permission the principal is known to lack', async () => {
+  it('turns away a member who reaches a console page directly', async () => {
+    // The member never gets the entry (the test above), but hiding the entry is
+    // not gating: a typed URL reaches the console path space anyway, and the
+    // route guard -- not the hidden entry -- is what turns it away.
     window.history.replaceState({}, '', '/console/tenants')
     renderDemoApp({
       session: createTestSession(authenticatedSnapshot({ system: [] })),
     })
 
+    // The console page itself is not rendered: the member meets the
+    // no-permission surface the route guard substitutes for it.
     expect(
       await screen.findByText(uiKitEnUS.emptyState.noPermission.title),
     ).toBeInTheDocument()

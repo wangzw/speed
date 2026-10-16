@@ -86,12 +86,17 @@ program beside this directory embeds with `go:embed` and serves through
   `CONSOLE_PREFIX`. `src/app.tsx` picks the shell from the route table's
   selected entry, so a console page carries a label.
 - **The console has a host entry and a host route guard.** The tenant
-  navigation is the labelled entries outside the console path space plus the
-  host's own console entry (`src/app.tsx`), which points at `CONSOLE_PREFIX`;
-  `/console` itself redirects to the console's first page (`src/routes.tsx`).
-  The console area -- and only it, since the tenant area is gated by the shell
-  -- carries a `RouteGuard` over the matched page's permission code, composed
-  host-side.
+  navigation is the labelled entries outside the console path space; the console
+  entry is not among them -- it rides the tenant frame's `headerActions` slot
+  (`src/app.tsx`'s `ConsoleEntry`) and appears only to a principal holding a
+  platform permission, so an ordinary member is offered no way in. The
+  principal's platform permission set is attached by the assembly
+  (`src/platform-permissions.tsx`, from the declared-permission catalog; see
+  README "Sessions and the console"). `/console` itself redirects to the
+  console's first page (`src/routes.tsx`). The console area -- and only it, since
+  the tenant area is gated by the shell -- carries a `RouteGuard` over the
+  matched page's permission code, composed host-side, so reaching `/console`
+  directly is turned away there.
 - **The console routes in place and offers an exit.** The console frame hands
   its navigation entries to the app's router through console-ui's `onNavigate`
   seam (`src/console/console-area.tsx`), and its banner carries an exit back to

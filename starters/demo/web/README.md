@@ -224,10 +224,26 @@ Both shells branch on the same session snapshot: a session that genuinely ends
 than a view that never settles. Nothing persists a credential to storage; the
 cookie is the browser's, not a script's.
 
-The tenant navigation carries a console entry pointing at `/console`, which
-redirects to the console's first page; the console area itself gates each page
-on its permission code (composed host-side) and shows a "no access" state for a
-code the session is known to lack.
+The tenant frame's header carries a console entry pointing at `/console`, which
+redirects to the console's first page. It sits at the right end of the bar, with
+the language switch, the color-mode toggle and the notification bell -- not in
+the navigation -- and appears only to a principal that holds a platform
+permission, so an ordinary member is offered no way in. The console area itself
+gates each page on its permission code (composed host-side) and shows a "no
+access" state for a code the session is known to lack, so a member who reaches
+`/console` directly is turned away there.
+
+The entry's visibility turns on the caller's platform permission set, which the
+host attaches (`src/platform-permissions.tsx`, wired into the assembly in
+`src/main.tsx`). The platform carries no read of the caller's *held* permissions,
+so the app reads the declared-permission catalog (`GET /authz/admin/permissions`)
+-- a platform-staff operation that answers only to a principal holding
+`authz.role.read` in the platform domain, and whose answer is every permission
+the process declares. The seed's platform administrator holds exactly that set,
+so the app attaches the catalog's codes as the caller's platform permissions; an
+ordinary member is answered 403 and the app attaches the empty set. A copy whose
+principals hold a subset of the declared permissions must replace this with its
+own source of the caller's held set.
 
 ### The account page and the app chrome
 

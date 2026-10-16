@@ -8,12 +8,13 @@
  * frames over one table:
  *
  *  - The tenant area renders ProductShell, the three-branch view machine, with
- *    the nav derived from every non-console entry plus the host's own console
- *    entry, and the auth-ui sign-in surface and sign-out action in the host
- *    slots. The shell renders the nav and content only while the session is
- *    authenticated; a fresh visitor meets the sign-in surface, and one whose
- *    session ends meets the ended screen. The routed page sits in a padded
- *    content region so it does not butt against the chrome.
+ *    the nav derived from every non-console entry and the host's console entry
+ *    -- offered only to platform staff -- in the header's action slot, plus the
+ *    auth-ui sign-in surface and sign-out action in the host slots. The shell
+ *    renders the nav and content only while the session is authenticated; a
+ *    fresh visitor meets the sign-in surface, and one whose session ends meets
+ *    the ended screen. The routed page sits in a padded content region so it
+ *    does not butt against the chrome.
  *
  *  - The console area renders @speed/console-ui's frame instead, with no tenant
  *    frame around it. The area is chosen by the selected navigation entry: the
@@ -31,8 +32,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
-import { TenantProvider, useAuthState } from '@speed/auth-core'
+import { TenantProvider, useAuthState, usePermission } from '@speed/auth-core'
 import type { AuthSnapshot } from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
 import { RouteGuard } from '@speed/layout-kit'
@@ -204,36 +206,25 @@ function AppFrame(): ReactElement {
     )
   }
 
-  // The tenant navigation is every labelled entry outside the console area,
-  // plus the host's own console entry (the console's pages are filtered out
-  // above, so nothing else points into the console). Each entry keeps its href
-  // (for a middle click or a copy) and navigates through the router on a plain
-  // click, so the page never reloads.
-  const consoleEntry: AppShellNavItem = {
-    id: 'console',
-    label: <DemoNavLabel labelKey="nav.console" />,
-    href: CONSOLE_PREFIX,
-    selected: false,
-    onClick: (event) => {
-      event.preventDefault()
-      navigate(CONSOLE_PREFIX)
-    },
-  }
-  const navItems: readonly AppShellNavItem[] = [
-    ...items
-      .filter((item) => !isConsolePath(item.id))
-      .map((item): AppShellNavItem => ({
-        id: item.id,
-        label: item.label,
-        href: item.href,
-        selected: item.selected,
-        onClick: (event) => {
-          event.preventDefault()
-          navigate(item.href)
-        },
-      })),
-    consoleEntry,
-  ]
+  // The tenant navigation is every labelled entry outside the console area
+  // (the console's pages are filtered out above, so nothing else points into
+  // the console). The console entry is deliberately not a navigation item: it
+  // lives in the header's action slot, offered only to platform staff, so a
+  // member meets a navigation with no way into the console. Each entry keeps
+  // its href (for a middle click or a copy) and navigates through the router
+  // on a plain click, so the page never reloads.
+  const navItems: readonly AppShellNavItem[] = items
+    .filter((item) => !isConsolePath(item.id))
+    .map((item): AppShellNavItem => ({
+      id: item.id,
+      label: item.label,
+      href: item.href,
+      selected: item.selected,
+      onClick: (event) => {
+        event.preventDefault()
+        navigate(item.href)
+      },
+    }))
 
   return (
     <TenantProvider tenantId={tenantId}>
@@ -252,11 +243,14 @@ function AppFrame(): ReactElement {
           // The notification bell rides the header actions slot beside the
           // shared chrome; it opens the notification surface. It lives only
           // in the tenant area (the console resolves no tenant, so its bell
-          // would have nothing to read).
+          // would have nothing to read). The console entry sits at the same
+          // end of the bar, nearest the account controls, and shows only to
+          // platform staff (ConsoleEntry gates itself).
           headerActions={
             <>
               <NotificationBell onClick={() => navigate(NOTIFICATIONS_PATH)} />
               <HeaderActions />
+              <ConsoleEntry />
             </>
           }
           sidebarCollapsed={sidebarCollapsed}
@@ -277,6 +271,45 @@ function AppFrame(): ReactElement {
         </ProductShell>
       </NotificationStreamProvider>
     </TenantProvider>
+  )
+}
+
+/**
+ * The header's console entry: a text button into the platform console, shown
+ * only to a principal that holds a platform permission. Every console page's
+ * permission code resolves in the platform domain -- auth-core names 'system'
+ * that set -- so the entry keys on one of those codes rather than any page's
+ * own, and the seed's platform administrator (which holds every permission the
+ * process declares) is told apart from an ordinary member by any one of them.
+ *
+ * The platform permission set is not known synchronously: the host attaches it
+ * (setPermissionSet) once the caller's platform permissions have been read, and
+ * usePermission answers false until then -- it fails closed, never throwing.
+ * The entry is therefore hidden until the set lands and appears once the
+ * principal is confirmed to hold the code, which is the safe direction: a
+ * member never sees the entry for the moment before the set arrives.
+ *
+ * It routes in place (the same seam every other entry uses), so entering the
+ * console does not reload the page and sign the operator out, and it keeps its
+ * href so a middle-click or a copied URL still reaches the console.
+ */
+function ConsoleEntry(): ReactElement | null {
+  const navigate = useNavigate()
+  const canEnterConsole = usePermission('system', 'tenant.read')
+  if (!canEnterConsole) {
+    return null
+  }
+  return (
+    <Button
+      color="inherit"
+      href={CONSOLE_PREFIX}
+      onClick={(event) => {
+        event.preventDefault()
+        navigate(CONSOLE_PREFIX)
+      }}
+    >
+      <DemoNavLabel labelKey="nav.console" />
+    </Button>
   )
 }
 
@@ -303,12 +336,20 @@ function SessionGate({
  * The console's route-level gate, composed the host way: layout-kit's
  * RouteGuard fed a status the host derives from the matched page's permission
  * code (the console declarations carry tenant.read / settings.read /
- * audit.read). A code the principal is known not to hold is denied; a code
- * held, a page with no code, or -- the skeleton's case, which attaches no
- * platform permission list -- an unknown set passes, since the server stays
- * the authority on the console's administration surfaces (the console-ui
- * design: a caller lacking a permission is refused server-side rather than
- * hidden client-side).
+ * audit.read). A code held, or a page with no code, is allowed; a code the
+ * principal is known not to hold is denied. This is the second half of the
+ * console gating -- the header entry (ConsoleEntry) hides the way in, and this
+ * guard turns away a viewer that reaches the console's path space directly,
+ * which hiding the entry alone would not do.
+ *
+ * The demo's assembly attaches the caller's platform permission set
+ * (src/main.tsx), so the guard settles on a real answer: the seed's platform
+ * administrator holds the console codes and passes, and an ordinary member --
+ * whose set is attached empty -- is denied. The set is null only before the
+ * caller's platform permissions have been read; an unknown set passes, since
+ * the server stays the authority on the console's administration surfaces (the
+ * console-ui design: a caller lacking a permission is refused server-side
+ * rather than hidden client-side).
  */
 function ConsoleRouteGuard({
   children,

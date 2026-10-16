@@ -47,6 +47,7 @@ import { AppServicesProvider } from './app-services.js'
 import { DemoApp } from './app.js'
 import { getCurrentTenantAlias } from './chrome.js'
 import { applyDocumentMetadata } from './document-metadata.js'
+import { PlatformPermissions } from './platform-permissions.js'
 import { DEMO_NAMESPACE, demoResources } from './resources.js'
 import { loadRuntimeConfig } from './runtime-config.js'
 
@@ -79,7 +80,11 @@ export async function bootstrapDemoApp(
     providers: [
       (services, children) => (
         <AppServicesProvider services={services}>
-          {children}
+          {/* Attaches the caller's platform permission set once signed in, so
+              the shell can gate the console on it (src/app.tsx). */}
+          <PlatformPermissions session={services.session}>
+            {children}
+          </PlatformPermissions>
         </AppServicesProvider>
       ),
     ],
