@@ -17,7 +17,7 @@
 | [route-kit](design-web-route-kit.md) | 路由与导航独立层：声明式注册面、路径匹配、链接构造、导航选中态与未命中回退 |
 | [auth-core](design-web-auth-core.md) | 浏览器会话状态机：登录流程、登出、快照、React hook、租户上下文与租户作用域查询键 |
 | [auth-ui](design-web-auth-ui.md) | 登录组件族：口令、短信、社交渠道与会话面 |
-| [account-ui](design-web-account-ui.md) | 账户管理组件族：偏好、会话、社交绑定、两步验证 |
+| [account-ui](design-web-account-ui.md) | 账户管理组件族：自助写（显示名、口令、手机、登录标识）、偏好、会话、社交绑定、两步验证 |
 | [tenancy-ui](design-web-tenancy-ui.md) | 租户切换控件 |
 | [product-shell](design-web-product-shell.md) | 租户侧装配壳与装配入口 `bootstrapSpeedApp` |
 | [console-ui](design-web-console-ui.md) | 平台侧控制台面组件族：租户、设置与审计三个管理面 |

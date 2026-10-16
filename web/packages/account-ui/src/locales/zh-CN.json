@@ -164,5 +164,84 @@
       "description": "加载偏好设置时出现问题，请重试。"
     },
     "retry": "重试"
+  },
+  "profile": {
+    "title": "个人资料",
+    "loading": "正在加载个人资料",
+    "displayName": {
+      "label": "显示名"
+    },
+    "save": "保存",
+    "saved": "个人资料已保存。",
+    "error": {
+      "title": "无法加载个人资料",
+      "description": "加载个人资料时出了问题，请稍后重试。"
+    },
+    "retry": "重试"
+  },
+  "password": {
+    "title": "密码",
+    "loading": "正在加载密码设置",
+    "current": {
+      "label": "当前密码"
+    },
+    "new": {
+      "label": "新密码",
+      "helper": "请设置一个该账户未使用过的密码。"
+    },
+    "confirm": {
+      "label": "确认新密码"
+    },
+    "submit": "修改密码",
+    "changed": "密码已修改，其他设备已被退出登录。",
+    "missingNew": "请输入新密码。",
+    "mismatch": "两次输入的密码不一致。",
+    "noPassword": "该账户经提供方登录，此处没有可修改的密码。",
+    "error": {
+      "title": "无法加载密码设置",
+      "description": "加载密码设置时出了问题，请稍后重试。"
+    },
+    "retry": "重试"
+  },
+  "phone": {
+    "title": "手机号",
+    "phone": {
+      "label": "手机号",
+      "helper": "请填写含国家代码的完整号码，例如 +8613800000000。"
+    },
+    "send": "发送验证码",
+    "sent": "验证码已发送至 {{phone}}。",
+    "code": {
+      "label": "验证码"
+    },
+    "verify": "验证",
+    "added": "手机号已添加。",
+    "cancel": "换一个号码"
+  },
+  "identifiers": {
+    "title": "登录标识",
+    "loading": "正在加载登录标识",
+    "kind": {
+      "email": "邮箱",
+      "phone": "手机号",
+      "username": "用户名",
+      "other": "标识"
+    },
+    "verified": "已验证",
+    "unverified": "未验证",
+    "remove": "移除",
+    "removeAria": "移除此登录标识：{{value}}",
+    "confirmTitle": "移除此登录标识？",
+    "confirmMessage": "移除后该标识将无法再用于登录。账户至少需要保留一种登录方式。",
+    "confirmLabel": "移除",
+    "empty": {
+      "title": "暂无登录标识",
+      "description": "用于登录的标识将显示在这里。"
+    },
+    "error": {
+      "title": "无法加载登录标识",
+      "description": "加载登录标识时出了问题，请稍后重试。"
+    },
+    "retry": "重试"
   }
 }

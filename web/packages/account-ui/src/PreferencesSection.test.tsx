@@ -31,6 +31,7 @@ import {
   type RealCall,
   type RealResponder,
 } from '../test-utils/real-client.js'
+import { profileBody } from '../test-utils/fixtures.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { PreferencesSection } from './PreferencesSection.js'
@@ -48,23 +49,6 @@ function languageLabel(tag: string, ui: string): string {
   }
 }
 
-/** A profile with the fields the two selects read. */
-function profileBody(locale = '', timeZone = ''): Record<string, unknown> {
-  return {
-    account_id: 'user-1',
-    kind: 'person',
-    display_name: 'Ada',
-    mfa_required: false,
-    password_set: true,
-    created_at: '2026-01-01T00:00:00Z',
-    attributes: {},
-    locale,
-    time_zone: timeZone,
-    identifiers: [],
-    links: [],
-  }
-}
-
 /** A stateful profile responder: GET answers the stored pair, PATCH merges
  * the partial body into it (absent field unchanged, empty string clears
  * -- the endpoint's contract) and answers 200. */
@@ -77,7 +61,7 @@ function makeProfileResponder(initial: { locale?: string; time_zone?: string }) 
     if (call.method === 'GET') {
       return jsonResponse(
         200,
-        profileBody(stored.locale ?? '', stored.time_zone ?? ''),
+        profileBody({ locale: stored.locale ?? '', time_zone: stored.time_zone ?? '' }),
       )
     }
     if (call.method === 'PATCH') {
@@ -257,7 +241,7 @@ describe('PreferencesSection', () => {
   it('renders the two-line failure alert and does not switch when the language write is refused', async () => {
     const respond: RealResponder = async (call) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
-        return jsonResponse(200, profileBody('', ''))
+        return jsonResponse(200, profileBody())
       }
       if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
         return errorResponse(400, 'authn.bad_request')
@@ -347,7 +331,7 @@ describe('PreferencesSection', () => {
         if (failLoad) {
           return errorResponse(503, 'client.network')
         }
-        return jsonResponse(200, profileBody('', 'Asia/Tokyo'))
+        return jsonResponse(200, profileBody({ time_zone: 'Asia/Tokyo' }))
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }

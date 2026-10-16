@@ -1,0 +1,207 @@
+/**
+ * ProfileSection behaviour: the display-name surface over the profile
+ * read (GET /auth/me) and the profile write (PATCH /auth/me).
+ *
+ * What this suite pins: the stored display name renders into the field; a
+ * save PATCHes a one-field body under `display_name`, fills the success
+ * live region and refetches the profile; a refused save renders its code
+ * text in the banner; a save refused with 401
+ * authn.insufficient_user_authentication opens the step-up dialog, and a
+ * won step-up re-runs that one save exactly once; and a load that failed
+ * renders the error state with a retry that refetches.
+ */
+
+import { describe, expect, it } from 'vitest'
+import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import zhCN from './locales/zh-CN.json' with { type: 'json' }
+import { profileBody } from '../test-utils/fixtures.js'
+import {
+  errorResponse,
+  jsonResponse,
+  makeRealClientRig,
+  type RealCall,
+  type RealResponder,
+} from '../test-utils/real-client.js'
+import { renderWithProviders } from '../test-utils/render.js'
+import { expectNoAxeViolations } from '../test-utils/axe.js'
+import { ProfileSection } from './ProfileSection.js'
+
+const PROFILE_PATH = '/auth/me'
+const FLOW_START = '/auth/flows/authenticated'
+const FLOW_ANSWER = '/auth/flows/answer'
+
+function mount(respond: RealResponder) {
+  const rig = makeRealClientRig(respond)
+  rig.store.set('access-1')
+  const rendered = renderWithProviders(<ProfileSection session={rig.session} />)
+  return { rig, ...rendered }
+}
+
+describe('ProfileSection', () => {
+  it('renders the stored display name and passes axe', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ display_name: 'Grace Hopper' }))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(
+      await screen.findByRole('heading', { name: zhCN.profile.title }),
+    ).toBeTruthy()
+    expect(
+      await screen.findByRole('textbox', { name: zhCN.profile.displayName.label }),
+    ).toHaveValue('Grace Hopper')
+
+    await expectNoAxeViolations()
+  })
+
+  it('PATCHes the display name, reports it and refetches the profile', async () => {
+    let stored = 'Ada'
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ display_name: stored }))
+      }
+      if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
+        stored = (call.body as { display_name: string }).display_name
+        return jsonResponse(200, {})
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    const field = await screen.findByRole('textbox', {
+      name: zhCN.profile.displayName.label,
+    })
+    await user.clear(field)
+    await user.type(field, 'Grace')
+    await user.click(screen.getByRole('button', { name: zhCN.profile.save }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(zhCN.profile.saved),
+    )
+    const patch = rig.calls.find((call) => call.method === 'PATCH')
+    expect(patch?.body).toEqual({ display_name: 'Grace' })
+    // The read converges on the account's own answer.
+    expect(
+      rig.calls.filter(
+        (call) => call.method === 'GET' && call.path === PROFILE_PATH,
+      ).length,
+    ).toBeGreaterThanOrEqual(2)
+  })
+
+  it('renders a refused save as its code text', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody())
+      }
+      if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
+        return errorResponse(400, 'authn.bad_request')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.profile.save }),
+    )
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
+  })
+
+  it('gates a step_up_required save behind the dialog and re-runs it once', async () => {
+    let elevated = false
+    let stored = 'Ada'
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ display_name: stored }))
+      }
+      if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
+        if (!elevated) {
+          return errorResponse(401, 'authn.insufficient_user_authentication')
+        }
+        stored = (call.body as { display_name: string }).display_name
+        return jsonResponse(200, {})
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'second',
+          next: {
+            kind: 'factor',
+            factors: [{ id: 'factor-1', kind: 'totp', label: 'App' }],
+          },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number }
+        if (body.seq === 1) {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'second',
+            next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
+          })
+        }
+        elevated = true
+        return jsonResponse(200, {
+          state: 'elevated',
+          token_type: 'Bearer',
+          access_token: 'access-2',
+          expires_in: 3600,
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    const field = await screen.findByRole('textbox', {
+      name: zhCN.profile.displayName.label,
+    })
+    await user.clear(field)
+    await user.type(field, 'Grace')
+    await user.click(screen.getByRole('button', { name: zhCN.profile.save }))
+
+    // The 401 opens the step-up dialog; winning it re-runs the save.
+    await screen.findByRole('button', { name: 'App' })
+    await user.click(screen.getByRole('button', { name: 'App' }))
+    await user.type(await screen.findByLabelText('code'), '123456')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(zhCN.profile.saved),
+    )
+    const patches = rig.calls.filter((call) => call.method === 'PATCH')
+    expect(patches).toHaveLength(2)
+    expect(patches[1]?.body).toEqual({ display_name: 'Grace' })
+  })
+
+  it('renders the error state with a retry that refetches when the load fails', async () => {
+    const user = userEvent.setup()
+    let failLoad = true
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return failLoad
+          ? errorResponse(503, 'client.network')
+          : jsonResponse(200, profileBody({ display_name: 'Grace' }))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByText(zhCN.profile.error.title)).toBeTruthy()
+
+    failLoad = false
+    await user.click(screen.getByRole('button', { name: zhCN.profile.retry }))
+    expect(
+      await screen.findByRole('textbox', { name: zhCN.profile.displayName.label }),
+    ).toHaveValue('Grace')
+  })
+})

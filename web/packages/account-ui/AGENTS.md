@@ -1,10 +1,15 @@
 # AGENTS.md for `@speed/account-ui`
 
 The account-management component family of a speed frontend, the
-signed-in half of the account story: four surfaces compose a host account
-page — `PreferencesSection` (the language-and-timezone selects over the
-profile's own `PATCH /auth/me`), `SessionsSection` (the live-sessions
-list with per-session and bulk revocation), `SocialBindingsSection` plus
+signed-in half of the account story: a set of surfaces compose a host
+account page — the self-service write surfaces (`ProfileSection` over the
+profile's `PATCH /auth/me`, `PasswordSection` over `PUT /auth/password`,
+`PhoneSection` over the two-step `POST /auth/phone` and
+`/auth/phone/verify`, and `IdentifiersSection` over the profile's own
+identifiers and `DELETE /auth/identifiers/{id}`), `PreferencesSection`
+(the language-and-timezone selects over the profile's own `PATCH
+/auth/me`), `SessionsSection` (the live-sessions list with per-session
+and bulk revocation), `SocialBindingsSection` plus
 `BindingCallbackHandler` (the social bindings surface and the callback
 route that completes a link flow), and `MfaSection` (the two-step
 verification surface: the factors read from `GET /auth/factors`, their
@@ -162,12 +167,14 @@ session as a required prop; the read-only ones take no props.
 
 ## Public surface
 
-Everything in `src/index.ts` is public: the four surfaces
-(`PreferencesSection`; `SessionsSection`; `SocialBindingsSection` with
-`SocialBindingsSectionProps`, `SocialProvider` and `SocialProviderConfig`;
-`MfaSection` with `MfaSectionProps`), `BindingCallbackHandler` with
-`BindingCallbackHandlerProps`, and the resource pair
-(`ACCOUNT_UI_NAMESPACE`, `accountUiResources`). Prop tables and behaviour
+Everything in `src/index.ts` is public: the surfaces (`ProfileSection`
+with `ProfileSectionProps`; `PasswordSection` with `PasswordSectionProps`;
+`PhoneSection` with `PhoneSectionProps`; `IdentifiersSection` with
+`IdentifiersSectionProps`; `PreferencesSection`; `SessionsSection`;
+`SocialBindingsSection` with `SocialBindingsSectionProps`, `SocialProvider`
+and `SocialProviderConfig`; `MfaSection` with `MfaSectionProps`),
+`BindingCallbackHandler` with `BindingCallbackHandlerProps`, and the
+resource pair (`ACCOUNT_UI_NAMESPACE`, `accountUiResources`). Prop tables and behaviour
 live in the README; `tsc -p tsconfig.json` type-checks every
 consumer-visible signature.
 

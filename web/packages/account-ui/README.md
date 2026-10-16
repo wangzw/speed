@@ -19,6 +19,10 @@ generated read or write on the shared access token.
 
 | File | Export |
 |---|---|
+| `src/ProfileSection.tsx` | `ProfileSection`, `ProfileSectionProps` |
+| `src/PasswordSection.tsx` | `PasswordSection`, `PasswordSectionProps` |
+| `src/PhoneSection.tsx` | `PhoneSection`, `PhoneSectionProps` |
+| `src/IdentifiersSection.tsx` | `IdentifiersSection`, `IdentifiersSectionProps` |
 | `src/PreferencesSection.tsx` | `PreferencesSection` |
 | `src/SessionsSection.tsx` | `SessionsSection` |
 | `src/SocialBindingsSection.tsx` | `SocialBindingsSection`, `SocialBindingsSectionProps`, `SocialProvider`, `SocialProviderConfig` |
@@ -45,6 +49,10 @@ import { AppThemeProvider, UI_KIT_NAMESPACE, uiKitResources } from '@speed/ui-ki
 import {
   ACCOUNT_UI_NAMESPACE,
   accountUiResources,
+  ProfileSection,
+  PasswordSection,
+  PhoneSection,
+  IdentifiersSection,
   PreferencesSection,
   SessionsSection,
   SocialBindingsSection,
@@ -58,6 +66,10 @@ function AccountPage({ session, providers, onAuthorizeUrl }) {
   return (
     <QueryClientProvider client={queryClient}>
       <AppThemeProvider i18n={i18n}>
+        <ProfileSection session={session} />
+        <PasswordSection session={session} />
+        <PhoneSection session={session} />
+        <IdentifiersSection session={session} />
         <PreferencesSection />
         <SessionsSection />
         <SocialBindingsSection
@@ -81,6 +93,72 @@ redirect back to, with the same session:
 
 `web/packages/account-ui/src/usage-example.test.tsx` compiles and runs
 this assembly end to end.
+
+## The self-service write surfaces
+
+Four sections cover the account's own self-service writes. Each drives a
+route that asks for a fresh authentication: an unelevated caller is
+answered 401 `authn.insufficient_user_authentication`, which opens the
+shared step-up dialog (`src/internal/step-up-challenge.tsx`, driving a
+`purpose: 'step-up'` flow) with that request's inputs remembered; a won
+challenge re-runs exactly that request once. Each takes the session as
+its only prop (the dialog drives it).
+
+```tsx
+interface ProfileSectionProps {
+  readonly session: AuthSession
+}
+interface PasswordSectionProps {
+  readonly session: AuthSession
+}
+interface PhoneSectionProps {
+  readonly session: AuthSession
+}
+interface IdentifiersSectionProps {
+  readonly session: AuthSession
+}
+```
+
+### ProfileSection
+
+Edits the account's display name through the profile write
+`PATCH /auth/me` (the same route the preferences section writes its
+language and time zone through). It reads `GET /auth/me` for the stored
+name, lets the field track that value until the user edits it, and
+PATCHes a one-field body from the save button. A successful save fills a
+`role="status"` notice and refetches the profile.
+
+### PasswordSection
+
+Changes the password through `PUT /auth/password`. The current-password
+field renders only when the profile says a password is set (an account
+opened through a provider holds none); a provider-only account changes to
+its first password with the new-password fields alone. Two client-side
+guards -- a non-empty new password, a matching confirmation -- render on
+their fields before any request; a refusal from the server (a wrong
+current password is the 401 `login-failed`) renders its code text. A
+successful change clears the fields, refetches the profile and the
+session list (the route rotates this session's token and revokes the
+others) and reports the change.
+
+### PhoneSection
+
+Adds or replaces the account's phone number in two steps:
+`POST /auth/phone` sends a code to the number and `POST /auth/phone/verify`
+submits it. The sent notice names the number; the verify carries the code
+alone, because the number is the server's own record keyed to the session.
+A verified number refetches the profile (and the session list, since the
+route revokes the account's other sessions) and reports the addition.
+
+### IdentifiersSection
+
+Lists the account's sign-in identifiers -- read off the profile's
+`identifiers` field (`GET /auth/me`), because the spec ships no dedicated
+list route -- each with its kind (email, phone or username) and its
+verified or unverified state. A row's remove action sits behind the
+ui-kit danger confirm and sends `DELETE /auth/identifiers/{id}`; a refusal
+(the account's last way in is the 409 `conflict`) renders its code text. A
+successful removal refetches the profile.
 
 ## PreferencesSection
 

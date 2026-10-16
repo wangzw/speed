@@ -227,7 +227,7 @@ graph TD
 | 生成的契约面 | 已实现 | `web/packages/api-sdk/src/runtime.ts` `bindRequestFn`、`speedRequest`、`speedRequestCredentialless`；生成面见 `web/packages/api-sdk/src/index.ts` |
 | 浏览器会话状态机与 hooks | 已实现 | `web/packages/auth-core/src/session.ts` `createAuthSession`；`web/packages/auth-core/src/hooks.ts` `attachSession`、`useAuthState`、`usePermission` |
 | 登录组件族 | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`；`web/packages/auth-ui/src/SignOutButton.tsx` `SignOutButton`；`web/packages/auth-ui/src/SessionEndedScreen.tsx` `SessionEndedScreen` |
-| 账户管理组件族 | 已实现 | `web/packages/account-ui/src/index.ts` `PreferencesSection`、`SessionsSection`、`SocialBindingsSection`、`MfaSection` |
+| 账户管理组件族 | 已实现 | `web/packages/account-ui/src/index.ts` `ProfileSection`、`PasswordSection`、`PhoneSection`、`IdentifiersSection`、`PreferencesSection`、`SessionsSection`、`SocialBindingsSection`、`MfaSection` |
 | 租户切换控件 | 已实现 | `web/packages/tenancy-ui/src/index.ts` `TenantSwitcher`、`TenantOption`、`TenantSwitcherProps`；`web/packages/tenancy-ui/src/resources.ts` `TENANCY_UI_NAMESPACE`、`tenancyUiResources` |
 | 组装壳与装配入口 | 已实现 | `web/packages/product-shell/src/index.ts` `ProductShell`；`web/packages/product-shell/src/bootstrap.tsx` `bootstrapSpeedApp` |
 | 路由与导航独立层 | 已实现 | `web/packages/route-kit/src/index.ts` `RouteProvider`、`RouteView`、`RouteLink`、`useNavItems`、`useNavigate` |

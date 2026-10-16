@@ -164,5 +164,84 @@
       "description": "Something went wrong while loading your preferences. Please try again."
     },
     "retry": "Retry"
+  },
+  "profile": {
+    "title": "Profile",
+    "loading": "Loading profile",
+    "displayName": {
+      "label": "Display name"
+    },
+    "save": "Save",
+    "saved": "Your profile has been saved.",
+    "error": {
+      "title": "Could not load your profile",
+      "description": "Something went wrong while loading your profile. Please try again."
+    },
+    "retry": "Retry"
+  },
+  "password": {
+    "title": "Password",
+    "loading": "Loading password settings",
+    "current": {
+      "label": "Current password"
+    },
+    "new": {
+      "label": "New password",
+      "helper": "Choose a password this account has not used before."
+    },
+    "confirm": {
+      "label": "Confirm new password"
+    },
+    "submit": "Change password",
+    "changed": "Your password has been changed. Other devices have been signed out.",
+    "missingNew": "Enter a new password.",
+    "mismatch": "The two passwords do not match.",
+    "noPassword": "This account signs in through a provider and has no password to change here.",
+    "error": {
+      "title": "Could not load password settings",
+      "description": "Something went wrong while loading your password settings. Please try again."
+    },
+    "retry": "Retry"
+  },
+  "phone": {
+    "title": "Phone number",
+    "phone": {
+      "label": "Phone number",
+      "helper": "Include the country code, for example +14155550123."
+    },
+    "send": "Send code",
+    "sent": "A verification code was sent to {{phone}}.",
+    "code": {
+      "label": "Verification code"
+    },
+    "verify": "Verify",
+    "added": "Your phone number has been added.",
+    "cancel": "Use a different number"
+  },
+  "identifiers": {
+    "title": "Sign-in identifiers",
+    "loading": "Loading sign-in identifiers",
+    "kind": {
+      "email": "Email",
+      "phone": "Phone",
+      "username": "Username",
+      "other": "Identifier"
+    },
+    "verified": "Verified",
+    "unverified": "Not verified",
+    "remove": "Remove",
+    "removeAria": "Remove this sign-in identifier: {{value}}",
+    "confirmTitle": "Remove this sign-in identifier?",
+    "confirmMessage": "The identifier will no longer be able to sign in. An account must keep at least one way to sign in.",
+    "confirmLabel": "Remove",
+    "empty": {
+      "title": "No sign-in identifiers",
+      "description": "Identifiers used to sign in will appear here."
+    },
+    "error": {
+      "title": "Could not load sign-in identifiers",
+      "description": "Something went wrong while loading your sign-in identifiers. Please try again."
+    },
+    "retry": "Retry"
   }
 }

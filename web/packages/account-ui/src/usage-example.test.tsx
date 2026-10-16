@@ -8,7 +8,7 @@
  * AppThemeProvider tree and a QueryClientProvider (the account surfaces
  * read their data through the react-query hooks generated into
  * @speed/api-sdk over the host's client), and the host's own account page
- * composing the four sections under a signed-in session.
+ * composing the sections under a signed-in session.
  *
  * Why a real client: the component suites drive each surface in isolation
  * through the same real-client rig; the wiring the README documents -- the
@@ -36,6 +36,10 @@ import {
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import { ProfileSection } from './ProfileSection.js'
+import { PasswordSection } from './PasswordSection.js'
+import { PhoneSection } from './PhoneSection.js'
+import { IdentifiersSection } from './IdentifiersSection.js'
 import { PreferencesSection } from './PreferencesSection.js'
 import { SessionsSection } from './SessionsSection.js'
 import { SocialBindingsSection } from './SocialBindingsSection.js'
@@ -52,11 +56,16 @@ const PROVIDERS: readonly SocialProviderConfig[] = [
   { provider: 'wechat', redirectUri: 'https://app.example.test/cb/wechat' },
 ]
 
-/** The host's account page in the example: the four sections the quick
- * start documents, under one signed-in session. */
+/** The host's account page in the example: the sections the quick start
+ * documents, under one signed-in session. The sections that drive a flow
+ * (a bind, a step-up, an enroll) take the session; the rest take none. */
 function AccountPage({ session }: { readonly session: AuthSession }) {
   return (
     <div>
+      <ProfileSection session={session} />
+      <PasswordSection session={session} />
+      <PhoneSection session={session} />
+      <IdentifiersSection session={session} />
       <PreferencesSection />
       <SessionsSection />
       <SocialBindingsSection session={session} providers={PROVIDERS} />
@@ -81,7 +90,15 @@ describe('the README quick start, exercised over a real api-client', () => {
             attributes: {},
             locale: '',
             time_zone: '',
-            identifiers: [],
+            identifiers: [
+              {
+                id: 'id-email',
+                kind: 'email',
+                value: 'ada@example.test',
+                verified_at: '2026-01-01T00:00:00Z',
+                verified_via: 'idp:github',
+              },
+            ],
             links: [
               { id: 'github-1', provider: 'github', email: 'ada@example.test' },
             ],
@@ -149,6 +166,10 @@ describe('the README quick start, exercised over a real api-client', () => {
 
     // The surfaces settle on the server's answers.
     for (const title of [
+      zhCN.profile.title,
+      zhCN.password.title,
+      zhCN.phone.title,
+      zhCN.identifiers.title,
       zhCN.preferences.title,
       zhCN.sessions.title,
       zhCN.bindings.title,
@@ -177,6 +198,10 @@ describe('the README quick start, exercised over a real api-client', () => {
       await switchLanguage(i18n, 'en-US')
     })
     for (const title of [
+      enUS.profile.title,
+      enUS.password.title,
+      enUS.phone.title,
+      enUS.identifiers.title,
       enUS.preferences.title,
       enUS.sessions.title,
       enUS.bindings.title,
@@ -184,5 +209,8 @@ describe('the README quick start, exercised over a real api-client', () => {
     ]) {
       expect(screen.getByRole('heading', { name: title })).toBeTruthy()
     }
-  })
+    // The composed page renders every account surface over one scripted
+    // client and two languages; the explicit budget covers the render and
+    // axe cost of that class on a loaded runner.
+  }, 20000)
 })
