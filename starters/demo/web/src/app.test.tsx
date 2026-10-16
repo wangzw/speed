@@ -29,9 +29,13 @@ import {
   authenticatedSnapshot,
   createTestSession,
 } from './test-utils/session.js'
+import { DEFAULT_TENANT_ID, getCurrentTenantId, setCurrentTenantId } from './chrome.js'
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
+  // The current tenant is module-level host state (the client's tenantProvider
+  // reads it); reset it so a switch in one test does not leak into the next.
+  setCurrentTenantId(DEFAULT_TENANT_ID)
 })
 
 describe('the app at the root path', () => {
@@ -301,6 +305,10 @@ describe('the tenant area header controls', () => {
     expect(
       screen.getByRole('button', { name: 'Globex Corp.' }),
     ).toBeInTheDocument()
+    // The switch writes the one host-held tenant, so the client's
+    // tenantProvider announces the new tenant on the next request rather
+    // than the departing one.
+    expect(getCurrentTenantId()).toBe('globex')
   })
 
   it('collapses and expands the sidebar from the header control', async () => {

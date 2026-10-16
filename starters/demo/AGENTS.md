@@ -230,7 +230,13 @@ under `server/testdata/` names them:
   `account` endpoint under `authn.gate.mount.base-path` (`/auth` by default).
 - Tenant resolution (`tenant.resolve`) and admission (`tenant.admission`) guard
   `api`; the authorization guard (`authz.guard`) enforces `api`; the rate limiter
-  (`ratelimit`) limits `api`.
+  (`ratelimit`) limits `api`. Resolution reads the tenant from the request's
+  `X-Tenant` header (`tenant.resolve.header-name` in the stack file), so an `api`
+  call without that header is refused 404 -- the tenant is not a claim of the
+  access token, it is a request-time routing fact the caller must announce. The
+  frontend does exactly that: the client built in `bootstrapSpeedApp` announces
+  the host's current tenant as `X-Tenant` (its `tenantProvider`, wired from
+  `starters/demo/web`), read per attempt.
 - The platform's management surfaces mount on `admin`: the roster
   (`tenant.admin`), the authorization catalog (`authz.admin`), the settings
   surface (`settings.admin`) and the journal's query routes (`audit.admin`).

@@ -37,6 +37,7 @@ import {
 import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
 import { AppServicesProvider } from './app-services.js'
 import { DemoApp } from './app.js'
+import { getCurrentTenantId } from './chrome.js'
 import { applyDocumentMetadata } from './document-metadata.js'
 import { DEMO_NAMESPACE, demoResources } from './resources.js'
 import { loadRuntimeConfig } from './runtime-config.js'
@@ -68,6 +69,11 @@ export async function bootstrapDemoApp(
     ],
     view: <DemoApp />,
     baseUrl: apiOrigin,
+    // The tenant every request announces as X-Tenant: the host's current
+    // tenant, read per attempt (src/chrome.tsx holds the one value). The
+    // server's tenant resolution layer reads it off the api endpoint, so
+    // a tenant-scoped call without it is refused 404.
+    tenantProvider: getCurrentTenantId,
   })
   // The entry document's <html lang> and title follow the language the
   // assembly resolved, so an interface rendered in Chinese is announced as

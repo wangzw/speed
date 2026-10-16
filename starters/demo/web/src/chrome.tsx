@@ -54,6 +54,28 @@ export const DEMO_TENANTS: readonly TenantOption[] = [
 /** The tenant the app resolves to before any switch: the placeholder list's first. */
 export const DEFAULT_TENANT_ID: string | null = DEMO_TENANTS[0]?.id ?? null
 
+/**
+ * The host's current tenant, held as a request-time fact. The server
+ * resolves the tenant off the request surface (a header on the api
+ * endpoint), so every tenant-scoped call must announce the tenant the user
+ * is acting in; the client's tenantProvider reads this cell per request,
+ * wired at bootstrap (src/main.tsx). It is the one place the host holds
+ * the current tenant -- the tenant area's React state (src/app.tsx)
+ * projects it for rendering, and a switch writes both, so the value a
+ * request carries and the value the chrome shows never diverge.
+ */
+let currentTenantId: string | null = DEFAULT_TENANT_ID
+
+/** The tenant the client announces on every request (the tenantProvider). */
+export function getCurrentTenantId(): string | null {
+  return currentTenantId
+}
+
+/** Records the host's current tenant; the switcher's pick lands here. */
+export function setCurrentTenantId(tenantId: string | null): void {
+  currentTenantId = tenantId
+}
+
 /** The top bar's brand: the demo namespace's title, in the header's own type. */
 export function AppBrand(): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)

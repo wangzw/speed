@@ -52,8 +52,9 @@ import { useLocation } from 'react-router-dom'
 import { useAppServices } from './app-services.js'
 import {
   AppBrand,
-  DEFAULT_TENANT_ID,
+  getCurrentTenantId,
   HeaderActions,
+  setCurrentTenantId,
   TenantMenu,
   UserMenu,
 } from './chrome.js'
@@ -89,11 +90,18 @@ export function DemoApp(): ReactElement {
 function AppFrame(): ReactElement {
   const items = useNavItems()
   const navigate = useNavigate()
-  // The current tenant is a host fact (the server resolves it per request),
-  // held here and handed to the switcher, which reports a pick back. The
+  // The current tenant is a host fact (the server resolves it per request
+  // from the request's tenant header). chrome.tsx holds the one value --
+  // the client's tenantProvider reads it per request -- and this state
+  // projects it for rendering; the setter writes the cell too, so the
+  // value a request announces and the value the chrome shows agree. The
   // tenant area mounts it on TenantProvider; a switch would update this
-  // state (and, in a product, the route and the departing tenant's cache).
-  const [tenantId, setTenantId] = useState<string | null>(DEFAULT_TENANT_ID)
+  // (and, in a product, the route and the departing tenant's cache).
+  const [tenantId, setTenantIdState] = useState<string | null>(getCurrentTenantId())
+  const setTenantId = (id: string | null): void => {
+    setCurrentTenantId(id)
+    setTenantIdState(id)
+  }
   // The desktop sidebar's collapse state, host-held: the shell renders the
   // toggle (the collapse props are supplied) and reports each flip back.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
