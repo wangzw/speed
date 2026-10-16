@@ -27,7 +27,7 @@
  * namespace's whitelist. The page opens with ui-kit's PageHeader.
  */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -109,6 +109,11 @@ export function PermissionsPage() {
   const unbindRole = operations.useUnbindRole()
 
   const permissions = catalog.data ?? []
+  // The (resource, action) -> permission-code lookup the revoke uses: the
+  // grant route names a permission by its code, while the grant list shows
+  // the pair the engine matches on, so a revoke maps a grant's pair back to
+  // the code that names it (see buildGrantCodeIndex).
+  const codeByPair = useMemo(() => buildGrantCodeIndex(permissions), [permissions])
 
   const roleColumns: DataTableColumn<ConsoleRole>[] = [
     {
@@ -170,24 +175,29 @@ export function PermissionsPage() {
     {
       id: 'actions',
       header: t('permissions.grants.column.actions'),
-      cell: (grant) => (
-        <Button
-          type="button"
-          size="small"
-          variant="outlined"
-          color="error"
-          disabled={revokePermission.isPending}
-          onClick={() =>
-            revokePermission.mutate({
-              tenant,
-              role: selectedRole,
-              permission: grantPermissionString(grant),
-            })
-          }
-        >
-          {t('permissions.grants.revoke')}
-        </Button>
-      ),
+      cell: (grant) => {
+        const code = codeByPair(grant.resource, grant.action)
+        return (
+          <Button
+            type="button"
+            size="small"
+            variant="outlined"
+            color="error"
+            disabled={revokePermission.isPending || code === null}
+            onClick={() => {
+              if (code !== null) {
+                revokePermission.mutate({
+                  tenant,
+                  role: selectedRole,
+                  permission: code,
+                })
+              }
+            }}
+          >
+            {t('permissions.grants.revoke')}
+          </Button>
+        )
+      },
     },
   ]
 
@@ -628,9 +638,56 @@ export function PermissionsPage() {
   )
 }
 
-/** The permission string a grant names: resource and action joined. */
-function grantPermissionString(grant: ConsoleGrant): string {
-  return `${grant.resource}:${grant.action}`
+/**
+ * Builds the (resource, action) -> permission-code lookup the revoke uses,
+ * from the loaded permission catalog.
+ *
+ * A grant route names a permission by its CODE (`PUT`/`DELETE .../grants/
+ * :permission`, e.g. authn.account.create): the handler translates the code
+ * to the (resource, action) pair the engine matches on (pkg/authz/admin's
+ * grant handlers). The grant list, though, shows the pair and not the code,
+ * so a revoke has to map the pair back to a code -- and the page's own
+ * source of the codes is the permission catalog it already loads.
+ *
+ * A code's trailing two dot-separated segments spell its pair
+ * (authn.account.create -> account/create; a bare module code like
+ * audit.read -> audit/read), so those build the primary lookup. Where the
+ * pair's resource is not the code's second-to-last segment (pkg/authz's
+ * translation table is the authority and is not always a suffix of the
+ * code, e.g. authn.mfa.reset -> factor/reset), the pair is matched by its
+ * action alone, and only when the catalog declares that action once; an
+ * action two pairs share (read, manage, ...) stays ambiguous and resolves
+ * to null, so the revoke is not offered a wrong code.
+ *
+ * Returns a function; a pair the catalog does not name resolves to null.
+ */
+function buildGrantCodeIndex(
+  permissions: readonly ConsolePermission[],
+): (resource: string, action: string) => string | null {
+  const byPair = new Map<string, string>()
+  // One code per action, or null once a second code shares the action.
+  const byAction = new Map<string, string | null>()
+  for (const entry of permissions) {
+    const segments = entry.permission.split('.')
+    const action = segments[segments.length - 1] ?? ''
+    if (action === '') {
+      continue
+    }
+    if (segments.length >= 2) {
+      const resource = segments[segments.length - 2] ?? ''
+      if (resource !== '') {
+        byPair.set(`${resource}:${action}`, entry.permission)
+      }
+    }
+    byAction.set(action, byAction.has(action) ? null : entry.permission)
+  }
+  return (resource, action) => {
+    const pair = byPair.get(`${resource}:${action}`)
+    if (pair !== undefined) {
+      return pair
+    }
+    return byAction.get(action) ?? null
+  }
 }
 
 /** The bind button stays disabled until both the account and the role are named. */

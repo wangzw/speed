@@ -74,8 +74,15 @@ function withAuthz(
   return createConsoleOperations(
     makeConsoleBackend({
       listTenants: () => Promise.resolve([TENANT]),
+      // The catalog carries permission CODES (the form the grant routes
+      // name a permission by), not the resource:action pair the grant list
+      // shows -- the page maps a grant's pair back to its code for the
+      // revoke.
       listPermissions: () =>
-        Promise.resolve([permission('deal:read'), permission('deal:write')]),
+        Promise.resolve([
+          permission('crm.deal.read'),
+          permission('crm.deal.write'),
+        ]),
       ...overrides,
     }),
   )
@@ -97,7 +104,7 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     expect(await screen.findByText('editor')).toBeInTheDocument()
-    expect(screen.getByText('deal:read')).toBeInTheDocument()
+    expect(screen.getByText('crm.deal.read')).toBeInTheDocument()
     expect(screen.getByText('acc-1')).toBeInTheDocument()
   })
 
@@ -141,12 +148,42 @@ describe('PermissionsPage', () => {
     await user.click(screen.getByRole('button', { name: '管理授权' }))
     await screen.findByText('deal')
     await user.click(screen.getByLabelText('权限'))
-    await user.click(await screen.findByRole('option', { name: 'deal:write' }))
+    await user.click(await screen.findByRole('option', { name: 'crm.deal.write' }))
     await user.click(screen.getByRole('button', { name: '授予' }))
     await user.click(screen.getByRole('button', { name: '撤销' }))
     await vi.waitFor(() => {
-      expect(granted).toEqual(['deal:write'])
-      expect(revoked).toEqual(['deal:read'])
+      // Grant and revoke name the permission by its CODE, symmetrically:
+      // the granted code is sent back on revoke through the catalog map.
+      expect(granted).toEqual(['crm.deal.write'])
+      expect(revoked).toEqual(['crm.deal.read'])
+    })
+  })
+
+  it('revokes a grant whose resource is not the code segment', async () => {
+    const user = userEvent.setup()
+    const revoked: string[] = []
+    const operations = withAuthz({
+      // The catalog's code is authn.mfa.reset, whose translated pair is
+      // factor/reset (pkg/authz's translation table is its own authority and
+      // is not a suffix of the code); the grant list shows that pair. The
+      // revoke still names the code, resolved by the unique action.
+      listPermissions: () => Promise.resolve([permission('authn.mfa.reset')]),
+      listRoles: () => Promise.resolve([role()]),
+      listGrants: () =>
+        Promise.resolve([grant({ resource: 'factor', action: 'reset' })]),
+      revokePermission: (input) => {
+        revoked.push(input.permission)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('editor')
+    await user.click(screen.getByRole('button', { name: '管理授权' }))
+    await screen.findByText('factor')
+    await user.click(screen.getByRole('button', { name: '撤销' }))
+    await vi.waitFor(() => {
+      expect(revoked).toEqual(['authn.mfa.reset'])
     })
   })
 
