@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/authz/internal/translation"
 )
 
 // forbiddenDetailForTest is the 403's reason class written as a literal and not
@@ -112,8 +113,8 @@ func TestAForbiddenWriteIsA403WithTheModuleType(t *testing.T) {
 			if body.Detail != forbiddenDetailForTest {
 				t.Errorf("detail = %q, want the reason class %q", body.Detail, forbiddenDetailForTest)
 			}
-			for perm := range translation {
-				if strings.Contains(body.Detail, perm) {
+			for _, perm := range translation.Builtin() {
+				if strings.Contains(body.Detail, string(perm)) {
 					t.Errorf("the detail names the permission %q: %q", perm, body.Detail)
 				}
 			}
@@ -151,8 +152,8 @@ func TestAnUnavailableWriteIsA503(t *testing.T) {
 		t.Errorf("the outage detail is %q, want none", body.Detail)
 	}
 	rp.assertAbsent(t, cause.Error())
-	for perm := range translation {
-		if strings.Contains(body.Detail, perm) {
+	for _, perm := range translation.Builtin() {
+		if strings.Contains(body.Detail, string(perm)) {
 			t.Errorf("the outage detail names the permission %q: %q", perm, body.Detail)
 		}
 	}

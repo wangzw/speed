@@ -24,6 +24,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/authz/internal/translation"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -140,8 +141,10 @@ func Module() core.Module {
 			if err := p.gate.verify(); err != nil {
 				// A failed Start must not leave the resolved translation
 				// installed: a later assembly sharing the process would read a set
-				// this one never accepted.
-				processTranslation.Store(nil)
+				// this one never accepted. The set belongs to the policy module,
+				// which resolved it; this is the beat at which an assembly that
+				// did not come up gives it back.
+				translation.Reset()
 				return err
 			}
 			return p.registerMetrics()
@@ -257,17 +260,22 @@ func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 // wire takes up what the middleware reads, registers it on every guarded
 // endpoint and writes the startup diagnostics.
 //
-// It first resolves the process's translation set — the built-in rows unioned
-// with every module's declared rows — because a disagreement there is a startup
-// failure the fix for which is visible before the entry point is touched. The
-// entry point is required: a command that guards routes and has no entry point
-// has nothing to guard, and the failure names the module so the fix — writing
-// the entry point module's name into this command — is visible. Every endpoint
-// in the configured list is looked up on the entry point; a name the entry point
-// does not declare is ErrUnknownEndpoint and stops the startup, because a guard
-// on an endpoint nobody serves guards nothing.
+// The entry point is required: a command that guards routes and has no entry
+// point has nothing to guard, and the failure names the module so the fix —
+// writing the entry point module's name into this command — is visible. Every
+// endpoint in the configured list is looked up on the entry point; a name the
+// entry point does not declare is ErrUnknownEndpoint and stops the startup,
+// because a guard on an endpoint nobody serves guards nothing.
+//
+// The process's translation set is resolved here, and the policy module resolves
+// it too. Resolving is a pure function of the registry and an idempotent write,
+// so the two agree by construction and the second one to run costs a map copy.
+// Both do it because either may be the only one present: this module reads the
+// set on every decision, and a command that writes policy data without guarding
+// anything — a bootstrap that seeds roles — takes the policy module in and leaves
+// this one out, with no HTTP entry point to satisfy.
 func (p *product) wire(reg *core.Registry) error {
-	if err := resolveTranslation(reg); err != nil {
+	if err := translation.Resolve(reg); err != nil {
 		return err
 	}
 	if delivered, found, err := optional[log.Logger](reg, "the logger"); err != nil {
@@ -391,7 +399,7 @@ func (p *product) enforce(c *gin.Context, perm authz.Permission, realm string) {
 		}
 		return
 	}
-	object, action, ok := ObjectAction(perm)
+	object, action, ok := translation.Lookup(perm)
 	if !ok {
 		// A permission the translation does not hold is one this module cannot
 		// express; the safe answer is a denial, the same as the decider gives an
@@ -504,7 +512,7 @@ func (p *product) allowedIn(c *gin.Context, perm authz.Permission, domain authz.
 	if !ok {
 		return false, nil
 	}
-	object, action, ok := ObjectAction(perm)
+	object, action, ok := translation.Lookup(perm)
 	if !ok {
 		return false, nil
 	}

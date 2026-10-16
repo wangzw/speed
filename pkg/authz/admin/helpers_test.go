@@ -12,6 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/authz/guard"
+	"github.com/vislake/speed/pkg/authz/internal/translation"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
@@ -170,6 +171,14 @@ func (c *stubCatalog) asked() []authz.Permission {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]authz.Permission(nil), c.has...)
+}
+
+// ObjectAction answers from the process's translation, as the real catalog does:
+// the pair a permission translates to is one thing for the whole process, and a
+// case asserting against a table of its own would be asserting against a
+// translation no decision is made by.
+func (c *stubCatalog) ObjectAction(p authz.Permission) (object, action string, ok bool) {
+	return translation.Lookup(p)
 }
 
 // stubGuard is a stand-in guard.Guard. It records the permission every decision

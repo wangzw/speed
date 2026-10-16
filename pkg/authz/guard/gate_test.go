@@ -8,6 +8,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/authz/authztest"
+	"github.com/vislake/speed/pkg/authz/internal/translation"
 )
 
 // A declaration is read back as the kind it was made: a required permission, or
@@ -139,10 +140,7 @@ func TestGateLeavesAnUndeclaredRouteUncovered(t *testing.T) {
 // a Go map varies run to run, so the case cannot be satisfied by luck; what it
 // holds is that the loop visits all of them.
 func TestGateVerifyChecksEveryDeclaration(t *testing.T) {
-	inCatalog := make([]authz.Permission, 0, len(translation))
-	for p := range translation {
-		inCatalog = append(inCatalog, authz.Permission(p))
-	}
+	inCatalog := translation.Builtin()
 	catalog := authztest.NewCatalog(inCatalog...)
 
 	// The out-of-catalog permission sits among many in-catalog ones, so a verify

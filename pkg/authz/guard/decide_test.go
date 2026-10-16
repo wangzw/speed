@@ -52,51 +52,6 @@ func identity(t *testing.T, account authn.AccountID, opts ...authntest.Option) a
 	return id
 }
 
-// The translation is the whole closed set: every permission of the two
-// vocabularies maps to its one (object, action) pair, and the set holds no row
-// beyond them. A permission with no row is a decision this module cannot
-// express, and a row with no permission is a mapping nothing can reach.
-func TestTheTranslationIsTheWholeClosedSet(t *testing.T) {
-	want := map[authz.Permission]pair{
-		authz.PermissionTenantAccess:        {object: "tenant", action: "access"},
-		authz.PermissionAccountRead:         {object: "account", action: "read"},
-		authz.PermissionAccountCreate:       {object: "account", action: "create"},
-		authz.PermissionAccountUpdate:       {object: "account", action: "update"},
-		authz.PermissionAccountDisable:      {object: "account", action: "disable"},
-		authz.PermissionAccountDelete:       {object: "account", action: "delete"},
-		authz.PermissionMembershipManage:    {object: "membership", action: "manage"},
-		authz.PermissionSessionRead:         {object: "session", action: "read"},
-		authz.PermissionSessionRevoke:       {object: "session", action: "revoke"},
-		authz.PermissionMFAReset:            {object: "factor", action: "reset"},
-		authz.PermissionClientManage:        {object: "client", action: "manage"},
-		authz.PermissionIDPManage:           {object: "idp", action: "manage"},
-		authz.PermissionImpersonateStart:    {object: "impersonation", action: "start"},
-		authz.PermissionImpersonationRead:   {object: "impersonation", action: "read"},
-		authz.PermissionImpersonationRevoke: {object: "impersonation", action: "revoke"},
-		authz.PermissionRoleRead:            {object: "role", action: "read"},
-		authz.PermissionRoleManage:          {object: "role", action: "manage"},
-		authz.PermissionAuditRead:           {object: "audit", action: "read"},
-		authz.PermissionAuditExport:         {object: "audit", action: "export"},
-		authz.PermissionSettingsRead:        {object: "settings", action: "read"},
-		authz.PermissionSettingsWrite:       {object: "settings", action: "write"},
-	}
-	for p, w := range want {
-		object, action, ok := ObjectAction(p)
-		if !ok || object != w.object || action != w.action {
-			t.Errorf("ObjectAction(%q) = (%q, %q, %t), want (%q, %q, true)",
-				p, object, action, ok, w.object, w.action)
-		}
-	}
-	for p := range translation {
-		if _, ok := want[authz.Permission(p)]; !ok {
-			t.Errorf("the translation holds a row for %q, which no permission names", p)
-		}
-	}
-	if len(translation) != len(want) {
-		t.Errorf("the translation holds %d rows, want %d", len(translation), len(want))
-	}
-}
-
 // A known action is translated to the engine's (object, action) pair and put to
 // the engine with the actor's key and the decision's tenant.
 func TestDecideTranslatesAndQueries(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/authz/internal/translation"
 	"github.com/vislake/speed/pkg/core"
 )
 
@@ -105,6 +106,16 @@ func (c *catalog) Declared() []authz.Permission {
 
 // Has reports whether p is declared.
 func (c *catalog) Has(p authz.Permission) bool { return c.set[p] }
+
+// ObjectAction returns the (object, action) pair a permission translates to.
+//
+// The translation is the process's, resolved once by this module's Init from the
+// built-in rows and every module's declared ones; the catalog does not hold a
+// copy of its own, because a permission's meaning is one thing for the whole
+// process and a second copy could only disagree with the first.
+func (c *catalog) ObjectAction(p authz.Permission) (object, action string, ok bool) {
+	return translation.Lookup(p)
+}
 
 // DescriptionKey returns the i18n key of p's description, and whether p is
 // declared at all.

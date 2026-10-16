@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/authz"
-	"github.com/vislake/speed/pkg/authz/guard"
+	"github.com/vislake/speed/pkg/authz/internal/translation"
 )
 
 // TestAnUnauthorisedGrantDeleteReachesNoManagerAndWritesNoAudit holds the grant
@@ -57,7 +57,7 @@ func TestDeletingAGrantAsksForRoleManageAndLandsOneSuccessRow(t *testing.T) {
 	if len(got) != 1 || got[0].op != "DeleteGrant" {
 		t.Fatalf("the manager calls = %+v, want one DeleteGrant", got)
 	}
-	object, action, _ := guard.ObjectAction(authz.PermissionAccountRead)
+	object, action, _ := translation.Lookup(authz.PermissionAccountRead)
 	if got[0].grant.Tenant != "t1" || string(got[0].grant.Role) != "r1" ||
 		got[0].grant.Resource != object || got[0].grant.Action != action {
 		t.Fatalf("the delete carried %+v, want tenant t1 role r1 pair (%q, %q)", got[0].grant, object, action)
@@ -221,7 +221,7 @@ func TestTheGrantListViewCarriesEveryField(t *testing.T) {
 // manager as its own pair, so an implementation that hardcoded the first pair
 // fails the second.
 func TestGrantingASecondPermissionUsesItsOwnTranslation(t *testing.T) {
-	object, action, ok := guard.ObjectAction(authz.PermissionSessionRead)
+	object, action, ok := translation.Lookup(authz.PermissionSessionRead)
 	if !ok {
 		t.Fatal("authn.session.read has no translation row, so the case cannot hold the pair")
 	}

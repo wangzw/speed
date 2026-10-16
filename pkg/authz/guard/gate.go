@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/authz/internal/translation"
 )
 
 // routeKey identifies one route: the HTTP method and the path pattern the entry
@@ -128,7 +129,7 @@ func (g *gate) verify() error {
 		if !g.catalog.Has(perm) {
 			return fmt.Errorf("%w: %s %s wants %q", authz.ErrUnknownPermission, k.method, k.path, perm)
 		}
-		if _, _, ok := ObjectAction(perm); !ok {
+		if _, _, ok := translation.Lookup(perm); !ok {
 			return fmt.Errorf("%w: %s %s wants %q, which the translation cannot express",
 				authz.ErrUnknownPermission, k.method, k.path, perm)
 		}

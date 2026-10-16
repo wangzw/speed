@@ -27,6 +27,7 @@ import (
 	"testing"
 
 	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/authz/internal/translation"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 )
@@ -137,6 +138,17 @@ func (c *Catalog) Declared() []authz.Permission { return slices.Clone(c.perms) }
 
 // Has implements authz.Catalog.
 func (c *Catalog) Has(p authz.Permission) bool { return c.set[p] }
+
+// ObjectAction implements authz.Catalog by reading the process's translation.
+//
+// It is not a stand-in of its own: a permission's meaning is one thing for the
+// whole process, so a case that fastened a pair of its own here would be
+// asserting against a translation no decision is made by. A case that wants a
+// pair for a permission it declares resolves one through the translation package
+// the way an assembly does.
+func (c *Catalog) ObjectAction(p authz.Permission) (object, action string, ok bool) {
+	return translation.Lookup(p)
+}
 
 // routeKey is one (method, path) declaration's key.
 type routeKey struct{ method, path string }

@@ -12,11 +12,14 @@ API, which lets a handler ask one more question after the middleware let the
 request through. The module declares `authz.guard` and delivers `(*authz.Gate)`,
 `(*Guard)` and `(*authn.Decider)`, each exclusively.
 
-The translation rows for this capability's own permissions live here, and this
-module resolves them with the rows a module declares of its own through
-`authz.TranslationSpec` into the one mapping the whole process decides by: the
+This module resolves the process's translation — the rows for the capability's
+own permissions unioned with the rows a module declares of its own through
+`authz.TranslationSpec` — into the one mapping the whole process decides by: the
 decider and the middleware both read the resolved set, so a permission cannot
-mean one thing on the request path and another on the decider's path.
+mean one thing on the request path and another on the decider's path. The rows
+and the resolved set live in `pkg/authz/internal/translation`, and `authz.policy`
+resolves them too, because a command that writes policy data without guarding a
+route takes that module and no HTTP entry point.
 
 The API is the package's godoc, the seam in `pkg/authn` (`Decision`, `Action`,
 `Decider`), and the declaration surface in `pkg/authz` (`Gate`).
@@ -70,14 +73,15 @@ The API is the package's godoc, the seam in `pkg/authn` (`Decision`, `Action`,
 - **`Decide` refuses an action the resolved translation has no row for.** The
   mapping from a permission to the (object, action) pair is the built-in rows
   unioned with the rows the registered modules declared through
-  `authz.TranslationSpec`, resolved once before the declaration window closes.
-  An action with no row returns `(false, nil)` — a denial and not an error — so
-  an action the authentication side added is refused until a row is added, which
-  is the safe direction; the parity guard in the parent directory
-  (`action_parity_test.go`) holds the built-in rows and the two vocabularies
-  aligned. `ObjectAction` is the one reader of the resolved set, shared with the
-  middleware. The middleware treats a declared permission with no row the same
-  way: a denial.
+  `authz.TranslationSpec`, resolved once in this module's `Init`, before the
+  declaration window closes. An action with no row returns `(false, nil)` — a
+  denial and not an error — so an action the authentication side added is refused
+  until a row is added, which is the safe direction; the parity guard in the
+  parent directory (`action_parity_test.go`) holds the built-in rows and the two
+  vocabularies aligned. `translation.Lookup` is the one reader of the resolved
+  set, shared with the middleware and with the management surface through the
+  catalog. The middleware treats a declared permission with no row the same way:
+  a denial.
 - **The resolved set is consistent by construction.** Resolving the translation
   refuses a declared row whose object or action is empty (the engine matches a
   permission on its pair alone, so an empty pair is one no grant can carry), a
@@ -86,14 +90,21 @@ The API is the package's godoc, the seam in `pkg/authn` (`Decision`, `Action`,
   one to it), and a row that disagrees with one already in the set. Each fails
   the startup, wrapped around `authz.ErrUnknownPermission`, and the failed
   resolution installs nothing; a row that agrees with one already there is kept
-  once. `TestAnEmptyTranslationRowFailsResolution`,
+  once. Every registered module's rows and every row of a module reach the set.
+  The cases holding this are `pkg/authz/internal/translation`'s, where the
+  resolution lives: `TestAnEmptyTranslationRowFailsResolution`,
   `TestASharedPairFailsResolution`, `TestATranslationConflictFailsResolution`,
-  `TestAnAgreeingTranslationRowIsKept`.
-- **Every registered module's rows, and every row of a module, reach the set.**
-  The union walks each registered `authz.TranslationSpec` and each of its rows,
-  so a second business module and a module's second permission are translated
-  alike. `TestEachModulesRowReachesTheTranslation`,
-  `TestEveryRowOfAModuleReachesTheTranslation`.
+  `TestAnAgreeingTranslationRowIsKept`,
+  `TestEachModulesRowReachesTheTranslation`,
+  `TestEveryRowOfAModuleReachesTheTranslation`,
+  `TestTheBuiltinRowsSurviveTheUnion`.
+- **This module's faces see the union, and refuse what no row covers.** A route
+  that names a module's declared permission passes the declaration check, the
+  middleware decides it on the pair the module declared, and a permission outside
+  the union is refused by the declaration check and denied by the decider.
+  `TestAModuleDeclaredPermissionIsAccepted`,
+  `TestTheMiddlewareTranslatesAModuleDeclaredPermission`,
+  `TestAPermissionOutsideTheUnionIsRefused`.
 - **`authn.tenant.access` is the one action with a platform-domain fallback.** In
   the decider it decides in the tenant's own domain first, and only on a miss
   does it decide again in `PlatformDomain`; two misses are a denial. Every other
@@ -143,7 +154,9 @@ The API is the package's godoc, the seam in `pkg/authn` (`Decision`, `Action`,
   the route and the permission. It is a startup diagnostic, not a response, so
   naming the permission does not open the policy-probing path the 403's detail is
   kept clear of. A failed `Start` clears the process translation `Init`
-  installed, so an assembly that fails leaves no set serving.
+  installed, so an assembly that fails leaves no set serving; the set belongs to
+  `pkg/authz/internal/translation`, which this is the beat at which an assembly
+  gives it back.
   `TestARouteOnAnUndeclaredPermissionFailsStart`,
   `TestAFailedStartClearsTheProcessTranslation`.
 - **`Prepare` states `StateEnabled` and never `StateAuto`.** `StateAuto` is the

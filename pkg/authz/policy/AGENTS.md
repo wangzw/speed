@@ -2,10 +2,17 @@
 
 The authorization policy module `authz.policy`. It owns the policy tables and
 their migrations, the thin store the engine reads and writes through, the
-Casbin engine snapshot the decisions read, the permission catalog, the
-management surface over the policy data, and the account lifecycle cleanup. It
-delivers `authz.Enforcer`, `authz.Catalog` and `authz.Manager`, each
-exclusively, and implements `authn.AccountLifecycle`.
+Casbin engine snapshot the decisions read, the permission catalog with the
+translation beside it, the management surface over the policy data, and the
+account lifecycle cleanup. It delivers `authz.Enforcer`, `authz.Catalog` and
+`authz.Manager`, each exclusively, and implements `authn.AccountLifecycle`.
+
+Resolving the process's permission translation belongs here as much as the
+catalog does: the two are built over the same registered modules, and a host
+command that writes policy data in a permission's name — a bootstrap that seeds
+a role — takes this module in and reads the (object, action) pair a permission
+translates to through `authz.Catalog.ObjectAction`, without the enforcement
+module and without the HTTP entry point that module requires.
 
 The Casbin engine and the database it reads live here and nowhere else, so a
 host that only guards routes carries no policy store. The thin adapter and the

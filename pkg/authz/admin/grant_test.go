@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/vislake/speed/pkg/authz"
-	"github.com/vislake/speed/pkg/authz/guard"
+	"github.com/vislake/speed/pkg/authz/internal/translation"
 )
 
 // TestGrantingAPermissionOutsideTheCatalogIsRefused holds the grant write's own
@@ -56,7 +56,7 @@ func TestGrantingATranslatedPermissionCallsPutGrantWithThePair(t *testing.T) {
 	if grant.Tenant != "t1" || string(grant.Role) != "r1" {
 		t.Fatalf("the grant names tenant %q role %q, want t1 and r1", grant.Tenant, grant.Role)
 	}
-	object, action, ok := guard.ObjectAction(authz.PermissionAccountRead)
+	object, action, ok := translation.Lookup(authz.PermissionAccountRead)
 	if !ok {
 		t.Fatal("authn.account.read has no translation row, so the case cannot hold the pair")
 	}
@@ -103,7 +103,7 @@ func TestDeletingAnAbsentGrantIsIdempotent(t *testing.T) {
 	if len(got) != 1 || got[0].op != "DeleteGrant" {
 		t.Fatalf("the manager calls = %+v, want one DeleteGrant", got)
 	}
-	object, action, _ := guard.ObjectAction(authz.PermissionAccountRead)
+	object, action, _ := translation.Lookup(authz.PermissionAccountRead)
 	if got[0].grant.Resource != object || got[0].grant.Action != action {
 		t.Fatalf("the delete carried the pair (%q, %q), want the translation (%q, %q)",
 			got[0].grant.Resource, got[0].grant.Action, object, action)

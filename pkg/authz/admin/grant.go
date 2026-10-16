@@ -6,7 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/authz"
-	"github.com/vislake/speed/pkg/authz/guard"
 )
 
 // handleGrantList answers GET /authz/admin/tenants/:tenant/roles/:role/grants:
@@ -54,7 +53,7 @@ func (p *product) handleGrantPut(c *gin.Context) {
 		p.bad(c)
 		return
 	}
-	resource, action, ok := guard.ObjectAction(permission)
+	resource, action, ok := p.catalog.ObjectAction(permission)
 	if !ok {
 		p.bad(c)
 		return
@@ -93,7 +92,7 @@ func (p *product) handleGrantDelete(c *gin.Context) {
 	}
 	tenant, role := c.Param("tenant"), authz.Role(c.Param("role"))
 	permission := authz.Permission(c.Param("permission"))
-	resource, action, ok := guard.ObjectAction(permission)
+	resource, action, ok := p.catalog.ObjectAction(permission)
 	if !ok {
 		p.bad(c)
 		return

@@ -11,13 +11,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
-	"github.com/vislake/speed/pkg/authz/guard"
+	"github.com/vislake/speed/pkg/authz/internal/translation"
 	"github.com/vislake/speed/pkg/authz/policy"
 	"github.com/vislake/speed/pkg/core"
 )
@@ -30,9 +31,9 @@ import (
 // are read from the packages' own sources, so a constant of either type added on
 // either side is seen here without a second list to keep in step.
 //
-// The guard runs from package authz_test because it imports the guard
-// subpackage, which imports the root package: an internal test of the root could
-// not import it without a cycle.
+// The guard runs from package authz_test because it imports subpackages of this
+// directory, which import the root package: an internal test of the root could
+// not import them without a cycle.
 
 // thisDir is this test file's directory, the root package pkg/authz. It is read
 // from the file's own location so that the guard reads the sources wherever go
@@ -153,7 +154,7 @@ func TestEveryActionHasAMatchingPermission(t *testing.T) {
 		if !permissionStrings[value] {
 			t.Errorf("authn.%s (%q) has no permission constant with the same string", name, value)
 		}
-		if object, action, ok := guard.ObjectAction(authz.Permission(value)); !ok || object == "" || action == "" {
+		if object, action, ok := translation.Lookup(authz.Permission(value)); !ok || object == "" || action == "" {
 			t.Errorf("the translation holds no row for authn.%s (%q): got (%q, %q, %t)",
 				name, value, object, action, ok)
 		}
@@ -181,7 +182,7 @@ func TestTheTranslationCoversEveryPermission(t *testing.T) {
 	}
 	for _, name := range sortedNames(permissions) {
 		value := permissions[name]
-		object, action, ok := guard.ObjectAction(authz.Permission(value))
+		object, action, ok := translation.Lookup(authz.Permission(value))
 		if !ok {
 			t.Errorf("authz.%s (%q) has no translation row", name, value)
 			continue
@@ -271,12 +272,18 @@ func catalogOf(_ *testing.T, reg *core.Registry) map[string]bool {
 	return declared
 }
 
-// translated reports whether a declared permission has a translation row: the
-// guard's built-in rows for a permission constant, or a registered module's
+// translated reports whether a declared permission has a translation row: a
+// built-in row for a permission constant, or a registered module's
 // TranslationSpec row for a permission of its own. It is the two sources the
-// enforcement module unions into its translation.
+// leaves union into the process's translation.
+//
+// The built-in half is read through Builtin and never through Lookup, which
+// answers from whatever set the process last resolved: a case in this binary
+// that drove an assembly would otherwise make a permission nothing declares a
+// row for look translated, and this guard would pass over the gap it exists to
+// find.
 func translated(reg *core.Registry, permission authz.Permission) bool {
-	if _, _, ok := guard.ObjectAction(permission); ok {
+	if slices.Contains(translation.Builtin(), permission) {
 		return true
 	}
 	for _, resource := range core.Resources[authz.TranslationSpec](reg) {

@@ -130,6 +130,7 @@ func TestTheCapabilityInterfacesHoldTheirMethodSets(t *testing.T) {
 			[]string{
 				"Declared func() []authz.Permission",
 				"Has func(authz.Permission) bool",
+				"ObjectAction func(authz.Permission) (string, string, bool)",
 			},
 		},
 		{

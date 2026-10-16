@@ -6,11 +6,11 @@ imports; `pkg/authz/policy` — the module that owns the policy tables and their
 migrations, the thin store the engine reads and writes through, the permission
 catalog, the engine snapshot the decisions read, the manager that reads and
 writes the policy data, and the account lifecycle cleanup — `pkg/authz/guard`,
-the module that implements the authentication capability's decision seam and
-holds the one permission translation, and `pkg/authz/authztest`, the fixtures a
-test of this directory drives. The thin adapter the engine stores its policy
-through and the snapshot holder live under `pkg/authz/internal/`, which only
-this directory can import.
+the module that implements the authentication capability's decision seam, and
+`pkg/authz/authztest`, the fixtures a test of this directory drives. The thin
+adapter the engine stores its policy through, the snapshot holder, and the one
+permission translation live under `pkg/authz/internal/`, which only this
+directory can import.
 
 The management surface's routes are this directory's third module,
 `authz.admin`: it mounts them under `/authz/admin/*`, delivers nothing of its
@@ -80,11 +80,16 @@ before writing a consumer.
   around the adapter, or that writes policy rows without it, is the shape to
   reject.
 - **The translation is this capability's rows unioned with every module's
-  declared rows, and a permission no row covers is refused.** `guard` carries
-  the rows for this capability's own permissions, and a module that declares a
-  permission of its own declares its (object, action) row beside it through
-  `authz.TranslationSpec`; the enforcement module resolves the two into the one
-  mapping the engine matches on, once, before any route is checked. An action no
+  declared rows, and a permission no row covers is refused.** `internal/translation`
+  carries the rows for this capability's own permissions, and a module that
+  declares a permission of its own declares its (object, action) row beside it
+  through `authz.TranslationSpec`; `authz.policy` and `authz.guard` each resolve
+  the two into the one mapping the engine matches on, in their `Init`, before any
+  route is checked. Resolving is a pure function of the registry and an
+  idempotent write, so the two agree by construction; both do it because either
+  may be the only one present, and a command that writes policy data without
+  guarding a route takes the policy module and no HTTP entry point. A host reads
+  the pair for a permission through `authz.Catalog.ObjectAction`. An action no
   resolved row covers is a denial without an error, so that an action the
   authentication side added is refused until a row is added here;
   `action_parity_test.go` holds the built-in rows to the two vocabularies. A

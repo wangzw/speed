@@ -378,10 +378,10 @@ func TestTheDeclaredRowsReachTheProcessTranslation(t *testing.T) {
 		t.Fatalf("the drive failed: %v", err)
 	}
 
-	if object, action, ok := guard.ObjectAction(PermissionTemplateRead); !ok || object != templateObject || action != "read" {
+	if object, action, ok := catalog.ObjectAction(PermissionTemplateRead); !ok || object != templateObject || action != "read" {
 		t.Errorf("template.read resolves to %q/%q ok=%v after the drive, want %q/read", object, action, ok, templateObject)
 	}
-	if object, action, ok := guard.ObjectAction(PermissionTemplateManage); !ok || object != templateObject || action != "manage" {
+	if object, action, ok := catalog.ObjectAction(PermissionTemplateManage); !ok || object != templateObject || action != "manage" {
 		t.Errorf("template.manage resolves to %q/%q ok=%v after the drive, want %q/manage", object, action, ok, templateObject)
 	}
 }

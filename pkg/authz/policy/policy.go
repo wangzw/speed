@@ -24,6 +24,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/authz/internal/policy"
+	"github.com/vislake/speed/pkg/authz/internal/translation"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
@@ -155,6 +156,14 @@ func Module() core.Module {
 			if p, ok := productOf(instance); ok {
 				p.stopRefresh()
 			}
+			// The process's translation is given back with the assembly that
+			// resolved it: Stop runs at the end of every drive, the one that
+			// arrived and the one that failed on the way, so a later assembly
+			// sharing the process resolves its own set rather than reading this
+			// one's. An entry point has already drained by this point — Stop
+			// reaches the entry points first — so no request is deciding on the
+			// set being dropped.
+			translation.Reset()
 			return nil
 		},
 	}
@@ -203,8 +212,21 @@ func productOf(instance any) (*product, bool) {
 	return p, ok
 }
 
-// wire takes up the optional capabilities and subscribes to the change event.
+// wire resolves the process's permission translation and takes up the optional
+// capabilities, and subscribes to the change event.
+//
+// The translation is resolved first, because it is the vocabulary the policy
+// data is written in and a disagreement in it is a startup failure the fix for
+// which is visible before anything else runs. This module owns the resolution
+// rather than the enforcement module reading decisions off it: the catalog and
+// the translation are built over the same registered modules and are one set of
+// data, and this module is the one every command that writes policy data already
+// takes in — so a bootstrap that seeds roles reaches the translation without the
+// enforcement module and without the HTTP entry point that module requires.
 func (p *product) wire(reg *core.Registry) error {
+	if err := translation.Resolve(reg); err != nil {
+		return err
+	}
 	if delivered, found, err := optional[log.Logger](reg, "the logger"); err != nil {
 		return err
 	} else if found {
@@ -297,6 +319,11 @@ func (p *product) Declared() []authz.Permission { return p.catalog.Declared() }
 
 // Has implements authz.Catalog.
 func (p *product) Has(perm authz.Permission) bool { return p.catalog.Has(perm) }
+
+// ObjectAction answers the (object, action) pair a permission translates to.
+func (p *product) ObjectAction(perm authz.Permission) (object, action string, ok bool) {
+	return p.catalog.ObjectAction(perm)
+}
 
 // swap reads the whole policy and installs it as the current snapshot. It is
 // the same operation for every trigger — the startup load, a write, a delivered

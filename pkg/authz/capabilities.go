@@ -16,15 +16,34 @@ type Enforcer interface {
 	Allowed(ctx context.Context, q Query) (bool, error)
 }
 
-// Catalog is the set of permissions this capability declares. It is delivered
-// exclusively by the policy subpackage and read by whatever enumerates the
-// permissions, such as a management surface's permission picker.
+// Catalog is the set of permissions this capability declares, and what each of
+// them translates to. It is delivered exclusively by the policy subpackage and
+// read by whatever enumerates the permissions, such as a management surface's
+// permission picker, and by a host command that writes policy data in permission
+// names — the grant table holds the (object, action) pair, not the permission, so
+// writing one takes the translation.
+//
+// It carries the translation because the two are one set of data: the catalog is
+// every module's declared permissions, and the translation is a row for every one
+// of them. Reading it here is what lets a caller reach the translation without
+// the enforcement module, and so without the HTTP entry point that module
+// requires.
 type Catalog interface {
 	// Declared returns every declared permission. The result is a copy: a
 	// caller sorting or trimming it does not disturb what the next caller sees.
 	Declared() []Permission
 	// Has reports whether p is a declared permission.
 	Has(p Permission) bool
+	// ObjectAction returns the (object, action) pair a permission translates to,
+	// and whether the translation has a row for it at all.
+	//
+	// A declared permission need not have one. The catalog is built from the
+	// modules' PermissionSpec and the translation from their TranslationSpec, and
+	// a module may declare the first without the second — a legal assembly in
+	// which a route naming that permission fails the startup and nothing else
+	// does. A caller that writes policy data in a permission's name therefore
+	// reads the second result: one that is false means there is no pair to write.
+	ObjectAction(p Permission) (object, action string, ok bool)
 }
 
 // Gate is the route declaration surface: it records the permission one

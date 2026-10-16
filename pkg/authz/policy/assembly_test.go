@@ -225,3 +225,72 @@ func TestTheStartupRefusesThePlatformDomainTaken(t *testing.T) {
 		t.Fatalf("the drive ended with %v, want ErrPlatformDomainTaken", err)
 	}
 }
+
+// A command that writes policy data in a permission's name reaches the
+// translation without the enforcement module and without an HTTP entry point:
+// the catalog this module delivers answers the (object, action) pair a
+// permission translates to, for a permission the capability carries and for one
+// a module declared of its own.
+//
+// The drive names no guard module, and that is the whole of what the case holds.
+// The enforcement module is where a decision reads the translation, and it
+// refuses to wire without an entry point — so while the translation was resolved
+// there, a bootstrap that seeds roles had to stand an entry point up to write a
+// grant. Its absence here is the fix.
+func TestTheCatalogTranslatesWithoutTheGuardModule(t *testing.T) {
+	declared := authz.Permission("crm.deal.read")
+	translator := core.Module{
+		Name: "stand-in.translator",
+		Resources: []any{
+			authz.PermissionSpec{Permissions: []authz.Permission{declared}},
+			authz.TranslationSpec{Rows: map[authz.Permission]authz.Translation{
+				declared: {Object: "deal", Action: "read"},
+			}},
+		},
+	}
+
+	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "authz.db"), nil)
+	createTables(t, database.DB())
+
+	policyModule := policy.Module()
+	reader := authztest.ConfigReaderAll(t, `{}`, policyModule, translator)
+
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Supply(reader, config.ModuleName)
+	reg.Register(policyModule)
+	reg.Register(translator)
+	stand := dbStandIn{name: "stand-in.database", base: database}
+	reg.Register(stand.module())
+
+	names := []string{policyModule.Name, translator.Name, stand.name}
+	err := reg.Drive(t.Context(), core.Drive{
+		Depth:        core.StageStart,
+		Participants: names,
+		Action: func(_ context.Context, reg *core.Registry) error {
+			catalog, err := core.Resolve[authz.Catalog](reg)
+			if err != nil {
+				return err
+			}
+			cases := []struct {
+				permission authz.Permission
+				object     string
+				action     string
+			}{
+				{authz.PermissionAccountRead, "account", "read"},
+				{declared, "deal", "read"},
+			}
+			for _, tc := range cases {
+				object, action, ok := catalog.ObjectAction(tc.permission)
+				if !ok || object != tc.object || action != tc.action {
+					t.Errorf("the catalog translates %q to (%q, %q, %t) with no guard module and no entry point, "+
+						"want (%q, %q, true)", tc.permission, object, action, ok, tc.object, tc.action)
+				}
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("the drive failed: %v", err)
+	}
+}

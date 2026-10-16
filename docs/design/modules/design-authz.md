@@ -208,7 +208,7 @@ const (
 )
 ```
 
-上列常量是本能力自己携带的权限。一个模块若拥有本能力未声明的业务权限，以自己的 `PermissionSpec` 声明这份清单、以自己的 `TranslationSpec` 声明每个权限的（资源，动作）行；两者随该模块的资源登记进注册表，`authz.policy` 把清单并入目录、`authz.guard` 把行并入进程的翻译，都在 `Init` 里完成（见[动作到查询的翻译](#动作到查询的翻译)与[扩展点](#扩展点)）。**说明文案由声明权限的那个模块自己承载**：它以一份消息目录（`i18n.Catalog` 资源）给出每个权限的 `DescriptionKeys` 条目连同文本，目录随它的资源声明进 i18n 引擎；管理面读到的因此是一句读得懂的话，而不是一条键。声明权限的模块自带文案是唯一的口径——`authz.policy` 自己声明的权限同样如此。
+上列常量是本能力自己携带的权限。一个模块若拥有本能力未声明的业务权限，以自己的 `PermissionSpec` 声明这份清单、以自己的 `TranslationSpec` 声明每个权限的（资源，动作）行；两者随该模块的资源登记进注册表，`authz.policy` 把清单并入目录，行则并入 `authz.policy` 与 `authz.guard` 各自的 `Init` 所解析的进程翻译（见[动作到查询的翻译](#动作到查询的翻译)与[扩展点](#扩展点)）。**说明文案由声明权限的那个模块自己承载**：它以一份消息目录（`i18n.Catalog` 资源）给出每个权限的 `DescriptionKeys` 条目连同文本，目录随它的资源声明进 i18n 引擎；管理面读到的因此是一句读得懂的话，而不是一条键。声明权限的模块自带文案是唯一的口径——`authz.policy` 自己声明的权限同样如此。
 
 ### 承接的权限点
 
@@ -221,7 +221,7 @@ const (
 
 ### 动作到查询的翻译
 
-`authz.guard` 把一次判定翻成一次 `Enforcer.Allowed` 调用：中间件翻的是路由声明的 `Permission`，`Decider` 翻的是 `Decision.Action`（`authn.Action` 的取值，与权限常量逐一相同）。两条路径用**同一份权限到（资源，动作）映射**给出 `Query.Object` 与 `Query.Action`。下表是这份映射的**内置行**，即本能力自己携带的行；进程的翻译是内置行与**每个已登记模块经 `authz.TranslationSpec` 声明的行**的并集，`authz.guard` 在 `Init` 里解析一次（在登记窗口关闭之前），此后不再改写。一个模块不得与既有行分歧：同一个权限配两行不同的（资源，动作）是启动失败，包在 `authz.ErrUnknownPermission` 上；与既有行一致的行并入同一行、去重。没有任何行覆盖的权限被拒——`Decider` 收到它时返回 `(false, nil)`，路由声明引用它则在启动期以 `ErrUnknownPermission` 终止。`Query.Subject` 取主体的标识：中间件取 `Identity.Key()`，`Decider` 取 `Decision.Actor.Key()`。
+`authz.guard` 把一次判定翻成一次 `Enforcer.Allowed` 调用：中间件翻的是路由声明的 `Permission`，`Decider` 翻的是 `Decision.Action`（`authn.Action` 的取值，与权限常量逐一相同）。两条路径用**同一份权限到（资源，动作）映射**给出 `Query.Object` 与 `Query.Action`。下表是这份映射的**内置行**，即本能力自己携带的行；进程的翻译是内置行与**每个已登记模块经 `authz.TranslationSpec` 声明的行**的并集，由 `authz.policy` 或 `authz.guard` 在各自的 `Init` 里解析一次（在登记窗口关闭之前），此后不再改写。两者的解析是注册表的纯函数且写入幂等，结果必是同一份；两个都解析，是因为任何一个都可能单独在场——写策略数据而不守卫任何路由的命令只纳入 `authz.policy`，而 `authz.guard` 要求 HTTP 入口存在，那种命令没有入口可给。一个模块不得与既有行分歧：同一个权限配两行不同的（资源，动作）是启动失败，包在 `authz.ErrUnknownPermission` 上；与既有行一致的行并入同一行、去重。没有任何行覆盖的权限被拒——`Decider` 收到它时返回 `(false, nil)`，路由声明引用它则在启动期以 `ErrUnknownPermission` 终止。`Query.Subject` 取主体的标识：中间件取 `Identity.Key()`，`Decider` 取 `Decision.Actor.Key()`。
 
 | 权限 | `Query.Object` | `Query.Action` |
 |---|---|---|
@@ -312,7 +312,7 @@ const (
 
 以下是本模块与其他模块和宿主之间的契约，改动它们改变每一个消费者：
 
-- 根包的接口与方法集：`Enforcer`、`Catalog`、`Gate`、`Manager`，以及 `Permission`、`Role`、`Domain`、`Query`、`Requirement`、`PermissionSpec`、`Translation`、`TranslationSpec`、`Binding` 的字段与取值。
+- 根包的接口与方法集：`Enforcer`、`Catalog`、`Gate`、`Manager`，以及 `Permission`、`Role`、`Domain`、`Query`、`Requirement`、`PermissionSpec`、`Translation`、`TranslationSpec`、`Binding` 的字段与取值。`Catalog` 的方法集含 `ObjectAction`：宿主按权限名写策略数据时经它取得（资源，动作）对，而不必取用强制点。它回答的是**进程翻译**里的那一行，与目录各取各的声明——`Has` 为真的权限不保证有行（模块可以只声明 `PermissionSpec` 而不写 `TranslationSpec`，那种模块合法，引用该权限的路由在启动期失败），因此调用方必须读第二个返回值。
 - 权限常量的值。常量一经发布不改名；新增常量不改已有常量。与 `authn.Action` 的对齐关系是稳定面。
 - `ModelText` 的模型文本，与动作到查询的翻译：内置行（本能力自己携带的行），各模块经 `authz.TranslationSpec` 声明自有翻译行的机制，以及「未被任何行覆盖的权限即拒、模块声明的行与既有行分歧即启动失败」这两条语义；一个模块新声明的行是这份翻译的扩展，不是对已有行的破坏。
 - 平台域的保留值 `"system"`。
@@ -704,7 +704,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 - **路由声明的登记面（`Gate`）。** 任何模块在 `Init` 里经 `Gate.Require`/`Gate.Open` 为一条（方法，路径）声明访问级别；`authz.guard` 用它同时服务请求期中间件与 `Decider`。一个模块也可以在自己的 handler 里经 `Guard` 问一句；判定域不是请求解析出的那个时，用它的显式域形式 `RequirePermissionIn` 点名域，`authz.admin` 就经它在平台域判定（见[管理面](#管理面)）。
 - **`authn.Decider` 由本模块交付。** 宿主若换上自己的实现，`authz.guard` 不再交付它；本模块的中间件与 handler API 不受影响，只有认证侧的管理面与冒充改走宿主的判定。
 - **`Catalog` 是权限目录的读取面。** 需要枚举已登记权限的消费方（例如生成管理面的权限选择器）经它取用。新增一个权限常量即进入目录，登记它的路由随即可引用；未登记的权限引用在启动期以 `ErrUnknownPermission` 终止。
-- **模块声明的权限与它们的翻译行（`PermissionSpec`、`TranslationSpec`）。** 一个模块若拥有本能力未声明的业务权限，以自己的 `PermissionSpec` 声明清单、以自己的 `TranslationSpec` 声明每个权限的（资源，动作）行；两者随该模块的资源登记进注册表，`authz.policy` 把清单并入目录、`authz.guard` 把行并入进程的翻译。声明了权限而不声明其翻译行的模块，会让引用该权限的路由在启动期以 `ErrUnknownPermission` 终止——一条翻译不出的权限没有路由能命名。缺文案目录不是启动失败：i18n 引擎对没有条目的键回落到键本身，那条权限以键的形态显示出来。
+- **模块声明的权限与它们的翻译行（`PermissionSpec`、`TranslationSpec`）。** 一个模块若拥有本能力未声明的业务权限，以自己的 `PermissionSpec` 声明清单、以自己的 `TranslationSpec` 声明每个权限的（资源，动作）行；两者随该模块的资源登记进注册表，`authz.policy` 把清单并入目录，行则并入进程的翻译。声明了权限而不声明其翻译行的模块，会让引用该权限的路由在启动期以 `ErrUnknownPermission` 终止——一条翻译不出的权限没有路由能命名。缺文案目录不是启动失败：i18n 引擎对没有条目的键回落到键本身，那条权限以键的形态显示出来。
 
 ## 实现状态
 
@@ -712,7 +712,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包的类型与判定接口：`Permission`、`Role`、`Domain`、`PermissionSpec`、`Translation`、`TranslationSpec`、`Query`、`Requirement`、`Binding`、`RoleRecord`、`GrantRecord`、`Enforcer`、`Catalog`、`Gate`、`Manager` | 已实现 | `pkg/authz/types.go`；`pkg/authz/capabilities.go` |
+| 根包的类型与判定接口：`Permission`、`Role`、`Domain`、`PermissionSpec`、`Translation`、`TranslationSpec`、`Query`、`Requirement`、`Binding`、`RoleRecord`、`GrantRecord`、`Enforcer`、`Catalog`（含 `ObjectAction`）、`Gate`、`Manager` | 已实现 | `pkg/authz/types.go`；`pkg/authz/capabilities.go` |
 | 权限常量与 `authn.Action` 的对齐、平台域保留值 | 已实现 | `pkg/authz/permissions.go` `PermissionAccountRead` …、`PlatformDomain` |
 | 平台域与真实租户同名的启动期核对 | 已实现 | `pkg/authz/policy/platform.go` `checkPlatformDomain` |
 | `ModelText` 模型文本常量 | 已实现 | `pkg/authz/model.go` `ModelText` |
@@ -722,7 +722,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 | 薄 adapter（`persist.Adapter`）、跨租户读与租户核对的写 | 已实现 | `pkg/authz/internal/persist/adapter.go` `Adapter`、`New` |
 | Casbin 引擎装载、不可变快照与原子换指针 | 已实现 | `pkg/authz/internal/policy/policy.go` `Snapshot`、`Load`、`Holder`（`Get`/`Swap` 即原子指针的读写） |
 | 启动期模型自检与夹具 | 已实现 | `pkg/authz/internal/policy/selftest.go` `SelfCheck`（夹具同包） |
-| 权限目录：各已登记模块声明的 `PermissionSpec` 并成一个目录 | 已实现 | `pkg/authz/policy/catalog.go` `permissions`、`buildCatalog`（目录类型未导出，读取面是根包的 `Catalog`） |
+| 权限目录：各已登记模块声明的 `PermissionSpec` 并成一个目录，以及目录对（资源，动作）的翻译 | 已实现 | `pkg/authz/policy/catalog.go` `permissions`、`buildCatalog`、`(*catalog).ObjectAction`（目录类型未导出，读取面是根包的 `Catalog`） |
 | `Manager` 的策略读写 | 已实现 | `pkg/authz/policy/manager.go` `(*product).Roles` … `(*product).DeleteBinding`（接口在 `pkg/authz/capabilities.go`） |
 | `AccountLifecycle` 清理（账户删除与停用钩子） | 已实现 | `pkg/authz/policy/lifecycle.go` `AccountDeleted`、`AccountDisabled`、`ServiceSecretRevoked` |
 | `authz.policy.changed` 事件发布与订阅、`refresh-interval` 周期重载 | 已实现 | `pkg/authz/policy/policy.go` `wire`（订阅）、`publish`、`reload` |
@@ -732,8 +732,9 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 | 请求期中间件与授权阶段登记 | 已实现 | `pkg/authz/guard/guard.go` `wire`、`middlewareFor`、`handle`、`enforce` |
 | 路由声明的登记表实现（`Gate` 的 `Require`/`Open`/`Covered`） | 已实现 | `pkg/authz/guard/gate.go` `gate`、`(*gate).verify`；交付经 `pkg/authz/guard/guard.go` `(*product).Require`、`(*product).Open`、`(*product).Covered` |
 | handler 内判定 API `Guard`（`authz.guard` 随中间件交付） | 已实现 | `pkg/authz/guard/guard.go` `Guard`、`(*product).Allowed`、`(*product).RequirePermission`、`(*product).RequirePermissionIn` |
-| `authn.Decider` 的实现、动作翻译表与未知动作 fail-closed | 已实现 | `pkg/authz/guard/decide.go` `translation`、`processTranslation`、`resolveTranslation`、`ObjectAction`、`(*product).Decide` |
-| 翻译扩展点：模块经 `authz.TranslationSpec` 声明的行并入进程的翻译，冲突即启动失败 | 已实现 | `pkg/authz/types.go` `Translation`、`TranslationSpec`；`pkg/authz/guard/decide.go` `resolveTranslation`、`processTranslation` |
+| `authn.Decider` 的实现与未知动作 fail-closed | 已实现 | `pkg/authz/guard/decide.go` `(*product).Decide` |
+| 动作翻译表：内置行、进程级已解析集合与读取 | 已实现 | `pkg/authz/internal/translation/translation.go` `builtin`、`process`、`Lookup`、`Builtin`、`Reset`；解析时机见 `pkg/authz/policy/policy.go` `(*product).wire`、`pkg/authz/guard/guard.go` `(*product).wire`；宿主可见的读取口 `pkg/authz/capabilities.go` `Catalog.ObjectAction`、`pkg/authz/policy/catalog.go` `(*catalog).ObjectAction` |
+| 翻译扩展点：模块经 `authz.TranslationSpec` 声明的行并入进程的翻译，冲突即启动失败 | 已实现 | `pkg/authz/types.go` `Translation`、`TranslationSpec`；`pkg/authz/internal/translation/translation.go` `Resolve`、`process` |
 | 403 与 503 的写出、指标 `authz.guard.decisions` 与拒绝日志 | 已实现 | `pkg/authz/guard/respond.go` `outcome`、`forbidden`、`unavailable`、`noIdentity401`；`pkg/authz/guard/guard.go` `conclude`、`registerMetrics` |
 | 配置 `endpoints` 的声明与读取 | 已实现 | `pkg/authz/admin/admin.go` `schema`、`resolve`、`readConfig` |
 | 模块 `authz.admin` 的管理面路由（权限目录、角色、权限授予、绑定的读写） | 已实现 | `pkg/authz/admin/admin.go` `Module`、`newProduct`、`product.wire`、`diagnose`；`pkg/authz/admin/routes.go` `routes`、`mount`、`declareOpen`；`pkg/authz/admin/pipeline.go` `caller`、`require`、`auditRequired`、`answer`；`pkg/authz/admin/catalog.go` `handlePermissionList`；`pkg/authz/admin/views.go` `permissionView`、`roleView`、`grantView`、`bindingView`；`pkg/authz/admin/role.go` `handleRoleList`、`handleRolePut`、`handleRoleDelete`；`pkg/authz/admin/grant.go` `handleGrantList`、`handleGrantPut`、`handleGrantDelete`；`pkg/authz/admin/binding.go` `handleBindingList`、`handleBindingOf`、`handleBindingPut`、`handleBindingDelete`；`pkg/authz/admin/audit.go` `mandatory`、`failedAudit` |

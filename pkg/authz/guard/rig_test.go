@@ -21,6 +21,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/authz/authztest"
+	"github.com/vislake/speed/pkg/authz/internal/translation"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -899,12 +900,20 @@ func TestARouteOnAnUndeclaredPermissionFailsStart(t *testing.T) {
 	}
 }
 
-// A failed Start leaves no resolved translation installed: the process value
-// Init built is cleared when Start refuses the assembly, so a later assembly
-// sharing the process does not read a set this one never accepted. The set is a
-// process value because the middleware, the decider and the management surface
-// all read it through ObjectAction and none of them holds the product.
+// A failed Start leaves no resolved translation installed: the set Init built is
+// given back when Start refuses the assembly, so a later assembly sharing the
+// process does not read a set this one never accepted.
+//
+// The drive carries a module of its own that declares a row, so the set it
+// installs differs from the built-in rows alone. Without that the two states
+// this case tells apart — cleared, and left installed — would hold the same
+// rows, and the assertion would pass whatever Start did.
 func TestAFailedStartClearsTheProcessTranslation(t *testing.T) {
+	translator := declaredModule("stand-in.translator", map[authz.Permission]authz.Translation{
+		declaredPermission: {Object: "deal", Action: "read"},
+	})
+	t.Cleanup(translation.Reset)
+
 	reg := authztest.Registry(t, guardedBody, Module())
 	authztest.AddProvider(reg, authztest.EnforcerProvider(authztest.NewEnforcer()))
 	authztest.AddProvider(reg, authztest.CatalogProvider(authztest.NewCatalog(authz.PermissionAccountRead)))
@@ -919,16 +928,17 @@ func TestAFailedStartClearsTheProcessTranslation(t *testing.T) {
 		Instance: logStub{logger: slog.Default()},
 	})
 	reg.Register(registrantModule)
+	reg.Register(translator)
 
 	err := reg.Drive(t.Context(), core.Drive{
 		Depth:        core.StageStart,
-		Participants: []string{ModuleName, registrantModule.Name},
+		Participants: []string{ModuleName, registrantModule.Name, translator.Name},
 	})
 	if !errors.Is(err, authz.ErrUnknownPermission) {
 		t.Fatalf("the drive ended with %v, want authz.ErrUnknownPermission", err)
 	}
-	if p := processTranslation.Load(); p != nil {
-		t.Errorf("a failed Start left the resolved translation installed (%d rows)", len(*p))
+	if _, _, ok := translation.Lookup(declaredPermission); ok {
+		t.Errorf("a failed Start left the resolved translation installed: %q still translates", declaredPermission)
 	}
 }
 

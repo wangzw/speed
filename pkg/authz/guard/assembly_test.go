@@ -15,6 +15,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/authz/authztest"
+	"github.com/vislake/speed/pkg/authz/internal/translation"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -370,7 +371,7 @@ func TestADeclaredPermissionOutsideTheCatalogFailsAssembly(t *testing.T) {
 // start.
 func TestAModuleDeclaredTranslationRowLetsAssemblyStart(t *testing.T) {
 	permission := authz.Permission("crm.deal.read")
-	t.Cleanup(func() { processTranslation.Store(nil) })
+	t.Cleanup(translation.Reset)
 
 	err := assembly{
 		extra:   []core.Module{translationRegistrant(permission)},
