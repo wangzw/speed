@@ -21,8 +21,9 @@
  *    console's pages are labelled under CONSOLE_PREFIX, so a URL in that path
  *    space selects one and the app's two areas never overlap. It carries the
  *    same session gate the tenant shell does (the console frame is not
- *    ProductShell) and a host-composed route guard over each page's permission
- *    code.
+ *    ProductShell), an area gate over the platform permission set (a viewer
+ *    who holds no platform permission never enters the shell), and a
+ *    host-composed route guard over each page's permission code.
  *
  * A URL no declaration matches renders the fallback page inside the tenant area.
  * The auth callback route (a provider's round trip) renders outside both frames,
@@ -33,6 +34,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
 import { TenantProvider, useAuthState, usePermission } from '@speed/auth-core'
 import type { AuthSnapshot } from '@speed/auth-core'
@@ -52,7 +54,7 @@ import {
 } from '@speed/route-kit'
 import type { RouteContext } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
-import { useLocation } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import { tenantAdminTenantsList } from './app-api/index.js'
 import { useAppServices } from './app-services.js'
 import {
@@ -84,6 +86,10 @@ import {
 /** The platform-staff permission domain the console routes' codes resolve in:
  * auth-core names 'system' the tenant-independent platform-staff set. */
 const CONSOLE_PERMISSION_DOMAIN = 'system'
+
+/** The tenant area's home path: the shell the console area sends a viewer it
+ * turns away, so a denied URL leaves the console's path space. */
+const TENANT_HOME_PATH = '/'
 
 /** The app view root: routing installed once, over the shell switch. */
 export function DemoApp(): ReactElement {
@@ -193,15 +199,17 @@ function AppFrame(): ReactElement {
   if (consoleSelected) {
     return (
       <SessionGate>
-        <ConsoleArea
-          routes={consoleShellRoutes}
-          sidebarCollapsed={sidebarCollapsed}
-          onSidebarCollapsedChange={setSidebarCollapsed}
-        >
-          <ConsoleRouteGuard>
-            <RouteView />
-          </ConsoleRouteGuard>
-        </ConsoleArea>
+        <ConsoleAreaGate>
+          <ConsoleArea
+            routes={consoleShellRoutes}
+            sidebarCollapsed={sidebarCollapsed}
+            onSidebarCollapsedChange={setSidebarCollapsed}
+          >
+            <ConsoleRouteGuard>
+              <RouteView />
+            </ConsoleRouteGuard>
+          </ConsoleArea>
+        </ConsoleAreaGate>
       </SessionGate>
     )
   }
@@ -333,23 +341,106 @@ function SessionGate({
 }
 
 /**
- * The console's route-level gate, composed the host way: layout-kit's
+ * The console area's access gate: the whole area is the platform-staff face,
+ * so a principal who holds no platform permission never enters it. The console
+ * frame -- its navigation, its banner -- is not rendered at all, rather than
+ * rendered with its content swapped for a no-permission surface: the menu names
+ * are themselves information a non-staff viewer must not receive.
+ *
+ * It settles the area tier of the console gate, between the header entry
+ * (ConsoleEntry, which hides the way in) and each page's own code (the route
+ * guard below, which turns a staff viewer away from a page they lack). The
+ * decision is drawn from the platform permission set (auth-core's 'system'
+ * domain), read here before the shell renders so a denied viewer never sees
+ * even its chrome. Three outcomes:
+ *
+ *  - granted: the set is known and holds at least one platform permission --
+ *    the principal is platform staff, and the console renders.
+ *  - denied: the set is known and empty -- an ordinary member. The area renders
+ *    nothing and redirects to the tenant home, so the console's path space (and
+ *    the names within it) is left behind for a shell the viewer may use.
+ *  - pending: the set is unknown (null) -- the host has not yet attached the
+ *    caller's platform permissions. This is the fail-closed direction: an
+ *    unknown set shows neither the console nor an immediate redirect, only a
+ *    shell-less placeholder, and the area settles once the set lands. Rendering
+ *    the console on an unknown set would show the shell to a member for the
+ *    window before their empty set is attached, which is the only moment the
+ *    set is null for a signed-in viewer.
+ */
+function ConsoleAreaGate({
+  children,
+}: {
+  readonly children: ReactNode
+}): ReactElement | null {
+  const snapshot = useAuthState()
+  const status = consoleAreaStatus(snapshot)
+  if (status === 'granted') {
+    return <>{children}</>
+  }
+  if (status === 'denied') {
+    return <Navigate to={TENANT_HOME_PATH} replace />
+  }
+  return <ConsoleAccessPending />
+}
+
+/**
+ * The area tier's decision for the current session. The criterion is the
+ * platform permission set, not any one page's code: the area is staff-only, so
+ * holding a single platform permission is what tells staff from an ordinary
+ * member. (The header entry keys on one representative code, tenant.read, to
+ * decide whether to offer the way in; the two agree on the demo's principals,
+ * which hold everything or nothing.) An unknown set is pending, never granted.
+ */
+function consoleAreaStatus(
+  snapshot: AuthSnapshot,
+): 'granted' | 'denied' | 'pending' {
+  if (snapshot.state !== 'authenticated') {
+    // The session gate above turned an anonymous viewer away; pending is
+    // fail-closed and never shows the shell.
+    return 'pending'
+  }
+  const set = snapshot.permissionSets[CONSOLE_PERMISSION_DOMAIN]
+  if (set === null) {
+    return 'pending'
+  }
+  return set.length > 0 ? 'granted' : 'denied'
+}
+
+/**
+ * The shell-less placeholder the area gate shows while the platform permission
+ * set is unknown: no console chrome, so nothing of the console reaches the
+ * viewer before the gate has settled. The label names the wait for assistive
+ * technology.
+ */
+function ConsoleAccessPending(): ReactElement {
+  const { t } = useTranslation(DEMO_NAMESPACE)
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingY: 6,
+      }}
+    >
+      <CircularProgress aria-label={t('console.accessPending')} />
+    </Box>
+  )
+}
+
+/**
+ * The console's page-level gate, composed the host way: layout-kit's
  * RouteGuard fed a status the host derives from the matched page's permission
  * code (the console declarations carry tenant.read / settings.read /
  * audit.read). A code held, or a page with no code, is allowed; a code the
- * principal is known not to hold is denied. This is the second half of the
- * console gating -- the header entry (ConsoleEntry) hides the way in, and this
- * guard turns away a viewer that reaches the console's path space directly,
- * which hiding the entry alone would not do.
- *
- * The demo's assembly attaches the caller's platform permission set
- * (src/main.tsx), so the guard settles on a real answer: the seed's platform
- * administrator holds the console codes and passes, and an ordinary member --
- * whose set is attached empty -- is denied. The set is null only before the
- * caller's platform permissions have been read; an unknown set passes, since
- * the server stays the authority on the console's administration surfaces (the
- * console-ui design: a caller lacking a permission is refused server-side
- * rather than hidden client-side).
+ * principal is known not to hold is denied. This is the innermost tier of the
+ * console gate -- the header entry (ConsoleEntry) hides the way in, the area
+ * gate (ConsoleAreaGate) turns a non-staff viewer away before the shell
+ * renders, and this guard settles each page's own code within the area. It
+ * runs only inside the area, where the platform set is already known, so its
+ * status is a plain set lookup: a staff viewer who lacks one page's code meets
+ * the no-permission surface in place of that page, the rest of the console
+ * frame intact.
  */
 function ConsoleRouteGuard({
   children,
@@ -383,7 +474,12 @@ function consoleGuardStatus(
     return 'pending'
   }
   const set = snapshot.permissionSets[CONSOLE_PERMISSION_DOMAIN]
-  return set === null || set.includes(permission) ? 'allowed' : 'denied'
+  if (set === null) {
+    // The area gate renders this guard only once the platform set is known;
+    // an unknown set is fail-closed here too rather than passing the page.
+    return 'pending'
+  }
+  return set.includes(permission) ? 'allowed' : 'denied'
 }
 
 /** The fallback page for a URL no declaration matches. */

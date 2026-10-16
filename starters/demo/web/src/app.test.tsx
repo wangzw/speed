@@ -188,7 +188,11 @@ describe('the tenant shell with a session', () => {
 describe('the console area', () => {
   it('gates a request-less viewer to the sign-in surface and follows a session that ends', async () => {
     window.history.replaceState({}, '', '/console/tenants')
-    const session = createTestSession(authenticatedSnapshot())
+    // The session holds a platform permission, so the area gate admits the
+    // frame; the point under test is the session gate around it.
+    const session = createTestSession(
+      authenticatedSnapshot({ system: ['tenant.read'] }),
+    )
     renderDemoApp({ session })
 
     // The frame is up at the console path while the session is authenticated.
@@ -243,25 +247,134 @@ describe('the console area', () => {
     ).toBeInTheDocument()
   })
 
-  it('turns away a member who reaches a console page directly', async () => {
+  it('turns a member who reaches a console page directly out of the console entirely', async () => {
     // The member never gets the entry (the test above), but hiding the entry is
-    // not gating: a typed URL reaches the console path space anyway, and the
-    // route guard -- not the hidden entry -- is what turns it away.
+    // not gating: a typed URL reaches the console path space anyway. The area
+    // gate -- not the hidden entry -- is what turns it away, and it does so
+    // before the shell renders: the console's menu names are themselves
+    // information a member must not receive.
     window.history.replaceState({}, '', '/console/tenants')
     renderDemoApp({
       session: createTestSession(authenticatedSnapshot({ system: [] })),
     })
 
-    // The console page itself is not rendered: the member meets the
-    // no-permission surface the route guard substitutes for it.
+    // No console frame at all -- neither its navigation landmark nor any of
+    // its page links -- and no no-permission surface inside a console shell: the
+    // content is not swapped for a denial, the whole area is withheld.
     expect(
-      await screen.findByText(uiKitEnUS.emptyState.noPermission.title),
+      screen.queryByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: consoleUiEnUS.tenants.title }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(uiKitEnUS.emptyState.noPermission.title),
+    ).not.toBeInTheDocument()
+
+    // The viewer lands in the tenant area instead: the redirect left the
+    // console path space for a shell the member may use.
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.home.heading,
+      }),
     ).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/')
+  })
+
+  it('turns a member away from every console path, not only the one typed', async () => {
+    for (const path of ['/console', '/console/audit']) {
+      window.history.replaceState({}, '', path)
+      const { unmount } = renderDemoApp({
+        session: createTestSession(authenticatedSnapshot({ system: [] })),
+      })
+      expect(
+        await screen.findByRole('heading', {
+          level: 1,
+          name: demoEnUS.home.heading,
+        }),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
+      ).not.toBeInTheDocument()
+      unmount()
+    }
+  })
+
+  it('shows no console to a viewer whose platform permission set is still unknown', async () => {
+    // An authenticated session whose platform set is unknown (null): the state
+    // the host leaves the session in before it has read the caller's platform
+    // permissions. The area gate fails closed -- it neither renders the console
+    // shell (which a member must never see) nor redirects (which would bounce a
+    // staff member still loading) -- so the viewer meets the shell-less
+    // placeholder until the set lands.
+    window.history.replaceState({}, '', '/console/tenants')
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    expect(
+      await screen.findByRole('progressbar', {
+        name: demoEnUS.console.accessPending,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
+    ).not.toBeInTheDocument()
     expect(
       screen.queryByRole('heading', {
         level: 1,
-        name: consoleUiEnUS.tenants.title,
+        name: demoEnUS.home.heading,
       }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('admits the console once a staff platform set lands', async () => {
+    window.history.replaceState({}, '', '/console/tenants')
+    const staff = createTestSession(authenticatedSnapshot())
+    renderDemoApp({ session: staff })
+
+    // Unknown set: the shell-less placeholder, no console.
+    expect(
+      await screen.findByRole('progressbar', {
+        name: demoEnUS.console.accessPending,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
+    ).not.toBeInTheDocument()
+
+    // A platform permission lands: the area admits the console frame.
+    act(() => {
+      staff.set(authenticatedSnapshot({ system: ['tenant.read'] }))
+    })
+    expect(
+      await screen.findByRole('navigation', {
+        name: consoleUiEnUS.shell.navLabel,
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('redirects a member out once their empty set lands, never showing the shell', async () => {
+    window.history.replaceState({}, '', '/console/tenants')
+    const member = createTestSession(authenticatedSnapshot())
+    renderDemoApp({ session: member })
+    expect(
+      await screen.findByRole('progressbar', {
+        name: demoEnUS.console.accessPending,
+      }),
+    ).toBeInTheDocument()
+
+    act(() => {
+      member.set(authenticatedSnapshot({ system: [] }))
+    })
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.home.heading,
+      }),
+    ).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/')
+    expect(
+      screen.queryByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
     ).not.toBeInTheDocument()
   })
 
@@ -315,7 +428,9 @@ describe('the console area', () => {
   it('renders the same brand and account menu in its top bar as the tenant frame', async () => {
     window.history.replaceState({}, '', '/console/tenants')
     const user = userEvent.setup()
-    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+    renderDemoApp({
+      session: createTestSession(authenticatedSnapshot({ system: ['tenant.read'] })),
+    })
 
     // The console frame is a different shell (no tenant switcher), but its
     // banner is the same chrome the tenant frame carries: the brand in the
@@ -346,7 +461,9 @@ describe('the console area', () => {
   it('collapses the console sidebar from the header control', async () => {
     window.history.replaceState({}, '', '/console/tenants')
     const user = userEvent.setup()
-    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+    renderDemoApp({
+      session: createTestSession(authenticatedSnapshot({ system: ['tenant.read'] })),
+    })
 
     // The console frame carries the same host-controlled collapse the tenant
     // frame does: the toggle is present, and collapsing removes the permanent
