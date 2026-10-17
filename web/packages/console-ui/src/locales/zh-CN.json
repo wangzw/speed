@@ -301,6 +301,15 @@
     "nextPage": "下一页",
     "actorUnresolved": "身份未解析（需账户读取权限）"
   },
+  "accountSelector": {
+    "hint": "输入显示名或登录标识以搜索账户",
+    "empty": "没有匹配的账户",
+    "failed": "账户搜索失败",
+    "searching": "正在搜索账户",
+    "clear": "清除",
+    "open": "展开",
+    "close": "收起"
+  },
   "permissions": {
     "title": "权限",
     "needTenant": {
@@ -363,12 +372,11 @@
       },
       "retry": "重试",
       "column": {
-        "resource": "资源",
-        "action": "动作",
+        "permission": "权限",
         "actions": "操作"
       },
       "revoke": "撤销",
-      "revokeAria": "撤销授权 {{resource}} {{action}}",
+      "revokeAria": "撤销授权 {{permission}}",
       "granted": "已授予权限",
       "revoked": "已撤销权限"
     },
@@ -634,11 +642,11 @@
   },
   "sessions": {
     "title": "会话",
-    "accountLabel": "账户标识",
+    "accountLabel": "账户",
     "load": "加载",
     "needAccount": {
       "title": "请指定账户",
-      "description": "会话按账户列出，请输入账户标识后加载。"
+      "description": "会话按账户列出，请搜索并选择一个账户后加载。"
     },
     "loading": "正在加载会话",
     "empty": {

@@ -14,6 +14,7 @@ import userEvent from '@testing-library/user-event'
 import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
 import { PermissionsPage } from './PermissionsPage.js'
 import type {
+  ConsoleAccount,
   ConsoleBinding,
   ConsoleGrant,
   ConsolePermission,
@@ -21,6 +22,7 @@ import type {
   ConsoleWriteRoleInput,
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { chooseAccount } from '../test-utils/account-selector.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   createConsoleOperations,
@@ -64,6 +66,21 @@ function permission(value: string): ConsolePermission {
   return { permission: value }
 }
 
+/** A searchable account row: a display name beside an opaque id. */
+function account(overrides: Partial<ConsoleAccount> = {}): ConsoleAccount {
+  return {
+    id: 'acc-1',
+    kind: 'user',
+    status: 'active',
+    display_name: 'Operator',
+    mfa_required: false,
+    protected: false,
+    password_set: true,
+    created_at: '2026-10-15T12:00:00Z',
+    ...overrides,
+  }
+}
+
 function binding(overrides: Partial<ConsoleBinding> = {}): ConsoleBinding {
   return {
     tenant: 'acme',
@@ -94,6 +111,14 @@ function withAuthz(
           permission('crm.deal.read'),
           permission('crm.deal.write'),
         ]),
+      listAccounts: () =>
+        Promise.resolve({
+          accounts: [
+            account(),
+            account({ id: 'acc-2', display_name: 'Ada' }),
+          ],
+          next_cursor: '',
+        }),
       ...overrides,
     }),
   )
@@ -195,8 +220,12 @@ describe('PermissionsPage', () => {
         name: '查看授权（角色 platform-admin）',
       }),
     )
-    // The held grant is visible...
-    expect(await screen.findByText('deal')).toBeInTheDocument()
+    // The held grant is visible, spelled as the catalog spells it (the
+    // catalog lists the same text, so the section scopes the assertion).
+    const grantsSection = screen
+      .getByRole('heading', { name: '授权' })
+      .closest('section') as HTMLElement
+    expect(await within(grantsSection).findByText('crm.deal.read')).toBeInTheDocument()
     expect(
       screen.getByText('该角色为内建角色，授权为只读：不能授予，也不能撤销。'),
     ).toBeInTheDocument()
@@ -204,8 +233,34 @@ describe('PermissionsPage', () => {
     expect(screen.queryByLabelText('权限')).toBeNull()
     expect(screen.queryByRole('button', { name: '授予' })).toBeNull()
     expect(
-      screen.queryByRole('button', { name: '撤销授权 deal read' }),
+      screen.queryByRole('button', { name: '撤销授权 crm.deal.read' }),
     ).toBeNull()
+  })
+
+  it('spells a grant with the same permission code the catalog lists', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+      listGrants: () => Promise.resolve([grant()]),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('editor')
+    await user.click(screen.getByRole('button', { name: '管理授权（角色 editor）' }))
+    const grantsSection = screen.getByRole('heading', { name: '授权' }).closest('section')
+    const catalogSection = screen.getByRole('heading', { name: '权限目录' }).closest('section')
+    expect(grantsSection).not.toBeNull()
+    expect(catalogSection).not.toBeNull()
+    // The grant row shows the catalog's permission code verbatim, so "what is
+    // granted" and "what the catalog declares" are one vocabulary; a pair
+    // spelling ("deal") would read as a different permission here.
+    const grantText = (
+      await within(grantsSection as HTMLElement).findByText('crm.deal.read')
+    ).textContent
+    const catalogText = (
+      await within(catalogSection as HTMLElement).findByText('crm.deal.read')
+    ).textContent
+    expect(grantText).toEqual(catalogText)
   })
 
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
@@ -229,7 +284,7 @@ describe('PermissionsPage', () => {
     // opens with the manage action.
     await user.click(manage)
     const revoke = await screen.findByRole('button', {
-      name: '撤销授权 deal read',
+      name: '撤销授权 crm.deal.read',
     })
     for (const control of [manage, removeRole, unbind, refresh, revoke]) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
@@ -281,11 +336,14 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     await screen.findByText('editor')
     await user.click(screen.getByRole('button', { name: '管理授权（角色 editor）' }))
-    await screen.findByText('deal')
+    const grantsSection = screen
+      .getByRole('heading', { name: '授权' })
+      .closest('section') as HTMLElement
+    await within(grantsSection).findByText('crm.deal.read')
     await user.click(screen.getByLabelText('权限'))
     await user.click(await screen.findByRole('option', { name: 'crm.deal.write' }))
     await user.click(screen.getByRole('button', { name: '授予' }))
-    await user.click(screen.getByRole('button', { name: '撤销授权 deal read' }))
+    await user.click(screen.getByRole('button', { name: '撤销授权 crm.deal.read' }))
     await vi.waitFor(() => {
       // Grant and revoke name the permission by its CODE, symmetrically:
       // the granted code is sent back on revoke through the catalog map.
@@ -317,21 +375,24 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     await screen.findByText('editor')
     await user.click(screen.getByRole('button', { name: '管理授权（角色 editor）' }))
-    await screen.findByText('factor')
-    await user.click(screen.getByRole('button', { name: '撤销授权 factor reset' }))
+    const grantsSection = screen
+      .getByRole('heading', { name: '授权' })
+      .closest('section') as HTMLElement
+    await within(grantsSection).findByText('authn.mfa.reset')
+    await user.click(screen.getByRole('button', { name: '撤销授权 authn.mfa.reset' }))
     await vi.waitFor(() => {
       expect(revoked).toEqual(['authn.mfa.reset'])
     })
   })
 
-  it('binds and unbinds a role', async () => {
+  it('binds the role to the chosen account, not to the typed name', async () => {
     const user = userEvent.setup()
     const bound: string[] = []
     const unbound: string[] = []
     const operations = withAuthz({
       listBindings: () => Promise.resolve([binding()]),
       bindRole: (input) => {
-        bound.push(input.role)
+        bound.push(`${input.account}:${input.role}`)
         return Promise.resolve()
       },
       unbindRole: (input) => {
@@ -342,19 +403,24 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     await screen.findByText('acc-1')
-    await user.type(screen.getByLabelText('账户'), 'acc-2')
+    // A role alone is not a binding: the account must be chosen, and the
+    // picker holds no id until then.
     await user.type(screen.getByLabelText('角色'), 'viewer')
+    expect(screen.getByRole('button', { name: '绑定' })).toBeDisabled()
+    // A display name finds the account; the write carries its id ("acc-2"),
+    // never the typed name.
+    await chooseAccount(user, '账户', 'Ada', 'Ada (acc-2)')
     await user.click(screen.getByRole('button', { name: '绑定' }))
     await user.click(screen.getByRole('button', { name: '解绑账户 acc-1 的角色 editor' }))
     await vi.waitFor(() => {
-      expect(bound).toEqual(['viewer'])
+      expect(bound).toEqual(['acc-2:viewer'])
       expect(unbound).toEqual(['editor'])
     })
     // The landed unbind fills the page's standing success region.
     expect(await screen.findByText('角色已解绑')).toBeInTheDocument()
   })
 
-  it('looks up an account bindings', async () => {
+  it('looks up the bindings of the chosen account by its id', async () => {
     const user = userEvent.setup()
     const looked: string[] = []
     const operations = withAuthz({
@@ -365,10 +431,13 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    await user.type(screen.getByLabelText('账户标识'), 'acc-9')
+    // No account chosen yet, so the lookup is not offered.
+    expect(screen.getByRole('button', { name: '查询' })).toBeDisabled()
+    await chooseAccount(user, '账户标识', 'Ada', 'Ada (acc-2)')
     await user.click(screen.getByRole('button', { name: '查询' }))
+    // The read is addressed by the account id, not the typed name.
     await vi.waitFor(() => {
-      expect(looked).toEqual(['acc-9'])
+      expect(looked).toEqual(['acc-2'])
     })
     expect(await screen.findByText('viewer')).toBeInTheDocument()
   })

@@ -12,13 +12,15 @@
  *
  *  - the role catalog: list a tenant's roles, create or rewrite one, and
  *    remove one (removal revokes its grants and bindings with it);
- *  - the grants of the selected role: list them, grant a permission from
- *    the catalog and revoke one;
+ *  - the grants of the selected role: list them by the same permission code
+ *    the catalog spells, grant a permission from the catalog and revoke
+ *    one;
  *  - the permission catalog: every permission the platform declares, for
  *    reference when granting;
- *  - the tenant's bindings: list them, bind a role to an account and
- *    unbind one;
- *  - one account's held bindings, looked up by account id.
+ *  - the tenant's bindings: list them, bind a role to an account chosen
+ *    through the account search picker and unbind one;
+ *  - one account's held bindings, looked up by the account chosen through
+ *    the same picker.
  *
  * Every read and write is an operation on the console operations bundle,
  * so the page builds no client and writes no query key. A failed list
@@ -44,12 +46,14 @@ import {
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import { AccountSelector } from './internal/account-selector.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { InlineError } from './internal/inline-error.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type {
+  ConsoleAccount,
   ConsoleBinding,
   ConsoleGrant,
   ConsolePermission,
@@ -82,11 +86,11 @@ export function PermissionsPage() {
   const [grantPermission, setGrantPermission] = useState('')
 
   // Binding draft.
-  const [bindAccount, setBindAccount] = useState('')
+  const [bindAccount, setBindAccount] = useState<ConsoleAccount | null>(null)
   const [bindRoleName, setBindRoleName] = useState('')
 
   // The account whose held bindings are looked up.
-  const [lookupAccount, setLookupAccount] = useState('')
+  const [lookupAccount, setLookupAccount] = useState<ConsoleAccount | null>(null)
   const [lookupApplied, setLookupApplied] = useState('')
 
   // The destructive action a confirm dialog guards.
@@ -208,20 +212,21 @@ export function PermissionsPage() {
     },
   ]
 
+  // A grant row shows the same permission code the catalog lists, so "what
+  // is granted" and "what the catalog declares" read as one vocabulary. A
+  // pair the catalog does not name falls back to the pair's own spelling,
+  // and its revoke is withheld (the route names a permission by its code).
+  const grantLabel = (grant: ConsoleGrant): string =>
+    codeByPair(grant.resource, grant.action) ??
+    `${grant.resource}/${grant.action}`
+
   const grantBaseColumns: DataTableColumn<ConsoleGrant>[] = [
     {
-      id: 'resource',
-      header: t('permissions.grants.column.resource'),
+      id: 'permission',
+      header: t('permissions.grants.column.permission'),
       cellWrap: 'nowrap',
-      cellFullValue: (grant) => grant.resource,
-      cell: (grant) => grant.resource,
-    },
-    {
-      id: 'action',
-      header: t('permissions.grants.column.action'),
-      cellWrap: 'nowrap',
-      cellFullValue: (grant) => grant.action,
-      cell: (grant) => grant.action,
+      cellFullValue: grantLabel,
+      cell: (grant) => grantLabel(grant),
     },
   ]
   // A builtin role's grants are read-only: the revoke column is not part of
@@ -239,8 +244,7 @@ export function PermissionsPage() {
           variant="outlined"
           color="error"
           aria-label={t('permissions.grants.revokeAria', {
-            resource: grant.resource,
-            action: grant.action,
+            permission: grantLabel(grant),
           })}
           disabled={revokePermission.isPending || code === null}
           onClick={() => {
@@ -596,11 +600,10 @@ export function PermissionsPage() {
                 mb: 2,
               }}
             >
-              <TextField
-                size="small"
-                value={bindAccount}
-                onChange={(event) => setBindAccount(event.target.value)}
+              <AccountSelector
                 label={t('permissions.bindings.accountLabel')}
+                value={bindAccount}
+                onChange={setBindAccount}
               />
               <TextField
                 size="small"
@@ -611,13 +614,17 @@ export function PermissionsPage() {
               <Button
                 type="button"
                 variant="contained"
-                disabled={bindDisabled(bindRoleName, bindAccount)}
+                disabled={bindRoleName.trim() === '' || bindAccount === null}
                 onClick={() => {
+                  if (bindAccount === null) {
+                    return
+                  }
                   setSuccess(null)
                   bindRole.mutate(
-                    { tenant, account: bindAccount, role: bindRoleName },
+                    { tenant, account: bindAccount.id, role: bindRoleName },
                     {
                       onSuccess: () => {
+                        setBindAccount(null)
                         setBindRoleName('')
                         setSuccess(t('permissions.bindings.bound'))
                       },
@@ -673,16 +680,16 @@ export function PermissionsPage() {
                 mb: 2,
               }}
             >
-              <TextField
-                size="small"
-                value={lookupAccount}
-                onChange={(event) => setLookupAccount(event.target.value)}
+              <AccountSelector
                 label={t('permissions.lookup.accountLabel')}
+                value={lookupAccount}
+                onChange={setLookupAccount}
               />
               <Button
                 type="button"
                 variant="outlined"
-                onClick={() => setLookupApplied(lookupAccount.trim())}
+                disabled={lookupAccount === null}
+                onClick={() => setLookupApplied(lookupAccount?.id ?? '')}
               >
                 {t('permissions.lookup.apply')}
               </Button>
@@ -787,11 +794,6 @@ function buildGrantCodeIndex(
     }
     return byAction.get(action) ?? null
   }
-}
-
-/** The bind button stays disabled until both the account and the role are named. */
-function bindDisabled(role: string, account: string): boolean {
-  return role.trim() === '' || account.trim() === ''
 }
 
 /** The first defined error's code, or null when every error is absent. */

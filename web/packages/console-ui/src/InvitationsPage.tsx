@@ -34,6 +34,7 @@ import {
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import { AccountSelector } from './internal/account-selector.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
@@ -43,6 +44,7 @@ import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type {
+  ConsoleAccount,
   ConsoleInvitation,
   ConsoleIssuedInvitation,
   ConsoleMember,
@@ -457,16 +459,17 @@ function acceptanceUrl(link: string): string {
 /**
  * MemberWriteForm: the membership-write control (PUT
  * /auth/admin/tenants/:tenant/members/:account) -- it adds, suspends or
- * resumes a membership, naming the account, its active state, an optional
- * source and the SSO exemption. A landed write clears the account and source
- * and resets the flags; a refused one keeps them to correct.
+ * resumes a membership, naming the account chosen through the account
+ * search picker, its active state, an optional source and the SSO
+ * exemption. A landed write clears the account and source and resets the
+ * flags; a refused one keeps them to correct.
  */
 function MemberWriteForm({ tenant }: { readonly tenant: string }) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const writeMember = operations.useWriteMember()
 
-  const [account, setAccount] = useState('')
+  const [account, setAccount] = useState<ConsoleAccount | null>(null)
   const [source, setSource] = useState('')
   const [active, setActive] = useState(true)
   const [ssoExempt, setSsoExempt] = useState(false)
@@ -482,11 +485,10 @@ function MemberWriteForm({ tenant }: { readonly tenant: string }) {
           rowGap: 1,
         }}
       >
-        <TextField
-          size="small"
-          value={account}
-          onChange={(event) => setAccount(event.target.value)}
+        <AccountSelector
           label={t('members.write.accountLabel')}
+          value={account}
+          onChange={setAccount}
         />
         <TextField
           size="small"
@@ -515,26 +517,29 @@ function MemberWriteForm({ tenant }: { readonly tenant: string }) {
         <Button
           type="button"
           variant="contained"
-          disabled={writeMember.isPending || account === ''}
-          onClick={() =>
+          disabled={writeMember.isPending || account === null}
+          onClick={() => {
+            if (account === null) {
+              return
+            }
             writeMember.mutate(
               {
                 tenant,
-                account,
+                account: account.id,
                 active,
                 ...(source === '' ? {} : { source }),
                 sso_exempt: ssoExempt,
               },
               {
                 onSuccess: () => {
-                  setAccount('')
+                  setAccount(null)
                   setSource('')
                   setActive(true)
                   setSsoExempt(false)
                 },
               },
             )
-          }
+          }}
         >
           {t('members.write.submit')}
         </Button>

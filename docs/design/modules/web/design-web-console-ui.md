@@ -209,6 +209,7 @@ graph TD
 | 页面声明 | `ConsoleRoute` | 即 route-kit 的 `RouteDeclaration`：路径 pattern、视图回调、可选导航标签、可选权限码、特性名列表，外加本包自加的可选导航分组与装饰性图标 |
 | 特性判定 | `(name: FeatureName) => boolean` | 宿主经 `ConsoleShell` 的 `hasFeature` 给出，经包内上下文交给页面 |
 | 租户作用域选择 | 页面自身状态 | 按租户寻址的页面持有的租户 id，作为请求实参，缺省为空即禁用该页的租户作用域读 |
+| 账户选择 | `AccountSelector` 的 `value` | 页面持有的已选账户（不是 id 文本），选择器交出账户对象，页面从中取 id 作为请求实参 |
 | 命名空间 | `consoleUiResources` | 双语文案目录，叶子键集跨语言相同 |
 
 ## 核心算法与流程
@@ -243,6 +244,14 @@ graph TD
 ### 账户查询的筛选
 
 账户页把工具栏的筛选作为读的查询参数，在提交时应用（一次键入不触发请求）：登录标识前缀与它的类型成对送出（模块的索引按两者寻址，前缀缺类型即被拒），显示名前缀、状态与账户类型各自单独送出，未选的筛选不出现在请求里。显示名前缀是存储值的字节前缀、大小写敏感，页面的搜索框按用户所写原样送出。列表读按游标分页（应答带出下一页游标），页面只渲染读到的一页。账户详情与创建表单都在侧边面板内打开，见「账户页的详情与创建面板」。创建表单对用户账户要求一个显示名与至少一个登录标识（用户名、邮箱或手机号）：不满足时「新建」保持禁用，提交路径也不再发出请求——没有登录标识的用户账户无法使用，界面上不产出它；服务账户以服务密钥登录，不受这条要求，只需显示名。
+
+### 账户选择器
+
+会话页的账户、权限页的绑定账户与绑定查询账户、邀请与成员页的成员写入账户都是账户实参，这四处共用本包的账户选择器（`src/internal/account-selector.tsx` 的 `AccountSelector`）：一个可键盘操作的组合框，操作者键入显示名或登录标识，选中一行即交出该账户的 id，页面发出的请求带这个 id 而不是键入的文本。选择器以账户列表读（`useAccounts`）按显示名前缀与用户名／邮箱／手机号三种标识前缀各读一页，按账户 id 合并去重；未键入时不发账户读，故打开页面不会拉取账户表。每页读有上限、按输入检索，账户很多时也不会整表载入。可及名取自选择器旁的标签；搜索失败在弹层里说明，不呈现成「无匹配」。权限页绑定栏的角色仍是自由文本的文本框：它命名的是一条要绑定的角色，不是账户，不由这个选择器承担。
+
+### 授权表与权限目录同一套写法
+
+权限页的授权表按完整权限码列出一个角色持有的权限，与同一页的权限目录逐字同形（形如 `authn.account.read`），而不是 `resource`／`action` 两列：同一页的两个面因此可直接对照，两个命名空间各自声明同名资源时也不会被读成同一行。行的码由已加载的权限目录把授权行的 `(resource, action)` 对映射回来——与撤销请求把同一对映射回码是同一次匹配；目录没有命名该对时，行退化为 `resource/action` 的拼写，且不提供撤销，因为撤销路由只按码命名权限。
 
 ### 破坏性动作的确认
 
@@ -401,6 +410,7 @@ graph TD
 | 短信模板页的读取失败一律落到通用失败面，写入表单不收起 | 未实现 | — |
 | 审计查询页（筛选、游标分页、操作者可读身份） | 已实现 | `web/packages/console-ui/src/AuditPage.tsx` `AuditPage`；`web/packages/console-ui/src/routes.tsx` `auditAdminRoutes` |
 | 按租户寻址页面的租户选择器 | 已实现 | `web/packages/console-ui/src/internal/tenant-scope.tsx` `TenantScope` |
+| 账户选择器（按显示名或登录标识检索，交出账户 id） | 已实现 | `web/packages/console-ui/src/internal/account-selector.tsx` `AccountSelector` |
 | 账户的创建、改动、状态变更、MFA 要求、口令重置、标识新增、服务密钥新建 | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountCreateForm`、`AccountDetailWrites`；`web/packages/console-ui/src/operations.tsx` `useCreateAccount`、`usePatchAccount`、`useSetAccountStatus`、`useSetMFARequired`、`useResetPassword`、`useAddIdentifier`、`useCreateSecret` |
 | SSO 提供方的创建与改动、域名认领 | 已实现 | `web/packages/console-ui/src/SsoPage.tsx` `SsoProviderWriteForm`；`web/packages/console-ui/src/operations.tsx` `useCreateSsoProvider`、`useUpdateSsoProvider`、`useClaimSsoDomain` |
 | 成员的写入与 SSO 豁免 | 已实现 | `web/packages/console-ui/src/InvitationsPage.tsx` `MemberWriteForm`；`web/packages/console-ui/src/operations.tsx` `useWriteMember`、`useSetMemberSsoExempt` |

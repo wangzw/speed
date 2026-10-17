@@ -121,7 +121,9 @@ export interface ConsoleBackend {
   unbindRole: (input: ConsoleBindingRef) => Promise<void>
 
   // Account surface.
-  listAccounts: () => Promise<ConsoleAccountPage>
+  listAccounts: (
+    params?: Parameters<ConsoleOperations['useAccounts']>[0],
+  ) => Promise<ConsoleAccountPage>
   getAccount: (query: ConsoleAccountQuery) => Promise<ConsoleAccount>
   listAccountFactors: (query: ConsoleAccountQuery) => Promise<readonly ConsoleAccountFactor[]>
   listAccountSecrets: (query: ConsoleAccountQuery) => Promise<readonly ConsoleAccountSecret[]>
@@ -600,8 +602,11 @@ export function createConsoleOperations(
       })
     },
 
-    useAccounts: () =>
-      useQuery({ queryKey: ACCOUNTS_KEY, queryFn: () => backend.listAccounts() }),
+    useAccounts: (params) =>
+      useQuery({
+        queryKey: [...ACCOUNTS_KEY, params ?? null],
+        queryFn: () => backend.listAccounts(params),
+      }),
     useAccount: (query: ConsoleAccountQuery) =>
       useQuery({
         queryKey: accountKey(query.id ?? ''),

@@ -12,12 +12,14 @@ import { fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { InvitationsPage } from './InvitationsPage.js'
 import type {
+  ConsoleAccount,
   ConsoleInvitation,
   ConsoleMember,
   ConsoleSetMemberSSOExemptInput,
   ConsoleWriteMemberInput,
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { chooseAccount } from '../test-utils/account-selector.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   createConsoleOperations,
@@ -55,6 +57,21 @@ function member(overrides: Partial<ConsoleMember> = {}): ConsoleMember {
   }
 }
 
+/** The account the picker finds: named "Ada", identified by an opaque id. */
+function account(overrides: Partial<ConsoleAccount> = {}): ConsoleAccount {
+  return {
+    id: 'acc-2',
+    kind: 'user',
+    status: 'active',
+    display_name: 'Ada',
+    mfa_required: false,
+    protected: false,
+    password_set: true,
+    created_at: '2026-10-15T12:00:00Z',
+    ...overrides,
+  }
+}
+
 async function pickTenant(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   await user.click(screen.getByLabelText('租户'))
   await user.click(await screen.findByRole('option', { name: 'Acme' }))
@@ -66,6 +83,8 @@ function withTenant(
   return createConsoleOperations(
     makeConsoleBackend({
       listTenants: () => Promise.resolve([TENANT]),
+      listAccounts: () =>
+        Promise.resolve({ accounts: [account()], next_cursor: '' }),
       ...overrides,
     }),
   )
@@ -268,7 +287,7 @@ describe('InvitationsPage', () => {
     })
   })
 
-  it('writes a membership through the bundle', async () => {
+  it('writes the chosen account id, not the typed name', async () => {
     const user = userEvent.setup()
     const written: ConsoleWriteMemberInput[] = []
     const operations = withTenant({
@@ -279,13 +298,21 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    await user.type(await screen.findByLabelText('账户'), 'acc-2')
+    // No account chosen: the picker holds no id yet.
+    expect(
+      screen.getByRole('button', { name: '写入成员关系' }),
+    ).toBeDisabled()
+    // A display name finds the account; the write carries its id ("acc-2"),
+    // never the typed name.
+    await chooseAccount(user, '账户', 'Ada', 'Ada (acc-2)')
     await user.click(screen.getByRole('button', { name: '写入成员关系' }))
     await vi.waitFor(() => {
       expect(written).toEqual([
         { tenant: 'acme', account: 'acc-2', active: true, sso_exempt: false },
       ])
     })
+    // The landed write clears both the selection and the box that named it.
+    expect(screen.getByLabelText('账户')).toHaveValue('')
   })
 
   it('toggles a member SSO exemption through the bundle', async () => {

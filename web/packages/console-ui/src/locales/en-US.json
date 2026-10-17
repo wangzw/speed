@@ -301,6 +301,15 @@
     "nextPage": "Next",
     "actorUnresolved": "Identity unresolved (needs account read)"
   },
+  "accountSelector": {
+    "hint": "Type a display name or login identifier to search accounts",
+    "empty": "No matching account",
+    "failed": "The account search failed",
+    "searching": "Searching accounts",
+    "clear": "Clear",
+    "open": "Open",
+    "close": "Close"
+  },
   "permissions": {
     "title": "Permissions",
     "needTenant": {
@@ -363,12 +372,11 @@
       },
       "retry": "Retry",
       "column": {
-        "resource": "Resource",
-        "action": "Action",
+        "permission": "Permission",
         "actions": "Actions"
       },
       "revoke": "Revoke",
-      "revokeAria": "Revoke permission {{resource}} {{action}}",
+      "revokeAria": "Revoke permission {{permission}}",
       "granted": "Permission granted",
       "revoked": "Permission revoked"
     },
@@ -634,11 +642,11 @@
   },
   "sessions": {
     "title": "Sessions",
-    "accountLabel": "Account identifier",
+    "accountLabel": "Account",
     "load": "Load",
     "needAccount": {
       "title": "Name an account",
-      "description": "Sessions are listed per account. Enter an account identifier and load."
+      "description": "Sessions are listed per account. Search for an account and load it."
     },
     "loading": "Loading sessions",
     "empty": {

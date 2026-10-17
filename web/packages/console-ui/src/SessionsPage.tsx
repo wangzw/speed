@@ -1,8 +1,9 @@
 /**
  * SessionsPage: the account-session administration page of the console.
  *
- * It lists the sessions of one account -- reached by naming the account's
- * identifier -- and revokes a single session. The read is
+ * It lists the sessions of one account -- chosen through the account
+ * search picker, which hands the read the account's id -- and revokes a
+ * single session. The read is
  * GET /auth/admin/accounts/:id/sessions and the revoke is
  * DELETE /auth/admin/sessions/:id; both are operations on the console
  * operations bundle, so the page builds no client and writes no query
@@ -16,7 +17,6 @@ import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
-import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
   DataTable,
@@ -27,13 +27,14 @@ import {
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import { AccountSelector } from './internal/account-selector.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
-import type { ConsoleAccountSession } from './operations.js'
+import type { ConsoleAccount, ConsoleAccountSession } from './operations.js'
 
 /** The assurance level's label from its integer (0 none, 1 single, 2 multi). */
 function assuranceKey(assurance: number): string {
@@ -47,7 +48,11 @@ export function SessionsPage() {
   const { t, i18n } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
 
-  const [accountDraft, setAccountDraft] = useState('')
+  // The account the operator picked, and the id the loads use: loading is
+  // a separate step, so browsing the picker alone issues no session read.
+  const [selectedAccount, setSelectedAccount] = useState<ConsoleAccount | null>(
+    null,
+  )
   const [account, setAccount] = useState('')
   const confirm = usePendingConfirm()
   // The confirmation a landed revoke fills into the page's success notice.
@@ -176,16 +181,16 @@ export function SessionsPage() {
           rowGap: 1,
         }}
       >
-        <TextField
-          size="small"
-          value={accountDraft}
-          onChange={(event) => setAccountDraft(event.target.value)}
+        <AccountSelector
           label={t('sessions.accountLabel')}
+          value={selectedAccount}
+          onChange={setSelectedAccount}
         />
         <Button
           type="button"
           variant="contained"
-          onClick={() => setAccount(accountDraft.trim())}
+          disabled={selectedAccount === null}
+          onClick={() => setAccount(selectedAccount?.id ?? '')}
         >
           {t('sessions.load')}
         </Button>
