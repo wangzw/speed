@@ -241,6 +241,12 @@ completes the factor. And once a sign-in completes the second factor, the
 session counts as freshly elevated for the configured recent window (ten
 minutes by default), so a batch of writes can be exercised on one sign-in.
 
+Impersonation needs more than the factor. Start with two accounts, write the
+target into the tenant on the invitations-and-members page, and wait until the
+factor has been active for `authn.mfa.sensitive-min-age` (one hour here, twenty
+four by default) — a step-up cannot shorten that, because it is the factor's
+age rather than the session's assurance that is refused.
+
 Seeding is a step of its own rather than something `serve` does on its way up,
 because a deployment nobody may administer until somebody says so is the posture
 this skeleton ships. On `sqlite-memory` the step achieves nothing — that stack's
