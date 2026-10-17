@@ -401,8 +401,8 @@ graph TD
 | 页内导航接缝（详情链接就地路由） | 已实现 | `web/packages/console-ui/src/internal/navigation.tsx` `ConsoleNavigationProvider`、`ConsoleLink`；`web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell` |
 | 详情页的按 id 读 | 已实现 | `web/packages/console-ui/src/operations.tsx` `useTenant`、`useAuditRecord` |
 | 账户页（按标识前缀、显示名前缀、状态与类型筛选列出，详情、创建与全部写入） | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`、`AccountCreateForm`、`AccountDetailWrites`；`web/packages/console-ui/src/routes.tsx` `accountsAdminRoutes` |
-| 账户详情的侧边面板（反馈随发起面，所选账户存续到 `onExited`） | 部分实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`、`AccountDetailWrites`、`detailExited` |
-| 账户创建的侧边面板（页头打开、未保存守卫、成功文案在 `onExited` 后写入） | 部分实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountCreatePanel`、`AccountCreateForm` |
+| 账户详情的侧边面板（反馈随发起面，所选账户存续到 `onExited`） | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`、`AccountDetailWrites`、`detailExited` |
+| 账户创建的侧边面板（页头打开、未保存守卫、成功文案在 `onExited` 后写入） | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountCreatePanel`、`AccountCreateForm`、`createPanelExited` |
 | 步进对话框先读本人因素，没有启用的因素时给出提示而不发起流程 | 已实现 | `web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`、`activeFactorCount` |
 | 前往账户设置的入口由宿主经 `accountHref` 给出 | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShellProps.accountHref`；`web/packages/console-ui/src/internal/account-href.tsx` `ConsoleAccountHrefProvider`、`useConsoleAccountHref`；`web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge` |
 | 各页的反馈作用域与成功确认 | 未实现 | — |
@@ -416,7 +416,7 @@ graph TD
 | 步进对话框的失败面 | 未实现 | — |
 | 写入失败的裸 403 与裸 401 文案 | 未实现 | — |
 | 写入在途时改变上下文的控件禁用 | 未实现 | — |
-| 详情面板内写入在途时 `busy` 与服务密钥的关闭守卫 | 未实现 | — |
+| 详情面板内写入在途时 `busy` 与服务密钥的关闭守卫 | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`（`detailBusy`、`requestDetailClose`）、`OneTimeSecretNotice` |
 | 账户身份单元区分已删除或非账户行动者与无权限 | 未实现 | — |
 | 权限页账户绑定查询的加载、失败与空占位 | 未实现 | — |
 | 会话页（按账户列出与撤销） | 已实现 | `web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/routes.tsx` `sessionsAdminRoutes` |
