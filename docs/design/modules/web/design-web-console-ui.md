@@ -88,6 +88,10 @@ interface ConsoleShellProps {
   // 路径或绝对 URL）。邀请与成员页在签发成功后据此展示链接；不给则展示
   // 裸令牌。落点是宿主的公开路由，只有宿主知道，故路径由宿主给出。
   readonly invitationLink?: (token: string) => string
+  // 宿主的账户设置页的位置（宿主相对的路径或绝对 URL），运营者在那里登记
+  // 两步验证。步进对话框在本人账户没有启用的因素时据此渲染前往入口；不给
+  // 则只渲染文案、不渲染入口。账户设置页是宿主的路由，只有宿主知道其路径。
+  readonly accountHref?: string
   // 桌面侧边栏收起：AppShell 的受控 prop 对，原样透传给帧。给出后者即在帧的
   // 顶栏渲染收起／展开按钮并回报每次翻转；不给即维持一直展开的常驻抽屉。
   readonly sidebarCollapsed?: boolean
@@ -280,6 +284,18 @@ graph TD
 
 **其它页面的内联写入区不在此列。** 一个页面的写入区是否改由侧边面板承载，按 [layout](design-web-layout.md) 的判据逐页判定；租户详情与审计详情是带地址的整页，保持原样。
 
+### 步进验证对话框
+
+特权写被答 401 步进（会话仍成立、强度不足）时，页面打开步进对话框并记住被拒的写（`useStepUpGate`），挑战成功后重放该写恰好一次，取消不重放。对话框在发起流程之前读一次本人已登记的因素（`GET /auth/factors`），按读的结果分阶段：
+
+- **读未落定**：渲染起手中的占位，不发起流程。
+- **读已落定且没有启用的因素**（读回的行里没有处于启用状态的）：账户没有能强化会话的因素，重新登录也只能得到同样强度的单因素会话，对话框提示先在账户设置里添加验证方式，不发起流程。`accountHref` 给出时附一个前往账户设置的链接，缺省不渲染链接，只留文案。
+- **有启用的因素，或读失败**：发起流程。读失败不判定为没有因素，由流程自己的拒绝决定。起手被 401 `authn.insufficient_user_authentication` 拒绝（有因素，但没有能强化本会话的）时，对话框判定本部署无法完成升级，给出重新登录的出口，不渲染步骤。
+
+**前往账户设置的目的地由宿主给出。** 对话框不持有任何宿主路径：`ConsoleShell` 的 `accountHref` 经包内上下文交给对话框，形态同 `invitationLink`；链接经壳的页内导航接缝就地路由，壳未给回调时是普通链接。
+
+**本人因素的读不经操作束。** 操作束收的是管理面的读写；本人账户的因素读是运营者对自己会话的调用，与冒充页的自身会话面同类：对话框直接调用生成的 `useAuthnMfaFactors`，跑在宿主的查询客户端上，不进操作束，宿主因此无法经操作束替换它。
+
 ## 错误与失败语义
 
 本包的失败面如下。
@@ -295,6 +311,8 @@ graph TD
 | 审计操作者解析被拒（无 `authn.account.read`），或特性 `authn.admin` 缺席 | 该格渲染记录值并标注身份未解析，页面本身仍可读 |
 | 自身会话无冒充（`GET /auth/impersonation` 的裸 404） | 渲染「当前未冒充任何账户」的说明，按未冒充处理，不落入失败占位 |
 | 白名单外的码 | 渲染通用失败文本，不渲染裸键 |
+| 步进对话框读本人因素已落定且没有启用的因素 | 渲染先添加验证方式的提示，不发起流程；`accountHref` 缺省时不渲染前往入口 |
+| 步进对话框读本人因素失败 | 不判定为没有因素，照常发起流程，由服务端的拒绝决定 |
 
 页面的特性缺席不经本包的失败面：那样的页面命中后由宿主的路由层渲染回退视图，与未登记路径的 404 相同。特性在场的页面读取仍答 404 或入口文档，都出自同一个源背后副本装配不一致，后者发生在缺席副本的配置没有认领该路径时，见 [feature](../design-feature.md) 的非保证；两者都落到上表的可重试占位。
 
@@ -322,6 +340,8 @@ graph TD
 | 账户页（按标识前缀、显示名前缀、状态与类型筛选列出，详情、创建与全部写入） | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`、`AccountCreateForm`、`AccountDetailWrites`；`web/packages/console-ui/src/routes.tsx` `accountsAdminRoutes` |
 | 账户详情的侧边面板（反馈随发起面，所选账户存续到 `onExited`） | 未实现 | — |
 | 账户创建的侧边面板（页头打开、未保存守卫、成功文案在 `onExited` 后写入） | 未实现 | — |
+| 步进对话框先读本人因素，没有启用的因素时给出提示而不发起流程 | 未实现 | — |
+| 前往账户设置的入口由宿主经 `accountHref` 给出 | 未实现 | — |
 | 会话页（按账户列出与撤销） | 已实现 | `web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/routes.tsx` `sessionsAdminRoutes` |
 | 冒充页（记录列出与终止；本会话冒充的状态、发起与结束） | 已实现 | `web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`、`StartImpersonationForm`；`web/packages/console-ui/src/routes.tsx` `impersonationsAdminRoutes` |
 | 权限页（角色、授权、目录、绑定） | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/routes.tsx` `permissionsAdminRoutes` |
