@@ -92,7 +92,7 @@ interface ImpersonationBannerProps {
 
 interface ImpersonationBannerState {
   readonly subject: string     // 被冒充账户的显示名，宿主已解析成文本
-  readonly tenant?: string     // 冒充所在租户的可读名，读不到时缺省
+  readonly tenant?: string     // 冒充所在租户的展示文本，示范宿主传租户标识；读不到时缺省
   readonly expiresAt?: Date    // 冒充到期时刻，读不到时缺省
 }
 ```
@@ -236,8 +236,10 @@ sequenceDiagram
 
 ### 冒充横幅
 
-1. **宿主始终挂载它，`impersonation` 为 `null` 时只留一个空的 live region。** 没有冒充时不渲染横幅，不占高度；区域先挂空、冒充出现时再填入文本，使冒充开始的确认对读屏用户可闻，刚结束冒充的成功文案也留在这个仍挂载的区域里，不随横幅卸载。
-2. **`impersonation` 非空时渲染横幅。** 横幅是带可及名的 `region` 地标，文字说明正在以 `subject` 的身份操作，给出了 `tenant` 与 `expiresAt` 就一并陈述，并说明冒充期间管理功能不可用。观看者就是发起者，横幅不陈述发起者。组件不倒计时，也不在到期时自行动作；到期后的重读由宿主负责。
+决策见 [ADR-web-impersonation-shell-2026-10-18](../../../adr/adr-web-impersonation-shell-2026-10-18.md)。
+
+1. **宿主始终挂载它，`impersonation` 为 `null` 时只留一个空的 live region。** 没有冒充时不渲染横幅，不占高度；区域先挂空、冒充出现时再填入文本，刚结束冒充的成功文案也留在这个仍挂载的区域里，不随横幅卸载。组件首次挂载时 `impersonation` 已非空（开始冒充后租户框架新挂载，或冒充中整页重载）同样先挂空区域、下一 tick 再填入文本，所以这两种情形都播报一次；冒充中重载时的这次播报是对仍处于冒充的提醒，不抑制。
+2. **`impersonation` 非空时渲染横幅。** 横幅是带可及名的 `region` 地标，文字说明正在以 `subject` 的身份操作，给出了 `tenant` 与 `expiresAt` 就一并陈述，`tenant` 按原样陈述，它可能是租户标识而不是可读名，并说明冒充期间管理功能不可用。观看者就是发起者，横幅不陈述发起者。组件不倒计时，也不在到期时自行动作；到期后的重读由宿主负责。
 3. **「结束冒充」不依赖 `tenant` 与 `expiresAt`。** 这两项是宿主读状态得来的，读不到时缺省，结束控件照常渲染、照常可用。
 4. **结束是一次写入尝试。** 点击经 `run` 调 `onEnd`；在途时控件禁用并标忙，不发第二次；兑现即成功，成功文案「冒充已结束」落在组件自己的区域；抛出即失败，失败码文本落在横幅内、控件保持可重试。「当前已无冒充可结束」（服务端的裸 404）由宿主的 `onEnd` 当成兑现，组件不认识 HTTP 状态。
 
