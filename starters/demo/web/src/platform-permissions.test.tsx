@@ -56,8 +56,10 @@ describe('PlatformPermissions', () => {
       </PlatformPermissions>,
     )
 
+    // The re-read resets the set to unknown immediately before issuing its
+    // read, so the known set always follows the unknown one.
     await waitFor(() =>
-      expect(attached).toEqual([['tenant.read', 'audit.read']]),
+      expect(attached).toEqual([null, ['tenant.read', 'audit.read']]),
     )
   })
 
@@ -74,6 +76,6 @@ describe('PlatformPermissions', () => {
       </PlatformPermissions>,
     )
 
-    await waitFor(() => expect(attached).toEqual([[]]))
+    await waitFor(() => expect(attached).toEqual([null, []]))
   })
 })

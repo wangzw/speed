@@ -80,7 +80,10 @@ export function PlatformPermissions({
  * surface to authorize), and `ready` with it (re)reads on every authenticated
  * transition: a login clears the sets (auth-core's survival rule), so a
  * re-login as another principal replaces them rather than inheriting the
- * previous principal's. A read that is refused (or fails) attaches the empty
+ * previous principal's. A re-read first resets the set to unknown, immediately
+ * before issuing its read; the reset is not part of the identity-change
+ * action, which must not leave the console waiting on a set it cleared when
+ * the session re-read hangs or fails. A read that is refused (or fails) attaches the empty
  * set -- fail-closed, so a viewer whose permissions are unknown is offered no
  * platform surface rather than the benefit of the doubt.
  *
@@ -119,6 +122,12 @@ function usePlatformPermissions(session: AuthSession): void {
       session.setPermissionSet(PLATFORM_DOMAIN, [])
       return
     }
+    // Resetting to unknown belongs to this read, not to the identity-change
+    // action that prompted it: the set must go unknown immediately before a
+    // new read is issued, so a restore() that hangs or is refused leaves the
+    // previous (known) set in place rather than the console waiting forever
+    // on an unknown one.
+    session.setPermissionSet(PLATFORM_DOMAIN, null)
     let cancelled = false
     void Promise.resolve()
       .then(() => authzAdminPermissionsList())
