@@ -737,11 +737,35 @@ describe('the not-found fallback', () => {
       }),
     ).toBeInTheDocument()
     // The body speaks to the user, not about the router's registration
-    // table.
+    // table; the address stays on the page as a secondary line.
     expect(screen.getByText(demoEnUS.notFound.body)).toBeInTheDocument()
     expect(
       screen.getByRole('link', { name: demoEnUS.notFound.home }),
     ).toHaveAttribute('href', '/')
+    expect(
+      screen.getByText(
+        demoEnUS.notFound.path.replace(
+          '{{path}}',
+          '/console/definitely-not-a-page',
+        ),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the requested address verbatim, with no HTML entities', async () => {
+    const path = '/console/a&b'
+    window.history.replaceState({}, '', path)
+    const { container } = renderDemoApp({
+      session: createTestSession(authenticatedSnapshot({ system: ['tenant.read'] })),
+    })
+
+    // React escapes the text node; the interpolation layer must not escape
+    // it a second time ("/" becomes "&#x2F;", "&" becomes "&amp;").
+    expect(
+      await screen.findByText(demoEnUS.notFound.path.replace('{{path}}', path)),
+    ).toBeInTheDocument()
+    expect(container.textContent).not.toContain('&#x2F;')
+    expect(container.textContent).not.toContain('&amp;')
   })
 })
 

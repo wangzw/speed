@@ -171,6 +171,26 @@ describe('TenantSwitcher', () => {
     ).toBeInTheDocument()
   })
 
+  it('announce a tenant name with markup characters verbatim', async () => {
+    const user = userEvent.setup()
+    renderSwitcher({
+      tenants: [
+        { id: 'tenant-1', name: 'Sunshine Dental' },
+        { id: 'tenant-2', name: 'Acme & Co <ops>' },
+      ],
+    })
+    await user.click(screen.getByRole('button', { name: 'Sunshine Dental' }))
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Acme & Co <ops>' }),
+    )
+    // The name is user input, not markup: it reaches the live region as the
+    // text the user typed, never as HTML entities.
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent(SWITCHED_TO_ZH('Acme & Co <ops>'))
+    expect(status.textContent).not.toContain('&amp;')
+    expect(status.textContent).not.toContain('&lt;')
+  })
+
   it('converge the trigger onto the new tenant once the host hands back the new id', async () => {
     const { onSelect, rerender } = renderSwitcher()
     const user = userEvent.setup()

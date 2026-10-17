@@ -197,6 +197,15 @@ language's text. A key no consulted namespace carries still renders as
 the key itself and fires the missing-key handler; a key a fallback
 namespace answers is a hit, so the handler stays silent for it.
 
+## Interpolation: values as text, never HTML
+
+The instance initializes with `interpolation: { escapeValue: false }`.
+React renders every translated string as a text node and escapes it when
+it does; the engine escaping the interpolated values as well would show
+the entities to the user -- a path's `/` as `&#x2F;`, a tenant name's
+`&` as `&amp;`. Values are inserted verbatim, and the package renders
+into React only, so no layer here consumes HTML.
+
 ## Missing keys: never another language's text
 
 `createI18n` pins the guarantees on the underlying instance:

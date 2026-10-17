@@ -21,6 +21,12 @@
  *    language) for a key the called namespace lacks -- the platform-errors
  *    bundle rides this; when it is undefined, no fallbackNS is configured
  *    and resolution is exactly what it was before the option existed.
+ *  - interpolation.escapeValue: false: React renders a translated string
+ *    as a text node and escapes it itself, so the engine must insert
+ *    interpolated values verbatim. i18next's default HTML escaping would
+ *    double-escape them -- a path or tenant name containing "&", "<" or
+ *    "/" would reach the page as "&amp;", "&lt;" or "&#x2F;". The package
+ *    renders into React only, so no layer here consumes HTML.
  *
  * Every negotiable input is injectable (searchParams, storage,
  * navigatorLanguages) and the DOM is only touched through guarded reads, so
@@ -291,6 +297,10 @@ export function createI18n(options: CreateI18nOptions = {}): I18nInstance {
     saveMissing: true,
     missingKeyHandler: missingKeyHandlerFactory(options.onMissingKey),
     initAsync: false,
+    // React escapes a translated string when it renders it as a text
+    // node; escaping the interpolated values here as well would show the
+    // entities to the user (a path's "/" becomes "&#x2F;").
+    interpolation: { escapeValue: false },
     // Omitted entirely when the host did not opt in: i18next's own default
     // is no fallback namespace, so an unset option and an absent one are
     // one configuration.

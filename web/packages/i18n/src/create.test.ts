@@ -334,6 +334,22 @@ describe('fallbackNamespaces (namespace fallback, never language fallback)', () 
   })
 })
 
+describe('interpolation', () => {
+  it('inserts an interpolated value verbatim, never HTML-escaped', () => {
+    const { instance } = createTestI18n()
+    registerNamespace(instance, 'interpolation', {
+      'en-US': { line: 'Address: {{value}}' },
+      'zh-CN': { line: 'Address: {{value}}' },
+    })
+    // React renders the translated string as a text node and escapes it
+    // there, so the engine must not escape the value a second time.
+    const value = `/console/a&b<c>"d'e`
+    expect(instance.t('line', { ns: 'interpolation', value })).toBe(
+      `Address: ${value}`,
+    )
+  })
+})
+
 describe('switchLanguage', () => {
   it('switches and persists the canonical tag under the locale key', async () => {
     const { instance, storage } = createTestI18n({ storedLanguage: null })

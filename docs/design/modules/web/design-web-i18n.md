@@ -51,7 +51,7 @@ export { I18nextProvider, useTranslation } from 'react-i18next'
 
 ### 对外接口面
 
-`createI18n` 的选项、`registerNamespace` 的语义、入口的导出面（由 `index.test.ts` 的精确导出清单钉住），以及缺键纪律所依赖的实例选项（`fallbackLng: false`、`load: 'currentOnly'`、`saveMissing: true`、始终安装的缺键处理器），是本包对消费方的接口面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。入口的精确导出清单在新增导出时同步更新——那是本包的回归守卫，不是对消费方的破坏；扩展入口面要与 AGENTS、README 与测试在同一提交内更新。
+`createI18n` 的选项、`registerNamespace` 的语义、入口的导出面（由 `index.test.ts` 的精确导出清单钉住），以及缺键纪律所依赖的实例选项（`fallbackLng: false`、`load: 'currentOnly'`、`saveMissing: true`、始终安装的缺键处理器）和插值纪律（`interpolation.escapeValue: false`），是本包对消费方的接口面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。入口的精确导出清单在新增导出时同步更新——那是本包的回归守卫，不是对消费方的破坏；扩展入口面要与 AGENTS、README 与测试在同一提交内更新。
 
 ## 依赖
 
@@ -96,7 +96,7 @@ sequenceDiagram
 | 存储绑定 | 挂在实例自身上的私有记录 | 创建时解析的存储与键以包内注册符号为键挂在实例上，切换经同一绑定写；从实例派生的对象（如 `useTranslation` 交回的包装）连同其余自有属性一起携带它 |
 | 缺键详情 | `MissingKeyDetails` | 查找涉及的语言、命名空间、键 |
 
-**实例由创建时的选项定型**：纪律选项（受支持集、`fallbackLng: false`、`load: 'currentOnly'`、`saveMissing` 与缺键处理器）保证缺键不回落到别的语言，协商结果（起始语言）决定从哪种语言开始。`fallbackNamespaces` 是唯一到达 i18next 自身选项面的宿主选项（落为 `fallbackNS`），其未设状态（`fallbackNS` 为 false）与「没有配置回退命名空间」是同一件事。
+**实例由创建时的选项定型**：纪律选项（受支持集、`fallbackLng: false`、`load: 'currentOnly'`、`saveMissing` 与缺键处理器）保证缺键不回落到别的语言，协商结果（起始语言）决定从哪种语言开始。**插值按原样进入文本**：实例固定 `interpolation.escapeValue: false`，因为 React 把译文字符串当作文本节点渲染时已转义一次，引擎再转义一次会把实体本身（路径里的 `/` 显示成 `&#x2F;`、租户名里的 `&` 显示成 `&amp;`）呈现给用户；本包只渲染进 React，没有任何一层消费 HTML。`fallbackNamespaces` 是唯一到达 i18next 自身选项面的宿主选项（落为 `fallbackNS`），其未设状态（`fallbackNS` 为 false）与「没有配置回退命名空间」是同一件事。
 
 ## 核心算法与流程
 
