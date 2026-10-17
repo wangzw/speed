@@ -49,7 +49,10 @@ import {
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
-import { AccountIdentity } from './internal/account-identity.js'
+import {
+  AccountIdentity,
+  useAccountIdentity,
+} from './internal/account-identity.js'
 import { AccountSelector } from './internal/account-selector.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
@@ -189,7 +192,10 @@ export function InvitationsPage() {
     })
   }
 
-  const requestRemoveMember = (member: ConsoleMember) => {
+  const requestRemoveMember = (
+    member: ConsoleMember,
+    accountName: string,
+  ) => {
     confirm.ask({
       title: t('members.removeTitle'),
       message: t('members.removeMessage', { account: member.account }),
@@ -202,7 +208,7 @@ export function InvitationsPage() {
               tenant,
               account: member.account,
             })
-            return t('members.removed', { account: member.account })
+            return t('members.removed', { account: accountName })
           } catch (error) {
             setFailedMember({ account: member.account, action: 'remove' })
             throw error
@@ -212,7 +218,10 @@ export function InvitationsPage() {
     })
   }
 
-  const toggleSsoExempt = (member: ConsoleMember) => {
+  const toggleSsoExempt = (
+    member: ConsoleMember,
+    accountName: string,
+  ) => {
     const exempt = !member.sso_exempt
     setFailedMember(null)
     void membersFeedback.run(async () => {
@@ -224,7 +233,7 @@ export function InvitationsPage() {
         })
         return t(
           exempt ? 'members.ssoExemptSaved' : 'members.ssoExemptCleared',
-          { account: member.account },
+          { account: accountName },
         )
       } catch (error) {
         setFailedMember({ account: member.account, action: 'sso' })
@@ -338,59 +347,20 @@ export function InvitationsPage() {
       id: 'actions',
       header: t('members.column.actions'),
       cellWrap: 'nowrap',
-      cell: (member) => {
-        const errorId = `member-error-${encodeURIComponent(member.account)}`
-        const ssoFailed =
-          failedMember?.account === member.account &&
-          failedMember.action === 'sso'
-        const removeFailed =
-          failedMember?.account === member.account &&
-          failedMember.action === 'remove'
-        return (
-          <Box>
-            <Box sx={{ display: 'flex', columnGap: 1 }}>
-              <Button
-                type="button"
-                size="small"
-                variant="outlined"
-                aria-invalid={ssoFailed}
-                aria-describedby={ssoFailed ? errorId : undefined}
-                disabled={membersFeedback.pending}
-                loading={membersFeedback.pending}
-                onClick={() => toggleSsoExempt(member)}
-              >
-                {member.sso_exempt
-                  ? t('members.ssoExemptClear')
-                  : t('members.ssoExemptSet')}
-              </Button>
-              <Button
-                type="button"
-                size="small"
-                variant="outlined"
-                color="error"
-                aria-invalid={removeFailed}
-                aria-describedby={removeFailed ? errorId : undefined}
-                disabled={membersFeedback.pending}
-                loading={membersFeedback.pending}
-                onClick={() => requestRemoveMember(member)}
-              >
-                {t('members.remove')}
-              </Button>
-            </Box>
-            {memberFailureText !== null &&
-              failedMember?.account === member.account && (
-                <Typography
-                  id={errorId}
-                  variant="caption"
-                  color="error"
-                  sx={{ display: 'block', mt: 0.5 }}
-                >
-                  {memberFailureText}
-                </Typography>
-              )}
-          </Box>
-        )
-      },
+      cell: (member) => (
+        <MemberRowActions
+          member={member}
+          failed={
+            failedMember?.account === member.account
+              ? failedMember.action
+              : null
+          }
+          failureText={memberFailureText}
+          pending={membersFeedback.pending}
+          onRemove={requestRemoveMember}
+          onToggleSsoExempt={toggleSsoExempt}
+        />
+      ),
     },
   ]
 
@@ -617,6 +587,81 @@ export function InvitationsPage() {
       )}
 
       <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
+    </Box>
+  )
+}
+
+/**
+ * The member row's own actions. The account's readable identity comes from
+ * the same account read the row's identity cell renders (one cached read
+ * per account), so a landed action names the account the way the row shows
+ * it and falls back to the recorded identifier when the read is refused.
+ */
+function MemberRowActions({
+  member,
+  failed,
+  failureText,
+  pending,
+  onRemove,
+  onToggleSsoExempt,
+}: {
+  readonly member: ConsoleMember
+  readonly failed: 'remove' | 'sso' | null
+  readonly failureText: string | null
+  readonly pending: boolean
+  readonly onRemove: (member: ConsoleMember, accountName: string) => void
+  readonly onToggleSsoExempt: (
+    member: ConsoleMember,
+    accountName: string,
+  ) => void
+}) {
+  const { t } = useConsoleUiTranslation()
+  const { name } = useAccountIdentity(member.account)
+  const accountName = name ?? member.account
+  const errorId = `member-error-${encodeURIComponent(member.account)}`
+  const ssoFailed = failed === 'sso'
+  const removeFailed = failed === 'remove'
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', columnGap: 1 }}>
+        <Button
+          type="button"
+          size="small"
+          variant="outlined"
+          aria-invalid={ssoFailed}
+          aria-describedby={ssoFailed ? errorId : undefined}
+          disabled={pending}
+          loading={pending}
+          onClick={() => onToggleSsoExempt(member, accountName)}
+        >
+          {member.sso_exempt
+            ? t('members.ssoExemptClear')
+            : t('members.ssoExemptSet')}
+        </Button>
+        <Button
+          type="button"
+          size="small"
+          variant="outlined"
+          color="error"
+          aria-invalid={removeFailed}
+          aria-describedby={removeFailed ? errorId : undefined}
+          disabled={pending}
+          loading={pending}
+          onClick={() => onRemove(member, accountName)}
+        >
+          {t('members.remove')}
+        </Button>
+      </Box>
+      {failureText !== null && failed !== null && (
+        <Typography
+          id={errorId}
+          variant="caption"
+          color="error"
+          sx={{ display: 'block', mt: 0.5 }}
+        >
+          {failureText}
+        </Typography>
+      )}
     </Box>
   )
 }

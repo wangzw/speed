@@ -448,6 +448,43 @@ describe('InvitationsPage', () => {
     })
   })
 
+  it('names the removed member by the resolved display name, falling back to the recorded id', async () => {
+    const user = userEvent.setup()
+    const resolving = withTenant({
+      listMembers: () => Promise.resolve([member()]),
+      getAccount: () =>
+        Promise.resolve(accountFixture({ display_name: 'Member One' })),
+    })
+    const first = renderWithProviders(<InvitationsPage />, {
+      operations: resolving,
+    })
+    await pickTenant(user)
+    await screen.findByText('Member One')
+    await user.click(screen.getByRole('button', { name: '移除' }))
+    let dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    expect(
+      await screen.findByText('已移除成员「Member One」'),
+    ).toBeInTheDocument()
+    first.unmount()
+
+    // A refused account read leaves the recorded id as the only name the
+    // page has, so the confirmation names that instead.
+    const refused = withTenant({
+      listMembers: () => Promise.resolve([member()]),
+      getAccount: () => Promise.reject(new Error('forbidden')),
+    })
+    renderWithProviders(<InvitationsPage />, { operations: refused })
+    await pickTenant(user)
+    await screen.findByLabelText(/身份未解析/)
+    await user.click(screen.getByRole('button', { name: '移除' }))
+    dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    expect(
+      await screen.findByText('已移除成员「acc-1」'),
+    ).toBeInTheDocument()
+  })
+
   it('writes the chosen account id, not the typed name', async () => {
     const user = userEvent.setup()
     const written: ConsoleWriteMemberInput[] = []
@@ -625,19 +662,19 @@ describe('InvitationsPage', () => {
       await screen.findByText('账户「Ada」的成员关系已保存'),
     ).toBeInTheDocument()
 
-    // The SSO exemption names the member.
+    // The SSO exemption names the member by its readable identity.
     await screen.findAllByText('Operator')
     await user.click(screen.getByRole('button', { name: '豁免 SSO' }))
     expect(
-      await screen.findByText('已为成员「acc-1」设置 SSO 豁免'),
+      await screen.findByText('已为成员「Operator」设置 SSO 豁免'),
     ).toBeInTheDocument()
 
-    // The removal names the removed member.
+    // The removal names the removed member by the same identity.
     await user.click(screen.getByRole('button', { name: '移除' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: '确认' }))
     expect(
-      await screen.findByText('已移除成员「acc-1」'),
+      await screen.findByText('已移除成员「Operator」'),
     ).toBeInTheDocument()
   })
 
@@ -680,14 +717,14 @@ describe('InvitationsPage', () => {
     await screen.findAllByText('Operator')
     await user.click(screen.getByRole('button', { name: '豁免 SSO' }))
     expect(
-      await screen.findByText('已为成员「acc-1」设置 SSO 豁免'),
+      await screen.findByText('已为成员「Operator」设置 SSO 豁免'),
     ).toBeInTheDocument()
 
     // Another tenant makes both results describe a tenant left behind.
     await user.click(screen.getByLabelText('租户'))
     await user.click(await screen.findByRole('option', { name: 'Globex' }))
     expect(screen.queryByText('已向「ada@example.com」发出邀请')).toBeNull()
-    expect(screen.queryByText('已为成员「acc-1」设置 SSO 豁免')).toBeNull()
+    expect(screen.queryByText('已为成员「Operator」设置 SSO 豁免')).toBeNull()
   })
 
   it('has no axe violations', async () => {
