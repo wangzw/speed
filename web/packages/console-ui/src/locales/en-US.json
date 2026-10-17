@@ -952,6 +952,11 @@
     "removeAria": "Remove template {{name}}",
     "removeTitle": "Remove template",
     "removeMessage": "Remove the runtime SMS template \"{{name}}\".",
+    "removed": "Template \"{{name}}\" removed",
+    "enabledToast": "Sending of template \"{{name}}\" enabled",
+    "disabledToast": "Sending of template \"{{name}}\" disabled",
+    "registered": "Template \"{{name}}\" registered",
+    "offered": "Template \"{{name}}\" offered for review",
     "register": {
       "title": "Register a template",
       "nameLabel": "Name",

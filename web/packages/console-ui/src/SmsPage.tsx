@@ -24,8 +24,14 @@
  * empty.
  *
  * Every read and write is an operation on the console operations bundle,
- * so the page builds no client and writes no query key. The page opens
- * with ui-kit's PageHeader.
+ * so the page builds no client and writes no query key.
+ *
+ * Each titled section is its own feedback scope: registering reports under
+ * the register form, offering for review under the offer form, and the
+ * template table's enable/remove actions under the table. A refused row
+ * action marks that row inline with the same resolved text the region
+ * shows and brings the region into view; a success names the template it
+ * changed. The page opens with ui-kit's PageHeader.
  */
 
 import { useState } from 'react'
@@ -38,13 +44,18 @@ import {
   DataTable,
   ListSkeleton,
   PageHeader,
-  errorCodeOf,
+  useWriteFeedback,
 } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
-import { InlineError } from './internal/inline-error.js'
+import { useConsoleUiErrorText } from './internal/error-text.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
+import {
+  failureTextOf,
+  useFailureScroll,
+  WriteFeedbackRegion,
+} from './internal/write-feedback.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleSmsTemplate } from './operations.js'
 
@@ -111,6 +122,98 @@ export function SmsPage() {
   const setEnabled = operations.useSetSmsTemplateEnabled()
   const removeTemplate = operations.useRemoveSmsTemplate()
 
+  // One scope per titled section: register, offer, and the template table.
+  const registerFeedback = useWriteFeedback()
+  const offerFeedback = useWriteFeedback()
+  const tableFeedback = useWriteFeedback()
+  const registerRegionRef = useFailureScroll(registerFeedback.outcome)
+  const offerRegionRef = useFailureScroll(offerFeedback.outcome)
+  const tableRegionRef = useFailureScroll(tableFeedback.outcome)
+
+  // The table row the scope's failure names, and which of its two writes
+  // was refused, so the inline marker sits on that control.
+  const [failedTemplate, setFailedTemplate] = useState<{
+    readonly name: string
+    readonly action: 'enabled' | 'remove'
+  } | null>(null)
+  const resolveErrorText = useConsoleUiErrorText()
+  const tableFailureText = failureTextOf(
+    tableFeedback.outcome,
+    resolveErrorText,
+  )
+
+  const register = () => {
+    const templateName = name
+    void registerFeedback.run(async () => {
+      await registerTemplate.mutateAsync({
+        name: templateName,
+        params: parseList(params),
+        codes: parseCodes(codes),
+      })
+      setName('')
+      setParams('')
+      setCodes('')
+      return t('sms.registered', { name: templateName })
+    })
+  }
+
+  const offer = () => {
+    const templateName = offerName
+    void offerFeedback.run(async () => {
+      await offerTemplate.mutateAsync({
+        name: templateName,
+        content: offerContent,
+        kind: offerKind,
+        locale: offerLocale,
+        params: parseList(offerParams),
+        remark: offerRemark,
+      })
+      setOfferName('')
+      setOfferContent('')
+      setOfferKind('')
+      setOfferLocale('')
+      setOfferParams('')
+      setOfferRemark('')
+      return t('sms.offered', { name: templateName })
+    })
+  }
+
+  const toggleEnabled = (template: ConsoleSmsTemplate) => {
+    const enabled = !template.enabled
+    setFailedTemplate(null)
+    void tableFeedback.run(async () => {
+      try {
+        await setEnabled.mutateAsync({ name: template.name, enabled })
+        return t(enabled ? 'sms.enabledToast' : 'sms.disabledToast', {
+          name: template.name,
+        })
+      } catch (error) {
+        setFailedTemplate({ name: template.name, action: 'enabled' })
+        throw error
+      }
+    })
+  }
+
+  const requestRemove = (template: ConsoleSmsTemplate) => {
+    confirm.ask({
+      title: t('sms.removeTitle'),
+      message: t('sms.removeMessage', { name: template.name }),
+      confirmLabel: t('common.confirm'),
+      run: () => {
+        setFailedTemplate(null)
+        void tableFeedback.run(async () => {
+          try {
+            await removeTemplate.mutateAsync({ name: template.name })
+            return t('sms.removed', { name: template.name })
+          } catch (error) {
+            setFailedTemplate({ name: template.name, action: 'remove' })
+            throw error
+          }
+        })
+      },
+    })
+  }
+
   // Register draft.
   const [name, setName] = useState('')
   const [params, setParams] = useState('')
@@ -167,43 +270,62 @@ export function SmsPage() {
       id: 'actions',
       header: t('sms.column.actions'),
       cellWrap: 'nowrap',
-      cell: (template) => (
-        <Box sx={{ display: 'flex', columnGap: 1 }}>
-          <Button
-            type="button"
-            size="small"
-            variant="outlined"
-            aria-label={t(
-              template.enabled ? 'sms.disableAria' : 'sms.enableAria',
-              { name: template.name },
-            )}
-            disabled={setEnabled.isPending}
-            onClick={() =>
-              setEnabled.mutate({ name: template.name, enabled: !template.enabled })
-            }
-          >
-            {template.enabled ? t('sms.disable') : t('sms.enable')}
-          </Button>
-          <Button
-            type="button"
-            size="small"
-            variant="outlined"
-            color="error"
-            aria-label={t('sms.removeAria', { name: template.name })}
-            disabled={removeTemplate.isPending}
-            onClick={() =>
-              confirm.ask({
-                title: t('sms.removeTitle'),
-                message: t('sms.removeMessage', { name: template.name }),
-                confirmLabel: t('common.confirm'),
-                run: () => removeTemplate.mutate({ name: template.name }),
-              })
-            }
-          >
-            {t('sms.remove')}
-          </Button>
-        </Box>
-      ),
+      cell: (template) => {
+        const errorId = `sms-error-${encodeURIComponent(template.name)}`
+        const toggleFailed =
+          failedTemplate?.name === template.name &&
+          failedTemplate.action === 'enabled'
+        const removeFailed =
+          failedTemplate?.name === template.name &&
+          failedTemplate.action === 'remove'
+        return (
+          <Box>
+            <Box sx={{ display: 'flex', columnGap: 1 }}>
+              <Button
+                type="button"
+                size="small"
+                variant="outlined"
+                aria-label={t(
+                  template.enabled ? 'sms.disableAria' : 'sms.enableAria',
+                  { name: template.name },
+                )}
+                aria-invalid={toggleFailed}
+                aria-describedby={toggleFailed ? errorId : undefined}
+                disabled={tableFeedback.pending}
+                loading={tableFeedback.pending}
+                onClick={() => toggleEnabled(template)}
+              >
+                {template.enabled ? t('sms.disable') : t('sms.enable')}
+              </Button>
+              <Button
+                type="button"
+                size="small"
+                variant="outlined"
+                color="error"
+                aria-label={t('sms.removeAria', { name: template.name })}
+                aria-invalid={removeFailed}
+                aria-describedby={removeFailed ? errorId : undefined}
+                disabled={tableFeedback.pending}
+                loading={tableFeedback.pending}
+                onClick={() => requestRemove(template)}
+              >
+                {t('sms.remove')}
+              </Button>
+            </Box>
+            {tableFailureText !== null &&
+              failedTemplate?.name === template.name && (
+                <Typography
+                  id={errorId}
+                  variant="caption"
+                  color="error"
+                  sx={{ display: 'block', mt: 0.5 }}
+                >
+                  {tableFailureText}
+                </Typography>
+              )}
+          </Box>
+        )
+      },
     },
   ]
 
@@ -215,13 +337,6 @@ export function SmsPage() {
   // have settled: a stale page from an earlier read keeps rendering (and
   // keeps its forms) because the error branch is not shown then either.
   const surfaceAbsent = rows === undefined && isSurfaceAbsent(templates.error)
-
-  const writeError = firstErrorCode([
-    registerTemplate.error,
-    offerTemplate.error,
-    setEnabled.error,
-    removeTemplate.error,
-  ])
 
   return (
     <Box>
@@ -281,22 +396,15 @@ export function SmsPage() {
             <Button
               type="button"
               variant="contained"
-              disabled={registerTemplate.isPending}
-              onClick={() => {
-                registerTemplate.mutate(
-                  { name, params: parseList(params), codes: parseCodes(codes) },
-                  {
-                    onSuccess: () => {
-                      setName('')
-                      setParams('')
-                      setCodes('')
-                    },
-                  },
-                )
-              }}
+              disabled={registerFeedback.pending}
+              loading={registerFeedback.pending}
+              onClick={register}
             >
               {t('sms.register.submit')}
             </Button>
+          </Box>
+          <Box ref={registerRegionRef}>
+            <WriteFeedbackRegion outcome={registerFeedback.outcome} />
           </Box>
         </Box>
       )}
@@ -355,32 +463,15 @@ export function SmsPage() {
             <Button
               type="button"
               variant="contained"
-              disabled={offerTemplate.isPending}
-              onClick={() => {
-                offerTemplate.mutate(
-                  {
-                    name: offerName,
-                    content: offerContent,
-                    kind: offerKind,
-                    locale: offerLocale,
-                    params: parseList(offerParams),
-                    remark: offerRemark,
-                  },
-                  {
-                    onSuccess: () => {
-                      setOfferName('')
-                      setOfferContent('')
-                      setOfferKind('')
-                      setOfferLocale('')
-                      setOfferParams('')
-                      setOfferRemark('')
-                    },
-                  },
-                )
-              }}
+              disabled={offerFeedback.pending}
+              loading={offerFeedback.pending}
+              onClick={offer}
             >
               {t('sms.offer.submit')}
             </Button>
+          </Box>
+          <Box ref={offerRegionRef}>
+            <WriteFeedbackRegion outcome={offerFeedback.outcome} />
           </Box>
         </Box>
       )}
@@ -423,22 +514,11 @@ export function SmsPage() {
           />
         )}
       </ConsoleAsyncSection>
-
-      <Box sx={{ mt: 2 }}>
-        <InlineError code={writeError} />
+      <Box ref={tableRegionRef}>
+        <WriteFeedbackRegion outcome={tableFeedback.outcome} />
       </Box>
 
       <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
     </Box>
   )
-}
-
-/** The first defined error's code, or null when every error is absent. */
-function firstErrorCode(errors: readonly unknown[]): string | null {
-  for (const error of errors) {
-    if (error !== null && error !== undefined) {
-      return errorCodeOf(error)
-    }
-  }
-  return null
 }

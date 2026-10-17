@@ -952,6 +952,11 @@
     "removeAria": "移除模板 {{name}}",
     "removeTitle": "移除模板",
     "removeMessage": "移除运行期短信模板「{{name}}」。",
+    "removed": "模板「{{name}}」已移除",
+    "enabledToast": "模板「{{name}}」已启用发送",
+    "disabledToast": "模板「{{name}}」已停用发送",
+    "registered": "模板「{{name}}」已登记",
+    "offered": "模板「{{name}}」已提交审核",
     "register": {
       "title": "登记模板",
       "nameLabel": "名称",

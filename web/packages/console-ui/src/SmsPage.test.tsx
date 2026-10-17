@@ -9,9 +9,10 @@
  * endpoint answers an unclaimed path with; any other failure keeps them.
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { mockMatchMedia } from '@speed/test-utils/matchMedia'
 import { createClient } from '@speed/api-client'
 import { SmsPage } from './SmsPage.js'
 import type {
@@ -56,6 +57,30 @@ function withTemplates(
     }),
   )
 }
+
+/** The titled section a heading opens, which holds its group's region. */
+function section(name: string): HTMLElement {
+  const element = screen.getByRole('heading', { name }).closest('section')
+  if (element === null) {
+    throw new Error(`no section headed ${name}`)
+  }
+  return element as HTMLElement
+}
+
+/** jsdom implements no layout; a scroll observer installs this stub. */
+function stubScrollIntoView(): ReturnType<typeof vi.fn> {
+  const spy = vi.fn()
+  Object.defineProperty(Element.prototype, 'scrollIntoView', {
+    configurable: true,
+    writable: true,
+    value: spy,
+  })
+  return spy
+}
+
+afterEach(() => {
+  delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+})
 
 describe('SmsPage', () => {
   it('renders the empty state when no template exists', async () => {
@@ -244,6 +269,114 @@ describe('SmsPage', () => {
     renderWithProviders(<SmsPage />, { operations })
     expect(await screen.findByText('权限不足')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    // A read's refusal never settles into a write scope's slot.
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it("reports the form failures and the table failure in their own regions", async () => {
+    const user = userEvent.setup()
+    const operations = withTemplates({
+      registerSmsTemplate: () => Promise.reject({ code: 'sms.bad_request' }),
+      setSmsTemplateEnabled: () => Promise.reject({ code: 'sms.conflict' }),
+    })
+    renderWithProviders(<SmsPage />, { operations })
+    await screen.findByText('login-code')
+
+    // The register form's scope carries its own failure.
+    await user.type(screen.getAllByLabelText('名称')[0]!, 'welcome')
+    await user.click(screen.getAllByRole('button', { name: '登记' })[0]!)
+    expect(
+      await within(section('登记模板')).findByRole('alert'),
+    ).toHaveTextContent('服务端无法读取该请求，请检查表单后重试。')
+
+    // The table's row action lands in the table's scope, not the form's
+    // and not the offer form's.
+    await user.click(
+      screen.getByRole('button', { name: '停用模板 login-code' }),
+    )
+    // The table's own region carries the refusal, and its row marker
+    // repeats the one message.
+    const alerts = await screen.findAllByRole('alert')
+    expect(alerts.map((alert) => alert.textContent)).toEqual([
+      '服务端无法读取该请求，请检查表单后重试。',
+      '同名模板已存在。',
+    ])
+    expect(
+      within(section('登记模板')).queryByText('同名模板已存在。'),
+    ).toBeNull()
+    expect(
+      within(section('提交审核')).queryByText('同名模板已存在。'),
+    ).toBeNull()
+  })
+
+  it('marks the refused template row inline and brings the table region into view', async () => {
+    // Reduced motion: the region jumps instead of animating.
+    mockMatchMedia(true)
+    const scrollIntoView = stubScrollIntoView()
+    const user = userEvent.setup()
+    const operations = withTemplates({
+      setSmsTemplateEnabled: () => Promise.reject({ code: 'sms.conflict' }),
+    })
+    renderWithProviders(<SmsPage />, { operations })
+    const toggle = await screen.findByRole('button', {
+      name: '停用模板 login-code',
+    })
+    const remove = screen.getByRole('button', { name: '移除模板 login-code' })
+    await user.click(toggle)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '同名模板已存在。',
+    )
+    expect(toggle).toHaveAttribute('aria-invalid', 'true')
+    expect(remove).toHaveAttribute('aria-invalid', 'false')
+    const hintId = toggle.getAttribute('aria-describedby')
+    expect(hintId).not.toBeNull()
+    expect(document.getElementById(hintId as string)?.textContent).toBe(
+      screen.getByRole('alert').textContent,
+    )
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'auto',
+      block: 'center',
+    })
+    await expectNoAxeViolations()
+  })
+
+  it('names the changed template on each landed write', async () => {
+    const user = userEvent.setup()
+    const operations = withTemplates()
+    renderWithProviders(<SmsPage />, { operations })
+    await screen.findByText('login-code')
+
+    // Register names the template.
+    await user.type(screen.getAllByLabelText('名称')[0]!, 'welcome')
+    await user.click(screen.getAllByRole('button', { name: '登记' })[0]!)
+    expect(
+      await screen.findByText('模板「welcome」已登记'),
+    ).toBeInTheDocument()
+
+    // Offer names the template it hands to the vendor.
+    await user.type(screen.getByLabelText('内容'), 'your code is {code}')
+    await user.type(screen.getAllByLabelText('名称')[1]!, 'welcome')
+    await user.click(screen.getByRole('button', { name: '提交' }))
+    expect(
+      await screen.findByText('模板「welcome」已提交审核'),
+    ).toBeInTheDocument()
+
+    // The toggle names the template and the state it now has.
+    await user.click(
+      screen.getByRole('button', { name: '停用模板 login-code' }),
+    )
+    expect(
+      await screen.findByText('模板「login-code」已停用发送'),
+    ).toBeInTheDocument()
+
+    // The removal names the template it dropped.
+    await user.click(screen.getByRole('button', { name: '移除模板 login-code' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    expect(
+      await screen.findByText('模板「login-code」已移除'),
+    ).toBeInTheDocument()
   })
 
   it('has no axe violations', async () => {
