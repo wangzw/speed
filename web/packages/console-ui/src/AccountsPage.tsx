@@ -36,6 +36,23 @@
  * account stays until the panel has animated out (its `onExited`), so the
  * exit renders the account rather than an empty panel.
  *
+ * Every write reports through one feedback scope per control group, and
+ * each region renders directly under the group that fired it: the panel's
+ * sections carry their own scopes so a failure lands beside the controls
+ * instead of behind the open modal, the two action rows in the detail
+ * share one scope, each table shares one with its row actions, and the
+ * list's row delete and the create success share the list's scope below
+ * the table. The panel is `busy` while any scope inside it has a write in
+ * flight, so a write's result always lands in a region that is still
+ * mounted. Every settled action without a failure confirms with a message
+ * naming the account and, for a row action, the row.
+ *
+ * A created service secret is a value handed out once. Its state is held
+ * by the page, not by the panel content that unmounts on close, so a scope
+ * reset cannot drop it; the display has its own close control and its
+ * accessible name names the account. While it is displayed, a detail close
+ * request first asks through a ConfirmDialog whether to discard it.
+ *
  * Each write request body is the shape the module's OpenAPI fragment
  * declares for its endpoint, which the handler decodes; the account view
  * carries no identifier list (the module exposes identifier add/remove
@@ -50,7 +67,7 @@
  * PageHeader.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -67,24 +84,24 @@ import {
   DataTable,
   FormField,
   FormLayout,
-  InlineSuccess,
   ListSkeleton,
   PageHeader,
   SidePanel,
-  errorCodeOf,
+  useWriteFeedback,
 } from '@speed/ui-kit'
-import type { DataTableColumn } from '@speed/ui-kit'
+import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
-import { InlineError } from './internal/inline-error.js'
 import { useConsoleStepUp } from './internal/step-up-gate.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
+import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { useConsoleOperations } from './operations.js'
 import type {
   ConsoleAccount,
   ConsoleAccountSecret,
+  ConsoleAccountSecretCreated,
   ConsoleAccountSession,
   ConsoleAccountFactor,
   ConsoleCreateAccountInput,
@@ -103,6 +120,25 @@ const ACCOUNT_KINDS = ['user', 'service'] as const
 
 /** The account statuses the list read narrows by, in the order the filter offers them. */
 const FILTER_STATUSES = ['active', 'disabled', 'deleted'] as const
+
+/** One service secret handed out once, held by the page across panel
+ * closes so a scope reset cannot drop the only copy. */
+interface OneTimeSecret {
+  readonly accountId: string
+  readonly accountName: string
+  readonly label: string
+  readonly secret: string
+}
+
+/** The detail's per-section feedback scopes, one per control group. */
+interface AccountDetailFeedback {
+  readonly status: WriteFeedback
+  readonly mfa: WriteFeedback
+  readonly patch: WriteFeedback
+  readonly password: WriteFeedback
+  readonly addIdentifier: WriteFeedback
+  readonly createSecret: WriteFeedback
+}
 
 function statusLabel(status: string, t: (key: string) => string): string {
   return ACCOUNT_STATUSES.has(status)
@@ -133,20 +169,33 @@ export function AccountsPage() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [identifierToRemove, setIdentifierToRemove] = useState('')
-  // The page-level success notice belongs to the row-initiated delete: it is
-  // the only account write fired from the list, outside the detail panel.
-  // Null while nothing has landed since the last attempt, and cleared at the
-  // start of each one.
-  const [success, setSuccess] = useState<string | null>(null)
-  // The detail panel's feedback, one notice per control group that fires a
-  // write inside it. While the modal panel is open the page behind it is
-  // aria-hidden, so a page-level notice is unreachable; these render inside
-  // the panel, beside the section that initiated the write. `onExited`
-  // clears them all so reopening the panel starts clean.
-  const [actionsSuccess, setActionsSuccess] = useState<string | null>(null)
-  const [secretsSuccess, setSecretsSuccess] = useState<string | null>(null)
-  const [sessionsSuccess, setSessionsSuccess] = useState<string | null>(null)
-  const [identifierSuccess, setIdentifierSuccess] = useState<string | null>(null)
+  // The one-time service secret is page state, not scope state: a scope
+  // reset must not drop the only copy of a value handed out once, and the
+  // display outlives the panel content that unmounts on close.
+  const [oneTimeSecret, setOneTimeSecret] = useState<OneTimeSecret | null>(null)
+  // A detail close request while the secret is still open asks first.
+  const [discardSecretOpen, setDiscardSecretOpen] = useState(false)
+  // The create panel's success belongs to the list's scope and may only be
+  // written after `onExited`: while the modal is open the page behind it is
+  // aria-hidden, so a notice written then would never be announced.
+  const createSuccess = useRef<string | null>(null)
+
+  // The list's feedback scope: the row-initiated delete and the create
+  // success share it, and its region stands below the list.
+  const listWrite = useWriteFeedback()
+  // The detail's scopes, one per section. They live here rather than inside
+  // the content so the panel can be `busy` while any of them is in flight
+  // and `onExited` can clear them all.
+  const detailStatusWrite = useWriteFeedback()
+  const detailMfaWrite = useWriteFeedback()
+  const detailPatchWrite = useWriteFeedback()
+  const detailPasswordWrite = useWriteFeedback()
+  const detailAddIdentifierWrite = useWriteFeedback()
+  const detailCreateSecretWrite = useWriteFeedback()
+  const detailActionWrite = useWriteFeedback()
+  const detailSecretWrite = useWriteFeedback()
+  const detailSessionWrite = useWriteFeedback()
+  const detailIdentifierRemoveWrite = useWriteFeedback()
 
   // The applied filters, committed together on submit so a keystroke never
   // fires a request. The identifier prefix is sent with its kind (the
@@ -184,115 +233,175 @@ export function AccountsPage() {
   const revokeSession = operations.useRevokeSession()
   const removeIdentifier = operations.useRemoveIdentifier()
 
-  // The step-up-gated writes each fire through the gate: a refusal the
-  // server answers while the session is still established (a strength
-  // shortfall) arms the dialog with a re-fire of the same write and clears
-  // the mutation's own error, so the dialog opens alone rather than beside
-  // the 401 banner.
+  // The write controls a detail section starts are disabled and marked busy
+  // from the scope's own in-flight count, never from one mutation observer's
+  // `isPending`: overlapping attempts of the same group would otherwise
+  // disagree about which one is running.
+  const detailFeedback: AccountDetailFeedback = {
+    status: detailStatusWrite,
+    mfa: detailMfaWrite,
+    patch: detailPatchWrite,
+    password: detailPasswordWrite,
+    addIdentifier: detailAddIdentifierWrite,
+    createSecret: detailCreateSecretWrite,
+  }
+
+  // Any write in flight inside the panel makes the panel busy, so a close
+  // request cannot unmount the region the result is about to land in.
+  const detailBusy =
+    detailStatusWrite.pending ||
+    detailMfaWrite.pending ||
+    detailPatchWrite.pending ||
+    detailPasswordWrite.pending ||
+    detailAddIdentifierWrite.pending ||
+    detailCreateSecretWrite.pending ||
+    detailActionWrite.pending ||
+    detailSecretWrite.pending ||
+    detailSessionWrite.pending ||
+    detailIdentifierRemoveWrite.pending
 
   function openDetail(id: string): void {
     setSelectedId(id)
     setDetailOpen(true)
   }
 
+  // A close request while the one-time secret is still open asks before
+  // discarding a value that cannot be shown again.
+  function requestDetailClose(): void {
+    if (oneTimeSecret !== null) {
+      setDiscardSecretOpen(true)
+      return
+    }
+    setDetailOpen(false)
+  }
+
   // The panel has animated out: only now drop the account it rendered, and
-  // reset the feedback and write state the panel carried so opening it
-  // again (for any account) starts clean.
+  // reset every scope and draft the panel carried so opening it again (for
+  // any account) starts clean. The one-time secret is page state and is
+  // cleared only by its own close control or the discard confirmation.
   function detailExited(): void {
     setSelectedId('')
     setIdentifierToRemove('')
-    setActionsSuccess(null)
-    setSecretsSuccess(null)
-    setSessionsSuccess(null)
-    setIdentifierSuccess(null)
-    resetMFA.reset()
-    revokeSessions.reset()
-    revokeSecret.reset()
-    revokeSession.reset()
-    removeIdentifier.reset()
+    detailStatusWrite.reset()
+    detailMfaWrite.reset()
+    detailPatchWrite.reset()
+    detailPasswordWrite.reset()
+    detailAddIdentifierWrite.reset()
+    detailCreateSecretWrite.reset()
+    detailActionWrite.reset()
+    detailSecretWrite.reset()
+    detailSessionWrite.reset()
+    detailIdentifierRemoveWrite.reset()
   }
 
-  function deleteOne(id: string): void {
-    setSuccess(null)
-    deleteAccount.mutate(
-      { id },
-      {
-        onSuccess: () => {
-          if (selectedId === id) {
-            setSelectedId('')
-          }
-          setSuccess(t('accounts.deleted'))
-        },
-        onError: (error) => {
-          if (stepUp.intercept(error, () => deleteOne(id))) {
-            deleteAccount.reset()
-          }
-        },
-      },
-    )
+  // A created account closes the panel; the list's confirmation waits for
+  // the exit so it is written into the page after it becomes reachable.
+  function accountCreated(created: ConsoleAccount): void {
+    const name = created.display_name === '' ? created.id : created.display_name
+    createSuccess.current = t('accounts.created', { name })
+    setCreateOpen(false)
   }
 
-  function resetAllFactors(): void {
-    setActionsSuccess(null)
-    resetMFA.mutate(
-      { id: selectedId },
-      {
-        onSuccess: () => setActionsSuccess(t('accounts.mfaReset')),
-        onError: (error) => {
-          if (stepUp.intercept(error, resetAllFactors)) {
-            resetMFA.reset()
-          }
-        },
-      },
-    )
+  function createPanelExited(): void {
+    const message = createSuccess.current
+    createSuccess.current = null
+    if (message !== null) {
+      listWrite.succeed(message)
+    }
   }
 
-  function revokeAllSessions(): void {
-    setActionsSuccess(null)
-    revokeSessions.mutate(
-      { id: selectedId },
-      {
-        onSuccess: () => setActionsSuccess(t('accounts.sessionsRevoked')),
-        onError: (error) => {
-          if (stepUp.intercept(error, revokeAllSessions)) {
-            revokeSessions.reset()
-          }
-        },
-      },
-    )
+  function deleteOne(id: string): Promise<void> {
+    return listWrite.run(async () => {
+      try {
+        await deleteAccount.mutateAsync({ id })
+      } catch (error) {
+        if (stepUp.intercept(error, () => void deleteOne(id))) {
+          return null
+        }
+        throw error
+      }
+      if (selectedId === id) {
+        setSelectedId('')
+      }
+      return t('accounts.deleted', { id })
+    })
   }
 
-  function removeOne(identifier: string): void {
-    setIdentifierSuccess(null)
-    removeIdentifier.mutate(
-      { id: selectedId, identifier },
-      {
-        onSuccess: () => {
-          setIdentifierToRemove('')
-          setIdentifierSuccess(t('accounts.identifierRemoved'))
-        },
-        onError: (error) => {
-          if (stepUp.intercept(error, () => removeOne(identifier))) {
-            removeIdentifier.reset()
-          }
-        },
-      },
-    )
+  function resetAllFactors(): Promise<void> {
+    return detailActionWrite.run(async () => {
+      try {
+        await resetMFA.mutateAsync({ id: selectedId })
+      } catch (error) {
+        if (stepUp.intercept(error, () => void resetAllFactors())) {
+          return null
+        }
+        throw error
+      }
+      return t('accounts.mfaReset', { id: selectedId })
+    })
   }
 
-  function revokeOneSecret(secret: string): void {
-    setSecretsSuccess(null)
-    revokeSecret.mutate(
-      { id: selectedId, secret },
-      {
-        onSuccess: () => setSecretsSuccess(t('accounts.secretRevoked')),
-        onError: (error) => {
-          if (stepUp.intercept(error, () => revokeOneSecret(secret))) {
-            revokeSecret.reset()
-          }
-        },
-      },
-    )
+  function revokeAllSessions(): Promise<void> {
+    return detailActionWrite.run(async () => {
+      try {
+        await revokeSessions.mutateAsync({ id: selectedId })
+      } catch (error) {
+        if (stepUp.intercept(error, () => void revokeAllSessions())) {
+          return null
+        }
+        throw error
+      }
+      return t('accounts.sessionsRevoked', { id: selectedId })
+    })
+  }
+
+  function removeOne(identifier: string): Promise<void> {
+    return detailIdentifierRemoveWrite.run(async () => {
+      try {
+        await removeIdentifier.mutateAsync({ id: selectedId, identifier })
+      } catch (error) {
+        if (stepUp.intercept(error, () => void removeOne(identifier))) {
+          return null
+        }
+        throw error
+      }
+      setIdentifierToRemove('')
+      return t('accounts.identifierRemoved', {
+        id: selectedId,
+        identifier,
+      })
+    })
+  }
+
+  function revokeOneSecret(row: ConsoleAccountSecret): Promise<void> {
+    return detailSecretWrite.run(async () => {
+      try {
+        await revokeSecret.mutateAsync({ id: selectedId, secret: row.id })
+      } catch (error) {
+        if (stepUp.intercept(error, () => void revokeOneSecret(row))) {
+          return null
+        }
+        throw error
+      }
+      return t('accounts.secretRevoked', { id: selectedId, label: row.label })
+    })
+  }
+
+  function revokeOneSession(row: ConsoleAccountSession): Promise<void> {
+    return detailSessionWrite.run(async () => {
+      try {
+        await revokeSession.mutateAsync({
+          accountId: selectedId,
+          sessionId: row.id,
+        })
+      } catch (error) {
+        if (stepUp.intercept(error, () => void revokeOneSession(row))) {
+          return null
+        }
+        throw error
+      }
+      return t('accounts.sessionRevoked', { id: selectedId, session: row.id })
+    })
   }
 
   const columns: DataTableColumn<ConsoleAccount>[] = [
@@ -354,7 +463,8 @@ export function AccountsPage() {
             variant="outlined"
             color="error"
             aria-label={t('accounts.deleteAria', { id: row.id })}
-            disabled={deleteAccount.isPending}
+            loading={listWrite.pending}
+            disabled={listWrite.pending}
             onClick={() =>
               confirm.ask({
                 title: t('accounts.deleteTitle'),
@@ -364,7 +474,7 @@ export function AccountsPage() {
                 // sessions with it and cannot be undone from the interface:
                 // the heavier two-step guard, never the plain single confirm.
                 doubleConfirm: true,
-                run: () => deleteOne(row.id),
+                run: () => void deleteOne(row.id),
               })
             }
           >
@@ -407,13 +517,14 @@ export function AccountsPage() {
           variant="outlined"
           color="error"
           aria-label={t('accounts.secrets.revokeAria', { label: row.label })}
-          disabled={row.revoked || revokeSecret.isPending}
+          loading={detailSecretWrite.pending}
+          disabled={row.revoked || detailSecretWrite.pending}
           onClick={() =>
             confirm.ask({
               title: t('accounts.secrets.revokeTitle'),
               message: t('accounts.secrets.revokeMessage', { label: row.label }),
               confirmLabel: t('common.confirm'),
-              run: () => revokeOneSecret(row.id),
+              run: () => void revokeOneSecret(row),
             })
           }
         >
@@ -456,19 +567,14 @@ export function AccountsPage() {
           variant="outlined"
           color="error"
           aria-label={t('accounts.sessions.revokeAria', { id: row.id })}
-          disabled={row.revoked || revokeSession.isPending}
+          loading={detailSessionWrite.pending}
+          disabled={row.revoked || detailSessionWrite.pending}
           onClick={() =>
             confirm.ask({
               title: t('accounts.sessions.revokeTitle'),
               message: t('accounts.sessions.revokeMessage', { id: row.id }),
               confirmLabel: t('common.confirm'),
-              run: () => {
-                setSessionsSuccess(null)
-                revokeSession.mutate(
-                  { accountId: selectedId, sessionId: row.id },
-                  { onSuccess: () => setSessionsSuccess(t('accounts.sessionRevoked')) },
-                )
-              },
+              run: () => void revokeOneSession(row),
             })
           }
         >
@@ -502,17 +608,6 @@ export function AccountsPage() {
   const rows = accounts.data?.accounts
   const pending = accounts.isPending && rows === undefined
 
-  // The page-level failure belongs to the row-initiated delete alone; every
-  // write fired from inside the detail panel reports beside its own section
-  // there, because the page behind the open panel is aria-hidden.
-  const writeError = firstErrorCode([deleteAccount.error])
-  const actionsError = firstErrorCode([resetMFA.error, revokeSessions.error])
-  const secretsError = revokeSecret.isError ? errorCodeOf(revokeSecret.error) : null
-  const sessionsError = revokeSession.isError ? errorCodeOf(revokeSession.error) : null
-  const identifierError = removeIdentifier.isError
-    ? errorCodeOf(removeIdentifier.error)
-    : null
-
   return (
     <Box>
       <PageHeader
@@ -527,6 +622,10 @@ export function AccountsPage() {
               type="button"
               variant="outlined"
               size="small"
+              // Refreshing changes the list scope's context: while one of
+              // its writes is in flight it is disabled, so a late result
+              // cannot land against a list it no longer describes.
+              disabled={listWrite.pending}
               onClick={() => void accounts.refetch()}
             >
               {t('common.refresh')}
@@ -548,6 +647,8 @@ export function AccountsPage() {
       <AccountCreatePanel
         open={createOpen}
         onClose={() => setCreateOpen(false)}
+        onCreated={accountCreated}
+        onExited={createPanelExited}
       />
 
       <Box
@@ -620,6 +721,7 @@ export function AccountsPage() {
         <Button
           type="button"
           variant="contained"
+          disabled={listWrite.pending}
           onClick={() => {
             setIdentifier(identifierDraft.trim())
             setIdentifierKind(kindDraft)
@@ -663,11 +765,17 @@ export function AccountsPage() {
         )}
       </ConsoleAsyncSection>
 
+      {/* The list's feedback: the row delete's result and the create
+          panel's success, which is written here only after the panel's
+          exit so the page is reachable when it appears. */}
+      <WriteFeedbackRegion outcome={listWrite.outcome} sx={{ mb: 2 }} />
+
       <SidePanel
         open={detailOpen}
         size="wide"
         title={t('accounts.detail.title', { id: selectedId })}
-        onClose={() => setDetailOpen(false)}
+        busy={detailBusy}
+        onClose={requestDetailClose}
         onExited={detailExited}
       >
         {selectedId !== '' && (
@@ -713,17 +821,21 @@ export function AccountsPage() {
               )}
             </ConsoleAsyncSection>
 
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 1, rowGap: 1, mb: 2 }}>
+            {/* The action row's two account-level actions share one scope:
+                they are the same control group and each message names the
+                account. */}
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 1, rowGap: 1 }}>
               <Button
                 type="button"
                 variant="outlined"
-                disabled={resetMFA.isPending}
+                loading={detailActionWrite.pending}
+                disabled={detailActionWrite.pending}
                 onClick={() =>
                   confirm.ask({
                     title: t('accounts.resetMFATitle'),
                     message: t('accounts.resetMFAMessage'),
                     confirmLabel: t('common.confirm'),
-                    run: () => resetAllFactors(),
+                    run: () => void resetAllFactors(),
                   })
                 }
               >
@@ -733,27 +845,34 @@ export function AccountsPage() {
                 type="button"
                 variant="outlined"
                 color="error"
-                disabled={revokeSessions.isPending}
+                loading={detailActionWrite.pending}
+                disabled={detailActionWrite.pending}
                 onClick={() =>
                   confirm.ask({
                     title: t('accounts.revokeSessionsTitle'),
                     message: t('accounts.revokeSessionsMessage'),
                     confirmLabel: t('common.confirm'),
-                    run: () => revokeAllSessions(),
+                    run: () => void revokeAllSessions(),
                   })
                 }
               >
                 {t('accounts.revokeSessions')}
               </Button>
             </Box>
-
-            <Box sx={{ mb: 2 }}>
-              <InlineError code={actionsError} />
-              <InlineSuccess message={actionsSuccess} />
-            </Box>
+            <WriteFeedbackRegion
+              outcome={detailActionWrite.outcome}
+              sx={{ mb: 2 }}
+            />
 
             {account.data !== undefined && (
-              <AccountDetailWrites key={selectedId} account={account.data} />
+              <AccountDetailWrites
+                key={selectedId}
+                account={account.data}
+                feedback={detailFeedback}
+                oneTimeSecret={oneTimeSecret}
+                onSecretCreated={setOneTimeSecret}
+                onCloseSecret={() => setOneTimeSecret(null)}
+              />
             )}
 
             <Typography component="h3" variant="subtitle1" sx={{ mb: 1 }}>
@@ -825,11 +944,10 @@ export function AccountsPage() {
                 />
               )}
             </ConsoleAsyncSection>
-
-            <Box sx={{ mt: 1, mb: 2 }}>
-              <InlineError code={secretsError} />
-              <InlineSuccess message={secretsSuccess} />
-            </Box>
+            <WriteFeedbackRegion
+              outcome={detailSecretWrite.outcome}
+              sx={{ mb: 2 }}
+            />
 
             <Typography component="h3" variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
               {t('accounts.sessions.title')}
@@ -865,11 +983,10 @@ export function AccountsPage() {
                 />
               )}
             </ConsoleAsyncSection>
-
-            <Box sx={{ mt: 1, mb: 2 }}>
-              <InlineError code={sessionsError} />
-              <InlineSuccess message={sessionsSuccess} />
-            </Box>
+            <WriteFeedbackRegion
+              outcome={detailSessionWrite.outcome}
+              sx={{ mb: 2 }}
+            />
 
             <Box
               sx={{
@@ -891,7 +1008,11 @@ export function AccountsPage() {
                 type="button"
                 variant="outlined"
                 color="error"
-                disabled={removeIdentifier.isPending || identifierToRemove.trim() === ''}
+                loading={detailIdentifierRemoveWrite.pending}
+                disabled={
+                  detailIdentifierRemoveWrite.pending ||
+                  identifierToRemove.trim() === ''
+                }
                 onClick={() =>
                   confirm.ask({
                     title: t('accounts.removeIdentifier.confirmTitle'),
@@ -899,28 +1020,38 @@ export function AccountsPage() {
                       identifier: identifierToRemove,
                     }),
                     confirmLabel: t('common.confirm'),
-                    run: () => removeOne(identifierToRemove),
+                    run: () => void removeOne(identifierToRemove),
                   })
                 }
               >
                 {t('accounts.removeIdentifier.submit')}
               </Button>
             </Box>
-
-            <Box sx={{ mt: 1, mb: 2 }}>
-              <InlineError code={identifierError} />
-              <InlineSuccess message={identifierSuccess} />
-            </Box>
+            <WriteFeedbackRegion
+              outcome={detailIdentifierRemoveWrite.outcome}
+              sx={{ mb: 2 }}
+            />
           </>
         )}
       </SidePanel>
 
-      <Box sx={{ mt: 2 }}>
-        <InlineError code={writeError} />
-        <InlineSuccess message={success} />
-      </Box>
-
       <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
+
+      {/* A detail close request with an unclosed one-time secret confirms
+          first: a secret shown once cannot be recovered once discarded. */}
+      <ConfirmDialog
+        open={discardSecretOpen}
+        title={t('accounts.createSecret.discardTitle')}
+        message={t('accounts.createSecret.discardMessage')}
+        confirmLabel={t('accounts.createSecret.discardConfirm')}
+        cancelLabel={t('common.cancel')}
+        onConfirm={() => {
+          setDiscardSecretOpen(false)
+          setOneTimeSecret(null)
+          setDetailOpen(false)
+        }}
+        onCancel={() => setDiscardSecretOpen(false)}
+      />
 
       {stepUp.session !== null && (
         <StepUpChallenge
@@ -933,19 +1064,6 @@ export function AccountsPage() {
     </Box>
   )
 }
-
-/** The first defined error's code, or null when every error is absent. */
-function firstErrorCode(errors: readonly unknown[]): string | null {
-  for (const error of errors) {
-    if (error !== null && error !== undefined) {
-      return errorCodeOf(error)
-    }
-  }
-  return null
-}
-
-/** The ways an administrator may state an identifier's verification. */
-type VerifiedVia = '' | 'admin' | 'import-unverified'
 
 /**
  * Parses an optional attribute map the operator typed as a JSON object with
@@ -970,6 +1088,9 @@ function parseStringMap(text: string): Record<string, string> | null {
     return null
   }
 }
+
+/** The ways an administrator may state an identifier's verification. */
+type VerifiedVia = '' | 'admin' | 'import-unverified'
 
 /** The create form's fields, in the shape react-hook-form holds them. */
 type CreateAccountFields = {
@@ -1020,23 +1141,28 @@ type CreateAccountMutation = UseMutationResult<
  * fields flow through ui-kit's form family (FormLayout's responsive grid of
  * FormField adapters), kept two columns wide in the panel and collapsed to
  * one when the panel itself is narrow. The attribute set is typed as a JSON
- * object and marks the field when it does not parse. A landed create closes
- * the panel; a refused one keeps the fields to correct.
+ * object and marks the field when it does not parse.
+ *
+ * A refused create settles the create panel's own scope, whose region stands
+ * under the form with the fields kept for correction. A landed create closes
+ * the panel through the page: its success belongs to the list's scope and is
+ * written there after the exit, when the page behind the modal is reachable.
  */
 function AccountCreateForm({
   form,
+  feedback,
   createAccount,
   onCreated,
 }: {
   readonly form: UseFormReturn<CreateAccountFields>
+  readonly feedback: WriteFeedback
   readonly createAccount: CreateAccountMutation
-  readonly onCreated: () => void
+  readonly onCreated: (created: ConsoleAccount) => void
 }) {
   const { t } = useConsoleUiTranslation()
 
   // An array, not a fragment: MUI's Select walks its children to build the
-  // options and warns when one of them is a Fragment (the same warning the
-  // route-level a11y gate printed).
+  // options and warns when one of them is a Fragment.
   const viaOptions = [
     <MenuItem key="none" value="">
       {t('accounts.create.via.none')}
@@ -1075,12 +1201,15 @@ function AccountCreateForm({
         values.email.trim() === '' &&
         phone === '')
     ) {
+      // A submit the client refused is still an attempt: the previous
+      // result must not stand beside the reasons this one did not fire.
+      feedback.reset()
       return
     }
     const parsed =
       values.attributes.trim() === '' ? null : parseStringMap(values.attributes)
-    createAccount.mutate(
-      {
+    void feedback.run(async () => {
+      const created = await createAccount.mutateAsync({
         kind: values.kind,
         ...(values.displayName === '' ? {} : { display_name: values.displayName }),
         ...(username === '' ? {} : { username }),
@@ -1091,16 +1220,13 @@ function AccountCreateForm({
         ...(values.password === '' ? {} : { password: values.password }),
         ...(parsed === null ? {} : { attributes: parsed }),
         ...(values.mfaRequired ? { mfa_required: true } : {}),
-      },
-      {
-        onSuccess: () => {
-          // The form starts from the initial values on the next opening; the
-          // page closes the panel on the same success.
-          form.reset()
-          onCreated()
-        },
-      },
-    )
+      })
+      // The form starts from the initial values on the next opening; the
+      // page closes the panel and confirms in the list's scope after exit.
+      form.reset()
+      onCreated(created)
+      return null
+    })
   }
 
   return (
@@ -1114,7 +1240,8 @@ function AccountCreateForm({
           <Button
             type="submit"
             variant="contained"
-            disabled={createAccount.isPending || !namesAnAccount}
+            loading={feedback.pending}
+            disabled={feedback.pending || !namesAnAccount}
           >
             {t('accounts.create.submit')}
           </Button>
@@ -1257,11 +1384,7 @@ function AccountCreateForm({
           )}
         />
       </FormLayout>
-      <Box sx={{ mt: 1 }}>
-        <InlineError
-          code={createAccount.isError ? errorCodeOf(createAccount.error) : null}
-        />
-      </Box>
+      <WriteFeedbackRegion outcome={feedback.outcome} />
     </>
   )
 }
@@ -1274,6 +1397,11 @@ function AccountCreateForm({
  * whether to discard the changes. While the create request is in flight the
  * panel is busy, and SidePanel then reports no close request at all.
  *
+ * The failing attempt settles the panel's own scope, whose region is under
+ * the form. The success is not written here: `onExited` hands the page the
+ * moment the page behind is reachable again, and the page writes it into the
+ * list's scope there.
+ *
  * The discarding confirmation is a dialog stacked above the panel (both
  * stack at the modal tier; the dialog mounts later), and closing it returns
  * focus to the panel's own close control, which asked.
@@ -1281,13 +1409,18 @@ function AccountCreateForm({
 function AccountCreatePanel({
   open,
   onClose,
+  onCreated,
+  onExited,
 }: {
   readonly open: boolean
   readonly onClose: () => void
+  readonly onCreated: (created: ConsoleAccount) => void
+  readonly onExited: () => void
 }) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const createAccount = operations.useCreateAccount()
+  const feedback = useWriteFeedback()
   const form = useForm<CreateAccountFields>({
     defaultValues: CREATE_ACCOUNT_DEFAULTS,
   })
@@ -1298,21 +1431,21 @@ function AccountCreatePanel({
   const [discardOpen, setDiscardOpen] = useState(false)
 
   // Opening starts from the initial values and without the previous
-  // attempt's failure banner, so a reopened panel never shows a draft or an
-  // error it already dismissed. `form` is react-hook-form's stable
-  // controller; the mutation result is a fresh object each render, so the
-  // effect keys on the open flip alone.
+  // attempt's result, so a reopened panel never shows a draft or a failure
+  // it already dismissed. `form` is react-hook-form's stable controller and
+  // the scope's `reset` keeps its identity, so the effect keys on the open
+  // flip alone.
   useEffect(() => {
     if (!open) {
       return
     }
     form.reset()
-    createAccount.reset()
+    feedback.reset()
     setDiscardOpen(false)
-  }, [open])
+  }, [open, form, feedback.reset])
 
   function requestClose(): void {
-    if (createAccount.isPending) {
+    if (feedback.pending) {
       return
     }
     if (dirty) {
@@ -1328,17 +1461,19 @@ function AccountCreatePanel({
         open={open}
         title={t('accounts.create.title')}
         size="wide"
-        busy={createAccount.isPending}
+        busy={feedback.pending}
         onClose={requestClose}
         onExited={() => {
           form.reset()
-          createAccount.reset()
+          feedback.reset()
+          onExited()
         }}
       >
         <AccountCreateForm
           form={form}
+          feedback={feedback}
           createAccount={createAccount}
-          onCreated={onClose}
+          onCreated={onCreated}
         />
       </SidePanel>
       <ConfirmDialog
@@ -1358,16 +1493,88 @@ function AccountCreatePanel({
 }
 
 /**
- * AccountDetailWrites: the account-level write controls the platform contract
- * now declares a body for -- the status change, the MFA requirement, the patch
- * (display name / attributes / protected), the password reset, the identifier
- * add and the service-secret creation. Each renders as one field group beside
- * its own failure banner; the page's delete, factor-reset, session-revoke and
- * identifier-remove controls stay with the detail above. The account is passed
- * settled, and the component is keyed by the account id at its call site so a
- * newly selected account starts from its own values.
+ * OneTimeSecretNotice: the display of a newly created service secret, a
+ * value handed out once.
+ *
+ * Its state is the page's (`AccountDetailWrites` only renders it), so a
+ * scope reset cannot drop the only copy. The notice is one polite live
+ * region with an explicit close control whose accessible name names the
+ * account and the secret's label; the page clears it on that control or on
+ * the discard confirmation a detail close request raises.
  */
-function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) {
+function OneTimeSecretNotice({
+  notice,
+  onClose,
+}: {
+  readonly notice: OneTimeSecret
+  readonly onClose: () => void
+}) {
+  const { t } = useConsoleUiTranslation()
+  return (
+    <Box
+      role="status"
+      sx={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        columnGap: 2,
+        mt: 1,
+        mb: 2,
+        p: 2,
+        border: 1,
+        borderColor: 'divider',
+        borderRadius: 1,
+      }}
+    >
+      <Typography variant="body2" sx={{ flex: 1, wordBreak: 'break-all' }}>
+        {t('accounts.createSecret.handedOver', {
+          label: notice.label,
+          secret: notice.secret,
+        })}
+      </Typography>
+      <Button
+        type="button"
+        size="small"
+        variant="outlined"
+        aria-label={t('accounts.createSecret.closeAria', {
+          id: notice.accountId,
+          name: notice.accountName,
+          label: notice.label,
+        })}
+        onClick={onClose}
+      >
+        {t('accounts.createSecret.close')}
+      </Button>
+    </Box>
+  )
+}
+
+/**
+ * AccountDetailWrites: the account-level write controls the platform contract
+ * declares a body for -- the status change, the MFA requirement, the patch
+ * (display name / attributes / protected), the password reset, the
+ * identifier add and the service-secret creation. Each is one control group
+ * with its own feedback scope and a region directly under it, so a failure
+ * lands beside the controls that fired it inside the still-open panel. The
+ * account is passed settled, and the component is keyed by the account id at
+ * its call site so a newly selected account starts from its own values.
+ *
+ * The one-time secret's state is the page's, passed in and reported back:
+ * this component only renders the display under the create-secret group, so
+ * remounting the panel content never loses the value.
+ */
+function AccountDetailWrites({
+  account,
+  feedback,
+  oneTimeSecret,
+  onSecretCreated,
+  onCloseSecret,
+}: {
+  readonly account: ConsoleAccount
+  readonly feedback: AccountDetailFeedback
+  readonly oneTimeSecret: OneTimeSecret | null
+  readonly onSecretCreated: (notice: OneTimeSecret) => void
+  readonly onCloseSecret: () => void
+}) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const stepUp = useConsoleStepUp()
@@ -1403,10 +1610,6 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
   const [identifierValue, setIdentifierValue] = useState('')
   const [secretLabel, setSecretLabel] = useState('')
   const [secretExpires, setSecretExpires] = useState('')
-  const [createdSecret, setCreatedSecret] = useState<string | null>(null)
-  // The landed write's confirmation, filled into the detail's success notice
-  // (a polite live region) and cleared at the start of the next attempt.
-  const [success, setSuccess] = useState<string | null>(null)
 
   const attributesInvalid =
     attributes.trim() !== '' && parseStringMap(attributes) === null
@@ -1422,121 +1625,125 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
     attributes === currentAttributes &&
     protectedUnchanged
 
-  // Each write fires through the step-up gate: a refusal the server answers
-  // while the session is still established arms the dialog with a re-fire
-  // of the same write, and the mutation's own error is cleared so the
-  // dialog opens alone.
+  // Each write runs as one attempt on its group's scope. A 401 refused for a
+  // step-up shortfall is handed to the gate and settles `null` (the slot is
+  // empty from the attempt's own reset); the replay after a won challenge is
+  // a new attempt.
 
-  function saveStatus(): void {
-    setSuccess(null)
-    setStatus.mutate(
-      { id, status: statusDraft },
-      {
-        onSuccess: () => setSuccess(t('accounts.statusSaved')),
-        onError: (error) => {
-          if (stepUp.intercept(error, saveStatus)) {
-            setStatus.reset()
-          }
-        },
-      },
-    )
+  function writeStatus(): void {
+    void feedback.status.run(async () => {
+      try {
+        await setStatus.mutateAsync({ id, status: statusDraft })
+      } catch (error) {
+        if (stepUp.intercept(error, writeStatus)) {
+          return null
+        }
+        throw error
+      }
+      return t('accounts.statusSaved', { id })
+    })
   }
 
-  function saveMfa(): void {
-    setSuccess(null)
-    setMfaRequired.mutate(
-      { id, required: mfaDraft === 'true' },
-      {
-        onSuccess: () => setSuccess(t('accounts.mfaSaved')),
-        onError: (error) => {
-          if (stepUp.intercept(error, saveMfa)) {
-            setMfaRequired.reset()
-          }
-        },
-      },
-    )
+  function writeMfa(): void {
+    void feedback.mfa.run(async () => {
+      try {
+        await setMfaRequired.mutateAsync({ id, required: mfaDraft === 'true' })
+      } catch (error) {
+        if (stepUp.intercept(error, writeMfa)) {
+          return null
+        }
+        throw error
+      }
+      return t('accounts.mfaSaved', { id })
+    })
   }
 
-  function savePatch(): void {
-    setSuccess(null)
+  function writePatch(): void {
     const parsed = attributes.trim() === '' ? null : parseStringMap(attributes)
-    patchAccount.mutate(
-      {
-        id,
-        ...(displayName === account.display_name ? {} : { display_name: displayName }),
-        ...(attributes === currentAttributes || parsed === null
-          ? {}
-          : { attributes: parsed }),
-        ...(protectedUnchanged ? {} : { protected: protectedDraft === 'true' }),
-      },
-      {
-        onSuccess: () => setSuccess(t('accounts.patchSaved')),
-        onError: (error) => {
-          if (stepUp.intercept(error, savePatch)) {
-            patchAccount.reset()
-          }
-        },
-      },
-    )
+    void feedback.patch.run(async () => {
+      try {
+        await patchAccount.mutateAsync({
+          id,
+          ...(displayName === account.display_name ? {} : { display_name: displayName }),
+          ...(attributes === currentAttributes || parsed === null
+            ? {}
+            : { attributes: parsed }),
+          ...(protectedUnchanged ? {} : { protected: protectedDraft === 'true' }),
+        })
+      } catch (error) {
+        if (stepUp.intercept(error, writePatch)) {
+          return null
+        }
+        throw error
+      }
+      return t('accounts.patchSaved', { id })
+    })
   }
 
-  function savePassword(): void {
-    setSuccess(null)
-    resetPassword.mutate(
-      { id, password: tempPassword },
-      {
-        onSuccess: () => {
-          setTempPassword('')
-          setSuccess(t('accounts.passwordReset'))
-        },
-        onError: (error) => {
-          if (stepUp.intercept(error, savePassword)) {
-            resetPassword.reset()
-          }
-        },
-      },
-    )
+  function writePassword(): void {
+    void feedback.password.run(async () => {
+      try {
+        await resetPassword.mutateAsync({ id, password: tempPassword })
+      } catch (error) {
+        if (stepUp.intercept(error, writePassword)) {
+          return null
+        }
+        throw error
+      }
+      setTempPassword('')
+      return t('accounts.passwordReset', { id })
+    })
   }
 
   function addOne(): void {
-    setSuccess(null)
-    addIdentifier.mutate(
-      { id, kind: identifierKind, value: identifierValue },
-      {
-        onSuccess: () => {
-          setIdentifierValue('')
-          setSuccess(t('accounts.identifierAdded'))
-        },
-        onError: (error) => {
-          if (stepUp.intercept(error, addOne)) {
-            addIdentifier.reset()
-          }
-        },
-      },
-    )
+    void feedback.addIdentifier.run(async () => {
+      try {
+        await addIdentifier.mutateAsync({
+          id,
+          kind: identifierKind,
+          value: identifierValue,
+        })
+      } catch (error) {
+        if (stepUp.intercept(error, addOne)) {
+          return null
+        }
+        throw error
+      }
+      setIdentifierValue('')
+      return t('accounts.identifierAdded', {
+        id,
+        identifier: identifierValue,
+      })
+    })
   }
 
   function createOne(): void {
-    setSuccess(null)
-    createSecret.mutate(
-      {
-        id,
-        label: secretLabel,
-        ...(secretExpires === '' ? {} : { expires_at: secretExpires }),
-      },
-      {
-        onSuccess: (answer) => {
-          setCreatedSecret(answer.secret)
-          setSecretLabel('')
-          setSecretExpires('')
-        },
-        onError: (error) => {
-          if (stepUp.intercept(error, createOne)) {
-            createSecret.reset()
-          }
-        },
-      },
-    )
+    void feedback.createSecret.run(async () => {
+      let created: ConsoleAccountSecretCreated
+      try {
+        created = await createSecret.mutateAsync({
+          id,
+          label: secretLabel,
+          ...(secretExpires === '' ? {} : { expires_at: secretExpires }),
+        })
+      } catch (error) {
+        if (stepUp.intercept(error, createOne)) {
+          return null
+        }
+        throw error
+      }
+      setSecretLabel('')
+      setSecretExpires('')
+      // The value is handed to the page, beside the slot: the display
+      // survives this scope's reset and the panel content's remount.
+      onSecretCreated({
+        accountId: id,
+        accountName: account.display_name === '' ? id : account.display_name,
+        label: created.label,
+        secret: created.secret,
+      })
+      return t('accounts.secretCreated', { id, label: created.label })
+    })
   }
 
   const rowSx = {
@@ -1545,7 +1752,7 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
     alignItems: 'flex-end',
     columnGap: 2,
     rowGap: 1,
-    mb: 2,
+    mb: 1,
   } as const
 
   return (
@@ -1571,17 +1778,16 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
         <Button
           type="button"
           variant="outlined"
-          disabled={setStatus.isPending || statusUnchanged}
-          onClick={() => saveStatus()}
+          loading={feedback.status.pending}
+          disabled={feedback.status.pending || statusUnchanged}
+          onClick={() => writeStatus()}
         >
           {t('accounts.status.submit')}
         </Button>
-        <InlineError
-          code={setStatus.isError ? errorCodeOf(setStatus.error) : null}
-        />
       </Box>
+      <WriteFeedbackRegion outcome={feedback.status.outcome} />
 
-      <Box sx={rowSx}>
+      <Box sx={{ ...rowSx, mt: 1 }}>
         <TextField
           select
           size="small"
@@ -1596,17 +1802,16 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
         <Button
           type="button"
           variant="outlined"
-          disabled={setMfaRequired.isPending || mfaUnchanged}
-          onClick={() => saveMfa()}
+          loading={feedback.mfa.pending}
+          disabled={feedback.mfa.pending || mfaUnchanged}
+          onClick={() => writeMfa()}
         >
           {t('accounts.mfa.submit')}
         </Button>
-        <InlineError
-          code={setMfaRequired.isError ? errorCodeOf(setMfaRequired.error) : null}
-        />
       </Box>
+      <WriteFeedbackRegion outcome={feedback.mfa.outcome} />
 
-      <Box sx={rowSx}>
+      <Box sx={{ ...rowSx, mt: 1 }}>
         <TextField
           size="small"
           value={displayName}
@@ -1643,17 +1848,18 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
         <Button
           type="button"
           variant="outlined"
-          disabled={patchAccount.isPending || attributesInvalid || patchUnchanged}
-          onClick={() => savePatch()}
+          loading={feedback.patch.pending}
+          disabled={
+            feedback.patch.pending || attributesInvalid || patchUnchanged
+          }
+          onClick={() => writePatch()}
         >
           {t('accounts.patch.submit')}
         </Button>
-        <InlineError
-          code={patchAccount.isError ? errorCodeOf(patchAccount.error) : null}
-        />
       </Box>
+      <WriteFeedbackRegion outcome={feedback.patch.outcome} />
 
-      <Box sx={rowSx}>
+      <Box sx={{ ...rowSx, mt: 1 }}>
         <TextField
           size="small"
           type="password"
@@ -1664,17 +1870,16 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
         <Button
           type="button"
           variant="outlined"
-          disabled={resetPassword.isPending || tempPassword === ''}
-          onClick={() => savePassword()}
+          loading={feedback.password.pending}
+          disabled={feedback.password.pending || tempPassword === ''}
+          onClick={() => writePassword()}
         >
           {t('accounts.password.submit')}
         </Button>
-        <InlineError
-          code={resetPassword.isError ? errorCodeOf(resetPassword.error) : null}
-        />
       </Box>
+      <WriteFeedbackRegion outcome={feedback.password.outcome} />
 
-      <Box sx={rowSx}>
+      <Box sx={{ ...rowSx, mt: 1 }}>
         <TextField
           select
           size="small"
@@ -1699,17 +1904,16 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
         <Button
           type="button"
           variant="outlined"
-          disabled={addIdentifier.isPending || identifierValue === ''}
+          loading={feedback.addIdentifier.pending}
+          disabled={feedback.addIdentifier.pending || identifierValue === ''}
           onClick={() => addOne()}
         >
           {t('accounts.addIdentifier.submit')}
         </Button>
-        <InlineError
-          code={addIdentifier.isError ? errorCodeOf(addIdentifier.error) : null}
-        />
       </Box>
+      <WriteFeedbackRegion outcome={feedback.addIdentifier.outcome} />
 
-      <Box sx={rowSx}>
+      <Box sx={{ ...rowSx, mt: 1 }}>
         <TextField
           size="small"
           value={secretLabel}
@@ -1726,27 +1930,17 @@ function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) 
         <Button
           type="button"
           variant="outlined"
-          disabled={createSecret.isPending || secretLabel === ''}
+          loading={feedback.createSecret.pending}
+          disabled={feedback.createSecret.pending || secretLabel === ''}
           onClick={() => createOne()}
         >
           {t('accounts.createSecret.submit')}
         </Button>
-        <InlineError
-          code={createSecret.isError ? errorCodeOf(createSecret.error) : null}
-        />
       </Box>
-
-      {createdSecret !== null && (
-        <Typography variant="body2" sx={{ wordBreak: 'break-all', mb: 2 }}>
-          {t('accounts.createSecret.handedOver', { secret: createdSecret })}
-        </Typography>
+      <WriteFeedbackRegion outcome={feedback.createSecret.outcome} sx={{ mb: 2 }} />
+      {oneTimeSecret !== null && oneTimeSecret.accountId === id && (
+        <OneTimeSecretNotice notice={oneTimeSecret} onClose={onCloseSecret} />
       )}
-
-      {/* The detail writes' success notice: one standing role="status" region
-          for whichever field-level write just landed. */}
-      <Box sx={{ mb: 2 }}>
-        <InlineSuccess message={success} />
-      </Box>
 
       {stepUp.session !== null && (
         <StepUpChallenge

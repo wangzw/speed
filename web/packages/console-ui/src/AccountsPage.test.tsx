@@ -19,6 +19,7 @@ import { emittedStyleText } from '@speed/test-utils/emitted-css'
 import { AccountsPage } from './AccountsPage.js'
 import { consoleOperations } from './operations.js'
 import type {
+  ConsoleAccount,
   ConsoleAddIdentifierInput,
   ConsoleCreateAccountInput,
   ConsoleCreateSecretInput,
@@ -243,7 +244,7 @@ const DETAIL_WRITES: readonly {
 }[] = [
   {
     label: 'reset all MFA factors',
-    success: '认证因子已重置',
+    success: '账户「acc-1」的认证因子已重置',
     operations: (fail) => ({
       resetMFA: () => (fail ? Promise.reject(FORBIDDEN) : Promise.resolve()),
     }),
@@ -254,7 +255,7 @@ const DETAIL_WRITES: readonly {
   },
   {
     label: 'revoke all sessions',
-    success: '会话已全部撤销',
+    success: '账户「acc-1」的会话已全部撤销',
     operations: (fail) => ({
       revokeAccountSessions: () =>
         fail ? Promise.reject(FORBIDDEN) : Promise.resolve(),
@@ -268,7 +269,7 @@ const DETAIL_WRITES: readonly {
   },
   {
     label: 'revoke one service secret',
-    success: '密钥已撤销',
+    success: '账户「acc-1」的服务密钥「ci」已撤销',
     operations: (fail) => ({
       listAccountSecrets: () => Promise.resolve([SECRET_ROW]),
       revokeSecret: () => (fail ? Promise.reject(FORBIDDEN) : Promise.resolve()),
@@ -281,7 +282,7 @@ const DETAIL_WRITES: readonly {
   },
   {
     label: 'revoke one session',
-    success: '会话已撤销',
+    success: '账户「acc-1」的会话「sess-1」已撤销',
     operations: (fail) => ({
       listAccountSessions: () => Promise.resolve([SESSION_ROW]),
       revokeSession: () => (fail ? Promise.reject(FORBIDDEN) : Promise.resolve()),
@@ -296,7 +297,7 @@ const DETAIL_WRITES: readonly {
   },
   {
     label: 'remove one login identifier by name',
-    success: '登录标识已移除',
+    success: '账户「acc-1」的登录标识「ada@example.com」已移除',
     operations: (fail) => ({
       removeIdentifier: () =>
         fail ? Promise.reject(FORBIDDEN) : Promise.resolve(),
@@ -311,6 +312,103 @@ const DETAIL_WRITES: readonly {
     },
   },
 ]
+
+/** The six field-level writes of the detail's account-level section: each is
+ * its own control group and its own feedback scope, with the region directly
+ * under the group. */
+const FIELD_WRITES: readonly {
+  readonly label: string
+  readonly success: string
+  readonly operations: (fail: boolean) => Partial<ConsoleBackend>
+  readonly drive: WriteDriver
+}[] = [
+  {
+    label: 'change the account status',
+    success: '账户「acc-1」的状态已保存',
+    operations: (fail) => ({
+      setAccountStatus: () =>
+        fail ? Promise.reject(FORBIDDEN) : Promise.resolve(accountFixture()),
+    }),
+    drive: async (user, panel) => {
+      await user.click(within(panel).getByLabelText('状态'))
+      await user.click(await screen.findByRole('option', { name: '已停用' }))
+      await user.click(within(panel).getByRole('button', { name: '保存状态' }))
+    },
+  },
+  {
+    label: 'change the MFA requirement',
+    success: '账户「acc-1」的 MFA 要求已保存',
+    operations: (fail) => ({
+      setMFARequired: () =>
+        fail ? Promise.reject(FORBIDDEN) : Promise.resolve(),
+    }),
+    drive: async (user, panel) => {
+      await user.click(within(panel).getByLabelText('MFA 要求'))
+      await user.click(await screen.findByRole('option', { name: '必须' }))
+      await user.click(within(panel).getByRole('button', { name: '保存要求' }))
+    },
+  },
+  {
+    label: 'patch the account',
+    success: '账户「acc-1」的资料已保存',
+    operations: (fail) => ({
+      patchAccount: () =>
+        fail ? Promise.reject(FORBIDDEN) : Promise.resolve(accountFixture()),
+    }),
+    drive: async (user, panel) => {
+      const name = within(panel).getByLabelText('新显示名')
+      await user.clear(name)
+      await user.type(name, 'Ada II')
+      await user.click(within(panel).getByRole('button', { name: '保存改动' }))
+    },
+  },
+  {
+    label: 'reset the password',
+    success: '账户「acc-1」的口令已重置',
+    operations: (fail) => ({
+      resetPassword: () =>
+        fail ? Promise.reject(FORBIDDEN) : Promise.resolve(),
+    }),
+    drive: async (user, panel) => {
+      await user.type(within(panel).getByLabelText('临时口令'), 'secret123')
+      await user.click(within(panel).getByRole('button', { name: '重置口令' }))
+    },
+  },
+  {
+    label: 'add a login identifier',
+    success: '账户「acc-1」已添加登录标识「ada@example.com」',
+    operations: (fail) => ({
+      addIdentifier: () =>
+        fail ? Promise.reject(FORBIDDEN) : Promise.resolve(),
+    }),
+    drive: async (user, panel) => {
+      await user.type(within(panel).getByLabelText('取值'), 'ada@example.com')
+      await user.click(within(panel).getByRole('button', { name: '新增标识' }))
+    },
+  },
+  {
+    label: 'create a service secret',
+    success: '账户「acc-1」已创建服务密钥「ci」',
+    operations: (fail) => ({
+      createSecret: () =>
+        fail
+          ? Promise.reject(FORBIDDEN)
+          : Promise.resolve({
+              id: 'secret-9',
+              label: 'ci',
+              secret: 'one-time-value',
+              expires_at: '0001-01-01T00:00:00Z',
+            }),
+    }),
+    drive: async (user, panel) => {
+      await user.type(within(panel).getByLabelText('标签'), 'ci')
+      await user.click(within(panel).getByRole('button', { name: '新建密钥' }))
+    },
+  },
+]
+
+/** Both tables drive one write per control group through the panel. */
+const ALL_DETAIL_WRITES = [...DETAIL_WRITES, ...FIELD_WRITES]
 
 describe('AccountsPage', () => {
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
@@ -610,6 +708,21 @@ describe('AccountsPage', () => {
     const challenge = await screen.findByRole('dialog', {
       name: '需要重新验证',
     })
+    // The refusal handed to the gate settles null: the status group's slot
+    // stays empty, so no failure banner stands beside the step-up dialog.
+    // The control leaves its busy state when the attempt settles, which is
+    // also the moment a wrongly settled failure would render.
+    await waitFor(() => expect(save).toBeEnabled())
+    // Let the rejected attempt's promise chain settle before judging: the
+    // dialog opens inside the failure handler, ahead of the attempt's own
+    // settlement.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    // The step-up dialog hides the panel from assistive technology, so the
+    // assertion reads the panel's DOM directly: a wrongly settled failure
+    // still renders its alert there and must show up here.
+    expect(panel.querySelectorAll('[role="alert"]')).toHaveLength(0)
     await user.click(within(challenge).getByRole('button', { name: '取消' }))
     await waitFor(() => expect(save).toHaveFocus())
   })
@@ -637,6 +750,20 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
     await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    await expectNoAxeViolations()
+  })
+
+  it('has no axe violations with the one-time secret displayed', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts()
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    await user.type(within(panel).getByLabelText('标签'), 'ci')
+    await user.click(within(panel).getByRole('button', { name: '新建密钥' }))
+    await within(panel).findByText(
+      '服务密钥「label」（仅显示这一次）：one-time',
+    )
     await expectNoAxeViolations()
   })
 
@@ -939,7 +1066,7 @@ describe('AccountsPage', () => {
     })
   })
 
-  it.each(DETAIL_WRITES)(
+  it.each(ALL_DETAIL_WRITES)(
     'renders a $label failure inside the open detail panel, never at page level',
     async ({ operations, drive }) => {
       const user = userEvent.setup()
@@ -960,7 +1087,7 @@ describe('AccountsPage', () => {
     },
   )
 
-  it.each(DETAIL_WRITES)(
+  it.each(ALL_DETAIL_WRITES)(
     'renders a $label success inside the open detail panel',
     async ({ success, operations, drive }) => {
       const user = userEvent.setup()
@@ -980,6 +1107,356 @@ describe('AccountsPage', () => {
       }
     },
   )
+
+  it('keeps the detail panel busy while any of its scopes is in flight', async () => {
+    const user = userEvent.setup()
+    let finish: (() => void) | undefined
+    const operations = withAccounts({
+      resetPassword: () =>
+        new Promise<void>((resolve) => {
+          finish = resolve
+        }),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    await user.type(within(panel).getByLabelText('临时口令'), 'secret123')
+    await user.click(within(panel).getByRole('button', { name: '重置口令' }))
+
+    // A write in one section makes the whole panel busy: the close control
+    // is disabled and Escape reports no close request at all.
+    await waitFor(() =>
+      expect(
+        within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
+      ).toBeDisabled(),
+    )
+    fireEvent.keyDown(panel, { key: 'Escape' })
+    expect(
+      screen.getByRole('dialog', { name: '账户「acc-1」' }),
+    ).toBeInTheDocument()
+
+    await act(async () => {
+      finish?.()
+    })
+    await waitFor(() =>
+      expect(
+        within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
+      ).toBeEnabled(),
+    )
+    fireEvent.click(within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }))
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: '账户「acc-1」' }),
+      ).not.toBeInTheDocument()
+    })
+  })
+
+  it('keeps each control group\'s outcome in its own region', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      setAccountStatus: () => Promise.reject(FORBIDDEN),
+      setMFARequired: () => Promise.resolve(),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+
+    // The status write fails in its own region.
+    await user.click(within(panel).getByLabelText('状态'))
+    await user.click(await screen.findByRole('option', { name: '已停用' }))
+    await user.click(within(panel).getByRole('button', { name: '保存状态' }))
+    expect(await within(panel).findByRole('alert')).toHaveTextContent(FORBIDDEN_TEXT)
+
+    // The MFA write lands in its own region; the status failure stands
+    // because the two groups do not share a slot (nothing is aggregated).
+    await user.click(within(panel).getByLabelText('MFA 要求'))
+    await user.click(await screen.findByRole('option', { name: '必须' }))
+    await user.click(within(panel).getByRole('button', { name: '保存要求' }))
+    expect(
+      await within(panel).findByText('账户「acc-1」的 MFA 要求已保存'),
+    ).toBeInTheDocument()
+    expect(within(panel).getByRole('alert')).toHaveTextContent(FORBIDDEN_TEXT)
+  })
+
+  it('renders a creation failure under the form inside the create panel', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      createAccount: () => Promise.reject(FORBIDDEN),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    const panel = await openCreate(user)
+    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
+    await user.type(within(panel).getByLabelText('用户名'), 'grace')
+    await user.click(within(panel).getByRole('button', { name: '新建' }))
+
+    const alert = await within(panel).findByRole('alert')
+    expect(alert).toHaveTextContent(FORBIDDEN_TEXT)
+    // The failure belongs to the create panel's own scope, inside the modal;
+    // the page behind it carries none.
+    expect(outsideOf(panel, '[role="alert"]')).toEqual([])
+    // The fields stay for correction and the panel stays open.
+    expect(within(panel).getByLabelText('显示名')).toHaveValue('Grace')
+    expect(screen.getByRole('dialog', { name: CREATE_PANEL_NAME })).toBe(panel)
+  })
+
+  it('writes the creation success below the list only after the panel exits', async () => {
+    const user = userEvent.setup()
+    let finishCreate: ((account: ConsoleAccount) => void) | undefined
+    const operations = withAccounts({
+      createAccount: () =>
+        new Promise<ConsoleAccount>((resolve) => {
+          finishCreate = resolve
+        }),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    await screen.findByText('Ada Lovelace')
+    const panel = await openCreate(user)
+    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
+    await user.type(within(panel).getByLabelText('用户名'), 'grace')
+    await user.click(within(panel).getByRole('button', { name: '新建' }))
+
+    await act(async () => {
+      finishCreate?.(accountFixture({ display_name: 'Grace' }))
+    })
+
+    // While the panel is still exiting, the page behind it is aria-hidden:
+    // the success may not be written yet.
+    expect(
+      screen.getByRole('dialog', { name: CREATE_PANEL_NAME }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('账户「Grace」已创建')).toBeNull()
+
+    // Only after the exit does it land, in the page's list region.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: CREATE_PANEL_NAME }),
+      ).not.toBeInTheDocument()
+    })
+    const notice = await screen.findByText('账户「Grace」已创建')
+    expect(notice.closest('[role="dialog"]')).toBeNull()
+    expect(notice.closest('[role="status"]')).not.toBeNull()
+  })
+
+  it('keeps the last-settled result in the list scope when writes overlap', async () => {
+    const user = userEvent.setup()
+    let finishDelete: (() => void) | undefined
+    let finishCreate: ((account: ConsoleAccount) => void) | undefined
+    const operations = withAccounts({
+      deleteAccount: () =>
+        new Promise<void>((resolve) => {
+          finishDelete = resolve
+        }),
+      createAccount: () =>
+        new Promise<ConsoleAccount>((resolve) => {
+          finishCreate = resolve
+        }),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    await screen.findByText('Ada Lovelace')
+
+    // Start the row delete and confirm it through the two-step guard; it
+    // stays in flight (one attempt in the list scope).
+    await user.click(screen.getByRole('button', { name: '删除账户 acc-1' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await act(async () => {
+      await new Promise((resolve) =>
+        setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
+      )
+    })
+    await user.click(
+      within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
+    )
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+
+    // While that write is in flight, a create lands in the same scope via
+    // the create panel's exit.
+    const panel = await openCreate(user)
+    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
+    await user.type(within(panel).getByLabelText('用户名'), 'grace')
+    await user.click(within(panel).getByRole('button', { name: '新建' }))
+    await act(async () => {
+      finishCreate?.(accountFixture({ display_name: 'Grace' }))
+    })
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: CREATE_PANEL_NAME }),
+      ).not.toBeInTheDocument()
+    })
+    expect(await screen.findByText('账户「Grace」已创建')).toBeInTheDocument()
+
+    // The delete settles last and replaces the create's confirmation: one
+    // slot, the last result wins.
+    await act(async () => {
+      finishDelete?.()
+    })
+    expect(await screen.findByText('账户「acc-1」已删除')).toBeInTheDocument()
+    expect(screen.queryByText('账户「Grace」已创建')).toBeNull()
+  })
+
+  it('shows a one-time secret under the create-secret group with a named close control', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      createSecret: () =>
+        Promise.resolve({
+          id: 'secret-9',
+          label: 'ci',
+          secret: 'one-time-value',
+          expires_at: '0001-01-01T00:00:00Z',
+        }),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    await user.type(within(panel).getByLabelText('标签'), 'ci')
+    await user.click(within(panel).getByRole('button', { name: '新建密钥' }))
+
+    const display = await within(panel).findByText(
+      '服务密钥「ci」（仅显示这一次）：one-time-value',
+    )
+    expect(display.closest('[role="status"]')).not.toBeNull()
+    // The explicit close control names the account it belongs to.
+    const close = within(panel).getByRole('button', {
+      name: '关闭账户「Operator」（acc-1）的服务密钥「ci」显示',
+    })
+    expect(close).toBeInTheDocument()
+    // The slot's success confirmation stands beside the display, not in it;
+    // closing the display leaves the confirmation in place.
+    expect(
+      within(panel).getByText('账户「acc-1」已创建服务密钥「ci」'),
+    ).toBeInTheDocument()
+    await user.click(close)
+    expect(within(panel).queryByText(/仅显示这一次/)).toBeNull()
+    expect(
+      within(panel).getByText('账户「acc-1」已创建服务密钥「ci」'),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps the one-time secret through a reset of the creating scope', async () => {
+    const user = userEvent.setup()
+    let attempts = 0
+    const operations = withAccounts({
+      createSecret: () => {
+        attempts += 1
+        return attempts === 1
+          ? Promise.resolve({
+              id: 'secret-9',
+              label: 'ci',
+              secret: 'one-time-value',
+              expires_at: '0001-01-01T00:00:00Z',
+            })
+          : Promise.reject(FORBIDDEN)
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    await user.type(within(panel).getByLabelText('标签'), 'ci')
+    await user.click(within(panel).getByRole('button', { name: '新建密钥' }))
+    await within(panel).findByText(
+      '服务密钥「ci」（仅显示这一次）：one-time-value',
+    )
+
+    // A second attempt resets the creating scope and settles as a failure.
+    // The display is page state, not slot state: it survives both.
+    await user.type(within(panel).getByLabelText('标签'), 'ci')
+    await user.click(within(panel).getByRole('button', { name: '新建密钥' }))
+    expect(await within(panel).findByRole('alert')).toHaveTextContent(FORBIDDEN_TEXT)
+    expect(
+      within(panel).getByText('服务密钥「ci」（仅显示这一次）：one-time-value'),
+    ).toBeInTheDocument()
+    expect(
+      within(panel).queryByText('账户「acc-1」已创建服务密钥「ci」'),
+    ).toBeNull()
+  })
+
+  it('asks before discarding an unclosed secret when the detail panel closes', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      createSecret: () =>
+        Promise.resolve({
+          id: 'secret-9',
+          label: 'ci',
+          secret: 'one-time-value',
+          expires_at: '0001-01-01T00:00:00Z',
+        }),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    let panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    await user.type(within(panel).getByLabelText('标签'), 'ci')
+    await user.click(within(panel).getByRole('button', { name: '新建密钥' }))
+    await within(panel).findByText(
+      '服务密钥「ci」（仅显示这一次）：one-time-value',
+    )
+
+    // Cancelling the discard keeps the panel and the unclosed secret.
+    fireEvent.click(
+      within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
+    )
+    let discard = await screen.findByRole('dialog', {
+      name: '放弃未关闭的服务密钥',
+    })
+    await user.click(within(discard).getByRole('button', { name: '取消' }))
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: '放弃未关闭的服务密钥' }),
+      ).not.toBeInTheDocument()
+    })
+    panel = screen.getByRole('dialog', { name: '账户「acc-1」' })
+    expect(
+      within(panel).getByText('服务密钥「ci」（仅显示这一次）：one-time-value'),
+    ).toBeInTheDocument()
+
+    // Confirming closes the panel and discards; reopening starts without it.
+    fireEvent.click(
+      within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
+    )
+    discard = await screen.findByRole('dialog', {
+      name: '放弃未关闭的服务密钥',
+    })
+    await user.click(within(discard).getByRole('button', { name: '放弃' }))
+    // Both the confirmation and the panel must finish exiting before the
+    // page behind the modal is reachable again.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: '放弃未关闭的服务密钥' }),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('dialog', { name: '账户「acc-1」' }),
+      ).not.toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: '管理账户 acc-1' }))
+    panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    expect(within(panel).queryByText(/仅显示这一次/)).toBeNull()
+  })
+
+  it('does not warn about a Fragment in the create form\'s select options', async () => {
+    const user = userEvent.setup()
+    const fragmentWarnings: string[] = []
+    const original = console.error
+    const spy = vi.spyOn(console, 'error').mockImplementation((...args) => {
+      const text = args.map(String).join(' ')
+      if (text.includes("doesn't accept a Fragment")) {
+        fragmentWarnings.push(text)
+        return
+      }
+      original(...args)
+    })
+    try {
+      renderWithProviders(<AccountsPage />, { operations: withAccounts() })
+      const panel = await openCreate(user)
+      await user.click(within(panel).getByLabelText('邮箱验证方式'))
+      await screen.findByRole('option', { name: '管理员断言' })
+    } finally {
+      spy.mockRestore()
+    }
+    expect(fragmentWarnings).toEqual([])
+  })
 
   it('carries a destructive write\'s confirmation in the already-aria-hidden page\'s panel', async () => {
     const user = userEvent.setup()
@@ -1001,7 +1478,7 @@ describe('AccountsPage', () => {
     const region = await waitFor(() => {
       const found = within(panel)
         .getAllByRole('status')
-        .find((entry) => entry.textContent === '会话已全部撤销')
+        .find((entry) => entry.textContent === '账户「acc-1」的会话已全部撤销')
       expect(found).toBeDefined()
       return found as HTMLElement
     })
@@ -1020,7 +1497,9 @@ describe('AccountsPage', () => {
     await within(panel).findByText('ci')
     await user.click(within(panel).getByRole('button', { name: '撤销密钥 ci' }))
     await confirmDialog(user)
-    expect(await within(panel).findByText('密钥已撤销')).toBeInTheDocument()
+    expect(
+      await within(panel).findByText('账户「acc-1」的服务密钥「ci」已撤销'),
+    ).toBeInTheDocument()
 
     fireEvent.click(within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }))
     await waitFor(() => {
@@ -1033,7 +1512,7 @@ describe('AccountsPage', () => {
     // message from the previous visit.
     await user.click(screen.getByRole('button', { name: '管理账户 acc-1' }))
     panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
-    expect(within(panel).queryByText('密钥已撤销')).toBeNull()
+    expect(within(panel).queryByText('账户「acc-1」的服务密钥「ci」已撤销')).toBeNull()
   })
 
   it('creates an account through the bundle', async () => {
@@ -1197,7 +1676,7 @@ describe('AccountsPage', () => {
     await user.click(screen.getByRole('button', { name: '保存状态' }))
     // The landed write fills the page's standing status region, so a
     // successful save is confirmed rather than silent.
-    expect(await screen.findByText('状态已保存')).toBeInTheDocument()
+    expect(await screen.findByText('账户「acc-1」的状态已保存')).toBeInTheDocument()
   })
 
   it('names each account row control with its own account', async () => {
@@ -1427,7 +1906,7 @@ describe('AccountsPage', () => {
       expect(calls).toEqual([{ id: 'acc-1', label: 'ci' }])
     })
     expect(
-      await screen.findByText('密钥（仅显示这一次）：one-time-value'),
+      await screen.findByText('服务密钥「ci」（仅显示这一次）：one-time-value'),
     ).toBeInTheDocument()
   })
 
