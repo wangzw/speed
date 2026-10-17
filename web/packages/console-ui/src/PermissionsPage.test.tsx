@@ -510,6 +510,60 @@ describe('PermissionsPage', () => {
     expect(await screen.findByText('viewer')).toBeInTheDocument()
   })
 
+  it('gives the lookup read its loading and empty placeholders', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<readonly ConsoleBinding[]>()
+    const operations = withAuthz({
+      listAccountBindings: () => pending.promise,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await chooseAccount(user, '账户标识', 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: '查询' }))
+
+    const lookup = section('查询账户的绑定')
+    expect(
+      within(lookup).getByRole('status', {
+        name: '正在加载该账户的绑定',
+      }),
+    ).toBeInTheDocument()
+
+    await act(async () => {
+      pending.resolve([])
+      await pending.promise
+    })
+    expect(await within(lookup).findByText('暂无绑定')).toBeInTheDocument()
+  })
+
+  it('gives the lookup read a retryable failure and re-reads on retry', async () => {
+    const user = userEvent.setup()
+    let reads = 0
+    const operations = withAuthz({
+      listAccountBindings: () => {
+        reads += 1
+        return reads === 1
+          ? Promise.reject(new Error('boom'))
+          : Promise.resolve([])
+      },
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await chooseAccount(user, '账户标识', 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: '查询' }))
+
+    const lookup = section('查询账户的绑定')
+    expect(
+      await within(lookup).findByText('该账户的绑定加载失败'),
+    ).toBeInTheDocument()
+    await user.click(within(lookup).getByRole('button', { name: '重试' }))
+    expect(await within(lookup).findByText('暂无绑定')).toBeInTheDocument()
+    expect(reads).toBe(2)
+    // The retry's pending state withdraws the failure placeholder.
+    expect(
+      within(lookup).queryByText('该账户的绑定加载失败'),
+    ).toBeNull()
+  })
+
   it('confirms before deleting a role', async () => {
     const user = userEvent.setup()
     const removed: string[] = []
