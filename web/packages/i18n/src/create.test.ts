@@ -399,6 +399,43 @@ describe('switchLanguage', () => {
     expect(message).toContain('en-US')
     expect(message).toContain(SPEED_LOCALE_STORAGE_KEY)
   })
+
+  it('persists through the descriptor-copy wrapper useTranslation returns', async () => {
+    // The manual switcher receives its instance from useTranslation, which
+    // hands out a distinct object built from the created instance's
+    // property descriptors. The binding must travel with it, or the one
+    // caller that makes manual choices never persists them.
+    const { instance, storage } = createTestI18n({ storedLanguage: null })
+    const wrapper = Object.create(
+      Object.getPrototypeOf(instance),
+      Object.getOwnPropertyDescriptors(instance),
+    ) as typeof instance
+    expect(wrapper).not.toBe(instance)
+    await switchLanguage(wrapper, 'zh-CN')
+    expect(storage.getItem(SPEED_LOCALE_STORAGE_KEY)).toBe('zh-CN')
+  })
+
+  it('warns visibly and still switches when the instance carries no binding', async () => {
+    // An instance nothing bound (a foreign instance that merely pins the
+    // supported set) has nowhere to persist to. Skipping that silently
+    // would lose the choice with no trace, so the warning is required and
+    // uses the same visible [speed-i18n] channel a failing store uses.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const unbound = createInstance()
+    await unbound.init({
+      lng: 'en-US',
+      supportedLngs: ['zh-CN', 'en-US'],
+      fallbackLng: false,
+      initAsync: false,
+    })
+    await expect(switchLanguage(unbound, 'zh-CN')).resolves.toBeUndefined()
+    expect(unbound.language).toBe('zh-CN')
+    expect(warn).toHaveBeenCalledTimes(1)
+    const message = warn.mock.calls[0]![0] as string
+    expect(message).toContain('[speed-i18n]')
+    expect(message).toContain('zh-CN')
+    expect(message).toContain('no storage binding')
+  })
 })
 
 describe('profile-language tier under late resolution', () => {

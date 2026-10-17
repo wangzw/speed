@@ -321,6 +321,12 @@ export function createI18n(options: CreateI18nOptions = {}): I18nInstance {
  * The optional storage argument is three-state: undefined uses the storage
  * bound at creation, null persists nothing, and a StorageLike persists to
  * that store instead. Reads and writes always go through the binding's key.
+ * A bound storage of null (the host opted out at creation) persists nothing
+ * and says nothing; an instance that carries no binding at all -- nothing
+ * createI18n produced -- has no store to write either, but that is reported
+ * through the same visible `[speed-i18n]` warning: a choice that quietly
+ * fails to survive a reload is the hardest kind of persistence defect to
+ * notice.
  *
  * Which state a caller means is intent, not mechanics. The persisting
  * states belong to the manual language-switch UI: the stored slot is the
@@ -356,6 +362,8 @@ export async function switchLanguage(
     storage === undefined ? (binding?.storage ?? null) : storage
   if (effectiveStorage !== null) {
     persistChoice(effectiveStorage, binding?.key ?? SPEED_LOCALE_STORAGE_KEY, target)
+  } else if (storage === undefined && binding === null) {
+    warnUnboundStorage(target)
   }
   await instance.changeLanguage(target)
 }
@@ -376,4 +384,19 @@ function persistChoice(storage: StorageLike, key: string, language: string): voi
         'reload. Storage failures never fail a language switch.',
     )
   }
+}
+
+/**
+ * Report a switch whose persistence had nowhere to go: the instance carries
+ * no binding, so there is no store to write and the choice cannot survive a
+ * reload. Reported like a failing store -- a visible warning, never a failed
+ * switch -- because this case would otherwise leave no trace at all.
+ */
+function warnUnboundStorage(language: string): void {
+  console.warn(
+    `[speed-i18n] could not persist the language choice "${language}": the instance ` +
+      'carries no storage binding. Instances created by createI18n bind one (pass ' +
+      'storage: null at creation to opt out of persistence); the instance still ' +
+      'switched, but the choice will not survive a reload.',
+  )
 }
