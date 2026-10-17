@@ -894,13 +894,11 @@ control's own styles.
 
 The theme already carries this floor for MUI's base controls
 (`src/theme/touch-floor.ts`, spread into the theme by `createAppTheme`),
-so a new surface inherits it without adding the recipe. The recipe is the
-fallback for an interactive element the theme cannot reach -- a bare
-`<a>`, a host-drawn clickable element -- and it stays as the explicit
-gate in the kit's own components (the `FileUploader` row actions, the
-`DataTable` selection controls) and in consuming packages' compact action
-controls (the shell's toggles, the notification bell, the session revoke
-control).
+so a surface built from those controls inherits it without adding the
+recipe. The recipe is the fallback for an interactive element the theme
+cannot reach -- a bare `<a>`, a host-drawn clickable element, a widget
+outside MUI's classes -- and no shipped package surface applies it
+today.
 
 ## Text and i18n
 

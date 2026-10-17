@@ -67,7 +67,6 @@ import LinearProgress from '@mui/material/LinearProgress'
 import Typography from '@mui/material/Typography'
 import { styled } from '@mui/material/styles'
 import { useUiKitTranslation } from '../internal/translation.js'
-import { touchTargetSx } from '../touch-target.js'
 import { visuallyHiddenSx } from '../visually-hidden.js'
 
 /** One row's transfer state, owned by the host. */
@@ -517,7 +516,6 @@ export function FileUploader({
                       <Button
                         size="small"
                         onClick={() => onCancel(row.id)}
-                        sx={touchTargetSx}
                       >
                         {t('fileUploader.actionCancel')}
                       </Button>
@@ -555,7 +553,6 @@ export function FileUploader({
                     <Button
                       size="small"
                       onClick={() => onRetry(row.id)}
-                      sx={touchTargetSx}
                     >
                       {t('fileUploader.actionRetry')}
                     </Button>
@@ -564,7 +561,6 @@ export function FileUploader({
                     <Button
                       size="small"
                       onClick={() => onRemove(row.id)}
-                      sx={touchTargetSx}
                     >
                       {t('fileUploader.actionRemove')}
                     </Button>

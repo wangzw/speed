@@ -10,14 +10,17 @@
  * gated on the media feature, so applying it adds the floor on touch and
  * nothing at all on a mouse.
  *
- * One shared object serves every control that gates this way -- the
- * ui-kit's own components, and each consuming package's icon buttons and
- * compact action controls through the public export. A single object is
- * what lets a change to the floor (the 44 number, or the media feature it
- * keys on, both owned by src/internal/pointer.ts) land in every gated
- * control at once instead of in one of a dozen hand-copied property sets.
- * It is deliberately additive: a control that omits it renders exactly as
- * before.
+ * The theme's own component overrides (src/theme/touch-floor.ts) carry
+ * this floor for MUI's base controls -- Button, IconButton, Checkbox,
+ * Radio, Switch, InputBase, Link, ListItemButton and a clickable Chip --
+ * so a control built from one of those needs no per-control application.
+ * This recipe remains for a target the theme cannot reach: a bare DOM
+ * element a host makes interactive (a clickable Box or span), a
+ * third-party widget outside MUI's classes, or a custom control that does
+ * not root in ButtonBase. The media feature and the 44 number are owned
+ * by src/internal/pointer.ts, so the floor the recipe applies cannot
+ * drift from the theme's. It is deliberately additive: a control that
+ * omits it renders exactly as before.
  */
 
 import { POINTER_COARSE_QUERY, TOUCH_TARGET_MIN_PX } from './internal/pointer.js'

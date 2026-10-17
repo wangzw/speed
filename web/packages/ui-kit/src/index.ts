@@ -17,8 +17,8 @@
  * AsyncSection (the pending/error/empty/content branches of an async
  * read) and
  * visuallyHiddenSx (the clip recipe for hidden live regions and file
- * inputs) and touchTargetSx (the coarse-pointer 44px floor every
- * interactive control in the family and its consumers gates on).
+ * inputs) and touchTargetSx (the coarse-pointer 44px floor for an
+ * interactive target the theme's own control overrides cannot reach).
  * Everything else stays internal: helpers shared between components live
  * in src/internal/ and are deliberately not exported.
  */

@@ -168,7 +168,6 @@ import type { EmptyStateHeadingLevel } from './EmptyState.js'
 import { useUiKitTranslation } from '../internal/translation.js'
 import { CopiedIcon, CopyIcon } from '../internal/icons.js'
 import { POINTER_FINE_HOVER_QUERY } from '../internal/pointer.js'
-import { touchTargetSx } from '../touch-target.js'
 import { visuallyHiddenSx } from '../visually-hidden.js'
 
 /**
@@ -404,7 +403,6 @@ function CopyValueButton({ value }: { readonly value: string }) {
         size="small"
         aria-label={t('dataTable.copyValue', { value })}
         onClick={copy}
-        sx={touchTargetSx}
       >
         {copied ? <CopiedIcon /> : <CopyIcon />}
       </IconButton>
@@ -564,7 +562,6 @@ export function DataTable<T>({
                     indeterminate={someSelected}
                     onChange={toggleAll}
                     disabled={pageKeys.length === 0}
-                    sx={touchTargetSx}
                     slotProps={{
                       input: {
                         'aria-label': t('dataTable.selectAllRows'),
@@ -703,7 +700,6 @@ export function DataTable<T>({
                       <Checkbox
                         checked={selected.has(key)}
                         onChange={() => toggleRow(key)}
-                        sx={touchTargetSx}
                         slotProps={{
                           input: {
                             'aria-label': t('dataTable.selectRow', {
@@ -767,10 +763,6 @@ export function DataTable<T>({
               ? t('dataTable.displayedRowsUnknown', { from, to })
               : t('dataTable.displayedRows', { from, to, count: total })
           }
-          sx={{
-            '& .MuiTablePagination-actions .MuiIconButton-root': touchTargetSx,
-            '& .MuiTablePagination-select': touchTargetSx,
-          }}
         />
       )}
     </Box>
