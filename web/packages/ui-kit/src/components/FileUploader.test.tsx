@@ -529,6 +529,25 @@ describe('FileUploader', () => {
     })
   })
 
+  describe('pointer capability', () => {
+    it('raises the row action controls to the 44px touch-target floor under a coarse pointer', () => {
+      // The per-row action buttons (Cancel / Retry / Remove) are compact;
+      // on a finger-driven device they gate up to the 44x44 floor (the
+      // layout design's pointer rule, through @speed/ui-kit's
+      // touchTargetSx). jsdom evaluates no media condition, so this is the
+      // property proof that the gated declaration was wired onto them.
+      renderHarness({
+        rows: [uploadingRow('r1', 'a.jpg'), failedRow('r2', 'b.jpg', 'boom')],
+        onCancel: vi.fn(),
+        onRetry: vi.fn(),
+        onRemove: vi.fn(),
+      })
+      const css = emittedStyleText()
+      expect(css).toContain('@media (pointer: coarse)')
+      expect(css).toMatch(/@media \(pointer: coarse\)\{[^}]*min-height:44px/)
+    })
+  })
+
   describe('the live region', () => {
     it('mounts with the queue and stays quiet for rows the host seeds', () => {
       const view = renderHarness({

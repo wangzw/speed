@@ -13,7 +13,8 @@ whole-attempt failure banner and its classifier
 (`InlineError` / `errorCodeOf`), its success twin (`InlineSuccess`, the
 mount-empty-then-fill `role="status"` notice), the pending/error/empty/content
 branches of an async read (`ListSkeleton`, `AsyncSection`) and the
-hidden-element style recipe (`visuallyHiddenSx`). Every
+shared style recipes (`visuallyHiddenSx` for hidden elements,
+`touchTargetSx` for the coarse-pointer touch-target floor). Every
 built-in user-facing
 string lives in the bilingual `ui-kit` namespace registered through
 `@speed/i18n` -- components never ship text in code, and the workspace's
@@ -38,6 +39,7 @@ string lives in the bilingual `ui-kit` namespace registered through
 | `components/ListSkeleton.tsx` | `ListSkeleton`, `ListSkeletonProps` |
 | `components/AsyncSection.tsx` | `AsyncSection`, `AsyncSectionProps`, `AsyncSectionErrorState`, `AsyncSectionEmptyState` |
 | `visually-hidden.ts` | `visuallyHiddenSx` |
+| `touch-target.ts` | `touchTargetSx` |
 | `resources.ts` | `UI_KIT_NAMESPACE`, `uiKitResources` |
 
 Everything else (`src/internal/`) is shared component plumbing and is
@@ -822,6 +824,20 @@ tree while painting nothing -- the clip technique, never
 focusable. Usable wherever MUI takes styles (`sx={visuallyHiddenSx}`,
 `styled('input')(visuallyHiddenSx)`). It serves the kit's own hidden
 elements and the consuming packages' hidden live regions.
+
+### touchTargetSx (the coarse-pointer touch-target floor)
+
+The one style object that raises an interactive control to a
+finger-sized hit area. It keys on the `pointer: coarse` media feature --
+not a breakpoint, so a touchscreen laptop or a keyboarded tablet at a
+wide viewport is gated too -- and contributes a 44x44 minimum width and
+height on a coarse pointer, nothing on a precise one. Applied as
+`sx={touchTargetSx}` on a Button / IconButton / ListItemButton, or inside
+an sx array beside a control's own styles. It serves the kit's own
+components (the `FileUploader` row actions, the `DataTable` selection
+controls) and, through this export, every consuming package's icon
+buttons and compact action controls (the shell's toggles, the
+notification bell, the session revoke control).
 
 ## Text and i18n
 

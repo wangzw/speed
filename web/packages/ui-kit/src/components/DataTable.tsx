@@ -137,11 +137,8 @@ import type { SxProps, Theme } from '@mui/material/styles'
 import { EmptyState } from './EmptyState.js'
 import type { EmptyStateHeadingLevel } from './EmptyState.js'
 import { useUiKitTranslation } from '../internal/translation.js'
-import {
-  POINTER_COARSE_QUERY,
-  POINTER_FINE_HOVER_QUERY,
-  TOUCH_TARGET_MIN_PX,
-} from '../internal/pointer.js'
+import { POINTER_FINE_HOVER_QUERY } from '../internal/pointer.js'
+import { touchTargetSx } from '../touch-target.js'
 import { visuallyHiddenSx } from '../visually-hidden.js'
 
 /**
@@ -296,18 +293,6 @@ function columnVisibilitySx(
   const visibleFrom = PRIORITY_VISIBLE_FROM[priority]
   return { display: { '@': 'none', [`@${visibleFrom}`]: 'table-cell' } }
 }
-
-/**
- * The touch-target floor for a control a finger drives: at least 44x44
- * under `@media (pointer: coarse)`, and no override at all on a precise
- * pointer, where the stock control size already applies.
- */
-const touchTargetSx = {
-  [POINTER_COARSE_QUERY]: {
-    minWidth: TOUCH_TARGET_MIN_PX,
-    minHeight: TOUCH_TARGET_MIN_PX,
-  },
-} as const
 
 /**
  * The controlled table view. See the header note for the ownership

@@ -13,7 +13,8 @@ components (`PageHeader`, `EmptyState`, `ConfirmDialog`, `FormField`,
 `InlineSuccess`, `ListSkeleton`, `AsyncSection`) that render only the
 state hosts give them, plus the form family's zod validation bridge
 (`zodFormResolver`) and the shared state primitives (`errorCodeOf`, the
-`visuallyHiddenSx` clip recipe). `FileUploader` is no carve-out: the queue renders from
+`visuallyHiddenSx` clip recipe, the `touchTargetSx` coarse-pointer
+44px floor). `FileUploader` is no carve-out: the queue renders from
 host-owned `rows` props, every pick, cancel, retry and remove reports up
 through a callback (`onSelectFiles` / `onCancel` / `onRetry` /
 `onRemove`), and the upload transport — one logical transfer per picked

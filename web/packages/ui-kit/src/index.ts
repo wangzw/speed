@@ -17,8 +17,10 @@
  * AsyncSection (the pending/error/empty/content branches of an async
  * read) and
  * visuallyHiddenSx (the clip recipe for hidden live regions and file
- * inputs). Everything else stays internal: helpers shared between
- * components live in src/internal/ and are deliberately not exported.
+ * inputs) and touchTargetSx (the coarse-pointer 44px floor every
+ * interactive control in the family and its consumers gates on).
+ * Everything else stays internal: helpers shared between components live
+ * in src/internal/ and are deliberately not exported.
  */
 
 export { UI_KIT_NAMESPACE, uiKitResources } from './resources.js'
@@ -102,3 +104,4 @@ export {
   type AsyncSectionProps,
 } from './components/AsyncSection.js'
 export { visuallyHiddenSx } from './visually-hidden.js'
+export { touchTargetSx } from './touch-target.js'

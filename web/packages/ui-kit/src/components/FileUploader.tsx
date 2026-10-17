@@ -45,7 +45,10 @@
  * button group (Cancel while uploading; Retry/Remove once settled) is a
  * responsive `flexWrap: 'wrap'` flex row, purely additive CSS, so a long
  * file name plus several action buttons cannot overflow a narrow queue
- * card regardless of name length. The picker affordance
+ * card regardless of name length. Those per-row action buttons carry the
+ * shared touch-target floor (src/touch-target.ts): a finger-driven device
+ * gets a 44px-minimum hit area on each, a precise pointer the stock
+ * control size. The picker affordance
  * renders only when `onSelectFiles` is given (the label is the built-in
  * bilingual text unless `chooseFilesLabel` overrides it, with the file
  * input visually hidden but focusable inside the label, one tab stop for
@@ -64,6 +67,7 @@ import LinearProgress from '@mui/material/LinearProgress'
 import Typography from '@mui/material/Typography'
 import { styled } from '@mui/material/styles'
 import { useUiKitTranslation } from '../internal/translation.js'
+import { touchTargetSx } from '../touch-target.js'
 import { visuallyHiddenSx } from '../visually-hidden.js'
 
 /** One row's transfer state, owned by the host. */
@@ -513,7 +517,11 @@ export function FileUploader({
                       sx={{ flexGrow: 1 }}
                     />
                     {onCancel !== undefined ? (
-                      <Button size="small" onClick={() => onCancel(row.id)}>
+                      <Button
+                        size="small"
+                        onClick={() => onCancel(row.id)}
+                        sx={touchTargetSx}
+                      >
                         {t('fileUploader.actionCancel')}
                       </Button>
                     ) : null}
@@ -547,12 +555,20 @@ export function FileUploader({
                     )}
                   </Typography>
                   {row.status === 'failed' && onRetry !== undefined ? (
-                    <Button size="small" onClick={() => onRetry(row.id)}>
+                    <Button
+                      size="small"
+                      onClick={() => onRetry(row.id)}
+                      sx={touchTargetSx}
+                    >
                       {t('fileUploader.actionRetry')}
                     </Button>
                   ) : null}
                   {onRemove !== undefined ? (
-                    <Button size="small" onClick={() => onRemove(row.id)}>
+                    <Button
+                      size="small"
+                      onClick={() => onRemove(row.id)}
+                      sx={touchTargetSx}
+                    >
                       {t('fileUploader.actionRemove')}
                     </Button>
                   ) : null}
