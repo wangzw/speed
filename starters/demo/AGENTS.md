@@ -202,6 +202,25 @@ operator adds a factor in account settings, and `seed` says so on its way out.
 The alternative — writing the factor's sealed row directly — would bind this
 skeleton to the factor module's internals.
 
+### Exercising a write path
+
+Register the factor through the UI first: sign in, open the account page (or
+follow the enrolment link in the step-up dialog), start two-step-verification
+enrolment, and confirm it with a code. The wizard renders the `otpauth://` URI
+as text; take its `secret` parameter and compute the current code with a
+standard-library one-liner:
+
+```
+python3 -c "import base64,hmac,hashlib,struct,time; s=base64.b32decode('SECRET'); c=int(time.time())//30; h=hmac.new(s,struct.pack('>Q',c),hashlib.sha1).digest(); o=h[-1]&15; print(str((struct.unpack('>I',h[o:o+4])[0]&0x7fffffff)%1000000).zfill(6))"
+```
+
+The parameters are the design's: SHA-1, six digits, thirty-second period.
+
+Two timing notes. A code cannot be replayed inside its window — the counter
+must advance — so wait for the next window before a second step-up. And once a
+step-up succeeds the session stays fresh for the configured recent window (ten
+minutes by default), so a batch of writes can be exercised on one elevation.
+
 Seeding is a step of its own rather than something `serve` does on its way up,
 because a deployment nobody may administer until somebody says so is the posture
 this skeleton ships. On `sqlite-memory` the step achieves nothing — that stack's

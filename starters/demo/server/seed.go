@@ -286,7 +286,7 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	// enrollment; write-path testing needs a factor added in account settings
 	// first, and the console's step-up gate refuses every write until then.
 	fmt.Print("note: no second factor is seeded; add one in account settings " +
-		"before testing a write path\n")
+		"before testing a write path (see AGENTS.md, \"Exercising a write path\")\n")
 	return nil
 }
 
