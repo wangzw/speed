@@ -36,8 +36,8 @@ guards".
 
 | File | Exports |
 |---|---|
-| `session.ts` | `createAuthSession(store?)`, `AuthSession`, `AuthSnapshot`, `AuthSessionListener`, `AuthDomain`, `AuthPermissionSets`, `AuthnPrincipal`, `AuthnFlowState`, `AuthnStep`, `AuthnField`, `AuthnFactorOption`, `AuthnMethodList`, `AuthnIdentifier`, `AuthnLink`, `OperationSupersededError`, `isOperationSuperseded` |
-| `hooks.ts` | `attachSession(session)`, `useAuthState()`, `usePermission(domain, permission)`, `TenantProvider`, `useCurrentTenant()` |
+| `session.ts` | `createAuthSession(store?)`, `AuthSession`, `AuthSnapshot`, `FeatureState`, `AuthSessionListener`, `AuthDomain`, `AuthPermissionSets`, `AuthnPrincipal`, `AuthnFlowState`, `AuthnStep`, `AuthnField`, `AuthnFactorOption`, `AuthnMethodList`, `AuthnIdentifier`, `AuthnLink`, `OperationSupersededError`, `isOperationSuperseded` |
+| `hooks.ts` | `attachSession(session)`, `useAuthState()`, `usePermission(domain, permission)`, `useFeature(name)`, `useFeatureState()`, `featurePresence(state)`, `TenantProvider`, `useCurrentTenant()` |
 | `query-key.ts` | `tenantQueryKey(tenantId, ...tail)`, `useTenantQueryKey(bareKey)`, `TenantQueryKey`, `evictTenantQueries(queryClient, tenantId)` |
 
 `src/index.ts` re-exports these; everything else is internal.
@@ -204,11 +204,56 @@ session.setPermissionSet('tenant', null)                         // clears a dom
 The session applies the survival rules when a principal change commits:
 a silent refresh or a step-up keeps both lists, `link` and `enroll`
 keep them, and a login -- even by the same account -- or an anonymous
-transition clears both. These checks are a UX affordance, never a
-security boundary -- the server authorizes. Refetch a domain's lists
-after a login: the session clears what must not survive, but it never
-knows whether a list you attach still describes the principal it was
-fetched under.
+transition clears both. The feature state follows the same rules (see
+"Feature state"). These checks are a UX affordance, never a security
+boundary -- the server authorizes. Refetch a domain's lists after a
+login: the session clears what must not survive, but it never knows
+whether a list you attach still describes the principal it was fetched
+under.
+
+## Feature state
+
+The snapshot carries the feature document the process serves
+(`GET /features`) beside the principal and the permission sets, as a
+closed `FeatureState`:
+
+```ts
+type FeatureState =
+  | { state: 'none' }                                  // anonymous: nothing was read
+  | { state: 'pending' }                               // a retryFeatures() read is in flight
+  | { state: 'failed'; error: unknown }                // the read failed
+  | { state: 'ready'; names: ReadonlySet<string> }     // the served names
+```
+
+A login completion and an anonymous-start restore read the document in
+parallel with `GET /auth/me` and commit it with the same rules as the
+permission sets: a login replaces it with the freshly read document, a
+same-session refresh, step-up, `link` or `enroll` keeps it without a
+request, and an anonymous transition resets it to `none`. A failed
+feature read never fails the login: the session commits with the state
+`failed`, which is neither "every feature absent" nor "every feature
+present".
+
+`retryFeatures()` is the explicit retry for a failed read. It only acts
+while authenticated: the state turns `pending`, `GET /features` is read,
+and the answer lands as `ready` or `failed` only if the session the read
+started under is still the current one (same generation, still
+authenticated, same principal account). Concurrent calls of the same
+session share one in-flight read; a read that outlived its session is
+never shared with the next one.
+
+The hooks read the state fail-closed: `useFeature(name)` answers true
+only when the state is `ready` and the set contains a name that is
+statically typed as the generated `FeatureName`, so a misspelled name
+does not compile. `featurePresence(state)` maps the state onto a
+route layer's presence shape (`none` and `pending` both read as
+pending; `failed` stays failed), which is what a host hands its router
+so a gated page disappears when its feature is absent.
+
+```ts
+const canUseInbox = useFeature('notification.inbox')
+const features = useFeatureState() // distinguish pending / failed / ready
+```
 
 ## Tenant-scoped query keys
 
@@ -268,7 +313,10 @@ the response models. This package re-exports them --
 parallel copy, and guards every body-carrying 2xx at runtime: the guard
 checks that the body is an object and that it carries the required
 fields, and refuses anything else as a `status: 200`, `code:
-client.protocol` ApiError. A contract-violating 2xx is never a
+client.protocol` ApiError. The same guard covers the feature document:
+`GET /features` must answer an object carrying a string array in
+`features`; anything else is a protocol violation, never an empty
+document. A contract-violating 2xx is never a
 successful login, and the guard runs before any state change (and before
 the first property access, so an empty 2xx never escapes as a native
 `TypeError`). `AuthnField`, `AuthnFactorOption`, `AuthnPrincipal` and
@@ -307,6 +355,13 @@ into the discriminated view a form renders.
   is done or gone) and rethrows anything else. `abandonFlow()` resolves
   for a 401 (the flow is already gone -- the delete is idempotent) and
   rethrows anything else.
+- A login or anonymous-start restore whose feature read fails still
+  commits (or resolves) with the state `failed`, carrying the read's
+  error: a deployment that cannot answer `GET /features` must not be
+  read as one that serves no features. `retryFeatures()` resolves once
+  its read settles; a result that lands after its session moved on
+  (another commit or a local clear) is discarded, and a retry issued
+  while anonymous makes no request.
 - `restore()` is the cookie session's silent path. It resolves `true`
   when the cookie still names a session (the snapshot is authenticated
   afterwards), `false` when nobody is signed in -- a snapshot that was

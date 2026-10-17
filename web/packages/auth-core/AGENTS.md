@@ -38,7 +38,8 @@ orval emits the response models. This package's `AuthnFlowState`,
 of them), and it guards each body at runtime (see the rules below).
 
 It is headless: no UI, no DOM. The React hooks in `src/hooks.ts`
-(`useAuthState`, `usePermission`, plus the `attachSession` call that
+(`useAuthState`, `usePermission`, `useFeature`, `useFeatureState`,
+`featurePresence`, plus the `attachSession` call that
 binds them to one session, last bind wins) live on the same layer --
 react is a peer dependency, never a regular one. The tenant is not the
 session's: the server resolves it per request and the principal carries
@@ -70,9 +71,10 @@ it calls). Never import either of those from below this layer.
   malformed body) as a `status: 200`, `code: client.protocol` ApiError
   *before* the first property access -- a native `TypeError` is not an
   ApiError and would escape the whole error contract. `parseFlowState`,
-  `parseStep`, `parsePrincipal`, `parseIssuedTokens` and
-  `parseMethodList` are the guards; every one of their refusal branches
-  is pinned by a test.
+  `parseStep`, `parsePrincipal`, `parseSessionView`, `parseIssuedTokens`,
+  `parseMethodList`, `parseMethodDescriptor`, `parseSsoProviders` and
+  `parseFeatureDocument` are the guards; every one of their refusal
+  branches is pinned by a test.
 - **The session never writes storage, and (on the cookie path) holds no
   credential at all.** The credential is the server's httpOnly session
   cookie, which the browser manages and scripts cannot read; this package
@@ -153,11 +155,30 @@ it calls). Never import either of those from below this layer.
   earlier session: the session never correlates a list with the
   principal it was fetched under, so attaching a stale list is a host
   bug it cannot detect.
+- **The feature state is a closed set with the permission sets'
+  survival rules and its own commit check.** The snapshot carries
+  `FeatureState` (`none`, `pending`, `failed`, `ready` with the served
+  names); the session never interprets a name. A login completion and an
+  anonymous-start restore read `GET /features` beside `GET /auth/me` and
+  commit both; a failed feature read commits `failed` (with the error)
+  rather than failing the login, because a failed read is neither every
+  feature absent nor every feature present. A same-session refresh,
+  step-up, `link`/`enroll` keeps the state without a request, an
+  anonymous transition resets it to `none`. `retryFeatures()` is the one
+  in-session writer: it turns the state `pending`, reads the document,
+  and applies the result only while the captured generation, the
+  authenticated snapshot and the principal account all still hold --
+  the generation check alone is not enough because the restore/refresh
+  clears do not bump it. Its single flight is keyed on that
+  generation/account and is registered before `pending` is published, so
+  a listener re-entering on `pending` shares the read and a read that
+  outlived its session is never handed to the next one.
 - **The hooks read the attached session and never drive it.** A
   component that must sign in calls `session.startFlow` /
   `session.answerFlow` from an event handler; hooks never mutate state,
-  never fetch, and fail closed (anonymous snapshot, `false` permissions)
-  before `attachSession` has been called.
+  never fetch, and fail closed (anonymous snapshot, `false` permissions,
+  a feature answer only for `ready` + membership) before
+  `attachSession` has been called.
 - **The tenant comes from the host, read back through
   `TenantProvider`.** `useCurrentTenant` never derives a tenant from the
   principal (the principal has none) and never remembers a previous one;
@@ -196,15 +217,17 @@ it calls). Never import either of those from below this layer.
 ## Public surface
 
 `src/index.ts` exports `createAuthSession(store?)`; the session types
-(`AuthSession`, `AuthSnapshot`, `AuthSessionListener`, plus `AuthDomain`
-and `AuthPermissionSets`, the two names that parameterise the
-host-attached permission lists); the response models (`AuthnPrincipal`,
-`AuthnFlowState`, `AuthnStep`, `AuthnField`, `AuthnFactorOption`,
-`AuthnMethodList`, `AuthnIdentifier`, `AuthnLink`, `AuthnSessionView`);
-the supersession rejection pair (`OperationSupersededError` and its
-`isOperationSuperseded` guard -- the one non-`ApiError` rejection of the
-session-establishing commits); the hooks (`attachSession`, `useAuthState`,
-`usePermission`, `TenantProvider`, `useCurrentTenant`); and the
+(`AuthSession`, `AuthSnapshot`, `FeatureState`, `AuthSessionListener`,
+plus `AuthDomain` and `AuthPermissionSets`, the two names that
+parameterise the host-attached permission lists); the response models
+(`AuthnPrincipal`, `AuthnFlowState`, `AuthnStep`, `AuthnField`,
+`AuthnFactorOption`, `AuthnMethodList`, `AuthnIdentifier`, `AuthnLink`,
+`AuthnSessionView`); the supersession rejection pair
+(`OperationSupersededError` and its `isOperationSuperseded` guard -- the
+one non-`ApiError` rejection of the session-establishing commits); the
+hooks (`attachSession`, `useAuthState`, `usePermission`, `useFeature`,
+`useFeatureState`, `featurePresence`, `TenantProvider`,
+`useCurrentTenant`); and the
 tenant-scoped query-key convention (`tenantQueryKey`,
 `useTenantQueryKey`, `TenantQueryKey`, `evictTenantQueries`). Anything
 else that grows here stays unexported until a consumer proves it needs
@@ -240,7 +263,13 @@ to be public.
   before attach, the tenant read-back from `TenantProvider`, the
   permission selectors over a scripted session, domain separation, the
   permission-set survival rules and the attach rebinding semantics have
-  theirs in the hooks and query-key suites. A change to any of those
+  theirs in the hooks and query-key suites. `src/features.test.ts` pins
+  the feature state: the login/restore reads, the failed-read rule, the
+  `pending` transition, the retry's commit check (a read that outlived a
+  server-ended clear is discarded), the pending-marker restore after a
+  superseding step-up, the keyed single flight (a listener re-entering on
+  `pending` shares the read; a new session does not inherit an old
+  flight) and the compile-time name check. A change to any of those
   behaviours must come with a test that pins the new behaviour and fails
   on the old.
 - No test file may import from another package's `dist/`; the vitest
