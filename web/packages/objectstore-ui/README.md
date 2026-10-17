@@ -39,10 +39,10 @@ and the client's `tenantProvider` (the same value the shell announces as
 
 | Part | What it does |
 |---|---|
-| List | `GET /api/v1/objects`, cursor-paginated (`next_cursor`); Previous/Next page through the cursor stack |
+| List | `GET /api/v1/objects`, cursor-paginated (`next_cursor`); Previous/Next page through the cursor stack. The first column is the declared name, one line with truncation, or the "unnamed" copy when the module stored none |
 | Upload | `@speed/ui-kit`'s `FileUploader`; each picked file runs declare (`POST /objects`) -> upload (`PUT /objects/{id}/content`) -> complete (`POST /objects/{id}/complete`) |
-| Download | `GET /api/v1/objects/{id}/content` as a Blob, saved named after the id with a MIME-derived extension |
-| Details | `GET /api/v1/objects/{id}` in a dialog |
+| Download | `GET /api/v1/objects/{id}/content` as a Blob, saved under the stored name, or named after the id with a MIME-derived extension when the name is empty |
+| Details | `GET /api/v1/objects/{id}` in a dialog, carrying the full name |
 | Delete | `DELETE /api/v1/objects/{id}` behind a danger `ConfirmDialog` |
 
 `ObjectsPage` takes an optional `pageSize` (the module applies its own
@@ -50,8 +50,11 @@ default and upper bound).
 
 ## Notes
 
-- The object view carries no declaration name (the module stores none), so
-  the list shows the object's `id`, not the uploaded file's name.
+- The object view carries the declaration's `name` after the module
+  normalized it once (no path separators, control characters or leading/
+  trailing whitespace, at most 255 bytes). The list shows it as text; empty
+  names render the "unnamed" copy, and a download falls back to the id plus a
+  MIME-derived extension.
 - The objectstore refusals travel as RFC 9457 problem objects (a `type`,
   no `code`), which the api-client maps to the module code derived from
   that `type`: `objectstore.bad_request` / `objectstore.not_found` /

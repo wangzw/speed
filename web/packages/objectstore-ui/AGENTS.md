@@ -62,9 +62,13 @@ reading the current tenant from `@speed/auth-core`'s tenant context.
 - **No HTTP of its own.** Every call is a generated operation; the package
   contains no `fetch`/`axios` (the workspace's `speed/no-direct-http`
   rule enforces it) and never constructs a client.
-- **The declaration name is not shown.** The object view carries no name
-  (the module stores none), so the list shows the object's `id`, and a
-  download is named after the id with a MIME-derived extension.
+- **The declaration name is shown as the module stored it.** The object view
+  carries the `name` the module normalized once at declaration. The list has a
+  one-line name column with truncation (the "unnamed" copy when it is empty);
+  the details dialog carries the full value; and a download is named after it,
+  falling back to the object `id` with a MIME-derived extension when it is
+  empty. The name is rendered as a text node, never as HTML and never into a
+  path.
 
 ## Its neighbors
 

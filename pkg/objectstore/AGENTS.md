@@ -66,8 +66,10 @@ non-optionally, so an assembly that installs no backend fails at startup.
 - **It makes no authorization decision.** It declares its permission points and
   the permission each of its routes needs; the decision is made by the entry
   module's middleware against the route declarations.
-- **It does not interpret an object's content or purpose.** `Object.MIME` and
-  `Declaration.Name` are opaque values.
+- **It does not interpret an object's content or purpose.** `Object.MIME` is an
+  opaque value. `Declaration.Name` is the caller's label: it is optional, it is
+  normalized once by the metadata module before it is stored, and it
+  identifies nothing — it is not unique and no lookup reads it.
 - **It does not queue or retry.** One upload and one read are synchronous calls
   that return once the backend has answered; a backend that is unreachable fails
   that call.

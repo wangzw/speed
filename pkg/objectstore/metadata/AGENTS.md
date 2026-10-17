@@ -32,9 +32,10 @@ An object is written in three steps, each a call on `Objects`:
 
 1. **Declaration** — `Create` validates the declaration (a positive `Size`, a
    non-empty `ContentType`, a `ChecksumSHA256` that is empty or 64 hex digits),
-   mints the object identifier and the internal key, and lands a `pending` row
-   open for upload. A declaration that fails validation is `ErrInvalidRequest`
-   and lands no row. A row is written only under a tenant; a context with no
+   normalizes the optional `Name`, mints the object identifier and the internal
+   key, and lands a `pending` row open for upload. A declaration that fails
+   validation is `ErrInvalidRequest` and lands no row; the name never fails a
+   declaration. A row is written only under a tenant; a context with no
    tenant is refused.
 2. **Upload** — `Upload` requires the row to be `pending` or `uploaded`, its
    upload window to be open, and the byte count it is given to equal the
@@ -58,6 +59,19 @@ deleted one — is `ErrObjectNotFound`, one shape for all three, so the answer
 leaks nothing about existence. Every operation but `Delete` answers that for a
 deleted row: the object is gone, which is not a state conflict. `Delete` on a
 deleted row is an idempotent success and removes no byte.
+
+## The name
+
+The `name` column holds the label the caller declared, normalized once in
+`Create` and never re-read for meaning: it is not unique and no lookup uses it.
+The stored value is valid UTF-8, carries no character in the Unicode categories
+Cc, Cf, Zl or Zp (those are dropped), carries no `/` or `\` (they become `_`),
+has no leading or trailing whitespace, is at most 255 bytes cut at a character
+boundary with whitespace trimmed again, and is empty when it consists only of
+dots. Quotes and semicolons are kept, no extension is treated specially, and a
+name never fails a declaration: an omitted, empty or reduced-to-nothing name
+stores as the empty string. Rows that predate the name migration carry the empty
+string, with no backfill.
 
 ## The internal key
 
@@ -124,9 +138,11 @@ seam, missing content — is a `503` whose cause stays in the log. The titles an
 details are rendered from this module's own catalog under `locales/`, one file
 per locale with the same key set.
 
-The object view the routes render carries `id`, `state`, `size`, `mime`,
-`checksum_sha256`, `expires_at`, `created_at` and `updated_at`, in UTC. It never
-carries the internal key.
+The object view the routes render carries `id`, `name`, `state`, `size`, `mime`,
+`checksum_sha256`, `expires_at`, `created_at` and `updated_at`, in UTC. The
+`name` member is always present; it is the empty string when the object has no
+name. The declaration request's `name` is optional. It never carries the
+internal key.
 
 ## Audit actions
 
