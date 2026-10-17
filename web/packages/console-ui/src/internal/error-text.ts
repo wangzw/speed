@@ -86,6 +86,13 @@ export const ERROR_TEXT_CODES = [
   'authn.conflict',
   'authn.forbidden',
   'authn.impersonation_restricted',
+  // authn flow answers the step-up dialog can meet: a refused credential,
+  // a flow the server no longer holds, throttling and an unavailable
+  // service. Each renders its own text instead of the generic fallback.
+  'authn.login_failed',
+  'authn.flow_invalid',
+  'authn.throttled',
+  'authn.unavailable',
   // audit admin: the 400 a malformed query is answered with.
   'audit.bad_request',
   // settings admin: a 400 shape refusal and the 422 a write whose value

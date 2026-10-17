@@ -10,7 +10,11 @@
       "unsupported_region": "That region is not supported for this operation.",
       "conflict": "That change conflicts with the account's current state.",
       "forbidden": "You do not have permission to do that.",
-      "impersonation_restricted": "This is not allowed while impersonating."
+      "impersonation_restricted": "This is not allowed while impersonating.",
+      "login_failed": "The verification did not pass. The email, phone, password or code is incorrect.",
+      "flow_invalid": "This verification attempt is no longer valid. Start again.",
+      "throttled": "Too many attempts. Try again later.",
+      "unavailable": "The service is temporarily unavailable. Try again later."
     },
     "authz": {
       "bad_request": "The server could not read this request. Check the form and try again.",
@@ -78,7 +82,8 @@
     "passkeyFailed": "The passkey ceremony did not complete.",
     "redirectNotice": "This verification continues on an external page, which this dialog does not open.",
     "noFactor": "This account has no two-step verification set up. Add a verification method in the account settings first.",
-    "goToAccount": "Go to account settings"
+    "goToAccount": "Go to account settings",
+    "restart": "Restart verification"
   },
   "tenants": {
     "title": "Tenants",

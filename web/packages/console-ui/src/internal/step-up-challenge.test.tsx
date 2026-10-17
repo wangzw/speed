@@ -22,8 +22,9 @@
  * two explanations.
  */
 
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type {
   AuthSession,
@@ -305,6 +306,240 @@ describe('StepUpChallenge', () => {
     expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
     expect(screen.queryByText(/本部署无法完成此次升级/)).toBeNull()
     expect(screen.queryByText(/尚未配置两步验证/)).toBeNull()
+    // A 400 answered to a still-established session is the start request
+    // itself being unusable; a restart would repeat it, so none is offered.
+    expect(screen.queryByRole('button', { name: '重新开始验证' })).toBeNull()
+  })
+
+  it('does not replay a cancelled write when its start lands after the close', async () => {
+    const user = userEvent.setup()
+    bindFactors([ACTIVE_FACTOR])
+    let settleStart!: (state: AuthnFlowState) => void
+    const start = vi.fn<AuthSession['startAuthenticatedFlow']>(
+      () =>
+        new Promise<AuthnFlowState>((resolve) => {
+          settleStart = resolve
+        }),
+    )
+    const session: AuthSession = {
+      ...createStepUpSession(),
+      startAuthenticatedFlow: start,
+    }
+    function Harness({ onSuccess }: { readonly onSuccess: () => void }) {
+      const [open, setOpen] = useState(true)
+      return (
+        <StepUpChallenge
+          open={open}
+          session={session}
+          onSuccess={onSuccess}
+          onCancel={() => setOpen(false)}
+        />
+      )
+    }
+    const onSuccess = vi.fn()
+    renderWithProviders(<Harness onSuccess={onSuccess} />)
+
+    // The start is in flight when the operator cancels: the dialog closes
+    // and its driver unmounts.
+    await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1))
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    // The start then settles elevated. The host must not replay the write
+    // the operator cancelled, so the elevation is dropped.
+    settleStart({
+      state: 'authenticated',
+      session: { id: 'sess-1', expires_at: '2026-10-17T00:00:00Z' },
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(onSuccess).not.toHaveBeenCalled()
+  })
+
+  it('renders a failed start as its code with a restart and a cancel', async () => {
+    const user = userEvent.setup()
+    bindFactors([ACTIVE_FACTOR])
+    const base = createStepUpSession()
+    const start = vi
+      .fn<AuthSession['startAuthenticatedFlow']>()
+      .mockRejectedValueOnce({
+        status: 503,
+        code: 'authn.unavailable',
+        message: 'down',
+        auth: false,
+      })
+      .mockImplementation(base.startAuthenticatedFlow)
+    const session: AuthSession = { ...base, startAuthenticatedFlow: start }
+    const onSuccess = vi.fn()
+    const onCancel = vi.fn()
+    renderWithProviders(
+      <StepUpChallenge
+        open
+        session={session}
+        onSuccess={onSuccess}
+        onCancel={onCancel}
+      />,
+    )
+
+    // A failed start leaves no step to answer: the code's banner, a
+    // restart and a cancel are the whole surface -- not the description
+    // of a verification that never came.
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.unavailable)
+    expect(screen.queryByText(zhCN.stepUp.description)).toBeNull()
+    expect(screen.queryByRole('button', { name: '验证' })).toBeNull()
+    expect(
+      screen.getByRole('button', { name: '重新开始验证' }),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '重新开始验证' }))
+    // The restart drives a fresh flow locally; the second start settles
+    // the elevation and the refused write is replayed.
+    await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+    expect(start).toHaveBeenCalledTimes(2)
+
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders a flow_invalid answer as its code with a restart and a cancel', async () => {
+    const user = userEvent.setup()
+    bindFactors([ACTIVE_FACTOR])
+    const base = createStepUpSession()
+    const start = vi
+      .fn<AuthSession['startAuthenticatedFlow']>()
+      .mockResolvedValueOnce({
+        seq: 1,
+        state: 'second',
+        next: {
+          kind: 'challenge',
+          fields: [{ name: 'code', kind: 'code', required: true }],
+        },
+      })
+      .mockImplementation(base.startAuthenticatedFlow)
+    const session: AuthSession = {
+      ...base,
+      startAuthenticatedFlow: start,
+      answerFlow: () =>
+        Promise.reject({
+          status: 401,
+          code: 'authn.flow_invalid',
+          message: 'gone',
+          auth: true,
+        }),
+    }
+    const onSuccess = vi.fn()
+    renderWithProviders(
+      <StepUpChallenge
+        open
+        session={session}
+        onSuccess={onSuccess}
+        onCancel={() => undefined}
+      />,
+    )
+
+    await user.type(await screen.findByLabelText(/code/), '123456')
+    await user.click(screen.getByRole('button', { name: '验证' }))
+
+    // The flow is gone (expired, consumed, nothing left to answer): the
+    // step form is replaced by the code's banner and a restart, because
+    // answering the same step again cannot succeed.
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.flow_invalid)
+    expect(screen.queryByText(zhCN.stepUp.description)).toBeNull()
+    expect(screen.queryByLabelText('code')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: '重新开始验证' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '取消' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '重新开始验证' }))
+    await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+    expect(start).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps a failed passkey ceremony and a server failure to one banner', async () => {
+    const user = userEvent.setup()
+    bindFactors([ACTIVE_FACTOR])
+    const base = createStepUpSession()
+    const session: AuthSession = {
+      ...base,
+      startAuthenticatedFlow: () =>
+        Promise.resolve<AuthnFlowState>({
+          seq: 1,
+          state: 'second',
+          next: {
+            kind: 'webauthn',
+            options: { challenge: 'Y2hhbGxlbmdl', allowCredentials: [] },
+          },
+        }),
+      answerFlow: () =>
+        Promise.reject({
+          status: 401,
+          code: 'authn.login_failed',
+          message: 'refused',
+          auth: true,
+        }),
+    }
+    const credential = {
+      id: 'AQID',
+      rawId: new Uint8Array([1, 2, 3]).buffer,
+      type: 'public-key',
+      response: {
+        clientDataJSON: new Uint8Array([4]).buffer,
+        authenticatorData: new Uint8Array([5]).buffer,
+        signature: new Uint8Array([6]).buffer,
+        userHandle: null,
+      },
+      getClientExtensionResults: () => ({}),
+      authenticatorAttachment: 'platform',
+    }
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce(credential)
+      .mockRejectedValueOnce(
+        Object.assign(new Error('dismissed'), { name: 'NotAllowedError' }),
+      )
+    const original = Object.getOwnPropertyDescriptor(window.navigator, 'credentials')
+    Object.defineProperty(window.navigator, 'credentials', {
+      value: { get, create: vi.fn() },
+      configurable: true,
+    })
+    try {
+      renderWithProviders(
+        <StepUpChallenge
+          open
+          session={session}
+          onSuccess={() => undefined}
+          onCancel={() => undefined}
+        />,
+      )
+
+      // The ceremony produces a credential and the server refuses it: the
+      // server banner stands alone.
+      await user.click(await screen.findByRole('button', { name: '验证' }))
+      const serverAlert = await screen.findByRole('alert')
+      expect(serverAlert).toHaveTextContent(zhCN.errors.authn.login_failed)
+      expect(screen.queryByText(zhCN.stepUp.passkeyCancelled)).toBeNull()
+
+      // The next ceremony is dismissed: the newer failure replaces the
+      // server banner, so the two are never on screen together.
+      await user.click(screen.getByRole('button', { name: '验证' }))
+      await vi.waitFor(() => {
+        expect(screen.getAllByRole('alert')).toHaveLength(1)
+      })
+      const alerts = screen.getAllByRole('alert')
+      expect(alerts).toHaveLength(1)
+      expect(alerts[0]).toHaveTextContent(zhCN.stepUp.passkeyCancelled)
+      expect(screen.queryByText(zhCN.errors.authn.login_failed)).toBeNull()
+    } finally {
+      if (original === undefined) {
+        delete (window.navigator as { credentials?: unknown }).credentials
+      } else {
+        Object.defineProperty(window.navigator, 'credentials', original)
+      }
+    }
   })
 
   it('offers a re-login when the account has factors none of which may strengthen the session', async () => {

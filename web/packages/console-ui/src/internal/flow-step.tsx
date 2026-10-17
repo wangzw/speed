@@ -52,6 +52,15 @@ export interface FlowStepProps {
   readonly answerStep: string
   readonly submitLabel: string
   readonly onSubmit: (answer: AuthnFlowAnswer) => void
+  /**
+   * The passkey ceremony's failure, held by the caller so one failure
+   * banner stands at a time in the surrounding region. Omit it and the
+   * ceremony keeps its own local banner.
+   */
+  readonly ceremonyError?: string | null
+  /** Reports the ceremony's failure key, or null when a new attempt
+   * starts. Omit it with `ceremonyError` to stay uncontrolled. */
+  readonly onCeremonyError?: (errorKey: string | null) => void
 }
 
 export function FlowStep({
@@ -59,6 +68,8 @@ export function FlowStep({
   answerStep,
   submitLabel,
   onSubmit,
+  ceremonyError,
+  onCeremonyError,
 }: FlowStepProps) {
   const { t } = useConsoleUiTranslation()
   // The free-text answer of a TOTP code field, and the typed values of a
@@ -168,6 +179,8 @@ export function FlowStep({
         answerStep={answerStep}
         submitLabel={submitLabel}
         onSubmit={onSubmit}
+        ceremonyError={ceremonyError}
+        onCeremonyError={onCeremonyError}
       />
     )
   }
@@ -208,30 +221,45 @@ interface PasskeyPromptProps {
   readonly answerStep: string
   readonly submitLabel: string
   readonly onSubmit: (answer: AuthnFlowAnswer) => void
+  readonly ceremonyError?: string | null
+  readonly onCeremonyError?: (errorKey: string | null) => void
 }
 
 /** The passkey ceremony step: one button that drives the browser's
  * WebAuthn ceremony and reports the credential it returns. A browser
  * without WebAuthn, a dismissed prompt and a failed ceremony each render
- * their own message rather than a silent no-op. */
+ * their own message rather than a silent no-op. The failure is reported
+ * to the caller when it supplies `onCeremonyError`, so the caller's region
+ * can keep it and the server-side banner mutually exclusive. */
 function PasskeyPrompt({
   options,
   answerStep,
   submitLabel,
   onSubmit,
+  ceremonyError,
+  onCeremonyError,
 }: PasskeyPromptProps) {
   const { t } = useConsoleUiTranslation()
   const [working, setWorking] = useState(false)
-  const [errorKey, setErrorKey] = useState<string | null>(null)
+  const [localError, setLocalError] = useState<string | null>(null)
+  const controlled = onCeremonyError !== undefined
+  const errorKey = controlled ? (ceremonyError ?? null) : localError
+  const reportError = (key: string | null): void => {
+    if (controlled) {
+      onCeremonyError(key)
+    } else {
+      setLocalError(key)
+    }
+  }
 
   async function run(): Promise<void> {
     setWorking(true)
-    setErrorKey(null)
+    reportError(null)
     try {
       const credential = await runWebauthn(options)
       onSubmit({ step: answerStep, input: { credential } })
     } catch (failure) {
-      setErrorKey(webauthnErrorKey(failure))
+      reportError(webauthnErrorKey(failure))
     } finally {
       setWorking(false)
     }

@@ -12,12 +12,10 @@
  * The dialog is controlled -- {open, session, onSuccess, onCancel} -- and
  * drives one `purpose: 'step-up'` flow through @speed/auth-core's
  * useStepUp hook, which owns the session operation. The hook starts the
- * flow on opening and parks on its first step; this dialog renders that
+ * flow on opening and parks on its first step; the driver renders that
  * step (FlowStep) and forwards each answer. Completion settles the
  * elevation on the session -- the cookie rotated, or an elevated token --
- * and the hook fires `onSuccess`. A failure of an answer resolves through
- * the console's code whitelist and renders as one banner; the flow stays
- * open and a fresh answer is retryable.
+ * and the hook fires `onSuccess`.
  *
  * Why a step-up cannot come is read before the flow starts, from the
  * caller's own factor list (GET /auth/factors). An account with no active
@@ -32,14 +30,31 @@
  * 'unavailable' phase): the dialog says the deployment cannot complete the
  * step-up and offers a re-login -- it ends the session through the
  * session's own logout, and the host's session gate converges on its
- * sign-in surface -- because a new sign-in lets those factors count. Any
- * other start failure, a 400 included, is an ordinary error rendered as
- * its code. The dialog never signs in and never navigates on its own: a
- * dead session shows its code text and the console's session gate
- * converges.
+ * sign-in surface -- because a new sign-in lets those factors count.
+ *
+ * The failure surface. Every code an answer can be refused with resolves
+ * through the console's whitelist and renders as one banner, so a wrong
+ * code shows its own text instead of the generic fallback. A start that
+ * fails for any reason other than the unraisable-session refusal above --
+ * or the 400 a still-established session is answered for a malformed start
+ * -- and an answer the server rejects with `authn.flow_invalid` (the flow
+ * expired, was consumed, or has nothing left to answer) render the code's
+ * banner with a restart action and a cancel, and neither the description
+ * nor a step form: there is no step to answer. The restart is local to the
+ * dialog -- it remounts the flow driver, which drives a fresh useStepUp
+ * run; auth-core is unchanged. A 400 answered while the session still
+ * stands is the start request itself being unusable, so it renders its
+ * code as an ordinary error and offers no restart.
+ *
+ * A failed passkey ceremony is the dialog's second failure source: its
+ * text is a bundle key, not an API code. The driver holds it so that the
+ * ceremony banner and the server-side banner never stand together -- the
+ * newer failure replaces the other, and starting an answer clears the
+ * ceremony banner. The dialog carries its own region; the failure banner
+ * renders inside the modal.
  */
 
-import { useId, useRef } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -93,22 +108,111 @@ export function StepUpChallenge({
   })
   const checking = open && factors.isPending
   const noFactor = open && factors.isSuccess && activeFactorCount(factors.data) === 0
-  const { phase, step, seq, errorCode, answer } = useStepUp(
-    session,
-    open && !checking && !noFactor,
-    onSuccess,
+  // A restart remounts the flow driver: a fresh mount re-drives useStepUp,
+  // which has no restart command of its own. The factor read stays put.
+  const [run, setRun] = useState(0)
+  const restart = useCallback(() => setRun((current) => current + 1), [])
+
+  if (!open) {
+    return null
+  }
+
+  return (
+    <Dialog open onClose={onCancel} aria-labelledby={titleId} maxWidth="xs" fullWidth>
+      <DialogTitle id={titleId}>{t('stepUp.title')}</DialogTitle>
+      {noFactor ? (
+        <>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary">
+              {t('stepUp.noFactor')}
+            </Typography>
+            {accountHref === undefined ? null : (
+              <Typography variant="body2" sx={{ mt: 1 }}>
+                <ConsoleLink href={accountHref}>{t('stepUp.goToAccount')}</ConsoleLink>
+              </Typography>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={onCancel}>{t('common.cancel')}</Button>
+          </DialogActions>
+        </>
+      ) : checking ? (
+        <>
+          <DialogContent>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              {t('stepUp.starting')}
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={onCancel}>{t('common.cancel')}</Button>
+          </DialogActions>
+        </>
+      ) : (
+        <StepUpFlow
+          key={run}
+          session={session}
+          onSuccess={onSuccess}
+          onCancel={onCancel}
+          onRestart={restart}
+        />
+      )}
+    </Dialog>
   )
+}
+
+interface StepUpFlowProps {
+  readonly session: AuthSession
+  readonly onSuccess: () => void
+  readonly onCancel: () => void
+  readonly onRestart: () => void
+}
+
+/** The flow driver: one useStepUp run, its step form and its two failure
+ * sources (a server code and a client-side passkey ceremony). */
+function StepUpFlow({
+  session,
+  onSuccess,
+  onCancel,
+  onRestart,
+}: StepUpFlowProps) {
+  const { t } = useConsoleUiTranslation()
+  // A hook reply can outlive this driver: closing the dialog unmounts it,
+  // and the shared hook only drops a stale reply when its active flag turns
+  // false, which an unmount never does. The gate would then replay a write
+  // the operator cancelled, so an elevation only reaches the caller while
+  // the driver is still mounted.
+  const mounted = useRef(true)
+  const elevated = useCallback(() => {
+    if (mounted.current) {
+      onSuccess()
+    }
+  }, [onSuccess])
+  const { phase, step, seq, errorCode, answer } = useStepUp(session, true, elevated)
   // The second factor the operator chose. The verification step that
   // follows it (the code challenge) is answered under the `factor` step
   // and must re-name the same factor alongside the code -- a challenge
   // reply carries only the field the factor asks for, and the server
   // re-reads the factor from the answer.
   const chosenFactor = useRef<string | null>(null)
+  // The passkey ceremony's failure, held here rather than in the step
+  // component so one banner stands at a time: while it is set it hides the
+  // server-side banner, and starting an answer clears it.
+  const [ceremonyError, setCeremonyError] = useState<string | null>(null)
+
+  // Closing the dialog or restarting unmounts this driver. Abandon the
+  // flow so no stale binding lingers on the server, as the shared hook
+  // does when its active flag turns false. `abandonFlow` treats an
+  // already-gone flow as the same success.
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      void session.abandonFlow().catch(() => undefined)
+    }
+  }, [session])
 
   function handleAnswer(value: AuthnFlowAnswer): void {
-    if (!open) {
-      return
-    }
+    setCeremonyError(null)
     const input = value.input ?? {}
     if (input.factor !== undefined) {
       // The factor-choice step: remember the chosen factor and forward.
@@ -125,15 +229,23 @@ export function StepUpChallenge({
     answer(value)
   }
 
-  if (!open) {
-    return null
-  }
-
-  const starting = phase === 'starting' || checking
+  const starting = phase === 'starting'
   // This deployment cannot raise the session at all (factors exist, none
   // that may strengthen it): no step will come, so the dialog says so and
   // offers a re-login rather than a verification that cannot succeed.
   const unavailable = phase === 'unavailable'
+  const failed = phase === 'failed'
+  // A start refusal leaves no step behind; an answer refusal keeps the
+  // step it was answered from.
+  const startRefused = failed && step === null && !ordinaryStartRefusal(session, errorCode)
+  // The server no longer holds the flow (expired, consumed, nothing left
+  // to answer): no step form can be retried, only a fresh start.
+  const flowInvalid = failed && step !== null && errorCode === 'authn.flow_invalid'
+  const terminalFailure = startRefused || flowInvalid
+  // One banner at a time: a later ceremony failure replaces the server
+  // banner; an answer attempt has already cleared the ceremony banner, so
+  // a server failure is the only source left.
+  const serverFailure = errorCode !== null && ceremonyError === null
 
   // The unavailable phase's one action: end the session -- forgetting the
   // refused write, as a cancel does -- so the host's session gate converges
@@ -146,20 +258,12 @@ export function StepUpChallenge({
   }
 
   return (
-    <Dialog open={open} onClose={onCancel} aria-labelledby={titleId} maxWidth="xs" fullWidth>
-      <DialogTitle id={titleId}>{t('stepUp.title')}</DialogTitle>
+    <>
       <DialogContent>
-        {noFactor ? (
-          <>
-            <Typography variant="body2" color="text.secondary">
-              {t('stepUp.noFactor')}
-            </Typography>
-            {accountHref === undefined ? null : (
-              <Typography variant="body2" sx={{ mt: 1 }}>
-                <ConsoleLink href={accountHref}>{t('stepUp.goToAccount')}</ConsoleLink>
-              </Typography>
-            )}
-          </>
+        {terminalFailure ? (
+          // No description and no step: there is nothing to answer, so the
+          // code's banner and the restart action are the whole surface.
+          <InlineError code={errorCode} />
         ) : unavailable ? (
           <Typography variant="body2" color="text.secondary">
             {t('stepUp.cannotElevate')}
@@ -169,7 +273,7 @@ export function StepUpChallenge({
             <Typography variant="body2" color="text.secondary">
               {t('stepUp.description')}
             </Typography>
-            <InlineError code={errorCode} />
+            {serverFailure ? <InlineError code={errorCode} /> : null}
             {starting ? (
               <Typography variant="body2" sx={{ mt: 2 }}>
                 {t('stepUp.starting')}
@@ -185,6 +289,8 @@ export function StepUpChallenge({
                     answerStep="factor"
                     submitLabel={t('stepUp.submit')}
                     onSubmit={handleAnswer}
+                    ceremonyError={ceremonyError}
+                    onCeremonyError={setCeremonyError}
                   />
                 ) : null}
               </Box>
@@ -194,14 +300,31 @@ export function StepUpChallenge({
       </DialogContent>
       <DialogActions>
         <Button onClick={onCancel}>{t('common.cancel')}</Button>
-        {unavailable ? (
+        {terminalFailure ? (
+          <Button variant="contained" onClick={onRestart}>
+            {t('stepUp.restart')}
+          </Button>
+        ) : unavailable ? (
           <Button variant="contained" onClick={handleRelogin}>
             {t('stepUp.relogin')}
           </Button>
         ) : null}
       </DialogActions>
-    </Dialog>
+    </>
   )
+}
+
+/**
+ * Whether a failed start is the 400 a still-established session is answered
+ * with for an unusable start request. Such a refusal is the request itself,
+ * not a transient condition, so the dialog renders its code as an ordinary
+ * error and offers no restart.
+ */
+function ordinaryStartRefusal(
+  session: AuthSession,
+  errorCode: string | null,
+): boolean {
+  return errorCode === 'authn.bad_request' && session.getSnapshot().state === 'authenticated'
 }
 
 /** The factors a factor read names as active, which are the ones a step-up

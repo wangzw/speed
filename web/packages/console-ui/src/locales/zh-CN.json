@@ -10,7 +10,11 @@
       "unsupported_region": "此操作不支持该地区。",
       "conflict": "该改动与账户的当前状态冲突。",
       "forbidden": "你没有执行此操作的权限。",
-      "impersonation_restricted": "模拟登录期间不允许此操作。"
+      "impersonation_restricted": "模拟登录期间不允许此操作。",
+      "login_failed": "验证未通过，邮箱、手机号、密码或验证码不正确。",
+      "flow_invalid": "验证流程已失效，请重新开始。",
+      "throttled": "尝试次数过多，请稍后再试。",
+      "unavailable": "服务暂时不可用，请稍后重试。"
     },
     "authz": {
       "bad_request": "服务端无法读取该请求，请检查表单后重试。",
@@ -78,7 +82,8 @@
     "passkeyFailed": "通行密钥仪式未能完成。",
     "redirectNotice": "该验证需要跳转到外部页面，本对话框不会自动跳转。",
     "noFactor": "此账户尚未配置两步验证，请先在账户设置中添加验证方式。",
-    "goToAccount": "前往账户设置"
+    "goToAccount": "前往账户设置",
+    "restart": "重新开始验证"
   },
   "tenants": {
     "title": "租户",
