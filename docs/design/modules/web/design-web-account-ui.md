@@ -51,6 +51,10 @@ interface IdentifiersSectionProps {
   readonly emailAvailable: boolean // 假时添加面不给邮箱一项
 }
 
+interface PreferencesSectionProps {
+  readonly session?: AuthSession // 可选；只为提权门控的对话框服务，不给时被 401 拒绝的写只渲染失败横幅
+}
+
 interface SocialBindingsSectionProps {
   readonly session: AuthSession
   readonly returnTo: string // 宿主的绑定回调路由；作为 link 流程的顶层 return_to 发出
@@ -68,9 +72,9 @@ interface MfaSectionProps {
 }
 ```
 
-四个自助写节（`ProfileSection`、`PasswordSection`、`PhoneSection`、`IdentifiersSection`）的 `session` 属性只为提权门控的对话框服务：一次写被答 401 `authn.insufficient_user_authentication` 时开一条 `purpose: 'step-up'` 流程（`session.startAuthenticatedFlow`），成功后重跑那次被拒的写恰好一次；它们的读与写本身是走共享访问令牌的生成调用，不经会话操作。
+自助写节（`ProfileSection`、`PasswordSection`、`PhoneSection`、`IdentifiersSection`）的 `session` 属性必选，`PreferencesSection` 的可选；它们的 `session` 都只为提权门控的对话框服务：一次写被答 401 `authn.insufficient_user_authentication` 时开一条 `purpose: 'step-up'` 流程（`session.startAuthenticatedFlow`），成功后重跑那次被拒的写恰好一次；它们的读与写本身是走共享访问令牌的生成调用，不经会话操作。
 
-`SocialBindingsSection` 的 `session` 属性经 `session.listMethods`（`GET /auth/methods`）读部署的发现文档以决定添加区给哪些渠道，并为添加区起一条 `purpose: 'link'` 的流程（`session.startAuthenticatedFlow`），`returnTo` 作为该流程请求的顶层 `return_to` 发出；`MfaSection` 的 `session` 属性为登记起一条 `purpose: 'enroll'` 的流程、为挑战起一条 `purpose: 'step-up'` 的流程，并经 `session.listMethods`（`GET /auth/methods`）读本部署装配的因素以决定提供哪些登记入口——读因子清单、删因子与解绑是走共享访问令牌的生成调用，不经会话操作。其余节不接属性：它们显示谁的会话或绑定，来自调用方绑定的客户端与它的访问令牌。
+`SocialBindingsSection` 的 `session` 属性经 `session.listMethods`（`GET /auth/methods`）读部署的发现文档以决定添加区给哪些渠道，并为添加区起一条 `purpose: 'link'` 的流程（`session.startAuthenticatedFlow`），`returnTo` 作为该流程请求的顶层 `return_to` 发出；`MfaSection` 的 `session` 属性为登记起一条 `purpose: 'enroll'` 的流程、为挑战起一条 `purpose: 'step-up'` 的流程，并经 `session.listMethods`（`GET /auth/methods`）读本部署装配的因素以决定提供哪些登记入口——读因子清单、删因子与解绑是走共享访问令牌的生成调用，不经会话操作。`SessionsSection` 不接属性：它显示谁的会话，来自调用方绑定的客户端与它的访问令牌。
 
 **查询键构造器是公开面。** 失效用本包导出的查询键构造器（如 `getAuthnSessionListQueryKey`），不经手写键。账户自己的标识与绑定读自 `GET /auth/me`（其 `identifiers` 与 `links` 字段），无独立的清单端点，故无对应查询键。
 
@@ -124,7 +128,7 @@ sequenceDiagram
 
 ### 自助写的提权门控
 
-改显示名、改口令、改手机、加标识与删标识都要求新鲜认证：一次写被服务端判为未提权时答 401 `authn.insufficient_user_authentication`。节把该次写的输入记在提权门控里（`src/internal/step-up-gate.ts` 的 `useStepUpGate`），打开加强认证流程对话框驱动一条 `purpose: 'step-up'` 流程；流程落定提权后，门控重跑被记住的那次写恰好一次，取消则不重跑。
+改显示名、改口令、改手机、加标识与删标识，以及改偏好（语言、时区，给了 `session` 时），都要求新鲜认证：一次写被服务端判为未提权时答 401 `authn.insufficient_user_authentication`。节把该次写的输入记在提权门控里（`src/internal/step-up-gate.ts` 的 `useStepUpGate`），打开加强认证流程对话框驱动一条 `purpose: 'step-up'` 流程；流程落定提权后，门控重跑被记住的那次写恰好一次，取消则不重跑。
 
 提权码与登录失败码都在 401 上：改口令的当前口令不匹配是 401 `login-failed`，与提权 401 靠问题码区分——前者进失败横幅，后者开门控。手机的两步各自门控：发码被拒重跑发码、验证被拒重跑验证，不混用。加标识的两步同此：添加被拒重跑添加、验证被拒重跑验证。
 
@@ -153,18 +157,18 @@ sequenceDiagram
 
 每个节按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织反馈：一个节是一个反馈作用域，区域紧贴该节的控件之下（[ADR-web-write-feedback-2026-10-17](../../../adr/adr-web-write-feedback-2026-10-17.md)）。
 
-- **成功确认一律走 `InlineSuccess`。** 档案、口令、手机、标识与会话几节手写的成功 `Alert` 换成 `InlineSuccess`，间距经它的 `sx`；本包没有第二种成功区域。偏好节与解绑的成功提示本就是 `InlineSuccess`。
-- **每个落地的写入都有成功文案。** 只靠列表重读的写入补齐：撤销单个会话、删除标识、两步验证的登记与移除、社交绑定的完成。绑定回调的 `done` 阶段渲染绑定成功的文案，而不是一个没有文字的 `role="status"` 加转圈。文案点明被改动的对象。
+- **成功确认只经区域渲染。** 成功由 `WriteFeedbackRegion` 渲染，间距经区域的 `sx`；本包没有第二种成功区域，调用点不单独渲染 `InlineSuccess`。
+- **每个由用户发起、落定且无一失败的动作都有成功文案**，含撤销单个会话、删除标识、两步验证的登记与移除，文案点明被改动的对象。社交绑定的完成是例外：`onBound` 是宿主离开回调路由的信号，离开的宿主以刷新后的绑定行呈现结果；留在该路由或未给 `onBound` 的宿主得到 `done` 阶段的绑定成功文案，挂在 `role="status"` 区域里。
 - **一个节一个失败横幅。** 标识节的失败只经区域渲染一次，添加、验证与移除共用同一个槽；取消添加与每次移除都 `reset`，使「已添加」的成功文案不在其后的移除之后停留，取消也不留下失败横幅。口令节的客户端校验失败同样以 `reset` 开头，不让上一次的服务端横幅与新的字段错误并存。
-- **「验证码已发送」是 live region。** 手机与标识的发码一步用先挂空区域、再填文本的 `role="status"` 报告，而不是普通文字；重发的文本与上一次相同时先清空、下一 tick 再填，使重发仍可闻；发码成功后焦点落在验证码字段。
-- **偏好节的写入被 401 步进不足拒绝时走提权门控。** 偏好节接受与其它自助写节同形的可选 `session`：给了会话，被拒的写由门控记住，成功提权后重放一次；没给会话，失败横幅沿用重新验证的提示，不开对话框。偏好写入失败渲染一条横幅，控件退回存下的值。
+- **「验证码已发送」的目的地文字在验证码一步内持续显示。** 它说明验证码发往哪个号码或邮箱，不是槽的结果，验证失败、`reset` 与无关的移除都不清除它；一个先挂空区域、再填文本的 `role="status"` 只在发码落地时播报一次，发码成功后焦点落在验证码字段。本包没有重发控件，回退再发码的路径以 `reset` 开头，播报区的文本因此经空到非空。
+- **偏好节的写入被 401 `authn.insufficient_user_authentication` 拒绝时走提权门控。** 偏好节接受类型同为 `AuthSession` 的可选 `session`：给了会话，被拒的写由门控记住，成功提权后重放一次；没给会话，失败横幅沿用该码的失败文案（要求重新验证身份），不开对话框，宿主只能在同页其它带会话的节完成提权（提权对整页的会话生效）或重新登录。参考装配把 `session` 传给偏好节。偏好写入失败渲染一条横幅，控件退回存下的值；语言写入在 `switchLanguage` 落定之后才调用 `succeed`，使确认文案取自新语言。
 - **通行密钥仪式的失败与区域里的失败横幅互斥。** 仪式失败是客户端原因，文本取自本包 bundle 的键，不经错误码白名单；一条出现时另一条被清掉。
-- **读的失败占位由各节自带。** 各节读同一份档案，档案读失败时每个读它的节渲染各自的占位与重试；这是节彼此独立的结果，不合并为页面级占位。
-- **错误白名单组合 `SESSION_LIFECYCLE_ERROR_CODES`。** 消费包组合自己的可达码与该族（[i18n](design-web-i18n.md) 的「扩展点」），使会话在途中失效时到达的这类码渲染各自的文案，而不是 `errors.unknown`。
+- **读的失败占位由各节自带，刷新失败由各节标明。** 每个以读为首的节在自己的读失败时渲染占位与重试；会话列表节读档案只为取显示时区，档案读失败时不渲染占位，回落到设备时区。已有数据时的读刷新失败（含写入后的失效再取）经 `AsyncSection` 的 `staleState` 标明：旧内容保留，其上渲染陈旧提示与重试，例如撤销之后重读失败时，旧行留在陈旧提示之下。
+- **错误白名单组合 `SESSION_LIFECYCLE_ERROR_CODES`。** 本包的白名单在自己的可达码与 `CLIENT_TRANSPORT_ERROR_CODES` 之外组合该族（[i18n](design-web-i18n.md) 的「扩展点」），每个码在 zh-CN 与 en-US 的 `errors.*` 下各有一条叶子，使会话在途中失效时到达的这类码渲染各自的文案，而不是 `errors.unknown`。
 
 ## 错误与失败语义
 
-**失败面是一个错误码白名单加受守卫的词表。** 每条失败路径解析成一个错误码，渲染在一条 `role="alert"` 横幅里；白名单外的码渲染 `errors.unknown`，永不渲染裸键。因素种类与渠道同样受守卫：令牌只在组件已知的取值表上才经 `t()` 渲染，否则渲染通用的其它标签。
+**失败面是一个错误码白名单加受守卫的词表。** 每条服务端与传输失败解析成一个错误码，渲染在一条 `role="alert"` 横幅里；通行密钥仪式的失败是唯一的客户端来源，文本取自本包 bundle 的键，不经白名单；白名单外的码渲染 `errors.unknown`，永不渲染裸键。因素种类与渠道同样受守卫：令牌只在组件已知的取值表上才经 `t()` 渲染，否则渲染通用的其它标签。
 
 | 情形 | 表现 |
 |---|---|
@@ -203,7 +207,9 @@ sequenceDiagram
 | 登录标识节 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
 | 自助写的提权门控 | 已实现 | `web/packages/account-ui/src/internal/step-up-gate.ts` `useStepUpGate` |
 | 偏好节 | 已实现 | `web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection` |
-| 各节的反馈作用域与 `InlineSuccess`（含补齐的成功确认） | 未实现 | — |
+| 各节的反馈作用域与成功确认 | 未实现 | — |
+| 读的刷新失败的陈旧提示 | 未实现 | — |
+| 错误白名单组合会话生命周期码族及其双语文案 | 未实现 | — |
 | 偏好节的提权门控 | 未实现 | — |
 | 「验证码已发送」的 live region 与焦点 | 未实现 | — |
 | 绑定回调完成阶段的成功文案 | 未实现 | — |
