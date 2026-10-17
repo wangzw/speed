@@ -29,12 +29,23 @@
  *
  * Every read and write is an operation on the console operations bundle,
  * so the page builds no client and writes no query key. A failed list
- * settles into a retryable placeholder; a failed write renders the
- * answer's code text in one alert, resolved through the console-ui
- * namespace's whitelist. The role deletion is confirmed through the shared
+ * settles into a retryable placeholder, and a refused read into the
+ * no-permission placeholder.
+ *
+ * Each control group reports its writes through its own feedback scope:
+ * the role catalog (create and delete), the selected role's grants (grant
+ * and revoke), the tenant's bindings (bind and unbind), and the
+ * account-binding lookup (the unbind actions of its own table, which do
+ * not borrow the bindings scope). A failure marks the affected row inline
+ * with the same resolved text its region shows and brings that region into
+ * view; a success names the changed role, permission or account and never
+ * moves the page. The tenant seeds every scope, so changing it resets them
+ * all and disables the tenant selector while any is in flight; the
+ * selected role resets the grants scope, and the chosen account resets the
+ * binding scope. The role deletion is confirmed through the shared
  * pending-confirmation dialog: it closes on the confirming click, and the
- * write's outcome lands in the page's feedback area once the modal no
- * longer hides it. The page opens with ui-kit's PageHeader.
+ * write's outcome lands in the role scope once the modal no longer hides
+ * it. The page opens with ui-kit's PageHeader.
  */
 
 import { useMemo, useState } from 'react'
@@ -47,10 +58,9 @@ import Typography from '@mui/material/Typography'
 import {
   DataTable,
   EmptyState,
-  InlineSuccess,
   ListSkeleton,
   PageHeader,
-  errorCodeOf,
+  useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import {
@@ -60,9 +70,14 @@ import {
 import { AccountSelector } from './internal/account-selector.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
-import { InlineError } from './internal/inline-error.js'
+import { useConsoleUiErrorText } from './internal/error-text.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
+import {
+  failureTextOf,
+  useFailureScroll,
+  WriteFeedbackRegion,
+} from './internal/write-feedback.js'
 import { useConsoleOperations } from './operations.js'
 import type {
   ConsoleAccount,
@@ -90,10 +105,16 @@ function SectionHeading({ children }: { readonly children: string }) {
 function UnbindButton({
   binding,
   disabled,
+  invalid,
+  describedBy,
   onClick,
 }: {
   readonly binding: ConsoleBinding
   readonly disabled: boolean
+  /** Whether this row is the one the scope's failure names. */
+  readonly invalid: boolean
+  /** The id of the resolved failure text rendered in this row. */
+  readonly describedBy?: string
   readonly onClick: () => void
 }) {
   const { t } = useConsoleUiTranslation()
@@ -108,12 +129,25 @@ function UnbindButton({
         account: name ?? binding.account,
         role: binding.role,
       })}
+      aria-invalid={invalid}
+      aria-describedby={invalid ? describedBy : undefined}
       disabled={disabled}
+      loading={disabled}
       onClick={onClick}
     >
       {t('permissions.bindings.unbind')}
     </Button>
   )
+}
+
+/** The key a binding row carries through the page's failure markers. */
+function bindingKey(binding: ConsoleBinding): string {
+  return `${binding.account}:${binding.role}`
+}
+
+/** The id of one binding row's inline failure text within a scope. */
+function bindingErrorId(scope: string, binding: ConsoleBinding): string {
+  return `permissions-${scope}-error-${encodeURIComponent(bindingKey(binding))}`
 }
 
 export function PermissionsPage() {
@@ -142,13 +176,34 @@ export function PermissionsPage() {
 
   // The destructive action the shared confirmation dialog guards. The
   // dialog closes on the confirming click; the write's outcome lands in
-  // the page's feedback area after it closes.
+  // the role scope after it closes.
   const confirm = usePendingConfirm()
 
-  // The confirmation a landed write fills into the page's success notice
-  // (one standing role="status" region); cleared before each attempt so a
-  // stale confirmation never lingers.
-  const [success, setSuccess] = useState<string | null>(null)
+  // One scope per control group: the role catalog, the selected role's
+  // grants, the tenant's bindings, and the account-binding lookup.
+  const roleFeedback = useWriteFeedback()
+  const grantsFeedback = useWriteFeedback()
+  const bindingsFeedback = useWriteFeedback()
+  const lookupFeedback = useWriteFeedback()
+  const roleRegionRef = useFailureScroll(roleFeedback.outcome)
+  const grantsRegionRef = useFailureScroll(grantsFeedback.outcome)
+  const bindingsRegionRef = useFailureScroll(bindingsFeedback.outcome)
+  const lookupRegionRef = useFailureScroll(lookupFeedback.outcome)
+
+  // The row each scope's failure names. The marker belongs to the row the
+  // region reports, and clearing it before an attempt starts keeps it from
+  // outliving the result it describes.
+  const [failedRole, setFailedRole] = useState<string | null>(null)
+  const [failedGrant, setFailedGrant] = useState<string | null>(null)
+  const [failedBinding, setFailedBinding] = useState<string | null>(null)
+  const [failedLookupBinding, setFailedLookupBinding] = useState<string | null>(
+    null,
+  )
+
+  // The one resolver the regions bind: a row's inline marker resolves the
+  // same failure code through it, so the two can never carry different
+  // copy.
+  const resolveErrorText = useConsoleUiErrorText()
 
   const roles = operations.useRoles(tenant)
   const catalog = operations.usePermissions()
@@ -165,6 +220,201 @@ export function PermissionsPage() {
   const revokePermission = operations.useRevokePermission()
   const bindRole = operations.useBindRole()
   const unbindRole = operations.useUnbindRole()
+
+  const roleFailureText = failureTextOf(roleFeedback.outcome, resolveErrorText)
+  const grantsFailureText = failureTextOf(
+    grantsFeedback.outcome,
+    resolveErrorText,
+  )
+  const bindingsFailureText = failureTextOf(
+    bindingsFeedback.outcome,
+    resolveErrorText,
+  )
+  const lookupFailureText = failureTextOf(
+    lookupFeedback.outcome,
+    resolveErrorText,
+  )
+  const anyPending =
+    roleFeedback.pending ||
+    grantsFeedback.pending ||
+    bindingsFeedback.pending ||
+    lookupFeedback.pending
+
+  // The tenant is an argument of every write on the page, so a change
+  // clears every slot and every row marker: the old result would read as
+  // describing the new tenant.
+  const changeTenant = (next: string) => {
+    setTenant(next)
+    roleFeedback.reset()
+    grantsFeedback.reset()
+    bindingsFeedback.reset()
+    lookupFeedback.reset()
+    setFailedRole(null)
+    setFailedGrant(null)
+    setFailedBinding(null)
+    setFailedLookupBinding(null)
+  }
+
+  // The selected role drives the grants scope: another role's result would
+  // be read as this role's, so choosing one clears the slot.
+  const selectRole = (role: string) => {
+    setSelectedRole(role)
+    grantsFeedback.reset()
+    setFailedGrant(null)
+  }
+
+  const changeBindAccount = (account: ConsoleAccount | null) => {
+    setBindAccount(account)
+    bindingsFeedback.reset()
+    setFailedBinding(null)
+  }
+
+  const changeBindRole = (role: string) => {
+    setBindRoleName(role)
+    bindingsFeedback.reset()
+    setFailedBinding(null)
+  }
+
+  // The lookup scope follows the applied account, not the draft: applying
+  // another account resets it.
+  const applyLookup = () => {
+    lookupFeedback.reset()
+    setFailedLookupBinding(null)
+    setLookupApplied(lookupAccount?.id ?? '')
+  }
+
+  const saveRole = () => {
+    const role = roleName
+    setFailedRole(null)
+    void roleFeedback.run(async () => {
+      await writeRole.mutateAsync({
+        tenant,
+        role,
+        descriptionKey: roleDescription,
+      })
+      setRoleName('')
+      setRoleDescription('')
+      return t('permissions.roles.saved', { role })
+    })
+  }
+
+  const requestRemoveRole = (role: ConsoleRole) => {
+    confirm.ask({
+      title: t('permissions.roles.removeTitle'),
+      message: t('permissions.roles.removeMessage', { role: role.role }),
+      confirmLabel: t('permissions.roles.removeConfirm'),
+      // Deleting a role revokes its grants and bindings with it and cannot
+      // be undone from the interface: the heavier two-step arm.
+      doubleConfirm: true,
+      run: () => {
+        setFailedRole(null)
+        void roleFeedback.run(async () => {
+          try {
+            await removeRole.mutateAsync({ tenant, role: role.role })
+            if (selectedRole === role.role) {
+              setSelectedRole('')
+              grantsFeedback.reset()
+              setFailedGrant(null)
+            }
+            return t('permissions.roles.removed', { role: role.role })
+          } catch (error) {
+            setFailedRole(role.role)
+            throw error
+          }
+        })
+      },
+    })
+  }
+
+  const grant = () => {
+    const permission = grantPermission
+    if (permission === '') {
+      return
+    }
+    void grantsFeedback.run(async () => {
+      await grantPermissionMutation.mutateAsync({
+        tenant,
+        role: selectedRole,
+        permission,
+      })
+      setGrantPermission('')
+      return t('permissions.grants.granted', {
+        permission,
+        role: selectedRole,
+      })
+    })
+  }
+
+  const revoke = (grant: ConsoleGrant, code: string) => {
+    const key = `${grant.resource}:${grant.action}`
+    setFailedGrant(null)
+    void grantsFeedback.run(async () => {
+      try {
+        await revokePermission.mutateAsync({
+          tenant,
+          role: selectedRole,
+          permission: code,
+        })
+        return t('permissions.grants.revoked', {
+          permission: code,
+          role: selectedRole,
+        })
+      } catch (error) {
+        setFailedGrant(key)
+        throw error
+      }
+    })
+  }
+
+  const bind = () => {
+    if (bindAccount === null) {
+      return
+    }
+    const account = bindAccount
+    const role = bindRoleName
+    setFailedBinding(null)
+    void bindingsFeedback.run(async () => {
+      await bindRole.mutateAsync({ tenant, account: account.id, role })
+      setBindAccount(null)
+      setBindRoleName('')
+      return t('permissions.bindings.bound', {
+        account: account.display_name === '' ? account.id : account.display_name,
+        role,
+      })
+    })
+  }
+
+  // The bindings table and the lookup table keep separate scopes and row
+  // markers: an unbind in the lookup answers the operator's lookup, not the
+  // tenant-wide binding list, so its result lives under the lookup table.
+  const unbind = (binding: ConsoleBinding, lookup: boolean) => {
+    const feedback = lookup ? lookupFeedback : bindingsFeedback
+    const key = bindingKey(binding)
+    const mark = (value: string | null) => {
+      if (lookup) {
+        setFailedLookupBinding(value)
+      } else {
+        setFailedBinding(value)
+      }
+    }
+    mark(null)
+    void feedback.run(async () => {
+      try {
+        await unbindRole.mutateAsync({
+          tenant,
+          account: binding.account,
+          role: binding.role,
+        })
+        return t('permissions.bindings.unbound', {
+          account: binding.account,
+          role: binding.role,
+        })
+      } catch (error) {
+        mark(key)
+        throw error
+      }
+    })
+  }
 
   const permissions = catalog.data ?? []
   // The (resource, action) -> permission-code lookup both the row label and
@@ -221,71 +471,89 @@ export function PermissionsPage() {
       // still in the accessibility tree, though, and a control that can never
       // succeed is not put in front of anyone. Visible text sits in every
       // reader's order and carries the reason.
-      cell: (role) =>
-        role.builtin ? (
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 1, rowGap: 1 }}>
-            <Button
-              type="button"
-              size="small"
-              variant="outlined"
-              aria-label={t('permissions.roles.viewGrantsAria', { role: role.role })}
-              onClick={() => setSelectedRole(role.role)}
-            >
-              {t('permissions.roles.viewGrants')}
-            </Button>
-            <Typography variant="body2" color="text.secondary">
-              {t('permissions.roles.builtinLocked')}
-            </Typography>
-          </Box>
-        ) : (
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 1, rowGap: 1 }}>
-            <Button
-              type="button"
-              size="small"
-              variant="outlined"
-              aria-label={t('permissions.roles.manageGrantsAria', { role: role.role })}
-              onClick={() => setSelectedRole(role.role)}
-            >
-              {t('permissions.roles.manageGrants')}
-            </Button>
-            <Button
-              type="button"
-              size="small"
-              variant="outlined"
-              color="error"
-              aria-label={t('permissions.roles.removeAria', { role: role.role })}
-              onClick={() =>
-                confirm.ask({
-                  title: t('permissions.roles.removeTitle'),
-                  message: t('permissions.roles.removeMessage', {
+      cell: (role) => {
+        const failed = failedRole === role.role
+        const errorId = `permissions-role-error-${encodeURIComponent(role.role)}`
+        return (
+          <Box>
+            {role.builtin ? (
+              <Box
+                sx={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  columnGap: 1,
+                  rowGap: 1,
+                }}
+              >
+                <Button
+                  type="button"
+                  size="small"
+                  variant="outlined"
+                  aria-label={t('permissions.roles.viewGrantsAria', {
                     role: role.role,
-                  }),
-                  confirmLabel: t('permissions.roles.removeConfirm'),
-                  // Deleting a role revokes its grants and bindings with it
-                  // and cannot be undone from the interface: the heavier
-                  // two-step arm.
-                  doubleConfirm: true,
-                  run: () => {
-                    setSuccess(null)
-                    removeRole.mutate(
-                      { tenant, role: role.role },
-                      {
-                        onSuccess: () => {
-                          if (selectedRole === role.role) {
-                            setSelectedRole('')
-                          }
-                          setSuccess(t('permissions.roles.removed'))
-                        },
-                      },
-                    )
-                  },
-                })
-              }
-            >
-              {t('permissions.roles.remove')}
-            </Button>
+                  })}
+                  disabled={grantsFeedback.pending}
+                  onClick={() => selectRole(role.role)}
+                >
+                  {t('permissions.roles.viewGrants')}
+                </Button>
+                <Typography variant="body2" color="text.secondary">
+                  {t('permissions.roles.builtinLocked')}
+                </Typography>
+              </Box>
+            ) : (
+              <Box
+                sx={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  columnGap: 1,
+                  rowGap: 1,
+                }}
+              >
+                <Button
+                  type="button"
+                  size="small"
+                  variant="outlined"
+                  aria-label={t('permissions.roles.manageGrantsAria', {
+                    role: role.role,
+                  })}
+                  disabled={grantsFeedback.pending}
+                  onClick={() => selectRole(role.role)}
+                >
+                  {t('permissions.roles.manageGrants')}
+                </Button>
+                <Button
+                  type="button"
+                  size="small"
+                  variant="outlined"
+                  color="error"
+                  aria-label={t('permissions.roles.removeAria', {
+                    role: role.role,
+                  })}
+                  aria-invalid={failed}
+                  aria-describedby={failed ? errorId : undefined}
+                  disabled={roleFeedback.pending}
+                  loading={roleFeedback.pending}
+                  onClick={() => requestRemoveRole(role)}
+                >
+                  {t('permissions.roles.remove')}
+                </Button>
+              </Box>
+            )}
+            {failed && roleFailureText !== null && (
+              <Typography
+                id={errorId}
+                variant="caption"
+                color="error"
+                sx={{ display: 'block', mt: 0.5 }}
+              >
+                {roleFailureText}
+              </Typography>
+            )}
           </Box>
-        ),
+        )
+      },
     },
   ]
 
@@ -314,32 +582,42 @@ export function PermissionsPage() {
     cellWrap: 'nowrap',
     cell: (grant) => {
       const code = codeByPair(grant.resource, grant.action)
+      const key = `${grant.resource}:${grant.action}`
+      const failed = failedGrant === key
+      const errorId = `permissions-grant-error-${encodeURIComponent(key)}`
       return (
-        <Button
-          type="button"
-          size="small"
-          variant="outlined"
-          color="error"
-          aria-label={t('permissions.grants.revokeAria', {
-            permission: grantLabel(grant),
-          })}
-          disabled={revokePermission.isPending || code === null}
-          onClick={() => {
-            if (code !== null) {
-              setSuccess(null)
-              revokePermission.mutate(
-                {
-                  tenant,
-                  role: selectedRole,
-                  permission: code,
-                },
-                { onSuccess: () => setSuccess(t('permissions.grants.revoked')) },
-              )
-            }
-          }}
-        >
-          {t('permissions.grants.revoke')}
-        </Button>
+        <Box>
+          <Button
+            type="button"
+            size="small"
+            variant="outlined"
+            color="error"
+            aria-label={t('permissions.grants.revokeAria', {
+              permission: grantLabel(grant),
+            })}
+            aria-invalid={failed}
+            aria-describedby={failed ? errorId : undefined}
+            disabled={grantsFeedback.pending || code === null}
+            loading={grantsFeedback.pending}
+            onClick={() => {
+              if (code !== null) {
+                revoke(grant, code)
+              }
+            }}
+          >
+            {t('permissions.grants.revoke')}
+          </Button>
+          {failed && grantsFailureText !== null && (
+            <Typography
+              id={errorId}
+              variant="caption"
+              color="error"
+              sx={{ display: 'block', mt: 0.5 }}
+            >
+              {grantsFailureText}
+            </Typography>
+          )}
+        </Box>
       )
     },
   }
@@ -357,55 +635,66 @@ export function PermissionsPage() {
     },
   ]
 
-  const bindingColumns: DataTableColumn<ConsoleBinding>[] = [
-    {
-      id: 'account',
-      header: t('permissions.bindings.column.account'),
-      cellWrap: 'nowrap',
-      cellFullValue: (binding) => binding.account,
-      cell: (binding) => <AccountIdentity account={binding.account} />,
-    },
-    {
-      id: 'role',
-      header: t('permissions.bindings.column.role'),
-      cellWrap: 'nowrap',
-      cellFullValue: (binding) => binding.role,
-      cell: (binding) => binding.role,
-    },
-    {
-      id: 'actions',
-      header: t('permissions.bindings.column.actions'),
-      cellWrap: 'nowrap',
-      cell: (binding) => (
-        <UnbindButton
-          binding={binding}
-          disabled={unbindRole.isPending}
-          onClick={() => {
-            setSuccess(null)
-            unbindRole.mutate(
-              {
-                tenant,
-                account: binding.account,
-                role: binding.role,
-              },
-              { onSuccess: () => setSuccess(t('permissions.bindings.unbound')) },
-            )
-          }}
-        />
-      ),
-    },
-  ]
+  // Both binding tables render the same columns, but each row's result
+  // belongs to that table's own scope and marker.
+  const bindingColumns = (
+    lookup: boolean,
+  ): DataTableColumn<ConsoleBinding>[] => {
+    const failedKey = lookup ? failedLookupBinding : failedBinding
+    const failureText = lookup ? lookupFailureText : bindingsFailureText
+    const feedback = lookup ? lookupFeedback : bindingsFeedback
+    return [
+      {
+        id: 'account',
+        header: t('permissions.bindings.column.account'),
+        cellWrap: 'nowrap',
+        cellFullValue: (binding) => binding.account,
+        cell: (binding) => <AccountIdentity account={binding.account} />,
+      },
+      {
+        id: 'role',
+        header: t('permissions.bindings.column.role'),
+        cellWrap: 'nowrap',
+        cellFullValue: (binding) => binding.role,
+        cell: (binding) => binding.role,
+      },
+      {
+        id: 'actions',
+        header: t('permissions.bindings.column.actions'),
+        cellWrap: 'nowrap',
+        cell: (binding) => {
+          const failed = failedKey === bindingKey(binding)
+          const errorId = bindingErrorId(
+            lookup ? 'lookup' : 'bindings',
+            binding,
+          )
+          return (
+            <Box>
+              <UnbindButton
+                binding={binding}
+                disabled={feedback.pending}
+                invalid={failed}
+                describedBy={errorId}
+                onClick={() => unbind(binding, lookup)}
+              />
+              {failed && failureText !== null && (
+                <Typography
+                  id={errorId}
+                  variant="caption"
+                  color="error"
+                  sx={{ display: 'block', mt: 0.5 }}
+                >
+                  {failureText}
+                </Typography>
+              )}
+            </Box>
+          )
+        },
+      },
+    ]
+  }
 
   const rolesPending = roles.isPending && roleRows === undefined
-
-  const writeErrorCode = firstErrorCode([
-    writeRole.error,
-    grantPermissionMutation.error,
-    revokePermission.error,
-    bindRole.error,
-    unbindRole.error,
-    removeRole.error,
-  ])
 
   return (
     <Box>
@@ -429,7 +718,11 @@ export function PermissionsPage() {
       />
 
       <Box component="section" sx={{ mb: 3 }}>
-        <TenantScope value={tenant} onSelect={setTenant} />
+        <TenantScope
+          value={tenant}
+          onSelect={changeTenant}
+          disabled={anyPending}
+        />
       </Box>
 
       {tenant === '' ? (
@@ -467,23 +760,11 @@ export function PermissionsPage() {
               <Button
                 type="button"
                 variant="contained"
-                disabled={writeRole.isPending}
-                onClick={() => {
-                  setSuccess(null)
-                  writeRole.mutate(
-                    {
-                      tenant,
-                      role: roleName,
-                      descriptionKey: roleDescription,
-                    },
-                    {
-                      onSuccess: () => {
-                        setRoleName('')
-                        setSuccess(t('permissions.roles.saved'))
-                      },
-                    },
-                  )
-                }}
+                disabled={
+                  roleFeedback.pending || roleName.trim() === ''
+                }
+                loading={roleFeedback.pending}
+                onClick={saveRole}
               >
                 {t('permissions.roles.create.submit')}
               </Button>
@@ -524,6 +805,9 @@ export function PermissionsPage() {
                 />
               )}
             </ConsoleAsyncSection>
+            <Box ref={roleRegionRef}>
+              <WriteFeedbackRegion outcome={roleFeedback.outcome} />
+            </Box>
           </Box>
 
           <Box component="section" sx={{ mb: 3 }}>
@@ -569,19 +853,11 @@ export function PermissionsPage() {
                     <Button
                       type="button"
                       variant="contained"
-                      disabled={grantPermissionMutation.isPending || grantPermission === ''}
-                      onClick={() => {
-                        setSuccess(null)
-                        grantPermissionMutation.mutate(
-                          { tenant, role: selectedRole, permission: grantPermission },
-                          {
-                            onSuccess: () => {
-                              setGrantPermission('')
-                              setSuccess(t('permissions.grants.granted'))
-                            },
-                          },
-                        )
-                      }}
+                      disabled={
+                        grantsFeedback.pending || grantPermission === ''
+                      }
+                      loading={grantsFeedback.pending}
+                      onClick={grant}
                     >
                       {t('permissions.grants.add')}
                     </Button>
@@ -619,6 +895,9 @@ export function PermissionsPage() {
                     />
                   )}
                 </ConsoleAsyncSection>
+                <Box ref={grantsRegionRef}>
+                  <WriteFeedbackRegion outcome={grantsFeedback.outcome} />
+                </Box>
               </>
             )}
           </Box>
@@ -674,34 +953,26 @@ export function PermissionsPage() {
               <AccountSelector
                 label={t('permissions.bindings.accountLabel')}
                 value={bindAccount}
-                onChange={setBindAccount}
+                onChange={changeBindAccount}
+                disabled={bindingsFeedback.pending}
               />
               <TextField
                 size="small"
                 value={bindRoleName}
-                onChange={(event) => setBindRoleName(event.target.value)}
+                onChange={(event) => changeBindRole(event.target.value)}
                 label={t('permissions.bindings.roleLabel')}
+                disabled={bindingsFeedback.pending}
               />
               <Button
                 type="button"
                 variant="contained"
-                disabled={bindRoleName.trim() === '' || bindAccount === null}
-                onClick={() => {
-                  if (bindAccount === null) {
-                    return
-                  }
-                  setSuccess(null)
-                  bindRole.mutate(
-                    { tenant, account: bindAccount.id, role: bindRoleName },
-                    {
-                      onSuccess: () => {
-                        setBindAccount(null)
-                        setBindRoleName('')
-                        setSuccess(t('permissions.bindings.bound'))
-                      },
-                    },
-                  )
-                }}
+                disabled={
+                  bindingsFeedback.pending ||
+                  bindRoleName.trim() === '' ||
+                  bindAccount === null
+                }
+                loading={bindingsFeedback.pending}
+                onClick={bind}
               >
                 {t('permissions.bindings.bind')}
               </Button>
@@ -733,11 +1004,14 @@ export function PermissionsPage() {
               {(settled) => (
                 <DataTable
                   rows={settled}
-                  columns={bindingColumns}
+                  columns={bindingColumns(false)}
                   rowKey={(binding) => `${binding.account}:${binding.role}`}
                 />
               )}
             </ConsoleAsyncSection>
+            <Box ref={bindingsRegionRef}>
+              <WriteFeedbackRegion outcome={bindingsFeedback.outcome} />
+            </Box>
           </Box>
 
           <Box component="section" sx={{ mb: 3 }}>
@@ -756,27 +1030,66 @@ export function PermissionsPage() {
                 label={t('permissions.lookup.accountLabel')}
                 value={lookupAccount}
                 onChange={setLookupAccount}
+                disabled={lookupFeedback.pending}
               />
               <Button
                 type="button"
                 variant="outlined"
-                disabled={lookupAccount === null}
-                onClick={() => setLookupApplied(lookupAccount?.id ?? '')}
+                disabled={
+                  lookupAccount === null ||
+                  accountBindings.isFetching ||
+                  lookupFeedback.pending
+                }
+                loading={accountBindings.isFetching}
+                onClick={applyLookup}
               >
                 {t('permissions.lookup.apply')}
               </Button>
             </Box>
             {lookupApplied !== '' && (
-              <DataTable
-                rows={accountBindings.data ?? []}
-                columns={bindingColumns}
-                rowKey={(binding) => `${binding.account}:${binding.role}`}
-              />
+              <ConsoleAsyncSection
+                pending={
+                  accountBindings.isPending &&
+                  accountBindings.data === undefined
+                }
+                payload={accountBindings.data}
+                error={accountBindings.error}
+                refreshing={accountBindings.isFetching}
+                empty={
+                  accountBindings.data !== undefined &&
+                  accountBindings.data.length === 0
+                }
+                headingLevel="h3"
+                loading={
+                  <ListSkeleton
+                    label={t('permissions.lookup.loading')}
+                    rows={[<Skeleton key="a" variant="text" width="48%" />]}
+                  />
+                }
+                errorState={{
+                  title: t('permissions.lookup.error.title'),
+                  description: t('permissions.lookup.error.description'),
+                  retryLabel: t('permissions.lookup.retry'),
+                  onRetry: () => void accountBindings.refetch(),
+                }}
+                emptyState={{
+                  title: t('permissions.lookup.empty.title'),
+                  description: t('permissions.lookup.empty.description'),
+                }}
+              >
+                {(settled) => (
+                  <DataTable
+                    rows={settled}
+                    columns={bindingColumns(true)}
+                    rowKey={(binding) => `${binding.account}:${binding.role}`}
+                  />
+                )}
+              </ConsoleAsyncSection>
             )}
+            <Box ref={lookupRegionRef}>
+              <WriteFeedbackRegion outcome={lookupFeedback.outcome} />
+            </Box>
           </Box>
-
-          <InlineError code={writeErrorCode} />
-          <InlineSuccess message={success} />
 
           <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
         </>
@@ -836,14 +1149,4 @@ function buildGrantCodeIndex(
     }
     return byAction.get(action) ?? null
   }
-}
-
-/** The first defined error's code, or null when every error is absent. */
-function firstErrorCode(errors: readonly unknown[]): string | null {
-  for (const error of errors) {
-    if (error !== null && error !== undefined) {
-      return errorCodeOf(error)
-    }
-  }
-  return null
 }

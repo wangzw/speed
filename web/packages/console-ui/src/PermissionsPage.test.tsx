@@ -8,10 +8,11 @@
  * read-only: its list is visible and every write control is withheld.
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
+import { mockMatchMedia } from '@speed/test-utils/matchMedia'
 import { PermissionsPage } from './PermissionsPage.js'
 import type {
   ConsoleAccount,
@@ -94,6 +95,44 @@ function binding(overrides: Partial<ConsoleBinding> = {}): ConsoleBinding {
 async function pickTenant(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   await user.click(screen.getByLabelText('租户'))
   await user.click(await screen.findByRole('option', { name: 'Acme' }))
+}
+
+/** The titled section a heading opens, which holds its group's region. */
+function section(name: string): HTMLElement {
+  const element = screen.getByRole('heading', { name }).closest('section')
+  if (element === null) {
+    throw new Error(`no section headed ${name}`)
+  }
+  return element as HTMLElement
+}
+
+/**
+ * jsdom implements no layout, so `scrollIntoView` does not exist on
+ * elements. A test that observes a region's scroll installs this spy.
+ */
+function stubScrollIntoView(): ReturnType<typeof vi.fn> {
+  const spy = vi.fn()
+  Object.defineProperty(Element.prototype, 'scrollIntoView', {
+    configurable: true,
+    writable: true,
+    value: spy,
+  })
+  return spy
+}
+
+afterEach(() => {
+  delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+})
+
+/** A promise the test settles by hand, for observing an in-flight write. */
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((settle, fail) => {
+    resolve = settle
+    reject = fail
+  })
+  return { promise, resolve, reject }
 }
 
 function withAuthz(
@@ -314,8 +353,9 @@ describe('PermissionsPage', () => {
         { tenant: 'acme', role: 'auditor', descriptionKey: '' },
       ])
     })
-    // The landed create fills the page's standing success region.
-    expect(await screen.findByText('角色已保存')).toBeInTheDocument()
+    // The landed create fills the role scope's success region, naming the
+    // role it wrote.
+    expect(await screen.findByText('角色「auditor」已保存')).toBeInTheDocument()
   })
 
   it('grants and revokes a permission on the selected role', async () => {
@@ -352,8 +392,11 @@ describe('PermissionsPage', () => {
       expect(granted).toEqual(['crm.deal.write'])
       expect(revoked).toEqual(['crm.deal.read'])
     })
-    // The landed revoke fills the page's standing success region.
-    expect(await screen.findByText('已撤销权限')).toBeInTheDocument()
+    // The landed revoke fills the grants scope's success region, naming the
+    // permission and the role it was revoked from.
+    expect(
+      await screen.findByText('已从角色「editor」撤销权限 crm.deal.read'),
+    ).toBeInTheDocument()
   })
 
   it('revokes a grant whose resource is not the code segment', async () => {
@@ -419,8 +462,11 @@ describe('PermissionsPage', () => {
       expect(bound).toEqual(['acc-2:viewer'])
       expect(unbound).toEqual(['editor'])
     })
-    // The landed unbind fills the page's standing success region.
-    expect(await screen.findByText('角色已解绑')).toBeInTheDocument()
+    // The landed unbind fills the bindings scope's success region, naming
+    // the account and the role it took away.
+    expect(
+      await screen.findByText('已解除账户「acc-1」的角色「editor」绑定'),
+    ).toBeInTheDocument()
   })
 
   it('keeps a binding account id marked unresolved when the account read is refused', async () => {
@@ -495,9 +541,9 @@ describe('PermissionsPage', () => {
       expect(removed).toEqual(['editor'])
     })
     // The dialog closes on the confirming click, and the landed delete
-    // fills the page's standing success region after it closes.
+    // fills the role scope's success region after it closes.
     await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(await screen.findByText('角色已删除')).toBeInTheDocument()
+    expect(await screen.findByText('角色「editor」已删除')).toBeInTheDocument()
   })
 
   it('closes the delete dialog on confirm and reports a refusal in the page region', async () => {
@@ -522,12 +568,13 @@ describe('PermissionsPage', () => {
     )
 
     // The dialog does not hold the write open: it closes on the confirming
-    // click, so the refusal lands in the page's region where it is readable
-    // rather than behind an aria-hidden modal.
+    // click, so the refusal lands in the role scope's region where it is
+    // readable rather than behind an aria-hidden modal. The same text marks
+    // the failed row inline, so the region is addressed by its role.
     await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(
-      await screen.findByText('你没有执行此操作的权限。'),
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '你没有执行此操作的权限。',
+    )
   })
 
   it('renders the retryable error placeholder when the roles read fails', async () => {
@@ -549,6 +596,191 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     expect(await screen.findByText('权限不足')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+  })
+
+  it("reports each control group's failure in its own region", async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+      listGrants: () => Promise.resolve([grant()]),
+      writeRole: () => Promise.reject({ code: 'authz.bad_request' }),
+      grantPermission: () => Promise.reject({ code: 'authz.conflict' }),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+
+    // The role catalog refuses the create.
+    await user.type(screen.getByLabelText('角色名'), 'auditor')
+    await user.click(screen.getByRole('button', { name: '保存角色' }))
+    expect(await within(section('角色')).findByRole('alert')).toHaveTextContent(
+      '服务端无法读取该请求，请检查表单后重试。',
+    )
+
+    // The grants group refuses the grant.
+    await user.click(
+      screen.getByRole('button', { name: '管理授权（角色 editor）' }),
+    )
+    await within(section('授权')).findByText('crm.deal.read')
+    await user.click(screen.getByLabelText('权限'))
+    await user.click(await screen.findByRole('option', { name: 'crm.deal.write' }))
+    await user.click(screen.getByRole('button', { name: '授予' }))
+    expect(await within(section('授权')).findByRole('alert')).toHaveTextContent(
+      '该改动与现有角色或绑定冲突。',
+    )
+
+    // Neither section carries the other's text, and no page-level banner
+    // aggregates them: the two regions are the only alerts.
+    expect(within(section('角色')).getByRole('alert')).toHaveTextContent(
+      '服务端无法读取该请求，请检查表单后重试。',
+    )
+    expect(
+      within(section('角色')).queryByText('该改动与现有角色或绑定冲突。'),
+    ).toBeNull()
+    expect(
+      within(section('授权')).queryByText(
+        '服务端无法读取该请求，请检查表单后重试。',
+      ),
+    ).toBeNull()
+    expect(screen.getAllByRole('alert')).toHaveLength(2)
+  })
+
+  it('marks the refused grant row inline and brings its region into view', async () => {
+    mockMatchMedia(false)
+    const scrollIntoView = stubScrollIntoView()
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+      listGrants: () =>
+        Promise.resolve([
+          grant(),
+          grant({ resource: 'deal', action: 'write' }),
+        ]),
+      revokePermission: () => Promise.reject({ code: 'authz.forbidden' }),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await user.click(
+      await screen.findByRole('button', { name: '管理授权（角色 editor）' }),
+    )
+    const grants = section('授权')
+    const failed = await within(grants).findByRole('button', {
+      name: '撤销授权 crm.deal.read',
+    })
+    const other = within(grants).getByRole('button', {
+      name: '撤销授权 crm.deal.write',
+    })
+    await user.click(failed)
+
+    // The failing row carries the marker; the row beside it does not.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '你没有执行此操作的权限。',
+    )
+    expect(failed).toHaveAttribute('aria-invalid', 'true')
+    expect(other).toHaveAttribute('aria-invalid', 'false')
+    const hintId = failed.getAttribute('aria-describedby')
+    expect(hintId).not.toBeNull()
+    const hint = document.getElementById(hintId as string)
+    expect(hint?.textContent).toBe(screen.getByRole('alert').textContent)
+
+    // The region under the table was brought into view, animated.
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'smooth',
+      block: 'center',
+    })
+    await expectNoAxeViolations()
+  })
+
+  it('keeps a refused lookup read in the permission placeholder, not a write error', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listAccountBindings: () =>
+        Promise.reject({ status: 403, code: 'client.http.403' }),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await chooseAccount(user, '账户标识', 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: '查询' }))
+
+    const lookup = section('查询账户的绑定')
+    expect(await within(lookup).findByText('权限不足')).toBeInTheDocument()
+    expect(within(lookup).queryByRole('button', { name: '重试' })).toBeNull()
+    // A read's refusal never settles into a write scope's slot.
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('disables the controls a pending grant drives, and clears the grant result when the role changes', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const operations = withAuthz({
+      listRoles: () =>
+        Promise.resolve([role(), role({ role: 'viewer' })]),
+      grantPermission: () => pending.promise,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await user.click(
+      await screen.findByRole('button', { name: '管理授权（角色 editor）' }),
+    )
+    await user.click(screen.getByLabelText('权限'))
+    await user.click(await screen.findByRole('option', { name: 'crm.deal.write' }))
+    await user.click(screen.getByRole('button', { name: '授予' }))
+
+    // The selected role drives the grants scope, and the tenant drives
+    // every scope: both are out of reach while the grant is in flight.
+    expect(
+      screen.getByRole('button', { name: '管理授权（角色 viewer）' }),
+    ).toBeDisabled()
+    expect(screen.getByLabelText('租户')).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+    expect(
+      await screen.findByText('已向角色「editor」授予权限 crm.deal.write'),
+    ).toBeInTheDocument()
+
+    // Another role means another context: the old confirmation goes.
+    await user.click(
+      screen.getByRole('button', { name: '管理授权（角色 viewer）' }),
+    )
+    expect(
+      screen.queryByText('已向角色「editor」授予权限 crm.deal.write'),
+    ).toBeNull()
+  })
+
+  it('disables the account picker while the bind is in flight and clears the bind result when the account changes', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const operations = withAuthz({
+      bindRole: () => pending.promise,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await user.type(screen.getByLabelText('角色'), 'viewer')
+    await chooseAccount(user, '账户', 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: '绑定' }))
+
+    // The chosen account drives the bindings scope: it is disabled while
+    // the write it drives is in flight.
+    expect(screen.getByLabelText('账户')).toBeDisabled()
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+    expect(
+      await screen.findByText('已将角色「viewer」绑定到账户「Ada」'),
+    ).toBeInTheDocument()
+
+    // Choosing another account is another context: the confirmation goes.
+    await chooseAccount(user, '账户', 'Operator', 'Operator (acc-1)')
+    expect(
+      screen.queryByText('已将角色「viewer」绑定到账户「Ada」'),
+    ).toBeNull()
   })
 
   it('has no axe violations', async () => {

@@ -360,8 +360,8 @@
       "removeTitle": "Delete role",
       "removeMessage": "Deleting role \"{{role}}\" revokes all of its grants and bindings.",
       "removeConfirm": "Delete",
-      "saved": "Role saved",
-      "removed": "Role deleted"
+      "saved": "Role \"{{role}}\" saved",
+      "removed": "Role \"{{role}}\" deleted"
     },
     "grants": {
       "title": "Grants",
@@ -386,8 +386,8 @@
       },
       "revoke": "Revoke",
       "revokeAria": "Revoke permission {{permission}}",
-      "granted": "Permission granted",
-      "revoked": "Permission revoked"
+      "granted": "Permission {{permission}} granted to role \"{{role}}\"",
+      "revoked": "Permission {{permission}} revoked from role \"{{role}}\""
     },
     "catalog": {
       "title": "Permission catalog",
@@ -427,13 +427,23 @@
       },
       "unbind": "Unbind",
       "unbindAria": "Unbind role {{role}} from account {{account}}",
-      "bound": "Role bound",
-      "unbound": "Role unbound"
+      "bound": "Role \"{{role}}\" bound to account \"{{account}}\"",
+      "unbound": "Role \"{{role}}\" unbound from account \"{{account}}\""
     },
     "lookup": {
       "title": "Look up an account's bindings",
       "accountLabel": "Account identifier",
-      "apply": "Look up"
+      "apply": "Look up",
+      "loading": "Loading the account's bindings",
+      "error": {
+        "title": "The account's bindings could not be loaded",
+        "description": "The bindings surface did not answer."
+      },
+      "retry": "Retry",
+      "empty": {
+        "title": "No bindings",
+        "description": "This account holds no role in the tenant."
+      }
     }
   },
   "accounts": {

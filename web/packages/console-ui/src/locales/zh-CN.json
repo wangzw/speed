@@ -360,8 +360,8 @@
       "removeTitle": "删除角色",
       "removeMessage": "删除角色「{{role}}」会一并撤销其全部授权与绑定。",
       "removeConfirm": "删除",
-      "saved": "角色已保存",
-      "removed": "角色已删除"
+      "saved": "角色「{{role}}」已保存",
+      "removed": "角色「{{role}}」已删除"
     },
     "grants": {
       "title": "授权",
@@ -386,8 +386,8 @@
       },
       "revoke": "撤销",
       "revokeAria": "撤销授权 {{permission}}",
-      "granted": "已授予权限",
-      "revoked": "已撤销权限"
+      "granted": "已向角色「{{role}}」授予权限 {{permission}}",
+      "revoked": "已从角色「{{role}}」撤销权限 {{permission}}"
     },
     "catalog": {
       "title": "权限目录",
@@ -427,13 +427,23 @@
       },
       "unbind": "解绑",
       "unbindAria": "解绑账户 {{account}} 的角色 {{role}}",
-      "bound": "角色已绑定",
-      "unbound": "角色已解绑"
+      "bound": "已将角色「{{role}}」绑定到账户「{{account}}」",
+      "unbound": "已解除账户「{{account}}」的角色「{{role}}」绑定"
     },
     "lookup": {
       "title": "查询账户的绑定",
       "accountLabel": "账户标识",
-      "apply": "查询"
+      "apply": "查询",
+      "loading": "正在加载该账户的绑定",
+      "error": {
+        "title": "该账户的绑定加载失败",
+        "description": "授权面未应答。"
+      },
+      "retry": "重试",
+      "empty": {
+        "title": "暂无绑定",
+        "description": "该账户在此租户下没有持有任何角色。"
+      }
     }
   },
   "accounts": {
