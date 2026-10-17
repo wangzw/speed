@@ -30,7 +30,7 @@
           },
           "400": {"description": "The body could not be read"},
           "401": {"description": "No usable credential, or a step-up is required"},
-          "403": {"description": "Impersonation is refused for this caller or target"},
+          "403": {"description": "Impersonation is refused for this caller or target, or the caller has no seasoned non-SMS factor (factor-not-seasoned)"},
           "409": {"description": "An impersonation is already in force"},
           "503": {"description": "A dependency could not answer"}
         }

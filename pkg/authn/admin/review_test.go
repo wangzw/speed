@@ -56,8 +56,9 @@ func problemCode(t *testing.T, body string) string {
 // TestTheStrongRoutesNeedASeasonedAdministratorWithANonSMSSecond holds the two
 // higher gates of the strong routes: a fresh, local, multi-factor
 // authentication with a non-SMS second method and a seasoned factor of the
-// actor's own. A successful privileged action drives both gates, and each
-// weaker case is answered with the step-up 401 and the capability is not
+// actor's own. A successful privileged action drives both gates; a weak or
+// stale authentication is answered with the step-up 401, and a missing seasoned
+// factor with the 403 a step-up cannot clear. Either way the capability is not
 // called.
 func TestTheStrongRoutesNeedASeasonedAdministratorWithANonSMSSecond(t *testing.T) {
 	// A TOTP administrator passes both strong routes.
@@ -92,12 +93,37 @@ func TestTheStrongRoutesNeedASeasonedAdministratorWithANonSMSSecond(t *testing.T
 		t.Errorf("Reset ran %d times for a WebAuthn administrator, want once", r.mfa.resets)
 	}
 
+	// A missing seasoned factor is not a strength shortfall: no re-authentication
+	// clears it, so both routes answer the 403 rather than the step-up 401.
+	r = newRig(t)
+	r.mfa.seasoned = false
+	rec = r.do(http.MethodPost, "/auth/admin/accounts/"+string(userID)+"/mfa-reset", nil, fresh()...)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("unseasoned mfa-reset: status = %d, want 403; body %s", rec.Code, rec.Body.String())
+	}
+	if code := problemCode(t, rec.Body.String()); code != "factor-not-seasoned" {
+		t.Errorf("unseasoned mfa-reset: problem code %q, want factor-not-seasoned", code)
+	}
+	if r.mfa.resets != 0 {
+		t.Error("Reset ran though the actor had no seasoned factor")
+	}
+	rec = r.do(http.MethodPost, "/auth/admin/accounts/"+string(userID)+"/password",
+		map[string]any{"password": "a-long-temporary-one"}, fresh()...)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("unseasoned password reset: status = %d, want 403; body %s", rec.Code, rec.Body.String())
+	}
+	if code := problemCode(t, rec.Body.String()); code != "factor-not-seasoned" {
+		t.Errorf("unseasoned password reset: problem code %q, want factor-not-seasoned", code)
+	}
+	if r.passwords.calls != 0 {
+		t.Error("Set ran though the actor had no seasoned factor")
+	}
+
 	weaker := []struct {
 		name  string
 		setup func(*rig)
 		opts  func() []authntest.Option
 	}{
-		{"no seasoned factor of the actor", func(r *rig) { r.mfa.seasoned = false }, func() []authntest.Option { return fresh() }},
 		{"a stale authentication", func(*rig) {}, func() []authntest.Option {
 			return fresh(authntest.WithAuthTime(time.Now().Add(-time.Hour)))
 		}},

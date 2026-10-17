@@ -31,6 +31,7 @@ const (
 	CodeMethodDisabled                 = "method-disabled"                  // 403
 	CodeAccountUnavailable             = "account-unavailable"              // 403
 	CodeImpersonationRestricted        = "impersonation-restricted"         // 403
+	CodeFactorNotSeasoned              = "factor-not-seasoned"              // 403
 	CodeForbidden                      = "forbidden"                        // 403
 	CodeConflict                       = "conflict"                         // 409
 	CodeLoginIdentifierRequired        = "login-identifier-required"        // 409
@@ -49,6 +50,7 @@ var statusOf = map[string]int{
 	CodeMethodDisabled:                 http.StatusForbidden,
 	CodeAccountUnavailable:             http.StatusForbidden,
 	CodeImpersonationRestricted:        http.StatusForbidden,
+	CodeFactorNotSeasoned:              http.StatusForbidden,
 	CodeForbidden:                      http.StatusForbidden,
 	CodeConflict:                       http.StatusConflict,
 	CodeLoginIdentifierRequired:        http.StatusConflict,
@@ -161,9 +163,9 @@ func StepUpRequired(c *gin.Context, id authn.Identity, r authn.Requirement) {
 }
 
 // Forbidden writes a 403. code is method-disabled, account-unavailable,
-// impersonation-restricted or forbidden, the four that this capability's own
-// handlers may answer: the gateway and the admission layer never write a 403.
-// Any other code panics.
+// impersonation-restricted, factor-not-seasoned or forbidden, the five that
+// this capability's own handlers may answer: the gateway and the admission
+// layer never write a 403. Any other code panics.
 func Forbidden(c *gin.Context, code string) {
 	problem(c, mustCode("Forbidden", code, http.StatusForbidden), code)
 }

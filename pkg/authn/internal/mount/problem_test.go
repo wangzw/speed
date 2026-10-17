@@ -69,6 +69,7 @@ var codeTable = []struct {
 	{"method-disabled", 403},
 	{"account-unavailable", 403},
 	{"impersonation-restricted", 403},
+	{"factor-not-seasoned", 403},
 	{"forbidden", 403},
 	{"conflict", 409},
 	{"login-identifier-required", 409},
@@ -77,9 +78,9 @@ var codeTable = []struct {
 	{"unavailable", 503},
 }
 
-// TestTheProblemCodesAreTheDesignsFifteenWithTheirStatuses holds the closed set
+// TestTheProblemCodesAreTheDesignsSetWithTheirStatuses holds the closed set
 // against the design, code by code, and refuses what is near it.
-func TestTheProblemCodesAreTheDesignsFifteenWithTheirStatuses(t *testing.T) {
+func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 	if len(statusOf) != len(codeTable) {
 		t.Errorf("the code table has %d entries, the design has %d", len(statusOf), len(codeTable))
 	}
@@ -107,8 +108,8 @@ func TestTheProblemCodesAreTheDesignsFifteenWithTheirStatuses(t *testing.T) {
 	consts := []string{
 		CodeBadRequest, CodeUnsupportedRegion, CodeLoginFailed, CodeFlowInvalid, CodeLinkRequired,
 		CodeInsufficientUserAuthentication, CodeMethodDisabled, CodeAccountUnavailable,
-		CodeImpersonationRestricted, CodeForbidden, CodeConflict, CodeLoginIdentifierRequired,
-		CodeUnsupportedMediaType, CodeThrottled, CodeUnavailable,
+		CodeImpersonationRestricted, CodeFactorNotSeasoned, CodeForbidden, CodeConflict,
+		CodeLoginIdentifierRequired, CodeUnsupportedMediaType, CodeThrottled, CodeUnavailable,
 	}
 	for i, c := range codeTable {
 		if consts[i] != c.code {

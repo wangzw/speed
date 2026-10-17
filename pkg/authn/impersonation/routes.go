@@ -264,6 +264,8 @@ func (m *product) answerStart(c *gin.Context, id authn.Identity, err error) {
 	switch {
 	case errors.Is(err, authn.ErrStepUpRequired):
 		mount.StepUpRequired(c, id, authn.Requirement{Assurance: authn.AssuranceMulti, MaxAge: m.settings.maxAuthAge(), Local: true})
+	case errors.Is(err, authn.ErrFactorNotSeasoned):
+		mount.Forbidden(c, mount.CodeFactorNotSeasoned)
 	case errors.Is(err, authn.ErrForbidden):
 		mount.Forbidden(c, mount.CodeForbidden)
 	case errors.Is(err, authn.ErrImpersonationRestricted), errors.Is(err, authn.ErrImpersonationNeedsSession):

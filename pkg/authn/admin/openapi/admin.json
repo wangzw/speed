@@ -166,7 +166,7 @@
           "204": {"description": "The password was set"},
           "400": {"description": "The body could not be read, or the password fails the policy"},
           "401": {"description": "No usable credential, or a step-up is required"},
-          "403": {"description": "The caller is impersonating or may not reset the password"},
+          "403": {"description": "The caller is impersonating, may not reset the password, or has no seasoned non-SMS factor (factor-not-seasoned)"},
           "404": {"description": "No such account"},
           "503": {"description": "A dependency could not answer"}
         }
@@ -222,7 +222,7 @@
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminRemoved"}}}
           },
           "401": {"description": "No usable credential, or a step-up is required"},
-          "403": {"description": "The caller is impersonating or may not reset the factors"},
+          "403": {"description": "The caller is impersonating, may not reset the factors, or has no seasoned non-SMS factor (factor-not-seasoned)"},
           "404": {"description": "No such account"},
           "503": {"description": "A dependency could not answer"}
         }

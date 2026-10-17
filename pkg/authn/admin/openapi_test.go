@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/audit"
@@ -8,6 +10,39 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/routefixture"
 	"github.com/vislake/speed/pkg/internal/routecontract"
 )
+
+// TestTheResetsDeclareTheUnseasonedRefusal holds the fragment's 403 of the two
+// reset operations. The design gives an administrator with no seasoned non-SMS
+// factor its own 403 rather than the step-up 401, so the declared operations a
+// generated client is built from carry it.
+func TestTheResetsDeclareTheUnseasonedRefusal(t *testing.T) {
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Responses map[string]struct {
+				Description string `json:"description"`
+			} `json:"responses"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(adminFragment, &doc); err != nil {
+		t.Fatalf("the fragment is not JSON: %v", err)
+	}
+	for _, path := range []string{
+		"/auth/admin/accounts/{id}/password",
+		"/auth/admin/accounts/{id}/mfa-reset",
+	} {
+		op, ok := doc.Paths[path]["post"]
+		if !ok {
+			t.Fatalf("the fragment declares no POST %s", path)
+		}
+		refusal, ok := op.Responses["403"]
+		if !ok {
+			t.Fatalf("POST %s declares no 403", path)
+		}
+		if !strings.Contains(refusal.Description, "factor-not-seasoned") {
+			t.Errorf("the 403 of %s reads %q, want it to name factor-not-seasoned", path, refusal.Description)
+		}
+	}
+}
 
 // TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters holds the one thing
 // the OpenAPI fragment and the registrations have to agree on: the fragment is

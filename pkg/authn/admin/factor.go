@@ -215,8 +215,9 @@ func (m *product) revokeAfterPassword(ctx context.Context, id authn.AccountID) {
 // requireAdministrator holds a high-privilege actor to a fresh, local,
 // non-SMS multi-factor authentication and a seasoned factor of their own, and
 // refuses a subject of the static credential table outright, which has neither
-// factors nor an account to answer for. A failure is answered with the step-up
-// 401 and returns false.
+// factors nor an account to answer for. The static-subject refusal and the
+// strength conditions are a step-up 401; a missing seasoned factor is the 403
+// the step-up cannot clear.
 func (m *product) requireAdministrator(c *gin.Context, id authn.Identity) bool {
 	if account := id.Account(); account == "" || account.IsStatic() {
 		mount.StepUpRequired(c, id, authn.FreshLocalMulti(m.settings.recentWindow()))
@@ -235,7 +236,7 @@ func (m *product) requireAdministrator(c *gin.Context, id authn.Identity) bool {
 		return false
 	}
 	if !seasoned {
-		mount.StepUpRequired(c, id, authn.FreshLocalMulti(m.settings.recentWindow()))
+		mount.Forbidden(c, mount.CodeFactorNotSeasoned)
 		return false
 	}
 	return true

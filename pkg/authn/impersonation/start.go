@@ -91,8 +91,11 @@ func (m *product) Start(ctx context.Context, actor authn.Identity, r authn.Imper
 // checkActor holds the actor to group a: not already impersonating, a human
 // account that is enabled, a session to hang the record on, a local multi-factor
 // authentication that is recent and not by SMS alone, and a seasoned non-SMS
-// factor. A missing account is read as the actor being unavailable, which is the
-// same refusal as a static or disabled one and says nothing about the target.
+// factor. The assurance, freshness, Local and method-set conditions are a
+// step-up, and only a stronger authentication can clear them; the seasoned
+// factor is a separate refusal, because no authentication clears it. A missing
+// account is read as the actor being unavailable, which is the same refusal as
+// a static or disabled one and says nothing about the target.
 func (m *product) checkActor(ctx context.Context, actor authn.Identity) error {
 	if actor.Impersonating() {
 		return authn.ErrImpersonationRestricted
@@ -126,7 +129,7 @@ func (m *product) checkActor(ctx context.Context, actor authn.Identity) error {
 		return authn.ErrUnavailable
 	}
 	if !seasoned {
-		return authn.ErrStepUpRequired
+		return authn.ErrFactorNotSeasoned
 	}
 	return nil
 }

@@ -299,6 +299,12 @@ var (
 	// a 401 insufficient_user_authentication.
 	ErrStepUpRequired = errors.New("authn: a stronger or fresher authentication is required")
 
+	// ErrFactorNotSeasoned reports an actor with no enabled non-SMS factor that
+	// has been active for sensitive-min-age, on the highest-privilege actions that
+	// require one. Re-authenticating cannot satisfy it, so it is not a step-up.
+	// Outwardly it is a 403 factor-not-seasoned.
+	ErrFactorNotSeasoned = errors.New("authn: the account has no seasoned non-SMS factor")
+
 	// ErrForbidden reports that a Decider refused, or that none is there.
 	// Outwardly it is a 403 forbidden.
 	ErrForbidden = errors.New("authn: the action is not allowed")

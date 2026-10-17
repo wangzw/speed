@@ -358,6 +358,63 @@ func TestStatusAnswersNotFoundForALapsedRecord(t *testing.T) {
 	})
 }
 
+// TestStartSeparatesAnUnseasonedActorFromAShortfall holds the two refusals a
+// failing actor's authentication reaches the route with. A missing seasoned
+// factor is the 403 a step-up can never clear, so it carries no challenge; the
+// assurance, freshness, Local and method-set checks stay the 401 the step-up
+// dialog answers. The seasoned answer is true throughout the second case, so a
+// remaining 401 proves the checks before it were judged first.
+func TestStartSeparatesAnUnseasonedActorFromAShortfall(t *testing.T) {
+	onEachDialect(t, func(t *testing.T, r *rig) {
+		r.p.mountRoutes()
+
+		t.Run("no seasoned factor", func(t *testing.T) {
+			r.mfa.seasoned = false
+			r.mounter.As(adminOpts()...)
+			w := r.mounter.Do(startRequest(postBody()))
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want 403: %s", w.Code, w.Body.String())
+			}
+			var body struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatalf("the body %q is not a problem: %v", w.Body.String(), err)
+			}
+			if want := "urn:speed:authn:factor-not-seasoned"; body.Type != want {
+				t.Errorf("the problem type is %q, want %q", body.Type, want)
+			}
+			if got := w.Header().Get("WWW-Authenticate"); got != "" {
+				t.Errorf("the refusal carries the challenge %q, want none", got)
+			}
+			if r.recordCount() != 0 {
+				t.Errorf("the refusal wrote %d records, want none", r.recordCount())
+			}
+		})
+
+		t.Run("a weak authentication with a seasoned factor", func(t *testing.T) {
+			r.mfa.seasoned = true
+			r.mounter.As(append(adminOpts(), authntest.WithAssurance(authn.AssuranceSingle))...)
+			w := r.mounter.Do(startRequest(postBody()))
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401: %s", w.Code, w.Body.String())
+			}
+			var body struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatalf("the body %q is not a problem: %v", w.Body.String(), err)
+			}
+			if want := "urn:speed:authn:insufficient_user_authentication"; body.Type != want {
+				t.Errorf("the problem type is %q, want %q", body.Type, want)
+			}
+			if got := w.Header().Get("WWW-Authenticate"); !strings.Contains(got, "insufficient_user_authentication") {
+				t.Errorf("the challenge reads %q, want the step-up marker", got)
+			}
+		})
+	})
+}
+
 // TestAnswerStartMapsEachErrorToItsStatusAndCode holds the handler's answer to
 // each error Start returns: the status and the problem code the design fixes,
 // which the gateway and the client read.
@@ -370,6 +427,7 @@ func TestAnswerStartMapsEachErrorToItsStatusAndCode(t *testing.T) {
 			code   string
 		}{
 			{"a step-up shortfall", authn.ErrStepUpRequired, http.StatusUnauthorized, "insufficient_user_authentication"},
+			{"an unseasoned factor", authn.ErrFactorNotSeasoned, http.StatusForbidden, "factor-not-seasoned"},
 			{"a forbidden decision", authn.ErrForbidden, http.StatusForbidden, "forbidden"},
 			{"a restricted start", authn.ErrImpersonationRestricted, http.StatusForbidden, "impersonation-restricted"},
 			{"a session with no life", authn.ErrImpersonationNeedsSession, http.StatusForbidden, "impersonation-restricted"},

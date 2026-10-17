@@ -517,6 +517,56 @@ func TestTheAccountAndMembershipGroupsAreAlwaysMounted(t *testing.T) {
 	}
 }
 
+// TestAnUnseasonedActorIsForbiddenOnTheResets holds the split of the two
+// refusals the factor and password resets make of a failing actor: a missing
+// seasoned factor is the 403 a step-up cannot clear and no write or audit row
+// follows, while a weak authentication ahead of it stays the step-up 401 even
+// when the seasoned answer is true.
+func TestAnUnseasonedActorIsForbiddenOnTheResets(t *testing.T) {
+	routes := []struct {
+		name string
+		path string
+		body any
+	}{
+		{"factor reset", "/auth/admin/accounts/" + string(userID) + "/mfa-reset", nil},
+		{"password reset", "/auth/admin/accounts/" + string(userID) + "/password", map[string]any{"password": "a-long-temporary-one"}},
+	}
+
+	for _, c := range routes {
+		t.Run(c.name+", no seasoned factor", func(t *testing.T) {
+			r := newRig(t)
+			r.mfa.seasoned = false
+			rec := r.do(http.MethodPost, c.path, c.body, fresh()...)
+			if rec.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want 403: %s", rec.Code, rec.Body.String())
+			}
+			if got := problemCode(t, rec.Body.String()); got != "factor-not-seasoned" {
+				t.Errorf("the problem code is %q, want factor-not-seasoned", got)
+			}
+			if r.mfa.resets != 0 || r.passwords.calls != 0 {
+				t.Errorf("the refused write ran: %d factor resets, %d password sets", r.mfa.resets, r.passwords.calls)
+			}
+			if rows := r.audit.entries(); len(rows) != 0 {
+				t.Errorf("the refusal wrote %d audit rows, want none: %+v", len(rows), rows)
+			}
+		})
+	}
+
+	t.Run("a weak authentication with a seasoned factor", func(t *testing.T) {
+		for _, c := range routes {
+			r := newRig(t)
+			rec := r.do(http.MethodPost, c.path, c.body,
+				fresh(authntest.WithAssurance(authn.AssuranceSingle))...)
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("%s: status = %d, want 401: %s", c.name, rec.Code, rec.Body.String())
+			}
+			if got := problemCode(t, rec.Body.String()); got != "insufficient_user_authentication" {
+				t.Errorf("%s: the problem code is %q, want insufficient_user_authentication", c.name, got)
+			}
+		}
+	})
+}
+
 // TestAStrengthShortfallIsAStepUp holds that an actor whose authentication is
 // not a fresh local multi-factor one is answered 401 on the routes that ask for
 // one, and the write does not happen.

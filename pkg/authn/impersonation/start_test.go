@@ -131,7 +131,7 @@ func TestStartRefusesEachStructuralRestriction(t *testing.T) {
 				r.mfa.seasoned = false
 				return adminIdentity(t)
 			},
-			want: authn.ErrStepUpRequired,
+			want: authn.ErrFactorNotSeasoned,
 		},
 		{
 			name:  "b: the target does not exist",

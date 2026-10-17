@@ -750,6 +750,7 @@ var exportedSurface = []string{
 	"var ErrFactorFlagged",
 	"var ErrFactorLimit",
 	"var ErrFactorNotEnrolled",
+	"var ErrFactorNotSeasoned",
 	"var ErrFlowInvalid",
 	"var ErrForbidden",
 	"var ErrIdentifierRequired",
