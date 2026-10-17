@@ -117,6 +117,12 @@ the mutations go through the same bound client, and no page builds a
 query client of its own or writes a query key — the keys live inside the
 hooks the host binds.
 
+The step-up dialog's read of the caller's own factors is the one read
+outside the bundle: `GET /auth/factors` is a self-service read of the
+operator's own account (which factors may raise this session), not an
+administration surface the bundle substitutes, so the dialog runs the
+generated hook directly on the host's query client.
+
 Why the pages read through a bundle and not a direct `@speed/api-sdk`
 call each: the bundle is the substitution point. The shipped
 `consoleOperations` is a thin adapter over the generated `@speed/api-sdk`
