@@ -1450,12 +1450,16 @@ describe('AccountsPage', () => {
     try {
       renderWithProviders(<AccountsPage />, { operations: withAccounts() })
       const panel = await openCreate(user)
+      // The warning belongs to the render that mounts the two
+      // verification-source selects, so it is checked as soon as the panel
+      // opens -- before the option list below, whose absence is the same
+      // defect's user-visible half but a slower, less precise signal.
+      expect(fragmentWarnings).toEqual([])
       await user.click(within(panel).getByLabelText('邮箱验证方式'))
       await screen.findByRole('option', { name: '管理员断言' })
     } finally {
       spy.mockRestore()
     }
-    expect(fragmentWarnings).toEqual([])
   })
 
   it('carries a destructive write\'s confirmation in the already-aria-hidden page\'s panel', async () => {
