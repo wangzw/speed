@@ -566,6 +566,10 @@ describe('AppShell', () => {
         expect(primaryOf(control)).toHaveStyle({
           minWidth: '0px',
           overflow: 'hidden',
+          // `nowrap` is what keeps the label on one line; without it the
+          // text wraps and the row grows tall -- the other half of the
+          // defect this case exists for.
+          whiteSpace: 'nowrap',
           textOverflow: 'ellipsis',
         })
       }

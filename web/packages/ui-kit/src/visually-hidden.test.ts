@@ -14,8 +14,10 @@ describe('visuallyHiddenSx', () => {
     expect(visuallyHiddenSx).toEqual({
       clip: 'rect(0 0 0 0)',
       clipPath: 'inset(50%)',
-      height: 1,
-      width: 1,
+      // Strings, not bare numbers: MUI's sizing transform reads a number at
+      // or below 1 as a fraction, so `height: 1` would render as 100%.
+      height: '1px',
+      width: '1px',
       overflow: 'hidden',
       position: 'absolute',
       bottom: 0,
