@@ -50,7 +50,12 @@ import TextField from '@mui/material/TextField'
 import Button from '@mui/material/Button'
 import { useForm } from 'react-hook-form'
 import type { SubmitHandler } from 'react-hook-form'
-import { FormField, FormLayout, visuallyHiddenSx } from '@speed/ui-kit'
+import {
+  FormField,
+  FormLayout,
+  touchTargetSx,
+  visuallyHiddenSx,
+} from '@speed/ui-kit'
 import type { AuthSession } from '@speed/auth-core'
 import type { OpenFlowState } from './internal/flow.js'
 import { useAuthUiTranslation } from './internal/translation.js'
@@ -254,10 +259,11 @@ export function SMSSignInForm({ session, onSignedIn }: SMSSignInFormProps) {
               size="small"
               onClick={() => void requestCode(sentToRef.current)}
               disabled={driver.busy}
+              sx={touchTargetSx}
             >
               {t('smsSignIn.resendCode')}
             </Button>
-            <Button size="small" onClick={editPhone}>
+            <Button size="small" onClick={editPhone} sx={touchTargetSx}>
               {t('smsSignIn.editPhone')}
             </Button>
           </Box>

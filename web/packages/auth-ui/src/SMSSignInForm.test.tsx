@@ -17,6 +17,7 @@ import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SMSSignInForm } from './SMSSignInForm.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   LOGIN_ANSWER,
   LOGIN_START,
@@ -253,6 +254,22 @@ describe('SMSSignInForm', () => {
     expect(
       screen.queryByLabelText(zhCN.smsSignIn.codeLabel),
     ).not.toBeInTheDocument()
+  })
+
+  it('raise the code-step actions to the 44px floor under a coarse pointer', async () => {
+    // Resend and change-phone are compact action buttons; on a
+    // finger-driven device each one gates up to the 44x44 floor.
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(),
+    })
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    await sendCode()
+    const resend = await screen.findByRole('button', {
+      name: zhCN.smsSignIn.resendCode,
+    })
+    const edit = screen.getByRole('button', { name: zhCN.smsSignIn.editPhone })
+    expect(hasCoarsePointerTouchTarget(resend)).toBe(true)
+    expect(hasCoarsePointerTouchTarget(edit)).toBe(true)
   })
 
   it('render the used-code notice on a superseded answer and refuse the same code locally', async () => {
