@@ -323,6 +323,8 @@
         "descriptionLabel": "Description key",
         "submit": "Save role"
       },
+      "viewGrants": "View grants",
+      "viewGrantsAria": "View grants (role {{role}})",
       "manageGrants": "Manage grants",
       "manageGrantsAria": "Manage grants (role {{role}})",
       "remove": "Delete",
@@ -337,6 +339,7 @@
       "title": "Grants",
       "pickRole": "Select a role above to manage its grants.",
       "forRole": "Grants of role \"{{role}}\"",
+      "builtinReadOnly": "This role is built-in; its grants are read-only and cannot be granted or revoked.",
       "permissionLabel": "Permission",
       "add": "Grant",
       "loading": "Loading grants",

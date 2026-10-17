@@ -120,6 +120,14 @@ export function PermissionsPage() {
   // the code that names it (see buildGrantCodeIndex).
   const codeByPair = useMemo(() => buildGrantCodeIndex(permissions), [permissions])
 
+  const roleRows = roles.data
+  // A builtin role refuses every write -- role rewrite and delete, and
+  // grant/revoke -- but not the reads. The selected role therefore opens
+  // read-only: the grants it holds are visible, and every write control
+  // that would name it is withheld.
+  const selectedRoleBuiltin =
+    roleRows?.some((role) => role.role === selectedRole && role.builtin) ?? false
+
   const roleColumns: DataTableColumn<ConsoleRole>[] = [
     {
       id: 'role',
@@ -150,18 +158,30 @@ export function PermissionsPage() {
       header: t('permissions.roles.column.actions'),
       cellWrap: 'nowrap',
       // A builtin role's grants and existence are fixed: the server refuses
-      // both writes with authz.ErrBuiltinRole. The controls are replaced by a
-      // plain explanation rather than disabled. A disabled button cannot be
-      // focused and drops out of the Tab order, so a tooltip or
-      // aria-describedby that depends on focus or hover is unreachable to
-      // keyboard-only users; it is still in the accessibility tree, though, and
-      // a control that can never succeed is not put in front of anyone.
-      // Visible text sits in every reader's order and carries the reason.
+      // every write with authz.ErrBuiltinRole, but it refuses no read. The
+      // row therefore keeps a read-only entry that opens the grant list and
+      // drops the two write controls. A disabled button cannot be focused and
+      // drops out of the Tab order, so a tooltip or aria-describedby that
+      // depends on focus or hover is unreachable to keyboard-only users; it is
+      // still in the accessibility tree, though, and a control that can never
+      // succeed is not put in front of anyone. Visible text sits in every
+      // reader's order and carries the reason.
       cell: (role) =>
         role.builtin ? (
-          <Typography variant="body2" color="text.secondary">
-            {t('permissions.roles.builtinLocked')}
-          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 1, rowGap: 1 }}>
+            <Button
+              type="button"
+              size="small"
+              variant="outlined"
+              aria-label={t('permissions.roles.viewGrantsAria', { role: role.role })}
+              onClick={() => setSelectedRole(role.role)}
+            >
+              {t('permissions.roles.viewGrants')}
+            </Button>
+            <Typography variant="body2" color="text.secondary">
+              {t('permissions.roles.builtinLocked')}
+            </Typography>
+          </Box>
         ) : (
           <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 1, rowGap: 1 }}>
             <Button
@@ -188,7 +208,7 @@ export function PermissionsPage() {
     },
   ]
 
-  const grantColumns: DataTableColumn<ConsoleGrant>[] = [
+  const grantBaseColumns: DataTableColumn<ConsoleGrant>[] = [
     {
       id: 'resource',
       header: t('permissions.grants.column.resource'),
@@ -203,43 +223,48 @@ export function PermissionsPage() {
       cellFullValue: (grant) => grant.action,
       cell: (grant) => grant.action,
     },
-    {
-      id: 'actions',
-      header: t('permissions.grants.column.actions'),
-      cellWrap: 'nowrap',
-      cell: (grant) => {
-        const code = codeByPair(grant.resource, grant.action)
-        return (
-          <Button
-            type="button"
-            size="small"
-            variant="outlined"
-            color="error"
-            aria-label={t('permissions.grants.revokeAria', {
-              resource: grant.resource,
-              action: grant.action,
-            })}
-            disabled={revokePermission.isPending || code === null}
-            onClick={() => {
-              if (code !== null) {
-                setSuccess(null)
-                revokePermission.mutate(
-                  {
-                    tenant,
-                    role: selectedRole,
-                    permission: code,
-                  },
-                  { onSuccess: () => setSuccess(t('permissions.grants.revoked')) },
-                )
-              }
-            }}
-          >
-            {t('permissions.grants.revoke')}
-          </Button>
-        )
-      },
-    },
   ]
+  // A builtin role's grants are read-only: the revoke column is not part of
+  // its table, and the grant form above it is withheld as well.
+  const grantRevokeColumn: DataTableColumn<ConsoleGrant> = {
+    id: 'actions',
+    header: t('permissions.grants.column.actions'),
+    cellWrap: 'nowrap',
+    cell: (grant) => {
+      const code = codeByPair(grant.resource, grant.action)
+      return (
+        <Button
+          type="button"
+          size="small"
+          variant="outlined"
+          color="error"
+          aria-label={t('permissions.grants.revokeAria', {
+            resource: grant.resource,
+            action: grant.action,
+          })}
+          disabled={revokePermission.isPending || code === null}
+          onClick={() => {
+            if (code !== null) {
+              setSuccess(null)
+              revokePermission.mutate(
+                {
+                  tenant,
+                  role: selectedRole,
+                  permission: code,
+                },
+                { onSuccess: () => setSuccess(t('permissions.grants.revoked')) },
+              )
+            }
+          }}
+        >
+          {t('permissions.grants.revoke')}
+        </Button>
+      )
+    },
+  }
+  const grantColumns = selectedRoleBuiltin
+    ? grantBaseColumns
+    : [...grantBaseColumns, grantRevokeColumn]
 
   const catalogColumns: DataTableColumn<ConsolePermission>[] = [
     {
@@ -299,7 +324,6 @@ export function PermissionsPage() {
     },
   ]
 
-  const roleRows = roles.data
   const rolesPending = roles.isPending && roleRows === undefined
 
   const writeErrorCode = firstErrorCode([
@@ -440,50 +464,56 @@ export function PermissionsPage() {
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                   {t('permissions.grants.forRole', { role: selectedRole })}
                 </Typography>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    alignItems: 'flex-end',
-                    columnGap: 2,
-                    rowGap: 1,
-                    mb: 2,
-                  }}
-                >
-                  <TextField
-                    select
-                    size="small"
-                    value={grantPermission}
-                    onChange={(event) => setGrantPermission(event.target.value)}
-                    label={t('permissions.grants.permissionLabel')}
-                    sx={{ minWidth: 240 }}
-                  >
-                    {permissions.map((entry) => (
-                      <MenuItem key={entry.permission} value={entry.permission}>
-                        {entry.permission}
-                      </MenuItem>
-                    ))}
-                  </TextField>
-                  <Button
-                    type="button"
-                    variant="contained"
-                    disabled={grantPermissionMutation.isPending || grantPermission === ''}
-                    onClick={() => {
-                      setSuccess(null)
-                      grantPermissionMutation.mutate(
-                        { tenant, role: selectedRole, permission: grantPermission },
-                        {
-                          onSuccess: () => {
-                            setGrantPermission('')
-                            setSuccess(t('permissions.grants.granted'))
-                          },
-                        },
-                      )
+                {selectedRoleBuiltin ? (
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    {t('permissions.grants.builtinReadOnly')}
+                  </Typography>
+                ) : (
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignItems: 'flex-end',
+                      columnGap: 2,
+                      rowGap: 1,
+                      mb: 2,
                     }}
                   >
-                    {t('permissions.grants.add')}
-                  </Button>
-                </Box>
+                    <TextField
+                      select
+                      size="small"
+                      value={grantPermission}
+                      onChange={(event) => setGrantPermission(event.target.value)}
+                      label={t('permissions.grants.permissionLabel')}
+                      sx={{ minWidth: 240 }}
+                    >
+                      {permissions.map((entry) => (
+                        <MenuItem key={entry.permission} value={entry.permission}>
+                          {entry.permission}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                    <Button
+                      type="button"
+                      variant="contained"
+                      disabled={grantPermissionMutation.isPending || grantPermission === ''}
+                      onClick={() => {
+                        setSuccess(null)
+                        grantPermissionMutation.mutate(
+                          { tenant, role: selectedRole, permission: grantPermission },
+                          {
+                            onSuccess: () => {
+                              setGrantPermission('')
+                              setSuccess(t('permissions.grants.granted'))
+                            },
+                          },
+                        )
+                      }}
+                    >
+                      {t('permissions.grants.add')}
+                    </Button>
+                  </Box>
+                )}
                 <ConsoleAsyncSection
                   pending={grants.isPending && grants.data === undefined}
                   payload={grants.data}

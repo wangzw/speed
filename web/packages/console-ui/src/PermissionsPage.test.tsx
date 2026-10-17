@@ -4,7 +4,8 @@
  * It prompts for a tenant until one is chosen, then renders a tenant's
  * roles, the permission catalog and the bindings, and drives the role
  * create / delete, the grant / revoke, the bind / unbind and the
- * account-binding lookup through the bundle.
+ * account-binding lookup through the bundle. A builtin role's grants open
+ * read-only: its list is visible and every write control is withheld.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -118,12 +119,12 @@ describe('PermissionsPage', () => {
     expect(screen.getByText('acc-1')).toBeInTheDocument()
   })
 
-  it("replaces a builtin role's write controls with a readable reason, keeping them on other roles", async () => {
+  it("keeps a read-only grants entry on a builtin role and drops its write controls", async () => {
     const user = userEvent.setup()
     const operations = withAuthz({
       // The two rows differ in the flag alone, so the case distinguishes the
-      // gate from "no role has write controls": builtin true hides both
-      // controls, builtin false keeps them.
+      // gate from "no role has write controls": builtin true drops both write
+      // controls and keeps the read-only entry, builtin false keeps them.
       listRoles: () =>
         Promise.resolve([
           role({ role: 'platform-admin', builtin: true }),
@@ -139,6 +140,11 @@ describe('PermissionsPage', () => {
     // unreachable to keyboard-only users. The control is still in the
     // accessibility tree; visible text sits in every reader's order.
     expect(screen.getByText('内建角色不可修改或删除')).toBeInTheDocument()
+    // The server refuses writes on a builtin role, not reads: the row keeps
+    // an entry that opens the grants it holds.
+    expect(
+      screen.getByRole('button', { name: '查看授权（角色 platform-admin）' }),
+    ).toBeEnabled()
     expect(
       screen.queryByRole('button', { name: '管理授权（角色 platform-admin）' }),
     ).toBeNull()
@@ -149,6 +155,40 @@ describe('PermissionsPage', () => {
       screen.getByRole('button', { name: '管理授权（角色 editor）' }),
     ).toBeEnabled()
     expect(screen.getByRole('button', { name: '删除角色 editor' })).toBeEnabled()
+  })
+
+  it('opens a builtin role grants read-only, with no grant or revoke control', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listRoles: () =>
+        Promise.resolve([role({ role: 'platform-admin', builtin: true })]),
+      // The grant list must actually be loaded for the builtin role, or the
+      // absence of the write controls would prove nothing.
+      listGrants: (tenant, role) =>
+        Promise.resolve(
+          role === 'platform-admin'
+            ? [grant({ role: 'platform-admin' })]
+            : [],
+        ),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await user.click(
+      await screen.findByRole('button', {
+        name: '查看授权（角色 platform-admin）',
+      }),
+    )
+    // The held grant is visible...
+    expect(await screen.findByText('deal')).toBeInTheDocument()
+    expect(
+      screen.getByText('该角色为内建角色，授权为只读：不能授予，也不能撤销。'),
+    ).toBeInTheDocument()
+    // ...and neither the grant form nor the revoke action is offered.
+    expect(screen.queryByLabelText('权限')).toBeNull()
+    expect(screen.queryByRole('button', { name: '授予' })).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: '撤销授权 deal read' }),
+    ).toBeNull()
   })
 
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {

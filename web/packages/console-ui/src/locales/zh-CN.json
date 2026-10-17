@@ -323,6 +323,8 @@
         "descriptionLabel": "描述键",
         "submit": "保存角色"
       },
+      "viewGrants": "查看授权",
+      "viewGrantsAria": "查看授权（角色 {{role}}）",
       "manageGrants": "管理授权",
       "manageGrantsAria": "管理授权（角色 {{role}}）",
       "remove": "删除",
@@ -337,6 +339,7 @@
       "title": "授权",
       "pickRole": "请在上方选择一个角色以管理其授权。",
       "forRole": "角色「{{role}}」的授权",
+      "builtinReadOnly": "该角色为内建角色，授权为只读：不能授予，也不能撤销。",
       "permissionLabel": "权限",
       "add": "授予",
       "loading": "正在加载授权",
