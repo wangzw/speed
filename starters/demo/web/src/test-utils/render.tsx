@@ -46,6 +46,13 @@ export interface RenderDemoAppOptions {
    * session whose state it drives) passes its own.
    */
   readonly session?: AuthSession
+  /**
+   * The client handed to the app services. Defaults to the inert harness
+   * client; a suite that observes a client seam (the event-stream opener, for
+   * example) passes its own. It still must not answer requests unless the test
+   * scripts it.
+   */
+  readonly api?: SpeedClient
 }
 
 /**
@@ -89,7 +96,7 @@ export function renderDemoApp(
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  const api = createHarnessClient()
+  const api = options.api ?? createHarnessClient()
   const session = options.session ?? createTestSession()
   attachSession(session)
   const services: SpeedAppServices = { session, api, queryClient }

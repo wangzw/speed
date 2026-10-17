@@ -17,6 +17,7 @@ import type {
   AuthSessionListener,
   AuthSnapshot,
   AuthnMethodList,
+  FeatureState,
 } from '@speed/auth-core'
 import { FEATURE_NAMES } from '@speed/api-sdk/features'
 
@@ -45,11 +46,14 @@ export const ANONYMOUS_SNAPSHOT: AuthSnapshot = {
 /**
  * The authenticated snapshot with the given permission lists attached. Each
  * domain defaults to null -- an unknown set, the state a host that attaches
- * none leaves the session in.
+ * none leaves the session in. The feature state defaults to the whole platform
+ * vocabulary (every gated surface present); a suite that needs a narrowed
+ * document, a pending read or a failed one passes its own.
  */
 export function authenticatedSnapshot(options: {
   readonly tenant?: readonly string[] | null
   readonly system?: readonly string[] | null
+  readonly features?: FeatureState
 } = {}): AuthSnapshot {
   return {
     state: 'authenticated',
@@ -70,11 +74,19 @@ export function authenticatedSnapshot(options: {
       tenant: options.tenant ?? null,
       system: options.system ?? null,
     },
-    // The suite's session serves the whole platform vocabulary, so the
-    // feature-gated pages and controls are present unless a test narrows
-    // the set itself.
-    features: { state: 'ready', names: new Set(FEATURE_NAMES) },
+    // The suite's session serves the whole platform vocabulary unless the
+    // test narrows it, so the feature-gated pages and controls are present
+    // by default.
+    features: options.features ?? {
+      state: 'ready',
+      names: new Set(FEATURE_NAMES),
+    },
   }
+}
+
+/** A ready feature state carrying exactly these names. */
+export function readyFeatures(...names: string[]): FeatureState {
+  return { state: 'ready', names: new Set(names) }
 }
 
 /**
