@@ -416,7 +416,7 @@ graph TD
 | 租户选择器的加载、失败与空态 | 未实现 | — |
 | 步进对话框的失败面 | 已实现 | `web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`；`web/packages/console-ui/src/internal/flow-step.tsx` `FlowStep` |
 | 写入失败的裸 403 与裸 401 文案 | 未实现 | — |
-| `authn.factor_not_seasoned` 的失败文案 | 未实现 | — |
+| `authn.factor_not_seasoned` 的失败文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | 写入在途时改变上下文的控件禁用 | 未实现 | — |
 | 详情面板内写入在途时 `busy` 与服务密钥的关闭守卫 | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`（`detailBusy`、`requestDetailClose`）、`OneTimeSecretNotice` |
 | 账户身份单元区分已删除或非账户行动者与无权限 | 未实现 | — |
