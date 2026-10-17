@@ -27,6 +27,7 @@ import {
   type RealResponder,
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { IdentifiersSection } from './IdentifiersSection.js'
 
@@ -477,5 +478,26 @@ describe('IdentifiersSection', () => {
         (call) => call.method === 'POST' && call.path === '/auth/identifiers',
       ),
     ).toHaveLength(2)
+  })
+
+  it('raises the identifier actions to the 44px floor under a coarse pointer', async () => {
+    // The row remove and the add-open controls are compact actions; on a
+    // finger-driven device each one gates up to the 44x44 floor.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({ identifiers: [identifier({ id: 'id-email' })] }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const remove = await screen.findByRole('button', {
+      name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada@example.test'),
+    })
+    const add = screen.getByRole('button', { name: zhCN.identifiers.add.open })
+    expect(hasCoarsePointerTouchTarget(remove)).toBe(true)
+    expect(hasCoarsePointerTouchTarget(add)).toBe(true)
   })
 })

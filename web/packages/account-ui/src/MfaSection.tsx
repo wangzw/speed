@@ -60,6 +60,7 @@ import {
   ConfirmDialog,
   errorCodeOf,
   ListSkeleton,
+  touchTargetSx,
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 import { FlowStep } from './internal/flow-step.js'
@@ -391,6 +392,7 @@ export function MfaSection({ session }: MfaSectionProps) {
                                 interpolation: { escapeValue: false },
                               })}
                               onClick={() => setRemoveTarget(id)}
+                              sx={touchTargetSx}
                             >
                               {t('mfa.remove')}
                             </Button>

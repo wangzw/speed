@@ -25,6 +25,7 @@ import {
   type RealResponder,
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import {
   SocialBindingsSection,
@@ -311,5 +312,31 @@ describe('SocialBindingsSection', () => {
     expect(
       screen.getByRole('button', { name: zhCN.bindings.provider.other }),
     ).toBeTruthy()
+  })
+
+  it('raises the unbind action to the 44px floor under a coarse pointer', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profile([
+            { id: 'github-1', provider: 'github', email: 'ada@example.test' },
+          ]),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <SocialBindingsSection session={rig.session} providers={PROVIDERS} />,
+    )
+    const unbind = await screen.findByRole('button', {
+      name: zhCN.bindings.unbindAriaWithProvider.replace(
+        '{{provider}}',
+        zhCN.bindings.provider.github,
+      ),
+    })
+    expect(hasCoarsePointerTouchTarget(unbind)).toBe(true)
   })
 })

@@ -29,6 +29,7 @@ import {
   type RealResponder,
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { MfaSection } from './MfaSection.js'
 
@@ -454,5 +455,22 @@ describe('MfaSection', () => {
     expect(
       (answers[0]?.body as { input?: { credential?: string } }).input?.credential,
     ).toContain('AQID')
+  })
+
+  it('raises the factor remove control to the 44px floor under a coarse pointer', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [factor({})] })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const remove = await screen.findByRole('button', {
+      name: zhCN.mfa.removeAria.replace('{{factor}}', zhCN.mfa.factor.kind.totp),
+    })
+    expect(hasCoarsePointerTouchTarget(remove)).toBe(true)
   })
 })

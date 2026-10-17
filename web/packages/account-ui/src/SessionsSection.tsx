@@ -504,6 +504,7 @@ export function SessionsSection() {
                   variant="outlined"
                   disabled={currentPage <= 1}
                   onClick={() => setPage(currentPage - 1)}
+                  sx={touchTargetSx}
                 >
                   {t('sessions.prevPage')}
                 </Button>
@@ -518,6 +519,7 @@ export function SessionsSection() {
                   variant="outlined"
                   disabled={currentPage >= pageCount}
                   onClick={() => setPage(currentPage + 1)}
+                  sx={touchTargetSx}
                 >
                   {t('sessions.nextPage')}
                 </Button>

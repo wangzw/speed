@@ -26,7 +26,10 @@ import {
   type RealCall,
   type RealResponder,
 } from '../test-utils/real-client.js'
-import { emittedStyleText } from '@speed/test-utils/emitted-css'
+import {
+  emittedStyleText,
+  hasCoarsePointerTouchTarget,
+} from '@speed/test-utils/emitted-css'
 import { renderWithProviders } from '../test-utils/render.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { SessionsSection } from './SessionsSection.js'
@@ -130,6 +133,35 @@ describe('SessionsSection', () => {
     const css = emittedStyleText()
     expect(css).toContain('@media (pointer: coarse)')
     expect(css).toMatch(/@media \(pointer: coarse\)\{[^}]*min-height:44px/)
+  })
+
+  it('raises the session pager to the 44px floor under a coarse pointer', async () => {
+    // The pager buttons are compact action controls on the same surface
+    // as the row revoke: on a finger-driven device each one gates up to
+    // the 44x44 floor. Asserted per element, so the row control's own
+    // gate does not vouch for them.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: Array.from({ length: 12 }, (_, index) =>
+            session({ id: `session-${index}`, user_agent: '' }),
+          ),
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+    const next = await screen.findByRole('button', {
+      name: zhCN.sessions.nextPage,
+    })
+    const previous = screen.getByRole('button', {
+      name: zhCN.sessions.prevPage,
+    })
+    expect(hasCoarsePointerTouchTarget(next)).toBe(true)
+    expect(hasCoarsePointerTouchTarget(previous)).toBe(true)
   })
 
   it('pages a long session list instead of rendering every row at once', async () => {
