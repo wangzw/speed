@@ -10,13 +10,18 @@
  * by restore(), which cannot know the identity changed), the current tenant
  * may differ, and the live notification subscription is registered per
  * effective account. applyIdentityChange is the one action that settles all
- * of them: it evicts the cache, resets the platform permission set to
- * unknown, re-reads the session, and then lets the identity-keyed effects
- * (app.tsx's tenant effect and platform-permissions.tsx's read) re-read the
- * permission set and the current tenant; it bumps an identity generation the
- * tenant frame uses to re-register the notification stream. A start then
- * sends the viewer to the tenant-area home; an end navigates nowhere,
- * because the page is already a tenant page.
+ * of them: it evicts the cache (except the status read's own query),
+ * re-reads the session, and then lets the identity-keyed effects (app.tsx's
+ * tenant effect and platform-permissions.tsx's read) re-read the permission
+ * set and the current tenant; it bumps an identity generation the tenant
+ * frame uses to re-register the notification stream. The permission set's
+ * read resets it to unknown immediately before issuing its own read, so a
+ * re-read that hangs or is refused never leaves the console waiting on a
+ * set this action cleared. A start then sends the viewer to the tenant-area
+ * home; an end navigates nowhere, because the page is already a tenant page.
+ * The action's identity is stable for the frame's whole lifetime: the
+ * expiry timer keys on it, and a callback that changed with the route would
+ * restart the timer on every navigation.
  *
  * The action never rejects. Its callers are settled writes (the banner's
  * end, the console page's start/end callback) and the expiry timer; a
@@ -26,8 +31,13 @@
  * is in force, so a visitor who is not impersonating issues no
  * GET /auth/impersonation at all. While it is enabled, a bare 404 is the
  * settled "no impersonation any more" (ended, expired, or terminated
- * elsewhere) and runs the ended path. The read is the only source of the
- * banner's tenant and expiry: the roster read belongs to the platform
+ * elsewhere) and runs the ended path once for that impersonation interval:
+ * keying the guard on the error object would let the payload of the next
+ * automatic read run it again. The status query itself is not evicted by
+ * the identity change, so a settled 404 does not re-trigger its own read.
+ * Once the one ended path has run, a snapshot that still says impersonating
+ * starts the same bounded re-read the expiry path uses. The read is the only
+ * source of the banner's tenant and expiry: the roster read belongs to the platform
  * management surface, which the gateway refuses to an impersonated
  * identity.
  *
@@ -39,7 +49,9 @@
  * while the session still answers impersonating, re-reads it on a fixed
  * short interval for at most the check-ttl upper bound; it then stops and
  * leaves the banner and its end control in place, and a refocus re-reads
- * through the query client's staleTime 0.
+ * through the query client's staleTime 0. A settled 404 runs the same
+ * bounded re-read from the moment it handled the 404, because that path has
+ * no recorded expiry to bound it by.
  *
  * An explicit end is the write half of the same window. Its result is what
  * the user acted on, so the banner stops claiming an impersonation is in
@@ -79,16 +91,13 @@ import { ImpersonationBanner } from '@speed/auth-ui'
 import { useNavigate } from '@speed/route-kit'
 import {
   getAuthnImpersonationStartMutationOptions,
+  getAuthnImpersonationStatusQueryKey,
   useAuthnImpersonationEnd,
   useAuthnImpersonationStatus,
 } from './app-api/index.js'
 import type { AuthnImpersonationGrant } from './app-api/index.js'
 import { useAppServices } from './app-services.js'
 import { TENANT_HOME_PATH } from './pages/not-found-page.js'
-
-/** The platform permission domain the console's codes resolve in (auth-core
- * names 'system' the tenant-independent platform set). */
-const PLATFORM_DOMAIN = 'system'
 
 /** The upper bound of authn.session.check-ttl: how long after the recorded
  * expiry the server may still treat the session as impersonating. */
@@ -105,6 +114,12 @@ const CHECK_TTL_RETRY_MS = 5_000
 const START_MUTATION_KEY: readonly unknown[] | undefined =
   getAuthnImpersonationStartMutationOptions().mutationKey
 
+/** The status read's generated query key. The identity change evicts every
+ * other cached row and leaves this one alone: evicting it would make the
+ * mounted status observer re-read immediately, and a re-read that answers
+ * the bare 404 would re-enter the ended path it just handled. */
+const STATUS_QUERY_KEY: readonly unknown[] = getAuthnImpersonationStatusQueryKey()
+
 /** Whether a mutation key is the start write's (same parts, same order). */
 function isStartMutationKey(key: readonly unknown[] | undefined): boolean {
   if (START_MUTATION_KEY === undefined || key === undefined) {
@@ -113,6 +128,14 @@ function isStartMutationKey(key: readonly unknown[] | undefined): boolean {
   return (
     key.length === START_MUTATION_KEY.length &&
     key.every((part, index) => part === START_MUTATION_KEY[index])
+  )
+}
+
+/** Whether a query key is the status read's (same parts, same order). */
+function isStatusQueryKey(key: readonly unknown[]): boolean {
+  return (
+    key.length === STATUS_QUERY_KEY.length &&
+    key.every((part, index) => part === STATUS_QUERY_KEY[index])
   )
 }
 
@@ -219,32 +242,48 @@ export function IdentityChangeProvider({
     }
   }, [queryClient, holdReads, releaseReads])
 
+  // The action's callers include the expiry timer, which must not restart
+  // when the route changes. The collaborators still reach the stable
+  // callback through refs; the callback itself never changes for the
+  // provider's lifetime.
+  const navigateRef = useRef(navigate)
+  navigateRef.current = navigate
+  const queryClientRef = useRef(queryClient)
+  queryClientRef.current = queryClient
+  const sessionRef = useRef(session)
+  sessionRef.current = session
+  const releaseReadsRef = useRef(releaseReads)
+  releaseReadsRef.current = releaseReads
+
   const applyIdentityChange = useCallback(
     async (change: IdentityChange): Promise<void> => {
       try {
         // Every cached row belongs to the identity that was current when it
-        // was read; the session-end strategy evicts the same way.
-        queryClient.removeQueries()
-        // restore() retains the sets the host attached, and cannot know the
-        // identity changed, so the set is reset to unknown here and re-read
-        // by the identity-keyed effect in platform-permissions.tsx.
-        session.setPermissionSet(PLATFORM_DOMAIN, null)
-        await session.restore()
+        // was read; the session-end strategy evicts the same way. The status
+        // read is the one exception: it is keyed on nothing identity-scoped
+        // and is re-read by its own enabled edge, and evicting it here would
+        // make a settled 404 re-enter this action.
+        queryClientRef.current.removeQueries({
+          predicate: (query) => !isStatusQueryKey(query.queryKey),
+        })
+        await sessionRef.current.restore()
         setGeneration((current) => current + 1)
         if (change === 'started') {
-          navigate(TENANT_HOME_PATH)
+          navigateRef.current(TENANT_HOME_PATH)
         }
       } catch {
-        // A failed re-read leaves the cache evicted and the sets unknown
-        // (fail-closed); it never reaches the settled write that called it.
+        // A failed re-read leaves the cache evicted (fail-closed); it never
+        // reaches the settled write that called it. The permission set is
+        // whatever its own last read attached -- the identity-keyed read
+        // resets it only when it is about to issue a new read.
       } finally {
         // The identity is settled -- or the re-read failed, leaving the
-        // cache empty and the sets unknown. Either way reads may go out
-        // again, now under the session the server holds.
-        releaseReads()
+        // cache empty. Either way reads may go out again, now under the
+        // session the server holds.
+        releaseReadsRef.current()
       }
     },
-    [navigate, queryClient, releaseReads, session],
+    [],
   )
 
   return (
@@ -283,8 +322,10 @@ export function isNotImpersonating(error: unknown): boolean {
  * failed, or answered the bare 404.
  *
  * It owns the two host reactions the status read needs: a bare 404 runs
- * the ended path once, and the recorded expiry schedules the identity
- * change plus the bounded re-read described in this file's header.
+ * the ended path once per impersonation interval, and the recorded expiry
+ * schedules the identity change plus the bounded re-read described in this
+ * file's header. The 404 path runs the same bounded re-read itself, because
+ * it has no recorded expiry to bound it by.
  */
 export function useImpersonationStatus(
   enabled: boolean,
@@ -292,34 +333,108 @@ export function useImpersonationStatus(
   const { session } = useAppServices()
   const { applyIdentityChange } = useIdentityChange()
   const status = useAuthnImpersonationStatus({ query: { enabled } })
-  const error = status.error
-  const notImpersonating = isNotImpersonating(error)
-  const grant = notImpersonating ? undefined : status.data?.grant
 
-  // A bare 404 while the snapshot still says impersonating means the
-  // server no longer has one. Handle each error object once: the same
-  // cached error must not re-run the identity change on every render.
-  const handledError = useRef<unknown>(null)
+  // Each impersonation interval answers for itself: the status query lives
+  // across intervals in the shared cache, and the previous interval's grant
+  // (or the 404 that ended it) must not drive this one. The interval starts
+  // when `enabled` turns true and is forgotten when it turns false. Its
+  // start time is what tells an answer issued in this interval from a
+  // cached one issued earlier.
+  const enabledSince = useRef<number | null>(null)
+  if (!enabled) {
+    enabledSince.current = null
+  } else if (enabledSince.current === null) {
+    enabledSince.current = Date.now()
+  }
+  const periodStart = enabledSince.current ?? Number.POSITIVE_INFINITY
+
+  const errorIsCurrent = status.errorUpdatedAt >= periodStart
+  const notImpersonating =
+    errorIsCurrent && isNotImpersonating(status.error)
+  const grant =
+    status.data !== undefined &&
+    status.dataUpdatedAt >= periodStart &&
+    !notImpersonating
+      ? status.data.grant
+      : undefined
+
+  // A bare 404 while the snapshot still says impersonating means the server
+  // no longer has one. Run the ended path at most once per impersonation
+  // interval: the status query is not evicted by the identity change, and a
+  // fresh error object on some later automatic read must not run it again.
+  // Afterwards a snapshot that still says impersonating starts the bounded
+  // re-read this path needs in place of the expiry timer's.
+  const handledPeriod = useRef(false)
   useEffect(() => {
-    if (!enabled || !isNotImpersonating(error)) {
-      return
+    if (!enabled) {
+      handledPeriod.current = false
+      return undefined
     }
-    if (handledError.current === error) {
-      return
+    if (!notImpersonating || handledPeriod.current) {
+      return undefined
     }
-    handledError.current = error
-    void applyIdentityChange('ended')
-  }, [enabled, error, applyIdentityChange])
+    handledPeriod.current = true
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    // There is no recorded expiry on this path, so the bound runs from the
+    // moment the 404 was handled: after it every replica's check-ttl cache
+    // has certainly expired.
+    const deadline = Date.now() + CHECK_TTL_MAX_MS
+
+    const retry = async (): Promise<void> => {
+      try {
+        await session.restore()
+      } catch {
+        // A failed re-read leaves the banner usable; the next interval or a
+        // refocus tries again.
+      }
+      if (!session.getSnapshot().impersonating) {
+        // Judged before the cancellation check: the flip itself disables
+        // this read and clears the timer, but the settled identity still
+        // needs the full change.
+        await applyIdentityChange('ended')
+        return
+      }
+      if (cancelled) {
+        return
+      }
+      scheduleRetry()
+    }
+
+    const scheduleRetry = (): void => {
+      if (cancelled || Date.now() >= deadline) {
+        return
+      }
+      timer = setTimeout(() => {
+        void retry()
+      }, CHECK_TTL_RETRY_MS)
+    }
+
+    void (async (): Promise<void> => {
+      await applyIdentityChange('ended')
+      if (cancelled || !session.getSnapshot().impersonating) {
+        return
+      }
+      scheduleRetry()
+    })()
+
+    return () => {
+      cancelled = true
+      if (timer !== undefined) {
+        clearTimeout(timer)
+      }
+    }
+  }, [enabled, notImpersonating, applyIdentityChange, session])
 
   const endsAt =
     grant === undefined ? null : Date.parse(grant.ends_at)
 
   // The expiry instant is held apart from the status read: the identity
-  // change evicts the query, so the grant briefly disappears and comes back.
-  // Keying the timer on the read's value would restart it on every refetch --
-  // and, once the recorded time is past, restart it immediately in a loop.
-  // The recorded ends_at is the value that matters, and it does not change
-  // while the record is in force.
+  // change evicts every other cached row, so the grant briefly disappears
+  // and comes back. Keying the timer on the read's value would restart it on
+  // every refetch -- and, once the recorded time is past, restart it
+  // immediately in a loop. The recorded ends_at is the value that matters,
+  // and it does not change while the record is in force.
   const [expiryAt, setExpiryAt] = useState<number | null>(null)
   useEffect(() => {
     if (endsAt === null || Number.isNaN(endsAt)) {
@@ -345,13 +460,15 @@ export function useImpersonationStatus(
         // A failed re-read leaves the banner usable; the next interval or a
         // refocus tries again.
       }
-      if (cancelled) {
-        return
-      }
       if (!session.getSnapshot().impersonating) {
         // The server has settled back to the operator: run the full
-        // identity change so the cache and the host state follow.
+        // identity change so the cache and the host state follow. Judged
+        // before the cancellation check, because the flip itself turns
+        // `enabled` off and this effect's cleanup then sets `cancelled`.
         await applyIdentityChange('ended')
+        return
+      }
+      if (cancelled) {
         return
       }
       scheduleRetry()

@@ -17,12 +17,15 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { onlineManager } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AuthSnapshot } from '@speed/auth-core'
+import type { AuthDomain, AuthSnapshot } from '@speed/auth-core'
 import type { RequestFn, RequestOptions, SpeedClient } from '@speed/api-client'
+import { FEATURE_NAMES } from '@speed/api-sdk/features'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import authUiEnUS from '../../../../web/packages/auth-ui/src/locales/en-US.json' with { type: 'json' }
+import consoleUiEnUS from '../../../../web/packages/console-ui/src/locales/en-US.json' with { type: 'json' }
 import tenancyUiEnUS from '../../../../web/packages/tenancy-ui/src/locales/en-US.json' with { type: 'json' }
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
+import { PlatformPermissions } from './platform-permissions.js'
 import {
   DEFAULT_TENANT_ID,
   getCurrentTenantId,
@@ -205,8 +208,13 @@ interface Backend {
   readonly recordsAborted: () => boolean
   readonly postReads: () => number
   readonly unreadReads: () => number
+  /** The current tenant's id at the moment each unread-count read left the
+   * browser: the alias the request surface would have announced. */
+  readonly unreadTenantIds: () => readonly (string | null)[]
   readonly objectsReads: () => number
   readonly deletes: () => number
+  /** Every tenant-area (`/api/v1/*`) read, whatever its path. */
+  readonly apiReads: () => number
 }
 
 /** A promise-bounded gate: the suite decides when the gated read answers. */
@@ -227,6 +235,22 @@ function makeBackend(options: {
   /** Keeps the status read answering the grant after the DELETE settles: a
    * replica whose check-ttl cache has not expired yet. */
   readonly statusLags?: boolean
+  /** Answers the status read with the bare 404 once the recorded expiry has
+   * passed: the server's own Active judgement, which the session read may
+   * still lag behind for one check-ttl. */
+  readonly status404AfterExpiry?: boolean
+  /** Holds the status read open, once the start write has been issued, until
+   * the suite resolves it: the window in which the remounted tenant frame
+   * has no grant yet. Reads before the start answer normally (the console
+   * page's own status surface needs its settled "not impersonating"). */
+  readonly statusGateAfterStart?: Promise<void>
+  /** The tenant id the start write grants; defaults to the fixture's. */
+  readonly startTenant?: string
+  /** Refuses the status read once it has been issued more than this many
+   * times. A self-driving 404 loop is a microtask storm that would otherwise
+   * hang the test until its timeout; this turns it into an answer the test
+   * can assert against (the storm is the failure, not the elapsed time). */
+  readonly statusReadLimit?: number
   /** Holds the start write open until the suite resolves it: the slow round
    * trip the rotation window is about. */
   readonly postGate?: Promise<void>
@@ -245,8 +269,10 @@ function makeBackend(options: {
   let recordSignal: AbortSignal | undefined
   let postReads = 0
   let unreadReads = 0
+  const unreadTenantIds: (string | null)[] = []
   let objectsReads = 0
   let deletes = 0
+  let apiReads = 0
   const fn: RequestFn = <T,>(
     path: string,
     request?: RequestOptions,
@@ -254,6 +280,9 @@ function makeBackend(options: {
     const method = request?.method ?? 'GET'
     if (method === 'GET') {
       reads += 1
+    }
+    if (path.startsWith('/api/v1/')) {
+      apiReads += 1
     }
     if (path === '/tenant/admin/tenants') {
       rosterReads += 1
@@ -265,11 +294,32 @@ function makeBackend(options: {
     if (path === '/auth/impersonation') {
       if (method === 'GET') {
         statusReads += 1
-        if (grant === undefined) {
-          return Promise.reject({ status: 404, code: 'client.http.404' })
+        if (
+          options.statusReadLimit !== undefined &&
+          statusReads > options.statusReadLimit
+        ) {
+          return Promise.reject(new Error('the status read is looping'))
         }
-        statusReadsWithGrant += 1
-        return Promise.resolve({ grant } as T)
+        const answer = (): Promise<T> => {
+          if (grant === undefined) {
+            return Promise.reject({ status: 404, code: 'client.http.404' })
+          }
+          if (
+            options.status404AfterExpiry === true &&
+            Date.now() >= Date.parse(grant.ends_at)
+          ) {
+            return Promise.reject({ status: 404, code: 'client.http.404' })
+          }
+          statusReadsWithGrant += 1
+          return Promise.resolve({ grant } as T)
+        }
+        if (
+          options.statusGateAfterStart !== undefined &&
+          postReads > 0
+        ) {
+          return options.statusGateAfterStart.then(answer)
+        }
+        return answer()
       }
       if (method === 'POST') {
         postReads += 1
@@ -279,7 +329,12 @@ function makeBackend(options: {
             code: 'rbac.permission_denied',
           })
         }
-        grant = grantFixture(new Date(Date.now() + 3_600_000).toISOString())
+        grant = {
+          ...grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+          ...(options.startTenant === undefined
+            ? {}
+            : { tenant: options.startTenant }),
+        }
         const answer = { grant } as T
         if (options.postGate !== undefined) {
           return options.postGate.then(() => answer)
@@ -310,6 +365,7 @@ function makeBackend(options: {
     // whose function returned undefined.
     if (path === '/api/v1/notifications/messages/unread-count') {
       unreadReads += 1
+      unreadTenantIds.push(getCurrentTenantId())
       return Promise.resolve({ unread: 0 } as T)
     }
     if (path === '/api/v1/notifications/messages') {
@@ -320,7 +376,13 @@ function makeBackend(options: {
       objectsReads += 1
       return Promise.resolve({ objects: [], next_cursor: '' } as T)
     }
-    return Promise.resolve(undefined as T)
+    // Nothing in a mounted tenant frame may fall through to an undefined
+    // query answer: react-query logs "Query data cannot be undefined" and the
+    // view renders a result it never received. An unanswered path is a hole
+    // in the scripted backend, not an empty answer.
+    return Promise.reject(
+      new Error(`the suite does not answer ${method} ${path}`),
+    )
   }
   return {
     fn,
@@ -332,23 +394,29 @@ function makeBackend(options: {
     recordsAborted: () => recordSignal?.aborted ?? false,
     postReads: () => postReads,
     unreadReads: () => unreadReads,
+    unreadTenantIds: () => unreadTenantIds,
     objectsReads: () => objectsReads,
     deletes: () => deletes,
+    apiReads: () => apiReads,
   }
 }
 
-/** A client whose event-stream opener records every connection. */
+/** A client whose event-stream opener records every connection and the
+ * current tenant at the moment it opens. */
 function streamClient(): {
   readonly client: SpeedClient
   readonly opened: { closed: number }[]
+  readonly tenants: (string | null)[]
 } {
   const opened: { closed: number }[] = []
+  const tenants: (string | null)[] = []
   const request = (() =>
     Promise.reject(new Error('the suite answers through bindRequestFn'))) as RequestFn
   const client = Object.assign(request, {
     openEventStream: () => {
       const record = { closed: 0 }
       opened.push(record)
+      tenants.push(getCurrentTenantId())
       return {
         close: () => {
           record.closed += 1
@@ -356,7 +424,7 @@ function streamClient(): {
       }
     },
   }) as SpeedClient
-  return { client, opened }
+  return { client, opened, tenants }
 }
 
 /** The banner's named region, or null while none is in force. */
@@ -748,13 +816,14 @@ describe('the impersonation shell', () => {
       bindRequestFn(backend.fn)
       // The first re-read after expiry still answers impersonating (the
       // server's check-ttl cache); the next one has settled back.
+      const { client, opened } = streamClient()
       let restores = 0
       const session = scriptedSession(targetSnapshot(), () => {
         restores += 1
         return restores === 1 ? targetSnapshot() : operatorSnapshot()
       })
 
-      renderDemoApp({ session })
+      renderDemoApp({ session, api: client })
       expect(
         await screen.findByRole('region', {
           name: authUiEnUS.impersonation.regionLabel,
@@ -775,12 +844,20 @@ describe('the impersonation shell', () => {
       expect(banner()).not.toBeNull()
 
       // A later bounded re-read reports the operator, and the full identity
-      // change follows.
+      // change follows -- including its own restore(), so the count reaches
+      // three: the expiry change, the bounded retry, and the settled change.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(6_000)
       })
       await waitFor(() => expect(banner()).toBeNull())
-      expect(restores).toBe(2)
+      expect(restores).toBe(3)
+
+      // The settled change re-registers the live subscription under the
+      // operator: the two earlier registrations (mount and expiry change)
+      // were taken while the server still answered the impersonated account.
+      expect(opened.length).toBeGreaterThanOrEqual(3)
+      expect(opened[0]?.closed).toBe(1)
+      expect(opened[1]?.closed).toBe(1)
     } finally {
       vi.useRealTimers()
     }
@@ -1101,6 +1178,671 @@ describe('the impersonation shell', () => {
     await waitFor(() => expect(window.location.pathname).toBe('/objects'))
     await waitFor(() => expect(backend.objectsReads()).toBeGreaterThan(0))
     expect(onlineManager.isOnline()).toBe(true)
+  })
+
+  it('runs the status read\'s bare 404 once per impersonation interval and bounds its re-read', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      window.history.replaceState({}, '', '/')
+      // The status read always answers the bare 404 while the session read
+      // keeps answering impersonating: the lagging replica the design
+      // covers. The status query must not be evicted by the change, or its
+      // own re-read would answer a new 404 and re-enter the change.
+      const backend = makeBackend({ statusReadLimit: 40 })
+      bindRequestFn(backend.fn)
+      let restores = 0
+      const session = scriptedSession(targetSnapshot(), () => {
+        restores += 1
+        return targetSnapshot()
+      })
+
+      renderDemoApp({ session })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000)
+      })
+
+      expect(backend.statusReads()).toBe(1)
+      // The one ended path ran; its own bounded re-read continues on the
+      // fixed interval.
+      expect(restores).toBe(1)
+      expect(banner()).not.toBeNull()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000)
+      })
+      // One identity change plus the retries the check-ttl bound allows.
+      expect(restores).toBeGreaterThan(1)
+      expect(restores).toBeLessThanOrEqual(13)
+      // The query was never evicted, so no automatic read re-entered it.
+      expect(backend.statusReads()).toBe(1)
+
+      const settled = restores
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120_000)
+      })
+      expect(restores).toBe(settled)
+      expect(backend.statusReads()).toBe(1)
+      // The bound is spent; the banner and its end control stay.
+      const notice = banner()
+      expect(notice).not.toBeNull()
+      expect(
+        within(notice!).getByRole('button', {
+          name: authUiEnUS.impersonation.end,
+        }),
+      ).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops the expiry re-read at the check-ttl upper bound', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      window.history.replaceState({}, '', '/')
+      const endsAt = new Date(Date.now() + 30_000).toISOString()
+      const backend = makeBackend({ grant: grantFixture(endsAt) })
+      bindRequestFn(backend.fn)
+      // Every re-read keeps answering impersonating: the bound, not the
+      // server, has to stop the loop.
+      let restores = 0
+      const session = scriptedSession(targetSnapshot(), () => {
+        restores += 1
+        return targetSnapshot()
+      })
+
+      renderDemoApp({ session })
+      await screen.findByRole('region', {
+        name: authUiEnUS.impersonation.regionLabel,
+      })
+      // Let the status read settle so the recorded expiry is in place
+      // before the clock moves.
+      await waitFor(() =>
+        expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
+      )
+      await act(async () => {
+        await Promise.resolve()
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(31_000)
+      })
+      expect(restores).toBe(1)
+
+      // Past the whole check-ttl upper bound from the recorded expiry: one
+      // change plus the 5-second retries, never more.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(70_000)
+      })
+      expect(restores).toBeGreaterThan(1)
+      expect(restores).toBeLessThanOrEqual(14)
+
+      const settled = restores
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120_000)
+      })
+      expect(restores).toBe(settled)
+      const notice = banner()
+      expect(notice).not.toBeNull()
+      expect(
+        within(notice!).getByRole('button', {
+          name: authUiEnUS.impersonation.end,
+        }),
+      ).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('bounds the re-read when expiry answers 404 while the session read still impersonates', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      window.history.replaceState({}, '', '/')
+      const endsAt = new Date(Date.now() + 30_000).toISOString()
+      const backend = makeBackend({
+        grant: grantFixture(endsAt),
+        // The server's own Active judgement answers the bare 404 once the
+        // recorded expiry passed, while the session read keeps answering
+        // impersonating for one check-ttl.
+        status404AfterExpiry: true,
+        statusReadLimit: 40,
+      })
+      bindRequestFn(backend.fn)
+      let restores = 0
+      const session = scriptedSession(targetSnapshot(), () => {
+        restores += 1
+        return targetSnapshot()
+      })
+
+      renderDemoApp({ session })
+      await screen.findByRole('region', {
+        name: authUiEnUS.impersonation.regionLabel,
+      })
+      // Let the status read settle so the recorded expiry is in place
+      // before the clock moves.
+      await waitFor(() =>
+        expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
+      )
+      await act(async () => {
+        await Promise.resolve()
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(31_000)
+      })
+      // The expiry change ran; the status query was not evicted, so it has
+      // not been re-read yet.
+      expect(restores).toBe(1)
+      expect(backend.statusReads()).toBe(1)
+
+      // A window refocus re-reads the status read under the new judgement:
+      // the bare 404 is handled once, and the bounded re-read starts.
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'))
+        await Promise.resolve()
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(70_000)
+      })
+
+      // Two identity changes (expiry, then the 404) plus the retries their
+      // two bounds allow -- not the request storm a self-driving loop makes.
+      expect(restores).toBeGreaterThanOrEqual(2)
+      expect(restores).toBeLessThanOrEqual(30)
+      expect(backend.statusReads()).toBeLessThanOrEqual(3)
+
+      const settled = restores
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120_000)
+      })
+      expect(restores).toBe(settled)
+      expect(banner()).not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not restart the expiry path when the route changes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      window.history.replaceState({}, '', '/')
+      // The recorded expiry is already past and its check-ttl bound with it,
+      // so the one expiry change runs and the timer stops.
+      const endsAt = new Date(Date.now() - 70_000).toISOString()
+      const backend = makeBackend({ grant: grantFixture(endsAt) })
+      bindRequestFn(backend.fn)
+      let restores = 0
+      const session = scriptedSession(targetSnapshot(), () => {
+        restores += 1
+        return targetSnapshot()
+      })
+      const user = userEvent.setup({
+        advanceTimers: vi.advanceTimersByTimeAsync,
+      })
+
+      renderDemoApp({ session })
+      await screen.findByRole('region', {
+        name: authUiEnUS.impersonation.regionLabel,
+      })
+      await waitFor(() =>
+        expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
+      )
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(restores).toBe(1)
+      const statusReads = backend.statusReads()
+
+      await user.click(
+        await screen.findByRole('link', { name: demoEnUS.nav.objects }),
+      )
+      await waitFor(() => expect(window.location.pathname).toBe('/objects'))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+
+      // The identity change's identity is stable, so the timer effect did
+      // not re-run on the navigation.
+      expect(restores).toBe(1)
+      expect(backend.statusReads()).toBe(statusReads)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([
+    [
+      'a failed feature document and an unknown set',
+      { state: 'failed' as const, error: new Error('unavailable') },
+      null,
+    ],
+    [
+      'a pending feature document and an unknown set',
+      { state: 'pending' as const },
+      null,
+    ],
+    [
+      'a ready document and an unknown set',
+      {
+        state: 'ready' as const,
+        names: new Set(FEATURE_NAMES),
+      },
+      null,
+    ],
+    [
+      'a ready document with no console feature and a known set',
+      { state: 'ready' as const, names: new Set<string>() },
+      ['tenant.read'],
+    ],
+  ])(
+    'leaves /console/* for the tenant home before the feature state and permission set (%s)',
+    async (_label, features, system) => {
+      window.history.replaceState({}, '', '/console/tenants')
+      const backend = makeBackend()
+      bindRequestFn(backend.fn)
+      const impersonated = {
+        ...authenticatedSnapshot({ system, features }),
+        impersonating: true,
+      }
+      const operator = {
+        ...authenticatedSnapshot({ system, features }),
+        impersonating: false,
+      }
+      renderDemoApp({
+        session: scriptedSession(impersonated, () => operator),
+      })
+
+      // The impersonation gate runs first, so the console's own feature
+      // waiting/failure views and its access placeholder never render.
+      await waitFor(() => expect(window.location.pathname).toBe('/'))
+      expect(screen.queryByText(demoEnUS.route.failed)).toBeNull()
+      expect(
+        screen.queryByRole('progressbar', { name: demoEnUS.route.pending }),
+      ).toBeNull()
+      expect(
+        screen.queryByRole('progressbar', {
+          name: demoEnUS.console.accessPending,
+        }),
+      ).toBeNull()
+    },
+  )
+
+  it('resets the platform set to unknown immediately before re-reading it after an impersonation ends', async () => {
+    window.history.replaceState({}, '', '/')
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+    })
+    // The catalog read is a platform-staff operation: refused while the
+    // session impersonates, answered for the operator.
+    let impersonating = true
+    const request: RequestFn = <T,>(
+      path: string,
+      options?: RequestOptions,
+    ) => {
+      if (path === '/authz/admin/permissions') {
+        return impersonating
+          ? Promise.reject({ status: 403, code: 'rbac.permission_denied' })
+          : Promise.resolve({
+              permissions: [{ permission: 'tenant.read' }],
+            } as T)
+      }
+      const answer = backend.fn<T>(path, options)
+      if (path === '/auth/impersonation' && options?.method === 'DELETE') {
+        impersonating = false
+      }
+      return answer
+    }
+    bindRequestFn(request)
+    // The impersonated snapshot holds a known empty set (the refused read);
+    // the operator's own set is unknown until the catalog read answers.
+    const target: AuthSnapshot = {
+      ...targetSnapshot(),
+      permissionSets: { tenant: null, system: [] },
+    }
+    const operator: AuthSnapshot = {
+      ...operatorSnapshot(),
+      permissionSets: { tenant: null, system: null },
+    }
+    const base = roundTripSession(target, () => operator)
+    const attached: (readonly string[] | null)[] = []
+    const session = {
+      ...base,
+      setPermissionSet: (domain: AuthDomain, perms: readonly string[] | null) => {
+        if (domain === 'system') {
+          attached.push(perms)
+        }
+        base.setPermissionSet(domain, perms)
+      },
+    }
+    const user = userEvent.setup()
+
+    renderDemoApp({
+      session,
+      wrap: (app) => (
+        <PlatformPermissions session={session}>{app}</PlatformPermissions>
+      ),
+    })
+
+    const notice = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    await waitFor(() => expect(attached).toEqual([null, []]))
+    expect(
+      screen.queryByRole('link', { name: demoEnUS.nav.console }),
+    ).toBeNull()
+
+    await user.click(
+      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+    )
+    await waitFor(() => expect(banner()).toBeNull())
+    await waitFor(() =>
+      expect(session.getSnapshot().permissionSets.system).toEqual([
+        'tenant.read',
+      ]),
+    )
+
+    // The set went unknown immediately before the re-read that answered it;
+    // without that reset a stale set could outlive the identity it was read
+    // under.
+    expect(attached).toEqual([null, [], null, ['tenant.read']])
+    expect(
+      await screen.findByRole('link', { name: demoEnUS.nav.console }),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps the settled permission set when the end\'s session re-read hangs', async () => {
+    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+    const backend = makeBackend()
+    const request: RequestFn = <T,>(
+      path: string,
+      options?: RequestOptions,
+    ) => {
+      if (path === '/authz/admin/permissions') {
+        return Promise.resolve({
+          permissions: [
+            { permission: 'tenant.read' },
+            { permission: 'authn.impersonation.read' },
+          ],
+        } as T)
+      }
+      return backend.fn<T>(path, options)
+    }
+    bindRequestFn(request)
+    const gated = gatedSession(operatorSnapshot(), () => targetSnapshot())
+    const base = gated.session
+    const session = {
+      ...base,
+      setPermissionSet: (domain: AuthDomain, perms: readonly string[] | null) => {
+        const current = base.getSnapshot()
+        base.set({
+          ...current,
+          permissionSets: {
+            tenant:
+              domain === 'tenant' ? perms : current.permissionSets.tenant,
+            system:
+              domain === 'system' ? perms : current.permissionSets.system,
+          },
+        })
+      },
+    }
+    const user = userEvent.setup()
+
+    renderDemoApp({
+      session,
+      wrap: (app) => (
+        <PlatformPermissions session={session}>{app}</PlatformPermissions>
+      ),
+    })
+
+    await screen.findByText('You are not impersonating any account.')
+    await user.type(screen.getByLabelText('Target account'), 'acc-1')
+    await user.click(screen.getByRole('button', { name: 'Start impersonation' }))
+
+    // The write settled and the identity change is waiting on the session
+    // re-read. The console must keep rendering: its permission set was not
+    // cleared ahead of the re-read.
+    await waitFor(() => expect(gated.pendingRestores()).toBe(1))
+    expect(window.location.pathname).toBe('/console/impersonations')
+    expect(
+      screen.queryByRole('progressbar', {
+        name: demoEnUS.console.accessPending,
+      }),
+    ).toBeNull()
+    expect(
+      screen.getByText(consoleUiEnUS.impersonations.current.title),
+    ).toBeInTheDocument()
+
+    await gated.releaseRestore()
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+  })
+
+  it('keeps the settled permission set when the end\'s session re-read is refused', async () => {
+    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+    const backend = makeBackend()
+    const request: RequestFn = <T,>(
+      path: string,
+      options?: RequestOptions,
+    ) => {
+      if (path === '/authz/admin/permissions') {
+        return Promise.resolve({
+          permissions: [
+            { permission: 'tenant.read' },
+            { permission: 'authn.impersonation.read' },
+          ],
+        } as T)
+      }
+      return backend.fn<T>(path, options)
+    }
+    bindRequestFn(request)
+    const base = createTestSession(operatorSnapshot())
+    const session = {
+      ...base,
+      setPermissionSet: (domain: AuthDomain, perms: readonly string[] | null) => {
+        const current = base.getSnapshot()
+        base.set({
+          ...current,
+          permissionSets: {
+            tenant:
+              domain === 'tenant' ? perms : current.permissionSets.tenant,
+            system:
+              domain === 'system' ? perms : current.permissionSets.system,
+          },
+        })
+      },
+    }
+    const user = userEvent.setup()
+
+    renderDemoApp({
+      session,
+      wrap: (app) => (
+        <PlatformPermissions session={session}>{app}</PlatformPermissions>
+      ),
+    })
+
+    await screen.findByText('You are not impersonating any account.')
+    await user.type(screen.getByLabelText('Target account'), 'acc-1')
+    await user.click(screen.getByRole('button', { name: 'Start impersonation' }))
+    await waitFor(() => expect(backend.postReads()).toBe(1))
+
+    // The re-read was refused, and the identity did not change; the console
+    // keeps the set it had rather than waiting on an unknown one forever.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(window.location.pathname).toBe('/console/impersonations')
+    expect(
+      screen.queryByRole('progressbar', {
+        name: demoEnUS.console.accessPending,
+      }),
+    ).toBeNull()
+    expect(session.getSnapshot().permissionSets.system).toEqual([
+      'tenant.read',
+      'authn.impersonation.read',
+    ])
+  })
+
+  it('keeps the settled permission set when an end changes no identity', async () => {
+    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+    // Another tab started the impersonation: the server's status read has a
+    // grant while this tab's session still names the operator.
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+    })
+    const request: RequestFn = <T,>(
+      path: string,
+      options?: RequestOptions,
+    ) => {
+      if (path === '/authz/admin/permissions') {
+        return Promise.resolve({
+          permissions: [
+            { permission: 'tenant.read' },
+            { permission: 'authn.impersonation.read' },
+          ],
+        } as T)
+      }
+      return backend.fn<T>(path, options)
+    }
+    bindRequestFn(request)
+    // restore() retains the sets the host attached: the re-read names the
+    // same operator and leaves the permission table as it found it.
+    const base = scriptedSession(operatorSnapshot(), () => ({
+      ...operatorSnapshot(),
+      permissionSets: base.getSnapshot().permissionSets,
+    }))
+    const session = {
+      ...base,
+      setPermissionSet: (domain: AuthDomain, perms: readonly string[] | null) => {
+        const current = base.getSnapshot()
+        base.set({
+          ...current,
+          permissionSets: {
+            tenant:
+              domain === 'tenant' ? perms : current.permissionSets.tenant,
+            system:
+              domain === 'system' ? perms : current.permissionSets.system,
+          },
+        })
+      },
+    }
+    const user = userEvent.setup()
+
+    renderDemoApp({
+      session,
+      wrap: (app) => (
+        <PlatformPermissions session={session}>{app}</PlatformPermissions>
+      ),
+    })
+
+    // The console's own status surface settles the grant; the end control
+    // belongs to it.
+    const end = await screen.findByRole('button', {
+      name: consoleUiEnUS.impersonations.current.end,
+    })
+    await user.click(end)
+    await waitFor(() => expect(backend.deletes()).toBe(1))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    // The identity did not move, so the set's read did not re-run; the set
+    // must still be the known one, not a value cleared by the change.
+    expect(window.location.pathname).toBe('/console/impersonations')
+    expect(
+      screen.queryByRole('progressbar', {
+        name: demoEnUS.console.accessPending,
+      }),
+    ).toBeNull()
+    expect(session.getSnapshot().permissionSets.system).toEqual([
+      'tenant.read',
+      'authn.impersonation.read',
+    ])
+  })
+
+  it('starts a newly mounted frame from an unknown tenant during an impersonation', async () => {
+    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+    // The operator's tenant is what the module-level cell holds while the
+    // console has the frame unmounted.
+    setCurrentTenantId('acme')
+    setTenantAliases(
+      new Map([
+        ['acme', 'acme'],
+        ['beta', 'beta'],
+      ]),
+    )
+    const status = deferred()
+    const backend = makeBackend({
+      statusGateAfterStart: status.promise,
+      startTenant: 'beta',
+    })
+    const { client, opened, tenants } = streamClient()
+    let phase: 'operator' | 'target' = 'operator'
+    const request: RequestFn = <T,>(
+      path: string,
+      options?: RequestOptions,
+    ) => {
+      const answer = backend.fn<T>(path, options)
+      if (path === '/auth/impersonation' && options?.method === 'POST') {
+        phase = 'target'
+      }
+      return answer
+    }
+    bindRequestFn(request)
+    const session = scriptedSession(operatorSnapshot(), () =>
+      phase === 'target' ? targetSnapshot() : operatorSnapshot(),
+    )
+    const user = userEvent.setup()
+
+    renderDemoApp({ session, api: client })
+
+    await screen.findByText('You are not impersonating any account.')
+    await user.type(screen.getByLabelText('Target account'), 'acc-1')
+    const apiBefore = backend.apiReads()
+    const openedBefore = opened.length
+    await user.click(screen.getByRole('button', { name: 'Start impersonation' }))
+
+    // The frame remounted while the status read is still held: the grant's
+    // tenant is not known, so no tenant-scoped read and no stream may run
+    // under the operator's leftover tenant.
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(getCurrentTenantId()).toBeNull()
+    expect(backend.apiReads()).toBe(apiBefore)
+    expect(opened.length).toBe(openedBefore)
+
+    // The status read settles the grant's tenant; reads and the stream now
+    // run under it.
+    await act(async () => {
+      status.resolve()
+    })
+    await waitFor(() => expect(backend.unreadReads()).toBeGreaterThan(0))
+    expect(backend.unreadTenantIds().every((id) => id === 'beta')).toBe(true)
+    await waitFor(() => expect(opened.length).toBeGreaterThan(openedBefore))
+    expect(tenants.at(-1)).toBe('beta')
+  })
+
+  it('falls back to the account identifier when the principal has no display name', async () => {
+    window.history.replaceState({}, '', '/')
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+    })
+    bindRequestFn(backend.fn)
+    const base = targetSnapshot()
+    const noDisplayName: AuthSnapshot = {
+      ...base,
+      principal: { ...base.principal!, display_name: '' },
+    }
+
+    renderDemoApp({
+      session: scriptedSession(noDisplayName, () => noDisplayName),
+    })
+
+    const notice = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    expect(
+      within(notice).getByText(
+        authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'acc-1'),
+      ),
+    ).toBeInTheDocument()
   })
 
   it('starts without a blanking window: the banner appears when the re-read settles', async () => {

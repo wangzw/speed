@@ -16,6 +16,7 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, type RenderResult } from '@testing-library/react'
+import type { ReactElement, ReactNode } from 'react'
 import { attachSession } from '@speed/auth-core'
 import type { AuthSession } from '@speed/auth-core'
 import type { RequestFn, SpeedClient } from '@speed/api-client'
@@ -57,6 +58,13 @@ export interface RenderDemoAppOptions {
    * scripts it.
    */
   readonly api?: SpeedClient
+  /**
+   * Wraps the app inside the provider tree, for a suite that mounts one of
+   * the production assembly's own providers around it (PlatformPermissions,
+   * for example). The wrapper renders inside the query client and the app
+   * services, so it reads the same session and client the app does.
+   */
+  readonly wrap?: (app: ReactElement) => ReactNode
 }
 
 /**
@@ -105,13 +113,14 @@ export function renderDemoApp(
   const session = options.session ?? createTestSession()
   attachSession(session)
   const services: SpeedAppServices = { session, api, queryClient }
+  const app = <DemoApp />
 
   return render(
     <I18nextProvider i18n={i18n}>
       <AppThemeProvider i18n={i18n}>
         <QueryClientProvider client={queryClient}>
           <AppServicesProvider services={services}>
-            <DemoApp />
+            {options.wrap === undefined ? app : options.wrap(app)}
           </AppServicesProvider>
         </QueryClientProvider>
       </AppThemeProvider>
