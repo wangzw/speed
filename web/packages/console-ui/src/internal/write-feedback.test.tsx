@@ -122,5 +122,8 @@ describe('WriteFeedbackRegion', () => {
       expect(screen.queryByText('first message')).toBeNull()
     })
     expect(screen.queryByRole('alert')).toBeNull()
+    // The slot is empty, not merely silent about this attempt: the standing
+    // polite region holds no message at all.
+    expect(screen.getByRole('status')).toHaveTextContent('')
   })
 })
