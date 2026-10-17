@@ -38,6 +38,7 @@
       "description": "你的账户不具备此页面所需的权限。"
     },
     "column": {
+      "name": "名称",
       "id": "对象",
       "state": "状态",
       "size": "大小",
@@ -45,6 +46,7 @@
       "created": "创建时间",
       "actions": "操作"
     },
+    "unnamed": "未命名",
     "previous": "上一页",
     "next": "下一页"
   },
@@ -86,6 +88,7 @@
     },
     "retry": "重试",
     "field": {
+      "name": "名称",
       "id": "对象标识",
       "state": "状态",
       "size": "大小",
@@ -96,6 +99,7 @@
       "updated": "更新时间"
     },
     "never": "永不",
+    "unnamed": "未命名",
     "close": "关闭"
   }
 }

@@ -2,13 +2,15 @@
  * ObjectsPage: the tenant object store's page.
  *
  * One page over the objectstore capability's routes: the tenant's stored
- * objects as a cursor-paginated table (identifier, state, size, content
+ * objects as a cursor-paginated table (name, identifier, state, size, content
  * type, creation time and the row's download / details / delete controls),
  * an upload surface driven by ui-kit's FileUploader, a per-object details
- * dialog and a confirmed delete. Every read and write goes through the
- * generated objectstore operations of @speed/api-sdk on the host's
- * QueryClient, under a tenant-namespaced key (see internal/queries.ts); the
- * page builds no client and writes no query key.
+ * dialog and a confirmed delete. The name column shows the label the module
+ * normalized once at declaration, truncated to one line; the full value is in
+ * the details dialog, and an empty name renders the "unnamed" copy. Every read
+ * and write goes through the generated objectstore operations of
+ * @speed/api-sdk on the host's QueryClient, under a tenant-namespaced key (see
+ * internal/queries.ts); the page builds no client and writes no query key.
  *
  * Pagination is the module's keyset cursor: the list answers a page and the
  * cursor of its last row, so the page keeps a stack of cursors -- the
@@ -20,7 +22,9 @@
  * complete) and the row settles succeeded or failed. The delete control
  * asks the page to hold a description of what it will do, rendered through
  * ui-kit's danger ConfirmDialog; the mutation fires only on the confirming
- * click. A failed download or delete renders one banner resolved from the
+ * click. A download is saved under the view's stored name, falling back to
+ * the identifier plus a MIME-derived extension when the name is empty. A
+ * failed download or delete renders one banner resolved from the
  * objectstore-ui namespace's error text, never a raw key.
  *
  * The page is tenant-scoped: it renders under the host's tenant context
@@ -101,7 +105,7 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
   const download = (object: StoredObject): void => {
     setActionError(null)
     getObjectContent(object.id)
-      .then((blob) => saveBlob(blob, downloadFilename(object.id, object.mime)))
+      .then((blob) => saveBlob(blob, downloadFilename(object.name, object.id, object.mime)))
       .catch((error: unknown) => setActionError(errorCodeOf(error)))
   }
 
@@ -126,6 +130,24 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
   }
 
   const columns: DataTableColumn<StoredObject>[] = [
+    {
+      id: 'name',
+      header: t('list.column.name'),
+      cellWrap: 'nowrap',
+      cell: (object) => (
+        // The module normalized the name once, so it is safe as a text
+        // node; the full value lives in the details dialog, and the cell
+        // stays one line with an ellipsis rather than widening the table.
+        <Typography
+          variant="body2"
+          noWrap
+          sx={{ maxWidth: 240 }}
+          color={object.name === '' ? 'text.secondary' : undefined}
+        >
+          {object.name === '' ? t('list.unnamed') : object.name}
+        </Typography>
+      ),
+    },
     {
       id: 'id',
       header: t('list.column.id'),

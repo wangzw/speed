@@ -42,6 +42,7 @@ import { saveBlob } from './internal/download.js'
 
 const OBJECT_A = {
   id: 'o-aaa',
+  name: 'greeting.txt',
   state: 'completed',
   size: 12,
   mime: 'text/plain',
@@ -69,11 +70,47 @@ describe('ObjectsPage', () => {
     renderWithProviders(<ObjectsPage />, { language: 'en-US' })
 
     expect(await screen.findByText('o-aaa')).toBeInTheDocument()
+    expect(screen.getByText('greeting.txt')).toBeInTheDocument()
     expect(screen.getByText('Completed')).toBeInTheDocument()
     expect(screen.getByText('12 B')).toBeInTheDocument()
     expect(screen.getByText('text/plain')).toBeInTheDocument()
 
     await expectNoAxeViolations()
+  })
+
+  it('renders the name column before the object id column, on one line', async () => {
+    makeObjectStoreRig(() =>
+      jsonResponse(200, { objects: [OBJECT_A], next_cursor: '' }),
+    )
+    renderWithProviders(<ObjectsPage />, { language: 'en-US' })
+
+    const nameText = await screen.findByText('greeting.txt')
+    const nameCell = nameText.closest('td')
+    const idCell = screen.getByText('o-aaa').closest('td')
+    expect(nameCell).not.toBeNull()
+    expect(idCell).not.toBeNull()
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent)
+    expect(headers.indexOf('Name')).toBeGreaterThanOrEqual(0)
+    expect(headers.indexOf('Name')).toBeLessThan(headers.indexOf('Object'))
+    // The name is one line with truncation; the complete value is in the
+    // detail dialog, not in a path or as markup.
+    expect(nameCell).toHaveStyle({ whiteSpace: 'nowrap' })
+    expect(nameText).toHaveStyle({
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+    })
+  })
+
+  it('renders the unnamed copy when an object has no name', async () => {
+    makeObjectStoreRig(() =>
+      jsonResponse(200, {
+        objects: [{ ...OBJECT_A, name: '' }],
+        next_cursor: '',
+      }),
+    )
+    renderWithProviders(<ObjectsPage />, { language: 'en-US' })
+    expect(await screen.findByText('Unnamed')).toBeInTheDocument()
   })
 
   it('keeps the identifier and state cells on one line and the identifier reachable in full', async () => {
@@ -162,7 +199,7 @@ describe('ObjectsPage', () => {
   it('uploads a file through declare -> upload -> complete', async () => {
     const user = userEvent.setup()
     let completed = false
-    const stored = { ...OBJECT_A, id: 'o-new', mime: 'text/plain', size: 5 }
+    const stored = { ...OBJECT_A, id: 'o-new', name: 'stored-file.txt', mime: 'text/plain', size: 5 }
     const rig = makeObjectStoreRig((call) => {
       if (call.method === 'GET' && call.path === LIST_PATH) {
         return jsonResponse(200, {
@@ -230,7 +267,7 @@ describe('ObjectsPage', () => {
     expect(await screen.findByText('o-new')).toBeInTheDocument()
   })
 
-  it("downloads an object's bytes with a MIME-derived filename", async () => {
+  it("downloads an object's bytes under its stored name", async () => {
     const user = userEvent.setup()
     vi.mocked(saveBlob).mockClear()
     makeObjectStoreRig((call) => {
@@ -248,6 +285,30 @@ describe('ObjectsPage', () => {
     const [blob, filename] = vi.mocked(saveBlob).mock.calls[0] as [Blob, string]
     // The bytes the store answered with reached the browser unchanged.
     expect(await blob.text()).toBe('the-bytes')
+    // The view's normalized name names the file.
+    expect(filename).toBe('greeting.txt')
+  })
+
+  it('downloads an unnamed object under its id and a MIME-derived extension', async () => {
+    const user = userEvent.setup()
+    vi.mocked(saveBlob).mockClear()
+    makeObjectStoreRig((call) => {
+      if (call.method === 'GET' && call.path === `${LIST_PATH}/o-aaa/content`) {
+        return blobResponse('the-bytes', 'text/plain')
+      }
+      return jsonResponse(200, {
+        objects: [{ ...OBJECT_A, name: '' }],
+        next_cursor: '',
+      })
+    })
+    renderWithProviders(<ObjectsPage />, { language: 'en-US' })
+    // The row carries the unnamed copy rather than an empty cell.
+    expect(await screen.findByText('Unnamed')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Download object o-aaa' }))
+
+    await waitFor(() => expect(saveBlob).toHaveBeenCalledTimes(1))
+    const [, filename] = vi.mocked(saveBlob).mock.calls[0] as [Blob, string]
     expect(filename).toBe('o-aaa.txt')
   })
 
@@ -329,7 +390,7 @@ describe('ObjectsPage', () => {
   it('retries a failed upload and removes the settled row', async () => {
     const user = userEvent.setup()
     let createAttempts = 0
-    const stored = { ...OBJECT_A, id: 'o-retry', mime: 'text/plain', size: 5 }
+    const stored = { ...OBJECT_A, id: 'o-retry', name: 'stored-retry.txt', mime: 'text/plain', size: 5 }
     makeObjectStoreRig((call) => {
       if (call.method === 'GET' && call.path === LIST_PATH) {
         return jsonResponse(200, { objects: [], next_cursor: '' })

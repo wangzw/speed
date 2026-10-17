@@ -25,10 +25,12 @@
  * the components live in src/internal/ and are deliberately not exported.
  *
  * What the object view carries is what the page can show: the routes answer
- * an object's `id`, `state`, `size`, `mime`, `checksum_sha256`, `expires_at`
- * and timestamps, and no declaration name -- the module stores no name --
- * so a downloaded file is named after the object id with a MIME-derived
- * extension.
+ * an object's `id`, `name`, `state`, `size`, `mime`, `checksum_sha256`,
+ * `expires_at` and timestamps. The name is the label the module normalized
+ * once at declaration; the list shows it in its own one-line column (the
+ * "unnamed" copy when it is empty), the details dialog shows it in full, and
+ * a downloaded file is named after it, falling back to the object id with a
+ * MIME-derived extension when it is empty.
  */
 
 export { OBJECTSTORE_UI_NAMESPACE, objectstoreUiResources } from './resources.js'

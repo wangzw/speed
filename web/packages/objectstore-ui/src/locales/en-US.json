@@ -38,6 +38,7 @@
       "description": "Your account does not hold the permission this page needs."
     },
     "column": {
+      "name": "Name",
       "id": "Object",
       "state": "State",
       "size": "Size",
@@ -45,6 +46,7 @@
       "created": "Created",
       "actions": "Actions"
     },
+    "unnamed": "Unnamed",
     "previous": "Previous page",
     "next": "Next page"
   },
@@ -86,6 +88,7 @@
     },
     "retry": "Try again",
     "field": {
+      "name": "Name",
       "id": "Object ID",
       "state": "State",
       "size": "Size",
@@ -96,6 +99,7 @@
       "updated": "Updated"
     },
     "never": "Never",
+    "unnamed": "Unnamed",
     "close": "Close"
   }
 }

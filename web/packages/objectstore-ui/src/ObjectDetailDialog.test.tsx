@@ -6,6 +6,7 @@ import { ObjectDetailDialog } from './ObjectDetailDialog.js'
 
 const OBJECT = {
   id: 'o-1',
+  name: 'report.txt',
   state: 'completed',
   size: 3,
   mime: 'text/plain',
@@ -25,7 +26,21 @@ describe('ObjectDetailDialog', () => {
       expect(within(dialog).getByText('deadbeef')).toBeInTheDocument()
     })
     expect(within(dialog).getByText('Object ID')).toBeInTheDocument()
+    // The full name lives here, where the list's truncated cell points.
+    expect(within(dialog).getByText('Name')).toBeInTheDocument()
+    expect(within(dialog).getByText('report.txt')).toBeInTheDocument()
     expect(within(dialog).getByText('Never')).toBeInTheDocument()
+  })
+
+  it('renders the unnamed copy for an object with no name', async () => {
+    makeObjectStoreRig(() =>
+      jsonResponse(200, { object: { ...OBJECT, name: '' } }),
+    )
+    renderWithProviders(<ObjectDetailDialog id="o-1" onClose={() => undefined} />, {
+      language: 'en-US',
+    })
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('Unnamed')).toBeInTheDocument()
   })
 
   it('reads nothing while closed (id null)', async () => {

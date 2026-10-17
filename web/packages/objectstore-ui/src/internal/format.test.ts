@@ -48,8 +48,19 @@ describe('extensionForMime', () => {
 })
 
 describe('downloadFilename', () => {
-  it('names the file after the object id with a MIME-derived extension', () => {
-    expect(downloadFilename('o-1', 'image/png')).toBe('o-1.png')
-    expect(downloadFilename('o-2', 'application/octet-stream')).toBe('o-2.bin')
+  it('names the file after the stored name when there is one', () => {
+    expect(downloadFilename('greeting.txt', 'o-1', 'image/png')).toBe(
+      'greeting.txt',
+    )
+    expect(
+      downloadFilename('archive.tar.gz', 'o-2', 'application/octet-stream'),
+    ).toBe('archive.tar.gz')
+  })
+
+  it('falls back to the object id with a MIME-derived extension when unnamed', () => {
+    expect(downloadFilename('', 'o-1', 'image/png')).toBe('o-1.png')
+    expect(downloadFilename('', 'o-2', 'application/octet-stream')).toBe(
+      'o-2.bin',
+    )
   })
 })

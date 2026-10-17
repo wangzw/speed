@@ -6,7 +6,9 @@
  * canonical "read one object" path, exercised where a row's cached view
  * might be stale. The dialog is controlled by the `id` prop: null keeps it
  * closed (and the read disabled), an id opens it and fetches that object.
- * Every field renders from the objectstore-ui namespace; instants render
+ * Every field renders from the objectstore-ui namespace; the name leads the
+ * field list -- the list truncates it to one line, so this is where its full
+ * value lives -- and an empty name renders the "unnamed" copy. Instants render
  * through Intl in the active language and in UTC, and an absent expiry
  * renders the "never" copy rather than an empty cell.
  *
@@ -101,6 +103,14 @@ export function ObjectDetailDialog({ id, onClose }: ObjectDetailDialogProps) {
         >
           {(settled) => (
             <Stack spacing={1.5} sx={{ mt: 1 }}>
+              <DetailRow
+                label={t('detail.field.name')}
+                value={
+                  settled.name === ''
+                    ? t('detail.unnamed')
+                    : settled.name
+                }
+              />
               <DetailRow label={t('detail.field.id')} value={settled.id} />
               <DetailRow
                 label={t('detail.field.state')}

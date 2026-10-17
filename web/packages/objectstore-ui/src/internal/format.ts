@@ -15,10 +15,11 @@
  * because Intl's built-in byte unit renders an uninflected "1,024 byte"
  * in en-US rather than "1,024 B".
  *
- * The download filename is derived from the object's own fields rather
- * than the declaration's `name`, which the view does not carry: the
- * object id names the file and the recorded MIME supplies a conventional
- * extension, falling back to `.bin` when the MIME maps to none.
+ * The download filename is the object view's stored name when there is
+ * one -- the module normalized it once at declaration, so this package
+ * renders it as it is -- and otherwise the object id with a conventional
+ * extension derived from the recorded MIME, falling back to `.bin` when
+ * the MIME maps to none.
  */
 
 const dateFormatters = new Map<string, Intl.DateTimeFormat>()
@@ -100,7 +101,15 @@ export function extensionForMime(mime: string): string {
   return `.${name}`
 }
 
-/** The filename for a downloaded object: its id plus a MIME-derived extension. */
-export function downloadFilename(id: string, mime: string): string {
+/**
+ * The filename for a downloaded object: the stored name when it has one,
+ * and otherwise the object id plus a MIME-derived extension. The name is
+ * the module's normalized value, not the raw declaration, so it carries no
+ * path separator or control character; it is used verbatim.
+ */
+export function downloadFilename(name: string, id: string, mime: string): string {
+  if (name !== '') {
+    return name
+  }
   return `${id}${extensionForMime(mime)}`
 }
