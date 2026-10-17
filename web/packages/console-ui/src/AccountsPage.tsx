@@ -931,13 +931,17 @@ type CreateAccountFields = {
 
 /**
  * AccountCreateForm: the account-creation control (POST /auth/admin/accounts).
- * It names the fields the handler decodes into its create request; each is
- * optional but the kind, and a field left blank is not sent. The fields flow
- * through ui-kit's form family (FormLayout's responsive grid of FormField
- * adapters), so they wrap into a form rather than crowding one row. The
- * attribute set is typed as a JSON object and marks the field when it does
- * not parse. A landed create clears the form; a refused one keeps it to
- * correct.
+ * It names the fields the handler decodes into its create request; a field
+ * left blank is not sent. The form requires a display name and at least one
+ * login identifier (a username, an email address or a phone number): an
+ * account without one has no way to sign in, and the server refuses it, so
+ * the submit stays disabled until the form could produce a usable account --
+ * and the submit handler itself re-checks, so no path sends a request the
+ * server is known to refuse. The fields flow through ui-kit's form family
+ * (FormLayout's responsive grid of FormField adapters), so they wrap into a
+ * form rather than crowding one row. The attribute set is typed as a JSON
+ * object and marks the field when it does not parse. A landed create clears
+ * the form; a refused one keeps it to correct.
  */
 function AccountCreateForm() {
   const { t } = useConsoleUiTranslation()
@@ -969,7 +973,25 @@ function AccountCreateForm() {
     </>
   )
 
+  // The form names an account once it carries a display name and at least
+  // one login identifier; before that the submit is disabled, and the
+  // handler below refuses to send anyway.
+  const watched = form.watch()
+  const namesAnAccount =
+    watched.displayName.trim() !== '' &&
+    (watched.username.trim() !== '' ||
+      watched.email.trim() !== '' ||
+      watched.phone.trim() !== '')
+
   const onSubmit: SubmitHandler<CreateAccountFields> = (values) => {
+    if (
+      values.displayName.trim() === '' ||
+      (values.username.trim() === '' &&
+        values.email.trim() === '' &&
+        values.phone.trim() === '')
+    ) {
+      return
+    }
     const parsed =
       values.attributes.trim() === '' ? null : parseStringMap(values.attributes)
     createAccount.mutate(
@@ -1004,7 +1026,7 @@ function AccountCreateForm() {
             <Button
               type="submit"
               variant="contained"
-              disabled={createAccount.isPending}
+              disabled={createAccount.isPending || !namesAnAccount}
             >
               {t('accounts.create.submit')}
             </Button>

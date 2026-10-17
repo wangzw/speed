@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
 import { AccountsPage } from './AccountsPage.js'
@@ -518,6 +518,46 @@ describe('AccountsPage', () => {
       expect(screen.getByLabelText('显示名')).toHaveValue('')
       expect(screen.getByLabelText('用户名')).toHaveValue('')
     })
+  })
+
+  it('keeps the create submit disabled until a display name and an identifier are given', async () => {
+    const user = userEvent.setup()
+    const created: ConsoleCreateAccountInput[] = []
+    const operations = withAccounts({
+      createAccount: (input) => {
+        created.push(input)
+        return Promise.resolve(accountFixture())
+      },
+    })
+    const { container } = renderWithProviders(<AccountsPage />, { operations })
+    const submit = screen.getByRole('button', { name: '新建' })
+    const form = container.querySelector('form') as HTMLFormElement
+
+    // An empty form names nothing an account can sign in with: the submit
+    // is disabled, and a submit of the form itself sends no request either
+    // -- the disabled button is not the only guard.
+    expect(submit).toBeDisabled()
+    fireEvent.submit(form)
+    expect(created).toEqual([])
+
+    // A display name alone is not an account either.
+    await user.type(screen.getByLabelText('显示名'), 'Grace')
+    expect(submit).toBeDisabled()
+    fireEvent.submit(form)
+    expect(created).toEqual([])
+
+    // Nor is an identifier alone.
+    await user.clear(screen.getByLabelText('显示名'))
+    await user.type(screen.getByLabelText('用户名'), 'grace')
+    expect(submit).toBeDisabled()
+    fireEvent.submit(form)
+    expect(created).toEqual([])
+
+    // Both together make the account creatable.
+    await user.type(screen.getByLabelText('显示名'), 'Grace')
+    await vi.waitFor(() => expect(submit).toBeEnabled())
+    await user.click(submit)
+    await vi.waitFor(() => expect(created).toHaveLength(1))
   })
 
   it('lays the create fields out through the form family instead of one crowded row', async () => {
