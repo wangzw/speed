@@ -35,9 +35,8 @@ var (
 // value, and a name that is malformed, empty or reduced to nothing stores as
 // the empty string rather than failing the declaration. A declaration that
 // fails validation is refused and lands no row. The tenant column is filled
-// from the context by the model's own filter,
-// and a context carrying no tenant is refused before the key is minted, because
-// the key needs the tenant.
+// from the context by the model's own filter, and a context carrying no tenant
+// is refused before the key is minted, because the key needs the tenant.
 func (p *product) Create(ctx context.Context, d objectstore.Declaration) (objectstore.Object, error) {
 	if err := validateDeclaration(d); err != nil {
 		return objectstore.Object{}, err
