@@ -801,7 +801,9 @@
     "revoke": "撤销",
     "revokeTitle": "撤销邀请",
     "revokeMessage": "撤销发给「{{email}}」的邀请。",
+    "revoked": "已撤销发给「{{email}}」的邀请",
     "issued": {
+      "confirm": "已向「{{email}}」发出邀请",
       "link": "把这条接受链接交给「{{email}}」：",
       "token": "「{{email}}」的接受令牌（链接由宿主构造）：",
       "copy": "复制",
@@ -840,11 +842,15 @@
       "sourceLabel": "来源",
       "activeLabel": "在册",
       "ssoExemptLabel": "SSO 豁免",
-      "submit": "写入成员关系"
+      "submit": "写入成员关系",
+      "saved": "账户「{{account}}」的成员关系已保存"
     },
     "remove": "移除",
     "removeTitle": "移除成员",
-    "removeMessage": "从该租户移除成员「{{account}}」。"
+    "removeMessage": "从该租户移除成员「{{account}}」。",
+    "removed": "已移除成员「{{account}}」",
+    "ssoExemptSaved": "已为成员「{{account}}」设置 SSO 豁免",
+    "ssoExemptCleared": "已清除成员「{{account}}」的 SSO 豁免"
   },
   "sso": {
     "title": "SSO 提供方",

@@ -21,7 +21,16 @@
  * tenant-facing invite surface; the console issues and revokes, it does
  * not accept. Every read and write is an operation on the console
  * operations bundle, so the page builds no client and writes no query
- * key. The page opens with ui-kit's PageHeader.
+ * key.
+ *
+ * The two titled sections are the page's two feedback scopes: the
+ * invitation list (issue and revoke) reports under its table, and the
+ * member list (write, remove and SSO exemption) reports under its own.
+ * A refusal marks the affected row inline with the same resolved text the
+ * region shows and brings the region into view; a success names the
+ * invitee or account it changed. The tenant seeds every write, so changing
+ * it resets both scopes and disables the selector while either is in
+ * flight. The page opens with ui-kit's PageHeader.
  */
 
 import { useEffect, useState } from 'react'
@@ -37,18 +46,23 @@ import {
   EmptyState,
   ListSkeleton,
   PageHeader,
-  errorCodeOf,
+  useWriteFeedback,
 } from '@speed/ui-kit'
-import type { DataTableColumn } from '@speed/ui-kit'
+import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
 import { AccountIdentity } from './internal/account-identity.js'
 import { AccountSelector } from './internal/account-selector.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
-import { InlineError } from './internal/inline-error.js'
+import { useConsoleUiErrorText } from './internal/error-text.js'
 import { useConsoleInvitationLink } from './internal/invitation-link.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
+import {
+  failureTextOf,
+  useFailureScroll,
+  WriteFeedbackRegion,
+} from './internal/write-feedback.js'
 import { useConsoleOperations } from './operations.js'
 import type {
   ConsoleAccount,
@@ -100,6 +114,125 @@ export function InvitationsPage() {
   const removeMember = operations.useRemoveMember()
   const setMemberSsoExempt = operations.useSetMemberSsoExempt()
 
+  // One scope per titled section: the invitation list (issue and revoke)
+  // and the member list (write, remove and SSO exemption).
+  const invitationFeedback = useWriteFeedback()
+  const membersFeedback = useWriteFeedback()
+  const invitationRegionRef = useFailureScroll(invitationFeedback.outcome)
+  const membersRegionRef = useFailureScroll(membersFeedback.outcome)
+
+  // The row each scope's failure names, cleared when the attempt starts.
+  // The member marker also carries which of the row's two writes failed, so
+  // the inline marker sits on the control that was refused.
+  const [failedInvitation, setFailedInvitation] = useState<string | null>(null)
+  const [failedMember, setFailedMember] = useState<{
+    readonly account: string
+    readonly action: 'remove' | 'sso'
+  } | null>(null)
+  const resolveErrorText = useConsoleUiErrorText()
+  const invitationFailureText = failureTextOf(
+    invitationFeedback.outcome,
+    resolveErrorText,
+  )
+  const memberFailureText = failureTextOf(
+    membersFeedback.outcome,
+    resolveErrorText,
+  )
+
+  // The tenant is an argument of every write here: a change clears both
+  // slots and every row marker, since the old result would read as
+  // describing the tenant left behind.
+  const changeTenant = (next: string) => {
+    setTenant(next)
+    invitationFeedback.reset()
+    membersFeedback.reset()
+    setFailedInvitation(null)
+    setFailedMember(null)
+  }
+
+  const issue = () => {
+    const address = email
+    void invitationFeedback.run(async () => {
+      const answer = await issueInvitation.mutateAsync({
+        tenant,
+        email: address,
+        expiresAt: toInviteExpiry(expiresAt),
+      })
+      setEmail('')
+      setIssued(answer)
+      return t('invitations.issued.confirm', {
+        email: answer.invitation.email,
+      })
+    })
+  }
+
+  const requestRevoke = (invitation: ConsoleInvitation) => {
+    confirm.ask({
+      title: t('invitations.revokeTitle'),
+      message: t('invitations.revokeMessage', { email: invitation.email }),
+      confirmLabel: t('common.confirm'),
+      run: () => {
+        setFailedInvitation(null)
+        void invitationFeedback.run(async () => {
+          try {
+            await revokeInvitation.mutateAsync({
+              tenant,
+              id: invitation.id,
+            })
+            return t('invitations.revoked', { email: invitation.email })
+          } catch (error) {
+            setFailedInvitation(invitation.id)
+            throw error
+          }
+        })
+      },
+    })
+  }
+
+  const requestRemoveMember = (member: ConsoleMember) => {
+    confirm.ask({
+      title: t('members.removeTitle'),
+      message: t('members.removeMessage', { account: member.account }),
+      confirmLabel: t('common.confirm'),
+      run: () => {
+        setFailedMember(null)
+        void membersFeedback.run(async () => {
+          try {
+            await removeMember.mutateAsync({
+              tenant,
+              account: member.account,
+            })
+            return t('members.removed', { account: member.account })
+          } catch (error) {
+            setFailedMember({ account: member.account, action: 'remove' })
+            throw error
+          }
+        })
+      },
+    })
+  }
+
+  const toggleSsoExempt = (member: ConsoleMember) => {
+    const exempt = !member.sso_exempt
+    setFailedMember(null)
+    void membersFeedback.run(async () => {
+      try {
+        await setMemberSsoExempt.mutateAsync({
+          tenant,
+          account: member.account,
+          sso_exempt: exempt,
+        })
+        return t(
+          exempt ? 'members.ssoExemptSaved' : 'members.ssoExemptCleared',
+          { account: member.account },
+        )
+      } catch (error) {
+        setFailedMember({ account: member.account, action: 'sso' })
+        throw error
+      }
+    })
+  }
+
   const invitationColumns: DataTableColumn<ConsoleInvitation>[] = [
     {
       id: 'email',
@@ -135,25 +268,39 @@ export function InvitationsPage() {
       id: 'actions',
       header: t('invitations.column.actions'),
       cellWrap: 'nowrap',
-      cell: (invitation) => (
-        <Button
-          type="button"
-          size="small"
-          variant="outlined"
-          color="error"
-          disabled={invitation.status !== 'pending' || revokeInvitation.isPending}
-          onClick={() =>
-            confirm.ask({
-              title: t('invitations.revokeTitle'),
-              message: t('invitations.revokeMessage', { email: invitation.email }),
-              confirmLabel: t('common.confirm'),
-              run: () => revokeInvitation.mutate({ tenant, id: invitation.id }),
-            })
-          }
-        >
-          {t('invitations.revoke')}
-        </Button>
-      ),
+      cell: (invitation) => {
+        const failed = failedInvitation === invitation.id
+        const errorId = `invitation-error-${encodeURIComponent(invitation.id)}`
+        const pending =
+          invitationFeedback.pending && invitation.status === 'pending'
+        return (
+          <Box>
+            <Button
+              type="button"
+              size="small"
+              variant="outlined"
+              color="error"
+              aria-invalid={failed}
+              aria-describedby={failed ? errorId : undefined}
+              disabled={invitation.status !== 'pending' || pending}
+              loading={pending}
+              onClick={() => requestRevoke(invitation)}
+            >
+              {t('invitations.revoke')}
+            </Button>
+            {failed && invitationFailureText !== null && (
+              <Typography
+                id={errorId}
+                variant="caption"
+                color="error"
+                sx={{ display: 'block', mt: 0.5 }}
+              >
+                {invitationFailureText}
+              </Typography>
+            )}
+          </Box>
+        )
+      },
     },
   ]
 
@@ -191,44 +338,59 @@ export function InvitationsPage() {
       id: 'actions',
       header: t('members.column.actions'),
       cellWrap: 'nowrap',
-      cell: (member) => (
-        <Box sx={{ display: 'flex', columnGap: 1 }}>
-          <Button
-            type="button"
-            size="small"
-            variant="outlined"
-            disabled={setMemberSsoExempt.isPending}
-            onClick={() =>
-              setMemberSsoExempt.mutate({
-                tenant,
-                account: member.account,
-                sso_exempt: !member.sso_exempt,
-              })
-            }
-          >
-            {member.sso_exempt
-              ? t('members.ssoExemptClear')
-              : t('members.ssoExemptSet')}
-          </Button>
-          <Button
-            type="button"
-            size="small"
-            variant="outlined"
-            color="error"
-            disabled={removeMember.isPending}
-            onClick={() =>
-              confirm.ask({
-                title: t('members.removeTitle'),
-                message: t('members.removeMessage', { account: member.account }),
-                confirmLabel: t('common.confirm'),
-                run: () => removeMember.mutate({ tenant, account: member.account }),
-              })
-            }
-          >
-            {t('members.remove')}
-          </Button>
-        </Box>
-      ),
+      cell: (member) => {
+        const errorId = `member-error-${encodeURIComponent(member.account)}`
+        const ssoFailed =
+          failedMember?.account === member.account &&
+          failedMember.action === 'sso'
+        const removeFailed =
+          failedMember?.account === member.account &&
+          failedMember.action === 'remove'
+        return (
+          <Box>
+            <Box sx={{ display: 'flex', columnGap: 1 }}>
+              <Button
+                type="button"
+                size="small"
+                variant="outlined"
+                aria-invalid={ssoFailed}
+                aria-describedby={ssoFailed ? errorId : undefined}
+                disabled={membersFeedback.pending}
+                loading={membersFeedback.pending}
+                onClick={() => toggleSsoExempt(member)}
+              >
+                {member.sso_exempt
+                  ? t('members.ssoExemptClear')
+                  : t('members.ssoExemptSet')}
+              </Button>
+              <Button
+                type="button"
+                size="small"
+                variant="outlined"
+                color="error"
+                aria-invalid={removeFailed}
+                aria-describedby={removeFailed ? errorId : undefined}
+                disabled={membersFeedback.pending}
+                loading={membersFeedback.pending}
+                onClick={() => requestRemoveMember(member)}
+              >
+                {t('members.remove')}
+              </Button>
+            </Box>
+            {memberFailureText !== null &&
+              failedMember?.account === member.account && (
+                <Typography
+                  id={errorId}
+                  variant="caption"
+                  color="error"
+                  sx={{ display: 'block', mt: 0.5 }}
+                >
+                  {memberFailureText}
+                </Typography>
+              )}
+          </Box>
+        )
+      },
     },
   ]
 
@@ -245,13 +407,6 @@ export function InvitationsPage() {
       : invitationLink === undefined
         ? issued.token
         : acceptanceUrl(invitationLink(issued.token))
-
-  const writeError = firstErrorCode([
-    issueInvitation.error,
-    revokeInvitation.error,
-    removeMember.error,
-    setMemberSsoExempt.error,
-  ])
 
   return (
     <Box>
@@ -278,7 +433,11 @@ export function InvitationsPage() {
       />
 
       <Box component="section" sx={{ mb: 3 }}>
-        <TenantScope value={tenant} onSelect={setTenant} />
+        <TenantScope
+          value={tenant}
+          onSelect={changeTenant}
+          disabled={invitationFeedback.pending || membersFeedback.pending}
+        />
       </Box>
 
       {tenant === '' ? (
@@ -325,22 +484,11 @@ export function InvitationsPage() {
               <Button
                 type="button"
                 variant="contained"
-                disabled={issueInvitation.isPending || email.trim() === ''}
-                onClick={() => {
-                  issueInvitation.mutate(
-                    {
-                      tenant,
-                      email,
-                      expiresAt: toInviteExpiry(expiresAt),
-                    },
-                    {
-                      onSuccess: (answer) => {
-                        setEmail('')
-                        setIssued(answer)
-                      },
-                    },
-                  )
-                }}
+                disabled={
+                  invitationFeedback.pending || email.trim() === ''
+                }
+                loading={invitationFeedback.pending}
+                onClick={issue}
               >
                 {t('invitations.issue.submit')}
               </Button>
@@ -414,6 +562,9 @@ export function InvitationsPage() {
                 />
               )}
             </ConsoleAsyncSection>
+            <Box ref={invitationRegionRef}>
+              <WriteFeedbackRegion outcome={invitationFeedback.outcome} />
+            </Box>
           </Box>
 
           <Box component="section" sx={{ mb: 3 }}>
@@ -424,7 +575,7 @@ export function InvitationsPage() {
             >
               {t('members.title')}
             </Typography>
-            <MemberWriteForm tenant={tenant} />
+            <MemberWriteForm tenant={tenant} feedback={membersFeedback} />
             <ConsoleAsyncSection
               pending={membersPending}
               payload={memberRows}
@@ -456,25 +607,16 @@ export function InvitationsPage() {
                 />
               )}
             </ConsoleAsyncSection>
+            <Box ref={membersRegionRef}>
+              <WriteFeedbackRegion outcome={membersFeedback.outcome} />
+            </Box>
           </Box>
-
-          <InlineError code={writeError} />
         </>
       )}
 
       <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
     </Box>
   )
-}
-
-/** The first defined error's code, or null when every error is absent. */
-function firstErrorCode(errors: readonly unknown[]): string | null {
-  for (const error of errors) {
-    if (error !== null && error !== undefined) {
-      return errorCodeOf(error)
-    }
-  }
-  return null
 }
 
 /**
@@ -551,9 +693,16 @@ function CopyControl({
  * resumes a membership, naming the account chosen through the account
  * search picker, its active state, an optional source and the SSO
  * exemption. A landed write clears the account and source and resets the
- * flags; a refused one keeps them to correct.
+ * flags; a refused one keeps them to correct. The write reports through the
+ * member section's scope, and a landed one names the account it changed.
  */
-function MemberWriteForm({ tenant }: { readonly tenant: string }) {
+function MemberWriteForm({
+  tenant,
+  feedback,
+}: {
+  readonly tenant: string
+  readonly feedback: WriteFeedback
+}) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const writeMember = operations.useWriteMember()
@@ -606,37 +755,35 @@ function MemberWriteForm({ tenant }: { readonly tenant: string }) {
         <Button
           type="button"
           variant="contained"
-          disabled={writeMember.isPending || account === null}
+          disabled={feedback.pending || account === null}
+          loading={feedback.pending}
           onClick={() => {
             if (account === null) {
               return
             }
-            writeMember.mutate(
-              {
+            const target = account
+            const writtenSource = source
+            void feedback.run(async () => {
+              await writeMember.mutateAsync({
                 tenant,
-                account: account.id,
+                account: target.id,
                 active,
-                ...(source === '' ? {} : { source }),
+                ...(writtenSource === '' ? {} : { source: writtenSource }),
                 sso_exempt: ssoExempt,
-              },
-              {
-                onSuccess: () => {
-                  setAccount(null)
-                  setSource('')
-                  setActive(true)
-                  setSsoExempt(false)
-                },
-              },
-            )
+              })
+              setAccount(null)
+              setSource('')
+              setActive(true)
+              setSsoExempt(false)
+              return t('members.write.saved', {
+                account:
+                  target.display_name === '' ? target.id : target.display_name,
+              })
+            })
           }}
         >
           {t('members.write.submit')}
         </Button>
-      </Box>
-      <Box sx={{ mt: 1 }}>
-        <InlineError
-          code={writeMember.isError ? errorCodeOf(writeMember.error) : null}
-        />
       </Box>
     </Box>
   )

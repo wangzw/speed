@@ -801,7 +801,9 @@
     "revoke": "Revoke",
     "revokeTitle": "Revoke invitation",
     "revokeMessage": "Revoke the invitation sent to \"{{email}}\".",
+    "revoked": "Invitation to \"{{email}}\" revoked",
     "issued": {
+      "confirm": "Invitation sent to \"{{email}}\"",
       "link": "Hand this acceptance link to {{email}}:",
       "token": "Hand this acceptance token to {{email}} (the host builds the link):",
       "copy": "Copy",
@@ -840,11 +842,15 @@
       "sourceLabel": "Source",
       "activeLabel": "Active",
       "ssoExemptLabel": "SSO exempt",
-      "submit": "Write membership"
+      "submit": "Write membership",
+      "saved": "Membership of account \"{{account}}\" saved"
     },
     "remove": "Remove",
     "removeTitle": "Remove member",
-    "removeMessage": "Remove the member \"{{account}}\" from this tenant."
+    "removeMessage": "Remove the member \"{{account}}\" from this tenant.",
+    "removed": "Member \"{{account}}\" removed",
+    "ssoExemptSaved": "SSO exemption of member \"{{account}}\" saved",
+    "ssoExemptCleared": "SSO exemption of member \"{{account}}\" cleared"
   },
   "sso": {
     "title": "SSO providers",

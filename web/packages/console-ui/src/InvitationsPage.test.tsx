@@ -8,7 +8,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, within } from '@testing-library/react'
+import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { InvitationsPage } from './InvitationsPage.js'
 import type {
@@ -21,6 +21,7 @@ import type {
 import { renderWithProviders } from '../test-utils/render.js'
 import { chooseAccount } from '../test-utils/account-selector.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
+import { mockMatchMedia } from '@speed/test-utils/matchMedia'
 import {
   accountFixture,
   createConsoleOperations,
@@ -78,6 +79,35 @@ async function pickTenant(user: ReturnType<typeof userEvent.setup>): Promise<voi
   await user.click(await screen.findByRole('option', { name: 'Acme' }))
 }
 
+/** The titled section a heading opens, which holds its group's region. */
+function section(name: string): HTMLElement {
+  const element = screen.getByRole('heading', { name }).closest('section')
+  if (element === null) {
+    throw new Error(`no section headed ${name}`)
+  }
+  return element as HTMLElement
+}
+
+/** jsdom implements no layout; a scroll observer installs this stub. */
+function stubScrollIntoView(): ReturnType<typeof vi.fn> {
+  const spy = vi.fn()
+  Object.defineProperty(Element.prototype, 'scrollIntoView', {
+    configurable: true,
+    writable: true,
+    value: spy,
+  })
+  return spy
+}
+
+/** A promise the test settles by hand, for observing an in-flight write. */
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
 function withTenant(
   overrides: Partial<ConsoleBackend> = {},
 ): ReturnType<typeof createConsoleOperations> {
@@ -94,6 +124,7 @@ function withTenant(
 describe('InvitationsPage', () => {
   afterEach(() => {
     Reflect.deleteProperty(navigator, 'clipboard')
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
   })
 
   it('prompts for a tenant before listing', () => {
@@ -490,6 +521,173 @@ describe('InvitationsPage', () => {
     // permission text, and no retry (a retry would only be refused again).
     expect(await screen.findByText('权限不足')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    // A read's refusal never settles into a write scope's slot.
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it("reports the invitation and member failures in their own sections", async () => {
+    const user = userEvent.setup()
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
+      listMembers: () => Promise.resolve([member()]),
+      issueInvitation: () => Promise.reject({ code: 'authn.conflict' }),
+      removeMember: () => Promise.reject({ code: 'authn.forbidden' }),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+
+    // The invitation section refuses the issue.
+    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    expect(await within(section('邀请')).findByRole('alert')).toHaveTextContent(
+      '该改动与账户的当前状态冲突。',
+    )
+
+    // The member section refuses the removal.
+    await screen.findAllByText('Operator')
+    await user.click(screen.getByRole('button', { name: '移除' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    // The modal hides the page from assistive technology until its exit
+    // transition ends; the region is readable after that.
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(await within(section('成员')).findByRole('alert')).toHaveTextContent(
+      '你没有执行此操作的权限。',
+    )
+
+    // Neither section carries the other's text, and no page-level banner
+    // aggregates them.
+    expect(
+      within(section('邀请')).queryByText('你没有执行此操作的权限。'),
+    ).toBeNull()
+    expect(
+      within(section('成员')).queryByText('该改动与账户的当前状态冲突。'),
+    ).toBeNull()
+    expect(screen.getAllByRole('alert')).toHaveLength(2)
+  })
+
+  it('marks the refused invitation row inline and brings its region into view', async () => {
+    mockMatchMedia(false)
+    const scrollIntoView = stubScrollIntoView()
+    const user = userEvent.setup()
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
+      revokeInvitation: () => Promise.reject({ code: 'authn.forbidden' }),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    const revoke = await screen.findByRole('button', { name: '撤销' })
+    await user.click(revoke)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+
+    // The failing row carries the marker and the resolved reason; the
+    // region carries the same text.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '你没有执行此操作的权限。',
+    )
+    expect(revoke).toHaveAttribute('aria-invalid', 'true')
+    const hintId = revoke.getAttribute('aria-describedby')
+    expect(hintId).not.toBeNull()
+    expect(document.getElementById(hintId as string)?.textContent).toBe(
+      screen.getByRole('alert').textContent,
+    )
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'smooth',
+      block: 'center',
+    })
+    await expectNoAxeViolations()
+  })
+
+  it('names the changed object on each landed write', async () => {
+    const user = userEvent.setup()
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
+      listMembers: () => Promise.resolve([member()]),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+
+    // Issue names the invitee.
+    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    expect(
+      await screen.findByText('已向「ada@example.com」发出邀请'),
+    ).toBeInTheDocument()
+
+    // The membership write names the chosen account.
+    await chooseAccount(user, '账户', 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: '写入成员关系' }))
+    expect(
+      await screen.findByText('账户「Ada」的成员关系已保存'),
+    ).toBeInTheDocument()
+
+    // The SSO exemption names the member.
+    await screen.findAllByText('Operator')
+    await user.click(screen.getByRole('button', { name: '豁免 SSO' }))
+    expect(
+      await screen.findByText('已为成员「acc-1」设置 SSO 豁免'),
+    ).toBeInTheDocument()
+
+    // The removal names the removed member.
+    await user.click(screen.getByRole('button', { name: '移除' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    expect(
+      await screen.findByText('已移除成员「acc-1」'),
+    ).toBeInTheDocument()
+  })
+
+  it('disables the tenant selector while a write is in flight and clears both scopes when the tenant changes', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const operations = withTenant({
+      listTenants: () =>
+        Promise.resolve([
+          TENANT,
+          { id: 'globex', alias: 'Globex', status: 'active' as const },
+        ]),
+      listInvitations: () =>
+        Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
+      listMembers: () => Promise.resolve([member()]),
+      issueInvitation: () =>
+        pending.promise.then(() => issuedInvitationFixture()),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+
+    // The tenant feeds every scope on the page: it is out of reach while
+    // the issue is in flight.
+    expect(screen.getByLabelText('租户')).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+    expect(
+      await screen.findByText('已向「ada@example.com」发出邀请'),
+    ).toBeInTheDocument()
+
+    // A member write lands in the other scope, so both carry a result.
+    await screen.findAllByText('Operator')
+    await user.click(screen.getByRole('button', { name: '豁免 SSO' }))
+    expect(
+      await screen.findByText('已为成员「acc-1」设置 SSO 豁免'),
+    ).toBeInTheDocument()
+
+    // Another tenant makes both results describe a tenant left behind.
+    await user.click(screen.getByLabelText('租户'))
+    await user.click(await screen.findByRole('option', { name: 'Globex' }))
+    expect(screen.queryByText('已向「ada@example.com」发出邀请')).toBeNull()
+    expect(screen.queryByText('已为成员「acc-1」设置 SSO 豁免')).toBeNull()
   })
 
   it('has no axe violations', async () => {
