@@ -59,7 +59,8 @@
     "cancel": "取消",
     "confirm": "确认",
     "tenant": "租户",
-    "tenantNone": "未选择"
+    "tenantNone": "未选择",
+    "emptyValue": "—"
   },
   "stepUp": {
     "title": "需要重新验证",
@@ -189,6 +190,13 @@
       "renameSubmit": "改名",
       "enable": "启用",
       "disable": "停用"
+    },
+    "related": {
+      "title": "相关页面",
+      "permissions": "权限与角色",
+      "invitations": "邀请与成员",
+      "sso": "SSO 提供方",
+      "impersonations": "冒充记录"
     }
   },
   "auditDetail": {
@@ -448,6 +456,8 @@
     "manage": "管理",
     "delete": "删除",
     "manageAria": "管理账户 {{id}}",
+    "collapse": "收起",
+    "collapseAria": "收起账户 {{id}}",
     "deleteAria": "删除账户 {{id}}",
     "deleteTitle": "删除账户",
     "deleteMessage": "删除账户「{{id}}」会一并移除其全部标识、密钥与会话。",
@@ -701,7 +711,7 @@
     "start": {
       "title": "发起冒充",
       "accountLabel": "目标账户",
-      "tenantLabel": "租户标识",
+      "tenantHint": "请先在上方选择一个租户；被冒充账户必须属于该租户。",
       "reasonLabel": "理由",
       "ttlLabel": "有效期（秒）",
       "submit": "发起冒充"

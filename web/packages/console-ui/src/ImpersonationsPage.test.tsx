@@ -16,7 +16,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
@@ -176,6 +176,20 @@ describe('ImpersonationsPage', () => {
     expect(screen.getByText('请选择租户')).toBeInTheDocument()
   })
 
+  it('opens on the tenant named by the query string', async () => {
+    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+    try {
+      const operations = withPage()
+      renderWithProviders(<ImpersonationsPage />, { operations })
+      // The link that carried the tenant arrives with a selection already
+      // made: no "choose a tenant" prompt, and the list read runs for it.
+      expect(await screen.findByText('暂无冒充记录')).toBeInTheDocument()
+      expect(screen.queryByText('请选择租户')).toBeNull()
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
   it('renders the empty state when there is no record', async () => {
     const user = userEvent.setup()
     const operations = withPage()
@@ -270,10 +284,38 @@ describe('ImpersonationsPage', () => {
       await screen.findByText('当前未冒充任何账户。'),
     ).toBeInTheDocument()
     expect(screen.getByLabelText('目标账户')).toBeInTheDocument()
-    expect(screen.getByLabelText('租户标识')).toBeInTheDocument()
+    // The start form takes its target tenant from the page's one tenant
+    // selector; it carries no second, free-text tenant input of its own.
+    expect(screen.getByLabelText('租户')).toBeInTheDocument()
+    expect(screen.queryByLabelText('租户标识')).toBeNull()
+    expect(
+      screen.getByText('请先在上方选择一个租户；被冒充账户必须属于该租户。'),
+    ).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: '发起冒充' }),
-    ).toBeInTheDocument()
+    ).toBeDisabled()
+  })
+
+  it('withholds the start until a tenant is selected', async () => {
+    const backend = makeCallerSessionBackend()
+    bindRequestFn(backend.fn)
+    const user = userEvent.setup()
+    renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
+
+    await screen.findByText('当前未冒充任何账户。')
+    await user.type(screen.getByLabelText('目标账户'), 'acc-9')
+    const submit = screen.getByRole('button', { name: '发起冒充' })
+    expect(submit).toBeDisabled()
+    fireEvent.click(submit)
+    // A disabled control dispatches nothing; flush the queue so an
+    // accidental request would have landed before the assertion.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(backend.started).toEqual([])
+
+    await pickTenant(user)
+    expect(submit).toBeEnabled()
   })
 
   it("starts an impersonation, sending the endpoint's request body", async () => {
@@ -283,8 +325,8 @@ describe('ImpersonationsPage', () => {
     renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
 
     await screen.findByText('当前未冒充任何账户。')
+    await pickTenant(user)
     await user.type(screen.getByLabelText('目标账户'), 'acc-9')
-    await user.type(screen.getByLabelText('租户标识'), 'acme')
     await user.type(screen.getByLabelText('理由'), 'investigate ticket')
     await user.type(screen.getByLabelText('有效期（秒）'), '3600')
     await user.click(screen.getByRole('button', { name: '发起冒充' }))
@@ -307,18 +349,19 @@ describe('ImpersonationsPage', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('omits the optional body fields when the form leaves them blank', async () => {
+  it('sends the selected tenant and omits the other optional fields when they are blank', async () => {
     const backend = makeCallerSessionBackend()
     bindRequestFn(backend.fn)
     const user = userEvent.setup()
     renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
 
     await screen.findByText('当前未冒充任何账户。')
+    await pickTenant(user)
     await user.type(screen.getByLabelText('目标账户'), 'acc-9')
     await user.click(screen.getByRole('button', { name: '发起冒充' }))
 
     await vi.waitFor(() => {
-      expect(backend.started).toEqual([{ account: 'acc-9' }])
+      expect(backend.started).toEqual([{ account: 'acc-9', tenant: 'acme' }])
     })
   })
 

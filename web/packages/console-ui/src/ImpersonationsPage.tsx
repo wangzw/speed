@@ -8,23 +8,27 @@
  *    the status read (GET) names the impersonation currently in force on
  *    the operator's own session (a bare 404 answers "not impersonating"),
  *    a start form (POST) begins one -- its request body is the endpoint's
- *    own {account, tenant?, reason?, ttl_seconds?} shape -- and an end
+ *    own {account, tenant, reason?, ttl_seconds?} shape -- and an end
  *    action (DELETE) stops it. These three are the caller-session
  *    operations the generated @speed/api-sdk surface ships
  *    (useAuthnImpersonationStatus / Start / End), so the page calls them
  *    directly and invalidates the status read through the generated key
  *    factory; the start control is offered only while no impersonation is
  *    in force (the module refuses a second start on one session with 409);
+ *    the start form's target tenant is the page's own tenant selection --
+ *    the tenant is a required part of the request (the module refuses an
+ *    empty one) and the target account must be a member of it, so the
+ *    form has no separate tenant input;
  *
  *  - the tenant's impersonation records, over /auth/admin/impersonations:
  *    the record list (GET) and one record's termination (DELETE). The read
  *    names its tenant as a required query parameter, so the page opens that
- *    half with a tenant selector fed by the platform roster, exactly as the
- *    authorization and SSO pages do with theirs, and keeps the read disabled
- *    until a tenant is chosen. The tenant is an argument of the request, not
- *    the session's current tenant. These two are operations on the console
- *    operations bundle, so that half builds no client and writes no query
- *    key.
+ *    half with the same tenant selection the start form uses, fed by the
+ *    platform roster exactly as the authorization and SSO pages do with
+ *    theirs, and keeps the read disabled until a tenant is chosen. The
+ *    tenant is an argument of the request, not the session's current
+ *    tenant. These two are operations on the console operations bundle, so
+ *    that half builds no client and writes no query key.
  *
  * A record is in force while its `ended_at` is the zero instant (the
  * sentinel the view carries); the state column says so and the terminate
@@ -60,7 +64,7 @@ import { formatUtc, isZeroInstant } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
 import { useConsoleStepUp } from './internal/step-up-gate.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
-import { TenantScope } from './internal/tenant-scope.js'
+import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleImpersonation } from './operations.js'
@@ -84,7 +88,7 @@ export function ImpersonationsPage() {
   const operations = useConsoleOperations()
   const queryClient = useQueryClient()
 
-  const [tenant, setTenant] = useState('')
+  const [tenant, setTenant] = useState(tenantFromLocation)
 
   const impersonations = operations.useImpersonations({ tenant })
   const revokeImpersonation = operations.useRevokeImpersonation()
@@ -261,6 +265,10 @@ export function ImpersonationsPage() {
         </Box>
       </Box>
 
+      <Box component="section" sx={{ mb: 3 }}>
+        <TenantScope value={tenant} onSelect={setTenant} />
+      </Box>
+
       {grant === undefined && (
         <Box component="section" sx={{ mb: 3 }}>
           <Typography
@@ -270,13 +278,9 @@ export function ImpersonationsPage() {
           >
             {t('impersonations.start.title')}
           </Typography>
-          <StartImpersonationForm />
+          <StartImpersonationForm tenant={tenant} />
         </Box>
       )}
-
-      <Box component="section" sx={{ mb: 3 }}>
-        <TenantScope value={tenant} onSelect={setTenant} />
-      </Box>
 
       {tenant === '' ? (
         <EmptyState
@@ -338,13 +342,17 @@ export function ImpersonationsPage() {
  * StartImpersonationForm: the control that begins an impersonation on the
  * operator's own session (POST /auth/impersonation). It renders the
  * endpoint's request-body fields -- a required target account, an optional
- * tenant and reason, and an optional TTL in whole seconds -- and calls the
- * generated start mutation. A landed start clears the form and invalidates
- * the status read through the generated key factory, so the page's status
- * section converges on the record the server just wrote; a refused start
- * keeps the values so the operator can correct them.
+ * reason, an optional TTL in whole seconds, and the page's tenant selection
+ * as the required target tenant -- and calls the generated start mutation.
+ * The target account must be a member of that tenant, so the form takes the
+ * tenant as a prop instead of offering a second, unrelated input; the
+ * submit stays disabled until a tenant is selected. A landed start clears
+ * the form and invalidates the status read through the generated key
+ * factory, so the page's status section converges on the record the server
+ * just wrote; a refused start keeps the values so the operator can correct
+ * them.
  */
-function StartImpersonationForm() {
+function StartImpersonationForm({ tenant }: { readonly tenant: string }) {
   const { t } = useConsoleUiTranslation()
   const queryClient = useQueryClient()
   const stepUp = useConsoleStepUp()
@@ -359,7 +367,6 @@ function StartImpersonationForm() {
   })
 
   const [account, setAccount] = useState('')
-  const [tenant, setTenant] = useState('')
   const [reason, setReason] = useState('')
   const [ttl, setTtl] = useState('')
 
@@ -370,7 +377,7 @@ function StartImpersonationForm() {
       {
         data: {
           account,
-          ...(tenant.trim() === '' ? {} : { tenant }),
+          tenant,
           ...(reason.trim() === '' ? {} : { reason }),
           ...(ttlSeconds === undefined || Number.isNaN(ttlSeconds)
             ? {}
@@ -380,7 +387,6 @@ function StartImpersonationForm() {
       {
         onSuccess: () => {
           setAccount('')
-          setTenant('')
           setReason('')
           setTtl('')
         },
@@ -416,12 +422,6 @@ function StartImpersonationForm() {
         />
         <TextField
           size="small"
-          value={tenant}
-          onChange={(event) => setTenant(event.target.value)}
-          label={t('impersonations.start.tenantLabel')}
-        />
-        <TextField
-          size="small"
           value={reason}
           onChange={(event) => setReason(event.target.value)}
           label={t('impersonations.start.reasonLabel')}
@@ -435,12 +435,23 @@ function StartImpersonationForm() {
         <Button
           type="button"
           variant="contained"
-          disabled={startImpersonation.isPending || account.trim() === ''}
+          disabled={
+            startImpersonation.isPending ||
+            account.trim() === '' ||
+            tenant === ''
+          }
           onClick={submit}
         >
           {t('impersonations.start.submit')}
         </Button>
       </Box>
+      {tenant === '' && (
+        <Box sx={{ mt: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            {t('impersonations.start.tenantHint')}
+          </Typography>
+        </Box>
+      )}
       <Box sx={{ mt: 1 }}>
         <InlineError
           code={

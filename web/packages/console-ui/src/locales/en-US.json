@@ -59,7 +59,8 @@
     "cancel": "Cancel",
     "confirm": "Confirm",
     "tenant": "Tenant",
-    "tenantNone": "None selected"
+    "tenantNone": "None selected",
+    "emptyValue": "—"
   },
   "stepUp": {
     "title": "Verify it's you",
@@ -189,6 +190,13 @@
       "renameSubmit": "Rename",
       "enable": "Enable",
       "disable": "Disable"
+    },
+    "related": {
+      "title": "Related pages",
+      "permissions": "Permissions and roles",
+      "invitations": "Invitations and members",
+      "sso": "SSO providers",
+      "impersonations": "Impersonation records"
     }
   },
   "auditDetail": {
@@ -448,6 +456,8 @@
     "manage": "Manage",
     "delete": "Delete",
     "manageAria": "Manage account {{id}}",
+    "collapse": "Close",
+    "collapseAria": "Close account {{id}}",
     "deleteAria": "Delete account {{id}}",
     "deleteTitle": "Delete account",
     "deleteMessage": "Deleting account \"{{id}}\" also removes its identifiers, secrets and sessions.",
@@ -701,7 +711,7 @@
     "start": {
       "title": "Start an impersonation",
       "accountLabel": "Target account",
-      "tenantLabel": "Tenant identifier",
+      "tenantHint": "Select a tenant above first; the target account must belong to that tenant.",
       "reasonLabel": "Reason",
       "ttlLabel": "TTL (seconds)",
       "submit": "Start impersonation"
