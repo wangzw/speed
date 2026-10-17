@@ -137,6 +137,8 @@ graph TD
 
 订阅在挂载、租户已知且 `enabled` 为真时打开一条连接。每来一帧 `message`，重置重连退避并失效当前租户的未读数与消息列表；帧只点名一条消息的标识（推送模块的契约），面因而不从帧补缓存，而是回读。
 
+订阅按（租户，收件人）登记，收件人是身份的生效账户，冒充期间是被冒充账户（[notification-stream](../notification/design-notification-stream.md)）。因此订阅不只随租户变化重开：开始或结束冒充之后，宿主以身份变更代数重建 `NotificationStreamProvider`，订阅按新的生效账户重新连接（[design-starters](../design-starters.md) 的「冒充期间的壳」）。
+
 连接结束或失败各上报一次，provider 以封顶的指数退避重开（基 1s，封顶 30s）。页面隐藏时关闭连接、可见时立即重开：后台标签页不需要一条长连接，返回的访客也不必等退避走完。撤销时关闭连接并移除可见性监听。
 
 ### 偏好矩阵的渲染
@@ -186,6 +188,7 @@ graph TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
+| 实时订阅随身份变更重建 | 未实现 | — |
 | 未读铃铛与徽标 | 已实现 | `web/packages/notification-ui/src/NotificationBell.tsx` `NotificationBell` |
 | 收件箱面与标记已读 | 已实现 | `web/packages/notification-ui/src/NotificationInbox.tsx` `NotificationInbox` |
 | 偏好矩阵的读写 | 已实现 | `web/packages/notification-ui/src/NotificationPreferences.tsx` `NotificationPreferences` |
