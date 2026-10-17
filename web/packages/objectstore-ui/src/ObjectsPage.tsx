@@ -130,15 +130,13 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
     {
       id: 'id',
       header: t('list.column.id'),
-      cell: (object) => (
-        <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-          {object.id}
-        </Typography>
-      ),
+      cellWrap: 'nowrap',
+      cell: (object) => <Typography variant="body2">{object.id}</Typography>,
     },
     {
       id: 'state',
       header: t('list.column.state'),
+      cellWrap: 'nowrap',
       cell: (object) => (
         <Typography variant="body2" color="text.secondary">
           {t(stateLabelKey(object.state))}
@@ -149,6 +147,7 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
       id: 'size',
       header: t('list.column.size'),
       priority: 'low',
+      cellWrap: 'nowrap',
       cell: (object) => (
         <Typography variant="body2">
           {t('size.bytes', { size: formatByteNumber(object.size, i18n.language) })}
@@ -159,16 +158,16 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
       id: 'mime',
       header: t('list.column.mime'),
       priority: 'medium',
+      cellWrap: 'nowrap',
       cell: (object) => (
-        <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-          {object.mime}
-        </Typography>
+        <Typography variant="body2">{object.mime}</Typography>
       ),
     },
     {
       id: 'created',
       header: t('list.column.created'),
       priority: 'medium',
+      cellWrap: 'nowrap',
       cell: (object) => (
         <Typography variant="body2" color="text.secondary">
           {formatUtc(object.created_at, i18n.language) ?? ''}
@@ -178,8 +177,9 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
     {
       id: 'actions',
       header: t('list.column.actions'),
+      cellWrap: 'nowrap',
       cell: (object) => (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+        <Box sx={{ display: 'flex', gap: 1 }}>
           <Button
             type="button"
             size="small"
