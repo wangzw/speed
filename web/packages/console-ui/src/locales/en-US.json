@@ -75,7 +75,9 @@
     "passkeyUnsupported": "This browser cannot carry out a passkey ceremony.",
     "passkeyCancelled": "The passkey prompt was dismissed. Try again.",
     "passkeyFailed": "The passkey ceremony did not complete.",
-    "redirectNotice": "This verification continues on an external page, which this dialog does not open."
+    "redirectNotice": "This verification continues on an external page, which this dialog does not open.",
+    "noFactor": "This account has no two-step verification set up. Add a verification method in the account settings first.",
+    "goToAccount": "Go to account settings"
   },
   "tenants": {
     "title": "Tenants",

@@ -9,10 +9,15 @@
  * identifier resent alongside the code (pkg/authn/login's applyFactor
  * re-reads the factor from the answer).
  *
- * The other assertion is the deployment that cannot raise the session: a
- * step-up start refused with a 400 (no factor to elevate with) parks the
- * flow on 'unavailable', and the dialog names the situation and offers a
- * re-login rather than a verification step.
+ * The failure cases pin the two different reasons a challenge cannot be
+ * completed. An account with no active factor is recognised from its own
+ * factor read: the dialog names the missing second factor, points at the
+ * account settings and never starts a flow it knows cannot come. A start the
+ * server refuses with 401 while the account does have factors (none of them
+ * may strengthen this session) is the deployment's own refusal, and the
+ * dialog offers the re-login instead. Any other start failure -- a 400
+ * included -- is an ordinary error rendered as its code, never folded into
+ * either of those two explanations.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -24,8 +29,10 @@ import type {
   AuthSnapshot,
   AuthnFlowState,
 } from '@speed/auth-core'
+import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import { StepUpChallenge } from './step-up-challenge.js'
 import { renderWithProviders } from '../../test-utils/render.js'
+import { bindConsoleRequest } from '../../test-utils/request-rig.js'
 import {
   AUTHENTICATED_SNAPSHOT,
   createStepUpSession,
@@ -92,21 +99,36 @@ function flowSession(): {
   return { session, answers }
 }
 
-/** A session whose step-up start is refused with a 400 while the session
- * stays established: the deployment has no factor to raise it with (the
- * start names no method the deployment could take), so no step can ever
- * come. The shortfall classifier is auth-core's own, so a 400 is not read
- * as a strength shortfall -- only the hook's 400 branch reaches it. */
-function refusingStartSession(logout: () => Promise<void>): StepUpTestSession {
+/** One active factor as the caller's own factor read answers it. */
+const ACTIVE_FACTOR = {
+  id: 'factor-1',
+  kind: 'totp',
+  label: 'Authenticator app',
+  status: 'active',
+  created_at: '2026-01-01T00:00:00Z',
+}
+
+/** Binds a scripted request function that answers the caller's own factor
+ * read with `factors`, and records every request. Any other leg is a
+ * defect of the case. */
+function bindFactors(factors: readonly unknown[]): ReturnType<typeof bindConsoleRequest> {
+  return bindConsoleRequest((call) => {
+    if (call.method === 'GET' && call.path === '/auth/factors') {
+      return { factors }
+    }
+    throw new Error(`unexpected ${call.method} ${call.path}`)
+  })
+}
+
+/** A session whose step-up start is refused by `refusal`. Its shortfall
+ * classifier is auth-core's own: a 401 on an established session. */
+function refusingStartSession(
+  refusal: unknown,
+  logout: () => Promise<void> = () => Promise.resolve(),
+): StepUpTestSession {
   return {
     ...createStepUpSession(),
-    startAuthenticatedFlow: () =>
-      Promise.reject({
-        status: 400,
-        code: 'client.http.400',
-        message: 'refused',
-        auth: false,
-      }),
+    startAuthenticatedFlow: () => Promise.reject(refusal),
     logout,
   }
 }
@@ -202,28 +224,96 @@ describe('StepUpChallenge', () => {
     expect(requests[0]?.input?.credential).toContain('AQID')
   })
 
-  it('offers a re-login when the deployment cannot complete the step-up', async () => {
+  it('names the missing second factor instead of starting a flow that cannot come', async () => {
     const user = userEvent.setup()
+    const calls = bindFactors([])
+    const session = createStepUpSession()
+    const startFlow = vi.spyOn(session, 'startAuthenticatedFlow')
+    const onCancel = vi.fn()
+    renderWithProviders(
+      <StepUpChallenge
+        open
+        session={session}
+        onSuccess={() => undefined}
+        onCancel={onCancel}
+      />,
+    )
+
+    // The caller's own factor read says the account has no active factor:
+    // the dialog names that and points at the account settings, rather than
+    // offering a re-login that can only produce the same single-factor
+    // session.
+    expect(await screen.findByText(/尚未配置两步验证/)).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: '前往账户设置' }),
+    ).toHaveAttribute('href', '/account')
+    expect(
+      screen.queryByRole('button', { name: '重新登录' }),
+    ).toBeNull()
+    // Nothing is left to verify, so the flow is never started.
+    expect(startFlow).not.toHaveBeenCalled()
+    expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      'GET /auth/factors',
+    ])
+
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders a 400 start refusal as an ordinary error when a factor is registered', async () => {
+    bindFactors([ACTIVE_FACTOR])
+    renderWithProviders(
+      <StepUpChallenge
+        open
+        session={refusingStartSession({
+          status: 400,
+          code: 'authn.bad_request',
+          message: 'refused',
+          auth: false,
+        })}
+        onSuccess={() => undefined}
+        onCancel={() => undefined}
+      />,
+    )
+
+    // A 400 is not, by itself, "the account has no factor": it is an
+    // ordinary refusal and the dialog shows its code, not either of the
+    // two explanations that would excuse the failure.
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
+    expect(screen.queryByText(/本部署无法完成此次升级/)).toBeNull()
+    expect(screen.queryByText(/尚未配置两步验证/)).toBeNull()
+  })
+
+  it('offers a re-login when the account has factors none of which may strengthen the session', async () => {
+    const user = userEvent.setup()
+    bindFactors([ACTIVE_FACTOR])
     const logout = vi.fn(() => Promise.resolve())
     const onCancel = vi.fn()
     renderWithProviders(
       <StepUpChallenge
         open
-        session={refusingStartSession(logout)}
+        session={refusingStartSession(
+          {
+            status: 401,
+            code: 'authn.insufficient_user_authentication',
+            message: 'refused',
+            auth: true,
+          },
+          logout,
+        )}
         onSuccess={() => undefined}
         onCancel={onCancel}
       />,
     )
-    // The start is refused: the dialog names the situation and offers the
-    // way out, not a verification the deployment cannot satisfy and not the
-    // raw status the answer carried.
+
+    // Factors exist but none of them may strengthen this session: the
+    // deployment declines the step-up, and a fresh sign-in is the way to a
+    // session whose authentication time lets those factors count.
     expect(
       await screen.findByText(/本部署无法完成此次升级/),
     ).toBeInTheDocument()
-    expect(screen.queryByText(/请先完成一次验证/)).toBeNull()
-    expect(screen.queryByText(/HTTP 400/)).toBeNull()
-    // The re-login ends the session (the host's session gate converges on its
-    // sign-in surface) and forgets the refused write, as a cancel does.
+    expect(screen.queryByText(/尚未配置两步验证/)).toBeNull()
     await user.click(screen.getByRole('button', { name: '重新登录' }))
     expect(logout).toHaveBeenCalledTimes(1)
     expect(onCancel).toHaveBeenCalledTimes(1)
