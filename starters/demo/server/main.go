@@ -512,6 +512,11 @@ func addStack(root *config.Command, s stack) {
 	// level, so without this the section could be missing or misspelled and the
 	// command would do nothing and say nothing.
 	//
+	// It names the settings module because the runtime settings the seed
+	// section lists are written through that module's store. The keys are the
+	// declarations the stack node collects statically, so the store is what
+	// refuses a misspelled key and a value outside its domain, in this command.
+	//
 	// It takes the stack's event backend in because an account the account store
 	// writes announces itself on the bus — the creation event is published after
 	// the commit and does not go through the outbox. The outbox comes with it
@@ -521,7 +526,7 @@ func addStack(root *config.Command, s stack) {
 	// nothing this command runs reaches for one.
 	seed := node.Sub(seedCommand)
 	seed.Include(seedModuleName, authnaccount.ModuleName, authzpolicy.ModuleName,
-		tenantcatalog.ModuleName, outboxrelay.ModuleName, s.event, log.ModuleName)
+		tenantcatalog.ModuleName, settings.ModuleName, outboxrelay.ModuleName, s.event, log.ModuleName)
 	seed.Do(core.StageStart, seedDatabase)
 
 	// gen merges the fragments the modules declare into one document and writes

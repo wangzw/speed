@@ -121,7 +121,16 @@ const demoSeedSection = `seed:
       password-hash: "$argon2id$v=19$m=19456,t=2,p=1$xeAjr/xEt4mML0QaEhw8pw$Khjd7856RU6MatFxmOtE0YFZJLsC05yxX5HwJhpBXno"
       display-name: "Demo Ops"
   tenants:
-    - demo`
+    - demo
+  # Lowered to the domain minimum for local demonstration: impersonation
+  # requires a non-SMS factor that has been active for at least
+  # authn.mfa.sensitive-min-age, and the declared default of 24h leaves a
+  # freshly enrolled factor ineligible for a day. Production keeps the
+  # declared default; seed writes a value only while the global layer holds
+  # no explicit row for the key.
+  settings:
+    - key: "authn.mfa.sensitive-min-age"
+      value: "1h"`
 
 // demoConfig is the sqlite-memory configuration a case writes: the two listener
 // addresses, the token signing key, the object store's root and the database
@@ -981,6 +990,7 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 		"seeded: account " + seedIdentifier,
 		"seeded: account " + hashIdentifier,
 		"seeded: tenant " + demoTenant,
+		"seeded: setting authn.mfa.sensitive-min-age=1h",
 		"seeded: role system/" + string(platformAdminRole),
 		"seeded: role " + demoTenant + "/" + string(platformAdminRole),
 		"seeded: binding ",
@@ -1000,6 +1010,7 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 	for _, want := range []string{
 		"skipped: account " + seedIdentifier,
 		"skipped: tenant " + demoTenant,
+		"skipped: setting authn.mfa.sensitive-min-age (exists)",
 		"skipped: role system/" + string(platformAdminRole),
 		"skipped: role " + demoTenant + "/" + string(platformAdminRole),
 		"skipped: grants on system/" + string(platformAdminRole),

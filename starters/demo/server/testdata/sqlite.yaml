@@ -204,6 +204,15 @@ seed:
   # DEV: replace with the tenants this deployment actually serves.
   tenants:
     - acme
+  # Lowered to the domain minimum for local demonstration: impersonation
+  # requires a non-SMS factor that has been active for at least
+  # authn.mfa.sensitive-min-age, and the declared default of 24h leaves a
+  # freshly enrolled factor ineligible for a day. Production keeps the
+  # declared default; seed writes a value only while the global layer holds
+  # no explicit row for the key.
+  settings:
+    - key: "authn.mfa.sensitive-min-age"
+      value: "1h"
 
 # The engine. The database is a file under var/, the directory the token signing
 # key's first-run generation already establishes; it is a runtime artifact and

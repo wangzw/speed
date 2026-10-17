@@ -180,6 +180,15 @@ seed:
   # DEV: replace with the tenants this deployment actually serves.
   tenants:
     - acme
+  # Lowered to the domain minimum for local demonstration: impersonation
+  # requires a non-SMS factor that has been active for at least
+  # authn.mfa.sensitive-min-age, and the declared default of 24h leaves a
+  # freshly enrolled factor ineligible for a day. Production keeps the
+  # declared default; seed writes a value only while the global layer holds
+  # no explicit row for the key.
+  settings:
+    - key: "authn.mfa.sensitive-min-age"
+      value: "1h"
 
 # DEV: the database encryption key seals the columns a module encrypts at rest.
 db:

@@ -13,6 +13,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -28,6 +29,10 @@ const accountsItem = "accounts"
 
 // tenantsItem is the item the seed reads the deployment's tenants from.
 const tenantsItem = "tenants"
+
+// settingsItem is the item the seed reads the deployment's initial runtime
+// settings from.
+const settingsItem = "settings"
 
 // platformAdminRole is the role the seed gives the accounts its configuration
 // marks. It holds every permission the process declares, and it is written into
@@ -62,6 +67,24 @@ type seedInput struct {
 	// operations' policy domain, not a tenant, and a name equal to it is refused
 	// rather than written.
 	Tenants []string `config:"tenants"`
+	// Settings are the runtime settings a deployment starts with, each
+	// written into the global layer while that layer holds no explicit row
+	// for its key. A key already written — by an earlier seed run or by the
+	// operator through the settings surface — is left as it stands, so a
+	// later run never overrides a runtime change.
+	Settings []seedSetting `config:"settings"`
+}
+
+// seedSetting is one runtime setting the seed writes.
+type seedSetting struct {
+	// Key is the full setting path, as the module declaring it names it,
+	// such as authn.mfa.sensitive-min-age.
+	Key string `config:"key"`
+	// Value is the setting in the declared type's own text form: "1h" for a
+	// duration, "12" for a whole number. The settings module holds the value
+	// to the declaration and its domain, so a misspelled key and an
+	// out-of-domain value both fail this command instead of being written.
+	Value string `config:"value"`
 }
 
 // seedAccount is one account the seed writes.
@@ -136,6 +159,12 @@ func seedSchema() config.Schema {
 					"and each holding the platform-administrator role for the accounts marked " +
 					"with it; the reserved platform domain is refused",
 			},
+			settingsItem: {
+				Origins: config.OriginPrimary,
+				Description: "runtime settings the deployment starts with, each written into " +
+					"the global layer while that layer holds no explicit row for the key; the " +
+					"settings module holds every value to its declaration and domain",
+			},
 		},
 	}
 }
@@ -153,8 +182,9 @@ func seedModule() core.Module {
 }
 
 // seedDatabase writes the accounts the configuration names, the tenants this
-// deployment serves, and the platform-administrator role the accounts marked
-// with it hold.
+// deployment serves, the platform-administrator role the accounts marked
+// with it hold, and the runtime settings the configuration starts the
+// deployment with.
 //
 // It is idempotent: an account, a tenant, a role, a grant or a binding already
 // there is left as it stands and reported as skipped, so the command is safe to
@@ -235,6 +265,10 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	if err != nil {
 		return err
 	}
+	store, err := core.Resolve[settings.Store](reg)
+	if err != nil {
+		return err
+	}
 	// The accounts first, and the identifiers of the ones the configuration
 	// marks as administrators.
 	var administrators []authn.AccountID
@@ -258,6 +292,13 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 		if err := seedTenant(ctx, roster, t); err != nil {
 			return err
 		}
+	}
+
+	// Then the settings, which belong to no account or tenant: a value the
+	// configuration names is written once, into the global layer, and a key
+	// that layer already holds is left as it stands.
+	if err := seedSettings(ctx, store, in.Settings); err != nil {
+		return err
 	}
 
 	if len(administrators) == 0 {
@@ -314,6 +355,50 @@ func seedTenant(ctx context.Context, roster tenant.Catalog, id string) error {
 		return fmt.Errorf("seed: registering the tenant %s: %w", id, err)
 	}
 	fmt.Printf("seeded: tenant %s\n", id)
+	return nil
+}
+
+// seedSettings writes the runtime settings the configuration names into the
+// global layer, unless that layer already holds an explicit row for the key.
+//
+// The write goes through the settings module rather than the table, so a
+// misspelled key is refused as unknown and a value outside its declared domain
+// as invalid, in this command and with the module's own vocabulary. The
+// declared type decides the text: a duration is written as "1h", a whole
+// number as "12", and the module stores the declared type's own form.
+//
+// A key the global layer already holds is skipped, not overwritten: the row may
+// be an operator's runtime change, and a second seed run must leave it as it
+// stands. That is what makes the command idempotent for settings the way it is
+// for accounts and tenants.
+func seedSettings(ctx context.Context, store settings.Store, items []seedSetting) error {
+	if len(items) == 0 {
+		return nil
+	}
+	rows, err := store.List(ctx, settings.Global())
+	if err != nil {
+		return fmt.Errorf("seed: listing the global settings: %w", err)
+	}
+	held := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		held[row.Key] = true
+	}
+	for _, item := range items {
+		if held[item.Key] {
+			fmt.Printf("skipped: setting %s (exists)\n", item.Key)
+			continue
+		}
+		if err := store.Set(ctx, settings.Write{
+			Layer: settings.Global(),
+			Key:   item.Key,
+			Value: item.Value,
+			Actor: seedCommand,
+		}); err != nil {
+			return fmt.Errorf("seed: writing the setting %s: %w", item.Key, err)
+		}
+		held[item.Key] = true
+		fmt.Printf("seeded: setting %s=%s\n", item.Key, item.Value)
+	}
 	return nil
 }
 
