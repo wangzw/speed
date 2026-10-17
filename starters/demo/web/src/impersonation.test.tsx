@@ -106,6 +106,46 @@ function scriptedSession(
   }
 }
 
+/**
+ * A session whose restore() answers a task later, like the server round
+ * trip a real restore is, and whose permission attachment notifies like the
+ * real session does. Both matter to the end sequence: the identity change
+ * first attaches the reset permission set (a commit -- the real session
+ * notifies on it) and evicts the status read, so the grant disappears while
+ * the snapshot still says impersonating and the frame sets the current
+ * tenant unknown; only then does the restore answer and commit the new
+ * identity. Collapsing either step hides that intermediate state.
+ */
+function roundTripSession(
+  initial: AuthSnapshot,
+  next: () => AuthSnapshot | null,
+): ReturnType<typeof createTestSession> {
+  const base = createTestSession(initial)
+  return {
+    ...base,
+    setPermissionSet: (domain, perms) => {
+      const current = base.getSnapshot()
+      base.set({
+        ...current,
+        permissionSets: {
+          tenant: domain === 'tenant' ? perms : current.permissionSets.tenant,
+          system: domain === 'system' ? perms : current.permissionSets.system,
+        },
+      })
+    },
+    restore: () =>
+      new Promise<boolean>((resolve) => {
+        setTimeout(() => {
+          const snapshot = next()
+          if (snapshot !== null) {
+            base.set(snapshot)
+          }
+          resolve(snapshot !== null)
+        }, 0)
+      }),
+  }
+}
+
 interface Backend {
   readonly fn: RequestFn
   readonly rosterReads: () => number
@@ -115,10 +155,21 @@ interface Backend {
   readonly deletes: () => number
 }
 
+/** A promise-bounded gate: the suite decides when the gated read answers. */
+function deferred(): { readonly promise: Promise<void>; readonly resolve: () => void } {
+  let resolve!: () => void
+  const promise = new Promise<void>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
 /** The generated endpoints the views reach, scripted per test. */
 function makeBackend(options: {
   readonly grant?: GrantFixture
   readonly endStatus?: 'ok' | '404'
+  /** Holds the roster read open until the suite resolves it. */
+  readonly rosterGate?: Promise<void>
 } = {}): Backend {
   let grant = options.grant
   let rosterReads = 0
@@ -133,6 +184,9 @@ function makeBackend(options: {
     const method = request?.method ?? 'GET'
     if (path === '/tenant/admin/tenants') {
       rosterReads += 1
+      if (options.rosterGate !== undefined) {
+        return options.rosterGate.then(() => ({ tenants: [TENANT] }) as T)
+      }
       return Promise.resolve({ tenants: [TENANT] } as T)
     }
     if (path === '/auth/impersonation') {
@@ -379,6 +433,77 @@ describe('the impersonation shell', () => {
       await screen.findByRole('button', { name: 'Acme Inc.' }),
     ).toBeInTheDocument()
     expect(getCurrentTenantId()).toBe('acme')
+  })
+
+  it('keeps the switcher out of the bar while the roster settles after an impersonation ends', async () => {
+    window.history.replaceState({}, '', '/')
+    // The roster read is held open: the suite decides when the settled
+    // tenant (and the switcher over it) may appear.
+    const roster = deferred()
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+      rosterGate: roster.promise,
+    })
+    bindRequestFn(backend.fn)
+    const session = roundTripSession(targetSnapshot(), () => operatorSnapshot())
+    const user = userEvent.setup()
+
+    renderDemoApp({ session })
+
+    const notice = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    await waitFor(() =>
+      expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
+    )
+    expect(tenantSwitcherTrigger()).toBeNull()
+
+    await user.click(
+      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+    )
+
+    // The identity change has settled and the roster read is in flight, so
+    // the host holds no current tenant yet. That is a transition, not the
+    // switcher's no-current-tenant state: the switcher stays out of the bar
+    // rather than stating the host has no tenant while it is only reading.
+    await waitFor(() => expect(banner()).toBeNull())
+    await waitFor(() => expect(backend.rosterReads()).toBe(1))
+    expect(tenantSwitcherTrigger()).toBeNull()
+    expect(
+      screen.queryByRole('button', {
+        name: tenancyUiEnUS.tenantSwitcher.noCurrentTenant,
+      }),
+    ).toBeNull()
+
+    // The read lands, and the switcher returns over the roster's row.
+    await act(async () => {
+      roster.resolve()
+    })
+    expect(
+      await screen.findByRole('button', { name: 'Acme Inc.' }),
+    ).toBeInTheDocument()
+    expect(getCurrentTenantId()).toBe('acme')
+  })
+
+  it('keeps the no-current-tenant state for a viewer whose roster read has not answered', async () => {
+    window.history.replaceState({}, '', '/')
+    // A viewer with no settled roster read (the member without roster-read
+    // access): the tenant is unknown for a reason that is not an identity
+    // change. The switcher mounts and states that state -- only the
+    // impersonation-end transition withholds it.
+    setCurrentTenantId(null)
+    const roster = deferred()
+    const backend = makeBackend({ rosterGate: roster.promise })
+    bindRequestFn(backend.fn)
+
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    await waitFor(() => expect(backend.rosterReads()).toBe(1))
+    expect(
+      screen.getByRole('button', {
+        name: tenancyUiEnUS.tenantSwitcher.noCurrentTenant,
+      }),
+    ).toBeInTheDocument()
   })
 
   it('leaves the top bar unchanged for a member who is not impersonating', async () => {

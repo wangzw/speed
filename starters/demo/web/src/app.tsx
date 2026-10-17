@@ -319,6 +319,30 @@ function TenantFrame({
     setCurrentTenantId(id)
     setTenantIdState(id)
   }, [])
+  // The identity-change gap. Ending an impersonation re-decides the current
+  // tenant from the roster, but the change first sets it unknown: it evicts
+  // the status read that held the ended grant's tenant (and attaches the
+  // reset permission set, a commit), and the roster's answer is still in
+  // flight. That unknown is a transition, not the switcher's
+  // no-current-tenant state (a host that settles no tenant at all), so the
+  // switcher stays out of the bar until the roster lands -- rendering it
+  // there would put the no-current-tenant text against a shell that is only
+  // still reading. The edge is detected during render, not in an effect:
+  // React re-renders this component before committing, so the very first
+  // commit after the snapshot flips already withholds the switcher. The
+  // tenant effect below closes the gap when the roster outcome lands. A
+  // mount that does not follow an impersonation is untouched, so a viewer
+  // who settles no tenant for another reason (no roster-read access) keeps
+  // the switcher and its documented no-current-tenant state.
+  const [identitySettling, setIdentitySettling] = useState(false)
+  const [previousImpersonating, setPreviousImpersonating] =
+    useState(impersonating)
+  if (previousImpersonating !== impersonating) {
+    setPreviousImpersonating(impersonating)
+    if (previousImpersonating) {
+      setIdentitySettling(true)
+    }
+  }
   // Settle the current tenant from the feature state and the roster. The read
   // is the app's own generated operation on the platform's management surface;
   // it needs tenant.read in the platform domain, which the demo's operator
@@ -350,10 +374,12 @@ function TenantFrame({
       // A pending or failed document never stands in for "tenant.admin
       // absent": the current tenant stays unknown.
       setTenantId(null)
+      setIdentitySettling(false)
       return
     }
     if (!rosterServed) {
       setTenantId(DEFAULT_TENANT_ID)
+      setIdentitySettling(false)
       return
     }
     let cancelled = false
@@ -373,12 +399,14 @@ function TenantFrame({
         )
         const first = answer.tenants.find((tenant) => tenant.status === 'active')
         setTenantId(first?.id ?? DEFAULT_TENANT_ID)
+        setIdentitySettling(false)
       })
       .catch(() => {
         if (cancelled) {
           return
         }
         setTenantId(DEFAULT_TENANT_ID)
+        setIdentitySettling(false)
       })
     return () => {
       cancelled = true
@@ -472,10 +500,14 @@ function TenantFrame({
           // tree and the tab order, and the bar closes over the missing item
           // (the slot is a flex row, so the remaining controls simply sit
           // together). Once the impersonation ends the effect above settles
-          // the tenant from the roster again and the switcher returns.
+          // the tenant from the roster again, and the switcher returns over
+          // that row; until the read lands the identity-change gap keeps it
+          // out of the bar for the same reason -- the host has no tenant to
+          // show yet, and its no-current-tenant text belongs to a host that
+          // settles none.
           userMenu={
             <>
-              {impersonating ? null : (
+              {impersonating || identitySettling ? null : (
                 <TenantMenu tenantId={tenantId} onTenantSelect={setTenantId} />
               )}
               <UserMenu />
