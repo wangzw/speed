@@ -38,15 +38,22 @@
  * sensitive marker that explains the masked text.
  *
  * Editing an item fills its draft (the table's value cell is the draft
- * input); the sticky save bar writes every changed item (one PUT each)
- * and stays disabled until something changed. A refused write renders the
- * answer's code text in one banner, resolved from the console-ui
+ * input); the sticky save bar writes every changed item and stays disabled
+ * until something changed. The batch is one write attempt in one feedback
+ * scope: the save bar issues every item's PUT through `mutateAsync`, waits
+ * for all of them with `Promise.allSettled`, and reports one result under
+ * the table. Every landed item clears its draft; a partial landing reports
+ * the first failure in submission order, keeps every failed item's draft,
+ * row marker and pending-save count, and pages the table to the page
+ * holding that first failed item. Success is reported only when nothing
+ * failed. The row's remove action shares the same scope and names the
+ * removed setting. A refused write resolves through the console-ui
  * whitelist (a value outside the item's declared domain reads the
- * invalid-value text), never a raw key; a landed write clears that item's
- * draft so the next edit starts empty. A refused read settles into the
- * permission placeholder (403) or the retryable error placeholder (any
- * other failure). The page opens with ui-kit's PageHeader, so the heading
- * order never skips.
+ * invalid-value text), never a raw key. A refused read settles into the
+ * permission placeholder (403, which replaces any content on screen) or
+ * the retryable error placeholder (a first failure); a failed refresh that
+ * kept its content shows the stale marker. The page opens with ui-kit's
+ * PageHeader, so the heading order never skips.
  */
 
 import { useEffect, useMemo, useState } from 'react'
@@ -62,16 +69,15 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
   DataTable,
-  InlineSuccess,
   ListSkeleton,
   PageHeader,
-  errorCodeOf,
+  useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
-import { InlineError } from './internal/inline-error.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
+import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { settingKeyRest, useConsoleOperations } from './operations.js'
 import type { ConsoleSetting } from './operations.js'
 
@@ -105,8 +111,9 @@ export function SettingsPage() {
   // The table's page and page size.
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_ROWS_PER_PAGE)
-  // The confirmation a landed write fills into the page's success notice.
-  const [success, setSuccess] = useState<string | null>(null)
+  // The settings table's feedback scope: the batch save and the row remove
+  // actions share one slot and one region under the table.
+  const feedback = useWriteFeedback()
 
   // The whole declared set, read for the namespace navigation (its
   // namespaces are the grouping the page offers).
@@ -118,11 +125,14 @@ export function SettingsPage() {
   const confirm = usePendingConfirm()
 
   // A namespace change starts a fresh form: no draft belongs to a
-  // namespace the operator has left, and the list starts on its first page.
+  // namespace the operator has left, the list starts on its first page,
+  // and the scope's result would otherwise read as describing the new
+  // namespace, so it is cleared.
   useEffect(() => {
     setDrafts({})
     setPage(0)
-  }, [selected])
+    feedback.reset()
+  }, [selected, feedback.reset])
 
   const namespaces = useMemo(() => {
     const set = new Set<string>()
@@ -142,30 +152,52 @@ export function SettingsPage() {
     )
 
   const save = (settled: readonly ConsoleSetting[]) => {
-    setSuccess(null)
-    for (const setting of changedItems(settled)) {
-      const value = drafts[setting.key] ?? ''
-      setSetting.mutate(
-        {
-          namespace: setting.namespace,
-          key: settingKeyRest(setting.key, setting.namespace),
-          value,
-        },
-        {
-          // A landed write clears that item's draft (so the next edit starts
-          // empty) and confirms itself; a refused one keeps the draft so the
-          // value can be corrected and retried.
-          onSuccess: () => {
-            setDrafts((previous) => {
-              const next = { ...previous }
-              delete next[setting.key]
-              return next
-            })
-            setSuccess(t('settings.saved'))
-          },
-        },
-      )
+    const changed = changedItems(settled)
+    if (changed.length === 0) {
+      return
     }
+    // One attempt for the whole batch: every PUT is issued before any
+    // settles, and `allSettled` keeps the submission order, so the first
+    // rejected entry is the first failure in that order rather than
+    // whichever request happened to finish first.
+    void feedback.run(async () => {
+      const results = await Promise.allSettled(
+        changed.map((setting) =>
+          setSetting.mutateAsync({
+            namespace: setting.namespace,
+            key: settingKeyRest(setting.key, setting.namespace),
+            value: drafts[setting.key] ?? '',
+          }),
+        ),
+      )
+      // A landed item's draft is cleared (the next edit starts empty); a
+      // failed item keeps its draft, its row marker and its share of the
+      // pending count, so it can be corrected and retried.
+      const landed = changed.filter(
+        (_setting, index) => results[index]?.status === 'fulfilled',
+      )
+      setDrafts((previous) => {
+        const next = { ...previous }
+        for (const setting of landed) {
+          delete next[setting.key]
+        }
+        return next
+      })
+      const failedIndex = results.findIndex(
+        (result) => result.status === 'rejected',
+      )
+      if (failedIndex === -1) {
+        return t('settings.saved')
+      }
+      // The table moves to the page holding the first failed item, so the
+      // retained draft that still needs attention is on screen.
+      const failedSetting = changed[failedIndex]
+      if (failedSetting !== undefined) {
+        const rowIndex = settled.indexOf(failedSetting)
+        setPage(Math.max(0, Math.floor(rowIndex / rowsPerPage)))
+      }
+      throw (results[failedIndex] as PromiseRejectedResult).reason
+    })
   }
 
   const remove = (setting: ConsoleSetting) => {
@@ -174,18 +206,13 @@ export function SettingsPage() {
       message: t('settings.removeMessage', { key: setting.key }),
       confirmLabel: t('common.confirm'),
       run: () => {
-        setSuccess(null)
-        removeSetting.mutate(
-          {
+        void feedback.run(async () => {
+          await removeSetting.mutateAsync({
             namespace: setting.namespace,
             key: settingKeyRest(setting.key, setting.namespace),
-          },
-          {
-            // The control is rendered only for a row the answer said the
-            // layer holds, so the removal can say a row was removed.
-            onSuccess: () => setSuccess(t('settings.removed')),
-          },
-        )
+          })
+          return t('settings.removed', { key: setting.key })
+        })
       },
     })
   }
@@ -268,7 +295,7 @@ export function SettingsPage() {
             variant="text"
             color="error"
             aria-label={t('settings.removeAria', { key: setting.key })}
-            disabled={removeSetting.isPending}
+            disabled={feedback.pending}
             onClick={() => remove(setting)}
           >
             {t('settings.remove')}
@@ -276,12 +303,6 @@ export function SettingsPage() {
         ) : null,
     },
   ]
-
-  const writeError = setSetting.isError
-    ? errorCodeOf(setSetting.error)
-    : removeSetting.isError
-      ? errorCodeOf(removeSetting.error)
-      : null
 
   return (
     <Box>
@@ -322,6 +343,7 @@ export function SettingsPage() {
               <ListItem disablePadding>
                 <ListItemButton
                   selected={selected === ALL}
+                  disabled={feedback.pending}
                   onClick={() => setSelected(ALL)}
                 >
                   <ListItemText primary={t('settings.nav.all')} />
@@ -331,6 +353,7 @@ export function SettingsPage() {
                 <ListItem key={namespace} disablePadding>
                   <ListItemButton
                     selected={selected === namespace}
+                    disabled={feedback.pending}
                     onClick={() => setSelected(namespace)}
                   >
                     <ListItemText primary={namespace} />
@@ -348,6 +371,7 @@ export function SettingsPage() {
             pending={pending}
             payload={items}
             error={settings.error}
+            refreshing={settings.isFetching}
             empty={items !== undefined && items.length === 0}
             headingLevel="h2"
             loading={
@@ -418,15 +442,15 @@ export function SettingsPage() {
                     <Button
                       type="button"
                       variant="contained"
-                      disabled={changed.length === 0 || setSetting.isPending}
+                      loading={feedback.pending}
+                      disabled={changed.length === 0 || feedback.pending}
                       onClick={() => save(settled)}
                     >
                       {t('settings.saveBar.save')}
                     </Button>
                   </Box>
 
-                  <InlineError code={writeError} />
-                  <InlineSuccess message={success} />
+                  <WriteFeedbackRegion outcome={feedback.outcome} />
                 </Box>
               )
             }}

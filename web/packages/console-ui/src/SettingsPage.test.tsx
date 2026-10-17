@@ -16,7 +16,7 @@
  * every other failure the retryable error placeholder.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SettingsPage } from './SettingsPage.js'
@@ -208,7 +208,10 @@ describe('SettingsPage', () => {
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: '确认' }))
 
-    expect(await screen.findByText('设置项已移除')).toBeInTheDocument()
+    // The success confirmation names the setting that was removed.
+    expect(
+      await screen.findByText('设置项 mail.password 已移除'),
+    ).toBeInTheDocument()
   })
 
   it('marks a sensitive item with no row as the default and offers no removal', async () => {
@@ -284,6 +287,110 @@ describe('SettingsPage', () => {
     expect(await screen.findByText('设置已保存')).toBeInTheDocument()
   })
 
+  it('saves a whole batch and confirms once that the settings landed', async () => {
+    const user = userEvent.setup()
+    const writes: string[] = []
+    const second: ConsoleSetting = {
+      ...item,
+      key: 'mail.limit',
+      value: '3',
+      written: '3',
+    }
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSettings: () => Promise.resolve([item, second]),
+        setSetting: (input) => {
+          writes.push(`${input.key}=${input.value}`)
+          return Promise.resolve()
+        },
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    const retry = await screen.findByRole('textbox', { name: 'mail.retry' })
+    const limit = screen.getByRole('textbox', { name: 'mail.limit' })
+    await user.clear(retry)
+    await user.type(retry, '9')
+    await user.clear(limit)
+    await user.type(limit, '7')
+    await user.click(screen.getByRole('button', { name: '保存改动' }))
+
+    // One attempt for the whole batch: both PUTs are issued, and one
+    // confirmation names the kind of object that was saved -- never a
+    // success per item.
+    await vi.waitFor(() => {
+      expect(writes).toEqual(['retry=9', 'limit=7'])
+    })
+    expect(await screen.findByText('设置已保存')).toBeInTheDocument()
+    expect(screen.getAllByText('设置已保存')).toHaveLength(1)
+  })
+
+  it('reports only the first batch failure, keeps its drafts and pages to it', async () => {
+    const user = userEvent.setup()
+    // Thirteen rows: ten on the first page, three on the second, so moving
+    // the table to the first failed item is observable.
+    const items: ConsoleSetting[] = Array.from({ length: 13 }, (_, index) => ({
+      ...item,
+      key: `mail.key-${index}`,
+      value: `${index}`,
+      written: `${index}`,
+    }))
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSettings: () => Promise.resolve(items),
+        setSetting: (input) => {
+          // Submission order follows the list order: the first failure is
+          // key-11, and key-12 fails too behind it with a different code.
+          if (input.key === 'key-11') {
+            return Promise.reject({ code: 'settings.invalid_value' })
+          }
+          if (input.key === 'key-12') {
+            return Promise.reject({ code: 'settings.bad_request' })
+          }
+          return Promise.resolve()
+        },
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+
+    // Edit the two later rows on the second page...
+    await user.click(await screen.findByRole('button', { name: '下一页' }))
+    const eleventh = await screen.findByRole('textbox', { name: 'mail.key-11' })
+    await user.clear(eleventh)
+    await user.type(eleventh, 'x11')
+    const twelfth = screen.getByRole('textbox', { name: 'mail.key-12' })
+    await user.clear(twelfth)
+    await user.type(twelfth, 'x12')
+    // ...and the first row back on the first page, then save from there.
+    await user.click(screen.getByRole('button', { name: '上一页' }))
+    const first = await screen.findByRole('textbox', { name: 'mail.key-0' })
+    await user.clear(first)
+    await user.type(first, 'x0')
+    await user.click(screen.getByRole('button', { name: '保存改动' }))
+
+    // The first failure in submission order is the one reported; the
+    // later failure's text stays out of the banner.
+    expect(
+      await screen.findByText('该值不在该设置项声明的取值范围内。'),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText('服务端无法读取该请求，请检查表单后重试。'),
+    ).toBeNull()
+    // A partial landing is not a success.
+    expect(screen.queryByText('设置已保存')).toBeNull()
+
+    // The table moved to the page holding the first failed item, where
+    // both failed drafts are still on screen; the landed item's draft was
+    // cleared and dropped out of the pending count.
+    expect(
+      screen.getByRole('textbox', { name: 'mail.key-11' }),
+    ).toHaveValue('x11')
+    expect(
+      screen.getByRole('textbox', { name: 'mail.key-12' }),
+    ).toHaveValue('x12')
+    expect(screen.queryByRole('textbox', { name: 'mail.key-0' })).toBeNull()
+    expect(screen.getByText('2 项待保存')).toBeInTheDocument()
+  })
+
   it('removes a setting through the row control after confirmation', async () => {
     const user = userEvent.setup()
     const writes: string[] = []
@@ -304,8 +411,10 @@ describe('SettingsPage', () => {
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: '确认' }))
     expect(writes).toContain('remove:mail.retry')
-    // The landed remove fills the page's standing status region.
-    expect(await screen.findByText('设置项已移除')).toBeInTheDocument()
+    // The landed remove fills the page's status region and names the row.
+    expect(
+      await screen.findByText('设置项 mail.retry 已移除'),
+    ).toBeInTheDocument()
   })
 
   it('renders the invalid-value text when a write is refused', async () => {

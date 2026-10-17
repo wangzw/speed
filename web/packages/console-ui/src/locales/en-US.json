@@ -265,7 +265,7 @@
     "removeMessage": "Remove the current value of the setting \"{{key}}\".",
     "removeAria": "Remove setting {{key}}",
     "saved": "Setting saved",
-    "removed": "Setting removed",
+    "removed": "Setting {{key}} removed",
     "state": {
       "default": "Default",
       "overridden": "Overridden"
