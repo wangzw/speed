@@ -24,15 +24,22 @@
  * whitelist and renders as one banner; the flow stays open and a fresh
  * answer is retryable.
  *
- * A refusal of the start itself is the deployment declining to raise this
- * session at all, which no step can satisfy: the hook's 'unavailable'
- * phase -- a 401 insufficient_user_authentication (the account has
- * factors, but none whose methods may strengthen this session) or a 400
- * (the start named no method the deployment could take, where an account
- * with no factor at all lands, since a step-up is started without one).
- * The dialog then says so and offers a re-login -- it ends the session
- * through the session's own logout, and the host's session gate converges
- * on its sign-in surface -- rather than a verification that cannot come.
+ * Why a step-up cannot come is read before the flow starts, from the
+ * caller's own factor list (GET /auth/factors). An account with no active
+ * factor can never raise a single-factor session, so the dialog names the
+ * missing two-step verification and points at the account settings, and
+ * starts no flow at all -- a sign-in cannot add a factor.
+ *
+ * A refusal of the start itself, with factors registered, is the
+ * deployment declining to raise this session at all, which no step can
+ * satisfy: the hook's 'unavailable' phase -- a 401
+ * insufficient_user_authentication (the account has factors, but none
+ * whose methods may strengthen this session). The dialog then says so and
+ * offers a re-login -- it ends the session through the session's own
+ * logout, and the host's session gate converges on its sign-in surface --
+ * rather than a verification that cannot come, because a new sign-in lets
+ * those factors count. Any other start failure, a 400 included, renders as
+ * its code.
  *
  * The dialog never signs in and never navigates on its own: a dead
  * session shows its code text and the host's session gate converges.
@@ -45,11 +52,13 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
 import type { AuthSession, AuthnFlowAnswer } from '@speed/auth-core'
 import { useStepUp } from '@speed/auth-core'
 import { InlineError } from './inline-error.js'
 import { FlowStep } from './flow-step.js'
+import { useFactorsQuery } from './queries.js'
 import { useAccountUiTranslation } from './translation.js'
 
 export interface StepUpChallengeProps {
@@ -71,9 +80,17 @@ export function StepUpChallenge({
 }: StepUpChallengeProps) {
   const { t } = useAccountUiTranslation()
   const titleId = useId()
+  // The caller's own registered factors, read while the dialog is open. An
+  // account with no active factor cannot raise its session, so the dialog
+  // answers the enrollment instead of starting a flow that cannot come. No
+  // factor read, or a failed one, falls back to the flow's own refusal.
+  const factors = useFactorsQuery(open)
+  const checking = open && factors.isPending
+  const noFactor =
+    open && factors.isSuccess && activeFactorCount(factors.data) === 0
   const { phase, step, seq, errorCode, answer } = useStepUp(
     session,
-    open,
+    open && !checking && !noFactor,
     onSuccess,
   )
   // The second factor the operator chose. The verification step that
@@ -107,10 +124,10 @@ export function StepUpChallenge({
     return null
   }
 
-  const starting = phase === 'starting'
-  // This deployment cannot raise the session at all (no factor that may
-  // strengthen it): no step will come, so the dialog says so and offers a
-  // re-login rather than a verification that cannot succeed.
+  const starting = phase === 'starting' || checking
+  // This deployment cannot raise the session at all (factors exist, none
+  // that may strengthen it): no step will come, so the dialog says so and
+  // offers a re-login rather than a verification that cannot succeed.
   const unavailable = phase === 'unavailable'
 
   // The unavailable phase's one action: end the session -- forgetting the
@@ -133,7 +150,16 @@ export function StepUpChallenge({
     >
       <DialogTitle id={titleId}>{t('mfa.stepUp.title')}</DialogTitle>
       <DialogContent>
-        {unavailable ? (
+        {noFactor ? (
+          <>
+            <Typography variant="body2" color="text.secondary">
+              {t('mfa.stepUp.noFactor')}
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <Link href="/account">{t('mfa.stepUp.goToAccount')}</Link>
+            </Typography>
+          </>
+        ) : unavailable ? (
           <Typography variant="body2" color="text.secondary">
             {t('mfa.stepUp.cannotElevate')}
           </Typography>
@@ -176,4 +202,18 @@ export function StepUpChallenge({
       </DialogActions>
     </Dialog>
   )
+}
+
+/** The factors a factor read names as active, which are the ones a step-up
+ * could use. A read that has not settled yet, or one that failed, holds
+ * none and leaves the decision to the flow's own refusal. */
+function activeFactorCount(
+  page:
+    | { readonly factors: readonly { readonly status: string }[] }
+    | undefined,
+): number {
+  if (page === undefined) {
+    return 0
+  }
+  return page.factors.filter((factor) => factor.status === 'active').length
 }

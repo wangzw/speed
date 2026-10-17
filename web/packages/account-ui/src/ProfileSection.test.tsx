@@ -158,6 +158,19 @@ describe('ProfileSection', () => {
         stored = (call.body as { display_name: string }).display_name
         return jsonResponse(200, {})
       }
+      if (call.method === 'GET' && call.path === '/auth/factors') {
+        return jsonResponse(200, {
+          factors: [
+            {
+              id: 'factor-1',
+              kind: 'totp',
+              label: 'App',
+              status: 'active',
+              created_at: '2026-01-01T00:00:00Z',
+            },
+          ],
+        })
+      }
       if (call.method === 'POST' && call.path === FLOW_START) {
         return jsonResponse(200, {
           seq: 1,

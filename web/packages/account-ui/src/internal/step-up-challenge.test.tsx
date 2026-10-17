@@ -8,19 +8,23 @@
  * the factor identifier; the flow's challenge step then asks for a code
  * answered under the same `factor` step, the chosen factor re-named
  * beside it; a completion in state 'elevated' fires onSuccess; a refused
- * answer renders its code text and stays retryable; a start refused while
- * the session stays established -- a 400, or a 401
- * insufficient_user_authentication -- parks the dialog on 'unavailable'
- * and offers a re-login rather than a step that cannot come, while a
- * start failure of another kind renders as an ordinary banner; and cancel
- * fires onCancel without running the gated action.
+ * answer renders its code text and stays retryable; an account with no
+ * active factor is recognised from the caller's own factor read and the
+ * dialog names the missing second factor, points at the account settings
+ * and starts no flow at all; a 401 start refusal on an established
+ * session (factors exist, none may strengthen it) offers a re-login; a
+ * 400 or any other start failure renders as its code, never as either of
+ * those explanations; and cancel fires onCancel without running the gated
+ * action.
  */
 
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AuthSession, AuthSnapshot } from '@speed/auth-core'
+import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { isApiError } from '@speed/api-client'
+import { bindRequestFn } from '@speed/api-sdk/runtime'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import {
   errorResponse,
@@ -35,12 +39,37 @@ import { StepUpChallenge } from './step-up-challenge.js'
 const FLOW_START = '/auth/flows/authenticated'
 const FLOW_ANSWER = '/auth/flows/answer'
 
+/** One active factor as the caller's own factor read answers it. */
+const ACTIVE_FACTOR = {
+  id: 'factor-1',
+  kind: 'totp',
+  label: 'Authenticator app',
+  status: 'active',
+  created_at: '2026-01-01T00:00:00Z',
+}
+
+/** Binds a scripted request function that answers the caller's own factor
+ * read with `factors`; any other leg is a defect of the case. For the
+ * cases that hand the dialog a session directly and never touch the wire. */
+function bindFactors(factors: readonly unknown[]): void {
+  bindRequestFn((async (path: string, options?: RequestOptions) => {
+    if ((options?.method ?? 'GET') === 'GET' && path === '/auth/factors') {
+      return { factors }
+    }
+    throw new Error(`unexpected ${options?.method ?? 'GET'} ${path}`)
+  }) as RequestFn)
+}
+
 /** A responder whose step-up flow offers one TOTP factor, challenges for a
- * code, and elevates on the code answer. */
+ * code, and elevates on the code answer; the caller's own factor read
+ * answers one active factor. */
 function makeStepUpResponder(overrides: {
   readonly codeAnswer?: () => Response
 } = {}): RealResponder {
   return (call: RealCall) => {
+    if (call.method === 'GET' && call.path === '/auth/factors') {
+      return jsonResponse(200, { factors: [ACTIVE_FACTOR] })
+    }
     if (call.method === 'POST' && call.path === FLOW_START) {
       return jsonResponse(200, {
         seq: 1,
@@ -239,45 +268,55 @@ describe('StepUpChallenge', () => {
     expect(onSuccess).not.toHaveBeenCalled()
   })
 
-  it('offers a re-login when the deployment cannot raise the session', async () => {
-    const user = userEvent.setup()
-    const logout = vi.fn(() => Promise.resolve())
-    // The start names no method the deployment could take (no factor to
-    // elevate with): a 400 while the session stays established. The
-    // client reads this deployment's 400 as authn.bad_request.
-    const { onCancel, onSuccess } = mountSession(
-      refusingStartSession(
-        {
-          status: 400,
-          code: 'authn.bad_request',
-          message: 'refused',
-          auth: false,
-        },
-        logout,
-      ),
+  it('names the missing second factor instead of starting a flow that cannot come', async () => {
+    // The caller's own factor read says the account has no active factor,
+    // so no step-up can ever raise a single-factor session: the dialog
+    // names that and points at the account settings, and no flow start is
+    // sent at all.
+    const { rig } = mount(
+      (call: RealCall) => {
+        if (call.method === 'GET' && call.path === '/auth/factors') {
+          return jsonResponse(200, { factors: [] })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      },
     )
 
-    // The dialog names the situation and offers the way out -- not the
-    // deployment's 400 re-read as "invalid request", and not a step that
-    // cannot come.
-    expect(await screen.findByText(zhCN.mfa.stepUp.cannotElevate)).toBeTruthy()
-    expect(screen.queryByText(zhCN.errors.authn.bad_request)).toBeNull()
-    expect(screen.queryByText(zhCN.mfa.stepUp.description)).toBeNull()
+    expect(await screen.findByText(zhCN.mfa.stepUp.noFactor)).toBeTruthy()
+    expect(
+      screen.getByRole('link', { name: zhCN.mfa.stepUp.goToAccount }),
+    ).toHaveAttribute('href', '/account')
+    expect(
+      screen.queryByRole('button', { name: zhCN.mfa.stepUp.relogin }),
+    ).toBeNull()
+    expect(rig.calls.some((call) => call.path === FLOW_START)).toBe(false)
+  })
 
-    // The re-login ends the session (the host's session gate converges on
-    // its sign-in surface) and forgets the refused action, as a cancel does.
-    await user.click(
-      screen.getByRole('button', { name: zhCN.mfa.stepUp.relogin }),
+  it('renders a 400 start refusal as an ordinary error when a factor is registered', async () => {
+    // A 400 is not, by itself, "no factor to elevate with": the account
+    // has an active factor here, so the dialog shows the refusal's own
+    // code instead of either of the two explanations.
+    bindFactors([ACTIVE_FACTOR])
+    mountSession(
+      refusingStartSession({
+        status: 400,
+        code: 'authn.bad_request',
+        message: 'refused',
+        auth: false,
+      }),
     )
-    expect(logout).toHaveBeenCalledTimes(1)
-    expect(onCancel).toHaveBeenCalledTimes(1)
-    expect(onSuccess).not.toHaveBeenCalled()
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
+    expect(screen.queryByText(zhCN.mfa.stepUp.cannotElevate)).toBeNull()
+    expect(screen.queryByText(zhCN.mfa.stepUp.noFactor)).toBeNull()
   })
 
   it('treats a 401 start refusal on an established session as unavailable', async () => {
     // The account has factors, but none whose methods may strengthen this
     // session: the start answers 401 insufficient_user_authentication and
     // the session stays authenticated -- a refusal no step can satisfy.
+    bindFactors([ACTIVE_FACTOR])
     mountSession(
       refusingStartSession({
         status: 401,
@@ -299,9 +338,10 @@ describe('StepUpChallenge', () => {
   it('renders a start failure that is not a refusal as an ordinary banner', async () => {
     // A 503 is not the deployment declining to raise the session -- the
     // session is established, but the failure is not an elevation refusal
-    // (not a 401 shortfall, not a 400), so it must not be merged into the
-    // unavailable phase: the dialog shows its resolved code text and
-    // still offers the flow.
+    // (not a 401 shortfall), so it must not be merged into the unavailable
+    // phase: the dialog shows its resolved code text and still offers the
+    // flow.
+    bindFactors([ACTIVE_FACTOR])
     mountSession(
       refusingStartSession({
         status: 503,

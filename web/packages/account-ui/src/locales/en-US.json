@@ -132,7 +132,9 @@
       "confirmLabel": "Verify",
       "cancelLabel": "Cancel",
       "cannotElevate": "This deployment cannot complete this step-up. Sign in again for a stronger verification.",
-      "relogin": "Sign in again"
+      "relogin": "Sign in again",
+      "noFactor": "This account has no two-step verification set up. Add a verification method in the account settings first.",
+      "goToAccount": "Go to account settings"
     },
     "error": {
       "title": "Could not load two-step verification",
