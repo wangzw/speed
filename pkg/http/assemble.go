@@ -53,8 +53,18 @@ func (e *endpoint) assemble(injected, logger *slog.Logger, responder ErrorRespon
 	logger.Info("an HTTP endpoint's chain is assembled",
 		"endpoint", e.settings.name,
 		"routes", len(e.routes),
+		"prefixes", claimSummary(e.settings.prefixes),
 		"chain", chainDescription(e.settings.name, ordered))
 	return e.base(engine, injected, responder, resolver), nil
+}
+
+// claimSummary renders an endpoint's claimed prefixes for the startup line, for
+// example [/api, /]. It carries the claims beside the route count so an
+// operator can check that a path is answered by the endpoint they meant, and a
+// differential test can confirm an endpoint really lost its routes while
+// keeping its claim.
+func claimSummary(prefixes []string) string {
+	return "[" + strings.Join(prefixes, ", ") + "]"
 }
 
 // useLayers registers this module's built-in layers and the ordered registered

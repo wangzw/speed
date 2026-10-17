@@ -252,12 +252,15 @@ func waitUntil(t *testing.T, what string, ok func() bool) {
 // waitDeadline bounds every wait in this package's tests.
 const waitDeadline = 5 * time.Second
 
-// testSettings is one endpoint's settings: the body limit and the proxy
-// settings that belong to an endpoint's chain rather than to its listener.
+// testSettings is one endpoint's settings: the claims that select it, the body
+// limit and the proxy settings that belong to an endpoint's chain rather than
+// to its listener. An endpoint on a listener of its own claims "/", which is
+// what omitting the key in configuration gives.
 func testSettings(name string) endpointSettings {
 	return endpointSettings{
 		name:         name,
 		listenerName: "backend",
+		prefixes:     []string{"/"},
 		maxBodyBytes: defaultMaxBodyBytes,
 	}
 }

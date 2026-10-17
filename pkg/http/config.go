@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/vislake/speed/pkg/config"
 )
@@ -109,6 +110,15 @@ type endpointConfig struct {
 	// not.
 	Listener string `config:"listener"`
 
+	// Prefixes are the path prefixes this endpoint claims on its listener.
+	// The dispatch selects an endpoint by these claims alone: a request falls
+	// under the longest claimed prefix, and the endpoint that claimed it
+	// answers. Omitting the key claims "/", which makes the endpoint its
+	// listener's fallback; "/" does not take part in longest matching. An
+	// explicit empty list is refused, because such an endpoint would receive
+	// no request at all.
+	Prefixes []string `config:"prefixes"`
+
 	// MaxBodyBytes is the request body limit the body limit layer of the
 	// chain imposes, 0 for no limit. It applies to every handler on the
 	// endpoint, whatever way a handler reads the body.
@@ -206,6 +216,8 @@ type endpointSettings struct {
 	name         string
 	listenerName string
 
+	prefixes []string
+
 	maxBodyBytes int64
 
 	trustedProxies  []string
@@ -238,7 +250,42 @@ func (c moduleConfig) resolve() ([]listenerSettings, []endpointSettings, error) 
 		}
 		endpoints = append(endpoints, resolved)
 	}
+	// One prefix belongs to one endpoint on a listener. The check is across
+	// entries, so it cannot live in either single-entry resolve, and it sees
+	// the defaulted claims: two endpoints that both omitted prefixes both
+	// claim "/" and are refused here.
+	if err := checkClaims(endpoints); err != nil {
+		return nil, nil, err
+	}
 	return listeners, endpoints, nil
+}
+
+// checkClaims refuses a prefix claimed by two endpoints on one listener, the
+// root included. Endpoints arrive in name order, so the pair the message names
+// is the same one every run.
+func checkClaims(endpoints []endpointSettings) error {
+	claimed := make(map[string]map[string]string, len(endpoints))
+	for _, e := range endpoints {
+		byPrefix := claimed[e.listenerName]
+		if byPrefix == nil {
+			byPrefix = make(map[string]string)
+			claimed[e.listenerName] = byPrefix
+		}
+		for _, prefix := range e.prefixes {
+			if previous, taken := byPrefix[prefix]; taken {
+				return fmt.Errorf(
+					"%w: listener %q: the endpoints %q and %q both claim the path prefix %q. "+
+						"A listener selects the endpoint by the longest prefix a request falls "+
+						"under, so one prefix belongs to one endpoint. Give every endpoint its own "+
+						"prefixes, for example write %s.%s.%s.prefixes: [\"/api\"]; an endpoint that "+
+						"omits prefixes claims \"/\", so at most one endpoint on a listener may omit it",
+					ErrClaimConflict, e.listenerName, previous, e.name, prefix,
+					configNamespace, endpointsItem, e.name)
+			}
+			byPrefix[prefix] = e.name
+		}
+	}
+	return nil
 }
 
 // resolve validates one listener. Every message names the listener and the key
@@ -248,15 +295,15 @@ func (l listenerConfig) resolve(name string) (listenerSettings, error) {
 	if len(l.Unknown) > 0 {
 		unknown := slices.Sorted(maps.Keys(l.Unknown))
 		return listenerSettings{}, fmt.Errorf(
-			"http: listener %q gives %s, which %s not among the keys a listener takes: %s. "+
+			"%w: listener %q gives %s, which %s not among the keys a listener takes: %s. "+
 				"Correct the spelling under %s.%s.%s",
-			name, quotedList(unknown), pluralVerb(len(unknown)), quotedList(listenerKeys()),
-			configNamespace, listenersItem, name)
+			ErrInvalidConfig, name, quotedList(unknown), pluralVerb(len(unknown)),
+			quotedList(listenerKeys()), configNamespace, listenersItem, name)
 	}
 	if l.Address == "" {
 		return listenerSettings{}, fmt.Errorf(
-			"http: listener %q gives no address to listen on. Write %s.%s.%s.address, "+
-				"for example \":8080\"", name, configNamespace, listenersItem, name)
+			"%w: listener %q gives no address to listen on. Write %s.%s.%s.address, "+
+				"for example \":8080\"", ErrInvalidConfig, name, configNamespace, listenersItem, name)
 	}
 
 	// A negative duration is not the same mistake as 0: 0 switches the item
@@ -275,8 +322,8 @@ func (l listenerConfig) resolve(name string) (listenerSettings, error) {
 	for _, d := range durations {
 		if d.given != nil && *d.given < 0 {
 			return listenerSettings{}, fmt.Errorf(
-				"http: listener %q gives %s the value %s; 0 switches the bound off and a "+
-					"positive duration sets it", name, d.key, *d.given)
+				"%w: listener %q gives %s the value %s; 0 switches the bound off and a "+
+					"positive duration sets it", ErrInvalidConfig, name, d.key, *d.given)
 		}
 	}
 	// Two of the durations refuse an explicit 0 rather than reading it as
@@ -307,16 +354,17 @@ func (l listenerConfig) resolve(name string) (listenerSettings, error) {
 	for _, d := range cannotBeSwitchedOff {
 		if d.given != nil && *d.given == 0 {
 			return listenerSettings{}, fmt.Errorf(
-				"http: listener %q switches %s off with 0, and it is one of the two bounds "+
+				"%w: listener %q switches %s off with 0, and it is one of the two bounds "+
 					"that have to stay on: %s. Give %s.%s.%s.%s a positive duration, or drop "+
 					"the key to take the default of %s",
-				name, d.key, d.reason, configNamespace, listenersItem, name, d.key, d.def)
+				ErrInvalidConfig, name, d.key, d.reason, configNamespace, listenersItem, name,
+				d.key, d.def)
 		}
 	}
 	if (l.TLSCertFile == "") != (l.TLSKeyFile == "") {
 		return listenerSettings{}, fmt.Errorf(
-			"http: listener %q gives only one of tls-cert-file and tls-key-file. Give both to "+
-				"serve over TLS, or neither to serve plain HTTP", name)
+			"%w: listener %q gives only one of tls-cert-file and tls-key-file. Give both to "+
+				"serve over TLS, or neither to serve plain HTTP", ErrInvalidConfig, name)
 	}
 
 	return listenerSettings{
@@ -339,24 +387,24 @@ func (l listenerConfig) resolve(name string) (listenerSettings, error) {
 func (e endpointConfig) resolve(name string, listeners map[string]struct{}, listenerNames []string) (endpointSettings, error) {
 	if name == reservedEndpointName {
 		return endpointSettings{}, fmt.Errorf(
-			"http: endpoint %q carries a name this module reserves: a list of endpoint names "+
+			"%w: endpoint %q carries a name this module reserves: a list of endpoint names "+
 				"elsewhere writes it to mean every declared endpoint, so no endpoint can be "+
 				"called that. Rename the entry %q under %s.%s",
-			name, name, configNamespace, endpointsItem)
+			ErrInvalidConfig, name, name, configNamespace, endpointsItem)
 	}
 	if len(e.Unknown) > 0 {
 		unknown := slices.Sorted(maps.Keys(e.Unknown))
 		return endpointSettings{}, fmt.Errorf(
-			"http: endpoint %q gives %s, which %s not among the keys an endpoint takes: %s. "+
+			"%w: endpoint %q gives %s, which %s not among the keys an endpoint takes: %s. "+
 				"Correct the spelling under %s.%s.%s",
-			name, quotedList(unknown), pluralVerb(len(unknown)), quotedList(endpointKeys()),
-			configNamespace, endpointsItem, name)
+			ErrInvalidConfig, name, quotedList(unknown), pluralVerb(len(unknown)),
+			quotedList(endpointKeys()), configNamespace, endpointsItem, name)
 	}
 	if e.Listener == "" {
 		return endpointSettings{}, fmt.Errorf(
-			"http: endpoint %q names no listener to hang on. Write %s.%s.%s.listener, one of "+
-				"the names under %s.%s", name, configNamespace, endpointsItem, name,
-			configNamespace, listenersItem)
+			"%w: endpoint %q names no listener to hang on. Write %s.%s.%s.listener, one of "+
+				"the names under %s.%s", ErrInvalidConfig, name, configNamespace, endpointsItem,
+			name, configNamespace, listenersItem)
 	}
 	if _, ok := listeners[e.Listener]; !ok {
 		return endpointSettings{}, fmt.Errorf(
@@ -368,8 +416,8 @@ func (e endpointConfig) resolve(name string, listeners map[string]struct{}, list
 	}
 	if e.MaxBodyBytes != nil && *e.MaxBodyBytes < 0 {
 		return endpointSettings{}, fmt.Errorf(
-			"http: endpoint %q gives max-body-bytes the value %d; 0 removes the limit and a "+
-				"positive number sets it", name, *e.MaxBodyBytes)
+			"%w: endpoint %q gives max-body-bytes the value %d; 0 removes the limit and a "+
+				"positive number sets it", ErrInvalidConfig, name, *e.MaxBodyBytes)
 	}
 	// The trusted proxy networks are validated here rather than only being handed
 	// to gin, so a mistyped one names the endpoint and the key it was written
@@ -382,19 +430,124 @@ func (e endpointConfig) resolve(name string, listeners map[string]struct{}, list
 			continue
 		}
 		return endpointSettings{}, fmt.Errorf(
-			"http: endpoint %q gives trusted-proxies[%d] the value %q, which is neither an IP "+
+			"%w: endpoint %q gives trusted-proxies[%d] the value %q, which is neither an IP "+
 				"address nor a CIDR block. Write each entry as an address or a block, for example "+
 				"\"10.0.0.0/8\", or drop the key to trust no proxy",
-			name, i, network)
+			ErrInvalidConfig, name, i, network)
+	}
+
+	prefixes, err := e.claimPrefixes(name)
+	if err != nil {
+		return endpointSettings{}, err
 	}
 
 	return endpointSettings{
 		name:            name,
 		listenerName:    e.Listener,
+		prefixes:        prefixes,
 		maxBodyBytes:    valueOrDefault(e.MaxBodyBytes, defaultMaxBodyBytes),
 		trustedProxies:  e.TrustedProxies,
 		remoteIPHeaders: e.RemoteIPHeaders,
 	}, nil
+}
+
+// claimPrefixes validates and completes one endpoint's claim list. An omitted
+// key claims "/", which makes the endpoint its listener's fallback; an explicit
+// empty list is refused, because that endpoint would receive no request at all.
+// The rules on a single prefix keep it literal and matchable: the dispatch
+// compares the decoded request path at segment boundaries, so a trailing slash,
+// a dynamic segment or an escaped character would produce a claim nothing ever
+// falls under.
+func (e endpointConfig) claimPrefixes(name string) ([]string, error) {
+	prefixes := e.Prefixes
+	if prefixes == nil {
+		return []string{"/"}, nil
+	}
+	if len(prefixes) == 0 {
+		return nil, fmt.Errorf(
+			"%w: endpoint %q gives %s.%s.%s.prefixes the value [], which claims no path at all, "+
+				"so the endpoint would receive no request. Give it at least one prefix, or drop "+
+				"the key to claim \"/\"",
+			ErrInvalidConfig, name, configNamespace, endpointsItem, name)
+	}
+	seen := make(map[string]int, len(prefixes))
+	for i, prefix := range prefixes {
+		key := fmt.Sprintf("%s.%s.%s.prefixes[%d]", configNamespace, endpointsItem, name, i)
+		if reason := prefixSummary(prefix); reason != "" {
+			return nil, fmt.Errorf(
+				"%w: endpoint %q gives %s the value %q, which is not a usable path prefix: %s. "+
+					"A prefix begins with \"/\" and holds literal segments only: no trailing \"/\" "+
+					"unless it is \"/\" itself, no empty, \".\" or \"..\" segment, no segment "+
+					"beginning with \":\" or \"*\", and no %%, ?, #, whitespace or control character. "+
+					"Requests are matched after decoding, so a prefix carrying \"%%\" would never match",
+				ErrInvalidConfig, name, key, prefix, reason)
+		}
+		if previous, duplicate := seen[prefix]; duplicate {
+			return nil, fmt.Errorf(
+				"%w: endpoint %q gives %s the value %q, which the list already claims at index %d. "+
+					"Drop one of the two", ErrInvalidConfig, name, key, prefix, previous)
+		}
+		seen[prefix] = i
+	}
+	for i, prefix := range prefixes {
+		if prefix == "/" {
+			continue
+		}
+		for j, other := range prefixes {
+			if i == j || other == "/" || other == prefix {
+				continue
+			}
+			if fallsUnder(other, prefix) {
+				return nil, fmt.Errorf(
+					"%w: endpoint %q gives %s the value %q, which already lies under the claimed "+
+						"prefix %q, so the longer claim changes nothing. Claim the shorter prefix "+
+						"alone, or replace it with the longer one",
+					ErrInvalidConfig, name,
+					fmt.Sprintf("%s.%s.%s.prefixes[%d]", configNamespace, endpointsItem, name, j),
+					other, prefix)
+			}
+		}
+	}
+	return prefixes, nil
+}
+
+// prefixSummary describes the first rule a claim prefix breaks, or returns ""
+// when it is usable. The rules keep the claim literal: the dispatch compares it
+// with the decoded request path at segment boundaries and treats ":" and "*" as
+// literals, so a non-literal segment would silently never match.
+func prefixSummary(prefix string) string {
+	switch {
+	case prefix == "":
+		return "it is empty"
+	case prefix[0] != '/':
+		return "it does not begin with \"/\""
+	}
+	if prefix == "/" {
+		return ""
+	}
+	if strings.HasSuffix(prefix, "/") {
+		return "it ends with \"/\", so it would never match a request for the path without it"
+	}
+	for _, segment := range strings.Split(prefix[1:], "/") {
+		switch {
+		case segment == "":
+			return "it has an empty segment"
+		case segment == "." || segment == "..":
+			return fmt.Sprintf("it has the reserved segment %q", segment)
+		case strings.HasPrefix(segment, ":") || strings.HasPrefix(segment, "*"):
+			return fmt.Sprintf("it has the dynamic segment %q, and a claim holds literal "+
+				"segments only", segment)
+		}
+	}
+	if found := strings.ContainsAny(prefix, "%?#"); found {
+		return "it contains \"%\", \"?\" or \"#\""
+	}
+	for _, r := range prefix {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return "it contains whitespace or a control character"
+		}
+	}
+	return ""
 }
 
 // declaredListeners renders the listener names for a message, saying so plainly

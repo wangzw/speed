@@ -305,7 +305,7 @@ func ExampleEndpoint_Route() {
 	fmt.Println(response.status, response.body)
 
 	// Output:
-	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=1 chain=http:context -> holdAllow -> http:access-log -> http:recovery -> http:body-limit
+	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=1 prefixes=[/] chain=http:context -> holdAllow -> http:access-log -> http:recovery -> http:body-limit
 	// INFO an HTTP listener is listening listener=backend address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false endpoints=[public]
 	// INFO an HTTP request was served endpoint=public method=GET route=/things/:id path=/things/7 status=200 size=10
 	// 200 {"id":"7"}
@@ -367,7 +367,7 @@ func ExampleEndpoint_Use() {
 	defer func() { _ = host.stop() }()
 
 	// Output:
-	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 chain=http:context -> holdAllow -> http:access-log -> [observe] span(github.com/vislake/speed/pkg/http_test.spans) -> trace(github.com/vislake/speed/pkg/http_test.tracing) -> http:recovery -> http:body-limit
+	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 prefixes=[/] chain=http:context -> holdAllow -> http:access-log -> [observe] span(github.com/vislake/speed/pkg/http_test.spans) -> trace(github.com/vislake/speed/pkg/http_test.tracing) -> http:recovery -> http:body-limit
 	// INFO an HTTP listener is listening listener=backend address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false endpoints=[public]
 }
 
@@ -414,7 +414,7 @@ func ExampleFail() {
 	}
 
 	// Output:
-	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=1 chain=http:context -> holdAllow -> http:access-log -> http:recovery -> http:body-limit
+	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=1 prefixes=[/] chain=http:context -> holdAllow -> http:access-log -> http:recovery -> http:body-limit
 	// INFO an HTTP listener is listening listener=backend address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false endpoints=[public]
 	// INFO an HTTP request was served endpoint=public method=GET route=/things/:id path=/things/7 status=404 size=86
 	// 404 application/problem+json
@@ -465,7 +465,7 @@ func ExampleErrorResponder() {
 	fmt.Println(response.body)
 
 	// Output:
-	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 chain=http:context -> holdAllow -> http:access-log -> http:recovery -> http:body-limit
+	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 prefixes=[/] chain=http:context -> holdAllow -> http:access-log -> http:recovery -> http:body-limit
 	// INFO an HTTP listener is listening listener=backend address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false endpoints=[public]
 	// INFO an HTTP request was served endpoint=public method=GET route= path=/nowhere status=404 size=34
 	// 404 application/json

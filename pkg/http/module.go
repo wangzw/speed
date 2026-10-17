@@ -238,9 +238,9 @@ func prepare(reader config.Reader, specs []core.Resource[Spec]) (core.Enablement
 		return core.Enablement{}, err
 	}
 	if len(listeners) == 0 {
-		return core.Enablement{}, fmt.Errorf("http: no listener is configured: "+
+		return core.Enablement{}, fmt.Errorf("%w: no listener is configured: "+
 			"%s.%s is empty, so there is no address to serve on. Declare a listener under "+
-			"that key to run this entry point", configNamespace, listenersItem)
+			"that key to run this entry point", ErrInvalidConfig, configNamespace, listenersItem)
 	}
 	return core.Enablement{State: core.StateEnabled}, nil
 }

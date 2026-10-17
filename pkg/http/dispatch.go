@@ -11,145 +11,124 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// coversWholePathSpace reports whether this endpoint answers every path on its
-// listener, which makes it the listener's fallback by construction: its routes
-// cover whatever path arrives, so the dispatch hands it the requests no endpoint
-// owns. Two route shapes do this. A catch-all route matches every path, and in
-// gin it can sit beside no other route on the same method tree. A route at the
-// root "/" matches only "/" itself, but "/" is a static prefix every path falls
-// under, so the endpoint's "/" owns the whole path space — the same space a
-// catch-all covers, reached through the prefix selector rather than the route
-// table. Either way the endpoint is out of the prefix a listener routes by: a
-// catch-all is not a static prefix, and the root is the fallback's own space.
-func (e *endpoint) coversWholePathSpace() bool {
-	for _, r := range e.routes {
-		if strings.Contains(r.path, "*") || r.path == "/" {
-			return true
-		}
-	}
-	return false
-}
-
 // buildDispatch builds the handler one listener serves every accepted
 // connection from.
 //
 // The dispatch selects one endpoint per request and hands the request to that
 // endpoint's assembled engine, which matches it, runs the endpoint's chain and
-// answers 200, its own 404 or its own 405. Selection is by the request path and
-// the endpoints' static prefixes: the endpoint whose static prefix the path
-// falls under answers it, the longest such prefix winning when the prefixes
-// nest. A path under no prefix goes to the listener's fallback endpoint, or,
-// with none, to a 404.
+// answers 200, its own 404 or its own 405. Selection reads configuration only:
+// the prefixes each endpoint claimed under http.endpoints.<name>.prefixes. The
+// endpoint whose claim the path falls under answers it, the longest such prefix
+// winning when the claims nest. A path under no non-root claim goes to the
+// listener's fallback endpoint, the one that claimed "/", or, with none, to a
+// 404.
 //
-// The static prefixes of an endpoint are read off its registered routes: a route
-// contributes the literal path segments it leads with, up to the first dynamic
-// segment. A route that is entirely literal contributes its parent path, so an
-// endpoint registering /api/v1/objects owns /api/v1 and answers a request for a
-// path under it that no route registered — a mistyped or removed route — with
-// its own 404 rather than letting the request fall through to a fallback whose
-// catch-all would answer 200. A route whose first segment is already dynamic
-// contributes no prefix.
-//
-// The fallback is the endpoint that receives a request no endpoint owns. An
-// endpoint whose routes cover the whole path space is one by construction — a
-// catch-all, or a route at the root "/"; so is the only endpoint of a listener,
-// because a listener with one endpoint has no routing to do — every request
-// belongs to that endpoint, and its prefixes are not consulted. The fallback
-// itself owns no prefix.
-//
-// Three things the listener cannot hold are refused here as startup failures,
-// all ErrRouteConflict and all naming the listener: a second endpoint covering
-// the whole path space; two endpoints claiming the same (method, path); and two
-// endpoints whose static prefixes collide — the same prefix owned by two
-// endpoints, or an endpoint whose routes all begin with a dynamic segment,
-// leaving it with no prefix to be selected by at all. Prefixes that nest are not
-// a collision: the longest one wins, so an endpoint owning /api/v1 may stand
-// beside one owning /api/v1/internal.
+// The registered routes take no part in selection. They are checked against it
+// once, here: a route whose literal leading path would select another endpoint,
+// or no endpoint at all, could be mounted but never reached, and that is
+// reported as ErrUnclaimedRoute rather than left silent. The check allows
+// partial shadowing — an endpoint claiming /api may register /api/:id beside
+// another endpoint claiming /api/internal — because the literal leading path
+// /api still selects the first endpoint, and /api/internal is the meaning of the
+// nested claim.
 func buildDispatch(name string, endpoints []*endpoint, localizer i18n.Localizer) (nethttp.Handler, error) {
-	var fallbacks []*endpoint
-	for _, e := range endpoints {
-		if e.coversWholePathSpace() {
-			fallbacks = append(fallbacks, e)
-		}
-	}
-	if len(fallbacks) > 1 {
-		return nil, fmt.Errorf("%w: listener %q carries two endpoints covering its whole path "+
-			"space, %q and %q. A listener hands every request no endpoint owns to its one fallback "+
-			"endpoint, and an endpoint whose routes cover the whole path space leaves no path a "+
-			"second such endpoint could answer: a catch-all matches every path, and a route at \"/\" "+
-			"owns every path as a prefix, so the second has no request it could ever be reached by. "+
-			"Give each listener at most one endpoint covering the whole path space, or move one of "+
-			"them to another listener",
-			ErrRouteConflict, name, fallbacks[0].settings.name, fallbacks[1].settings.name)
-	}
-
+	var entries []prefixEntry
 	var fallback *endpoint
-	switch {
-	case len(fallbacks) == 1:
-		fallback = fallbacks[0]
-	case len(endpoints) == 1:
-		fallback = endpoints[0]
-	}
-
-	// One (method, path) belongs to one endpoint. The fallback is included: it is
-	// left out of prefix ownership, not out of the rule, and a route only the
-	// fallback registers beside a prefix-owning endpoint's would be unreachable
-	// without this check — the prefix owning the path would answer it instead.
-	registered := make(map[string]*endpoint)
 	for _, e := range endpoints {
-		for _, r := range e.routes {
-			key := r.method + " " + r.path
-			if prev, ok := registered[key]; ok {
-				return nil, fmt.Errorf("%w: listener %q: the endpoints %q and %q both register "+
-					"the route %q. A listener routes each path to one endpoint, and one route "+
-					"belongs to one endpoint only. Change one of the routes or move it to another "+
-					"endpoint",
-					ErrRouteConflict, name, prev.settings.name, e.settings.name, r.String())
+		for _, prefix := range e.settings.prefixes {
+			if prefix == "/" {
+				// "/" means "the paths no other endpoint claims", so it is the
+				// listener's fallback rather than an entry in longest matching.
+				fallback = e
+				continue
 			}
-			registered[key] = e
+			entries = append(entries, prefixEntry{prefix: prefix, endpoint: e})
 		}
 	}
-
-	// A static prefix belongs to one endpoint. Collect them longest-first for the
-	// request-time lookup, refusing a prefix two endpoints own.
-	d := &dispatch{fallback: fallback}
-	seen := make(map[string]*endpoint)
-	for _, e := range endpoints {
-		if e == fallback {
-			continue
-		}
-		prefixes := e.staticPrefixes()
-		if len(prefixes) == 0 {
-			return nil, fmt.Errorf("%w: listener %q carries the endpoint %q beside other "+
-				"endpoints, but every route it registers begins with a dynamic segment, so it "+
-				"owns no static prefix and the listener has no path to select it by. Give the "+
-				"endpoint a route under a literal prefix, or move it to a listener of its own",
-				ErrRouteConflict, name, e.settings.name)
-		}
-		for _, p := range prefixes {
-			if prev, ok := seen[p]; ok && prev != e {
-				return nil, fmt.Errorf("%w: listener %q: the endpoints %q and %q both own the "+
-					"path prefix %q. The listener selects an endpoint by the longest prefix a "+
-					"request falls under, so one prefix belongs to one endpoint. Change one "+
-					"endpoint's routes or move it to another listener",
-					ErrRouteConflict, name, prev.settings.name, e.settings.name, p)
-			}
-			seen[p] = e
-			d.entries = append(d.entries, prefixEntry{prefix: p, endpoint: e})
-		}
+	slices.SortFunc(entries, func(a, b prefixEntry) int { return len(b.prefix) - len(a.prefix) })
+	d := &dispatch{entries: entries, fallback: fallback}
+	if err := d.verifyRoutes(name, endpoints); err != nil {
+		return nil, err
 	}
-	slices.SortFunc(d.entries, func(a, b prefixEntry) int { return len(b.prefix) - len(a.prefix) })
 	return d.handler(localizer), nil
 }
 
-// prefixEntry binds one static prefix to the endpoint that owns it.
+// verifyRoutes refuses every route whose literal leading path selects an
+// endpoint other than the one that registered it.
+//
+// The literal leading path is the part before the first segment that begins
+// with ":" or "*": a fully literal route contributes its whole path, while a
+// root route and one whose first segment is dynamic contribute "". An empty
+// leading path falls under no non-root claim, so it selects the fallback. The
+// route is registered where it is answered only when that selection is the
+// registering endpoint.
+//
+// Every failing route of one endpoint is reported together, with the endpoint
+// and its claims, the endpoint and prefix that would answer it, and a suggested
+// claim. Naming the routes one at a time would send the reader back to the
+// startup once per route; naming none of the answerers would leave out the
+// endpoint whose claim has to change. The text names no registrant: the
+// registration surface does not know who called it.
+func (d *dispatch) verifyRoutes(listener string, endpoints []*endpoint) error {
+	var failures []string
+	for _, e := range endpoints {
+		var missed []string
+		var suggestions []string
+		for _, r := range e.routes {
+			leading := literalLeadingPath(r.path)
+			selected, prefix := d.owner(leading)
+			if selected == nil {
+				selected = d.fallback
+				if selected != nil {
+					prefix = "/"
+				}
+			}
+			if selected == e {
+				continue
+			}
+			answer := "no endpoint selects it: no endpoint on this listener claims \"/\""
+			if selected != nil {
+				answer = fmt.Sprintf("it is selected by endpoint %q, which claims %q",
+					selected.settings.name, prefix)
+			}
+			missed = append(missed, fmt.Sprintf("%q (literal leading path %q, and %s)",
+				r.String(), leading, answer))
+			if top := topLevelSegment(leading); top != "" {
+				suggestions = append(suggestions, top)
+			}
+		}
+		if len(missed) == 0 {
+			continue
+		}
+		suggestion := "A route whose literal leading path is empty can only sit on the endpoint " +
+			"that claims \"/\""
+		if len(suggestions) > 0 {
+			slices.Sort(suggestions)
+			suggestions = slices.Compact(suggestions)
+			suggestion = fmt.Sprintf("Give endpoint %q a claim covering them (for example %s), "+
+				"or register them on the endpoint that selects them",
+				e.settings.name, quotedList(suggestions))
+		}
+		failures = append(failures, fmt.Sprintf(
+			"endpoint %q claims %s but registers %d route(s) those claims never select: %s. %s",
+			e.settings.name, claimList(e.settings.prefixes), len(missed),
+			strings.Join(missed, "; "), suggestion))
+	}
+	if len(failures) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: listener %q: %s", ErrUnclaimedRoute, listener,
+		strings.Join(failures, ". "))
+}
+
+// prefixEntry binds one claimed prefix to the endpoint that claimed it.
 type prefixEntry struct {
 	prefix   string
 	endpoint *endpoint
 }
 
-// dispatch is a listener's request selector: the endpoints' static prefixes,
-// longest first, and the fallback for a path none of them owns.
+// dispatch is a listener's request selector: the endpoints' non-root claims,
+// longest first, and the fallback for a path none of them covers.
 type dispatch struct {
 	entries  []prefixEntry
 	fallback *endpoint
@@ -166,12 +145,12 @@ func (d *dispatch) handler(localizer i18n.Localizer) nethttp.Handler {
 	engine.RedirectTrailingSlash = false
 	engine.RedirectFixedPath = false
 	engine.NoRoute(func(c *gin.Context) {
-		if e := d.owner(c.Request.URL.Path); e != nil {
-			e.handler.ServeHTTP(c.Writer, c.Request)
-			return
+		e, _ := d.owner(c.Request.URL.Path)
+		if e == nil {
+			e = d.fallback
 		}
-		if d.fallback != nil {
-			d.fallback.handler.ServeHTTP(c.Writer, c.Request)
+		if e != nil {
+			e.handler.ServeHTTP(c.Writer, c.Request)
 			return
 		}
 		Fail(c, Problem{
@@ -182,104 +161,72 @@ func (d *dispatch) handler(localizer i18n.Localizer) nethttp.Handler {
 	return engine
 }
 
-// owner returns the endpoint whose static prefix the path falls under, the
-// longest such prefix winning, or nil when no prefix covers the path. entries is
-// ordered longest-first, so the first prefix that covers the path is the longest.
-func (d *dispatch) owner(path string) *endpoint {
+// owner returns the endpoint whose claimed prefix the path falls under, together
+// with that prefix, the longest one winning, or nil and "" when no claim covers
+// the path. entries is ordered longest-first, so the first prefix that covers
+// the path is the longest. The fallback — the endpoint claiming "/" — is not one
+// of the entries and is therefore never returned here; selection falls back to
+// it only when owner finds nothing.
+func (d *dispatch) owner(path string) (*endpoint, string) {
 	for _, e := range d.entries {
 		if fallsUnder(path, e.prefix) {
-			return e.endpoint
+			return e.endpoint, e.prefix
 		}
 	}
-	return nil
+	return nil, ""
 }
 
-// fallsUnder reports whether a request path lies at or below a static prefix:
+// fallsUnder reports whether a request path lies at or below a claimed prefix:
 // equal to it, or continuing past it at a segment boundary. A bare string-prefix
 // match is not enough — "/apifoo" does not fall under "/api" — which is what
-// keeps an endpoint's ownership to its own segment subtree. No owned prefix is
-// "/": an endpoint registering the root is its listener's fallback and
-// contributes no prefix (see coversWholePathSpace), so the root needs no case
-// here.
+// keeps an endpoint's claim to its own segment subtree. No entry is "/": the
+// endpoint that claims the root is its listener's fallback and contributes no
+// entry (see buildDispatch), so the root needs no case here.
 func fallsUnder(path, prefix string) bool {
 	return path == prefix || strings.HasPrefix(path, prefix+"/")
 }
 
-// staticPrefixes returns the path prefixes this endpoint owns on its listener,
-// read off its registered routes and in ascending order. Each route contributes
-// the literal segments it leads with up to the first dynamic segment; a fully
-// literal route contributes its parent path; a route whose first segment is
-// dynamic contributes nothing. A prefix nested under another prefix of the same
-// endpoint is dropped, because the shallower one already covers it.
-func (e *endpoint) staticPrefixes() []string {
-	set := make(map[string]bool)
-	for _, r := range e.routes {
-		if p, ok := routePrefix(r.path); ok {
-			set[p] = true
-		}
-	}
-	out := make([]string, 0, len(set))
-	for p := range set {
-		if !hasAncestor(set, p) {
-			out = append(out, p)
-		}
-	}
-	slices.Sort(out)
-	return out
-}
-
-// hasAncestor reports whether any prefix in set is a proper ancestor of p.
-func hasAncestor(set map[string]bool, p string) bool {
-	for q := parentPath(p); q != ""; q = parentPath(q) {
-		if set[q] {
-			return true
-		}
-	}
-	return false
-}
-
-// parentPath returns the parent of a path at the last segment boundary, or ""
-// when the path is single-segment or at the root. The root is never a parent:
-// "/" is a prefix of every path, and it is not one an endpoint derives from a
-// route.
-func parentPath(p string) string {
-	i := strings.LastIndex(p, "/")
-	if i <= 0 {
-		return ""
-	}
-	return p[:i]
-}
-
-// routePrefix returns the static prefix one route contributes to its endpoint's
-// ownership, and false when it contributes none. Nothing is contributed by a
-// route whose first segment is already dynamic, nor by a route at the root "/":
-// an endpoint registering the root covers its listener's whole path space and is
-// that listener's fallback, not a prefix owner (see coversWholePathSpace). A path
-// under a contributed prefix — even one no route registered — is answered by the
-// endpoint. A fully literal route of two or more segments contributes its parent
-// path, so the endpoint answers a path beside or under its own routes instead of
-// letting it reach a fallback; the endpoint's own routes are then covered by that
-// parent. A single-segment route contributes itself.
-func routePrefix(path string) (string, bool) {
+// literalLeadingPath returns the literal part a route leads with: everything
+// before its first segment that begins with ":" or "*". A fully literal route
+// contributes its whole path; a route at the root and one whose first segment is
+// already dynamic contribute "". It is this prefix, not the registered path, that
+// the dispatch's selection has to answer the same way as the registering
+// endpoint.
+func literalLeadingPath(path string) string {
 	segments := pathSegments(path)
 	if len(segments) == 0 {
-		return "", false
+		return ""
 	}
 	cut := len(segments)
-	for i, s := range segments {
-		if strings.HasPrefix(s, ":") || strings.HasPrefix(s, "*") {
+	for i, segment := range segments {
+		if strings.HasPrefix(segment, ":") || strings.HasPrefix(segment, "*") {
 			cut = i
 			break
 		}
 	}
 	if cut == 0 {
-		return "", false
+		return ""
 	}
-	end := cut
-	if cut == len(segments) && end > 1 {
-		end--
+	return "/" + strings.Join(segments[:cut], "/")
+}
+
+// topLevelSegment returns the top-level segment of a literal path, or "" when
+// the path has none. It is the coarsest claim that would cover the path, which
+// is what a startup failure over an unclaimed route suggests: claims are written
+// per top-level namespace unless a subtree is deliberately given to another
+// endpoint.
+func topLevelSegment(path string) string {
+	segments := pathSegments(path)
+	if len(segments) == 0 {
+		return ""
 	}
-	return "/" + strings.Join(segments[:end], "/"), true
+	return "/" + segments[0]
+}
+
+// claimList renders an endpoint's claims for a message, for example ["/api",
+// "/other"].
+func claimList(prefixes []string) string {
+	return "[" + quotedList(prefixes) + "]"
 }
 
 // pathSegments splits a route or request path into its non-empty segments.

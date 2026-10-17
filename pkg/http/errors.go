@@ -23,12 +23,37 @@ var (
 	// it named and the listeners that do exist, because picking one of them is
 	// the fixing action.
 	ErrUnknownListener = errors.New("http: listener name was never declared")
-	// ErrRouteConflict reports a routing clash the module refused: two routes
-	// on one endpoint that gin would not mount beside the others, or two
-	// routes on one listener that the listener's dispatch cannot tell apart.
-	// It surfaces while the chains are assembled and the listeners bound in
-	// Serve, not at registration: a registration records a declaration, and
-	// conflict is a property of the mounted set.
+	// ErrInvalidConfig reports a value error read out of configuration: an
+	// unknown key, a missing address, the reserved endpoint name, a duration
+	// an item refuses, a claim list or one of its prefixes that is not usable.
+	// The fixing action is always to correct or add that item, so the text
+	// names the entry and the complete key path, together with the value that
+	// was refused.
+	//
+	// Cross-entry references and conflicts have sentinels of their own:
+	// ErrUnknownListener for an endpoint naming a listener no configuration
+	// declares, and ErrClaimConflict for two endpoints claiming one prefix.
+	ErrInvalidConfig = errors.New("http: invalid configuration value")
+	// ErrClaimConflict reports two endpoints on one listener claiming the same
+	// path prefix, the root "/" included: the listener selects an endpoint by
+	// the longest prefix a request falls under, so one prefix belongs to one
+	// endpoint. Two endpoints that both omit prefixes both claim "/", which is
+	// the same conflict. The text names the listener, both endpoints and the
+	// prefix.
+	ErrClaimConflict = errors.New("http: two endpoints on one listener claim the same prefix")
+	// ErrUnclaimedRoute reports a route the listener's dispatch would never
+	// hand to the endpoint that registered it: its literal leading path falls
+	// under another endpoint's claimed prefix, or under none while the
+	// endpoint claims no root. Selection reads configuration only, so such a
+	// route is mounted but unreachable. The text names the listener, the
+	// route, the endpoint that registered it and its claims, and the endpoint
+	// and prefix that would answer it, or says that no endpoint would.
+	ErrUnclaimedRoute = errors.New("http: route lies outside its endpoint's claimed prefixes")
+	// ErrRouteConflict reports a routing clash gin refuses to mount: two routes
+	// on one endpoint, or a route together with the endpoint's layers beyond
+	// the number of handlers one gin chain holds. It surfaces while the chains
+	// are assembled in Serve, not at registration: a registration records a
+	// declaration, and conflict is a property of the mounted set.
 	//
 	// The text names both routes, each as its method and path, and the endpoint
 	// or the listener they are on, and not the registrants: the registration
@@ -36,10 +61,7 @@ var (
 	// declare its own Provides. A method and a path are literals in the
 	// source, so naming them locates the call. When the refusal cannot be
 	// attributed to a pair, the text says so instead of naming one route as
-	// though that were the verdict. Two catch-all endpoints on one listener
-	// join this sentinel too: gin keeps a catch-all and any other route apart,
-	// so the listener can carry at most one endpoint whose routes end in a
-	// catch-all, and a second one has no route a request could reach it by.
+	// though that were the verdict.
 	ErrRouteConflict = errors.New("http: two routes on one endpoint conflict")
 	// ErrMiddlewareCycle reports that the After and Before constraints of
 	// an endpoint's middleware form a cycle, so no order satisfies them.

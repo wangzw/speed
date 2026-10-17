@@ -16,6 +16,9 @@ import (
 var sentinels = map[string]error{
 	"ErrUnknownEndpoint": ErrUnknownEndpoint,
 	"ErrUnknownListener": ErrUnknownListener,
+	"ErrInvalidConfig":   ErrInvalidConfig,
+	"ErrClaimConflict":   ErrClaimConflict,
+	"ErrUnclaimedRoute":  ErrUnclaimedRoute,
 	"ErrRouteConflict":   ErrRouteConflict,
 	"ErrMiddlewareCycle": ErrMiddlewareCycle,
 	"ErrStageConflict":   ErrStageConflict,

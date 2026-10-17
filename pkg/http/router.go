@@ -235,9 +235,9 @@ type endpoint struct {
 	layers []layer
 
 	// handler is the assembled chain this endpoint serves requests with, set by
-	// Serve. The listener's dispatch handler hands it a request whose (method,
-	// path) this endpoint registered, or one no endpoint registered when this
-	// endpoint is the listener's catch-all.
+	// Serve. The listener's dispatch handler hands it every request whose path
+	// falls under one of this endpoint's claimed prefixes, and every path no
+	// other endpoint claims when this endpoint claims "/".
 	handler nethttp.Handler
 }
 

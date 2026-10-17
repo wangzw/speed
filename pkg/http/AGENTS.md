@@ -12,14 +12,18 @@ layer's constraints point at. The root package registers the module, named
 The configuration declares two sets: **listeners**, one socket each, and
 **endpoints**, one middleware chain and route table each, hung on a listener by
 name. A registrant takes an endpoint up by name and binds its routes and layers
-there; several endpoints may share one listener's socket. A listener carries a
-dispatch handler that routes each request by static path prefix: a request that
-falls under an endpoint's prefix — derived from the endpoint's registered routes
-— is answered by that endpoint's engine even when no route registered the path,
-so a mistyped API path gets that endpoint's own 404 rather than the fallback's
-200, and only a path under no endpoint's prefix reaches the listener's fallback
-endpoint — the one whose routes cover the whole path space, a catch-all route or
-a route at the root.
+there; several endpoints may share one listener's socket. Each endpoint claims
+the path prefixes it answers under `http.endpoints.<name>.prefixes`; omitting
+the key claims `/`, which makes the endpoint its listener's fallback — the one
+that answers the paths no other endpoint claims. A listener's dispatch selects
+an endpoint by those claims alone, the longest matching one winning, and hands
+the request to that endpoint's engine: a request under a claim is answered by
+that endpoint even when no route registered the path, so a mistyped API path
+gets that endpoint's own 404 rather than the fallback's 200. Registered routes
+take no part in selection; at startup each route's literal leading path must
+select the endpoint that registered it, or the startup fails with
+`ErrUnclaimedRoute`. Two endpoints claiming one prefix on a listener, `/`
+included, fail the startup as `ErrClaimConflict`.
 
 The API is the package's godoc, plus the runnable examples in `example_test.go`.
 Read `Middleware`'s field comments before adding a seat to a layer.

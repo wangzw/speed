@@ -573,9 +573,9 @@ func TestMaxBodyBytesHasThreeStatesAndRefusesANegativeOne(t *testing.T) {
 	cfg := moduleConfig{
 		Listeners: map[string]listenerConfig{"backend": {Address: "127.0.0.1:0"}},
 		Endpoints: map[string]endpointConfig{
-			"absent": {Listener: "backend"},
-			"off":    {Listener: "backend", MaxBodyBytes: &zero},
-			"given":  {Listener: "backend", MaxBodyBytes: &given},
+			"absent": {Listener: "backend", Prefixes: []string{"/absent"}},
+			"off":    {Listener: "backend", Prefixes: []string{"/off"}, MaxBodyBytes: &zero},
+			"given":  {Listener: "backend", Prefixes: []string{"/given"}, MaxBodyBytes: &given},
 		},
 	}
 	_, endpoints, err := cfg.resolve()
@@ -670,4 +670,173 @@ func TestAnInvalidTrustedProxyIsStartupFailure(t *testing.T) {
 	mustContain(t, err.Error(), "trusted-proxies", "the key that was written")
 	mustContain(t, err.Error(), `"public"`, "the endpoint it was written on")
 	mustContain(t, err.Error(), "not-a-network", "the value that is not a network")
+}
+
+// TestAnUnusableClaimPrefixIsAValueError pins each rule a single claimed prefix
+// has to meet, and the shape of the failure: a value error carrying the complete
+// key path and the refused value. The rules keep a claim literal and matchable —
+// the dispatch compares it with the decoded request path at segment boundaries —
+// so an implementation that accepted "/api/" would leave a claim no request ever
+// falls under.
+func TestAnUnusableClaimPrefixIsAValueError(t *testing.T) {
+	cases := []struct {
+		name     string
+		prefixes []string
+		want     []string
+	}{
+		{"empty string", []string{""}, []string{"prefixes[0]", `""`}},
+		{"no leading slash", []string{"api"}, []string{"prefixes[0]", `"api"`}},
+		{"trailing slash", []string{"/api/"}, []string{"prefixes[0]", `"/api/"`}},
+		{"empty segment", []string{"/api//v1"}, []string{"prefixes[0]", `"/api//v1"`}},
+		{"dot segment", []string{"/api/./v1"}, []string{"prefixes[0]", `"/api/./v1"`}},
+		{"dot-dot segment", []string{"/api/../v1"}, []string{"prefixes[0]", `"/api/../v1"`}},
+		{"parameter segment", []string{"/api/:id"}, []string{"prefixes[0]", `"/api/:id"`}},
+		{"wildcard segment", []string{"/api/*rest"}, []string{"prefixes[0]", `"/api/*rest"`}},
+		{"percent", []string{"/api%2Fv1"}, []string{"prefixes[0]", "contains"}},
+		{"query", []string{"/api?x"}, []string{"prefixes[0]", "contains"}},
+		{"fragment", []string{"/api#x"}, []string{"prefixes[0]", "contains"}},
+		{"space", []string{"/api v1"}, []string{"prefixes[0]", "whitespace"}},
+		{"control", []string{"/api\x01"}, []string{"prefixes[0]", "control character"}},
+		{"empty list", []string{}, []string{"http.endpoints.public.prefixes", "[]"}},
+		{"duplicate", []string{"/api", "/api"}, []string{"prefixes[1]", `"/api"`}},
+		{"ancestor", []string{"/api", "/api/v1"}, []string{"prefixes[1]", `"/api/v1"`, `"/api"`}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := moduleConfig{
+				Listeners: map[string]listenerConfig{"backend": {Address: ":8080"}},
+				Endpoints: map[string]endpointConfig{
+					"public": {Listener: "backend", Prefixes: tc.prefixes},
+				},
+			}.resolve()
+			if err == nil {
+				t.Fatalf("the claim list %q was accepted", tc.prefixes)
+			}
+			if !errors.Is(err, ErrInvalidConfig) {
+				t.Fatalf("resolving the claim list %q returned %v, want ErrInvalidConfig", tc.prefixes, err)
+			}
+			mustContain(t, err.Error(), "http.endpoints.public.prefixes", "the key path of the claim list")
+			for _, want := range tc.want {
+				mustContain(t, err.Error(), want, "the refused value locating the mistake")
+			}
+		})
+	}
+}
+
+// TestOmittedClaimPrefixesClaimTheRoot pins the default: an endpoint that does
+// not write prefixes claims "/", which makes it its listener's fallback. A
+// listener with one endpoint therefore behaves as it did before claims existed.
+func TestOmittedClaimPrefixesClaimTheRoot(t *testing.T) {
+	_, endpoints, err := moduleConfig{
+		Listeners: map[string]listenerConfig{"backend": {Address: ":8080"}},
+		Endpoints: map[string]endpointConfig{"public": {Listener: "backend"}},
+	}.resolve()
+	if err != nil {
+		t.Fatalf("resolving an endpoint without prefixes: %v", err)
+	}
+	if want := []string{"/"}; !slices.Equal(endpoints[0].prefixes, want) {
+		t.Errorf("an endpoint that omitted prefixes resolved to %v, want %v", endpoints[0].prefixes, want)
+	}
+}
+
+// TestRootAndADeeperClaimOnOneEndpointAreLegal pins that "/" may stand beside a
+// non-root claim in one endpoint's list: the endpoint answers the paths no one
+// else claims, and the deeper one lets it take a subtree back out of an outer
+// claim. The ancestor rule is skipped for "/", which is an ancestor of
+// everything by construction.
+func TestRootAndADeeperClaimOnOneEndpointAreLegal(t *testing.T) {
+	_, endpoints, err := moduleConfig{
+		Listeners: map[string]listenerConfig{"backend": {Address: ":8080"}},
+		Endpoints: map[string]endpointConfig{
+			"web":   {Listener: "backend", Prefixes: []string{"/", "/api"}},
+			"admin": {Listener: "backend", Prefixes: []string{"/admin"}},
+		},
+	}.resolve()
+	if err != nil {
+		t.Fatalf("resolving an endpoint claiming \"/\" and \"/api\": %v", err)
+	}
+	claims := make(map[string][]string, len(endpoints))
+	for _, e := range endpoints {
+		claims[e.name] = e.prefixes
+	}
+	if want := []string{"/", "/api"}; !slices.Equal(claims["web"], want) {
+		t.Errorf("the endpoint claiming both resolved to %v, want %v", claims["web"], want)
+	}
+}
+
+// TestTwoEndpointsClaimingOnePrefixIsAClaimConflict pins the cross-entry check
+// and its sentinel. Both writing the same prefix and both omitting the key are
+// the same conflict: the listener selects one endpoint by the longest claim, and
+// one prefix belongs to one endpoint. The text names the listener, both
+// endpoints and the prefix, and tells the host to write prefixes.
+func TestTwoEndpointsClaimingOnePrefixIsAClaimConflict(t *testing.T) {
+	for name, cfg := range map[string]moduleConfig{
+		"the same prefix": {
+			Listeners: map[string]listenerConfig{"backend": {Address: ":8080"}},
+			Endpoints: map[string]endpointConfig{
+				"a": {Listener: "backend", Prefixes: []string{"/api"}},
+				"b": {Listener: "backend", Prefixes: []string{"/api"}},
+			},
+		},
+		"both omitted": {
+			Listeners: map[string]listenerConfig{"backend": {Address: ":8080"}},
+			Endpoints: map[string]endpointConfig{
+				"a": {Listener: "backend"},
+				"b": {Listener: "backend"},
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := cfg.resolve()
+			if !errors.Is(err, ErrClaimConflict) {
+				t.Fatalf("the configuration resolved with %v, want ErrClaimConflict", err)
+			}
+			mustContain(t, err.Error(), `"backend"`, "the listener carrying both endpoints")
+			mustContain(t, err.Error(), `"a"`, "the first endpoint claiming the prefix")
+			mustContain(t, err.Error(), `"b"`, "the second endpoint claiming the prefix")
+			mustContain(t, err.Error(), "prefixes", "the key the failure tells the host to write")
+		})
+	}
+}
+
+// TestTwoListenersMayClaimTheSamePrefix pins that the conflict check is per
+// listener. Two listeners are two path spaces; the same claim on each selects a
+// different endpoint, and refusing it would reject a legal configuration.
+func TestTwoListenersMayClaimTheSamePrefix(t *testing.T) {
+	_, _, err := moduleConfig{
+		Listeners: map[string]listenerConfig{
+			"a": {Address: ":8080"},
+			"b": {Address: ":8081"},
+		},
+		Endpoints: map[string]endpointConfig{
+			"one": {Listener: "a", Prefixes: []string{"/api"}},
+			"two": {Listener: "b", Prefixes: []string{"/api"}},
+		},
+	}.resolve()
+	if err != nil {
+		t.Fatalf("two listeners claiming the same prefix on their own endpoints: %v", err)
+	}
+}
+
+// TestAnExplicitlyEmptyClaimListIsRefusedAfterDecode pins the difference between
+// omitting the key and writing an empty list through the real configuration
+// path. Omitting claims "/"; an explicit [] claims nothing, and an endpoint that
+// claims nothing receives no request, so it is refused rather than mistaken for
+// the default.
+func TestAnExplicitlyEmptyClaimListIsRefusedAfterDecode(t *testing.T) {
+	got, decodeErr, runErr := readThrough(t, `{
+		"http": {
+			"listeners": {"backend": {"address": ":8080"}},
+			"endpoints": {"public": {"listener": "backend", "prefixes": []}}
+		}
+	}`, schema())
+	if decodeErr != nil || runErr != nil {
+		t.Fatalf("the section did not decode: %v", errors.Join(runErr, decodeErr))
+	}
+	_, _, err := got.resolve()
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("an explicitly empty claim list resolved with %v, want ErrInvalidConfig", err)
+	}
+	mustContain(t, err.Error(), "http.endpoints.public.prefixes", "the key path of the empty list")
+	mustContain(t, err.Error(), "[]", "the value that was refused")
 }

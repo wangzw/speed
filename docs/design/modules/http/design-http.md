@@ -681,15 +681,15 @@ gin 的 `*gin.Context` 只在它所属那次请求的处理期间有效：handle
 |---|---|---|
 | 登记面与写入闸门 | 已实现 | `pkg/http/surface.go` `Router`、`Endpoint`、`Middleware`，`pkg/http/router.go` `(*router).open`、`(*router).seal`、`(*router).write`、`(*endpoint).Route`、`(*endpoint).Use` |
 | 端名的列出与保留端名 | 已实现 | `pkg/http/router.go` `(*router).Endpoints`，`pkg/http/config.go` `reservedEndpointName`、`endpointConfig.resolve` |
-| 监听与端点的配置读取、校验与引用检查 | 已实现 | `pkg/http/config.go` `moduleConfig`、`listenerConfig.resolve`、`endpointConfig.resolve`、`declaredListeners` |
+| 监听与端点的配置读取、校验与引用检查 | 已实现 | `pkg/http/config.go` `moduleConfig`、`listenerConfig.resolve`、`endpointConfig.resolve`、`declaredListeners`、`checkClaims` |
 | 入口模块的登记 | 已实现 | `pkg/http/module.go` `ModuleName`、`Module` |
 | gin 引擎的建立与设定 | 已实现 | `pkg/http/assemble.go` `newEngine`、`holdAllow`、`setReleaseMode` |
 | 中间件按阶段排序与链组装 | 已实现 | `pkg/http/order.go` `orderLayers`、`stageConflict`、`unplacedCause`，`pkg/http/assemble.go` `(*endpoint).assemble`、`useLayers`、`splitStages`、`(*endpoint).mount`、`(*endpoint).conflictError`、`reportRemarks`、`remarkCause.level` |
-| 阶段与次序的定义、取值与链清单 | 已实现 | `pkg/http/surface.go` `Stage`、`Order`、`OrderOutermost`、`OrderInnermost`、`validStage`、`stageName`，`pkg/http/assemble.go` `chainDescription`、`chainStage`、`chainLayer` |
-| 按认领前缀的监听级分派 | 未实现 | — |
-| 认领前缀的配置与校验 | 未实现 | — |
-| 路由须落在认领之内 | 未实现 | — |
-| 读配置时取值错误的哨兵 `ErrInvalidConfig` | 未实现 | — |
+| 阶段与次序的定义、取值与链清单 | 已实现 | `pkg/http/surface.go` `Stage`、`Order`、`OrderOutermost`、`OrderInnermost`、`validStage`、`stageName`，`pkg/http/assemble.go` `chainDescription`、`chainStage`、`chainLayer`、`claimSummary` |
+| 按认领前缀的监听级分派 | 已实现 | `pkg/http/dispatch.go` `buildDispatch`、`dispatch`、`(*dispatch).handler`、`(*dispatch).owner`、`fallsUnder`，`pkg/http/module.go` `(*router).serve` |
+| 认领前缀的配置与校验 | 已实现 | `pkg/http/config.go` `endpointConfig.Prefixes`、`endpointConfig.claimPrefixes`、`prefixSummary`、`checkClaims`、`endpointSettings.prefixes` |
+| 路由须落在认领之内 | 已实现 | `pkg/http/dispatch.go` `(*dispatch).verifyRoutes`、`literalLeadingPath`、`topLevelSegment` |
+| 读配置时取值错误的哨兵 `ErrInvalidConfig` | 已实现 | `pkg/http/errors.go` `ErrInvalidConfig`，`pkg/http/config.go` `listenerConfig.resolve`、`endpointConfig.resolve`、`claimPrefixes`，`pkg/http/module.go` `prepare` |
 | 监听的绑定与停机排空 | 已实现 | `pkg/http/listener.go` `(*listener).start`、`(*listener).stop`、`(*listener).close`、`(*listener).track`、`(*listener).endpointNames`、`inFlight`、`pkg/http/module.go` `(*router).serve`、`(*router).stop` |
 | 请求上下文的建立 | 已实现 | `pkg/http/assemble.go` `(*endpoint).base`，`pkg/http/problem.go` `withResponder` |
 | 请求路径的 panic 兜底 | 已实现 | `pkg/http/recovery.go` `recovery`、`answerDefect`、`panicError`、`handlerDefect`、`discardRepresentationHeaders`、`stackTrace` |

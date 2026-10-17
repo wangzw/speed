@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	nethttp "net/http"
 	"strings"
 	"sync"
@@ -13,10 +14,14 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/log"
 )
 
 // backendConfig is one listener named backend with the named endpoints hanging
-// on it, all on a loopback port the operating system picks.
+// on it, all on a loopback port the operating system picks. None of them writes
+// prefixes, so every one claims "/": this is the configuration two endpoints on
+// one listener cannot have, and the tests that want a claim conflict start from
+// it.
 func backendConfig(names ...string) moduleConfig {
 	cfg := moduleConfig{
 		Listeners: map[string]listenerConfig{"backend": {Address: "127.0.0.1:0"}},
@@ -24,6 +29,19 @@ func backendConfig(names ...string) moduleConfig {
 	}
 	for _, name := range names {
 		cfg.Endpoints[name] = endpointConfig{Listener: "backend"}
+	}
+	return cfg
+}
+
+// claimedConfig is one listener named backend with each endpoint's claimed
+// prefixes given explicitly, on a loopback port the operating system picks.
+func claimedConfig(claims map[string][]string) moduleConfig {
+	cfg := moduleConfig{
+		Listeners: map[string]listenerConfig{"backend": {Address: "127.0.0.1:0"}},
+		Endpoints: make(map[string]endpointConfig, len(claims)),
+	}
+	for name, prefixes := range claims {
+		cfg.Endpoints[name] = endpointConfig{Listener: "backend", Prefixes: prefixes}
 	}
 	return cfg
 }
@@ -59,7 +77,8 @@ func TestOneListenerServesTwoEndpointsOverOneSocket(t *testing.T) {
 		},
 	}
 
-	a := startAssembly(t, backendConfig("api", "web"), Module(), probe.module())
+	a := startAssembly(t, claimedConfig(map[string][]string{"api": {"/api"}, "web": {"/"}}),
+		Module(), probe.module())
 	a.waitForOrEnd(t, serving, "the listener to be served")
 
 	mu.Lock()
@@ -83,7 +102,7 @@ func TestOneListenerServesTwoEndpointsOverOneSocket(t *testing.T) {
 	}
 
 	// Both endpoints are reached over the same socket: the api route hits the
-	// api endpoint's chain, and a path no endpoint registered falls to the web
+	// api endpoint's chain, and a path no endpoint claims falls to the web
 	// endpoint, whose catch-all covers it.
 	api, err := getResponse(context.Background(), apiAddr, "/api/things")
 	if err != nil {
@@ -102,35 +121,57 @@ func TestOneListenerServesTwoEndpointsOverOneSocket(t *testing.T) {
 	}
 }
 
-// TestTwoCatchAllEndpointsOnOneListenerIsStartupFailure pins the one-endpoint
-// rule for the fallback: a listener hands every request no endpoint registered
-// to its one fallback endpoint, so a second catch-all has no request it could
-// ever be reached by, and the startup ends naming the listener and the two
-// endpoints.
-func TestTwoCatchAllEndpointsOnOneListenerIsStartupFailure(t *testing.T) {
-	probe := &stageProbe{
-		name:     "probe.registers-two-catch-alls",
-		requires: requiresRouter(),
-		onInit: inOrder(
-			routeOn("a", nethttp.MethodGet, "/*path", filler),
-			routeOn("b", nethttp.MethodGet, "/*rest", filler),
-		),
-	}
-	a := startAssembly(t, backendConfig("a", "b"), Module(), probe.module())
+// TestTwoEndpointsOmittingPrefixesIsAClaimConflict pins the configuration
+// failure two endpoints on one listener share: omitting prefixes claims "/",
+// and "/" at most one endpoint may claim. The failure comes from reading
+// configuration, before any chain is assembled, and its text tells the host to
+// give each endpoint its own prefixes.
+func TestTwoEndpointsOmittingPrefixesIsAClaimConflict(t *testing.T) {
+	a := startAssembly(t, backendConfig("a", "b"), Module())
 
 	runErr := a.stop(t)
-	if !errors.Is(runErr, ErrRouteConflict) {
-		t.Fatalf("two catch-all endpoints on one listener started up with %v, want ErrRouteConflict", runErr)
+	if !errors.Is(runErr, ErrClaimConflict) {
+		t.Fatalf("two endpoints that both omitted prefixes started up with %v, want ErrClaimConflict", runErr)
 	}
-	mustContain(t, runErr.Error(), `"backend"`, "the listener carrying both catch-alls")
-	mustContain(t, runErr.Error(), `"a"`, "the first catch-all endpoint")
-	mustContain(t, runErr.Error(), `"b"`, "the second catch-all endpoint")
+	mustContain(t, runErr.Error(), `"backend"`, "the listener carrying both endpoints")
+	mustContain(t, runErr.Error(), `"a"`, "the first endpoint claiming \"/\"")
+	mustContain(t, runErr.Error(), `"b"`, "the second endpoint claiming \"/\"")
+	mustContain(t, runErr.Error(), "prefixes", "the key the failure tells the host to write")
 }
 
-// TestTwoEndpointsOnARouteOnOneListenerIsStartupFailure pins that one (method,
-// path) belongs to one endpoint: two endpoints on one listener claiming the same
-// route is a startup failure naming the listener and the two endpoints, because
-// the dispatch could not tell which chain the request belongs to.
+// TestTwoEndpointsWithTheSameStaticPrefixIsAClaimConflict pins that one prefix
+// belongs to one endpoint: the listener selects an endpoint by the longest
+// prefix a request falls under, so two endpoints claiming the same prefix leave
+// the request's endpoint undecided. It is a configuration failure, naming the
+// listener, both endpoints and the prefix.
+func TestTwoEndpointsWithTheSameStaticPrefixIsAClaimConflict(t *testing.T) {
+	probe := &stageProbe{
+		name:     "probe.registers-two-endpoints-on-one-prefix",
+		requires: requiresRouter(),
+		onInit: inOrder(
+			routeOn("a", nethttp.MethodGet, "/api/v1/things", filler),
+			routeOn("b", nethttp.MethodGet, "/api/v1/other", filler),
+		),
+	}
+	a := startAssembly(t,
+		claimedConfig(map[string][]string{"a": {"/api/v1"}, "b": {"/api/v1"}}),
+		Module(), probe.module())
+
+	runErr := a.stop(t)
+	if !errors.Is(runErr, ErrClaimConflict) {
+		t.Fatalf("two endpoints claiming one prefix started up with %v, want ErrClaimConflict", runErr)
+	}
+	mustContain(t, runErr.Error(), `"backend"`, "the listener carrying both endpoints")
+	mustContain(t, runErr.Error(), `"a"`, "the first endpoint on the prefix")
+	mustContain(t, runErr.Error(), `"b"`, "the second endpoint on the prefix")
+	mustContain(t, runErr.Error(), "/api/v1", "the prefix both claimed")
+}
+
+// TestTwoEndpointsOnARouteOnOneListenerIsStartupFailure pins that selection is
+// by configuration: a route registered on an endpoint whose claim does not
+// select it is mounted but unreachable, so the startup ends with
+// ErrUnclaimedRoute naming the listener, the route and the endpoint that would
+// answer it instead.
 func TestTwoEndpointsOnARouteOnOneListenerIsStartupFailure(t *testing.T) {
 	probe := &stageProbe{
 		name:     "probe.registers-one-route-twice",
@@ -140,26 +181,25 @@ func TestTwoEndpointsOnARouteOnOneListenerIsStartupFailure(t *testing.T) {
 			routeOn("b", nethttp.MethodGet, "/things", filler),
 		),
 	}
-	a := startAssembly(t, backendConfig("a", "b"), Module(), probe.module())
+	a := startAssembly(t,
+		claimedConfig(map[string][]string{"a": {"/things"}, "b": {"/other"}}),
+		Module(), probe.module())
 
 	runErr := a.stop(t)
-	if !errors.Is(runErr, ErrRouteConflict) {
-		t.Fatalf("two endpoints claiming one route started up with %v, want ErrRouteConflict", runErr)
+	if !errors.Is(runErr, ErrUnclaimedRoute) {
+		t.Fatalf("two endpoints claiming one route started up with %v, want ErrUnclaimedRoute", runErr)
 	}
 	mustContain(t, runErr.Error(), `"backend"`, "the listener carrying both endpoints")
-	mustContain(t, runErr.Error(), `"a"`, "the first endpoint on the route")
-	mustContain(t, runErr.Error(), `"b"`, "the second endpoint on the route")
+	mustContain(t, runErr.Error(), `"b"`, "the endpoint whose route is unclaimed")
+	mustContain(t, runErr.Error(), `"a"`, "the endpoint its claim selects")
 	mustContain(t, runErr.Error(), "/things", "the route both claimed")
 }
 
-// TestARouteShadowedByTheFallbackIsStillAStartupFailure pins that the
-// one-route-one-endpoint rule reaches the fallback endpoint too. The fallback is
-// left out of prefix ownership, and the prefix owning the path answers it, so a
-// route the fallback registers beside another endpoint's is not routed by the
-// listener at all; without the fallback in the duplicate check the startup
-// succeeds and the shadowed route is silently unreachable. The check therefore
-// covers every endpoint, and the failure names the listener, the two endpoints
-// and the route.
+// TestARouteShadowedByTheFallbackIsStillAStartupFailure pins that the claim
+// check reaches the fallback endpoint too. A literal route the fallback
+// registers under another endpoint's claim is answered by that other endpoint,
+// so it is unreachable; the failure names the listener, the registering
+// endpoint and the endpoint and prefix that would answer it.
 func TestARouteShadowedByTheFallbackIsStillAStartupFailure(t *testing.T) {
 	probe := &stageProbe{
 		name:     "probe.registers-a-route-the-fallback-shadows",
@@ -170,15 +210,17 @@ func TestARouteShadowedByTheFallbackIsStillAStartupFailure(t *testing.T) {
 			routeOn("api", nethttp.MethodPost, "/api/x", filler),
 		),
 	}
-	a := startAssembly(t, backendConfig("api", "web"), Module(), probe.module())
+	a := startAssembly(t,
+		claimedConfig(map[string][]string{"api": {"/api"}, "web": {"/"}}),
+		Module(), probe.module())
 
 	runErr := a.stop(t)
-	if !errors.Is(runErr, ErrRouteConflict) {
-		t.Fatalf("a route the fallback endpoint also registered started up with %v, want ErrRouteConflict", runErr)
+	if !errors.Is(runErr, ErrUnclaimedRoute) {
+		t.Fatalf("a route the fallback endpoint also registered started up with %v, want ErrUnclaimedRoute", runErr)
 	}
 	mustContain(t, runErr.Error(), `"backend"`, "the listener carrying both endpoints")
-	mustContain(t, runErr.Error(), `"web"`, "the fallback endpoint")
-	mustContain(t, runErr.Error(), `"api"`, "the endpoint whose route was shadowed")
+	mustContain(t, runErr.Error(), `"web"`, "the fallback endpoint that registered the route")
+	mustContain(t, runErr.Error(), `"api"`, "the endpoint whose claim answers it")
 	mustContain(t, runErr.Error(), "/api/x", "the route both registered")
 }
 
@@ -215,7 +257,9 @@ func TestAMethodNotAllowedRequestRunsTheOwningEndpointsChain(t *testing.T) {
 		},
 	}
 
-	a := startAssembly(t, backendConfig("api", "web"), Module(), probe.module())
+	a := startAssembly(t,
+		claimedConfig(map[string][]string{"api": {"/api"}, "web": {"/"}}),
+		Module(), probe.module())
 	a.waitForOrEnd(t, serving, "the listener to be served")
 	r, err := routerFrom(a.reg)
 	if err != nil {
@@ -279,9 +323,9 @@ func TestAMethodNotAllowedRequestRunsTheOwningEndpointsChain(t *testing.T) {
 
 // TestAPathUnderAnEndpointsPrefixIsAnsweredByThatEndpoint pins the selector a
 // shared listener routes by: a request path that falls under an endpoint's
-// static prefix is answered by that endpoint — its engine runs its chain and
+// claimed prefix is answered by that endpoint — its engine runs its chain and
 // writes its own 404 — even when no route registered the path, and only a path
-// under no endpoint's prefix reaches the fallback. Without it the web bundle's
+// under no endpoint's claim reaches the fallback. Without it the web bundle's
 // catch-all, the fallback, answers a mistyped API path with 200 text/html, and a
 // client or a monitor reads a misspelling as a success.
 func TestAPathUnderAnEndpointsPrefixIsAnsweredByThatEndpoint(t *testing.T) {
@@ -300,7 +344,9 @@ func TestAPathUnderAnEndpointsPrefixIsAnsweredByThatEndpoint(t *testing.T) {
 			return nil
 		},
 	}
-	a := startAssembly(t, backendConfig("api", "web"), Module(), probe.module())
+	a := startAssembly(t,
+		claimedConfig(map[string][]string{"api": {"/api"}, "web": {"/"}}),
+		Module(), probe.module())
 	a.waitForOrEnd(t, serving, "the listener to be served")
 	r, err := routerFrom(a.reg)
 	if err != nil {
@@ -320,7 +366,7 @@ func TestAPathUnderAnEndpointsPrefixIsAnsweredByThatEndpoint(t *testing.T) {
 		t.Errorf("the registered route answered %d %q, want 200 %q", got.status, got.body, "api")
 	}
 
-	// A path under the api prefix that no route registered is answered by api in
+	// A path under the api claim that no route registered is answered by api in
 	// api's own shape — a problem+json 404 — not swallowed by the web fallback.
 	nope, err := getResponse(context.Background(), addr, "/api/v1/nope")
 	if err != nil {
@@ -337,7 +383,7 @@ func TestAPathUnderAnEndpointsPrefixIsAnsweredByThatEndpoint(t *testing.T) {
 		t.Errorf("the unregistered api path was served the web bundle: %q", nope.body)
 	}
 
-	// A path under no endpoint's prefix goes to the fallback, the web bundle.
+	// A path under no endpoint's claim goes to the fallback, the web bundle.
 	for _, path := range []string{"/console/tenants", "/"} {
 		web, err := getResponse(context.Background(), addr, path)
 		if err != nil {
@@ -350,13 +396,11 @@ func TestAPathUnderAnEndpointsPrefixIsAnsweredByThatEndpoint(t *testing.T) {
 }
 
 // TestAPathNoEndpointOwnsWithNoFallbackIsTheDispatchsOwn404 pins the dispatch's
-// own answer when a listener carries no fallback: a path under no endpoint's
-// prefix is answered by the dispatch itself, as a problem+json 404, rather than
-// by any endpoint. The listener here carries two endpoints with disjoint
-// prefixes and no catch-all, so a request under neither is owned by nobody and
-// there is no fallback to hand it to. Each endpoint's chain sets a marker header,
-// and the answer carries neither, which is what shows the dispatch wrote it and
-// no endpoint's chain ran.
+// own answer when a listener carries no endpoint claiming "/": a path under no
+// endpoint's claim is answered by the dispatch itself, as a problem+json 404,
+// rather than by any endpoint. Each endpoint's chain sets a marker header, and
+// the answer carries neither, which is what shows the dispatch wrote it and no
+// endpoint's chain ran.
 func TestAPathNoEndpointOwnsWithNoFallbackIsTheDispatchsOwn404(t *testing.T) {
 	serving := make(chan struct{}, 1)
 	mark := func(name string) gin.HandlerFunc {
@@ -379,7 +423,9 @@ func TestAPathNoEndpointOwnsWithNoFallbackIsTheDispatchsOwn404(t *testing.T) {
 			return nil
 		},
 	}
-	a := startAssembly(t, backendConfig("a", "b"), Module(), probe.module())
+	a := startAssembly(t,
+		claimedConfig(map[string][]string{"a": {"/api/v1"}, "b": {"/other"}}),
+		Module(), probe.module())
 	a.waitForOrEnd(t, serving, "the listener to be served")
 	r, err := routerFrom(a.reg)
 	if err != nil {
@@ -395,7 +441,7 @@ func TestAPathNoEndpointOwnsWithNoFallbackIsTheDispatchsOwn404(t *testing.T) {
 		t.Fatalf("the request for the unowned path failed: %v", err)
 	}
 	if got.status != nethttp.StatusNotFound {
-		t.Errorf("a path under no endpoint's prefix answered %d, want %d", got.status, nethttp.StatusNotFound)
+		t.Errorf("a path under no endpoint's claim answered %d, want %d", got.status, nethttp.StatusNotFound)
 	}
 	if ct := got.header.Get("Content-Type"); !strings.HasPrefix(ct, "application/problem+json") {
 		t.Errorf("the dispatch's 404 carries Content-Type %q, want application/problem+json", ct)
@@ -405,37 +451,11 @@ func TestAPathNoEndpointOwnsWithNoFallbackIsTheDispatchsOwn404(t *testing.T) {
 	}
 }
 
-// TestTwoEndpointsWithTheSameStaticPrefixIsStartupFailure pins that one static
-// prefix belongs to one endpoint: the listener selects an endpoint by the
-// longest prefix a request falls under, so two endpoints owning the same prefix
-// leave the request's endpoint undecided, and the startup ends naming the
-// listener, the two endpoints and the prefix.
-func TestTwoEndpointsWithTheSameStaticPrefixIsStartupFailure(t *testing.T) {
-	probe := &stageProbe{
-		name:     "probe.registers-two-endpoints-on-one-prefix",
-		requires: requiresRouter(),
-		onInit: inOrder(
-			routeOn("a", nethttp.MethodGet, "/api/v1/things", filler),
-			routeOn("b", nethttp.MethodGet, "/api/v1/other", filler),
-		),
-	}
-	a := startAssembly(t, backendConfig("a", "b"), Module(), probe.module())
-
-	runErr := a.stop(t)
-	if !errors.Is(runErr, ErrRouteConflict) {
-		t.Fatalf("two endpoints on one static prefix started up with %v, want ErrRouteConflict", runErr)
-	}
-	mustContain(t, runErr.Error(), `"backend"`, "the listener carrying both endpoints")
-	mustContain(t, runErr.Error(), `"a"`, "the first endpoint on the prefix")
-	mustContain(t, runErr.Error(), `"b"`, "the second endpoint on the prefix")
-	mustContain(t, runErr.Error(), "/api/v1", "the prefix both owned")
-}
-
-// TestNestedStaticPrefixesPickTheLongestMatch pins that nested prefixes are not a
-// collision: the endpoint owning the longer prefix answers a path under it, and
-// the endpoint owning the shorter one answers the rest of its subtree, including
-// a path no route registered, since the longer prefix does not cover it.
-func TestNestedStaticPrefixesPickTheLongestMatch(t *testing.T) {
+// TestNestedClaimsPickTheLongestMatch pins that nested claims are not a
+// collision: the endpoint claiming the longer prefix answers a path under it,
+// and the endpoint claiming the shorter one answers the rest of its subtree,
+// including a path no route registered, since the longer claim does not cover it.
+func TestNestedClaimsPickTheLongestMatch(t *testing.T) {
 	serving := make(chan struct{}, 1)
 	probe := &stageProbe{
 		name:     "probe.registers-nested-prefixes",
@@ -449,7 +469,9 @@ func TestNestedStaticPrefixesPickTheLongestMatch(t *testing.T) {
 			return nil
 		},
 	}
-	a := startAssembly(t, backendConfig("outer", "inner"), Module(), probe.module())
+	a := startAssembly(t,
+		claimedConfig(map[string][]string{"outer": {"/api"}, "inner": {"/api/v1/internal"}}),
+		Module(), probe.module())
 	a.waitForOrEnd(t, serving, "the listener to be served")
 	r, err := routerFrom(a.reg)
 	if err != nil {
@@ -460,7 +482,7 @@ func TestNestedStaticPrefixesPickTheLongestMatch(t *testing.T) {
 		t.Fatalf("finding the address the listener bound: %v", err)
 	}
 
-	// The longer prefix wins for a path under it.
+	// The longer claim wins for a path under it.
 	inner, err := getResponse(context.Background(), addr, "/api/v1/internal/things")
 	if err != nil {
 		t.Fatalf("the request for the inner route failed: %v", err)
@@ -470,8 +492,8 @@ func TestNestedStaticPrefixesPickTheLongestMatch(t *testing.T) {
 			inner.status, inner.body, "inner")
 	}
 
-	// The shorter prefix answers the rest of its subtree. Its registered route
-	// answers normally; a path it owns but does not register gets the outer
+	// The shorter claim answers the rest of its subtree. Its registered route
+	// answers normally; a path it claims but does not register gets the outer
 	// endpoint's own 404, not the inner endpoint's and not a fallback (there is
 	// none).
 	for _, tc := range []struct {
@@ -492,41 +514,40 @@ func TestNestedStaticPrefixesPickTheLongestMatch(t *testing.T) {
 	}
 }
 
-// TestARootEndpointBesideACatchAllIsStartupFailure pins the one-whole-path-space
-// rule for a root endpoint: a route at "/" makes the endpoint own every path as a
-// prefix, the same whole space a catch-all endpoint covers. A listener carrying
-// both would hand every request to whichever the dispatch picked first and the
-// other would never be reached, so the startup ends naming the listener and the
-// two endpoints. Without the rule the root endpoint silently shadows the
-// catch-all: the catch-all is the fallback and owns no prefix, while the root
-// endpoint owns "/" and takes every request the catch-all would have answered.
-func TestARootEndpointBesideACatchAllIsStartupFailure(t *testing.T) {
+// TestACatchAllBesideARootClaimIsUnclaimed pins that a catch-all is selected by
+// its literal leading path, which is empty: only the endpoint claiming "/" can
+// register one. An endpoint claiming /web and registering /*path would never be
+// selected, so the startup ends with ErrUnclaimedRoute naming both the
+// registering endpoint and the fallback that answers it.
+func TestACatchAllBesideARootClaimIsUnclaimed(t *testing.T) {
 	probe := &stageProbe{
-		name:     "probe.registers-a-root-endpoint-and-a-catch-all",
+		name:     "probe.registers-a-root-and-a-catch-all",
 		requires: requiresRouter(),
 		onInit: inOrder(
 			routeOn("root", nethttp.MethodGet, "/", filler),
 			routeOn("web", nethttp.MethodGet, "/*path", filler),
 		),
 	}
-	a := startAssembly(t, backendConfig("root", "web"), Module(), probe.module())
+	a := startAssembly(t,
+		claimedConfig(map[string][]string{"root": {"/"}, "web": {"/web"}}),
+		Module(), probe.module())
 
 	runErr := a.stop(t)
-	if !errors.Is(runErr, ErrRouteConflict) {
-		t.Fatalf("a root endpoint beside a catch-all started up with %v, want ErrRouteConflict", runErr)
+	if !errors.Is(runErr, ErrUnclaimedRoute) {
+		t.Fatalf("a catch-all beside a root claim started up with %v, want ErrUnclaimedRoute", runErr)
 	}
 	mustContain(t, runErr.Error(), `"backend"`, "the listener carrying both endpoints")
-	mustContain(t, runErr.Error(), `"root"`, "the endpoint registering the root")
-	mustContain(t, runErr.Error(), `"web"`, "the catch-all endpoint")
+	mustContain(t, runErr.Error(), `"web"`, "the endpoint registering the catch-all")
+	mustContain(t, runErr.Error(), `"root"`, "the endpoint claiming \"/\" that answers it")
+	mustContain(t, runErr.Error(), "/web", "the claim of the endpoint registering the catch-all")
 }
 
-// TestAnEndpointRegisteringTheRootIsTheListenersFallback pins how a listener
-// treats an endpoint that registers the root "/": it covers the whole path space
-// — every path falls under "/" — so it is the listener's fallback, the endpoint
-// that answers the paths no other endpoint owns. Beside an endpoint owning a
-// deeper prefix the two coexist: the deeper prefix wins for a path under it, and
+// TestAnEndpointClaimingTheRootIsTheListenersFallback pins how a listener
+// treats an endpoint that claims "/": it is the fallback, the endpoint that
+// answers the paths no other endpoint claims. Beside an endpoint claiming a
+// deeper prefix the two coexist: the deeper claim wins for a path under it, and
 // the root endpoint answers the rest, including "/" itself.
-func TestAnEndpointRegisteringTheRootIsTheListenersFallback(t *testing.T) {
+func TestAnEndpointClaimingTheRootIsTheListenersFallback(t *testing.T) {
 	serving := make(chan struct{}, 1)
 	probe := &stageProbe{
 		name:     "probe.registers-a-root-endpoint-beside-an-api",
@@ -540,7 +561,9 @@ func TestAnEndpointRegisteringTheRootIsTheListenersFallback(t *testing.T) {
 			return nil
 		},
 	}
-	a := startAssembly(t, backendConfig("root", "api"), Module(), probe.module())
+	a := startAssembly(t,
+		claimedConfig(map[string][]string{"root": {"/"}, "api": {"/api"}}),
+		Module(), probe.module())
 	a.waitForOrEnd(t, serving, "the listener to be served")
 	r, err := routerFrom(a.reg)
 	if err != nil {
@@ -568,60 +591,312 @@ func TestAnEndpointRegisteringTheRootIsTheListenersFallback(t *testing.T) {
 	}
 }
 
-// TestAnEndpointWithNoStaticPrefixBesideOthersIsStartupFailure pins the other
-// half of prefix selection: an endpoint whose routes all begin with a dynamic
-// segment owns no prefix, so a listener carrying it beside another endpoint has
-// no path to select it by, and the startup ends naming the listener and the
-// endpoint. Alone on a listener the same endpoint is the fallback and carries
-// every request, so this is only a failure when it shares the socket.
-func TestAnEndpointWithNoStaticPrefixBesideOthersIsStartupFailure(t *testing.T) {
+// TestAZeroRouteEndpointOwnsItsClaim pins the property that made claims
+// configuration: an endpoint with no routes starts up and answers the paths its
+// claim selects, running its own chain and writing its own 404. Without it an
+// endpoint whose modules are not running would have to leave the listener, and
+// the paths under its claim would drift to the fallback with the assembly.
+func TestAZeroRouteEndpointOwnsItsClaim(t *testing.T) {
+	serving := make(chan struct{}, 1)
+	mark := func(c *gin.Context) {
+		c.Header("X-Endpoint-Saw", "e")
+		c.Next()
+	}
 	probe := &stageProbe{
-		name:     "probe.registers-a-root-dynamic-endpoint",
+		name:     "probe.registers-a-zero-route-endpoint",
 		requires: requiresRouter(),
 		onInit: inOrder(
-			routeOn("a", nethttp.MethodGet, "/:tenant/things", filler),
-			routeOn("b", nethttp.MethodGet, "/api/v1/things", filler),
+			useLayer("e", Middleware{Name: "e.marker", Stage: StageGuard, Handler: mark}),
+			routeOn("f", nethttp.MethodGet, "/*path", func(c *gin.Context) { c.String(nethttp.StatusOK, "fallback") }),
 		),
+		onServe: func(*core.Registry) error {
+			serving <- struct{}{}
+			return nil
+		},
 	}
-	a := startAssembly(t, backendConfig("a", "b"), Module(), probe.module())
+	a := startAssembly(t,
+		claimedConfig(map[string][]string{"e": {"/x"}, "f": {"/"}}),
+		Module(), probe.module())
+	a.waitForOrEnd(t, serving, "the listener to be served")
+	r, err := routerFrom(a.reg)
+	if err != nil {
+		t.Fatalf("taking this module's product out of the registry: %v", err)
+	}
+	addr, err := boundAddr(r, "e")
+	if err != nil {
+		t.Fatalf("finding the address the listener bound: %v", err)
+	}
 
-	runErr := a.stop(t)
-	if !errors.Is(runErr, ErrRouteConflict) {
-		t.Fatalf("an endpoint with no static prefix beside another started up with %v, want ErrRouteConflict", runErr)
+	got, err := getResponse(context.Background(), addr, "/x/y")
+	if err != nil {
+		t.Fatalf("the request under the zero-route endpoint's claim failed: %v", err)
 	}
-	mustContain(t, runErr.Error(), `"backend"`, "the listener carrying both endpoints")
-	mustContain(t, runErr.Error(), `"a"`, "the endpoint with no static prefix")
+	if got.status != nethttp.StatusNotFound {
+		t.Errorf("a path under the zero-route endpoint answered %d, want its own 404", got.status)
+	}
+	if ct := got.header.Get("Content-Type"); !strings.HasPrefix(ct, "application/problem+json") {
+		t.Errorf("the endpoint's 404 carries Content-Type %q, want application/problem+json", ct)
+	}
+	if saw := got.header.Get("X-Endpoint-Saw"); saw != "e" {
+		t.Errorf("the answer carries the marker %q, want %q: the fallback answered instead of the "+
+			"endpoint that claims the path", saw, "e")
+	}
+	if strings.Contains(got.body, "fallback") {
+		t.Errorf("the fallback answered a path under another endpoint's claim: %q", got.body)
+	}
 }
 
-// TestRoutePrefix pins the static prefix a route contributes to its endpoint's
-// ownership: the literal segments it leads with, up to the first dynamic
-// segment, with a fully literal route of two or more segments contributing its
-// parent so the endpoint also answers paths beside its own routes. A route whose
-// first segment is already dynamic contributes nothing, and neither does a route
-// at the root: an endpoint registering "/" covers the whole path space and is its
-// listener's fallback rather than a prefix owner.
-func TestRoutePrefix(t *testing.T) {
-	cases := []struct {
-		path string
-		want string
-		ok   bool
-	}{
-		{"/api/v1/objects", "/api/v1", true},
-		{"/api/v1/objects/:id", "/api/v1/objects", true},
-		{"/api/v1/notifications/messages/:messageId/read", "/api/v1/notifications/messages", true},
-		{"/auth/login", "/auth", true},
-		{"/tenant/admin/tenants/:id/status", "/tenant/admin/tenants", true},
-		{"/health", "/health", true},
-		{"/", "", false},
-		{"/:tenant/things", "", false},
-		{"/*path", "", false},
+// TestAPathUnderAClaimIsAnsweredByThatEndpointEvenWithoutARoute pins that
+// selection reads the claim and not the routes: an endpoint claiming /api
+// answers /api/v1/objects with its own 404 even though the only route it
+// registered is /api/v1/notifications/m. The record module that registers the
+// other routes may be absent, and the answer stays the same.
+func TestAPathUnderAClaimIsAnsweredByThatEndpointEvenWithoutARoute(t *testing.T) {
+	serving := make(chan struct{}, 1)
+	mark := func(c *gin.Context) {
+		c.Header("X-Endpoint-Saw", "e")
+		c.Next()
 	}
-	for _, tc := range cases {
-		got, ok := routePrefix(tc.path)
-		if ok != tc.ok || got != tc.want {
-			t.Errorf("routePrefix(%q) = %q, %v; want %q, %v", tc.path, got, ok, tc.want, tc.ok)
+	probe := &stageProbe{
+		name:     "probe.registers-one-deep-route",
+		requires: requiresRouter(),
+		onInit: inOrder(
+			useLayer("e", Middleware{Name: "e.marker", Stage: StageGuard, Handler: mark}),
+			routeOn("e", nethttp.MethodGet, "/api/v1/notifications/m",
+				func(c *gin.Context) { c.String(nethttp.StatusOK, "e") }),
+			routeOn("f", nethttp.MethodGet, "/*path", func(c *gin.Context) { c.String(nethttp.StatusOK, "fallback") }),
+		),
+		onServe: func(*core.Registry) error {
+			serving <- struct{}{}
+			return nil
+		},
+	}
+	a := startAssembly(t,
+		claimedConfig(map[string][]string{"e": {"/api"}, "f": {"/"}}),
+		Module(), probe.module())
+	a.waitForOrEnd(t, serving, "the listener to be served")
+	r, err := routerFrom(a.reg)
+	if err != nil {
+		t.Fatalf("taking this module's product out of the registry: %v", err)
+	}
+	addr, err := boundAddr(r, "e")
+	if err != nil {
+		t.Fatalf("finding the address the listener bound: %v", err)
+	}
+
+	got, err := getResponse(context.Background(), addr, "/api/v1/objects")
+	if err != nil {
+		t.Fatalf("the request for an unregistered path under the claim failed: %v", err)
+	}
+	if got.status != nethttp.StatusNotFound {
+		t.Errorf("a path under the claim answered %d, want the endpoint's own 404", got.status)
+	}
+	if saw := got.header.Get("X-Endpoint-Saw"); saw != "e" {
+		t.Errorf("the answer carries the marker %q, want %q: the fallback answered instead", saw, "e")
+	}
+}
+
+// TestADeepCatchAllUnderItsOwnClaimStarts pins that a wildcard is selected by
+// its literal leading path: /files/*p leads with /files, so an endpoint
+// claiming /files may register it beside an endpoint claiming "/". It is not a
+// second fallback.
+func TestADeepCatchAllUnderItsOwnClaimStarts(t *testing.T) {
+	serving := make(chan struct{}, 1)
+	probe := &stageProbe{
+		name:     "probe.registers-a-deep-catch-all",
+		requires: requiresRouter(),
+		onInit: inOrder(
+			routeOn("files", nethttp.MethodGet, "/files/*p",
+				func(c *gin.Context) { c.String(nethttp.StatusOK, "files:"+c.Param("p")) }),
+			routeOn("web", nethttp.MethodGet, "/*path", func(c *gin.Context) { c.String(nethttp.StatusOK, "web") }),
+		),
+		onServe: func(*core.Registry) error {
+			serving <- struct{}{}
+			return nil
+		},
+	}
+	a := startAssembly(t,
+		claimedConfig(map[string][]string{"files": {"/files"}, "web": {"/"}}),
+		Module(), probe.module())
+	a.waitForOrEnd(t, serving, "the listener to be served")
+	r, err := routerFrom(a.reg)
+	if err != nil {
+		t.Fatalf("taking this module's product out of the registry: %v", err)
+	}
+	addr, err := boundAddr(r, "files")
+	if err != nil {
+		t.Fatalf("finding the address the listener bound: %v", err)
+	}
+
+	got, err := getResponse(context.Background(), addr, "/files/a/b")
+	if err != nil {
+		t.Fatalf("the request for the deep wildcard failed: %v", err)
+	}
+	if got.status != nethttp.StatusOK || got.body != "files:/a/b" {
+		t.Errorf("/files/a/b answered %d %q, want 200 %q", got.status, got.body, "files:/a/b")
+	}
+
+	other, err := getResponse(context.Background(), addr, "/other")
+	if err != nil {
+		t.Fatalf("the request for the fallback failed: %v", err)
+	}
+	if other.status != nethttp.StatusOK || other.body != "web" {
+		t.Errorf("/other answered %d %q, want 200 %q", other.status, other.body, "web")
+	}
+}
+
+// TestAWildcardOnAPrefixedEndpointIsUnclaimed pins the failing side of the
+// literal leading path: a catch-all leads with nothing, so only the endpoint
+// claiming "/" can register one. An endpoint claiming /api and registering
+// /*path is refused at startup with ErrUnclaimedRoute, naming the route, the
+// registering endpoint and the fallback that would answer it.
+func TestAWildcardOnAPrefixedEndpointIsUnclaimed(t *testing.T) {
+	probe := &stageProbe{
+		name:     "probe.registers-a-wildcard-on-a-prefixed-endpoint",
+		requires: requiresRouter(),
+		onInit: inOrder(
+			routeOn("e", nethttp.MethodGet, "/*path", filler),
+			routeOn("f", nethttp.MethodGet, "/*rest", filler),
+		),
+	}
+	a := startAssembly(t,
+		claimedConfig(map[string][]string{"e": {"/api"}, "f": {"/"}}),
+		Module(), probe.module())
+
+	runErr := a.stop(t)
+	if !errors.Is(runErr, ErrUnclaimedRoute) {
+		t.Fatalf("a wildcard on a prefixed endpoint started up with %v, want ErrUnclaimedRoute", runErr)
+	}
+	mustContain(t, runErr.Error(), `"backend"`, "the listener")
+	mustContain(t, runErr.Error(), `"e"`, "the endpoint registering the wildcard")
+	mustContain(t, runErr.Error(), "GET /*path", "the route that is unclaimed")
+	mustContain(t, runErr.Error(), `"f"`, "the fallback that would answer it")
+}
+
+// TestARouteTakenByALongerClaimIsUnclaimed pins the rule the claim check exists
+// for: a route is selected by the longest claim under it, not by whether its own
+// endpoint claims something above it. An endpoint claiming /api registers
+// /api/internal/x while another claims /api/internal; the request would go to
+// the longer claim, so the route is unreachable and the startup names the
+// endpoint and prefix that take it.
+func TestARouteTakenByALongerClaimIsUnclaimed(t *testing.T) {
+	probe := &stageProbe{
+		name:     "probe.registers-a-route-taken-by-a-longer-claim",
+		requires: requiresRouter(),
+		onInit: inOrder(
+			routeOn("e", nethttp.MethodGet, "/api/internal/x", filler),
+		),
+	}
+	a := startAssembly(t,
+		claimedConfig(map[string][]string{"e": {"/api"}, "b": {"/api/internal"}}),
+		Module(), probe.module())
+
+	runErr := a.stop(t)
+	if !errors.Is(runErr, ErrUnclaimedRoute) {
+		t.Fatalf("a route taken by a longer claim started up with %v, want ErrUnclaimedRoute", runErr)
+	}
+	mustContain(t, runErr.Error(), `"e"`, "the endpoint that registered the route")
+	mustContain(t, runErr.Error(), `"b"`, "the endpoint whose longer claim selects it")
+	mustContain(t, runErr.Error(), "/api/internal", "the claim that takes it")
+	mustContain(t, runErr.Error(), "/api/internal/x", "the route")
+}
+
+// TestPartialShadowingStarts pins that nested claims may partition a subtree: an
+// endpoint claiming /api registers /api/:id and another claims /api/internal.
+// /api/:id's literal leading path is /api, which selects the first endpoint, and
+// /api/internal is the meaning of the nested claim. The startup succeeds and the
+// request for /api/internal reaches the second endpoint.
+func TestPartialShadowingStarts(t *testing.T) {
+	serving := make(chan struct{}, 1)
+	probe := &stageProbe{
+		name:     "probe.registers-partially-shadowed-routes",
+		requires: requiresRouter(),
+		onInit: inOrder(
+			routeOn("a", nethttp.MethodGet, "/api/:id",
+				func(c *gin.Context) { c.String(nethttp.StatusOK, "a:"+c.Param("id")) }),
+			routeOn("b", nethttp.MethodGet, "/api/internal",
+				func(c *gin.Context) { c.String(nethttp.StatusOK, "b") }),
+		),
+		onServe: func(*core.Registry) error {
+			serving <- struct{}{}
+			return nil
+		},
+	}
+	a := startAssembly(t,
+		claimedConfig(map[string][]string{"a": {"/api"}, "b": {"/api/internal"}}),
+		Module(), probe.module())
+	a.waitForOrEnd(t, serving, "the listener to be served")
+	r, err := routerFrom(a.reg)
+	if err != nil {
+		t.Fatalf("taking this module's product out of the registry: %v", err)
+	}
+	addr, err := boundAddr(r, "a")
+	if err != nil {
+		t.Fatalf("finding the address the listener bound: %v", err)
+	}
+
+	got, err := getResponse(context.Background(), addr, "/api/internal")
+	if err != nil {
+		t.Fatalf("the request for the nested claim failed: %v", err)
+	}
+	if got.status != nethttp.StatusOK || got.body != "b" {
+		t.Errorf("/api/internal answered %d %q, want 200 %q (the endpoint claiming it)",
+			got.status, got.body, "b")
+	}
+
+	got, err = getResponse(context.Background(), addr, "/api/other")
+	if err != nil {
+		t.Fatalf("the request for the outer parameter route failed: %v", err)
+	}
+	if got.status != nethttp.StatusOK || got.body != "a:other" {
+		t.Errorf("/api/other answered %d %q, want 200 %q", got.status, got.body, "a:other")
+	}
+}
+
+// TestTheChainLineNamesTheClaims pins that the startup line carries the claims
+// beside the route count. A zero-route endpoint is the case that shows why: the
+// route count alone cannot say which paths it answers, and an operator checking
+// that a module's namespace still points at its endpoint needs the claim there.
+func TestTheChainLineNamesTheClaims(t *testing.T) {
+	logger, records := newRecordingLogger()
+	serving := make(chan struct{}, 1)
+	probe := &stageProbe{
+		name:     "probe.registers-a-zero-route-endpoint",
+		requires: requiresRouter(),
+		onInit: inOrder(
+			routeOn("f", nethttp.MethodGet, "/*path", filler),
+		),
+		onServe: func(*core.Registry) error {
+			serving <- struct{}{}
+			return nil
+		},
+	}
+	modules := []core.Module{
+		Module(),
+		(&stageProbe{
+			name:     "probe.delivers-the-logger",
+			provides: []core.Provision{{Token: (*log.Logger)(nil)}},
+			product:  stubLogger{logger: logger},
+		}).module(),
+		probe.module(),
+	}
+	a := startAssembly(t,
+		claimedConfig(map[string][]string{"e": {"/x"}, "f": {"/"}}), modules...)
+	a.waitForOrEnd(t, serving, "the listener to be served")
+
+	var line string
+	for _, written := range records.at(slog.LevelInfo) {
+		if strings.Contains(written, "endpoint=e ") {
+			line = written
+			break
 		}
 	}
+	if line == "" {
+		t.Fatalf("the startup wrote no chain line for endpoint e; the records were %v",
+			records.at(slog.LevelInfo))
+	}
+	mustContain(t, line, "routes=0", "the route count of the zero-route endpoint")
+	mustContain(t, line, "prefixes=[/x]", "the claims of the zero-route endpoint")
 }
 
 // exchange issues one request of the given method, with the given headers,
