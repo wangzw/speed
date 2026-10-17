@@ -24,7 +24,10 @@ import {
   expectNoAxeViolations,
   runHeadingOrderCheck,
 } from '../../test-utils/axe.js'
-import { emittedStyleText } from '@speed/test-utils/emitted-css'
+import {
+  emittedStyleText,
+  hasCoarsePointerTouchTarget,
+} from '@speed/test-utils/emitted-css'
 import { DataTable } from './DataTable.js'
 import type { DataTableColumn, DataTableProps } from './DataTable.js'
 
@@ -939,22 +942,39 @@ describe('DataTable', () => {
 
   describe('pointer capability', () => {
     it('raises the selection controls to the 44x44 touch-target floor under a coarse pointer', () => {
-      renderTable({
+      // A checkbox's clickable box is its root span, not the inner input,
+      // so each assertion matches the emitted CSS against that span. A
+      // coarse rule for another control on the page cannot satisfy them.
+      const utils = renderTable({
         selectedRowKeys: [],
         onSelectionChange: vi.fn(),
       })
-      const css = emittedStyleText()
-      expect(css).toContain('@media (pointer: coarse)')
-      expect(css).toMatch(/@media \(pointer: coarse\)\{[^}]*min-(width|height):44px/)
+      expect(
+        hasCoarsePointerTouchTarget(
+          utils
+            .getByRole('checkbox', { name: zhCN.dataTable.selectAllRows })
+            .closest('.MuiCheckbox-root') as Element,
+        ),
+      ).toBe(true)
+      expect(
+        hasCoarsePointerTouchTarget(
+          utils
+            .getByRole('checkbox', {
+              name: renderTemplate(zhCN.dataTable.selectRow, { row: 1 }),
+            })
+            .closest('.MuiCheckbox-root') as Element,
+        ),
+      ).toBe(true)
     })
 
     it('raises the pagination buttons and the rows-per-page selector to the floor', () => {
       // The footer is the table's own control surface: its page buttons
       // and the rows-per-page selector are compact MUI controls, so on a
       // finger-driven device each one gates up to the 44x44 floor. The
-      // assertions name the footer's own selectors, so a rule emitted for
-      // another gated control on the page does not satisfy them.
-      renderWithProviders(
+      // assertions are made against the footer's own elements, so a rule
+      // emitted for another gated control on the page does not satisfy
+      // them.
+      const utils = renderWithProviders(
         <DataTable
           rows={MEMBERS}
           columns={BASE_COLUMNS}
@@ -970,13 +990,21 @@ describe('DataTable', () => {
         />,
         { language: 'en-US' },
       )
-      const css = emittedStyleText()
-      expect(css).toMatch(
-        /@media \(pointer: coarse\)\{[^}]*\.MuiTablePagination-actions \.MuiIconButton-root\{[^}]*min-width:44px/,
-      )
-      expect(css).toMatch(
-        /@media \(pointer: coarse\)\{[^}]*\.MuiTablePagination-select\{[^}]*min-height:44px/,
-      )
+      expect(
+        hasCoarsePointerTouchTarget(
+          utils.getByRole('button', { name: 'Go to previous page' }),
+        ),
+      ).toBe(true)
+      expect(
+        hasCoarsePointerTouchTarget(
+          utils.getByRole('button', { name: 'Go to next page' }),
+        ),
+      ).toBe(true)
+      expect(
+        hasCoarsePointerTouchTarget(
+          utils.getByRole('combobox', { name: enUS.dataTable.rowsPerPage }),
+        ),
+      ).toBe(true)
     })
 
     it('enables the row hover highlight only under a fine, hovering pointer', () => {

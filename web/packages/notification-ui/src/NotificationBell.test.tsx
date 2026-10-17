@@ -15,7 +15,7 @@ import {
   makeRealClientRigWithoutSession,
   type RealResponder,
 } from '../test-utils/real-client.js'
-import { emittedStyleText } from '@speed/test-utils/emitted-css'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { renderWithProviders } from '../test-utils/render.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { NotificationBell } from './NotificationBell.js'
@@ -64,16 +64,15 @@ describe('NotificationBell', () => {
 
   it('raises the bell to the 44px touch-target floor under a coarse pointer', async () => {
     // The bell is an icon-only button; on a finger-driven device it gates
-    // up to the 44x44 floor (the layout design's pointer rule, through
-    // @speed/ui-kit's touchTargetSx). jsdom evaluates no media condition,
-    // so this proves the gated declaration was wired in.
+    // up to the 44x44 floor (the layout design's pointer rule). jsdom
+    // evaluates no media condition, so the emitted CSS is matched against
+    // the bell itself: a coarse rule elsewhere on the page cannot satisfy
+    // this assertion for it.
     const respond: RealResponder = () => jsonResponse(200, { unread: 0 })
     const rig = makeRealClientRigWithoutSession(respond)
     rig.store.set('access-1')
     renderWithProviders(<NotificationBell onClick={() => undefined} />)
-    await screen.findByRole('button', { name: zhCN.bell.label })
-    const css = emittedStyleText()
-    expect(css).toContain('@media (pointer: coarse)')
-    expect(css).toMatch(/@media \(pointer: coarse\)\{[^}]*min-height:44px/)
+    const button = await screen.findByRole('button', { name: zhCN.bell.label })
+    expect(hasCoarsePointerTouchTarget(button)).toBe(true)
   })
 })

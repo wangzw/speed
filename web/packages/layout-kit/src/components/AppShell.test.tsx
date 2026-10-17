@@ -827,8 +827,9 @@ describe('AppShell', () => {
       // the layout design): a coarse pointer gets the floor on the shell's
       // own toggle buttons and on every navigation entry, a precise
       // pointer the stock sizes. jsdom evaluates no real media condition,
-      // so this is the property/snapshot proof that the gated declarations
-      // were wired in (see @speed/test-utils/emitted-css).
+      // so the emitted CSS is matched against the real controls (see
+      // @speed/test-utils/emitted-css): a coarse rule elsewhere on the
+      // page cannot satisfy these assertions for them.
       mockMatchMedia(true)
       renderWithProviders(
         <AppShell
@@ -838,9 +839,6 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      const css = emittedStyleText()
-      expect(css).toContain('@media (pointer: coarse)')
-      expect(css).toMatch(/@media \(pointer: coarse\)\{[^}]*min-height:44px/)
       // The samples are the shell's real controls, not the media block in
       // the abstract: the navigation entry (a ListItemButton rendered as
       // an anchor) and the collapse toggle both carry the floor.

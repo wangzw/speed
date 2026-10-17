@@ -26,10 +26,7 @@ import {
   type RealCall,
   type RealResponder,
 } from '../test-utils/real-client.js'
-import {
-  emittedStyleText,
-  hasCoarsePointerTouchTarget,
-} from '@speed/test-utils/emitted-css'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { renderWithProviders } from '../test-utils/render.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { SessionsSection } from './SessionsSection.js'
@@ -112,9 +109,9 @@ describe('SessionsSection', () => {
   it('raises the row revoke control to the 44px touch-target floor under a coarse pointer', async () => {
     // The per-row revoke control is a compact icon button; on a
     // finger-driven device it gates up to the 44x44 floor (the layout
-    // design's pointer rule, through @speed/ui-kit's touchTargetSx). jsdom
-    // evaluates no media condition, so this proves the gated declaration
-    // was wired in.
+    // design's pointer rule). jsdom evaluates no media condition, so the
+    // emitted CSS is matched against the control itself: a coarse rule
+    // elsewhere on the page cannot satisfy this assertion for it.
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
         return PROFILE
@@ -127,12 +124,10 @@ describe('SessionsSection', () => {
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     mountSection(respond)
-    await screen.findByRole('button', {
+    const revoke = await screen.findByRole('button', {
       name: revokeAria(zhCN.sessions.deviceUnknown),
     })
-    const css = emittedStyleText()
-    expect(css).toContain('@media (pointer: coarse)')
-    expect(css).toMatch(/@media \(pointer: coarse\)\{[^}]*min-height:44px/)
+    expect(hasCoarsePointerTouchTarget(revoke)).toBe(true)
   })
 
   it('raises the session pager to the 44px floor under a coarse pointer', async () => {

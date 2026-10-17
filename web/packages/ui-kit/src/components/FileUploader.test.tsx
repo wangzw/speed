@@ -25,7 +25,10 @@ import { renderWithProviders } from '../../test-utils/render.js'
 import type { RenderWithProvidersResult } from '../../test-utils/render.js'
 import { expectNoAxeViolations } from '../../test-utils/axe.js'
 import { dropFiles, selectFiles } from '../../test-utils/file-input.js'
-import { emittedStyleText } from '@speed/test-utils/emitted-css'
+import {
+  emittedStyleText,
+  hasCoarsePointerTouchTarget,
+} from '@speed/test-utils/emitted-css'
 
 function makeFile(name: string): File {
   return new File(['x-ray bytes'], name, { type: 'application/octet-stream' })
@@ -578,18 +581,31 @@ describe('FileUploader', () => {
     it('raises the row action controls to the 44px touch-target floor under a coarse pointer', () => {
       // The per-row action buttons (Cancel / Retry / Remove) are compact;
       // on a finger-driven device they gate up to the 44x44 floor (the
-      // layout design's pointer rule, through @speed/ui-kit's
-      // touchTargetSx). jsdom evaluates no media condition, so this is the
-      // property proof that the gated declaration was wired onto them.
-      renderHarness({
+      // layout design's pointer rule). jsdom evaluates no media
+      // condition, so the emitted CSS is matched against each rendered
+      // button: a coarse rule elsewhere on the page cannot satisfy these
+      // assertions for them.
+      const view = renderHarness({
         rows: [uploadingRow('r1', 'a.jpg'), failedRow('r2', 'b.jpg', 'boom')],
         onCancel: vi.fn(),
         onRetry: vi.fn(),
         onRemove: vi.fn(),
       })
-      const css = emittedStyleText()
-      expect(css).toContain('@media (pointer: coarse)')
-      expect(css).toMatch(/@media \(pointer: coarse\)\{[^}]*min-height:44px/)
+      expect(
+        hasCoarsePointerTouchTarget(
+          view.getByRole('button', { name: zhCN.fileUploader.actionCancel }),
+        ),
+      ).toBe(true)
+      expect(
+        hasCoarsePointerTouchTarget(
+          view.getByRole('button', { name: zhCN.fileUploader.actionRetry }),
+        ),
+      ).toBe(true)
+      expect(
+        hasCoarsePointerTouchTarget(
+          view.getByRole('button', { name: zhCN.fileUploader.actionRemove }),
+        ),
+      ).toBe(true)
     })
   })
 
