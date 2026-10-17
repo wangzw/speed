@@ -162,8 +162,9 @@
       "column": {
         "time": "Time",
         "action": "Action",
-        "outcome": "Outcome",
-        "actor": "Actor"
+        "object": "Object",
+        "actor": "Actor",
+        "outcome": "Outcome"
       }
     }
   },

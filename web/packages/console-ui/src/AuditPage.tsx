@@ -3,9 +3,9 @@
  *
  * It reads the audit journal's records -- the platform's append-only
  * trail, whose rows span every tenant -- and renders them newest first as
- * a table (time, action, outcome, actor and object), through ui-kit's
- * DataTable; the columns shed the least important first as the viewport
- * narrows. The read surface carries no export: exporting is another
+ * a table (time, action, object, actor and outcome), through ui-kit's
+ * DataTable; the columns shed the least important first as the table's
+ * container narrows. The read surface carries no export: exporting is another
  * permission and another module's to carry, so this page only lists.
  *
  * The read is an operation on the console operations bundle -- the host
@@ -54,6 +54,7 @@ import {
 import type { DataTableColumn } from '@speed/ui-kit'
 import Typography from '@mui/material/Typography'
 import { ConsoleAsyncSection } from './internal/async-section.js'
+import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { ConsoleLink } from './internal/navigation.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
@@ -202,10 +203,11 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
     [i18n.language],
   )
 
-  // The columns the table renders, in the order the record's fields read:
-  // when it happened, what it was, how it ended, who did it and to what.
-  // The actor and object columns carry a priority, so a narrow viewport
-  // sheds them before the action and the outcome.
+  // The columns the table renders: when it happened, what it was, to what,
+  // who did it and how it ended. The object column carries the route the
+  // action names, so it shares the record's identity with the action and
+  // outranks the actor; the priorities are the set both audit-record
+  // tables share (see AUDIT_RECORD_COLUMN_PRIORITY).
   const columns: DataTableColumn<ConsoleAuditRecord>[] = [
     {
       id: 'time',
@@ -231,21 +233,22 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
         ),
     },
     {
-      id: 'outcome',
-      header: t('audit.column.outcome'),
-      cell: (record) => record.outcome,
+      id: 'object',
+      header: t('audit.column.object'),
+      priority: AUDIT_RECORD_COLUMN_PRIORITY.object,
+      cell: (record) => record.object,
     },
     {
       id: 'actor',
       header: t('audit.column.actor'),
-      priority: 'medium',
+      priority: AUDIT_RECORD_COLUMN_PRIORITY.actor,
       cell: (record) => <AuditActorCell actor={record.actor} />,
     },
     {
-      id: 'object',
-      header: t('audit.column.object'),
-      priority: 'low',
-      cell: (record) => record.object,
+      id: 'outcome',
+      header: t('audit.column.outcome'),
+      priority: AUDIT_RECORD_COLUMN_PRIORITY.outcome,
+      cell: (record) => record.outcome,
     },
   ]
 

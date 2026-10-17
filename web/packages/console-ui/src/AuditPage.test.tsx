@@ -16,6 +16,7 @@ import userEvent from '@testing-library/user-event'
 import { AuditPage } from './AuditPage.js'
 import type { ConsoleAuditRecord } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { columnVisibility } from '../test-utils/container-visibility.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   accountFixture,
@@ -85,6 +86,35 @@ describe('AuditPage', () => {
     for (const name of ['时间', '动作', '结果', '操作者', '对象']) {
       expect(screen.getByRole('columnheader', { name })).toBeInTheDocument()
     }
+  })
+
+  it('keeps the object column visible in a laptop-wide container and sheds the outcome first', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listRecords: () => Promise.resolve(page([record])) }),
+    )
+    renderWithProviders(<AuditPage />, { operations })
+    await screen.findByText('tenant.create')
+    // The table's container is 1184px wide beside the console nav at a
+    // 1512px viewport: the object column (and the actor) must clear that
+    // width, while the outcome column degrades below it. Under a still
+    // narrower container the object column hides again below sm -- the
+    // restore is the low end of its tier, not an always-on column.
+    expect(
+      columnVisibility(screen.getByRole('columnheader', { name: '对象' })),
+    ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
+    expect(
+      columnVisibility(screen.getByRole('columnheader', { name: '操作者' })),
+    ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
+    expect(
+      columnVisibility(screen.getByRole('columnheader', { name: '结果' })),
+    ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
+    // The anchors never hide.
+    expect(
+      columnVisibility(screen.getByRole('columnheader', { name: '时间' })),
+    ).toBeNull()
+    expect(
+      columnVisibility(screen.getByRole('columnheader', { name: '动作' })),
+    ).toBeNull()
   })
 
   it('formats the recorded time in UTC in the current language', async () => {

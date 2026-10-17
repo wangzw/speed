@@ -12,7 +12,8 @@
  * successful sign-ins among them (the audit action authn.login). Those
  * counts come from the newest page of a windowed read, so a page that
  * carries a next cursor reports its count as a lower bound ("N+"). The
- * recent-activity list shows the newest page of records outright. Nothing
+ * recent-activity list shows the newest page of records outright, through
+ * the same column set and priorities as the audit query page. Nothing
  * here invents an aggregate the contract does not carry.
  *
  * Each surface renders through the console async section, so a refused
@@ -36,6 +37,7 @@ import {
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
+import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { formatUtc } from './internal/datetime.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
@@ -139,6 +141,9 @@ export function DashboardPage() {
     )
   }
 
+  // The same columns and priorities as the audit query page: the action
+  // and its object carry the record's identity, the actor follows, and
+  // the outcome -- almost always a success here -- is shed first.
   const recentColumns: DataTableColumn<ConsoleAuditRecord>[] = [
     {
       id: 'time',
@@ -151,16 +156,22 @@ export function DashboardPage() {
       cell: (record) => record.action,
     },
     {
-      id: 'outcome',
-      header: t('dashboard.recent.column.outcome'),
-      priority: 'medium',
-      cell: (record) => record.outcome,
+      id: 'object',
+      header: t('dashboard.recent.column.object'),
+      priority: AUDIT_RECORD_COLUMN_PRIORITY.object,
+      cell: (record) => record.object,
     },
     {
       id: 'actor',
       header: t('dashboard.recent.column.actor'),
-      priority: 'low',
+      priority: AUDIT_RECORD_COLUMN_PRIORITY.actor,
       cell: (record) => record.actor,
+    },
+    {
+      id: 'outcome',
+      header: t('dashboard.recent.column.outcome'),
+      priority: AUDIT_RECORD_COLUMN_PRIORITY.outcome,
+      cell: (record) => record.outcome,
     },
   ]
 

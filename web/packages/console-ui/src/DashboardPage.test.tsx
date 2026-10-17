@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import { DashboardPage } from './DashboardPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { columnVisibility } from '../test-utils/container-visibility.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   createConsoleOperations,
@@ -63,6 +64,38 @@ describe('DashboardPage', () => {
     const recent = await screen.findByRole('heading', { level: 2, name: '最近活动' })
     expect(recent).toBeInTheDocument()
     expect(await screen.findByText('tenant.read')).toBeInTheDocument()
+  })
+
+  it('renders recent activity with the audit page columns and priorities', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listRecords: () =>
+          Promise.resolve({
+            entries: [recordFixture({ id: 'rec-9', action: 'tenant.read' })],
+            next: '',
+          }),
+      }),
+    )
+    renderWithProviders(<DashboardPage />, { operations })
+    await screen.findByText('tenant.read')
+    // The list carries the same set as the audit query page: action and
+    // object identify the record, so the object column outranks the actor
+    // and the outcome -- almost always a success -- is shed first.
+    expect(
+      columnVisibility(screen.getByRole('columnheader', { name: '对象' })),
+    ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
+    expect(
+      columnVisibility(screen.getByRole('columnheader', { name: '操作者' })),
+    ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
+    expect(
+      columnVisibility(screen.getByRole('columnheader', { name: '结果' })),
+    ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
+    expect(
+      columnVisibility(screen.getByRole('columnheader', { name: '时间' })),
+    ).toBeNull()
+    expect(
+      columnVisibility(screen.getByRole('columnheader', { name: '动作' })),
+    ).toBeNull()
   })
 
   it('derives the platform health row from the windowed audit read', async () => {
