@@ -197,7 +197,9 @@ flowchart TD
     tauth -->|是| exist{"RouteView：存在性"}
     area -->|是| cauth{"已认证？"}
     cauth -->|否| csign["登录面"]
-    cauth -->|是| fstate{"特性态"}
+    cauth -->|是| imp{"会话在冒充中？"}
+    imp -->|是| home
+    imp -->|否| fstate{"特性态"}
     fstate -->|pending| cwait["无框架的等待"]
     fstate -->|failed| cfail["无框架的失败视图，带重试"]
     fstate -->|ready| perms{"平台权限集"}
@@ -252,7 +254,7 @@ flowchart TD
 
 - **先存在性、后权限。** 特性缺席的页面，对持有其权限码的员工同样是 404；特性在场而权限码未持有的页面渲染无权限面。
 - **非员工看不出控制台有哪些页面。** 区域只看路径前缀，平台权限集为空的已认证者访问任何 `/console/*` 路径都被重定向回首页，结果与页面特性在场与否无关。
-- **冒充期间不提供控制台，重定向同样静默。** 冒充身份只到得了封闭的几条路由，平台管理面的路由全部被网关拒绝，无论被冒充账户的平台权限集是什么都是如此，所以控制台区在冒充期间一律重定向。重定向处不加说明：加说明会向非员工暴露控制台的存在，上一条性质不允许；冒充者的解释由租户框架里的持久横幅承担（见「冒充期间的壳」）。
+- **冒充期间不提供控制台，重定向同样静默。** 平台管理面既不在准入层所守的端上、也未登记为可冒充，对冒充身份一律被网关拒绝，与被冒充账户的平台权限集无关，所以控制台区在冒充期间一律重定向到租户区首页。重定向处不加说明，冒充者的解释由租户框架里的持久横幅承担（[ADR-web-impersonation-shell-2026-10-18](../../adr/adr-web-impersonation-shell-2026-10-18.md)、「冒充期间的壳」）。
 - **特性态未定时不误判为非员工。** 平台权限集的读取依赖特性态（见「宿主侧的特性读取」），特性态为 `pending` 或 `failed` 时权限集保持未知；控制台区先判特性态、再判权限集，取回失败的员工看到失败视图，不被重定向。控制台声明的收窄结果在 `pending`、`failed` 时恒为空，这一判同样排在特性态之后。
 - **权限码不经前缀继承。** 未命中任何控制台声明的路径渲染 `NotFoundPage`，与调用者持有哪些权限码无关；没有导航标签的控制台详情声明因此各自带权限码（[console-ui](web/design-web-console-ui.md)）。
 
@@ -265,11 +267,12 @@ flowchart TD
 
 ### 冒充期间的壳
 
-冒充开始后会话的主体是被冒充账户，冒充身份只到得了封闭的几条路由（[design-authn-impersonation](authn/design-authn-impersonation.md)）。示范在租户框架里给出下列几部分，冒充者离开发起冒充的那个页面之后仍有明确的提示与出口。
+决策见 [ADR-web-impersonation-shell-2026-10-18](../../adr/adr-web-impersonation-shell-2026-10-18.md)。冒充开始后会话的主体是被冒充账户，网关只把冒充身份放进准入层所守的端与登记为可冒充的路由，平台管理面一律被拒（[design-authn-impersonation](authn/design-authn-impersonation.md)）。示范在租户框架里给出下列几部分。
 
-- **横幅。** `TenantFrame` 把 auth-ui 的 `ImpersonationBanner` 经 `ProductShell` 的 `banner` 槽挂在应用栏之上，始终挂载（[auth-ui](web/design-web-auth-ui.md)、[product-shell](web/design-web-product-shell.md)）。`impersonation` 非空当且仅当快照的 `impersonating` 为真。`subject` 取快照 `principal` 的显示名，没有显示名时取账户标识；`tenant` 与 `expiresAt` 取自冒充状态读（`GET /auth/impersonation`）应答的 `tenant` 与 `ends_at`，`tenant` 就是租户标识，因为租户名册读属平台管理面、冒充期间不可达。状态读只在 `impersonating` 为真时启用，没有冒充的访问者不发这条读，也就没有一次裸 404；读不到时这两项缺省，横幅与结束控件照常。控制台框架不挂横幅：冒充期间控制台区重定向到租户区，控制台框架不会在冒充期间渲染。
-- **一个身份变更动作。** 开始与结束冒充都改变此后每个读所属的身份，缓存里的每一行都是在另一个身份下取的。宿主绑定一个动作 `applyIdentityChange(change)`，`change` 是 `started` 或 `ended`：整体逐出查询缓存，与会话结束的缺省策略是同一个动作（[product-shell](web/design-web-product-shell.md)），随后调用会话的 `restore()` 重读主体与 `impersonating`，并把宿主附上的平台权限集置回未知、再按「宿主侧的特性读取」的规则重读；`change` 为 `started` 时再把页面带到租户区首页。`restore()` 保留已附上的权限集，也不自行得知身份变了：不重读的话，冒充期间那条权限目录读被网关拒绝、附上的空集会一直留着，结束冒充后运营者回到自己的身份，却看不到控制台。横幅的 `onEnd`、console-ui 冒充页的结束与发起，落定后都调用它；结束操作遇到服务端对「当前已无冒充」答的裸 404，当成兑现，同样调用它。console-ui 经 `onImpersonationChange` 属性接入这个动作（[console-ui](web/design-web-console-ui.md)）。
-- **到期。** 横幅给出了 `expiresAt` 时，宿主在该时刻调用 `applyIdentityChange('ended')`：服务端在到期之后对下一个请求就回到发起者自己的身份，宿主不能让界面停在已失效的冒充上。
+- **横幅。** `TenantFrame` 把 auth-ui 的 `ImpersonationBanner` 经 `ProductShell` 的 `banner` 槽挂在应用栏之上，始终挂载（[auth-ui](web/design-web-auth-ui.md)、[product-shell](web/design-web-product-shell.md)）。`impersonation` 非空当且仅当快照的 `impersonating` 为真。`subject` 取快照 `principal` 的显示名，没有显示名时取账户标识；`tenant` 与 `expiresAt` 取自冒充状态读（`GET /auth/impersonation`）应答里 `grant` 对象的 `tenant` 与 `ends_at`，`tenant` 就是租户标识，因为租户名册读属平台管理面、冒充期间不可达。状态读只在 `impersonating` 为真时启用，没有冒充的访问者不发这条读，也就没有一次裸 404。`impersonating` 为真时该读答裸 404，是已落定的「已无冒充」，与 console-ui 同一规则，宿主据此调用 `applyIdentityChange('ended')`；重读由查询客户端缺省的窗口重新聚焦承担（每项 `staleTime` 为 0），本设计不另加轮询。其余失败读不到时，`tenant` 与 `expiresAt` 缺省，横幅与结束控件照常。横幅覆盖租户框架内的页面：邀请落点是公开落点页，渲染在租户框架之外，不挂横幅；控制台框架不挂横幅，冒充期间控制台区重定向到租户区，控制台框架不会在冒充期间渲染。
+- **一个身份变更动作。** 宿主绑定 `applyIdentityChange(change)`，`change` 是 `started` 或 `ended`。它依次：整体逐出查询缓存，与会话结束的缺省策略是同一个动作（[product-shell](web/design-web-product-shell.md)）；调用会话的 `restore()` 重读主体与 `impersonating`；重读依赖身份的宿主状态，即平台权限集（置回未知，再按「宿主侧的特性读取」的门控重读）、当前租户（见下）与租户区的实时订阅（订阅按生效账户登记，身份变更后以变更代数重建 `NotificationStreamProvider`，使它重新按新的生效账户连接，[notification-ui](web/design-web-notification-ui.md)）。`started` 时再把页面带到租户区首页，`ended` 不导航：页面是租户页，结束后控制台重新可达。`restore()` 保留已附上的权限集，也不自行得知身份变了，所以权限集的重读由本动作触发，不依赖特性态的变化。调用方是横幅的 `onEnd`、console-ui 冒充页的发起与结束（经 `onImpersonationChange` 接入，[console-ui](web/design-web-console-ui.md)）与到期。本动作在写入落定之后、在该次尝试之外调用，它的失败被包住，不改判已落定的写入；横幅的 `onEnd` 在结束请求落定时兑现，结束请求答裸 404 也当成兑现，不等待本动作。
+- **当前租户。** 冒充期间租户名册读被网关拒绝，当前租户取冒充状态读的 `grant.tenant`（标识），不发名册读，也不回落占位租户；状态读落定之前当前租户保持未知，租户作用域的读保持禁用。请求播报用的别名取自此前读到的名册别名缓存里该标识的别名；缓存里没有它（整页重载、新开标签页）时回落占位表，别名与实际不符时租户区的读被准入层答 404，这与没有名册读权限的普通成员是同一条已知限制，不为冒充另造别名来源。结束冒充后当前租户重新由名册读决定。
+- **到期。** 横幅给出 `expiresAt` 时，宿主在该时刻调用 `applyIdentityChange('ended')`。冒充记录的有效性判定按 `authn.session.check-ttl` 缓存（缺省 5 秒、取值域 0 到 60 秒），到期没有可发的事件，所以到期之后最长一个 `check-ttl` 内服务端仍可能按冒充处理，`restore()` 可能仍读到 `impersonating` 为真。读回仍为真时，宿主按固定的短间隔再读，总时长不超过 `check-ttl` 的上界；上限内仍为真则停止重试，横幅与结束控件保持可用，等下一次聚焦重读。定时取自浏览器时钟，与服务器时钟的偏差由这个有界重试吸收。
 
 ### 宿主侧的特性读取
 
@@ -289,7 +292,7 @@ flowchart TD
 | 首页的对象卡片与通知卡片 | `useHasRoute('/objects')`、`useHasRoute('/notifications')`：入口跟随目标页 |
 | `ConsoleArea` | 给 console-ui 的 `ConsoleShell` 传经 `presentDeclarations` 收窄的控制台声明，以及取自 `featurePresence` 的 `hasFeature` |
 
-租户名册与平台权限集的读取以特性态为输入：特性态转为 `ready` 时各读一次。账户页的 `PasswordSection` 不经特性门控，修改口令的路由由 `authn.login` 恒挂。
+租户名册与平台权限集的读取以特性态为输入：特性态转为 `ready` 时各读一次；一次身份变更（`applyIdentityChange`）另是平台权限集与当前租户的重读触发，特性态此时仍是 `ready`、没有转为 `ready` 这一沿，重读仍受上表的门控约束。账户页的 `PasswordSection` 不经特性门控，修改口令的路由由 `authn.login` 恒挂。
 
 **示范的文案不断言装配。** 哪些登录方式可用由 `GET /auth/methods` 决定，哪些面存在由特性文档决定，文案不复述其中任何一项。登录页的首个账户说明只陈述与装配无关的事实：部署的第一个管理员账号由 `seed` 命令写入。
 
@@ -340,7 +343,7 @@ flowchart TD
 | 前端的组合次序：区域按路径前缀、先存在性后权限、权限码按精确命中 | 已实现 | `starters/demo/web/src/app.tsx` `AppFrame`、`ConsoleFeatureGate`、`ConsoleAreaGate`、`ConsoleRouteGuard` |
 | 租户框架 `TenantFrame` 与回调落点的 `absent` 视图 | 已实现 | `starters/demo/web/src/app.tsx` `TenantFrame`；`web/packages/auth-ui/src/SocialCallbackHandler.tsx` `SocialCallbackHandler`；`web/packages/account-ui/src/BindingCallbackHandler.tsx` `BindingCallbackHandler` |
 | 宿主侧的特性读取与特性态失败的呈现 | 部分实现 | `starters/demo/web/src/app.tsx` `TenantFrame`、`ConsoleFeatureGate`、`RoutePresenceFailed`；`starters/demo/web/src/platform-permissions.tsx` `PlatformPermissions`；`starters/demo/web/src/pages/account-page.tsx` `AccountSettingsPage`；`starters/demo/web/src/pages/home-page.tsx` `HomePage` |
-| 冒充期间的壳（横幅挂载、身份变更动作、到期重读、控制台区在冒充中的重定向） | 未实现 | — |
+| 冒充期间的壳（横幅挂载、身份变更动作、当前租户、实时订阅重建、到期的有界重读、控制台区在冒充中的重定向） | 未实现 | — |
 | 登录页文案不断言装配 | 已实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
 | `backend` 监听上各端的认领前缀（`testdata/` 的每份配置与示范测试的配置） | 已实现 | `starters/demo/server/testdata/` 六份配置的 `http.endpoints.*.prefixes`；`starters/demo/server/demo_test.go` `demoConfig` |
 | 后端前缀清单 `backend-prefixes.json` 与由它生成的开发代理 | 已实现 | `starters/demo/web/backend-prefixes.json`；`starters/demo/web/src/backend-prefixes.ts` `backendProxyRules`；`starters/demo/web/vite.config.ts` |
