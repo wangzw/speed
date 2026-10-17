@@ -188,7 +188,6 @@ export function PermissionsPage() {
             </Button>
           </Box>
         ),
->>>>>>> f20d8144 (fix(console-ui): withhold write controls on a builtin role)
     },
   ]
 
