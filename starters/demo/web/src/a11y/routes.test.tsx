@@ -13,6 +13,14 @@
  *   - a `moderate`, `minor` or no-impact violation is warned and registered
  *     (never silently dropped), and the whole run prints a per-route report.
  *
+ * The sweep also fails on an i18n missing-key warning. The harness registers
+ * every namespace the app's views render from (src/test-utils/render.tsx), and
+ * a page whose namespace registration is dropped still renders -- the key
+ * itself takes the text's place -- so without this guard a lost registration
+ * is only stderr noise and the route stays "accessible". A warning the i18n
+ * package prefixes `[speed-i18n] missing translation key` fails the case that
+ * emitted it, naming the key and namespace.
+ *
  * This is the page tier above the packages' component scans: the units here
  * are whole routes -- chrome and page together -- so a landmark, heading or
  * naming defect that only appears when the two compose is caught where it
@@ -22,7 +30,8 @@
  */
 
 import { act } from '@testing-library/react'
-import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { MockInstance } from 'vitest'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { routes } from '../routes.js'
 import { renderDemoApp } from '../test-utils/render.js'
@@ -177,10 +186,41 @@ function warnNonFailing(
   }
 }
 
+/** The prefix @speed/i18n's default missing-key handler prints. */
+const MISSING_KEY_WARNING = '[speed-i18n] missing translation key'
+
+/**
+ * The missing-key warnings the current case emitted. Every other warning --
+ * the sweep's own advisory findings included -- passes through to the real
+ * console; only the missing-key channel is captured, and afterEach fails the
+ * case when it caught anything.
+ */
+const missingKeys: string[] = []
+let warnSpy: MockInstance
+
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
   setCurrentTenantId(DEFAULT_TENANT_ID)
   setTenantAliases(new Map())
+  missingKeys.length = 0
+  const original = console.warn
+  warnSpy = vi.spyOn(console, 'warn').mockImplementation((message, ...rest) => {
+    const text = String(message)
+    if (text.startsWith(MISSING_KEY_WARNING)) {
+      missingKeys.push(text)
+      return
+    }
+    original(message, ...rest)
+  })
+})
+
+afterEach(() => {
+  warnSpy.mockRestore()
+  expect(
+    missingKeys,
+    'a swept route rendered a missing translation key: the harness must ' +
+      'register every namespace its views read (src/test-utils/render.tsx)',
+  ).toEqual([])
 })
 
 describe('route-level accessibility (WCAG 2.1 AA)', () => {
