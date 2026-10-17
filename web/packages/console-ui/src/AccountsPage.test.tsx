@@ -520,6 +520,35 @@ describe('AccountsPage', () => {
     })
   })
 
+  it('sends the trimmed identifier values the local guard judged', async () => {
+    const user = userEvent.setup()
+    const created: ConsoleCreateAccountInput[] = []
+    const operations = withAccounts({
+      createAccount: (input) => {
+        created.push(input)
+        return Promise.resolve(accountFixture())
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    // The guard trims before judging, so a padded value passes it; the
+    // request must carry the same trimmed values the guard judged rather
+    // than the raw input the server then refuses.
+    await user.type(screen.getByLabelText('显示名'), 'Grace')
+    await user.type(screen.getByLabelText('用户名'), '  grace  ')
+    await user.type(screen.getByLabelText('手机号'), '  +8613800000000  ')
+    await user.click(screen.getByRole('button', { name: '新建' }))
+    await vi.waitFor(() => {
+      expect(created).toEqual([
+        {
+          kind: 'user',
+          display_name: 'Grace',
+          username: 'grace',
+          phone: '+8613800000000',
+        },
+      ])
+    })
+  })
+
   it('keeps the create submit disabled until a display name and an identifier are given', async () => {
     const user = userEvent.setup()
     const created: ConsoleCreateAccountInput[] = []

@@ -988,12 +988,18 @@ function AccountCreateForm() {
       watched.phone.trim() !== '')
 
   const onSubmit: SubmitHandler<CreateAccountFields> = (values) => {
+    // The guard judges the trimmed values, so the request sends those same
+    // values: a username or phone wrapped in spaces otherwise passes here
+    // and is refused by the server. The email leg needs no local trim -- the
+    // server trims it.
+    const username = values.username.trim()
+    const phone = values.phone.trim()
     if (
       values.displayName.trim() === '' ||
       (values.kind !== 'service' &&
-        values.username.trim() === '' &&
+        username === '' &&
         values.email.trim() === '' &&
-        values.phone.trim() === '')
+        phone === '')
     ) {
       return
     }
@@ -1003,10 +1009,10 @@ function AccountCreateForm() {
       {
         kind: values.kind,
         ...(values.displayName === '' ? {} : { display_name: values.displayName }),
-        ...(values.username === '' ? {} : { username: values.username }),
+        ...(username === '' ? {} : { username }),
         ...(values.email === '' ? {} : { email: values.email }),
         ...(values.emailVia === '' ? {} : { email_verified_via: values.emailVia }),
-        ...(values.phone === '' ? {} : { phone: values.phone }),
+        ...(phone === '' ? {} : { phone }),
         ...(values.phoneVia === '' ? {} : { phone_verified_via: values.phoneVia }),
         ...(values.password === '' ? {} : { password: values.password }),
         ...(parsed === null ? {} : { attributes: parsed }),
