@@ -20,6 +20,11 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./test-utils/setup.ts'],
+    // The axe-scanning cases take ~4s on their own; when the workspace's
+    // test legs run concurrently (`pnpm -r test` alongside `-r lint`)
+    // they exceed vitest's 5s default and fail on the clock rather than
+    // on a violation. The larger budget keeps the gate repeatable.
+    testTimeout: 10_000,
     coverage: {
       provider: 'v8',
       include: ['src/**'],
