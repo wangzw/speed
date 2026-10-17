@@ -32,7 +32,7 @@ import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Typography from '@mui/material/Typography'
 import type { NotificationPreference } from '@speed/api-sdk'
-import { AsyncSection, errorCodeOf } from '@speed/ui-kit'
+import { AsyncSection, errorCodeOf, touchTargetSx } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 import {
   useNotificationPreferences,
@@ -144,6 +144,7 @@ export function NotificationPreferences() {
                           onChange={(event) =>
                             toggle(preference, channel, event.target.checked)
                           }
+                          sx={touchTargetSx}
                           slotProps={{
                             input: {
                               'aria-label': t('preferences.channelToggleAria', {

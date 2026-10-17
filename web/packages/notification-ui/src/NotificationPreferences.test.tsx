@@ -18,6 +18,7 @@ import {
   type RealResponder,
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { NotificationPreferences } from './NotificationPreferences.js'
 
@@ -150,6 +151,24 @@ describe('NotificationPreferences', () => {
     )) {
       expect(checkbox).toBeDisabled()
     }
+  })
+
+  it('raises the bare channel checkboxes to the 44px floor under a coarse pointer', async () => {
+    mount([
+      { key: 'demo.thing.happened', unsubscribable: true, channels: ['in_app'] },
+    ])
+    await screen.findByText('demo.thing.happened')
+    // These checkboxes sit bare in a table cell (no FormControlLabel to
+    // widen the hit area), so each one gates up to the 44x44 floor. The
+    // sx lands on the checkbox root, not the inner input.
+    const checkbox = within(rowFor('demo.thing.happened')).getByRole('checkbox', {
+      name: zhCN.preferences.channelToggleAria
+        .replace('{{type}}', 'demo.thing.happened')
+        .replace('{{channel}}', zhCN.preferences.channel.in_app),
+    })
+    const root = checkbox.closest('.MuiCheckbox-root')
+    expect(root).not.toBeNull()
+    expect(hasCoarsePointerTouchTarget(root as Element)).toBe(true)
   })
 
   it('renders the empty placeholder when the taxonomy declares no types', async () => {

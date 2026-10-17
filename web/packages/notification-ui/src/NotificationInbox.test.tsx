@@ -19,6 +19,7 @@ import {
   type RealResponder,
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { NotificationInbox } from './NotificationInbox.js'
 
@@ -161,6 +162,24 @@ describe('NotificationInbox', () => {
     expect(
       screen.getByRole('button', { name: zhCN.inbox.markAllRead }),
     ).toBeDisabled()
+  })
+
+  it('raises the inbox actions to the 44px floor under a coarse pointer', async () => {
+    mount([
+      { id: 'm1', title: 'Build finished', body: '', read: false },
+    ])
+    await screen.findByText('Build finished')
+    // The header action and the per-message action are compact controls;
+    // on a finger-driven device each one gates up to the 44x44 floor.
+    const gated = [
+      screen.getByRole('button', { name: zhCN.inbox.markAllRead }),
+      screen.getByRole('button', {
+        name: zhCN.inbox.markReadAria.replace('{{title}}', 'Build finished'),
+      }),
+    ]
+    for (const control of gated) {
+      expect(hasCoarsePointerTouchTarget(control)).toBe(true)
+    }
   })
 
   it('renders the retryable error placeholder when the read fails', async () => {

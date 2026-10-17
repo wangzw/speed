@@ -33,6 +33,7 @@ import {
   ListSkeleton,
   PageHeader,
   errorCodeOf,
+  touchTargetSx,
 } from '@speed/ui-kit'
 import { formatDateTime } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
@@ -92,6 +93,7 @@ export function NotificationInbox() {
             size="small"
             disabled={unread === 0 || markAllRead.isPending}
             onClick={runMarkAll}
+            sx={touchTargetSx}
           >
             {markAllRead.isPending
               ? t('inbox.markAllReadPending')
@@ -194,6 +196,7 @@ function NotificationRow({
             disabled={markReadDisabled}
             aria-label={t('inbox.markReadAria', { title: message.title })}
             onClick={onMarkRead}
+            sx={touchTargetSx}
           >
             {t('inbox.markRead')}
           </Button>
