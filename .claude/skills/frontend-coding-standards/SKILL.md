@@ -231,24 +231,29 @@ The form family is react-hook-form — the host owns the `useForm` instance, `Fo
 - Derive the zod schema from the `api-sdk` types where a field maps to one. **DO NOT** maintain a second rule set beside the contract — the schema is the one rule set, derived from the generated types.
 - Validation errors render through `FormField`. **DO NOT** lay out error text per form.
 
-### The result of a write
+## 11. Write Feedback and Refresh State
 
-The design is `docs/design/modules/web/design-web-ui-kit.md` ("写入的反馈"); this section holds the coding rules it implies.
+The design is `docs/design/modules/web/design-web-ui-kit.md` ("写入的反馈", "异步读的状态分支"); this section holds the coding rules it implies.
 
 **Required:**
-- Report the result of every write through a feedback scope: one `useWriteFeedback` instance and one `WriteFeedbackRegion` per control group, the region directly under the controls that started the write. Call `reset` at the start of every attempt — a submit rejected by client-side validation included — and on a context switch (tenant, selected object); call `succeed(message)` or `fail(error)` when the attempt settles.
-- Confirm every landed write with a translated success message that names the object changed. A value handed out once (a token, a secret) gets a display panel inside the region in addition to the message, never instead of it.
-- Bind the family's error-code resolver once, in the package's `internal/` wrapper around `WriteFeedbackRegion`; call sites pass the slot and nothing else.
-- Close a `ConfirmDialog` no later than the moment its write settles. A failure is reported in the region after the dialog has closed, never in a dialog that stays open.
-- Mark the control that started a write busy while the write is in flight, and a refresh control while its read is in flight. Give `AsyncSection` a `staleState` wherever a refetch can fail while data is on screen.
-- Treat one action as one attempt: an action that issues several requests (a batch save) calls `reset` once and `succeed` or `fail` once.
+- Report the result of every operator-initiated write through a feedback scope: one `useWriteFeedback` instance and one `WriteFeedbackRegion` per control group — the controls that share one result location, usually a titled section with its forms and its table row actions — with the region directly under them. Success is rendered only by the region; never render `InlineSuccess` beside it.
+- Run each attempt through `run`; for a flow that is not one promise (a sign-in step), call `reset` when the attempt starts and `succeed` or `fail` when it settles. Start every attempt with `reset`, a submit rejected by client-side validation included. Call `reset` on any context change after which the previous result would read as describing a different context: a tenant or selected-object change, a page change, a refresh.
+- Confirm every operator-initiated action that settles without a failure with a translated success message that names what changed. A value handed out once (a token, a secret) gets, in addition, a display panel next to the region: its state is held by the host outside the slot, it has an explicit close control, and its accessible name includes its owner.
+- Treat one action as one attempt. An action that issues several requests (a batch save) settles through `mutateAsync` and `Promise.allSettled` inside one `run`, and a partial landing is reported as a failure. Overlapping actions never share one react-query observer's per-call `mutate` callbacks, `isPending` or `variables`.
+- Disable and mark busy the control that started a write while it is in flight (MUI `Button` `loading`, as `ConfirmDialog` does), disable the controls that change the scope's context (selectors, paging, refresh) while the scope is `pending`, and make a modal panel `busy` while a write started inside it is in flight.
+- Hand a write refused 401 for step-up to the step-up gate: its attempt settles `null` and leaves the slot empty, and the replay is a new `run`.
+- Bind the package's own error-code resolver once, in the package's `internal/` wrapper around `WriteFeedbackRegion`; call sites pass the slot and nothing else.
+- Close a `ConfirmDialog` no later than the moment its write settles and report the failure in the region after it closes. A modal that stays open (the step-up dialog, a side panel) renders its failure inside itself.
+- Give `AsyncSection` a `staleState` exactly while a refetch has failed with data on screen and no read is in flight, and `undefined` otherwise. A refused read (403) replaces the content with the no-permission placeholder instead.
+- Give a queue of independent per-item transfers (the `FileUploader` rows) one result per row, not one slot.
 
 **Prohibited:**
 - **DO NOT** aggregate the errors of several mutations into one page banner (a "first non-null error" array), and **DO NOT** keep a per-mutation `success` string beside the shared slot.
-- **DO NOT** hand-roll a success `Alert` — use `InlineSuccess`, and its `sx` for spacing.
+- **DO NOT** hand-roll a success `Alert`.
 - **DO NOT** report a failure only in a region an open modal hides: while a modal panel or dialog is open, the page behind it is hidden from assistive technology.
+- **DO NOT** expect a standing success message to follow a language switch: it is the translation made when `succeed` was called.
 
-## 11. Diagnostics and Logging
+## 12. Diagnostics and Logging
 
 The browser has no structured log backend, so the equivalent discipline is **structured reporting**: anything worth diagnosing in production goes through the reporter in `@speed/api-client`, not `console`.
 
@@ -266,7 +271,7 @@ console.log('checkout failed for plan ' + planId);
 - **DO NOT** report PII, tokens or full form contents.
 - Always include the `traceId` from the API error envelope — it is the only way to connect a user report to server logs.
 
-## 12. Testing
+## 13. Testing
 
 | Tier | Tooling | Scope |
 |---|---|---|
@@ -285,13 +290,13 @@ console.log('checkout failed for plan ' + planId);
 - **Every bug fix ships with a test that reproduces the bug.**
 - **DO NOT** ignore warnings — React console warnings, a11y warnings and lint warnings are all first-class issues.
 
-## 13. Language
+## 14. Language
 
 All code comments, TSDoc and package `README`s are written in **English**. The design and decision documents under `docs/design/modules/web/` (and `docs/adr/`) are in Chinese.
 
 Comments and TSDoc describe the code's **current state only**: no history or change records, no implementation-round or finding references, no internal doc-filename citations as authority, no TODO or future promises, no restating what the code says, no counts that go stale as the code evolves. External normative references (RFC, W3C, language specs) and cross-references to code itself are allowed.
 
-## 14. Pre-Commit Checklist
+## 15. Pre-Commit Checklist
 
 - [ ] No hand-written `fetch` / `axios`; every call comes from `@speed/api-sdk`
 - [ ] API change started from the spec, generated artifacts committed
@@ -302,6 +307,7 @@ Comments and TSDoc describe the code's **current state only**: no history or cha
 - [ ] The route-level accessibility gate is green (`make web-a11y`); a new route is swept automatically because the sweep walks the route table
 - [ ] New public components are checked rendering in both languages and carry prop docs
 - [ ] Correct in both light and dark mode
+- [ ] Every write reports through a feedback scope, and every action that settles without a failure confirms with a success message
 - [ ] peerDependencies not accidentally moved into dependencies
 - [ ] Bug fix includes a reproducing test
 - [ ] Diagnostics go through the reporter with a constant message and structured attributes
