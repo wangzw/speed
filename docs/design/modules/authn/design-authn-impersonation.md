@@ -100,7 +100,7 @@ type Impersonation interface {
 | 方法 | 语义 |
 |---|---|
 | `Start` | 在调用方身份 `actor` 上开始一次冒充：校验全部结构性限制，询问 `Decider`，写强制档审计，写记录。同一个会话同时至多一条未结束的记录。成功返回记录；失败返回的哨兵与对外形状见「错误与失败语义」。`Start` 不挂接载体、不签发令牌、不发 `started` 事件：换出的会话令牌与冒充访问令牌要交到响应里，而 `Start` 拿不到响应写出器，这三件事由处理器在 `Start` 返回之后完成。顺序与每一步的失败处置见「开始的顺序」。 |
-| `End` | 结束 `actor` 的会话上未结束的那条记录，结束原因记 `explicit`。`actor` 可以是冒充身份，也可以是发起者自己的身份；会话上没有未结束的记录返回 `ErrNotImpersonating`。只改记录、写审计、发事件，不碰载体：不摘除会话行上的记录标识，不轮换会话令牌；cookie 凭据下的摘除与换令牌由 `DELETE B/impersonation` 的处理器随后完成，撤销冒充令牌的路径没有 cookie，两者都不做。结束是向安全方向的动作，审计写失败不阻止结束。`reason` 是结束的说明，只进审计行，不进事件，也不进 `end_reason`。 |
+| `End` | 结束 `actor` 的会话上未结束的那条记录，结束原因记 `explicit`。`actor` 可以是冒充身份，也可以是发起者自己的身份；会话上没有未结束的记录返回 `ErrNotImpersonating`。只改记录、写审计、发事件，不碰载体：不摘除会话行上的记录标识，不轮换会话令牌；cookie 凭据下的标识摘除由 `DELETE B/impersonation` 的处理器随后完成，不换令牌，撤销冒充令牌的路径没有 cookie，不做这一步。结束是向安全方向的动作，审计写失败不阻止结束。`reason` 是结束的说明，只进审计行，不进事件，也不进 `end_reason`。 |
 | `Revoke` | 管理面强制结束记录 `id`，结束原因记 `revoked`；`by` 是撤销者。幂等：记录已结束时无操作。写 `revoked` 之前先对记录按「有效性判定」求值并落库，已失效的记录以它自己的原因结束，撤销随即是已结束的无操作：到期或会话已死的记录不会被记成管理员撤销，审计与事件也不为它写撤销。`Revoke` 不询问 `Decider`，授权由 `authn.admin` 的处理器在调用之前完成。 |
 | `Active` | 回答记录 `id` 此刻是否仍然有效，判定条件见「有效性判定」。记录不存在、已结束或已失效时第二个返回值为假；读到失效而记录仍未结束时同时落库。返回错误时调用方按失败方向处理，不当作有效。 |
 | `List` | 按 `GrantQuery` 过滤的键集分页：`After` 是上一页返回的游标，第二个返回值是下一页的游标，空串表示没有下一页。次序按记录 `id` 升序，`id` 是 UUIDv7、接近开始次序，游标取上一页最后一条的 `id`；记录永不清除，所以按目标查询的结果是「谁冒充过谁」的完整来源。返回之前对页内未结束的记录按「有效性判定」求值并落库，返回的是落库之后的记录；这一次求值不经 `check-ttl` 缓存，缓存只服务校验的热路径。列表因此不会把已到期或已失效的记录陈述为生效中，已落库的记录与列出时才落库的记录读起来没有区别。 |
@@ -122,7 +122,7 @@ type Impersonation interface {
 |---|---|---|
 | `POST B/impersonation` | Required | CSRF；请求体 `{"account","tenant","reason","ttl_seconds"}`；调用 `Start`，成功后由处理器挂接载体并发事件（见「开始的顺序」）。cookie 凭据下应答带 `{grant:{id, target, tenant, ends_at}}`，换出的会话令牌经 `Sessions.SetCookie` 写出；Bearer 凭据下应答另带一枚冒充访问令牌。 |
 | `GET B/impersonation` | Required，`Impersonable` | 返回当前会话上的冒充状态；会话上没有有效的记录时 404（裸 404，不带问题码）。 |
-| `DELETE B/impersonation` | Required，`Impersonable` | CSRF；调用 `End`，冒充身份下允许；cookie 凭据下处理器随后清除会话上的记录标识、换令牌并写出 cookie；Bearer 凭据下只结束记录。 |
+| `DELETE B/impersonation` | Required，`Impersonable` | CSRF；调用 `End`，冒充身份下允许；cookie 凭据下处理器随后清除会话上的记录标识，不换令牌、不写 cookie；Bearer 凭据下只结束记录。 |
 
 `GET` 与 `DELETE` 登记为 `Impersonable`，使冒充中的管理员总能查看并结束冒充。本模块的挂载端不得是准入层所守的端：准入层对「冒充身份且无租户上下文」答 404，会让结束冒充都做不到。本模块在自己的 `Start` 里核对 `ScopeGuard.Covers(mount.endpoint)` 为假，为真即 `ErrInvalidConfig`（这既是所需依赖的用武之处，也使一段只被挂错端的装配当场失败）；网关在启动阶段的校验里对同一规则再核一次（[design-authn-gate](design-authn-gate.md)）。
 
@@ -325,7 +325,7 @@ CREATE UNIQUE INDEX authn_imp_one_active ON authn_impersonations (session_id) WH
 4. **载体挂接，处理器完成。** 凭据种类按身份的 `Backend()` 分：`session` 是 cookie 凭据，`token` 是 Bearer 凭据。cookie 凭据：`Sessions.SetImpersonation(sid, grantID)` 换出会话令牌，再 `Sessions.SetCookie`，应答带 `{grant:{id, target, tenant, ends_at}}`。Bearer 凭据：不改会话，经 `Tokens.Issue` 签发冒充访问令牌，应答额外带这枚令牌。令牌的声明为 `sub`（目标）、`act.sub`（发起者）、`imp`（记录标识）、`imp_tenant`（租户）、`sid`（发起者的会话）、`acr` 恒为 `"1"`，另经 `IssueToken` 带上发起者的方式集（`amr`）与认证时刻（`auth_time`），与会话端对称；有效期取 `min(authn.token.access-ttl, 记录剩余时限)`，而记录的硬上限是 1 小时，所以令牌有效期至多 1 小时；不签发刷新令牌。挂接失败时处理器补偿：以条件更新结束记录，结束原因 `start-failed`，不经 `End`，其处置见「开始失败的处置」。
 5. **事件，处理器完成。** 载体挂接成功之后经 `Bus.Publish` 发 `authn.impersonation.started`，理由不进事件。发布失败只记 Warn，不使冒充失败。
 
-**载体挂接与事件不在 `Start` 里**，判据在于 `Start` 与 `End` 的返回值交不出令牌，也拿不到响应写出器：换出的会话令牌与冒充访问令牌只能由持有响应的处理器交给调用方。`End` 还被 `authn.token` 在撤销冒充令牌时调用，那条路径没有 cookie，`End` 不碰载体才不会误摘会话行上的标识或轮换管理员的会话令牌。`started` 事件放在载体挂接之后，使一次挂接失败的开始不对外发出事件。
+**载体挂接与事件不在 `Start` 里**，判据在于 `Start` 的返回值交不出令牌，`Start` 与 `End` 也都拿不到响应写出器：换出的会话令牌与冒充访问令牌只能由持有响应的处理器交给调用方。`End` 还被 `authn.token` 在撤销冒充令牌时调用，那条路径没有 cookie，`End` 不碰载体才不会误摘会话行上的标识。`started` 事件放在载体挂接之后，使一次挂接失败的开始不对外发出事件。
 
 **强制档审计先于动作，且在事务之外**，判据在于审计接缝的写入另占一条连接、不加入调用方的事务：在调用方事务开着时调用它，单写者的 SQLite 上等的是调用方自己占着的写锁，只开一条连接的库上等的是调用方占着的那条连接，等满界限后 `Record` 以 `ErrWriteFailed` 失败，强制档因此永远写不成功（[ADR-audit-failure-2026-09-21](../../../adr/adr-audit-failure-2026-09-21.md)）。同一次序适用于全部管理面写操作：先 `Decider`，再强制审计，再写，再事件，写失败补一条 `failed` 的审计行（[design-authn-admin](design-authn-admin.md)）。
 
@@ -417,7 +417,7 @@ WHERE id = ? AND ended_at IS NULL
 
 ### 结束与撤销
 
-**`End`。** 经 `authn_imp_session` 找到 `actor` 会话上未结束的记录，没有则 `ErrNotImpersonating`。条件更新写 `explicit`，写审计 `authn.impersonation.end`，发 `authn.impersonation.ended`，不碰载体。**审计失败不阻止结束**：结束是向安全方向的动作，失败写 Error 日志。`DELETE B/impersonation` 的处理器在 cookie 凭据下于 `End` 之后以 `Sessions.SetImpersonation(sid, "")` 清除会话行上的标识并换令牌，再 `Sessions.SetCookie`；撤销冒充令牌的路径没有 cookie，不做这一步，管理员的会话令牌不被轮换。会话行上的标识摘除失败不使记录恢复：记录已结束，校验端读到 `Active` 为假即按未冒充处理。
+**`End`。** 经 `authn_imp_session` 找到 `actor` 会话上未结束的记录，没有则 `ErrNotImpersonating`。条件更新写 `explicit`，写审计 `authn.impersonation.end`，发 `authn.impersonation.ended`，不碰载体。**审计失败不阻止结束**：结束是向安全方向的动作，失败写 Error 日志。`DELETE B/impersonation` 的处理器在 cookie 凭据下于 `End` 之后以 `Sessions.SetImpersonation(sid, "")` 清除会话行上的标识，不换令牌、不写 cookie，旧令牌继续有效，身份已回到发起者自己（决策见 [ADR-authn-impersonation-2026-10-10](../../../adr/adr-authn-impersonation-2026-10-10.md)）；撤销冒充令牌的路径没有 cookie，不做这一步。会话行上的标识摘除失败不使记录恢复：记录已结束，校验端读到 `Active` 为假即按未冒充处理。
 
 **`Revoke`。** 读记录，条件更新写 `revoked`，写审计 `authn.impersonation.revoke`，发 `authn.impersonation.ended`。记录不存在返回 `ErrNotImpersonating`；已结束则无操作。`Revoke` 不摘除发起者会话行上的标识，会话与令牌载体都经 `Active` 为假一致失效。
 
@@ -590,6 +590,7 @@ flowchart TD
 | 有效性判定与惰性落库 | 已实现 | `pkg/authn/impersonation/active.go` `Active`、`lapseReason` |
 | `List` 与 `Revoke` 在返回、写入之前按有效性判定求值并落库 | 已实现 | `pkg/authn/impersonation/active.go` `settle`、`judge`；`pkg/authn/impersonation/end.go` `List`、`Revoke` |
 | `End`、`Revoke`、`List` | 已实现 | `pkg/authn/impersonation/end.go` `End`、`Revoke`、`List`；`pkg/authn/impersonation/store.go` `list` |
+| 结束冒充只清除会话行上的标识、不换令牌 | 未实现 | — |
 | 路由 `POST`、`GET`、`DELETE B/impersonation`，其中 `GET` 与 `DELETE` 登记为 `Impersonable` | 已实现 | `pkg/authn/impersonation/routes.go` `mountRoutes`、`handleStart`、`handleStatus`、`handleEnd` |
 | Bearer 凭据下的冒充访问令牌签发 | 已实现 | `pkg/authn/impersonation/routes.go` `issueImpersonation`（`authn.IssueToken` 的 `sub`、`act`、`imp`、`imp_tenant`、`sid`、有效期取 `min(access-ttl, 记录剩余时限)`）；令牌侧 `pkg/authn/token/issue.go` `signAccess` |
 | 接缝级审计、事件、日志与指标 `authn.impersonation.sessions` | 已实现 | `pkg/authn/impersonation/signal.go` `writeAudit`、`publish`、`recordSession`；开始/结束的日志在 `routes.go` |

@@ -84,7 +84,7 @@ type Sessions interface {
 | `RevokeAccount` | 对该账户的 `browser` 与 `token` 种做一条 `UPDATE`；`except` 非空则保留那一个会话，为空则全撤；交出撤销的标识。`service` 种不在其内。 |
 | `Rotate` | 为当前会话换令牌，保留标识、等级与期限；只对 `browser` 种有内容，其余种类无事可做。它与 `RevokeAccount` 是两个动作：前者换当前会话的令牌，后者撤销其余会话。 |
 | `Elevate` | 加强认证完成后更新等级、认证时刻、方式集与 `IDPAssured`，并对 `browser` 种换令牌；保留标识与绝对期限，不建新会话。 |
-| `SetImpersonation` | 写入冒充记录标识，空串表示结束，并对 `browser` 种换令牌；保留标识与期限。 |
+| `SetImpersonation` | 写入冒充记录标识，空串表示结束。写入非空标识时对 `browser` 种换令牌；空串（结束）只清除标识、不换令牌，旧令牌继续有效。保留标识与期限。 |
 | `Status` | 回答会话是否仍然有效，并交出校验后端建立身份所需的全部事实；受 `check-ttl` 缓存。库里没有该会话返回 `ErrSessionNotFound`；会话存在而失效（已撤销、过期、账户停用、会话早于账户的 `valid_after`）返回 `Active` 为假的 `SessionStatus`。 |
 | `StatusFresh` | 与 `Status` 同判据，不走缓存；刷新令牌轮换与登录流程完成时使用。 |
 | `ForCredential` | 对 `credential_id` 的唯一约束做原子的取或建，一个服务密钥一行（`service` 种）。行不存在则建；存在且未撤销则把 `expires_at` 更新为 `expires` 并返回同一标识（`expires` 为空指针表示密钥不过期，`expires_at` 置空）；行的 `created_at` 早于账户的 `valid_after` 时一并置为当前时刻；存在但已撤销返回 `ErrSessionRevoked`。 |
@@ -422,7 +422,7 @@ CREATE INDEX authn_sessions_expires ON authn_sessions (expires_at);
 ```mermaid
 stateDiagram-v2
     [*] --> 有效: Create 或 ForCredential 建行
-    有效 --> 有效: Rotate Elevate SetImpersonation 条件更新 换令牌
+    有效 --> 有效: Rotate Elevate SetImpersonation 挂接 条件更新 换令牌
     有效 --> 有效: 续期 按 touch-interval 条件更新 idle_expires_at
     有效 --> 已过期: browser 过空闲或绝对期限 token 过绝对期限 service 随密钥到期
     有效 --> 已撤销: Revoke RevokeAccount RevokeCredential 钩子 超出 max-per-account
@@ -488,7 +488,7 @@ stateDiagram-v2
 
 ### 轮换、撤销、列出与踢下线
 
-**轮换点**是下列动作（封闭集合）：登录完成；加强认证完成；改口令；登记或删除因素；改手机或邮箱；关联或解绑外部身份；冒充的开始与结束。轮换指旧令牌脱钩、新令牌写入，对会话行的条件更新，行已被撤销则整件事失败。调用方在动作成功之后调用 `Rotate`（改口令、登记或删除因素、改手机、关联与解绑）、`Elevate`（加强认证）或 `SetImpersonation`（冒充），再调用 `SetCookie`。改口令、删除因素、解绑外部身份成功之后，各自的处理器另调 `RevokeAccount(except = 当前会话)`；`Rotate` 换当前会话的令牌，`RevokeAccount` 撤销其余会话，二者是两个动作。`Passwords.Set` 不替调用方撤销，使 `Passwords` 不依赖会话模块。
+**轮换点**是下列动作（封闭集合）：登录完成；加强认证完成；改口令；登记或删除因素；改手机或邮箱；关联或解绑外部身份；冒充的开始。冒充的结束不是轮换点，只清除会话行上的标识（决策见 [ADR-authn-impersonation-2026-10-10](../../../adr/adr-authn-impersonation-2026-10-10.md)）。轮换指旧令牌脱钩、新令牌写入，对会话行的条件更新，行已被撤销则整件事失败。调用方在动作成功之后调用 `Rotate`（改口令、登记或删除因素、改手机、关联与解绑）、`Elevate`（加强认证）或 `SetImpersonation`（冒充开始；结束只清标识，不换令牌也不写 cookie），再调用 `SetCookie`。改口令、删除因素、解绑外部身份成功之后，各自的处理器另调 `RevokeAccount(except = 当前会话)`；`Rotate` 换当前会话的令牌，`RevokeAccount` 撤销其余会话，二者是两个动作。`Passwords.Set` 不替调用方撤销，使 `Passwords` 不依赖会话模块。
 
 登录完成时，请求若带着可解析的旧会话 cookie（经 `Sessions.Current`），旧会话被撤销，不让它继续并存。这不是会话固定的防线：防线是登录总是新建会话与新令牌，加上令牌只由服务端生成。SAML 的跨站 POST 不带 `SameSite=Lax` 的 cookie，旧会话无从撤销。
 
@@ -643,6 +643,7 @@ stateDiagram-v2
 | 表 `authn_sessions` 与按方言的迁移集 | 已实现 | `pkg/authn/session/store.go`；`pkg/authn/session/migrations/postgres`、`pkg/authn/session/migrations/sqlite` |
 | scs 的适配：存储适配器、JSON 编码器与适配规则 | 已实现 | `pkg/authn/session/adapter.go` `storeAdapter`；`pkg/authn/session/payload.go` `jsonCodec` |
 | 会话的创建、读取、列出、撤销与按账户批量撤销 | 已实现 | `pkg/authn/session/sessions.go` `Create`、`Get`、`List`、`RevocableSessions`、`Revoke`、`RevokeAccount` |
+| 冒充结束只清除标识、不换令牌 | 未实现 | — |
 | 令牌轮换、提权与冒充挂接 | 已实现 | `pkg/authn/session/sessions.go` `Rotate`、`Elevate`、`SetImpersonation` |
 | cookie 的写出、清除、读取与启动校验 | 已实现 | `pkg/authn/session/sessions.go` `SetCookie`、`ClearCookie`；`pkg/authn/session/config.go` |
 | `Verifier`：cookie 校验、会话校验缓存、账户核对与冒充记录缓存 | 已实现 | `pkg/authn/session/verify.go` `Verify`、`Accepts`、`Name`；`pkg/authn/session/cache.go` |
