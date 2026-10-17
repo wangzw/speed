@@ -131,10 +131,10 @@ type Row struct {
 - **权限**：路由询 `audit.read`；本模块不声明自己的权限，`audit.read` 由授权能力携带。
 - **问题应答**：`Problem.Type` 前缀 `urn:speed:audit:`，其下的码 `bad-request`。
 
-### 稳定性承诺
+### 对外接口面
 
-- 模块名 `audit.admin`、配置键 `audit.admin.endpoints`、管理面路由的路径与它们询问的权限（`audit.read`），以及 `Problem.Type` 前缀 `urn:speed:audit:` 及其下的码（`bad-request`），是本模块对宿主的契约。改动它们是宿主可见的破坏性变更，须随发布对账。
-- 记录视图的字段名（`id`、`tenant`、`occurred_at`、`actor`、`source`、`action`、`object`、`outcome`、`purpose`、`detail`）与列表应答的容器成形态（`entries`、`next`）是承诺：宿主与前端据此读应答。
+- 模块名 `audit.admin`、配置键 `audit.admin.endpoints`、管理面路由的路径与它们询问的权限（`audit.read`），以及 `Problem.Type` 前缀 `urn:speed:audit:` 及其下的码（`bad-request`），是本模块对宿主的接口面。改动它们是宿主可见的破坏性变更。
+- 记录视图的字段名（`id`、`tenant`、`occurred_at`、`actor`、`source`、`action`、`object`、`outcome`、`purpose`、`detail`）与列表应答的容器成形态（`entries`、`next`）是应答形状：宿主与前端据此读应答。
 - 本模块可替换、可撤掉，不改变调用方或审计模块的代码。
 
 ## 依赖

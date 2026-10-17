@@ -145,10 +145,10 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 - **路由**：`B/admin/tenants/:tenant/invitations` 下的签发、列表与撤销，以及 `B/invitations/:token` 下的读取与接受；询问的动作 `authn.membership.manage`。
 - **令牌前缀**：接受令牌以 `spd_inv_` 起头，供日志脱敏识别（对照 `spd_rt_`、`spd_cs_` 两条既有前缀，见 [design-authn-token](design-authn-token.md)）。
 
-### 稳定性承诺
+### 对外接口面
 
-- `Invites` 的方法集，`Invitation`、`InvitationStatus`、`Issued`、`IssueInvite`、`AcceptInvite` 的字段与方法集，以及本模块的全部哨兵，是稳定面。
-- 路由路径与每条管理面路由询问的动作是稳定面；`InvitationStatus` 的存量列与「已过期由时钟推出、不落列」是承诺。
+- `Invites` 的方法集，`Invitation`、`InvitationStatus`、`Issued`、`IssueInvite`、`AcceptInvite` 的字段与方法集，以及本模块的全部哨兵，属于对外接口面。
+- 路由路径与每条管理面路由询问的动作属于对外接口面；`InvitationStatus` 的存量列与「已过期由时钟推出、不落列」同属接口面。
 - 成员行的 `Source = invite`、令牌前缀 `spd_inv_` 与配置键 `authn.invite.ttl` 是宿主可见面的一部分，改名即破坏性变更。
 
 ### 哨兵错误

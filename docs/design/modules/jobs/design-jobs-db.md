@@ -82,12 +82,12 @@ type Handler interface {
 
 各输入项的用途见「认领的常数与取值」；`jobs.db` 是排他交付 `Queue` 与 `Handlers` 的唯一模块，宿主在命令树上点名它或为它预置实例，依赖闭包不替它挑（排他交付的提供者不被依赖闭包自动纳入）。
 
-### 稳定性承诺
+### 对外接口面
 
-- `Queue`、`Handlers`、`Handler`、`Task`、`Job`、`Result`、`Schedule`、`Status`、`Priority`、`ProgressFn`、`EnqueueOption` 与根包的哨兵是根包对调用方的契约，本模块交付的实现承诺它们的语义。加方法、改签名或改字段名，对实现这些接缝的模块与取用它们的调用方都是不兼容变更。
-- **表 `jobs` 属于本模块，宿主不读写它。** 它的列供运维查看积压、重试与死信，不是契约面。
-- **宿主可见面是承诺**：模块名 `jobs.db`、配置命名空间 `jobs.db` 与其中的输入项，改动它们是宿主可见的破坏性变更，须随发布对账。
-- **事件类型名是承诺**：`jobs.job.succeeded`、`jobs.job.dead_letter`、`jobs.job.cancelled` 是发布方与订阅方之间的契约，改名改变订阅方的配置。
+- `Queue`、`Handlers`、`Handler`、`Task`、`Job`、`Result`、`Schedule`、`Status`、`Priority`、`ProgressFn`、`EnqueueOption` 与根包的哨兵是根包对调用方的接口面，本模块交付的实现的语义与之一致。加方法、改签名或改字段名，对实现这些接缝的模块与取用它们的调用方都是不兼容变更。
+- **表 `jobs` 属于本模块，宿主不读写它。** 它的列供运维查看积压、重试与死信，不在对外接口面内。
+- **宿主可见面**：模块名 `jobs.db`、配置命名空间 `jobs.db` 与其中的输入项，改动它们是宿主可见的破坏性变更。
+- **事件类型名**：`jobs.job.succeeded`、`jobs.job.dead_letter`、`jobs.job.cancelled` 是发布方与订阅方之间的接口面，改名改变订阅方的配置。
 
 ### 哨兵错误
 

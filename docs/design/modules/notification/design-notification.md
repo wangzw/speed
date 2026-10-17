@@ -182,13 +182,13 @@ type Message struct {
 
 收件人来源随路由而分：inbox 与 stream 的 handler 经认证根包的读取面（`pkg/authn` `FromContext` 返回的 `Identity` 的账户）取已认定的身份，以其账户标识为收件人；preferences 的 handler 不从身份解析收件人，它的收件人取值来自请求上下文里的一个取值，由宿主的身份与授权侧给出（[notification-preferences](design-notification-preferences.md)）。本能力不给路由挂权限闸，因此「这个身份能不能读这个收件人的收件箱」不在本能力的路由上判定。
 
-### 稳定性承诺
+### 对外接口面
 
-- `Channel`、`KnownChannel`、`TypeSpec`、`RecipientClass`、`Recipient`、`Dispatch`、`Preference`、`Message`、`Inbox`、`Preferences`、`Dispatcher` 的方法集与字段名，以及本能力的全部哨兵，是本能力对调用方的契约。加方法、改签名、改字段名对实现了接缝的模块与取用它们的调用方都是不兼容变更。
-- `Channel` 的取值集合是承诺：`in_app`、`email`、`sms`，`KnownChannel` 的判定面。增删一个渠道是宿主可见的破坏性变更，须随发布对账。
-- `TypeSpec` 的字段语义是承诺：`Key` 是全局唯一类型名、`DefaultChannels` 是 `Channel` 子集、`Unsubscribable` 的极性与「不可退订」相反、`RecipientVisibleParams` 非 `nil` 即白名单。改字段名或改极性使既有声明静默改变行为。
-- `Dispatch` 的字段语义是承诺：`Locale` 非空、`OccurrenceID` 参与去重键。`Message` 的字段语义是承诺：`Title` 与 `Body` 是已渲染文本。
-- 路由的路径、每条路由的过滤参数与分页界限、基路径 `/api/v1/notifications`，以及收件箱与偏好的应答形状，是宿主可见面；改动它们须随发布对账。
+- `Channel`、`KnownChannel`、`TypeSpec`、`RecipientClass`、`Recipient`、`Dispatch`、`Preference`、`Message`、`Inbox`、`Preferences`、`Dispatcher` 的方法集与字段名，以及本能力的全部哨兵，是本能力对调用方的接口面。加方法、改签名、改字段名对实现了接缝的模块与取用它们的调用方都是不兼容变更。
+- `Channel` 的取值集合：`in_app`、`email`、`sms`，`KnownChannel` 的判定面。增删一个渠道是宿主可见的破坏性变更。
+- `TypeSpec` 的字段语义：`Key` 是全局唯一类型名、`DefaultChannels` 是 `Channel` 子集、`Unsubscribable` 的极性与「不可退订」相反、`RecipientVisibleParams` 非 `nil` 即白名单。改字段名或改极性使既有声明静默改变行为。
+- `Dispatch` 的字段语义：`Locale` 非空、`OccurrenceID` 参与去重键。`Message` 的字段语义：`Title` 与 `Body` 是已渲染文本。
+- 路由的路径、每条路由的过滤参数与分页界限、基路径 `/api/v1/notifications`，以及收件箱与偏好的应答形状，是宿主可见面；改动它们
 - 哨兵 `ErrUnknownType`、`ErrUnknownChannel`、`ErrNotUnsubscribable`、`ErrParamsNotAllowed`、`ErrMessageNotFound`、`ErrInvalidConfig`、`ErrInvalidRequest` 是判别面，调用方以 `errors.Is` 判别，包裹一律用 `%w`。
 
 ### 哨兵错误

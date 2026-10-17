@@ -58,7 +58,7 @@
 
 **接受的代价：**
 
-- **一个宿主可见的新面。** 新模块名 `tenant.admin`、新配置键 `tenant.admin.endpoints`（必填、只收具体端名）、新的一组路由、新的权限（`tenant.read`、`tenant.manage`）与新的 `Problem.Type` 前缀 `urn:speed:tenant:`。这些都是宿主可见面，随发布对账。
+- **一个宿主可见的新面。** 新模块名 `tenant.admin`、新配置键 `tenant.admin.endpoints`（必填、只收具体端名）、新的一组路由、新的权限（`tenant.read`、`tenant.manage`）与新的 `Problem.Type` 前缀 `urn:speed:tenant:`。这些都是宿主可见面。
 - **管理面把一整套依赖带进租户能力目录的一个叶子。** `tenant.admin` import `pkg/authz`、`pkg/authn`、`pkg/audit`、`pkg/http`，是租户能力目录里唯一这样做的一层。它可撤掉，名册与解析不因它背上这些依赖，但一个纳入它的宿主的依赖闭合里就有了这套东西。
 - **权限进入进程目录与权限选择器。** 它们占用（资源，动作）对 `(tenant, read)` 与 `(tenant, manage)`，这对（资源，动作）因此不能被别的权限复用。
 - **宿主断言平台域的授予。** 一个调用方要操作名册，得在平台域持 `tenant.read` 或 `tenant.manage` 的授予；部署要为用户或角色备好这条平台域授予，否则管理面对所有调用方都答 403。

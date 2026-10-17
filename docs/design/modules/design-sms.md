@@ -207,12 +207,12 @@ sms:
       - ops
 ```
 
-### 稳定性承诺
+### 对外接口面
 
-- `Sender`、`Provider`、`Registry`、`Product`、`Message`、`Receipt`、`Resolved`、`Template`、`TemplateSpec`、`Declaration`、`Submission`、`Approval`、`ApprovalState`、`Source`、`Kind`、`Record` 的字段与方法集，以及本能力的全部哨兵，是本能力对调用方的契约。加方法、改签名或改字段名对实现了接缝的载体、注册表与取用它们的调用方都是不兼容变更。
-- `Message` 的字段语义是承诺：`To` 是 E.164、`Template` 是调用方定义的逻辑名、`Params` 的键是模板声明的参数名、`Locale` 非空且对 `pkg/sms` 不透明、`DedupeID` 使载体至多对同一标识调厂商一次。`Resolved` 的字段语义同样是承诺：`Code` 是厂商编号、`Ordered` 按模板声明的次序铺开、`Params` 是键值表。
-- **模板声明的形状是承诺**：`TemplateSpec` 的字段名与容器成形态（`params` 是列表、`codes` 是映射）是宿主写在配置文件里、也写在管理面 `Register` 正文里的东西，改它们使旧写法成为未知键或坏正文。
-- **宿主可见面是承诺**：模块名 `sms.registry`、`sms.admin`，配置键 `sms.registry.templates`、`sms.registry.poll-interval`、`sms.admin.endpoints`，管理面路由的路径与每条路由询问的权限（读 `sms.template.read`、写 `sms.template.manage`），以及权限常量 `sms.template.read`、`sms.template.manage` 与 `Problem.Type` 前缀 `urn:speed:sms:` 及其下的码（`bad-request`、`conflict`、`config-template`）。改动它们是宿主可见的破坏性变更，须随发布对账。
+- `Sender`、`Provider`、`Registry`、`Product`、`Message`、`Receipt`、`Resolved`、`Template`、`TemplateSpec`、`Declaration`、`Submission`、`Approval`、`ApprovalState`、`Source`、`Kind`、`Record` 的字段与方法集，以及本能力的全部哨兵，是本能力对调用方的接口面。加方法、改签名或改字段名对实现了接缝的载体、注册表与取用它们的调用方都是不兼容变更。
+- `Message` 的字段语义：`To` 是 E.164、`Template` 是调用方定义的逻辑名、`Params` 的键是模板声明的参数名、`Locale` 非空且对 `pkg/sms` 不透明、`DedupeID` 使载体至多对同一标识调厂商一次。`Resolved` 的字段语义：`Code` 是厂商编号、`Ordered` 按模板声明的次序铺开、`Params` 是键值表。
+- **模板声明的形状属于接口面**：`TemplateSpec` 的字段名与容器成形态（`params` 是列表、`codes` 是映射）是宿主写在配置文件里、也写在管理面 `Register` 正文里的东西，改它们使旧写法成为未知键或坏正文。
+- **宿主可见面**：模块名 `sms.registry`、`sms.admin`，配置键 `sms.registry.templates`、`sms.registry.poll-interval`、`sms.admin.endpoints`，管理面路由的路径与每条路由询问的权限（读 `sms.template.read`、写 `sms.template.manage`），以及权限常量 `sms.template.read`、`sms.template.manage` 与 `Problem.Type` 前缀 `urn:speed:sms:` 及其下的码（`bad-request`、`conflict`、`config-template`）。改动它们是宿主可见的破坏性变更。
 - 单个载体叶子包、注册表模块、管理面模块各自可替换、可撤掉，不改变调用方的代码。
 
 ### 哨兵错误

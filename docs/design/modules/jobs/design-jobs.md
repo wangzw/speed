@@ -150,12 +150,12 @@ var (
 
 对照是 notification 的[类型分类法](../notification/design-notification-preferences.md)，它取**可用集**：类型是**词汇**——偏好写入与投递拿它当校验参照，同一个声明不能在这条命令下合法、在另一条下非法；周期声明是**活**——它必须与这次装配的东西一致，只被静态级纳入、handler 不存在的声明不该被 tick。两者判据的差别即本条裁定与类型分类法裁定之间的实质（[ADR-jobs-schedule-2026-10-15](../../../adr/adr-jobs-schedule-2026-10-15.md)）。
 
-### 稳定性承诺
+### 对外接口面
 
-- `Queue`、`Handlers`、`Handler`、`Task`、`Job`、`JobID`、`Status` 及其闭集与 `Terminal`、`Priority`、`Result`、`ProgressFn`、`Schedule`、`EnqueueOption` 与 `NewEnqueueOptions` 及 `With*` 构造函数的字段与方法集，以及本能力的全部哨兵，是对调用方的契约。加方法、改签名或改字段名对实现了接缝的队列模块与取用它们的调用方都是不兼容变更。
-- `Task` 的字段语义是承诺：`Type` 对应某个已登记 `Handler` 的 `Type()`，`Payload` 对 `pkg/jobs` 不透明，`IdempotencyKey` 非空时使 `Enqueue` 幂等。`Job` 的字段语义、`Status` 的闭集与 `Terminal` 的判定同属承诺。
-- **`Schedule` 的形状是承诺**：`Key` 全局唯一、`Type` 必须与某个已登记 handler 的 `Type()` 相同、`Interval > 0`；改这些字段使既有声明成为坏声明。
-- **宿主可见面是承诺**：模块名 `jobs.db`、`jobs.scheduler`，配置命名空间 `jobs.db`、`jobs.scheduler` 及其输入项，表名 `jobs`。改动它们是宿主可见的破坏性变更，须随发布对账。
+- `Queue`、`Handlers`、`Handler`、`Task`、`Job`、`JobID`、`Status` 及其闭集与 `Terminal`、`Priority`、`Result`、`ProgressFn`、`Schedule`、`EnqueueOption` 与 `NewEnqueueOptions` 及 `With*` 构造函数的字段与方法集，以及本能力的全部哨兵，是对调用方的接口面。加方法、改签名或改字段名对实现了接缝的队列模块与取用它们的调用方都是不兼容变更。
+- `Task` 的字段语义：`Type` 对应某个已登记 `Handler` 的 `Type()`，`Payload` 对 `pkg/jobs` 不透明，`IdempotencyKey` 非空时使 `Enqueue` 幂等。`Job` 的字段语义、`Status` 的闭集与 `Terminal` 的判定同属接口面。
+- **`Schedule` 的形状**：`Key` 全局唯一、`Type` 必须与某个已登记 handler 的 `Type()` 相同、`Interval > 0`；改这些字段使既有声明成为坏声明。
+- **宿主可见面**：模块名 `jobs.db`、`jobs.scheduler`，配置命名空间 `jobs.db`、`jobs.scheduler` 及其输入项，表名 `jobs`。改动它们是宿主可见的破坏性变更。
 - **`jobs.db` 可被替换**：另一个队列后端实现同一对 `Queue` 与 `Handlers` 接缝、各排他交付，调用方的代码不必改变。
 
 ### 哨兵错误

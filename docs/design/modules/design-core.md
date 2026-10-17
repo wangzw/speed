@@ -318,7 +318,7 @@ func (r *Registry) Run(ctx context.Context) error
 
 宿主的 `main` 因此负责 import 所需模块、声明自己的宿主身份（见 [config](design-config.md)）、发起装配——写出命令树并由它发起驱动，或不写命令树而直接调用 `Run`（[ADR-drive-entry-2026-09-21](../../adr/adr-drive-entry-2026-09-21.md)）——以及决定 `ctx` 何时取消。
 
-**稳定性承诺**：`Module` 的字段与 `Registry` 的方法集是模块作者与 `core` 之间的契约，其变更会波及每一个模块。字段集限于注册表自身要解释的内容，横切机制经由 `Resources` 扩展，不改变这份契约。
+**对外接口面**：`Module` 的字段与 `Registry` 的方法集是模块作者与 `core` 之间的接口面，其变更会波及每一个模块。字段集限于注册表自身要解释的内容，横切机制经由 `Resources` 扩展，不改变这个接口面。
 
 ## 依赖
 

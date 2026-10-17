@@ -79,10 +79,10 @@ func Merge(specs []core.Resource[speedhttp.Spec], opts Options) ([]byte, error)
 - **探针端点**：`ops.endpoint` 点名的端上的 `/health`、`/ready`、`/openapi.json`。
 - **合并文档的形状**：顶层 `openapi`、`info`（标题与版本取自 `ops.title` 与 `ops.version` 两个输入项）、`paths`、`components`，以及扩展键 `x-fragments`（逐份片段的来源：模块与端）与每个 operation 上的 `x-endpoint`（这条 operation 服务在哪个端上）。
 
-### 稳定性承诺
+### 对外接口面
 
-- 模块名 `ops`、配置键 `ops.endpoint`、`ops.title`、`ops.version`、路由的方法与路径、合并文档的扩展键 `x-fragments` 与 `x-endpoint`，是宿主与网关写下来、读进去的东西，改动它们是宿主可见的破坏性变更，须随发布对账。
-- `Spec.Endpoint` 的语义是承诺：它是声明模块写下的端名，一个未被声明的端不是错误——资源是静态声明，`http` 只保存它（见 [http](http/design-http.md)）。
+- 模块名 `ops`、配置键 `ops.endpoint`、`ops.title`、`ops.version`、路由的方法与路径、合并文档的扩展键 `x-fragments` 与 `x-endpoint`，是宿主与网关写下来、读进去的东西，改动它们是宿主可见的破坏性变更。
+- `Spec.Endpoint` 的语义：它是声明模块写下的端名，一个未被声明的端不是错误——资源是静态声明，`http` 只保存它（见 [http](http/design-http.md)）。
 
 ### 非保证
 

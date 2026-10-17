@@ -207,7 +207,7 @@ type AccountLifecycle interface {
 | `AccountDeleted` | 抹除本模块持有的该账户数据：会话行、因素与其子表数据、短信挑战行。 |
 | `ServiceSecretRevoked` | 撤销该密钥对应的 service 种会话。 |
 
-### 稳定性
+### 对外接口面
 
 上述接口的方法集、哨兵与表名是宿主可见面：增删方法、改签名与改表名都是破坏性变更。根包只放这些接口与数据类型，实现与 `*gorm.DB` 留在本模块内；其他 authn 子包与授权功能目录拿不到数据库句柄。
 

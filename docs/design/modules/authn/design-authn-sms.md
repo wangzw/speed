@@ -115,10 +115,10 @@ type SMSCodes interface {
 
 `allowed-prefixes` 与预算项是设置，改到更宽松的取值时，本模块写一行 `Warn` 并经审计接缝记一条尽力档记录，事前不拦（[ADR-authn-settings-and-secrets-2026-10-10](../../../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。
 
-### 稳定性承诺
+### 对外接口面
 
-- `SMSCodes`、`SendCode` 的字段与方法集，以及用途与模板键这两个封闭集，是本模块对使用方的契约。`SendCode.Locale` 的取值不是封闭集：它是一个 BCP 47 标签，由本模块解析到该消息所用模板声明的语言；模板键（`authn.code.login`、`authn.code.mfa`、`authn.code.enroll`）是配置文件里出现的取值，是本模块与载体的配置契约。增删封闭集的成员，等同修改契约，使用方与载体一并复核。
-- 挑战表的列与索引是本模块私有的存储形状，不属于契约：其他模块不读 `authn_challenges`，只经 `SMSCodes` 与 `AccountLifecycle` 交互。
+- `SMSCodes`、`SendCode` 的字段与方法集，以及用途与模板键这两个封闭集，是本模块对使用方的接口面。`SendCode.Locale` 的取值不是封闭集：它是一个 BCP 47 标签，由本模块解析到该消息所用模板声明的语言；模板键（`authn.code.login`、`authn.code.mfa`、`authn.code.enroll`）是配置文件里出现的取值，是本模块与载体的配置接口面。增删封闭集的成员会同时改变使用方与载体看到的面，两者一并复核。
+- 挑战表的列与索引是本模块私有的存储形状，不在对外接口面内：其他模块不读 `authn_challenges`，只经 `SMSCodes` 与 `AccountLifecycle` 交互。
 - 单个载体叶子包可替换、可撤掉，不改变 `SMSCodes` 的行为。
 
 ## 依赖

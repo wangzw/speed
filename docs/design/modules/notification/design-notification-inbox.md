@@ -82,10 +82,10 @@ type Inbox interface {
 
 路由的响应体里，`Message` 视图逐字段从根包的 `Message` 构造：`id`、`type_key`、`group`、`title`、`body`、`params`、`link`、`read_at`、`created_at`，时间按 UTC 写出。
 
-### 稳定性承诺
+### 对外接口面
 
-- `Inbox` 的方法集，`ListQuery`、`MessagePage` 与根包的 `Message` 视图的字段名，以及哨兵 `ErrMessageNotFound`、`ErrInvalidRequest`，是本模块对调用方的契约。加方法、改签名或改字段名对取用 `Inbox` 的调用方是不兼容变更。
-- **宿主可见面是承诺**：模块名 `notification.inbox`，配置键 `notification.inbox.endpoints`，路由的路径，事件类型名常量 `EventInboxCreated`（`"notification.inbox.created"`）与它的载荷字段，以及 `Problem.Type` 前缀 `urn:speed:notification:` 及其下的码（`bad-request`、`message-not-found`）。改动它们是宿主可见的破坏性变更，须随发布对账。
+- `Inbox` 的方法集，`ListQuery`、`MessagePage` 与根包的 `Message` 视图的字段名，以及哨兵 `ErrMessageNotFound`、`ErrInvalidRequest`，是本模块对调用方的接口面。加方法、改签名或改字段名对取用 `Inbox` 的调用方是不兼容变更。
+- **宿主可见面**：模块名 `notification.inbox`，配置键 `notification.inbox.endpoints`，路由的路径，事件类型名常量 `EventInboxCreated`（`"notification.inbox.created"`）与它的载荷字段，以及 `Problem.Type` 前缀 `urn:speed:notification:` 及其下的码（`bad-request`、`message-not-found`）。改动它们是宿主可见的破坏性变更。
 
 ## 依赖
 

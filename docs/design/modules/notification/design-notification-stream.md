@@ -59,11 +59,11 @@ Hub 在内存里，每个副本一个，只装本副本的连接。**Hub 唯一�
 
 **事件帧的格式**：`event: message\n`、`data: {…}\n`、一个空行结尾，即 `event: message\ndata: {…}\n\n`。`data:` 冒号之后是一个 JSON 对象，字段就是订阅到的事件载荷（`message_id`、`tenant_id`、`recipient_user_id`、`type_key`）。`event:` 名固定为 `message`。客户端据 `message_id` 回读取件箱取内容。
 
-### 稳定性承诺
+### 对外接口面
 
-- **事件帧的形状是承诺**：`event: message` 这一行，`data:` 里 JSON 载荷的字段名，以及结尾的空行。改它们使已连接的客户端解析失效。
-- **宿主可见面是承诺**：模块名 `notification.stream`，配置键 `notification.stream.endpoints`，路由 `GET /api/v1/notifications/stream`。改动它们是宿主可见的破坏性变更，须随发布对账。
-- 本模块不交付功能接口，因而不在功能标识面上作出任何承诺；一个进程里恰好一个 `notification.stream`。
+- **事件帧的形状属于接口面**：`event: message` 这一行，`data:` 里 JSON 载荷的字段名，以及结尾的空行。改它们使已连接的客户端解析失效。
+- **宿主可见面**：模块名 `notification.stream`，配置键 `notification.stream.endpoints`，路由 `GET /api/v1/notifications/stream`。改动它们是宿主可见的破坏性变更。
+- 本模块不交付功能接口，因而不在功能标识面上；一个进程里恰好一个 `notification.stream`。
 
 ## 依赖
 

@@ -76,11 +76,11 @@ var ErrOtherDatabase error // 事务不在交付的连接池上
 - **服务角色要有这张表的读写权限。** PostgreSQL 上是对 `event_staged` 的 `SELECT`、`INSERT`、`UPDATE`、`DELETE` 与序列 `event_staged_id_seq` 的 `USAGE`。
 - **暂存的事件只由到达 `Start` 的命令里的中继发布。** 一条停在 `Start` 之前的命令暂存的事件，留在表里等下一个运行着中继的进程。
 
-### 稳定性承诺
+### 对外接口面
 
-- `Outbox`、`ErrNoTransaction` 与 `ErrOtherDatabase` 是本模块与其他模块之间的契约，发布的承诺同属契约。
-- `*gorm.DB` 出现在契约面上，GORM 的不兼容升级直达暂存方，与数据库功能相同（[ADR-module-packaging-2026-09-14](../../../adr/adr-module-packaging-2026-09-14.md)）。
-- 表 `event_staged` 属于本模块，宿主不读写它；它的列供运维查看积压与拒收的原因，不是契约面。
+- `Outbox`、`ErrNoTransaction` 与 `ErrOtherDatabase` 是本模块与其他模块之间的接口面，发布语义同属接口面。
+- `*gorm.DB` 出现在接口面上，GORM 的不兼容升级直达暂存方，与数据库功能相同（[ADR-module-packaging-2026-09-14](../../../adr/adr-module-packaging-2026-09-14.md)）。
+- 表 `event_staged` 属于本模块，宿主不读写它；它的列供运维查看积压与拒收的原因，不在对外接口面内。
 
 ## 依赖
 

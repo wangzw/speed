@@ -97,7 +97,7 @@ type Impersonation interface {
 }
 ```
 
-| 方法 | 承诺 |
+| 方法 | 语义 |
 |---|---|
 | `Start` | 在调用方身份 `actor` 上开始一次冒充：校验全部结构性限制，询问 `Decider`，写强制档审计，写记录。同一个会话同时至多一条未结束的记录。成功返回记录；失败返回的哨兵与对外形状见「错误与失败语义」。`Start` 不挂接载体、不签发令牌、不发 `started` 事件：换出的会话令牌与冒充访问令牌要交到响应里，而 `Start` 拿不到响应写出器，这三件事由处理器在 `Start` 返回之后完成。顺序与每一步的失败处置见「开始的顺序」。 |
 | `End` | 结束 `actor` 的会话上未结束的那条记录，结束原因记 `explicit`。`actor` 可以是冒充身份，也可以是发起者自己的身份；会话上没有未结束的记录返回 `ErrNotImpersonating`。只改记录、写审计、发事件，不碰载体：不摘除会话行上的记录标识，不轮换会话令牌；cookie 凭据下的摘除与换令牌由 `DELETE B/impersonation` 的处理器随后完成，撤销冒充令牌的路径没有 cookie，两者都不做。结束是向安全方向的动作，审计写失败不阻止结束。`reason` 是结束的说明，只进审计行，不进事件，也不进 `end_reason`。 |
@@ -105,14 +105,14 @@ type Impersonation interface {
 | `Active` | 回答记录 `id` 此刻是否仍然有效，判定条件见「有效性判定」。记录不存在、已结束或已失效时第二个返回值为假；读到失效而记录仍未结束时同时落库。返回错误时调用方按失败方向处理，不当作有效。 |
 | `List` | 按 `GrantQuery` 过滤的键集分页：`After` 是上一页返回的游标，第二个返回值是下一页的游标，空串表示没有下一页。次序按记录 `id` 升序，`id` 是 UUIDv7、接近开始次序，游标取上一页最后一条的 `id`；记录永不清除，所以按目标查询的结果是「谁冒充过谁」的完整来源。 |
 
-稳定性承诺：
+对外接口面：
 
-- `Impersonation` 的方法集、`ImpersonationGrant` 的字段与 `end_reason` 的取值集合是对 `authn.session`、`authn.token`、`authn.admin` 与宿主的承诺。`end_reason` 是封闭集，新增取值需要同时修改根包、迁移的检查约束与本文。
-- `Active` 的判定条件是承诺的一部分：取用方（会话与令牌的校验后端）依赖它同时核对绑定会话、发起者、目标与成员关系，自己不重复核对。
+- `Impersonation` 的方法集、`ImpersonationGrant` 的字段与 `end_reason` 的取值集合是对 `authn.session`、`authn.token`、`authn.admin` 与宿主的接口面。`end_reason` 是封闭集，新增取值需要同时修改根包、迁移的检查约束与本文。
+- `Active` 的判定条件属于接口面：取用方（会话与令牌的校验后端）依赖它同时核对绑定会话、发起者、目标与成员关系，自己不重复核对。
 - 冒充的理由只进审计与记录本身，不进事件；这一约束对 `authn.impersonation.*` 事件的任何载荷演进都成立。
-- `Impersonation` 是排他功能：宿主可以不纳入 `authn.impersonation`，换上自己的实现，实现须满足上表的承诺与「开始的顺序」写出的约束。
+- `Impersonation` 是排他功能：宿主可以不纳入 `authn.impersonation`，换上自己的实现，实现须满足上表的语义与「开始的顺序」写出的约束。
 
-**发给管理面的单条读取不在公开接口里。** 管理面的记录路由要在询问 `Decider` 之前读出记录的租户与目标，这需要一个按标识读单条记录的方法，它不是公开 `Impersonation` 接口的一部分（公开接口承诺的是上表的方法集）。本模块另行交付 `Get(ctx, id) (ImpersonationGrant, error)`，对不存在的记录返回 `ErrNotImpersonating`；`authn.admin` 在构造期把取到的 `Impersonation` 值断言到这个扩展形状上，满足才挂出记录组（[design-authn-admin](design-authn-admin.md)）。宿主换上自己的实现时，要让管理面的记录组可用，同样要交付它。
+**发给管理面的单条读取不在公开接口里。** 管理面的记录路由要在询问 `Decider` 之前读出记录的租户与目标，这需要一个按标识读单条记录的方法，它不是公开 `Impersonation` 接口的一部分（公开接口交付的是上表的方法集）。本模块另行交付 `Get(ctx, id) (ImpersonationGrant, error)`，对不存在的记录返回 `ErrNotImpersonating`；`authn.admin` 在构造期把取到的 `Impersonation` 值断言到这个扩展形状上，满足才挂出记录组（[design-authn-admin](design-authn-admin.md)）。宿主换上自己的实现时，要让管理面的记录组可用，同样要交付它。
 
 ### 路由
 

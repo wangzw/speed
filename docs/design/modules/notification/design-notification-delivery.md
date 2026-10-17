@@ -113,11 +113,11 @@ idempotency_key = hex(sha256(canonicalJSON{
 
 **两个部件只在目录里有条目时才写。** 站内信的 `link` 与邮件的 `body_html` 是客户端会直接呈现的字段，目录里没有对应条目时留空，不把键串写进一个客户端当作链接或标记来处理的字段；其余部件按引擎的回落照常渲染——键串是文本，缺一条目录不是本模块可拒的事。
 
-### 稳定性承诺
+### 对外接口面
 
-- `notification.Dispatcher` 的方法集，以及本模块对 `notification.Dispatch` 字段语义的依赖，是与其他模块之间的契约；本模块的包导出的 `ModuleName` 同样是契约。
-- **宿主可见面是承诺**：模块名 `notification.delivery`，以及提交面的功能标识 `(*notification.Dispatcher)(nil)`。命令树按模块名纳入本模块，或为它预置实例。
-- 表 `notification_sends` 属于本模块，宿主不读写它；它的列供运维查投放账，不是契约面。
+- `notification.Dispatcher` 的方法集，以及本模块对 `notification.Dispatch` 字段语义的依赖，是与其他模块之间的接口面；本模块的包导出的 `ModuleName` 同属接口面。
+- **宿主可见面**：模块名 `notification.delivery`，以及提交面的功能标识 `(*notification.Dispatcher)(nil)`。命令树按模块名纳入本模块，或为它预置实例。
+- 表 `notification_sends` 属于本模块，宿主不读写它；它的列供运维查投放账，不在对外接口面内。
 
 ## 依赖
 

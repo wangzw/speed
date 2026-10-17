@@ -57,9 +57,9 @@ interface OrvalCall {
 
 **未声明的 `requireJsonBody`。** 接缝在任何操作上都不声明 `requestOptions.requireJsonBody`：一个操作的运行期响应类型在此被擦除，接缝无从知道该操作是否声明了响应体，而无条件要求一个 JSON 文档会破坏合法的空成功操作（204 式删除、只需受理的应答）——那些操作本应解析为 `undefined`。因而**文档的存在性是消费方的守卫**：一个必须在 2xx 体里携带文档的操作，自己校验该体（在触及任何字段之前）并把空 2xx 拒为 `client.protocol`。
 
-### 稳定性承诺
+### 对外接口面
 
-`./runtime` 的导出集（`bindRequestFn`、`speedRequest`、`speedRequestCredentialless`）与 `OrvalCall` 的字段、以及 `.` 入口经 orval 派生的操作与钩子的形状，是消费方据以编写的契约。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。`.` 入口的形状归生成器；改动它要经 `web/orval.config.ts` 并重生成，绝不手改产物。`./runtime` 的改动要与 AGENTS、README、`src/runtime.test.ts` 在同一提交内更新。
+`./runtime` 的导出集（`bindRequestFn`、`speedRequest`、`speedRequestCredentialless`）与 `OrvalCall` 的字段、以及 `.` 入口经 orval 派生的操作与钩子的形状，是消费方据以编写的接口面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。`.` 入口的形状归生成器；改动它要经 `web/orval.config.ts` 并重生成，绝不手改产物。`./runtime` 的改动要与 AGENTS、README、`src/runtime.test.ts` 在同一提交内更新。
 
 ## 依赖
 

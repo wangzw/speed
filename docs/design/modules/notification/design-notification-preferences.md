@@ -125,11 +125,11 @@ flowchart TD
     I --> I1[200 新有效集]
 ```
 
-### 稳定性承诺
+### 对外接口面
 
-- `notification.Preferences` 的方法集，以及 `notification.TypeSpec`、`notification.Preference`、`notification.Channel`、`notification.KnownChannel` 的字段与取值，是本模块与其他模块之间的契约；本模块的包导出的 `ModuleName` 同样是契约，改名会让命令树上的纳入静默失配。
-- **宿主可见面是承诺**：模块名 `notification.preferences`，配置键 `notification.preferences.endpoints`，路由 `GET /api/v1/notifications/types`、`GET /api/v1/notifications/preferences`、`PUT /api/v1/notifications/preferences/:typeKey/:channel`，`Problem.Type` 前缀 `urn:speed:notification:` 及其下的码。改动它们是宿主可见的破坏性变更。
-- 表 `notification_preferences` 属于本模块，宿主不读写它；它的列供运维查看，不是契约面。
+- `notification.Preferences` 的方法集，以及 `notification.TypeSpec`、`notification.Preference`、`notification.Channel`、`notification.KnownChannel` 的字段与取值，是本模块与其他模块之间的接口面；本模块的包导出的 `ModuleName` 同属接口面，改名会让命令树上的纳入静默失配。
+- **宿主可见面**：模块名 `notification.preferences`，配置键 `notification.preferences.endpoints`，路由 `GET /api/v1/notifications/types`、`GET /api/v1/notifications/preferences`、`PUT /api/v1/notifications/preferences/:typeKey/:channel`，`Problem.Type` 前缀 `urn:speed:notification:` 及其下的码。改动它们是宿主可见的破坏性变更。
+- 表 `notification_preferences` 属于本模块，宿主不读写它；它的列供运维查看，不在对外接口面内。
 
 ### 哨兵错误
 

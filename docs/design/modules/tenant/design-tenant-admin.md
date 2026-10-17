@@ -77,10 +77,10 @@
 - **权限**：读路由询 `tenant.read`，写路由询 `tenant.manage`；本模块的权限经 `authz.PermissionSpec` 进入进程目录、经 `authz.TranslationSpec` 进入进程翻译（`tenant.read` 译成 `(tenant, read)`、`tenant.manage` 译成 `(tenant, manage)`）。
 - **问题应答**：`Problem.Type` 前缀 `urn:speed:tenant:`，其下的码 `bad-request`、`conflict`。
 
-### 稳定性承诺
+### 对外接口面
 
-- 模块名 `tenant.admin`、配置键 `tenant.admin.endpoints`、管理面路由的路径与每条路由询问的权限（读 `tenant.read`、写 `tenant.manage`），以及权限常量 `tenant.read`、`tenant.manage` 与 `Problem.Type` 前缀 `urn:speed:tenant:` 及其下的码（`bad-request`、`conflict`），是本模块对宿主的契约。改动它们是宿主可见的破坏性变更，须随发布对账。
-- 租户视图的字段名（`id`、`alias`、`status`）与容器成形态是承诺：宿主与前端据此读应答。
+- 模块名 `tenant.admin`、配置键 `tenant.admin.endpoints`、管理面路由的路径与每条路由询问的权限（读 `tenant.read`、写 `tenant.manage`），以及权限常量 `tenant.read`、`tenant.manage` 与 `Problem.Type` 前缀 `urn:speed:tenant:` 及其下的码（`bad-request`、`conflict`），是本模块对宿主的接口面。改动它们是宿主可见的破坏性变更。
+- 租户视图的字段名（`id`、`alias`、`status`）与容器成形态是应答形状：宿主与前端据此读应答。
 - 本模块可替换、可撤掉，不改变调用方或名册的代码。
 
 ## 依赖

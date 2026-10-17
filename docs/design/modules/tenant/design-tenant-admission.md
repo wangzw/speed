@@ -109,9 +109,9 @@ type ScopeGuard interface {
 - **需要运营账号读租户数据时，经 `authn.tenant.access` 放行，或自写 handler。** 静态口令表主体不是任何租户的成员。
 - **装配里要有授权或宿主自己的角色判定。** 准入层之后的权限判定不在本层。
 
-### 稳定性承诺
+### 对外接口面
 
-下列是本模块与其他模块之间的契约：`tenant.Admission` 与 `authn.ScopeGuard` 的形状，模块名与交付标识，`endpoints` 的必填与不接受 `*`，设置键 `tenant.admission.require-mfa`、`require-sso`、`check-ttl`，`Decider` 动作 `authn.tenant.access` 的使用方式，指标名 `tenant.admission.decisions` 与其 Meter 名 `tenant`、属性 `outcome` 的取值，以及应答状态码的封闭集。改名、增减取值或扩大状态码集合是对宿主与授权功能目录的不兼容变更；设置键与指标属性值的变更同时是对运维面的不兼容变更。
+下列是本模块与其他模块之间的接口面：`tenant.Admission` 与 `authn.ScopeGuard` 的形状，模块名与交付标识，`endpoints` 的必填与不接受 `*`，设置键 `tenant.admission.require-mfa`、`require-sso`、`check-ttl`，`Decider` 动作 `authn.tenant.access` 的使用方式，指标名 `tenant.admission.decisions` 与其 Meter 名 `tenant`、属性 `outcome` 的取值，以及应答状态码的封闭集。改名、增减取值或扩大状态码集合是对宿主与授权功能目录的不兼容变更；设置键与指标属性值的变更同时是对运维面的不兼容变更。
 
 ## 依赖
 

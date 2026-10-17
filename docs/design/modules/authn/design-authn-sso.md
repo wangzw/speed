@@ -132,15 +132,15 @@ type SSOMetadataRefresher interface {
 - **`authn.sso.egress-timeout`**：出站调用的期限。设置，请求期读；`http.Client` 不设总 `Timeout`，每次调用用 `context` 的期限。
 - **`authn.session.sso-absolute-timeout`**：`Provider` 非空的会话的绝对期限上限，归 `authn.session`，语义见「会话期限」一节。
 
-### 稳定性承诺
+### 对外接口面
 
 - `SSOProvider` 的字段、`SSOProviders` 与 `SSOMetadataRefresher` 的方法集、`Protocol` 的取值（`oidc`、`saml`，封闭集）是接口的一部分，增删字段或方法是不兼容变更。
 - 提供方标识是不透明的 UUID 文本，调用方不解析、不构造、不比较格式。
 - 回调路径 `B/callback/<提供方标识>` 与元数据路径 `B/sso/saml/<提供方标识>/metadata` 的形状，以及据它们派生的 ACS 地址、`redirect_uri` 与 `entityID`，已登记在租户的 IdP 一侧，改动会使全部已登记的 IdP 失效，因此不改。
 - 外部身份的绑定键形状 `oidc:<提供方标识>`、`saml:<提供方标识>` 不改：改动使已有绑定全部失配。
 - `POST B/sso/discover` 的应答形状 `{"providers":[{id, name, protocol}]}` 不改，无匹配时恒为空数组。
-- `authn_idps` 的 `config` 对未知键拒绝；`claims` 的目标集是封闭集，增加目标是契约变更。
-- 指标 `authn.sso.assertions` 与审计动作 `authn.sso.reject` 的属性取值是闭集，名字与取值一经看板引用即冻结，取值表归 [design-authn-events](design-authn-events.md)。
+- `authn_idps` 的 `config` 对未知键拒绝；`claims` 的目标集是封闭集，增加目标会改变接口面。
+- 指标 `authn.sso.assertions` 与审计动作 `authn.sso.reject` 的属性取值是闭集，名字与取值只增不改，取值表归 [design-authn-events](design-authn-events.md)。
 - `authn_idps`、`authn_idp_domains`、`authn_saml_assertions` 的表结构只经迁移集演进，宿主不直接读写。
 
 ## 依赖

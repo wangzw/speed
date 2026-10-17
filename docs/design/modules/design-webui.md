@@ -60,7 +60,7 @@ type Config struct {
 
 **与入口模块「无匹配路由」答复的关系。** 入口模块在组装每个端时给引擎装了一个无匹配路由的答复（`pkg/http/assemble.go` 的 `NoRoute`）：它是 404 的 `application/problem+json` 写出器，面向一个不存在的 API 路径，答案是一份问题文档。它不是 SPA 回退，两者不能互换。本模块的回退是它自己登记的一条路由，在它服务的端上请求永远命中这条路由，入口模块的无匹配答复因而不会触发；把 SPA 回退塞进那条无匹配答复，会让一份 API 的 404 变成一份 HTML，反过来把这条通配路由当成 API 的未命中答复，会吞掉真正该报 404 的请求。
 
-**稳定性承诺。** 模块名 `webui`、配置键 `webui.endpoint`、`webui.asset-prefix` 与 `webui.resource-prefixes`、构造函数签名 `New(fs.FS) core.Module`，以及答出面的语义与 `asset-prefix` 的缺省值 `assets`、`resource-prefixes` 的缺省值 `[".well-known"]`，是宿主可见面；改动它们是破坏性变更，须随发布对账。
+**对外接口面。** 模块名 `webui`、配置键 `webui.endpoint`、`webui.asset-prefix` 与 `webui.resource-prefixes`、构造函数签名 `New(fs.FS) core.Module`，以及答出面的语义与 `asset-prefix` 的缺省值 `assets`、`resource-prefixes` 的缺省值 `[".well-known"]`，是宿主可见面；改动它们是破坏性变更。
 
 ## 依赖
 

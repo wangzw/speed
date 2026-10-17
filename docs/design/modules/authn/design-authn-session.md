@@ -127,7 +127,7 @@ cookie 的 `Secure` 没有独立开关。`public-url` 不是 https（回环主�
 - `max-per-account`：每账户 `browser` 与 `token` 种会话数上限；`service` 种不占，冒充不占。
 - `retention`：到期之后的行（`service` 种为已撤销之后的行）保留多久，留作审计与列出已撤销记录。
 
-### 稳定性承诺
+### 对外接口面
 
 - `Sessions` 与它的值类型位于 `pkg/authn` 根包。`Sessions` 是宿主可以预置自己实现的接口：加方法与改签名对预置了自己实现的宿主是不兼容变更。
 - `SessionKind` 的取值集合是封闭的：`browser`、`token`、`service`。

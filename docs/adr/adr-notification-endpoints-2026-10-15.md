@@ -46,7 +46,7 @@
 **接受的代价：**
 
 - **宿主多一个必填项。** 只有一个端、或本来就想让偏好路由落在所有端上的宿主，现在也要写出 `notification.preferences.endpoints`；漏写即启动失败。这是把「路由落在哪里」从隐式约定变成显式声明所付的价。
-- **配置项是宿主可见面。** `notification.preferences.endpoints` 的路径与语义在发布后改动是破坏性变更，须随发布对账。
+- **配置项是宿主可见面。** `notification.preferences.endpoints` 的路径与语义是宿主可见面，改动它是破坏性变更。
 - **端名是字符串，本模块的配置与入口模块的配置之间的对应靠启动期校验建立，编译器不参与**——与端名参数本身同源（[ADR-http-endpoints-2026-09-14](adr-http-endpoints-2026-09-14.md)）。
 
 ## 失效条件

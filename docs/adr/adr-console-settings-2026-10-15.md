@@ -58,7 +58,7 @@
 
 **接受的代价：**
 
-- **一个宿主可见的新面。** 新模块名 `settings.admin`、新配置键 `settings.admin.endpoints`（必填、只收具体端名）、新的一组路由、新的一组查询串与新的 `Problem.Type` 前缀 `urn:speed:settings:`。这些都是宿主可见面，随发布对账。
+- **一个宿主可见的新面。** 新模块名 `settings.admin`、新配置键 `settings.admin.endpoints`（必填、只收具体端名）、新的一组路由、新的一组查询串与新的 `Problem.Type` 前缀 `urn:speed:settings:`。这些都是宿主可见面。
 - **管理面把一整套依赖带进设置能力目录的一个叶子。** `settings.admin` import `pkg/authz`、`pkg/authn`、`pkg/audit`、`pkg/http`，是设置能力目录里唯一这样做的一层。它可撤掉，设置根包不因它背上这些依赖，但一个纳入它的宿主的依赖闭合里就有了这套东西。
 - **租户层的读写按租户的域判定。** 一个在某租户获 `settings.write` 的调用方可以经本模块改那个租户的层。这是刻意的——租户层是那个租户的数据——但它也意味着这面「管理面」同时是一条租户自助的写路径。
 - **平台域的授予是写全局层的前提。** 部署要在平台域为角色备好 `settings.write`，否则改全局层对所有调用方都答 403。

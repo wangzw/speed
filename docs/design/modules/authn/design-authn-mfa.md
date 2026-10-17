@@ -168,9 +168,9 @@ WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication
 
 一次加强认证（`purpose=step-up`）要求一个认证方式不落在会话已有方式里、且启用时刻不早于会话认证时刻的因素，所以只有一种因素种类的装配里没有可用的加强认证因素：这样的装配取到满足要求的 200 靠登录时完成第二因素，加强认证的入口留给种类多于一种的装配。同一份约束见 [design-authn-login](design-authn-login.md) 的「在已登录身份上开始流程」一节。
 
-### 稳定性承诺
+### 对外接口面
 
-- `Factor`、`MFA`、`FactorRecord`、`Pass`、`MFAOutcome`、`MFAResult` 的签名与上表的承诺是稳定面。
+- `Factor`、`MFA`、`FactorRecord`、`Pass`、`MFAOutcome`、`MFAResult` 的签名与上表所列同属对外接口面。
 - `FactorKind` 的取值是闭集，与 `authn_factors.kind` 的检查约束一致；新增种类要同时改根包常量、检查约束与迁移。
 - 可用的因素种类经登录发现端点 `GET B/methods` 的 `mfa.factors` 发布（[authn-login](design-authn-login.md)），属部署级：装配收哪些种类；本人已登记的因素另走 `GET B/factors`。
 - 保障等级的非零取值是闭集：单因素与多因素。新增取值时合成处仍只有 `MFA.Assurance`。

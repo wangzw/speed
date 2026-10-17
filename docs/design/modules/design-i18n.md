@@ -209,9 +209,9 @@ func ValidTimeZone(name string) bool
 
 **引擎的这几件能力排他交付，一个进程至多一个语言集。** 语言集是目录承载的集合，两个引擎会各自持有不同的一份，`Resolve` 要求唯一，多于一个即装配期 `ErrExclusiveViolated`。**`Profile` 非排他可选取用**：引擎在 `New` 用 `core.ResolveAll[i18n.Profile]` 取用每一个实现，一个都没有是合法配置，账户语言随之缺失，解析链落到配置的默认语言。
 
-### 稳定性承诺
+### 对外接口面
 
-`Locale`、`ConfigNamespace`、`DefaultLocaleItem`、`Key`、`Args`、`Value`、`ValueKind`、`KindString`／`KindInt`／`KindFloat`／`KindTime`、构造与读回函数 `String`／`Int`／`Float`／`Time`／`KindOf`／`StringOf`／`IntOf`／`FloatOf`／`TimeOf`、`Localizer`、`Negotiator`、`Resolver`、`Profile`、`Catalog`、`LocaleResolver`、上下文的存取函数、属性键常量与校验函数，以及各模块导出的 `ModuleName`，是本功能目录与其他模块之间的契约：接口的方法集、值类型与资源类型的字段，以及属性键的取值，改一个即破坏每一个实现方与消费方。`Args` 的取值类型是 `map[string]Value`，插值字符串的调用方经 `i18n.String` 构造。消息的语法同样是契约：六个 CLDR 类别、`other` 必填、`#` 与分支边界的含义，以及时间段的关键字与布局，是每个目录文件写消息时依据的规则，改它会让既有消息不再按原样渲染。属性键 `i18n.locale` 与 `i18n.tz` 同时是存储契约：账户属性里已经写下的值按这两个键读，改键会让既有偏好读不出来。配置命名空间 `i18n` 与配置项名 `default-locale`、`catalogs-dir` 是配置契约：短信模块按命名空间与 `default-locale` 两个名字读同一个默认语言，改名会让两个能力在无声中各读一份；`catalogs-dir` 是运维写入覆盖目录的入口，改名会让既有配置静默地读作没有额外文案。模块名由各包导出为常量，改名会让命令树上的纳入静默失配。
+`Locale`、`ConfigNamespace`、`DefaultLocaleItem`、`Key`、`Args`、`Value`、`ValueKind`、`KindString`／`KindInt`／`KindFloat`／`KindTime`、构造与读回函数 `String`／`Int`／`Float`／`Time`／`KindOf`／`StringOf`／`IntOf`／`FloatOf`／`TimeOf`、`Localizer`、`Negotiator`、`Resolver`、`Profile`、`Catalog`、`LocaleResolver`、上下文的存取函数、属性键常量与校验函数，以及各模块导出的 `ModuleName`，是本功能目录与其他模块之间的接口面：接口的方法集、值类型与资源类型的字段，以及属性键的取值，改一个即破坏每一个实现方与消费方。`Args` 的取值类型是 `map[string]Value`，插值字符串的调用方经 `i18n.String` 构造。消息的语法同属接口面：六个 CLDR 类别、`other` 必填、`#` 与分支边界的含义，以及时间段的关键字与布局，是每个目录文件写消息时依据的规则，改它会让既有消息不再按原样渲染。属性键 `i18n.locale` 与 `i18n.tz` 同时是存储接口面：账户属性里已经写下的值按这两个键读，改键会让既有偏好读不出来。配置命名空间 `i18n` 与配置项名 `default-locale`、`catalogs-dir` 是配置接口面：短信模块按命名空间与 `default-locale` 两个名字读同一个默认语言，改名会让两个能力在无声中各读一份；`catalogs-dir` 是运维写入覆盖目录的入口，改名会让既有配置静默地读作没有额外文案。模块名由各包导出为常量，改名会让命令树上的纳入静默失配。
 
 ## 依赖
 

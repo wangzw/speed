@@ -176,7 +176,7 @@ type Plugin struct {
 
 一条声明里没有可安装的东西——nil 接口，或带类型的 nil 指针（`db.Plugin{Plugin: (*T)(nil)}`，普通 nil 判据挡不住）——在收集阶段判 `ErrPluginFailed` 并点名声明它的模块，此时连接都还没开。
 
-**稳定性承诺**。`Database`、`Migrations`、`Plugin` 与 `Connection` 是本模块与其他模块之间的契约，约束拒绝落在 `gorm.ErrDuplicatedKey` 与 `gorm.ErrForeignKeyViolated` 上这一条同属契约。`*gorm.DB` 出现在契约面上，GORM 的不兼容升级因此直达依赖方，这是封装型模块接受的代价（[ADR-module-packaging-2026-09-14](../../adr/adr-module-packaging-2026-09-14.md)）。
+**对外接口面**。`Database`、`Migrations`、`Plugin` 与 `Connection` 是本模块与其他模块之间的接口面，约束拒绝落在 `gorm.ErrDuplicatedKey` 与 `gorm.ErrForeignKeyViolated` 上这一条同属接口面。`*gorm.DB` 出现在接口面上，GORM 的不兼容升级因此直达依赖方，这是封装型模块接受的代价（[ADR-module-packaging-2026-09-14](../../adr/adr-module-packaging-2026-09-14.md)）。
 
 **配置**。输入项由各实现子包模块声明，**各自挂在自己的命名空间下**：`db.postgres` 与 `db.sqlite`。互斥的实现必须划分各自的输入项路径——清单收集自全部已注册模块，包含本次不会启用的那些，同一路径上的两份声明只要都被 import 就是冲突，且这个冲突在收集阶段检出，早于排他消解（见 [config](design-config.md)）。分开之后，同时 import 多个实现是常态：各个实现各自声明排他，依赖闭包因而不替宿主挑，只取命令树上已经写下的那些。宿主在运行级纳入里点名 `db.postgres` 或 `db.sqlite`，用哪个方言就是哪一个；未点名的实现不进参与集，宿主为它预置了实例的除外（见 [core](design-core.md)）。点名的那个必须配好它的连接信息才能启动，同时点名 `db.postgres` 与 `db.sqlite` 即排他冲突、启动失败；一个都没点名、也没有预置实例，而又有模块依赖数据库功能时，缺提供者、启动失败。
 

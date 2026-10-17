@@ -84,11 +84,11 @@ type Receipt struct{ ProviderID string }
 
 `Message.Validate` 判出的拒绝与「发件人不在载体配置的允许集里」都是调用方缺陷，都在厂商被触达之前判出，都是 `ErrRejected`。
 
-### 稳定性承诺
+### 对外接口面
 
-- `Sender`、`Message`、`Attachment`、`Receipt` 的字段与方法集，以及哨兵 `ErrThrottled`、`ErrRejected`、`ErrUncertain`、`ErrInvalidConfig`，是本模块对调用方的契约。加方法、改签名或改字段名对实现了 `Sender` 的载体与取用它的调用方都是不兼容变更。
-- `Message` 的字段语义是承诺：`To`、`Cc`、`Bcc`、`ReplyTo` 的每个条目是 RFC 5322 地址；`Bcc` 的条目只作信封收件人、不被写进头；`Text` 与 `HTML` 是调用方渲染好的正文；`DedupeID` 使载体至多对同一标识调厂商一次。
-- **正文的形态是承诺**：`Text` 与 `HTML` 是两份可替代的正文，两份同时在时以纯文本在前、HTML 在后铺成一份 multipart/alternative，附件在场时再在外层铺成 multipart/mixed。
+- `Sender`、`Message`、`Attachment`、`Receipt` 的字段与方法集，以及哨兵 `ErrThrottled`、`ErrRejected`、`ErrUncertain`、`ErrInvalidConfig`，是本模块对调用方的接口面。加方法、改签名或改字段名对实现了 `Sender` 的载体与取用它的调用方都是不兼容变更。
+- `Message` 的字段语义：`To`、`Cc`、`Bcc`、`ReplyTo` 的每个条目是 RFC 5322 地址；`Bcc` 的条目只作信封收件人、不被写进头；`Text` 与 `HTML` 是调用方渲染好的正文；`DedupeID` 使载体至多对同一标识调厂商一次。
+- **正文的形态属于接口面**：`Text` 与 `HTML` 是两份可替代的正文，两份同时在时以纯文本在前、HTML 在后铺成一份 multipart/alternative，附件在场时再在外层铺成 multipart/mixed。
 - 单个载体叶子包可替换、可撤掉，不改变调用方的代码。
 
 ### 哨兵错误

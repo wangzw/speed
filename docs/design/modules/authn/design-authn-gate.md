@@ -107,7 +107,7 @@ type CookieClearer interface {
 - 必须响应传入的 `ctx`，在它到点时尽快返回；
 - 不得把「凭据不对」答成 `Unavailable`。
 
-`Gate` 与 `Verifier` 都是宿主可以预置自己实现的接口，给它们加方法与改签名对预置了自己实现的宿主是不兼容变更（见稳定性承诺）。
+`Gate` 与 `Verifier` 都是宿主可以预置自己实现的接口，给它们加方法与改签名对预置了自己实现的宿主是不兼容变更（见对外接口面）。
 
 ### 网关交付的功能
 
@@ -230,13 +230,13 @@ var ErrMalformedHash error
 - **在允许冒充的端上不对业务路由开租户解析的豁免**：这样的路由没有租户上下文，冒充身份仍到得了它们（见 [design-authn](design-authn.md) 的非保证）。
 - **自备 `Gate` 时自己核对挂载端受守。** `mount.endpoint` 指向网关不守的端、而挂路由模块只登记 `Guarded` 路由时，唯一拦住它的是网关 `Start` 的 `ErrRoutesUnguarded`。宿主预置自己的 `Gate` 替身、不纳入 `authn.gate` 时没有这道检查，`Guarded` 路由会在无人守护的端上被静默公开。预置自有 `Gate` 的宿主因此自己负责这一核对。
 
-### 稳定性承诺
+### 对外接口面
 
-- 根包符号的契约与不兼容变更的判据见 [design-authn](design-authn.md) 的稳定性承诺；本文不另列符号。
-- `(*authn.Gate)(nil)` 与它声明的鉴别阶段是别层定序的稳定锚点，取值不变。
+- 根包符号的接口面与不兼容变更的判据见 [design-authn](design-authn.md) 的对外接口面；本文不另列符号。
+- `(*authn.Gate)(nil)` 与它声明的鉴别阶段是别层定序的锚点，取值不变。
 - 收口计数器 `authn.gate.conclusions`、它的单位、属性名 `outcome` 与全部桶名冻结：已有取值不改名，只许新增取值。
-- 模块名、配置命名空间与哨兵的名字不变；哨兵的触发条件以本文的哨兵表为准。
-- `pkg/authn/static` 的 `Hash`、`HashPBKDF2`、`ParseHash`、`ErrMalformedHash` 与条目格式是它与写表者之间的契约。
+- 模块名、配置命名空间与哨兵的名字属于对外接口面；哨兵的触发条件以本文的哨兵表为准。
+- `pkg/authn/static` 的 `Hash`、`HashPBKDF2`、`ParseHash`、`ErrMalformedHash` 与条目格式是它与写表者之间的接口面。
 
 ## 依赖
 

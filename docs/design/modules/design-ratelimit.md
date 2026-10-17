@@ -57,13 +57,13 @@ type Limiter interface {
 
 **地址防护层不交付任何功能标识，`Provides` 为空。** 没有别的层据它定序；配额层的 `(*Limiter)(nil)` 只代表配额层，不代表地址防护层。
 
-### 稳定性承诺
+### 对外接口面
 
-- **交付的标识在版本之间保持。** `(*Limiter)(nil)` 是别的层据以定序的名字，那些约束按类型同一性匹配。改名会让每一处写下它的代码编译不过——那个名字不复存在。把它改成非接口类型则连编译都不拦：`core.Token` 是 `any`，真暴露的地方是登记，指向非接口的空指针在那里当场 panic（见 [core](design-core.md) 与 [http](http/design-http.md) 对功能标识的判定）。
-- **链上层的 `Name` 不是契约。** 它只出现在 panic 文本与启动时列出的链清单里，本模块之外的任何东西都不该按它匹配。
-- **设置的键名是契约。** `ratelimit.window`、`ratelimit.limit`、`ratelimit.address-rate`、`ratelimit.address-burst` 与 `ratelimit.address-penalty` 是宿主与运维写值时的入口，改名要连同已写入的行一起迁移。
-- **配置项的键名是契约，取值不是。** `ratelimit.endpoints` 与 `ratelimit.address-endpoints` 这两个名字保持；它们承载的端名清单由宿主的配置决定，随部署而变。
-- **计数键的格式不进承诺。** 键名是本模块与计数后端之间的事，别的模块读不读得到它都不构成契约。改键名会让计数重新开始，而滚动发布期间新旧两版的键并存，那段时间的实际额度高于配置值。
+- **交付的标识按类型同一性定序。** `(*Limiter)(nil)` 是别的层据以定序的名字，那些约束按类型同一性匹配。改名会让每一处写下它的代码编译不过——那个名字不复存在。把它改成非接口类型则连编译都不拦：`core.Token` 是 `any`，真暴露的地方是登记，指向非接口的空指针在那里当场 panic（见 [core](design-core.md) 与 [http](http/design-http.md) 对功能标识的判定）。
+- **链上层的 `Name` 不在接口面内。** 它只出现在 panic 文本与启动时列出的链清单里，本模块之外的任何东西都不该按它匹配。
+- **设置的键名属于接口面。** `ratelimit.window`、`ratelimit.limit`、`ratelimit.address-rate`、`ratelimit.address-burst` 与 `ratelimit.address-penalty` 是宿主与运维写值时的入口，改名要连同已写入的行一起迁移。
+- **配置项的键名属于接口面，取值不是。** `ratelimit.endpoints` 与 `ratelimit.address-endpoints` 这两个名字保持；它们承载的端名清单由宿主的配置决定，随部署而变。
+- **计数键的格式不在接口面内。** 键名是本模块与计数后端之间的事，别的模块读不读得到它都不在接口面内。改键名会让计数重新开始，而滚动发布期间新旧两版的键并存，那段时间的实际额度高于配置值。
 
 ### 配置面
 

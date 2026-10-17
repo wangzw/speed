@@ -294,11 +294,11 @@ type Change struct {
 - **管理面自己遮蔽敏感项的值。** `Declared` 的列表不带敏感项的默认值，`List` 与 `Get` 却照常交出敏感项的值；把它们交给客户端的宿主，按列表里的 `Sensitive` 把这些值遮住。漏了这一步不报错，凭据随响应一起出去。
 - **租户标识由调用方从请求面取得**（`tenant.FromContext`），以 `ForTenant` 包成层选交给本模块；取不到租户时读全局层还是拒绝由调用方决定。写一个不在名册上的标识不会被本模块拒绝，读取它的行也不会——本模块不认识名册。
 
-### 稳定性承诺
+### 对外接口面
 
-`Layer`、`Global`、`ForTenant`、`Store`、`Get`、`Write`、`Entry`、`DeclaredItem`、`Schema`、`Mount`、`Item`、`Domain`、`DomainOf`、`Change`、`ChangedEventType`、`ModuleName` 与哨兵错误是本模块与其他模块之间的契约。一个设置项的取值域是声明方的契约：给它声明或收窄取值域，以前写得进去的值随之被拒绝。键的路径派生规则与配置共用一条，改它同时改变两个模块的键名。变更事件的类型名与载荷字段名是发布方与订阅方之间的约定，改一个字段名会静默断开订阅方的读取（[event](../event/design-event.md) 记有同一条）。
+`Layer`、`Global`、`ForTenant`、`Store`、`Get`、`Write`、`Entry`、`DeclaredItem`、`Schema`、`Mount`、`Item`、`Domain`、`DomainOf`、`Change`、`ChangedEventType`、`ModuleName` 与哨兵错误是本模块与其他模块之间的接口面。一个设置项的取值域是声明方的接口面：给它声明或收窄取值域，以前写得进去的值随之被拒绝。键的路径派生规则与配置共用一条，改它同时改变两个模块的键名。变更事件的类型名与载荷字段名是发布方与订阅方之间的约定，改一个字段名会静默断开订阅方的读取（[event](../event/design-event.md) 记有同一条）。
 
-表名、列名与迁移文件的组织是内部实现，不在契约面上。
+表名、列名与迁移文件的组织是内部实现，不在对外接口面内。
 
 ## 依赖
 

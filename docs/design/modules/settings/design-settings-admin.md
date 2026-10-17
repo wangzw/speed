@@ -80,10 +80,10 @@
 - **权限**：读路由询 `settings.read`，写路由询 `settings.write`，由授权能力承载（`settings.read` 译成 `(settings, read)`、`settings.write` 译成 `(settings, write)`）；域随层选在平台域与租户域之间取。
 - **问题应答**：`Problem.Type` 前缀 `urn:speed:settings:`，其下的码 `bad-request`、`invalid-value`。
 
-### 稳定性承诺
+### 对外接口面
 
-- 模块名 `settings.admin`、配置键 `settings.admin.endpoints`、管理面路由的路径与查询串的键（`layer`、`tenant` 及其取值）、每条路由询问的权限（读 `settings.read`、写 `settings.write`）与域（平台域与租户域），以及 `Problem.Type` 前缀 `urn:speed:settings:` 及其下的码（`bad-request`、`invalid-value`），是本模块对宿主的契约。改动它们是宿主可见的破坏性变更，须随发布对账。
-- 设置项视图的字段名（`key`、`namespace`、`type`、`description`、`domain`、`sensitive`、`default`、`written`、`value`）与敏感项遮蔽的规则是承诺：宿主与前端据此读应答。
+- 模块名 `settings.admin`、配置键 `settings.admin.endpoints`、管理面路由的路径与查询串的键（`layer`、`tenant` 及其取值）、每条路由询问的权限（读 `settings.read`、写 `settings.write`）与域（平台域与租户域），以及 `Problem.Type` 前缀 `urn:speed:settings:` 及其下的码（`bad-request`、`invalid-value`），是本模块对宿主的接口面。改动它们是宿主可见的破坏性变更。
+- 设置项视图的字段名（`key`、`namespace`、`type`、`description`、`domain`、`sensitive`、`default`、`written`、`value`）与敏感项遮蔽的规则是应答形状：宿主与前端据此读应答。
 - 本模块可替换、可撤掉，不改变调用方或设置模块的代码。
 
 ## 依赖

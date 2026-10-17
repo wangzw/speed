@@ -288,7 +288,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 
 前端应用是交付面的一部分：脚手架 [starters](modules/design-starters.md) 带一棵前端应用，它的构建产物由 [webui](modules/design-webui.md) 按 HTTP 交出。下面这些关切不为任何一个 `pkg/` 模块所有，由统一的口径承载。
 
-- **客户端错误模型与 `ApiError` 归一。** 服务端写出的错误响应都是 RFC 9457 的问题文档，形状由入口模块 [http](modules/http/design-http.md) 定义、经 `ErrorResponder` 接缝可定制。客户端把响应体归一到单一的 `ApiError`：机器码 `Type` 与状态码 `Status` 原样保留、不随语言变化，`Title` 与 `Detail` 是后端渲染好的成品文本。界面据 `Type` 分类、据文本呈现，不依赖任何未进稳定性承诺的字段。
+- **客户端错误模型与 `ApiError` 归一。** 服务端写出的错误响应都是 RFC 9457 的问题文档，形状由入口模块 [http](modules/http/design-http.md) 定义、经 `ErrorResponder` 接缝可定制。客户端把响应体归一到单一的 `ApiError`：机器码 `Type` 与状态码 `Status` 原样保留、不随语言变化，`Title` 与 `Detail` 是后端渲染好的成品文本。界面据 `Type` 分类、据文本呈现，不依赖任何不在对外接口面内的字段。
 - **认证与租户边界。** 身份的取得与刷新经认证模块交出的路由（[authn](modules/authn/design-authn.md) 的会话与令牌）；租户由请求面解析（[tenant](modules/tenant/design-tenant.md)），不由客户端在请求体里指定。客户端不缓存跨租户的响应。
 - **缓存与租户切换的逐出。** 客户端缓存以租户为键的一部分；租户切换时逐出上一个租户的缓存，不从缓存里读出不属于当前租户的数据。
 - **并发与竞态。** 离开界面时发出的请求随上下文取消，晚到的响应按发起它的上下文丢弃；并发写入以服务端能判定的方式收口，不由客户端据先后顺序猜定。
