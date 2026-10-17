@@ -253,6 +253,7 @@ export function AccountsPage() {
       id: 'id',
       header: t('accounts.column.id'),
       cellWrap: 'nowrap',
+      cellFullValue: (row) => row.id,
       cell: (row) => <Typography variant="body2">{row.id}</Typography>,
     },
     {
@@ -380,6 +381,7 @@ export function AccountsPage() {
       id: 'id',
       header: t('accounts.sessions.column.id'),
       cellWrap: 'nowrap',
+      cellFullValue: (row) => row.id,
       cell: (row) => <Typography variant="body2">{row.id}</Typography>,
     },
     {

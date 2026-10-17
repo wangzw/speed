@@ -68,6 +68,7 @@ export function SsoPage() {
       id: 'name',
       header: t('sso.column.name'),
       cellWrap: 'nowrap',
+      cellFullValue: (provider) => provider.name,
       cell: (provider) => <Typography variant="body2">{provider.name}</Typography>,
     },
     {

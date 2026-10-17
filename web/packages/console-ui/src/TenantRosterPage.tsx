@@ -212,6 +212,7 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
       id: 'id',
       header: t('tenants.column.id'),
       cellWrap: 'nowrap',
+      cellFullValue: (tenant) => tenant.id,
       cell: (tenant) =>
         basePath === undefined ? (
           <Typography variant="body2">{tenant.id}</Typography>

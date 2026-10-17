@@ -166,6 +166,7 @@ export function SettingsPage() {
       id: 'key',
       header: t('settings.column.key'),
       cellWrap: 'nowrap',
+      cellFullValue: (setting) => setting.key,
       cell: (setting) => (
         <Box
           sx={{ display: 'flex', alignItems: 'baseline', columnGap: 1, minWidth: 0 }}

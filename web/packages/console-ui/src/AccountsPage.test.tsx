@@ -162,13 +162,15 @@ describe('AccountsPage', () => {
     expect(screen.getByText('已启用')).toBeInTheDocument()
   })
 
-  it('keeps its short-value and identifier columns on one line', async () => {
+  it('keeps its short-value and identifier columns on one line and the identifier reachable in full', async () => {
     // The status cell must not split '已启用' across two lines, a
     // display name with a space must not break at it, and an identifier
     // must not break mid-token. jsdom does no layout, so the proof is
     // the declared `white-space: nowrap` on the rendered cells; the
     // table's TableContainer scroll is what absorbs the resulting width
-    // (asserted in ui-kit's DataTable suite).
+    // (asserted in ui-kit's DataTable suite). The complete identifier
+    // stays reachable without that scroll: the cell carries it as its
+    // title and a focusable copy control copies it.
     const user = userEvent.setup()
     const operations = withAccounts()
     renderWithProviders(<AccountsPage />, { operations })
@@ -180,6 +182,10 @@ describe('AccountsPage', () => {
       expect(cell).not.toBeNull()
       expect(cell).toHaveStyle({ whiteSpace: 'nowrap' })
     }
+    expect(idCell).toHaveAttribute('title', 'acc-1')
+    expect(
+      within(idCell as HTMLElement).getByRole('button', { name: /acc-1/ }),
+    ).toBeInTheDocument()
   })
 
   it('sends the identifier prefix and its kind when the search is submitted', async () => {

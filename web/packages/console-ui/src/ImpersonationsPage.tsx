@@ -113,12 +113,14 @@ export function ImpersonationsPage() {
       id: 'actor',
       header: t('impersonations.column.actor'),
       cellWrap: 'nowrap',
+      cellFullValue: (record) => record.actor,
       cell: (record) => record.actor,
     },
     {
       id: 'target',
       header: t('impersonations.column.target'),
       cellWrap: 'nowrap',
+      cellFullValue: (record) => record.target,
       cell: (record) => record.target,
     },
     {
@@ -126,6 +128,7 @@ export function ImpersonationsPage() {
       header: t('impersonations.column.tenant'),
       priority: 'medium',
       cellWrap: 'nowrap',
+      cellFullValue: (record) => record.tenant,
       cell: (record) => record.tenant,
     },
     {

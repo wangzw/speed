@@ -64,6 +64,7 @@ export function SessionsPage() {
       id: 'id',
       header: t('sessions.column.id'),
       cellWrap: 'nowrap',
+      cellFullValue: (session) => session.id,
       cell: (session) => <Typography variant="body2">{session.id}</Typography>,
     },
     {

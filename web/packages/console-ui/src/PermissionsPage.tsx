@@ -127,6 +127,7 @@ export function PermissionsPage() {
       id: 'role',
       header: t('permissions.roles.column.role'),
       cellWrap: 'nowrap',
+      cellFullValue: (role) => role.role,
       cell: (role) => <Typography variant="body2">{role.role}</Typography>,
     },
     {
@@ -142,6 +143,8 @@ export function PermissionsPage() {
       header: t('permissions.roles.column.description'),
       priority: 'low',
       cellWrap: 'nowrap',
+      cellFullValue: (role) =>
+        role.description_key === '' ? undefined : role.description_key,
       cell: (role) => role.description_key,
     },
     {
@@ -181,12 +184,14 @@ export function PermissionsPage() {
       id: 'resource',
       header: t('permissions.grants.column.resource'),
       cellWrap: 'nowrap',
+      cellFullValue: (grant) => grant.resource,
       cell: (grant) => grant.resource,
     },
     {
       id: 'action',
       header: t('permissions.grants.column.action'),
       cellWrap: 'nowrap',
+      cellFullValue: (grant) => grant.action,
       cell: (grant) => grant.action,
     },
     {
@@ -233,6 +238,7 @@ export function PermissionsPage() {
       id: 'permission',
       header: t('permissions.catalog.column.permission'),
       cellWrap: 'nowrap',
+      cellFullValue: (entry) => entry.permission,
       cell: (entry) => entry.permission,
     },
   ]
@@ -242,12 +248,14 @@ export function PermissionsPage() {
       id: 'account',
       header: t('permissions.bindings.column.account'),
       cellWrap: 'nowrap',
+      cellFullValue: (binding) => binding.account,
       cell: (binding) => binding.account,
     },
     {
       id: 'role',
       header: t('permissions.bindings.column.role'),
       cellWrap: 'nowrap',
+      cellFullValue: (binding) => binding.role,
       cell: (binding) => binding.role,
     },
     {

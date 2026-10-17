@@ -155,6 +155,7 @@ export function DashboardPage() {
       id: 'action',
       header: t('dashboard.recent.column.action'),
       cellWrap: 'nowrap',
+      cellFullValue: (record) => record.action,
       cell: (record) => record.action,
     },
     {
@@ -169,6 +170,8 @@ export function DashboardPage() {
       header: t('dashboard.recent.column.actor'),
       priority: AUDIT_RECORD_COLUMN_PRIORITY.actor,
       cellWrap: 'nowrap',
+      cellFullValue: (record) =>
+        record.actor === '' ? undefined : record.actor,
       cell: (record) => record.actor,
     },
     {

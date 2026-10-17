@@ -222,6 +222,7 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       id: 'action',
       header: t('audit.column.action'),
       cellWrap: 'nowrap',
+      cellFullValue: (record) => record.action,
       // When the host supplies the audit query's own path (basePath), the
       // action links to that record's detail page; without it the cell is
       // plain text.
@@ -239,6 +240,8 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       header: t('audit.column.object'),
       priority: AUDIT_RECORD_COLUMN_PRIORITY.object,
       cellWrap: 'nowrap',
+      cellFullValue: (record) =>
+        record.object === '' ? undefined : record.object,
       cell: (record) => record.object,
     },
     {
@@ -246,6 +249,8 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       header: t('audit.column.actor'),
       priority: AUDIT_RECORD_COLUMN_PRIORITY.actor,
       cellWrap: 'nowrap',
+      cellFullValue: (record) =>
+        record.actor === '' ? undefined : record.actor,
       cell: (record) => <AuditActorCell actor={record.actor} />,
     },
     {

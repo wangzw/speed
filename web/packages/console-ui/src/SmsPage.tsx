@@ -92,6 +92,7 @@ export function SmsPage() {
       id: 'name',
       header: t('sms.column.name'),
       cellWrap: 'nowrap',
+      cellFullValue: (template) => template.name,
       cell: (template) => <Typography variant="body2">{template.name}</Typography>,
     },
     {

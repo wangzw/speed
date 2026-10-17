@@ -97,6 +97,7 @@ export function InvitationsPage() {
       id: 'email',
       header: t('invitations.column.email'),
       cellWrap: 'nowrap',
+      cellFullValue: (invitation) => invitation.email,
       cell: (invitation) => invitation.email,
     },
     {
@@ -110,6 +111,7 @@ export function InvitationsPage() {
       header: t('invitations.column.invitedBy'),
       priority: 'medium',
       cellWrap: 'nowrap',
+      cellFullValue: (invitation) => invitation.invited_by,
       cell: (invitation) => invitation.invited_by,
     },
     {
@@ -151,6 +153,7 @@ export function InvitationsPage() {
       id: 'account',
       header: t('members.column.account'),
       cellWrap: 'nowrap',
+      cellFullValue: (member) => member.account,
       cell: (member) => member.account,
     },
     {
