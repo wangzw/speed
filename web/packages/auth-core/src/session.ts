@@ -101,7 +101,7 @@
  */
 
 import { ApiError, ERROR_CODE_PROTOCOL, isApiError } from '@speed/api-client'
-import type { AccessTokenStore } from '@speed/api-client'
+import type { AccessTokenStore, RequestFn } from '@speed/api-client'
 import {
   authnLoginAbandon,
   authnLoginAnswer,
@@ -339,8 +339,16 @@ export interface AuthSession {
    * snapshot that was authenticated goes anonymous -- the session is
    * over -- and a 401 from the read is treated the same). A transport or
    * server-side failure rethrows the raw ApiError and leaves the local
-   * snapshot in place. */
-  restore(): Promise<boolean>
+   * snapshot in place.
+   *
+   * `issue` is the round-scoped request function @speed/api-client
+   * hands its refresh hook: both of this method's reads then travel
+   * through it, so a refusal among them surfaces here instead of
+   * joining the refresh round that is awaiting this call -- the
+   * profile read follows an await, where the client's
+   * synchronous-invocation marker no longer covers it. Absent, the
+   * generated operations' bound request function serves both reads. */
+  restore(issue?: RequestFn): Promise<boolean>
   /** Silently refreshes the access token with the held refresh token
    * (a token session). Resolves true when the store holds a fresh token
    * afterwards; resolves false when there is nothing to refresh, when
@@ -1341,11 +1349,24 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
       }
     },
 
-    async restore(): Promise<boolean> {
+    async restore(issue?: RequestFn): Promise<boolean> {
       const opGeneration = generation
+      // The round-scoped request function, when the client supplied one,
+      // carries both reads; otherwise the generated operations' bound
+      // request function does. The profile read follows an await, so it
+      // is this parameter -- not the client's synchronous-call marker --
+      // that keeps it out of the refresh round awaiting this call.
+      const readSession = (): Promise<AuthnSessionViewModel> =>
+        issue === undefined
+          ? authnSessionGet()
+          : issue<AuthnSessionViewModel>('/auth/session')
+      const readProfile = (): Promise<AuthnProfileProfile> =>
+        issue === undefined
+          ? authnProfileGet()
+          : issue<AuthnProfileProfile>('/auth/me')
       let view: AuthnSessionView
       try {
-        view = parseSessionView(await authnSessionGet())
+        view = parseSessionView(await readSession())
       } catch (error) {
         if (isApiError(error) && error.status === 401) {
           // A credential was presented but does not hold: nobody is
@@ -1368,7 +1389,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
         }
         return false
       }
-      const principal = parsePrincipal(await authnProfileGet())
+      const principal = parsePrincipal(await readProfile())
       if (generation !== opGeneration) {
         return false
       }

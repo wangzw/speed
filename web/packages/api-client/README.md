@@ -161,8 +161,8 @@ export async function loadNotes(): Promise<Note[]> {
   concurrent requests keep presenting the token they hold throughout.
   A cookie session's credential is the host's business in the same way:
   @speed/auth-core holds nothing (the browser has the cookie) and wires
-  the hook to `session.restore()`, so a 401 re-reads the session; this
-  package only defines the seam. The refresh
+  the hook to `(issue) => session.restore(issue)`, so a 401 re-reads the
+  session; this package only defines the seam. The refresh
   round is a separate exchange: `timeoutMs` bounds each HTTP exchange,
   never the time spent in the refresh hook, so a refresh that outlives
   the timeout cannot degrade the refused 401's own envelope (its code

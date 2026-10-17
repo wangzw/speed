@@ -23,8 +23,9 @@
 
 import { QueryClient } from '@tanstack/react-query'
 import { act } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
+import { isApiError } from '@speed/api-client'
 import { AUTH_UI_NAMESPACE } from '@speed/auth-ui'
 import { switchLanguage, useTranslation } from '@speed/i18n'
 import { PLATFORM_ERRORS_NAMESPACE } from '@speed/i18n/platform-errors'
@@ -34,7 +35,7 @@ import { PRODUCT_SHELL_NAMESPACE } from './resources.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import { bootstrapSpeedApp, watchSessionEnd } from './bootstrap.js'
 import type { SpeedAppBootstrap, SpeedAppProvider } from './bootstrap.js'
-import type { SpeedAppDefinition } from './bootstrap.js'
+import type { SpeedAppDefinition, SpeedAppServices } from './bootstrap.js'
 import {
   authenticatedCompletion,
   errorResponse,
@@ -231,6 +232,7 @@ describe('bootstrapSpeedApp', () => {
     if (realLocalStorage !== undefined) {
       Object.defineProperty(globalThis, 'localStorage', realLocalStorage)
     }
+    vi.restoreAllMocks()
     document.body.innerHTML = ''
   })
 
@@ -305,6 +307,99 @@ describe('bootstrapSpeedApp', () => {
       expect(call.credentials).toBe('same-origin')
     }
     expect(observed.some((call) => call.path === '/auth/flows')).toBe(true)
+    await act(async () => {
+      boot.root.unmount()
+    })
+    container.remove()
+  })
+
+  it('settles a refused request even when the silent restore it triggers has its profile read refused', { timeout: 5000 }, async () => {
+    // The wiring under test is the production one: the client's
+    // refreshAccessToken hook is the session's own restore, reading
+    // GET /auth/session and then GET /auth/me. The first read runs
+    // inside the hook's synchronous invocation; the profile read
+    // follows an await, so only the round-scoped request function the
+    // hook is handed keeps it from joining the round that is awaiting
+    // the hook -- a request awaiting itself never settles.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    let sessionReads = 0
+    let profileReads = 0
+    activeResponder = (call) => {
+      if (call.method === 'GET' && call.path === '/auth/session') {
+        sessionReads += 1
+        // The boot restore finds nobody signed in; the silent restore
+        // that follows the refused request finds a still-valid cookie.
+        return jsonResponse(
+          200,
+          sessionReads === 1
+            ? { authenticated: false }
+            : { authenticated: true, session_id: 's-1' },
+        )
+      }
+      if (call.method === 'GET' && call.path === '/auth/me') {
+        profileReads += 1
+        return errorResponse(401, 'authn.session_expired', 'trace-me')
+      }
+      if (call.method === 'GET' && call.path === '/notes') {
+        return errorResponse(401, 'authn.session_expired', 'trace-notes')
+      }
+      return respond(call)
+    }
+
+    let api: SpeedAppServices['api'] | undefined
+    const capture: SpeedAppProvider = (services, children) => {
+      api = services.api
+      return <>{children}</>
+    }
+    const boot = await mountApp(container, {
+      view: <div />,
+      providers: [capture],
+    })
+    expect(boot.session.getSnapshot().state).toBe('anonymous')
+    const drive = api
+    if (drive === undefined) {
+      throw new Error('the provider must receive the assembled client')
+    }
+
+    // One credentialed request into the refused path.
+    let settled = false
+    let caught: unknown
+    const driven = drive<unknown>('/notes').then(
+      () => {
+        settled = true
+      },
+      (error: unknown) => {
+        settled = true
+        caught = error
+      },
+    )
+    // The never-settling regression is deterministic: without the bound
+    // the profile read joins the round awaiting it. The bounded wait
+    // turns that hang into an assertion failure.
+    for (let i = 0; i < 64 && !settled; i += 1) {
+      await Promise.resolve()
+    }
+    const deadline = Date.now() + 2000
+    while (!settled && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 2))
+    }
+    expect(settled).toBe(true)
+    expect(isApiError(caught)).toBe(true)
+    if (isApiError(caught)) {
+      expect(caught.auth).toBe(true)
+      expect(caught.code).toBe('authn.session_expired')
+      expect(caught.traceId).toBe('trace-notes')
+    }
+    // Each restore read happened exactly once: the round ended as a
+    // finite failed refresh instead of re-reading or retrying, and the
+    // client reported that failure through its own diagnostic channel.
+    expect(sessionReads).toBe(2)
+    expect(profileReads).toBe(1)
+    expect(warn).toHaveBeenCalledTimes(1)
+    await driven
+
     await act(async () => {
       boot.root.unmount()
     })

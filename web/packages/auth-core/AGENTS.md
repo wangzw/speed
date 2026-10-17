@@ -103,7 +103,12 @@ it calls). Never import either of those from below this layer.
   `false` (never rejects) when nobody is signed in -- a snapshot that was
   authenticated goes anonymous, and a 401 from the read is treated the
   same -- and rethrows raw only for a transport/server failure with the
-  local snapshot in place. `refresh()` (the token session) resolves
+  local snapshot in place. Its optional `issue` argument is the
+  round-scoped request function `@speed/api-client` hands the
+  `refreshAccessToken` hook: both reads then travel through it, so a
+  refusal among them surfaces instead of joining the refresh round that
+  is awaiting the call (the profile read follows an await, where the
+  client's synchronous-invocation marker no longer covers it). `refresh()` (the token session) resolves
   `false` (never rejects) when there is nothing to refresh, when the held
   token was refused (the session signs out locally), or when a concurrent
   commit replaced the session; it rethrows raw only for transport/server

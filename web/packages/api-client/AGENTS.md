@@ -153,7 +153,7 @@ orval-generated typed surface, calls into this runtime through its
 (its session layer imports this package's `AccessTokenStore` interface
 for the opt-in token path, calls the generated authn operations through
 the bound request function, and fills the `refreshAccessToken` hook --
-`() => session.restore()` on the cookie path, `() => session.refresh()`
+`(issue) => session.restore(issue)` on the cookie path, `() => session.refresh()`
 on the token one).
 `starters/demo/web` binds this client at runtime: its app-entry assembly
 (`@speed/product-shell/bootstrap`'s `bootstrapSpeedApp`) binds one real

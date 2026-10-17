@@ -65,7 +65,7 @@ export interface AuthSession {
   readFlow(): Promise<AuthnFlowState | null>
   abandonFlow(): Promise<void>
   logout(): Promise<void>
-  restore(): Promise<boolean>
+  restore(issue?: RequestFn): Promise<boolean>
   refresh(): Promise<boolean>
   setPermissionSet(domain: AuthDomain, perms: readonly string[] | null): void
   retryFeatures(): Promise<void>
@@ -73,7 +73,7 @@ export interface AuthSession {
 ```
 
 - **流程操作接生成面；只有完成开启会话时改会话。** `startFlow`、`startAuthenticatedFlow`、`answerFlow`、`readFlow`、`abandonFlow` 把 `authn.login` 的流程操作转发给视图，交回该步的 `AuthnFlowState`。只有 `answerFlow` 落定一次完成时才改会话：一次 `purpose: 'login'` 的完成（`state: 'authenticated'`）建会话、转已认证；一次 `step-up` 的完成（`state: 'authenticated'`，服务端已轮换 cookie；令牌会话为 `state: 'elevated'`）更新凭据、主体不变；`purpose: 'link'` 与 `enroll` 的完成（`state: 'linked'`、`state: 'enrolled'`）不改登录态。`startFlow` 一律以 `delivery: 'session'` 开始（cookie 会话）；`startAuthenticatedFlow` 的交付方式留给调用方（账户面不设，服务端取其缺省，即 cookie 会话）。
-- **`restore()` 从 cookie 重建会话。** 它读 `GET /auth/session`：cookie 仍指向一个会话时，读 `GET /auth/me` 取主体、转已认证并 resolve `true`——从匿名状态开始的恢复同时并行读 `GET /features`，已认证状态下的恢复只读主体、保留特性态（见「特性态」）；无人登录（含读被 401 拒）时清本地并 resolve `false`；传输或服务端失败重抛原始 `ApiError`、本地快照不动。页面加载时调用一次即保持登录，同时也是 `@speed/api-client` 在被拒的带凭据请求上跑的那条静默腿。
+- **`restore()` 从 cookie 重建会话。** 它读 `GET /auth/session`：cookie 仍指向一个会话时，读 `GET /auth/me` 取主体、转已认证并 resolve `true`——从匿名状态开始的恢复同时并行读 `GET /features`，已认证状态下的恢复只读主体、保留特性态（见「特性态」）；无人登录（含读被 401 拒）时清本地并 resolve `false`；传输或服务端失败重抛原始 `ApiError`、本地快照不动。页面加载时调用一次即保持登录，同时也是 `@speed/api-client` 在被拒的带凭据请求上跑的那条静默腿。它接受可选的 `issue`——`@speed/api-client` 交给刷新钩子的轮作用域请求函数：两次读都经它发出，故其中任一次被拒即浮出给钩子，而不会加入正在 await 该调用的刷新轮；缺省时走生成的绑定请求函数。
 - **`refresh()` 用被持有的刷新令牌换新令牌对（令牌会话）。** 走 `POST /auth/token` 的 `grant_type = refresh_token`，凭据为空（[api-client](design-web-api-client.md) 的凭据为空一档，即 `speedRequestCredentialless`）；其令牌的落地与世代守卫见「单飞刷新」与「世代守卫」。cookie 会话不持刷新令牌，`refresh()` 不发请求即 resolve `false`；其静默腿是 `restore()`。
 - **`listMethods` 读部署在场的登录方式发现文档。** 它转发 `GET /auth/methods` 并解析成方法描述符文档（每个方法自报渲染类别、线协议、品牌标签、首步字段与是否可开户，连同注册开关与部署级因素种类），随部署的 `authn.login.disabled-methods` 设置与在场模块而变，前端不写死；消费视图用它渲染渠道（[ADR-web-auth-channel-discovery-2026-10-16](../../../adr/adr-web-auth-channel-discovery-2026-10-16.md)、[ADR-authn-login-method-discovery-2026-10-16](../../../adr/adr-authn-login-method-discovery-2026-10-16.md)）。
 - **`discoverSso` 读一个邮箱域映射的企业提供方。** 它转发 `POST /auth/sso/discover`，交回 `{id, name, protocol}` 列表；应答恒同形同长，无匹配时为空列表，故「无匹配」是一次成功的空读而非错误。企业提供方清单不多进发现文档：它按域发现，不泄露账户存在性（[authn-sso](../authn/design-authn-sso.md)）。

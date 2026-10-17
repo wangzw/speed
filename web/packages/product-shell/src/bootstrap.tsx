@@ -320,8 +320,11 @@ export function bootstrapSpeedApp(
     // The silent-401 leg: on a refused credentialed request, re-read the
     // session (GET /auth/session). A cookie that still holds keeps the
     // session and the request is retried once; one that does not ends the
-    // local session, so the shells fall back to sign-in.
-    refreshAccessToken: () => session.restore(),
+    // local session, so the shells fall back to sign-in. The client hands
+    // the hook its round-scoped request function; restore runs both of
+    // its reads through it, so the follow-up GET /auth/me cannot join
+    // the round that is awaiting this very call.
+    refreshAccessToken: (issue) => session.restore(issue),
     // The frontend negotiation chain's resolved value, transported: the
     // provider reads the instance per attempt (createClient's own
     // contract), so a request retried after a language switch announces

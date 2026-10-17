@@ -89,7 +89,7 @@ export function createConsoleReporter(): Reporter
 | `fetch` | fetch 实现；缺省取构造时捕获的 `globalThis.fetch`，两处都无即抛错（环境无 fetch 时快速失败，而非每次请求失败） |
 | `accessTokenStore` | 可选的仅内存令牌存储；缺席即请求不带 `Authorization`（cookie 会话用这一档） |
 | `credentials` | fetch 的 `credentials` 模式，原样传给 fetch；缺席取浏览器缺省（`same-origin`，cookie 会话靠它带上同源 cookie）。声明 `'same-origin'`/`'include'` 同时把本客户端标为 cookie 带凭据：一次带了 cookie 的 401（除声明 `omitAccessToken` 者）与带了 bearer 令牌的请求同等触发刷新钩子 |
-| `refreshAccessToken` | 静默 401 刷新钩子：成功返回 `true`（随后原请求重试一次）；只对带了凭据（bearer 令牌，或 cookie 模式下的同源 cookie）的请求触发；并发 401 共享一次在飞刷新；每请求至多调用一次 |
+| `refreshAccessToken` | 静默 401 刷新钩子：以本轮作用域的请求函数调用；成功返回 `true`（随后原请求重试一次）；只对带了凭据（bearer 令牌，或 cookie 模式下的同源 cookie）的请求触发；并发 401 共享一次在飞刷新；每请求至多调用一次 |
 | `timeoutMs` | 一次交换的超时毫秒；缺席即不装内部超时；`<= 0` 或非有限值抛错 |
 | `retryPolicy` | 瞬时重试的次数与延时；缺省 `DEFAULT_RETRY_POLICY`；`maxAttempts < 1` 或非整数、延时为负或非有限即抛错 |
 | `reporter` | 结构化诊断接收端；缺省 `createConsoleReporter()` |
@@ -208,6 +208,7 @@ sequenceDiagram
 - **在任何时候，最多一次刷新在飞。** 并发的 401 汇入同一次在飞刷新；一次刷新完成后不记忆结果，下一个 401 起一次新的。
 - **刷新轮是与原交换分离的一次交换。** 原尝试的超时在刷新轮期间暂停、之后按剩余的预算重上；刷新轮自身不竞态任何信号，故一个中途放弃的发起者不会把一次可能成功的刷新对已在飞的等待者判成失败。
 - **凭据为空的 401 不经刷新。** 它意味着端点要求认证，而刷新给不出；它原样抛出。这条对会话装配是承重的：会话自身的刷新操作声明 `omitAccessToken`，凭据为空地出行，故刷新端点拒绝一个陈旧令牌时拒绝原样浮出，而不会重新进入刷新路径（那会 await 它自己所处的刷新）。
+- **刷新钩子拿到本轮作用域的请求函数。** 经它发出的请求属于本轮：其 401 原样浮出，不加入（也不另起）共享的刷新轮——那一轮可能正是正在 await 这个钩子的同一轮，否则请求会 await 自己。restore 形状的钩子在 `GET /auth/session` 应答已认证后还要读 `GET /auth/me`；这次读发生在钩子的同步调用之后，只有走轮作用域函数才不落入自我 await。忽略参数的钩子仍能编译运行，但经普通请求函数发出本轮读的钩子会在端点拒绝时自锁。
 - **刷新失败**使原 401 作为一个可区分的认证 `ApiError` 浮出，并经 `Reporter` 报一条 `access token refresh failed` 警告（带该失败的码——信封的 `code` 或由 `type` 推得的模块码——有 `traceId` 时一并带上，以关联服务端日志）。
 
 ### 重试的判定与退避
@@ -258,7 +259,7 @@ sequenceDiagram
 - **`fetch`**：注入确定性替身（测试），或在无全局 fetch 的环境提供实现。
 - **`accessTokenStore`**：注入替换的令牌存储（仍须仅在内存，不落存储——本包没有存储接缝）；cookie 会话不注入。
 - **`credentials`**：声明客户端带 cookie（`'same-origin'`/`'include'`），使同源 cookie 随请求发送、且其 401 触发刷新钩子；跨源部署置 `'include'`。
-- **`refreshAccessToken`**：把静默刷新接到宿主的会话（`@speed/auth-core`）；cookie 会话接 `session.restore()`，令牌会话接 `session.refresh()`。缺席即每个 401 原样浮出。
+- **`refreshAccessToken`**：把静默刷新接到宿主的会话（`@speed/auth-core`），钩子以本轮作用域的请求函数调用——cookie 会话接 `(issue) => session.restore(issue)`，`restore` 的两次读都经它发出；令牌会话接 `session.refresh()`。缺席即每个 401 原样浮出。
 - **`retryPolicy`**：改瞬时重试的预算与延时；`{ maxAttempts: 1, ... }` 关闭瞬时重试。
 - **`reporter`**：把诊断接到宿主的管道；`Reporter` 的 `error` 通道是宿主自身的调用点。
 - **`languageProvider`**：把客户端的语言播报接到宿主的 i18n 实例。

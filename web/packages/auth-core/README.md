@@ -56,7 +56,7 @@ bindRequestFn(
   createClient({
     baseUrl: window.location.origin,
     credentials: 'same-origin', // send the session cookie; make a 401 run restore()
-    refreshAccessToken: () => session.restore(),
+    refreshAccessToken: (issue) => session.restore(issue),
   }),
 )
 
@@ -126,8 +126,9 @@ from `GET /auth/me`) and resolves `true`; a cookie that names nobody
 clears the local snapshot and resolves `false`. Call it once at
 bootstrap so a reload stays logged in. It is also the client's silent leg
 for a refused request -- wire it as `refreshAccessToken` alongside
-`credentials`, and a 401 re-reads the session (a still-valid cookie keeps
-the request and it retries once; a dead one ends the local session):
+`credentials`, forwarding the round-scoped request function the hook is
+handed, and a 401 re-reads the session (a still-valid cookie keeps the
+request and it retries once; a dead one ends the local session):
 
 ```ts
 const session = createAuthSession()
@@ -136,7 +137,7 @@ void session.restore() // at bootstrap: a valid cookie keeps the user in
 createClient({
   baseUrl: window.location.origin,
   credentials: 'same-origin',
-  refreshAccessToken: () => session.restore(),
+  refreshAccessToken: (issue) => session.restore(issue),
 })
 ```
 
