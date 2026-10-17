@@ -67,6 +67,18 @@ describe('SsoPage', () => {
     expect(screen.getByText('oidc')).toBeInTheDocument()
   })
 
+  it('shows no error banner while no write has failed', async () => {
+    const user = userEvent.setup()
+    const operations = withProviders()
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    // The write form is mounted with both mutations idle. React Query holds
+    // null on an idle mutation, and null means "no error" -- it must not be
+    // classified into an unknown-failure banner.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
     const user = userEvent.setup()
     const operations = withProviders()

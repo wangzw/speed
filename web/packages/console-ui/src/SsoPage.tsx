@@ -540,7 +540,9 @@ function SsoProviderWriteForm({
         </Button>
       </Box>
       <Box sx={{ mt: 1 }}>
-        <InlineError code={error === undefined ? null : errorCodeOf(error)} />
+        {/* A mutation that has not failed carries null, not undefined;
+            both mean there is no error to render. */}
+        <InlineError code={error == null ? null : errorCodeOf(error)} />
       </Box>
     </Box>
   )
