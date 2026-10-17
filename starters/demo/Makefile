@@ -35,9 +35,11 @@ help: ## List the entry points
 	@awk 'BEGIN{FS=":.*## "} /^[a-z][a-z-]*:.*## /{printf "  %-13s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # The frontend first: the Go build embeds the bundle, and go:embed requires
-# the file to exist when it compiles.
+# the file to exist when it compiles. The output is named explicitly: a build
+# of a pattern covering several packages discards its results, so `build ./...`
+# succeeds without writing a binary.
 build: web-build ## Build the frontend, then the Go program
-	go -C $(GOMODULE) build ./...
+	go -C $(GOMODULE) build -o demo .
 
 test: ## Test the Go module
 	go -C $(GOMODULE) test -timeout 30m ./...
