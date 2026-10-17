@@ -18,6 +18,7 @@ import userEvent from '@testing-library/user-event'
 import { SettingsPage } from './SettingsPage.js'
 import type { ConsoleSetting } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   createConsoleOperations,
   makeConsoleBackend,
@@ -41,6 +42,25 @@ describe('SettingsPage', () => {
     const operations = createConsoleOperations(makeConsoleBackend())
     renderWithProviders(<SettingsPage />, { operations })
     expect(await screen.findByText('暂无设置')).toBeInTheDocument()
+  })
+
+  it('raises its secondary navigation and compact actions to the floor', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listSettings: () => Promise.resolve([item]) }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    const all = await screen.findByRole('button', { name: '全部命名空间' })
+    const namespace = await screen.findByRole('button', { name: 'mail' })
+    const remove = screen.getByRole('button', {
+      name: '移除设置项 mail.retry',
+    })
+    const refresh = screen.getByRole('button', { name: '刷新' })
+    // The namespace navigation and the row/toolbar actions are the same
+    // class of compact target; each gates up to the 44x44 floor on a
+    // coarse pointer.
+    for (const control of [all, namespace, remove, refresh]) {
+      expect(hasCoarsePointerTouchTarget(control)).toBe(true)
+    }
   })
 
   it('renders a declared item with its resolved value', async () => {

@@ -13,6 +13,7 @@ import userEvent from '@testing-library/user-event'
 import { SmsPage } from './SmsPage.js'
 import type { ConsoleSmsTemplate } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   createConsoleOperations,
   makeConsoleBackend,
@@ -63,6 +64,21 @@ describe('SmsPage', () => {
     expect(await screen.findByText('login-code')).toBeInTheDocument()
     expect(screen.getByText('zh-CN: approved')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '停用模板 login-code' })).toBeInTheDocument()
+  })
+
+  it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
+    const operations = withTemplates()
+    renderWithProviders(<SmsPage />, { operations })
+    const toggle = await screen.findByRole('button', {
+      name: '停用模板 login-code',
+    })
+    const remove = screen.getByRole('button', {
+      name: '移除模板 login-code',
+    })
+    const refresh = screen.getByRole('button', { name: '刷新' })
+    for (const control of [toggle, remove, refresh]) {
+      expect(hasCoarsePointerTouchTarget(control)).toBe(true)
+    }
   })
 
   it('registers a template through the bundle', async () => {

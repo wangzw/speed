@@ -32,6 +32,7 @@ import {
   ListSkeleton,
   PageHeader,
   errorCodeOf,
+  touchTargetSx,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -132,6 +133,7 @@ export function InvitationsPage() {
               run: () => revokeInvitation.mutate({ tenant, id: invitation.id }),
             })
           }
+          sx={touchTargetSx}
         >
           {t('invitations.revoke')}
         </Button>
@@ -181,6 +183,7 @@ export function InvitationsPage() {
                 sso_exempt: !member.sso_exempt,
               })
             }
+            sx={touchTargetSx}
           >
             {member.sso_exempt
               ? t('members.ssoExemptClear')
@@ -200,6 +203,7 @@ export function InvitationsPage() {
                 run: () => removeMember.mutate({ tenant, account: member.account }),
               })
             }
+            sx={touchTargetSx}
           >
             {t('members.remove')}
           </Button>
@@ -237,6 +241,7 @@ export function InvitationsPage() {
               void invitations.refetch()
               void members.refetch()
             }}
+            sx={touchTargetSx}
           >
             {t('common.refresh')}
           </Button>

@@ -19,6 +19,7 @@ import type {
   ConsoleRole,
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   createConsoleOperations,
   makeConsoleBackend,
@@ -114,6 +115,34 @@ describe('PermissionsPage', () => {
     expect(await screen.findByText('editor')).toBeInTheDocument()
     expect(screen.getByText('crm.deal.read')).toBeInTheDocument()
     expect(screen.getByText('acc-1')).toBeInTheDocument()
+  })
+
+  it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+      listGrants: () => Promise.resolve([grant()]),
+      listBindings: () => Promise.resolve([binding({ role: 'viewer' })]),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    const manage = await screen.findByRole('button', {
+      name: '管理授权（角色 editor）',
+    })
+    const removeRole = screen.getByRole('button', { name: '删除角色 editor' })
+    const unbind = screen.getByRole('button', {
+      name: '解绑账户 acc-1 的角色 viewer',
+    })
+    const refresh = screen.getByRole('button', { name: '刷新' })
+    // The grant revoke belongs to the selected role's grant list, which
+    // opens with the manage action.
+    await user.click(manage)
+    const revoke = await screen.findByRole('button', {
+      name: '撤销授权 deal read',
+    })
+    for (const control of [manage, removeRole, unbind, refresh, revoke]) {
+      expect(hasCoarsePointerTouchTarget(control)).toBe(true)
+    }
   })
 
   it('creates a role through the bundle', async () => {

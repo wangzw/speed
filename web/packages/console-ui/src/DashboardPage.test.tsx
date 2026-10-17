@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import { DashboardPage } from './DashboardPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   createConsoleOperations,
   makeConsoleBackend,
@@ -26,6 +27,15 @@ const TENANTS = [
 ]
 
 describe('DashboardPage', () => {
+  it('raises its refresh action to the 44px floor under a coarse pointer', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listTenants: () => Promise.resolve(TENANTS) }),
+    )
+    renderWithProviders(<DashboardPage />, { operations })
+    const refresh = await screen.findByRole('button', { name: '刷新' })
+    expect(hasCoarsePointerTouchTarget(refresh)).toBe(true)
+  })
+
   it('summarizes the roster in the KPI row', async () => {
     const operations = createConsoleOperations(
       makeConsoleBackend({ listTenants: () => Promise.resolve(TENANTS) }),

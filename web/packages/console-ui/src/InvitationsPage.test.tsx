@@ -18,6 +18,7 @@ import type {
   ConsoleWriteMemberInput,
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   createConsoleOperations,
   issuedInvitationFixture,
@@ -89,6 +90,27 @@ describe('InvitationsPage', () => {
     expect(await screen.findByText('ada@example.com')).toBeInTheDocument()
     expect(screen.getByText('待接受')).toBeInTheDocument()
     expect(screen.getByText('acc-1')).toBeInTheDocument()
+  })
+
+  it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
+    const user = userEvent.setup()
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
+      listMembers: () => Promise.resolve([member()]),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('ada@example.com')
+    const gated = [
+      screen.getByRole('button', { name: '刷新' }),
+      screen.getByRole('button', { name: '撤销' }),
+      screen.getByRole('button', { name: '豁免 SSO' }),
+      screen.getByRole('button', { name: '移除' }),
+    ]
+    for (const control of gated) {
+      expect(hasCoarsePointerTouchTarget(control)).toBe(true)
+    }
   })
 
   it('issues an invitation through the bundle', async () => {

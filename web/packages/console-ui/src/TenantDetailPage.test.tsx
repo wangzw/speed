@@ -13,6 +13,7 @@ import userEvent from '@testing-library/user-event'
 import { TenantDetailPage } from './TenantDetailPage.js'
 import type { ConsoleTenant } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   createConsoleOperations,
   makeConsoleBackend,
@@ -21,6 +22,13 @@ import {
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 
 describe('TenantDetailPage', () => {
+  it('raises its refresh action to the 44px floor under a coarse pointer', async () => {
+    const operations = createConsoleOperations(makeConsoleBackend())
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    const refresh = await screen.findByRole('button', { name: '刷新' })
+    expect(hasCoarsePointerTouchTarget(refresh)).toBe(true)
+  })
+
   it('renders the tenant fields read by id', async () => {
     const getTenant = vi.fn(() =>
       Promise.resolve(tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })),

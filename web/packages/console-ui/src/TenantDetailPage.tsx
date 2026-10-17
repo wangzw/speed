@@ -26,7 +26,12 @@ import Paper from '@mui/material/Paper'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { ListSkeleton, PageHeader, errorCodeOf } from '@speed/ui-kit'
+import {
+  ListSkeleton,
+  PageHeader,
+  errorCodeOf,
+  touchTargetSx,
+} from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { InlineError } from './internal/inline-error.js'
 import { ConsoleLink } from './internal/navigation.js'
@@ -168,6 +173,7 @@ export function TenantDetailPage({ id, parentHref }: TenantDetailPageProps) {
             variant="outlined"
             size="small"
             onClick={() => void tenant.refetch()}
+            sx={touchTargetSx}
           >
             {t('common.refresh')}
           </Button>

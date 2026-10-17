@@ -17,6 +17,7 @@ import userEvent from '@testing-library/user-event'
 import { TenantRosterPage } from './TenantRosterPage.js'
 import type { ConsoleTenant } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   createConsoleOperations,
   makeConsoleBackend,
@@ -44,6 +45,27 @@ describe('TenantRosterPage', () => {
     expect(screen.getByText('已停用')).toBeInTheDocument()
   })
 
+
+  it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
+    const tenants: ConsoleTenant[] = [
+      { id: 'acme', alias: 'Acme', status: 'active' },
+      { id: 'old', alias: 'Old Co', status: 'disabled' },
+    ]
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listTenants: () => Promise.resolve(tenants) }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+    const gated = [
+      screen.getByRole('button', { name: '刷新' }),
+      screen.getByRole('button', { name: '为租户 acme 改名' }),
+      screen.getByRole('button', { name: '停用租户 acme' }),
+      screen.getByRole('button', { name: '启用租户 old' }),
+    ]
+    for (const control of gated) {
+      expect(hasCoarsePointerTouchTarget(control)).toBe(true)
+    }
+  })
 
   it('registers a tenant and reflects the invalidated list', async () => {
     const user = userEvent.setup()

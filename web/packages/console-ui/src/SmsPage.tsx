@@ -30,6 +30,7 @@ import {
   ListSkeleton,
   PageHeader,
   errorCodeOf,
+  touchTargetSx,
 } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import type { DataTableColumn } from '@speed/ui-kit'
@@ -136,6 +137,7 @@ export function SmsPage() {
             onClick={() =>
               setEnabled.mutate({ name: template.name, enabled: !template.enabled })
             }
+            sx={touchTargetSx}
           >
             {template.enabled ? t('sms.disable') : t('sms.enable')}
           </Button>
@@ -154,6 +156,7 @@ export function SmsPage() {
                 run: () => removeTemplate.mutate({ name: template.name }),
               })
             }
+            sx={touchTargetSx}
           >
             {t('sms.remove')}
           </Button>
@@ -183,6 +186,7 @@ export function SmsPage() {
             variant="outlined"
             size="small"
             onClick={() => void templates.refetch()}
+            sx={touchTargetSx}
           >
             {t('common.refresh')}
           </Button>

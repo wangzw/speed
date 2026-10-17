@@ -16,6 +16,7 @@ import userEvent from '@testing-library/user-event'
 import { AuditPage } from './AuditPage.js'
 import type { ConsoleAuditRecord } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   accountFixture,
   createConsoleOperations,
@@ -42,6 +43,23 @@ const page = (entries: readonly ConsoleAuditRecord[], next = '') => ({
 })
 
 describe('AuditPage', () => {
+  it('raises its toolbar and pager actions to the 44px floor under a coarse pointer', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listRecords: () => Promise.resolve(page([record], 'next')),
+      }),
+    )
+    renderWithProviders(<AuditPage />, { operations })
+    const gated = [
+      await screen.findByRole('button', { name: '刷新' }),
+      screen.getByRole('button', { name: '上一页' }),
+      screen.getByRole('button', { name: '下一页' }),
+    ]
+    for (const control of gated) {
+      expect(hasCoarsePointerTouchTarget(control)).toBe(true)
+    }
+  })
+
   it('renders the settled empty state when no record matches', async () => {
     const operations = createConsoleOperations(makeConsoleBackend())
     renderWithProviders(<AuditPage />, { operations })

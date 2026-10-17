@@ -45,7 +45,12 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
-import { DataTable, ListSkeleton, PageHeader } from '@speed/ui-kit'
+import {
+  DataTable,
+  ListSkeleton,
+  PageHeader,
+  touchTargetSx,
+} from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import Typography from '@mui/material/Typography'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -289,6 +294,7 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
             variant="outlined"
             size="small"
             onClick={() => void records.refetch()}
+            sx={touchTargetSx}
           >
             {t('common.refresh')}
           </Button>
@@ -402,6 +408,7 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
           size="small"
           disabled={page === 0}
           onClick={() => setPage((current) => Math.max(0, current - 1))}
+          sx={touchTargetSx}
         >
           {t('audit.prevPage')}
         </Button>
@@ -418,6 +425,7 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
             })
             setPage((current) => current + 1)
           }}
+          sx={touchTargetSx}
         >
           {t('audit.nextPage')}
         </Button>

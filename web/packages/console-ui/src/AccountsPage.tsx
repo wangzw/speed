@@ -61,6 +61,7 @@ import {
   ListSkeleton,
   PageHeader,
   errorCodeOf,
+  touchTargetSx,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -291,6 +292,7 @@ export function AccountsPage() {
             variant="outlined"
             aria-label={t('accounts.manageAria', { id: row.id })}
             onClick={() => setSelectedId(row.id)}
+            sx={touchTargetSx}
           >
             {t('accounts.manage')}
           </Button>
@@ -313,6 +315,7 @@ export function AccountsPage() {
                 run: () => deleteOne(row.id),
               })
             }
+            sx={touchTargetSx}
           >
             {t('accounts.delete')}
           </Button>
@@ -358,6 +361,7 @@ export function AccountsPage() {
               run: () => revokeOneSecret(row.id),
             })
           }
+          sx={touchTargetSx}
         >
           {t('accounts.secrets.revoke')}
         </Button>
@@ -412,6 +416,7 @@ export function AccountsPage() {
               },
             })
           }
+          sx={touchTargetSx}
         >
           {t('accounts.sessions.revoke')}
         </Button>
@@ -463,6 +468,7 @@ export function AccountsPage() {
             variant="outlined"
             size="small"
             onClick={() => void accounts.refetch()}
+            sx={touchTargetSx}
           >
             {t('common.refresh')}
           </Button>

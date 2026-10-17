@@ -23,6 +23,7 @@ import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { ImpersonationsPage } from './ImpersonationsPage.js'
 import type { ConsoleImpersonation } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   createConsoleOperations,
   makeConsoleBackend,
@@ -145,6 +146,30 @@ beforeEach(() => {
 })
 
 describe('ImpersonationsPage', () => {
+  it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
+    const backend = makeCallerSessionBackend()
+    backend.setGrant({
+      id: 'imp-1',
+      target: 'acc-1',
+      tenant: 'acme',
+      starts_at: '2026-10-15T12:00:00Z',
+      ends_at: '2026-10-15T13:00:00Z',
+    })
+    bindRequestFn(backend.fn)
+    const user = userEvent.setup()
+    const operations = withPage({
+      listImpersonations: () => Promise.resolve([record()]),
+    })
+    renderWithProviders(<ImpersonationsPage />, { operations })
+    const refresh = screen.getByRole('button', { name: '刷新' })
+    const end = await screen.findByRole('button', { name: '结束冒充' })
+    await pickTenant(user)
+    const terminate = await screen.findByRole('button', { name: '终止' })
+    for (const control of [refresh, end, terminate]) {
+      expect(hasCoarsePointerTouchTarget(control)).toBe(true)
+    }
+  })
+
   it('prompts for a tenant before listing', () => {
     const operations = withPage()
     renderWithProviders(<ImpersonationsPage />, { operations })

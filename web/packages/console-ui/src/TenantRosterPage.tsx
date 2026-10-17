@@ -48,6 +48,7 @@ import {
   ListSkeleton,
   PageHeader,
   errorCodeOf,
+  touchTargetSx,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -142,6 +143,7 @@ function TenantRowActions({ tenant }: { readonly tenant: ConsoleTenant }) {
             },
           )
         }}
+        sx={touchTargetSx}
       >
         {t('tenants.rename.submit')}
       </Button>
@@ -165,6 +167,7 @@ function TenantRowActions({ tenant }: { readonly tenant: ConsoleTenant }) {
             { onSuccess: () => setSuccess(t('tenants.statusSaved')) },
           )
         }}
+        sx={touchTargetSx}
       >
         {disabled ? t('tenants.enable') : t('tenants.disable')}
       </Button>
@@ -265,6 +268,7 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
             variant="outlined"
             size="small"
             onClick={() => void tenants.refetch()}
+            sx={touchTargetSx}
           >
             {t('common.refresh')}
           </Button>

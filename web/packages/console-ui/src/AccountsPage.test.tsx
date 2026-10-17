@@ -27,6 +27,7 @@ import type {
   ConsoleSetMFARequiredInput,
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { bindConsoleRequest } from '../test-utils/request-rig.js'
 import { createStepUpSession } from '../test-utils/session.js'
 import {
@@ -97,6 +98,53 @@ function stepUpRefusal(): {
 }
 
 describe('AccountsPage', () => {
+  it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      listAccountSecrets: () =>
+        Promise.resolve([
+          {
+            id: 'sec-1',
+            label: 'ci',
+            expires_at: '0001-01-01T00:00:00Z',
+            revoked: false,
+          },
+        ]),
+      listAccountSessions: () =>
+        Promise.resolve([
+          {
+            id: 'sess-1',
+            kind: 'refresh',
+            assurance: 1,
+            auth_time: '2026-10-15T12:00:00Z',
+            created_at: '2026-10-15T12:00:00Z',
+            last_seen_at: '2026-10-15T12:00:00Z',
+            expires_at: '2026-10-16T12:00:00Z',
+            revoked: false,
+          },
+        ]),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    // The page header refresh is present before any search; the row and
+    // detail controls join it once the account is opened.
+    expect(
+      hasCoarsePointerTouchTarget(
+        screen.getByRole('button', { name: '刷新' }),
+      ),
+    ).toBe(true)
+    await openDetail(user)
+    await screen.findByText('ci')
+    const gated = [
+      screen.getByRole('button', { name: '管理账户 acc-1' }),
+      screen.getByRole('button', { name: '删除账户 acc-1' }),
+      screen.getByRole('button', { name: '撤销密钥 ci' }),
+      screen.getByRole('button', { name: '撤销会话 sess-1' }),
+    ]
+    for (const control of gated) {
+      expect(hasCoarsePointerTouchTarget(control)).toBe(true)
+    }
+  }, 20_000)
+
   it('renders the empty state when no account matches', async () => {
     const operations = withAccounts({
       listAccounts: () => Promise.resolve({ accounts: [], next_cursor: '' }),

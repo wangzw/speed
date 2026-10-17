@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import { AuditDetailPage } from './AuditDetailPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   createConsoleOperations,
   makeConsoleBackend,
@@ -39,6 +40,13 @@ describe('AuditDetailPage', () => {
     expect(screen.getByText('alias')).toBeInTheDocument()
     expect(screen.getByText('Acme')).toBeInTheDocument()
     expect(getRecord).toHaveBeenCalledWith({ id: 'rec-7' })
+  })
+
+  it('raises its refresh action to the 44px floor under a coarse pointer', async () => {
+    const operations = createConsoleOperations(makeConsoleBackend())
+    renderWithProviders(<AuditDetailPage id="rec-1" />, { operations })
+    const refresh = await screen.findByRole('button', { name: '刷新' })
+    expect(hasCoarsePointerTouchTarget(refresh)).toBe(true)
   })
 
   it('links back to the audit query when given its path', async () => {

@@ -52,6 +52,7 @@ import {
   ListSkeleton,
   PageHeader,
   errorCodeOf,
+  touchTargetSx,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -221,6 +222,7 @@ export function SettingsPage() {
           aria-label={t('settings.removeAria', { key: setting.key })}
           disabled={removeSetting.isPending}
           onClick={() => remove(setting)}
+          sx={touchTargetSx}
         >
           {t('settings.remove')}
         </Button>
@@ -245,6 +247,7 @@ export function SettingsPage() {
             variant="outlined"
             size="small"
             onClick={() => void settings.refetch()}
+            sx={touchTargetSx}
           >
             {t('common.refresh')}
           </Button>
@@ -274,6 +277,7 @@ export function SettingsPage() {
                 <ListItemButton
                   selected={selected === ALL}
                   onClick={() => setSelected(ALL)}
+                  sx={touchTargetSx}
                 >
                   <ListItemText primary={t('settings.nav.all')} />
                 </ListItemButton>
@@ -283,6 +287,7 @@ export function SettingsPage() {
                   <ListItemButton
                     selected={selected === namespace}
                     onClick={() => setSelected(namespace)}
+                    sx={touchTargetSx}
                   >
                     <ListItemText primary={namespace} />
                   </ListItemButton>

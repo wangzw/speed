@@ -17,6 +17,7 @@ import type {
   ConsoleWriteSsoProviderInput,
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   createConsoleOperations,
   makeConsoleBackend,
@@ -64,6 +65,23 @@ describe('SsoPage', () => {
     await pickTenant(user)
     expect(await screen.findByText('Acme IdP')).toBeInTheDocument()
     expect(screen.getByText('oidc')).toBeInTheDocument()
+  })
+
+  it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
+    const user = userEvent.setup()
+    const operations = withProviders()
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    const gated = [
+      screen.getByRole('button', { name: '刷新' }),
+      screen.getByRole('button', { name: '刷新元数据（Acme IdP）' }),
+      screen.getByRole('button', { name: '重新验证域名（Acme IdP）' }),
+      screen.getByRole('button', { name: '删除提供方 Acme IdP' }),
+    ]
+    for (const control of gated) {
+      expect(hasCoarsePointerTouchTarget(control)).toBe(true)
+    }
   })
 
   it('deletes a provider through the bundle', async () => {

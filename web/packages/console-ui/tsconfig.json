@@ -39,6 +39,7 @@
       "@speed/layout-kit": ["../layout-kit/src/index.ts"],
       "@speed/ui-kit": ["../ui-kit/src/index.ts"],
       "@speed/test-utils/axe": ["../../test-utils/src/axe.ts"],
+      "@speed/test-utils/emitted-css": ["../../test-utils/src/emitted-css.ts"],
       "@speed/test-utils/matchMedia": ["../../test-utils/src/matchMedia.ts"],
       "@speed/test-utils/render": ["../../test-utils/src/render.tsx"],
       "@speed/test-utils/setup": ["../../test-utils/src/setup.ts"]

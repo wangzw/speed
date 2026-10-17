@@ -13,6 +13,7 @@ import userEvent from '@testing-library/user-event'
 import { SessionsPage } from './SessionsPage.js'
 import type { ConsoleAccountSession } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   createConsoleOperations,
   makeConsoleBackend,
@@ -56,6 +57,26 @@ describe('SessionsPage', () => {
     await loadAccount(user)
     expect(await screen.findByText('sess-1')).toBeInTheDocument()
     expect(screen.getByText('多因子')).toBeInTheDocument()
+  })
+
+  it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccountSessions: () => Promise.resolve([session()]),
+      }),
+    )
+    renderWithProviders(<SessionsPage />, { operations })
+    await loadAccount(user)
+    const revoke = await screen.findByRole('button', {
+      name: '撤销会话 sess-1',
+    })
+    expect(hasCoarsePointerTouchTarget(revoke)).toBe(true)
+    expect(
+      hasCoarsePointerTouchTarget(
+        screen.getByRole('button', { name: '刷新' }),
+      ),
+    ).toBe(true)
   })
 
   it('labels each assurance level', async () => {

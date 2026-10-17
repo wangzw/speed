@@ -28,7 +28,12 @@ import Button from '@mui/material/Button'
 import Paper from '@mui/material/Paper'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
-import { DataTable, ListSkeleton, PageHeader } from '@speed/ui-kit'
+import {
+  DataTable,
+  ListSkeleton,
+  PageHeader,
+  touchTargetSx,
+} from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { formatUtc } from './internal/datetime.js'
@@ -195,6 +200,7 @@ export function DashboardPage() {
               void healthLogins.refetch()
               void records.refetch()
             }}
+            sx={touchTargetSx}
           >
             {t('common.refresh')}
           </Button>

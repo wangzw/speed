@@ -53,6 +53,7 @@ import {
   ListSkeleton,
   PageHeader,
   errorCodeOf,
+  touchTargetSx,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -161,6 +162,7 @@ export function ImpersonationsPage() {
           color="error"
           disabled={!isZeroInstant(record.ended_at) || revokeImpersonation.isPending}
           onClick={() => revokeImpersonation.mutate({ id: record.id })}
+          sx={touchTargetSx}
         >
           {t('impersonations.terminate')}
         </Button>
@@ -188,6 +190,7 @@ export function ImpersonationsPage() {
               void status.refetch()
               void impersonations.refetch()
             }}
+            sx={touchTargetSx}
           >
             {t('common.refresh')}
           </Button>
@@ -229,6 +232,7 @@ export function ImpersonationsPage() {
               color="error"
               disabled={endImpersonation.isPending}
               onClick={() => endImpersonation.mutate()}
+              sx={touchTargetSx}
             >
               {t('impersonations.current.end')}
             </Button>
