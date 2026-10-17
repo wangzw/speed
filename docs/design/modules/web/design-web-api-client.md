@@ -275,6 +275,6 @@ sequenceDiagram
 | 仅内存的访问令牌存储 | 已实现 | `web/packages/api-client/src/access-token.ts` `createMemoryAccessTokenStore`、`AccessTokenStore` |
 | 重试策略与纯退避函数 | 已实现 | `web/packages/api-client/src/retry.ts` `DEFAULT_RETRY_POLICY`、`retryDelayMs`、`retryAfterDelayMs` |
 | 结构化上报端 | 已实现 | `web/packages/api-client/src/reporter.ts` `createConsoleReporter`、`Reporter` |
-| 公开面不含预认证配置取回 | 未实现 | — |
-| 公开面不含 `./react` 子路径，不声明 `react` peer | 未实现 | — |
+| 公开面不含预认证配置取回 | 已实现 | `web/packages/api-client/src/index.ts` |
+| 公开面不含 `./react` 子路径，不声明 `react` peer | 已实现 | `web/packages/api-client/src/index.ts`、`web/packages/api-client/package.json` |
 | 手写 HTTP 的 ESLint 白名单 | 已实现 | `web/eslint.config.mjs` `speed/no-direct-http` |

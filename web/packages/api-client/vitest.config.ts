@@ -1,9 +1,7 @@
 /**
- * api-client test configuration: coverage only -- the core suites run
- * in the default node environment over scripted fetch, and the react
- * subpath's DOM suites opt in per file with the @vitest-environment
- * jsdom pragma. src/ imports only relative files, so no aliases are
- * needed.
+ * api-client test configuration: coverage only -- every suite runs in
+ * the default node environment over scripted fetch. src/ imports only
+ * relative files, so no aliases are needed.
  */
 import { defineConfig } from 'vitest/config'
 

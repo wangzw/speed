@@ -135,83 +135,17 @@ this one may issue HTTP requests itself.
   on a bearer `401`, parses the `text/event-stream` framing, and -- by
   contract -- neither times out nor reconnects; reconnecting is the
   caller's policy.
-- **React exists only behind the `./react` subpath.** `src/react.ts`
-  is the one file in this package that may `import` from `react`; the
-  main entry (`src/index.ts`) stays dependency-free, mirroring
-  `@speed/i18n`'s `./mui-locale` isolation. Do not import `react` from
-  any file reachable from the main entry, and do not add a second
-  React-touching file outside `react.ts`.
-- **The `usePublicConfig`/`useFeature` cache is keyed by `RequestFn`
-  identity, not by component lifetime.** A fetch started by the first
-  mounted consumer of a given `api` is shared (and, if still in
-  flight, awaited-in-place) by every other instance backed by the same
-  `api` -- including ones that mount after the fetch settles. Passing a
-  fresh `RequestFn` on every render defeats the sharing; hosts must
-  construct `api` once and reuse the reference. The sharing excludes
-  the failure state by design: a load that settles on an error caches
-  nothing, so the next subscriber of that `api` starts a fresh fetch
-  instead of inheriting the dead state for the client's whole lifetime
-  (the failure-recovery shape startup fetches depend on; `refresh()`
-  remains the explicit retry lever).
+- **The package is React-free.** It has one entry, imports no react,
+  declares no react peer and adds no subpath. Feature and configuration
+  reads belong to the module that owns them, consumed through the
+  generated operations; do not add a hook layer here.
 
 ## What ships vs. what is deferred
 
 The runtime above (client, errors, retry, reporter, token store) plus
 the `speed/no-direct-http` ESLint rule that routes all other package
-HTTP through it.
-
-`fetchPublicConfig` / `fetchSystemFeatures` live in
-`src/config-fetcher.ts` -- typed wrappers around go/config's two
-pre-auth endpoints (`PathPublic` / `PathSystemFeatures`), built on the
-`RequestFn` interface above. Both path constants are hand-kept in sync with
-the Go side (go/config ships an OpenAPI fragment declaring the pair as
-`config_getPublicConfig` / `config_getSystemFeatures`). The generated
-operations that fragment produces -- `@speed/api-sdk`'s
-`useConfigGetPublicConfig` / `useConfigGetSystemFeatures` -- are the
-primary call surface for those endpoints; these wrappers remain the
-per-key mapping layer over them, because the generated type for the
-public-config body can only be a record of dynamic keys -- the per-key
-typing the hooks expose cannot come from generation. A generated
-operation must agree with the two constants here on the paths. Neither
-function accepts a tenant argument -- these endpoints resolve the tenant
-from the request host, not from the `X-Tenant` header the transport
-announces elsewhere: which tenant (if any) the request maps to is the
-server host's own wiring, through go/config's host-injected
-request-to-tenant resolver, with platform defaults when nothing matches.
-
-`usePublicConfig` / `useFeature` live in `src/react.ts`, exported from
-the isolated `./react` subpath. The manifest declares `react` as a
-peer and marks it optional (`peerDependenciesMeta.react.optional`) --
-npm peers are package-level, not per-subpath, so the optional marker
-is what keeps the main entry React-free in practice: a consumer that
-only uses the main entry installs no react, while a consumer of the
-`./react` subpath supplies it as its own dependency (the package's
-own suites resolve it from devDependencies). `src/package.json.test.ts`
-pins that metadata shape. Both hooks share one cache keyed by
-`RequestFn` identity via `useSyncExternalStore`: the first mounted
-consumer of a given `api` starts the one fetch, every other instance
-backed by the same `api` reads and re-renders off that shared state,
-and `refresh()` republishes a forced refetch to all of them.
-`useFeature` composes on `usePublicConfig`'s cache rather than calling
-`/api/v1/config/features` itself, and returns `false` (never throws)
-while loading or on error. Neither hook does fallback-to-defaults
-detection, tenant-switch revalidation, or auto-polling -- see
-`src/react.ts`'s header comment for why each is a deliberate
-non-feature, not a gap. Two defensive details recorded here so they
-are not "simplified" away: both config fetchers refuse an **empty**
-2xx body (the RequestFn's own 204-style empty-success shape) as a
-coded `client.protocol` error -- go/config always writes a JSON
-document, so an empty answer is a broken one, and resolving
-`undefined` would pass for the typed document until a consumer reads
-a field off it. The refusal is the request's own
-(`RequestOptions.requireJsonBody`, client.ts), so it carries the
-exchange's real status and attempt count rather than a
-wrapper-synthesized pair -- a 503/503/empty-200 exchange surfaces as
-attempts 3 / status 200, never the hardcoded 1/0 a fetcher-level
-error could only fake -- and `useFeature` null-guards
-`data.features` (absent/null reads as "nothing enabled", never a
-render-time throw), because the response shape is this
-hand-maintained contract and a payload violating it must fail softly.
+HTTP through it. The package has no config-fetching surface and no
+React surface of its own.
 
 The runtime leg is real in-workspace: `@speed/api-sdk`, the
 orval-generated typed surface, calls into this runtime through its
@@ -223,11 +157,8 @@ the bound request function, and fills the `refreshAccessToken` hook --
 on the token one).
 `starters/demo/web` binds this client at runtime: its app-entry assembly
 (`@speed/product-shell/bootstrap`'s `bootstrapSpeedApp`) binds one real
-`createClient` over the environment's own fetch and reads the server's
-effective Public values and feature flags through
-`usePublicConfig`/`useFeature` on that same bound client, the shape a
-`requiredFeature`-style consumer needs. The package ships no browser-tier
-suite of its own.
+`createClient` over the environment's own fetch. The package ships no
+browser-tier suite of its own.
 
 ## Transports
 
@@ -246,35 +177,26 @@ suite of its own.
   writer actually writes (`urn:speed:<module>:<code>`); `traceId` is
   optional (parsed and surfaced when present, omitted from reporter
   attributes when absent), so those bodies keep their codes end to end.
-  `config-fetcher.test.ts`'s two traceId-less fixture tests and
-  `client.test.ts`'s `{code, params}` envelope test pin the literal wire
-  shape. The correlation half -- a backend-wide change for every module's
+  `client.test.ts`'s `{code, params}` envelope test pins the literal
+  wire shape. The correlation half -- a backend-wide change for every module's
   error writer to emit a real `traceId` (sourced from request tracing), so
   user reports can be tied to server logs -- is not implemented.
 
 ## Public surface
 
 The runtime exports are pinned by `src/index.test.ts`
-(`ApiError`, `CONFIG_PUBLIC_PATH`, `DEFAULT_RETRY_POLICY`,
+(`ApiError`, `DEFAULT_RETRY_POLICY`,
 `ERROR_CODE_HTML`, `ERROR_CODE_NETWORK`, `ERROR_CODE_PROTOCOL`,
-`ERROR_CODE_TIMEOUT`,
-`SYSTEM_FEATURES_PATH`, `createClient`, `createConsoleReporter`,
-`createMemoryAccessTokenStore`, `fetchPublicConfig`,
-`fetchSystemFeatures`, `httpErrorCode`, `isApiError`,
+`ERROR_CODE_TIMEOUT`, `createClient`, `createConsoleReporter`,
+`createMemoryAccessTokenStore`, `httpErrorCode`, `isApiError`,
 `isTransportFailure`, `retryAfterDelayMs`, `retryDelayMs`), with
 compile-time shape-drift
 guards for the type exports (`RequestFn`, `ClientOptions`,
 `RequestOptions`, `AccessTokenStore`, `RetryPolicy`, `Reporter`,
-`FieldError`, `HttpMethod`, `ApiErrorInit`, `ConfigFetchOptions`,
-`PublicConfigResponse`, `SystemFeaturesResponse`). See the README's
+`FieldError`, `HttpMethod`, `ApiErrorInit`). See the README's
 public-surface table for semantics. Removing or renaming an export
 breaks the pin tests and the typecheck; extend the surface
 deliberately, with the README table updated in the same commit.
-
-The `./react` subpath exports `usePublicConfig`, `useFeature` and the
-`UsePublicConfigResult` type from `src/react.ts` -- not pinned by
-`src/index.test.ts` (that file covers only the main entry); `src/react.test.ts`
-exercises both hooks' behavior directly instead.
 
 ## Development
 
@@ -289,15 +211,8 @@ pnpm build       # tsc ESM build (nodenext); dist/ is gitignored build output
 ```
 
 Test layout: one file per source file (`errors.ts` -> `errors.test.ts`)
-plus behavior files (`usage-example.test.ts` executes the README Quick
-start against a stubbed global fetch; `react-usage-example.test.ts`
-does the same for the README's "Config hooks" quick start, via
-`renderHook`). Shared helpers live in `test-utils/` (`fetch-standin.ts`
-scripted responders, abort-aware the way real fetch is;
-`memory-reporter.ts` capture sinks). Tests never require Docker or a
-network. `src/react.test.ts` and `src/react-usage-example.test.ts`
-opt into the `jsdom` environment via a per-file
-`// @vitest-environment jsdom` docblock (vitest 4's built-in mechanism)
-rather than a package-wide `vitest.config.ts` -- every other test file
-in this package keeps the faster default `node` environment, since
-`renderHook`'s DOM mounting is the only thing here that needs one.
+plus a behavior file (`usage-example.test.ts` executes the README Quick
+start against a stubbed global fetch). Shared helpers live in
+`test-utils/` (`fetch-standin.ts` scripted responders, abort-aware the
+way real fetch is; `memory-reporter.ts` capture sinks). Tests run in
+the default `node` environment and never require Docker or a network.

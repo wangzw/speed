@@ -194,10 +194,10 @@ export interface RequestOptions {
    * an empty 2xx body (the client's own 204-style empty-success
    * shape) then refuses as a client.protocol ApiError carrying the
    * exchange's real status and attempt count -- never a resolved
-   * `undefined` that passes for the typed document. The config
-   * fetchers in config-fetcher.ts are the canonical users: both
-   * go/config endpoints always write a JSON document, so an empty
-   * answer there is a broken one.
+   * `undefined` that passes for the typed document. A consumer that
+   * reads fields off an operation declaring a response body sets it:
+   * the refusal carries the exchange's real status and attempt count,
+   * which only the request itself knows.
    */
   requireJsonBody?: boolean
   /**

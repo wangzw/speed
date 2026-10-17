@@ -13,12 +13,9 @@
  * No i18n resources ship here: ApiError codes map to user-facing text
  * in the consuming package's own catalogs, and nothing in this package
  * emits user-facing text. No storage API exists anywhere in this
- * package -- tokens live in memory only (see access-token.ts).
- *
- * fetchPublicConfig / fetchSystemFeatures (config-fetcher.ts) are typed
- * wrappers around go/config's two pre-auth endpoints, built on the same
- * RequestFn -- neither takes a tenant argument, since both endpoints
- * resolve tenant server-side from the request host.
+ * package -- tokens live in memory only (see access-token.ts). The
+ * entry has no React dependency: it exports no hooks and declares no
+ * React peer.
  */
 
 export { createClient } from './client.js'
@@ -58,14 +55,3 @@ export {
 export type { RetryPolicy } from './retry.js'
 export { createConsoleReporter } from './reporter.js'
 export type { Reporter } from './reporter.js'
-export {
-  CONFIG_PUBLIC_PATH,
-  SYSTEM_FEATURES_PATH,
-  fetchPublicConfig,
-  fetchSystemFeatures,
-} from './config-fetcher.js'
-export type {
-  ConfigFetchOptions,
-  PublicConfigResponse,
-  SystemFeaturesResponse,
-} from './config-fetcher.js'

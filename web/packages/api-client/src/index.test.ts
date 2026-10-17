@@ -16,37 +16,30 @@ import type {
   AccessTokenStore,
   ApiErrorInit,
   ClientOptions,
-  ConfigFetchOptions,
   EventStreamHandle,
   EventStreamOpener,
   EventStreamOptions,
   FieldError,
   HttpMethod,
-  PublicConfigResponse,
   Reporter,
   RequestFn,
   RequestOptions,
   RetryPolicy,
   ServerSentEvent,
   SpeedClient,
-  SystemFeaturesResponse,
 } from './index'
 
 /** The runtime exports, sorted for comparison. */
 const RUNTIME_EXPORTS = [
   'ApiError',
-  'CONFIG_PUBLIC_PATH',
   'DEFAULT_RETRY_POLICY',
   'ERROR_CODE_HTML',
   'ERROR_CODE_NETWORK',
   'ERROR_CODE_PROTOCOL',
   'ERROR_CODE_TIMEOUT',
-  'SYSTEM_FEATURES_PATH',
   'createClient',
   'createConsoleReporter',
   'createMemoryAccessTokenStore',
-  'fetchPublicConfig',
-  'fetchSystemFeatures',
   'httpErrorCode',
   'isApiError',
   'isTransportFailure',
@@ -106,14 +99,6 @@ const fieldError: FieldError = {
   params: undefined,
 }
 const httpMethod: HttpMethod = 'DELETE'
-const configFetchOptions: ConfigFetchOptions = { signal: undefined }
-const publicConfigResponse: PublicConfigResponse = {
-  config: { 'brand.name': 'Speed' },
-  features: ['billing'],
-}
-const systemFeaturesResponse: SystemFeaturesResponse = {
-  features: ['billing'],
-}
 const requestFn: RequestFn = async <T>(
   path: string,
   options?: RequestOptions,
@@ -147,9 +132,6 @@ void errorInit
 void fieldError
 void httpMethod
 void requestFn
-void configFetchOptions
-void publicConfigResponse
-void systemFeaturesResponse
 void serverSentEvent
 void eventStreamHandle
 void eventStreamOptions
@@ -183,11 +165,6 @@ const missingFieldName: FieldError = { code: 'notes.text_required' }
 // @ts-expect-error -- guard: Reporter requires error and warn
 const missingWarnMethod: Reporter = { error: () => {} }
 
-// @ts-expect-error -- guard: PublicConfigResponse.features is required
-const missingPublicFeatures: PublicConfigResponse = { config: {} }
-
-// @ts-expect-error -- guard: SystemFeaturesResponse.features is required
-const missingSystemFeatures: SystemFeaturesResponse = {}
 // @ts-expect-error -- guard: EventStreamOptions requires an onEvent callback
 const missingOnEvent: EventStreamOptions = {}
 void missingBaseUrl
@@ -198,6 +175,4 @@ void nonNumericAttempts
 void missingAttempts
 void missingFieldName
 void missingWarnMethod
-void missingPublicFeatures
-void missingSystemFeatures
 void missingOnEvent

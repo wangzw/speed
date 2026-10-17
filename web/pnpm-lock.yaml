@@ -196,27 +196,9 @@ importers:
 
   packages/api-client:
     devDependencies:
-      '@testing-library/react':
-        specifier: ^16.3.3
-        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@types/node':
         specifier: ^26.4.1
         version: 26.6.5
-      '@types/react':
-        specifier: ^19.2.18
-        version: 19.3.0
-      '@types/react-dom':
-        specifier: ^19.2.5
-        version: 19.3.0(@types/react@19.3.0)
-      jsdom:
-        specifier: ^30.0.1
-        version: 30.1.2
-      react:
-        specifier: ^19.2.8
-        version: 19.3.0
-      react-dom:
-        specifier: ^19.2.8
-        version: 19.3.0(react@19.3.0)
 
   packages/api-sdk:
     dependencies:
