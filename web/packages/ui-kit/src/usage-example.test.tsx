@@ -30,6 +30,8 @@
  * translations.
  */
 
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { act, fireEvent, within } from '@testing-library/react'
 import { useEffect, useRef, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -313,6 +315,27 @@ describe('README usage example', () => {
       utils.queryByLabelText(zhCN.dataTable.selectAllRows),
     ).not.toBeInTheDocument()
     expect(utils.queryByText(zhCN.dataTable.rowsPerPage)).not.toBeInTheDocument()
+  })
+
+  it('documents the write-feedback resolver composition the suite executes', () => {
+    // The package's test commands run with the package root as the working
+    // directory (`pnpm test` here, or `pnpm --filter @speed/ui-kit test`).
+    const readme = readFileSync(join(process.cwd(), 'README.md'), 'utf8')
+    const sectionStart = readme.indexOf('### Write feedback')
+    expect(sectionStart).toBeGreaterThanOrEqual(0)
+    const fenceStart = readme.indexOf('```tsx', sectionStart)
+    expect(fenceStart).toBeGreaterThan(sectionStart)
+    const blockStart = fenceStart + '```tsx'.length
+    const fenceEnd = readme.indexOf('```', blockStart)
+    expect(fenceEnd).toBeGreaterThan(blockStart)
+    const block = readme.slice(blockStart, fenceEnd)
+
+    // The documented composition resolves failure text through the shared
+    // resolver -- the same call the executed TenantNameSection makes.
+    expect(block).toContain('createErrorTextResolver(')
+    // A hand-built template resolver would render raw `errors.*` keys, so
+    // the documented composition must never carry one.
+    expect(block).not.toContain('t(`errors.${')
   })
 
   it('renders the stock empty and confirm states the README shows', async () => {

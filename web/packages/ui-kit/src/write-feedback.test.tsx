@@ -201,6 +201,126 @@ describe('useWriteFeedback', () => {
     expect(result.current.pending).toBe(false)
   })
 
+  it('keeps a rejection when the null settlement lands last', async () => {
+    const { result } = renderHook(() => useWriteFeedback())
+    const failing = deferred<string | null>()
+    const nullAttempt = deferred<string | null>()
+
+    let failingRun!: Promise<void>
+    let nullRun!: Promise<void>
+    act(() => {
+      failingRun = result.current.run(() => failing.promise)
+      nullRun = result.current.run(() => nullAttempt.promise)
+    })
+
+    // The rejecting attempt settles first and occupies the slot.
+    await act(async () => {
+      failing.reject({ code: 'write_failed' })
+      await failingRun
+    })
+    expect(result.current.outcome).toEqual({
+      kind: 'failure',
+      code: 'write_failed',
+    })
+
+    // The null settlement lands last and does not touch the slot.
+    await act(async () => {
+      nullAttempt.resolve(null)
+      await nullRun
+    })
+    expect(result.current.outcome).toEqual({
+      kind: 'failure',
+      code: 'write_failed',
+    })
+    expect(result.current.pending).toBe(false)
+  })
+
+  it('keeps a rejection when the null settlement lands first', async () => {
+    const { result } = renderHook(() => useWriteFeedback())
+    const failing = deferred<string | null>()
+    const nullAttempt = deferred<string | null>()
+
+    let failingRun!: Promise<void>
+    let nullRun!: Promise<void>
+    act(() => {
+      failingRun = result.current.run(() => failing.promise)
+      nullRun = result.current.run(() => nullAttempt.promise)
+    })
+
+    // The null settlement lands first: the slot stays empty from its own
+    // reset while the rejecting attempt is still in flight.
+    await act(async () => {
+      nullAttempt.resolve(null)
+      await nullRun
+    })
+    expect(result.current.outcome).toBeNull()
+
+    // The rejection then lands and stays.
+    await act(async () => {
+      failing.reject({ code: 'write_failed' })
+      await failingRun
+    })
+    expect(result.current.outcome).toEqual({
+      kind: 'failure',
+      code: 'write_failed',
+    })
+    expect(result.current.pending).toBe(false)
+  })
+
+  it('keeps a fail() result set while a null attempt is in flight', async () => {
+    const { result } = renderHook(() => useWriteFeedback())
+    const attempt = deferred<string | null>()
+
+    let runPromise!: Promise<void>
+    act(() => {
+      runPromise = result.current.run(() => attempt.promise)
+    })
+    // The elevation gate answers during the attempt's flight: that result
+    // is the slot's, and the later null settlement must not clear it.
+    act(() => {
+      result.current.fail({ code: 'write_failed' })
+    })
+    expect(result.current.outcome).toEqual({
+      kind: 'failure',
+      code: 'write_failed',
+    })
+
+    await act(async () => {
+      attempt.resolve(null)
+      await runPromise
+    })
+    expect(result.current.outcome).toEqual({
+      kind: 'failure',
+      code: 'write_failed',
+    })
+  })
+
+  it('keeps a succeed() result set while a null attempt is in flight', async () => {
+    const { result } = renderHook(() => useWriteFeedback())
+    const attempt = deferred<string | null>()
+
+    let runPromise!: Promise<void>
+    act(() => {
+      runPromise = result.current.run(() => attempt.promise)
+    })
+    act(() => {
+      result.current.succeed('landed during the flight')
+    })
+    expect(result.current.outcome).toEqual({
+      kind: 'success',
+      message: 'landed during the flight',
+    })
+
+    await act(async () => {
+      attempt.resolve(null)
+      await runPromise
+    })
+    expect(result.current.outcome).toEqual({
+      kind: 'success',
+      message: 'landed during the flight',
+    })
+  })
+
   it('captures a rejection as a failure and never rejects its own promise', async () => {
     const { result } = renderHook(() => useWriteFeedback())
 

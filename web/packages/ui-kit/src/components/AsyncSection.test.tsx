@@ -5,15 +5,20 @@
  * taking precedence over the empty decision, the empty placeholder
  * requiring its copy, the content callback receiving the narrowed
  * payload, and the placeholders' titles rendering at the passed heading
- * level (h2, the section-title level, by default).
+ * level (h2, the section-title level, by default). A settled branch may
+ * also carry the stale marker: the settled rendering -- the content, or
+ * the empty placeholder when the payload is empty -- keeps rendering
+ * while a warning alert with the retry action renders above it, so the
+ * marker appearing or withdrawing never remounts the settled node.
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { AsyncSection } from './AsyncSection.js'
 import type { AsyncSectionStaleState } from './AsyncSection.js'
+import { EmptyBoxIcon } from '../internal/icons.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { expectNoAxeViolations } from '../../test-utils/axe.js'
 
@@ -126,6 +131,42 @@ function StatefulStaleHost() {
         staleState={stale}
       >
         {() => <StatefulContent />}
+      </AsyncSection>
+    </div>
+  )
+}
+
+/** A settled EMPTY section whose host flips the stale marker on and off. */
+function EmptyPayloadStaleHost({
+  onRetry,
+}: {
+  readonly onRetry: () => void
+}) {
+  const [stale, setStale] = useState<AsyncSectionStaleState | undefined>(() =>
+    staleStateOf(onRetry),
+  )
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => {
+          setStale((current) =>
+            current === undefined ? staleStateOf(onRetry) : undefined,
+          )
+        }}
+      >
+        toggle stale
+      </button>
+      <AsyncSection
+        pending={false}
+        payload={[]}
+        empty
+        loading={<p>loading node</p>}
+        errorState={ERROR_STATE}
+        emptyState={EMPTY_STATE}
+        staleState={stale}
+      >
+        {(items) => <p>content {items.length}</p>}
       </AsyncSection>
     </div>
   )
@@ -525,6 +566,67 @@ describe('AsyncSection', () => {
     ).toBeTruthy()
     expect(alert).not.toContainElement(title)
     expect(screen.queryByText(/content/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the empty placeholder and its icon while the stale notice appears and withdraws', async () => {
+    const onRetry = vi.fn()
+    const view = renderWithProviders(
+      <EmptyPayloadStaleHost onRetry={onRetry} />,
+    )
+
+    const title = view.getByText(EMPTY_STATE.title)
+    const placeholder = title.parentElement
+    expect(placeholder).not.toBeNull()
+    expect(view.queryByText(/content/)).not.toBeInTheDocument()
+
+    // The placeholder carries the EMPTY variant's icon, not the error
+    // placeholder's: mutating the variant must fail here.
+    const icon = placeholder!.querySelector('svg')
+    expect(icon).not.toBeNull()
+    expect(icon!.outerHTML).toBe(
+      render(<EmptyBoxIcon />).container.innerHTML,
+    )
+
+    // The notice stands above the placeholder, as a sibling rather than a
+    // container around it.
+    const alert = view.getByRole('alert')
+    expect(alert).toHaveTextContent(STALE_DESCRIPTION)
+    expect(
+      alert.compareDocumentPosition(placeholder!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(alert).not.toContainElement(placeholder!)
+
+    // Withdrawing the marker unmounts the notice and leaves the same
+    // placeholder node -- and the same icon -- in place.
+    await userEvent.click(view.getByRole('button', { name: 'toggle stale' }))
+    expect(view.queryByRole('alert')).toBeNull()
+    const withdrawnTitle = view.getByText(EMPTY_STATE.title)
+    expect(withdrawnTitle.parentElement).toBe(placeholder)
+    expect(withdrawnTitle.parentElement!.querySelector('svg')!.outerHTML).toBe(
+      icon!.outerHTML,
+    )
+
+    // Re-supplying it mounts the notice anew; the placeholder is still the
+    // same node.
+    await userEvent.click(view.getByRole('button', { name: 'toggle stale' }))
+    expect(view.getByRole('alert')).toHaveTextContent(STALE_DESCRIPTION)
+    expect(view.getByText(EMPTY_STATE.title).parentElement).toBe(placeholder)
+  })
+
+  it('reports the stale retry from under the empty placeholder', async () => {
+    const onRetry = vi.fn()
+    const view = renderWithProviders(
+      <EmptyPayloadStaleHost onRetry={onRetry} />,
+    )
+    expect(view.getByText(EMPTY_STATE.title)).toBeInTheDocument()
+    const retry = view.getByRole('button', { name: STALE_RETRY_LABEL })
+    expect(view.getByRole('alert')).toContainElement(retry)
+    await userEvent.click(retry)
+    expect(onRetry).toHaveBeenCalledTimes(1)
+    // The marker is the host's state: clicking the retry does not
+    // dissolve it on its own.
+    expect(view.getByRole('alert')).toBeInTheDocument()
   })
 
   it('renders no stale notice while pending or in the error branch', () => {

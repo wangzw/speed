@@ -10,7 +10,7 @@ import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { renderWithProviders } from '../../test-utils/render.js'
-import { InlineSuccess } from './InlineSuccess.js'
+import { InlineSuccess, type InlineSuccessProps } from './InlineSuccess.js'
 
 /** A host holding the message, so changes re-render the banner in place. */
 function SuccessHost() {
@@ -83,6 +83,25 @@ describe('InlineSuccess', () => {
     expect(status).toHaveTextContent('')
     expect(status).not.toHaveStyle(CLIPPED)
     expect(status).toHaveStyle({ width: '100%' })
+  })
+
+  it('takes no styling prop, so a stringly-typed sx has no effect', () => {
+    // The type refuses `sx` by contract: spacing belongs to the region that
+    // renders this banner.
+    // @ts-expect-error InlineSuccess takes no sx
+    const typed: InlineSuccessProps = { message: 'Saved', sx: { marginTop: '37px' } }
+    expect(typed.message).toBe('Saved')
+
+    // A caller that bypasses the type (untyped JS, a spread from an unsafe
+    // cast) still gets no effect: the banner reads only `message`.
+    const untyped = {
+      message: 'Saved',
+      sx: { marginTop: '37px' },
+    } as unknown as InlineSuccessProps
+    const view = renderWithProviders(<InlineSuccess {...untyped} />)
+    const status = view.getByRole('status')
+    expect(status).not.toHaveStyle({ marginTop: '37px' })
+    expect(getComputedStyle(status).marginTop).not.toBe('37px')
   })
 
   it('fills and clears the same mounted region as the message changes', async () => {

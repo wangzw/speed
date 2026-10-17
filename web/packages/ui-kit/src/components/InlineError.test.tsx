@@ -83,4 +83,11 @@ describe('errorCodeOf', () => {
     expect(errorCodeOf({ code: 401 })).toBe('client.unknown')
     expect(errorCodeOf({})).toBe('client.unknown')
   })
+
+  it('collapse a callable carrying a code, because it is not an object', () => {
+    // `typeof` reports 'function' for a callable, so the object guard keeps
+    // it out of the ApiError branch even when a `code` was assigned to it.
+    const callable = Object.assign(() => {}, { code: 'tenant.future' })
+    expect(errorCodeOf(callable)).toBe('client.unknown')
+  })
 })

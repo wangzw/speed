@@ -235,6 +235,62 @@ describe('WriteFeedbackRegion', () => {
     )
   })
 
+  it('carries the default top margin on the root for an empty slot too', () => {
+    const empty = renderWithProviders(
+      <WriteFeedbackRegion outcome={null} resolve={resolve} />,
+    )
+    const emptyRoot = empty.container.firstElementChild
+    expect(emptyRoot).not.toBeNull()
+    expect(emptyRoot).toHaveStyle({ marginTop: '8px' })
+    const emptyMargin = getComputedStyle(emptyRoot!).marginTop
+    empty.unmount()
+
+    const success = renderWithProviders(
+      <WriteFeedbackRegion
+        outcome={{ kind: 'success', message: 'Saved' }}
+        resolve={resolve}
+      />,
+    )
+    // The gap is the region's, not a banner's: an empty slot gets the same
+    // one spacing unit a settled outcome gets.
+    expect(
+      getComputedStyle(success.container.firstElementChild!).marginTop,
+    ).toBe(emptyMargin)
+  })
+
+  it('applies an array sx to the root container', () => {
+    const view = renderWithProviders(
+      <WriteFeedbackRegion
+        outcome={null}
+        resolve={resolve}
+        sx={[{ marginTop: 2 }]}
+      />,
+    )
+    expect(view.container.firstElementChild).toHaveStyle({ marginTop: '16px' })
+  })
+
+  it('applies an array sx containing false to the root container', () => {
+    const view = renderWithProviders(
+      <WriteFeedbackRegion
+        outcome={null}
+        resolve={resolve}
+        sx={[false, { marginTop: 2 }]}
+      />,
+    )
+    expect(view.container.firstElementChild).toHaveStyle({ marginTop: '16px' })
+  })
+
+  it('applies a function sx to the root container', () => {
+    const view = renderWithProviders(
+      <WriteFeedbackRegion
+        outcome={null}
+        resolve={resolve}
+        sx={(theme) => ({ marginTop: theme.spacing(3) })}
+      />,
+    )
+    expect(view.container.firstElementChild).toHaveStyle({ marginTop: '24px' })
+  })
+
   it('applies the caller sx after the default root margin', () => {
     const view = renderWithProviders(
       <WriteFeedbackRegion
