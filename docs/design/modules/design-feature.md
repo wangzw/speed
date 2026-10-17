@@ -370,9 +370,9 @@ authn 的登录前事实不按租户取值：登录不认识租户（[authn-logi
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包 `pkg/feature`：`Spec`、`Board`、哨兵错误 | 未实现 | — |
-| 名字规则与可用集上的声明校验 | 未实现 | — |
-| 贴出窗口与封板 | 未实现 | — |
-| 按启用集与 `AllResources` 覆盖算出特性集 | 未实现 | — |
-| `GET /features`：网关可冒充登记、授权开放登记、`no-store` 应答 | 未实现 | — |
-| `Start` 的集合摘要日志 | 未实现 | — |
+| 根包 `pkg/feature`：`Spec`、`Board`、哨兵错误 | 已实现 | `pkg/feature/feature.go` `Spec`、`Board`、`ValidName`、哨兵 |
+| 名字规则与可用集上的声明校验 | 已实现 | `pkg/feature/feature.go` `ValidName`；`pkg/feature/board/board.go` `validate` |
+| 贴出窗口与封板 | 已实现 | `pkg/feature/board/board.go` `board.Post`、`board.open`、`board.seal` |
+| 按启用集与 `AllResources` 覆盖算出特性集 | 已实现 | `pkg/feature/board/board.go` `board.collect` |
+| `GET /features`：网关可冒充登记、授权开放登记、`no-store` 应答 | 已实现 | `pkg/feature/board/board.go` `board.wire`；`pkg/feature/board/handler.go` `board.serve` |
+| `Start` 的集合摘要日志 | 已实现 | `pkg/feature/board/board.go` `board.seal`；`pkg/feature/board/handler.go` `digestOf` |
