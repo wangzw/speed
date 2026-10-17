@@ -23,8 +23,15 @@
  * matchMedia.ts).
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
 import { afterEach } from 'vitest'
+
+// findBy*/waitFor default to a one-second async budget. The workspace
+// runs every package's suite concurrently; under that load a query a
+// case waits on can settle just after the default expires, failing the
+// case on the clock rather than on the behaviour it asserts. A wider
+// budget keeps the gate repeatable without loosening any assertion.
+configure({ asyncUtilTimeout: 5_000 })
 
 afterEach(() => {
   cleanup()

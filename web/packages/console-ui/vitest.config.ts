@@ -22,11 +22,12 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./test-utils/setup.ts'],
-    // This package's suites drive real user-event sequences, debounced
-    // search reads and MUI transitions; on a loaded CI host the 5s default
-    // fails on unrelated files. The budget is the wait, not the work: a
-    // genuine hang still fails, twenty seconds later.
-    testTimeout: 20000,
+    // The page cases drive userEvent through MUI menus, dialogs, debounced
+    // search reads and data tables; when the workspace's suites run
+    // concurrently (pnpm -r test) they exceed vitest's 5s default and fail on
+    // the clock rather than on an assertion. The budget is the wait, not the
+    // work: a genuine hang still fails, twenty seconds later.
+    testTimeout: 20_000,
     // Coverage: v8 over src/** only, so aliased sibling sources never
     // count toward this package's numbers; text-summary for local runs,
     // json-summary for the per-package coverage gate, whose floor is

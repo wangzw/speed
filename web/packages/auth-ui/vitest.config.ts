@@ -22,6 +22,12 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./test-utils/setup.ts'],
+    // The journey cases drive userEvent through the whole sign-in flow
+    // over a real client; when the workspace's suites run concurrently
+    // (`pnpm -r test`) they exceed vitest's 5s default and fail on the
+    // clock rather than on an assertion. The larger budget keeps the gate
+    // repeatable.
+    testTimeout: 20_000,
     // Coverage: v8 over src/** only, so aliased sibling sources never
     // count toward this package's numbers; text-summary for local runs,
     // json-summary for the per-package coverage gate, whose floor is
