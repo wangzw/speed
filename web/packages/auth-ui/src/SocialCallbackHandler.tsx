@@ -22,14 +22,22 @@
  * flow (which settled), so it never flips the handler to the failed state
  * -- whose retry would read a flow that is already gone -- and never
  * escapes as an unhandled rejection.
+ *
+ * The optional `absent` slot answers a deployment with no callback landing
+ * point: when the handler finds no flow (or a re-entry) and the discovery
+ * document offers neither a `redirect` nor an `enterprise` method, nothing
+ * can return to this route, so the host's "no such page" renders instead
+ * of a flow-not-found banner. The discovery document is read only when
+ * `absent` is supplied.
  */
 
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
-import type { AuthSession } from '@speed/auth-core'
+import type { AuthSession, AuthnMethodList } from '@speed/auth-core'
 import { errorCodeOf } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
@@ -43,6 +51,24 @@ export interface SocialCallbackHandlerProps {
    * finds the session already authenticated (the re-entry case where no
    * read is started); the host navigates. */
   readonly onSignedIn?: () => void
+  /**
+   * Rendered when this deployment offers neither a `redirect` nor an
+   * `enterprise` method, so nothing ever returns to this route: an invitee
+   * who hand-types the URL gets the host's "no such page" instead of a
+   * flow-not-found banner. When supplied, the handler reads
+   * `session.listMethods()` in that case (and only in that case) to decide;
+   * without it the handler behaves exactly as before and reads no
+   * discovery document.
+   */
+  readonly absent?: ReactNode
+}
+
+/** Whether the deployment offers a method whose round trip can return to
+ * this callback route. */
+function offersCallbackReturn(doc: AuthnMethodList): boolean {
+  return doc.methods.some(
+    (method) => method.kind === 'redirect' || method.kind === 'enterprise',
+  )
 }
 
 /** The code a read that finds no flow renders (the binding is gone, or
@@ -52,10 +78,12 @@ const NO_FLOW = 'authn.flow_invalid'
 export function SocialCallbackHandler({
   session,
   onSignedIn,
+  absent,
 }: SocialCallbackHandlerProps) {
   const { t } = useAuthUiTranslation()
   const [errorCode, setErrorCode] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
+  const [absentShown, setAbsentShown] = useState(false)
   const [attempt, setAttempt] = useState(0)
 
   const driver = useFlowDriver(session, {
@@ -108,8 +136,22 @@ export function SocialCallbackHandler({
     void (async () => {
       // A mount that finds the session already authenticated is a re-entry
       // to the callback route after a completed login: start no read and
-      // fire onSignedIn again.
+      // fire onSignedIn again. With an absent slot, first settle whether
+      // the deployment offers any method that could have returned here; a
+      // discovery read that fails keeps the old answer (fire onSignedIn).
       if (session.getSnapshot().state === 'authenticated') {
+        if (absent !== undefined) {
+          let offers: boolean | null = null
+          try {
+            offers = offersCallbackReturn(await session.listMethods())
+          } catch {
+            offers = null
+          }
+          if (offers === false) {
+            setAbsentShown(true)
+            return
+          }
+        }
         try {
           onSignedIn?.()
         } catch {
@@ -126,18 +168,40 @@ export function SocialCallbackHandler({
         return
       }
       if (reply === null) {
+        // No flow to resume. A host-provided absent view turns this into a
+        // question about the deployment: when neither a redirect nor an
+        // enterprise method exists, nothing returns to this route and the
+        // host's 404 answers. A deployment that does offer one keeps the
+        // failure banner (and a discovery read that fails cannot settle it,
+        // so the banner stays).
+        if (absent !== undefined) {
+          let offers: boolean | null = null
+          try {
+            offers = offersCallbackReturn(await session.listMethods())
+          } catch {
+            offers = null
+          }
+          if (offers === false) {
+            setAbsentShown(true)
+            return
+          }
+        }
         setErrorCode(NO_FLOW)
         setFailed(true)
         return
       }
       await driverRef.current.absorb(reply)
     })()
-  }, [attempt, session, onSignedIn])
+  }, [absent, attempt, session, onSignedIn])
 
   const retry = (): void => {
     setErrorCode(null)
     setFailed(false)
     setAttempt((value) => value + 1)
+  }
+
+  if (absentShown && absent !== undefined) {
+    return <>{absent}</>
   }
 
   if (failed) {

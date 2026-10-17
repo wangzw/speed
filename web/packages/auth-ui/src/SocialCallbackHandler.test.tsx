@@ -7,7 +7,11 @@
  * retry button that reads once more, and a read that fails transiently
  * renders its code text the same way. A mount that finds the session
  * already authenticated starts no read and fires onSignedIn again -- the
- * re-entry to the callback route after a completed login. The en-US bundle
+ * re-entry to the callback route after a completed login. The optional
+ * absent slot reads the discovery document only when the flow read finds
+ * nothing (or on a re-entry): without a redirect or enterprise method the
+ * host's 404 renders, and every other outcome (a method, a failed discovery
+ * read, no absent slot) keeps the banner and reads nothing. The en-US bundle
  * renders on an English-starting instance and the pending tree passes axe.
  * Text expectations read the bundle values, never inline language.
  */
@@ -22,11 +26,13 @@ import { renderWithProviders } from '../test-utils/render.js'
 import {
   LOGIN_ANSWER,
   LOGIN_CURRENT,
+  LOGIN_METHODS,
   PROFILE_GET,
   apiError,
   authenticatedCompletion,
   completeFlow,
   makeHarness,
+  methodList,
   openFlow,
   principal,
 } from '@speed/test-utils/session-harness'
@@ -317,6 +323,127 @@ describe('SocialCallbackHandler', () => {
     expect(
       harness.calls.filter((call) => call.path === '/auth/flows/current'),
     ).toHaveLength(1)
+  })
+
+  it('render the host absent view when no flow is bound and the deployment offers no callback method', async () => {
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => {
+        throw apiError(401, 'authn.flow_invalid')
+      },
+      [LOGIN_METHODS]: () => methodList(['password']),
+    })
+    renderWithProviders(
+      <SocialCallbackHandler
+        session={harness.session}
+        absent={<p>No such page</p>}
+      />,
+    )
+
+    // Nothing can return to this route: the discovery document offers no
+    // redirect or enterprise method, so the host's 404 answers instead of a
+    // flow-not-found banner.
+    expect(await screen.findByText('No such page')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(
+      harness.calls.some((call) => call.path === '/auth/methods'),
+    ).toBe(true)
+  })
+
+  it('keep the flow-not-found banner when the deployment does offer a callback method', async () => {
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => {
+        throw apiError(401, 'authn.flow_invalid')
+      },
+      [LOGIN_METHODS]: () =>
+        methodList([{ name: 'google', kind: 'redirect' }]),
+    })
+    renderWithProviders(
+      <SocialCallbackHandler
+        session={harness.session}
+        absent={<p>No such page</p>}
+      />,
+    )
+
+    // A method exists that could have returned here, so the empty read is a
+    // real flow-not-found: the retry banner stays, and the absent view does
+    // not take over.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.flow_invalid,
+    )
+    expect(
+      screen.getByRole('button', { name: zhCN.socialCallback.retry }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('No such page')).not.toBeInTheDocument()
+  })
+
+  it('keep the flow-not-found banner when the discovery read fails', async () => {
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => {
+        throw apiError(401, 'authn.flow_invalid')
+      },
+      [LOGIN_METHODS]: () => {
+        throw apiError(503, 'authn.unavailable')
+      },
+    })
+    renderWithProviders(
+      <SocialCallbackHandler
+        session={harness.session}
+        absent={<p>No such page</p>}
+      />,
+    )
+
+    // An unreadable discovery document cannot settle "this deployment has no
+    // callback": the failure banner (with its retry) is the honest answer.
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(screen.queryByText('No such page')).not.toBeInTheDocument()
+  })
+
+  it('render the host absent view on an authenticated re-entry when no method returns here', async () => {
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => completeFlow(1),
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+      [PROFILE_GET]: () => principal(),
+      [LOGIN_METHODS]: () => methodList(['password']),
+    })
+    const onSignedIn = vi.fn()
+    const first = renderWithProviders(
+      <SocialCallbackHandler session={harness.session} onSignedIn={onSignedIn} />,
+    )
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
+    first.unmount()
+
+    // The re-entry reads the discovery document (the session is already
+    // authenticated): with no callback method, the host's 404 answers and the
+    // one-shot onSignedIn does not fire for a route nothing can land on.
+    renderWithProviders(
+      <SocialCallbackHandler
+        session={harness.session}
+        onSignedIn={onSignedIn}
+        absent={<p>No such page</p>}
+      />,
+    )
+    expect(await screen.findByText('No such page')).toBeInTheDocument()
+    expect(onSignedIn).toHaveBeenCalledTimes(1)
+  })
+
+  it('read no discovery document when the host passes no absent view', async () => {
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => {
+        throw apiError(401, 'authn.flow_invalid')
+      },
+    })
+    renderWithProviders(<SocialCallbackHandler session={harness.session} />)
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        zhCN.errors.authn.flow_invalid,
+      ),
+    )
+    // Behaviour is unchanged for a host without an absent slot: the handler
+    // never reads the discovery document.
+    expect(
+      harness.calls.some((call) => call.path === '/auth/methods'),
+    ).toBe(false)
   })
 
   it('treat a superseded completion as the lost race it is: no failed state, no onSignedIn', async () => {
