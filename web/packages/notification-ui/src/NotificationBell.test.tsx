@@ -15,6 +15,7 @@ import {
   makeRealClientRigWithoutSession,
   type RealResponder,
 } from '../test-utils/real-client.js'
+import { emittedStyleText } from '@speed/test-utils/emitted-css'
 import { renderWithProviders } from '../test-utils/render.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { NotificationBell } from './NotificationBell.js'
@@ -59,5 +60,20 @@ describe('NotificationBell', () => {
         screen.getByRole('button', { name: zhCN.bell.label }),
       ).toBeInTheDocument(),
     )
+  })
+
+  it('raises the bell to the 44px touch-target floor under a coarse pointer', async () => {
+    // The bell is an icon-only button; on a finger-driven device it gates
+    // up to the 44x44 floor (the layout design's pointer rule, through
+    // @speed/ui-kit's touchTargetSx). jsdom evaluates no media condition,
+    // so this proves the gated declaration was wired in.
+    const respond: RealResponder = () => jsonResponse(200, { unread: 0 })
+    const rig = makeRealClientRigWithoutSession(respond)
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationBell onClick={() => undefined} />)
+    await screen.findByRole('button', { name: zhCN.bell.label })
+    const css = emittedStyleText()
+    expect(css).toContain('@media (pointer: coarse)')
+    expect(css).toMatch(/@media \(pointer: coarse\)\{[^}]*min-height:44px/)
   })
 })

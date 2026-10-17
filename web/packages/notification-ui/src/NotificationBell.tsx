@@ -17,6 +17,7 @@
 
 import Badge from '@mui/material/Badge'
 import IconButton from '@mui/material/IconButton'
+import { touchTargetSx } from '@speed/ui-kit'
 import { useNotificationUnreadCount } from './internal/queries.js'
 import { useNotificationUiTranslation } from './internal/translation.js'
 
@@ -37,7 +38,12 @@ export function NotificationBell({ onClick }: NotificationBellProps) {
   const label =
     count > 0 ? t('bell.labelWithCount', { n: count }) : t('bell.label')
   return (
-    <IconButton color="inherit" aria-label={label} onClick={onClick}>
+    <IconButton
+      color="inherit"
+      aria-label={label}
+      onClick={onClick}
+      sx={touchTargetSx}
+    >
       <Badge
         color="error"
         max={BADGE_MAX}
