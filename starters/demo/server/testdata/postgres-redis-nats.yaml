@@ -25,14 +25,18 @@ http:
   endpoints:
     api:
       listener: backend
+      prefixes: ["/api"]
     account:
       listener: backend
+      prefixes: ["/auth", "/features"]
     admin:
       listener: backend
+      prefixes: ["/audit", "/authz", "/settings", "/sms", "/tenant"]
     ops:
       listener: ops
     web:
       listener: backend
+      prefixes: ["/"]
   # The CORS layer guards the api endpoint. This stack serves the frontend
   # bundle from the same listener as the API, so a browser reaching the API from
   # the page needs no CORS headers and this policy is not exercised here. It is

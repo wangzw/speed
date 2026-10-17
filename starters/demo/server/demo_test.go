@@ -135,14 +135,18 @@ const demoConfig = `http:
   endpoints:
     api:
       listener: backend
+      prefixes: ["/api"]
     account:
       listener: backend
+      prefixes: ["/auth", "/features"]
     admin:
       listener: backend
+      prefixes: ["/audit", "/authz", "/settings", "/sms", "/tenant"]
     ops:
       listener: ops
     web:
       listener: backend
+      prefixes: ["/"]
   cors:
     endpoints:
       api:
