@@ -160,18 +160,14 @@ describe('ConsoleShell', () => {
       throw new Error(`unexpected ${call.method} ${call.path}`)
     })
     renderWithProviders(
-      <ConsoleShell
-        routes={routes}
-        title="Console"
-        accountHref="/host/security"
-      >
+      <Shell routes={routes} title="Console" accountHref="/host/security">
         <StepUpChallenge
           open
           session={createStepUpSession()}
           onSuccess={() => undefined}
           onCancel={() => undefined}
         />
-      </ConsoleShell>,
+      </Shell>,
       { operations },
     )
     expect(
