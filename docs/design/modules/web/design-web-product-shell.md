@@ -32,6 +32,7 @@ export interface ProductShellProps {
   readonly header?: ReactNode
   readonly headerActions?: ReactNode
   readonly userMenu?: ReactNode
+  readonly banner?: ReactNode
   readonly mobileOpen?: boolean
   readonly onMobileOpenChange?: (open: boolean) => void
   readonly sidebarCollapsed?: boolean
@@ -47,7 +48,7 @@ export interface ProductShellProps {
 export function ProductShell(props: ProductShellProps): ReactElement
 ```
 
-- **框架 prop 原样透传。** `navItems`、`header`、`headerActions`、`userMenu`、抽屉控制（移动开合 `mobileOpen`/`onMobileOpenChange` 与桌面收起 `sidebarCollapsed`/`onSidebarCollapsedChange`）与 `sx` 被拾起后逐字转给 `AppShell`；本包不重解释、不重排序、不做路径匹配。加一个框架 prop 意味着加进那个 `Pick<AppShellProps, ...>`，而不是另建一套解释。
+- **框架 prop 原样透传。** `navItems`、`header`、`headerActions`、`userMenu`、`banner`、抽屉控制（移动开合 `mobileOpen`/`onMobileOpenChange` 与桌面收起 `sidebarCollapsed`/`onSidebarCollapsedChange`）与 `sx` 被拾起后逐字转给 `AppShell`；本包不重解释、不重排序、不做路径匹配。加一个框架 prop 意味着加进那个 `Pick<AppShellProps, ...>`，而不是另建一套解释。
 - **`signIn` 缺席时未登录分支什么都不渲染。** 缺省结束屏的「再次登录」动作需要这个视图存在：它把访问者送回登录分支，而视图机拒绝复位到一个什么都不渲染的分支，故没有 `signIn` 槽的宿主其会话中途结束时停在结束屏。
 - **`sessionEnded` 缺席时渲染 `auth-ui` 的 `SessionEndedScreen`**，并把它的「再次登录」动作接成返回登录分支。给出 `sessionEnded` 节点时原样渲染，视图机状态一并交给该节点，由它自持返回应用的出路。
 - **`children` 只在快照为已认证时渲染进框架的 `main` 地标内。**
@@ -227,5 +228,6 @@ stateDiagram-v2
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | `ProductShell` 三支视图机 | 已实现 | `web/packages/product-shell/src/components/ProductShell.tsx` `ProductShell`、`ProductShellProps` |
+| `banner` 槽的透传 | 未实现 | — |
 | 应用入口装配 `bootstrapSpeedApp` 与定义类型 | 已实现 | `web/packages/product-shell/src/bootstrap.tsx` `bootstrapSpeedApp`、`SpeedAppDefinition`、`SpeedAppServices`、`watchSessionEnd`、`createQueryClient` |
 | 双语命名空间资源 | 已实现 | `web/packages/product-shell/src/resources.ts` `PRODUCT_SHELL_NAMESPACE`、`productShellResources` |

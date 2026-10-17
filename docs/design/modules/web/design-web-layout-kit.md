@@ -49,6 +49,7 @@ export interface AppShellProps {
   readonly header?: ReactNode
   readonly headerActions?: ReactNode
   readonly userMenu?: ReactNode
+  readonly banner?: ReactNode                       // 应用栏之上的整幅横幅，宿主内容，已翻译；缺席或为空不占空间
   readonly navLabel?: string                        // 导航地标（与临时抽屉）的可及名，缺省 appShell.navLabel
   readonly children: ReactNode
   readonly mobileOpen?: boolean                    // 与下一项成对，控制态
@@ -63,6 +64,7 @@ export function AppShell(props: AppShellProps): ReactElement
 ```
 
 - **导航项与分组是同一入口的两种元素，拓宽是纯附加的。** `navItems` 的元素类型由 `AppShellNavItem` 拓宽为 `AppShellNavItem | AppShellNavGroup`（`AppShellNavEntry`）。这是一处纯附加：`AppShellNavItem[]` 仍可赋值给这个联合数组，未使用分组的宿主逐字节不变。分组渲染为一个带标题的可折叠区：标题本身即展开控件（`aria-expanded` 与其目标 `aria-controls`），组内是普通导航项。带 `children` 的项渲染为一个可展开的父项，其子项缩进渲染，各是真实链接或按钮；父项自身不再是一条导航行（其 `href`/`onClick`/`selected` 不渲染，路由在子项里）。分组与嵌套都复用同一套叶子激活（先 `onClick`、再 `onNavigate`）与 `selected`/`aria-current` 约定。折叠态的组或父项把其子项以 `hidden` 留在 DOM 里，故无障碍树与角色查询在收起时都取不到它们。分组标题可带一个可选图标（`AppShellNavGroup.icon`，纯附加的可选字段）：收起为窄栏时，带图标的标题按图标行呈现，标题文本裁剪但仍作可及名并由提示补足；无图标的标题保留截断的文本，与无图标条目同一回落。
+- **`banner` 是应用栏之上的持久整幅槽，纯附加的可选字段。** 它渲染在应用栏之上、占流内高度，应用栏、导航抽屉与内容整体随之下移，不与它们重叠；任一断点都不隐藏它，宿主节点在窄屏下自行换行。槽属于 `AppShell` 自身，不属于 `children`，因此路由切换时它不卸载、不重挂。槽不加地标也不加 `aria-live`：宿主节点自带它需要的角色与播报，`AppShell` 的地标结构不变。`banner` 缺席、为 `null` 或 `false` 时不渲染任何容器、不占高度，未使用它的宿主逐字节不变。模态的侧边面板与对话框叠在它之上，它不抢焦点。
 
 ### Avatar
 
@@ -213,6 +215,7 @@ classDiagram
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | `AppShell`（响应式头部、导航抽屉、内容区与地标） | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`、`AppShellProps`、`AppShellNavItem` |
+| `AppShell` 的 `banner` 槽（应用栏之上的持久整幅横幅） | 未实现 | — |
 | 桌面侧边栏收起（受控 prop 对，收为仅图标的窄栏） | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `sidebarCollapsed`、`onSidebarCollapsedChange`、`railIconItemSx`／`railTextItemSx`、`RailTooltip` |
 | 身份块 Avatar | 已实现 | `web/packages/layout-kit/src/components/Avatar.tsx` `Avatar`、`AvatarProps` |
 | `RouteGuard`（按注入状态放行的三态门） | 已实现 | `web/packages/layout-kit/src/components/RouteGuard.tsx` `RouteGuard`、`RouteGuardProps`、`RouteGuardStatus` |

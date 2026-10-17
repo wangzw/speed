@@ -32,7 +32,7 @@
 | [tokens](design-web-tokens.md) | 已实现 |
 | [i18n](design-web-i18n.md) | 已实现 |
 | [ui-kit](design-web-ui-kit.md) | 部分实现 |
-| [layout-kit](design-web-layout-kit.md) | 已实现 |
+| [layout-kit](design-web-layout-kit.md) | 部分实现 |
 | [api-client](design-web-api-client.md) | 部分实现 |
 | [api-sdk](design-web-api-sdk.md) | 部分实现 |
 | [route-kit](design-web-route-kit.md) | 部分实现 |
@@ -40,7 +40,7 @@
 | [auth-ui](design-web-auth-ui.md) | 部分实现 |
 | [account-ui](design-web-account-ui.md) | 部分实现 |
 | [tenancy-ui](design-web-tenancy-ui.md) | 部分实现 |
-| [product-shell](design-web-product-shell.md) | 已实现 |
+| [product-shell](design-web-product-shell.md) | 部分实现 |
 | [console-ui](design-web-console-ui.md) | 部分实现 |
 | [objectstore-ui](design-web-objectstore-ui.md) | 部分实现 |
 | [notification-ui](design-web-notification-ui.md) | 部分实现 |
