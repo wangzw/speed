@@ -853,6 +853,11 @@ export interface AuthzAdminRoleWrite {
   description_key: string;
 }
 
+export interface FeatureBoardDocument {
+  /** The feature names this process serves, ascending and without repetition. Each name answers whether a frontend surface the caller's build carries is served here; the response carries no configuration value, method descriptor or rendering description. */
+  features: string[];
+}
+
 /**
  * @nullable
  */
@@ -7967,6 +7972,76 @@ export const useAuthzAdminGrantsPut = <TError = Problem,
       > => {
       return useMutation(getAuthzAdminGrantsPutMutationOptions(options));
     }
+
+/**
+ * The feature names this process serves, ascending and without repetition. The set is decided by the assembly at start and is the same for every caller; it is not filtered by permission or tenant. Its content may differ between callers and tenants (a tenant-level narrowing is a future addition), so a response must not be cached across sessions.
+ * @summary Read the feature document this process serves
+ */
+export const featureBoardList = (
+
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<FeatureBoardDocument>(
+      {url: `/features`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getFeatureBoardListQueryKey = () => {
+    return [
+    `/features`
+    ] as const;
+    }
+
+
+export const getFeatureBoardListQueryOptions = <TData = Awaited<ReturnType<typeof featureBoardList>>, TError = Problem>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof featureBoardList>>, TError, TData>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getFeatureBoardListQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof featureBoardList>>> = ({ signal }) => featureBoardList(signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof featureBoardList>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type FeatureBoardListQueryResult = NonNullable<Awaited<ReturnType<typeof featureBoardList>>>
+export type FeatureBoardListQueryError = Problem
+
+
+/**
+ * @summary Read the feature document this process serves
+ */
+
+export function useFeatureBoardList<TData = Awaited<ReturnType<typeof featureBoardList>>, TError = Problem>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof featureBoardList>>, TError, TData>, }
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getFeatureBoardListQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 /**
  * @summary The process is alive

@@ -213,7 +213,8 @@ constructs no module, so the configuration it reads is never connected to:
 
 ```
 go -C starters/demo/server run . --config file:testdata/sqlite-memory.yaml \
-    sqlite-memory gen --title demo-api --version 1.2.3 -o /tmp/openapi.json
+    sqlite-memory gen --title demo-api --version 1.2.3 -o /tmp/openapi.json \
+    --features /tmp/features.json
 ```
 
 The `serve` command's configuration is the sample under `server/testdata/`. The
@@ -316,6 +317,14 @@ under `server/testdata/` names them:
 - The platform's management surfaces mount on `admin`: the roster
   (`tenant.admin`), the authorization catalog (`authz.admin`), the settings
   surface (`settings.admin`) and the journal's query routes (`audit.admin`).
+- The feature document (`feature.board`) mounts `GET /features` on the endpoint
+  `feature.board.endpoint` names — `account` in every `testdata/` file, which
+  the gateway guards, which resolves no tenant, and whose listener claims
+  `/features`. It publishes only to authenticated callers: a process with no
+  authentication gateway fails to start rather than expose the document, and an
+  anonymous request receives the gateway's own 401. The document names what this
+  process serves, so `sms.admin` — imported for the contract, run by no
+  command — is absent from it.
 - The notification surface (`notification.inbox`, `notification.stream`,
   `notification.preferences`) mounts on `api`. The capability declares no
   permission point of its own, so its routes carry no gate and the authorization
@@ -458,9 +467,13 @@ Under every stack:
 - **`gen`** merges the OpenAPI fragments the modules declare into one document
   and writes it out, either to the file `-o` names or to standard output; the
   document's title and version come from `--title` and `--version`, defaulting to
-  the program's name and version. It drives to `StagePrepare`, so it binds no
-  port and constructs no module: it reads the same static declarations the
-  operations endpoint serves, through the same pure function (`pkg/ops/openapi`).
+  the program's name and version. With `--features PATH` it also writes the
+  feature vocabulary — every `feature.Spec` the binary's imports reach, sorted by
+  name, each with its name, declaring module and whether it is conditional — as
+  `contracts/features.json`. It drives to `StagePrepare`, so it binds no port and
+  constructs no module: it reads the same static declarations the operations
+  endpoint serves, through the same pure function (`pkg/ops/openapi`), and the
+  vocabulary from the same declaring set.
 - The **command groups** are where a product's one-shot operations hang. The
   skeleton ships one placeholder group (`example`) with two leaves, one that
   stops at `Init` (a read) and one that goes to `Start` (a write); a product

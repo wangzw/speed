@@ -42,14 +42,18 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
 	"os/signal"
+	"sort"
 	"syscall"
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/feature"
+	featureboard "github.com/vislake/speed/pkg/feature/board"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/ops"
@@ -319,6 +323,15 @@ var (
 		i18nhttp.ModuleName,
 		i18naccount.ModuleName,
 
+		// The feature document. The frontend reads it to find out which of the
+		// surfaces it carries code for this process serves, so a run that serves
+		// the frontend names this module. It mounts GET /features on the endpoint
+		// feature.board.endpoint names — the configuration under testdata/ names
+		// the account endpoint, which the gateway guards and the listener claims
+		// for /features. The module also needs the authentication gateway: it
+		// fails the start rather than publish the document to anonymous callers.
+		featureboard.ModuleName,
+
 		// Jobs, notifications, the object store and the outbox relay. All four
 		// notification modules are named: the inbox, the live stream, the
 		// preference matrix and the outbound delivery pipeline. Each of them
@@ -512,10 +525,11 @@ func addStack(root *config.Command, s stack) {
 	seed.Do(core.StageStart, seedDatabase)
 
 	// gen merges the fragments the modules declare into one document and writes
-	// it out. It drives to StagePrepare, so it binds no port and constructs no
-	// module; it reaches every fragment through the declarations the stack node
-	// carries. Its own flags reach its command line through the module named
-	// here.
+	// it out, and with --features writes the available set's feature
+	// declarations to a file beside it. It drives to StagePrepare, so it binds
+	// no port and constructs no module; it reaches every fragment and every
+	// declaration through the static inclusions the stack node carries. Its own
+	// flags reach its command line through the module named here.
 	gen := node.Sub(genCommand)
 	gen.Include(genModuleName)
 	gen.Do(core.StagePrepare, genDocument)
@@ -575,6 +589,9 @@ type genInput struct {
 	// Output is the file the merged document is written to. Empty writes it to
 	// standard output.
 	Output string `config:"output"`
+	// Features is the file the feature vocabulary is written to. Empty writes
+	// no vocabulary.
+	Features string `config:"features"`
 	// Title is the document's info.title. Empty takes the program's own name.
 	Title string `config:"title"`
 	// Version is the document's info.version. Empty takes the program's version.
@@ -598,6 +615,9 @@ func genSchema() config.Schema {
 		Items: map[string]config.Item{
 			"output": flag("output", "o", "PATH",
 				"write the merged OpenAPI document to this file; with none it goes to standard output"),
+			"features": flag("features", "", "PATH",
+				"write the feature vocabulary to this file: every feature.Spec in the available set, "+
+					"sorted by name, each with its name, declaring module and whether it is conditional"),
 			"title": flag("title", "", "TITLE",
 				"the document's info.title; the program's own name by default"),
 			"version": flag("version", "", "VERSION",
@@ -619,14 +639,19 @@ func genModule() core.Module {
 }
 
 // genDocument merges every declared OpenAPI fragment into one document and
-// writes it to the file the command line names, or to standard output.
+// writes it to the file the command line names, or to standard output. When
+// --features names a file, it also writes the available set's feature
+// declarations there, sorted by name.
 //
 // It reads the declaring set — the fragments of every module reached at
 // declaration level, which IncludeAllDeclarations on the stack node makes the
 // whole binary's — through the same pure function the operations module serves
 // /openapi.json with, so a build writes into an artifact the document a running
-// process serves. It constructs no module: the merge reads static declarations,
-// and driving to StagePrepare reaches nothing past the stances.
+// process serves. The feature vocabulary comes from the same declaring set: the
+// feature.Spec resources the binary's imports reach, whether or not a command
+// names the declaring module for a run. It constructs no module: both reads are
+// static declarations, and driving to StagePrepare reaches nothing past the
+// stances.
 func genDocument(_ context.Context, reg *core.Registry) error {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -648,12 +673,59 @@ func genDocument(_ context.Context, reg *core.Registry) error {
 		return err
 	}
 	if in.Output == "" {
-		_, err = os.Stdout.Write(document)
+		if _, err = os.Stdout.Write(document); err != nil {
+			return err
+		}
+	} else {
+		// The artifact is written owner-only: it is a build product a consumer
+		// reads, and nothing about it needs to be world-readable.
+		if err = os.WriteFile(in.Output, document, 0o600); err != nil {
+			return err
+		}
+	}
+	if in.Features == "" {
+		return nil
+	}
+	vocabulary, err := featureVocabulary(reg)
+	if err != nil {
 		return err
 	}
-	// The artifact is written owner-only: it is a build product a consumer
-	// reads, and nothing about it needs to be world-readable.
-	return os.WriteFile(in.Output, document, 0o600)
+	return os.WriteFile(in.Features, vocabulary, 0o600)
+}
+
+// featureEntry is one declaration in the feature vocabulary: the name, the
+// module that declared it, and whether the module has to post it for it to be
+// present in a run.
+type featureEntry struct {
+	Name        string `json:"name"`
+	Module      string `json:"module"`
+	Conditional bool   `json:"conditional"`
+}
+
+// featureVocabulary serializes the available set's feature declarations, sorted
+// by name. The available set is what the binary's imports reach, the same scope
+// the merged document covers, so the vocabulary lists a feature of a module no
+// command names for a run as well — the frontend's feature-name type is
+// generated from it, and a name has to be known before it can be checked
+// against a document that may or may not contain it.
+func featureVocabulary(reg *core.Registry) ([]byte, error) {
+	declarations := core.Resources[feature.Spec](reg)
+	entries := make([]featureEntry, 0, len(declarations))
+	for _, declaration := range declarations {
+		entries = append(entries, featureEntry{
+			Name:        declaration.Value.Name,
+			Module:      declaration.Module,
+			Conditional: declaration.Value.Conditional,
+		})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+	body, err := json.Marshal(struct {
+		Features []featureEntry `json:"features"`
+	}{Features: entries})
+	if err != nil {
+		return nil, fmt.Errorf("%s: encoding the feature vocabulary: %w", genModuleName, err)
+	}
+	return body, nil
 }
 
 // cliCommand is one leaf of a command group: the word, how far it drives the

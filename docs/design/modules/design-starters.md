@@ -319,12 +319,13 @@ flowchart TD
 | 平台基线（`serve`/`worker` 的点名集与配置样例） | 部分实现 | `starters/demo/server/main.go` `baselineServe`、`baselineWorker`；`starters/demo/server/testdata/` |
 | 通知面的宿主侧授权 | 已实现 | `starters/demo/server/notification.go` `notificationModule`、`notificationRoutes`；纳入见 `starters/demo/server/main.go` `baselineServe` |
 | `seed` 命令 | 已实现 | `starters/demo/server/seed.go` `seedModule`、`seedSchema`、`seedDatabase`、`seedTenant`、`seedAdministration`、`seedBinding`；命令见 `starters/demo/server/main.go` `addStack` |
-| `gen` 命令 | 部分实现 | `starters/demo/server/main.go` `genModule`、`genDocument` |
-| 已提交的 `contracts/features.json` 的新鲜度测试 | 未实现 | — |
+| `gen` 命令 | 已实现 | `starters/demo/server/main.go` `genModule`、`genDocument`、`featureVocabulary` |
+| 已提交的 `contracts/features.json` 的新鲜度测试 | 已实现 | `starters/demo/server/feature_test.go` `TestCommittedFeatureVocabulary` |
+| 基线 `serve` 的特性文档端到端（逐项等于基线集合、匿名 401） | 已实现 | `starters/demo/server/feature_test.go` `TestServePublishesTheFeatureDocument` |
 | 前端产物的内嵌与托管（合一拓扑的 Go 侧） | 已实现 | `starters/demo/server/main.go` `webBundle`（`//go:embed dist`）、`webuiModuleName` |
 | 前端应用本身（`web/` 的源码与构建） | 部分实现 | `starters/demo/web/src/main.tsx` `bootstrapDemoApp`、`starters/demo/web/src/app.tsx` `DemoApp`、`starters/demo/web/src/routes.tsx` `routes`、`starters/demo/web/src/runtime-config.ts` `loadRuntimeConfig`；构建见 `starters/demo/web/vite.config.ts` |
 | 应用自己的第二级契约生成 | 已实现 | `starters/demo/web/orval.config.ts` `appApi`、`starters/demo/web/package.json` `api:gen`；产物 `starters/demo/web/src/app-api/index.ts`、接缝 `starters/demo/web/src/app-api/runtime.ts` |
-| `api:gen` 一并写出 `contracts/features.json` 并调用特性名生成器 | 未实现 | — |
+| `api:gen` 一并写出 `contracts/features.json` 并调用特性名生成器 | 已实现 | `starters/demo/web/package.json` `api:gen`；`web/scripts/feature-names.mjs` |
 | 前端页面声明的 `requires` 与名字成员断言 | 未实现 | — |
 | 前端的组合次序：区域按路径前缀、先存在性后权限、权限码按精确命中 | 未实现 | — |
 | 租户框架 `TenantFrame` 与回调落点的 `absent` 视图 | 未实现 | — |

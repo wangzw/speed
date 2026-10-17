@@ -218,6 +218,9 @@ ratelimit:
 settings:
   admin:
     endpoints: [admin]
+feature:
+  board:
+    endpoint: account
 notification:
   inbox:
     endpoints: [api]

@@ -379,5 +379,5 @@ authn 的登录前事实不按租户取值：登录不认识租户（[authn-logi
 | 按启用集与 `AllResources` 覆盖算出特性集 | 已实现 | `pkg/feature/board/board.go` `board.collect` |
 | `GET /features`：网关可冒充登记、授权开放登记、`no-store` 应答 | 已实现 | `pkg/feature/board/board.go` `board.wire`；`pkg/feature/board/handler.go` `board.serve` |
 | `Start` 的集合摘要日志 | 已实现 | `pkg/feature/board/board.go` `board.seal`；`pkg/feature/board/handler.go` `digestOf` |
-| `/features` 落在点名的端的认领之内的启动期核对 | 未实现 | — |
-| 本模块不运行时 `/features` 由所在端的链作答 | 未实现 | — |
+| `/features` 落在点名的端的认领之内的启动期核对 | 已实现 | `pkg/http` 的 `Serve` 按配置的认领选端，路由落在认领之外即以 `speedhttp.ErrUnclaimedRoute` 失败 |
+| 本模块不运行时 `/features` 由所在端的链作答 | 已实现 | `pkg/http` 的分派 handler 按配置的认领选端，不看本次装配的路由 |

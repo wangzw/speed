@@ -153,6 +153,15 @@ settings:
   admin:
     endpoints: [admin]
 
+# The feature document. It lists the features this process serves, with a
+# route the frontend reads. The endpoint named here has to be guarded by the
+# authentication gateway (authn.gate.endpoints above), has to claim /features
+# in its prefixes (http.endpoints above), and must not resolve a tenant: the
+# frontend reads the document before a tenant is chosen.
+feature:
+  board:
+    endpoint: account
+
 # The notification inbox, the live stream and the preference matrix mount on the
 # API endpoint. None of them names the web endpoint: the frontend bundle's
 # catch-all route covers that endpoint's whole path space.
