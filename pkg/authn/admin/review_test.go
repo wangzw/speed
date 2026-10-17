@@ -364,6 +364,47 @@ func TestAccountCreateRefusesAProofVia(t *testing.T) {
 	}
 }
 
+// TestAccountCreateRefusesAUserAccountWithNoIdentifier holds that the route
+// refuses a user account it cannot give a way to log in with before anything
+// is written: the kind alone, a display name alone, or an attribute set alone
+// is not an account, and the API does not leave an unusable row behind. The
+// refusal is the route's own 400 and the module is never called. A service
+// account is not held to that -- it signs in with a service secret.
+func TestAccountCreateRefusesAUserAccountWithNoIdentifier(t *testing.T) {
+	r := newRig(t)
+	for _, body := range []map[string]any{
+		{"kind": "user"},
+		{"kind": "user", "display_name": "Nobody"},
+		{"kind": "user", "attributes": map[string]string{"team": "core"}},
+	} {
+		rec := r.do(http.MethodPost, "/auth/admin/accounts", body, fresh()...)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%v: status = %d, want 400; body %s", body, rec.Code, rec.Body.String())
+			continue
+		}
+		if got := problemCode(t, rec.Body.String()); got != mount.CodeBadRequest {
+			t.Errorf("%v: problem code = %q, want %q", body, got, mount.CodeBadRequest)
+		}
+	}
+	if n := r.accountAdm.count("create"); n != 0 {
+		t.Errorf("Create ran %d times for an account with no identifier", n)
+	}
+
+	// One identifier satisfies the route.
+	rec := r.do(http.MethodPost, "/auth/admin/accounts",
+		map[string]any{"kind": "user", "display_name": "Grace", "username": "grace"}, fresh()...)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("a user account with a username: status = %d, want 201; body %s", rec.Code, rec.Body.String())
+	}
+
+	// A service account signs in with a service secret, so it needs none.
+	rec = r.do(http.MethodPost, "/auth/admin/accounts",
+		map[string]any{"kind": "service", "display_name": "Nightly"}, fresh()...)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("a service account with no identifier: status = %d, want 201; body %s", rec.Code, rec.Body.String())
+	}
+}
+
 // TestTheAnswerMapsEverySentinel holds the sentinel-to-answer mapping: each
 // sentinel a capability returns gets its own status and code, and one no case
 // names is a 503, so a class dropped from its case cannot pass unnoticed.

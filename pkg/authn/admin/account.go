@@ -172,7 +172,11 @@ type createBody struct {
 // account.create, and a service account additionally needs client.manage. An
 // email address and a phone number are written with a way an administrator may
 // state — the administrator's own assertion or an import record — and never a
-// proof of ownership, which is not the administrator's to make.
+// proof of ownership, which is not the administrator's to make. A user account
+// requires at least one login identifier: with no username, email address or
+// phone number it has no way to sign in, so the route refuses it before the
+// module writes a row nothing can use. A service account is not held to that:
+// it signs in with a service secret, not an identifier.
 func (m *product) handleAccountCreate(c *gin.Context) {
 	id, ok := m.caller(c)
 	if !ok || !m.admit(c, id) {
@@ -194,6 +198,10 @@ func (m *product) handleAccountCreate(c *gin.Context) {
 	}
 	phoneVia, ok := administratorVia(body.PhoneVerifiedVia)
 	if !ok {
+		m.bad(c)
+		return
+	}
+	if kind == authn.KindUser && body.Username == "" && body.Email == "" && body.Phone == "" {
 		m.bad(c)
 		return
 	}
