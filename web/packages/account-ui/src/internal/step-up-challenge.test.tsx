@@ -10,8 +10,8 @@
  * beside it; a completion in state 'elevated' fires onSuccess; a refused
  * answer renders its code text and stays retryable; an account with no
  * active factor is recognised from the caller's own factor read and the
- * dialog names the missing second factor, points at the account settings
- * and starts no flow at all; a 401 start refusal on an established
+ * dialog names the missing second factor, renders no link and starts no
+ * flow at all; a 401 start refusal on an established
  * session (factors exist, none may strengthen it) offers a re-login; a
  * 400 or any other start failure renders as its code, never as either of
  * those explanations; and cancel fires onCancel without running the gated
