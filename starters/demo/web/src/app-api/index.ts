@@ -923,7 +923,8 @@ export interface NotificationType {
 }
 
 export interface ObjectstoreDeclaration {
-  name: string;
+  /** An optional label for the object; normalized before storing, and omitted or empty stores an empty name */
+  name?: string;
   size: number;
   content_type: string;
   /** The declared SHA-256 as 64 hex digits; empty declares no checksum */
@@ -942,6 +943,8 @@ export const ObjectstoreObjectState = {
 
 export interface ObjectstoreObject {
   id: string;
+  /** The declared label, normalized once when the object was created; empty when none was declared or it normalized to nothing */
+  name: string;
   state: ObjectstoreObjectState;
   size: number;
   mime: string;

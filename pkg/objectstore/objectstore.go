@@ -85,6 +85,11 @@ type Object struct {
 	// Key is the internal key the bytes are stored under. It is module
 	// bookkeeping: it reaches no API response, no error text and no log line.
 	Key string
+	// Name is the label the caller declared, normalized once when the object
+	// was created. It is empty when no name was declared or the declared name
+	// normalized to nothing. It identifies nothing: it is not unique and no
+	// lookup uses it.
+	Name string
 	// State is where the object stands in its lifecycle.
 	State State
 	// Size is the number of bytes observed at upload. It is zero before an
@@ -114,9 +119,11 @@ type Object struct {
 // The semantics each method carries are the delivering module's to keep:
 //
 //   - Create validates a Declaration (a positive Size, a non-empty ContentType,
-//     a ChecksumSHA256 that is empty or 64 hex digits), generates the identifier
-//     and the internal key, lands a pending row and opens an upload window. A
-//     Declaration that fails validation is ErrInvalidRequest and lands no row.
+//     a ChecksumSHA256 that is empty or 64 hex digits), normalizes its Name,
+//     generates the identifier and the internal key, lands a pending row and
+//     opens an upload window. A Declaration that fails validation is
+//     ErrInvalidRequest and lands no row; the name is never a validation
+//     failure.
 //   - Upload requires a pending or uploaded row with an open upload window and
 //     a size equal to the declared size, stores the bytes through Store and
 //     records the observed size and SHA-256, moving the row to uploaded. A
@@ -143,7 +150,10 @@ type Objects interface {
 
 // Declaration is what a caller states about an object before any byte arrives.
 type Declaration struct {
-	// Name is the caller's own label for the object. It is opaque here.
+	// Name is the caller's own label for the object. It is optional and is
+	// normalized once before it is stored; it never fails Create. The rules
+	// are the delivering module's, and the object view carries the stored
+	// value.
 	Name string
 	// Size is the declared number of bytes. An upload whose byte count differs
 	// from this is refused.

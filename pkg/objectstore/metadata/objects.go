@@ -48,6 +48,9 @@ const (
 // and judged against it on write. The key leads with that column, as every
 // scoped table's does.
 //
+// The name column holds the declaration's name after Create normalized it
+// once; it is not the value the caller sent, and no lookup reads it.
+//
 // Every instant is an epoch count in milliseconds, matching the columns the
 // migrations declare and the native statements the sweep runs, so a row the
 // model path reads and a row the sweep touches carry the same value. The
@@ -58,6 +61,7 @@ type object struct {
 	tenant.Model
 	ID               string `gorm:"column:id;primaryKey"`
 	Key              string `gorm:"column:key;not null"`
+	Name             string `gorm:"column:name;not null"`
 	State            string `gorm:"column:state;not null"`
 	DeclaredSize     int64  `gorm:"column:declared_size;not null"`
 	DeclaredType     string `gorm:"column:declared_type;not null"`
@@ -85,6 +89,7 @@ func (r *object) view() objectstore.Object {
 	return objectstore.Object{
 		ID:        r.ID,
 		Key:       r.Key,
+		Name:      r.Name,
 		State:     objectstore.State(r.State),
 		Size:      r.Size,
 		MIME:      r.MIME,

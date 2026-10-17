@@ -96,9 +96,10 @@
     "schemas": {
       "ObjectstoreObject": {
         "type": "object",
-        "required": ["id", "state", "size", "mime", "checksum_sha256", "created_at", "updated_at"],
+        "required": ["id", "name", "state", "size", "mime", "checksum_sha256", "created_at", "updated_at"],
         "properties": {
           "id": {"type": "string"},
+          "name": {"type": "string", "description": "The declared label, normalized once when the object was created; empty when none was declared or it normalized to nothing"},
           "state": {"type": "string", "enum": ["pending", "uploaded", "completed", "deleted"]},
           "size": {"type": "integer"},
           "mime": {"type": "string"},
@@ -110,9 +111,9 @@
       },
       "ObjectstoreDeclaration": {
         "type": "object",
-        "required": ["name", "size", "content_type"],
+        "required": ["size", "content_type"],
         "properties": {
-          "name": {"type": "string"},
+          "name": {"type": "string", "description": "An optional label for the object; normalized before storing, and omitted or empty stores an empty name"},
           "size": {"type": "integer"},
           "content_type": {"type": "string"},
           "checksum_sha256": {"type": "string", "description": "The declared SHA-256 as 64 hex digits; empty declares no checksum"}

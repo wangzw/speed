@@ -14,6 +14,7 @@ import (
 // reaches no API response. Every instant is written in UTC.
 type objectView struct {
 	ID        string     `json:"id"`
+	Name      string     `json:"name"`
 	State     string     `json:"state"`
 	Size      int64      `json:"size"`
 	MIME      string     `json:"mime"`
@@ -27,6 +28,7 @@ type objectView struct {
 func objectViewOf(o objectstore.Object) objectView {
 	return objectView{
 		ID:        o.ID,
+		Name:      o.Name,
 		State:     string(o.State),
 		Size:      o.Size,
 		MIME:      o.MIME,

@@ -28,10 +28,14 @@ var (
 
 // Create declares an object; see objectstore.Objects.
 //
-// It validates the declaration, mints the object identifier and the internal
-// key, and lands a pending row with the declared values and an upload window
-// opened from now. A declaration that fails validation is refused and lands no
-// row. The tenant column is filled from the context by the model's own filter,
+// It validates the declaration, normalizes the declared name, mints the object
+// identifier and the internal key, and lands a pending row with the declared
+// values and an upload window opened from now. The name is normalized here, the
+// one place it is read for storage: every reader afterwards gets the stored
+// value, and a name that is malformed, empty or reduced to nothing stores as
+// the empty string rather than failing the declaration. A declaration that
+// fails validation is refused and lands no row. The tenant column is filled
+// from the context by the model's own filter,
 // and a context carrying no tenant is refused before the key is minted, because
 // the key needs the tenant.
 func (p *product) Create(ctx context.Context, d objectstore.Declaration) (objectstore.Object, error) {
@@ -51,6 +55,7 @@ func (p *product) Create(ctx context.Context, d objectstore.Declaration) (object
 	row := object{
 		ID:               id,
 		Key:              key,
+		Name:             normalizeName(d.Name),
 		State:            statePending,
 		DeclaredSize:     d.Size,
 		DeclaredType:     d.ContentType,

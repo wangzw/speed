@@ -170,6 +170,7 @@ const NOTIFICATION_TYPE: NotificationType = {
 
 const OBJECT: ObjectstoreObject = {
   id: 'obj-1',
+  name: 'example.txt',
   state: 'uploaded',
   size: 1024,
   mime: 'text/plain',
