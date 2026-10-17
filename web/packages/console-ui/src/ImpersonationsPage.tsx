@@ -39,6 +39,20 @@
  * and re-reads it through the generated key, so the section can only land
  * on what the server answers next.
  *
+ * A settled grant collapses the record half: an impersonated identity
+ * reaches only a closed set of routes, so the gateway refuses the roster
+ * read and the record read alike. Once the status read names a grant the
+ * page issues neither, and replaces the tenant selector, the record list
+ * and its terminate controls with one line saying the records are
+ * available again after the impersonation ends. The record read also
+ * waits for the status read to settle, so a page opened while an
+ * impersonation is already in force never issues it. A status read that
+ * is still pending, or that failed with anything but the bare 404, is not
+ * evidence of an impersonation: the record half renders as it always has.
+ * Ending an impersonation drops the cached record pages along with
+ * resetting the status read, so the surface that returns reads again
+ * instead of presenting the pre-impersonation list as current.
+ *
  * Both halves report their writes through feedback scopes: the start and
  * the end share one scope whose region lives in the current-impersonation
  * section (the start form unmounts when the start lands, so a region
@@ -66,6 +80,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
 import {
+  getAuthnAdminImpersonationsListQueryKey,
   getAuthnImpersonationStatusQueryKey,
   useAuthnImpersonationEnd,
   useAuthnImpersonationStart,
@@ -128,34 +143,11 @@ export function ImpersonationsPage() {
   const recordsFeedback = useWriteFeedback()
   const stepUp = useConsoleStepUp()
 
-  const impersonations = operations.useImpersonations({ tenant })
-  const revokeImpersonation = operations.useRevokeImpersonation()
-
   // The caller's own impersonation session, over /auth/impersonation. These
   // are the generated caller-session operations (not the administration
   // bundle): the page reads the status, ends an in-force impersonation, and
   // offers the start form only while none is in force.
   const status = useAuthnImpersonationStatus()
-  const endImpersonation = useAuthnImpersonationEnd({
-    mutation: {
-      onSuccess: () => {
-        // The status read is the authority on what is in force: drop the
-        // cached grant and re-read, so the section lands on the server's
-        // next answer rather than a grant the end just retired.
-        void queryClient.resetQueries({
-          queryKey: getAuthnImpersonationStatusQueryKey(),
-        })
-      },
-    },
-  })
-
-  // The tenant is an argument of every write in both sections, so a change
-  // clears their results: the old outcome would read as describing the new
-  // tenant.
-  useEffect(() => {
-    currentFeedback.reset()
-    recordsFeedback.reset()
-  }, [tenant, currentFeedback.reset, recordsFeedback.reset])
 
   // The bare 404 is settled content, not a failure: it renders as "not
   // impersonating" and discards whatever grant the cache still holds.
@@ -168,9 +160,51 @@ export function ImpersonationsPage() {
       : { grant: status.data.grant }
   const grant = statusPayload?.grant
   const statusPending = status.isPending && statusPayload === undefined
-  // The start form is offered only on a settled "not impersonating" answer;
-  // while the read is in flight or failed there is no basis to offer it.
+  // A settled read that names a grant is the only evidence of an
+  // impersonation; a pending read and a failure are "status unknown" and
+  // never count as one. The start form is offered only on a settled "not
+  // impersonating" answer. The read's error is null rather than undefined
+  // when there is none.
+  const statusFailed = statusError !== undefined && statusError !== null
+  const impersonating = !statusFailed && grant !== undefined
   const notInForce = statusPayload !== undefined && grant === undefined
+  // The record read waits for the status read to settle -- a read on a
+  // session that turns out to be impersonating is only refused -- and
+  // stays disabled while a grant is in force.
+  const recordsEnabled = !status.isPending && !impersonating && tenant !== ''
+
+  const impersonations = operations.useImpersonations(
+    { tenant },
+    { enabled: recordsEnabled },
+  )
+  const revokeImpersonation = operations.useRevokeImpersonation()
+
+  const endImpersonation = useAuthnImpersonationEnd({
+    mutation: {
+      onSuccess: () => {
+        // The status read is the authority on what is in force: drop the
+        // cached grant and re-read, so the section lands on the server's
+        // next answer rather than a grant the end just retired.
+        void queryClient.resetQueries({
+          queryKey: getAuthnImpersonationStatusQueryKey(),
+        })
+        // The cached record pages predate the end and describe a state it
+        // just changed. Drop them so the returning surface reads again
+        // instead of presenting the old list as current.
+        queryClient.removeQueries({
+          queryKey: getAuthnAdminImpersonationsListQueryKey(),
+        })
+      },
+    },
+  })
+
+  // The tenant is an argument of every write in both sections, so a change
+  // clears their results: the old outcome would read as describing the new
+  // tenant.
+  useEffect(() => {
+    currentFeedback.reset()
+    recordsFeedback.reset()
+  }, [tenant, currentFeedback.reset, recordsFeedback.reset])
 
   const endAttempt = (): Promise<void> =>
     currentFeedback.run(async () => {
@@ -299,7 +333,10 @@ export function ImpersonationsPage() {
             size="small"
             onClick={() => {
               void status.refetch()
-              void impersonations.refetch()
+              // The record read is refused while impersonating and waits for
+              // the status read to settle; once it does, enabling the read
+              // fetches it.
+              if (recordsEnabled) void impersonations.refetch()
             }}
           >
             {t('common.refresh')}
@@ -399,58 +436,71 @@ export function ImpersonationsPage() {
         <WriteFeedbackRegion outcome={currentFeedback.outcome} />
       </Box>
 
-      <Box component="section" sx={{ mb: 3 }}>
-        <TenantScope
-          value={tenant}
-          onSelect={setTenant}
-          disabled={currentFeedback.pending || recordsFeedback.pending}
-        />
-      </Box>
-
-      {tenant === '' ? (
-        <EmptyState
-          headingLevel="h2"
-          title={t('impersonations.needTenant.title')}
-          description={t('impersonations.needTenant.description')}
-        />
+      {impersonating ? (
+        // The record half is not offered through an impersonated identity:
+        // the gateway refuses the roster read and the record read, and a
+        // list rendered from refused reads would read as "no records". One
+        // line replaces the selector, the list and its terminate controls;
+        // the current-impersonation section and its end control remain.
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          {t('impersonations.recordsUnavailable')}
+        </Typography>
       ) : (
         <>
-          <ConsoleAsyncSection
-            pending={pending}
-            payload={rows}
-            error={impersonations.error}
-            empty={rows !== undefined && rows.length === 0}
-            headingLevel="h2"
-            loading={
-              <ListSkeleton
-                label={t('impersonations.loading')}
-                rows={[
-                  <Skeleton key="a" variant="text" width="60%" />,
-                  <Skeleton key="b" variant="text" width="44%" />,
-                ]}
-              />
-            }
-            errorState={{
-              title: t('impersonations.error.title'),
-              description: t('impersonations.error.description'),
-              retryLabel: t('impersonations.retry'),
-              onRetry: () => void impersonations.refetch(),
-            }}
-            emptyState={{
-              title: t('impersonations.empty.title'),
-              description: t('impersonations.empty.description'),
-            }}
-          >
-            {(settled) => (
-              <DataTable
-                rows={settled}
-                columns={columns}
-                rowKey={(record) => record.id}
-              />
-            )}
-          </ConsoleAsyncSection>
-          {/* The table and its row actions share one result location. */}
-          <WriteFeedbackRegion outcome={recordsFeedback.outcome} />
+          <Box component="section" sx={{ mb: 3 }}>
+            <TenantScope
+              value={tenant}
+              onSelect={setTenant}
+              disabled={currentFeedback.pending || recordsFeedback.pending}
+            />
+          </Box>
+
+          {tenant === '' ? (
+            <EmptyState
+              headingLevel="h2"
+              title={t('impersonations.needTenant.title')}
+              description={t('impersonations.needTenant.description')}
+            />
+          ) : (
+            <>
+              <ConsoleAsyncSection
+                pending={pending}
+                payload={rows}
+                error={impersonations.error}
+                empty={rows !== undefined && rows.length === 0}
+                headingLevel="h2"
+                loading={
+                  <ListSkeleton
+                    label={t('impersonations.loading')}
+                    rows={[
+                      <Skeleton key="a" variant="text" width="60%" />,
+                      <Skeleton key="b" variant="text" width="44%" />,
+                    ]}
+                  />
+                }
+                errorState={{
+                  title: t('impersonations.error.title'),
+                  description: t('impersonations.error.description'),
+                  retryLabel: t('impersonations.retry'),
+                  onRetry: () => void impersonations.refetch(),
+                }}
+                emptyState={{
+                  title: t('impersonations.empty.title'),
+                  description: t('impersonations.empty.description'),
+                }}
+              >
+                {(settled) => (
+                  <DataTable
+                    rows={settled}
+                    columns={columns}
+                    rowKey={(record) => record.id}
+                  />
+                )}
+              </ConsoleAsyncSection>
+              {/* The table and its row actions share one result location. */}
+              <WriteFeedbackRegion outcome={recordsFeedback.outcome} />
+            </>
+          )}
         </>
       )}
 

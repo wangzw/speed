@@ -738,6 +738,7 @@
     "ended": "已结束（{{reason}}）",
     "terminate": "终止",
     "terminated": "已终止账户 {{account}} 的冒充记录。",
+    "recordsUnavailable": "冒充期间不能读取或终止冒充记录；结束冒充后可在此查看。",
     "current": {
       "title": "当前冒充",
       "loading": "正在读取冒充状态",

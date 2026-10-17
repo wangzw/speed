@@ -37,6 +37,10 @@ import zhCN from './locales/zh-CN.json' with { type: 'json' }
 const ZERO = '0001-01-01T00:00:00Z'
 const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
 
+/** The line that replaces the record half while an impersonation is in force. */
+const RECORDS_UNAVAILABLE =
+  '冒充期间不能读取或终止冒充记录；结束冒充后可在此查看。'
+
 /** The caller-session grant the status read answers with when one is in force. */
 interface GrantFixture {
   readonly id: string
@@ -169,6 +173,25 @@ beforeEach(() => {
 
 describe('ImpersonationsPage', () => {
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
+    // The terminate control exists only on the record half, which renders
+    // while no impersonation is in force; the end control exists only while
+    // one is.
+    const user = userEvent.setup()
+    const idle = renderWithProviders(
+      <ImpersonationsPage />,
+      {
+        operations: withPage({
+          listImpersonations: () => Promise.resolve([record()]),
+        }),
+      },
+    )
+    const refresh = screen.getByRole('button', { name: '刷新' })
+    await pickTenant(user)
+    const terminate = await screen.findByRole('button', { name: '终止' })
+    expect(hasCoarsePointerTouchTarget(refresh)).toBe(true)
+    expect(hasCoarsePointerTouchTarget(terminate)).toBe(true)
+    idle.unmount()
+
     const backend = makeCallerSessionBackend()
     backend.setGrant({
       id: 'imp-1',
@@ -178,18 +201,9 @@ describe('ImpersonationsPage', () => {
       ends_at: '2026-10-15T13:00:00Z',
     })
     bindRequestFn(backend.fn)
-    const user = userEvent.setup()
-    const operations = withPage({
-      listImpersonations: () => Promise.resolve([record()]),
-    })
-    renderWithProviders(<ImpersonationsPage />, { operations })
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
     const end = await screen.findByRole('button', { name: '结束冒充' })
-    await pickTenant(user)
-    const terminate = await screen.findByRole('button', { name: '终止' })
-    for (const control of [refresh, end, terminate]) {
-      expect(hasCoarsePointerTouchTarget(control)).toBe(true)
-    }
+    expect(hasCoarsePointerTouchTarget(end)).toBe(true)
   })
 
   it('prompts for a tenant before listing', () => {
@@ -235,6 +249,24 @@ describe('ImpersonationsPage', () => {
   })
 
   it('keeps the recorded ids marked unresolved when the account read is refused', async () => {
+    // Every account identifier the page shows keeps the recorded id,
+    // labelled unresolved rather than passed off as a resolved identity.
+    // The two surfaces do not render together -- the record half is closed
+    // while an impersonation is in force -- so each is checked on its own.
+    const user = userEvent.setup()
+    const recordHalf = renderWithProviders(<ImpersonationsPage />, {
+      operations: withPage({
+        listImpersonations: () => Promise.resolve([record()]),
+        getAccount: () => Promise.reject(new Error('forbidden')),
+      }),
+    })
+    await pickTenant(user)
+    const recordIds = await screen.findAllByLabelText(/身份未解析/)
+    expect(recordIds.map((cell) => cell.textContent)).toEqual(
+      expect.arrayContaining(['staff-1', 'acc-1']),
+    )
+    recordHalf.unmount()
+
     const backend = makeCallerSessionBackend()
     backend.setGrant({
       id: 'imp-1',
@@ -244,20 +276,11 @@ describe('ImpersonationsPage', () => {
       ends_at: '2026-10-15T13:00:00Z',
     })
     bindRequestFn(backend.fn)
-    const user = userEvent.setup()
-    const operations = withPage({
-      listImpersonations: () => Promise.resolve([record()]),
-      getAccount: () => Promise.reject(new Error('forbidden')),
+    renderWithProviders(<ImpersonationsPage />, {
+      operations: withPage({ getAccount: () => Promise.reject(new Error('forbidden')) }),
     })
-    renderWithProviders(<ImpersonationsPage />, { operations })
-    await pickTenant(user)
-    // Every account identifier the page shows -- the in-force panel's
-    // target and the record's actor and target -- keeps the recorded id,
-    // labelled unresolved rather than passed off as a resolved identity.
-    const unresolved = await screen.findAllByLabelText(/身份未解析/)
-    expect(unresolved.map((cell) => cell.textContent)).toEqual(
-      expect.arrayContaining(['acc-7', 'staff-1', 'acc-1']),
-    )
+    const grantIds = await screen.findAllByLabelText(/身份未解析/)
+    expect(grantIds.map((cell) => cell.textContent)).toEqual(['acc-7'])
   })
 
   it('marks an ended record with its reason and disables termination', async () => {
@@ -766,6 +789,148 @@ describe('ImpersonationsPage', () => {
     expect(rendered).toContain('no impersonation in progress')
     expect(rendered).not.toContain('during an impersonation')
     expect(rendered).not.toContain('while impersonating')
+  })
+
+  // --- The record half while an impersonation is in force ----------------
+
+  it('collapses the record half and issues no record read when a grant is in force', async () => {
+    const backend = makeCallerSessionBackend()
+    backend.setGrant({
+      id: 'imp-1',
+      target: 'acc-1',
+      tenant: 'acme',
+      starts_at: '2026-10-15T12:00:00Z',
+      ends_at: '2026-10-15T13:00:00Z',
+    })
+    bindRequestFn(backend.fn)
+    const listImpersonations = vi.fn(() => Promise.resolve([record()]))
+    // The tenant is already chosen, so only the status read stands between
+    // the page and a record read.
+    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+    try {
+      renderWithProviders(<ImpersonationsPage />, {
+        operations: withPage({ listImpersonations }),
+      })
+
+      expect(
+        await screen.findByText('被冒充账户：Target One'),
+      ).toBeInTheDocument()
+      // The one line replaces the selector, the list and its controls.
+      expect(screen.getByText(RECORDS_UNAVAILABLE)).toBeInTheDocument()
+      expect(screen.queryByLabelText('租户')).toBeNull()
+      expect(screen.queryByText('暂无冒充记录')).toBeNull()
+      expect(screen.queryByRole('button', { name: '终止' })).toBeNull()
+      // The reads would be refused through the impersonated identity, so
+      // they are not issued at all.
+      expect(listImpersonations).not.toHaveBeenCalled()
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
+  it('renders the record half while the status read is still pending', async () => {
+    const fn: RequestFn = <T,>(
+      path: string,
+      options?: RequestOptions,
+    ) => {
+      if (path === '/auth/impersonation' && (options?.method ?? 'GET') === 'GET') {
+        // Never settles: the status stays unknown for the whole test.
+        return new Promise<T>(() => undefined)
+      }
+      return Promise.resolve(undefined as T)
+    }
+    bindRequestFn(fn)
+    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+    try {
+      renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
+      // "Status unknown" is not "impersonating": the record surface renders
+      // as it always has.
+      expect(screen.getByLabelText('租户')).toBeInTheDocument()
+      expect(
+        screen.getByRole('status', { name: '正在加载冒充记录' }),
+      ).toBeInTheDocument()
+      expect(screen.queryByText(RECORDS_UNAVAILABLE)).toBeNull()
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
+  it('renders the record half when the status read fails with a non-404 answer', async () => {
+    const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
+      if (path === '/auth/impersonation' && (options?.method ?? 'GET') === 'GET') {
+        return Promise.reject({ status: 500, code: 'client.http.500' })
+      }
+      return Promise.resolve(undefined as T)
+    }
+    bindRequestFn(fn)
+    const user = userEvent.setup()
+    const listImpersonations = vi.fn(() => Promise.resolve([record()]))
+    renderWithProviders(<ImpersonationsPage />, {
+      operations: withPage({ listImpersonations }),
+    })
+
+    expect(await screen.findByText('冒充状态读取失败')).toBeInTheDocument()
+    expect(screen.getByLabelText('租户')).toBeInTheDocument()
+    await pickTenant(user)
+    expect(await screen.findByText('Staff One')).toBeInTheDocument()
+    expect(listImpersonations).toHaveBeenCalled()
+    expect(screen.queryByText(RECORDS_UNAVAILABLE)).toBeNull()
+  })
+
+  it('returns the record half after an end and reads again instead of the cached list', async () => {
+    const backend = makeCallerSessionBackend()
+    bindRequestFn(backend.fn)
+    let reads = 0
+    let release: () => void = () => undefined
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const listImpersonations = vi.fn(() => {
+      reads += 1
+      if (reads <= 2) {
+        return Promise.resolve([record()])
+      }
+      // The read the returning surface issues is held open, so the test can
+      // see whether the pre-impersonation list leaks back as current.
+      return held.then(() => [record({ target: 'acc-7' })])
+    })
+    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+    try {
+      const user = userEvent.setup()
+      renderWithProviders(<ImpersonationsPage />, {
+        operations: withPage({ listImpersonations }),
+      })
+
+      // The list is read before any impersonation starts.
+      expect(await screen.findByText('Staff One')).toBeInTheDocument()
+
+      await user.type(screen.getByLabelText('目标账户'), 'acc-9')
+      await user.click(screen.getByRole('button', { name: '发起冒充' }))
+      // Once the status read lands on the grant, the record half is closed.
+      expect(await screen.findByText(RECORDS_UNAVAILABLE)).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: '结束冒充' }))
+      await vi.waitFor(() => expect(backend.ended).toHaveLength(1))
+
+      // The surface returns without a refresh and issues a new read. The
+      // cached pre-impersonation list is gone while that read is in flight:
+      // it describes a state the end just changed.
+      await vi.waitFor(() => expect(reads).toBe(3))
+      expect(screen.queryByText(RECORDS_UNAVAILABLE)).toBeNull()
+      expect(screen.getByLabelText('租户')).toBeInTheDocument()
+      expect(screen.queryByText('Staff One')).toBeNull()
+      expect(
+        screen.getByRole('status', { name: '正在加载冒充记录' }),
+      ).toBeInTheDocument()
+
+      release()
+      expect(await screen.findByText('Target Seven')).toBeInTheDocument()
+      // The old record's target is gone: the list is the one the returning
+      // surface read, not the pre-impersonation page it replaced.
+      expect(screen.queryByText('Target One')).toBeNull()
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
   })
 
   it('renders an unseasoned-factor refusal in the current scope without a step-up dialog', async () => {

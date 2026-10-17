@@ -11,8 +11,11 @@
  *
  * The query keys live here, in test code, because the production keys
  * live inside the generated hooks; the scripted backend is the seam's
- * only stand-in. A backend function a test scripts to reject drives the
- * corresponding failure branch.
+ * only stand-in. The impersonation record read is the exception: it builds
+ * the generated factory's key, because the page drops that entry from the
+ * cache and must name the key production's read builds. A backend
+ * function a test scripts to reject drives the corresponding failure
+ * branch.
  *
  * The backend is grouped by administration surface, mirroring the bundle:
  * the tenant roster and settings (platform-side, tenant-free), the audit
@@ -24,6 +27,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { getAuthnAdminImpersonationsListQueryKey } from '@speed/api-sdk'
 import type {
   ConsoleAccount,
   ConsoleAccountBindingsQuery,
@@ -401,7 +405,6 @@ function secretsKey(id: string) {
 function sessionsKey(id: string) {
   return ['console-test', 'sessions', id] as const
 }
-const IMPERSONATIONS_KEY = ['console-test', 'impersonations'] as const
 function invitationsKey(tenant: string) {
   return ['console-test', 'invitations', tenant] as const
 }
@@ -764,11 +767,14 @@ export function createConsoleOperations(
       })
     },
 
-    useImpersonations: (params) =>
+    useImpersonations: (params, options) =>
       useQuery({
-        queryKey: [...IMPERSONATIONS_KEY, params],
+        // The generated key factory, because the page acts on this read's
+        // cache directly: the entry it drops on ending an impersonation
+        // must be the one production's read builds.
+        queryKey: getAuthnAdminImpersonationsListQueryKey(params),
         queryFn: () => backend.listImpersonations(params),
-        enabled: params.tenant !== '',
+        enabled: params.tenant !== '' && (options?.enabled ?? true),
       }),
     useRevokeImpersonation: () => {
       const client = useQueryClient()
@@ -776,7 +782,9 @@ export function createConsoleOperations(
         mutationFn: (input: ConsoleAccountRef) =>
           backend.revokeImpersonation(input),
         onSuccess: () => {
-          void client.invalidateQueries({ queryKey: IMPERSONATIONS_KEY })
+          void client.invalidateQueries({
+            queryKey: getAuthnAdminImpersonationsListQueryKey(),
+          })
         },
       })
     },

@@ -738,6 +738,7 @@
     "ended": "Ended ({{reason}})",
     "terminate": "Terminate",
     "terminated": "Terminated the impersonation of account {{account}}.",
+    "recordsUnavailable": "Impersonation records cannot be read or terminated while impersonating. View them after ending it.",
     "current": {
       "title": "Current impersonation",
       "loading": "Loading the impersonation status",

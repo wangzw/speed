@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -534,6 +534,29 @@ describe('consoleOperations administration surfaces', () => {
     ]) {
       expect(calls.some((c) => c.method === 'GET' && c.path === path)).toBe(true)
     }
+  })
+
+  it('holds the impersonation record read while its caller disables it', async () => {
+    const calls = bindConsoleRequest(answer)
+    function Held() {
+      const impersonations = consoleOperations.useImpersonations(
+        { tenant: 'acme' },
+        { enabled: false },
+      )
+      return <p>{impersonations.isPending ? 'held' : 'settled'}</p>
+    }
+    renderWithProviders(<Held />, { operations: consoleOperations })
+    expect(await screen.findByText('held')).toBeInTheDocument()
+    // Flush the queue so an accidental request would have been recorded.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(
+      calls.some(
+        (call) =>
+          call.method === 'GET' && call.path === '/auth/admin/impersonations',
+      ),
+    ).toBe(false)
   })
 
   it('drives the account, session and impersonation write endpoints', async () => {

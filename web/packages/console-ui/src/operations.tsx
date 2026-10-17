@@ -747,10 +747,13 @@ export interface ConsoleOperations {
   /**
    * GET /auth/admin/impersonations -- one page of impersonation records.
    * The read is tenant-scoped by a required query parameter, so it stays
-   * disabled while the caller names no tenant.
+   * disabled while the caller names no tenant; `enabled` lets a page hold
+   * it further, for a session whose impersonation the gateway would refuse
+   * the read of.
    */
   readonly useImpersonations: (
     params: AuthnAdminImpersonationsListParams,
+    options?: { readonly enabled?: boolean },
   ) => UseQueryResult<readonly ConsoleImpersonation[], unknown>
   /** DELETE /auth/admin/impersonations/:id -- terminate an impersonation. */
   readonly useRevokeImpersonation: () => UseMutationResult<
@@ -1375,14 +1378,16 @@ export const consoleOperations: ConsoleOperations = {
 
   // --- Impersonation surface (/auth/admin) ------------------------------
 
-  useImpersonations: (params) =>
+  useImpersonations: (params, options) =>
     useQuery({
       ...getAuthnAdminImpersonationsListQueryOptions(params),
       select: (page) => page.impersonations,
       // The tenant is a required query parameter on the route, so an empty
       // one would fire a request the module refuses as a shape it cannot
-      // read; the read stays disabled until the page names a tenant.
-      enabled: params.tenant !== '',
+      // read; the read stays disabled until the page names a tenant. A
+      // page also holds it while its own session is impersonating, where
+      // the gateway refuses the read.
+      enabled: params.tenant !== '' && (options?.enabled ?? true),
     }),
 
   useRevokeImpersonation: () => {
