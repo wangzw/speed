@@ -6,6 +6,9 @@ bytes themselves do not live here — they move through the `objectstore.Store`
 seam — but the metadata row, the upload window, the keyset listing, the expiry
 sweep and the HTTP surface are this module's.
 
+The descriptor declares the static feature `objectstore.objects`, present
+whenever the module is in force; the assembled byte backend does not change it.
+
 ## What it delivers
 
 The module delivers `(*objectstore.Objects)(nil)` **exclusively**: one process

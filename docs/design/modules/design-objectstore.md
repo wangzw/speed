@@ -448,4 +448,4 @@ type Spec[C any] struct {
 | 本地目录后端 `objectstore.fs` | 已实现 | `pkg/objectstore/fs/fs.go` `Module`、`ModuleName`、`Put`、`Open`、`Delete`；`pkg/objectstore/fs/keys.go` `relativePath`、`splitKey`；`pkg/objectstore/fs/config.go` `items` |
 | S3 兼容后端 `objectstore.s3` | 已实现 | `pkg/objectstore/s3/s3.go` `Module`、`ModuleName`、`Put`、`Open`、`Delete`；`pkg/objectstore/s3/config.go` `items` |
 | 元数据面的 OpenAPI 片段声明 | 已实现 | `pkg/objectstore/metadata/openapi/metadata.json`；`pkg/objectstore/metadata/metadata.go` `metadataFragment`、`defaultEndpoint`、`Module` |
-| 静态特性 `objectstore.objects` 的 `feature.Spec` 声明 | 未实现 | — |
+| 静态特性 `objectstore.objects` 的 `feature.Spec` 声明 | 已实现 | `pkg/objectstore/metadata/metadata.go` `Module`；`pkg/objectstore/metadata/feature_test.go` `TestTheModuleDeclaresTheObjectsFeature` |
