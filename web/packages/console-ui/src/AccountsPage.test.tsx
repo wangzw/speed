@@ -436,6 +436,11 @@ describe('AccountsPage', () => {
         { kind: 'user', display_name: 'Grace', username: 'grace' },
       ])
     })
+    // A landed create clears the form, so the next one starts empty.
+    await vi.waitFor(() => {
+      expect(screen.getByLabelText('显示名')).toHaveValue('')
+      expect(screen.getByLabelText('用户名')).toHaveValue('')
+    })
   })
 
   it('lays the create fields out through the form family instead of one crowded row', async () => {
