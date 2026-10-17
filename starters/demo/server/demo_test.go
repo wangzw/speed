@@ -958,6 +958,55 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 	}
 }
 
+// TestSeedBindsTheAdministratorInEveryServedTenant holds the seed's bindings
+// against a deployment that serves more than one tenant: the administrator
+// must hold the platform-administrator role in each configured tenant's
+// domain, not only in the platform domain and not only in the first tenant.
+//
+// A role and its binding are per-domain rows. A binding in the platform domain
+// alone does not answer for a tenant, and the console's tenant-addressed pages
+// decide in the tenant the path names, so an implementation that writes one
+// binding for the whole run leaves a deployment with a configured tenant whose
+// administration pages are refused with 403. The reads below are exactly those
+// pages, one request per tenant the configuration names.
+func TestSeedBindsTheAdministratorInEveryServedTenant(t *testing.T) {
+	ports := freePorts(t, listenerCount)
+	// Two tenants, so a seed that binds the first one it reads is
+	// distinguishable from one that binds them all.
+	secondTenant := "acme"
+	config := writeConfigReplacing(t, ports, filepath.Join(t.TempDir(), "demo.db"),
+		"  tenants:\n    - "+demoTenant+"\n",
+		"  tenants:\n    - "+demoTenant+"\n    - "+secondTenant+"\n")
+
+	seeded := runCommand(t, config, "sqlite", seedCommand)
+	if seeded.err != nil {
+		t.Fatalf("seed failed: %v\n%s", seeded.err, seeded.combined())
+	}
+
+	serve := start(t, config, "sqlite", serveCommand)
+	serve.waitReady(t)
+
+	accountBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
+	adminBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
+	client := &http.Client{Timeout: 10 * time.Second}
+	token := signIn(t, accountBase, seedIdentifier, seedPassword)
+	for _, tenant := range []string{demoTenant, secondTenant} {
+		for _, path := range []string{
+			"/members",
+			"/invitations",
+			"/sso/providers",
+		} {
+			got := send(t, client, http.MethodGet,
+				adminBase+"/auth/admin/tenants/"+tenant+path, nil,
+				map[string]string{"Authorization": "Bearer " + token})
+			if got.status != http.StatusOK {
+				t.Errorf("the seeded administrator was refused the %s page of tenant %q with %d: %s",
+					path, tenant, got.status, got.body)
+			}
+		}
+	}
+}
+
 // TestTheNotificationSurfaceIsReachable holds that the notification routes the
 // console's notification center calls answer a signed-in caller rather than the
 // authorization guard's 403.
