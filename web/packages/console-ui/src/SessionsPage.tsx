@@ -63,51 +63,55 @@ export function SessionsPage() {
     {
       id: 'id',
       header: t('sessions.column.id'),
-      cell: (session) => (
-        <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-          {session.id}
-        </Typography>
-      ),
+      cellWrap: 'nowrap',
+      cell: (session) => <Typography variant="body2">{session.id}</Typography>,
     },
     {
       id: 'kind',
       header: t('sessions.column.kind'),
       priority: 'low',
+      cellWrap: 'nowrap',
       cell: (session) => session.kind,
     },
     {
       id: 'assurance',
       header: t('sessions.column.assurance'),
       priority: 'medium',
+      cellWrap: 'nowrap',
       cell: (session) => t(assuranceKey(session.assurance)),
     },
     {
       id: 'created',
       header: t('sessions.column.created'),
+      cellWrap: 'nowrap',
       cell: (session) => formatUtc(session.created_at, i18n.language),
     },
     {
       id: 'lastSeen',
       header: t('sessions.column.lastSeen'),
       priority: 'low',
+      cellWrap: 'nowrap',
       cell: (session) => formatUtc(session.last_seen_at, i18n.language),
     },
     {
       id: 'expires',
       header: t('sessions.column.expires'),
       priority: 'low',
+      cellWrap: 'nowrap',
       cell: (session) => formatUtc(session.expires_at, i18n.language),
     },
     {
       id: 'state',
       header: t('sessions.column.state'),
       priority: 'medium',
+      cellWrap: 'nowrap',
       cell: (session) =>
         session.revoked ? t('sessions.revoked') : t('sessions.active'),
     },
     {
       id: 'actions',
       header: t('sessions.column.actions'),
+      cellWrap: 'nowrap',
       cell: (session) => (
         <Button
           type="button"

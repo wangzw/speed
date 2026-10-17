@@ -252,40 +252,42 @@ export function AccountsPage() {
     {
       id: 'id',
       header: t('accounts.column.id'),
-      cell: (row) => (
-        <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-          {row.id}
-        </Typography>
-      ),
+      cellWrap: 'nowrap',
+      cell: (row) => <Typography variant="body2">{row.id}</Typography>,
     },
     {
       id: 'kind',
       header: t('accounts.column.kind'),
       priority: 'medium',
+      cellWrap: 'nowrap',
       cell: (row) => row.kind,
     },
     {
       id: 'displayName',
       header: t('accounts.column.displayName'),
+      cellWrap: 'nowrap',
       cell: (row) => row.display_name,
     },
     {
       id: 'status',
       header: t('accounts.column.status'),
+      cellWrap: 'nowrap',
       cell: (row) => statusLabel(row.status, t),
     },
     {
       id: 'mfa',
       header: t('accounts.column.mfa'),
       priority: 'low',
+      cellWrap: 'nowrap',
       cell: (row) =>
         row.mfa_required ? t('accounts.mfaYes') : t('accounts.mfaNo'),
     },
     {
       id: 'actions',
       header: t('accounts.column.actions'),
+      cellWrap: 'nowrap',
       cell: (row) => (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 1, rowGap: 1 }}>
+        <Box sx={{ display: 'flex', columnGap: 1 }}>
           <Button
             type="button"
             size="small"
@@ -328,23 +330,27 @@ export function AccountsPage() {
     {
       id: 'label',
       header: t('accounts.secrets.column.label'),
+      cellWrap: 'nowrap',
       cell: (row) => row.label,
     },
     {
       id: 'expires',
       header: t('accounts.secrets.column.expires'),
       priority: 'low',
+      cellWrap: 'nowrap',
       cell: (row) => formatUtc(row.expires_at, i18n.language),
     },
     {
       id: 'state',
       header: t('accounts.secrets.column.state'),
+      cellWrap: 'nowrap',
       cell: (row) =>
         row.revoked ? t('accounts.secrets.revoked') : t('accounts.secrets.active'),
     },
     {
       id: 'actions',
       header: t('accounts.secrets.column.actions'),
+      cellWrap: 'nowrap',
       cell: (row) => (
         <Button
           type="button"
@@ -373,27 +379,27 @@ export function AccountsPage() {
     {
       id: 'id',
       header: t('accounts.sessions.column.id'),
-      cell: (row) => (
-        <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-          {row.id}
-        </Typography>
-      ),
+      cellWrap: 'nowrap',
+      cell: (row) => <Typography variant="body2">{row.id}</Typography>,
     },
     {
       id: 'created',
       header: t('accounts.sessions.column.created'),
+      cellWrap: 'nowrap',
       cell: (row) => formatUtc(row.created_at, i18n.language),
     },
     {
       id: 'state',
       header: t('accounts.sessions.column.state'),
       priority: 'medium',
+      cellWrap: 'nowrap',
       cell: (row) =>
         row.revoked ? t('accounts.sessions.revoked') : t('accounts.sessions.active'),
     },
     {
       id: 'actions',
       header: t('accounts.sessions.column.actions'),
+      cellWrap: 'nowrap',
       cell: (row) => (
         <Button
           type="button"
@@ -428,16 +434,19 @@ export function AccountsPage() {
     {
       id: 'kind',
       header: t('accounts.factors.column.kind'),
+      cellWrap: 'nowrap',
       cell: (row) => row.kind,
     },
     {
       id: 'label',
       header: t('accounts.factors.column.label'),
+      cellWrap: 'nowrap',
       cell: (row) => row.label,
     },
     {
       id: 'status',
       header: t('accounts.factors.column.status'),
+      cellWrap: 'nowrap',
       cell: (row) => row.status,
     },
   ]

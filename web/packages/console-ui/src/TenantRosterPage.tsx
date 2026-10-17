@@ -211,16 +211,12 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
     {
       id: 'id',
       header: t('tenants.column.id'),
+      cellWrap: 'nowrap',
       cell: (tenant) =>
         basePath === undefined ? (
-          <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-            {tenant.id}
-          </Typography>
+          <Typography variant="body2">{tenant.id}</Typography>
         ) : (
-          <ConsoleLink
-            href={`${basePath}/${encodeURIComponent(tenant.id)}`}
-            sx={{ wordBreak: 'break-all' }}
-          >
+          <ConsoleLink href={`${basePath}/${encodeURIComponent(tenant.id)}`}>
             {tenant.id}
           </ConsoleLink>
         ),
@@ -228,6 +224,7 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
     {
       id: 'alias',
       header: t('tenants.column.alias'),
+      cellWrap: 'nowrap',
       cell: (tenant) => (
         <Typography variant="body2" sx={{ fontWeight: 500 }}>
           {tenant.alias}
@@ -238,6 +235,7 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
       id: 'status',
       header: t('tenants.column.status'),
       priority: 'medium',
+      cellWrap: 'nowrap',
       cell: (tenant) => (
         <Typography variant="body2" color="text.secondary">
           {statusLabel(tenant.status, t)}

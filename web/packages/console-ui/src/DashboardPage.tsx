@@ -148,29 +148,34 @@ export function DashboardPage() {
     {
       id: 'time',
       header: t('dashboard.recent.column.time'),
+      cellWrap: 'nowrap',
       cell: (record) => formatUtc(record.occurred_at, i18n.language) ?? '',
     },
     {
       id: 'action',
       header: t('dashboard.recent.column.action'),
+      cellWrap: 'nowrap',
       cell: (record) => record.action,
     },
     {
       id: 'object',
       header: t('dashboard.recent.column.object'),
       priority: AUDIT_RECORD_COLUMN_PRIORITY.object,
+      cellWrap: 'nowrap',
       cell: (record) => record.object,
     },
     {
       id: 'actor',
       header: t('dashboard.recent.column.actor'),
       priority: AUDIT_RECORD_COLUMN_PRIORITY.actor,
+      cellWrap: 'nowrap',
       cell: (record) => record.actor,
     },
     {
       id: 'outcome',
       header: t('dashboard.recent.column.outcome'),
       priority: AUDIT_RECORD_COLUMN_PRIORITY.outcome,
+      cellWrap: 'nowrap',
       cell: (record) => record.outcome,
     },
   ]

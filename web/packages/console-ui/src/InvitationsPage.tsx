@@ -96,28 +96,33 @@ export function InvitationsPage() {
     {
       id: 'email',
       header: t('invitations.column.email'),
+      cellWrap: 'nowrap',
       cell: (invitation) => invitation.email,
     },
     {
       id: 'status',
       header: t('invitations.column.status'),
+      cellWrap: 'nowrap',
       cell: (invitation) => statusLabel(invitation.status, t),
     },
     {
       id: 'invitedBy',
       header: t('invitations.column.invitedBy'),
       priority: 'medium',
+      cellWrap: 'nowrap',
       cell: (invitation) => invitation.invited_by,
     },
     {
       id: 'expires',
       header: t('invitations.column.expires'),
       priority: 'low',
+      cellWrap: 'nowrap',
       cell: (invitation) => formatUtc(invitation.expires_at, i18n.language),
     },
     {
       id: 'actions',
       header: t('invitations.column.actions'),
+      cellWrap: 'nowrap',
       cell: (invitation) => (
         <Button
           type="button"
@@ -145,11 +150,13 @@ export function InvitationsPage() {
     {
       id: 'account',
       header: t('members.column.account'),
+      cellWrap: 'nowrap',
       cell: (member) => member.account,
     },
     {
       id: 'active',
       header: t('members.column.active'),
+      cellWrap: 'nowrap',
       cell: (member) =>
         member.active ? t('members.activeYes') : t('members.activeNo'),
     },
@@ -157,6 +164,7 @@ export function InvitationsPage() {
       id: 'ssoExempt',
       header: t('members.column.ssoExempt'),
       priority: 'low',
+      cellWrap: 'nowrap',
       cell: (member) =>
         member.sso_exempt ? t('members.ssoExemptYes') : t('members.ssoExemptNo'),
     },
@@ -164,13 +172,15 @@ export function InvitationsPage() {
       id: 'source',
       header: t('members.column.source'),
       priority: 'medium',
+      cellWrap: 'nowrap',
       cell: (member) => member.source,
     },
     {
       id: 'actions',
       header: t('members.column.actions'),
+      cellWrap: 'nowrap',
       cell: (member) => (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 1, rowGap: 1 }}>
+        <Box sx={{ display: 'flex', columnGap: 1 }}>
           <Button
             type="button"
             size="small"

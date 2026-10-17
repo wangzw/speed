@@ -67,17 +67,20 @@ export function SsoPage() {
     {
       id: 'name',
       header: t('sso.column.name'),
+      cellWrap: 'nowrap',
       cell: (provider) => <Typography variant="body2">{provider.name}</Typography>,
     },
     {
       id: 'protocol',
       header: t('sso.column.protocol'),
+      cellWrap: 'nowrap',
       cell: (provider) => provider.protocol,
     },
     {
       id: 'enabled',
       header: t('sso.column.enabled'),
       priority: 'medium',
+      cellWrap: 'nowrap',
       cell: (provider) =>
         provider.enabled ? t('sso.enabledYes') : t('sso.enabledNo'),
     },
@@ -85,13 +88,15 @@ export function SsoPage() {
       id: 'version',
       header: t('sso.column.version'),
       priority: 'low',
+      cellWrap: 'nowrap',
       cell: (provider) => String(provider.version),
     },
     {
       id: 'actions',
       header: t('sso.column.actions'),
+      cellWrap: 'nowrap',
       cell: (provider) => (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 1, rowGap: 1 }}>
+        <Box sx={{ display: 'flex', columnGap: 1 }}>
           <Button
             type="button"
             size="small"

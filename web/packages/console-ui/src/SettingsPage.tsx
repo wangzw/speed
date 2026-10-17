@@ -165,13 +165,12 @@ export function SettingsPage() {
     {
       id: 'key',
       header: t('settings.column.key'),
+      cellWrap: 'nowrap',
       cell: (setting) => (
         <Box
           sx={{ display: 'flex', alignItems: 'baseline', columnGap: 1, minWidth: 0 }}
         >
-          <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-            {setting.key}
-          </Typography>
+          <Typography variant="body2">{setting.key}</Typography>
           {setting.sensitive && (
             <Typography variant="caption" color="text.secondary">
               {t('settings.field.sensitive')}
@@ -184,6 +183,7 @@ export function SettingsPage() {
       id: 'type',
       header: t('settings.column.type'),
       priority: 'low',
+      cellWrap: 'nowrap',
       cell: (setting) => (
         <Typography variant="body2" color="text.secondary">
           {setting.type}
@@ -213,6 +213,7 @@ export function SettingsPage() {
     {
       id: 'actions',
       header: t('settings.column.actions'),
+      cellWrap: 'nowrap',
       cell: (setting) => (
         <Button
           type="button"

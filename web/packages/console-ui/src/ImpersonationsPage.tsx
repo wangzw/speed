@@ -112,34 +112,40 @@ export function ImpersonationsPage() {
     {
       id: 'actor',
       header: t('impersonations.column.actor'),
+      cellWrap: 'nowrap',
       cell: (record) => record.actor,
     },
     {
       id: 'target',
       header: t('impersonations.column.target'),
+      cellWrap: 'nowrap',
       cell: (record) => record.target,
     },
     {
       id: 'tenant',
       header: t('impersonations.column.tenant'),
       priority: 'medium',
+      cellWrap: 'nowrap',
       cell: (record) => record.tenant,
     },
     {
       id: 'started',
       header: t('impersonations.column.started'),
+      cellWrap: 'nowrap',
       cell: (record) => formatUtc(record.started_at, i18n.language),
     },
     {
       id: 'ends',
       header: t('impersonations.column.ends'),
       priority: 'low',
+      cellWrap: 'nowrap',
       cell: (record) => formatUtc(record.ends_at, i18n.language),
     },
     {
       id: 'state',
       header: t('impersonations.column.state'),
       priority: 'medium',
+      cellWrap: 'nowrap',
       cell: (record) =>
         isZeroInstant(record.ended_at) ? (
           <Typography variant="body2" color="warning.main">
@@ -154,6 +160,7 @@ export function ImpersonationsPage() {
     {
       id: 'actions',
       header: t('impersonations.column.actions'),
+      cellWrap: 'nowrap',
       cell: (record) => (
         <Button
           type="button"

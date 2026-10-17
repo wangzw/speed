@@ -91,24 +91,28 @@ export function SmsPage() {
     {
       id: 'name',
       header: t('sms.column.name'),
+      cellWrap: 'nowrap',
       cell: (template) => <Typography variant="body2">{template.name}</Typography>,
     },
     {
       id: 'source',
       header: t('sms.column.source'),
       priority: 'medium',
+      cellWrap: 'nowrap',
       cell: (template) => template.source,
     },
     {
       id: 'locales',
       header: t('sms.column.locales'),
       priority: 'low',
+      cellWrap: 'nowrap',
       cell: (template) => template.locales.join(', '),
     },
     {
       id: 'approvals',
       header: t('sms.column.approvals'),
       priority: 'low',
+      cellWrap: 'nowrap',
       cell: (template) =>
         Object.entries(template.approvals)
           .map(([locale, approval]) => `${locale}: ${approval.state}`)
@@ -117,14 +121,16 @@ export function SmsPage() {
     {
       id: 'enabled',
       header: t('sms.column.enabled'),
+      cellWrap: 'nowrap',
       cell: (template) =>
         template.enabled ? t('sms.enabledYes') : t('sms.enabledNo'),
     },
     {
       id: 'actions',
       header: t('sms.column.actions'),
+      cellWrap: 'nowrap',
       cell: (template) => (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 1, rowGap: 1 }}>
+        <Box sx={{ display: 'flex', columnGap: 1 }}>
           <Button
             type="button"
             size="small"

@@ -126,12 +126,14 @@ export function PermissionsPage() {
     {
       id: 'role',
       header: t('permissions.roles.column.role'),
+      cellWrap: 'nowrap',
       cell: (role) => <Typography variant="body2">{role.role}</Typography>,
     },
     {
       id: 'builtin',
       header: t('permissions.roles.column.builtin'),
       priority: 'medium',
+      cellWrap: 'nowrap',
       cell: (role) =>
         role.builtin ? t('permissions.roles.builtinYes') : t('permissions.roles.builtinNo'),
     },
@@ -139,13 +141,15 @@ export function PermissionsPage() {
       id: 'description',
       header: t('permissions.roles.column.description'),
       priority: 'low',
+      cellWrap: 'nowrap',
       cell: (role) => role.description_key,
     },
     {
       id: 'actions',
       header: t('permissions.roles.column.actions'),
+      cellWrap: 'nowrap',
       cell: (role) => (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 1, rowGap: 1 }}>
+        <Box sx={{ display: 'flex', columnGap: 1 }}>
           <Button
             type="button"
             size="small"
@@ -176,16 +180,19 @@ export function PermissionsPage() {
     {
       id: 'resource',
       header: t('permissions.grants.column.resource'),
+      cellWrap: 'nowrap',
       cell: (grant) => grant.resource,
     },
     {
       id: 'action',
       header: t('permissions.grants.column.action'),
+      cellWrap: 'nowrap',
       cell: (grant) => grant.action,
     },
     {
       id: 'actions',
       header: t('permissions.grants.column.actions'),
+      cellWrap: 'nowrap',
       cell: (grant) => {
         const code = codeByPair(grant.resource, grant.action)
         return (
@@ -225,6 +232,7 @@ export function PermissionsPage() {
     {
       id: 'permission',
       header: t('permissions.catalog.column.permission'),
+      cellWrap: 'nowrap',
       cell: (entry) => entry.permission,
     },
   ]
@@ -233,16 +241,19 @@ export function PermissionsPage() {
     {
       id: 'account',
       header: t('permissions.bindings.column.account'),
+      cellWrap: 'nowrap',
       cell: (binding) => binding.account,
     },
     {
       id: 'role',
       header: t('permissions.bindings.column.role'),
+      cellWrap: 'nowrap',
       cell: (binding) => binding.role,
     },
     {
       id: 'actions',
       header: t('permissions.bindings.column.actions'),
+      cellWrap: 'nowrap',
       cell: (binding) => (
         <Button
           type="button"

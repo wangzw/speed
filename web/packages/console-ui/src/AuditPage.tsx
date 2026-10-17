@@ -212,6 +212,7 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
     {
       id: 'time',
       header: t('audit.column.time'),
+      cellWrap: 'nowrap',
       cell: (record) => {
         const occurred = parseDate(record.occurred_at)
         return occurred === null ? null : formatTime.format(occurred)
@@ -220,6 +221,7 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
     {
       id: 'action',
       header: t('audit.column.action'),
+      cellWrap: 'nowrap',
       // When the host supplies the audit query's own path (basePath), the
       // action links to that record's detail page; without it the cell is
       // plain text.
@@ -236,18 +238,21 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       id: 'object',
       header: t('audit.column.object'),
       priority: AUDIT_RECORD_COLUMN_PRIORITY.object,
+      cellWrap: 'nowrap',
       cell: (record) => record.object,
     },
     {
       id: 'actor',
       header: t('audit.column.actor'),
       priority: AUDIT_RECORD_COLUMN_PRIORITY.actor,
+      cellWrap: 'nowrap',
       cell: (record) => <AuditActorCell actor={record.actor} />,
     },
     {
       id: 'outcome',
       header: t('audit.column.outcome'),
       priority: AUDIT_RECORD_COLUMN_PRIORITY.outcome,
+      cellWrap: 'nowrap',
       cell: (record) => record.outcome,
     },
   ]
