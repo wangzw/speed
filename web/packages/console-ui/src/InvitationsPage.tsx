@@ -535,6 +535,7 @@ export function InvitationsPage() {
               pending={invitationsPending}
               payload={invitationRows}
               error={invitations.error}
+              refreshing={invitations.isFetching}
               empty={invitationRows !== undefined && invitationRows.length === 0}
               headingLevel="h3"
               loading={
@@ -580,6 +581,7 @@ export function InvitationsPage() {
               pending={membersPending}
               payload={memberRows}
               error={members.error}
+              refreshing={members.isFetching}
               empty={memberRows !== undefined && memberRows.length === 0}
               headingLevel="h3"
               loading={

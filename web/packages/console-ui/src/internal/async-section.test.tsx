@@ -53,6 +53,7 @@ function Probe({ error }: { readonly error: unknown }) {
       pending={false}
       payload={undefined}
       error={error}
+      refreshing={false}
       empty={false}
       loading={<p>loading</p>}
       errorState={{

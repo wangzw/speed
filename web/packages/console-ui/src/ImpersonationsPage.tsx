@@ -467,6 +467,7 @@ export function ImpersonationsPage() {
                 pending={pending}
                 payload={rows}
                 error={impersonations.error}
+                refreshing={impersonations.isFetching}
                 empty={rows !== undefined && rows.length === 0}
                 headingLevel="h2"
                 loading={

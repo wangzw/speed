@@ -738,6 +738,7 @@ export function AccountsPage() {
         pending={pending}
         payload={rows}
         error={accounts.error}
+        refreshing={accounts.isFetching}
         empty={rows !== undefined && rows.length === 0}
         headingLevel="h2"
         loading={
@@ -784,6 +785,7 @@ export function AccountsPage() {
               pending={account.isPending && account.data === undefined}
               payload={account.data}
               error={account.error}
+              refreshing={account.isFetching}
               empty={false}
               headingLevel="h3"
               loading={
@@ -882,6 +884,7 @@ export function AccountsPage() {
               pending={factors.isPending && factors.data === undefined}
               payload={factors.data}
               error={factors.error}
+              refreshing={factors.isFetching}
               empty={factors.data !== undefined && factors.data.length === 0}
               headingLevel="h3"
               loading={
@@ -917,6 +920,7 @@ export function AccountsPage() {
               pending={secrets.isPending && secrets.data === undefined}
               payload={secrets.data}
               error={secrets.error}
+              refreshing={secrets.isFetching}
               empty={secrets.data !== undefined && secrets.data.length === 0}
               headingLevel="h3"
               loading={
@@ -956,6 +960,7 @@ export function AccountsPage() {
               pending={sessions.isPending && sessions.data === undefined}
               payload={sessions.data}
               error={sessions.error}
+              refreshing={sessions.isFetching}
               empty={sessions.data !== undefined && sessions.data.length === 0}
               headingLevel="h3"
               loading={

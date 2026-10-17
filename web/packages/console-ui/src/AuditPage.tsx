@@ -339,6 +339,7 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
         pending={pending}
         payload={rows}
         error={records.error}
+        refreshing={records.isFetching}
         empty={rows !== undefined && rows.length === 0}
         headingLevel="h2"
         loading={

@@ -207,6 +207,7 @@ export function SessionsPage() {
           pending={pending}
           payload={rows}
           error={sessions.error}
+          refreshing={sessions.isFetching}
           empty={rows !== undefined && rows.length === 0}
           headingLevel="h2"
           loading={

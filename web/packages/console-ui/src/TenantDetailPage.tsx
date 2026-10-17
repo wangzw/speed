@@ -251,6 +251,7 @@ export function TenantDetailPage({ id, parentHref, rootHref }: TenantDetailPageP
             pending={pending}
             payload={rows}
             error={tenant.error}
+            refreshing={tenant.isFetching}
             empty={false}
             headingLevel="h2"
             loading={

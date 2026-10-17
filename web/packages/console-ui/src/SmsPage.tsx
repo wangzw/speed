@@ -480,6 +480,7 @@ export function SmsPage() {
         pending={pending}
         payload={rows}
         error={templates.error}
+        refreshing={templates.isFetching}
         empty={rows !== undefined && rows.length === 0}
         headingLevel="h2"
         loading={

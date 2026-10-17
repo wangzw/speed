@@ -1935,6 +1935,60 @@ describe('AccountsPage', () => {
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
   })
 
+  it('withdraws the stale marker while the list retry is in flight', async () => {
+    const user = userEvent.setup()
+    let searchedReads = 0
+    let releaseRetry: (() => void) | undefined
+    const listAccounts = (
+      params?: Parameters<ConsoleBackend['listAccounts']>[0],
+    ): ReturnType<ConsoleBackend['listAccounts']> => {
+      // The page's own opening read (no filter) is not the one under test.
+      if (params?.identifier_prefix === undefined) {
+        return Promise.resolve({
+          accounts: [accountFixture({ display_name: 'Ada Lovelace' })],
+          next_cursor: '',
+        })
+      }
+      searchedReads += 1
+      if (searchedReads === 1) {
+        return Promise.resolve({
+          accounts: [accountFixture({ display_name: 'Ada Lovelace' })],
+          next_cursor: '',
+        })
+      }
+      if (searchedReads === 2) {
+        return Promise.reject(new Error('refresh failed'))
+      }
+      // The retry stays in flight: the marker must already be withdrawn.
+      return new Promise((resolve) => {
+        releaseRetry = () =>
+          resolve({
+            accounts: [accountFixture({ display_name: 'Ada Lovelace' })],
+            next_cursor: '',
+          })
+      })
+    }
+    const operations = withAccounts({ listAccounts })
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    await screen.findByText('Ada Lovelace')
+
+    // A failed refresh keeps the settled list and marks it stale.
+    await user.click(screen.getByRole('button', { name: '刷新' }))
+    const stale = await screen.findByRole('alert')
+    expect(stale).toHaveTextContent('所示内容可能已过期，请重试刷新。')
+
+    // The retry is in flight: the marker goes away rather than staying
+    // beside content the page is already re-reading.
+    await user.click(within(stale).getByRole('button', { name: '重试' }))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
+
+    await act(async () => {
+      releaseRetry?.()
+    })
+  })
+
   it('has no axe violations', async () => {
     const user = userEvent.setup()
     const operations = withAccounts()

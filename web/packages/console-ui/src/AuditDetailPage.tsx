@@ -153,6 +153,7 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
             pending={pending}
             payload={rows}
             error={record.error}
+            refreshing={record.isFetching}
             empty={false}
             headingLevel="h2"
             loading={

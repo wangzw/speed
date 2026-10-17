@@ -188,6 +188,7 @@ export function SsoPage() {
             pending={pending}
             payload={rows}
             error={providers.error}
+            refreshing={providers.isFetching}
             empty={rows !== undefined && rows.length === 0}
             headingLevel="h2"
             loading={

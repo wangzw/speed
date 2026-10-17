@@ -383,6 +383,7 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
         pending={pending}
         payload={rows}
         error={tenants.error}
+        refreshing={tenants.isFetching}
         empty={rows !== undefined && rows.length === 0}
         headingLevel="h2"
         loading={

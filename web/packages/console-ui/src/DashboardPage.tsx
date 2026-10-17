@@ -239,6 +239,7 @@ export function DashboardPage() {
           pending={tenantsPending}
           payload={tenantsRows}
           error={tenants.error}
+          refreshing={tenants.isFetching}
           empty={false}
           headingLevel="h2"
           loading={
@@ -266,6 +267,7 @@ export function DashboardPage() {
           pending={healthPending}
           payload={health}
           error={healthError}
+          refreshing={healthActivity.isFetching || healthLogins.isFetching}
           empty={false}
           headingLevel="h3"
           loading={
@@ -316,6 +318,7 @@ export function DashboardPage() {
           pending={recordsPending}
           payload={recordsRows}
           error={records.error}
+          refreshing={records.isFetching}
           empty={recordsRows !== undefined && recordsRows.length === 0}
           headingLevel="h3"
           loading={

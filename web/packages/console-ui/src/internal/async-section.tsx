@@ -78,10 +78,11 @@ export interface ConsoleAsyncSectionProps<Payload> {
   /**
    * Whether a read is in flight over content already on screen (a refetch).
    * A failed refresh keeps the content and marks it stale; the marker is
-   * withdrawn while the retry is in flight, so the caller passes its read's
-   * fetching state here. Defaults to false.
+   * withdrawn while the retry is in flight, so every caller passes its
+   * read's fetching state here. Required: a section whose caller dropped it
+   * would keep the marker standing over a read it is already re-reading.
    */
-  readonly refreshing?: boolean
+  readonly refreshing: boolean
   /** The settled content, built from the narrowed payload. */
   readonly children: (payload: Payload) => ReactNode
 }
@@ -91,7 +92,7 @@ export function ConsoleAsyncSection<Payload>({
   error,
   errorState,
   headingLevel = 'h2',
-  refreshing = false,
+  refreshing,
   ...rest
 }: ConsoleAsyncSectionProps<Payload>) {
   const { t } = useConsoleUiTranslation()
