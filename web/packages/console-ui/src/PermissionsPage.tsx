@@ -118,10 +118,12 @@ export function PermissionsPage() {
   const unbindRole = operations.useUnbindRole()
 
   const permissions = catalog.data ?? []
-  // The (resource, action) -> permission-code lookup the revoke uses: the
-  // grant route names a permission by its code, while the grant list shows
-  // the pair the engine matches on, so a revoke maps a grant's pair back to
-  // the code that names it (see buildGrantCodeIndex).
+  // The (resource, action) -> permission-code lookup both the row label and
+  // the revoke use: a grant row carries the pair the engine matches on,
+  // while the grant route names a permission by its code, so the catalog
+  // maps the pair back to the code that names it. A pair the catalog does
+  // not name renders as `resource/action` and offers no revoke (see
+  // buildGrantCodeIndex).
   const codeByPair = useMemo(() => buildGrantCodeIndex(permissions), [permissions])
 
   const roleRows = roles.data
@@ -751,9 +753,10 @@ export function PermissionsPage() {
  * A grant route names a permission by its CODE (`PUT`/`DELETE .../grants/
  * :permission`, e.g. authn.account.create): the handler translates the code
  * to the (resource, action) pair the engine matches on (pkg/authz/admin's
- * grant handlers). The grant list, though, shows the pair and not the code,
- * so a revoke has to map the pair back to a code -- and the page's own
- * source of the codes is the permission catalog it already loads.
+ * grant handlers). A grant row carries that pair; the page renders the row
+ * as the pair's code and the revoke names the permission by that code --
+ * and the page's own source of the codes is the permission catalog it
+ * already loads.
  *
  * A code's trailing two dot-separated segments spell its pair
  * (authn.account.create -> account/create; a bare module code like

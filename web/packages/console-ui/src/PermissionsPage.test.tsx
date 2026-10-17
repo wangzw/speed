@@ -103,9 +103,9 @@ function withAuthz(
     makeConsoleBackend({
       listTenants: () => Promise.resolve([TENANT]),
       // The catalog carries permission CODES (the form the grant routes
-      // name a permission by), not the resource:action pair the grant list
-      // shows -- the page maps a grant's pair back to its code for the
-      // revoke.
+      // name a permission by); a grant row carries the resource:action pair
+      // the engine matches on, and the page maps it back to its code for
+      // the row label and the revoke.
       listPermissions: () =>
         Promise.resolve([
           permission('crm.deal.read'),
@@ -360,8 +360,9 @@ describe('PermissionsPage', () => {
     const operations = withAuthz({
       // The catalog's code is authn.mfa.reset, whose translated pair is
       // factor/reset (pkg/authz's translation table is its own authority and
-      // is not a suffix of the code); the grant list shows that pair. The
-      // revoke still names the code, resolved by the unique action.
+      // is not a suffix of the code); the grant row carries that pair. The
+      // label and the revoke still name the code, resolved by the unique
+      // action.
       listPermissions: () => Promise.resolve([permission('authn.mfa.reset')]),
       listRoles: () => Promise.resolve([role()]),
       listGrants: () =>
