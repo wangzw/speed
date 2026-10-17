@@ -323,6 +323,63 @@ describe('AsyncSection', () => {
     await expectNoAxeViolations()
   })
 
+  it('renders the stale notice as a warning alert with two spacing units below it', () => {
+    renderWithProviders(
+      <div>
+        <h1>Page title</h1>
+        <AsyncSection
+          pending={false}
+          payload={['alpha', 'beta']}
+          empty={false}
+          loading={<p>loading node</p>}
+          errorState={ERROR_STATE}
+          emptyState={EMPTY_STATE}
+          staleState={staleStateOf(vi.fn())}
+        >
+          {(items) => <p>content {items.join(',')}</p>}
+        </AsyncSection>
+      </div>,
+    )
+    const alert = screen.getByRole('alert')
+    // The notice is a warning: a refresh failed but the shown data keeps
+    // its meaning. Error and info severities are not this state.
+    expect(alert).toHaveClass('MuiAlert-colorWarning')
+    expect(alert.className).not.toMatch(/MuiAlert-colorError/)
+    expect(alert.className).not.toMatch(/MuiAlert-colorInfo/)
+    // Two spacing units (8px each) separate the notice from the content
+    // rendered beneath it.
+    expect(alert).toHaveStyle({ marginBottom: '16px' })
+  })
+
+  it('keeps the stale notice and its retry when the description is empty', async () => {
+    const onRetry = vi.fn()
+    renderWithProviders(
+      <AsyncSection
+        pending={false}
+        payload={['alpha']}
+        empty={false}
+        loading={<p>loading node</p>}
+        errorState={ERROR_STATE}
+        emptyState={EMPTY_STATE}
+        staleState={{
+          description: '',
+          retryLabel: STALE_RETRY_LABEL,
+          onRetry,
+        }}
+      >
+        {(items) => <p>content {items.join(',')}</p>}
+      </AsyncSection>,
+    )
+    // An empty description does not dissolve the state marker: the alert
+    // stands (announcing the state change) and the retry stays available.
+    const alert = screen.getByRole('alert')
+    expect(alert).toBeInTheDocument()
+    const retry = screen.getByRole('button', { name: STALE_RETRY_LABEL })
+    expect(alert).toContainElement(retry)
+    await userEvent.click(retry)
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+
   it('withdraws the stale alert on retry and remounts it when the retry fails', async () => {
     const view = renderWithProviders(<StaleSectionHost />)
     const firstAlert = screen.getByRole('alert')

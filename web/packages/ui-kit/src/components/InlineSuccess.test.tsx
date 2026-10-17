@@ -74,6 +74,17 @@ describe('InlineSuccess', () => {
     expect(status).toHaveStyle({ width: '100%' })
   })
 
+  it('renders an empty string literally as a banner, not as silent', () => {
+    // The design ruling holds `''` and `null` apart: only `null` means
+    // "nothing to confirm" and clips the region. An empty string is a
+    // success carrying no text -- a painted, empty banner.
+    const { getByRole } = renderWithProviders(<InlineSuccess message="" />)
+    const status = getByRole('status')
+    expect(status).toHaveTextContent('')
+    expect(status).not.toHaveStyle(CLIPPED)
+    expect(status).toHaveStyle({ width: '100%' })
+  })
+
   it('fills and clears the same mounted region as the message changes', async () => {
     const view = renderWithProviders(<SuccessHost />)
     const silent = view.getByRole('status')

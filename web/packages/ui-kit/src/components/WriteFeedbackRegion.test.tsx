@@ -12,7 +12,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { expectNoAxeViolations } from '../../test-utils/axe.js'
-import type { WriteOutcome } from '../write-feedback.js'
+import { useWriteFeedback, type WriteOutcome } from '../write-feedback.js'
 import { WriteFeedbackRegion } from './WriteFeedbackRegion.js'
 
 const resolve = (code: string): string => `resolved:${code}`
@@ -63,6 +63,65 @@ function RegionHost() {
       <WriteFeedbackRegion outcome={outcome} resolve={resolve} />
     </div>
   )
+}
+
+/** A host settling the slot with the empty string through the hook. */
+function EmptyMessageHost() {
+  const feedback = useWriteFeedback()
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => {
+          feedback.succeed('')
+        }}
+      >
+        succeed empty
+      </button>
+      <WriteFeedbackRegion outcome={feedback.outcome} resolve={resolve} />
+    </div>
+  )
+}
+
+/**
+ * Renders one outcome twice -- without caller `sx` and with `marginTop: 2`
+ * -- and checks that only the root's spacing moved. A caller's `sx` copied
+ * into a banner would add its margin to the root's own and double the gap.
+ */
+function expectCallerSxToStayOnRoot(outcome: WriteOutcome | null): void {
+  const plain = renderWithProviders(
+    <WriteFeedbackRegion outcome={outcome} resolve={resolve} />,
+  )
+  const plainRoot = plain.container.firstElementChild
+  expect(plainRoot).toHaveStyle({ marginTop: '8px' })
+  const plainStatusMargin = getComputedStyle(
+    plain.getByRole('status'),
+  ).marginTop
+  const plainAlert =
+    outcome?.kind === 'failure' ? plain.getByRole('alert') : null
+  const plainAlertMargin =
+    plainAlert === null ? null : getComputedStyle(plainAlert).marginTop
+  plain.unmount()
+
+  const styled = renderWithProviders(
+    <WriteFeedbackRegion
+      outcome={outcome}
+      resolve={resolve}
+      sx={{ marginTop: 2 }}
+    />,
+  )
+  // The caller's spacing lands on the root ...
+  expect(styled.container.firstElementChild).toHaveStyle({ marginTop: '16px' })
+  // ... and on nothing inside it: the status region (silent or filled) and
+  // the failure alert keep exactly the margin they had without caller `sx`.
+  expect(getComputedStyle(styled.getByRole('status')).marginTop).toBe(
+    plainStatusMargin,
+  )
+  if (plainAlertMargin !== null) {
+    expect(getComputedStyle(styled.getByRole('alert')).marginTop).toBe(
+      plainAlertMargin,
+    )
+  }
 }
 
 describe('WriteFeedbackRegion', () => {
@@ -190,6 +249,31 @@ describe('WriteFeedbackRegion', () => {
     // renders inside that root.
     expect(root).toHaveStyle({ marginTop: '16px' })
     expect(root).toContainElement(view.getByRole('status'))
+  })
+
+  it('applies the caller sx only to the root for a success', () => {
+    expectCallerSxToStayOnRoot({ kind: 'success', message: 'Saved' })
+  })
+
+  it('applies the caller sx only to the root for an empty slot', () => {
+    expectCallerSxToStayOnRoot(null)
+  })
+
+  it('applies the caller sx only to the root for a failure', () => {
+    expectCallerSxToStayOnRoot({ kind: 'failure', code: 'write_failed' })
+  })
+
+  it('renders a success carrying the empty string as a painted, empty banner', async () => {
+    const view = renderWithProviders(<EmptyMessageHost />)
+    expect(view.getByRole('status')).toHaveStyle(CLIPPED)
+
+    await userEvent.click(view.getByRole('button', { name: 'succeed empty' }))
+    // `''` is a settled success, not silent: the region drops the clip and
+    // paints an empty banner, exactly as a direct `InlineSuccess` does.
+    const status = view.getByRole('status')
+    expect(status).toHaveTextContent('')
+    expect(status).not.toHaveStyle(CLIPPED)
+    expect(status).toHaveStyle({ width: '100%' })
   })
 
   it('keeps the success banner as one node across slot changes', async () => {
