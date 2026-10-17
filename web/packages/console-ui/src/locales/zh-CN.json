@@ -252,11 +252,9 @@
     "removeAria": "移除设置项 {{key}}",
     "saved": "设置已保存",
     "removed": "设置项已移除",
-    "removedSubmitted": "移除请求已提交",
     "state": {
       "default": "默认",
-      "overridden": "已覆盖",
-      "masked": "已遮蔽"
+      "overridden": "已覆盖"
     }
   },
   "audit": {

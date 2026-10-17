@@ -23,22 +23,19 @@
  * item's value arrives already masked by the server; the page renders the
  * masked text as-is and never masks a second time.
  *
- * A row's state comes from the selected layer's own override: for an
- * ordinary item the view's `written` is that layer's row text and is empty
- * when the item falls back to its declared default, so the page marks the
- * row as overridden when it is non-empty and as default otherwise. Only an
- * overridden row carries a remove control: a default row has nothing to
- * take back, so the control is not rendered at all rather than offered as
- * a switch that can only be a no-op. An explicitly written empty string is
- * indistinguishable from no row in this view and is treated as the
- * declared default.
+ * A row's state comes from whether the selected layer holds its own row:
+ * the view's `has_row` says so. The `written` text cannot: an explicitly
+ * written empty string is an empty text too, so it would read as the
+ * declared default. A held row is marked overridden and a missing one as
+ * the declared default. Only a held row carries a remove control: a
+ * default row has nothing to take back, so the control is not rendered at
+ * all rather than offered as a switch that can only be a no-op.
  *
- * A sensitive item cannot be told apart that way: the server replaces its
- * `written` with the mask string whether or not the layer holds a row, so
- * the answer no longer says which of the two it is. The page marks such a
- * row as masked and keeps its remove control, because hiding the control
- * would take away the only way to clear a real override; whether the
- * control will act is known only to the server.
+ * A sensitive item's text arrives masked, so `written` and `value` show
+ * the mask; `has_row` still reports the row's existence. The page marks
+ * such a row default or overridden like any other and renders the remove
+ * control only where there is a row to remove; the key cell carries the
+ * sensitive marker that explains the masked text.
  *
  * Editing an item fills its draft (the table's value cell is the draft
  * input); the sticky save bar writes every changed item (one PUT each)
@@ -86,19 +83,17 @@ const ALL = ''
 const DEFAULT_ROWS_PER_PAGE = 10
 
 /** A row's state as the answer lets the page tell it. */
-type SettingState = 'default' | 'overridden' | 'masked'
+type SettingState = 'default' | 'overridden'
 
 /**
  * The state of one row: `default` when the selected layer holds no row and
  * the value falls back to the declaration, `overridden` when the layer wrote
- * one, and `masked` for a sensitive item, whose `written` is the server's
- * mask string whether or not a row exists. See the page comment.
+ * one. `has_row` is the answer's own statement of that, independent of the
+ * row's text — which is empty for a written empty string too, and is the
+ * server's mask string for a sensitive item.
  */
 function settingState(setting: ConsoleSetting): SettingState {
-  if (setting.sensitive) {
-    return 'masked'
-  }
-  return setting.written === '' ? 'default' : 'overridden'
+  return setting.has_row ? 'overridden' : 'default'
 }
 
 export function SettingsPage() {
@@ -187,14 +182,9 @@ export function SettingsPage() {
             key: settingKeyRest(setting.key, setting.namespace),
           },
           {
-            // A masked item's answer never says whether the layer held a
-            // row, so the removal cannot claim one was there to clear.
-            onSuccess: () =>
-              setSuccess(
-                setting.sensitive
-                  ? t('settings.removedSubmitted')
-                  : t('settings.removed'),
-              ),
+            // The control is rendered only for a row the answer said the
+            // layer holds, so the removal can say a row was removed.
+            onSuccess: () => setSuccess(t('settings.removed')),
           },
         )
       },
@@ -267,11 +257,11 @@ export function SettingsPage() {
       header: t('settings.column.actions'),
       cellWrap: 'nowrap',
       // A declared default has no row to take back: the remove control is
-      // left out rather than rendered as a switch that can never act. A
-      // masked row keeps it: the answer cannot say whether a row exists, and
-      // removing the control would hide the only way to clear a real one.
+      // left out rather than rendered as a switch that can never act.
+      // `has_row` says so for a sensitive item too, whose masked text
+      // reveals nothing about its row.
       cell: (setting) =>
-        settingState(setting) !== 'default' ? (
+        setting.has_row ? (
           <Button
             type="button"
             size="small"

@@ -112,6 +112,7 @@ describe('consoleOperations', () => {
             sensitive: false,
             default: '3',
             written: '',
+            has_row: false,
             value: '3',
           },
         ]

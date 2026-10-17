@@ -66,9 +66,9 @@
 
 ### 视图
 
-**读的应答是 200 加一份视图，落地的写与删是 204 无正文。** 视图逐字段构造，从不把设置模块的值原样交给客户端：声明部分逐字段取自 `settings.DeclaredItem`，值部分由该层的行与 `Get` 的解析结果给出。设置项视图的字段：`key`、`namespace`（声明它的模块，即键的前缀段）、`type`（声明类型自己的文本形式）、`description`、`domain`（取值域的规则，`DeclaredItem.Item.Domain` 的 `Rule()`，没有取值域的项为空）、`sensitive`、`default`、`written`、`value`。时间不在此列——一张设置行的时间不随视图交给客户端。
+**读的应答是 200 加一份视图，落地的写与删是 204 无正文。** 视图逐字段构造，从不把设置模块的值原样交给客户端：声明部分逐字段取自 `settings.DeclaredItem`，值部分由该层的行与 `Get` 的解析结果给出。设置项视图的字段：`key`、`namespace`（声明它的模块，即键的前缀段）、`type`（声明类型自己的文本形式）、`description`、`domain`（取值域的规则，`DeclaredItem.Item.Domain` 的 `Rule()`，没有取值域的项为空）、`sensitive`、`default`、`written`、`has_row`（该层是否持有这个键的行）、`value`。时间不在此列——一张设置行的时间不随视图交给客户端。
 
-**敏感项的值由本模块遮蔽。** `Declared` 的列表不带敏感项的默认值（`DeclaredItem.Default` 为空），`List` 与 `Get` 却照常交出敏感项的值；本模块按 `DeclaredItem.Sensitive` 把敏感项的 `default` 置空、把 `written` 与 `value` 换成一个固定遮蔽串再交出。漏了这一步不报错、凭据随响应出去。视图里 `default`、`written`、`value` 的含义与遮蔽规则是宿主与前端据以读应答的契约（[ADR-settings-declaration-2026-09-29](../../../adr/adr-settings-declaration-2026-09-29.md)）。
+**敏感项的值由本模块遮蔽。** `Declared` 的列表不带敏感项的默认值（`DeclaredItem.Default` 为空），`List` 与 `Get` 却照常交出敏感项的值；本模块按 `DeclaredItem.Sensitive` 把敏感项的 `default` 置空、把 `written` 与 `value` 换成一个固定遮蔽串再交出。漏了这一步不报错、凭据随响应出去。遮蔽只覆盖文本：`has_row` 照常报出该层是否持有行。视图里 `default`、`written`、`has_row`、`value` 的含义与遮蔽规则是宿主与前端据以读应答的契约（[ADR-settings-declaration-2026-09-29](../../../adr/adr-settings-declaration-2026-09-29.md)）。
 
 ### 宿主可见面
 
@@ -83,7 +83,7 @@
 ### 对外接口面
 
 - 模块名 `settings.admin`、配置键 `settings.admin.endpoints`、管理面路由的路径与查询串的键（`layer`、`tenant` 及其取值）、每条路由询问的权限（读 `settings.read`、写 `settings.write`）与域（平台域与租户域），以及 `Problem.Type` 前缀 `urn:speed:settings:` 及其下的码（`bad-request`、`invalid-value`），是本模块对宿主的接口面。改动它们是宿主可见的破坏性变更。
-- 设置项视图的字段名（`key`、`namespace`、`type`、`description`、`domain`、`sensitive`、`default`、`written`、`value`）与敏感项遮蔽的规则是应答形状：宿主与前端据此读应答。
+- 设置项视图的字段名（`key`、`namespace`、`type`、`description`、`domain`、`sensitive`、`default`、`written`、`has_row`、`value`）与敏感项遮蔽的规则是应答形状：宿主与前端据此读应答。`has_row` 报所选层是否真的有一行，使「默认」与「已覆盖」不靠文本值推断（空串值是一行，无行则不是）。
 - 本模块可替换、可撤掉，不改变调用方或设置模块的代码。
 
 ## 依赖
@@ -151,14 +151,14 @@ sequenceDiagram
 
 | 概念 | 形状 | 说明 |
 |---|---|---|
-| 设置项视图 | `{key, namespace, type, description, domain, sensitive, default, written, value}` | 声明部分逐字段取自 `settings.DeclaredItem`；值部分取自该层的行与 `Get` 的解析结果；敏感项的值遮蔽 |
+| 设置项视图 | `{key, namespace, type, description, domain, sensitive, default, written, has_row, value}` | 声明部分逐字段取自 `settings.DeclaredItem`；值部分取自该层的行与 `Get` 的解析结果；敏感项的值遮蔽，`has_row` 不遮蔽 |
 | 写正文 | `{value}` | `PUT /settings/:namespace/:key` 的正文；值按设置模块的声明类型编码 |
 | 层选 | `settings.Layer` | 由查询串定出：`layer=global` 给 `settings.Global()`，`layer=tenant` 给 `settings.ForTenant(tenant)` |
 | 域 | `authz.Domain` | 由层选定出：全局层给 `authz.PlatformDomain`，租户层给 `authz.Domain(tenant)` |
 
 视图与正文都是本模块自己的类型，不是设置模块的：设置模块的 `Entry` 是表里的一行（含写入时刻），`DeclaredItem` 是键表里的声明（含反射类型）；交出去的是它们的字段化视图、收进来的是校验过形状的正文。
 
-**遮蔽串与查询串的取值是封闭集。** `layer` 取 `global` 与 `tenant`；敏感项在 `written` 与 `value` 处换成固定遮蔽串，`default` 对敏感项置空。这些取值是宿主与前端据以读应答的契约。
+**遮蔽串与查询串的取值是封闭集。** `layer` 取 `global` 与 `tenant`；敏感项在 `written` 与 `value` 处换成固定遮蔽串，`default` 对敏感项置空，`has_row` 的布尔值不因敏感与否而变。这些取值是宿主与前端据以读应答的契约。
 
 ## 核心算法与流程
 
@@ -191,7 +191,7 @@ sequenceDiagram
 3. `List(ctx, 层选)` 取该层写下的行，按键建索引；逐项用 `Get(层选, key, reflect.New(声明类型))` 取解析到的值。
 4. 按 `DeclaredItem.Sensitive` 遮蔽敏感项的值，交出视图，200。
 
-**列举按层给值，不改回落规则。** `List` 报出的是该层显式写下的行，`Get` 按层选起点走三级回落（租户行、全局行、声明默认值）；视图因此同时给出 `written`（该层显式写下的文本，无则为空）与 `value`（解析到的值）。这与设置模块读写的语义一致，本模块不另定一套。
+**列举按层给值，不改回落规则。** `List` 报出的是该层显式写下的行，`Get` 按层选起点走三级回落（租户行、全局行、声明默认值）；视图因此同时给出 `written`（该层显式写下的文本，无则为空）、`has_row`（该层是否持有行）与 `value`（解析到的值）。`written` 为空同时对应「该层无行」与「该层有一行且文本为空串」，两者由 `has_row` 区分。这与设置模块读写的语义一致，本模块不另定一套。
 
 ### 敏感项的遮蔽
 

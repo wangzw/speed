@@ -7,7 +7,9 @@
  * its sticky save bar drives the writes -- one PUT per changed item, a
  * remove calling the remove operation. A row whose layer holds no override
  * is marked as the declared default and carries no remove control; only an
- * overridden row can be removed. A refused write renders the
+ * overridden row can be removed, which `has_row` decides for a row written
+ * as the empty string and for a sensitive row whose text is masked. A
+ * refused write renders the
  * answer's code text (a value outside the domain reading the invalid-value
  * text); a landed save clears the item's draft; a refused save keeps it. A
  * refused read (403) renders the permission placeholder without a retry,
@@ -36,6 +38,7 @@ const item: ConsoleSetting = {
   sensitive: false,
   default: '3',
   written: '5',
+  has_row: true,
   value: '5',
 }
 
@@ -44,6 +47,7 @@ const defaultItem: ConsoleSetting = {
   ...item,
   key: 'mail.limit',
   written: '',
+  has_row: false,
   value: '3',
 }
 
@@ -110,6 +114,34 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('textbox', { name: 'mail.limit' })).toBeEnabled()
   })
 
+  it('marks a row written as the empty string as an override', async () => {
+    // An explicitly written empty string and a missing row both carry an
+    // empty `written`; only `has_row` tells them apart. The row is a real
+    // override, and the page must offer the way to remove it.
+    const emptyText: ConsoleSetting = {
+      ...item,
+      key: 'authn.sms.allowed-prefixes',
+      type: 'string',
+      default: '[]',
+      written: '',
+      has_row: true,
+      value: '',
+    }
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSettings: () => Promise.resolve([emptyText]),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+
+    expect(await screen.findByText('已覆盖')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', {
+        name: '移除设置项 authn.sms.allowed-prefixes',
+      }),
+    ).toBeInTheDocument()
+  })
+
   it('renders the items in a table and pages a large declared set', async () => {
     const many: ConsoleSetting[] = Array.from({ length: 12 }, (_, index) => ({
       ...item,
@@ -139,6 +171,7 @@ describe('SettingsPage', () => {
       sensitive: true,
       default: '',
       written: '********',
+      has_row: true,
       value: '********',
     }
     const operations = createConsoleOperations(
@@ -147,21 +180,38 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, { operations })
     expect(await screen.findByDisplayValue('********')).toBeInTheDocument()
 
-    // The server masks `written` as well, so the answer cannot say whether
-    // the layer holds a row: the row is marked masked and keeps its remove
-    // control -- hiding it would take away the only way to clear a real
-    // override, and calling it default or overridden would be a claim the
-    // answer does not carry.
-    expect(screen.getByText('已遮蔽')).toBeInTheDocument()
+    // The server masks the text but reports the row: the page states the
+    // row is overridden and keeps its remove control.
+    expect(screen.getByText('已覆盖')).toBeInTheDocument()
     await user.click(
       screen.getByRole('button', { name: '移除设置项 mail.password' }),
     )
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: '确认' }))
 
-    // The answer cannot say whether a row was there to clear, so the notice
-    // does not claim one was removed.
-    expect(await screen.findByText('移除请求已提交')).toBeInTheDocument()
+    expect(await screen.findByText('设置项已移除')).toBeInTheDocument()
+  })
+
+  it('marks a sensitive item with no row as the default and offers no removal', async () => {
+    const masked: ConsoleSetting = {
+      ...item,
+      key: 'mail.password',
+      sensitive: true,
+      default: '',
+      written: '********',
+      has_row: false,
+      value: '********',
+    }
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listSettings: () => Promise.resolve([masked]) }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+
+    expect(await screen.findByDisplayValue('********')).toBeInTheDocument()
+    expect(screen.getByText('默认')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '移除设置项 mail.password' }),
+    ).toBeNull()
   })
 
   it('lists the namespaces in the secondary navigation and narrows the read on selection', async () => {

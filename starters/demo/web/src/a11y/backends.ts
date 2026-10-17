@@ -133,6 +133,7 @@ const SETTING: SettingsAdminSetting = {
   sensitive: false,
   default: 'value',
   written: 'value',
+  has_row: true,
   value: 'value',
 }
 

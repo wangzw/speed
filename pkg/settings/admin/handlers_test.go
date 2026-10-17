@@ -171,6 +171,9 @@ func TestTheListShowsEveryDeclaredItemWithItsResolvedValue(t *testing.T) {
 	if window.Written != "" {
 		t.Errorf("written is %q, want empty: the layer holds no row", window.Written)
 	}
+	if window.HasRow {
+		t.Error("has_row is true, want false: the layer holds no row")
+	}
 	if window.Value != "5m0s" {
 		t.Errorf("value is %q, want 5m0s: the resolved duration in its text form", window.Value)
 	}
@@ -179,11 +182,83 @@ func TestTheListShowsEveryDeclaredItemWithItsResolvedValue(t *testing.T) {
 	if limit.Written != "42" || limit.Value != "42" {
 		t.Errorf("the limit's written/value are %q/%q, want 42/42", limit.Written, limit.Value)
 	}
+	if !limit.HasRow {
+		t.Error("has_row is false, want true: the layer holds the limit's row")
+	}
 	if limit.Default != "100" {
 		t.Errorf("the limit's default is %q, want 100", limit.Default)
 	}
 	if limit.Domain != "" {
 		t.Errorf("the limit's domain is %q, want empty: it declares none", limit.Domain)
+	}
+}
+
+// A row the layer holds as the empty string is reported as a row: the text is
+// empty either way, so has_row is what tells the client the answer holds an
+// override. A domain that admits the empty text lets the write land.
+func TestAnEmptyTextRowIsReportedAsAHeldRow(t *testing.T) {
+	r := newRig(t)
+	r.store.declared = []settings.DeclaredItem{
+		decl("authn.sms.allowed-prefixes", "authn.sms", reflect.TypeFor[string](), "[]", settings.Item{}),
+	}
+	r.store.values["authn.sms.allowed-prefixes"] = ""
+	r.store.rows = []settings.Entry{{Key: "authn.sms.allowed-prefixes", Tenant: "", Value: ""}}
+
+	w := r.do(http.MethodGet, "/settings/admin/settings?layer=global", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("the request ended with %d: %s", w.Code, w.Body.String())
+	}
+	var views []settingView
+	decode(t, w, &views)
+	if len(views) != 1 {
+		t.Fatalf("the listing holds %d items, want 1", len(views))
+	}
+	v := views[0]
+	if v.Written != "" {
+		t.Errorf("written is %q, want empty: the row's text is the empty string", v.Written)
+	}
+	if !v.HasRow {
+		t.Error("has_row is false, want true: the layer holds an empty-text row")
+	}
+}
+
+// A sensitive item masks its text but not its row's existence: a request for a
+// sensitive item whose layer holds no row reports has_row false, and one whose
+// layer holds a row reports true.
+func TestASensitiveItemStillReportsWhetherItsRowExists(t *testing.T) {
+	cases := []struct {
+		name string
+		rows []settings.Entry
+		want bool
+	}{
+		{"no row", nil, false},
+		{"a row", []settings.Entry{{Key: "authn.sms.secret", Tenant: "", Value: "hunter2"}}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t)
+			r.store.declared = []settings.DeclaredItem{
+				decl("authn.sms.secret", "authn.sms", reflect.TypeFor[string](), "", settings.Item{Sensitive: true}),
+			}
+			r.store.values["authn.sms.secret"] = "hunter2"
+			r.store.rows = tc.rows
+
+			w := r.do(http.MethodGet, "/settings/admin/settings?layer=global", nil)
+			if w.Code != http.StatusOK {
+				t.Fatalf("the request ended with %d: %s", w.Code, w.Body.String())
+			}
+			var views []settingView
+			decode(t, w, &views)
+			if len(views) != 1 {
+				t.Fatalf("the listing holds %d items, want 1", len(views))
+			}
+			if views[0].Written != maskedValue {
+				t.Errorf("written is %q, want the mask", views[0].Written)
+			}
+			if views[0].HasRow != tc.want {
+				t.Errorf("has_row is %t, want %t", views[0].HasRow, tc.want)
+			}
+		})
 	}
 }
 

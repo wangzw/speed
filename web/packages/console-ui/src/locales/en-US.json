@@ -252,11 +252,9 @@
     "removeAria": "Remove setting {{key}}",
     "saved": "Setting saved",
     "removed": "Setting removed",
-    "removedSubmitted": "Removal submitted",
     "state": {
       "default": "Default",
-      "overridden": "Overridden",
-      "masked": "Masked"
+      "overridden": "Overridden"
     }
   },
   "audit": {

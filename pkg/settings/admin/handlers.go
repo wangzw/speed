@@ -57,8 +57,9 @@ func (p *product) handleListNamespace(c *gin.Context) {
 // it is given.
 //
 // The items are the declaration listing, which takes no IO and needs no context.
-// Each item's written text comes from the selected layer's rows, and its resolved
-// text from a read at that layer, which walks the three-level fallback. A
+// Each item's written text and row existence come from the selected layer's rows,
+// and its resolved text from a read at that layer, which walks the three-level
+// fallback. A
 // namespace no declared item belongs to is a 404; a failure to read the rows or
 // resolve a value is a 503, because a listing that could not read a row must not
 // answer as though the row were not there.
@@ -83,9 +84,14 @@ func (p *product) list(c *gin.Context, sel selection, namespace string) {
 		p.unavailable(c, "listing the settings rows", err)
 		return
 	}
+	// The rows are keyed by their text and, separately, by their existence: an
+	// empty text is a row the layer holds as much as a non-empty one, and a
+	// client reads the existence to tell a written row from a fallback.
 	written := make(map[string]string, len(rows))
+	present := make(map[string]bool, len(rows))
 	for _, row := range rows {
 		written[row.Key] = row.Value
+		present[row.Key] = true
 	}
 
 	views := make([]settingView, 0, len(items))
@@ -95,7 +101,7 @@ func (p *product) list(c *gin.Context, sel selection, namespace string) {
 			p.unavailable(c, "resolving a setting", err)
 			return
 		}
-		views = append(views, viewOf(item, written[item.Key], value))
+		views = append(views, viewOf(item, written[item.Key], present[item.Key], value))
 	}
 	c.JSON(http.StatusOK, views)
 }

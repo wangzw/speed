@@ -28,6 +28,12 @@ const maskedValue = "********"
 // and a duration reads "5m0s" rather than as a count of nanoseconds. A sensitive
 // item's default is empty, and its written and value carry the mask string
 // instead of the value.
+//
+// written alone cannot say whether the layer holds a row: an empty text is both
+// a missing row and a row written as the empty string. has_row carries that fact
+// on its own, so a client can mark the item as the declared default or as an
+// override without interpreting the text, and a sensitive item tells a client
+// whether there is a row to remove even though its text is masked.
 type settingView struct {
 	Key         string `json:"key"`
 	Namespace   string `json:"namespace"`
@@ -37,11 +43,12 @@ type settingView struct {
 	Sensitive   bool   `json:"sensitive"`
 	Default     string `json:"default"`
 	Written     string `json:"written"`
+	HasRow      bool   `json:"has_row"`
 	Value       string `json:"value"`
 }
 
 // viewOf builds one item's view from its declaration, the text the selected
-// layer holds for it, and the text it resolves to.
+// layer holds for it, whether it holds a row at all, and the text it resolves to.
 //
 // The item's namespace is the module that declared it, which is the key's prefix
 // segment. The type is the declared type's text form. The domain is the rule the
@@ -52,7 +59,8 @@ type settingView struct {
 // place, because the masking is a property of the item rather than of the route
 // that read it: a second place building a view is a second place that can forget
 // to mask it, and a forgotten mask sends a credential out with the response.
-func viewOf(item settings.DeclaredItem, written, value string) settingView {
+// The mask covers the text only; has_row reports the row's existence unchanged.
+func viewOf(item settings.DeclaredItem, written string, hasRow bool, value string) settingView {
 	// The metadata the declaration gave hangs off the embedded Item; the
 	// promoted selectors reach it.
 	if item.Sensitive {
@@ -65,6 +73,7 @@ func viewOf(item settings.DeclaredItem, written, value string) settingView {
 			Sensitive:   true,
 			Default:     "",
 			Written:     maskedValue,
+			HasRow:      hasRow,
 			Value:       maskedValue,
 		}
 	}
@@ -77,6 +86,7 @@ func viewOf(item settings.DeclaredItem, written, value string) settingView {
 		Sensitive:   false,
 		Default:     item.Default,
 		Written:     written,
+		HasRow:      hasRow,
 		Value:       value,
 	}
 }

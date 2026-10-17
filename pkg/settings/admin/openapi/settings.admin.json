@@ -95,7 +95,7 @@
     "schemas": {
       "SettingsAdminSetting": {
         "type": "object",
-        "required": ["key", "namespace", "type", "description", "domain", "sensitive", "default", "written", "value"],
+        "required": ["key", "namespace", "type", "description", "domain", "sensitive", "default", "written", "has_row", "value"],
         "properties": {
           "key": {"type": "string"},
           "namespace": {"type": "string", "description": "The module that declared the item"},
@@ -105,6 +105,7 @@
           "sensitive": {"type": "boolean"},
           "default": {"type": "string", "description": "The declared default in the declared type's text form, empty for a sensitive item"},
           "written": {"type": "string", "description": "The text the selected layer holds, the mask string for a sensitive item"},
+          "has_row": {"type": "boolean", "description": "Whether the selected layer holds a row for the item; written is empty both when it holds none and when the row's text is empty"},
           "value": {"type": "string", "description": "The text the item resolves to after the three-level fallback, the mask string for a sensitive item"}
         }
       },

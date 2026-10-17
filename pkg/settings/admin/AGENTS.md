@@ -81,7 +81,8 @@ fixed:
 | `domain` | the rule the declaration states, empty when it declares none |
 | `sensitive` | whether the item is marked sensitive |
 | `default` | the declared default in the declared type's own text form |
-| `written` | the text the selected layer holds, empty when it holds no row |
+| `written` | the text the selected layer holds, the mask string for a sensitive item |
+| `has_row` | whether the selected layer holds a row for the item |
 | `value` | the text the item resolves to after the three-level fallback |
 
 `default`, `written` and `value` are all text in the declared type's own text
@@ -90,12 +91,17 @@ value and a row: a duration reads `5m0s`, not a count of nanoseconds. `written`
 is the selected layer's explicit text; `value` walks the fallback — that layer's
 row, then the global row, then the declared default.
 
+`written` cannot say whether the layer holds a row: an empty text is a missing
+row and a row written as the empty string alike. `has_row` carries that fact on
+its own.
+
 **A sensitive item is masked here.** The settings module withholds a sensitive
 item's default from its listing but still hands out its value from a read. This
 module masks the value before it reaches a client: `default` is empty and both
 `written` and `value` carry the fixed mask string `********`. The masking is
 applied in the one place a view is built, on every read route, so a credential
-does not travel out with a response.
+does not travel out with a response. `has_row` is not masked: it reports the
+row's existence without revealing the text.
 
 ## Boundaries
 

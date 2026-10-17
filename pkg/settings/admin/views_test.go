@@ -65,15 +65,50 @@ func TestViewOfBuildsAnOrdinaryItem(t *testing.T) {
 			Domain:      settings.DomainOf("one of auto or manual", func(v string) bool { return v == "auto" || v == "manual" }),
 		},
 	}
-	v := viewOf(item, "manual", "manual")
+	v := viewOf(item, "manual", true, "manual")
 	if v.Key != "app.mode" || v.Namespace != "app" || v.Type != "string" {
 		t.Errorf("the view is %+v", v)
 	}
 	if v.Description != "how the application runs" || v.Domain != "one of auto or manual" {
 		t.Errorf("the metadata is %+v", v)
 	}
-	if v.Sensitive || v.Default != "auto" || v.Written != "manual" || v.Value != "manual" {
+	if v.Sensitive || v.Default != "auto" || v.Written != "manual" || !v.HasRow || v.Value != "manual" {
 		t.Errorf("the values are %+v", v)
+	}
+}
+
+// A row whose text is empty is still a row: has_row carries its existence so a
+// client does not read the empty text as the declared default.
+func TestViewOfReportsAnEmptyTextRowAsPresent(t *testing.T) {
+	item := settings.DeclaredItem{
+		Key:     "authn.sms.allowed-prefixes",
+		Module:  "authn.sms",
+		Type:    reflect.TypeFor[string](),
+		Default: "[]",
+	}
+	v := viewOf(item, "", true, "")
+	if !v.HasRow {
+		t.Error("the view says the layer holds no row, want the empty-text row it was built from")
+	}
+	if v.Written != "" || v.Value != "" {
+		t.Errorf("written/value are %q/%q, want the empty text", v.Written, v.Value)
+	}
+}
+
+// A missing row is reported as such even though its text is empty too.
+func TestViewOfReportsAMissingRow(t *testing.T) {
+	item := settings.DeclaredItem{
+		Key:     "authn.sms.allowed-prefixes",
+		Module:  "authn.sms",
+		Type:    reflect.TypeFor[string](),
+		Default: "[]",
+	}
+	v := viewOf(item, "", false, "[]")
+	if v.HasRow {
+		t.Error("the view says the layer holds a row, want none")
+	}
+	if v.Written != "" || v.Value != "[]" {
+		t.Errorf("written/value are %q/%q, want empty/[]", v.Written, v.Value)
 	}
 }
 
@@ -87,7 +122,7 @@ func TestViewOfMasksASensitiveItem(t *testing.T) {
 		Default: "",
 		Item:    settings.Item{Sensitive: true},
 	}
-	v := viewOf(item, "hunter2", "hunter2")
+	v := viewOf(item, "hunter2", true, "hunter2")
 	if !v.Sensitive {
 		t.Error("the view is not marked sensitive")
 	}
@@ -96,6 +131,9 @@ func TestViewOfMasksASensitiveItem(t *testing.T) {
 	}
 	if v.Written != maskedValue || v.Value != maskedValue {
 		t.Errorf("written/value are %q/%q, want the mask", v.Written, v.Value)
+	}
+	if !v.HasRow {
+		t.Error("the mask covers the text but has_row must still report the row")
 	}
 }
 

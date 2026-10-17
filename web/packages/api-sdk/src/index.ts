@@ -999,6 +999,8 @@ export interface SettingsAdminSetting {
   default: string;
   /** The text the selected layer holds, the mask string for a sensitive item */
   written: string;
+  /** Whether the selected layer holds a row for the item; written is empty both when it holds none and when the row's text is empty */
+  has_row: boolean;
   /** The text the item resolves to after the three-level fallback, the mask string for a sensitive item */
   value: string;
 }
@@ -1177,6 +1179,9 @@ status?: string;
 kind?: string;
 identifier_prefix?: string;
 identifier_kind?: string;
+/**
+ * The account's display name by its leading bytes, case-sensitive; must be valid UTF-8 text; absent or empty selects every display name
+ */
 display_name_prefix?: string;
 after?: string;
 limit?: number;
