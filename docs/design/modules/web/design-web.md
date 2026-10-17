@@ -267,7 +267,7 @@ graph TD
 | 组件族与主题适配 | 已实现 | `web/packages/ui-kit/src/index.ts` `createAppTheme`、`AppThemeProvider` |
 | 与认证无关的框架与门禁 | 已实现 | `web/packages/layout-kit/src/index.ts` `AppShell`、`RouteGuard` |
 | 契约无关的传输运行时 | 已实现 | `web/packages/api-client/src/index.ts` `createClient`、`ApiError` |
-| `@speed/api-client` 的公开面不含 `./react` 子路径与预认证配置取回 | 未实现 | — |
+| `@speed/api-client` 的公开面不含 `./react` 子路径与预认证配置取回 | 已实现 | `web/packages/api-client/src/index.ts`、`web/packages/api-client/package.json` |
 | 生成的契约面 | 部分实现 | `web/packages/api-sdk/src/runtime.ts` `bindRequestFn`、`speedRequest`、`speedRequestCredentialless`；生成面见 `web/packages/api-sdk/src/index.ts` |
 | 浏览器会话状态机与 hooks | 部分实现 | `web/packages/auth-core/src/session.ts` `createAuthSession`；`web/packages/auth-core/src/hooks.ts` `attachSession`、`useAuthState`、`usePermission` |
 | 登录组件族 | 部分实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`；`web/packages/auth-ui/src/SignOutButton.tsx` `SignOutButton`；`web/packages/auth-ui/src/SessionEndedScreen.tsx` `SessionEndedScreen` |
