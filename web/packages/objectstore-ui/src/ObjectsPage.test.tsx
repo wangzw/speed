@@ -23,6 +23,7 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
 import { renderWithProviders } from '../test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import {
   blobResponse,
@@ -346,6 +347,28 @@ describe('ObjectsPage', () => {
     await waitFor(() => {
       expect(screen.queryByText('retry-me.txt')).not.toBeInTheDocument()
     })
+  })
+
+  it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
+    makeObjectStoreRig(() =>
+      jsonResponse(200, { objects: [OBJECT_A], next_cursor: 'cursor-1' }),
+    )
+    renderWithProviders(<ObjectsPage />, { language: 'en-US' })
+    await screen.findByText('o-aaa')
+    // The row actions, the toolbar refresh and the cursor pager are all
+    // compact controls; on a finger-driven device each one gates up to
+    // the 44x44 floor through @speed/ui-kit's touchTargetSx.
+    const gated = [
+      screen.getByRole('button', { name: 'Download object o-aaa' }),
+      screen.getByRole('button', { name: 'Details' }),
+      screen.getByRole('button', { name: 'Delete object o-aaa' }),
+      screen.getByRole('button', { name: 'Refresh' }),
+      screen.getByRole('button', { name: 'Previous page' }),
+      screen.getByRole('button', { name: 'Next page' }),
+    ]
+    for (const control of gated) {
+      expect(hasCoarsePointerTouchTarget(control)).toBe(true)
+    }
   })
 
   it('renders in Chinese when the active language is zh-CN', async () => {

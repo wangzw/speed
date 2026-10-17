@@ -42,6 +42,7 @@ import {
   ListSkeleton,
   PageHeader,
   errorCodeOf,
+  touchTargetSx,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { useObjectstoreUiTranslation } from './internal/translation.js'
@@ -185,6 +186,7 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
             variant="outlined"
             aria-label={t('actions.downloadAria', { id: object.id })}
             onClick={() => download(object)}
+            sx={touchTargetSx}
           >
             {t('actions.download')}
           </Button>
@@ -193,6 +195,7 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
             size="small"
             variant="outlined"
             onClick={() => setDetailId(object.id)}
+            sx={touchTargetSx}
           >
             {t('actions.details')}
           </Button>
@@ -203,6 +206,7 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
             color="error"
             aria-label={t('actions.deleteAria', { id: object.id })}
             onClick={() => setPendingDelete(object)}
+            sx={touchTargetSx}
           >
             {t('actions.delete')}
           </Button>
@@ -222,6 +226,7 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
             variant="outlined"
             size="small"
             onClick={() => void query.refetch()}
+            sx={touchTargetSx}
           >
             {t('page.refresh')}
           </Button>
@@ -297,6 +302,7 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
               onClick={() =>
                 setCursorStack((stack) => stack.slice(0, stack.length - 1))
               }
+              sx={touchTargetSx}
             >
               {t('list.previous')}
             </Button>
@@ -306,6 +312,7 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
               size="small"
               disabled={!hasNext}
               onClick={() => setCursorStack((stack) => [...stack, nextCursor])}
+              sx={touchTargetSx}
             >
               {t('list.next')}
             </Button>
