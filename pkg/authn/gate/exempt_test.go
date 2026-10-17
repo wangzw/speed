@@ -402,6 +402,17 @@ func TestAnExemptionMatchesTheRegisteredMethodAndPathOnly(t *testing.T) {
 	requireStatus(t, "GET /other, a route nobody exempted", other, nethttp.StatusUnauthorized)
 	requireStatus(t, "GET /either, the optional route", optionalGet, nethttp.StatusOK)
 	requireStatus(t, "POST /either, on the same path as the optional one", optionalPost, nethttp.StatusUnauthorized)
+	// The three refused above are refused by the gateway before the router
+	// answers, so they are one answer: same status, same headers, same body.
+	for _, c := range []struct {
+		name string
+		got  reply
+	}{
+		{"GET /other", other},
+		{"POST /either", optionalPost},
+	} {
+		requireSameReply(t, c.name, "POST /both", post, c.name, c.got, true)
+	}
 }
 
 // TestAnExemptionWrittenAsTheRouteWasRegisteredCoversThatRouteOnly holds the
@@ -576,6 +587,11 @@ func TestARequestTheRouterAnswersWithoutARouteIsStillChallenged(t *testing.T) {
 	for i, r := range requests {
 		requireStatus(t, r.name+" without a credential", bare[i], nethttp.StatusUnauthorized)
 		requireChallenge(t, r.name+" without a credential", bare[i])
+		// The gateway refuses all three before the router answers, so the answers
+		// must not differ in anything but Date: same status, same headers (Allow
+		// included) and, where the method has a body, the same body.
+		requireSameReply(t, r.name+" without a credential", requests[0].name, bare[0],
+			r.name, bare[i], r.method != nethttp.MethodHead)
 		if got := bare[i].header.Get("Allow"); got != "" {
 			t.Errorf("%s without a credential carries Allow %q, which tells a caller with no "+
 				"credential which methods the path accepts", r.name, got)
@@ -607,6 +623,8 @@ func TestAnEndpointWithNoRegistrationExemptsNothing(t *testing.T) {
 	requireStatus(t, "a route on an endpoint with no registration", health, nethttp.StatusUnauthorized)
 	requireStatus(t, "a path no route carries, on an endpoint with no registration", nowhere,
 		nethttp.StatusUnauthorized)
+	requireSameReply(t, "a path no route carries, on an endpoint with no registration",
+		"the registered route", health, "the path no route carries", nowhere, true)
 }
 
 // TestARegistrationOnlyAppliesToTheEndpointItWasRegisteredOn holds the keying of
