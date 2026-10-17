@@ -54,14 +54,31 @@
  * and runs the change again, converging once the caches expire. A start has
  * no corresponding blank: the banner appears when the re-read settles the
  * impersonated identity.
+ *
+ * A start is also the one identity change that rotates the session cookie on
+ * the server. Until its response lands, every read already in flight was
+ * issued under the cookie the server has just replaced, and a read answered
+ * 401 in that window runs the transport's silent restore with the stale
+ * cookie -- which reads "no session" and turns the local session anonymous.
+ * The mutation cache exposes the moment the start write leaves the browser
+ * (the console page issues it), and this provider uses that moment, not the
+ * settled write, to cut both halves of the window: the queries in flight are
+ * cancelled (their generated query functions carry react-query's abort
+ * signal into the transport, so no 401 answer reaches the session hook), and
+ * new query fetches stay paused until applyIdentityChange finishes -- after
+ * the eviction and the re-read, so the reads that follow carry the new
+ * cookie. This is a mitigation of the start path's rotation window, not a
+ * fix for the transport's old-token 401 handling.
  */
 
+import { onlineManager } from '@tanstack/react-query'
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 import { useAuthState } from '@speed/auth-core'
 import { ImpersonationBanner } from '@speed/auth-ui'
 import { useNavigate } from '@speed/route-kit'
 import {
+  getAuthnImpersonationStartMutationOptions,
   useAuthnImpersonationEnd,
   useAuthnImpersonationStatus,
 } from './app-api/index.js'
@@ -80,6 +97,32 @@ const CHECK_TTL_MAX_MS = 60_000
 /** The fixed interval between re-reads while the server still answers
  * impersonating after the recorded expiry (the check-ttl default). */
 const CHECK_TTL_RETRY_MS = 5_000
+
+/** The generated start mutation's key. The console page issues the write, so
+ * the shared mutation cache is the host's only view of the moment it leaves
+ * the browser; the key is read from the generated options rather than
+ * repeated here, so a regeneration cannot silently rename it. */
+const START_MUTATION_KEY: readonly unknown[] | undefined =
+  getAuthnImpersonationStartMutationOptions().mutationKey
+
+/** Whether a mutation key is the start write's (same parts, same order). */
+function isStartMutationKey(key: readonly unknown[] | undefined): boolean {
+  if (START_MUTATION_KEY === undefined || key === undefined) {
+    return false
+  }
+  return (
+    key.length === START_MUTATION_KEY.length &&
+    key.every((part, index) => part === START_MUTATION_KEY[index])
+  )
+}
+
+/** The state of the start write's window: from the moment the write is issued
+ * until applyIdentityChange settles the new identity. */
+interface ReadHold {
+  /** The client's online state when the hold began; a client that was
+   * genuinely offline stays offline when the hold is released. */
+  readonly resumeOnline: boolean
+}
 
 /** Which identity edge just settled. */
 export type IdentityChange = 'started' | 'ended'
@@ -108,6 +151,73 @@ export function IdentityChangeProvider({
   const { session, queryClient } = useAppServices()
   const navigate = useNavigate()
   const [generation, setGeneration] = useState(0)
+  const holdRef = useRef<ReadHold | null>(null)
+
+  /** Lets query fetches run again (a no-op unless a start put them on hold). */
+  const releaseReads = useCallback((): void => {
+    const hold = holdRef.current
+    if (hold === null) {
+      return
+    }
+    holdRef.current = null
+    if (hold.resumeOnline) {
+      onlineManager.setOnline(true)
+    }
+  }, [])
+
+  /** Cuts both halves of the start write's rotation window. */
+  const holdReads = useCallback((): void => {
+    if (holdRef.current !== null) {
+      return
+    }
+    // Every read in flight was issued under the session cookie the start
+    // write is about to replace. Cancel them before any 401 answer can run
+    // the transport's silent restore with the stale cookie.
+    void queryClient.cancelQueries()
+    const resumeOnline = onlineManager.isOnline()
+    holdRef.current = { resumeOnline }
+    if (resumeOnline) {
+      // Pausing the client's fetches is the one client-wide gate react-query
+      // exposes: queries created or refetching while held stay paused and
+      // issue no request. The start write itself is exempted below (its
+      // mutation key runs with networkMode 'always'), so the pause cannot
+      // stall the write that opened the window.
+      onlineManager.setOnline(false)
+    }
+  }, [queryClient])
+
+  // Watches for the start write being issued through the shared mutation
+  // cache. A pending start holds reads; a refused one releases them (no
+  // identity change follows); a successful one stays held until the identity
+  // change settles the new session.
+  useEffect(() => {
+    if (START_MUTATION_KEY === undefined) {
+      return undefined
+    }
+    queryClient.setMutationDefaults(START_MUTATION_KEY, {
+      networkMode: 'always',
+    })
+    const unsubscribe = queryClient.getMutationCache().subscribe((event) => {
+      if (event.type !== 'added' && event.type !== 'updated') {
+        return
+      }
+      const { mutation } = event
+      if (!isStartMutationKey(mutation.options.mutationKey)) {
+        return
+      }
+      if (mutation.state.status === 'pending') {
+        holdReads()
+      } else if (mutation.state.status === 'error') {
+        releaseReads()
+      }
+    })
+    return () => {
+      unsubscribe()
+      // A provider torn down mid-hold must not leave the shared client
+      // paused for whatever renders next.
+      releaseReads()
+    }
+  }, [queryClient, holdReads, releaseReads])
 
   const applyIdentityChange = useCallback(
     async (change: IdentityChange): Promise<void> => {
@@ -127,9 +237,14 @@ export function IdentityChangeProvider({
       } catch {
         // A failed re-read leaves the cache evicted and the sets unknown
         // (fail-closed); it never reaches the settled write that called it.
+      } finally {
+        // The identity is settled -- or the re-read failed, leaving the
+        // cache empty and the sets unknown. Either way reads may go out
+        // again, now under the session the server holds.
+        releaseReads()
       }
     },
-    [navigate, queryClient, session],
+    [navigate, queryClient, releaseReads, session],
   )
 
   return (

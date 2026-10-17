@@ -1,7 +1,9 @@
 /**
  * The impersonation shell in the demo host: the identity-change action, the
  * banner in the tenant frame, the console's redirect while impersonating,
- * the status read's bare-404 rule and the expiry timer.
+ * the status read's bare-404 rule, the expiry timer, and the read cutover a
+ * start write opens (its in-flight reads cancelled, new ones held until the
+ * identity change settles).
  *
  * The suites drive the real views over a scripted session and request
  * function: the session's restore() commits whatever identity the script
@@ -13,6 +15,7 @@
 
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { onlineManager } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthSnapshot } from '@speed/auth-core'
 import type { RequestFn, RequestOptions, SpeedClient } from '@speed/api-client'
@@ -190,10 +193,19 @@ function gatedSession(
 
 interface Backend {
   readonly fn: RequestFn
+  /** Every GET issued through the request function (a plain effect read is
+   * counted like a query's). */
+  readonly reads: () => number
   readonly rosterReads: () => number
   readonly statusReads: () => number
   readonly statusReadsWithGrant: () => number
   readonly recordReads: () => number
+  /** Whether the record read's abort signal fired: the read the start
+   * write's hold cancelled. */
+  readonly recordsAborted: () => boolean
+  readonly postReads: () => number
+  readonly unreadReads: () => number
+  readonly objectsReads: () => number
   readonly deletes: () => number
 }
 
@@ -215,18 +227,34 @@ function makeBackend(options: {
   /** Keeps the status read answering the grant after the DELETE settles: a
    * replica whose check-ttl cache has not expired yet. */
   readonly statusLags?: boolean
+  /** Holds the start write open until the suite resolves it: the slow round
+   * trip the rotation window is about. */
+  readonly postGate?: Promise<void>
+  /** Holds the record read open until the suite resolves it, so a read is
+   * in flight when the start write is issued. */
+  readonly recordsGate?: Promise<void>
+  /** Refuses the start write: no identity change follows it. */
+  readonly startRefused?: boolean
 } = {}): Backend {
   let grant = options.grant
+  let reads = 0
   let rosterReads = 0
   let statusReads = 0
   let statusReadsWithGrant = 0
   let recordReads = 0
+  let recordSignal: AbortSignal | undefined
+  let postReads = 0
+  let unreadReads = 0
+  let objectsReads = 0
   let deletes = 0
   const fn: RequestFn = <T,>(
     path: string,
     request?: RequestOptions,
   ): Promise<T> => {
     const method = request?.method ?? 'GET'
+    if (method === 'GET') {
+      reads += 1
+    }
     if (path === '/tenant/admin/tenants') {
       rosterReads += 1
       if (options.rosterGate !== undefined) {
@@ -244,8 +272,19 @@ function makeBackend(options: {
         return Promise.resolve({ grant } as T)
       }
       if (method === 'POST') {
+        postReads += 1
+        if (options.startRefused === true) {
+          return Promise.reject({
+            status: 403,
+            code: 'rbac.permission_denied',
+          })
+        }
         grant = grantFixture(new Date(Date.now() + 3_600_000).toISOString())
-        return Promise.resolve({ grant } as T)
+        const answer = { grant } as T
+        if (options.postGate !== undefined) {
+          return options.postGate.then(() => answer)
+        }
+        return Promise.resolve(answer)
       }
       if (method === 'DELETE') {
         deletes += 1
@@ -260,25 +299,40 @@ function makeBackend(options: {
     }
     if (path.startsWith('/auth/admin/impersonations')) {
       recordReads += 1
+      recordSignal = request?.signal
+      if (options.recordsGate !== undefined) {
+        return options.recordsGate.then(() => ({ impersonations: [] }) as T)
+      }
       return Promise.resolve({ impersonations: [] } as T)
     }
     // The tenant header's bell reads the unread count; the inbox page the
     // message list. Answer both so a mounted tenant frame has no query
     // whose function returned undefined.
     if (path === '/api/v1/notifications/messages/unread-count') {
+      unreadReads += 1
       return Promise.resolve({ unread: 0 } as T)
     }
     if (path === '/api/v1/notifications/messages') {
       return Promise.resolve({ messages: [], total: 0 } as T)
     }
+    // The object store's page lists the tenant's objects.
+    if (path === '/api/v1/objects') {
+      objectsReads += 1
+      return Promise.resolve({ objects: [], next_cursor: '' } as T)
+    }
     return Promise.resolve(undefined as T)
   }
   return {
     fn,
+    reads: () => reads,
     rosterReads: () => rosterReads,
     statusReads: () => statusReads,
     statusReadsWithGrant: () => statusReadsWithGrant,
     recordReads: () => recordReads,
+    recordsAborted: () => recordSignal?.aborted ?? false,
+    postReads: () => postReads,
+    unreadReads: () => unreadReads,
+    objectsReads: () => objectsReads,
     deletes: () => deletes,
   }
 }
@@ -917,6 +971,136 @@ describe('the impersonation shell', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('cancels the read in flight and holds new reads until a delayed start settles', async () => {
+    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+    // The write's round trip is slow, and the record read stays open: one
+    // read is in flight at the moment the start is issued.
+    const post = deferred()
+    const records = deferred()
+    const backend = makeBackend({
+      postGate: post.promise,
+      recordsGate: records.promise,
+    })
+    let phase: 'operator' | 'target' = 'operator'
+    const request: RequestFn = <T,>(
+      path: string,
+      requestOptions?: RequestOptions,
+    ) => {
+      const answer = backend.fn<T>(path, requestOptions)
+      if (path === '/auth/impersonation' && requestOptions?.method === 'POST') {
+        phase = 'target'
+      }
+      return answer
+    }
+    bindRequestFn(request)
+    const gated = gatedSession(operatorSnapshot(), () =>
+      phase === 'target' ? targetSnapshot() : operatorSnapshot(),
+    )
+    const user = userEvent.setup()
+
+    renderDemoApp({ session: gated.session })
+
+    // The start form waits on a settled "not impersonating" answer, and the
+    // record read is in flight.
+    await screen.findByText('You are not impersonating any account.')
+    await waitFor(() => expect(backend.recordReads()).toBe(1))
+    await user.type(screen.getByLabelText('Target account'), 'acc-1')
+
+    // The write is issued: the record read in flight is cancelled at that
+    // moment, and the client's queries are paused.
+    await user.click(screen.getByRole('button', { name: 'Start impersonation' }))
+    await waitFor(() => expect(backend.postReads()).toBe(1))
+    await waitFor(() => expect(backend.recordsAborted()).toBe(true))
+    expect(onlineManager.isOnline()).toBe(false)
+
+    // From the write's issue onward, no read leaves the browser: the
+    // settled write's invalidations stay parked behind the pause while the
+    // identity change's re-read is held open.
+    const readsWhileHeld = backend.reads()
+    await act(async () => {
+      post.resolve()
+    })
+    await waitFor(() => expect(gated.pendingRestores()).toBe(1))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(backend.reads()).toBe(readsWhileHeld)
+
+    // The re-read settles the impersonated identity and the hold is released
+    // with it: the tenant home's reads run under the new session.
+    await gated.releaseRestore()
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    expect(onlineManager.isOnline()).toBe(true)
+    await waitFor(() => expect(backend.unreadReads()).toBeGreaterThan(0))
+  })
+
+  it('releases the hold when the start is refused: no identity change follows', async () => {
+    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+    const backend = makeBackend({ startRefused: true })
+    bindRequestFn(backend.fn)
+    const user = userEvent.setup()
+
+    renderDemoApp({ session: createTestSession(operatorSnapshot()) })
+
+    await screen.findByText('You are not impersonating any account.')
+    await user.type(screen.getByLabelText('Target account'), 'acc-1')
+    await user.click(screen.getByRole('button', { name: 'Start impersonation' }))
+    await waitFor(() => expect(backend.postReads()).toBe(1))
+
+    // The write changed no identity, so the pause is released at once and
+    // the page's reads run again (its refresh control re-reads the status).
+    await waitFor(() => expect(onlineManager.isOnline()).toBe(true))
+    const readsBefore = backend.reads()
+    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => expect(backend.reads()).toBeGreaterThan(readsBefore))
+  })
+
+  it('holds no reads while an end settles: the hold belongs to the start path', async () => {
+    window.history.replaceState({}, '', '/')
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+    })
+    bindRequestFn(backend.fn)
+    const gated = gatedSession(targetSnapshot(), () => operatorSnapshot())
+    const user = userEvent.setup()
+
+    renderDemoApp({ session: gated.session })
+
+    const notice = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    await user.click(
+      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+    )
+
+    // The DELETE settled and the identity change's re-read is held open. An
+    // end does not rotate the session cookie, so nothing pauses the client's
+    // reads.
+    await waitFor(() => expect(gated.pendingRestores()).toBe(1))
+    expect(onlineManager.isOnline()).toBe(true)
+
+    await gated.releaseRestore()
+    await waitFor(() => expect(banner()).toBeNull())
+  })
+
+  it('leaves ordinary navigation unaffected: the destination read is issued at once', async () => {
+    window.history.replaceState({}, '', '/')
+    const backend = makeBackend()
+    bindRequestFn(backend.fn)
+    const user = userEvent.setup()
+
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+    await waitFor(() => expect(backend.rosterReads()).toBeGreaterThan(0))
+
+    await user.click(
+      await screen.findByRole('link', { name: demoEnUS.nav.objects }),
+    )
+
+    await waitFor(() => expect(window.location.pathname).toBe('/objects'))
+    await waitFor(() => expect(backend.objectsReads()).toBeGreaterThan(0))
+    expect(onlineManager.isOnline()).toBe(true)
   })
 
   it('starts without a blanking window: the banner appears when the re-read settles', async () => {
