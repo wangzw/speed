@@ -643,7 +643,7 @@ stateDiagram-v2
 | 表 `authn_sessions` 与按方言的迁移集 | 已实现 | `pkg/authn/session/store.go`；`pkg/authn/session/migrations/postgres`、`pkg/authn/session/migrations/sqlite` |
 | scs 的适配：存储适配器、JSON 编码器与适配规则 | 已实现 | `pkg/authn/session/adapter.go` `storeAdapter`；`pkg/authn/session/payload.go` `jsonCodec` |
 | 会话的创建、读取、列出、撤销与按账户批量撤销 | 已实现 | `pkg/authn/session/sessions.go` `Create`、`Get`、`List`、`RevocableSessions`、`Revoke`、`RevokeAccount` |
-| 冒充结束只清除标识、不换令牌 | 未实现 | — |
+| 冒充结束只清除标识、不换令牌 | 已实现 | `pkg/authn/session/sessions.go` `SetImpersonation`；`pkg/authn/session/sessions_test.go` `TestSetImpersonationAttachesAndEndsARecord` |
 | 令牌轮换、提权与冒充挂接 | 已实现 | `pkg/authn/session/sessions.go` `Rotate`、`Elevate`、`SetImpersonation` |
 | cookie 的写出、清除、读取与启动校验 | 已实现 | `pkg/authn/session/sessions.go` `SetCookie`、`ClearCookie`；`pkg/authn/session/config.go` |
 | `Verifier`：cookie 校验、会话校验缓存、账户核对与冒充记录缓存 | 已实现 | `pkg/authn/session/verify.go` `Verify`、`Accepts`、`Name`；`pkg/authn/session/cache.go` |
