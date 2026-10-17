@@ -317,6 +317,7 @@
       },
       "builtinYes": "Yes",
       "builtinNo": "No",
+      "builtinLocked": "A built-in role cannot be changed or deleted",
       "create": {
         "roleLabel": "Role name",
         "descriptionLabel": "Description key",

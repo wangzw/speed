@@ -151,31 +151,45 @@ export function PermissionsPage() {
       id: 'actions',
       header: t('permissions.roles.column.actions'),
       cellWrap: 'nowrap',
-      cell: (role) => (
-        <Box sx={{ display: 'flex', columnGap: 1 }}>
-          <Button
-            type="button"
-            size="small"
-            variant="outlined"
-            aria-label={t('permissions.roles.manageGrantsAria', { role: role.role })}
-            onClick={() => setSelectedRole(role.role)}
-            sx={touchTargetSx}
-          >
-            {t('permissions.roles.manageGrants')}
-          </Button>
-          <Button
-            type="button"
-            size="small"
-            variant="outlined"
-            color="error"
-            aria-label={t('permissions.roles.removeAria', { role: role.role })}
-            onClick={() => setPendingRoleDelete(role.role)}
-            sx={touchTargetSx}
-          >
-            {t('permissions.roles.remove')}
-          </Button>
-        </Box>
-      ),
+      // A builtin role's grants and existence are fixed: the server refuses
+      // both writes with authz.ErrBuiltinRole. The controls are replaced by a
+      // plain explanation rather than disabled. A disabled button cannot be
+      // focused and drops out of the Tab order, so a tooltip or
+      // aria-describedby that depends on focus or hover is unreachable to
+      // keyboard-only users; it is still in the accessibility tree, though, and
+      // a control that can never succeed is not put in front of anyone.
+      // Visible text sits in every reader's order and carries the reason.
+      cell: (role) =>
+        role.builtin ? (
+          <Typography variant="body2" color="text.secondary">
+            {t('permissions.roles.builtinLocked')}
+          </Typography>
+        ) : (
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 1, rowGap: 1 }}>
+            <Button
+              type="button"
+              size="small"
+              variant="outlined"
+              aria-label={t('permissions.roles.manageGrantsAria', { role: role.role })}
+              onClick={() => setSelectedRole(role.role)}
+              sx={touchTargetSx}
+            >
+              {t('permissions.roles.manageGrants')}
+            </Button>
+            <Button
+              type="button"
+              size="small"
+              variant="outlined"
+              color="error"
+              aria-label={t('permissions.roles.removeAria', { role: role.role })}
+              onClick={() => setPendingRoleDelete(role.role)}
+              sx={touchTargetSx}
+            >
+              {t('permissions.roles.remove')}
+            </Button>
+          </Box>
+        ),
+>>>>>>> f20d8144 (fix(console-ui): withhold write controls on a builtin role)
     },
   ]
 

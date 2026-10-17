@@ -317,6 +317,7 @@
       },
       "builtinYes": "是",
       "builtinNo": "否",
+      "builtinLocked": "内建角色不可修改或删除",
       "create": {
         "roleLabel": "角色名",
         "descriptionLabel": "描述键",

@@ -117,6 +117,37 @@ describe('PermissionsPage', () => {
     expect(screen.getByText('acc-1')).toBeInTheDocument()
   })
 
+  it("replaces a builtin role's write controls with a readable reason, keeping them on other roles", async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      // The two rows differ in the flag alone, so the case distinguishes the
+      // gate from "no role has write controls": builtin true hides both
+      // controls, builtin false keeps them.
+      listRoles: () =>
+        Promise.resolve([
+          role({ role: 'platform-admin', builtin: true }),
+          role({ role: 'editor', builtin: false }),
+        ]),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    expect(await screen.findByText('platform-admin')).toBeInTheDocument()
+    // The reason is visible text, not a colour or a tooltip on a disabled
+    // control: a disabled button is skipped by keyboard and screen-reader
+    // navigation, which would leave the reason unreachable.
+    expect(screen.getByText('内建角色不可修改或删除')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '管理授权（角色 platform-admin）' }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: '删除角色 platform-admin' }),
+    ).toBeNull()
+    expect(
+      screen.getByRole('button', { name: '管理授权（角色 editor）' }),
+    ).toBeEnabled()
+    expect(screen.getByRole('button', { name: '删除角色 editor' })).toBeEnabled()
+  })
+
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
     const user = userEvent.setup()
     const operations = withAuthz({
@@ -335,12 +366,14 @@ describe('PermissionsPage', () => {
   it('has no axe violations', async () => {
     const user = userEvent.setup()
     const operations = withAuthz({
-      listRoles: () => Promise.resolve([role()]),
+      listRoles: () =>
+        Promise.resolve([role(), role({ role: 'platform-admin', builtin: true })]),
       listBindings: () => Promise.resolve([binding({ role: 'viewer' })]),
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     await screen.findByText('editor')
+    await screen.findByText('platform-admin')
     await expectNoAxeViolations()
   })
 })
