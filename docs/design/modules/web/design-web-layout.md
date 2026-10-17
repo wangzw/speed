@@ -38,14 +38,9 @@
 
 分组与二级嵌套按导航规模选用：导航项少到无需分组时用扁平单列。
 
-### 内容区的宽度分岔
+### 内容区的宽度
 
-内容区按页型取两种宽度：
-
-- **全宽**：表格页与仪表盘占满内容区，宽度即信息量。
-- **受限宽**：表单收在一段居中的窄宽（640–960px），使输入控件不随视口拉长。
-
-两种宽度在同一产品里并存，由页面的容器显式区分。
+内容区里的页型占满内容区：表格页、详情页、设置页与仪表盘的宽度即信息量。控制台没有受限宽的内容区容器：成块的表单放进侧边面板，宽度取面板的宽度档（见「次级任务的容器」）；内联写入区的控件随所在的节排布。
 
 ### 页型的骨架
 
@@ -83,7 +78,7 @@
 - **组件级响应走容器。** 会随可用宽度改变自身排布的组件——数据表、表单、卡片网格——按**所在容器**的宽度响应，不按视口。容器上下文由组件自建：组件在自身根节点声明 `container-type: inline-size`。
 - **一次一行的组件用内在换行。** 有些行的排布既不需要断点，也不需要容器上下文：固定 `flex-basis` 配 `flex-wrap`，换行点自然跟随所在容器的可用宽度。控制台仪表盘的指标卡行是这个形态（`DashboardPage` 的 `KpiRow`）——它是「组件级响应」的免查询形态：判据与容器查询相同（按自身可用宽度重排），只是不必声明容器上下文。
 - **指针能力走能力查询。** 依赖悬停的交互（悬停展开、悬停显出的操作）只在指针设备上启用；触摸设备上这些操作常显。触摸设备上**所有可点击目标**不小于 44×44——不分是否依赖悬停；下限由主题层对基础控件统一给出，各包继承，不逐处指定。判据是 `hover` 与 `pointer` 媒体查询，不是视口宽度——带键盘的平板与触屏笔记本都是宽视口下的触摸设备。
-- **页面骨架按视口取档。** 详情页的主栏与侧栏、设置页的二级导航与内容并列、以及内容区的受限宽，都是**页型骨架**：它们占满内容区，内容区的宽度由视口与外壳状态（侧栏是否常驻）决定，宿主不会把它们放进任意窄容器。因此它们按视口断点取档（`console-ui` 的 `DetailLayout`、`SettingsPage`、`FormWidth`），是「组件级响应走容器」的例外。
+- **页面骨架按视口取档。** 详情页的主栏与侧栏、设置页的二级导航与内容并列，都是**页型骨架**：它们占满内容区，内容区的宽度由视口与外壳状态（侧栏是否常驻）决定，宿主不会把它们放进任意窄容器。因此它们按视口断点取档（`console-ui` 的 `DetailLayout`、`SettingsPage`），是「组件级响应走容器」的例外。
 
 外壳级、组件级与内在换行三条的判据是**一个区域的变化由视口决定，还是由它被放进多宽的容器决定**；内在换行只是组件级里不需要声明容器上下文的那一种写法。外壳的整体形态占满视口，故由视口决定；一个组件既可能占满内容区、也可能被放进窄侧栏，只有按容器响应才能在两种处境下各自正确。
 
@@ -160,7 +155,7 @@ graph TD
 | 侧栏的扁平导航项与选中态 | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShellNavItem` |
 | 侧栏的分组与二级嵌套 | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShellNavGroup`、`AppShellNavItem.children`；`web/packages/console-ui/src/nav-groups.tsx` `consoleNavGroups` |
 | 断点标度等于所装 MUI 主题默认 | 已实现 | `web/packages/tokens/src/breakpoints.ts` `breakpointTokens` |
-| 内容区的宽度分岔 | 已实现 | `web/packages/console-ui/src/internal/layout.tsx` `DetailLayout`、`FormWidth` |
+| 内容区的宽度（页型占满内容区） | 已实现 | `web/packages/console-ui/src/internal/layout.tsx` `DetailLayout` |
 | 列表页骨架 | 已实现 | `web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage` |
 | 详情页骨架（主栏与侧栏） | 已实现 | `web/packages/console-ui/src/internal/layout.tsx` `DetailLayout`；`web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
 | 设置页骨架（二级导航与表） | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage` |
