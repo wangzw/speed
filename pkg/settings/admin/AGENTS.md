@@ -6,6 +6,9 @@ route's action is a call on the settings surface, reached through the
 `settings.Store` capability, and the module holds no setting, no rule and no data
 of its own.
 
+The descriptor declares the static feature `settings.admin`, present whenever the
+module is in force.
+
 The settings module owns what a setting item is — its declared type, its value
 domain, its default and the three-level fallback — so this module only decides
 who may ask and how the answer is shaped. It carries no policy rule: it asks the
