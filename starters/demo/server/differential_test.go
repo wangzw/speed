@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,24 +20,14 @@ import (
 	"testing"
 	"time"
 
-	auditadmin "github.com/vislake/speed/pkg/audit/admin"
 	"github.com/vislake/speed/pkg/authn"
-	authnadmin "github.com/vislake/speed/pkg/authn/admin"
-	authninvite "github.com/vislake/speed/pkg/authn/invite"
-	authzadmin "github.com/vislake/speed/pkg/authz/admin"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/http/cors"
 	"github.com/vislake/speed/pkg/i18n"
 	i18nhttp "github.com/vislake/speed/pkg/i18n/http"
-	notificationinbox "github.com/vislake/speed/pkg/notification/inbox"
-	notificationpreferences "github.com/vislake/speed/pkg/notification/preferences"
-	notificationstream "github.com/vislake/speed/pkg/notification/stream"
-	objectstoremeta "github.com/vislake/speed/pkg/objectstore/metadata"
 	"github.com/vislake/speed/pkg/observability/otel"
 	"github.com/vislake/speed/pkg/ratelimit"
-	settingsadmin "github.com/vislake/speed/pkg/settings/admin"
-	tenantadmin "github.com/vislake/speed/pkg/tenant/admin"
 )
 
 // This file holds the differential case: the anonymous answers a run gives
@@ -547,28 +538,64 @@ func withDependents(seed map[string]bool, modules map[string]*baselineModule) ma
 
 // variantGroup is one run with a set of modules left out.
 type variantGroup struct {
-	id        string
-	modules   []string
-	mustStart bool
+	id      string
+	modules []string
 }
 
-// mustStartGroups are the variants the case requires to start. A routing
-// module that is in the baseline has to leave a run that still starts: an
-// ability to drop one without breaking the assembly is what makes the
-// differential comparison meaningful.
-var mustStartGroups = map[string]bool{
-	tenantadmin.ModuleName:             true,
-	authzadmin.ModuleName:              true,
-	settingsadmin.ModuleName:           true,
-	auditadmin.ModuleName:              true,
-	authnadmin.ModuleName:              true,
-	authninvite.ModuleName:             true,
-	objectstoremeta.ModuleName:         true,
-	notificationinbox.ModuleName:       true,
-	notificationstream.ModuleName:      true,
-	notificationpreferences.ModuleName: true,
-	"admin-all":                        true,
-	"api-all":                          true,
+// mayNotStartGroups names the variants the case allows to leave not starting,
+// each with the reason. The guarantee is fail-closed: every variant that
+// buildGroups produces has to start, because leaving one out and still
+// standing up is what makes the differential comparison meaningful. A variant
+// that stops starting fails the case; only a debt written down here, with its
+// reason, may be left out of the guarantee.
+var mayNotStartGroups = map[string]string{}
+
+// variantStartOutcome decides what a variant's readiness result means. A run
+// that became ready passes. One that did not fails unless mayNotStartGroups
+// exempts the group, in which case the exemption's reason is returned for the
+// log. The decision is a function so a case can hold an unstarted variant to
+// it without launching one.
+func variantStartOutcome(group variantGroup, err error, output string) (exemption string, failure error) {
+	if err == nil {
+		return "", nil
+	}
+	if reason, exempt := mayNotStartGroups[group.id]; exempt {
+		return reason, nil
+	}
+	return "", fmt.Errorf("dropping %v left a run that does not start: %w\n%s", group.modules, err, output)
+}
+
+// TestEveryRoutingVariantMustStart holds the start guarantee to the variants
+// the case builds: an exemption has to be written down with its reason, and
+// every other variant fails when it does not start rather than leaving the
+// matrix silently. baselineDescriptors and classifyBaseline are the functions
+// the differential case itself uses, so the groups held here are the ones it
+// runs.
+func TestEveryRoutingVariantMustStart(t *testing.T) {
+	modules := baselineDescriptors(t)
+	classes := classifyBaseline(t, modules, guardedEndpointSet(t))
+	groups := buildGroups(modules, classes)
+	if len(groups) == 0 {
+		t.Fatalf("baselineServe holds no routing module, so there is nothing to remove")
+	}
+	built := map[string]bool{}
+	for _, group := range groups {
+		built[group.id] = true
+		if reason, exempt := mayNotStartGroups[group.id]; exempt {
+			if strings.TrimSpace(reason) == "" {
+				t.Errorf("mayNotStartGroups exempts %q without a reason", group.id)
+			}
+			continue
+		}
+		if _, failure := variantStartOutcome(group, errors.New("the variant never became ready"), "output"); failure == nil {
+			t.Errorf("variant %q can leave the matrix without starting", group.id)
+		}
+	}
+	for id := range mayNotStartGroups {
+		if !built[id] {
+			t.Errorf("mayNotStartGroups names %q, which buildGroups does not produce: the exemption outlived its variant", id)
+		}
+	}
 }
 
 // buildGroups writes the variants: one per routing module with its dependents,
@@ -593,7 +620,7 @@ func buildGroups(modules map[string]*baselineModule, classes map[string]moduleCl
 			return
 		}
 		sort.Strings(removal)
-		groups = append(groups, variantGroup{id: id, modules: removal, mustStart: mustStartGroups[id]})
+		groups = append(groups, variantGroup{id: id, modules: removal})
 	}
 
 	for _, name := range names {
@@ -964,12 +991,11 @@ func runDifferential(t *testing.T, topo topology) {
 		t.Run(group.id, func(t *testing.T) {
 			variant, variantPorts := launch(t, topo, group.modules)
 			if err := variant.waitReady(startLimit); err != nil {
-				if group.mustStart {
-					t.Errorf("dropping %v left a run that does not start:\n%v\n%s",
-						group.modules, err, variant.stderrOutput())
+				exemption, failure := variantStartOutcome(group, err, variant.stderrOutput())
+				if exemption != "" {
+					t.Logf("dropping %v does not start; exempt: %s", group.modules, exemption)
 				} else {
-					t.Logf("dropping %v does not start; not counted against the guarantee: %v",
-						group.modules, err)
+					t.Error(failure)
 				}
 				return
 			}
