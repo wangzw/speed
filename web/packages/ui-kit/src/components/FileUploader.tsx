@@ -48,14 +48,14 @@
  * card regardless of name length. Those per-row action buttons carry the
  * shared touch-target floor (src/touch-target.ts): a finger-driven device
  * gets a 44px-minimum hit area on each, a precise pointer the stock
- * control size. The picker affordance
- * renders only when `onSelectFiles` is given (the label is the built-in
- * bilingual text unless `chooseFilesLabel` overrides it, with the file
- * input visually hidden but focusable inside the label, one tab stop for
- * the whole control). With `allowDrop` a drop surface sits below the
- * trigger and reports through the same callback -- the keyboard path never
- * depends on it. `disabled` renders the affordances inert and ignores
- * picks and drops.
+ * control size. The selection affordance is one drop zone: a labelled,
+ * dashed surface whose text states the action (the built-in bilingual
+ * text unless `chooseFilesLabel` overrides it) and whose hidden file
+ * input is visually hidden but focusable inside it, so the whole zone is
+ * one click target and the input stays the control's one tab stop. With
+ * `allowDrop` the same zone accepts a drag and reports it through the
+ * same callback -- the keyboard path never depends on it. `disabled`
+ * renders the affordance inert and ignores picks and drops.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -97,9 +97,9 @@ export interface FileUploaderProps {
   readonly rows: readonly FileUploaderRow[]
   /**
    * Reports one pick or drop's files (in order, never held by the
-   * component after the call). Its presence renders the picker trigger
-   * and, with `allowDrop`, the drop surface; without it the component is
-   * a pure queue view.
+   * component after the call). Its presence renders the selection zone
+   * and, with `allowDrop`, makes that same zone accept a drop; without it
+   * the component is a pure queue view.
    */
   readonly onSelectFiles?: (files: readonly File[]) => void
   /** Cancels the named row's transfer (an abort is the host's to perform). */
@@ -116,7 +116,7 @@ export interface FileUploaderProps {
   readonly allowDrop?: boolean
   /** Renders the affordances inert and ignores picks and drops. */
   readonly disabled?: boolean
-  /** Picker affordance label; defaults to the built-in bilingual text. */
+  /** Picker affordance label; defaults to the built-in bilingual text (which names dragging too when `allowDrop` is on). */
   readonly chooseFilesLabel?: string
   /** sx pass-through, consistent with sibling components. */
   readonly sx?: SxProps<Theme>
@@ -125,13 +125,12 @@ export interface FileUploaderProps {
 /**
  * The file input itself: visually hidden through the package's clip
  * recipe (see src/visually-hidden.ts) -- clipped, never `display: none`
- * -- so it stays focusable and keeps its place in the tab order. The
- * trigger is a MUI Button rendered as a <label> wrapping this input, so
- * an activation opens the native picker; the label carries no button
- * role and is removed from the tab order (`role={undefined}` and
- * `tabIndex={-1}`), leaving the input as the control's single tab stop.
- * While the input is focused the trigger shows a visible focus
- * indicator through the label's :focus-within rule.
+ * -- so it stays focusable and keeps its place in the tab order. It sits
+ * inside the selection zone's <label>, so an activation anywhere in the
+ * zone opens the native picker; the label carries no role and is removed
+ * from the tab order (`tabIndex={-1}`), leaving the input as the
+ * control's single tab stop. While the input is focused the zone shows a
+ * visible focus indicator through the label's :focus-within rule.
  */
 const HiddenFileInput = styled('input')(visuallyHiddenSx)
 
@@ -364,24 +363,24 @@ export function FileUploader({
     onSelectFiles?.(picked)
   }
 
-  const handleDragEnter = (event: ReactDragEvent<HTMLDivElement>): void => {
+  const handleDragEnter = (event: ReactDragEvent<HTMLElement>): void => {
     event.preventDefault()
     setDragDepth((depth) => depth + 1)
   }
 
-  const handleDragOver = (event: ReactDragEvent<HTMLDivElement>): void => {
+  const handleDragOver = (event: ReactDragEvent<HTMLElement>): void => {
     // preventDefault is what permits the drop to land here.
     event.preventDefault()
   }
 
-  const handleDragLeave = (event: ReactDragEvent<HTMLDivElement>): void => {
+  const handleDragLeave = (event: ReactDragEvent<HTMLElement>): void => {
     event.preventDefault()
     // Enter/leave pairs fire per child crossing; the depth counter keeps
     // the armed state true until the drag leaves the surface for good.
     setDragDepth((depth) => Math.max(0, depth - 1))
   }
 
-  const handleDrop = (event: ReactDragEvent<HTMLDivElement>): void => {
+  const handleDrop = (event: ReactDragEvent<HTMLElement>): void => {
     event.preventDefault()
     setDragDepth(0)
     if (disabled) {
@@ -406,9 +405,13 @@ export function FileUploader({
     rows.some((row) => row.id === announcement.rowId)
       ? announcement
       : null
-  const triggerLabel = chooseFilesLabel ?? t('fileUploader.chooseFiles')
-  const dragActive = dragDepth > 0
   const pickerRendered = onSelectFiles !== undefined
+  const dropDeclared = pickerRendered && allowDrop === true
+  const dragAccepting = dropDeclared && !disabled
+  const dragActive = dragAccepting && dragDepth > 0
+  const triggerLabel =
+    chooseFilesLabel ??
+    t(dropDeclared ? 'fileUploader.dropOrChoose' : 'fileUploader.chooseFiles')
 
   return (
     <Box
@@ -421,17 +424,31 @@ export function FileUploader({
       }}
     >
       {pickerRendered ? (
-        <Button
+        /* One selection zone: the click target and the drop target are the
+           same labelled surface, which carries the instruction once. The
+           file input inside it stays the control's single tab stop. */
+        <Box
           component="label"
-          variant="contained"
-          role={undefined}
           tabIndex={-1}
           aria-disabled={disabled || undefined}
+          data-drop-active={dragActive || undefined}
+          onDragEnter={dragAccepting ? handleDragEnter : undefined}
+          onDragOver={dragAccepting ? handleDragOver : undefined}
+          onDragLeave={dragAccepting ? handleDragLeave : undefined}
+          onDrop={dragAccepting ? handleDrop : undefined}
           sx={{
+            width: '100%',
+            py: 2,
+            px: 2,
+            borderRadius: 1,
+            border: '1px dashed',
+            borderColor: dragActive ? 'primary.main' : 'divider',
+            bgcolor: dragActive ? 'action.hover' : 'transparent',
             cursor: disabled ? 'default' : 'pointer',
             opacity: disabled
               ? (theme) => theme.palette.action.disabledOpacity
               : undefined,
+            textAlign: 'center',
             '&:focus-within': {
               outline: '2px solid',
               outlineOffset: 2,
@@ -439,7 +456,9 @@ export function FileUploader({
             },
           }}
         >
-          {triggerLabel}
+          <Typography variant="body2" color="text.secondary" component="span">
+            {triggerLabel}
+          </Typography>
           <HiddenFileInput
             type="file"
             multiple={multiple}
@@ -447,28 +466,6 @@ export function FileUploader({
             disabled={disabled}
             onChange={handlePick}
           />
-        </Button>
-      ) : null}
-      {pickerRendered && allowDrop && !disabled ? (
-        <Box
-          data-drop-active={dragActive || undefined}
-          onDragEnter={handleDragEnter}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          sx={{
-            width: '100%',
-            py: 1.5,
-            px: 2,
-            borderRadius: 1,
-            border: '1px dashed',
-            borderColor: dragActive ? 'primary.main' : 'divider',
-            bgcolor: dragActive ? 'action.hover' : 'transparent',
-          }}
-        >
-          <Typography variant="body2" color="text.secondary">
-            {t('fileUploader.dropHint')}
-          </Typography>
         </Box>
       ) : null}
       {rows.length > 0 ? (

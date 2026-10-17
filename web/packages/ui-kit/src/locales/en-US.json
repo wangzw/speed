@@ -22,7 +22,7 @@
   },
   "fileUploader": {
     "chooseFiles": "Choose files",
-    "dropHint": "or drag files here",
+    "dropOrChoose": "Choose files, or drag them here",
     "statusUploading": "Uploading…",
     "statusSucceeded": "Uploaded",
     "statusFailed": "Upload failed",

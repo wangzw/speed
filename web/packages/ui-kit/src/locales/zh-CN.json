@@ -22,7 +22,7 @@
   },
   "fileUploader": {
     "chooseFiles": "选择文件",
-    "dropHint": "或将文件拖到此处",
+    "dropOrChoose": "选择文件，或将文件拖到此处",
     "statusUploading": "上传中…",
     "statusSucceeded": "已上传",
     "statusFailed": "上传失败",

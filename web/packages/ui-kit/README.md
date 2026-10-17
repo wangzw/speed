@@ -739,14 +739,16 @@ example's scripted fetch stub stands in for that call.
 
 Other props: `multiple` (several files per selection; false by
 default), `accept` (forwarded to the picker; advisory only -- real
-validation is the host's upload code), `allowDrop` (adds a drop surface
-below the trigger reporting through the same `onSelectFiles`; the
-keyboard path never depends on it), `disabled` (renders the
-affordances inert and ignores picks and drops), `chooseFilesLabel`
-(picker label; the built-in bilingual text by default). The trigger is
-a button rendered as a label wrapping a visually hidden but focusable
-file input -- one tab stop for the whole control, focus shown through
-the label's `:focus-within` rule. Each row's action-button group
+validation is the host's upload code), `allowDrop` (makes the same
+selection zone accept a drop, reported through the same
+`onSelectFiles`; the keyboard path never depends on it), `disabled`
+(renders the affordance inert and ignores picks and drops),
+`chooseFilesLabel` (zone label; the built-in bilingual text by default,
+naming dragging too when `allowDrop` is on). The selection affordance is
+one zone: a label wrapping a visually hidden but focusable file input --
+one click target and one drop target for the whole control, one tab
+stop, focus shown through the label's `:focus-within` rule. Each row's
+action-button group
 (Cancel while uploading; Retry/Remove once settled) is a responsive
 `flexWrap: 'wrap'` flex row, so a long file name plus several buttons
 wraps onto a second line instead of overflowing a narrow queue card --
@@ -867,8 +869,8 @@ live). The full key set:
 | `form.invalid` | generic invalid-value message | |
 | `pageHeader.breadcrumbNav` | breadcrumb nav landmark accessible name | |
 | `pageHeader.showFullPath` | breadcrumb collapse-expand button label | replaces MUI's stock English "Show path" |
-| `fileUploader.chooseFiles` | picker trigger label | `chooseFilesLabel` overrides |
-| `fileUploader.dropHint` | drop-surface hint, with `allowDrop` | |
+| `fileUploader.chooseFiles` | selection-zone label without `allowDrop` | `chooseFilesLabel` overrides |
+| `fileUploader.dropOrChoose` | selection-zone label with `allowDrop` | `chooseFilesLabel` overrides |
 | `fileUploader.statusUploading` | uploading row status text and progress bar aria-label | |
 | `fileUploader.statusSucceeded` | succeeded row status text | |
 | `fileUploader.statusFailed` | failed row status text | |

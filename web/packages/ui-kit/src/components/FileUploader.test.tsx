@@ -14,6 +14,7 @@
 
 import { useState } from 'react'
 import { act, fireEvent, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { switchLanguage } from '@speed/i18n'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
@@ -122,7 +123,7 @@ function fileInputOf(container: HTMLElement): HTMLInputElement {
 }
 
 const pickerLabel = zhCN.fileUploader.chooseFiles
-const dropHint = zhCN.fileUploader.dropHint
+const dropOrChoose = zhCN.fileUploader.dropOrChoose
 const statusUploading = zhCN.fileUploader.statusUploading
 const statusSucceeded = zhCN.fileUploader.statusSucceeded
 const statusFailed = zhCN.fileUploader.statusFailed
@@ -198,7 +199,7 @@ describe('FileUploader', () => {
       })
       expect(view.container.querySelector('label')).toBeNull()
       expect(view.container.querySelector('input')).toBeNull()
-      expect(view.queryByText(dropHint)).not.toBeInTheDocument()
+      expect(view.queryByText(dropOrChoose)).not.toBeInTheDocument()
       expect(view.getByText('scan.jpg')).toBeInTheDocument()
     })
 
@@ -209,17 +210,23 @@ describe('FileUploader', () => {
       expect(view.queryByRole('status')).not.toBeInTheDocument()
     })
 
-    it('is disabled as one control: inert label, disabled input, no drop surface', () => {
+    it('is disabled as one control: inert zone, disabled input, drops ignored', () => {
+      const onSelectFiles = vi.fn()
       const view = renderHarness({
         rows: [],
-        onSelectFiles: vi.fn(),
+        onSelectFiles,
         allowDrop: true,
         disabled: true,
       })
       const label = view.container.querySelector('label')
       expect(label).toHaveAttribute('aria-disabled', 'true')
       expect(fileInputOf(view.container).disabled).toBe(true)
-      expect(view.queryByText(dropHint)).not.toBeInTheDocument()
+      // The zone is still described, but it accepts no drag while disabled.
+      expect(view.getByText(dropOrChoose)).toBeInTheDocument()
+      fireEvent.dragEnter(label!, emptyDragInit)
+      expect(label).not.toHaveAttribute('data-drop-active')
+      dropFiles(label!, [makeFile('scan.jpg')])
+      expect(onSelectFiles).not.toHaveBeenCalled()
     })
   })
 
@@ -292,25 +299,63 @@ describe('FileUploader', () => {
   })
 
   describe('dropping', () => {
-    it('renders no drop surface by default, and a stray drop is ignored', () => {
+    it('does not accept a drop without allowDrop, and a stray drop is ignored', () => {
       const onSelectFiles = vi.fn()
       const view = renderHarness({
         rows: [],
         onSelectFiles,
       })
-      expect(view.queryByText(dropHint)).not.toBeInTheDocument()
-      dropFiles(view.container, [makeFile('scan.jpg')])
+      expect(view.getByText(pickerLabel)).toBeInTheDocument()
+      const zone = view.container.querySelector('label')!
+      expect(zone).not.toHaveAttribute('data-drop-active')
+      dropFiles(zone, [makeFile('scan.jpg')])
       expect(onSelectFiles).not.toHaveBeenCalled()
     })
 
-    it('renders the surface with allowDrop, arms it visually during a drag, and reports the drop', () => {
+    it('renders one selection zone: one instruction, click and drop on the same target, one tab stop', async () => {
+      const user = userEvent.setup()
       const onSelectFiles = vi.fn()
       const view = renderHarness({
         rows: [],
         onSelectFiles,
         allowDrop: true,
       })
-      const surface = view.getByText(dropHint).closest('div')
+      // One zone, one instruction: the picker and the drop surface no
+      // longer stack as two controls telling the operator the same thing.
+      expect(view.container.querySelectorAll('label')).toHaveLength(1)
+      expect(view.getAllByText(dropOrChoose)).toHaveLength(1)
+      expect(view.queryByText(pickerLabel)).not.toBeInTheDocument()
+      expect(view.queryByRole('button')).toBeNull()
+
+      const zone = view.container.querySelector('label')!
+      const input = fileInputOf(view.container)
+      // The label wraps the input, so clicking anywhere in the zone opens
+      // the native picker; the input remains the keyboard path.
+      expect(zone.contains(input)).toBe(true)
+      expect((zone as HTMLLabelElement).control).toBe(input)
+
+      // Keyboard: tab reaches the hidden input and nothing else.
+      await user.tab()
+      expect(input).toHaveFocus()
+
+      // Drop: the same zone reports files through the same callback.
+      fireEvent.dragEnter(zone, emptyDragInit)
+      expect(zone).toHaveAttribute('data-drop-active', 'true')
+      const file = makeFile('scan.jpg')
+      dropFiles(zone, [file])
+      expect(onSelectFiles).toHaveBeenCalledTimes(1)
+      expect(onSelectFiles.mock.calls[0]![0]![0]).toBe(file)
+      expect(zone).not.toHaveAttribute('data-drop-active')
+    })
+
+    it('renders the zone with allowDrop, arms it visually during a drag, and reports the drop', () => {
+      const onSelectFiles = vi.fn()
+      const view = renderHarness({
+        rows: [],
+        onSelectFiles,
+        allowDrop: true,
+      })
+      const surface = view.getByText(dropOrChoose).closest('label')
       expect(surface).not.toBeNull()
       expect(surface).not.toHaveAttribute('data-drop-active')
 
