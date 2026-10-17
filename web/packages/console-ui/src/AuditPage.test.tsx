@@ -102,6 +102,12 @@ describe('AuditPage', () => {
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: '对象' })),
     ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
+    // The header and the body each apply the column's visibility rule on
+    // their own, so assert the body cell too: a divergence between the two
+    // would otherwise pass with only the header checked.
+    expect(
+      columnVisibility(screen.getByText('tenant/acme').closest('td')!),
+    ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: '操作者' })),
     ).toEqual({ hiddenAt: 0, visibleFrom: 900 })

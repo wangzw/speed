@@ -84,6 +84,11 @@ describe('DashboardPage', () => {
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: '对象' })),
     ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
+    // The body cell carries its own copy of the rule; assert it too so a
+    // header/body divergence cannot pass with only the header checked.
+    expect(
+      columnVisibility(screen.getByText('acme').closest('td')!),
+    ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: '操作者' })),
     ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
