@@ -62,7 +62,8 @@ this one may issue HTTP requests itself.
   backend sent them (`parseEnvelope` must never demand `traceId`, which
   no backend sends); a body with neither a `code` nor a `urn:speed:`
   `type` synthesizes a reserved `client.*` code (`client.network`,
-  `client.timeout`, `client.protocol`, `client.http.<status>`). The
+  `client.timeout`, `client.protocol`, `client.html`,
+  `client.http.<status>`). The
   reservation is a parse-time mechanism, not a convention: server codes
   are module-scoped and `client` is no module's domain, so
   `parseEnvelope` refuses any code -- however it arrived, a literal
@@ -242,9 +243,10 @@ suite of its own.
 
 ## Public surface
 
-The seventeen runtime exports are pinned by `src/index.test.ts`
+The runtime exports are pinned by `src/index.test.ts`
 (`ApiError`, `CONFIG_PUBLIC_PATH`, `DEFAULT_RETRY_POLICY`,
-`ERROR_CODE_NETWORK`, `ERROR_CODE_PROTOCOL`, `ERROR_CODE_TIMEOUT`,
+`ERROR_CODE_HTML`, `ERROR_CODE_NETWORK`, `ERROR_CODE_PROTOCOL`,
+`ERROR_CODE_TIMEOUT`,
 `SYSTEM_FEATURES_PATH`, `createClient`, `createConsoleReporter`,
 `createMemoryAccessTokenStore`, `fetchPublicConfig`,
 `fetchSystemFeatures`, `httpErrorCode`, `isApiError`,

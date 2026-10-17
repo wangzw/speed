@@ -88,6 +88,7 @@
 
 import {
   ApiError,
+  ERROR_CODE_HTML,
   ERROR_CODE_NETWORK,
   ERROR_CODE_PROTOCOL,
   ERROR_CODE_TIMEOUT,
@@ -1359,6 +1360,21 @@ export function createClient(options: ClientOptions): SpeedClient {
             // delivery instead of resolving a 2xx for a cancelled
             // caller.
             throwIfAborted(signal)
+            if (isHtmlDocument(outcome.response.headers.get('content-type'))) {
+              // An operation declares a JSON answer, so an HTML document
+              // is not a delivery: it is what a deployment that serves
+              // the front end from this endpoint answers for a path no
+              // API route claims (the entry document), where an
+              // API-only deployment answers 404. Refusing it here gives
+              // that shape a code of its own, so a caller can tell the
+              // absent surface from a JSON contract violation and can
+              // do so before parsing a document it never wanted.
+              throw new ApiError({
+                status: outcome.status,
+                code: ERROR_CODE_HTML,
+                attempts,
+              })
+            }
             if (body.trim() === '') {
               if (requestOptions.requireJsonBody === true) {
                 // A declared need for a JSON document turns the
@@ -1563,4 +1579,12 @@ export function createClient(options: ClientOptions): SpeedClient {
 
 function isSuccessStatus(status: number): boolean {
   return status >= 200 && status <= 299
+}
+
+/** Whether a content-type header names an HTML document. The comparison is
+ * on the media type alone: parameters such as `charset` are not part of
+ * what the header says the body is. */
+function isHtmlDocument(contentType: string | null): boolean {
+  const mediaType = (contentType ?? '').split(';', 1)[0]?.trim().toLowerCase()
+  return mediaType === 'text/html' || mediaType === 'application/xhtml+xml'
 }

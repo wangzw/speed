@@ -65,6 +65,7 @@ export class ApiError extends Error { /* status, code, traceId, params, details,
 export const ERROR_CODE_NETWORK: 'client.network'
 export const ERROR_CODE_TIMEOUT: 'client.timeout'
 export const ERROR_CODE_PROTOCOL: 'client.protocol'
+export const ERROR_CODE_HTML: 'client.html'
 export function httpErrorCode(status: number): string
 export function isApiError(value: unknown): value is ApiError
 export function isTransportFailure(value: unknown): value is ApiError
@@ -106,7 +107,7 @@ export type UsePublicConfigResult
 | `languageProvider` | 每次尝试读一次，返回当前语言或 `null`/空串表示「无可播报」；接成 `accept-language`，不覆盖调用方自带的该头 |
 | `tenantProvider` | 每次尝试读一次，返回当前租户或 `null`/空串表示「无可播报」；接成 `X-Tenant`，不覆盖调用方自带的 `x-tenant` |
 
-**`RequestFn` 的契约，约束的主体是它的每次调用**：2xx 的 JSON 正文解析为 `T`，空的 2xx（204 式）解析为 `undefined`，除非请求声明了 `requireJsonBody`（此时空 2xx 以携带真实状态与尝试次数的 `client.protocol` 拒绝）；非 2xx 一律以 `ApiError` 拒绝；带信封的失败保留其码——正文自带的 `code`，或后端 RFC 9457 问题对象的 `type` 推得的 `<模块>.<码>`（`code` 与 `urn:speed:` 的 `type` 任一即可，`traceId` 可选），其余取保留的 `client.*` 码；调用方取消以原生 `AbortError` 拒绝。请求路径必须是以 `/` 开头的绝对路径；带查询串的路径与 `query` 选项同时给出即按程序员错误拒绝。
+**`RequestFn` 的契约，约束的主体是它的每次调用**：2xx 的 JSON 正文解析为 `T`；2xx 的 `content-type` 是 HTML 文档（`text/html`、`application/xhtml+xml`）时以 `client.html` 拒绝，早于任何解析；空的 2xx（204 式）解析为 `undefined`，除非请求声明了 `requireJsonBody`（此时空 2xx 以携带真实状态与尝试次数的 `client.protocol` 拒绝）；非 2xx 一律以 `ApiError` 拒绝；带信封的失败保留其码——正文自带的 `code`，或后端 RFC 9457 问题对象的 `type` 推得的 `<模块>.<码>`（`code` 与 `urn:speed:` 的 `type` 任一即可，`traceId` 可选），其余取保留的 `client.*` 码；调用方取消以原生 `AbortError` 拒绝。请求路径必须是以 `/` 开头的绝对路径；带查询串的路径与 `query` 选项同时给出即按程序员错误拒绝。
 
 **`RequestOptions` 的字段**：`method`（缺省 `GET`）、`headers`、`omitAccessToken`、`query`（数组值按重复参数展开，供 Go 的 `r.URL.Query()` 解析）、`body`（JSON，或一个原样送出的二进制值）、`responseType`（`'blob'` 即把 2xx 正文读成 `Blob`）、`requireJsonBody`、`signal`。
 
@@ -114,7 +115,7 @@ export type UsePublicConfigResult
 
 ### 保留码词表
 
-`client.network`（请求未到达可用响应）、`client.timeout`（本包的超时触发）、`client.http.<status>`（无模块码的非 2xx——正文既无 `code` 成员，也无 `urn:speed:` 的 `type`）、`client.protocol`（契约在任一方向被违反：非对象/数组的 2xx、声明了需要文档却是空 2xx、不可序列化的请求体）。**`client.*` 是保留命名空间**：`parseEnvelope` 在解析时拒绝任何以 `client.` 开头的码——不论它来自 `code` 成员还是由 `urn:speed:client:*` 的 `type` 推得——改以 `client.http.<status>` 合成。服务器码是模块作用域的，`client` 不属于任何模块，因而一个信封里的 `client.*` 是行为不端的后端或中间人。`isTransportFailure` 是消费方据以区分本包真实传输失败（`status` 为 0，任何 HTTP 应答都造不出）与服务器应答错误的判据。
+`client.network`（请求未到达可用响应）、`client.timeout`（本包的超时触发）、`client.http.<status>`（无模块码的非 2xx——正文既无 `code` 成员，也无 `urn:speed:` 的 `type`）、`client.protocol`（契约在任一方向被违反：非对象/数组的 2xx、声明了需要文档却是空 2xx、不可序列化的请求体）、`client.html`（2xx 的 `content-type` 是 HTML 文档——操作声明 JSON 却收到一份文档，典型来源是与前端共用端点的部署把未被 API 路由认领的路径交给入口文档）。**`client.*` 是保留命名空间**：`parseEnvelope` 在解析时拒绝任何以 `client.` 开头的码——不论它来自 `code` 成员还是由 `urn:speed:client:*` 的 `type` 推得——改以 `client.http.<status>` 合成。服务器码是模块作用域的，`client` 不属于任何模块，因而一个信封里的 `client.*` 是行为不端的后端或中间人。`isTransportFailure` 是消费方据以区分本包真实传输失败（`status` 为 0，任何 HTTP 应答都造不出）与服务器应答错误的判据。
 
 ### 对外接口面
 
@@ -207,7 +208,7 @@ sequenceDiagram
 1. 校验路径是以 `/` 开头的绝对路径，按 `query` 选项拼 URL（数组值展开为重复参数；路径自带查询串与 `query` 选项并用即按程序员错误拒绝）。
 2. 若给了正文，先序列化一次（正文不随尝试变化）；不可序列化（循环结构、顶层函数或符号、`toJSON()` 返回空）以 `client.protocol` 拒绝，早于任何发送。
 3. 进入尝试循环：每次尝试接令牌（除非 `omitAccessToken`）、设默认头、按尝试读一次语言、装每次交换的超时、转发调用方的取消信号。
-4. 发送后按结果分派：2xx 读体并解析（空体按 `requireJsonBody` 决定是 `undefined` 还是 `client.protocol`）；401 走刷新路径；可重试的失败按方法与预算决定退避重试；其余以 `ApiError` 拒绝。
+4. 发送后按结果分派：2xx 读体，`content-type` 是 HTML 文档即以 `client.html` 拒绝，否则解析（空体按 `requireJsonBody` 决定是 `undefined` 还是 `client.protocol`）；401 走刷新路径；可重试的失败按方法与预算决定退避重试；其余以 `ApiError` 拒绝。
 5. 每次尝试结束（读毕、释放、放弃）都拆掉该尝试的超时与取消接线。
 
 **被丢弃的响应的正文先取消。** 一个为被重试或因刷新成功而被丢弃的响应，其正文在退避或重试之前被取消，使连接被确定地释放，而不是被一个未读响应一直占住直到垃圾回收。
@@ -245,6 +246,7 @@ sequenceDiagram
 | 非 2xx 且无可解析信封（既无 `code` 也无 `urn:speed:` 的 `type`） | `ApiError`，`client.http.<status>` |
 | 请求未到达可用响应（DNS／拒连／TLS／CORS／读体中途失败） | `ApiError`，`client.network`、`status` 为 0 |
 | 本包的超时触发 | `ApiError`，`client.timeout`、`status` 为 0 |
+| 2xx 的 `content-type` 是 HTML 文档 | `ApiError`，`client.html`，早于任何解析 |
 | 2xx 正文不是 JSON 对象或数组 | `ApiError`，`client.protocol` |
 | 声明了 `requireJsonBody` 却收到空 2xx | `ApiError`，`client.protocol`，带该交换的真实状态与尝试次数 |
 | 请求体不可序列化为 JSON | `ApiError`，`client.protocol`，早于任何发送 |

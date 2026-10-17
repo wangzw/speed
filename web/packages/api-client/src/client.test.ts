@@ -16,6 +16,7 @@ import {
   createClient,
   createMemoryAccessTokenStore,
   DEFAULT_RETRY_POLICY,
+  ERROR_CODE_HTML,
   ERROR_CODE_NETWORK,
   ERROR_CODE_PROTOCOL,
   ERROR_CODE_TIMEOUT,
@@ -2414,6 +2415,39 @@ describe('error normalization', () => {
     expect(error.status).toBe(200)
     expect(error.attempts).toBe(1)
     expect(error.cause).toBeInstanceOf(SyntaxError)
+  })
+
+  it('refuses a 2xx HTML document with the client.html code', async () => {
+    // A deployment that serves the front end from the API's own endpoint
+    // answers a path no API route claims with the entry document: HTTP 200
+    // and text/html. The operation declares JSON, so the document is a
+    // failure of its own kind -- decidable from the content type alone,
+    // before any parse -- and not a JSON contract violation.
+    for (const contentType of [
+      'text/html; charset=utf-8',
+      'TEXT/HTML',
+      'application/xhtml+xml',
+    ]) {
+      const standin = scriptedStandin(
+        textResponse(200, '<!doctype html><html></html>', {
+          'content-type': contentType,
+        }),
+      )
+      const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
+      const error = await expectApiError(api<{ ok: boolean }>('/notes'))
+      expect(error.code, `content type ${contentType}`).toBe(ERROR_CODE_HTML)
+      expect(error.status).toBe(200)
+      expect(error.attempts).toBe(1)
+    }
+  })
+
+  it('keeps a non-JSON 2xx without an HTML content type on client.protocol', async () => {
+    const standin = scriptedStandin(
+      textResponse(200, 'plain text', { 'content-type': 'text/plain' }),
+    )
+    const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
+    const error = await expectApiError(api<{ ok: boolean }>('/notes'))
+    expect(error.code).toBe(ERROR_CODE_PROTOCOL)
   })
 
   it('rejects a 2xx JSON primitive as client.protocol', async () => {

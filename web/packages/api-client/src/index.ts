@@ -41,6 +41,7 @@ export {
 export type { AccessTokenStore } from './access-token.js'
 export {
   ApiError,
+  ERROR_CODE_HTML,
   ERROR_CODE_NETWORK,
   ERROR_CODE_PROTOCOL,
   ERROR_CODE_TIMEOUT,

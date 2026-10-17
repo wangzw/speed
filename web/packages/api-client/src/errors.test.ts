@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   ApiError,
+  ERROR_CODE_HTML,
   ERROR_CODE_NETWORK,
   ERROR_CODE_PROTOCOL,
   ERROR_CODE_TIMEOUT,
@@ -69,6 +70,7 @@ describe('ApiError', () => {
       [0, ERROR_CODE_NETWORK, 'The request failed before a response arrived.'],
       [0, ERROR_CODE_TIMEOUT, 'The request timed out before a response arrived.'],
       [200, ERROR_CODE_PROTOCOL, 'The response did not satisfy the API JSON contract.'],
+      [200, ERROR_CODE_HTML, 'The server answered HTTP 200 with an HTML document where the API contract promises JSON.'],
       [502, 'client.http.502', 'The server answered HTTP 502 without a valid ApiError envelope.'],
       [400, 'notes.text_required', 'The API rejected the request (notes.text_required).'],
     ]

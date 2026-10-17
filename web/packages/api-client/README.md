@@ -207,6 +207,9 @@ function useAppChrome(clientApi: RequestFn): AppChrome {
   request declared `requireJsonBody` -- or a request body that cannot
   be JSON-serialized, such as a circular structure or a top-level
   function/symbol, which rejects before anything is sent),
+  `client.html` (a 2xx whose content type is an HTML document: an
+  entry point that answers an unclaimed path with its front-end
+  document, where an API-only deployment answers 404),
   `client.http.<status>`. `error.attempts` reports how many HTTP
   attempts were made. The namespace is reserved by mechanism, not just
   by convention: server codes are module-scoped (`authn.*`, `notes.*`)
@@ -381,7 +384,7 @@ const handle = api.openEventStream('/api/v1/notifications/stream', {
 | `ApiError` | class | The one error type. `status` (0 when no response arrived), `code` (the error body's own `code`, or the module code the client derives from its RFC 9457 problem `type`), `traceId?`, `params?`, `details?`, `attempts`, `auth` (true exactly for HTTP 401), `message` (an error body's message or an English diagnostic). |
 | `isApiError(value)` | function | Type guard; accepts `instanceof` and structurally identical errors (a second copy of the library). |
 | `isTransportFailure(value)` | function | Answers whether an error is genuinely this client's own transport-layer failure (`client.network`/`client.timeout` with `status` 0 -- the one status no HTTP response can carry). Consumer whitelists distinguishing "the request never completed" from server-answered errors should consult this, never a bare code match. |
-| `ERROR_CODE_NETWORK` / `ERROR_CODE_TIMEOUT` / `ERROR_CODE_PROTOCOL` | const | Reserved `client.` codes; a code that borrows the prefix -- a literal `code` or a `urn:speed:client:*` type -- is refused at parse time. |
+| `ERROR_CODE_NETWORK` / `ERROR_CODE_TIMEOUT` / `ERROR_CODE_PROTOCOL` / `ERROR_CODE_HTML` | const | Reserved `client.` codes; a code that borrows the prefix -- a literal `code` or a `urn:speed:client:*` type -- is refused at parse time. |
 | `httpErrorCode(status)` | function | Shapes a bare non-2xx status into `client.http.<status>`. |
 | `FieldError` | type | `{ field, code, params? }` -- one field-level validation failure in `details`. |
 | `AccessTokenStore` | type | The sync `get`/`set` seam hosts implement (or use the memory store). |

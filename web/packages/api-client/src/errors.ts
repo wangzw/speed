@@ -44,6 +44,14 @@
  *                       (a circular structure, a top-level function
  *                       or symbol, a toJSON() that yields nothing) --
  *                       the latter rejects before anything is sent.
+ *   client.html      -- a 2xx whose content type is an HTML document.
+ *                       An endpoint that declares a JSON answer was
+ *                       served a document instead: an entry point that
+ *                       hands an unmatched path to its front-end
+ *                       fallback does this, where the API-only
+ *                       deployment would answer 404. The code is the
+ *                       decidable form of "this path has no API route
+ *                       behind it"; it is not a claim about which.
  *
  * Codes from a valid envelope always win over the client.* vocabulary:
  * a 401 carrying `authn.session_expired` surfaces as that code, with
@@ -86,6 +94,12 @@ export const ERROR_CODE_TIMEOUT = 'client.timeout' as const
  * for the full list (a 2xx body that is not a JSON object/array, an
  * unsendable request body, ...). */
 export const ERROR_CODE_PROTOCOL = 'client.protocol' as const
+
+/** Reserved code: a 2xx carried an HTML document where the operation
+ * declares JSON -- the front-end entry document, typically, which a
+ * deployment that serves the front end from the API's own endpoint
+ * answers for a path no API route claims. */
+export const ERROR_CODE_HTML = 'client.html' as const
 
 /** Reserved code for a bare non-2xx response (no valid envelope). */
 export function httpErrorCode(status: number): string {
@@ -153,6 +167,9 @@ function defaultMessage(code: string, status: number): string {
   }
   if (code === ERROR_CODE_PROTOCOL) {
     return 'The response did not satisfy the API JSON contract.'
+  }
+  if (code === ERROR_CODE_HTML) {
+    return `The server answered HTTP ${status} with an HTML document where the API contract promises JSON.`
   }
   if (code.startsWith('client.http.')) {
     return `The server answered HTTP ${status} without a valid ApiError envelope.`
