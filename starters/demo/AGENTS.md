@@ -9,6 +9,12 @@ host — and writes the command tree that says what each run may be.
 It is a starting point, not an evaluation host. The modules under `pkg/` deliver
 the seams; this program shows one way to put them together. It ships no business
 domain: `server/modules/` is the empty slot a product's own modules land in.
+Because it seeds no business data, several surfaces open empty in the browser:
+the object store, the console dashboard beyond the tenant counts it reads from
+the platform's own roster, the notification inbox (this program declares no
+notification type and dispatches nothing), and the preference matrix. An empty
+surface is the baseline doing what it says it does, not a capability left
+unfinished — the data is the product's and its users' to produce.
 
 It is two trees under one directory. `server/` is the Go program — its own
 module, its configuration samples and the frontend bundle it embeds; `web/` is
