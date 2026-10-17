@@ -333,7 +333,7 @@ stateDiagram-v2
 | `logout()` 的 `POST /auth/logout` 被拒 | 仍清本地并转匿名（会话已不可信），拒绝原始 `ApiError` |
 | 权限检查的域无列表 | `false`（fail-closed），`tenant` 与 `system` 互不满足 |
 | 登录提交或从匿名开始的恢复时 `GET /features` 读取失败（网络、超时、5xx） | 特性态 `failed`，带该次的 `ApiError`；提交照常成功，不让登录失败 |
-| `GET /features` 答 404 或入口文档（本进程没有 `feature.board`，或它挂在别的端上） | 特性态 `failed`（`client.http.404` 或 `client.html`）；属部署错误，不当作全部特性缺席 |
+| `GET /features` 答 404 或入口文档（前端所在监听上，`/features` 落在某个端的非 `/` 认领之下、而那个端没有挂 `feature.board` 时是 404；不落在任何非 `/` 认领之下、请求落到前端时是入口文档） | 特性态 `failed`（`client.http.404` 或 `client.html`）；属部署错误，不当作全部特性缺席 |
 | 特性文档形状不符（不是对象，或 `features` 不是字符串数组） | 特性态 `failed`，`client.protocol`（解析守卫） |
 | `retryFeatures()` 的结果落地时世代已变、快照不再已认证或账户已换 | 丢弃结果，特性态保持胜出者写定的值 |
 | 匿名时调用 `retryFeatures()` | 不发请求，不改状态 |

@@ -290,6 +290,8 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 
 **请求路径的 panic 兜底是这条取向的一处例外：它是入口模块的承诺。** 兜底层由 [http](modules/http/design-http.md) 内建、每端唯一，不装任何别的模块的进程同样有它。判据是这条能力不需要任何产生于依赖图上层的概念——不要身份、不要租户、不要执行变更的一方，只要接住一次调用并写出一次错误响应（形状由默认的 `application/problem+json` 或已交付的 `ErrorResponder` 决定），这里的“执行变更的一方”泛指发出调用的一方，与[认证](modules/authn/design-authn.md)身份上的实际操作者不是同一个词义，该文术语表有界定。因而按横切归属的判据落在持有拦截点的模块（[ADR-http-recovery-2026-09-22](../adr/adr-http-recovery-2026-09-22.md)、[ADR-http-errors-2026-10-10](../adr/adr-http-errors-2026-10-10.md)）。宿主为入口模块预置的实例不是它的产物时，这份承诺不随之而来，那个实例怎样对外提供服务由预置的一方负责（见 [http](modules/http/design-http.md)）。
 
+**同一个二进制、同一份配置下，未认证者借 HTTP 应答的差异判断不出一个路由模块是否在运行，只要它不对端点上的每个请求起作用、在各端点上也没有[匿名面路由](../glossary.md)；模块内随装配挂载、不含匿名面路由的路由组同样如此。** 这是入口模块与认证网关合起来的承诺：入口模块只按端点在配置里写的[认领前缀](../glossary.md)为请求选端，选端不随装配变化（[http](modules/http/design-http.md) 的分派 handler）；受守端点上不命中匿名登记的未认证请求，网关一律写出与匹配了哪条路由、有没有匹配都无关的同一个拒绝（[authn-gate](modules/authn/design-authn-gate.md) 的请求期判定）。承诺带前提：网关与入口模块的路由器都由各自的模块构造，两次运行中对端点上每个请求起作用的模块相同、配置与运行期状态相同，链上排在网关之外的层不按路由作答，同一端点上匿名面路由与其余路由的匹配域不相交；任一条不成立时不作承诺，逐条见 [http](modules/http/design-http.md)（[ADR-http-dispatch-2026-10-17](../adr/adr-http-dispatch-2026-10-17.md)、[ADR-authn-exemption-2026-10-17](../adr/adr-authn-exemption-2026-10-17.md)）。**承诺不覆盖对端点上每个请求都起作用、不按路由区分的模块**，它们的在场体现在每个应答上，例如凭据后端、`http.cors`、i18n 与 `ratelimit` 的来源地址层，判定见 [http](modules/http/design-http.md) 术语表的应答塑形模块；**也不覆盖带匿名面路由的模块**：匿名面路由本就对未认证请求作答，所属模块的在场可经这些路由本身探出（[authn](modules/authn/design-authn.md) 的非保证）。
+
 ### 认证与授权边界
 
 认证交付身份系统：登录、会话、令牌、多因素、企业 SSO、冒充与账户存储；授权由 [authz](modules/design-authz.md) 承载，接缝只有 `Decider` 一处（[ADR-authn-scope-2026-10-10](../adr/adr-authn-scope-2026-10-10.md)、[ADR-authn-decision-seam-2026-10-10](../adr/adr-authn-decision-seam-2026-10-10.md)、[ADR-authz-decision-seam-2026-10-12](../adr/adr-authz-decision-seam-2026-10-12.md)）。归属认证的判据是判定所需的输入：只需要凭据、账户、标识、会话、令牌、因素、IdP 配置与冒充记录这类认证事实的归认证，还需要资源、动作与策略的归授权。判定接缝 `Decider` 缺席即全拒：认证自己的管理面与冒充的开始都不在它缺席时放行。网关与 `tenant.admission` 不写 403，认证强度不足答 401，非成员与冒充范围不符答 404，403 出现在认证自己的处理器里与 `authz.guard`（[authn](modules/authn/design-authn.md)、[authn-failure](modules/authn/design-authn-failure.md)、[authz](modules/design-authz.md)）。
@@ -374,7 +376,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [config](modules/design-config.md) | 已实现 |
 | [log](modules/design-log.md) | 已实现 |
 | [db](modules/design-db.md) | 已实现 |
-| [http](modules/http/design-http.md) | 已实现 |
+| [http](modules/http/design-http.md) | 部分实现 |
 | [authn](modules/authn/design-authn.md) | 部分实现 |
 | [tenant](modules/tenant/design-tenant.md) | 部分实现 |
 | [authz](modules/design-authz.md) | 部分实现 |
@@ -390,8 +392,8 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [jobs](modules/jobs/design-jobs.md) | 已实现 |
 | [notification](modules/notification/design-notification.md) | 部分实现 |
 | [objectstore](modules/design-objectstore.md) | 部分实现 |
-| [feature](modules/design-feature.md) | 未实现 |
+| [feature](modules/design-feature.md) | 部分实现 |
 | [ops](modules/design-ops.md) | 已实现 |
 | [web](modules/web/design-web.md) | 部分实现 |
-| [webui](modules/design-webui.md) | 已实现 |
+| [webui](modules/design-webui.md) | 部分实现 |
 | [starters](modules/design-starters.md) | 部分实现 |
