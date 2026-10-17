@@ -92,7 +92,8 @@ export default defineConfig({
     },
     // The build also prints one MODULE_LEVEL_DIRECTIVE warning per
     // `'use client'` directive carried by a bundled dependency's ESM build
-    // (@mui/*, @tanstack/react-query, react-router -- 179 files today).
+    // (@mui/*, @tanstack/react-query, react-router -- one line per
+    // dependency ESM file that carries the directive).
     // The directive is React Server Components metadata from those
     // packages, not this app's, and it is meaningless in a client-only
     // bundle, so nothing here can or should remove it. It is left visible

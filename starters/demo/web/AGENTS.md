@@ -162,6 +162,11 @@ pnpm test:a11y
 pnpm build
 ```
 
+The tests use vitest's defaults: this tree deliberately does not take
+`web/vitest.shared.ts`, the package library's shared preset, so a case here
+times out at 5s rather than the workspace's 20s (a product copied from it whose
+tests grow heavier should set its own `testTimeout`).
+
 `test:a11y` is the route-level accessibility sweep (`src/a11y/`): it walks the
 route table and renders the assembled app at every route in the tenant and
 console shells, in three data states, scanning each with axe-core and failing on

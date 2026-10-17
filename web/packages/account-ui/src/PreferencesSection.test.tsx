@@ -268,12 +268,7 @@ describe('PreferencesSection', () => {
     expect(i18n.language).toBe('zh-CN')
   })
 
-  // This test's cost is the engine's own timezone list: ~418 zones
-  // rendered into the open select menu twice (the pick and the clear) and
-  // two option queries by accessible name over the whole list; the
-  // explicit 20s budget covers the loaded-runner cost of that
-  // render-heavy class with headroom.
-  it('PATCHes a timezone choice and the cleared empty string under time_zone', async () => {
+  it('PATCHes a timezone choice under time_zone', async () => {
     const { respond, stored } = makeProfileResponder({
       time_zone: 'Asia/Tokyo',
     })
@@ -288,20 +283,29 @@ describe('PreferencesSection', () => {
     // field name.
     chooseOption(timezone, 'Europe/Berlin')
     await waitFor(() => expect(stored.time_zone).toBe('Europe/Berlin'))
-    let patches = rig.calls.filter((call) => call.method === 'PATCH')
+    const patches = rig.calls.filter((call) => call.method === 'PATCH')
+    expect(patches).toHaveLength(1)
     expect(patches[0]?.body).toEqual({ time_zone: 'Europe/Berlin' })
+  })
+
+  it('PATCHes the cleared empty string under time_zone', async () => {
+    const { respond, stored } = makeProfileResponder({
+      time_zone: 'Asia/Tokyo',
+    })
+    const { rig } = mountSection(respond)
+
+    const timezone = await screen.findByRole('combobox', {
+      name: zhCN.preferences.timezone.label,
+    })
+    expect(timezone).toHaveTextContent('Asia/Tokyo')
 
     // Back to "not chosen": the clearing value is the empty string.
-    chooseOption(
-      screen.getByRole('combobox', {
-        name: zhCN.preferences.timezone.label,
-      }),
-      zhCN.preferences.timezone.notChosen,
-    )
+    chooseOption(timezone, zhCN.preferences.timezone.notChosen)
     await waitFor(() => expect(stored.time_zone).toBe(''))
-    patches = rig.calls.filter((call) => call.method === 'PATCH')
-    expect(patches[1]?.body).toEqual({ time_zone: '' })
-  }, 20000)
+    const patches = rig.calls.filter((call) => call.method === 'PATCH')
+    expect(patches).toHaveLength(1)
+    expect(patches[0]?.body).toEqual({ time_zone: '' })
+  })
 
   it('adds a stored timezone the engine list omits as its own option', async () => {
     // The engine's list is narrowed for this test: the stored value is
