@@ -231,6 +231,23 @@ The form family is react-hook-form — the host owns the `useForm` instance, `Fo
 - Derive the zod schema from the `api-sdk` types where a field maps to one. **DO NOT** maintain a second rule set beside the contract — the schema is the one rule set, derived from the generated types.
 - Validation errors render through `FormField`. **DO NOT** lay out error text per form.
 
+### The result of a write
+
+The design is `docs/design/modules/web/design-web-ui-kit.md` ("写入的反馈"); this section holds the coding rules it implies.
+
+**Required:**
+- Report the result of every write through a feedback scope: one `useWriteFeedback` instance and one `WriteFeedbackRegion` per control group, the region directly under the controls that started the write. Call `reset` at the start of every attempt — a submit rejected by client-side validation included — and on a context switch (tenant, selected object); call `succeed(message)` or `fail(error)` when the attempt settles.
+- Confirm every landed write with a translated success message that names the object changed. A value handed out once (a token, a secret) gets a display panel inside the region in addition to the message, never instead of it.
+- Bind the family's error-code resolver once, in the package's `internal/` wrapper around `WriteFeedbackRegion`; call sites pass the slot and nothing else.
+- Close a `ConfirmDialog` no later than the moment its write settles. A failure is reported in the region after the dialog has closed, never in a dialog that stays open.
+- Mark the control that started a write busy while the write is in flight, and a refresh control while its read is in flight. Give `AsyncSection` a `staleState` wherever a refetch can fail while data is on screen.
+- Treat one action as one attempt: an action that issues several requests (a batch save) calls `reset` once and `succeed` or `fail` once.
+
+**Prohibited:**
+- **DO NOT** aggregate the errors of several mutations into one page banner (a "first non-null error" array), and **DO NOT** keep a per-mutation `success` string beside the shared slot.
+- **DO NOT** hand-roll a success `Alert` — use `InlineSuccess`, and its `sx` for spacing.
+- **DO NOT** report a failure only in a region an open modal hides: while a modal panel or dialog is open, the page behind it is hidden from assistive technology.
+
 ## 11. Diagnostics and Logging
 
 The browser has no structured log backend, so the equivalent discipline is **structured reporting**: anything worth diagnosing in production goes through the reporter in `@speed/api-client`, not `console`.
