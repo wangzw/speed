@@ -137,7 +137,7 @@ interface ConsoleShellProps {
 - **详情页**（`TenantDetailPage`、`AuditDetailPage`）：标题区加主栏与固定宽侧栏。主栏承载主体与其写入，侧栏承载标识与回链。路径是列表页路径加一段 `:id`（`/tenants/:id`、`/audit/:id`），声明不带标签，故不进导航。列表页接收声明传入的该列表页匹配路径（`basePath`），据此为每行构造详情链接 `${basePath}/${id}`；详情页接收 `parentHref`（匹配路径去掉 id 段），据此回链列表页。租户详情页另接收控制台根路径（匹配路径去掉 `/tenants/:id`），据此给出通往按该租户寻址的兄弟页面的链接（权限与角色、邀请与成员、SSO 提供方、冒充记录），每条链接把租户放进 `tenant` 查询参数——目标页从该参数取得选择器初值。审计详情页对记录携带的空字段渲染占位符而不是只留标签：字段为空本身是记录的一部分（平台级事件没有租户、动作可以没有用途），省掉这一行会掩盖记录携带空值。
 - **设置页**（`SettingsPage`）：一条二级导航（按 namespace 分组，取出自全量设置读）、一张占满内容区的分页表（键／类型／当前值／状态／操作）、底部一条粘性保存条。行的状态取自该层视图的 `has_row`：该层没有行时值走回落（标「默认」），持有行时标「已覆盖」。`written` 只用于显示，不参与判定——显式写入的空串与无行在文本上不可区分，行是否存在由 `has_row` 单独给出。只有持有行的行渲染可点的移除控件，默认行不渲染它——默认值没有可撤的覆盖行，摆一个只能空转的开关只会误导读屏与操作者；204 的幂等删除语义不变。**敏感项**：[settings.admin](../settings/design-settings-admin.md) 在应答里把敏感项的 `written` 与 `value` 换成遮蔽串，`has_row` 照常报出行是否存在，故页面按同一判据统计状态，并只对持有行的敏感项渲染移除控件；键格的「敏感」标记说明该行的值是遮蔽串。
 
-**冒充页承载两个面。** 记录面是一个按租户寻址的列表页：它列出租户的冒充记录并终止一条。运营者自身会话面读调用方自己会话上的冒充（`GET /auth/impersonation`，无冒充时是裸 404）、以 `POST /auth/impersonation` 发起一条、以 `DELETE /auth/impersonation` 结束它。自身会话面作用到调用方自己的会话，不按租户寻址，故它不随租户选择器启用，其读取的键也不分租户；发起控件只在当前会话没有在force的冒充时呈现——模块对同一会话上的第二次发起答 409。这三个操作是生成的调用方会话操作（`useAuthnImpersonationStatus`、`useAuthnImpersonationStart`、`useAuthnImpersonationEnd`），页面直接调用它们并经生成键工厂（`getAuthnImpersonationStatusQueryKey`）失效状态读，与记录面的操作束不是同一组。
+**冒充页承载两个面。** 记录面是一个按租户寻址的列表页：它列出租户的冒充记录并终止一条。运营者自身会话面读调用方自己会话上的冒充（`GET /auth/impersonation`，无冒充时是裸 404）、以 `POST /auth/impersonation` 发起一条、以 `DELETE /auth/impersonation` 结束它。自身会话面作用到调用方自己的会话，不按租户寻址，故它不随租户选择器启用，其读取的键也不分租户；发起控件只在当前会话没有在force的冒充时呈现——模块对同一会话上的第二次发起答 409。这三个操作是生成的调用方会话操作（`useAuthnImpersonationStatus`、`useAuthnImpersonationStart`、`useAuthnImpersonationEnd`），页面直接调用它们并经生成键工厂（`getAuthnImpersonationStatusQueryKey`）失效状态读，与记录面的操作束不是同一组。**状态读落定为有冒充时，记录面不渲染、其读不发出。** 记录面包括租户选择器、记录列表与终止控件，换成一条说明（冒充期间不能读取或终止冒充记录，结束冒充后在此查看），页面只剩「当前冒充」节与结束控件。冒充身份只到得了封闭的几条路由，记录面的读与名册读在冒充期间必被网关拒绝，渲染成空列表加陈旧提示会被读成「没有记录」。状态读未落定或失败时记录面照常渲染；结束成功后记录面恢复并重读，不需要刷新页面。
 
 **页内导航复用壳的接缝。** 控制台壳把它的 `onNavigate` 经内部上下文交给它渲染的页内容；页内的详情链接经该回调就地路由（不做整页重载，否则内存态会话会丢），壳未给回调时是普通链接。这条接缝与壳自身的导航项同一来源，故二者重载与否的行为一致。
 
@@ -335,7 +335,7 @@ graph TD
 
 **确认对话框在确认点击时关闭。** 破坏性动作的确认一律经 `usePendingConfirm`：写入在确认点击时发出，对话框在同一次点击里关闭、不等写入落定，失败在写入落定后落在区域里；权限页的角色删除同此，不以 `confirmLoading` 把对话框保持到落定。发起控件在写入进行中禁用并标忙，定义见 ui-kit。
 
-**写入失败的文案。** 写入失败经本包白名单渲染：裸 HTTP 403 渲染权限不足文案；未被步进拦截的裸 401（会话已不再成立，或该写入不经步进闸）渲染会话已结束文案；经步进闸的写入先由 `intercept` 判定，会话仍成立的 401 打开步进对话框，不进入文案层。403 与该类 401 都不并入裸 HTTP 状态通用的 `errors.client.http` 叶子（`client.http.<status>` 经它渲染带状态码的「请稍后重试」文本）。冒充发起与管理员重置因素、重置口令被 403 `authn.factor_not_seasoned` 拒绝时，写入失败渲染一条说明：需要一个已启用满规定时长的非短信因素（认证器应用或通行密钥），刚登记的因素要等；应答不带时长，文案不写具体数字。步进对话框不拦截它，加强认证解不了这一条。
+**写入失败的文案。** 写入失败经本包白名单渲染：裸 HTTP 403 渲染权限不足文案；未被步进拦截的裸 401（会话已不再成立，或该写入不经步进闸）渲染会话已结束文案；经步进闸的写入先由 `intercept` 判定，会话仍成立的 401 打开步进对话框，不进入文案层。403 与该类 401 都不并入裸 HTTP 状态通用的 `errors.client.http` 叶子（`client.http.<status>` 经它渲染带状态码的「请稍后重试」文本）。冒充发起与管理员重置因素、重置口令被 403 `authn.factor_not_seasoned` 拒绝时，写入失败渲染一条说明：需要一个已启用满规定时长的非短信因素（认证器应用或通行密钥），刚登记的因素要等；应答不带时长，文案不写具体数字。步进对话框不拦截它，加强认证解不了这一条。403 `authn.impersonation_restricted` 在界面上几乎总是冒充发起被拒：服务端对发起者、目标、参数三组的违反不区分是哪一条（[design-authn-impersonation](../authn/design-authn-impersonation.md)），文案因此不指向单一原因，也不写「冒充期间」，而是逐类陈述对目标与当前会话的要求：目标是该租户中已启用、未受保护的成员账户，当前会话没有进行中的冒充。这条码不拆出「目标不是成员」之类的子码：拆出任何一类，应答就多告诉发起者一条关于目标账户的事实，取舍见 [ADR-authn-impersonation-2026-10-10](../../../adr/adr-authn-impersonation-2026-10-10.md)。
 
 **冒充的状态与记录。** 冒充状态读（`GET /auth/impersonation`）的裸 404 是已落定的「未冒充」：该 404 不作为 `error` 交给 `ConsoleAsyncSection`，既不渲染失败占位也不渲染陈旧提示，并丢弃缓存里的旧授予；冒充经本页的结束、到期、另一个标签页或另一位管理员的终止而结束，重读都落到这条规则。结束成功时对状态读做 `resetQueries` 并重取；发起与终止使状态读与记录列表失效重取。状态读经 `ConsoleAsyncSection` 渲染，其余失败走本包通用的占位与陈旧提示。
 
@@ -360,6 +360,8 @@ graph TD
 | 敏感设置项 | 值由服务端遮蔽，页面渲染遮蔽串 |
 | 账户身份解析被拒（无 `authn.account.read`），或特性 `authn.admin` 缺席 | 该处渲染记录值并标注身份未解析，页面本身仍可读 |
 | 自身会话无冒充（`GET /auth/impersonation` 的裸 404） | 渲染「当前未冒充任何账户」的说明，按未冒充处理，不落入失败占位也不渲染陈旧提示；缓存里的旧授予被丢弃 |
+| 冒充发起被 403 `authn.impersonation_restricted` 拒绝 | 渲染不指向单一原因的说明，逐类陈述对目标与当前会话的要求，不写「冒充期间」 |
+| 自身会话有冒充（状态读落定为有授予） | 记录面不渲染、其读不发出，渲染一条说明；「当前冒充」节与结束控件照常 |
 | 白名单外的码 | 渲染通用失败文本，不渲染裸键 |
 | 步进对话框读本人因素已落定且没有启用的因素 | 渲染先添加验证方式的提示，不发起流程；`accountHref` 缺省时不渲染前往入口 |
 | 步进对话框读本人因素失败 | 不判定为没有因素，照常发起流程，由服务端的拒绝决定 |
@@ -423,6 +425,7 @@ graph TD
 | 权限页账户绑定查询的加载、失败与空占位 | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`、`bindingColumns` |
 | 会话页（按账户列出与撤销） | 已实现 | `web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/routes.tsx` `sessionsAdminRoutes` |
 | 冒充页（记录列出与终止；本会话冒充的状态、发起与结束） | 已实现 | `web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`、`StartImpersonationForm`；`web/packages/console-ui/src/routes.tsx` `impersonationsAdminRoutes` |
+| 冒充发起被拒的文案、冒充期间记录面的收起 | 未实现 | — |
 | 权限页（角色、授权、目录、绑定） | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/routes.tsx` `permissionsAdminRoutes` |
 | 内建角色只读（保留查看授权入口，隐藏授予与撤销控件） | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | 邀请与成员页（邀请读写、成员列出与移除） | 已实现 | `web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/routes.tsx` `invitationsAdminRoutes` |
