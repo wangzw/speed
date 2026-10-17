@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,5 +102,82 @@ func TestSeedLeavesAnExistingBuiltinRoleAlone(t *testing.T) {
 	if len(manager.writes) != 0 || len(manager.marks) != 0 {
 		t.Errorf("markRoleBuiltin touched an existing builtin role: writes %+v, marks %v",
 			manager.writes, manager.marks)
+	}
+}
+
+// grantManager answers the grant calls seedGrants makes. Its PutGrant answers
+// with the error the policy manager returns on a builtin role, so the case
+// pins the seed's report of a frozen grant set.
+type grantManager struct {
+	authz.Manager
+	attempted []authz.GrantRecord
+	err       error
+}
+
+func (m *grantManager) Grants(context.Context, string, authz.Role) ([]authz.GrantRecord, error) {
+	return nil, nil
+}
+
+func (m *grantManager) PutGrant(_ context.Context, g authz.GrantRecord) error {
+	m.attempted = append(m.attempted, g)
+	return m.err
+}
+
+// fixedCatalog is a catalog holding the permissions it is given, each with the
+// (resource, action) pair it translates to.
+type fixedCatalog struct {
+	pairs map[authz.Permission][2]string
+}
+
+func (c fixedCatalog) Declared() []authz.Permission {
+	out := make([]authz.Permission, 0, len(c.pairs))
+	for permission := range c.pairs {
+		out = append(out, permission)
+	}
+	return out
+}
+
+func (c fixedCatalog) Has(permission authz.Permission) bool {
+	_, ok := c.pairs[permission]
+	return ok
+}
+
+func (c fixedCatalog) ObjectAction(permission authz.Permission) (string, string, bool) {
+	pair, ok := c.pairs[permission]
+	if !ok {
+		return "", "", false
+	}
+	return pair[0], pair[1], true
+}
+
+// A permission declared after the builtin mark cannot be added to the frozen
+// role. The seed must report the refusal with the permission and the domain it
+// named, and the manager's own error must survive the wrapping: swallowing it
+// would turn a frozen grant set into a silent shortfall.
+func TestSeedReportsAFrozenGrantRefusal(t *testing.T) {
+	refusal := fmt.Errorf("%w: the role %q of tenant %q is builtin",
+		authz.ErrBuiltinRole, platformAdminRole, "system")
+	manager := &grantManager{err: refusal}
+	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
+		"crm.deal.read": {"deal", "read"},
+	}}
+	err := seedGrants(t.Context(), manager, catalog, "system", time.Now().UTC())
+	if !errors.Is(err, authz.ErrBuiltinRole) {
+		t.Fatalf("seedGrants error = %v, want it to wrap authz.ErrBuiltinRole", err)
+	}
+	for _, want := range []string{
+		"seed: granting crm.deal.read to system/" + string(platformAdminRole),
+		refusal.Error(),
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("seedGrants error = %q, want it to contain %q", err, want)
+		}
+	}
+	if len(manager.attempted) != 1 {
+		t.Fatalf("seedGrants attempted %d grant writes, want one", len(manager.attempted))
+	}
+	got := manager.attempted[0]
+	if got.Resource != "deal" || got.Action != "read" || got.Role != platformAdminRole || got.Tenant != "system" {
+		t.Errorf("the attempted grant = %+v, want deal/read on %s/system", got, platformAdminRole)
 	}
 }
