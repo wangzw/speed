@@ -33,7 +33,6 @@ import {
   ListSkeleton,
   PageHeader,
   errorCodeOf,
-  touchTargetSx,
 } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { InlineError } from './internal/inline-error.js'
@@ -176,7 +175,6 @@ export function TenantDetailPage({ id, parentHref }: TenantDetailPageProps) {
             variant="outlined"
             size="small"
             onClick={() => void tenant.refetch()}
-            sx={touchTargetSx}
           >
             {t('common.refresh')}
           </Button>

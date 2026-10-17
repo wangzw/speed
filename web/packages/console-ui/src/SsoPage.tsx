@@ -33,7 +33,6 @@ import {
   ListSkeleton,
   PageHeader,
   errorCodeOf,
-  touchTargetSx,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -107,7 +106,6 @@ export function SsoPage() {
             onClick={() =>
               refreshMetadata.mutate({ id: provider.id, tenant })
             }
-            sx={touchTargetSx}
           >
             {t('sso.refreshMetadata')}
           </Button>
@@ -118,7 +116,6 @@ export function SsoPage() {
             aria-label={t('sso.reverifyDomainsAria', { name: provider.name })}
             disabled={reverifyDomains.isPending}
             onClick={() => reverifyDomains.mutate({ id: provider.id, tenant })}
-            sx={touchTargetSx}
           >
             {t('sso.reverifyDomains')}
           </Button>
@@ -137,7 +134,6 @@ export function SsoPage() {
                 run: () => deleteProvider.mutate({ id: provider.id, tenant }),
               })
             }
-            sx={touchTargetSx}
           >
             {t('sso.delete')}
           </Button>
@@ -169,7 +165,6 @@ export function SsoPage() {
             variant="outlined"
             size="small"
             onClick={() => void providers.refetch()}
-            sx={touchTargetSx}
           >
             {t('common.refresh')}
           </Button>

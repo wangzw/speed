@@ -25,7 +25,6 @@ import {
   ListSkeleton,
   PageHeader,
   errorCodeOf,
-  touchTargetSx,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -135,7 +134,6 @@ export function SessionsPage() {
               },
             })
           }
-          sx={touchTargetSx}
         >
           {t('sessions.revoke')}
         </Button>
@@ -160,7 +158,6 @@ export function SessionsPage() {
             variant="outlined"
             size="small"
             onClick={() => void sessions.refetch()}
-            sx={touchTargetSx}
           >
             {t('common.refresh')}
           </Button>

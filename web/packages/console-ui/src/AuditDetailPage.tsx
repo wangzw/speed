@@ -25,7 +25,7 @@ import Button from '@mui/material/Button'
 import Paper from '@mui/material/Paper'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
-import { ListSkeleton, PageHeader, touchTargetSx } from '@speed/ui-kit'
+import { ListSkeleton, PageHeader } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { formatUtc } from './internal/datetime.js'
 import { ConsoleLink } from './internal/navigation.js'
@@ -115,7 +115,6 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
             variant="outlined"
             size="small"
             onClick={() => void record.refetch()}
-            sx={touchTargetSx}
           >
             {t('common.refresh')}
           </Button>

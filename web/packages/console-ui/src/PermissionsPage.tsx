@@ -42,7 +42,6 @@ import {
   ListSkeleton,
   PageHeader,
   errorCodeOf,
-  touchTargetSx,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -171,7 +170,6 @@ export function PermissionsPage() {
               variant="outlined"
               aria-label={t('permissions.roles.manageGrantsAria', { role: role.role })}
               onClick={() => setSelectedRole(role.role)}
-              sx={touchTargetSx}
             >
               {t('permissions.roles.manageGrants')}
             </Button>
@@ -182,7 +180,6 @@ export function PermissionsPage() {
               color="error"
               aria-label={t('permissions.roles.removeAria', { role: role.role })}
               onClick={() => setPendingRoleDelete(role.role)}
-              sx={touchTargetSx}
             >
               {t('permissions.roles.remove')}
             </Button>
@@ -236,7 +233,6 @@ export function PermissionsPage() {
                 )
               }
             }}
-            sx={touchTargetSx}
           >
             {t('permissions.grants.revoke')}
           </Button>
@@ -296,7 +292,6 @@ export function PermissionsPage() {
               { onSuccess: () => setSuccess(t('permissions.bindings.unbound')) },
             )
           }}
-          sx={touchTargetSx}
         >
           {t('permissions.bindings.unbind')}
         </Button>
@@ -330,7 +325,6 @@ export function PermissionsPage() {
             variant="outlined"
             size="small"
             onClick={() => void roles.refetch()}
-            sx={touchTargetSx}
           >
             {t('common.refresh')}
           </Button>

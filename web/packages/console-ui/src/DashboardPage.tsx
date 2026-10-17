@@ -33,7 +33,6 @@ import {
   DataTable,
   ListSkeleton,
   PageHeader,
-  touchTargetSx,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -224,7 +223,6 @@ export function DashboardPage() {
               void healthLogins.refetch()
               void records.refetch()
             }}
-            sx={touchTargetSx}
           >
             {t('common.refresh')}
           </Button>
