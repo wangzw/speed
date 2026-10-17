@@ -124,7 +124,13 @@ The cookie outlives the page, so a reload is no longer a sign-out.
 session re-establishes the authenticated snapshot (reading the principal
 from `GET /auth/me`) and resolves `true`; a cookie that names nobody
 clears the local snapshot and resolves `false`. Call it once at
-bootstrap so a reload stays logged in. It is also the client's silent leg
+bootstrap so a reload stays logged in. The same read carries the
+session's `impersonating` flag into the snapshot (false when the answer
+omits it); only `restore()` writes that field, so a host that starts or
+ends an impersonation issues that write itself and re-reads the session
+once it settles. The snapshot carries no initiator identity: during an
+impersonation the principal is the impersonated account. It is also the
+client's silent leg
 for a refused request -- wire it as `refreshAccessToken` alongside
 `credentials`, forwarding the round-scoped request function the hook is
 handed, and a 401 re-reads the session (a still-valid cookie keeps the

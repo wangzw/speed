@@ -160,6 +160,7 @@ const AUTHENTICATED_SNAPSHOT: AuthSnapshot = {
     identifiers: [],
     links: [],
   },
+  impersonating: false,
   permissionSets: { tenant: null, system: null },
   features: { state: 'ready', names: new Set() },
 }

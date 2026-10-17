@@ -257,6 +257,7 @@ describe('the feature state over a session', () => {
     expect(harness.session.getSnapshot()).toEqual({
       state: 'anonymous',
       principal: null,
+      impersonating: false,
       permissionSets: { tenant: null, system: null },
       features: { state: 'none' },
     })

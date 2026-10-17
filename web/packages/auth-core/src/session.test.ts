@@ -81,6 +81,7 @@ async function expectProtocolViolation(
 const ANONYMOUS = {
   state: 'anonymous',
   principal: null,
+  impersonating: false,
   permissionSets: { tenant: null, system: null },
   features: { state: 'none' },
 }
@@ -360,6 +361,7 @@ describe('answer flow', () => {
     expect(harness.session.getSnapshot()).toEqual({
       state: 'authenticated',
       principal: principal({ account_id: 'acct-9', display_name: 'Ada L.' }),
+      impersonating: false,
       permissionSets: { tenant: null, system: null },
       features: { state: 'ready', names: new Set() },
     })
@@ -612,6 +614,7 @@ describe('operation supersession', () => {
     const winnerSnapshot: AuthSnapshot = {
       state: 'authenticated',
       principal: principal(),
+      impersonating: false,
       permissionSets: { tenant: null, system: null },
       features: { state: 'ready', names: new Set() },
     }
@@ -1283,6 +1286,7 @@ describe('cookie session (store-less)', () => {
     expect(harness.session.getSnapshot()).toEqual({
       state: 'authenticated',
       principal: principal(),
+      impersonating: false,
       permissionSets: { tenant: null, system: null },
       features: { state: 'ready', names: new Set() },
     })
@@ -1328,6 +1332,7 @@ describe('cookie session (store-less)', () => {
         account_id: 'acct-reload',
         display_name: 'Ada Reload',
       }),
+      impersonating: false,
       permissionSets: { tenant: null, system: null },
       features: { state: 'ready', names: new Set() },
     })
@@ -1336,6 +1341,72 @@ describe('cookie session (store-less)', () => {
       '/auth/me',
       '/features',
     ])
+  })
+
+  it('restore() carries the impersonating flag from the session answer', async () => {
+    const harness = makeCookieHarness({
+      [SESSION_GET]: () =>
+        sessionView({ authenticated: true, impersonating: true }),
+      [PROFILE_GET]: () => principal(),
+    })
+    await expect(harness.session.restore()).resolves.toBe(true)
+    expect(harness.session.getSnapshot().impersonating).toBe(true)
+    // The snapshot carries no initiator identity: the principal is the
+    // impersonated account, as GET /auth/me answered it.
+    expect(harness.session.getSnapshot().principal).toEqual(principal())
+  })
+
+  it('restore() reports impersonating false when the answer omits the field', async () => {
+    const harness = makeCookieHarness({
+      [SESSION_GET]: () => sessionView({ authenticated: true }),
+      [PROFILE_GET]: () => principal(),
+    })
+    await expect(harness.session.restore()).resolves.toBe(true)
+    expect(harness.session.getSnapshot().impersonating).toBe(false)
+  })
+
+  it('a login completion and an anonymous session carry impersonating false', async () => {
+    const harness = makeCookieHarness(cookieLogin)
+    expect(harness.session.getSnapshot().impersonating).toBe(false)
+    await harness.session.startFlow({ method: 'password' })
+    await harness.session.answerFlow({ seq: 2, step: 'complete' })
+    expect(harness.session.getSnapshot().impersonating).toBe(false)
+  })
+
+  it('a later restore updates impersonating as the impersonation starts and ends', async () => {
+    let impersonating = false
+    const harness = makeCookieHarness({
+      [SESSION_GET]: () => sessionView({ authenticated: true, impersonating }),
+      [PROFILE_GET]: () => principal(),
+    })
+    await expect(harness.session.restore()).resolves.toBe(true)
+    expect(harness.session.getSnapshot().impersonating).toBe(false)
+
+    // The host starts an impersonation server-side and re-reads.
+    impersonating = true
+    await expect(harness.session.restore()).resolves.toBe(true)
+    expect(harness.session.getSnapshot().impersonating).toBe(true)
+
+    // The host ends it and re-reads: the flag follows the server.
+    impersonating = false
+    await expect(harness.session.restore()).resolves.toBe(true)
+    expect(harness.session.getSnapshot().impersonating).toBe(false)
+  })
+
+  it('a step-up continuing the session keeps the impersonating flag', async () => {
+    const harness = makeCookieHarness({
+      [SESSION_GET]: () =>
+        sessionView({ authenticated: true, impersonating: true }),
+      [PROFILE_GET]: () => principal(),
+      [LOGIN_START_AUTHENTICATED]: () => completeFlow(),
+      [LOGIN_ANSWER]: () => sessionCompletion(),
+    })
+    await harness.session.restore()
+    expect(harness.session.getSnapshot().impersonating).toBe(true)
+    await harness.session.startAuthenticatedFlow({ purpose: 'step-up' })
+    await harness.session.answerFlow({ seq: 3, step: 'complete' })
+    // A step-up continues the same session; only restore writes the flag.
+    expect(harness.session.getSnapshot().impersonating).toBe(true)
   })
 
   it('restore() resolves false and stays anonymous when nobody is signed in', async () => {

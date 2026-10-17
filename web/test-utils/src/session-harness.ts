@@ -196,6 +196,7 @@ export function sessionView(
     authenticated?: boolean
     session_id?: string
     account_id?: string
+    impersonating?: boolean
     methods?: string[]
     assurance?: 'none' | 'single' | 'multi'
     auth_time?: string
@@ -213,6 +214,9 @@ export function sessionView(
     methods: overrides.methods ?? ['pwd'],
     assurance: overrides.assurance ?? 'single',
     auth_time: overrides.auth_time ?? '2026-01-01T00:00:00Z',
+    ...(overrides.impersonating === undefined
+      ? {}
+      : { impersonating: overrides.impersonating }),
     ...(overrides.provider === undefined
       ? {}
       : { provider: overrides.provider }),

@@ -94,6 +94,16 @@
  * both: a login opens a fresh server session whose lists the host has
  * not fetched yet. A failed operation changes nothing, lists included.
  *
+ * Impersonation: the snapshot carries `impersonating`, read from
+ * GET /auth/session by restore(). Only restore() writes it -- a login
+ * completion and every anonymous snapshot carry false, and a step-up,
+ * which continues the same session, keeps the value it read. This
+ * package is never told that an impersonation started or ended: the host
+ * issues that write itself and calls restore() once it settles, so the
+ * field always follows the server's answer. The snapshot carries no
+ * initiator identity; during an impersonation the principal is the
+ * impersonated account.
+ *
  * Feature state: the snapshot also carries the feature document the
  * process serves (GET /features), as a closed `FeatureState` set. A
  * login completion and an anonymous-start restore read it in parallel
@@ -272,6 +282,13 @@ export interface AuthSnapshot {
   state: 'anonymous' | 'authenticated'
   /** The authenticated principal, or null while anonymous. */
   principal: AuthnPrincipal | null
+  /** Whether the current session carries an impersonation, read from
+   * GET /auth/session's `impersonating`. Only restore() writes it;
+   * false while anonymous and on every login completion. The snapshot
+   * carries no initiator identity -- during an impersonation the
+   * principal is the impersonated account. A host re-reads the session
+   * after it starts or ends an impersonation. */
+  impersonating: boolean
   /** The host-attached permission lists per domain (see
    * setPermissionSet). Always present; a null list means no set is
    * known for that domain. Empty in both domains while anonymous. */
@@ -363,9 +380,11 @@ export interface AuthSession {
   logout(): Promise<void>
   /** Restores the session the request's cookie names, by reading
    * GET /auth/session. Resolves true when a session is signed in
-   * afterwards -- the snapshot is authenticated and the principal is
-   * read from GET /auth/me -- which is what keeps a page reload logged
-   * in, and is also the leg @speed/api-client runs on a refused
+   * afterwards -- the snapshot is authenticated, the principal is read
+   * from GET /auth/me, and `impersonating` is taken from the session
+   * read's own field (false when the answer omits it) -- which is what
+   * keeps a page reload logged in, and is also the leg
+   * @speed/api-client runs on a refused
    * credentialed request. Resolves false when nobody is signed in (a
    * snapshot that was authenticated goes anonymous -- the session is
    * over -- and a 401 from the read is treated the same). A transport or
@@ -1018,6 +1037,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
   let snapshot: AuthSnapshot = {
     state: 'anonymous',
     principal: null,
+    impersonating: false,
     permissionSets: NO_PERMISSION_SETS,
     features: NO_FEATURES,
   }
@@ -1079,6 +1099,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
     snapshot = {
       state: 'anonymous',
       principal: null,
+      impersonating: false,
       permissionSets: NO_PERMISSION_SETS,
       features: NO_FEATURES,
     }
@@ -1115,6 +1136,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
     snapshot = {
       state: 'authenticated',
       principal,
+      impersonating: false,
       permissionSets: NO_PERMISSION_SETS,
       features,
     }
@@ -1204,6 +1226,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
     snapshot = {
       state: 'authenticated',
       principal,
+      impersonating: false,
       permissionSets: NO_PERMISSION_SETS,
       features: settledFeatures(features),
     }
@@ -1242,6 +1265,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
     snapshot = {
       state: 'authenticated',
       principal: snapshot.principal,
+      impersonating: snapshot.impersonating,
       permissionSets: snapshot.permissionSets,
       features: snapshot.features,
     }
@@ -1524,6 +1548,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
         snapshot = {
           state: 'authenticated',
           principal,
+          impersonating: view.impersonating === true,
           permissionSets: snapshot.permissionSets,
           features: snapshot.features,
         }
@@ -1548,6 +1573,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
       snapshot = {
         state: 'authenticated',
         principal,
+        impersonating: view.impersonating === true,
         permissionSets: snapshot.permissionSets,
         features: settledFeatures(features),
       }

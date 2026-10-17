@@ -39,6 +39,7 @@ export interface TestSession extends AuthSession {
 export const ANONYMOUS_SNAPSHOT: AuthSnapshot = {
   state: 'anonymous',
   principal: null,
+  impersonating: false,
   permissionSets: { tenant: null, system: null },
   features: { state: 'none' },
 }
@@ -70,6 +71,7 @@ export function authenticatedSnapshot(options: {
       identifiers: [],
       links: [],
     },
+    impersonating: false,
     permissionSets: {
       tenant: options.tenant ?? null,
       system: options.system ?? null,

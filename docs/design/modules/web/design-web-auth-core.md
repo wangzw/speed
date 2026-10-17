@@ -372,6 +372,6 @@ stateDiagram-v2
 | 会话状态机（流程驱动登录、发现读取、登出、恢复、加强认证、刷新与世代守卫；特性态的取回、存活规则、提交检查与 `retryFeatures`） | 部分实现 | `web/packages/auth-core/src/session.ts` `createAuthSession` |
 | 生成响应模型的解析守卫（含特性文档的 `parseFeatureDocument`） | 部分实现 | `web/packages/auth-core/src/session.ts` `parseFlowState`、`parseStep`、`parsePrincipal`、`parseSessionView`、`parseIssuedTokens`、`parseMethodList`、`parseMethodDescriptor`、`parseSsoProviders`、`parseFeatureDocument` |
 | 会话 hook 与通知桥（含 `useFeature`、`useFeatureState` 与 `featurePresence`） | 部分实现 | `web/packages/auth-core/src/hooks.ts` `attachSession`、`useAuthState`、`usePermission`、`useFeature`、`useFeatureState`、`featurePresence` |
-| 快照的 `impersonating` 字段与 `restore()` 对它的写入 | 未实现 | — |
+| 快照的 `impersonating` 字段与 `restore()` 对它的写入 | 已实现 | `web/packages/auth-core/src/session.ts` `AuthSnapshot`、`restore` |
 | 步进认证的 hook | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp` |
 | 租户上下文、租户作用域 query key 工厂与逐出助手 | 已实现 | `web/packages/auth-core/src/hooks.ts` `TenantProvider`、`useCurrentTenant`；`web/packages/auth-core/src/query-key.ts` `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries` |

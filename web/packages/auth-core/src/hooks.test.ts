@@ -65,6 +65,7 @@ describe('before any session is attached', () => {
     expect(result.current).toEqual({
       state: 'anonymous',
       principal: null,
+      impersonating: false,
       permissionSets: { tenant: null, system: null },
       features: { state: 'none' },
     })

@@ -38,6 +38,7 @@ function session(
   snapshot: AuthSnapshot = {
     state: 'authenticated',
     principal: null,
+    impersonating: false,
     permissionSets: { tenant: null, system: null },
     features: { state: 'none' },
   },
@@ -65,6 +66,7 @@ function session(
 const ANONYMOUS: AuthSnapshot = {
   state: 'anonymous',
   principal: null,
+  impersonating: false,
   permissionSets: { tenant: null, system: null },
   features: { state: 'none' },
 }

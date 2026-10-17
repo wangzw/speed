@@ -36,6 +36,7 @@ export const AUTHENTICATED_SNAPSHOT: AuthSnapshot = {
     identifiers: [],
     links: [],
   },
+  impersonating: false,
   permissionSets: { tenant: null, system: null },
   features: { state: 'ready', names: new Set() },
 }
@@ -44,6 +45,7 @@ export const AUTHENTICATED_SNAPSHOT: AuthSnapshot = {
 export const ANONYMOUS_SNAPSHOT: AuthSnapshot = {
   state: 'anonymous',
   principal: null,
+  impersonating: false,
   permissionSets: { tenant: null, system: null },
   features: { state: 'none' },
 }

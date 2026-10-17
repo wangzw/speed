@@ -63,6 +63,7 @@ import type {
 const NO_SESSION_SNAPSHOT: AuthSnapshot = {
   state: 'anonymous',
   principal: null,
+  impersonating: false,
   permissionSets: { tenant: null, system: null },
   features: { state: 'none' },
 }
