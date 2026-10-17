@@ -55,7 +55,10 @@
  * screen reader) and the clipped label offered to a sighted pointer user
  * as a per-entry tooltip; an entry that carries no icon keeps its label
  * visible (clipped to the rail) so the rail is never a blank cell -- see
- * railTextItemSx. A group heading follows the same rule: with an icon it
+ * railTextItemSx, and railTextSx for the clip itself, which is declared
+ * on the label's text element so the label truncates with an ellipsis
+ * instead of being cut mid-glyph by the button. A group heading follows
+ * the same rule: with an icon it
  * becomes an icon row (its label clipped but still the heading's
  * accessible name and tooltip), and without one it keeps its clipped
  * label. The rail therefore stays navigable instead of
@@ -263,18 +266,32 @@ const railIconItemSx = { justifyContent: 'center', px: 1 } as const
 
 /**
  * A collapsed rail entry without an icon: rather than a blank cell, the
- * entry's label stays visible, clipped to the rail's width (the
- * container's `overflow: hidden` trims the tail). The layout design's
- * rail is icon-bearing by intent, but a host that collapses a navigation
- * whose entries carry no `icon` still gets identifiable, operable rows --
- * tooltipped and, for assistive tech, named by the label either way.
+ * entry's label stays visible, clipped to the rail's width. The layout
+ * design's rail is icon-bearing by intent, but a host that collapses a
+ * navigation whose entries carry no `icon` still gets identifiable,
+ * operable rows -- tooltipped and, for assistive tech, named by the
+ * label either way. The button's own `overflow: hidden` is only a
+ * backstop; the one-line clip and its ellipsis live on the label's text
+ * element -- see railTextSx.
  */
 const railTextItemSx = {
   px: 1,
   overflow: 'hidden',
-  // One line, cut with an ellipsis: without `nowrap` the label wraps to as
-  // many lines as the rail's narrow width allows and the row grows tall
-  // instead of reading as a single clipped entry.
+} as const
+
+/**
+ * The clipped label in the collapsed rail. It must be declared on the
+ * text element (`ListItemText`'s primary slot), not on the button: the
+ * label sits in a block below the button, and `text-overflow` applies
+ * only to an element's own inline content, never to a descendant
+ * block's text. Declared on the button, the ellipsis never engages and
+ * the button's `overflow: hidden` cuts the label mid-glyph instead of
+ * producing a readable truncation. `minWidth: 0` lets the text box
+ * shrink to its column instead of holding its nowrap content width.
+ */
+const railTextSx = {
+  minWidth: 0,
+  overflow: 'hidden',
   whiteSpace: 'nowrap',
   textOverflow: 'ellipsis',
 } as const
@@ -378,8 +395,12 @@ function NavItemRow({
   const iconSx = narrow && hasIcon ? railIconSx : undefined
   // In the rail an entry WITH an icon hides its label (the icon speaks,
   // the tooltip names it); an entry WITHOUT one keeps the label visible,
-  // so the rail is never a blank cell -- see railTextItemSx.
+  // so the rail is never a blank cell -- see railTextItemSx, and see
+  // railTextSx for why the clipping declarations go on the text element
+  // rather than on the button.
   const textSx = narrow && hasIcon ? visuallyHiddenSx : undefined
+  const textSlotProps =
+    narrow && !hasIcon ? { primary: { sx: railTextSx } } : undefined
 
   const activate = (event: MouseEvent<HTMLElement>): void => {
     item.onClick?.(event)
@@ -402,7 +423,11 @@ function NavItemRow({
             {item.icon !== undefined && (
               <ListItemIcon sx={iconSx}>{item.icon}</ListItemIcon>
             )}
-            <ListItemText primary={item.label} sx={textSx} />
+            <ListItemText
+              primary={item.label}
+              sx={textSx}
+              slotProps={textSlotProps}
+            />
             <DisclosureChevron expanded={expanded} />
           </ListItemButton>
         </RailTooltip>
@@ -428,7 +453,11 @@ function NavItemRow({
       {item.icon !== undefined && (
         <ListItemIcon sx={iconSx}>{item.icon}</ListItemIcon>
       )}
-      <ListItemText primary={item.label} sx={textSx} />
+      <ListItemText
+        primary={item.label}
+        sx={textSx}
+        slotProps={textSlotProps}
+      />
     </>
   )
   return (
@@ -503,10 +532,16 @@ function NavGroupItem({
           <ListItemText
             primary={group.label}
             // With an icon the rail hides the label visually but keeps it
-            // as the heading's accessible name, matching an entry.
+            // as the heading's accessible name, matching an entry; without
+            // one the heading stays visible and takes the same text-element
+            // clip an icon-less entry does (see railTextSx).
             sx={narrow && hasIcon ? visuallyHiddenSx : undefined}
             slotProps={{
-              primary: { variant: 'subtitle2', color: 'text.secondary' },
+              primary: {
+                variant: 'subtitle2',
+                color: 'text.secondary',
+                ...(narrow && !hasIcon ? { sx: railTextSx } : {}),
+              },
             }}
           />
           {/* The rail has no room for the chevron beside the icon; the

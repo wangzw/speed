@@ -525,6 +525,52 @@ describe('AppShell', () => {
       })
     })
 
+    it('clips an icon-less label on its text element, so the label ellipsizes instead of being cut mid-glyph', () => {
+      mockMatchMedia(true)
+      const entries: readonly AppShellNavEntry[] = [
+        { id: 'reports', label: 'Reports', href: '/reports' },
+        {
+          id: 'platform',
+          label: 'Platform configuration',
+          items: [{ id: 'settings', label: 'Settings', href: '/settings' }],
+        },
+      ]
+      const { getByRole } = renderWithProviders(
+        <ControlledCollapseHost
+          navItems={entries}
+          initialCollapsed
+          onCollapseChange={() => undefined}
+        />,
+      )
+      const primaryOf = (control: HTMLElement): HTMLElement => {
+        const primary = control.querySelector<HTMLElement>(
+          '.MuiListItemText-primary',
+        )
+        if (primary === null) {
+          throw new Error('expected a ListItemText primary element')
+        }
+        return primary
+      }
+
+      // jsdom performs no layout, so what this proves is where the
+      // declarations land, not the rendered ellipsis. On the label's own
+      // text element they engage as a real one-line ellipsis; on the
+      // button -- whose label is a descendant block -- `text-overflow`
+      // never applies and the button's `overflow: hidden` cuts the text
+      // mid-glyph. Moving these three declarations back onto the button
+      // turns this assertion red.
+      for (const control of [
+        getByRole('link', { name: 'Reports' }),
+        getByRole('button', { name: 'Platform configuration' }),
+      ]) {
+        expect(primaryOf(control)).toHaveStyle({
+          minWidth: '0px',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        })
+      }
+    })
+
     it('collapses a group heading to its icon instead of a clipped heading', () => {
       mockMatchMedia(true)
       const grouped: readonly AppShellNavEntry[] = [
