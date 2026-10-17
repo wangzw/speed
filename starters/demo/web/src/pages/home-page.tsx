@@ -27,11 +27,7 @@ import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import Typography from '@mui/material/Typography'
-import {
-  featurePresence,
-  useAuthState,
-  useFeatureState,
-} from '@speed/auth-core'
+import { featurePresence, useFeatureState } from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
 import {
   presentDeclarations,
@@ -41,7 +37,7 @@ import {
 import { PageHeader } from '@speed/ui-kit'
 import {
   consoleShellRoutes,
-  firstConsoleTarget,
+  useConsoleTarget,
 } from '../console-routes.js'
 import {
   ACCOUNT_PATH,
@@ -157,18 +153,17 @@ function RouteStartCard({
 /**
  * The console card: offered only to a principal holding a platform permission,
  * while at least one console declaration is in force, and pointing at the
- * first console page the principal may open. It shares firstConsoleTarget with
- * the header's console entry (src/app.tsx), so card and entry never disagree
- * about where the console is or whether it is offered at all. While the
+ * first console page the principal may open. It calls the same
+ * useConsoleTarget the header's console entry does (src/app.tsx), so card and
+ * entry never disagree about where the console is or whether it is offered at
+ * all -- including during an impersonation, when neither offers it. While the
  * feature document or the permission set is unsettled the card is hidden (both
  * answers fail closed).
  */
 function ConsoleStartCard(): ReactElement | null {
   const presence = featurePresence(useFeatureState())
-  const platformPermissions = useAuthState().permissionSets.system
-  const target = firstConsoleTarget(
+  const target = useConsoleTarget(
     presentDeclarations(consoleShellRoutes, presence),
-    platformPermissions,
   )
   if (target === null) {
     return null

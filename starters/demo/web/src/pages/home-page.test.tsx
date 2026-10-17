@@ -108,6 +108,33 @@ describe('the start page', () => {
     )
   })
 
+  it('hides the console card during an impersonation, keeping the member-facing cards', () => {
+    // The impersonated snapshot still carries a platform set (the empty one
+    // is attached later by the identity-keyed read). The card must follow
+    // the identity, exactly as the header entry does, so the two never
+    // disagree while that set is stale.
+    renderDemoApp({
+      session: createTestSession({
+        ...authenticatedSnapshot({ system: ['tenant.read'] }),
+        impersonating: true,
+      }),
+    })
+
+    expect(hasCard(demoEnUS.home.cards.console.title)).toBe(false)
+    expect(cardFor(demoEnUS.home.cards.account.title)).toHaveAttribute(
+      'href',
+      ACCOUNT_PATH,
+    )
+    expect(cardFor(demoEnUS.home.cards.objects.title)).toHaveAttribute(
+      'href',
+      OBJECTS_PATH,
+    )
+    expect(cardFor(demoEnUS.home.cards.notifications.title)).toHaveAttribute(
+      'href',
+      NOTIFICATIONS_PATH,
+    )
+  })
+
   it('keeps the console card hidden while the platform permission set is unknown', () => {
     // An authenticated session whose platform set is still unknown (null): the
     // state before the host has read the caller's platform permissions. The

@@ -84,8 +84,8 @@ import {
 import { ConsoleArea } from './console/console-area.js'
 import {
   consoleShellRoutes,
-  firstConsoleTarget,
   isConsolePath,
+  useConsoleTarget,
 } from './console-routes.js'
 import {
   IdentityChangeProvider,
@@ -312,8 +312,13 @@ function TenantFrame({
   // chrome shows agree. It starts empty and is settled once the roster below
   // is read: a tenant-scoped request fired before then would announce the
   // placeholder's alias, which a rename has left behind, and be refused 404.
-  const [tenantId, setTenantIdState] = useState<string | null>(
-    getCurrentTenantId(),
+  // A frame mounting during an impersonation starts unknown too: the
+  // module-level cell still holds the operator's tenant from before the
+  // console took over, and a first frame carrying it would issue one read
+  // (and open one stream) under the impersonated session and the operator's
+  // alias before the status read settles the grant's tenant.
+  const [tenantId, setTenantIdState] = useState<string | null>(() =>
+    impersonating ? null : getCurrentTenantId(),
   )
   const setTenantId = useCallback((id: string | null): void => {
     setCurrentTenantId(id)
@@ -527,14 +532,15 @@ function TenantFrame({
  * may open, shown only to a principal that holds a platform permission and
  * only while at least one console declaration is in force.
  *
- * The target comes from firstConsoleTarget (src/console-routes.ts): the first
- * labelled declaration, in table order, with no permission code or one the
- * platform permission set holds. The set is not known synchronously -- the
- * host attaches it once the caller's platform permissions have been read, and
- * useAuthState reads null until then -- so the entry is hidden until the set
- * lands, which is the safe direction: a member never sees the entry for the
- * moment before the set arrives. The start page's console card shares this one
- * derivation, so the two never disagree.
+ * The target comes from useConsoleTarget (src/console-routes.ts): null for an
+ * impersonated session, otherwise the first labelled declaration, in table
+ * order, with no permission code or one the platform permission set holds.
+ * The set is not known synchronously -- the host attaches it once the
+ * caller's platform permissions have been read, and useAuthState reads null
+ * until then -- so the entry is hidden until the set lands, which is the safe
+ * direction: a member never sees the entry for the moment before the set
+ * arrives. The start page's console card calls the same hook, so the two
+ * never disagree.
  *
  * It routes in place (the same seam every other entry uses), so entering the
  * console does not reload the page and sign the operator out, and it keeps its
@@ -547,15 +553,9 @@ function ConsoleEntry({
   readonly routes: readonly ConsoleRoute[]
 }): ReactElement | null {
   const navigate = useNavigate()
-  const snapshot = useAuthState()
-  // An impersonated session has no console to enter: the area redirects it
-  // home whatever the platform permission set says (the set it attached
-  // before the start is either reset by the identity change or answered
-  // empty during the impersonation). Hide the way in for the same reason.
-  if (snapshot.state === 'authenticated' && snapshot.impersonating) {
-    return null
-  }
-  const target = firstConsoleTarget(routes, snapshot.permissionSets.system)
+  // An impersonated session has no console to enter; the shared derivation
+  // carries that rule for the header entry and the start page's card alike.
+  const target = useConsoleTarget(routes)
   if (target === null) {
     return null
   }

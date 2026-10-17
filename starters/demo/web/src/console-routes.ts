@@ -10,6 +10,7 @@
  * table imports the start page -- placing them there would form a cycle.
  */
 
+import { useAuthState } from '@speed/auth-core'
 import { consoleRoutes } from '@speed/console-ui'
 import type { ConsoleRoute, ConsoleRouteTable } from '@speed/console-ui'
 import { CONSOLE_PREFIX } from './paths.js'
@@ -68,4 +69,26 @@ export function firstConsoleTarget(
         platformPermissions.includes(route.permission)),
   )
   return entry?.path ?? null
+}
+
+/**
+ * The console destination the current viewer may open, or null: the one
+ * derivation the header entry (src/app.tsx) and the start page's console
+ * card (src/pages/home-page.tsx) share, so the two never disagree.
+ *
+ * An impersonated session has no console to enter -- the area redirects it
+ * home whatever the platform permission set says -- so the answer is null
+ * there. The set may still be the non-empty one the viewer held before the
+ * start (the identity change has not finished re-attaching the empty set),
+ * which is exactly the window in which the two entry points would otherwise
+ * disagree about whether the console is offered.
+ */
+export function useConsoleTarget(
+  routes: readonly ConsoleRoute[],
+): string | null {
+  const snapshot = useAuthState()
+  if (snapshot.state === 'authenticated' && snapshot.impersonating) {
+    return null
+  }
+  return firstConsoleTarget(routes, snapshot.permissionSets.system)
 }
