@@ -191,6 +191,127 @@ function stepUpRefusal(): {
   return { status: 401, code: 'client.http.401', message: 'refused', auth: true }
 }
 
+/** A 403 ApiError carrying a code the console's error text lists, so the
+ * failure banner has a stable line to assert on. */
+const FORBIDDEN = {
+  status: 403,
+  code: 'authn.forbidden',
+  message: 'forbidden',
+}
+
+const FORBIDDEN_TEXT = '你没有执行此操作的权限。'
+
+const SECRET_ROW = {
+  id: 'sec-1',
+  label: 'ci',
+  expires_at: '0001-01-01T00:00:00Z',
+  revoked: false,
+}
+
+const SESSION_ROW = {
+  id: 'sess-1',
+  kind: 'refresh',
+  assurance: 1,
+  auth_time: '2026-10-15T12:00:00Z',
+  created_at: '2026-10-15T12:00:00Z',
+  last_seen_at: '2026-10-15T12:00:00Z',
+  expires_at: '2026-10-16T12:00:00Z',
+  revoked: false,
+}
+
+/** Every element matching `selector` outside the panel: the page-level
+ * feedback regions live there, behind the open panel's aria-hidden. */
+function outsideOf(panel: HTMLElement, selector: string): Element[] {
+  return Array.from(document.querySelectorAll(selector)).filter(
+    (element) => !panel.contains(element),
+  )
+}
+
+type WriteDriver = (
+  user: ReturnType<typeof userEvent.setup>,
+  panel: HTMLElement,
+) => Promise<void>
+
+/** The five detail writes whose feedback moved into the panel: each case
+ * builds the operations for a failing or a succeeding run, and knows how to
+ * drive the write from inside the open detail panel. */
+const DETAIL_WRITES: readonly {
+  readonly label: string
+  readonly success: string
+  readonly operations: (fail: boolean) => Partial<ConsoleBackend>
+  readonly drive: WriteDriver
+}[] = [
+  {
+    label: 'reset all MFA factors',
+    success: '认证因子已重置',
+    operations: (fail) => ({
+      resetMFA: () => (fail ? Promise.reject(FORBIDDEN) : Promise.resolve()),
+    }),
+    drive: async (user, panel) => {
+      await user.click(within(panel).getByRole('button', { name: '重置 MFA' }))
+      await confirmDialog(user)
+    },
+  },
+  {
+    label: 'revoke all sessions',
+    success: '会话已全部撤销',
+    operations: (fail) => ({
+      revokeAccountSessions: () =>
+        fail ? Promise.reject(FORBIDDEN) : Promise.resolve(),
+    }),
+    drive: async (user, panel) => {
+      await user.click(
+        within(panel).getByRole('button', { name: '撤销全部会话' }),
+      )
+      await confirmDialog(user)
+    },
+  },
+  {
+    label: 'revoke one service secret',
+    success: '密钥已撤销',
+    operations: (fail) => ({
+      listAccountSecrets: () => Promise.resolve([SECRET_ROW]),
+      revokeSecret: () => (fail ? Promise.reject(FORBIDDEN) : Promise.resolve()),
+    }),
+    drive: async (user, panel) => {
+      await within(panel).findByText('ci')
+      await user.click(within(panel).getByRole('button', { name: '撤销密钥 ci' }))
+      await confirmDialog(user)
+    },
+  },
+  {
+    label: 'revoke one session',
+    success: '会话已撤销',
+    operations: (fail) => ({
+      listAccountSessions: () => Promise.resolve([SESSION_ROW]),
+      revokeSession: () => (fail ? Promise.reject(FORBIDDEN) : Promise.resolve()),
+    }),
+    drive: async (user, panel) => {
+      await within(panel).findByText('sess-1')
+      await user.click(
+        within(panel).getByRole('button', { name: '撤销会话 sess-1' }),
+      )
+      await confirmDialog(user)
+    },
+  },
+  {
+    label: 'remove one login identifier by name',
+    success: '登录标识已移除',
+    operations: (fail) => ({
+      removeIdentifier: () =>
+        fail ? Promise.reject(FORBIDDEN) : Promise.resolve(),
+    }),
+    drive: async (user, panel) => {
+      await user.type(
+        within(panel).getByLabelText('移除登录标识'),
+        'ada@example.com',
+      )
+      await user.click(within(panel).getByRole('button', { name: '移除' }))
+      await confirmDialog(user)
+    },
+  },
+]
+
 describe('AccountsPage', () => {
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
     const user = userEvent.setup()
@@ -816,6 +937,103 @@ describe('AccountsPage', () => {
     await vi.waitFor(() => {
       expect(removed).toEqual(['ada@example.com'])
     })
+  })
+
+  it.each(DETAIL_WRITES)(
+    'renders a $label failure inside the open detail panel, never at page level',
+    async ({ operations, drive }) => {
+      const user = userEvent.setup()
+      const backend = withAccounts(operations(true))
+      renderWithProviders(<AccountsPage />, { operations: backend })
+      await openDetail(user)
+      const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+
+      await drive(user, panel)
+
+      // The failure banner renders beside the section that fired the write,
+      // inside the dialog the operator can still reach.
+      const banner = await within(panel).findByRole('alert')
+      expect(banner).toHaveTextContent(FORBIDDEN_TEXT)
+      // The page-level region is not used for a write initiated here; while
+      // the panel is open it is also aria-hidden and would be unreachable.
+      expect(outsideOf(panel, '[role="alert"]')).toEqual([])
+    },
+  )
+
+  it.each(DETAIL_WRITES)(
+    'renders a $label success inside the open detail panel',
+    async ({ success, operations, drive }) => {
+      const user = userEvent.setup()
+      const backend = withAccounts(operations(false))
+      renderWithProviders(<AccountsPage />, { operations: backend })
+      await openDetail(user)
+      const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+
+      await drive(user, panel)
+
+      const message = await within(panel).findByText(success)
+      // The confirmation fills a polite live region inside the panel rather
+      // than the page-level one behind the modal.
+      expect(message.closest('[role="status"]')).not.toBeNull()
+      for (const region of outsideOf(panel, '[role="status"]')) {
+        expect(region.textContent).not.toContain(success)
+      }
+    },
+  )
+
+  it('carries a destructive write\'s confirmation in the already-aria-hidden page\'s panel', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      revokeAccountSessions: () => Promise.resolve(),
+    })
+    const { container } = renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    await user.click(within(panel).getByRole('button', { name: '撤销全部会话' }))
+    await confirmDialog(user)
+
+    // MUI marks the page behind an open modal aria-hidden: the page-level
+    // notice would not be reachable, so the panel's own region must carry
+    // the confirmation.
+    await waitFor(() => {
+      expect(container).toHaveAttribute('aria-hidden', 'true')
+    })
+    const region = await waitFor(() => {
+      const found = within(panel)
+        .getAllByRole('status')
+        .find((entry) => entry.textContent === '会话已全部撤销')
+      expect(found).toBeDefined()
+      return found as HTMLElement
+    })
+    expect(region.closest('[role="dialog"]')).toBe(panel)
+  })
+
+  it('clears the detail panel feedback when it exits, so reopening starts clean', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      listAccountSecrets: () => Promise.resolve([SECRET_ROW]),
+      revokeSecret: () => Promise.resolve(),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    let panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    await within(panel).findByText('ci')
+    await user.click(within(panel).getByRole('button', { name: '撤销密钥 ci' }))
+    await confirmDialog(user)
+    expect(await within(panel).findByText('密钥已撤销')).toBeInTheDocument()
+
+    fireEvent.click(within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }))
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: '账户「acc-1」' }),
+      ).not.toBeInTheDocument()
+    })
+
+    // The exit cleared the panel's feedback: reopening shows no stale
+    // message from the previous visit.
+    await user.click(screen.getByRole('button', { name: '管理账户 acc-1' }))
+    panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    expect(within(panel).queryByText('密钥已撤销')).toBeNull()
   })
 
   it('creates an account through the bundle', async () => {
