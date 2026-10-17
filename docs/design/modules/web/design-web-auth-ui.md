@@ -303,7 +303,7 @@ sequenceDiagram
 | 社交区与回调 | 已实现 | `web/packages/auth-ui/src/SocialSignInSection.tsx`；`web/packages/auth-ui/src/SocialCallbackHandler.tsx` |
 | 会话面 | 已实现 | `web/packages/auth-ui/src/SignOutButton.tsx`；`web/packages/auth-ui/src/SessionEndedScreen.tsx` |
 | 邀请受理面 | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen` |
-| 冒充横幅 `ImpersonationBanner` | 未实现 | — |
+| 冒充横幅 `ImpersonationBanner` | 已实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerProps`、`ImpersonationBannerState` |
 | 渠道组件的反馈作用域，答复一步清掉失败横幅，仪式失败与服务端失败横幅互斥 | 未实现 | — |
 | 社交回跳路由上的步骤失败原地保留，没有停着步骤时的重试 | 未实现 | — |
 | 重发的「验证码已发送」可闻，步骤切换后的焦点 | 未实现 | — |

@@ -104,6 +104,16 @@
     "passwordLabel": "口令",
     "newAccountHint": "仅当被邀请的地址尚无账户时使用；该地址已有账户时留空即可。"
   },
+  "impersonation": {
+    "regionLabel": "冒充提示",
+    "actingAs": "你正在以 {{subject}} 的身份操作。",
+    "tenant": "租户：{{tenant}}",
+    "expiresAt": "冒充将在 {{expiresAt}} 到期。",
+    "managementUnavailable": "冒充期间管理功能不可用。",
+    "end": "结束冒充",
+    "ending": "正在结束冒充…",
+    "ended": "冒充已结束。"
+  },
   "errors": {
     "authn": {
       "bad_request": "请求无效，请检查后重试。",

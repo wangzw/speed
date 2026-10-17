@@ -29,6 +29,11 @@
  * mounts at a view whose authenticated snapshot just turned anonymous,
  * handing the viewer back to its sign-in surface. Both render only
  * auth-ui-namespace text and neither reads session state.
+ *
+ * ImpersonationBanner is the same kind of presentational surface for an
+ * impersonated session: the host keeps it mounted in the app frame, says
+ * whether an impersonation is current and binds the operation that ends
+ * it. It reads no session and issues no request of its own.
  */
 
 export { AUTH_UI_NAMESPACE, authUiResources } from './resources.js'
@@ -72,3 +77,8 @@ export {
   type InvitationOperations,
   type InvitationSummary,
 } from './AcceptInvitationScreen.js'
+export {
+  ImpersonationBanner,
+  type ImpersonationBannerProps,
+  type ImpersonationBannerState,
+} from './ImpersonationBanner.js'

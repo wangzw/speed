@@ -48,6 +48,7 @@ describe('auth-ui resources', () => {
       'discovery',
       'enterprise',
       'errors',
+      'impersonation',
       'mode',
       'passkey',
       'passwordSignIn',

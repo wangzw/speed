@@ -104,6 +104,16 @@
     "passwordLabel": "Password",
     "newAccountHint": "Only used when the invited address has no account yet; leave blank to accept on the account it already has."
   },
+  "impersonation": {
+    "regionLabel": "Impersonation notice",
+    "actingAs": "You are operating as {{subject}}.",
+    "tenant": "Tenant: {{tenant}}",
+    "expiresAt": "This impersonation ends at {{expiresAt}}.",
+    "managementUnavailable": "Management features are unavailable while you are impersonating.",
+    "end": "End impersonation",
+    "ending": "Ending impersonation…",
+    "ended": "Impersonation ended."
+  },
   "errors": {
     "authn": {
       "bad_request": "The request could not be accepted. Please check it and try again.",

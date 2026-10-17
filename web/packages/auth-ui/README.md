@@ -37,6 +37,7 @@ package ships.
 | `SocialCallbackHandler.tsx` | `SocialCallbackHandler`, `SocialCallbackHandlerProps` |
 | `SignOutButton.tsx` | `SignOutButton`, `SignOutButtonProps` |
 | `SessionEndedScreen.tsx` | `SessionEndedScreen`, `SessionEndedScreenProps` |
+| `ImpersonationBanner.tsx` | `ImpersonationBanner`, `ImpersonationBannerProps`, `ImpersonationBannerState` |
 | `resources.ts` | `AUTH_UI_NAMESPACE`, `authUiResources` |
 
 Everything else (`src/internal/`) is shared plumbing -- the flow-stepping
@@ -445,6 +446,37 @@ continues the page's order.
 |---|---|---|
 | `onSignIn` | `() => void` (required) | fired when the viewer asks to sign in again; the host navigates |
 | `headingLevel` | `EmptyStateProps['headingLevel']` | the real heading element the title renders as; defaults to `'h1'` |
+
+## ImpersonationBanner
+
+The banner a host mounts for the whole app frame while its session is
+impersonating, and the one control that ends the impersonation. It is
+pure presentation: no session, no hook, no request. The host says whether
+an impersonation is current (`impersonation`, or `null`) and binds the
+end operation (`onEnd`).
+
+One polite live region is mounted for the component's whole life, never
+conditionally: empty while idle, filled with the "acting as" announcement
+when the impersonation appears, and with the end confirmation once
+`onEnd` resolves -- so the confirmation outlives the banner itself when
+the host clears `impersonation` after re-reading the session. While an
+impersonation is current the component renders a named `region` landmark
+stating who the operator is acting as, the tenant and expiry when the
+host read them, and that management features are unavailable. The banner
+adds no live region of its own, so the failure alert inside it is
+announced once.
+
+The end control does not depend on `tenant` or `expiresAt`: a click is
+one write attempt (the control is disabled and busy while in flight), a
+resolved `onEnd` confirms, and a rejection renders the answer's code text
+inside the banner with the control retryable. A bare 404 meaning "there
+is no impersonation to end" is the host's concern -- its `onEnd` treats
+that as settled -- and the component itself inspects no HTTP status.
+
+| Prop | Type | Notes |
+|---|---|---|
+| `impersonation` | `ImpersonationBannerState \| null` (required) | `{ subject, tenant?, expiresAt? }`; `subject` is the impersonated account's display name, the other two come from the host's status read |
+| `onEnd` | `() => Promise<void>` (required) | ends the impersonation; resolve to confirm, reject for a failure whose code text renders in the banner |
 
 ## Text and i18n
 
