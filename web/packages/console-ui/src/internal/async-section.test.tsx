@@ -12,8 +12,10 @@
  * would be missed by them alone.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { useState } from 'react'
 import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { ConsoleAsyncSection, isForbidden } from './async-section.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 
@@ -87,5 +89,138 @@ describe('ConsoleAsyncSection', () => {
       <Probe error={{ status: 0, code: 'client.network' }} />,
     )
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+  })
+})
+
+/** A settled section: the caller decides payload, failure and refresh state. */
+function SettledProbe({
+  payload,
+  error,
+  refreshing = false,
+  onRetry = () => {},
+}: {
+  readonly payload: readonly string[] | undefined
+  readonly error: unknown
+  readonly refreshing?: boolean
+  readonly onRetry?: () => void
+}) {
+  return (
+    <ConsoleAsyncSection
+      pending={false}
+      payload={payload}
+      error={error}
+      refreshing={refreshing}
+      empty={false}
+      loading={<p>loading</p>}
+      errorState={{
+        title: 'error-title',
+        description: 'error-description',
+        retryLabel: '重试',
+        onRetry,
+      }}
+    >
+      {(items) => <p>content {items.join(',')}</p>}
+    </ConsoleAsyncSection>
+  )
+}
+
+/**
+ * A settled section whose refresh retry is scripted: the retry withdraws
+ * the marker (a read is in flight) and a later control re-supplies it,
+ * standing in for a retry that failed again.
+ */
+function FlakyRefreshHost() {
+  const [refreshing, setRefreshing] = useState(false)
+  return (
+    <div>
+      <button type="button" onClick={() => setRefreshing(false)}>
+        retry failed
+      </button>
+      <ConsoleAsyncSection
+        pending={false}
+        payload={['alpha']}
+        error={{ status: 500, code: 'client.http.500' }}
+        refreshing={refreshing}
+        empty={false}
+        loading={<p>loading</p>}
+        errorState={{
+          title: 'error-title',
+          description: 'error-description',
+          retryLabel: '重试',
+          onRetry: () => setRefreshing(true),
+        }}
+      >
+        {(items) => <p>content {items.join(',')}</p>}
+      </ConsoleAsyncSection>
+    </div>
+  )
+}
+
+describe('ConsoleAsyncSection refresh state', () => {
+  it('replaces content with the permission placeholder on a 403 that has a payload', () => {
+    renderWithProviders(
+      <SettledProbe
+        payload={['alpha']}
+        error={{ status: 403, code: 'authz.forbidden' }}
+      />,
+    )
+    // A refusal makes the older data meaningless: the placeholder takes
+    // the content's place, with no retry and no stale marker.
+    expect(screen.getByText('权限不足')).toBeInTheDocument()
+    expect(screen.queryByText('content alpha')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+  })
+
+  it('marks a failed refresh with data on screen as stale above the content', async () => {
+    const onRetry = vi.fn()
+    renderWithProviders(
+      <SettledProbe
+        payload={['alpha']}
+        error={{ status: 500, code: 'client.http.500' }}
+        onRetry={onRetry}
+      />,
+    )
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('所示内容可能已过期，请重试刷新。')
+    const content = screen.getByText('content alpha')
+    expect(
+      alert.compareDocumentPosition(content) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '重试' }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves the marker out while the retry is in flight', () => {
+    renderWithProviders(
+      <SettledProbe
+        payload={['alpha']}
+        error={{ status: 500, code: 'client.http.500' }}
+        refreshing
+      />,
+    )
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByText('content alpha')).toBeInTheDocument()
+  })
+
+  it('withdraws the stale marker on retry and remounts it when the retry fails', async () => {
+    const view = renderWithProviders(<FlakyRefreshHost />)
+    const firstAlert = screen.getByRole('alert')
+    expect(firstAlert).toHaveTextContent('所示内容可能已过期，请重试刷新。')
+
+    // The retry is issued: the read is in flight and the marker unmounts
+    // while the content stays on screen.
+    await userEvent.click(screen.getByRole('button', { name: '重试' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(view.getByText('content alpha')).toBeInTheDocument()
+
+    // The retry failed again: the marker mounts anew, so its alert
+    // announcement fires again.
+    await userEvent.click(screen.getByRole('button', { name: 'retry failed' }))
+    const secondAlert = screen.getByRole('alert')
+    expect(secondAlert).toHaveTextContent('所示内容可能已过期，请重试刷新。')
+    expect(secondAlert).not.toBe(firstAlert)
+    expect(view.getByText('content alpha')).toBeInTheDocument()
   })
 })

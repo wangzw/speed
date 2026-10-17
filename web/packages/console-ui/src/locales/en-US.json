@@ -128,6 +128,9 @@
     "title": "Not permitted",
     "description": "You do not have permission to view this content."
   },
+  "stale": {
+    "description": "The content shown may be out of date. Retry to refresh it."
+  },
   "dashboard": {
     "title": "Overview",
     "loading": "Loading the overview",

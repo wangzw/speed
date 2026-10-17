@@ -9,10 +9,16 @@
  * and offers a retry that can only ever be refused again. This component
  * branches the error state on the failure: a 403 renders ui-kit's
  * no-permission EmptyState with this package's forbidden copy and no
- * action, and every other failure (a 5xx, a transport error) falls through
- * to AsyncSection's retryable error placeholder unchanged. The pending,
- * empty and content branches are AsyncSection's own -- only the failure
- * branch differs.
+ * action, replacing whatever content was on screen -- a refusal makes the
+ * older data meaningless, so it never becomes a stale marker. Every other
+ * failure over an already settled payload is a failed refresh: the content
+ * stays and AsyncSection's `staleState` announces that it may be out of
+ * date, with the section's own retry label and callback. The caller passes
+ * `refreshing` while the retry is in flight, withdrawing the marker; a
+ * retry that fails again re-supplies it, so the alert mounts anew and
+ * announces again. Without a settled payload the same non-403 failure
+ * falls through to AsyncSection's retryable error placeholder. The
+ * pending, empty and content branches are AsyncSection's own.
  *
  * The refusal is detected from the answer, not from a route-level
  * permission read: the server writes the 403, and the console renders the
@@ -69,6 +75,13 @@ export interface ConsoleAsyncSectionProps<Payload> {
   readonly emptyState?: AsyncSectionEmptyState
   /** The heading element the placeholders' titles render as; defaults to 'h2'. */
   readonly headingLevel?: EmptyStateHeadingLevel
+  /**
+   * Whether a read is in flight over content already on screen (a refetch).
+   * A failed refresh keeps the content and marks it stale; the marker is
+   * withdrawn while the retry is in flight, so the caller passes its read's
+   * fetching state here. Defaults to false.
+   */
+  readonly refreshing?: boolean
   /** The settled content, built from the narrowed payload. */
   readonly children: (payload: Payload) => ReactNode
 }
@@ -78,10 +91,14 @@ export function ConsoleAsyncSection<Payload>({
   error,
   errorState,
   headingLevel = 'h2',
+  refreshing = false,
   ...rest
 }: ConsoleAsyncSectionProps<Payload>) {
   const { t } = useConsoleUiTranslation()
-  if (!rest.pending && rest.payload === undefined && isForbidden(error)) {
+  // A refusal replaces the content whatever the payload is: the older data
+  // no longer means anything, so it is never marked stale and no retry is
+  // offered. A first load still pending renders the loading announcement.
+  if (!rest.pending && isForbidden(error)) {
     return (
       <EmptyState
         variant="noPermission"
@@ -91,7 +108,27 @@ export function ConsoleAsyncSection<Payload>({
       />
     )
   }
+  // Every other failure over an already settled payload is a failed
+  // refresh: the content stays on screen with the stale marker above it.
+  // `refreshing` withdraws the marker while the retry runs; a retry that
+  // fails again re-supplies it, and the remounted alert announces again.
+  const staleState =
+    !refreshing &&
+    rest.payload !== undefined &&
+    error !== undefined &&
+    error !== null
+      ? {
+          description: t('stale.description'),
+          retryLabel: errorState.retryLabel,
+          onRetry: errorState.onRetry,
+        }
+      : undefined
   return (
-    <AsyncSection errorState={errorState} headingLevel={headingLevel} {...rest} />
+    <AsyncSection
+      errorState={errorState}
+      headingLevel={headingLevel}
+      staleState={staleState}
+      {...rest}
+    />
   )
 }
