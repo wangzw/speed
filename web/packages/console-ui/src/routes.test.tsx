@@ -58,6 +58,40 @@ describe('console page declarations', () => {
     })
   }
 
+  it('gives every navigation entry a decorative icon and leaves the detail routes icon-less', () => {
+    for (const route of consoleRoutes) {
+      if (route.label === undefined) {
+        // A page that is reachable but not listed has no navigation entry,
+        // so it carries no navigation icon.
+        expect(route.icon).toBeUndefined()
+      } else {
+        expect(route.icon).toBeDefined()
+      }
+    }
+  })
+
+  it('renders an aria-hidden icon for every navigation entry without changing its accessible name', () => {
+    renderWithProviders(
+      <ConsoleShell routes={consoleRoutes} title="Console">
+        <h1>Home</h1>
+      </ConsoleShell>,
+      { operations },
+    )
+    const nav = screen.getByRole('navigation')
+    const links = within(nav).getAllByRole('link')
+    expect(links).toHaveLength(11)
+    for (const link of links) {
+      const icon = link.querySelector('svg')
+      expect(icon, `no icon in ${link.textContent ?? ''}`).not.toBeNull()
+      // Decorative: hidden from assistive tech, so the label alone names
+      // the entry.
+      expect(icon).toHaveAttribute('aria-hidden', 'true')
+      expect(icon).toHaveAttribute('focusable', 'false')
+    }
+    expect(within(nav).getByRole('link', { name: '概览' })).toBeInTheDocument()
+    expect(within(nav).getByRole('link', { name: '审计记录' })).toBeInTheDocument()
+  })
+
   it('combines every page in navigation order, the detail routes unlabelled', () => {
     expect(consoleRoutes.map((route) => route.path)).toEqual([
       '/',

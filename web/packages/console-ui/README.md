@@ -77,6 +77,15 @@ through its `group` field, and the shell renders the groups in the
 table's order with each group's entries in declaration order beneath it.
 Omit `navGroups` and the flat column is unchanged.
 
+The package's own labelled declarations carry a decorative `icon`, which
+the shell passes to the frame's `AppShellNavItem.icon`; a host's own
+declaration may carry one too. Collapsing the sidebar therefore gives the
+icon rail the layout design intends -- each entry keeps its icon and its
+label is clipped to the entry's accessible name -- rather than a column of
+truncated text. The icons ship as hand-authored 24px stroke SVGs
+(`src/internal/icons.tsx`) and render `aria-hidden`, so the label alone
+names each entry.
+
 ## What ships
 
 | Module | Exports |

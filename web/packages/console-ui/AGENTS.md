@@ -72,11 +72,12 @@ declarative registration seam (`dashboardAdminRoutes`,
 `invitationsAdminRoutes`, `ssoAdminRoutes`, `settingsAdminRoutes`,
 `smsAdminRoutes`, `auditAdminRoutes`, or the whole set as
 `consoleRoutes`). A capability may contribute more than one declaration:
-a list page carries a navigation label and a detail page (the tenant
-detail, the audit detail) does not, so it is reachable from a row without
-appearing in the navigation. A declaration carries a path pattern, a
-view, an optional navigation label and the permission code the page's
-data is held to (`tenant.read`, `authn.account.read`, `authn.session.read`,
+a list page carries a navigation label and icon and a detail page (the
+tenant detail, the audit detail) carries neither, so it is reachable from
+a row without appearing in the navigation. A declaration carries a path
+pattern, a view, an optional navigation label, an optional decorative
+icon and the permission code the page's data is held to (`tenant.read`,
+`authn.account.read`, `authn.session.read`,
 `authn.impersonation.read`, `authz.role.read`, `authn.membership.manage`,
 `authn.idp.manage`, `settings.read`, `sms.template.read`, `audit.read`).
 A list declaration's view carries the page's own matched path (`basePath`)
@@ -92,6 +93,13 @@ declarations stay plain module-level values (the seam wants a value)
 while their labels resolve their text through the console-ui namespace
 when they render, so the navigation translates reactively with the
 host's language.
+
+A declaration's icon is decorative host content, passed through to the
+frame's `AppShellNavItem.icon`. The package's own pages carry hand-authored
+24px stroke SVGs from `src/internal/icons.tsx`, each rendering
+`aria-hidden`; the label remains the entry's accessible name, and a
+collapsed sidebar shows the icon rail the layout design intends rather
+than clipped text.
 
 The permission code is data. This package never decides on it: the
 server judges every request, and the host reads the code to compose any
@@ -245,7 +253,7 @@ Suites: `ConsoleShell` (the landmarks, the labelled-only navigation, the
 own suite (its reads, writes and failure branches, with an axe scan); the
 `operations` suite (the shipped bundle's generated bindings for every
 surface, driven over the request rig, plus the provider fallback and the
-key-splitting helper); `routes` (the declarations' paths, permissions and
+key-splitting helper); `routes` (the declarations' paths, permissions, icons and
 translated labels); `resources`, `internal/error-text`,
 `internal/identifier`, `internal/datetime` and `internal/async-section`
 (bundle key parity, whitelist pairing, the identifier rule, the timestamp

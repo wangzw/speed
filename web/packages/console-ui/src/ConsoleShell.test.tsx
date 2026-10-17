@@ -36,8 +36,19 @@ import { expectNoAxeViolationsForPage } from '../test-utils/axe.js'
 const operations = createConsoleOperations(makeConsoleBackend())
 
 const routes: readonly ConsoleRoute[] = [
-  { path: '/tenants', view: () => null, label: 'Tenants', permission: 'tenant.read' },
-  { path: '/settings', view: () => null, label: 'Settings' },
+  {
+    path: '/tenants',
+    view: () => null,
+    label: 'Tenants',
+    permission: 'tenant.read',
+    icon: <svg aria-hidden="true" data-testid="icon-tenants" />,
+  },
+  {
+    path: '/settings',
+    view: () => null,
+    label: 'Settings',
+    icon: <svg aria-hidden="true" data-testid="icon-settings" />,
+  },
   // No label: reachable but not listed in the navigation.
   { path: '/audit/:id', view: () => null },
 ]
@@ -384,6 +395,67 @@ describe('ConsoleShell', () => {
         { operations },
       )
       await expectNoAxeViolationsForPage()
+    })
+  })
+
+  describe('navigation icons', () => {
+    /** The ListItemText root holding an entry's label. */
+    const labelRootOf = (element: HTMLElement): Element | null =>
+      element.closest('.MuiListItemText-root')
+
+    it('renders a declaration icon beside the visible label while the sidebar is expanded', () => {
+      mockMatchMedia(true)
+      renderWithProviders(
+        <ConsoleShell routes={routes} title="Console">
+          <h1>Home</h1>
+        </ConsoleShell>,
+        { operations },
+      )
+      const tenants = screen.getByRole('link', { name: 'Tenants' })
+      // Icon and text coexist, and the icon is decorative: the accessible
+      // name is still exactly the label.
+      expect(within(tenants).getByTestId('icon-tenants')).toBeInTheDocument()
+      expect(within(tenants).getByText('Tenants')).toBeInTheDocument()
+      expect(labelRootOf(screen.getByText('Tenants'))).not.toHaveStyle({
+        position: 'absolute',
+      })
+    })
+
+    it('collapses to an icon rail: every entry keeps its icon and its label is clipped', async () => {
+      mockMatchMedia(true)
+      const user = userEvent.setup()
+      renderWithProviders(
+        <ControlledCollapseConsole onCollapseChange={() => undefined} />,
+        { operations },
+      )
+      await user.click(
+        screen.getByRole('button', { name: layoutKitZhCN.appShell.collapseNav }),
+      )
+      const nav = screen.getByRole('navigation', {
+        name: consoleUiZhCN.shell.navLabel,
+      })
+      const links = within(nav).getAllByRole('link')
+      expect(links.map((link) => link.getAttribute('href'))).toEqual([
+        '/tenants',
+        '/settings',
+      ])
+      for (const link of links) {
+        // The rail is icon-led: each entry renders its icon ...
+        expect(link.querySelector('svg')).not.toBeNull()
+        // ... and the label taking the clipped accessible-only hiding
+        // recipe, rather than the icon-less fallback that keeps the text
+        // visible.
+        expect(link.querySelector('.MuiListItemText-root')).toHaveStyle({
+          position: 'absolute',
+        })
+      }
+      // The clipped label still names each entry.
+      expect(
+        within(nav).getByRole('link', { name: 'Tenants' }),
+      ).toBeInTheDocument()
+      expect(
+        within(nav).getByRole('link', { name: 'Settings' }),
+      ).toBeInTheDocument()
     })
   })
 

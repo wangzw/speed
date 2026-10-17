@@ -3,12 +3,13 @@
  * to the declarative registration seam.
  *
  * Each administration capability contributes one page declaration: a
- * path pattern, the page view and the permission code the page's data is
- * held to (the console shell derives the platform navigation from the
- * label each declaration carries). The declarations are collected by the
- * application's composition layer and handed to the route layer it chose;
- * this package imports no router and does no path matching, so a
- * declaration is data plus a view and nothing more.
+ * path pattern, the page view, the permission code the page's data is
+ * held to and a decorative navigation icon (the console shell derives
+ * the platform navigation from the label and icon each declaration
+ * carries). The declarations are collected by the application's
+ * composition layer and handed to the route layer it chose; this package
+ * imports no router and does no path matching, so a declaration is data
+ * plus a view and nothing more.
  *
  * A declaration's label is a React element (ConsoleNavLabel) that
  * resolves its text through the console-ui namespace when it renders:
@@ -32,6 +33,19 @@
 
 import type { ConsoleRoute, ConsoleRouteTable } from './route.js'
 import { ConsoleNavLabel } from './internal/nav-label.js'
+import {
+  AccountsIcon,
+  AuditIcon,
+  DashboardIcon,
+  ImpersonationsIcon,
+  InvitationsIcon,
+  PermissionsIcon,
+  SessionsIcon,
+  SettingsIcon,
+  SmsIcon,
+  SsoIcon,
+  TenantsIcon,
+} from './internal/icons.js'
 import { DashboardPage } from './DashboardPage.js'
 import { TenantRosterPage } from './TenantRosterPage.js'
 import { TenantDetailPage } from './TenantDetailPage.js'
@@ -56,6 +70,7 @@ export const dashboardAdminRoutes: ConsoleRouteTable = [
     path: '/',
     view: () => <DashboardPage />,
     label: <ConsoleNavLabel labelKey="dashboard.title" />,
+    icon: <DashboardIcon />,
     permission: 'tenant.read',
     group: 'overview',
   },
@@ -72,6 +87,7 @@ export const tenantAdminRoutes: ConsoleRouteTable = [
     path: '/tenants',
     view: (context) => <TenantRosterPage basePath={context.path} />,
     label: <ConsoleNavLabel labelKey="tenants.title" />,
+    icon: <TenantsIcon />,
     permission: 'tenant.read',
     group: 'tenants',
   },
@@ -92,6 +108,7 @@ export const accountsAdminRoutes: ConsoleRouteTable = [
     path: '/accounts',
     view: () => <AccountsPage />,
     label: <ConsoleNavLabel labelKey="accounts.title" />,
+    icon: <AccountsIcon />,
     permission: 'authn.account.read',
     group: 'identity',
   },
@@ -103,6 +120,7 @@ export const sessionsAdminRoutes: ConsoleRouteTable = [
     path: '/sessions',
     view: () => <SessionsPage />,
     label: <ConsoleNavLabel labelKey="sessions.title" />,
+    icon: <SessionsIcon />,
     permission: 'authn.session.read',
     group: 'identity',
   },
@@ -114,6 +132,7 @@ export const impersonationsAdminRoutes: ConsoleRouteTable = [
     path: '/impersonations',
     view: () => <ImpersonationsPage />,
     label: <ConsoleNavLabel labelKey="impersonations.title" />,
+    icon: <ImpersonationsIcon />,
     permission: 'authn.impersonation.read',
     group: 'identity',
   },
@@ -125,6 +144,7 @@ export const permissionsAdminRoutes: ConsoleRouteTable = [
     path: '/permissions',
     view: () => <PermissionsPage />,
     label: <ConsoleNavLabel labelKey="permissions.title" />,
+    icon: <PermissionsIcon />,
     permission: 'authz.role.read',
     group: 'identity',
   },
@@ -136,6 +156,7 @@ export const invitationsAdminRoutes: ConsoleRouteTable = [
     path: '/invitations',
     view: () => <InvitationsPage />,
     label: <ConsoleNavLabel labelKey="invitations.title" />,
+    icon: <InvitationsIcon />,
     permission: 'authn.membership.manage',
     group: 'identity',
   },
@@ -147,6 +168,7 @@ export const ssoAdminRoutes: ConsoleRouteTable = [
     path: '/sso',
     view: () => <SsoPage />,
     label: <ConsoleNavLabel labelKey="sso.title" />,
+    icon: <SsoIcon />,
     permission: 'authn.idp.manage',
     group: 'identity',
   },
@@ -158,6 +180,7 @@ export const settingsAdminRoutes: ConsoleRouteTable = [
     path: '/settings',
     view: () => <SettingsPage />,
     label: <ConsoleNavLabel labelKey="settings.title" />,
+    icon: <SettingsIcon />,
     permission: 'settings.read',
     group: 'platform',
   },
@@ -169,6 +192,7 @@ export const smsAdminRoutes: ConsoleRouteTable = [
     path: '/sms',
     view: () => <SmsPage />,
     label: <ConsoleNavLabel labelKey="sms.title" />,
+    icon: <SmsIcon />,
     permission: 'sms.template.read',
     group: 'platform',
   },
@@ -184,6 +208,7 @@ export const auditAdminRoutes: ConsoleRouteTable = [
     path: '/audit',
     view: (context) => <AuditPage basePath={context.path} />,
     label: <ConsoleNavLabel labelKey="audit.title" />,
+    icon: <AuditIcon />,
     permission: 'audit.read',
     group: 'audit',
   },

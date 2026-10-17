@@ -139,6 +139,7 @@ function navItemFor(
     id: route.path,
     href: route.path,
     label: route.label,
+    icon: route.icon,
     onClick:
       onNavigate === undefined
         ? undefined

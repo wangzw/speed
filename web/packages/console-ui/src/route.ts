@@ -4,8 +4,9 @@
  *
  * The platform console reuses the declarative registration seam the
  * tenant-facing product shell uses: each page exports one declaration --
- * a path pattern, a view callback, an optional navigation label and an
- * optional permission code -- and the application's composition layer
+ * a path pattern, a view callback, an optional navigation label, an
+ * optional permission code and the console's own optional navigation
+ * metadata (group and icon) -- and the application's composition layer
  * collects the declarations and hands them to the route layer it chose.
  * This package does not import @speed/route-kit: it only exports values
  * shaped like RouteDeclaration, so a page is a declaration and nothing
@@ -57,6 +58,16 @@ export interface ConsoleRoute {
    * the page's entry ungrouped.
    */
   readonly group?: string
+  /**
+   * The navigation entry's leading icon; host content, already resolved.
+   * The console shell passes it to the frame's `AppShellNavItem.icon`, so
+   * a collapsed sidebar rail shows the icon with its label clipped to the
+   * entry's accessible name. Decorative by contract -- the label is the
+   * entry's accessible name, so the icon should render `aria-hidden`.
+   * Ignored on a declaration without a `label` (that page has no
+   * navigation entry).
+   */
+  readonly icon?: ReactNode
 }
 
 /**
