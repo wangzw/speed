@@ -30,6 +30,23 @@
  *    tenant. These two are operations on the console operations bundle, so
  *    that half builds no client and writes no query key.
  *
+ * The status read's bare 404 is a settled answer, not a failure: it means
+ * no impersonation is in force, so the page renders it as that content --
+ * never as the error placeholder and never as a stale marker -- and the
+ * cached grant is discarded, because the read that just said "none" is
+ * the authority. Every other status failure renders through the console's
+ * shared read branches. A successful end resets the status read's cache
+ * and re-reads it through the generated key, so the section can only land
+ * on what the server answers next.
+ *
+ * Both halves report their writes through feedback scopes: the start and
+ * the end share one scope whose region lives in the current-impersonation
+ * section (the start form unmounts when the start lands, so a region
+ * inside it would take the success message with it), and the record
+ * table's terminate actions own a scope with the region under the table.
+ * A start or end refused for insufficient step-up hands over to the
+ * elevation gate and leaves the scope empty; the replay is a new run.
+ *
  * A record is in force while its `ended_at` is the zero instant (the
  * sentinel the view carries); the state column says so and the terminate
  * control is offered only then. Every account identifier the page shows --
@@ -39,7 +56,7 @@
  * Intl. The page opens with ui-kit's PageHeader.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -54,24 +71,32 @@ import {
   useAuthnImpersonationStart,
   useAuthnImpersonationStatus,
 } from '@speed/api-sdk'
+import type { AuthnImpersonationGrant } from '@speed/api-sdk'
 import {
   DataTable,
   EmptyState,
   ListSkeleton,
   PageHeader,
-  errorCodeOf,
+  useWriteFeedback,
 } from '@speed/ui-kit'
-import type { DataTableColumn } from '@speed/ui-kit'
+import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
 import { AccountIdentity } from './internal/account-identity.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { formatUtc, isZeroInstant } from './internal/datetime.js'
-import { InlineError } from './internal/inline-error.js'
 import { useConsoleStepUp } from './internal/step-up-gate.js'
+import type { ConsoleStepUp } from './internal/step-up-gate.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
+import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleImpersonation } from './operations.js'
+
+/** The caller's own impersonation status as the section renders it: the
+ * settled grant, or a settled "not impersonating" answer. */
+interface ImpersonationStatusView {
+  readonly grant: AuthnImpersonationGrant | undefined
+}
 
 /**
  * Whether a failure is the status read's "no impersonation in force": the
@@ -94,6 +119,15 @@ export function ImpersonationsPage() {
 
   const [tenant, setTenant] = useState(tenantFromLocation)
 
+  // The current-impersonation section's scope: the start and the end are
+  // the same control group (one object, one result location), and the
+  // start form unmounts when a start lands, so the page holds the slot.
+  const currentFeedback = useWriteFeedback()
+  // The record table's scope: its terminate actions share one result
+  // location under the table.
+  const recordsFeedback = useWriteFeedback()
+  const stepUp = useConsoleStepUp()
+
   const impersonations = operations.useImpersonations({ tenant })
   const revokeImpersonation = operations.useRevokeImpersonation()
 
@@ -105,15 +139,71 @@ export function ImpersonationsPage() {
   const endImpersonation = useAuthnImpersonationEnd({
     mutation: {
       onSuccess: () => {
-        void queryClient.invalidateQueries({
+        // The status read is the authority on what is in force: drop the
+        // cached grant and re-read, so the section lands on the server's
+        // next answer rather than a grant the end just retired.
+        void queryClient.resetQueries({
           queryKey: getAuthnImpersonationStatusQueryKey(),
         })
       },
     },
   })
 
-  const grant = status.data?.grant
+  // The tenant is an argument of every write in both sections, so a change
+  // clears their results: the old outcome would read as describing the new
+  // tenant.
+  useEffect(() => {
+    currentFeedback.reset()
+    recordsFeedback.reset()
+  }, [tenant, currentFeedback.reset, recordsFeedback.reset])
+
+  // The bare 404 is settled content, not a failure: it renders as "not
+  // impersonating" and discards whatever grant the cache still holds.
   const notImpersonating = isNotImpersonating(status.error)
+  const statusError = notImpersonating ? undefined : status.error
+  const statusPayload: ImpersonationStatusView | undefined = notImpersonating
+    ? { grant: undefined }
+    : status.data === undefined
+      ? undefined
+      : { grant: status.data.grant }
+  const grant = statusPayload?.grant
+  const statusPending = status.isPending && statusPayload === undefined
+  // The start form is offered only on a settled "not impersonating" answer;
+  // while the read is in flight or failed there is no basis to offer it.
+  const notInForce = statusPayload !== undefined && grant === undefined
+
+  const endAttempt = (): Promise<void> =>
+    currentFeedback.run(async () => {
+      try {
+        await endImpersonation.mutateAsync()
+        return t('impersonations.current.ended', { account: grant?.target ?? '' })
+      } catch (error) {
+        // A refusal the server answers while the session is still
+        // established is a strength shortfall: the gate takes the write
+        // over and this attempt settles without touching the slot. The
+        // replayed write is a new run.
+        if (stepUp.intercept(error, () => void endAttempt())) {
+          return null
+        }
+        throw error
+      }
+    })
+
+  const terminate = (record: ConsoleImpersonation): void => {
+    const attempt = (): Promise<void> =>
+      recordsFeedback.run(async () => {
+        try {
+          await revokeImpersonation.mutateAsync({ id: record.id })
+          return t('impersonations.terminated', { account: record.target })
+        } catch (error) {
+          if (stepUp.intercept(error, () => void attempt())) {
+            return null
+          }
+          throw error
+        }
+      })
+    void attempt()
+  }
 
   const columns: DataTableColumn<ConsoleImpersonation>[] = [
     {
@@ -177,8 +267,9 @@ export function ImpersonationsPage() {
           size="small"
           variant="outlined"
           color="error"
-          disabled={!isZeroInstant(record.ended_at) || revokeImpersonation.isPending}
-          onClick={() => revokeImpersonation.mutate({ id: record.id })}
+          disabled={!isZeroInstant(record.ended_at) || recordsFeedback.pending}
+          loading={recordsFeedback.pending}
+          onClick={() => terminate(record)}
         >
           {t('impersonations.terminate')}
         </Button>
@@ -221,71 +312,93 @@ export function ImpersonationsPage() {
         >
           {t('impersonations.current.title')}
         </Typography>
-        {status.isPending ? (
-          <Typography role="status" variant="body2" color="text.secondary">
-            {t('impersonations.current.loading')}
-          </Typography>
-        ) : grant !== undefined ? (
-          <Alert severity="warning" variant="outlined">
-            <Stack sx={{ gap: 0.5, mb: 1 }}>
-              <Typography variant="body2">
-                {t('impersonations.current.target')}
-                <AccountIdentity account={grant.target} />
+        <ConsoleAsyncSection
+          pending={statusPending}
+          payload={statusPayload}
+          error={statusError}
+          empty={false}
+          refreshing={status.isFetching}
+          loading={
+            <Typography role="status" variant="body2" color="text.secondary">
+              {t('impersonations.current.loading')}
+            </Typography>
+          }
+          errorState={{
+            title: t('impersonations.current.error.title'),
+            description: t('impersonations.current.error.description'),
+            retryLabel: t('impersonations.retry'),
+            onRetry: () => void status.refetch(),
+          }}
+        >
+          {(settled) =>
+            settled.grant === undefined ? (
+              <Typography variant="body2" color="text.secondary">
+                {t('impersonations.current.none')}
               </Typography>
-              <Typography variant="body2">
-                {t('impersonations.current.tenant', { tenant: grant.tenant })}
-              </Typography>
-              <Typography variant="body2">
-                {t('impersonations.current.ends', {
-                  ends: formatUtc(grant.ends_at, i18n.language),
-                })}
-              </Typography>
-            </Stack>
-            <Button
-              type="button"
-              size="small"
-              variant="outlined"
-              color="error"
-              disabled={endImpersonation.isPending}
-              onClick={() => endImpersonation.mutate()}
+            ) : (
+              <Alert severity="warning" variant="outlined">
+                <Stack sx={{ gap: 0.5, mb: 1 }}>
+                  <Typography variant="body2">
+                    {t('impersonations.current.target')}
+                    <AccountIdentity account={settled.grant.target} />
+                  </Typography>
+                  <Typography variant="body2">
+                    {t('impersonations.current.tenant', {
+                      tenant: settled.grant.tenant,
+                    })}
+                  </Typography>
+                  <Typography variant="body2">
+                    {t('impersonations.current.ends', {
+                      ends: formatUtc(settled.grant.ends_at, i18n.language),
+                    })}
+                  </Typography>
+                </Stack>
+                <Button
+                  type="button"
+                  size="small"
+                  variant="outlined"
+                  color="error"
+                  disabled={currentFeedback.pending}
+                  loading={currentFeedback.pending}
+                  onClick={() => void endAttempt()}
+                >
+                  {t('impersonations.current.end')}
+                </Button>
+              </Alert>
+            )
+          }
+        </ConsoleAsyncSection>
+
+        {notInForce && (
+          <Box sx={{ mt: 2 }}>
+            <Typography
+              component="h2"
+              variant="h2"
+              sx={{ fontSize: '1.25rem', mb: 1 }}
             >
-              {t('impersonations.current.end')}
-            </Button>
-          </Alert>
-        ) : notImpersonating ? (
-          <Typography variant="body2" color="text.secondary">
-            {t('impersonations.current.none')}
-          </Typography>
-        ) : status.isError ? (
-          <InlineError code={errorCodeOf(status.error)} />
-        ) : null}
-        <Box sx={{ mt: 1 }}>
-          <InlineError
-            code={
-              endImpersonation.isError
-                ? errorCodeOf(endImpersonation.error)
-                : null
-            }
-          />
-        </Box>
+              {t('impersonations.start.title')}
+            </Typography>
+            <StartImpersonationForm
+              tenant={tenant}
+              feedback={currentFeedback}
+              stepUp={stepUp}
+            />
+          </Box>
+        )}
+
+        {/* The start form unmounts when a start lands; this region stays
+            with the section, so the success message is not unmounted with
+            the form that produced it. */}
+        <WriteFeedbackRegion outcome={currentFeedback.outcome} />
       </Box>
 
       <Box component="section" sx={{ mb: 3 }}>
-        <TenantScope value={tenant} onSelect={setTenant} />
+        <TenantScope
+          value={tenant}
+          onSelect={setTenant}
+          disabled={currentFeedback.pending || recordsFeedback.pending}
+        />
       </Box>
-
-      {grant === undefined && (
-        <Box component="section" sx={{ mb: 3 }}>
-          <Typography
-            component="h2"
-            variant="h2"
-            sx={{ fontSize: '1.25rem', mb: 1 }}
-          >
-            {t('impersonations.start.title')}
-          </Typography>
-          <StartImpersonationForm tenant={tenant} />
-        </Box>
-      )}
 
       {tenant === '' ? (
         <EmptyState
@@ -294,51 +407,54 @@ export function ImpersonationsPage() {
           description={t('impersonations.needTenant.description')}
         />
       ) : (
-        <ConsoleAsyncSection
-          pending={pending}
-          payload={rows}
-          error={impersonations.error}
-          empty={rows !== undefined && rows.length === 0}
-          headingLevel="h2"
-          loading={
-            <ListSkeleton
-              label={t('impersonations.loading')}
-              rows={[
-                <Skeleton key="a" variant="text" width="60%" />,
-                <Skeleton key="b" variant="text" width="44%" />,
-              ]}
-            />
-          }
-          errorState={{
-            title: t('impersonations.error.title'),
-            description: t('impersonations.error.description'),
-            retryLabel: t('impersonations.retry'),
-            onRetry: () => void impersonations.refetch(),
-          }}
-          emptyState={{
-            title: t('impersonations.empty.title'),
-            description: t('impersonations.empty.description'),
-          }}
-        >
-          {(settled) => (
-            <DataTable
-              rows={settled}
-              columns={columns}
-              rowKey={(record) => record.id}
-            />
-          )}
-        </ConsoleAsyncSection>
+        <>
+          <ConsoleAsyncSection
+            pending={pending}
+            payload={rows}
+            error={impersonations.error}
+            empty={rows !== undefined && rows.length === 0}
+            headingLevel="h2"
+            loading={
+              <ListSkeleton
+                label={t('impersonations.loading')}
+                rows={[
+                  <Skeleton key="a" variant="text" width="60%" />,
+                  <Skeleton key="b" variant="text" width="44%" />,
+                ]}
+              />
+            }
+            errorState={{
+              title: t('impersonations.error.title'),
+              description: t('impersonations.error.description'),
+              retryLabel: t('impersonations.retry'),
+              onRetry: () => void impersonations.refetch(),
+            }}
+            emptyState={{
+              title: t('impersonations.empty.title'),
+              description: t('impersonations.empty.description'),
+            }}
+          >
+            {(settled) => (
+              <DataTable
+                rows={settled}
+                columns={columns}
+                rowKey={(record) => record.id}
+              />
+            )}
+          </ConsoleAsyncSection>
+          {/* The table and its row actions share one result location. */}
+          <WriteFeedbackRegion outcome={recordsFeedback.outcome} />
+        </>
       )}
 
-      <Box sx={{ mt: 2 }}>
-        <InlineError
-          code={
-            revokeImpersonation.isError
-              ? errorCodeOf(revokeImpersonation.error)
-              : null
-          }
+      {stepUp.session !== null && (
+        <StepUpChallenge
+          open={stepUp.gate.open}
+          session={stepUp.session}
+          onSuccess={stepUp.gate.succeed}
+          onCancel={stepUp.gate.cancel}
         />
-      </Box>
+      )}
     </Box>
   )
 }
@@ -348,19 +464,26 @@ export function ImpersonationsPage() {
  * operator's own session (POST /auth/impersonation). It renders the
  * endpoint's request-body fields -- a required target account, an optional
  * reason, an optional TTL in whole seconds, and the page's tenant selection
- * as the required target tenant -- and calls the generated start mutation.
- * The target account must be a member of that tenant, so the form takes the
- * tenant as a prop instead of offering a second, unrelated input; the
- * submit stays disabled until a tenant is selected. A landed start clears
- * the form and invalidates the status read through the generated key
- * factory, so the page's status section converges on the record the server
- * just wrote; a refused start keeps the values so the operator can correct
- * them.
+ * as the required target tenant -- and reports the write through the
+ * section's feedback scope. The target account must be a member of that
+ * tenant, so the form takes the tenant as a prop instead of offering a
+ * second, unrelated input; the submit stays disabled until a tenant is
+ * selected. A landed start clears the form and invalidates the status read
+ * through the generated key factory, so the page's status section converges
+ * on the record the server just wrote; a refused start keeps the values so
+ * the operator can correct them.
  */
-function StartImpersonationForm({ tenant }: { readonly tenant: string }) {
+function StartImpersonationForm({
+  tenant,
+  feedback,
+  stepUp,
+}: {
+  readonly tenant: string
+  readonly feedback: WriteFeedback
+  readonly stepUp: ConsoleStepUp
+}) {
   const { t } = useConsoleUiTranslation()
   const queryClient = useQueryClient()
-  const stepUp = useConsoleStepUp()
   const startImpersonation = useAuthnImpersonationStart({
     mutation: {
       onSuccess: () => {
@@ -378,34 +501,39 @@ function StartImpersonationForm({ tenant }: { readonly tenant: string }) {
   const ttlSeconds = ttl.trim() === '' ? undefined : Number(ttl)
 
   const submit = (): void => {
-    startImpersonation.mutate(
-      {
-        data: {
-          account,
-          tenant,
-          ...(reason.trim() === '' ? {} : { reason }),
-          ...(ttlSeconds === undefined || Number.isNaN(ttlSeconds)
-            ? {}
-            : { ttl_seconds: ttlSeconds }),
-        },
+    // The refused write's body is captured here: a step-up replay must
+    // re-fire exactly this request, not whatever the fields hold later.
+    const body = {
+      data: {
+        account,
+        tenant,
+        ...(reason.trim() === '' ? {} : { reason }),
+        ...(ttlSeconds === undefined || Number.isNaN(ttlSeconds)
+          ? {}
+          : { ttl_seconds: ttlSeconds }),
       },
-      {
-        onSuccess: () => {
+    }
+    const attempt = (): Promise<void> =>
+      feedback.run(async () => {
+        try {
+          const answer = await startImpersonation.mutateAsync(body)
           setAccount('')
           setReason('')
           setTtl('')
-        },
-        onError: (error) => {
-          // A refusal the server answers while the session is still
-          // established is a strength shortfall: arm the step-up dialog
-          // with a re-fire of the same start and clear the mutation's own
-          // error so the dialog opens alone.
-          if (stepUp.intercept(error, submit)) {
-            startImpersonation.reset()
+          return t('impersonations.current.started', {
+            account: answer.grant.target,
+          })
+        } catch (error) {
+          // The gate takes a step-up refusal over; the attempt settles
+          // without touching the slot, and a won challenge replays this
+          // body as a new run.
+          if (stepUp.intercept(error, () => void attempt())) {
+            return null
           }
-        },
-      },
-    )
+          throw error
+        }
+      })
+    void attempt()
   }
 
   return (
@@ -441,10 +569,11 @@ function StartImpersonationForm({ tenant }: { readonly tenant: string }) {
           type="button"
           variant="contained"
           disabled={
-            startImpersonation.isPending ||
+            feedback.pending ||
             account.trim() === '' ||
             tenant === ''
           }
+          loading={feedback.pending}
           onClick={submit}
         >
           {t('impersonations.start.submit')}
@@ -456,24 +585,6 @@ function StartImpersonationForm({ tenant }: { readonly tenant: string }) {
             {t('impersonations.start.tenantHint')}
           </Typography>
         </Box>
-      )}
-      <Box sx={{ mt: 1 }}>
-        <InlineError
-          code={
-            startImpersonation.isError
-              ? errorCodeOf(startImpersonation.error)
-              : null
-          }
-        />
-      </Box>
-
-      {stepUp.session !== null && (
-        <StepUpChallenge
-          open={stepUp.gate.open}
-          session={stepUp.session}
-          onSuccess={stepUp.gate.succeed}
-          onCancel={stepUp.gate.cancel}
-        />
       )}
     </Box>
   )

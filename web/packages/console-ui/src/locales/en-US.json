@@ -725,6 +725,7 @@
     "inForce": "In force",
     "ended": "Ended ({{reason}})",
     "terminate": "Terminate",
+    "terminated": "Terminated the impersonation of account {{account}}.",
     "current": {
       "title": "Current impersonation",
       "loading": "Loading the impersonation status",
@@ -732,7 +733,13 @@
       "target": "Impersonated account: ",
       "tenant": "Tenant: {{tenant}}",
       "ends": "Ends: {{ends}}",
-      "end": "End impersonation"
+      "end": "End impersonation",
+      "started": "Started impersonating account {{account}}.",
+      "ended": "Ended impersonating account {{account}}.",
+      "error": {
+        "title": "The impersonation status could not be loaded",
+        "description": "The impersonation status did not answer."
+      }
     },
     "start": {
       "title": "Start an impersonation",

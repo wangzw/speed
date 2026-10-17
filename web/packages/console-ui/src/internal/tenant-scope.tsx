@@ -48,10 +48,16 @@ export interface TenantScopeProps {
   readonly value: string
   /** Reports the chosen tenant id ('' clears the selection). */
   readonly onSelect: (tenant: string) => void
+  /**
+   * Whether the selector is disabled. A page disables it while any scope
+   * its tenant feeds has a write in flight: a change would reset those
+   * scopes and leave a settling attempt describing the tenant left behind.
+   */
+  readonly disabled?: boolean
 }
 
 /** The tenant selector, fed by the platform roster read. */
-export function TenantScope({ value, onSelect }: TenantScopeProps) {
+export function TenantScope({ value, onSelect, disabled = false }: TenantScopeProps) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const tenants = operations.useTenants()
@@ -68,6 +74,7 @@ export function TenantScope({ value, onSelect }: TenantScopeProps) {
       size="small"
       label={t('common.tenant')}
       value={value}
+      disabled={disabled}
       onChange={(event) => onSelect(event.target.value)}
       sx={{ minWidth: 240 }}
     >

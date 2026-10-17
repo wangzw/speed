@@ -16,7 +16,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
@@ -31,6 +31,8 @@ import {
   type ConsoleBackend,
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import { createStepUpSession } from '../test-utils/session.js'
+import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 const ZERO = '0001-01-01T00:00:00Z'
 const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
@@ -435,5 +437,204 @@ describe('ImpersonationsPage', () => {
     await vi.waitFor(() => {
       expect(backend.ended).toHaveLength(1)
     })
+  })
+
+  it('treats the status read\'s bare 404 as a settled "not impersonating" answer', async () => {
+    let reads = 0
+    const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
+      if (path !== '/auth/impersonation') {
+        return Promise.resolve(undefined as T)
+      }
+      if ((options?.method ?? 'GET') !== 'GET') {
+        return Promise.resolve(undefined as T)
+      }
+      reads += 1
+      // The first read names a grant; a later read answers the bare 404
+      // the endpoint writes when nothing is in force.
+      return reads === 1
+        ? Promise.resolve({
+            grant: {
+              id: 'imp-1',
+              target: 'acc-1',
+              tenant: 'acme',
+              starts_at: '2026-10-15T12:00:00Z',
+              ends_at: '2026-10-15T13:00:00Z',
+            },
+          } as T)
+        : Promise.reject({ status: 404, code: 'client.http.404' })
+    }
+    bindRequestFn(fn)
+    const user = userEvent.setup()
+    renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
+
+    expect(await screen.findByText('被冒充账户：Target One')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '刷新' }))
+
+    // The 404 is the settled answer "not impersonating": the cached grant
+    // is discarded, and nothing renders as a failure or a stale marker.
+    expect(await screen.findByText('当前未冒充任何账户。')).toBeInTheDocument()
+    expect(screen.queryByText('被冒充账户：Target One')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('drops the cached grant and re-reads the status after a successful end', async () => {
+    const grant = {
+      id: 'imp-1',
+      target: 'acc-7',
+      tenant: 'acme',
+      starts_at: '2026-10-15T12:00:00Z',
+      ends_at: '2026-10-15T13:00:00Z',
+    }
+    // The first status read names the grant; after the end, the re-read is
+    // held open so the test can see whether the cached grant was dropped
+    // before the next answer arrived.
+    let phase: 'in-force' | 'ended' = 'in-force'
+    let releaseRead: () => void = () => undefined
+    const endRead = new Promise<void>((resolve) => {
+      releaseRead = resolve
+    })
+    let reads = 0
+    let ended = 0
+    const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
+      if (path !== '/auth/impersonation') {
+        return Promise.resolve(undefined as T)
+      }
+      const method = options?.method ?? 'GET'
+      if (method === 'GET') {
+        reads += 1
+        if (phase === 'in-force') {
+          return Promise.resolve({ grant } as T)
+        }
+        return endRead.then(() =>
+          Promise.reject<T>({ status: 404, code: 'client.http.404' }),
+        )
+      }
+      if (method === 'DELETE') {
+        ended += 1
+        phase = 'ended'
+        return Promise.resolve(undefined as T)
+      }
+      return Promise.resolve(undefined as T)
+    }
+    bindRequestFn(fn)
+    const user = userEvent.setup()
+    renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
+
+    expect(await screen.findByText('被冒充账户：Target Seven')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '结束冒充' }))
+    await vi.waitFor(() => expect(ended).toBe(1))
+
+    // The end resets the status cache and re-reads it: the retired grant is
+    // gone from the screen while the new read is still in flight (an
+    // invalidate would keep it there until the refetch settled).
+    await vi.waitFor(() => {
+      expect(screen.queryByText('被冒充账户：Target Seven')).toBeNull()
+    })
+    expect(reads).toBeGreaterThan(1)
+
+    releaseRead()
+    // The re-read answers the bare 404: the settled "not impersonating"
+    // state, not an error.
+    expect(await screen.findByText('当前未冒充任何账户。')).toBeInTheDocument()
+
+    // The confirmation names the account the end changed, and it lives in
+    // the current-impersonation section.
+    const section = screen
+      .getByRole('heading', { name: '当前冒充' })
+      .closest('section')
+    expect(section).not.toBeNull()
+    expect(
+      within(section as HTMLElement).getByText('已结束冒充账户 acc-7。'),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps the start confirmation in the section after the start form unmounts', async () => {
+    const backend = makeCallerSessionBackend()
+    bindRequestFn(backend.fn)
+    const user = userEvent.setup()
+    renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
+
+    await screen.findByText('当前未冒充任何账户。')
+    await pickTenant(user)
+    await user.type(screen.getByLabelText('目标账户'), 'acc-9')
+    await user.click(screen.getByRole('button', { name: '发起冒充' }))
+
+    // The landed start replaces the form with the in-force panel; the
+    // confirmation is not unmounted with the form that produced it.
+    expect(
+      await screen.findByText('已开始冒充账户 acc-1。'),
+    ).toBeInTheDocument()
+    expect(screen.queryByLabelText('目标账户')).not.toBeInTheDocument()
+    const section = screen
+      .getByRole('heading', { name: '当前冒充' })
+      .closest('section')
+    expect(section).not.toBeNull()
+    expect(
+      within(section as HTMLElement).getByText('已开始冒充账户 acc-1。'),
+    ).toBeInTheDocument()
+  })
+
+  it('hands a step-up-refused start to the elevation gate and reports the replay', async () => {
+    const posts: unknown[] = []
+    const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
+      const method = options?.method ?? 'GET'
+      if (path === '/auth/factors') {
+        return Promise.resolve({
+          factors: [
+            {
+              id: 'factor-1',
+              kind: 'totp',
+              label: 'Authenticator app',
+              status: 'active',
+              created_at: '2026-01-01T00:00:00Z',
+            },
+          ],
+        } as T)
+      }
+      if (path === '/auth/impersonation' && method === 'GET') {
+        return Promise.reject({ status: 404, code: 'client.http.404' })
+      }
+      if (path === '/auth/impersonation' && method === 'POST') {
+        posts.push(options?.body)
+        // The first refusal is the strength shortfall the gate takes over;
+        // the replayed write is answered with an ordinary refusal, which is
+        // the only one the section reports.
+        return posts.length === 1
+          ? Promise.reject({
+              status: 401,
+              code: 'authn.insufficient_user_authentication',
+              message: 'step up',
+              auth: true,
+            })
+          : Promise.reject({
+              status: 403,
+              code: 'authn.forbidden',
+              message: 'denied',
+              auth: true,
+            })
+      }
+      return Promise.resolve(undefined as T)
+    }
+    bindRequestFn(fn)
+    const user = userEvent.setup()
+    renderWithProviders(<ImpersonationsPage />, {
+      operations: withPage(),
+      session: createStepUpSession(),
+    })
+
+    await screen.findByText('当前未冒充任何账户。')
+    await pickTenant(user)
+    await user.type(screen.getByLabelText('目标账户'), 'acc-9')
+    await user.click(screen.getByRole('button', { name: '发起冒充' }))
+
+    // The first refusal settled without touching the slot (no banner for
+    // it), the dialog elevated, and the replay re-fired the same body as a
+    // new run whose refusal is what the section shows.
+    expect(
+      await screen.findByText(zhCN.errors.authn.forbidden),
+    ).toBeInTheDocument()
+    await vi.waitFor(() => expect(posts).toHaveLength(2))
+    expect(posts[1]).toEqual(posts[0])
+    expect(posts[0]).toEqual({ account: 'acc-9', tenant: 'acme' })
   })
 })

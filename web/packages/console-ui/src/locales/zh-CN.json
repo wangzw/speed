@@ -725,6 +725,7 @@
     "inForce": "生效中",
     "ended": "已结束（{{reason}}）",
     "terminate": "终止",
+    "terminated": "已终止账户 {{account}} 的冒充记录。",
     "current": {
       "title": "当前冒充",
       "loading": "正在读取冒充状态",
@@ -732,7 +733,13 @@
       "target": "被冒充账户：",
       "tenant": "租户：{{tenant}}",
       "ends": "结束时间：{{ends}}",
-      "end": "结束冒充"
+      "end": "结束冒充",
+      "started": "已开始冒充账户 {{account}}。",
+      "ended": "已结束冒充账户 {{account}}。",
+      "error": {
+        "title": "冒充状态读取失败",
+        "description": "冒充状态未应答。"
+      }
     },
     "start": {
       "title": "发起冒充",
