@@ -6,6 +6,10 @@ pushes "the inbox just gained a row" to the clients already connected over
 own: it subscribes to an event and pushes to a connection, and neither end goes
 through a capability token.
 
+The descriptor declares the static feature `notification.stream`, present
+whenever the module is in force; the frontend opens the SSE connection only when
+it is.
+
 It subscribes to `notification.inbox.created` on the event bus — the type name
 the inbox module declares, spelled out here as a literal and never imported, so
 a subscriber reaches no publisher's package — and delivers each event to the

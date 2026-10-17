@@ -242,4 +242,4 @@ classDiagram
 | 事件发布 | 已实现 | `pkg/notification/inbox/inbox.go` `EventInboxCreated`、`Created`；`pkg/notification/inbox/store.go` `publishCreated` |
 | 列出、计数与标记已读 | 已实现 | `pkg/notification/inbox/store.go` `List`、`UnreadCount`、`MarkRead`、`ReadAll` |
 | OpenAPI 片段声明 | 已实现 | `pkg/notification/inbox/openapi/inbox.json`；`pkg/notification/inbox/inbox.go` `inboxFragment`、`defaultEndpoint`、`Module` |
-| 静态特性 `notification.inbox` 的 `feature.Spec` 声明 | 未实现 | — |
+| 静态特性 `notification.inbox` 的 `feature.Spec` 声明 | 已实现 | `pkg/notification/inbox/inbox.go` `Module`；`pkg/notification/inbox/feature_test.go` `TestTheModuleDeclaresTheInboxFeature` |

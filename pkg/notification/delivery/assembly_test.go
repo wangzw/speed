@@ -7,6 +7,7 @@ import (
 
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/feature"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/jobs"
 	"github.com/vislake/speed/pkg/mail"
@@ -89,17 +90,21 @@ func TestTheDescriptorDeclaresTheFixedDependencies(t *testing.T) {
 	}
 }
 
-// The module declares its migrations and its message catalog as resources, and
-// reads no configuration: it declares no schema and no namespace of its own.
+// The module declares its migrations, its message catalog and its two channel
+// features as resources, and reads no configuration: it declares no schema and
+// no namespace of its own.
 func TestTheModuleDeclaresItsMigrationsAndCatalog(t *testing.T) {
 	var migrations db.Migrations
 	var catalog i18n.Catalog
+	specs := 0
 	for _, res := range Module().Resources {
 		switch v := res.(type) {
 		case db.Migrations:
 			migrations = v
 		case i18n.Catalog:
 			catalog = v
+		case feature.Spec:
+			specs++
 		default:
 			t.Errorf("the module declares an unexpected resource %T", res)
 		}
@@ -109,6 +114,9 @@ func TestTheModuleDeclaresItsMigrationsAndCatalog(t *testing.T) {
 	}
 	if catalog.FS == nil || catalog.Pattern != "locales/*.json" {
 		t.Errorf("the catalog is %+v, want the embedded locales", catalog)
+	}
+	if specs != 2 {
+		t.Errorf("the descriptor declares %d feature specs, want the two channels", specs)
 	}
 }
 

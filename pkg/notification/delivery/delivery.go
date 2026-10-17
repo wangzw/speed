@@ -37,6 +37,7 @@ import (
 
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/feature"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/jobs"
 	"github.com/vislake/speed/pkg/mail"
@@ -55,6 +56,13 @@ const ModuleName = "notification.delivery"
 // the module's work, and a second registration under it is a defect the handler
 // registration refuses.
 const JobType = ModuleName
+
+// The conditional features this module declares: one per external channel, and
+// each is posted in Init from the same seam judgement the send path reads.
+const (
+	featureEmail = "notification.channel.email"
+	featureSMS   = "notification.channel.sms"
+)
 
 // The parameters of a delivery job, fixed by this module. A send is one external
 // call that may take seconds, so it is given a generation timeout and the
@@ -132,6 +140,8 @@ func Module() core.Module {
 		Resources: []any{
 			db.Migrations{FS: migrationsFS},
 			messageCatalog,
+			feature.Spec{Name: featureEmail, Conditional: true},
+			feature.Spec{Name: featureSMS, Conditional: true},
 		},
 
 		// New takes up what the descriptor requires and collects the type
@@ -142,15 +152,21 @@ func Module() core.Module {
 			return newPipeline(reg)
 		},
 
-		// Init registers the handler with the queue's registration face. The
-		// handler set is fixed before the queue starts, so this runs early enough
-		// that every delivery job has a handler to run it.
-		Init: func(_ context.Context, _ *core.Registry, instance any) error {
+		// Init registers the handler with the queue's registration face and
+		// reports the channels this assembly can send on. The handler set is
+		// fixed before the queue starts, so this runs early enough that every
+		// delivery job has a handler to run it. The report runs here and not in
+		// New: New is outside the board's posting window, where a post panics.
+		Init: func(_ context.Context, reg *core.Registry, instance any) error {
 			p, ok := productOf(instance)
 			if !ok {
 				return nil
 			}
-			return p.register()
+			if err := p.register(); err != nil {
+				return err
+			}
+			p.postFeatures(reg)
+			return nil
 		},
 
 		Start: func(context.Context, *core.Registry, any) error { return nil },
@@ -286,4 +302,21 @@ func (p *pipeline) register() error {
 		return fmt.Errorf("%s: registering the delivery handler: %w", ModuleName, err)
 	}
 	return nil
+}
+
+// postFeatures reports the external channels this assembly can send on. It runs
+// in Init, inside the board's posting window, and reuses the seam judgements the
+// send path reads: email on the mail sender, sms only when both its seams are
+// present. A process with no board skips the report silently.
+func (p *pipeline) postFeatures(reg *core.Registry) {
+	board, err := core.Resolve[feature.Board](reg)
+	if err != nil {
+		return
+	}
+	if p.seams.emailReady() {
+		board.Post(ModuleName, featureEmail)
+	}
+	if p.seams.smsReady() {
+		board.Post(ModuleName, featureSMS)
+	}
 }

@@ -297,4 +297,4 @@ classDiagram
 | 偏好路由与 PUT 的判定顺序 | 已实现 | `pkg/notification/preferences/preferences.go` `routes`、`mount`；`pkg/notification/preferences/routes.go` `handleTypes`、`handlePreferences`、`handleSetPreference`；`pkg/notification/preferences/store.go` `Set` |
 | 配置命名空间与端名清单 | 已实现 | `pkg/notification/preferences/config.go` `ConfigNamespace`、`schema`、`validateEndpoints`、`readConfig`；`pkg/notification/preferences/preferences.go` `readerOf`、`mount` |
 | OpenAPI 片段声明 | 已实现 | `pkg/notification/preferences/openapi/preferences.json`；`pkg/notification/preferences/preferences.go` `preferencesFragment`、`defaultEndpoint`、`Module` |
-| 静态特性 `notification.preferences` 的 `feature.Spec` 声明 | 未实现 | — |
+| 静态特性 `notification.preferences` 的 `feature.Spec` 声明 | 已实现 | `pkg/notification/preferences/preferences.go` `Module`；`pkg/notification/preferences/feature_test.go` `TestTheModuleDeclaresThePreferencesFeature` |

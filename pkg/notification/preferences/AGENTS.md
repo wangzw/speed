@@ -6,6 +6,9 @@ which channels that recipient's dispatches of the type go out under, and it
 collects the notification types the business modules declare to validate a
 preference write against.
 
+The descriptor declares the static feature `notification.preferences`, present
+whenever the module is in force.
+
 ## What it delivers
 
 The module delivers `(*notification.Preferences)(nil)` **exclusively**: one

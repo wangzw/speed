@@ -5,6 +5,9 @@ account's in-app message rows and their listing, unread count and marking-read,
 and it mounts the inbox routes under `/api/v1/notifications`. It delivers one
 capability, `notification.Inbox`, exclusively.
 
+The descriptor declares the static feature `notification.inbox`, present whenever
+the module is in force.
+
 The interface package is `pkg/notification`; this package is the implementation
 and registers the module. The API is the package's godoc, and the capability's is
 the godoc of `notification.Inbox` in the interface package.

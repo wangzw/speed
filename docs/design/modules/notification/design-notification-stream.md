@@ -199,4 +199,4 @@ classDiagram
 | `GET /stream` 路由与帧写出 | 已实现 | `pkg/notification/stream/routes.go` `routes`、`mount`、`handleStream`、`writeFrame` |
 | 停机与注销 | 已实现 | `pkg/notification/stream/stream.go` `Module`；`pkg/notification/stream/hub.go` `Close`、`closeAll`、`remove` |
 | OpenAPI 片段声明 | 已实现 | `pkg/notification/stream/openapi/stream.json`；`pkg/notification/stream/stream.go` `streamFragment`、`defaultEndpoint`、`Module` |
-| 静态特性 `notification.stream` 的 `feature.Spec` 声明 | 未实现 | — |
+| 静态特性 `notification.stream` 的 `feature.Spec` 声明 | 已实现 | `pkg/notification/stream/stream.go` `Module`；`pkg/notification/stream/feature_test.go` `TestTheModuleDeclaresTheStreamFeature` |

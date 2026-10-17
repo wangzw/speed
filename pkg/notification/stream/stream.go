@@ -25,6 +25,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/notification"
@@ -104,7 +105,14 @@ func Module() core.Module {
 			{Token: (*speedhttp.Router)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
-		Resources: []any{schema(), speedhttp.Spec{Endpoint: defaultEndpoint, Document: streamFragment}},
+		Resources: []any{
+			schema(),
+			speedhttp.Spec{Endpoint: defaultEndpoint, Document: streamFragment},
+			// The real-time push surface: its route is mounted whenever the
+			// module is in force and the process has an entry point, so the
+			// feature is static.
+			feature.Spec{Name: "notification.stream"},
+		},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := readerOf(reg)

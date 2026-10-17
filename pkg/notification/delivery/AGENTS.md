@@ -6,6 +6,11 @@ consumed the intent is validated again, the recipient's effective channels are
 resolved, and every channel is rendered, sent through its seam and recorded as
 one ledger row.
 
+The descriptor declares the conditional features `notification.channel.email` and
+`notification.channel.sms`. `Init` posts each from the same seam judgement the
+send path reads: email on `mail.Sender`, sms only when both `sms.Registry` and
+`sms.Sender` are present. A host-supplied instance posts neither.
+
 ## What it delivers
 
 The module delivers `(*notification.Dispatcher)(nil)` **exclusively**: one

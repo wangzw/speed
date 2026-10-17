@@ -328,4 +328,4 @@ classDiagram
 | 去重键与 `notification_sends` 幂等落账 | 已实现 | `pkg/notification/delivery/keys.go` `channelKey`、`dispatchKey`、`deriveKey`；`pkg/notification/delivery/store.go` `ledger`、`lookup`、`record` |
 | 外部渠道的目的地与短信参数的字符串化 | 已实现 | `pkg/notification/delivery/render.go` `destination`、`destinationParam`、`stringifyParams`、`stringify`、`renderValue` |
 | `notification_sends` 表与迁移 | 已实现 | `pkg/notification/delivery/store.go` `sendRow`、`tableName`；`pkg/notification/delivery/migrations` |
-| 渠道条件特性的声明与 `Init` 中按 `channelSeams` 的报告 | 未实现 | — |
+| 渠道条件特性的声明与 `Init` 中按 `channelSeams` 的报告 | 已实现 | `pkg/notification/delivery/delivery.go` `Module`、`featureEmail`、`featureSMS`、`postFeatures`；`pkg/notification/delivery/feature_test.go` `TestAChannelIsNamedExactlyWhenItsSeamsArePresent`、`TestTheModuleDeclaresBothChannelFeatures` |
