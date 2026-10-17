@@ -187,8 +187,11 @@ process is up waits for the record and not for a listening socket. Stop a run
 with SIGINT or SIGTERM; it drains in-flight requests first.
 
 `seed` writes the initial operators `seed.accounts` names, the tenants
-`seed.tenants` names, and the platform-administrator role the ones marked with
-it hold. It carries the migrations with it, so it is the whole of what a fresh
+`seed.tenants` names, the platform-administrator role the ones marked with
+it hold, and the runtime settings `seed.settings` names. A setting is written
+into the global layer only while that layer holds no explicit row for its key,
+so a value an operator changed through the settings surface survives a later
+seed run. It carries the migrations with it, so it is the whole of what a fresh
 copy does to a database before serving from it; running it again writes nothing
 and says so. A permission a module declares after an earlier run is added on
 the next run through the host's seeding surface, so the operator keeps
@@ -198,17 +201,28 @@ change the role.
 `seed` writes no second factor. The public `pkg/authn` surface hands a host a
 registration step it does not let that host read, so a seed cannot finish an
 enrollment; the console's step-up gate therefore refuses every write until an
-operator adds a factor in account settings, and `seed` says so on its way out.
+operator adds a factor in account settings and signs in again, completing that
+factor at login, and `seed` says so on its way out.
 The alternative — writing the factor's sealed row directly — would bind this
 skeleton to the factor module's internals.
 
 ### Exercising a write path
 
-Register the factor through the UI first: sign in, open the account page (or
-follow the enrolment link in the step-up dialog), start two-step-verification
-enrolment, and confirm it with a code. The wizard renders the `otpauth://` URI
-as text; take its `secret` parameter and compute the current code with a
-standard-library one-liner:
+Register the factor through the UI first: sign in, open the account page, start
+two-step-verification enrolment, and confirm it with a code. Then sign out and
+sign in again, completing the second factor at login. Only that second session
+admits a write: enrolment does not raise the assurance of the session it
+happened under, so a write attempted right after enrolling is still refused —
+in a session that is no longer fresh, even the enrolment itself is refused by
+the step-up gate. The factor is proven at the next login, and that login's
+local multi-factor is what the write path accepts. A step-up cannot substitute
+for that second login: it accepts only a factor enabled before the session's
+authentication time, so the factor just enrolled under the current session is
+not offered to it. The design settles the order the same way: a second factor
+is satisfied at login.
+
+The wizard renders the `otpauth://` URI as text; take its `secret` parameter
+and compute the current code with a standard-library one-liner:
 
 ```
 python3 -c "import base64,hmac,hashlib,struct,time; s=base64.b32decode('SECRET'); c=int(time.time())//30; h=hmac.new(s,struct.pack('>Q',c),hashlib.sha1).digest(); o=h[-1]&15; print(str((struct.unpack('>I',h[o:o+4])[0]&0x7fffffff)%1000000).zfill(6))"
@@ -217,9 +231,10 @@ python3 -c "import base64,hmac,hashlib,struct,time; s=base64.b32decode('SECRET')
 The parameters are the design's: SHA-1, six digits, thirty-second period.
 
 Two timing notes. A code cannot be replayed inside its window — the counter
-must advance — so wait for the next window before a second step-up. And once a
-step-up succeeds the session stays fresh for the configured recent window (ten
-minutes by default), so a batch of writes can be exercised on one elevation.
+must advance — so wait for the next window before a second sign-in that
+completes the factor. And once a sign-in completes the second factor, the
+session counts as freshly elevated for the configured recent window (ten
+minutes by default), so a batch of writes can be exercised on one sign-in.
 
 Seeding is a step of its own rather than something `serve` does on its way up,
 because a deployment nobody may administer until somebody says so is the posture
@@ -408,10 +423,13 @@ just-completed multi-factor sign-in satisfies it directly, so the dialog appears
 only once the window has passed.
 
 Impersonation carries one gate of its own: its actor must hold an active
-non-SMS factor activated at least `authn.mfa.sensitive-min-age` (24 hours by
-default) before now, so an operator whose only factor was enrolled minutes ago
-cannot start an impersonation until that factor matures. A freshly seeded copy
-cannot demonstrate a started impersonation.
+non-SMS factor activated at least `authn.mfa.sensitive-min-age` before now. The
+declared default is 24 hours; the sample configurations lower it to the
+setting's domain minimum of 1h for local demonstration, and production keeps
+the declared default. A factor enrolled minutes ago still cannot start an
+impersonation — it has to mature for an hour under the samples — so a freshly
+seeded copy cannot demonstrate a started impersonation, and a step-up does not
+shorten that wait.
 
 ## The stacks
 
