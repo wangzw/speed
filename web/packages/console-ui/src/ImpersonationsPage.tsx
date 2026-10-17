@@ -98,6 +98,10 @@ import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
 import { AccountIdentity } from './internal/account-identity.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { formatUtc, isZeroInstant } from './internal/datetime.js'
+import {
+  useConsoleImpersonationChange,
+  type ConsoleImpersonationChange,
+} from './internal/impersonation-change.js'
 import { useConsoleStepUp } from './internal/step-up-gate.js'
 import type { ConsoleStepUp } from './internal/step-up-gate.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
@@ -127,6 +131,25 @@ function isNotImpersonating(error: unknown): boolean {
   return candidate.status === 404 || candidate.code === 'client.http.404'
 }
 
+/**
+ * Reports a settled start or end to the host, outside the write attempt:
+ * fire-and-forget, with the rejection wrapped, so a host action that fails
+ * cannot turn a landed write into a failure the page renders.
+ */
+function notifyIdentityChange(
+  callback:
+    | ((change: ConsoleImpersonationChange) => void | Promise<void>)
+    | undefined,
+  change: ConsoleImpersonationChange,
+): void {
+  if (callback === undefined) {
+    return
+  }
+  void Promise.resolve()
+    .then(() => callback(change))
+    .catch(() => undefined)
+}
+
 export function ImpersonationsPage() {
   const { t, i18n } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
@@ -142,6 +165,10 @@ export function ImpersonationsPage() {
   // location under the table.
   const recordsFeedback = useWriteFeedback()
   const stepUp = useConsoleStepUp()
+  // The host's identity-change action (the shell publishes it). A start
+  // and an end both swap whose identity every later read belongs to, so
+  // each reports to the same seam once its write settles.
+  const identityChange = useConsoleImpersonationChange()
 
   // The caller's own impersonation session, over /auth/impersonation. These
   // are the generated caller-session operations (not the administration
@@ -210,7 +237,6 @@ export function ImpersonationsPage() {
     currentFeedback.run(async () => {
       try {
         await endImpersonation.mutateAsync()
-        return t('impersonations.current.ended', { account: grant?.target ?? '' })
       } catch (error) {
         // A refusal the server answers while the session is still
         // established is a strength shortfall: the gate takes the write
@@ -219,8 +245,23 @@ export function ImpersonationsPage() {
         if (stepUp.intercept(error, () => void endAttempt())) {
           return null
         }
-        throw error
+        // A bare 404 is the settled "there is no impersonation to end"
+        // (ended elsewhere, expired or terminated). It is not a failure:
+        // the page closes exactly as a successful end does.
+        if (!isNotImpersonating(error)) {
+          throw error
+        }
+        void queryClient.resetQueries({
+          queryKey: getAuthnImpersonationStatusQueryKey(),
+        })
+        queryClient.removeQueries({
+          queryKey: getAuthnAdminImpersonationsListQueryKey(),
+        })
       }
+      // The write settled: the host re-reads the identity, without the
+      // page waiting for it.
+      notifyIdentityChange(identityChange, 'ended')
+      return t('impersonations.current.ended', { account: grant?.target ?? '' })
     })
 
   const terminate = (record: ConsoleImpersonation): void => {
@@ -423,6 +464,7 @@ export function ImpersonationsPage() {
               tenant={tenant}
               feedback={currentFeedback}
               stepUp={stepUp}
+              identityChange={identityChange}
               // A start writes a record into the selected tenant's list as
               // well as onto the operator's own session.
               onStarted={() => void impersonations.refetch()}
@@ -538,11 +580,16 @@ function StartImpersonationForm({
   tenant,
   feedback,
   stepUp,
+  identityChange,
   onStarted,
 }: {
   readonly tenant: string
   readonly feedback: WriteFeedback
   readonly stepUp: ConsoleStepUp
+  /** The host's identity-change action (see ImpersonationsPage). */
+  readonly identityChange:
+    | ((change: ConsoleImpersonationChange) => void | Promise<void>)
+    | undefined
   /** Fired after a start lands, so the page re-reads the tenant's records. */
   readonly onStarted: () => void
 }) {
@@ -585,6 +632,9 @@ function StartImpersonationForm({
           setReason('')
           setTtl('')
           onStarted()
+          // The write settled: the host re-reads the identity and moves
+          // the page, without the form waiting for it.
+          notifyIdentityChange(identityChange, 'started')
           return t('impersonations.current.started', {
             account: answer.grant.target,
           })

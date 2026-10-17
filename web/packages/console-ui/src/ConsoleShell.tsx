@@ -68,6 +68,7 @@ import { ConsoleAccountHrefProvider } from './internal/account-href.js'
 import { ConsoleFeatureProvider } from './internal/features.js'
 import { ConsoleNavigationProvider } from './internal/navigation.js'
 import { ConsoleInvitationLinkProvider } from './internal/invitation-link.js'
+import { ConsoleImpersonationChangeProvider } from './internal/impersonation-change.js'
 import { ConsoleSessionProvider } from './internal/session.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 
@@ -147,6 +148,18 @@ export interface ConsoleShellProps extends AppShellCollapseProps {
    * writes fire unguarded and a refused one renders its error code.
    */
   readonly session?: AuthSession
+  /**
+   * The host's action after an impersonation start or end settles: the
+   * host evicts the cache rows taken under the old identity, re-reads the
+   * session and the identity-dependent host state, and moves the page.
+   * The impersonation page invokes it once after each settled write,
+   * outside the attempt, does not await it, and wraps its rejection --
+   * the settled write is not overturned. Absent, the page refreshes only
+   * its own status and record reads.
+   */
+  readonly onImpersonationChange?: (
+    change: 'started' | 'ended',
+  ) => void | Promise<void>
   /** Extra styling merged onto the root layout box. */
   readonly sx?: SxProps<Theme>
 }
@@ -233,6 +246,7 @@ export function ConsoleShell({
   invitationLink,
   accountHref,
   session,
+  onImpersonationChange,
   sidebarCollapsed,
   onSidebarCollapsedChange,
   sx,
@@ -280,9 +294,13 @@ export function ConsoleShell({
           <ConsoleSessionProvider session={session ?? null}>
             <ConsoleAccountHrefProvider accountHref={accountHref}>
               <ConsoleInvitationLinkProvider invitationLink={invitationLink}>
-                <ConsoleFeatureProvider hasFeature={hasFeature}>
-                  {children}
-                </ConsoleFeatureProvider>
+                <ConsoleImpersonationChangeProvider
+                  onImpersonationChange={onImpersonationChange}
+                >
+                  <ConsoleFeatureProvider hasFeature={hasFeature}>
+                    {children}
+                  </ConsoleFeatureProvider>
+                </ConsoleImpersonationChangeProvider>
               </ConsoleInvitationLinkProvider>
             </ConsoleAccountHrefProvider>
           </ConsoleSessionProvider>

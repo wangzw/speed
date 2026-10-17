@@ -21,6 +21,7 @@ import userEvent from '@testing-library/user-event'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { ImpersonationsPage } from './ImpersonationsPage.js'
+import { ConsoleImpersonationChangeProvider } from './internal/impersonation-change.js'
 import type { ConsoleImpersonation } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
@@ -475,6 +476,146 @@ describe('ImpersonationsPage', () => {
     await vi.waitFor(() => {
       expect(backend.started).toEqual([{ account: 'acc-9', tenant: 'acme' }])
     })
+  })
+
+  it('reports a settled start to the host without waiting for it', async () => {
+    const backend = makeCallerSessionBackend()
+    bindRequestFn(backend.fn)
+    const user = userEvent.setup()
+    // The host's action never settles: the page must not wait for it.
+    const onChange = vi.fn(() => new Promise<void>(() => undefined))
+    renderWithProviders(
+      <ConsoleImpersonationChangeProvider onImpersonationChange={onChange}>
+        <ImpersonationsPage />
+      </ConsoleImpersonationChangeProvider>,
+      { operations: withPage() },
+    )
+
+    await screen.findByText('当前未冒充任何账户。')
+    await pickTenant(user)
+    await user.type(screen.getByLabelText('目标账户'), 'acc-1')
+    await user.click(screen.getByRole('button', { name: '发起冒充' }))
+
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith('started'))
+    expect(onChange).toHaveBeenCalledTimes(1)
+    // The success copy rendered while the host action is still pending.
+    expect(
+      await screen.findByText('已开始冒充账户 acc-1。'),
+    ).toBeInTheDocument()
+  })
+
+  it("wraps the host's rejection, leaving the settled start a success", async () => {
+    const backend = makeCallerSessionBackend()
+    bindRequestFn(backend.fn)
+    const user = userEvent.setup()
+    const onChange = vi.fn(() => Promise.reject(new Error('host action failed')))
+    renderWithProviders(
+      <ConsoleImpersonationChangeProvider onImpersonationChange={onChange}>
+        <ImpersonationsPage />
+      </ConsoleImpersonationChangeProvider>,
+      { operations: withPage() },
+    )
+
+    await screen.findByText('当前未冒充任何账户。')
+    await pickTenant(user)
+    await user.type(screen.getByLabelText('目标账户'), 'acc-1')
+    await user.click(screen.getByRole('button', { name: '发起冒充' }))
+
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith('started'))
+    // No failure rendering: the start landed, and the host's own failure is
+    // not the page's to report.
+    expect(
+      await screen.findByText('已开始冒充账户 acc-1。'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('host action failed')).toBeNull()
+  })
+
+  it('reports a settled end to the host', async () => {
+    const backend = makeCallerSessionBackend()
+    backend.setGrant({
+      id: 'imp-1',
+      target: 'acc-7',
+      tenant: 'acme',
+      starts_at: '2026-10-15T12:00:00Z',
+      ends_at: '2026-10-15T13:00:00Z',
+    })
+    bindRequestFn(backend.fn)
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    renderWithProviders(
+      <ConsoleImpersonationChangeProvider onImpersonationChange={onChange}>
+        <ImpersonationsPage />
+      </ConsoleImpersonationChangeProvider>,
+      { operations: withPage() },
+    )
+
+    expect(
+      await screen.findByText('被冒充账户：Target Seven'),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '结束冒充' }))
+
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith('ended'))
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(
+      await screen.findByText('已结束冒充账户 acc-7。'),
+    ).toBeInTheDocument()
+  })
+
+  it('closes a bare 404 end as a settled end and reports it', async () => {
+    let inForce = true
+    let deletes = 0
+    const grant = {
+      id: 'imp-1',
+      target: 'acc-7',
+      tenant: 'acme',
+      starts_at: '2026-10-15T12:00:00Z',
+      ends_at: '2026-10-15T13:00:00Z',
+    }
+    const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
+      if (path !== '/auth/impersonation') {
+        return Promise.resolve(undefined as T)
+      }
+      const method = options?.method ?? 'GET'
+      if (method === 'GET') {
+        return inForce
+          ? Promise.resolve({ grant } as T)
+          : Promise.reject({ status: 404, code: 'client.http.404' })
+      }
+      if (method === 'DELETE') {
+        deletes += 1
+        // Already ended elsewhere: the end answers the bare 404, and the
+        // status read that follows sees nothing in force.
+        inForce = false
+        return Promise.reject({ status: 404, code: 'client.http.404' })
+      }
+      return Promise.resolve(undefined as T)
+    }
+    bindRequestFn(fn)
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    renderWithProviders(
+      <ConsoleImpersonationChangeProvider onImpersonationChange={onChange}>
+        <ImpersonationsPage />
+      </ConsoleImpersonationChangeProvider>,
+      { operations: withPage() },
+    )
+
+    expect(
+      await screen.findByText('被冒充账户：Target Seven'),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '结束冒充' }))
+
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith('ended'))
+    expect(deletes).toBe(1)
+    // The same closing path a successful end takes: the success copy, no
+    // failure banner, and the section lands on "not impersonating".
+    expect(
+      await screen.findByText('已结束冒充账户 acc-7。'),
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByText('当前未冒充任何账户。'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('shows the impersonation in force and ends it', async () => {

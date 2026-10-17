@@ -31,6 +31,7 @@ import { consoleNavGroups } from './nav-groups.js'
 import { consoleRoutes } from './routes.js'
 import type { ConsoleNavGroup, ConsoleRoute } from './route.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
+import { useConsoleImpersonationChange } from './internal/impersonation-change.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { bindConsoleRequest } from '../test-utils/request-rig.js'
 import { createStepUpSession } from '../test-utils/session.js'
@@ -99,6 +100,28 @@ function ControlledCollapseConsole({
 }
 
 describe('ConsoleShell', () => {
+  it('publishes onImpersonationChange to the routed content', async () => {
+    const onChange = vi.fn()
+    function Probe(): ReactElement {
+      const report = useConsoleImpersonationChange()
+      return (
+        <button type="button" onClick={() => void report?.('started')}>
+          report
+        </button>
+      )
+    }
+    renderWithProviders(
+      <Shell routes={routes} title="Console" onImpersonationChange={onChange}>
+        <Probe />
+      </Shell>,
+      { operations },
+    )
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: 'report' }))
+    expect(onChange).toHaveBeenCalledWith('started')
+  })
+
   it('renders a banner, a nav and a main landmark', () => {
     renderWithProviders(
       <Shell routes={routes} title="Console">
