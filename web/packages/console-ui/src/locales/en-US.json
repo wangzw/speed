@@ -29,7 +29,9 @@
       "network": "The network is unavailable. Check your connection and try again.",
       "timeout": "The request timed out. Try again shortly.",
       "protocol": "The server returned an unexpected response. Try again shortly.",
-      "http": "The server answered HTTP {{status}}. Try again shortly."
+      "http": "The server answered HTTP {{status}}. Try again shortly.",
+      "httpForbidden": "You do not have permission to do that.",
+      "httpUnauthorized": "Your session has ended. Sign in again."
     },
     "tenant": {
       "bad_request": "The server could not read this request. Check the form and try again.",
@@ -65,8 +67,20 @@
     "confirm": "Confirm",
     "tenant": "Tenant",
     "tenantNone": "None selected",
+    "tenantLoading": "Loading tenants…",
+    "tenantForbidden": "You do not have permission to list tenants.",
+    "tenantLoadFailed": "The tenant list could not be loaded.",
+    "tenantRetry": "Retry",
+    "tenantEmpty": "No tenant is registered yet.",
     "emptyValue": "—",
-    "accountUnresolved": "Identity unresolved (needs account read)"
+    "accountUnresolved": "Identity unresolved (needs account read)",
+    "accountMissing": "Not an account or deleted"
+  },
+  "detail": {
+    "notFound": {
+      "title": "Record not found or unavailable",
+      "description": "This record does not exist or could not be read right now. Retry to check again."
+    }
   },
   "stepUp": {
     "title": "Verify it's you",
@@ -813,7 +827,9 @@
       "copy": "Copy",
       "copyLink": "Copy acceptance link",
       "copyToken": "Copy acceptance token",
-      "copied": "Copied"
+      "copied": "Copied",
+      "close": "Close",
+      "closeAria": "Close the acceptance link for \"{{email}}\" in tenant \"{{tenant}}\""
     }
   },
   "members": {
@@ -889,6 +905,9 @@
     "deleteAria": "Delete provider {{name}}",
     "deleteTitle": "Delete SSO provider",
     "deleteMessage": "Delete the provider \"{{name}}\" and all of its domains.",
+    "deleted": "Provider \"{{name}}\" deleted",
+    "refreshMetadataSaved": "Metadata of provider \"{{name}}\" refreshed",
+    "reverifyDomainsSaved": "Domains of provider \"{{name}}\" re-verified",
     "domains": {
       "title": "Domains",
       "note": "The provider view does not list domains; verify or remove a domain by name.",
@@ -897,6 +916,11 @@
       "verify": "Verify",
       "claim": "Claim",
       "claimToken": "Publish this token in DNS: {{token}}",
+      "claimed": "Domain \"{{domain}}\" claimed for provider \"{{name}}\"",
+      "verified": "Domain \"{{domain}}\" verified for provider \"{{name}}\"",
+      "removed": "Domain \"{{domain}}\" removed from provider \"{{name}}\"",
+      "claimTokenClose": "Close",
+      "claimTokenCloseAria": "Close the claim token for domain \"{{domain}}\" of provider \"{{name}}\" in tenant \"{{tenant}}\"",
       "remove": "Remove",
       "removeTitle": "Remove domain",
       "removeMessage": "Remove the domain \"{{domain}}\" from this provider."
@@ -918,6 +942,8 @@
       "clientSecretLabel": "Client secret",
       "createSubmit": "Create provider",
       "updateSubmit": "Save provider",
+      "created": "Provider \"{{name}}\" created",
+      "updated": "Provider \"{{name}}\" saved",
       "tri": {"unchanged": "Unchanged", "true": "Yes", "false": "No"}
     }
   },

@@ -53,10 +53,12 @@ describe('console-ui error text', () => {
     const whitelisted = new Set<string>([
       ...ERROR_TEXT_CODES.map((code) => `errors.${code}`),
       'errors.unknown',
-      // The bare-HTTP family's single parameterized leaf: the resolver maps
-      // the whole client.http.<status> family onto it (see the http-family
-      // test below), so it has no single whitelisted code.
+      // The bare-HTTP family's parameterized leaf and the two refusal leaves
+      // the resolver maps a client.http.<status> code onto (see the http-family
+      // test below), so none of them has a single whitelisted code.
       'errors.client.http',
+      'errors.client.httpForbidden',
+      'errors.client.httpUnauthorized',
     ])
     for (const key of errorKeys('en-US')) {
       expect(whitelisted, `${key} has no whitelisted code`).toContain(key)
@@ -76,26 +78,36 @@ describe('console-ui error text', () => {
     expect(resolve('client.whatever')).toBe('UNKNOWN')
   })
 
-  it('renders each bare-HTTP status distinctly, carrying its status code', () => {
+  it('renders a bare 403 and 401 as the actionable copy, other statuses with their code', () => {
     const i18n = createConsoleUiI18n('en-US')
     const { result } = renderHook(() => useConsoleUiErrorText(), {
       wrapper: ({ children }: { readonly children: ReactNode }) =>
         createElement(I18nextProvider, { i18n }, children),
     })
-    const notAllowed = result.current('client.http.405')
+    const forbidden = result.current('client.http.403')
     const unauthorized = result.current('client.http.401')
+    const notAllowed = result.current('client.http.405')
     const serverError = result.current('client.http.500')
-    // Each status keeps its own number: no longer one generic line, and
-    // never the raw code or the unknown fallback.
+    const bundle = consoleUiResources['en-US'] as {
+      errors: {
+        unknown: string
+        client: { httpForbidden: string; httpUnauthorized: string }
+      }
+    }
+    // A write refused with no readable envelope tells the operator what to
+    // do: the permission copy for a 403, the ended-session copy for a 401 --
+    // neither restates the status.
+    expect(forbidden).toBe(bundle.errors.client.httpForbidden)
+    expect(unauthorized).toBe(bundle.errors.client.httpUnauthorized)
+    expect(forbidden).not.toContain('403')
+    expect(unauthorized).not.toContain('401')
+    expect(new Set([forbidden, unauthorized]).size).toBe(2)
+    // Every other status keeps its own parameterized line, never the raw
+    // code or the unknown fallback.
     expect(notAllowed).toContain('405')
-    expect(unauthorized).toContain('401')
     expect(serverError).toContain('500')
-    expect(new Set([notAllowed, unauthorized, serverError]).size).toBe(3)
     expect(notAllowed).not.toContain('client.http.405')
-    expect(notAllowed).not.toBe(
-      (consoleUiResources['en-US'] as { errors: { unknown: string } }).errors
-        .unknown,
-    )
+    expect(notAllowed).not.toBe(bundle.errors.unknown)
   })
 
   it('resolves every module refusal a write can be answered with to its own text', () => {

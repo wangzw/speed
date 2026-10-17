@@ -29,7 +29,9 @@
       "network": "网络连接不可用，请检查网络后重试。",
       "timeout": "请求超时，请稍后重试。",
       "protocol": "服务返回了异常响应，请稍后重试。",
-      "http": "服务返回了 HTTP {{status}} 错误，请稍后重试。"
+      "http": "服务返回了 HTTP {{status}} 错误，请稍后重试。",
+      "httpForbidden": "你没有执行此操作的权限。",
+      "httpUnauthorized": "会话已结束，请重新登录。"
     },
     "tenant": {
       "bad_request": "服务端无法读取该请求，请检查表单后重试。",
@@ -65,8 +67,20 @@
     "confirm": "确认",
     "tenant": "租户",
     "tenantNone": "未选择",
+    "tenantLoading": "正在加载租户…",
+    "tenantForbidden": "你没有列出租户的权限。",
+    "tenantLoadFailed": "租户名册加载失败。",
+    "tenantRetry": "重试",
+    "tenantEmpty": "尚未登记任何租户。",
     "emptyValue": "—",
-    "accountUnresolved": "身份未解析（需账户读取权限）"
+    "accountUnresolved": "身份未解析（需账户读取权限）",
+    "accountMissing": "非账户或已删除"
+  },
+  "detail": {
+    "notFound": {
+      "title": "记录不存在或暂不可用",
+      "description": "该记录不存在，或当前无法读取，请重试确认。"
+    }
   },
   "stepUp": {
     "title": "需要重新验证",
@@ -813,7 +827,9 @@
       "copy": "复制",
       "copyLink": "复制接受链接",
       "copyToken": "复制接受令牌",
-      "copied": "已复制"
+      "copied": "已复制",
+      "close": "关闭",
+      "closeAria": "关闭租户「{{tenant}}」发给「{{email}}」的接受链接"
     }
   },
   "members": {
@@ -889,6 +905,9 @@
     "deleteAria": "删除提供方 {{name}}",
     "deleteTitle": "删除 SSO 提供方",
     "deleteMessage": "删除提供方「{{name}}」及其全部域名。",
+    "deleted": "已删除提供方「{{name}}」",
+    "refreshMetadataSaved": "已刷新提供方「{{name}}」的元数据",
+    "reverifyDomainsSaved": "已重新验证提供方「{{name}}」的域名",
     "domains": {
       "title": "域名",
       "note": "提供方视图不列出域名，域名的验证与移除按名称进行。",
@@ -897,6 +916,11 @@
       "verify": "验证",
       "claim": "认领",
       "claimToken": "请在 DNS 中发布该令牌：{{token}}",
+      "claimed": "已为提供方「{{name}}」认领域名「{{domain}}」",
+      "verified": "已验证提供方「{{name}}」的域名「{{domain}}」",
+      "removed": "已从提供方「{{name}}」移除域名「{{domain}}」",
+      "claimTokenClose": "关闭",
+      "claimTokenCloseAria": "关闭租户「{{tenant}}」中提供方「{{name}}」域名「{{domain}}」的认领令牌",
       "remove": "移除",
       "removeTitle": "移除域名",
       "removeMessage": "从该提供方移除域名「{{domain}}」。"
@@ -918,6 +942,8 @@
       "clientSecretLabel": "客户端密钥",
       "createSubmit": "新建提供方",
       "updateSubmit": "保存提供方",
+      "created": "已创建提供方「{{name}}」",
+      "updated": "已保存提供方「{{name}}」",
       "tri": {"unchanged": "保持不变", "true": "是", "false": "否"}
     }
   },

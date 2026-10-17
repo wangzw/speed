@@ -28,10 +28,11 @@
  * exported by @speed/i18n -- with the console's own codes; the key
  * construction and the unknown fallback are the shared resolver's (see
  * @speed/i18n's error-text module). Beside the fixed whitelist, the
- * api-client's bare-HTTP answers (client.http.<status>) resolve through
- * one parameterized leaf carrying the status, so the status-bearing
- * refusals the console can be answered with stay distinguishable instead
- * of collapsing into the single unknown line.
+ * api-client's bare-HTTP answers (client.http.<status>) resolve through one
+ * parameterized leaf carrying the status, except the two a write refusal
+ * most often carries: a bare 403 renders the permission-refusal copy and a
+ * bare 401 the ended-session copy, so both tell the operator what to do
+ * instead of only restating the status.
  */
 
 import {
@@ -127,8 +128,19 @@ export function useConsoleUiErrorText(): (code: string) => string {
   const resolve = createErrorTextResolver(t, known)
   return (code) => {
     const http = HTTP_ERROR_CODE.exec(code)
-    return http === null
-      ? resolve(code)
-      : t('errors.client.http', { status: http[1] ?? '' })
+    if (http === null) {
+      return resolve(code)
+    }
+    // A write refused with a bare 403 or 401 (no readable problem envelope)
+    // gets copy that says what to do: a permission refusal and an ended
+    // session are actionable, while the generic status line ("the server
+    // answered HTTP 403") would only restate the status.
+    if (http[1] === '403') {
+      return t('errors.client.httpForbidden')
+    }
+    if (http[1] === '401') {
+      return t('errors.client.httpUnauthorized')
+    }
+    return t('errors.client.http', { status: http[1] ?? '' })
   }
 }
