@@ -60,7 +60,8 @@
     "confirm": "确认",
     "tenant": "租户",
     "tenantNone": "未选择",
-    "emptyValue": "—"
+    "emptyValue": "—",
+    "accountUnresolved": "身份未解析（需账户读取权限）"
   },
   "stepUp": {
     "title": "需要重新验证",
@@ -298,8 +299,7 @@
       "reset": "重置"
     },
     "prevPage": "上一页",
-    "nextPage": "下一页",
-    "actorUnresolved": "身份未解析（需账户读取权限）"
+    "nextPage": "下一页"
   },
   "accountSelector": {
     "hint": "输入显示名或登录标识以搜索账户",
@@ -771,7 +771,11 @@
     "revokeMessage": "撤销发给「{{email}}」的邀请。",
     "issued": {
       "link": "把这条接受链接交给「{{email}}」：",
-      "token": "「{{email}}」的接受令牌（链接由宿主构造）："
+      "token": "「{{email}}」的接受令牌（链接由宿主构造）：",
+      "copy": "复制",
+      "copyLink": "复制接受链接",
+      "copyToken": "复制接受令牌",
+      "copied": "已复制"
     }
   },
   "members": {

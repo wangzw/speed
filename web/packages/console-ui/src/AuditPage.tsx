@@ -21,14 +21,15 @@
  * wording.
  *
  * The actor column renders a readable identity, not the raw account
- * identifier: the actor cell resolves the account's display name through
- * the same bound surface and falls back to the recorded value when the
- * actor names no account (a system or import actor). That resolution is a
- * second read (GET /auth/admin/accounts/:id), gated on authn.account.read,
- * which this page's audit.read does not imply: a viewer holding audit.read
- * without account.read is refused it and the cell marks the value as
- * unresolved rather than passing it off as a name. The recorded time is
- * rendered through Intl in the current language and explicitly in UTC,
+ * identifier: the account identity unit resolves the account's display
+ * name through the same bound surface and falls back to the recorded value
+ * when the actor names no account (a system or import actor). That
+ * resolution is a second read (GET /auth/admin/accounts/:id), gated on
+ * authn.account.read, which this page's audit.read does not imply: a viewer
+ * holding audit.read without account.read is refused it and the cell marks
+ * the value as unresolved rather than passing it off as a name. The
+ * recorded time is rendered through Intl in the current language and
+ * explicitly in UTC,
  * the zone the view carries it in, never the process-local default; a
  * malformed timestamp renders no time rather than throwing. The record's
  * own fields are journal data (not a closed vocabulary the surface
@@ -52,7 +53,7 @@ import {
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
-import { AuditActorCell } from './internal/audit-actor-cell.js'
+import { AccountIdentity } from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { ConsoleLink } from './internal/navigation.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
@@ -214,7 +215,7 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       cellWrap: 'nowrap',
       cellFullValue: (record) =>
         record.actor === '' ? undefined : record.actor,
-      cell: (record) => <AuditActorCell actor={record.actor} />,
+      cell: (record) => <AccountIdentity account={record.actor} />,
     },
     {
       id: 'outcome',

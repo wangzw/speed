@@ -13,6 +13,7 @@ import { AuditDetailPage } from './AuditDetailPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
+  accountFixture,
   createConsoleOperations,
   makeConsoleBackend,
   recordFixture,
@@ -40,6 +41,41 @@ describe('AuditDetailPage', () => {
     expect(screen.getByText('alias')).toBeInTheDocument()
     expect(screen.getByText('Acme')).toBeInTheDocument()
     expect(getRecord).toHaveBeenCalledWith({ id: 'rec-7' })
+  })
+
+  it("shows the actor's display name, or the recorded id marked unresolved when the account read is refused", async () => {
+    const resolved = createConsoleOperations(
+      makeConsoleBackend({
+        getRecord: () =>
+          Promise.resolve(recordFixture({ actor: 'acc-9' })),
+        getAccount: () =>
+          Promise.resolve(
+            accountFixture({ id: 'acc-9', display_name: 'Demo Operator' }),
+          ),
+      }),
+    )
+    const first = renderWithProviders(<AuditDetailPage id="rec-9" />, {
+      operations: resolved,
+    })
+    expect(await screen.findByText('Demo Operator')).toBeInTheDocument()
+    expect(screen.queryByText('acc-9')).not.toBeInTheDocument()
+    first.unmount()
+
+    const refused = createConsoleOperations(
+      makeConsoleBackend({
+        getRecord: () =>
+          Promise.resolve(recordFixture({ actor: 'acc-9' })),
+        getAccount: () => Promise.reject(new Error('forbidden')),
+      }),
+    )
+    renderWithProviders(<AuditDetailPage id="rec-9" />, {
+      operations: refused,
+    })
+    // The row keeps the recorded id but labels it unresolved rather than
+    // passing it off as a resolved name.
+    const cell = await screen.findByLabelText(/身份未解析/)
+    expect(cell).toHaveTextContent('acc-9')
+    expect(cell).toHaveAttribute('title', '身份未解析（需账户读取权限）')
   })
 
   it('shows the empty-value placeholder for fields the record carries empty', async () => {

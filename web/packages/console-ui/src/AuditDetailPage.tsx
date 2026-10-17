@@ -9,10 +9,14 @@
  * row's identifier and a way back to the query.
  *
  * The read is an operation on the console operations bundle, so the page
- * builds no client and writes no query key. The recorded time renders
- * through Intl in the current language and explicitly in UTC (the zone
- * the view carries), never the process-local default; a malformed
- * timestamp renders the empty-value placeholder, not a guess. The record's own fields are journal data
+ * builds no client and writes no query key. The actor renders through the
+ * shared account identity unit -- the account's display name where the
+ * lookup answers, the recorded value with an unresolved note where it is
+ * refused -- so a record reads the same here as in the audit query list.
+ * The recorded time renders through Intl in the current language and
+ * explicitly in UTC (the zone the view carries), never the process-local
+ * default; a malformed timestamp renders the empty-value placeholder, not
+ * a guess. The record's own fields are journal data
  * (not a closed vocabulary the surface guards) and render as recorded; a
  * detail object renders as its key/value pairs. An empty field renders
  * the em-dash placeholder rather than a label with no value: a journal
@@ -32,6 +36,7 @@ import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import { ListSkeleton, PageHeader } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
+import { AccountIdentity } from './internal/account-identity.js'
 import { formatUtc } from './internal/datetime.js'
 import { ConsoleLink } from './internal/navigation.js'
 import { DefinitionRow, DetailLayout } from './internal/layout.js'
@@ -87,7 +92,16 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
             label={t('auditDetail.field.occurredAt')}
             value={shown(occurred ?? '')}
           />
-          <DefinitionRow label={t('auditDetail.field.actor')} value={shown(settled.actor)} />
+          <DefinitionRow
+            label={t('auditDetail.field.actor')}
+            value={
+              settled.actor === '' ? (
+                t('common.emptyValue')
+              ) : (
+                <AccountIdentity account={settled.actor} />
+              )
+            }
+          />
           <DefinitionRow label={t('auditDetail.field.action')} value={shown(settled.action)} />
           <DefinitionRow label={t('auditDetail.field.object')} value={shown(settled.object)} />
           <DefinitionRow label={t('auditDetail.field.outcome')} value={shown(settled.outcome)} />

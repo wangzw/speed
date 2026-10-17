@@ -11,6 +11,12 @@
  *  - the tenant's members: list them (account, active, SSO exemption,
  *    source) and remove a membership.
  *
+ * The inviter and the member account render through the shared account
+ * identity unit: the readable display name where the account read answers,
+ * the recorded identifier with an unresolved note where it is refused. The
+ * table columns keep the recorded identifier as their full value, so the
+ * copy and hover channel stays the value the record carries.
+ *
  * Inviting an address mints an invitation the invitee accepts through the
  * tenant-facing invite surface; the console issues and revokes, it does
  * not accept. Every read and write is an operation on the console
@@ -18,7 +24,7 @@
  * key. The page opens with ui-kit's PageHeader.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -34,6 +40,7 @@ import {
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import { AccountIdentity } from './internal/account-identity.js'
 import { AccountSelector } from './internal/account-selector.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
@@ -113,7 +120,9 @@ export function InvitationsPage() {
       priority: 'medium',
       cellWrap: 'nowrap',
       cellFullValue: (invitation) => invitation.invited_by,
-      cell: (invitation) => invitation.invited_by,
+      cell: (invitation) => (
+        <AccountIdentity account={invitation.invited_by} />
+      ),
     },
     {
       id: 'expires',
@@ -154,7 +163,7 @@ export function InvitationsPage() {
       header: t('members.column.account'),
       cellWrap: 'nowrap',
       cellFullValue: (member) => member.account,
-      cell: (member) => member.account,
+      cell: (member) => <AccountIdentity account={member.account} />,
     },
     {
       id: 'active',
@@ -227,6 +236,15 @@ export function InvitationsPage() {
   const memberRows = members.data
   const invitationsPending = invitations.isPending && invitationRows === undefined
   const membersPending = members.isPending && memberRows === undefined
+
+  // The value the issued block hands over: the host's absolute acceptance
+  // link when it supplies a builder, the bare token otherwise.
+  const issuedValue =
+    issued === null
+      ? ''
+      : invitationLink === undefined
+        ? issued.token
+        : acceptanceUrl(invitationLink(issued.token))
 
   const writeError = firstErrorCode([
     issueInvitation.error,
@@ -338,14 +356,31 @@ export function InvitationsPage() {
                         email: issued.invitation.email,
                       })}
                 </Typography>
-                <Typography
-                  variant="body2"
-                  sx={{ wordBreak: 'break-all', fontFamily: 'monospace' }}
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    columnGap: 1,
+                    rowGap: 0.5,
+                  }}
                 >
-                  {invitationLink === undefined
-                    ? issued.token
-                    : acceptanceUrl(invitationLink(issued.token))}
-                </Typography>
+                  <Typography
+                    variant="body2"
+                    sx={{ wordBreak: 'break-all', fontFamily: 'monospace' }}
+                  >
+                    {issuedValue}
+                  </Typography>
+                  <CopyControl
+                    key={issuedValue}
+                    value={issuedValue}
+                    label={
+                      invitationLink === undefined
+                        ? t('invitations.issued.copyToken')
+                        : t('invitations.issued.copyLink')
+                    }
+                  />
+                </Box>
               </Box>
             )}
             <ConsoleAsyncSection
@@ -454,6 +489,60 @@ function acceptanceUrl(link: string): string {
   } catch {
     return link
   }
+}
+
+/** How long the copy control keeps its copied state and announcement. */
+const COPY_FEEDBACK_MS = 2000
+
+/**
+ * The copy control for the one-time hand-off value: it writes the complete
+ * value -- the acceptance link or the bare token -- to the clipboard and
+ * announces the copy, so the operator hands over the exact value rather
+ * than a truncated one. The stable `label` is the control's accessible
+ * name. A context without the Clipboard API leaves the control silent
+ * rather than failing the page.
+ */
+function CopyControl({
+  value,
+  label,
+}: {
+  readonly value: string
+  readonly label: string
+}) {
+  const { t } = useConsoleUiTranslation()
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!copied) return undefined
+    const timer = window.setTimeout(() => setCopied(false), COPY_FEEDBACK_MS)
+    return () => window.clearTimeout(timer)
+  }, [copied])
+
+  const copy = (): void => {
+    const clipboard: Clipboard | undefined = navigator.clipboard
+    if (clipboard === undefined) return
+    void clipboard.writeText(value).then(
+      () => setCopied(true),
+      () => undefined,
+    )
+  }
+
+  return (
+    <Box sx={{ display: 'inline-flex', alignItems: 'center', columnGap: 1 }}>
+      <Button
+        type="button"
+        size="small"
+        variant="outlined"
+        aria-label={label}
+        onClick={copy}
+      >
+        {t('invitations.issued.copy')}
+      </Button>
+      <Typography role="status" variant="body2" color="text.secondary">
+        {copied ? t('invitations.issued.copied') : ''}
+      </Typography>
+    </Box>
+  )
 }
 
 /**

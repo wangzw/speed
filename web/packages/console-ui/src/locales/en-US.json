@@ -60,7 +60,8 @@
     "confirm": "Confirm",
     "tenant": "Tenant",
     "tenantNone": "None selected",
-    "emptyValue": "—"
+    "emptyValue": "—",
+    "accountUnresolved": "Identity unresolved (needs account read)"
   },
   "stepUp": {
     "title": "Verify it's you",
@@ -298,8 +299,7 @@
       "reset": "Reset"
     },
     "prevPage": "Previous",
-    "nextPage": "Next",
-    "actorUnresolved": "Identity unresolved (needs account read)"
+    "nextPage": "Next"
   },
   "accountSelector": {
     "hint": "Type a display name or login identifier to search accounts",
@@ -771,7 +771,11 @@
     "revokeMessage": "Revoke the invitation sent to \"{{email}}\".",
     "issued": {
       "link": "Hand this acceptance link to {{email}}:",
-      "token": "Hand this acceptance token to {{email}} (the host builds the link):"
+      "token": "Hand this acceptance token to {{email}} (the host builds the link):",
+      "copy": "Copy",
+      "copyLink": "Copy acceptance link",
+      "copyToken": "Copy acceptance token",
+      "copied": "Copied"
     }
   },
   "members": {

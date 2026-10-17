@@ -280,13 +280,14 @@ composition, with the operations bundle substituted from test-utils).
 
 - **Audit export surface.** An export route is not surfaced; export is
   another permission and another module's to carry.
-- **Batched audit-actor resolution.** The audit page's actor column
+- **Batched account-identity resolution.** The account identity unit (an
+  audit record's actor, an invitation's inviter, a membership's account)
   resolves each distinct account id through `GET /auth/admin/accounts/:id`
-  (react-query caches by id, so rows sharing an actor share one read and a
-  re-render reuses it), but a page of distinct actors fires one read per
-  actor: no batch account-read surface exists. Resolving a page in one
+  (react-query caches by id, so rows sharing an account share one read and a
+  re-render reuses it), but a page of distinct accounts fires one read per
+  account: no batch account-read surface exists. Resolving a page in one
   request needs a server surface this package does not have. The account
-  read is gated on `authn.account.read`, which the page's own `audit.read`
+  read is gated on `authn.account.read`, which the page's own permission
   does not imply, so a viewer without it gets recorded ids marked
   unresolved rather than readable identities.
 - **Storybook.** No preview harness exists; the components are covered by

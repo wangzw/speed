@@ -14,9 +14,9 @@
  * carries a next cursor reports its count as a lower bound ("N+"). The
  * recent-activity list shows the newest page of records outright, through
  * the same column set and priorities as the audit query page, and the same
- * actor cell: the account's display name where the lookup answers, the
- * recorded value with an unresolved note where it is refused. Nothing
- * here invents an aggregate the contract does not carry.
+ * account identity unit: the account's display name where the lookup
+ * answers, the recorded value with an unresolved note where it is
+ * refused. Nothing here invents an aggregate the contract does not carry.
  *
  * Each surface renders through the console async section, so a refused
  * read (403) shows the permission placeholder without a retry and every
@@ -38,7 +38,7 @@ import {
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
-import { AuditActorCell } from './internal/audit-actor-cell.js'
+import { AccountIdentity } from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { formatUtc } from './internal/datetime.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
@@ -175,7 +175,7 @@ export function DashboardPage() {
       cellWrap: 'nowrap',
       cellFullValue: (record) =>
         record.actor === '' ? undefined : record.actor,
-      cell: (record) => <AuditActorCell actor={record.actor} />,
+      cell: (record) => <AccountIdentity account={record.actor} />,
     },
     {
       id: 'outcome',
