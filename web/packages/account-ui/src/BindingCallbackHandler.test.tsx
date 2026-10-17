@@ -202,6 +202,9 @@ describe('BindingCallbackHandler', () => {
           trace_id: 'trace-1',
         }),
       )
+      // One refused read, one refresh failure: a duplicated read would warn
+      // again.
+      expect(warn).toHaveBeenCalledTimes(1)
     })
 
     it('keeps the failure banner when a redirect method exists', async () => {
@@ -234,6 +237,9 @@ describe('BindingCallbackHandler', () => {
           trace_id: 'trace-1',
         }),
       )
+      // One refused read, one refresh failure: a duplicated read would warn
+      // again.
+      expect(warn).toHaveBeenCalledTimes(1)
     })
 
     it('keeps the failure banner when the discovery read fails', async () => {
@@ -268,6 +274,9 @@ describe('BindingCallbackHandler', () => {
           trace_id: 'trace-1',
         }),
       )
+      // One refused read, one refresh failure: a duplicated read would warn
+      // again.
+      expect(warn).toHaveBeenCalledTimes(1)
     })
 
     it('reads no discovery document without an absent slot', async () => {
@@ -294,6 +303,9 @@ describe('BindingCallbackHandler', () => {
           trace_id: 'trace-1',
         }),
       )
+      // One refused read, one refresh failure: a duplicated read would warn
+      // again.
+      expect(warn).toHaveBeenCalledTimes(1)
     })
   })
 })

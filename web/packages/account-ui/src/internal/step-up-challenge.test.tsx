@@ -267,6 +267,8 @@ describe('StepUpChallenge', () => {
         trace_id: 'trace-1',
       }),
     )
+    // Exactly one answer was refused; a duplicated answer would warn again.
+    expect(warn).toHaveBeenCalledTimes(1)
   })
 
   it('fires onCancel on the cancel button without elevating', async () => {

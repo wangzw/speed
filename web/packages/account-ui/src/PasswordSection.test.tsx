@@ -167,6 +167,9 @@ describe('PasswordSection', () => {
         trace_id: 'trace-1',
       }),
     )
+    // Exactly one refused request was sent; a retried or duplicated write
+    // would each add its own refresh failure.
+    expect(warn).toHaveBeenCalledTimes(1)
   })
 
   it('gates a step_up_required change behind the dialog and re-runs it once', async () => {
@@ -247,5 +250,8 @@ describe('PasswordSection', () => {
         trace_id: 'trace-1',
       }),
     )
+    // The shortfall and its re-run produce one refresh failure between
+    // them; a second one means a write was sent twice.
+    expect(warn).toHaveBeenCalledTimes(1)
   })
 })

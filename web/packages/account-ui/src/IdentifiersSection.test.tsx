@@ -259,6 +259,9 @@ describe('IdentifiersSection', () => {
         trace_id: 'trace-1',
       }),
     )
+    // One shortfall, one refresh failure: a duplicated removal would warn
+    // again.
+    expect(warn).toHaveBeenCalledTimes(1)
   })
 
   it('renders the empty state for an account with no identifiers', async () => {
@@ -525,6 +528,8 @@ describe('IdentifiersSection', () => {
         trace_id: 'trace-1',
       }),
     )
+    // One shortfall, one refresh failure: a duplicated add would warn again.
+    expect(warn).toHaveBeenCalledTimes(1)
   })
 
   it('offers the email kind by default when the host does not gate identifiers', async () => {

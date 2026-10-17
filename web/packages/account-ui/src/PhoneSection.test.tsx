@@ -229,5 +229,8 @@ describe('PhoneSection', () => {
         trace_id: 'trace-1',
       }),
     )
+    // One shortfall, one refresh failure: a duplicated answer would warn
+    // again.
+    expect(warn).toHaveBeenCalledTimes(1)
   })
 })

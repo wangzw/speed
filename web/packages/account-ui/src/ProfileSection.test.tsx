@@ -235,6 +235,8 @@ describe('ProfileSection', () => {
         trace_id: 'trace-1',
       }),
     )
+    // One shortfall, one refresh failure: a duplicated save would warn again.
+    expect(warn).toHaveBeenCalledTimes(1)
   })
 
   it('renders the error state with a retry that refetches when the load fails', async () => {

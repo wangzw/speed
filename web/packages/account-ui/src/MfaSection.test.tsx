@@ -300,6 +300,9 @@ describe('MfaSection', () => {
         trace_id: 'trace-1',
       }),
     )
+    // One shortfall, one refresh failure: a duplicated removal would warn
+    // again.
+    expect(warn).toHaveBeenCalledTimes(1)
   })
 
   it('walks the TOTP enrollment flow and refetches the factors', async () => {
