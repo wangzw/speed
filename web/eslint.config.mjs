@@ -17,7 +17,12 @@
  * API-contract discipline: hand-written HTTP happens only inside
  * @speed/api-client, which the rule's sole config-level whitelist
  * exempts -- the no-literal-text rule still applies inside api-client,
- * whitelisting HTTP does not whitelist text. The react-hooks plugin
+ * whitelisting HTTP does not whitelist text. The no-dangerous-html rule
+ * (web/eslint-rules/no-dangerous-html.js, tested in
+ * web/eslint-rules/no-dangerous-html.test.mjs) holds the premise the
+ * i18n instance's interpolation.escapeValue: false rests on: no runtime
+ * layer may consume HTML, so a markup sink added later cannot silently
+ * turn a verbatim interpolated value into markup. The react-hooks plugin
  * stays out: no stateful component exists outside ui-kit's controlled
  * set -- state belongs to the host and every interaction reports up
  * through callbacks, the FileUploader queue rendering from host-owned
@@ -25,6 +30,7 @@
  * keeps this config dependency-free.
  */
 import tseslint from 'typescript-eslint'
+import { noDangerousHtmlRule } from './eslint-rules/no-dangerous-html.js'
 import { noDirectHttpRule } from './eslint-rules/no-direct-http.js'
 import { noLiteralTextRule } from './eslint-rules/no-literal-text.js'
 
@@ -37,6 +43,7 @@ const localPlugin = {
   plugins: {
     speed: {
       rules: {
+        'no-dangerous-html': noDangerousHtmlRule,
         'no-direct-http': noDirectHttpRule,
         'no-literal-text': noLiteralTextRule,
       },
@@ -68,6 +75,7 @@ export default tseslint.config(
   {
     ...PACKAGE_RUNTIME_SRC,
     rules: {
+      'speed/no-dangerous-html': 'error',
       'speed/no-literal-text': 'error',
     },
   },
