@@ -306,6 +306,7 @@
     "empty": "No matching account",
     "failed": "The account search failed",
     "searching": "Searching accounts",
+    "narrow": "More accounts match than are shown; type more characters to narrow the search",
     "clear": "Clear",
     "open": "Open",
     "close": "Close"

@@ -18,7 +18,9 @@
  * name are read; a kind the server refuses anyway is treated as not
  * applicable rather than as a failure. A failed search -- a transport or
  * server failure -- is stated in the popup rather than shown as "no
- * matches".
+ * matches". A read that answers more rows than it was asked for leaves a
+ * next page unread; the control says so instead of pretending the merged
+ * rows are the whole answer, and asks the operator to narrow the text.
  *
  * The combobox is keyboard operable end to end (arrow keys move through
  * the options, Enter selects, Escape closes) and takes its accessible name
@@ -30,6 +32,7 @@ import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
 import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
 import { useConsoleUiTranslation } from './translation.js'
 import { useConsoleOperations } from '../operations.js'
 import type { ConsoleAccount } from '../operations.js'
@@ -57,12 +60,15 @@ interface AccountSearchState {
   readonly rows: readonly ConsoleAccount[]
   readonly pending: boolean
   readonly failed: boolean
+  /** A read answered a full page and left a next page unread. */
+  readonly truncated: boolean
 }
 
 const EMPTY_SEARCH: AccountSearchState = {
   rows: [],
   pending: false,
   failed: false,
+  truncated: false,
 }
 
 /** The option's text: the display name beside the id, or the id alone. */
@@ -160,6 +166,7 @@ export function AccountSelector({
     setSearch((previous) =>
       previous.pending === next.pending &&
       previous.failed === next.failed &&
+      previous.truncated === next.truncated &&
       previous.rows.length === next.rows.length &&
       previous.rows.every((row, index) => row.id === next.rows[index]?.id)
         ? previous
@@ -227,7 +234,11 @@ export function AccountSelector({
                 endAdornment: (
                   <>
                     {searching ? (
-                      <CircularProgress color="inherit" size={16} />
+                      <CircularProgress
+                        aria-label={t('accountSelector.searching')}
+                        color="inherit"
+                        size={16}
+                      />
                     ) : null}
                     {params.slotProps.input.endAdornment}
                   </>
@@ -238,6 +249,16 @@ export function AccountSelector({
         )}
         sx={{ minWidth: 260 }}
       />
+      {query !== '' && search.truncated && !search.failed && (
+        <Typography
+          component="p"
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: 'block', mt: 0.5 }}
+        >
+          {t('accountSelector.narrow')}
+        </Typography>
+      )}
       {query !== '' && <AccountSearch query={query} onState={applySearch} />}
     </Box>
   )
@@ -290,7 +311,8 @@ function AccountSearch({
   const state = useMemo<AccountSearchState>(() => {
     const rows: ConsoleAccount[] = []
     const seen = new Set<string>()
-    for (const page of [byName.data, byUsername.data, byEmail.data, byPhone.data]) {
+    const pages = [byName.data, byUsername.data, byEmail.data, byPhone.data]
+    for (const page of pages) {
       for (const account of page?.accounts ?? []) {
         if (!seen.has(account.id)) {
           seen.add(account.id)
@@ -298,6 +320,13 @@ function AccountSearch({
         }
       }
     }
+    // A read stops at SEARCH_LIMIT and hands back a cursor for the rest.
+    // The merged rows cannot tell the operator the search is exhausted, so
+    // any cursor is reported: they narrow the text rather than assume the
+    // first page is the answer.
+    const truncated = pages.some(
+      (page) => page !== undefined && page.next_cursor !== '',
+    )
     // A kind the text cannot name is declared disabled, and a disabled
     // query reports pending forever (pending with nothing fetching):
     // progress is read from isLoading (pending and fetching) so it clears
@@ -313,7 +342,7 @@ function AccountSearch({
         (byUsername.isError && !isShapeRefusal(byUsername.error)) ||
         (byEmail.isError && !isShapeRefusal(byEmail.error)) ||
         (byPhone.isError && !isShapeRefusal(byPhone.error)))
-    return { rows, pending, failed }
+    return { rows, pending, failed, truncated }
   }, [
     byName.data,
     byName.isLoading,

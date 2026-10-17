@@ -15,6 +15,7 @@ import userEvent from '@testing-library/user-event'
 import { AccountSelector } from './account-selector.js'
 import type { ConsoleAccount } from '../operations.js'
 import { renderWithProviders } from '../../test-utils/render.js'
+import { expectNoAxeViolations } from '../../test-utils/axe.js'
 import {
   createConsoleOperations,
   makeConsoleBackend,
@@ -145,6 +146,10 @@ describe('AccountSelector', () => {
       expect(screen.getByText('没有匹配的账户')).toBeInTheDocument()
     })
     expect(screen.queryByText('账户搜索失败')).toBeNull()
+    // Nothing was paged out either, so no narrowing hint is due.
+    expect(
+      screen.queryByText('匹配的账户较多，输入更多字符以缩小搜索范围'),
+    ).toBeNull()
   })
 
   it('reads a refused identifier kind as not applicable, not as a failure', async () => {
@@ -205,5 +210,46 @@ describe('AccountSelector', () => {
     renderWithProviders(<Harness onChoose={() => {}} />, { operations })
     await user.type(screen.getByLabelText('账户'), 'Ada')
     expect(await screen.findByText('账户搜索失败')).toBeInTheDocument()
+  })
+
+  it('asks the operator to narrow the search when a read leaves a next page', async () => {
+    const user = userEvent.setup()
+    // Every read answers a full page; the merged rows are only the first
+    // page of each, so the control must not present them as the whole answer.
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccounts: () =>
+          Promise.resolve({ accounts: [account()], next_cursor: 'page-2' }),
+      }),
+    )
+    renderWithProviders(<Harness onChoose={() => {}} />, { operations })
+    await user.type(screen.getByLabelText('账户'), 'Ada')
+    expect(
+      await screen.findByText('匹配的账户较多，输入更多字符以缩小搜索范围'),
+    ).toBeInTheDocument()
+  })
+
+  it('names the in-flight progress and scans clean while searching', async () => {
+    const user = userEvent.setup()
+    // A read that never settles holds the searching state open, the state
+    // the settled page scans never reach.
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccounts: () => new Promise<never>(() => {}),
+      }),
+    )
+    renderWithProviders(
+      <>
+        <h1>权限</h1>
+        <Harness onChoose={() => {}} />
+      </>,
+      { operations },
+    )
+    await user.type(screen.getByLabelText('账户'), 'Ada')
+    const progress = await screen.findByRole('progressbar', {
+      name: '正在搜索账户',
+    })
+    expect(progress).toBeInTheDocument()
+    await expectNoAxeViolations()
   })
 })
