@@ -124,9 +124,10 @@
     "disable": "停用",
     "enableAria": "启用租户 {{id}}",
     "disableAria": "停用租户 {{id}}",
-    "created": "租户已登记",
-    "renamed": "别名已更新",
-    "statusSaved": "租户状态已更新",
+    "created": "租户「{{id}}」已登记",
+    "renamed": "租户「{{id}}」的别名已更新",
+    "enabledToast": "租户「{{id}}」已启用",
+    "disabledToast": "租户「{{id}}」已停用",
     "identifierHelper": "不含空格等空白字符"
   },
   "forbidden": {

@@ -124,9 +124,10 @@
     "disable": "Disable",
     "enableAria": "Enable tenant {{id}}",
     "disableAria": "Disable tenant {{id}}",
-    "created": "Tenant registered",
-    "renamed": "Alias updated",
-    "statusSaved": "Tenant status updated",
+    "created": "Tenant \"{{id}}\" registered",
+    "renamed": "Alias of tenant \"{{id}}\" updated",
+    "enabledToast": "Tenant \"{{id}}\" enabled",
+    "disabledToast": "Tenant \"{{id}}\" disabled",
     "identifierHelper": "No spaces or other whitespace"
   },
   "forbidden": {

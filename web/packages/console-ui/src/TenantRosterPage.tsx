@@ -14,10 +14,7 @@
  * the page builds no client and writes no query key. The row's state
  * renders from the roster's own spelling (active / disabled); a value
  * outside that closed set renders the generic label, never a raw value.
- * A failed list render settles into the retryable error placeholder; a
- * failed write renders the answer's code text in one banner beside the
- * offending control, resolved from the console-ui namespace's whitelist
- * (a roster collision reads the conflict text), never a raw key.
+ * A failed list render settles into the retryable error placeholder.
  *
  * The identifier and alias inputs carry a helper that names the rule the
  * backend holds them to (no blanks or control characters) and mark
@@ -27,9 +24,15 @@
  * meets. The server still judges every write. A write that lands clears
  * the input that carried it -- the create form's identifier and alias
  * together, a row's rename draft on its own -- so the next edit starts
- * empty, and it also fills a success notice (a polite live region), so a
- * silent write never leaves the operator guessing; a refused write keeps
- * the input so it can be corrected and retried.
+ * empty, and it names the tenant it changed in its scope's success
+ * message; a refused write keeps the input so it can be corrected.
+ *
+ * The create form is one feedback scope. Each row's rename and
+ * enable/disable controls are a scope of their own, with the region and
+ * the inline marker inside that row, so one row's refusal never reads as
+ * another row's. A refusal resolves through the console-ui namespace's
+ * whitelist (a roster collision reads the conflict text), never a raw key,
+ * and brings its region into view.
  *
  * The page opens with ui-kit's PageHeader: the page title as the level-one
  * heading, a breadcrumb trail from the console to this page, and a
@@ -46,17 +49,21 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
   DataTable,
-  InlineSuccess,
   ListSkeleton,
   PageHeader,
-  errorCodeOf,
+  useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
-import { InlineError } from './internal/inline-error.js'
+import { useConsoleUiErrorText } from './internal/error-text.js'
 import { ConsoleLink } from './internal/navigation.js'
 import { isRejectedIdentifier } from './internal/identifier.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
+import {
+  failureTextOf,
+  useFailureScroll,
+  WriteFeedbackRegion,
+} from './internal/write-feedback.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleTenant } from './operations.js'
 
@@ -83,24 +90,74 @@ function statusLabel(
  * a typed value the identifier domain would refuse marks the input and
  * holds the rename submit disabled.
  *
+ * The row is its own feedback scope: its rename and enable/disable share
+ * one slot and one region inside the row, so a refusal in one row never
+ * shows in another row's region and a success names this tenant. A failed
+ * action marks its own control -- the draft field for a rename, the toggle
+ * for a status change -- with the same resolved text the region shows.
+ *
  * Every control here repeats across the rows, so each carries the row's
  * own tenant id in its accessible name (the input, the rename submit, the
  * enable/disable toggle) -- a screen-reader user hears "rename tenant
- * acme", never a bare "rename" indistinguishable from the row above. The
- * row's landed writes surface through one shared success notice.
+ * acme", never a bare "rename" indistinguishable from the row above.
  */
 function TenantRowActions({ tenant }: { readonly tenant: ConsoleTenant }) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const renameTenant = operations.useSetTenantAlias()
   const setStatus = operations.useSetTenantStatus()
+  // The row's own scope, with its region inside this row.
+  const feedback = useWriteFeedback()
+  const regionRef = useFailureScroll(feedback.outcome)
   const [alias, setAlias] = useState('')
-  const [success, setSuccess] = useState<string | null>(null)
+  // Which of the row's two writes the current failure names, so the
+  // inline marker sits on the control that was refused.
+  const [failedAction, setFailedAction] = useState<'rename' | 'status' | null>(
+    null,
+  )
+  const resolveErrorText = useConsoleUiErrorText()
+  const failureText = failureTextOf(feedback.outcome, resolveErrorText)
+  const statusErrorId = `tenant-status-error-${encodeURIComponent(tenant.id)}`
 
   const disabled = tenant.status === 'disabled'
   // An empty draft is not-yet-an-error; a non-empty one the domain would
   // refuse is.
   const aliasRejected = alias !== '' && isRejectedIdentifier(alias)
+
+  const rename = () => {
+    setFailedAction(null)
+    void feedback.run(async () => {
+      try {
+        await renameTenant.mutateAsync({ id: tenant.id, alias })
+        // A landed rename clears the draft so the next edit starts empty;
+        // a refused one keeps it for a retry.
+        setAlias('')
+        return t('tenants.renamed', { id: tenant.id })
+      } catch (error) {
+        setFailedAction('rename')
+        throw error
+      }
+    })
+  }
+
+  const toggleStatus = () => {
+    setFailedAction(null)
+    void feedback.run(async () => {
+      try {
+        await setStatus.mutateAsync({
+          id: tenant.id,
+          status: disabled ? 'active' : 'disabled',
+        })
+        return t(
+          disabled ? 'tenants.enabledToast' : 'tenants.disabledToast',
+          { id: tenant.id },
+        )
+      } catch (error) {
+        setFailedAction('status')
+        throw error
+      }
+    })
+  }
 
   return (
     <Box
@@ -117,8 +174,12 @@ function TenantRowActions({ tenant }: { readonly tenant: ConsoleTenant }) {
         value={alias}
         onChange={(event) => setAlias(event.target.value)}
         label={t('tenants.rename.label')}
-        error={aliasRejected}
-        helperText={t('tenants.identifierHelper')}
+        error={aliasRejected || failedAction === 'rename'}
+        helperText={
+          failedAction === 'rename'
+            ? (failureText ?? undefined)
+            : t('tenants.identifierHelper')
+        }
         slotProps={{
           htmlInput: {
             'aria-label': t('tenants.rename.ariaWithId', { id: tenant.id }),
@@ -130,21 +191,9 @@ function TenantRowActions({ tenant }: { readonly tenant: ConsoleTenant }) {
         size="small"
         variant="outlined"
         aria-label={t('tenants.rename.submitAria', { id: tenant.id })}
-        disabled={renameTenant.isPending || aliasRejected}
-        onClick={() => {
-          setSuccess(null)
-          renameTenant.mutate(
-            { id: tenant.id, alias },
-            {
-              // A landed rename clears the draft so the next edit starts
-              // empty; a refused one keeps it for a retry.
-              onSuccess: () => {
-                setAlias('')
-                setSuccess(t('tenants.renamed'))
-              },
-            },
-          )
-        }}
+        disabled={feedback.pending || aliasRejected}
+        loading={feedback.pending}
+        onClick={rename}
       >
         {t('tenants.rename.submit')}
       </Button>
@@ -157,31 +206,28 @@ function TenantRowActions({ tenant }: { readonly tenant: ConsoleTenant }) {
             ? t('tenants.enableAria', { id: tenant.id })
             : t('tenants.disableAria', { id: tenant.id })
         }
-        disabled={setStatus.isPending}
-        onClick={() => {
-          setSuccess(null)
-          setStatus.mutate(
-            {
-              id: tenant.id,
-              status: disabled ? 'active' : 'disabled',
-            },
-            { onSuccess: () => setSuccess(t('tenants.statusSaved')) },
-          )
-        }}
+        aria-invalid={failedAction === 'status'}
+        aria-describedby={
+          failedAction === 'status' ? statusErrorId : undefined
+        }
+        disabled={feedback.pending}
+        loading={feedback.pending}
+        onClick={toggleStatus}
       >
         {disabled ? t('tenants.enable') : t('tenants.disable')}
       </Button>
-      <Box sx={{ flexBasis: '100%' }}>
-        <InlineError
-          code={
-            renameTenant.isError
-              ? errorCodeOf(renameTenant.error)
-              : setStatus.isError
-                ? errorCodeOf(setStatus.error)
-                : null
-          }
-        />
-        <InlineSuccess message={success} />
+      {failedAction === 'status' && failureText !== null && (
+        <Typography
+          id={statusErrorId}
+          variant="caption"
+          color="error"
+          sx={{ flexBasis: '100%' }}
+        >
+          {failureText}
+        </Typography>
+      )}
+      <Box ref={regionRef} sx={{ flexBasis: '100%' }}>
+        <WriteFeedbackRegion outcome={feedback.outcome} />
       </Box>
     </Box>
   )
@@ -194,10 +240,25 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
   const createTenant = operations.useCreateTenant()
   const [newId, setNewId] = useState('')
   const [newAlias, setNewAlias] = useState('')
-  const [created, setCreated] = useState<string | null>(null)
+  // The create form is one scope; its region sits directly under it.
+  const createFeedback = useWriteFeedback()
+  const createRegionRef = useFailureScroll(createFeedback.outcome)
 
   const idRejected = newId !== '' && isRejectedIdentifier(newId)
   const aliasRejected = newAlias !== '' && isRejectedIdentifier(newAlias)
+
+  const create = () => {
+    const id = newId
+    const alias = newAlias
+    void createFeedback.run(async () => {
+      await createTenant.mutateAsync({ id, alias })
+      // A landed registration clears both inputs so the form is ready for
+      // the next one; a refused one keeps them.
+      setNewId('')
+      setNewAlias('')
+      return t('tenants.created', { id })
+    })
+  }
 
   // The columns the table renders: a row's read-only fields and its write
   // controls. Status carries a priority, so a narrow viewport sheds it
@@ -306,31 +367,15 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
           <Button
             type="button"
             variant="contained"
-            disabled={createTenant.isPending || idRejected || aliasRejected}
-            onClick={() => {
-              setCreated(null)
-              createTenant.mutate(
-                { id: newId, alias: newAlias },
-                // A landed registration clears both inputs so the form is
-                // ready for the next one; a refused one keeps them.
-                {
-                  onSuccess: () => {
-                    setNewId('')
-                    setNewAlias('')
-                    setCreated(t('tenants.created'))
-                  },
-                },
-              )
-            }}
+            disabled={createFeedback.pending || idRejected || aliasRejected}
+            loading={createFeedback.pending}
+            onClick={create}
           >
             {t('tenants.create.submit')}
           </Button>
         </Box>
-        <Box sx={{ mt: 1 }}>
-          <InlineError
-            code={createTenant.isError ? errorCodeOf(createTenant.error) : null}
-          />
-          <InlineSuccess message={created} />
+        <Box ref={createRegionRef}>
+          <WriteFeedbackRegion outcome={createFeedback.outcome} />
         </Box>
       </Box>
 

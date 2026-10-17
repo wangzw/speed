@@ -11,9 +11,10 @@
  * invalid while a typed value breaks the identifier domain.
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { mockMatchMedia } from '@speed/test-utils/matchMedia'
 import { TenantRosterPage } from './TenantRosterPage.js'
 import type { ConsoleTenant } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -23,6 +24,21 @@ import {
   makeConsoleBackend,
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+
+/** jsdom implements no layout; a scroll observer installs this stub. */
+function stubScrollIntoView(): ReturnType<typeof vi.fn> {
+  const spy = vi.fn()
+  Object.defineProperty(Element.prototype, 'scrollIntoView', {
+    configurable: true,
+    writable: true,
+    value: spy,
+  })
+  return spy
+}
+
+afterEach(() => {
+  delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+})
 
 describe('TenantRosterPage', () => {
   it('renders the settled empty state when the roster answers no tenants', async () => {
@@ -186,7 +202,9 @@ describe('TenantRosterPage', () => {
     // write lands, then filled with the confirmation. The rename's lands here.
     await user.type(screen.getByLabelText('租户 acme 的新别名'), 'Acme-Inc')
     await user.click(screen.getByRole('button', { name: '为租户 acme 改名' }))
-    expect(await screen.findByText('别名已更新')).toBeInTheDocument()
+    expect(
+      await screen.findByText('租户「acme」的别名已更新'),
+    ).toBeInTheDocument()
   })
 
   it('renames a tenant through the row control', async () => {
@@ -425,6 +443,8 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     expect(await screen.findByText('权限不足')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    // A read's refusal never settles into a write scope's slot.
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('links each row to the tenant detail when given the roster path', async () => {
@@ -442,6 +462,171 @@ describe('TenantRosterPage', () => {
       'href',
       '/console/tenants/acme',
     )
+  })
+
+  it("keeps each row's refusal in that row's own scope", async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () =>
+          Promise.resolve([
+            { id: 'acme', alias: 'Acme', status: 'active' },
+            { id: 'globex', alias: 'Globex', status: 'active' },
+          ]),
+        setTenantAlias: (input) =>
+          input.id === 'acme'
+            ? Promise.reject({ code: 'tenant.conflict' })
+            : Promise.resolve(),
+        setTenantStatus: (input) =>
+          input.id === 'globex'
+            ? Promise.reject({ code: 'tenant.bad_request' })
+            : Promise.resolve(),
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    const acmeAlias = screen.getByLabelText('租户 acme 的新别名')
+    await user.type(acmeAlias, 'Acme-Inc')
+    await user.click(
+      screen.getByRole('button', { name: '为租户 acme 改名' }),
+    )
+    // The same resolved text stands in the row marker and in the region.
+    expect(
+      await screen.findAllByText('该标识或别名已被其他租户占用。'),
+    ).toHaveLength(2)
+
+    const globexToggle = screen.getByRole('button', {
+      name: '停用租户 globex',
+    })
+    await user.click(globexToggle)
+    expect(
+      await screen.findAllByText('服务端无法读取该请求，请检查表单后重试。'),
+    ).toHaveLength(2)
+
+    // Each row marks its own failure; the other row is untouched.
+    expect(acmeAlias).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('租户 globex 的新别名')).toHaveAttribute(
+      'aria-invalid',
+      'false',
+    )
+    expect(globexToggle).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('button', { name: '停用租户 acme' })).toHaveAttribute(
+      'aria-invalid',
+      'false',
+    )
+    // Two results, one per row scope: no page-level aggregate.
+    expect(
+      screen.getAllByRole('alert').map((alert) => alert.textContent),
+    ).toEqual([
+      '该标识或别名已被其他租户占用。',
+      '服务端无法读取该请求，请检查表单后重试。',
+    ])
+  })
+
+  it('marks the refused rename inline and brings its region into view', async () => {
+    mockMatchMedia(false)
+    const scrollIntoView = stubScrollIntoView()
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () =>
+          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+        setTenantAlias: () => Promise.reject({ code: 'tenant.conflict' }),
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    const input = screen.getByLabelText('租户 acme 的新别名')
+    await user.type(input, 'Acme-Inc')
+    await user.click(
+      screen.getByRole('button', { name: '为租户 acme 改名' }),
+    )
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('该标识或别名已被其他租户占用。')
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    const hintId = input.getAttribute('aria-describedby')
+    expect(hintId).not.toBeNull()
+    expect(document.getElementById(hintId as string)?.textContent).toBe(
+      alert.textContent,
+    )
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'smooth',
+      block: 'center',
+    })
+    await expectNoAxeViolations()
+  })
+
+  it('marks the refused status change inline and jumps under reduced motion', async () => {
+    mockMatchMedia(true)
+    const scrollIntoView = stubScrollIntoView()
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () =>
+          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+        setTenantStatus: () => Promise.reject({ code: 'tenant.bad_request' }),
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    const toggle = screen.getByRole('button', { name: '停用租户 acme' })
+    await user.click(toggle)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(
+      '服务端无法读取该请求，请检查表单后重试。',
+    )
+    expect(toggle).toHaveAttribute('aria-invalid', 'true')
+    const hintId = toggle.getAttribute('aria-describedby')
+    expect(hintId).not.toBeNull()
+    expect(document.getElementById(hintId as string)?.textContent).toBe(
+      alert.textContent,
+    )
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'auto',
+      block: 'center',
+    })
+  })
+
+  it('names the tenant on each landed write', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () =>
+          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    // The registration names the tenant it created.
+    await user.type(screen.getByLabelText('标识'), 'globex')
+    await user.type(screen.getByLabelText('别名'), 'Globex')
+    await user.click(screen.getByRole('button', { name: '登记' }))
+    expect(
+      await screen.findByText('租户「globex」已登记'),
+    ).toBeInTheDocument()
+
+    // The row's rename names its tenant.
+    await user.type(screen.getByLabelText('租户 acme 的新别名'), 'Acme-Inc')
+    await user.click(
+      screen.getByRole('button', { name: '为租户 acme 改名' }),
+    )
+    expect(
+      await screen.findByText('租户「acme」的别名已更新'),
+    ).toBeInTheDocument()
+
+    // The row's status change names its tenant and the new state.
+    await user.click(screen.getByRole('button', { name: '停用租户 acme' }))
+    expect(
+      await screen.findByText('租户「acme」已停用'),
+    ).toBeInTheDocument()
+    // The registration's confirmation lives in the other scope.
+    expect(screen.getByText('租户「globex」已登记')).toBeInTheDocument()
   })
 
   it('has no axe violations', async () => {
