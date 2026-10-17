@@ -923,12 +923,14 @@ that settles last occupies it.
 `run(attempt)` is one operator-initiated action: it clears the slot,
 counts the attempt in flight (`pending` stays true until every attempt
 settles), awaits `attempt` and settles the slot from it -- a returned
-string (including an empty one) becomes the success message, `null` does
-not touch the slot (a write refused for step-up is handed to the
-elevation gate and its replay is a new `run`; the slot is empty from the
-attempt's own reset, and a result filled later by an overlapping attempt
-or by `succeed` / `fail` stays), and a throw becomes a failure classified
-through `errorCodeOf`. `run` never rejects. `succeed`, `fail` and `reset` serve
+string (including an empty one) becomes the success message (an empty
+string is stored verbatim and renders a banner with no text, so callers
+must pass non-empty copy), `null` does not touch the slot (a write
+refused for step-up is handed to the elevation gate and its replay is a
+new `run`; the slot is empty from the attempt's own reset, and a result
+filled later by an overlapping attempt or by `succeed` / `fail` stays),
+and a throw becomes a failure classified through `errorCodeOf`. `run`
+never rejects. `succeed`, `fail` and `reset` serve
 flows that are not one promise; `reset` clears the slot without
 cancelling attempts in flight. Callbacks keep their identity for the
 component's lifetime.
@@ -1039,12 +1041,11 @@ it holds (a draft input, an open row). `description` and `retryLabel`
 are the caller's translated copy and should say the shown content may be
 out of date. A refusal such as HTTP 403 does not use `staleState` -- the
 old data no longer means anything, so the caller renders the
-no-permission placeholder in place of the content (the console and
-object-store packages do this in their own `AsyncSection` wrappers). That
-replacement applies when the refusal leaves no cached data to keep; a
-refresh-time 403 that must keep cached data on screen while denying
-further reads is not covered by `staleState` and is deferred to stage 2.
-Omitting `staleState` renders exactly the previous behaviour.
+no-permission placeholder in place of the content. The console package's
+`AsyncSection` wrapper does this on any 403; the object-store wrapper
+does it only when the read has no payload yet, and otherwise leaves the
+content on screen. Omitting `staleState` renders exactly the previous
+behaviour.
 
 Props: `pending`, `payload`, `empty`, `loading`, `errorState`,
 `emptyState?`, `headingLevel?`, `emptyHeadingLevel?`, `staleState?`,

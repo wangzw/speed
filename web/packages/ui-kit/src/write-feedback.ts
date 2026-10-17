@@ -16,7 +16,8 @@
  * from that attempt's own reset, and a result later filled by an
  * overlapping attempt or by `succeed` / `fail` stays. An attempt that
  * throws lands as a failure, classified through `errorCodeOf`. A returned
- * string -- including the empty string -- is stored verbatim. `run` never
+ * string -- including the empty string -- is stored verbatim and renders a
+ * banner with no text, so callers must pass non-empty copy. `run` never
  * throws.
  *
  * `succeed`, `fail` and `reset` serve flows that are not one promise (a

@@ -112,7 +112,8 @@ export interface AsyncSectionProps<Payload> {
   readonly emptyHeadingLevel?: EmptyStateHeadingLevel | EmptyStateNoHeading
   /**
    * Marks a failed refresh whose earlier data is still on screen: the
-   * content keeps rendering with this alert and its retry above it.
+   * settled rendering (the content, or the empty placeholder when the
+   * payload is empty) keeps rendering with this alert above it.
    * Omitted in every other state, including a refusal (403), which the
    * caller renders as the no-permission placeholder instead.
    */

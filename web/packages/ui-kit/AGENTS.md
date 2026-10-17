@@ -83,18 +83,22 @@ plumbing and deliberately not exported.
   attempt starts with `reset`, and the slot holds at most one outcome --
   the one that settled last; overlapping attempts are never merged, and
   an old failure and a new success never coexist. `run` settles from the
-  attempt's return or throw: a string (including an empty one) confirms,
-  `null` does not touch the slot (a step-up refusal handed to the
-  elevation gate; its replay is a new `run`; the slot is empty from the
-  attempt's own reset, and a result filled later by an overlapping
-  attempt or by `succeed` / `fail` stays), and a throw becomes a code
+  attempt's return or throw: a string (including an empty one) confirms --
+  the empty string is stored verbatim and renders a banner with no text,
+  so callers must pass non-empty copy; `null` does not touch the slot (a
+  step-up refusal handed to the elevation gate; its replay is a new
+  `run`; the slot is empty from the attempt's own reset, and a result
+  filled later by an overlapping attempt or by `succeed` / `fail` stays),
+  and a throw becomes a code
   through `errorCodeOf`; `run` never rejects. The success message is the string the host translated
   at `succeed` time and does not follow a later language switch; failure
   codes resolve at render time, so they do. The region carries no copy
   of its own: the host passes the success text and binds its package's
   error-code resolver into its own `internal/` wrapper, so call sites
-  pass the slot and nothing else. `InlineSuccess` is never rendered
-  beside the region.
+  pass the slot and nothing else. The region's root container carries a
+  default top margin of one spacing unit and the caller's `sx` applies
+  after it; that is why `InlineSuccess` takes no `sx` and is not rendered
+  separately.
 - **`AsyncSection.staleState` marks a failed refresh that kept its
   data.** Supply it exactly while the latest refresh failed, the data is
   still on screen and no read is in flight; withdraw it when the retry
