@@ -965,15 +965,20 @@ function AccountCreateForm() {
     },
   })
 
-  const viaOptions = (
-    <>
-      <MenuItem value="">{t('accounts.create.via.none')}</MenuItem>
-      <MenuItem value="admin">{t('accounts.create.via.admin')}</MenuItem>
-      <MenuItem value="import-unverified">
-        {t('accounts.create.via.importUnverified')}
-      </MenuItem>
-    </>
-  )
+  // An array, not a fragment: MUI's Select walks its children to build the
+  // options and warns when one of them is a Fragment (the same warning the
+  // route-level a11y gate printed).
+  const viaOptions = [
+    <MenuItem key="none" value="">
+      {t('accounts.create.via.none')}
+    </MenuItem>,
+    <MenuItem key="admin" value="admin">
+      {t('accounts.create.via.admin')}
+    </MenuItem>,
+    <MenuItem key="import-unverified" value="import-unverified">
+      {t('accounts.create.via.importUnverified')}
+    </MenuItem>,
+  ]
 
   // The form names an account once it carries a display name and either a
   // service kind or at least one login identifier; a service account signs
