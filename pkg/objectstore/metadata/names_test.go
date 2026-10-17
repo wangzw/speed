@@ -3,12 +3,18 @@ package metadata
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode"
 	"unicode/utf8"
 
+	sqlitedriver "github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/db/sqlite"
 	"github.com/vislake/speed/pkg/objectstore"
 )
 
@@ -189,4 +195,59 @@ func TestTheObjectViewAlwaysCarriesTheName(t *testing.T) {
 	if name != "" {
 		t.Errorf("an unnamed object's view carries the name %v, want the empty string", name)
 	}
+}
+
+// TestARowThatPredatesTheNameMigrationReadsAsUnnamed holds the migration's
+// additive promise: a row written before the name column existed keeps the
+// empty string, which the view carries and clients render as "unnamed".
+func TestARowThatPredatesTheNameMigrationReadsAsUnnamed(t *testing.T) {
+	schema, err := fs.ReadFile(migrationRoot, "migrations/sqlite/0001_objects.sql")
+	if err != nil {
+		t.Fatalf("reading the first migration: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "objects.db")
+	handle, err := gorm.Open(sqlitedriver.Open(path), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("opening the pre-migration database: %v", err)
+	}
+	pool, err := handle.DB()
+	if err != nil {
+		t.Fatalf("taking the pre-migration pool: %v", err)
+	}
+	if _, err := pool.Exec(string(schema)); err != nil {
+		t.Fatalf("creating the pre-migration table: %v", err)
+	}
+	if _, err := pool.Exec(`INSERT INTO objects
+		(id, tenant_id, key, state, declared_size, declared_type, declared_checksum,
+		 size, mime, checksum_sha256, upload_expires_at, expires_at, created_at, updated_at)
+		VALUES ('legacy-1', 'acme', 'acme/legacy-1', 'completed', 3, 'text/plain', '',
+			3, 'text/plain', '', 0, NULL, 1, 1)`); err != nil {
+		t.Fatalf("writing the pre-migration row: %v", err)
+	}
+	if err := pool.Close(); err != nil {
+		t.Fatalf("closing the pre-migration pool: %v", err)
+	}
+
+	h := harness{database: sqlite.Module(), section: "sqlite", dsn: path}
+	h.drive(t, func(_ context.Context, reg *core.Registry) error {
+		objects := objectsOf(t, reg)
+		tctx := tenantCtx(t, reg, "acme")
+		got, err := objects.Get(tctx, "legacy-1")
+		if err != nil {
+			t.Fatalf("reading the pre-migration row: %v", err)
+		}
+		if got.Name != "" {
+			t.Errorf("the pre-migration row carries the name %q, want the empty string", got.Name)
+		}
+		listed, err := objects.List(tctx, objectstore.ListQuery{})
+		if err != nil {
+			t.Fatalf("listing: %v", err)
+		}
+		for _, o := range listed {
+			if o.ID == "legacy-1" && o.Name != "" {
+				t.Errorf("the listed pre-migration row carries the name %q, want the empty string", o.Name)
+			}
+		}
+		return nil
+	})
 }
