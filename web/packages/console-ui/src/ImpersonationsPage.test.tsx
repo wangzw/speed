@@ -365,12 +365,12 @@ describe('ImpersonationsPage', () => {
     ).toBeInTheDocument()
     expect(screen.getByLabelText('目标账户')).toBeInTheDocument()
     // The start form states its precondition beside the controls: the
-    // surface cannot tell an unmet factor-age requirement from a weak
-    // session, and only this text warns that signing in again will not
-    // help.
+    // The server's refusal cannot tell an unmet factor-age requirement from a
+    // weak session, so the page states the requirement instead of naming a
+    // cause; only this text warns that signing in again will not help.
     expect(
       screen.getByText(
-        '发起冒充需要你本人的账户有已启用满 authn.mfa.sensitive-min-age（默认 24 小时）的非短信因素；刚登记的因素不算，重新登录也不能缩短这段等待。',
+        '发起冒充需要你本人的账户有已启用满 authn.mfa.sensitive-min-age（缺省 24 小时，以本部署设置为准）的非短信因素；刚登记的因素不算，重新登录也不能缩短这段等待。',
       ),
     ).toBeInTheDocument()
     // The start form takes its target tenant from the page's one tenant
