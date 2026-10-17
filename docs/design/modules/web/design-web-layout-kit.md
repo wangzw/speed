@@ -13,7 +13,7 @@
 
 - **不导入任何具体认证或路由包。** `RouteGuard` 不得 import `@speed/auth-core`、任何路由器，或任何假设了某种认证机制的包；授权判决以 `status` 值传入。`AppShell` 不做路径匹配——不同宿主用不同路由器，本包对它们一视同仁，`selected` 由宿主算。
 - **不发任何 HTTP 请求。** 本包是外壳与门，取数归宿主与其数据层。
-- **不持业务与租户语义。** 导航项标签、头部、用户菜单、子节点都是宿主内容，本包不发明它们，也不认识「租户」这个概念。
+- **不持业务与租户语义。** 导航项标签、头部、横幅、用户菜单、子节点都是宿主内容，本包不发明它们，也不认识「租户」这个概念。
 - **不做认证机制本身。** 登录、登出、会话读取与权限求值都不在本包内；`RouteGuard` 只按传入的判决渲染。把某个授权来源接上 `RouteGuard` 是宿主的组装工作。
 - **不发明新的宿主可见行为来应付窄视口。** 窄视口防护是纯附加样式，不新增也不改动任何 prop；AppShell 只渲染宿主交来的内容，没有自动收起的溢出菜单这类隐式行为。桌面侧边栏的收起与之相反：是一个宿主显式选择的受控 prop 对，不是隐式的响应式行为。
 
@@ -49,7 +49,7 @@ export interface AppShellProps {
   readonly header?: ReactNode
   readonly headerActions?: ReactNode
   readonly userMenu?: ReactNode
-  readonly banner?: ReactNode                       // 应用栏之上的整幅横幅，宿主内容，已翻译；缺席或为空不占空间
+  readonly banner?: ReactNode                       // 应用栏之上的整幅横幅，宿主内容，已翻译；缺席、null、false 不渲染容器，宿主节点自身渲染为空时容器零高度
   readonly navLabel?: string                        // 导航地标（与临时抽屉）的可及名，缺省 appShell.navLabel
   readonly children: ReactNode
   readonly mobileOpen?: boolean                    // 与下一项成对，控制态
@@ -64,7 +64,7 @@ export function AppShell(props: AppShellProps): ReactElement
 ```
 
 - **导航项与分组是同一入口的两种元素，拓宽是纯附加的。** `navItems` 的元素类型由 `AppShellNavItem` 拓宽为 `AppShellNavItem | AppShellNavGroup`（`AppShellNavEntry`）。这是一处纯附加：`AppShellNavItem[]` 仍可赋值给这个联合数组，未使用分组的宿主逐字节不变。分组渲染为一个带标题的可折叠区：标题本身即展开控件（`aria-expanded` 与其目标 `aria-controls`），组内是普通导航项。带 `children` 的项渲染为一个可展开的父项，其子项缩进渲染，各是真实链接或按钮；父项自身不再是一条导航行（其 `href`/`onClick`/`selected` 不渲染，路由在子项里）。分组与嵌套都复用同一套叶子激活（先 `onClick`、再 `onNavigate`）与 `selected`/`aria-current` 约定。折叠态的组或父项把其子项以 `hidden` 留在 DOM 里，故无障碍树与角色查询在收起时都取不到它们。分组标题可带一个可选图标（`AppShellNavGroup.icon`，纯附加的可选字段）：收起为窄栏时，带图标的标题按图标行呈现，标题文本裁剪但仍作可及名并由提示补足；无图标的标题保留截断的文本，与无图标条目同一回落。
-- **`banner` 是应用栏之上的持久整幅槽，纯附加的可选字段。** 它渲染在应用栏之上、占流内高度，应用栏、导航抽屉与内容整体随之下移，不与它们重叠；任一断点都不隐藏它，宿主节点在窄屏下自行换行。槽属于 `AppShell` 自身，不属于 `children`，因此路由切换时它不卸载、不重挂。槽不加地标也不加 `aria-live`：宿主节点自带它需要的角色与播报，`AppShell` 的地标结构不变。`banner` 缺席、为 `null` 或 `false` 时不渲染任何容器、不占高度，未使用它的宿主逐字节不变。模态的侧边面板与对话框叠在它之上，它不抢焦点。
+- **`banner` 是与顶部栏同属外壳头部的持久整幅槽，纯附加的可选字段**（决策见 [ADR-web-impersonation-shell-2026-10-18](../../../adr/adr-web-impersonation-shell-2026-10-18.md)）。它固定在视口顶部，顶部栏、导航抽屉与内容整体下移，不与它们重叠；页面滚动时它与顶部栏一起留在视口里，外壳其余部分不动。任一断点都不隐藏它，宿主节点在窄屏下自行换行。它的层级低于模态的侧边面板与对话框、高于页面内容，不抢焦点。槽容器不带内边距、边框与最小高度，高度完全取自宿主节点：`banner` 缺席、为 `null` 或 `false` 时不渲染容器，宿主节点自身渲染为空（例如只含一个空的 live region）时容器零高度、顶部栏不下移，未使用它的宿主逐字节不变。槽不加地标也不加 `aria-live`，宿主节点自带它需要的角色与播报；它不是 `banner` 地标，`banner` 地标仍是顶部栏。槽属于 `AppShell` 自身，不属于 `children`，路由切换时不卸载、不重挂。
 
 ### Avatar
 
@@ -82,7 +82,7 @@ export function Avatar(props: AvatarProps): ReactElement
 - **一个纯展示的身份块，不持状态、不发请求。** 有 `src` 时渲染图片（其 `alt` 即 `name`）；否则由 `name` 取最多两个大写首字母（首词与末词）。带名且非装饰时，它暴露 `name` 为其可及名（`role="img"` 加 `aria-label`），使有名无图的头像读作名字而非裸首字母；`decorative` 为真时整块移出无障碍树，由包着它的控件（一个 `aria-label` 的按钮）承担唯一播报。
 - **`AppShell` 的桌面侧边栏收起是宿主显式选择的受控面。** `sidebarCollapsed` 是收起态，`onSidebarCollapsedChange` 是收起开关的回报通道；给出后者即在顶栏渲染收起／展开按钮，两者都省略即维持一直展开的常驻抽屉。收起能力未选择时，宿主的抽屉形态与收起出现前相同；唯一对所有宿主都生效的加严是触摸设备上的可点击目标下限（**所有可点击目标**不小于 44×44，导航项随主题层一并满足，见[布局](design-web-layout.md)的指针能力查询一节），它随无障碍要求一并落下，与是否选择收起无关。收起只在 `md` 及以上生效，移动（临时）抽屉不受影响。收起态是宿主持有的普通值，本包不在内部推导。收起把常驻抽屉收为仅图标的窄栏：固定宽（由主题间距基数算出）、图标保留、标签裁剪并以提示补足文案，条目无图标时保留其标签；抽屉本身不卸载，`nav` 地标与各条目的可及名都保留。标签的裁切与省略号落在标签的文本元素上（按钮的 `overflow` 只作兜底）：文本在按钮内的后代块里，`text-overflow` 只作用于元素自身的行内内容，挂在按钮上时省略号永不生效、按钮的裁切会把字从中间切断；落在文本元素上，无图标条目才以可读的省略收尾。
 
-- **槽位原样渲染。** `header`、`headerActions`、`userMenu`、`children` 渲染宿主交来的内容本身；某个槽缺席就什么都不渲染，不代以占位。
+- **槽位原样渲染。** `header`、`headerActions`、`userMenu`、`banner`、`children` 渲染宿主交来的内容本身；某个槽缺席就什么都不渲染，不代以占位。
 - **导航地标的名字可由宿主给出。** `navLabel` 是导航地标与临时抽屉的可及名，宿主已翻译好；缺省取本包的 `appShell.navLabel`。宿主在另一套外壳的导航旁再挂一个本帧时给出区分名，使两个地标在无障碍树里互不混淆。
 - **移动抽屉的开合是唯一的交互局部状态。** `mobileOpen` 与 `onMobileOpenChange` 成对给出时是受控的；都省略时由 AppShell 内部管理（非受控）。从临时抽屉越到常驻抽屉（视口从 `md` 以下越到 `md` 及以上）时，移动抽屉的开合被复位为关，经同一个 `onMobileOpenChange` 通道报出。
 - **`selected` 由宿主算。** AppShell 不做路径匹配，`aria-current` 与选中样式都取自这个值。
@@ -189,7 +189,7 @@ classDiagram
 1. 以 `useMediaQuery(theme.breakpoints.up('md'))` 得到桌面/移动的布尔值，不引入新断点。抽屉的两态由此布尔值在 JS 中选择（桌面 `permanent`、移动 `temporary`），而非经 CSS 断点 sx 切换，使「桌面抽屉是否在显示」只有一个确定答案，避免两个 DOM 节点在绘制上竞争。
 2. 顶部栏是 `header`/banner 地标，导航抽屉是带无障碍名（`appShell.navLabel`）的 `nav` 地标，内容区是 `main` 地标。
 3. 跳转链接（`appShell.skipToContent`）是外壳里第一个可聚焦元素，激活时以编程方式把焦点移到 `main` 地标，而不是导航到一个片段：片段导航会改写 `location.hash`，在以 hash 路由的宿主里那个片段就是路由本身，导航会顶掉当前路由。
-4. 顶部栏一行可换行，其渲染高度由 `ResizeObserver` 测量；`main` 与抽屉纸内的三处偏移占位由此测量取值，使换行的顶部栏不遮住其下内容。无 `ResizeObserver` 时（jsdom）占位退回主题的单行工具条高度。
+4. 顶部栏一行可换行，其渲染高度由 `ResizeObserver` 测量；`main` 与抽屉纸内的三处偏移占位由此测量取值，使换行的顶部栏不遮住其下内容。有 `banner` 时横幅的渲染高度同样测量：顶部栏与抽屉纸的顶偏移取横幅高度，`main` 与抽屉纸内的占位取横幅与顶部栏的高度之和。无 `ResizeObserver` 时（jsdom）横幅高度记 0，顶部栏占位退回主题的单行工具条高度。
 
 ### AppShell 的抽屉交互
 
@@ -208,7 +208,7 @@ classDiagram
 
 - **授权来源经 `status` 接入。** 宿主按所用机制（真认证包背后的 hook、认证包落地前的 `useState` 桩、测试里的静态值）算出一个 `RouteGuardStatus` 传入即可，本包不改。
 - **占位与文案经 prop 与命名空间替换。** 等待态与拒绝态各可由 `pendingFallback` / `deniedFallback` 整体替换；宿主亦可经再次 `registerNamespace` 把 `LAYOUT_KIT_NAMESPACE` 下的文案改成自己的，而不是改组件里的字面量。
-- **槽位即扩展点。** 顶部栏、头部动作、用户菜单、导航项与内容区都是宿主内容，本包不发明。
+- **槽位即扩展点。** 顶部栏、头部动作、用户菜单、横幅、导航项与内容区都是宿主内容，本包不发明。
 
 ## 实现状态
 
