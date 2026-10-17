@@ -454,6 +454,10 @@ func TestAnExemptionWrittenAsTheRouteWasRegisteredCoversThatRouteOnly(t *testing
 	requireStatus(t, "GET /public/css/site.css, matched to the same catch-all", nested, nethttp.StatusOK)
 	requireStatus(t, "GET /private/logo.png, matched to a catch-all nobody exempted",
 		elsewhere, nethttp.StatusUnauthorized)
+	// Both refusals come from the gateway before the matched routes' handlers
+	// run, so they are one answer despite matching different routes.
+	requireSameReply(t, "a refusal on a route beside the exempted one and on a catch-all nobody exempted",
+		"GET /accounts/me", sibling, "GET /private/logo.png", elsewhere, true)
 }
 
 // TestAnExemptionSpelledDifferentlyFromEveryRouteNeverMatches holds the cost the
@@ -518,6 +522,10 @@ func TestAnExemptionSpelledDifferentlyFromEveryRouteNeverMatches(t *testing.T) {
 		for i, r := range requests {
 			requireStatus(t, fmt.Sprintf("%s %s, which no %s is spelled as", r.method, r.path, kind),
 				got[i], nethttp.StatusUnauthorized)
+			// Every one of them is an unmatched request refused by the gateway,
+			// so they are one answer: same status, same headers, same body.
+			requireSameReply(t, fmt.Sprintf("%s %s, which no %s is spelled as", r.method, r.path, kind),
+				requests[0].method+" "+requests[0].path, got[0], r.method+" "+r.path, got[i], true)
 		}
 	}
 }
