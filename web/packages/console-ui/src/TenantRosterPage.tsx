@@ -327,6 +327,8 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
             type="button"
             variant="outlined"
             size="small"
+            disabled={tenants.isFetching}
+            loading={tenants.isFetching}
             onClick={() => void tenants.refetch()}
           >
             {t('common.refresh')}

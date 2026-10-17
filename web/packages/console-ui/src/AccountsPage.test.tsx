@@ -1935,6 +1935,32 @@ describe('AccountsPage', () => {
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
   })
 
+  it('renders the unavailable placeholder with a retry when the detail read answers 404', async () => {
+    const user = userEvent.setup()
+    let calls = 0
+    const getAccount = () => {
+      calls += 1
+      return calls === 1
+        ? Promise.reject({ status: 404, code: 'client.http.404' })
+        : Promise.resolve(accountFixture({ display_name: 'Ada Lovelace' }))
+    }
+    const operations = withAccounts({ getAccount })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+
+    // A by-id 404 replaces the panel's content with the "not found or
+    // unavailable" placeholder and keeps the retry that re-reads.
+    expect(
+      await within(panel).findByText('记录不存在或暂不可用'),
+    ).toBeInTheDocument()
+    await user.click(within(panel).getByRole('button', { name: '重试' }))
+    expect(
+      await within(panel).findByText('显示名：Ada Lovelace'),
+    ).toBeInTheDocument()
+    expect(calls).toBe(2)
+  })
+
   it('withdraws the stale marker while the list retry is in flight', async () => {
     const user = userEvent.setup()
     let searchedReads = 0

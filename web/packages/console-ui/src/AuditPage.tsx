@@ -270,6 +270,8 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
             type="button"
             variant="outlined"
             size="small"
+            disabled={records.isFetching}
+            loading={records.isFetching}
             onClick={() => void records.refetch()}
           >
             {t('common.refresh')}

@@ -348,6 +348,8 @@ export function SmsPage() {
             type="button"
             variant="outlined"
             size="small"
+            disabled={templates.isFetching}
+            loading={templates.isFetching}
             onClick={() => void templates.refetch()}
           >
             {t('common.refresh')}

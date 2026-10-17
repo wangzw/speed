@@ -393,8 +393,10 @@ export function SettingsPage() {
             variant="outlined"
             size="small"
             // A refresh changes the set the batch is settling against,
-            // so it is disabled while the scope is pending.
-            disabled={feedback.pending}
+            // so it is disabled while the scope is pending; while the read
+            // itself is in flight it is disabled and marked busy.
+            disabled={feedback.pending || settings.isFetching}
+            loading={settings.isFetching}
             onClick={() => void settings.refetch()}
           >
             {t('common.refresh')}

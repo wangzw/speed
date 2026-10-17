@@ -372,6 +372,8 @@ export function ImpersonationsPage() {
             type="button"
             variant="outlined"
             size="small"
+            disabled={status.isFetching || impersonations.isFetching}
+            loading={status.isFetching || impersonations.isFetching}
             onClick={() => {
               void status.refetch()
               // The record read is refused while impersonating and waits for

@@ -162,6 +162,8 @@ export function SessionsPage() {
             type="button"
             variant="outlined"
             size="small"
+            disabled={sessions.isFetching}
+            loading={sessions.isFetching}
             onClick={() => void sessions.refetch()}
           >
             {t('common.refresh')}

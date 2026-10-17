@@ -237,6 +237,8 @@ export function TenantDetailPage({ id, parentHref, rootHref }: TenantDetailPageP
             type="button"
             variant="outlined"
             size="small"
+            disabled={tenant.isFetching}
+            loading={tenant.isFetching}
             onClick={() => void tenant.refetch()}
           >
             {t('common.refresh')}
@@ -267,6 +269,12 @@ export function TenantDetailPage({ id, parentHref, rootHref }: TenantDetailPageP
             errorState={{
               title: t('tenantDetail.error.title'),
               description: t('tenantDetail.error.description'),
+              retryLabel: t('tenantDetail.retry'),
+              onRetry: () => void tenant.refetch(),
+            }}
+            notFoundState={{
+              title: t('detail.notFound.title'),
+              description: t('detail.notFound.description'),
               retryLabel: t('tenantDetail.retry'),
               onRetry: () => void tenant.refetch(),
             }}

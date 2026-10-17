@@ -9,6 +9,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { AuditDetailPage } from './AuditDetailPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
@@ -146,6 +147,24 @@ describe('AuditDetailPage', () => {
     renderWithProviders(<AuditDetailPage id="rec-1" />, { operations })
     expect(await screen.findByText('权限不足')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+  })
+
+  it('renders the unavailable placeholder with a retry that re-reads a 404', async () => {
+    const user = userEvent.setup()
+    let calls = 0
+    const getRecord = vi.fn(() => {
+      calls += 1
+      return calls === 1
+        ? Promise.reject({ status: 404, code: 'client.http.404' })
+        : Promise.resolve(recordFixture({ id: 'rec-1', action: 'tenant.read' }))
+    })
+    const operations = createConsoleOperations(makeConsoleBackend({ getRecord }))
+    renderWithProviders(<AuditDetailPage id="rec-1" />, { operations })
+
+    expect(await screen.findByText('记录不存在或暂不可用')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '重试' }))
+    expect(await screen.findByText('tenant.read')).toBeInTheDocument()
+    expect(getRecord).toHaveBeenCalledTimes(2)
   })
 
   it('renders the retryable error placeholder when the read fails otherwise', async () => {

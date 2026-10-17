@@ -193,6 +193,11 @@ export function DashboardPage() {
 
   const activityEntries = healthActivity.data?.entries
   const loginEntries = healthLogins.data?.entries
+  const refreshing =
+    tenants.isFetching ||
+    healthActivity.isFetching ||
+    healthLogins.isFetching ||
+    records.isFetching
   const healthPending =
     (healthActivity.isPending && activityEntries === undefined) ||
     (healthLogins.isPending && loginEntries === undefined)
@@ -221,6 +226,8 @@ export function DashboardPage() {
             type="button"
             variant="outlined"
             size="small"
+            disabled={refreshing}
+            loading={refreshing}
             onClick={() => {
               void tenants.refetch()
               void healthActivity.refetch()

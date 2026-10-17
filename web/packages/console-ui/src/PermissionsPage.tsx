@@ -717,6 +717,8 @@ export function PermissionsPage() {
             type="button"
             variant="outlined"
             size="small"
+            disabled={roles.isFetching}
+            loading={roles.isFetching}
             onClick={() => void roles.refetch()}
           >
             {t('common.refresh')}

@@ -193,6 +193,50 @@ describe('TenantDetailPage', () => {
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
   })
 
+  it('renders the unavailable placeholder with a retry that re-reads a 404', async () => {
+    const user = userEvent.setup()
+    let calls = 0
+    const getTenant = vi.fn(() => {
+      calls += 1
+      return calls === 1
+        ? Promise.reject({ status: 404, code: 'client.http.404' })
+        : Promise.resolve(
+            tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+          )
+    })
+    const operations = createConsoleOperations(makeConsoleBackend({ getTenant }))
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+
+    // A bare 404 keeps the wording undecided about deletion ("not found or
+    // unavailable") and still offers the retry that checks again.
+    expect(await screen.findByText('记录不存在或暂不可用')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '重试' }))
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(getTenant).toHaveBeenCalledTimes(2)
+  })
+
+  it('replaces the detail with the unavailable placeholder when a refresh answers 404', async () => {
+    const user = userEvent.setup()
+    let calls = 0
+    const getTenant = vi.fn(() => {
+      calls += 1
+      return calls === 1
+        ? Promise.resolve(
+            tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+          )
+        : Promise.reject({ status: 404, code: 'client.http.404' })
+    })
+    const operations = createConsoleOperations(makeConsoleBackend({ getTenant }))
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    await screen.findByText('Acme')
+
+    await user.click(screen.getByRole('button', { name: '刷新' }))
+    // The 404 makes the older content meaningless: it is replaced, not
+    // marked stale.
+    expect(await screen.findByText('记录不存在或暂不可用')).toBeInTheDocument()
+    expect(screen.queryByText('Acme')).toBeNull()
+  })
+
   it('renders the retryable error placeholder when the read fails otherwise', async () => {
     const operations = createConsoleOperations(
       makeConsoleBackend({

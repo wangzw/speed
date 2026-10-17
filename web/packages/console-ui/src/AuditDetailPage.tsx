@@ -139,6 +139,8 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
             type="button"
             variant="outlined"
             size="small"
+            disabled={record.isFetching}
+            loading={record.isFetching}
             onClick={() => void record.refetch()}
           >
             {t('common.refresh')}
@@ -169,6 +171,12 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
             errorState={{
               title: t('auditDetail.error.title'),
               description: t('auditDetail.error.description'),
+              retryLabel: t('auditDetail.retry'),
+              onRetry: () => void record.refetch(),
+            }}
+            notFoundState={{
+              title: t('detail.notFound.title'),
+              description: t('detail.notFound.description'),
               retryLabel: t('auditDetail.retry'),
               onRetry: () => void record.refetch(),
             }}

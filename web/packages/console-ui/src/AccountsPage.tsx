@@ -647,8 +647,10 @@ export function AccountsPage() {
               size="small"
               // Refreshing changes the list scope's context: while one of
               // its writes is in flight it is disabled, so a late result
-              // cannot land against a list it no longer describes.
-              disabled={listWrite.pending}
+              // cannot land against a list it no longer describes. While
+              // the read itself is in flight it is disabled and marked busy.
+              disabled={listWrite.pending || accounts.isFetching}
+              loading={accounts.isFetching}
               onClick={() => void accounts.refetch()}
             >
               {t('common.refresh')}
@@ -826,6 +828,12 @@ export function AccountsPage() {
               errorState={{
                 title: t('accounts.detail.error.title'),
                 description: t('accounts.detail.error.description'),
+                retryLabel: t('accounts.detail.retry'),
+                onRetry: () => void account.refetch(),
+              }}
+              notFoundState={{
+                title: t('detail.notFound.title'),
+                description: t('detail.notFound.description'),
                 retryLabel: t('accounts.detail.retry'),
                 onRetry: () => void account.refetch(),
               }}

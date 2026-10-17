@@ -17,8 +17,12 @@
  * `refreshing` while the retry is in flight, withdrawing the marker; a
  * retry that fails again re-supplies it, so the alert mounts anew and
  * announces again. Without a settled payload the same non-403 failure
- * falls through to AsyncSection's retryable error placeholder. The
- * pending, empty and content branches are AsyncSection's own.
+ * falls through to AsyncSection's retryable error placeholder. A by-id read
+ * that is answered 404 renders its own `notFoundState` placeholder instead,
+ * still with a retry -- the server's bare 404 does not distinguish a deleted
+ * record from a replica that does not know it -- and replaces any content on
+ * screen, as a failure of meaning rather than a stale refresh. The pending,
+ * empty and content branches are AsyncSection's own.
  *
  * The refusal is detected from the answer, not from a route-level
  * permission read: the server writes the 403, and the console renders the
@@ -41,6 +45,9 @@ import { useConsoleUiTranslation } from './translation.js'
 /** The bare-HTTP code the transport synthesizes for a 403 with no readable envelope. */
 const FORBIDDEN_CODE = 'client.http.403'
 
+/** The bare-HTTP code the transport synthesizes for a 404 with no readable envelope. */
+const NOT_FOUND_CODE = 'client.http.404'
+
 /**
  * Whether a read's failure is a permission refusal: the answer carried HTTP
  * 403, or a bare 403 surfaced as the client.http.403 code. Any other value
@@ -58,6 +65,25 @@ export function isForbidden(error: unknown): boolean {
   return candidate.code === FORBIDDEN_CODE
 }
 
+/**
+ * Whether a read's failure is "no such record": the answer carried HTTP 404,
+ * or a bare 404 surfaced as the client.http.404 code. A by-id detail page
+ * renders its not-found placeholder for this failure -- the server's "no such
+ * record" is an untyped bare 404, indistinguishable from a replica that does
+ * not know the record, so the placeholder still offers a retry. Every other
+ * value is not this failure.
+ */
+export function isNotFound(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false
+  }
+  const candidate = error as { readonly status?: unknown; readonly code?: unknown }
+  if (candidate.status === 404) {
+    return true
+  }
+  return candidate.code === NOT_FOUND_CODE
+}
+
 export interface ConsoleAsyncSectionProps<Payload> {
   /** No answer yet: renders `loading`. */
   readonly pending: boolean
@@ -71,6 +97,13 @@ export interface ConsoleAsyncSectionProps<Payload> {
   readonly loading: ReactNode
   /** The retryable error placeholder, for every non-refusal failure. */
   readonly errorState: AsyncSectionErrorState
+  /**
+   * The placeholder a by-id read answered 404 renders: "the record does not
+   * exist or is temporarily unavailable", still with its retry, because the
+   * server's bare 404 cannot be told apart from a replica that does not know
+   * the record. Absent leaves every failure on `errorState`.
+   */
+  readonly notFoundState?: AsyncSectionErrorState
   /** The empty placeholder. */
   readonly emptyState?: AsyncSectionEmptyState
   /** The heading element the placeholders' titles render as; defaults to 'h2'. */
@@ -91,6 +124,7 @@ export interface ConsoleAsyncSectionProps<Payload> {
 export function ConsoleAsyncSection<Payload>({
   error,
   errorState,
+  notFoundState,
   headingLevel = 'h2',
   refreshing,
   ...rest
@@ -106,6 +140,21 @@ export function ConsoleAsyncSection<Payload>({
         title={t('forbidden.title')}
         description={t('forbidden.description')}
         headingLevel={headingLevel}
+      />
+    )
+  }
+  // A by-id read answered 404 renders its own placeholder in place of the
+  // content -- a refresh that answers 404 replaces what was on screen -- and
+  // keeps the retry: the answer does not distinguish a deleted record from a
+  // replica that does not know it yet.
+  if (!rest.pending && notFoundState !== undefined && isNotFound(error)) {
+    return (
+      <AsyncSection
+        {...rest}
+        payload={undefined}
+        errorState={notFoundState}
+        headingLevel={headingLevel}
+        staleState={undefined}
       />
     )
   }
