@@ -438,6 +438,7 @@ func TestTheAnswerMapsEverySentinel(t *testing.T) {
 		{"invalid identifier", authn.ErrInvalidIdentifier, http.StatusBadRequest, mount.CodeBadRequest},
 		{"password policy", authn.ErrPasswordPolicy, http.StatusBadRequest, mount.CodeBadRequest},
 		{"invalid config", authn.ErrInvalidConfig, http.StatusBadRequest, mount.CodeBadRequest},
+		{"identifier required", authn.ErrIdentifierRequired, http.StatusBadRequest, mount.CodeBadRequest},
 		{"account exists", authn.ErrAccountExists, http.StatusConflict, mount.CodeConflict},
 		{"binding conflict", authn.ErrBindingConflict, http.StatusConflict, mount.CodeConflict},
 		{"domain claimed", authn.ErrDomainClaimed, http.StatusConflict, mount.CodeConflict},

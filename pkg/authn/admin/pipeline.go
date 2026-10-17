@@ -126,7 +126,8 @@ func (m *product) answer(c *gin.Context, op string, err error) {
 		c.Status(http.StatusNotFound)
 		c.Writer.WriteHeaderNow()
 	case errors.Is(err, authn.ErrInvalidArgument), errors.Is(err, authn.ErrInvalidIdentifier),
-		errors.Is(err, authn.ErrPasswordPolicy), errors.Is(err, authn.ErrInvalidConfig):
+		errors.Is(err, authn.ErrPasswordPolicy), errors.Is(err, authn.ErrInvalidConfig),
+		errors.Is(err, authn.ErrIdentifierRequired):
 		mount.Fail(c, mount.CodeBadRequest)
 	case errors.Is(err, authn.ErrAccountExists), errors.Is(err, authn.ErrBindingConflict),
 		errors.Is(err, authn.ErrDomainClaimed), errors.Is(err, authn.ErrLastLoginMethod),
