@@ -310,7 +310,7 @@ CREATE UNIQUE INDEX authn_imp_one_active ON authn_impersonations (session_id) WH
 | c 参数 | `Tenant` 非空且形状合法；`Reason` 去空白后 1 到 500 个字符；有效期取下列各项的最小值：请求的 TTL（零表示由设置决定）、设置 `authn.impersonation.max-ttl`、发起者会话的剩余寿命，且有效期不超过 1 小时。这个 1 小时是硬上限，独立于 `max-ttl` 的取值域（`max-ttl` 的上界当前也取 1 小时，与这个硬上限指向同一个秒数）。 | 没有全局冒充；理由是审计的一部分；冒充的期限有硬上限。 |
 | d 并发 | 同一个发起者会话任一时刻至多一条未结束的记录：先检是读 `authn_imp_session` 取该会话上未结束的记录，经 `Active` 求值仍有效即 `ErrImpersonationActive`；插入处的部分唯一索引是并发竞态的兜底。 | 同一会话上的冒充不并存。 |
 
-- **发起者、目标、参数三组的违反一律答 403 `impersonation-restricted`，且不区分是哪一条**，避免向发起者泄露目标账户的状态。例外只涉及发起者自己的状态与并发：强认证类条件不满足答 401；没有会话可绑是 `ErrImpersonationNeedsSession`，对外同样是 403 `impersonation-restricted`；并发组的先检失败是 `ErrImpersonationActive`（409）。
+- **发起者、目标、参数三组的违反一律答 403 `impersonation-restricted`，且不区分是哪一条**，避免向发起者泄露目标账户的状态。例外只涉及发起者自己的状态与并发：强认证类条件（保障等级、新鲜度、`Local`、认证方式集）不满足答 401；发起者名下没有启用已满规定时长的非短信因素答 403 `factor-not-seasoned`；没有会话可绑是 `ErrImpersonationNeedsSession`，对外同样是 403 `impersonation-restricted`；并发组的先检失败是 `ErrImpersonationActive`（409）。
 - **并发组有两道关口。** 先检在强制档审计之前，属于本表的拒绝，审计写 `denied`；两个并发的开始同时通过先检时，由记录事务插入处的部分唯一索引裁决，败者按「记录事务失败」处置：409，审计补一行 `failed`，见「开始失败的处置」。
 - **被拒的尝试尽力写一行结果为 `denied` 的接缝级审计**，并计入指标的 `denied`；写不成不改变拒绝。
 - **设置读取。** `authn.impersonation.max-ttl` 与 `authn.impersonation.max-auth-age` 读自设置的内存快照，不产生 IO；读不出时取声明的缺省值并记 Error（键、取值域与缺省值见 [design-authn-config](design-authn-config.md)）。
@@ -497,7 +497,7 @@ flowchart TD
 
 | 哨兵 | 何时 | 对外 | 方向 |
 |---|---|---|---|
-| `ErrImpersonationRestricted` | 开始时违反发起者、目标、参数三组的条件，强认证类条件与没有会话可绑除外（不区分是哪一条）；冒充期间 authn 的处理器自检被拒 | 403 `impersonation-restricted` | 拒 |
+| `ErrImpersonationRestricted` | 开始时违反发起者、目标、参数三组的条件，强认证类条件、`Seasoned` 与没有会话可绑除外（不区分是哪一条）；冒充期间 authn 的处理器自检被拒 | 403 `impersonation-restricted` | 拒 |
 | `ErrImpersonationActive` | 同一发起者会话上已有未结束的有效记录：并发组的先检，或部分唯一索引冲突 | 409 | 拒 |
 | `ErrNotImpersonating` | 结束时会话上没有未结束的记录；撤销的记录不存在；查询时会话上没有有效记录 | 404（裸 404，不带问题码） | 拒 |
 | `ErrImpersonationNeedsSession` | 调用方没有会话可绑 | 403 `impersonation-restricted`，与 `ErrImpersonationRestricted` 对外不区分 | 拒 |
