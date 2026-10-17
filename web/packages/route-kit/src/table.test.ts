@@ -88,4 +88,61 @@ describe('assertRouteTable', () => {
     }
     expect(() => assertRouteTable([withPerm], fallback)).not.toThrow()
   })
+
+  it('accepts an ungated table without any gating inputs', () => {
+    const table: RouteTable = [
+      { path: '/', view, label: 'Home' },
+      { path: '/cases', view },
+    ]
+    expect(() => assertRouteTable(table, fallback)).not.toThrow()
+  })
+
+  it('rejects a gated table with no presence predicate', () => {
+    const table: RouteTable = [
+      { path: '/objects', view, requires: ['objectstore.objects'] },
+    ]
+    expect(() =>
+      assertRouteTable(table, fallback, {
+        pending: fallback,
+        failed: fallback,
+      }),
+    ).toThrow(/presence/)
+  })
+
+  it('rejects a gated table with no pending view', () => {
+    const table: RouteTable = [
+      { path: '/objects', view, requires: ['objectstore.objects'] },
+    ]
+    expect(() =>
+      assertRouteTable(table, fallback, {
+        presence: { state: 'pending' },
+        failed: fallback,
+      }),
+    ).toThrow(/pending/)
+  })
+
+  it('rejects a gated table with no failed view', () => {
+    const table: RouteTable = [
+      { path: '/objects', view, requires: ['objectstore.objects'] },
+    ]
+    expect(() =>
+      assertRouteTable(table, fallback, {
+        presence: { state: 'pending' },
+        pending: fallback,
+      }),
+    ).toThrow(/failed/)
+  })
+
+  it('accepts a gated table with the predicate and both views', () => {
+    const table: RouteTable = [
+      { path: '/objects', view, requires: ['objectstore.objects'] },
+    ]
+    expect(() =>
+      assertRouteTable(table, fallback, {
+        presence: { state: 'pending' },
+        pending: fallback,
+        failed: fallback,
+      }),
+    ).not.toThrow()
+  })
 })

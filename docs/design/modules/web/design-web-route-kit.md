@@ -297,10 +297,10 @@ flowchart TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 声明面（`RouteDeclaration`、`RouteTable`、`RouteContext`、`requires`、`RoutePresence`） | 部分实现 | `web/packages/route-kit/src/types.ts` `RouteDeclaration`、`RouteTable`、`RouteContext`、`RouteParams` |
-| 接线与渲染（`RouteProvider`、`RouteView`、未命中回退、按在场谓词分派） | 部分实现 | `web/packages/route-kit/src/RouteProvider.tsx` `RouteProvider`；`web/packages/route-kit/src/RouteView.tsx` `RouteView` |
-| 装配期的登记面校验 | 部分实现 | `web/packages/route-kit/src/table.ts` `assertRouteTable` |
-| 导航收集与选中态（`useNavItems`，只在有效注册面上） | 部分实现 | `web/packages/route-kit/src/hooks.ts` `useNavItems`；`web/packages/route-kit/src/nav.ts` `deriveNavItems` |
-| 有效注册面（`presentDeclarations`） | 未实现 | — |
-| 精确命中与入口判定（`useMatch`、`useHasRoute`） | 未实现 | — |
+| 声明面（`RouteDeclaration`、`RouteTable`、`RouteContext`、`requires`、`RoutePresence`） | 已实现 | `web/packages/route-kit/src/types.ts` `RouteDeclaration`、`RouteTable`、`RouteContext`、`RouteParams`、`RoutePresence` |
+| 接线与渲染（`RouteProvider`、`RouteView`、未命中回退、按在场谓词分派） | 已实现 | `web/packages/route-kit/src/RouteProvider.tsx` `RouteProvider`；`web/packages/route-kit/src/RouteView.tsx` `RouteView` |
+| 装配期的登记面校验 | 已实现 | `web/packages/route-kit/src/table.ts` `assertRouteTable` |
+| 导航收集与选中态（`useNavItems`，只在有效注册面上） | 已实现 | `web/packages/route-kit/src/hooks.ts` `useNavItems`；`web/packages/route-kit/src/nav.ts` `deriveNavItems` |
+| 有效注册面（`presentDeclarations`） | 已实现 | `web/packages/route-kit/src/presence.ts` `presentDeclarations` |
+| 精确命中与入口判定（`useMatch`、`useHasRoute`） | 已实现 | `web/packages/route-kit/src/hooks.ts` `useMatch`、`useHasRoute`；`web/packages/route-kit/src/pathing.ts` `matchDeclaration` |
 | 链接构造与命令式导航（`RouteLink`、`useNavigate`） | 已实现 | `web/packages/route-kit/src/RouteLink.tsx` `RouteLink`；`web/packages/route-kit/src/hooks.ts` `useNavigate` |

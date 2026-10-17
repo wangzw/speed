@@ -13,7 +13,7 @@ import { render } from '@testing-library/react'
 import type { RenderResult } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { RouteProvider } from '../src/RouteProvider.js'
-import type { RouteContext, RouteTable } from '../src/types.js'
+import type { RouteContext, RoutePresence, RouteTable } from '../src/types.js'
 
 /** Move jsdom's address to `path` before a render reads it. */
 export function setLocation(path: string): void {
@@ -25,6 +25,12 @@ export interface RenderRouteOptions {
   readonly path?: string
   /** The unmatched-URL view; defaults to a probe rendering the missed path. */
   readonly fallback?: (context: RouteContext) => ReactNode
+  /** The host's feature-presence answer, for gated tables. */
+  readonly presence?: RoutePresence
+  /** The view a gated path renders while the predicate is pending. */
+  readonly pending?: (context: RouteContext) => ReactNode
+  /** The view a gated path renders when the predicate failed. */
+  readonly failed?: (context: RouteContext) => ReactNode
 }
 
 /** Mount `ui` inside a RouteProvider over `table`, at `path`. */
@@ -33,13 +39,19 @@ export function renderRouteTable(
   ui: ReactNode,
   options: RenderRouteOptions = {},
 ): RenderResult {
-  const { path = '/', fallback } = options
-  setLocation(path)
+  const { path = '/', fallback, presence, pending, failed } = options
   const fallbackView =
     fallback ??
     ((context: RouteContext): ReactNode => `no route matched: ${context.path}`)
+  setLocation(path)
   return render(
-    <RouteProvider table={table} fallback={fallbackView}>
+    <RouteProvider
+      table={table}
+      fallback={fallbackView}
+      presence={presence}
+      pending={pending}
+      failed={failed}
+    >
       {ui}
     </RouteProvider>,
   )

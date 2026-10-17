@@ -12,8 +12,9 @@ import type { ReactElement } from 'react'
 import { renderRouteTable } from '../test-utils/render.js'
 import { RouteLink } from './RouteLink.js'
 import { RouteView } from './RouteView.js'
-import { useNavItems, useNavigate } from './hooks.js'
-import type { RouteTable } from './types.js'
+import { useHasRoute, useMatch, useNavItems, useNavigate } from './hooks.js'
+import { presentDeclarations } from './presence.js'
+import type { RoutePresence, RouteTable } from './types.js'
 
 function Nav(): ReactElement {
   const items = useNavItems()
@@ -107,5 +108,167 @@ describe('useNavigate', () => {
 
     expect(await screen.findByText('case list')).toBeInTheDocument()
     expect(window.location.pathname).toBe('/cases')
+  })
+})
+
+function MatchProbe(): ReactElement {
+  const match = useMatch()
+  return (
+    <span data-testid="match">
+      {match === undefined
+        ? 'none'
+        : `${match.declaration.path}|${match.context.params.id ?? ''}`}
+    </span>
+  )
+}
+
+describe('useMatch', () => {
+  const table: RouteTable = [
+    { path: '/console/x', view: () => null, label: 'X' },
+    { path: '/console/x/:id', view: () => null },
+  ]
+
+  it('returns the detail declaration itself, not the prefix ancestor', () => {
+    renderRouteTable(table, <MatchProbe />, { path: '/console/x/42' })
+    expect(screen.getByTestId('match')).toHaveTextContent('/console/x/:id|42')
+  })
+
+  it('returns the declaration for its own exact path', () => {
+    renderRouteTable(table, <MatchProbe />, { path: '/console/x' })
+    expect(screen.getByTestId('match')).toHaveTextContent('/console/x|')
+  })
+
+  it('does not inherit an ancestor for a path with no declaration of its own', () => {
+    renderRouteTable(table, <MatchProbe />, { path: '/console/x/42/extra' })
+    expect(screen.getByTestId('match')).toHaveTextContent('none')
+  })
+
+  it('returns no match for a gated declaration whose features are absent', () => {
+    const gatedTable: RouteTable = [
+      { path: '/objects', view: () => null, requires: ['objectstore.objects'] },
+    ]
+    renderRouteTable(gatedTable, <MatchProbe />, {
+      path: '/objects',
+      presence: { state: 'ready', has: () => false },
+      pending: () => null,
+      failed: () => null,
+    })
+    expect(screen.getByTestId('match')).toHaveTextContent('none')
+  })
+})
+
+function HasRouteProbe(): ReactElement {
+  const parameterized = useHasRoute('/cases/42')
+  const unregistered = useHasRoute('/nope')
+  const absent = useHasRoute('/objects')
+  return (
+    <span data-testid="has">
+      {`${String(parameterized)}|${String(unregistered)}|${String(absent)}`}
+    </span>
+  )
+}
+
+describe('useHasRoute', () => {
+  const table: RouteTable = [
+    { path: '/', view: () => null },
+    { path: '/cases/:caseId', view: () => null },
+    { path: '/objects', view: () => null, requires: ['objectstore.objects'] },
+  ]
+
+  it('answers true for a parameterized path and false off the table or for an absent page', () => {
+    renderRouteTable(table, <HasRouteProbe />, {
+      presence: { state: 'ready', has: () => false },
+      pending: () => null,
+      failed: () => null,
+    })
+    expect(screen.getByTestId('has')).toHaveTextContent('true|false|false')
+  })
+
+  it('answers false for a gated path while the predicate is pending', () => {
+    renderRouteTable(table, <HasRouteProbe />, {
+      presence: { state: 'pending' },
+      pending: () => null,
+      failed: () => null,
+    })
+    expect(screen.getByTestId('has')).toHaveTextContent('true|false|false')
+  })
+})
+
+describe('navigation and matching share one narrowed surface', () => {
+  const table: RouteTable = [
+    { path: '/', view: () => null, label: 'Home' },
+    {
+      path: '/objects',
+      view: () => null,
+      label: 'Objects',
+      requires: ['objectstore.objects'],
+    },
+    { path: '/cases', view: () => null, label: 'Cases' },
+  ]
+
+  const states: readonly RoutePresence[] = [
+    { state: 'pending' },
+    { state: 'failed' },
+    { state: 'ready', has: () => true },
+    { state: 'ready', has: () => false },
+  ]
+
+  function nameOf(presence: RoutePresence): string {
+    if (presence.state !== 'ready') return presence.state
+    return `ready, objects ${presence.has('objectstore.objects') ? 'present' : 'absent'}`
+  }
+
+  it.each(states.map((presence) => [nameOf(presence), presence] as const))(
+    'derives the entries from presentDeclarations when %s',
+    (_name, presence) => {
+      const expected = presentDeclarations(table, presence)
+        .filter((declaration) => declaration.label !== undefined)
+        .map((declaration) => `nav-${declaration.path}`)
+
+      renderRouteTable(table, <Nav />, {
+        presence,
+        pending: () => null,
+        failed: () => null,
+      })
+
+      const rendered = screen
+        .queryAllByTestId(/^nav-/)
+        .map((element) => element.getAttribute('data-testid'))
+      expect(rendered).toEqual(expected)
+    },
+  )
+
+  it('shows an absent gated page in neither the navigation nor the exact match', () => {
+    function SurfaceProbe(): ReactElement {
+      const items = useNavItems()
+      const match = useMatch()
+      return (
+        <span data-testid="surface">
+          {`${items.map((item) => item.id).join(',')}|${
+            match?.declaration.path ?? 'none'
+          }`}
+        </span>
+      )
+    }
+
+    renderRouteTable(
+      table,
+      <>
+        <Nav />
+        <SurfaceProbe />
+      </>,
+      {
+        path: '/objects',
+        presence: { state: 'ready', has: () => false },
+        pending: () => null,
+        failed: () => null,
+      },
+    )
+
+    expect(screen.getByTestId('surface')).toHaveTextContent('/,/cases|none')
+    const selected = screen
+      .queryAllByTestId(/^nav-/)
+      .filter((element) => element.getAttribute('data-selected') === 'true')
+    expect(selected).toHaveLength(0)
   })
 })

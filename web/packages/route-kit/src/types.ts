@@ -31,7 +31,29 @@ export interface RouteDeclaration {
    * but never reads it -- authorization is the host composing a RouteGuard.
    */
   readonly permission?: string
+  /**
+   * The feature names this page needs, all of which must be present for the
+   * declaration to render and to appear in navigation. It is data: this
+   * package hands the names to the host's presence predicate and never
+   * interprets them. A declaration without this field (or with an empty
+   * list) is not gated and is unaffected by the predicate.
+   */
+  readonly requires?: readonly string[]
 }
+
+/**
+ * The host's answer to "is this feature present?", handed to `RouteProvider`.
+ * It is a structural shape: a host derives it from its own feature state
+ * without a shared type edge. `pending` and `failed` are the two states in
+ * which no gated declaration is present yet.
+ */
+export type RoutePresence =
+  | { readonly state: 'pending' }
+  | { readonly state: 'failed' }
+  | {
+      readonly state: 'ready'
+      readonly has: (name: string) => boolean
+    }
 
 /** A product's pages: the one place it names which pages it is made of. */
 export type RouteTable = readonly RouteDeclaration[]

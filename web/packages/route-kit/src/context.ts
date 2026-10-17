@@ -7,11 +7,14 @@
 
 import { createContext, useContext } from 'react'
 import type { ReactNode } from 'react'
-import type { RouteContext, RouteTable } from './types.js'
+import type { RouteContext, RoutePresence, RouteTable } from './types.js'
 
 export interface RouteKitContextValue {
   readonly table: RouteTable
   readonly fallback: (context: RouteContext) => ReactNode
+  readonly presence?: RoutePresence
+  readonly pending?: (context: RouteContext) => ReactNode
+  readonly failed?: (context: RouteContext) => ReactNode
 }
 
 export const RouteKitContext = createContext<RouteKitContextValue | undefined>(

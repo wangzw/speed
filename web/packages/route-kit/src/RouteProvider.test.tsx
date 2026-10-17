@@ -92,4 +92,82 @@ describe('RouteProvider', () => {
       errorSpy.mockRestore()
     }
   })
+
+  describe('feature-gated tables', () => {
+    const gated: RouteTable = [
+      { path: '/objects', view, requires: ['objectstore.objects'] },
+    ]
+    const presence = { state: 'ready', has: () => true } as const
+    const pending = (): null => null
+    const failed = (): null => null
+
+    function expectAssemblyThrow(
+      element: ReactElement,
+      pattern: RegExp,
+    ): void {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        expect(() => render(element)).toThrow(pattern)
+      } finally {
+        errorSpy.mockRestore()
+      }
+    }
+
+    it('throws when the presence predicate is missing', () => {
+      expectAssemblyThrow(
+        <RouteProvider
+          table={gated}
+          fallback={fallback}
+          pending={pending}
+          failed={failed}
+        >
+          <span>never</span>
+        </RouteProvider>,
+        /presence/,
+      )
+    })
+
+    it('throws when the pending view is missing', () => {
+      expectAssemblyThrow(
+        <RouteProvider
+          table={gated}
+          fallback={fallback}
+          presence={presence}
+          failed={failed}
+        >
+          <span>never</span>
+        </RouteProvider>,
+        /pending/,
+      )
+    })
+
+    it('throws when the failed view is missing', () => {
+      expectAssemblyThrow(
+        <RouteProvider
+          table={gated}
+          fallback={fallback}
+          presence={presence}
+          pending={pending}
+        >
+          <span>never</span>
+        </RouteProvider>,
+        /failed/,
+      )
+    })
+
+    it('mounts when the predicate and both views are given', () => {
+      render(
+        <RouteProvider
+          table={gated}
+          fallback={fallback}
+          presence={presence}
+          pending={pending}
+          failed={failed}
+        >
+          <span>mounted</span>
+        </RouteProvider>,
+      )
+      expect(screen.getByText('mounted')).toBeInTheDocument()
+    })
+  })
 })
