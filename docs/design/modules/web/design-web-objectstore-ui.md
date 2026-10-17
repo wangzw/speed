@@ -38,7 +38,7 @@ interface ObjectDetailDialogProps {
 
 导出集为 `OBJECTSTORE_UI_NAMESPACE`、`objectstoreUiResources`、`ObjectsPage`（连同 `ObjectsPageProps`）、`ObjectDetailDialog`（连同 `ObjectDetailDialogProps`）。`src/internal/` 下的错误文案解析器、失败横幅、异步分支、上传编排与格式化助手是页内管线，不外导。
 
-**稳定性承诺。** 上述导出集与 `ObjectsPageProps`、`ObjectDetailDialogProps` 的形状是对宿主的契约。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段、把必选放宽为可选是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型）、把可选收紧为必选，是不兼容变更。包以锁定版本组发布。
+**稳定性承诺。** 上述导出集与 `ObjectsPageProps`、`ObjectDetailDialogProps` 的形状是对宿主的契约。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下读取方即报 TS18048，是不兼容变更。包以锁定版本组发布。
 
 ## 依赖
 

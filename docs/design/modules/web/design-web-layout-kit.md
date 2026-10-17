@@ -115,7 +115,7 @@ export const layoutKitResources: Readonly<Record<string, ResourceBundle>>
 
 宿主在 `createI18n` 之后用 `registerNamespace` 恰好注册一次（重复注册抛错，故不得发生在组件或 provider 内）。本包渲染自身文字经 `useLayoutKitTranslation`，从 `src/locales/zh-CN.json` 与 `en-US.json` 这对叶子键集相同的双语文件读取。
 
-**稳定性承诺。** `AppShell`、`AppShellProps`、`AppShellNavItem`、`RouteGuard`、`RouteGuardProps`、`RouteGuardStatus`、`Avatar`、`AvatarProps` 的字段与方法集，`LAYOUT_KIT_NAMESPACE`、`layoutKitResources`，以及 `sidebarWidth` 缺省值 `280`、缺省拒绝态与等待态的形状，是宿主可见面。宿主可见面上的变更按 TypeScript 的源码语义分类：新增导出、新增可选字段、把必选放宽为可选是源码兼容的，且未被使用时宿主行为不变；删除导出或字段、改既有字段或导出的含义或名、改签名（参数或返回类型）、把可选收紧为必选，是不兼容变更。收起能力是纯附加的可选 prop 对，`navLabel` 是纯附加的可选 prop，两者都未传时宿主行为不变。分组与二级嵌套同样是纯附加：`AppShellNavGroup` 与 `AppShellNavEntry` 是新增导出，`AppShellNavItem.children` 是新增的可选字段，`AppShellProps.navItems` 的元素类型由 `AppShellNavItem` 拓宽为 `AppShellNavItem | AppShellNavGroup`——`AppShellNavItem[]` 仍可赋值给它，故这是源码兼容的拓宽而非签名变更：未使用分组或嵌套的宿主行为逐字节不变。
+**稳定性承诺。** `AppShell`、`AppShellProps`、`AppShellNavItem`、`RouteGuard`、`RouteGuardProps`、`RouteGuardStatus`、`Avatar`、`AvatarProps` 的字段与方法集，`LAYOUT_KIT_NAMESPACE`、`layoutKitResources`，以及 `sidebarWidth` 缺省值 `280`、缺省拒绝态与等待态的形状，是宿主可见面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下读取方即报 TS18048，是不兼容变更。新增的可选字段在未被使用时宿主行为不变。收起能力是纯附加的可选 prop 对，`navLabel` 是纯附加的可选 prop，两者都未传时宿主行为不变。分组与二级嵌套同样是纯附加：`AppShellNavGroup` 与 `AppShellNavEntry` 是新增导出，`AppShellNavItem.children` 是新增的可选字段，`AppShellProps.navItems` 的元素类型由 `AppShellNavItem` 拓宽为 `AppShellNavItem | AppShellNavGroup`——`AppShellNavItem[]` 仍可赋值给它，故这是源码兼容的拓宽而非签名变更：未使用分组或嵌套的宿主行为逐字节不变。
 
 ## 依赖
 

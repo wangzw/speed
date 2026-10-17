@@ -124,7 +124,7 @@ export const productShellResources: Readonly<Record<string, ResourceBundle>>
 
 本包自身只渲染一句文字：会话结束翻转的礼貌播报。框架的内建文字来自 layout-kit 命名空间，缺省结束屏的来自 auth-ui 命名空间；其余都是宿主内容。`bootstrapSpeedApp` 为它组合的包自动注册四个族命名空间（含本包自己的），故经装配启动的页面不会漏注册。
 
-**稳定性承诺。** `ProductShell`、`ProductShellProps`、`PRODUCT_SHELL_NAMESPACE`、`productShellResources`，以及 `SpeedAppDefinition`、`SpeedAppNamespace`、`SpeedAppProvider`、`SpeedAppServices`、`SpeedSessionEndContext`、`SpeedSessionEndedHandler`、`SpeedAppBootstrap`、`bootstrapSpeedApp`、`watchSessionEnd`、`createQueryClient` 的字段与方法集，是宿主可见面。宿主可见面上的变更按 TypeScript 的源码语义分类：新增导出、新增可选字段、把必选放宽为可选是源码兼容的，且未被使用时宿主行为不变；删除导出或字段、改既有字段或导出的含义或名、改签名（参数或返回类型）、把可选收紧为必选，是不兼容变更。
+**稳定性承诺。** `ProductShell`、`ProductShellProps`、`PRODUCT_SHELL_NAMESPACE`、`productShellResources`，以及 `SpeedAppDefinition`、`SpeedAppNamespace`、`SpeedAppProvider`、`SpeedAppServices`、`SpeedSessionEndContext`、`SpeedSessionEndedHandler`、`SpeedAppBootstrap`、`bootstrapSpeedApp`、`watchSessionEnd`、`createQueryClient` 的字段与方法集，是宿主可见面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下读取方即报 TS18048，是不兼容变更。新增的可选字段在未被使用时宿主行为不变。
 
 ## 依赖
 
