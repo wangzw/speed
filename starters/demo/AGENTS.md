@@ -190,10 +190,10 @@ with SIGINT or SIGTERM; it drains in-flight requests first.
 `seed.tenants` names, and the platform-administrator role the ones marked with
 it hold. It carries the migrations with it, so it is the whole of what a fresh
 copy does to a database before serving from it; running it again writes nothing
-and says so, as long as the declared permission set has not grown since the
-role was marked builtin. A permission a module adds after that mark cannot be
-granted to the frozen role, and the run reports the refusal as the error
-described under "Adding a permission after the administrator role is frozen".
+and says so. A permission a module declares after an earlier run is added on
+the next run through the host's seeding surface, so the operator keeps
+everything the process declares while the management surface stays unable to
+change the role.
 
 Seeding is a step of its own rather than something `serve` does on its way up,
 because a deployment nobody may administer until somebody says so is the posture
@@ -397,11 +397,13 @@ Under every stack:
   it is given — a plaintext `password` or a `password-hash` — the tenants under
   `seed.tenants`, and the platform-administrator role the ones marked with it
   hold, carrying every permission the process declares. The role is created, its
-  grants are written, and it is then marked builtin in every domain: the
-  management surface refuses to rewrite or delete it, because deleting it would
-  revoke the operator's every permission with no command to put it back. The mark
-  freezes the grant set: a permission a module declares after that run is not
-  added to the role. The role and its grants
+  grants are written through the seeding surface (`authz.Seeder`), and it is
+  then marked builtin in every domain: the management surface refuses to
+  rewrite it, delete it or change its grants, because deleting it would revoke
+  the operator's every permission with no command to put it back. The seeding
+  surface only adds: a permission a module declares after the mark is added to
+  the role on the next run, and an existing grant is never removed or
+  rewritten. The role and its grants
   are written into two kinds of domain: the platform domain, which the
   platform's own management surface reads, and each tenant under `seed.tenants`,
   so the console's tenant-addressed pages — members, invitations and SSO
@@ -410,21 +412,10 @@ Under every stack:
   `seed.tenants`: it names the platform's policy domain and not a tenant, and the
   policy module refuses to start when the roster holds a tenant carrying it, so
   the seed refuses the name before writing it rather than seeding a roster the
-  next serve would not start on. It is idempotent over an unchanged declared
-  permission set — an account, a tenant, a role, a grant or a binding already
-  there is left as it stands and reported as skipped, so a re-run writes
-  nothing. The set is what the builtin mark freezes: once a module declares a
-  permission the administrator role does not hold, the missing grant write is
-  refused with `authz.ErrBuiltinRole` and the command exits non-zero with
-
-  ```
-  seed: granting <permission> to <domain>/platform-admin: authz: a builtin role cannot be changed or deleted: the role "platform-admin" of tenant "<domain>" is builtin
-  ```
-
-  That refusal is the report — no partial write is left behind — and the
-  upgrade follows "Adding a permission after the administrator role is
-  frozen" below rather than retrying the same run unchanged. The one existing
-  role it corrects is
+  next serve would not start on. It is idempotent: an account, a tenant, a role,
+  a grant or a binding already there is left as it stands and reported as
+  skipped, so a re-run writes nothing — and a re-run after the process gained a
+  permission writes exactly that grant. The one existing role it corrects is
   the administrator role's `builtin` mark: a role an earlier seed wrote without
   it is marked once its grants are in place, because that mark is what keeps the
   role off the console's delete control. Nothing else is touched, and an
@@ -443,48 +434,6 @@ Under every stack:
   skeleton ships one placeholder group (`example`) with two leaves, one that
   stops at `Init` (a read) and one that goes to `Start` (a write); a product
   replaces the leaves' actions and words with its own.
-
-### Adding a permission after the administrator role is frozen
-
-The administrator role holds every permission the binary declares at the
-moment `seed` marks it builtin, and the mark keeps that set fixed: the manager
-refuses every grant write on the role, which is what keeps the role — and the
-operator's access — off the console's delete and rewrite paths. A module that
-declares a permission later does not extend the role. Give that permission its
-own role and bind the role to the same accounts, in every domain that needs it
-— the platform domain `system` and each tenant under `seed.tenants`, because a
-role, its grants and its bindings are per-domain rows:
-
-1. Create the supplementary role. The call needs `role.manage`, which the
-   builtin role still carries:
-
-   ```
-   PUT /authz/admin/tenants/{domain}/roles/operator-extra
-   {"description_key": "authz.role.operator-extra"}
-   ```
-
-2. Grant the new permission, named by its catalog code as the route's path
-   requires:
-
-   ```
-   PUT /authz/admin/tenants/{domain}/roles/operator-extra/grants/{permission}
-   ```
-
-3. Bind it to each administrator account in that domain:
-
-   ```
-   PUT /authz/admin/tenants/{domain}/bindings/{account}/operator-extra
-   ```
-
-An account's effective permissions are the union of the grants of its roles,
-so each administrator keeps everything the builtin role holds and gains the
-new permission. `seed` keeps reporting the refusal on later runs, because the
-frozen role is still short of the permission — that is what the mark means,
-and no step makes that particular grant succeed. A deployment upgrading an
-existing database therefore either drops `seed` from its regular pipeline
-after following these steps or accepts the reported refusal on each run; a
-fresh database seeds the grown set and marks it in one run, so the failure
-never arises there.
 
 ## Where to change what
 

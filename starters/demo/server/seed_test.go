@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -37,9 +36,9 @@ func (m *roleManager) MarkRoleBuiltin(_ context.Context, _ string, role authz.Ro
 	return nil
 }
 
-// The role is created without the builtin mark: the grants are written next,
-// and the manager refuses every grant write on a builtin role, so a role created
-// with the mark would be frozen holding nothing.
+// The role is created without the builtin mark: it is marked only once the
+// grants are in place, so the mark cannot freeze a role before the grants that
+// give it meaning exist.
 func TestSeedCreatesTheAdministratorRoleWithoutTheMark(t *testing.T) {
 	manager := &roleManager{}
 	if err := seedRole(t.Context(), manager, "system", time.Now().UTC()); err != nil {
@@ -105,22 +104,24 @@ func TestSeedLeavesAnExistingBuiltinRoleAlone(t *testing.T) {
 	}
 }
 
-// grantManager answers the grant calls seedGrants makes. Its PutGrant answers
-// with the error the policy manager returns on a builtin role, so the case
-// pins the seed's report of a frozen grant set.
-type grantManager struct {
-	authz.Manager
-	attempted []authz.GrantRecord
+// grantSeeder answers the seeding call seedGrants makes. The number added and
+// the error are fixed by the case, so the case pins what the seed reports and
+// what it hands the seeding surface.
+type grantSeeder struct {
+	authz.Seeder
+	tenant    string
+	role      authz.Role
+	attempted []authz.Grant
+	added     int
 	err       error
 }
 
-func (m *grantManager) Grants(context.Context, string, authz.Role) ([]authz.GrantRecord, error) {
-	return nil, nil
-}
-
-func (m *grantManager) PutGrant(_ context.Context, g authz.GrantRecord) error {
-	m.attempted = append(m.attempted, g)
-	return m.err
+func (s *grantSeeder) SeedGrants(_ context.Context, tenant string, role authz.Role,
+	grants []authz.Grant,
+) (int, error) {
+	s.tenant, s.role = tenant, role
+	s.attempted = append(s.attempted, grants...)
+	return s.added, s.err
 }
 
 // fixedCatalog is a catalog holding the permissions it is given, each with the
@@ -150,34 +151,58 @@ func (c fixedCatalog) ObjectAction(permission authz.Permission) (string, string,
 	return pair[0], pair[1], true
 }
 
-// A permission declared after the builtin mark cannot be added to the frozen
-// role. The seed must report the refusal with the permission and the domain it
-// named, and the manager's own error must survive the wrapping: swallowing it
-// would turn a frozen grant set into a silent shortfall.
-func TestSeedReportsAFrozenGrantRefusal(t *testing.T) {
-	refusal := fmt.Errorf("%w: the role %q of tenant %q is builtin",
-		authz.ErrBuiltinRole, platformAdminRole, "system")
-	manager := &grantManager{err: refusal}
+// A permission declared after the builtin mark reaches the role through the
+// seeding surface: seedGrants hands every translated declared permission to
+// SeedGrants, which is the one write that adds to a builtin role. The number
+// the surface reports added is what the seed prints, so a grown set and an
+// unchanged one are distinguished by the surface's own answer.
+func TestSeedGrantsSeedsEveryDeclaredPermission(t *testing.T) {
+	seeder := &grantSeeder{added: 2}
+	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
+		"crm.deal.read":  {"deal", "read"},
+		"crm.deal.write": {"deal", "write"},
+	}}
+	if err := seedGrants(t.Context(), seeder, catalog, "system"); err != nil {
+		t.Fatalf("seedGrants: %v", err)
+	}
+	if seeder.tenant != "system" || seeder.role != platformAdminRole {
+		t.Errorf("SeedGrants got tenant %q role %q, want system/%s",
+			seeder.tenant, seeder.role, platformAdminRole)
+	}
+	got := slices.SortedFunc(slices.Values(seeder.attempted), func(a, b authz.Grant) int {
+		if a.Resource != b.Resource {
+			return strings.Compare(a.Resource, b.Resource)
+		}
+		return strings.Compare(a.Action, b.Action)
+	})
+	want := []authz.Grant{
+		{Resource: "deal", Action: "read"},
+		{Resource: "deal", Action: "write"},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("SeedGrants got %+v, want %+v", got, want)
+	}
+}
+
+// The seeding write's failure is reported with the domain and the role it
+// named, and the surface's own error survives the wrapping: swallowing it would
+// turn a failed seed into a role silently short of a permission.
+func TestSeedReportsASeedingFailure(t *testing.T) {
+	refusal := errors.New("authz/policy: the table is unavailable")
+	seeder := &grantSeeder{err: refusal}
 	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
 		"crm.deal.read": {"deal", "read"},
 	}}
-	err := seedGrants(t.Context(), manager, catalog, "system", time.Now().UTC())
-	if !errors.Is(err, authz.ErrBuiltinRole) {
-		t.Fatalf("seedGrants error = %v, want it to wrap authz.ErrBuiltinRole", err)
+	err := seedGrants(t.Context(), seeder, catalog, "system")
+	if !errors.Is(err, refusal) {
+		t.Fatalf("seedGrants error = %v, want it to wrap the seeding failure", err)
 	}
 	for _, want := range []string{
-		"seed: granting crm.deal.read to system/" + string(platformAdminRole),
+		"seed: granting the declared permissions to system/" + string(platformAdminRole),
 		refusal.Error(),
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("seedGrants error = %q, want it to contain %q", err, want)
 		}
-	}
-	if len(manager.attempted) != 1 {
-		t.Fatalf("seedGrants attempted %d grant writes, want one", len(manager.attempted))
-	}
-	got := manager.attempted[0]
-	if got.Resource != "deal" || got.Action != "read" || got.Role != platformAdminRole || got.Tenant != "system" {
-		t.Errorf("the attempted grant = %+v, want deal/read on %s/system", got, platformAdminRole)
 	}
 }
