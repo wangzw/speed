@@ -13,7 +13,6 @@ import { renderRouteTable } from '../test-utils/render.js'
 import { RouteLink } from './RouteLink.js'
 import { RouteView } from './RouteView.js'
 import { useHasRoute, useMatch, useNavItems, useNavigate } from './hooks.js'
-import { presentDeclarations } from './presence.js'
 import type { RoutePresence, RouteTable } from './types.js'
 
 function Nav(): ReactElement {
@@ -206,25 +205,27 @@ describe('navigation and matching share one narrowed surface', () => {
     { path: '/cases', view: () => null, label: 'Cases' },
   ]
 
-  const states: readonly RoutePresence[] = [
-    { state: 'pending' },
-    { state: 'failed' },
-    { state: 'ready', has: () => true },
-    { state: 'ready', has: () => false },
+  // Expectations are literal, one per presence state: deriving them from
+  // presentDeclarations would let a broken narrowing rule agree with itself.
+  // The gated entry sits between the two ungated ones in table order.
+  const cases: readonly (readonly [string, RoutePresence, readonly string[]])[] = [
+    ['pending', { state: 'pending' }, ['nav-/', 'nav-/cases']],
+    ['failed', { state: 'failed' }, ['nav-/', 'nav-/cases']],
+    [
+      'ready with the feature present',
+      { state: 'ready', has: () => true },
+      ['nav-/', 'nav-/objects', 'nav-/cases'],
+    ],
+    [
+      'ready with the feature absent',
+      { state: 'ready', has: () => false },
+      ['nav-/', 'nav-/cases'],
+    ],
   ]
 
-  function nameOf(presence: RoutePresence): string {
-    if (presence.state !== 'ready') return presence.state
-    return `ready, objects ${presence.has('objectstore.objects') ? 'present' : 'absent'}`
-  }
-
-  it.each(states.map((presence) => [nameOf(presence), presence] as const))(
-    'derives the entries from presentDeclarations when %s',
-    (_name, presence) => {
-      const expected = presentDeclarations(table, presence)
-        .filter((declaration) => declaration.label !== undefined)
-        .map((declaration) => `nav-${declaration.path}`)
-
+  it.each(cases)(
+    'derives the navigation entries when presence is %s',
+    (_name, presence, expected) => {
       renderRouteTable(table, <Nav />, {
         presence,
         pending: () => null,

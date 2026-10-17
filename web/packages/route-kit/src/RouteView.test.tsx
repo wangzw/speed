@@ -10,6 +10,7 @@ import { screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { renderRouteTable } from '../test-utils/render.js'
+import type { RenderRouteOptions } from '../test-utils/render.js'
 import { RouteView } from './RouteView.js'
 import type { RouteContext, RouteTable } from './types.js'
 
@@ -127,30 +128,42 @@ describe('RouteView with feature gating', () => {
   })
 
   it('renders the same fallback for an absent page and an unregistered path', () => {
-    const table: RouteTable = [
-      { path: '/', view: () => <span>home</span> },
-      { path: '/objects', view: () => <span>objects</span>, requires: ['objectstore.objects'] },
+    const contexts: RouteContext[] = []
+    const fallback = (context: RouteContext): ReactElement => {
+      contexts.push(context)
+      return (
+        <p data-testid="fallback">
+          {`${context.path} ${JSON.stringify(context.params)}`}
+        </p>
+      )
+    }
+    const gated: RouteTable = [
+      {
+        path: '/reports/:reportId',
+        view: () => <span>report</span>,
+        requires: ['reporting.exports'],
+      },
     ]
-    const absent = renderRouteTable(table, <RouteView />, {
-      path: '/objects',
-      fallback: fallbackView,
+    const options: RenderRouteOptions = {
+      path: '/reports/r1',
+      fallback,
       presence: { state: 'ready', has: () => false },
       pending: () => <span>waiting</span>,
       failed: () => <span>failed</span>,
-    })
+    }
+
+    const absent = renderRouteTable(gated, <RouteView />, options)
     const absentHtml = absent.container.innerHTML
     absent.unmount()
 
-    const unregistered = renderRouteTable(table, <RouteView />, {
-      path: '/nope',
-      fallback: fallbackView,
-      presence: { state: 'ready', has: () => false },
-      pending: () => <span>waiting</span>,
-      failed: () => <span>failed</span>,
-    })
-    expect(unregistered.container.innerHTML).toBe(
-      absentHtml.replace('/objects', '/nope'),
-    )
+    // Removing the declaration leaves a genuinely unmatched path at the same
+    // URL; the two renders must be byte-identical, params included.
+    const unregistered = renderRouteTable([], <RouteView />, options)
+    expect(unregistered.container.innerHTML).toBe(absentHtml)
+    expect(contexts).toEqual([
+      { path: '/reports/r1', params: {} },
+      { path: '/reports/r1', params: {} },
+    ])
   })
 
   it('renders the pending view for a gated path and never the fallback', () => {

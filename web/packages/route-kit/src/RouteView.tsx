@@ -10,8 +10,10 @@
  * Matching runs over the whole table, not the narrowed surface: a gated path
  * still matches while the presence predicate is pending or failed, which is
  * what lets it render the pending or failed view. Absence is the exception --
- * a gated declaration whose features are absent renders the fallback, the
- * same branch an unregistered path takes, and its view is never called.
+ * a gated declaration whose features are absent renders the fallback with the
+ * same context an unregistered path gets, the unmatched path and no params,
+ * and its view is never called. The fallback therefore cannot tell the two
+ * apart, however it reads its context.
  */
 
 import { useLocation } from 'react-router-dom'
@@ -74,5 +76,5 @@ function renderMatch(
   const requires = declaration.requires ?? []
   return requires.every((name) => presence.has(name))
     ? declaration.view(context)
-    : dispatch.fallback(context)
+    : dispatch.fallback({ path: pathname, params: {} })
 }

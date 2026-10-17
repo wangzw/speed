@@ -165,9 +165,10 @@ interface NavItem {
   behavior is unchanged by their presence.
 - **Absence is the same branch as a miss.** Matching runs over the whole table.
   An unmatched path renders `fallback`; a gated declaration whose features are
-  absent renders the same `fallback` with the matched context, and its `view`
-  is never called. `<RouteView>` therefore cannot render a page that is not
-  present.
+  absent renders the same `fallback` with the same context a miss gets — the
+  requested path and no params — so the fallback cannot tell the two apart, and
+  the declaration's `view` is never called. `<RouteView>` therefore cannot
+  render a page that is not present.
 - **Pending and failed are distinct states.** A gated path renders `pending`
   while the predicate is loading (a miss still renders `fallback`
   immediately), and `failed` once it has failed. Neither is treated as
@@ -248,7 +249,7 @@ change, labelled with a `!` scope and a `BREAKING CHANGE` footer.
 | Situation | Behavior |
 |---|---|
 | No declaration matches the URL | `fallback` renders; nothing throws |
-| A gated declaration's features are absent | the same `fallback` renders, with the matched context; the declaration's `view` is never called and it has no nav entry |
+| A gated declaration's features are absent | the same `fallback` renders, with the requested path and no params, exactly as for a miss; the declaration's `view` is never called and it has no nav entry |
 | A gated path while the predicate is pending | `pending` renders; `fallback` is not called and gated nav entries are withheld |
 | A gated path while the predicate has failed | `failed` renders; ungated pages and nav entries are unaffected |
 | A duplicate or ambiguous path pattern | assembly throws (`RouteProvider`), naming the conflicting declarations, before rendering |

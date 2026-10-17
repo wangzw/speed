@@ -110,8 +110,10 @@ entry (exact match, "sits below", longest prefix), `permission` being inert,
 and a click or imperative `navigate` re-rendering the view from the new URL.
 The gating suites assert the decisions too: an ungated table renders
 identically under every presence value; a ready answer with a feature absent
-reaches `fallback` without calling the view; pending and failed reach their
-own views and never `fallback` (an unregistered path still reaches it);
+reaches `fallback` without calling the view; an absent parameterized page and
+a miss at the same URL render byte-identically, and each hands `fallback` the
+requested path with empty params; pending and failed reach their own views and
+never `fallback` (an unregistered path still reaches it);
 navigation, `useMatch` and `useHasRoute` agree on the same narrowed set;
 `useMatch` has no prefix inheritance. The consistency check is asserted both
 directly (`table.test.ts`) and through the provider
