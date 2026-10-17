@@ -22,10 +22,14 @@ export type TestOptions = NonNullable<ViteUserConfig['test']>
 
 /**
  * Coverage: v8 over src/** only, so aliased sibling sources never count
- * toward a package's numbers; text-summary for local runs, json-summary
- * for the per-package coverage gate, whose floor is 80% statements and
- * 80% branches -- the CI test leg runs with --coverage, so dropping
- * below either fails that package's job.
+ * toward a package's numbers; text-summary for the console and json-summary
+ * for a machine-readable total beside it. The floors are 80% statements and
+ * 80% branches, and they gate exactly one thing: a run that requests coverage
+ * (`pnpm -C web -r test --coverage`). The repository's automated gate --
+ * `make web-check`, the only thing CI calls -- runs every suite WITHOUT
+ * coverage, so a package below a floor is reported by that opt-in run, never
+ * failed by CI. Instrumentation makes every suite more expensive, which is
+ * why it is not on the per-commit gate.
  */
 export const sharedCoverage = {
   provider: 'v8',

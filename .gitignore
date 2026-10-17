@@ -26,6 +26,9 @@ __pycache__/
 # Node
 node_modules/
 dist/
+# Vitest's coverage output, written beside each package's config by a run
+# that asks for it (`pnpm -C web -r test --coverage`).
+coverage/
 .turbo/
 *.tsbuildinfo
 
