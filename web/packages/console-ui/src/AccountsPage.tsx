@@ -173,6 +173,15 @@ export function AccountsPage() {
   // reset must not drop the only copy of a value handed out once, and the
   // display outlives the panel content that unmounts on close.
   const [oneTimeSecret, setOneTimeSecret] = useState<OneTimeSecret | null>(null)
+  // The control that opened each panel. A close that goes through the
+  // discard confirmation closes the dialog and the panel in one commit;
+  // the dialog's own focus restore then lands on the panel's close control,
+  // which unmounts with the panel and drops focus to the document. The page
+  // therefore returns focus to the opener itself once the panel has exited
+  // (the ordinary close is already restored by the panel, to this same
+  // control).
+  const createTrigger = useRef<HTMLButtonElement | null>(null)
+  const detailTrigger = useRef<HTMLButtonElement | null>(null)
   // A detail close request while the secret is still open asks first.
   const [discardSecretOpen, setDiscardSecretOpen] = useState(false)
   // The create panel's success belongs to the list's scope and may only be
@@ -292,6 +301,11 @@ export function AccountsPage() {
     detailSecretWrite.reset()
     detailSessionWrite.reset()
     detailIdentifierRemoveWrite.reset()
+    const trigger = detailTrigger.current
+    detailTrigger.current = null
+    if (trigger !== null && trigger.isConnected) {
+      trigger.focus()
+    }
   }
 
   // A created account closes the panel; the list's confirmation waits for
@@ -307,6 +321,11 @@ export function AccountsPage() {
     createSuccess.current = null
     if (message !== null) {
       listWrite.succeed(message)
+    }
+    const trigger = createTrigger.current
+    createTrigger.current = null
+    if (trigger !== null && trigger.isConnected) {
+      trigger.focus()
     }
   }
 
@@ -453,7 +472,10 @@ export function AccountsPage() {
             // The panel is modal: this control only opens it. Closing is
             // the panel's own exit, never a second click here.
             aria-haspopup="dialog"
-            onClick={() => openDetail(row.id)}
+            onClick={(event) => {
+              detailTrigger.current = event.currentTarget
+              openDetail(row.id)
+            }}
           >
             {t('accounts.manage')}
           </Button>
@@ -635,7 +657,10 @@ export function AccountsPage() {
               variant="contained"
               size="small"
               aria-haspopup="dialog"
-              onClick={() => setCreateOpen(true)}
+              onClick={(event) => {
+                createTrigger.current = event.currentTarget
+                setCreateOpen(true)
+              }}
             >
               {t('accounts.create.title')}
             </Button>

@@ -1989,6 +1989,72 @@ describe('AccountsPage', () => {
     })
   })
 
+  it('returns focus to the create trigger once a discarded form leaves the panel', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<AccountsPage />, { operations: withAccounts() })
+    const trigger = screen.getByRole('button', { name: CREATE_PANEL_NAME })
+    await user.click(trigger)
+    const panel = await screen.findByRole('dialog', { name: CREATE_PANEL_NAME })
+    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
+
+    await user.click(
+      within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
+    )
+    const discard = await screen.findByRole('dialog', {
+      name: DISCARD_DIALOG_NAME,
+    })
+    await user.click(within(discard).getByRole('button', { name: '放弃' }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: CREATE_PANEL_NAME }),
+      ).not.toBeInTheDocument(),
+    )
+
+    // The confirmation closed together with the panel; the panel's own
+    // close control unmounted with it, so focus belongs on the control
+    // that opened the panel.
+    await waitFor(() => expect(trigger).toHaveFocus())
+  })
+
+  it('returns focus to the row control once a discarded secret leaves the panel', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      createSecret: () =>
+        Promise.resolve({
+          id: 'secret-9',
+          label: 'ci',
+          secret: 'one-time-value',
+          expires_at: '0001-01-01T00:00:00Z',
+        }),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    await screen.findByText('Ada Lovelace')
+    const trigger = screen.getByRole('button', { name: '管理账户 acc-1' })
+    await user.click(trigger)
+    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    await user.type(within(panel).getByLabelText('标签'), 'ci')
+    await user.click(within(panel).getByRole('button', { name: '新建密钥' }))
+    await within(panel).findByText(
+      '服务密钥「ci」（仅显示这一次）：one-time-value',
+    )
+
+    await user.click(
+      within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
+    )
+    const discard = await screen.findByRole('dialog', {
+      name: '放弃未关闭的服务密钥',
+    })
+    await user.click(within(discard).getByRole('button', { name: '放弃' }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: '账户「acc-1」' }),
+      ).not.toBeInTheDocument(),
+    )
+
+    await waitFor(() => expect(trigger).toHaveFocus())
+  })
+
   it('has no axe violations', async () => {
     const user = userEvent.setup()
     const operations = withAccounts()
