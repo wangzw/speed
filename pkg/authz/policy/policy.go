@@ -69,11 +69,11 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
 //
-// It delivers the engine, the catalog and the manager, each exclusively: two
-// engines would be two snapshots a decision could land in with nothing to
-// choose between them, two catalogs two answers to whether a permission is
-// declared, and two managers two writers of one table. A second provider of any
-// of them fails the startup.
+// It delivers the engine, the catalog, the manager and the seeding surface,
+// each exclusively: two engines would be two snapshots a decision could land in
+// with nothing to choose between them, two catalogs two answers to whether a
+// permission is declared, and two managers or two seeders two writers of one
+// table. A second provider of any of them fails the startup.
 //
 // The database is the one hard dependency: the policy lives in its own tables
 // and there is no engine without it. The roster, the bus, the settings store and
@@ -92,6 +92,7 @@ func Module() core.Module {
 			{Token: (*authz.Enforcer)(nil), Exclusive: true},
 			{Token: (*authz.Catalog)(nil), Exclusive: true},
 			{Token: (*authz.Manager)(nil), Exclusive: true},
+			{Token: (*authz.Seeder)(nil), Exclusive: true},
 			{Token: (*authn.AccountLifecycle)(nil)},
 		},
 		Resources: []any{
@@ -173,11 +174,13 @@ var (
 	_ authz.Enforcer         = (*product)(nil)
 	_ authz.Catalog          = (*product)(nil)
 	_ authz.Manager          = (*product)(nil)
+	_ authz.Seeder           = (*product)(nil)
 	_ authn.AccountLifecycle = (*product)(nil)
 )
 
 // product is this module's product and the implementation of the enforcement
-// engine, the catalog, the manager and the account lifecycle hook.
+// engine, the catalog, the manager, the seeding surface and the account
+// lifecycle hook.
 type product struct {
 	handle      *gorm.DB
 	text        string

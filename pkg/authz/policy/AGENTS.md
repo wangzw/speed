@@ -4,8 +4,9 @@ The authorization policy module `authz.policy`. It owns the policy tables and
 their migrations, the thin store the engine reads and writes through, the
 Casbin engine snapshot the decisions read, the permission catalog with the
 translation beside it, the management surface over the policy data, and the
-account lifecycle cleanup. It delivers `authz.Enforcer`, `authz.Catalog` and
-`authz.Manager`, each exclusively, and implements `authn.AccountLifecycle`.
+account lifecycle cleanup. It delivers `authz.Enforcer`, `authz.Catalog`,
+`authz.Manager` and `authz.Seeder`, each exclusively, and implements
+`authn.AccountLifecycle`.
 
 Resolving the process's permission translation belongs here as much as the
 catalog does: the two are built over the same registered modules, and a host
@@ -82,14 +83,25 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   `authz.ErrTenantMismatch`, and a binding that names no account is refused too.
   A builtin role may still be bound — that is how the platform operations'
   roles are handed to an account.
+- **`Seeder` is the one write that grows a builtin role's grant set.** It is
+  delivered exclusively beside `Manager` and takes
+  `SeedGrants(ctx, tenant, role, grants []authz.Grant)`: it adds the
+  (resource, action) pairs the role does not hold, including on a builtin
+  role, and reports how many it added. A held grant is no work, no error and no
+  count, so a repeated seed over an unchanged set writes nothing, reloads
+  nothing and publishes nothing. It never removes, rewrites or re-timestamps a
+  grant, which is what leaves the role's existing grants fixed. An absent role
+  is `authz.ErrUnknownRole`, an empty tenant `authz.ErrTenantMismatch`, and the
+  role check and the inserts run in one transaction with the role's row lock,
+  the same serialisation the `Manager` writes take.
 - **The builtin mark has one write, and `PutRole` is not it.** `PutRole`
   refuses a record carrying `builtin` with `authz.ErrBuiltinRole`, whether it
-  would create or rewrite the role: a role created with the mark could never
-  receive the grants that give it meaning, and a rewrite that could add it would
-  turn any role into one that can be neither rewritten nor deleted, with no path
-  back. `MarkRoleBuiltin(tenant, role)` sets the mark on an existing role — the
-  host's seeding step calls it once the grants are in place — and is idempotent;
-  an absent role is `authz.ErrUnknownRole`.
+  would create or rewrite the role: a role created with the mark would be
+  frozen before the grants that give it meaning are in place, and a rewrite
+  that could add it would turn any role into one that can be neither rewritten
+  nor deleted, with no path back. `MarkRoleBuiltin(tenant, role)` sets the mark
+  on an existing role — the host's seeding step calls it once the grants are in
+  place — and is idempotent; an absent role is `authz.ErrUnknownRole`.
 - **Deleting a role revokes it.** `DeleteRole` removes the role's row together
   with its rows in `authz_grants` and `authz_bindings`, in one transaction. The
   engine decides from those two tables and never reads `authz_roles`, so the

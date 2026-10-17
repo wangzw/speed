@@ -84,18 +84,47 @@ type Manager interface {
 	// cannot be rewritten at all.
 	PutRole(ctx context.Context, r RoleRecord) error
 	// MarkRoleBuiltin sets the builtin mark on an existing role. It is the
-	// only write that sets the mark: after it, the role cannot be rewritten or
-	// deleted and its grants cannot be changed. An absent role is
-	// ErrUnknownRole; an already-builtin role is no work.
+	// only write that sets the mark: after it, the management surface cannot
+	// rewrite or delete the role and cannot change its grants; Seeder is the
+	// one write that still adds grants. An absent role is ErrUnknownRole; an
+	// already-builtin role is no work.
 	MarkRoleBuiltin(ctx context.Context, tenant string, role Role) error
 	// DeleteRole removes a role. A builtin role cannot be deleted.
 	DeleteRole(ctx context.Context, tenant string, role Role) error
-	// PutGrant creates a grant on a role that exists in the tenant.
+	// PutGrant creates a grant on a role that exists in the tenant and is not
+	// builtin. A builtin role's grants are changed only by the host's seeding
+	// surface, Seeder.
 	PutGrant(ctx context.Context, g GrantRecord) error
-	// DeleteGrant removes a grant.
+	// DeleteGrant removes a grant. A builtin role's grants are refused.
 	DeleteGrant(ctx context.Context, g GrantRecord) error
 	// PutBinding binds a role that exists in the tenant to a subject.
 	PutBinding(ctx context.Context, b Binding) error
 	// DeleteBinding removes a subject's binding to a role within a tenant.
 	DeleteBinding(ctx context.Context, tenant, account string, role Role) error
+}
+
+// Seeder is the host's seeding surface over the policy data: it adds the grants
+// a role is declared to hold, and it is the one write that reaches a builtin
+// role's grant set. The policy subpackage delivers it exclusively, beside
+// Manager.
+//
+// It is a capability of its own and not a method on Manager because the
+// management surface takes Manager up: a granted route can then change a role's
+// grants only through Manager, which refuses a builtin role, and holds no way to
+// reach this surface. The seeding write exists for the host, which has to be
+// able to re-run its bootstrap after the process declares a permission the role
+// does not hold: the builtin mark keeps the role off the management surface's
+// delete and rewrite paths, and the host's bootstrap keeps the role complete.
+//
+// A seed adds grants and never removes, rewrites or deletes one. A builtin
+// role's existing grants are therefore fixed against every path, and a host
+// that needs to revoke one gives the account another role instead.
+type Seeder interface {
+	// SeedGrants adds grants to a role that exists in the tenant, whether or
+	// not it is builtin. A grant the role already holds is no work and no
+	// error, so a repeated seed over an unchanged declared set writes nothing
+	// and reports zero; the result is how many grants this call added, not how
+	// many it considered. An absent role is ErrUnknownRole and an empty tenant
+	// is ErrTenantMismatch.
+	SeedGrants(ctx context.Context, tenant string, role Role, grants []Grant) (int, error)
 }

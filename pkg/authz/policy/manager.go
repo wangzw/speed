@@ -159,9 +159,9 @@ func bindingsOf(rows []bindingRow) []authz.Binding {
 
 // PutRole creates or rewrites a role without the builtin mark. A record that
 // carries the mark is refused: the mark is what freezes a role, and a role
-// created with it could never receive the grants that give it meaning (every
-// grant write on a builtin role is refused), so MarkRoleBuiltin is the one
-// path that sets it. An existing builtin role is refused as well: its shape is
+// created with it would be frozen before the grants that give it meaning are in
+// place, so MarkRoleBuiltin is the one path that sets it, called once the
+// grants are written. An existing builtin role is refused as well: its shape is
 // fixed, and rewriting it would change what it means.
 func (p *product) PutRole(ctx context.Context, r authz.RoleRecord) error {
 	if err := requireTenant(r.Tenant); err != nil {
@@ -202,11 +202,12 @@ func (p *product) PutRole(ctx context.Context, r authz.RoleRecord) error {
 	return p.afterWrite(ctx)
 }
 
-// MarkRoleBuiltin freezes an existing role: it sets the builtin mark, after
-// which the management surface and this manager refuse to rewrite or delete
-// the role and to change its grants. It is the only write that sets the mark;
-// PutRole refuses a record carrying it, because a builtin role created that way
-// could never receive the grants that give it meaning.
+// MarkRoleBuiltin freezes an existing role against the management surface: it
+// sets the builtin mark, after which this manager and the management surface
+// refuse to rewrite or delete the role and to change its grants. SeedGrants is
+// the one write that still adds grants to it. It is the only write that sets
+// the mark; PutRole refuses a record carrying it, because a builtin role
+// created that way would be frozen before the grants that give it meaning.
 //
 // The caller is the host writing the policy data it owns: the demo seed marks
 // the administrator role once its grants are in place, and the mark keeps that
@@ -337,6 +338,75 @@ func (p *product) DeleteGrant(ctx context.Context, g authz.GrantRecord) error {
 		return err
 	}
 	return p.afterWrite(ctx)
+}
+
+// SeedGrants adds grants to a role, whether or not it is builtin, and is
+// idempotent: a grant already held is left as it stands and not counted. The
+// caller is the host's seeding step; the management surface holds no Seeder and
+// changes a role's grants through Manager only, which refuses a builtin role.
+//
+// The write is one transaction, and the role check takes the role's row lock, so
+// a concurrent delete of the role and this seed serialise: the delete cannot
+// remove the role between the check and the rows written against it. A grant is
+// never removed, rewritten or re-timestamped here; the set only grows, which is
+// what leaves a builtin role's existing grants fixed. An absent role is
+// ErrUnknownRole, an empty tenant ErrTenantMismatch, and a seed that adds
+// nothing writes nothing and publishes nothing.
+func (p *product) SeedGrants(ctx context.Context, tenant string, role authz.Role, grants []authz.Grant) (int, error) {
+	if err := requireTenant(tenant); err != nil {
+		return 0, err
+	}
+	added := 0
+	err := p.write(ctx, func(tx *gorm.DB) error {
+		if _, found, err := roleState(ctx, tx, tenant, role); err != nil {
+			return err
+		} else if !found {
+			return fmt.Errorf("%w: the role %q of tenant %q was not created", authz.ErrUnknownRole, role, tenant)
+		}
+		held, err := grantsHeld(ctx, tx, tenant, role)
+		if err != nil {
+			return err
+		}
+		adapter := persist.New(ctx, tx, tenancy.ID(tenant))
+		for _, g := range grants {
+			if _, ok := held[g]; ok {
+				continue
+			}
+			rule := []string{string(role), tenant, g.Resource, g.Action}
+			if err := adapter.AddPolicy("p", "p", rule); err != nil {
+				return fmt.Errorf("authz/policy: seeding the grants of tenant %q: %w", tenant, err)
+			}
+			held[g] = struct{}{}
+			added++
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	if added == 0 {
+		return 0, nil
+	}
+	return added, p.afterWrite(ctx)
+}
+
+// grantsHeld reports the (resource, action) pairs a role holds in a tenant,
+// read through the write's own transaction. It reads the whole set rather than
+// asking per grant so that a seed of a grown declared set issues one read and
+// only the inserts the set lacks.
+func grantsHeld(ctx context.Context, tx *gorm.DB, tenant string, role authz.Role) (map[authz.Grant]struct{}, error) {
+	var rows []grantRow
+	err := tx.WithContext(tenancy.CrossTenant(ctx)).
+		Where("tenant_id = ? AND role = ?", tenant, string(role)).
+		Find(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("authz/policy: reading the grants of the role %q of tenant %q: %w", role, tenant, err)
+	}
+	held := make(map[authz.Grant]struct{}, len(rows))
+	for _, r := range rows {
+		held[authz.Grant{Resource: r.Resource, Action: r.Action}] = struct{}{}
+	}
+	return held, nil
 }
 
 // PutBinding binds a role that exists in the tenant to a subject. A builtin

@@ -79,6 +79,13 @@ before writing a consumer.
   landed between its read and its write. A module that builds its own session
   around the adapter, or that writes policy rows without it, is the shape to
   reject.
+- **The seeding write is a capability of its own.** `Manager` refuses every
+  write on a builtin role; `Seeder` adds grants to one and never removes,
+  rewrites or deletes a grant. `authz.policy` delivers both exclusively, and
+  `authz.admin` takes up `Manager` alone — so the wall between the management
+  surface and a builtin role's grant set is the capability the module holds,
+  not a branch in a handler. A management route would reach `SeedGrants` only
+  if the module were given a `Seeder`, and its descriptor names none.
 - **The translation is this capability's rows unioned with every module's
   declared rows, and a permission no row covers is refused.** `internal/translation`
   carries the rows for this capability's own permissions, and a module that

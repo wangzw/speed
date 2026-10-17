@@ -87,13 +87,16 @@ write that lands answers 204 and no body.
   module writes the (resource, action) pair the engine matches on, never the
   permission as a rule. A write that would delete a builtin role or change its
   permissions is a 409 — the target exists but cannot be changed — and the
-  `Manager` judges that one.
+  `Manager` judges that one. The module holds `Manager` alone and never a
+  `Seeder`, so no route can add a grant to a builtin role either.
 - **The role write body carries the description key only, never the builtin
-  mark.** The mark freezes a role for good — it cannot be rewritten, deleted or
-  granted afterwards, and no path clears it — so the management surface does not
-  set it: the host's seeding step does, through `Manager.MarkRoleBuiltin`. A
-  `builtin` member a client sends reaches nothing; the handler forwards a record
-  without it, and `PutRole` refuses a record that carries it.
+  mark.** The mark freezes a role against the management surface — it cannot be
+  rewritten, deleted or re-granted here, and no path clears it — so the
+  management surface does not set it: the host's seeding step does, through
+  `Manager.MarkRoleBuiltin`, and the host's seeding surface is the one write
+  that adds a grant to the role afterwards. A `builtin` member a client sends
+  reaches nothing; the handler forwards a record without it, and `PutRole`
+  refuses a record that carries it.
 - **The refusal mapping is closed and fail-closed.** An unknown role and a
   tenant mismatch — a request that named something that is not there, or crossed
   a tenant — are 400s; a builtin role is a 409; any other failure of the `Manager`

@@ -40,8 +40,9 @@ var (
 	ErrUnknownRole = errors.New("authz: the role does not exist in this tenant")
 
 	// ErrBuiltinRole reports an attempt to delete a builtin role or to change
-	// its permissions. The fix is to give the subject another role: a builtin
-	// role's permissions are fixed.
+	// its permissions through Manager. The fix is to give the subject another
+	// role: a builtin role's permissions are fixed against every write except
+	// Seeder.SeedGrants, which only adds.
 	ErrBuiltinRole = errors.New("authz: a builtin role cannot be changed or deleted")
 
 	// ErrTenantMismatch reports a policy row whose tenant is not the tenant the

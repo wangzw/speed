@@ -92,8 +92,10 @@ type Binding struct {
 }
 
 // RoleRecord is one role of the role table as it is read and written. Builtin
-// marks a role that cannot be deleted and whose permissions cannot be changed;
-// it is set only by Manager.MarkRoleBuiltin and read back as it stands.
+// marks a role the management surface may not delete or rewrite and whose
+// grants it may not change; it is set only by Manager.MarkRoleBuiltin and read
+// back as it stands. A builtin role's grants are extended only by
+// Seeder.SeedGrants.
 type RoleRecord struct {
 	Tenant         string
 	Role           Role
@@ -110,4 +112,13 @@ type GrantRecord struct {
 	Resource  string
 	Action    string
 	CreatedAt time.Time
+}
+
+// Grant is one permission grant a seeding step adds to a role: the (resource,
+// action) pair the role holds. It is the input shape of Seeder.SeedGrants,
+// which names the tenant and the role once for the whole set; a stored row is
+// a GrantRecord, which also carries the row's tenant, role and creation time.
+type Grant struct {
+	Resource string
+	Action   string
 }

@@ -150,6 +150,13 @@ type GrantRecord struct {
     CreatedAt time.Time
 }
 
+// Grant 是种入步骤添加给角色的一条权限授予的（资源，动作）对；
+// 租户与角色由 SeedGrants 对整组点名。
+type Grant struct {
+    Resource string
+    Action   string
+}
+
 // Manager 是策略数据的读写面，由 authz.policy 交付、authz.admin 取用。
 type Manager interface {
     Roles(ctx context.Context, tenant string) ([]RoleRecord, error)
@@ -163,6 +170,12 @@ type Manager interface {
     DeleteGrant(ctx context.Context, g GrantRecord) error
     PutBinding(ctx context.Context, b Binding) error
     DeleteBinding(ctx context.Context, tenant, account string, role Role) error
+}
+
+// Seeder 是宿主的种入面：它添加角色被声明持有的授权，也是唯一能写
+// builtin 角色授权集的入口。由 authz.policy 排他交付，不在 Manager 上。
+type Seeder interface {
+    SeedGrants(ctx context.Context, tenant string, role Role, grants []Grant) (int, error)
 }
 ```
 
@@ -270,7 +283,7 @@ const (
 
 - **把 `authz.guard`、`authz.policy` 的模块名写进需要授权的命令。** 只挂中间件而不点名 `policy` 时，`guard` 的 `Enforcer` 缺席，本模块判定不可用，全部受守路由答 503；两者要么一起点名，要么都不点。
 - **`endpoints` 写成业务端。** 与 `tenant.admission.endpoints` 一致；`authz.guard` 只在它守的端上登记中间件。
-- **策略数据由宿主写入。** 迁移只建表，不种角色、不种权限授予、不种绑定；平台域 `system` 的运营角色、口令表主体的绑定、各租户的角色与绑定都经 `Manager` 或管理面路由写入。
+- **策略数据由宿主写入。** 迁移只建表，不种角色、不种权限授予、不种绑定；平台域 `system` 的运营角色、口令表主体的绑定、各租户的角色与绑定都经 `Manager` 或管理面路由写入。一个已置 `builtin` 的角色，其授权只经 `Seeder.SeedGrants` 增补：`Manager` 与 `authz.admin` 的写路由都拒绝它。
 - **名册里不得有名为 `system` 的租户。** 平台域的保留值与本模块的判定绑定；`authz.policy` 在启动时经 `tenant.Catalog` 读名册，有同名租户即以 `ErrPlatformDomainTaken` 终止启动。没有租户模块的装配里没有名册，这条核对不执行。
 - **想让权限随撤销尽快生效的装配里要提供事件总线。** 没有 `event.Bus` 时，策略变更靠 `refresh-interval` 兜底，撤销的生效延迟以它为界。
 - **想挂管理面的命令点名 `authz.admin` 并配 `authz.admin.endpoints`。** 不点名时没有 `/authz/admin/*` 下的任何路由；点名而清单为空、为空名或含 `*` 是 `authn.ErrInvalidConfig`。
@@ -305,7 +318,7 @@ const (
 
 **读的应答是 200 加一份视图，落地写的应答是 204 无正文。** 视图逐字段从根包的值构造，从不把值原样交给客户端，记录日后新增一个字段不会因为它在就等于出现在应答里。各视图的字段：目录是 `permission`；角色是 `tenant`、`role`、`builtin`、`description_key`、`created_at`；授予是 `tenant`、`role`、`resource`、`action`、`created_at`；绑定是 `tenant`、`account`、`role`、`granted_at`。时间字段按 UTC 写出。
 
-**角色写入的正文只有 `description_key`。** `builtin` 是宿主的种入步骤经 `Manager.MarkRoleBuiltin` 置上的冻结标记，不是管理面可写的值：正文里带这个成员不会到达 `Manager`，`PutRole` 收到携带该标记的记录也一律拒绝。标记一旦置上就没有清回的通路——这正是它的含义。
+**角色写入的正文只有 `description_key`。** `builtin` 是宿主的种入步骤经 `Manager.MarkRoleBuiltin` 置上的冻结标记，不是管理面可写的值：正文里带这个成员不会到达 `Manager`，`PutRole` 收到携带该标记的记录也一律拒绝。标记一旦置上就没有清回的通路——这正是它的含义。标记置上之后，管理面与 `Manager` 都不能改该角色的授权；宿主的种入面 `Seeder.SeedGrants` 只增不删，是唯一的增补入口（[种入面](#种入面)）。
 
 **授出的权限先经目录与翻译，再写。** 一条授予落到 `authz_grants` 的是（资源，动作）对，不是权限本身；目录不持有的权限在 `Manager` 被调用之前就是 400。写入的（资源，动作）由与中间件、`Decider` 共用的那份翻译给出（[动作到查询的翻译](#动作到查询的翻译)）。
 
@@ -317,7 +330,7 @@ const (
 
 以下是本模块与其他模块和宿主之间的接口面，改动它们改变每一个消费者：
 
-- 根包的接口与方法集：`Enforcer`、`Catalog`、`Gate`、`Manager`，以及 `Permission`、`Role`、`Domain`、`Query`、`Requirement`、`PermissionSpec`、`Translation`、`TranslationSpec`、`Binding` 的字段与取值。`Catalog` 的方法集含 `ObjectAction`：宿主按权限名写策略数据时经它取得（资源，动作）对，而不必取用强制点。它回答的是**进程翻译**里的那一行，与目录各取各的声明——`Has` 为真的权限不保证有行（模块可以只声明 `PermissionSpec` 而不写 `TranslationSpec`，那种模块合法，引用该权限的路由在启动期失败），因此调用方必须读第二个返回值。
+- 根包的接口与方法集：`Enforcer`、`Catalog`、`Gate`、`Manager`、`Seeder`，以及 `Permission`、`Role`、`Domain`、`Query`、`Requirement`、`PermissionSpec`、`Translation`、`TranslationSpec`、`Binding`、`Grant` 的字段与取值。`Catalog` 的方法集含 `ObjectAction`：宿主按权限名写策略数据时经它取得（资源，动作）对，而不必取用强制点。它回答的是**进程翻译**里的那一行，与目录各取各的声明——`Has` 为真的权限不保证有行（模块可以只声明 `PermissionSpec` 而不写 `TranslationSpec`，那种模块合法，引用该权限的路由在启动期失败），因此调用方必须读第二个返回值。`Seeder` 与 `Manager` 分开是接口面的一部分：管理面只取用 `Manager`，因此拿不到写 builtin 角色授权集的那条路径（[种入面](#种入面)）。
 - 权限常量的值。新增常量是兼容的；删除、改名或改变既有常量的值是破坏性变更。与 `authn.Action` 的对齐关系属于对外接口面。
 - `ModelText` 的模型文本，与动作到查询的翻译：内置行（本能力自己携带的行），各模块经 `authz.TranslationSpec` 声明自有翻译行的机制，以及「未被任何行覆盖的权限即拒、模块声明的行与既有行分歧即启动失败」这两条语义；一个模块新声明的行是这份翻译的扩展，不是对已有行的破坏。
 - 平台域的保留值 `"system"`。
@@ -333,7 +346,7 @@ const (
 
 | 包 | 模块名 | 交付 | 排他 | `Requires` | 在 `Init` 里取用（缺席合法者标 ○） | 表 |
 |---|---|---|---|---|---|---|
-| `authz/policy` | `authz.policy` | `Enforcer`、`Catalog`、`Manager`；`authn.AccountLifecycle` | `Enforcer`、`Catalog`、`Manager` 各自是 | `db.Database` | `tenant.Catalog` ○、`event.Bus` ○、`settings.Store` ○、`log.Logger` ○ | `authz_roles`、`authz_grants`、`authz_bindings` |
+| `authz/policy` | `authz.policy` | `Enforcer`、`Catalog`、`Manager`、`Seeder`；`authn.AccountLifecycle` | `Enforcer`、`Catalog`、`Manager`、`Seeder` 各自是 | `db.Database` | `tenant.Catalog` ○、`event.Bus` ○、`settings.Store` ○、`log.Logger` ○ | `authz_roles`、`authz_grants`、`authz_bindings` |
 | `authz/guard` | `authz.guard` | `Guard`、`Gate`；`authn.Decider` | 各自是 | `Enforcer`、`Catalog` | `http.Router`、`tenant` 的上下文读取、`log.Logger` ○、`observability.MeterProvider` ○ | 无 |
 | `authz/admin` | `authz.admin` | 无（只挂 `/authz/admin/*` 下的路由） | — | `Manager`、`Catalog`、`guard.Guard`、`audit.Audit` | `http.Router`、`authz.Gate` ○、`log.Logger` ○ | 无 |
 
@@ -409,6 +422,14 @@ classDiagram
         +Role Role
         +GrantedAt time.Time
     }
+    class Grant {
+        +Resource string
+        +Action string
+    }
+    class Seeder {
+        <<interface>>
+        +SeedGrants(ctx, tenant, role, grants) int, error
+    }
     class Decider {
         <<interface>>
         +Decide(ctx, d Decision) bool, error
@@ -423,6 +444,7 @@ classDiagram
     Gate ..> Requirement : 登记
     Binding --> Role
     Manager --> Binding : 读写
+    Seeder --> Grant : 添加
     Decider <|.. guardProduct : 实现
     Guard <|.. guardProduct : 交付
     Gate <|.. guardProduct : 交付
@@ -430,7 +452,7 @@ classDiagram
     guardProduct --> Gate : 读声明
 ```
 
-`guardProduct` 未导出，它持有声明表、引擎引用与租户读取（见[请求期判定](#请求期判定)）。模块的一个实例要交付描述符声明的每一项能力，所以 `guardProduct` 同时交付 `Gate`、`Guard` 与 `Decider`，其中 `Gate` 经它持有的声明表委托实现。`Guard` 的写出方法因此名为 `RequirePermission` 而非 `Require`：一个 Go 类型不能有两个同名方法，而产品另要承载 `Gate.Require(method, path, perm)`。`RequirePermissionIn` 是 `RequirePermission` 的显式域形式，供判定域不是请求解析出的租户的 handler 用：管理面把路径里的租户当数据、判定固定在平台域，经它点名域（见[管理面](#管理面)）。`Guard` 与 `Decider` 由 `authz.guard` 交付、都不在根包；`Gate` 与 `Enforcer`、`Catalog`、`Manager` 连同各数据类型的定义都在根包。链上锚点取根包的 `(*authz.Gate)(nil)`——`Guard` 因签名取 `*gin.Context` 落在 `pkg/authz/guard`，不作为锚点。
+`guardProduct` 未导出，它持有声明表、引擎引用与租户读取（见[请求期判定](#请求期判定)）。模块的一个实例要交付描述符声明的每一项能力，所以 `guardProduct` 同时交付 `Gate`、`Guard` 与 `Decider`，其中 `Gate` 经它持有的声明表委托实现。`Guard` 的写出方法因此名为 `RequirePermission` 而非 `Require`：一个 Go 类型不能有两个同名方法，而产品另要承载 `Gate.Require(method, path, perm)`。`RequirePermissionIn` 是 `RequirePermission` 的显式域形式，供判定域不是请求解析出的租户的 handler 用：管理面把路径里的租户当数据、判定固定在平台域，经它点名域（见[管理面](#管理面)）。`Guard` 与 `Decider` 由 `authz.guard` 交付、都不在根包；`Gate` 与 `Enforcer`、`Catalog`、`Manager`、`Seeder` 连同各数据类型的定义都在根包。`Seeder` 是独立于 `Manager` 的种入面，管理面不取用它（[种入面](#种入面)）。链上锚点取根包的 `(*authz.Gate)(nil)`——`Guard` 因签名取 `*gin.Context` 落在 `pkg/authz/guard`，不作为锚点。
 
 下图给出一条受守路由从进入授权阶段到 403 或放行的路径。它固定的是读的次序与拒绝的划分：声明先于身份，身份先于租户，引擎出错是 503 而不是 403，未声明路由在缺省下也走 403。
 
@@ -524,7 +546,7 @@ m = g(r.sub, p.sub, r.dom) && r.dom == p.dom && r.obj == p.obj && r.act == p.act
 
 策略表都归 `authz.policy`，迁移在 `pkg/authz/policy/migrations/{sqlite,postgres}/0001_authz_policy.sql`。每张表都以 `tenant_id` 领衔主键，都带 `CHECK (tenant_id <> '')`，都不用方言专有类型与函数；`TIMESTAMPTZ`（Postgres）与 `DATETIME`（SQLite）的对照照行本模块自己的建表语句。
 
-- **`authz_roles(tenant_id, role, builtin, description_key, created_at)`**，主键 `(tenant_id, role)`。`builtin` 标记内置角色（不可删除、不可改权限）；标记只由 `Manager.MarkRoleBuiltin` 置位，置位后没有清回的通路。`description_key` 是说明文案的 i18n 键。
+- **`authz_roles(tenant_id, role, builtin, description_key, created_at)`**，主键 `(tenant_id, role)`。`builtin` 标记内置角色：管理面不可删除、不可改写，也不可改其授权；宿主的种入面 `Seeder.SeedGrants` 只增不删。标记只由 `Manager.MarkRoleBuiltin` 置位，置位后没有清回的通路。`description_key` 是说明文案的 i18n 键。
 
 ```sql
 CREATE TABLE authz_roles (
@@ -630,7 +652,17 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 **平台域与真实租户同名是一处配置冲突，在开始服务之前拦下。** `authz.policy` 在 `Start` 时经 `tenant.Catalog` 查一次标识为 `system` 的租户，存在即以 `ErrPlatformDomainTaken` 终止启动。这道核对只在有租户模块的装配里执行：一个真实租户叫 `system` 时，本模块的账户级动作会落到那个租户的策略行上，方向是安全的一侧，但语义不是设计所声明的那一个。策略行里的 `tenant_id` 是否对应一个真实租户不由本模块核对（见[非保证](#非保证)）。
 
-**平台域的绑定由宿主写，不在迁移里种。** 内置的运营角色只在 `authz_roles` 里建立形状（`builtin=true`，由宿主的种入步骤在其权限写完之后经 `Manager.MarkRoleBuiltin` 置上），谁的账户获得哪个运营角色由宿主经 `Manager.PutBinding` 在 `system` 域写入。
+**平台域的绑定由宿主写，不在迁移里种。** 内置的运营角色只在 `authz_roles` 里建立形状（`builtin=true`，由宿主的种入步骤在其权限写完之后经 `Manager.MarkRoleBuiltin` 置上），谁的账户获得哪个运营角色由宿主经 `Manager.PutBinding` 在 `system` 域写入。角色置上标记之后，进程新声明的一条权限由宿主的种入面写入该角色（[种入面](#种入面)）。
+
+### 种入面
+
+**`Seeder` 是独立于 `Manager` 的种入能力，由 `authz.policy` 排他交付**（[ADR-authz-seeding-2026-10-17](../../adr/adr-authz-seeding-2026-10-17.md)）。它只有 `SeedGrants(ctx, tenant, role, grants) (int, error)` 一个方法：给一个已存在的角色（`builtin` 与否都可以）添加它尚未持有的（资源，动作）对，返回本次实际写入的行数。
+
+**它是独立接口而不是 `Manager` 上的一个方法，因为管理面只取用 `Manager`。** `authz.admin` 的模块声明里没有 `Seeder`，它的 handler 也不持有它，因此 `/authz/admin/*` 下的任何写路由都触不到这条路径——这不是 handler 里的分支约定，而是该模块拿到的类型所决定（[管理面](#管理面)）。
+
+**种入是幂等且只增的。** 已持有的授予不写、不报错、不计数，所以同一份声明重复种入返回零、不写行、不重载快照、不发 `authz.policy.changed`。它不删除、不改写、不重写时间戳；`builtin` 角色既有的授权因此在所有路径上都固定，要撤销一条只能给账户换一个角色。
+
+**一次种入是一个事务，角色检查持行锁。** 与 `Manager` 的写同一把锁：并发的删角色与种入串行化，删角色不会落在检查与写入之间。角色不存在是 `ErrUnknownRole`，空租户是 `ErrTenantMismatch`，都在写任何行之前拒绝。写入经薄 adapter，因此与其它写共用租户核对与行形状。
 
 ### Decider 的动作分派
 
@@ -670,8 +702,8 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 | `ErrUnknownEndpoint` | 启动期 | `endpoints` 里的端名在入口模块里不存在 | 改端名，或在入口模块的配置里声明这个端 |
 | `ErrUnknownPermission` | 启动期 | 一条路由登记引用了目录里没有的权限；一条路由声明了一个进程翻译没有行的权限；一个模块的翻译行与已有的行给出不同的（资源，动作）；一个模块的翻译行是空的（资源，动作）；两个模块把同一对（资源，动作）配给不同的权限 | 登记一个声明过的权限并给它一条翻译行，或改掉冲突的模块行 |
 | `ErrPlatformDomainTaken` | 启动期 | 经 `tenant.Catalog` 核对出名册里有一个名为 `system` 的租户 | 改名册里的那个租户，平台域是保留值 |
-| `ErrUnknownRole` | 写入期 | `PutGrant`、`PutBinding` 里的角色在 `authz_roles` 里不存在 | 先建立角色，或改用已存在的角色 |
-| `ErrBuiltinRole` | 写入期 | 试图删除或修改 `builtin=true` 的角色；`PutRole` 的记录携带 `builtin` 标记 | 内置角色的权限不可改；给账户绑别的角色。标记由 `Manager.MarkRoleBuiltin` 置位，角色写入不携带它 |
+| `ErrUnknownRole` | 写入期 | `PutGrant`、`PutBinding`、`SeedGrants` 里的角色在 `authz_roles` 里不存在 | 先建立角色，或改用已存在的角色 |
+| `ErrBuiltinRole` | 写入期 | 试图删除或修改 `builtin=true` 的角色，或经 `Manager` 改其授权；`PutRole` 的记录携带 `builtin` 标记 | 内置角色对管理面与 `Manager` 固定；经 `Seeder.SeedGrants` 增补授权，撤销则给账户绑别的角色。标记由 `Manager.MarkRoleBuiltin` 置位，角色写入不携带它 |
 | `ErrTenantMismatch` | 写入期 | adapter 从 `rule` 取出的租户与调用方给的租户不一致 | 一次写入只作用一个租户；核对调用点的租户 |
 | `ErrUndeclaredRoute` | 请求期 | 一条路由没有任何声明（既非 `Require` 也非 `Open`），`undeclared=closed` 下拒 | 为那条路由声明权限或登记为开放 |
 | `ErrPolicyUnavailable` | 请求期或启动期 | 引擎快照、存储读或启动自检不可用 | 依赖可用即恢复；成因进日志，应答不区分 |
@@ -722,7 +754,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包的类型与判定接口：`Permission`、`Role`、`Domain`、`PermissionSpec`、`Translation`、`TranslationSpec`、`Query`、`Requirement`、`Binding`、`RoleRecord`、`GrantRecord`、`Enforcer`、`Catalog`（含 `ObjectAction`）、`Gate`、`Manager` | 已实现 | `pkg/authz/types.go`；`pkg/authz/capabilities.go` |
+| 根包的类型与判定接口：`Permission`、`Role`、`Domain`、`PermissionSpec`、`Translation`、`TranslationSpec`、`Query`、`Requirement`、`Binding`、`RoleRecord`、`GrantRecord`、`Grant`、`Enforcer`、`Catalog`（含 `ObjectAction`）、`Gate`、`Manager`、`Seeder` | 已实现 | `pkg/authz/types.go`；`pkg/authz/capabilities.go` |
 | 权限常量与 `authn.Action` 的对齐、平台域保留值 | 已实现 | `pkg/authz/permissions.go` `PermissionAccountRead` …、`PlatformDomain` |
 | 平台域与真实租户同名的启动期核对 | 已实现 | `pkg/authz/policy/platform.go` `checkPlatformDomain` |
 | `ModelText` 模型文本常量 | 已实现 | `pkg/authz/model.go` `ModelText` |
@@ -734,6 +766,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 | 启动期模型自检与夹具 | 已实现 | `pkg/authz/internal/policy/selftest.go` `SelfCheck`（夹具同包） |
 | 权限目录：各已登记模块声明的 `PermissionSpec` 并成一个目录，以及目录对（资源，动作）的翻译 | 已实现 | `pkg/authz/policy/catalog.go` `permissions`、`buildCatalog`、`(*catalog).ObjectAction`（目录类型未导出，读取面是根包的 `Catalog`） |
 | `Manager` 的策略读写 | 已实现 | `pkg/authz/policy/manager.go` `(*product).Roles` … `(*product).DeleteBinding`（接口在 `pkg/authz/capabilities.go`） |
+| 种入面 `Seeder`：幂等、只增、可写 builtin 角色的授权集 | 已实现 | `pkg/authz/policy/manager.go` `(*product).SeedGrants`、`grantsHeld`（接口在 `pkg/authz/capabilities.go`） |
 | `AccountLifecycle` 清理（账户删除与停用钩子） | 已实现 | `pkg/authz/policy/lifecycle.go` `AccountDeleted`、`AccountDisabled`、`ServiceSecretRevoked` |
 | `authz.policy.changed` 事件发布与订阅、`refresh-interval` 周期重载 | 已实现 | `pkg/authz/policy/policy.go` `wire`（订阅）、`publish`、`reload` |
 | 配置 `load-timeout` 与设置 `refresh-interval` 的声明与读取 | 已实现 | `pkg/authz/policy/config.go` |

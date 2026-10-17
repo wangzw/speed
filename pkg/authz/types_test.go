@@ -100,6 +100,11 @@ func TestTheSharedTypesHoldTheirFields(t *testing.T) {
 			structFields(t, GrantRecord{}),
 			[]string{"Tenant string", "Role authz.Role", "Resource string", "Action string", "CreatedAt time.Time"},
 		},
+		{
+			"Grant",
+			structFields(t, Grant{}),
+			[]string{"Resource string", "Action string"},
+		},
 	}
 	for _, c := range cases {
 		if !slices.Equal(c.got, c.want) {
@@ -157,6 +162,13 @@ func TestTheCapabilityInterfacesHoldTheirMethodSets(t *testing.T) {
 				"PutGrant func(context.Context, authz.GrantRecord) error",
 				"PutRole func(context.Context, authz.RoleRecord) error",
 				"Roles func(context.Context, string) ([]authz.RoleRecord, error)",
+			},
+		},
+		{
+			"Seeder",
+			interfaceMethods(t, (*Seeder)(nil)),
+			[]string{
+				"SeedGrants func(context.Context, string, authz.Role, []authz.Grant) (int, error)",
 			},
 		},
 	}
