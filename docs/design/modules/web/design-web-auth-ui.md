@@ -13,6 +13,7 @@
 - `SignOutButton` 驱动 `session.logout()`。
 - `SessionEndedScreen` 是宿主挂在一处已认证视图刚翻成匿名时的占位屏。
 - `AcceptInvitationScreen` 渲染邀请受理面：读取令牌指向的邀请（acceptView）并受理它（accept）。它驱动的不是会话操作，而是宿主交给它的两个邀请操作。
+- `ImpersonationBanner` 渲染冒充期间应用壳顶部的持久横幅：谁被冒充、到期时刻与「结束冒充」。它不驱动会话，也不发请求，结束操作由宿主交给它。
 
 驱动会话的组件各持有一个 `session` 属性，会话由宿主传入；`AcceptInvitationScreen` 不驱动会话，它的两个操作经属性的 `invitations` 取用（见「外部接口契约」）。组件不消费 auth-core 的**钩子**（`useAuthState`、`usePermission`），只经属性调用会话的**操作**——发现读取（`listMethods`、`discoverSso`）即在其列（见「非职责」）。内建文案一律取自 `auth-ui` 命名空间；品牌名（提供方自己的名字）由发现文档带，不进命名空间。
 
@@ -29,7 +30,7 @@
 
 ## 外部接口契约
 
-`@speed/auth-ui` 的公开面是 `web/packages/auth-ui/src/index.ts` 的导出：`SignInScreen`（连同 `SignInChannel`、`SignInMode`、`SocialSignInOptions`）、各渠道的表单（`PasswordSignInForm`、`SMSSignInForm`）、社交对（`SocialSignInSection` 连同 `SocialProvider`、`SocialProviderConfig`，以及 `SocialCallbackHandler`）、`SignOutButton`、`SessionEndedScreen`、`AcceptInvitationScreen`（连同 `InvitationOperations`、`InvitationSummary`、`AcceptInvitationInput`），以及命名空间对（`AUTH_UI_NAMESPACE`、`authUiResources`）。`web/packages/auth-ui/src/internal/` 下的助手（发现读取、方法标签、通用描述符表单、企业入口、通行密钥入口，以及把一步 `AuthnStep` 渲染成分支字段的步进渲染器）是族内共享管线，不外导。`SocialProvider` 是 `string`（方法名），不再是名字闭集：redirect 方法的集合由发现给出，见 [ADR-web-auth-channel-discovery-2026-10-16](../../../adr/adr-web-auth-channel-discovery-2026-10-16.md)。
+`@speed/auth-ui` 的公开面是 `web/packages/auth-ui/src/index.ts` 的导出：`SignInScreen`（连同 `SignInChannel`、`SignInMode`、`SocialSignInOptions`）、各渠道的表单（`PasswordSignInForm`、`SMSSignInForm`）、社交对（`SocialSignInSection` 连同 `SocialProvider`、`SocialProviderConfig`，以及 `SocialCallbackHandler`）、`SignOutButton`、`SessionEndedScreen`、`AcceptInvitationScreen`（连同 `InvitationOperations`、`InvitationSummary`、`AcceptInvitationInput`）、`ImpersonationBanner`（连同 `ImpersonationBannerProps`、`ImpersonationBannerState`），以及命名空间对（`AUTH_UI_NAMESPACE`、`authUiResources`）。`web/packages/auth-ui/src/internal/` 下的助手（发现读取、方法标签、通用描述符表单、企业入口、通行密钥入口，以及把一步 `AuthnStep` 渲染成分支字段的步进渲染器）是族内共享管线，不外导。`SocialProvider` 是 `string`（方法名），不再是名字闭集：redirect 方法的集合由发现给出，见 [ADR-web-auth-channel-discovery-2026-10-16](../../../adr/adr-web-auth-channel-discovery-2026-10-16.md)。
 
 ### 受控组件的形状
 
@@ -81,6 +82,19 @@ interface InvitationOperations {
     input: AcceptInvitationInput,
   ) => Promise<void>
 }
+
+// ImpersonationBanner：冒充期间应用壳顶部的持久横幅。宿主始终挂载它，经
+// `impersonation` 告诉它当前有没有冒充，经 `onEnd` 绑定结束冒充的操作。
+interface ImpersonationBannerProps {
+  readonly impersonation: ImpersonationBannerState | null // null 即当前没有冒充
+  readonly onEnd: () => Promise<void>                      // 兑现即已结束，抛出即失败
+}
+
+interface ImpersonationBannerState {
+  readonly subject: string     // 被冒充账户的显示名，宿主已解析成文本
+  readonly tenant?: string     // 冒充所在租户的可读名，读不到时缺省
+  readonly expiresAt?: Date    // 冒充到期时刻，读不到时缺省
+}
 ```
 
 `SignInScreen` 的 `discovery` 缺省时经 `session.listMethods()` 读一次部署的发现文档（`useSignInDiscovery`）；给出时以注入的文档为准，不发起读取（SSR、测试）。`mode` 是纯呈现开关：注册入口的可见性由 `discovery.signup.enabled` 与至少一个可见方法带 `opens_account` 决定，起的是同一条登录流程。未知 `kind` 不渲染也不崩；描述符给出的 `label` 优先作为方法显示名，缺失时按方法名查 `auth-ui` 命名空间，再退回方法名本身。
@@ -102,7 +116,7 @@ interface InvitationOperations {
 | `SignOutButton` | `session.logout` |
 | `SessionEndedScreen` | 无 |
 
-`AcceptInvitationScreen` 不在上表：它驱动的不是会话操作，而是宿主交给它的两个邀请操作（`invitations.readInvitation` 与 `invitations.acceptInvitation`）。
+`AcceptInvitationScreen` 不在上表：它驱动的不是会话操作，而是宿主交给它的两个邀请操作（`invitations.readInvitation` 与 `invitations.acceptInvitation`）。`ImpersonationBanner` 同样不在上表：它不持 `session`，状态与操作都经属性交给它（`impersonation` 与 `onEnd`），结束冒充的 HTTP 在宿主绑定的操作里。
 
 每个渠道的表单只驱动它那一个方法：`startFlow` 起流程，后续每一步（第二因素、改口令、登记因素、通行密钥仪式）由步进渲染器按 `next.kind` 渲染并交 `session.answerFlow`，直到流程落到完成。一次登录的落地由 auth-core 在同一会话上提交，视图不自己持有登录态。
 
@@ -220,6 +234,13 @@ sequenceDiagram
 1. 挂载时经 `invitations.readInvitation(token)` 读一次令牌指向的邀请，三个状态：读取中渲染一条 `role="status"` 通知；读取失败按失败形态分支（无此邀请 404 渲染「邀请不存在」文案、已失效 409 渲染「邀请已失效」文案、其余渲染该错误码的横幅加一个重试按钮，重试再读一次）；就绪后渲染邀请的租户、地址与期限。
 2. 查看者以 `invitations.acceptInvitation(token, input)` 受理，`input` 带可选显示名与口令（`AcceptInvitationInput`）：被邀请地址尚无账户时受理会建一个账户，故受理面为这一支提供显示名与口令两个可留空的输入，填了即随受理发出、留空即不带；地址已有账户时服务端忽略它们。被拒时渲染应答的错误码文本、受理动作保持可重试；受理落地后渲染受理成功文案并触发一次 `onAccepted`（抛出的宿主回调被包住，不改变受理已落定的事实）。
 
+### 冒充横幅
+
+1. **宿主始终挂载它，`impersonation` 为 `null` 时只留一个空的 live region。** 没有冒充时不渲染横幅，不占高度；区域先挂空、冒充出现时再填入文本，使冒充开始的确认对读屏用户可闻，刚结束冒充的成功文案也留在这个仍挂载的区域里，不随横幅卸载。
+2. **`impersonation` 非空时渲染横幅。** 横幅是带可及名的 `region` 地标，文字说明正在以 `subject` 的身份操作，给出了 `tenant` 与 `expiresAt` 就一并陈述，并说明冒充期间管理功能不可用。观看者就是发起者，横幅不陈述发起者。组件不倒计时，也不在到期时自行动作；到期后的重读由宿主负责。
+3. **「结束冒充」不依赖 `tenant` 与 `expiresAt`。** 这两项是宿主读状态得来的，读不到时缺省，结束控件照常渲染、照常可用。
+4. **结束是一次写入尝试。** 点击经 `run` 调 `onEnd`；在途时控件禁用并标忙，不发第二次；兑现即成功，成功文案「冒充已结束」落在组件自己的区域；抛出即失败，失败码文本落在横幅内、控件保持可重试。「当前已无冒充可结束」（服务端的裸 404）由宿主的 `onEnd` 当成兑现，组件不认识 HTTP 状态。
+
 ### 失败横幅与步骤的推进
 
 登录与受理面的失败与确认按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织（[ADR-web-write-feedback-2026-10-17](../../../adr/adr-web-write-feedback-2026-10-17.md)）；登录的每一步答复都是一次尝试。每个渠道组件（登录屏上当前的渠道表单、社交区、企业入口、各通行密钥入口）是各自的反馈作用域，经本包 `internal/` 的包装绑定 `useWriteFeedback` 与 `WriteFeedbackRegion`，只用其中的 `reset` 与 `fail`——逐步答复不是单个 promise。一个渠道的失败不清掉另一个渠道的横幅，离开渠道（切换标签）只清掉它自己的。
@@ -251,6 +272,8 @@ sequenceDiagram
 | 邀请已过期、已撤销或已被接受（409） | 受理面渲染「邀请已失效」的标题与说明 |
 | 邀请读取的其它失败 | 一条 `role="alert"` 横幅渲染应答的错误码文本，加一个重试按钮（重跑一次读取） |
 | 邀请受理被拒 | 一条 `role="alert"` 横幅渲染应答的错误码文本，受理动作保持可重试 |
+| 冒充横幅的结束被拒或传输失败 | 横幅内一条 `role="alert"` 渲染应答的错误码文本，结束控件保持可重试 |
+| 冒充横幅的 `onEnd` 兑现 | 渲染「冒充已结束」的成功文案；横幅随宿主把 `impersonation` 置空而消失，文案留在仍挂载的区域里 |
 | 一步答复被拒后，下一次答复成功而流程停在新步骤 | 旧的失败横幅被清掉，不留在新步骤旁 |
 | 通行密钥仪式失败与服务端失败横幅先后出现 | 互斥：出现一条时清掉另一条 |
 | 通行密钥仪式不受支持、被取消或失败 | 一条 `role="alert"` 横幅渲染本包 bundle 里对应情形的文本，不经错误码白名单 |
@@ -278,6 +301,7 @@ sequenceDiagram
 | 社交区与回调 | 已实现 | `web/packages/auth-ui/src/SocialSignInSection.tsx`；`web/packages/auth-ui/src/SocialCallbackHandler.tsx` |
 | 会话面 | 已实现 | `web/packages/auth-ui/src/SignOutButton.tsx`；`web/packages/auth-ui/src/SessionEndedScreen.tsx` |
 | 邀请受理面 | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen` |
+| 冒充横幅 `ImpersonationBanner` | 未实现 | — |
 | 渠道组件的反馈作用域，答复一步清掉失败横幅，仪式失败与服务端失败横幅互斥 | 未实现 | — |
 | 社交回跳路由上的步骤失败原地保留，没有停着步骤时的重试 | 未实现 | — |
 | 重发的「验证码已发送」可闻，步骤切换后的焦点 | 未实现 | — |
