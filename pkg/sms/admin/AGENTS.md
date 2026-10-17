@@ -5,6 +5,9 @@ under `/sms/admin/*` and delivers no capability of its own: every route's action
 is a call on the template registry, reached through the `sms.Registry`
 capability, and the module holds no template, no rule and no data of its own.
 
+The descriptor declares the static feature `sms.admin`, present whenever the
+module is in force.
+
 The registry owns what a template is — which of them are in force, which the
 process may change and what the vendor answered — so this module only decides
 who may ask and how the answer is shaped. It carries no policy rule: it asks the

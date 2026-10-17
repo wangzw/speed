@@ -32,6 +32,7 @@ import (
 	"github.com/vislake/speed/pkg/authz/guard"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/sms"
@@ -122,6 +123,10 @@ func Module() core.Module {
 		Resources: []any{
 			schema(), permissionSpec(), translationSpec(), messageCatalog,
 			speedhttp.Spec{Endpoint: defaultEndpoint, Document: openAPIFragment},
+			// The template-management surface: its routes are mounted whenever
+			// the module is in force and the process has an entry point, so the
+			// feature is static.
+			feature.Spec{Name: "sms.admin"},
 		},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
