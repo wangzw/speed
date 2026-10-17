@@ -17,7 +17,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SettingsPage } from './SettingsPage.js'
 import type { ConsoleSetting } from './operations.js'
@@ -574,6 +574,102 @@ describe('SettingsPage', () => {
     expect(await screen.findByText('设置已保存')).toBeInTheDocument()
     expect(input).toHaveAttribute('aria-invalid', 'false')
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('keeps paging, the page size and the header refresh inert while a batch save is in flight', async () => {
+    const user = userEvent.setup()
+    const items: ConsoleSetting[] = Array.from({ length: 12 }, (_, index) => ({
+      ...item,
+      key: `mail.key-${index}`,
+      value: `${index}`,
+      written: `${index}`,
+    }))
+    let release: (() => void) | undefined
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSettings: () => Promise.resolve(items),
+        setSetting: () =>
+          new Promise<void>((resolve) => {
+            release = resolve
+          }),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+
+    const first = await screen.findByRole('textbox', { name: 'mail.key-0' })
+    await user.clear(first)
+    await user.type(first, 'x')
+    await user.click(screen.getByRole('button', { name: '保存改动' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '刷新' })).toBeDisabled(),
+    )
+
+    // Paging is part of the save's context: the next page does not open.
+    await user.click(screen.getByRole('button', { name: '下一页' }))
+    expect(
+      screen.getByRole('textbox', { name: 'mail.key-0' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'mail.key-10' })).toBeNull()
+
+    // Nor does the page-size selector change the slice under the save.
+    await user.click(screen.getByRole('combobox'))
+    await user.click(await screen.findByRole('option', { name: '25' }))
+    expect(screen.getAllByRole('textbox')).toHaveLength(10)
+    expect(screen.queryByRole('textbox', { name: 'mail.key-10' })).toBeNull()
+
+    await act(async () => {
+      release?.()
+    })
+  })
+
+  it('clears the batch marker when the row it names is left behind by a later write', async () => {
+    const user = userEvent.setup()
+    const items: ConsoleSetting[] = [
+      { ...item, key: 'mail.a', value: '1', written: '1' },
+      { ...item, key: 'mail.b', value: '2', written: '2' },
+    ]
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSettings: () => Promise.resolve(items),
+        setSetting: (input) =>
+          input.key === 'a'
+            ? Promise.reject({ code: 'settings.invalid_value' })
+            : Promise.resolve(),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+
+    const failed = await screen.findByRole('textbox', { name: 'mail.a' })
+    const other = screen.getByRole('textbox', { name: 'mail.b' })
+    await user.clear(failed)
+    await user.type(failed, 'bad')
+    await user.clear(other)
+    await user.type(other, 'ok')
+    await user.click(screen.getByRole('button', { name: '保存改动' }))
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'mail.a' })).toHaveAttribute(
+        'aria-invalid',
+        'true',
+      ),
+    )
+
+    // The row removal shares the batch's scope. Its success replaces the
+    // result the marker describes, so the old marker must go with it
+    // rather than leave a red row with no reason.
+    await user.click(
+      screen.getByRole('button', { name: '移除设置项 mail.b' }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    expect(
+      await screen.findByText('设置项「mail.b」已移除'),
+    ).toBeInTheDocument()
+    // The page behind the confirmation is reachable again only once the
+    // dialog has left; the role query waits for that.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(
+      screen.getByRole('textbox', { name: 'mail.a' }),
+    ).toHaveAttribute('aria-invalid', 'false')
   })
 
   it('removes a setting through the row control after confirmation', async () => {

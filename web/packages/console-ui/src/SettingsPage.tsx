@@ -120,6 +120,13 @@ export function SettingsPage() {
   // The table's page and page size.
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_ROWS_PER_PAGE)
+  // The page size as it stands when a batch settles. The settlement pages
+  // to the first failed item, and a size captured when the save started
+  // would compute a page under the current slice's sizing.
+  const rowsPerPageRef = useRef(rowsPerPage)
+  useEffect(() => {
+    rowsPerPageRef.current = rowsPerPage
+  }, [rowsPerPage])
   // The full key of the item the batch reported first, or null. It is the
   // row the inline marker belongs to; cleared when a new attempt starts and
   // when the namespace changes, so a marker never outlives the result it
@@ -250,7 +257,7 @@ export function SettingsPage() {
         // region reports -- not to every item that failed behind it.
         setFailedKey(failedSetting.key)
         const rowIndex = settled.indexOf(failedSetting)
-        setPage(Math.max(0, Math.floor(rowIndex / rowsPerPage)))
+        setPage(Math.max(0, Math.floor(rowIndex / rowsPerPageRef.current)))
       }
       throw (results[failedIndex] as PromiseRejectedResult).reason
     })
@@ -262,6 +269,10 @@ export function SettingsPage() {
       message: t('settings.removeMessage', { key: setting.key }),
       confirmLabel: t('common.confirm'),
       run: () => {
+        // The row removal shares the batch's scope and slot, so the marker
+        // that belonged to the batch's result is dropped with it; a new
+        // result must not be read as the old row's reason.
+        setFailedKey(null)
         void feedback.run(async () => {
           await removeSetting.mutateAsync({
             namespace: setting.namespace,
@@ -381,6 +392,9 @@ export function SettingsPage() {
             type="button"
             variant="outlined"
             size="small"
+            // A refresh changes the set the batch is settling against,
+            // so it is disabled while the scope is pending.
+            disabled={feedback.pending}
             onClick={() => void settings.refetch()}
           >
             {t('common.refresh')}
@@ -477,8 +491,15 @@ export function SettingsPage() {
                       page,
                       rowsPerPage,
                       count: settled.length,
-                      onPageChange: setPage,
+                      // Paging and sizing change the slice the batch's
+                      // result is read against, so they are inert while it
+                      // is in flight (the footer carries no disabled prop).
+                      onPageChange: (value) => {
+                        if (feedback.pending) return
+                        setPage(value)
+                      },
                       onRowsPerPageChange: (value) => {
+                        if (feedback.pending) return
                         setRowsPerPage(value)
                         setPage(0)
                       },
