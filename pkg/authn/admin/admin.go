@@ -43,6 +43,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
@@ -75,6 +76,19 @@ const diagnosticPrefix = "authn: "
 // ModuleName into the command.
 func init() { core.ProcessRegistry.Register(Module()) }
 
+// The feature names this module declares. The account and membership groups are
+// always mounted and publish the static name; every other name belongs to one
+// group and is posted in the same judgement that mounts the group.
+const (
+	featureAdmin          = "authn.admin"
+	featureSessions       = "authn.admin.sessions"
+	featureFactors        = "authn.admin.factors"
+	featureServiceKeys    = "authn.admin.secrets"
+	featureSSO            = "authn.admin.sso"
+	featureSSOMetadata    = "authn.admin.sso.metadata"
+	featureImpersonations = "authn.admin.impersonations"
+)
+
 // Module is the descriptor a host registers.
 //
 // The route mounter, the account read and write surfaces, the membership reads
@@ -105,6 +119,13 @@ func Module() core.Module {
 		},
 		Resources: []any{
 			speedhttp.Spec{Endpoint: defaultEndpoint, Document: adminFragment},
+			feature.Spec{Name: featureAdmin},
+			feature.Spec{Name: featureSessions, Conditional: true},
+			feature.Spec{Name: featureFactors, Conditional: true},
+			feature.Spec{Name: featureServiceKeys, Conditional: true},
+			feature.Spec{Name: featureSSO, Conditional: true},
+			feature.Spec{Name: featureSSOMetadata, Conditional: true},
+			feature.Spec{Name: featureImpersonations, Conditional: true},
 		},
 
 		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {
@@ -172,6 +193,10 @@ type product struct {
 
 	settings *reader
 	logger   *slog.Logger
+
+	// board is the feature publisher, when this process has one. It is taken up
+	// in Init and read in the same stage, never in New.
+	board feature.Board
 
 	// groups names the route groups that were mounted, for the start
 	// diagnostic. It is written in Init and read in Start.
@@ -268,9 +293,20 @@ func (m *product) wire(reg *core.Registry) error {
 		}
 	}
 	m.refreshers = core.ResolveAll[authn.SSOMetadataRefresher](reg)
+	if b, err := core.Resolve[feature.Board](reg); err == nil {
+		m.board = b
+	}
 
 	m.mountRoutes()
 	return nil
+}
+
+// postFeature reports one conditional group name to the feature board, when the
+// process has one. It is called in the same judgement that mounts the group.
+func (m *product) postFeature(name string) {
+	if m.board != nil {
+		m.board.Post(ModuleName, name)
+	}
 }
 
 // diagnose writes the start diagnostic: which route groups were mounted. The

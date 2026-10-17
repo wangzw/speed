@@ -59,7 +59,7 @@ func (p *product) mountRoutes() {
 	m.Callback([]string{http.MethodGet, http.MethodPost}, pathCallback, r.callback)
 
 	if p.selfservice != nil {
-		p.selfservice.Mount(m)
+		p.selfservice.Mount(m, p.postFeature)
 	}
 }
 

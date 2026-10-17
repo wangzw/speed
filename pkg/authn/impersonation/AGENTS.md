@@ -7,6 +7,9 @@ the administrator's own session; the browser carries it as a marker on that
 session, the API carries it as a short-lived impersonation access token, and
 the administrator stays the accountable party through every request.
 
+The descriptor declares the static feature `authn.impersonation` for the
+self-service impersonation routes, present whenever the module is in force.
+
 The module delivers `authn.Impersonation` exclusively, owns the table and its
 migration, mounts the `B/impersonation` routes through `authn.mount`, and
 writes the seam-level audit rows and the two impersonation events.

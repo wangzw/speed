@@ -118,22 +118,52 @@ type routes struct {
 	endpoint string
 }
 
+// The conditional features the account self-service routes publish. A name is
+// posted by the engine under its own module name; this package owns the
+// judgement that decides whether the surface the name describes is present, so
+// the name constants live beside it.
+const (
+	// FeaturePhone is the phone self-service surface: POST /phone and
+	// POST /phone/verify, present exactly when SMSCodes is.
+	FeaturePhone = "authn.phone"
+	// FeatureEmail is the email branch of POST /identifiers, present exactly
+	// when EmailSender is. The route itself is mounted either way; the name
+	// describes the branch.
+	FeatureEmail = "authn.identifiers.email"
+)
+
 // Mount registers the routes. The two phone routes are registered only when the
-// service has SMSCodes.
+// service has SMSCodes; post, when it is not nil, is called in that same
+// judgement with the feature name the surface publishes. The email branch is
+// switched on by EmailSender, and its feature is posted in the judgement that
+// reads that dependency. The engine passes its report function here and calls
+// Mount from its Init, where the feature board accepts a post.
 //
 // Every route is guarded: the gateway authenticates it, and a request without a
 // credential never reaches a handler.
-func (s *Service) Mount(m mount.Mounter) {
+func (s *Service) Mount(m mount.Mounter, post func(name string)) {
 	r := &routes{Service: s, endpoint: m.Endpoint()}
 	m.Guarded(http.MethodPut, "/password", r.changePassword)
 	if s.deps.SMSCodes != nil {
 		m.Guarded(http.MethodPost, "/phone", r.startPhone)
 		m.Guarded(http.MethodPost, "/phone/verify", r.verifyPhone)
+		postFeature(post, FeaturePhone)
+	}
+	if s.deps.EmailSender != nil {
+		postFeature(post, FeatureEmail)
 	}
 	m.Guarded(http.MethodPost, "/identifiers", r.addIdentifier)
 	m.Guarded(http.MethodPost, "/identifiers/verify", r.verifyIdentifier)
 	m.Guarded(http.MethodDelete, "/identifiers/:id", r.removeIdentifier)
 	m.Guarded(http.MethodDelete, "/links/:id", r.unlink)
+}
+
+// postFeature reports a feature name when the engine handed Mount a reporting
+// function. A nil function is a caller that publishes no feature document.
+func postFeature(post func(name string), name string) {
+	if post != nil {
+		post(name)
+	}
 }
 
 // The sentinels a handler reads out of what it called, and the answer of each.

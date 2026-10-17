@@ -5,6 +5,9 @@ The authentication capability's invitation module. It owns the
 the invitation's issuance face and its acceptance face. It delivers the
 `Invites` capability exclusively.
 
+The descriptor declares the static feature `authn.invitations`, present whenever
+the module is in force; the frontend gates the invitation faces on it.
+
 An invitation is a pending grant of a membership: it names an address and a
 tenant and, until it is accepted, no account and no membership row exists. One
 module owns the whole of it — the table, the token and both route faces. It does

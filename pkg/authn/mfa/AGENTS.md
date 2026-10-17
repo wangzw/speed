@@ -6,6 +6,9 @@ the orchestration around every call to a factor, and the one place the assurance
 of a login is composed. It delivers the `authn.MFA` capability exclusively and
 the `authn.AccountLifecycle` hook beside it.
 
+The descriptor declares the static feature `authn.mfa`, present whenever this
+module is in force; the frontend gates the multi-factor section on it.
+
 The kinds of factor are not here. A kind is a module of its own — `authn.mfa.totp`,
 `authn.mfa.sms`, `authn.mfa.webauthn`, and any third party's — that delivers
 `authn.Factor`, one module per kind. This module takes them all with

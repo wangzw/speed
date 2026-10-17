@@ -15,6 +15,7 @@ func (m *product) mountRoutes() {
 	if m.sessions != nil {
 		m.mountSessionRoutes()
 		m.groups = append(m.groups, "sessions")
+		m.postFeature(featureSessions)
 	}
 	if m.mfa != nil {
 		m.groups = append(m.groups, "factors")
@@ -22,18 +23,22 @@ func (m *product) mountRoutes() {
 	if m.tokens != nil {
 		m.mountSecretRoutes()
 		m.groups = append(m.groups, "secrets")
+		m.postFeature(featureServiceKeys)
 	}
 	if m.ssoProviders != nil {
 		m.mountSSORoutes()
 		m.groups = append(m.groups, "sso-providers")
+		m.postFeature(featureSSO)
 		if len(m.refreshers) > 0 {
 			m.mounter.Guarded(http.MethodPost, "/admin/sso/providers/:id/metadata/refresh", m.handleMetadataRefresh)
 			m.groups = append(m.groups, "sso-metadata-refresh")
+			m.postFeature(featureSSOMetadata)
 		}
 	}
 	if m.records != nil {
 		m.mountImpersonationRoutes()
 		m.groups = append(m.groups, "impersonations")
+		m.postFeature(featureImpersonations)
 	}
 }
 
@@ -58,6 +63,7 @@ func (m *product) mountAccountRoutes() {
 		g(http.MethodGet, "/admin/accounts/:id/factors", m.handleFactorList)
 		g(http.MethodPost, "/admin/accounts/:id/mfa-required", m.handleMFARequired)
 		g(http.MethodPost, "/admin/accounts/:id/mfa-reset", m.handleMFAReset)
+		m.postFeature(featureFactors)
 	}
 }
 

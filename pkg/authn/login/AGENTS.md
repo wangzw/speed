@@ -7,6 +7,11 @@ account, the second-factor orchestration, and the terminal actions that make a
 session or issue a token. It delivers no capability — it is a process and a set
 of routes — and takes every first-factor method with `core.ResolveAll`.
 
+The descriptor declares the conditional features `authn.phone` and
+`authn.identifiers.email`. `Mount` posts each in the judgement that mounts the
+phone routes or switches on the email branch, during `Init`, and skips the post
+when the process has no feature board.
+
 The kinds of first factor are not here. Each is a leaf package that delivers
 `authn.LoginMethod` beside the others; this package imports none of them, and a
 command that names this module and delivers no method fails at startup with

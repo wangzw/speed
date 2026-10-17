@@ -48,6 +48,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/log"
@@ -111,6 +112,11 @@ func Module() core.Module {
 		Resources: []any{
 			settingsSchema(),
 			speedhttp.Spec{Endpoint: defaultEndpoint, Document: loginFragment},
+			// The optional account self-service surfaces. Each is posted in
+			// Init from the same judgement that mounts it; the name constants
+			// live beside that judgement.
+			feature.Spec{Name: selfservice.FeaturePhone, Conditional: true},
+			feature.Spec{Name: selfservice.FeatureEmail, Conditional: true},
 		},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
@@ -175,6 +181,7 @@ type product struct {
 	// Assembled by Init.
 	resolver    *resolve.Resolver
 	selfservice *selfservice.Service
+	board       feature.Board
 	methods     map[string]authn.LoginMethod
 	methodNames []string
 
@@ -276,6 +283,7 @@ func (p *product) wire(reg *core.Registry) error {
 	if err = p.buildSelfservice(); err != nil {
 		return err
 	}
+	p.takeBoard(reg)
 
 	if provider, err := optional[observability.MeterProvider](reg, "the metric capability"); err != nil {
 		return err
@@ -301,6 +309,24 @@ func optional[T any](reg *core.Registry, what string) (T, error) {
 		return zero, nil
 	default:
 		return zero, fmt.Errorf("%s%s: taking up %s: %w", diagnosticPrefix, ModuleName, what, err)
+	}
+}
+
+// takeBoard takes up the feature board when this process publishes one. It is
+// not a requirement: a process that serves no frontend has no board, and the
+// report it would receive is skipped.
+func (p *product) takeBoard(reg *core.Registry) {
+	if b, err := core.Resolve[feature.Board](reg); err == nil {
+		p.board = b
+	}
+}
+
+// postFeature reports one conditional feature of this module to the board, when
+// the process has one. It is handed to the account self-service mount, which
+// calls it in the judgement that decides the surface's presence.
+func (p *product) postFeature(name string) {
+	if p.board != nil {
+		p.board.Post(ModuleName, name)
 	}
 }
 

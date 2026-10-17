@@ -38,6 +38,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 )
@@ -117,6 +118,9 @@ func Module() core.Module {
 			schema(),
 			db.Migrations{FS: migrationsFS},
 			speedhttp.Spec{Endpoint: defaultEndpoint, Document: inviteFragment},
+			// The invitation faces: issued and accepted on routes mounted
+			// whenever the module is in force, so the feature is static.
+			feature.Spec{Name: "authn.invitations"},
 		},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {

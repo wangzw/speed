@@ -35,6 +35,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
@@ -124,6 +125,9 @@ func Module() core.Module {
 			settingsSchema(),
 			db.Migrations{FS: migrationsFS},
 			speedhttp.Spec{Endpoint: defaultEndpoint, Document: mfaFragment},
+			// The multi-factor self-service surface: the two guarded routes the
+			// module mounts, which are present whenever it is in force.
+			feature.Spec{Name: "authn.mfa"},
 		},
 
 		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {

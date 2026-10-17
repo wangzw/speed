@@ -5,6 +5,12 @@ management routes under the base path's `/admin` tree through `authn.mount`,
 decides every one of them at the `Decider` seam, writes the mandatory audit
 before a write, and calls the capability the route belongs to.
 
+The descriptor declares the static feature `authn.admin` for the account and
+membership groups and one conditional feature per other group
+(`authn.admin.sessions`, `.factors`, `.secrets`, `.sso`, `.sso.metadata`,
+`.impersonations`). Each conditional name is posted in `Init` in the branch that
+mounts its group.
+
 It delivers no capability of its own. It is taken in only by a command that
 wants the management routes; without it the account, membership, session,
 factor, secret, SSO and impersonation capabilities are still available through

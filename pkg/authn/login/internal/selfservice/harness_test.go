@@ -131,7 +131,7 @@ func newHarness(t *testing.T, cfgs ...func(*config)) *harness {
 	if cfg.impersonable {
 		mounter = impersonableMounter{h.m}
 	}
-	svc.Mount(mounter)
+	svc.Mount(mounter, nil)
 	h.as()
 	return h
 }
