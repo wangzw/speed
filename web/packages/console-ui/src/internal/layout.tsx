@@ -1,12 +1,5 @@
 /**
- * The console page-layout primitives: the content-area width divergence
- * and the detail page's main/side split.
- *
- * The layout design gives the console pages two content widths: a
- * register or dashboard takes the whole content area (its width is its
- * information), while a form (the settings page) sits in a centred,
- * limited column so its controls do not stretch with the viewport. Both
- * live here so the pages do not each re-derive them.
+ * The console page-layout primitives: the detail page's main/side split.
  *
  * The detail page's skeleton -- a main column carrying the subject and a
  * fixed-width side column carrying its metadata -- is the same shape for
@@ -54,10 +47,6 @@ export function DetailLayout({ main, side }: DetailLayoutProps) {
   )
 }
 
-export interface FormWidthProps {
-  readonly children: ReactNode
-}
-
 export interface DefinitionRowProps {
   /** The field's label. */
   readonly label: string
@@ -92,14 +81,4 @@ export function DefinitionRow({ label, value }: DefinitionRowProps) {
       </Typography>
     </Box>
   )
-}
-
-/**
- * The limited-width container a console form sits in: it never exceeds
- * its column (a narrow viewport is 100%), and at `sm` and up it is capped
- * to a comfortable reading width so inputs do not stretch with the
- * viewport.
- */
-export function FormWidth({ children }: FormWidthProps) {
-  return <Box sx={{ maxWidth: { sm: '45rem' }, width: '100%' }}>{children}</Box>
 }
