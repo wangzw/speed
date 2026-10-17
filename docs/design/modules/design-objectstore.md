@@ -15,7 +15,7 @@
 - **内容复验与净化流水线刻意后置。** 本模块**不重算声明的校验和与字节比对，也不做格式化解析、病毒扫描、重编码一类的净化**。刻意后置，不是漏项（[ADR-objectstore-scope-2026-10-15](../../adr/adr-objectstore-scope-2026-10-15.md)）。
 - **缩略图派生刻意后置。** 本模块不从一个对象的字节派生缩略图或任何投影。刻意后置，不是漏项（[ADR-objectstore-scope-2026-10-15](../../adr/adr-objectstore-scope-2026-10-15.md)）。
 - **不做授权判定。** 谁能对哪个对象做什么归 [authz](design-authz.md)：本模块在 `Resources` 里声明权限点、在路由上声明所需权限，判定由入口模块的中间件与路由声明面做出，本模块不给自己授予任何权限。
-- **不解释对象的内容与用途。** `Object.MIME`、`Declaration.Name` 都是不透明值；本模块不知道一份字节是票据、头像还是日志归档。
+- **不解释对象的内容与用途。** `Object.MIME` 是不透明值，`Declaration.Name` 是调用方给的标签，本模块只把它规整后存下、不读它的含义；本模块不知道一份字节是票据、头像还是日志归档。
 - **不认识内部键之外的存储布局。** 键的语法是本模块的私有约定；`fs` 与 `s3` 各自把它映射到自己的后端拼写（相对路径、对象键），映射细节不进接口，也不出现在任何应答里。
 - **不写审计行。** 本模块在根包声明审计动作的类型名常量，由宿主在不可逆的迁移点显式把事件发上总线（见「审计动作」）；本模块只声明动作的名字，不写审计行，也不点审计模块为依赖。
 - **不排队、不重试。** 一次上传与一次读取都是同步调用，`Store` 的方法在后端调用返回后才返回；后端不可达即那次调用失败，是否重试归调用方。
@@ -48,6 +48,7 @@ const (
 type Object struct {
     ID        string
     Key       string // 内部键，从不经 API 暴露
+    Name      string // 调用方声明的标签，存入前已规整，可为空串
     State     State
     Size      int64
     MIME      string
@@ -70,7 +71,7 @@ type Objects interface {
 }
 
 type Declaration struct {
-    Name           string
+    Name           string // 可省；存入前规整，从不使 Create 失败
     Size           int64
     ContentType    string
     ChecksumSHA256 string
@@ -95,7 +96,7 @@ var (
 
 `Objects` 各方法的语义，约束的主体是交付 `Objects` 的模块：
 
-- `Create` 校验 `Declaration`（`Size` 大于零、`ContentType` 非空、`ChecksumSHA256` 为空或 64 位十六进制），生成对象标识与内部键，落一行 `pending`，写 `declared_size`、`declared_type`、`declared_checksum` 与 `upload_expires_at = now + upload-window`，返回该行的视图。校验不过即 `ErrInvalidRequest`，不落行。
+- `Create` 校验 `Declaration`（`Size` 大于零、`ContentType` 非空、`ChecksumSHA256` 为空或 64 位十六进制），生成对象标识与内部键，落一行 `pending`，写 `name`、`declared_size`、`declared_type`、`declared_checksum` 与 `upload_expires_at = now + upload-window`，返回该行的视图。`Name` 不参与校验，按下文「名字的规整」存入。校验不过即 `ErrInvalidRequest`，不落行。
 - `Upload` 取该行，要求状态为 `pending` 或 `uploaded`、上传窗口未关、`size` 参数等于 `declared_size`；字节经 `Store.Put(内部键, r, size)` 存下，同时以流式读出实际字节数与 SHA-256；写 `size`、`checksum_sha256`、`mime`（取 `declared_type`），状态转 `uploaded`。前置不符答 `ErrStateConflict`（状态不符或窗口已关）或 `ErrInvalidRequest`（字节数与声明不符），均在写字节之前拦下。
 - `Complete` 取该行，条件 `WHERE id = ? AND state IN ('uploaded','completed')`：`uploaded` 直接转 `completed`，`expires_at` 在 `object-ttl` 大于零时取 `now + object-ttl`、否则为空，返回视图；`completed` 原样返回该行、不改状态；`pending` 答 `ErrStateConflict`，`deleted` 答 `ErrObjectNotFound`。
 - `Get` 返回该行的视图；`deleted` 与不存在同形，答 `ErrObjectNotFound`。
@@ -173,7 +174,7 @@ const (
 
 端点与权限由路由声明面绑定：中间件按 `(方法, c.FullPath())` 找到该路由声明的权限再做判定（[authz](design-authz.md)）。
 
-**对象视图逐字段从根包的 `Object` 构造，不带 `Key`。** 视图字段：`id`、`state`、`size`、`mime`、`checksum_sha256`、`expires_at`、`created_at`、`updated_at`，时间按 UTC 写出。内部键是模块的私有记账，从不进应答、也不进错误文本。`GET /api/v1/objects/:id/content` 只对 `completed` 的对象返回字节，正文的 `Content-Type` 取 `mime`。`POST /api/v1/objects` 命中 `metadata` 的 `upload-window` 打开上传窗口；`PUT .../content` 只接受 `pending` 或 `uploaded` 的对象。
+**对象视图逐字段从根包的 `Object` 构造，不带 `Key`。** 视图字段：`id`、`name`、`state`、`size`、`mime`、`checksum_sha256`、`expires_at`、`created_at`、`updated_at`，时间按 UTC 写出。内部键是模块的私有记账，从不进应答、也不进错误文本。`GET /api/v1/objects/:id/content` 只对 `completed` 的对象返回字节，正文的 `Content-Type` 取 `mime`。视图的 `name` 总在场，没有名字时是空串；声明请求体的 `name` 可省，省略与空串同义。应答不设 `Content-Disposition`，下载文件名由客户端取视图的 `name`。`POST /api/v1/objects` 命中 `metadata` 的 `upload-window` 打开上传窗口；`PUT .../content` 只接受 `pending` 或 `uploaded` 的对象。
 
 **回绝映射是封闭的、fail-closed 的。** 400（`Problem.Type` 为 `urn:speed:objectstore:bad-request`）：`ErrInvalidRequest`——声明形状不可读，或一次上传的字节数与声明不符。403：路由声明的权限判定未通过，由 guard 写出。404（`urn:speed:objectstore:not-found`）：`ErrObjectNotFound`——未知 id、他人租户、已删除三合同形，不做泄露存在性的区分；**已删除的行在除 `Delete` 之外的每个操作上都答这个码**，它已经不在了、不是状态冲突，而 `Delete` 对已删除的行幂等成功。409（`urn:speed:objectstore:conflict`）：`ErrStateConflict`。503（无 `Problem.Type`）：`ErrStoreUnavailable`、`ErrContentMissing` 与其余失败，成因只进日志。`Title` 与 `Detail` 是渲染好的成品文本，由本模块从自己的消息目录渲染。
 
@@ -262,6 +263,7 @@ classDiagram
     class Object {
         +ID string
         +Key string
+        +Name string
         +State State
         +Size int64
         +MIME string
@@ -323,6 +325,7 @@ stateDiagram-v2
 | `id` | 对象标识，主键，应用生成 |
 | `tenant_id` | 租户列，由内嵌的 `tenant.Model` 落地 |
 | `key` | 内部键，模块生成；从不经 API 暴露 |
+| `name` | 调用方声明的标签，规整后存入，可为空串；不唯一，不用于查找 |
 | `state` | `pending`／`uploaded`／`completed`／`deleted` 的闭集 |
 | `declared_size` | 声明里的大小 |
 | `declared_type` | 声明里的内容类型 |
@@ -337,6 +340,8 @@ stateDiagram-v2
 本模块在 `objects` 表上建索引：`(tenant_id, created_at)` 服务 `List` 的键集游标；`upload_expires_at` 与 `expires_at` 各一条服务过期清扫。
 
 **首次读表不得早于 `Init`。** `New` 早于 `Migrate`，`New` 里 `objects` 还不存在，本模块因此不在 `New` 读表；路由在 `Init` 里只登记、不读表。第一次读表落在 `Start`：清扫的第一次 pass 读 `objects`。清扫被关掉（`sweep-interval ≤ 0`）时，第一次读表是 `Serve` 阶段的第一条请求。
+
+**名字在入口规整一次。** `Create` 把声明的 `Name` 规整后写入 `name`，之后的每个读取方拿到的都是同一个值。存入的值满足：合法 UTF-8；不含 Unicode 类别为 Cc、Cf、Zl、Zp 的字符（控制字符、格式字符含方向控制与零宽字符、行分隔符与段分隔符），这些字符被丢弃；不含 `/` 与 `\`，它们被替换为 `_`；首尾无空白；至多 255 字节且不在字符中间截断，截断之后再去一次首尾空白；不是只由 `.` 组成，那样的名字存为空串。省略、空串与规整后为空同义，都存为空串。规整不去掉引号与分号，不检查扩展名，不保留末尾的扩展名。`name` 没有观测值一侧，视图交出的就是存入的值；既有行的 `name` 为空串。
 
 **声明里的值与上传后记下的值并存。** `declared_size`、`declared_type`、`declared_checksum` 是调用方在声明时给的；`size`、`mime`、`checksum_sha256` 是上传时模块自己读出的。两者分列存放，本模块因此能在上传时看出字节数与声明不符，又不把声明值改写成观测值。`Object` 视图交出的是观测值一侧。
 
@@ -445,6 +450,7 @@ type Spec[C any] struct {
 | 接缝与根包类型、审计动作常量、工厂 | 已实现 | `pkg/objectstore/objectstore.go` `Store`、`State`、`Object`、`Objects`、`Declaration`、`ListQuery`、`EventObjectCreated`、`EventObjectCompleted`、`EventObjectDeleted`；`pkg/objectstore/module.go` `Spec`、`NewModule` |
 | 哨兵错误 | 已实现 | `pkg/objectstore/objectstore.go` `ErrObjectNotFound`、`ErrStateConflict`、`ErrContentMissing`、`ErrStoreUnavailable`、`ErrInvalidConfig`、`ErrInvalidRequest` |
 | 元数据与生命周期面 `objectstore.metadata`（`objects` 表与迁移、上传三步、键集游标列表、过期清扫、HTTP 面、权限与审计动作声明） | 已实现 | `pkg/objectstore/metadata/metadata.go` `Module`、`ModuleName`；`pkg/objectstore/metadata/store.go` `Create`、`Upload`、`Complete`、`Get`、`OpenContent`、`List`、`Delete`；`pkg/objectstore/metadata/objects.go` `tableName`、`internalKey`、`encodeCursor`、`decodeCursor`；`pkg/objectstore/metadata/sweep.go` `startSweep`、`sweepOnce`；`pkg/objectstore/metadata/handlers.go` `handleCreate`、`handleUpload`、`handleComplete`、`handleGet`、`handleList`、`handleContent`、`handleDelete`；`pkg/objectstore/metadata/permissions.go` `PermissionObjectRead`、`PermissionObjectWrite`、`permissionSpec`、`translationSpec`；`pkg/objectstore/metadata/migrations` |
+| 对象的名字（`name` 列与迁移、入口规整、视图字段、声明请求体的 `name` 可省） | 未实现 | — |
 | 本地目录后端 `objectstore.fs` | 已实现 | `pkg/objectstore/fs/fs.go` `Module`、`ModuleName`、`Put`、`Open`、`Delete`；`pkg/objectstore/fs/keys.go` `relativePath`、`splitKey`；`pkg/objectstore/fs/config.go` `items` |
 | S3 兼容后端 `objectstore.s3` | 已实现 | `pkg/objectstore/s3/s3.go` `Module`、`ModuleName`、`Put`、`Open`、`Delete`；`pkg/objectstore/s3/config.go` `items` |
 | 元数据面的 OpenAPI 片段声明 | 已实现 | `pkg/objectstore/metadata/openapi/metadata.json`；`pkg/objectstore/metadata/metadata.go` `metadataFragment`、`defaultEndpoint`、`Module` |
