@@ -75,7 +75,7 @@
 按可用宽度递减，在断点标度上逐档降级，不一步切换形态：
 
 - **侧栏**：从常驻变为覆盖式抽屉。
-- **数据表**：先隐藏低优先级列，仍放不下时在容器内横向滚动兜底。
+- **数据表**：先隐藏低优先级列，仍放不下时在容器内横向滚动兜底。短值列与标识符列按列声明不折行，单元格因此不会被拆行压扁；内容撑不住容器宽度时，滚动兜底才实际发生。
 - **表单**：由多列收为单列。
 - **卡片网格**：由多列收为单列；档位取网格所在容器的宽度，不取视口。
 
@@ -150,6 +150,7 @@ graph TD
 | 数据表的列优先级降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx` |
 | 数据表超宽的容器内滚动兜底 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable` |
 | 卡片网格的多列收为单列 | 已实现 | `starters/demo/web/src/pages/home-page.tsx` `HomePage` |
+| 数据表按列的折行策略 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnCellWrapSx` |
 | 组件级容器查询 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx`；`starters/demo/web/src/pages/home-page.tsx` `HomePage` |
 | 窄视口逐档降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx`；`web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`（收起为仅图标的窄栏）；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx`；`starters/demo/web/src/pages/home-page.tsx` `HomePage` |
 | 指针能力查询 | 已实现 | `web/packages/ui-kit/src/internal/pointer.ts`；`web/packages/ui-kit/src/theme/touch-floor.ts` `touchFloorComponents`；`web/packages/ui-kit/src/touch-target.ts` `touchTargetSx`；`web/packages/ui-kit/src/components/DataTable.tsx`、`web/packages/ui-kit/src/components/FileUploader.tsx`、`web/packages/layout-kit/src/components/AppShell.tsx`、`web/packages/notification-ui/src/NotificationBell.tsx`、`web/packages/account-ui/src/SessionsSection.tsx` |

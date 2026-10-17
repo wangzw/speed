@@ -833,6 +833,88 @@ describe('DataTable', () => {
     })
   })
 
+  // The cell-wrap policy is per column and opt-in. jsdom does no layout,
+  // so these cases prove the declarations: a column that opts into
+  // 'nowrap' renders its header and every body cell with
+  // `white-space: nowrap` (the declaration that keeps a short value or
+  // an identifier from breaking mid-token), while a column that leaves
+  // the field unset keeps normal text flow so prose can still wrap. The
+  // scroll fallback those declarations feed is the TableContainer
+  // wrapper asserted by the horizontal-scroll case above; together they
+  // are what makes a table wider than its container scroll instead of
+  // squeezing its cells. No assertion here measures a rendered width.
+  describe('cell wrap policy (per-column opt-in)', () => {
+    const WRAP_COLUMNS: readonly DataTableColumn<Member>[] = [
+      {
+        id: 'name',
+        header: 'Name',
+        cellWrap: 'nowrap',
+        cell: (row) => row.name,
+      },
+      {
+        id: 'bio',
+        header: 'Bio',
+        cell: (row) => `Member ${row.id} has a longer description`,
+      },
+    ]
+
+    it('keeps an opted-in column on one line in the header and every body cell', () => {
+      const utils = renderTable({ columns: WRAP_COLUMNS })
+      expect(
+        utils.getByRole('columnheader', { name: 'Name' }),
+      ).toHaveStyle({ whiteSpace: 'nowrap' })
+      const nameCells = utils.container.querySelectorAll(
+        'tbody tr td:first-child',
+      )
+      expect(nameCells.length).toBe(MEMBERS.length)
+      for (const cell of nameCells) {
+        expect(cell).toHaveStyle({ whiteSpace: 'nowrap' })
+      }
+    })
+
+    it('leaves a column that does not opt in in normal text flow, so a long value can still wrap', () => {
+      const utils = renderTable({ columns: WRAP_COLUMNS })
+      expect(
+        utils.getByRole('columnheader', { name: 'Bio' }),
+      ).not.toHaveStyle({ whiteSpace: 'nowrap' })
+      const bioCells = utils.container.querySelectorAll(
+        'tbody tr td:nth-child(2)',
+      )
+      expect(bioCells.length).toBe(MEMBERS.length)
+      for (const cell of bioCells) {
+        expect(cell).not.toHaveStyle({ whiteSpace: 'nowrap' })
+      }
+    })
+
+    it("treats an explicit 'wrap' policy as the default, emitting no declaration", () => {
+      const columns: DataTableColumn<Member>[] = [
+        { id: 'name', header: 'Name', cellWrap: 'wrap', cell: (row) => row.name },
+        ...BASE_COLUMNS.slice(1),
+      ]
+      const utils = renderTable({ columns })
+      expect(
+        utils.getByRole('columnheader', { name: 'Name' }),
+      ).not.toHaveStyle({ whiteSpace: 'nowrap' })
+      expect(
+        utils.container.querySelector('tbody tr td:first-child'),
+      ).not.toHaveStyle({ whiteSpace: 'nowrap' })
+    })
+
+    it('keeps the horizontal scroll container that a nowrap column overflows into', () => {
+      // The two halves of the contract: the opted-in cells declare
+      // nowrap (so their content cannot shrink), and the wrapper still
+      // declares the horizontal scroll that catches the resulting
+      // overflow. jsdom cannot prove a scrollbar appears at a real
+      // width -- the declaration pair is the observable proof.
+      const utils = renderTable({ columns: WRAP_COLUMNS })
+      const container = utils.container.querySelector('.MuiTableContainer-root')
+      expect(container).toHaveStyle({ overflowX: 'auto' })
+      expect(
+        utils.getByRole('columnheader', { name: 'Name' }),
+      ).toHaveStyle({ whiteSpace: 'nowrap' })
+    })
+  })
+
   describe('column priority (container-triggered reflow)', () => {
     it('renders a column with no priority with no visibility override -- unaffected by the feature', () => {
       // BASE_COLUMNS sets no column's priority; this restates the

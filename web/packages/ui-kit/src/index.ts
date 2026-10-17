@@ -71,6 +71,7 @@ export {
 export {
   DataTable,
   type DataTableColumn,
+  type DataTableColumnCellWrap,
   type DataTableColumnPriority,
   type DataTableFilter,
   type DataTablePagination,

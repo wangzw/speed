@@ -35,7 +35,7 @@ string lives in the bilingual `ui-kit` namespace registered through
 | `components/FormField.tsx` | `FormField`, `FormFieldProps`, `FormFieldRenderState`, `REQUIRED_ERROR_KEY` |
 | `components/FormLayout.tsx` | `FormLayout`, `FormLayoutProps`, `FormLayoutColumns` |
 | `zod-form-resolver.ts` | `zodFormResolver`, `INVALID_ERROR_KEY` |
-| `components/DataTable.tsx` | `DataTable`, `DataTableColumn`, `DataTableColumnPriority`, `DataTableSort`, `DataTableSortDirection`, `DataTableFilter`, `DataTablePagination`, `DataTableProps` |
+| `components/DataTable.tsx` | `DataTable`, `DataTableColumn`, `DataTableColumnCellWrap`, `DataTableColumnPriority`, `DataTableSort`, `DataTableSortDirection`, `DataTableFilter`, `DataTablePagination`, `DataTableProps` |
 | `components/InlineError.tsx` | `InlineError`, `InlineErrorProps`, `errorCodeOf` |
 | `components/InlineSuccess.tsx` | `InlineSuccess`, `InlineSuccessProps` |
 | `components/ListSkeleton.tsx` | `ListSkeleton`, `ListSkeletonProps` |
@@ -645,6 +645,25 @@ deliberately over-wide column set and asserting the wrapper is a real
 `TableContainer` with `overflow-x: auto`, so a refactor that drops
 `TableContainer` would fail a test instead of silently regressing.
 
+**Cell wrapping is per-column and opt-in, and it is what keeps the
+scroll fallback reachable.** Under normal text flow a cell breaks
+mid-token, so the table shrinks back to its container and the wrapper
+never overflows. A column's `cellWrap?: 'wrap' | 'nowrap'` therefore
+lets each column state its own line policy: `'nowrap'` renders the
+header and every body cell on one line, so a short value (`'Enabled'`,
+an action label) cannot split across two rows and an identifier cannot
+break in the middle; the column then contributes its full unbroken
+width to the table, which the `TableContainer` above scrolls when the
+host's container is narrower. Omitting the field -- or passing
+`'wrap'` -- keeps normal text flow, which is what prose-like cells
+need, so the policy is a per-column choice rather than a table-wide
+switch and a host that sets it nowhere is byte-for-byte unaffected.
+`DataTable.test.tsx`'s "cell wrap policy" cases pin the declared
+`white-space: nowrap` on an opted-in column's header and body cells,
+its absence on a column that does not opt in, and that an explicit
+`'wrap'` emits no declaration; jsdom does no layout, so this proves
+the declarations, not a rendered width.
+
 **Column priority is the opt-in reflow alternative to that scroll
 fallback, and it is container-triggered.** The table's root box declares
 `container-type: inline-size`, so every responsive rule inside the table
@@ -705,6 +724,9 @@ const columns: DataTableColumn<Member>[] = [
   {
     id: 'email',
     header: 'Email',
+    // An identifier-like value: never break it mid-token; let the
+    // container scroll instead.
+    cellWrap: 'nowrap',
     cell: (row) => row.email,
   },
   // Dropped first as the container narrows (hidden below the container `lg`).

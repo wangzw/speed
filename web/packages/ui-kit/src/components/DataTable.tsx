@@ -63,6 +63,23 @@
  * "horizontal-scroll container" test for the proof (a refactor that
  * drops `TableContainer` would fail it).
  *
+ * That fallback only exists when a cell refuses to squeeze: under normal
+ * text flow a value breaks mid-token and shrinks the table back to its
+ * container, so the wrapper never overflows and the scroll fallback
+ * silently disappears. `cellWrap` is the per-column opt-in that prevents
+ * it -- a column declaring 'nowrap' renders its header and body cells on
+ * one line, so a short value ('Enabled', an action label) never splits
+ * across two rows and an identifier is never broken in the middle; the
+ * column then contributes its full unbroken width to the table, which is
+ * what makes the wrapper's horizontal scroll reachable when the host's
+ * container is narrower. A column that omits `cellWrap` keeps normal
+ * wrapping, which is what prose-like cells need, so the policy is
+ * opt-in per column rather than a table-wide switch. See
+ * DataTable.test.tsx's cell-wrap tests for what this proves and does
+ * not (jsdom does no layout: the proof is the declared
+ * `white-space: nowrap` on the opted-in cells and its absence on a
+ * wrapping column, plus the existing overflow container).
+ *
  * The whole table is a CSS container: the root box declares
  * `container-type: inline-size`, so every responsive rule inside it
  * answers to the table's own width -- how wide the host placed it --
@@ -149,6 +166,16 @@ import { visuallyHiddenSx } from '../visually-hidden.js'
  */
 export type DataTableColumnPriority = 'high' | 'medium' | 'low'
 
+/**
+ * Opt-in per-column line policy (see the header note). 'wrap' is the
+ * default: the cell keeps normal text flow and may break across lines.
+ * 'nowrap' keeps every cell in the column on one line, so short values
+ * and identifiers are never split; the column contributes its full
+ * unbroken width to the table, which the TableContainer scrolls
+ * horizontally when the host's container is narrower.
+ */
+export type DataTableColumnCellWrap = 'wrap' | 'nowrap'
+
 /** One column definition: header plus a per-row cell renderer. */
 export interface DataTableColumn<T> {
   /** Stable column identity; also the sort-state columnId. */
@@ -169,6 +196,13 @@ export interface DataTableColumn<T> {
    * this prop existing.
    */
   readonly priority?: DataTableColumnPriority
+  /**
+   * Opt-in line policy for this column's header and cells: 'nowrap'
+   * keeps them on one line (short values, identifiers, action controls),
+   * while omitting it -- or passing 'wrap' -- keeps normal wrapping for
+   * prose-like cells. See the component header note.
+   */
+  readonly cellWrap?: DataTableColumnCellWrap
   /** Renders one row's cell; rowIndex is the index within `rows`. */
   readonly cell: (row: T, rowIndex: number) => ReactNode
 }
@@ -292,6 +326,19 @@ function columnVisibilitySx(
   if (priority === undefined) return undefined
   const visibleFrom = PRIORITY_VISIBLE_FROM[priority]
   return { display: { '@': 'none', [`@${visibleFrom}`]: 'table-cell' } }
+}
+
+/**
+ * Renders a column's opt-in line policy into a cell sx value. 'nowrap'
+ * is the only policy that emits a declaration; a column with no policy
+ * (or an explicit 'wrap') returns undefined, so spreading the result is
+ * a no-op and the cell keeps its normal text flow.
+ */
+function columnCellWrapSx(
+  cellWrap: DataTableColumnCellWrap | undefined,
+): { whiteSpace: 'nowrap' } | undefined {
+  if (cellWrap !== 'nowrap') return undefined
+  return { whiteSpace: 'nowrap' }
 }
 
 /**
@@ -459,7 +506,11 @@ export function DataTable<T>({
                   <TableCell
                     key={column.id}
                     align={column.align}
-                    sx={{ width: column.width, ...columnVisibilitySx(column.priority) }}
+                    sx={{
+                      width: column.width,
+                      ...columnVisibilitySx(column.priority),
+                      ...columnCellWrapSx(column.cellWrap),
+                    }}
                     aria-sort={
                       activeDirection === 'asc'
                         ? 'ascending'
@@ -593,7 +644,11 @@ export function DataTable<T>({
                     <TableCell
                       key={column.id}
                       align={column.align}
-                      sx={{ width: column.width, ...columnVisibilitySx(column.priority) }}
+                      sx={{
+                        width: column.width,
+                        ...columnVisibilitySx(column.priority),
+                        ...columnCellWrapSx(column.cellWrap),
+                      }}
                     >
                       {column.cell(row, index)}
                     </TableCell>

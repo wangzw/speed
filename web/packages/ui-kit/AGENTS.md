@@ -116,7 +116,10 @@ plumbing and deliberately not exported.
   the identical template: undefined by default, exactly the
   always-visible column, so an existing consumer that sets no column's
   priority is byte-for-byte unaffected; only a column that opts in
-  gets the container-query-keyed hide/show. The color mode follows the same
+  gets the container-query-keyed hide/show. `DataTableColumn`'s
+  `cellWrap?: 'wrap' | 'nowrap'` follows it as well: omitting it (or
+  passing `'wrap'`) is normal text flow, and only `'nowrap'` emits the
+  single-line declaration. The color mode follows the same
   template: `createAppTheme`'s third `mode` argument and
   `AppThemeProvider`'s `defaultMode` both default to `'light'`, exactly
   the previous always-light theme, and `useAppThemeMode` is a new
@@ -187,9 +190,13 @@ features' generated CSS does not collide; the filter test renders no
 prioritized column, so the only `@container` rule there is the filter's
 own. DataTable's pointer rules assert the `@media (pointer: coarse)`
 44x44 touch-target floor and the `@media (hover: hover) and (pointer:
-fine)` row-hover gate. As with every `emittedStyleText()` assertion in
-this package, these prove the right declarations were wired in, not
-that a real viewport or container actually hides or shows the column.
+fine)` row-hover gate. The cell-wrap cases assert the declared
+`white-space: nowrap` on an opted-in column's header and body cells and
+its absence on a column that does not opt in -- the declaration jsdom
+can show, not a rendered width. As with every `emittedStyleText()`
+assertion in this package, these prove the right declarations were
+wired in, not that a real viewport or container actually hides a
+column or scrolls a table.
 
 ## Deferrals (recorded, do not re-open silently)
 
