@@ -278,12 +278,14 @@ describe('ConsoleShell', () => {
       })
       expect(toggle).toHaveAttribute('aria-expanded', 'true')
       await user.click(toggle)
-      // The flip is the host's to hold: the shell reports it and the permanent
-      // drawer disappears, leaving the toggle offering to expand.
+      // The flip is the host's to hold: the shell reports it and the
+      // permanent drawer narrows to the icon-only rail -- it stays mounted,
+      // so the nav landmark remains -- leaving the toggle offering to
+      // expand.
       expect(onCollapseChange).toHaveBeenCalledWith(true)
       expect(
-        screen.queryByRole('navigation', { name: consoleUiZhCN.shell.navLabel }),
-      ).not.toBeInTheDocument()
+        screen.getByRole('navigation', { name: consoleUiZhCN.shell.navLabel }),
+      ).toBeInTheDocument()
       expect(
         screen.getByRole('button', { name: layoutKitZhCN.appShell.expandNav }),
       ).toHaveAttribute('aria-expanded', 'false')

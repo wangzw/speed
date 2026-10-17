@@ -61,7 +61,11 @@ rule. The public surface is `src/index.ts`; everything under
   not that: it is an explicit, host-controlled prop pair
   (`sidebarCollapsed` / `onSidebarCollapsedChange`) a host opts into,
   never an implicit responsive behavior — omitting it keeps the
-  always-open permanent drawer.
+  always-open permanent drawer. Collapsing narrows that drawer to the
+  icon-only rail (a fixed width derived from the theme spacing base): the
+  drawer stays mounted, each entry keeps its icon with the label shown as
+  a tooltip, and an icon-less entry keeps its label rather than going
+  blank.
 - **This package makes zero HTTP calls.** There is no scope in which
   it legitimately needs to — if a change wants to fetch anything, that
   is a sign scope has drifted; stop and re-read the package README's

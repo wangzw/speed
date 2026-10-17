@@ -89,9 +89,11 @@ function ControlledDrawerHost({
 function ControlledCollapseHost({
   initialCollapsed,
   onCollapseChange,
+  navItems = NAV_ITEMS,
 }: {
   readonly initialCollapsed: boolean
   readonly onCollapseChange: (collapsed: boolean) => void
+  readonly navItems?: readonly AppShellNavEntry[]
 }) {
   const [collapsed, setCollapsed] = useState(initialCollapsed)
   const reportCollapse = useCallback(
@@ -103,7 +105,7 @@ function ControlledCollapseHost({
   )
   return (
     <AppShell
-      navItems={NAV_ITEMS}
+      navItems={navItems}
       sidebarCollapsed={collapsed}
       onSidebarCollapsedChange={reportCollapse}
     >
@@ -401,9 +403,32 @@ describe('AppShell', () => {
   })
 
   describe('collapsible sidebar', () => {
-    it('renders no collapse toggle and keeps the permanent drawer when the host does not opt in', () => {
+    // Entries that carry an icon: the design's icon-only rail is built
+    // from these, so the rail tests use icons to exercise the real shape
+    // (the collapsed label is clipped, the icon speaks).
+    const NAV_WITH_ICONS: readonly AppShellNavItem[] = [
+      {
+        id: 'home',
+        label: 'Home',
+        href: '/home',
+        selected: true,
+        icon: <span data-testid="icon-home">H</span>,
+      },
+      {
+        id: 'reports',
+        label: 'Reports',
+        href: '/reports',
+        icon: <span data-testid="icon-reports">R</span>,
+      },
+    ]
+
+    /** The ListItemText root holding an entry's label. */
+    const labelRootOf = (element: HTMLElement): Element | null =>
+      element.closest('.MuiListItemText-root')
+
+    it('renders no collapse toggle and keeps the permanent icon+text drawer when the host does not opt in', () => {
       mockMatchMedia(true)
-      const { queryByRole, getByRole } = renderWithProviders(
+      const { queryByRole, getByRole, getByText } = renderWithProviders(
         <AppShell navItems={NAV_ITEMS}>content</AppShell>,
       )
       expect(
@@ -412,18 +437,23 @@ describe('AppShell', () => {
       expect(
         queryByRole('button', { name: zhCN.appShell.expandNav }),
       ).not.toBeInTheDocument()
-      // The always-open permanent drawer is unchanged.
+      // The always-open permanent drawer is unchanged, and its label is
+      // ordinary visible text (not clipped by any rail).
       expect(
         getByRole('navigation', { name: zhCN.appShell.navLabel }),
       ).toBeInTheDocument()
+      expect(labelRootOf(getByText('Home'))).not.toHaveStyle({
+        position: 'absolute',
+      })
     })
 
-    it('reports the flipped value from the toggle and hides the drawer once the host collapses it', async () => {
+    it('collapses to the icon-only rail: the nav stays mounted at a fixed narrow width, icons remain, labels are clipped but still name the entries', async () => {
       mockMatchMedia(true)
       const onCollapseChange = vi.fn()
       const user = userEvent.setup()
-      const { getByRole, queryByRole } = renderWithProviders(
+      const { getByRole, getByTestId, getByText } = renderWithProviders(
         <ControlledCollapseHost
+          navItems={NAV_WITH_ICONS}
           initialCollapsed={false}
           onCollapseChange={onCollapseChange}
         />,
@@ -434,29 +464,86 @@ describe('AppShell', () => {
 
       expect(onCollapseChange).toHaveBeenCalledTimes(1)
       expect(onCollapseChange).toHaveBeenCalledWith(true)
-      // Collapsed: the permanent drawer is gone and the toggle now offers
-      // to expand.
+
+      // Collapsed NARROWS the drawer to the rail; it does not unmount it.
+      // The nav landmark and every entry survive, each still reachable by
+      // its accessible name (the label is clipped, not removed from the
+      // accessibility tree), and the icons remain rendered.
       expect(
-        queryByRole('navigation', { name: zhCN.appShell.navLabel }),
-      ).not.toBeInTheDocument()
+        getByRole('navigation', { name: zhCN.appShell.navLabel }),
+      ).toBeInTheDocument()
+      expect(getByRole('link', { name: 'Home' })).toBeInTheDocument()
+      expect(getByTestId('icon-home')).toBeInTheDocument()
+      expect(getByTestId('icon-reports')).toBeInTheDocument()
+      // The label is visibly hidden (clipped to preserve the accessible
+      // name) once collapsed ...
+      expect(labelRootOf(getByText('Home'))).toHaveStyle({
+        position: 'absolute',
+      })
+      // ... and the rail is the fixed narrow width derived from the theme
+      // spacing base (7 x 8px = 56px), NOT the old zero-width hide.
+      expect(emittedStyleText()).toMatch(/\.MuiDrawer-paper\{[^}]*width:56px/)
+      // The toggle now offers to expand.
       expect(
         getByRole('button', { name: zhCN.appShell.expandNav }),
       ).toHaveAttribute('aria-expanded', 'false')
     })
 
-    it('expands again from the collapsed state', async () => {
+    it('names each rail entry with a tooltip carrying the clipped label', async () => {
       mockMatchMedia(true)
       const user = userEvent.setup()
-      const { getByRole, queryByRole } = renderWithProviders(
+      const { getByRole, findByRole } = renderWithProviders(
+        <ControlledCollapseHost
+          navItems={NAV_WITH_ICONS}
+          initialCollapsed
+          onCollapseChange={() => undefined}
+        />,
+      )
+      // With the label clipped, the tooltip is how a sighted pointer user
+      // reads the entry.
+      await user.hover(getByRole('link', { name: 'Home' }))
+      expect(await findByRole('tooltip')).toHaveTextContent('Home')
+    })
+
+    it('keeps an icon-less entry identifiable in the rail instead of a blank cell', () => {
+      mockMatchMedia(true)
+      const { getByRole, getByText } = renderWithProviders(
         <ControlledCollapseHost
           initialCollapsed
           onCollapseChange={() => undefined}
         />,
       )
-      expect(
-        queryByRole('navigation', { name: zhCN.appShell.navLabel }),
-      ).not.toBeInTheDocument()
+      // NAV_ITEMS carries no icons: the rail falls back to the visible
+      // (clipped) label rather than rendering nothing, so a host that
+      // collapses an icon-less navigation still gets readable rows.
+      expect(getByRole('link', { name: 'Home' })).toBeInTheDocument()
+      expect(labelRootOf(getByText('Home'))).not.toHaveStyle({
+        position: 'absolute',
+      })
+    })
+
+    it('expands back to the full icon+text drawer from the rail', async () => {
+      mockMatchMedia(true)
+      const user = userEvent.setup()
+      const { getByRole, getByText } = renderWithProviders(
+        <ControlledCollapseHost
+          navItems={NAV_WITH_ICONS}
+          initialCollapsed
+          onCollapseChange={() => undefined}
+        />,
+      )
+      // Collapsed: the label is clipped (kept for the accessible name).
+      expect(labelRootOf(getByText('Home'))).toHaveStyle({
+        position: 'absolute',
+      })
+
       await user.click(getByRole('button', { name: zhCN.appShell.expandNav }))
+
+      // Expanded again: the label is ordinary visible text and the nav
+      // landmark is still one.
+      expect(labelRootOf(getByText('Home'))).not.toHaveStyle({
+        position: 'absolute',
+      })
       expect(
         getByRole('navigation', { name: zhCN.appShell.navLabel }),
       ).toBeInTheDocument()
@@ -478,6 +565,20 @@ describe('AppShell', () => {
       expect(
         getByRole('button', { name: zhCN.appShell.openNav }),
       ).toBeInTheDocument()
+    })
+
+    it('has no axe violations on the collapsed rail', async () => {
+      mockMatchMedia(true)
+      renderWithProviders(
+        <AppShell
+          navItems={NAV_WITH_ICONS}
+          sidebarCollapsed
+          onSidebarCollapsedChange={() => undefined}
+        >
+          <h1>Main content</h1>
+        </AppShell>,
+      )
+      await expectNoAxeViolations()
     })
   })
 
@@ -716,6 +817,27 @@ describe('AppShell', () => {
       )
       const actionsGroup = getByRole('button', { name: 'Search' }).parentElement
       expect(actionsGroup).toHaveStyle({ flexWrap: 'wrap' })
+    })
+
+    it('raises the shell toggles and the nav entries to the 44px touch-target floor under a coarse pointer', () => {
+      // The touch-target gate is a media feature, not a breakpoint (see
+      // the layout design): a coarse pointer gets the floor on the shell's
+      // own toggle buttons and on every navigation entry, a precise
+      // pointer the stock sizes. jsdom evaluates no real media condition,
+      // so this is the property/snapshot proof that the gated declarations
+      // were wired in (see @speed/test-utils/emitted-css).
+      mockMatchMedia(true)
+      renderWithProviders(
+        <AppShell
+          navItems={[{ id: 'home', label: 'Home', href: '/home' }]}
+          onSidebarCollapsedChange={() => undefined}
+        >
+          content
+        </AppShell>,
+      )
+      const css = emittedStyleText()
+      expect(css).toContain('@media (pointer: coarse)')
+      expect(css).toMatch(/@media \(pointer: coarse\)\{[^}]*min-height:44px/)
     })
   })
 

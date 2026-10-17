@@ -47,7 +47,16 @@
  * `onSidebarCollapsedChange`) that a host opts into, never an implicit
  * responsive behavior -- omitting it renders the always-open permanent
  * drawer unchanged, and the toggle button appears only when the host
- * supplies the change callback. The
+ * supplies the change callback. Collapsing narrows the permanent drawer
+ * to the icon-only rail the layout design names (a fixed width derived
+ * from the theme spacing base, not a zero-width hide): the drawer stays
+ * mounted as a real `nav` landmark, each entry keeps its icon with its
+ * text clipped (still the entry's accessible name, still readable by a
+ * screen reader) and the clipped label offered to a sighted pointer user
+ * as a per-entry tooltip; an entry that carries no icon keeps its label
+ * visible (clipped to the rail) so the rail is never a blank cell -- see
+ * railTextItemSx. The rail therefore stays navigable instead of
+ * disappearing. The
  * mobile (temporary) Drawer's paper width is capped to
  * `min(sidebarWidth, 85vw)`, and the nav content rendered inside it
  * fills that paper (`width: 100%`) rather than re-declaring
@@ -79,7 +88,7 @@
  */
 
 import { useEffect, useId, useRef, useState } from 'react'
-import type { MouseEvent, MouseEventHandler, ReactNode } from 'react'
+import type { MouseEvent, MouseEventHandler, ReactElement, ReactNode } from 'react'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { useTheme } from '@mui/material/styles'
 import AppBar from '@mui/material/AppBar'
@@ -93,7 +102,9 @@ import ListItemButton from '@mui/material/ListItemButton'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import Toolbar from '@mui/material/Toolbar'
+import Tooltip from '@mui/material/Tooltip'
 import useMediaQuery from '@mui/material/useMediaQuery'
+import { touchTargetSx, visuallyHiddenSx } from '@speed/ui-kit'
 import { useLayoutKitTranslation } from '../internal/translation.js'
 import {
   ChevronLeftIcon,
@@ -200,9 +211,11 @@ export interface AppShellProps {
    * Desktop sidebar collapse state (the permanent drawer at md and up).
    * Omit to keep the sidebar always open -- the previous behavior, and
    * the one every host that never opts in is byte-for-byte unaffected
-   * by. Pass it (with onSidebarCollapsedChange) for a sidebar the user
-   * can collapse to reclaim the content width; the mobile (temporary)
-   * drawer is unaffected.
+   * by. Pass it (optionally with onSidebarCollapsedChange) to collapse
+   * the sidebar to the icon-only rail that reclaims most of the content
+   * width: the drawer stays mounted and named, every entry keeps its
+   * icon with the label shown as a tooltip, and the mobile (temporary)
+   * drawer is unaffected. False renders the full icon+text sidebar.
    */
   readonly sidebarCollapsed?: boolean
   /**
@@ -219,6 +232,64 @@ export interface AppShellProps {
 }
 
 const DEFAULT_SIDEBAR_WIDTH = 280
+
+/**
+ * The collapsed sidebar rail's width, in theme spacing units. The layout
+ * design keeps a collapsed sidebar a fixed-width icon rail rather than
+ * hiding it, and derives that width from the spacing base the token tree
+ * owns (the theme's spacing base IS the spacing token unit): a standard
+ * 24px list icon with the theme's default 16px (spacing 2) inset on each
+ * side is 24 + 2 x 16 = 56 = 7 x unit.
+ */
+const COLLAPSED_SIDEBAR_SPACING_UNITS = 7
+
+/**
+ * A collapsed rail entry that carries an icon: the icon is centered and
+ * the label clipped (see RailTooltip). The horizontal padding is the
+ * theme's single spacing step, leaving the icon horizontally centered in
+ * the rail's remaining width.
+ */
+const railIconItemSx = { justifyContent: 'center', px: 1 } as const
+
+/**
+ * A collapsed rail entry without an icon: rather than a blank cell, the
+ * entry's label stays visible, clipped to the rail's width (the
+ * container's `overflow: hidden` trims the tail). The layout design's
+ * rail is icon-bearing by intent, but a host that collapses a navigation
+ * whose entries carry no `icon` still gets identifiable, operable rows --
+ * tooltipped and, for assistive tech, named by the label either way.
+ */
+const railTextItemSx = { px: 1, overflow: 'hidden' } as const
+
+/** The rail entry's icon box: no reserved label width, itself centered. */
+const railIconSx = { minWidth: 0, mr: 0, justifyContent: 'center' } as const
+
+/**
+ * The sidebar's icon-only label tooltip. In the collapsed rail each
+ * entry's text is clipped (kept in the DOM, so it remains the entry's
+ * accessible name), so a sighted pointer user reads the label on hover or
+ * focus; everywhere else the entry's text is visible and no tooltip is
+ * added, so an expanded entry is byte-for-byte what it was before the
+ * rail existed.
+ */
+function RailTooltip({
+  enabled,
+  label,
+  children,
+}: {
+  readonly enabled: boolean
+  readonly label: ReactNode
+  readonly children: ReactElement
+}): ReactElement {
+  if (!enabled) {
+    return children
+  }
+  return (
+    <Tooltip title={label} placement="right">
+      {children}
+    </Tooltip>
+  )
+}
 
 /** Narrows a declared entry to a grouped section. */
 function isNavGroup(entry: AppShellNavEntry): entry is AppShellNavGroup {
@@ -257,6 +328,7 @@ function NavItemRow({
   item,
   onNavigate,
   indented = false,
+  narrow = false,
 }: {
   readonly item: AppShellNavItem
   /**
@@ -269,11 +341,28 @@ function NavItemRow({
   readonly onNavigate?: () => void
   /** Whether this entry sits one level below its parent. */
   readonly indented?: boolean
+  /** Whether this entry renders in the collapsed icon-only rail. */
+  readonly narrow?: boolean
 }) {
   // Called unconditionally (hook order): only the parent branch uses them.
   const contentId = useId()
   const [expanded, setExpanded] = useState(true)
-  const indentSx = indented ? { pl: 4 } : undefined
+  // The indent narrows a nested entry one level, but never in the rail:
+  // the rail centers every entry, so an indent would break that (and the
+  // rail's own width cannot afford it).
+  const indentSx = indented && !narrow ? { pl: 4 } : undefined
+  const hasIcon = item.icon !== undefined
+  const contentSx =
+    narrow
+      ? [hasIcon ? railIconItemSx : railTextItemSx, touchTargetSx]
+      : indentSx === undefined
+        ? touchTargetSx
+        : [indentSx, touchTargetSx]
+  const iconSx = narrow && hasIcon ? railIconSx : undefined
+  // In the rail an entry WITH an icon hides its label (the icon speaks,
+  // the tooltip names it); an entry WITHOUT one keeps the label visible,
+  // so the rail is never a blank cell -- see railTextItemSx.
+  const textSx = narrow && hasIcon ? visuallyHiddenSx : undefined
 
   const activate = (event: MouseEvent<HTMLElement>): void => {
     item.onClick?.(event)
@@ -284,17 +373,22 @@ function NavItemRow({
   if (hasChildren) {
     return (
       <ListItem disablePadding sx={{ display: 'block' }}>
-        <ListItemButton
-          aria-expanded={expanded}
-          aria-controls={contentId}
-          onClick={() => {
-            setExpanded((previous) => !previous)
-          }}
-        >
-          {item.icon !== undefined && <ListItemIcon>{item.icon}</ListItemIcon>}
-          <ListItemText primary={item.label} />
-          <DisclosureChevron expanded={expanded} />
-        </ListItemButton>
+        <RailTooltip enabled={narrow} label={item.label}>
+          <ListItemButton
+            aria-expanded={expanded}
+            aria-controls={contentId}
+            onClick={() => {
+              setExpanded((previous) => !previous)
+            }}
+            sx={contentSx}
+          >
+            {item.icon !== undefined && (
+              <ListItemIcon sx={iconSx}>{item.icon}</ListItemIcon>
+            )}
+            <ListItemText primary={item.label} sx={textSx} />
+            <DisclosureChevron expanded={expanded} />
+          </ListItemButton>
+        </RailTooltip>
         <Box id={contentId} hidden={!expanded}>
           <List disablePadding>
             {(item.children ?? []).map((child) => (
@@ -303,6 +397,7 @@ function NavItemRow({
                 item={child}
                 onNavigate={onNavigate}
                 indented
+                narrow={narrow}
               />
             ))}
           </List>
@@ -313,33 +408,37 @@ function NavItemRow({
 
   const label = (
     <>
-      {item.icon !== undefined && <ListItemIcon>{item.icon}</ListItemIcon>}
-      <ListItemText primary={item.label} />
+      {item.icon !== undefined && (
+        <ListItemIcon sx={iconSx}>{item.icon}</ListItemIcon>
+      )}
+      <ListItemText primary={item.label} sx={textSx} />
     </>
   )
   return (
     <ListItem disablePadding>
-      {item.href !== undefined ? (
-        <ListItemButton
-          component="a"
-          href={item.href}
-          onClick={activate}
-          selected={item.selected ?? false}
-          aria-current={item.selected === true ? 'page' : undefined}
-          sx={indentSx}
-        >
-          {label}
-        </ListItemButton>
-      ) : (
-        <ListItemButton
-          onClick={activate}
-          selected={item.selected ?? false}
-          aria-current={item.selected === true ? 'page' : undefined}
-          sx={indentSx}
-        >
-          {label}
-        </ListItemButton>
-      )}
+      <RailTooltip enabled={narrow} label={item.label}>
+        {item.href !== undefined ? (
+          <ListItemButton
+            component="a"
+            href={item.href}
+            onClick={activate}
+            selected={item.selected ?? false}
+            aria-current={item.selected === true ? 'page' : undefined}
+            sx={contentSx}
+          >
+            {label}
+          </ListItemButton>
+        ) : (
+          <ListItemButton
+            onClick={activate}
+            selected={item.selected ?? false}
+            aria-current={item.selected === true ? 'page' : undefined}
+            sx={contentSx}
+          >
+            {label}
+          </ListItemButton>
+        )}
+      </RailTooltip>
     </ListItem>
   )
 }
@@ -354,33 +453,47 @@ function NavItemRow({
 function NavGroupItem({
   group,
   onNavigate,
+  narrow = false,
 }: {
   readonly group: AppShellNavGroup
   readonly onNavigate?: () => void
+  /** Whether the group renders in the collapsed icon-only rail. */
+  readonly narrow?: boolean
 }) {
   const contentId = useId()
   const [expanded, setExpanded] = useState(!(group.defaultCollapsed ?? false))
   return (
     <ListItem disablePadding sx={{ display: 'block' }}>
-      <ListItemButton
-        aria-expanded={expanded}
-        aria-controls={contentId}
-        onClick={() => {
-          setExpanded((previous) => !previous)
-        }}
-      >
-        <ListItemText
-          primary={group.label}
-          slotProps={{
-            primary: { variant: 'subtitle2', color: 'text.secondary' },
+      <RailTooltip enabled={narrow} label={group.label}>
+        <ListItemButton
+          aria-expanded={expanded}
+          aria-controls={contentId}
+          onClick={() => {
+            setExpanded((previous) => !previous)
           }}
-        />
-        <DisclosureChevron expanded={expanded} />
-      </ListItemButton>
+          // A group heading carries no icon, so in the rail it takes the
+          // text fallback (its heading stays visible) rather than
+          // centering around an absent icon.
+          sx={narrow ? [railTextItemSx, touchTargetSx] : touchTargetSx}
+        >
+          <ListItemText
+            primary={group.label}
+            slotProps={{
+              primary: { variant: 'subtitle2', color: 'text.secondary' },
+            }}
+          />
+          <DisclosureChevron expanded={expanded} />
+        </ListItemButton>
+      </RailTooltip>
       <Box id={contentId} hidden={!expanded}>
         <List disablePadding>
           {group.items.map((item) => (
-            <NavItemRow key={item.id} item={item} onNavigate={onNavigate} />
+            <NavItemRow
+              key={item.id}
+              item={item}
+              onNavigate={onNavigate}
+              narrow={narrow}
+            />
           ))}
         </List>
       </Box>
@@ -391,6 +504,7 @@ function NavGroupItem({
 function NavList({
   entries,
   onNavigate,
+  narrow = false,
 }: {
   readonly entries: readonly AppShellNavEntry[]
   /**
@@ -400,14 +514,26 @@ function NavList({
    * passes none.
    */
   readonly onNavigate?: () => void
+  /** Whether the list renders in the collapsed icon-only rail. */
+  readonly narrow?: boolean
 }) {
   return (
     <List>
       {entries.map((entry) =>
         isNavGroup(entry) ? (
-          <NavGroupItem key={entry.id} group={entry} onNavigate={onNavigate} />
+          <NavGroupItem
+            key={entry.id}
+            group={entry}
+            onNavigate={onNavigate}
+            narrow={narrow}
+          />
         ) : (
-          <NavItemRow key={entry.id} item={entry} onNavigate={onNavigate} />
+          <NavItemRow
+            key={entry.id}
+            item={entry}
+            onNavigate={onNavigate}
+            narrow={narrow}
+          />
         ),
       )}
     </List>
@@ -437,6 +563,10 @@ export function AppShell({
   const theme = useTheme()
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'))
   const mainContentId = useId()
+
+  // The collapsed rail's fixed width, derived from the theme spacing base
+  // (the spacing token unit) -- see COLLAPSED_SIDEBAR_SPACING_UNITS.
+  const collapsedSidebarWidth = theme.spacing(COLLAPSED_SIDEBAR_SPACING_UNITS)
 
   // The navigation landmark's name is host-suppliable (navLabel) so a
   // host mounting this frame beside a second shell's navigation can keep
@@ -532,9 +662,9 @@ export function AppShell({
   // permanent variant passes no onNavigate (nothing to close); the
   // temporary variant passes the close transition -- see the module doc
   // comment for who owns it in which mode.
-  const navContent = (onNavigate?: () => void) => (
+  const navContent = (onNavigate?: () => void, narrow = false) => (
     <Box component="nav" aria-label={resolvedNavLabel} sx={{ width: '100%', boxSizing: 'border-box' }}>
-      <NavList entries={navItems} onNavigate={onNavigate} />
+      <NavList entries={navItems} onNavigate={onNavigate} narrow={narrow} />
     </Box>
   )
 
@@ -612,7 +742,7 @@ export function AppShell({
               aria-label={mobileOpen ? t('appShell.closeNav') : t('appShell.openNav')}
               aria-expanded={mobileOpen}
               onClick={() => setMobileOpen(!mobileOpen)}
-              sx={{ marginRight: 2 }}
+              sx={[touchTargetSx, { marginRight: 2 }]}
             >
               {mobileOpen ? <CloseIcon /> : <MenuIcon />}
             </IconButton>
@@ -630,7 +760,7 @@ export function AppShell({
               onClick={() =>
                 onSidebarCollapsedChange?.(!sidebarCollapsed)
               }
-              sx={{ marginRight: 2 }}
+              sx={[touchTargetSx, { marginRight: 2 }]}
             >
               {sidebarCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
             </IconButton>
@@ -656,21 +786,32 @@ export function AppShell({
       </AppBar>
       <Box
         sx={{
-          width: { md: sidebarCollapsed ? 0 : sidebarWidth },
+          width: {
+            md: sidebarCollapsed ? collapsedSidebarWidth : sidebarWidth,
+          },
           flexShrink: { md: 0 },
         }}
       >
         {isDesktop ? (
-          sidebarCollapsed ? null : (
-            <Drawer
-              variant="permanent"
-              open
-              sx={{ '& .MuiDrawer-paper': { boxSizing: 'border-box', width: sidebarWidth } }}
-            >
-              {spacer}
-              {navContent()}
-            </Drawer>
-          )
+          // The permanent drawer stays mounted whether expanded (icon +
+          // text) or collapsed (the icon-only rail): collapsing narrows
+          // its paper to the rail width and clips each entry's label, it
+          // never unmounts the drawer -- the `nav` landmark and every
+          // entry's accessible name survive the collapse.
+          <Drawer
+            variant="permanent"
+            open
+            sx={{
+              '& .MuiDrawer-paper': {
+                boxSizing: 'border-box',
+                width: sidebarCollapsed ? collapsedSidebarWidth : sidebarWidth,
+                ...(sidebarCollapsed ? { overflowX: 'hidden' } : {}),
+              },
+            }}
+          >
+            {spacer}
+            {navContent(undefined, sidebarCollapsed)}
+          </Drawer>
         ) : (
           <Drawer
             variant="temporary"
@@ -724,7 +865,9 @@ export function AppShell({
           flexGrow: 1,
           minWidth: 0,
           width: {
-            md: desktopCollapsed ? '100%' : `calc(100% - ${sidebarWidth}px)`,
+            md: desktopCollapsed
+              ? `calc(100% - ${collapsedSidebarWidth})`
+              : `calc(100% - ${sidebarWidth}px)`,
           },
         }}
       >

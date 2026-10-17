@@ -28,7 +28,7 @@
 
 | 子模块 | 状态 |
 |---|---|
-| [layout](design-web-layout.md) | 部分实现 |
+| [layout](design-web-layout.md) | 已实现 |
 | [tokens](design-web-tokens.md) | 已实现 |
 | [i18n](design-web-i18n.md) | 已实现 |
 | [ui-kit](design-web-ui-kit.md) | 已实现 |

@@ -476,8 +476,9 @@ describe('the console area', () => {
     })
 
     // The console frame carries the same host-controlled collapse the tenant
-    // frame does: the toggle is present, and collapsing removes the permanent
-    // drawer and the platform navigation with it.
+    // frame does: the toggle is present, and collapsing narrows the permanent
+    // drawer to the icon-only rail -- the platform navigation stays mounted
+    // (named) rather than disappearing.
     expect(
       await screen.findByRole('navigation', {
         name: consoleUiEnUS.shell.navLabel,
@@ -490,8 +491,8 @@ describe('the console area', () => {
       screen.getByRole('button', { name: layoutKitEnUS.appShell.expandNav }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
-    ).not.toBeInTheDocument()
+      screen.getByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
+    ).toBeInTheDocument()
   })
 
   it('keeps the sidebar collapse across the console/tenant switch', async () => {
@@ -506,7 +507,7 @@ describe('the console area', () => {
       screen.getByRole('button', { name: layoutKitEnUS.appShell.collapseNav }),
     )
     // Leave for the tenant area through the console banner's exit link: the
-    // navigation sidebar is gone, so the exit is the way back.
+    // sidebar is collapsed to the rail, so the exit link is the way back.
     await user.click(screen.getByRole('link', { name: demoEnUS.console.backToApp }))
     // The tenant frame comes up already collapsed: one host-held state feeds
     // both areas, so the operator's collapse survives the switch rather than

@@ -31,7 +31,7 @@
 
 侧栏导航分四层：容器、分组、导航项、二级嵌套。
 
-- **容器**：固定宽度，或收为仅图标的窄态；窄态下每个图标以提示补足文案。
+- **容器**：固定宽度，或收为仅图标的窄态；窄态下每个图标以提示补足文案。窄态以图标为主，条目无图标时保留其标签（在窄栏内截断显示），使窄态不出现空白格。
 - **分组**：一组导航项的标题，整组可折叠。
 - **导航项**：图标、标签与可选计数，选中态由宿主算。
 - **二级嵌套**：展开的子项，是真实路由，不是悬停浮层。
@@ -147,5 +147,5 @@ graph TD
 | 数据表的列优先级降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx` |
 | 数据表超宽的容器内滚动兜底 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable` |
 | 组件级容器查询 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx` |
-| 窄视口逐档降级 | 部分实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx`；`web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx` |
-| 指针能力查询 | 部分实现 | `web/packages/ui-kit/src/internal/pointer.ts`；`web/packages/ui-kit/src/components/DataTable.tsx` `touchTargetSx` |
+| 窄视口逐档降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx`；`web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`（收起为仅图标的窄栏）；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx` |
+| 指针能力查询 | 已实现 | `web/packages/ui-kit/src/internal/pointer.ts`；`web/packages/ui-kit/src/touch-target.ts` `touchTargetSx`；`web/packages/ui-kit/src/components/DataTable.tsx`、`web/packages/ui-kit/src/components/FileUploader.tsx`、`web/packages/layout-kit/src/components/AppShell.tsx`、`web/packages/notification-ui/src/NotificationBell.tsx`、`web/packages/account-ui/src/SessionsSection.tsx` |
