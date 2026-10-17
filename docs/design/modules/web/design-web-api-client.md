@@ -13,13 +13,13 @@
 - **`ApiError` 归一。** 后端以 RFC 9457 问题对象出行（机器可读的类在 `type`，取值 `urn:speed:<模块>:<码>`，正文不带 `code` 成员），本包从 `type` 推得模块码 `<模块>.<码>`（码段里的连字符归一为下划线，`urn:speed:objectstore:not-found` → `objectstore.not_found`），并保留后端给了的 `traceId`／`params`／`message`／`details`；带 `code` 成员的信封以 `code` 为准；两者都没有的应答取本包保留的 `client.*` 码。
 - **语言按尝试播报。** 宿主交来一个语言提供者，本包每次尝试读一次，接成 `accept-language`，是传输通道而非响应本地化开关。
 - **结构化上报。** 本包自身只在刷新失败时经 `Reporter` 报一条警告；终态失败以 `ApiError` 拒绝，由调用方决定是否上报。
-- **预认证配置端点的手写取回。** go/config 的公开端点在生成面之外另有一条按键映射的手写封装。
 - **服务端事件流。** `createClient` 除请求函数外交出 `openEventStream`：经同一组接缝（fetch、令牌存储、租户与语言提供者、静默刷新）打开一条 `text/event-stream` 长连接，把 SSE 帧解析成事件交给调用方。它与请求函数分开承载，因为它不是一次请求/响应交换——无每次交换的超时、无幂等重试预算，也不重连。
-- **`./react` 子路径。** 配置钩子在独立子路径下，使主入口保持无 React 依赖。
 
 ### 非职责
 
 - **不生成类型与端点函数。** 每端点的类型、函数与 Query hook 由 orval 从契约生成，落在 [api-sdk](design-web-api-sdk.md)。本包对 spec 无关：它不认识任何端点路径、请求体或响应类型，只接受一个路径串与一组请求选项。
+- **不取回部署配置或特性。** 本包不为任何端点手写取回：部署的 API origin 在运行期由应用入口注入（[web](design-web.md)），本进程服务哪些面由 [auth-core](design-web-auth-core.md) 经生成面取回特性文档得知，登录前的事实经拥有它的模块自己的发现面、同样经生成面读取。
+- **不交付 React 钩子。** 本包的代码出口只有主入口，不 import `react`，也不声明它为 peer。
 - **不认识租户，只播报宿主给的租户。** 本包不推导、不存租户标识，只在每次尝试把宿主经租户提供者交来的值接成 `X-Tenant` 头；租户从哪来（路由、会话）是宿主的事实，本包不决定。查询键的租户分段是框架别处的事（[ADR-web-tenant-query-key-2026-10-15](../../../adr/adr-web-tenant-query-key-2026-10-15.md)）。
 - **不落存储。** 本包没有存储接缝，宿主因而无法配置令牌持久化；访问令牌只在内存，重载页面即登出直到会话层重建会话。刷新令牌的家在会话层（[auth-core](design-web-auth-core.md)），不在本包。
 - **不持会话状态、不驱动会话。** 401 时调用的刷新钩子由宿主提供（`@speed/auth-core` 的会话刷新）；本包不持有会话，不决定会话存续。
@@ -75,22 +75,11 @@ export function retryDelayMs(attempt: number, policy: RetryPolicy, random?: () =
 export function retryAfterDelayMs(header: string | null | undefined, now?: number): number | null
 
 export function createConsoleReporter(): Reporter
-
-export const CONFIG_PUBLIC_PATH: '/api/v1/config/public'
-export const SYSTEM_FEATURES_PATH: '/api/v1/config/features'
-export function fetchPublicConfig(api: RequestFn, options?: ConfigFetchOptions): Promise<PublicConfigResponse>
-export function fetchSystemFeatures(api: RequestFn, options?: ConfigFetchOptions): Promise<SystemFeaturesResponse>
 ```
 
-类型面：`ClientOptions`、`RequestOptions`、`AccessTokenStore`、`RetryPolicy`、`Reporter`、`ApiErrorInit`、`FieldError`、`ConfigFetchOptions`、`PublicConfigResponse`、`SystemFeaturesResponse`、`HttpMethod`、`RequestFn`。
+类型面：`ClientOptions`、`RequestOptions`、`AccessTokenStore`、`RetryPolicy`、`Reporter`、`ApiErrorInit`、`FieldError`、`HttpMethod`、`RequestFn`。
 
-### `./react` 子路径交付的符号
-
-```ts
-export function usePublicConfig(api: RequestFn): UsePublicConfigResult
-export function useFeature(api: RequestFn, key: string): boolean
-export type UsePublicConfigResult
-```
+本包的代码出口只有主入口。
 
 ### `createClient` 的选项（`ClientOptions`）
 
@@ -98,7 +87,7 @@ export type UsePublicConfigResult
 |---|---|
 | `baseUrl` | scheme 加 host 加可选前缀；请求路径必须以 `/` 开头并原样接在其后。缺省或空串即 `createClient` 抛错。尾斜杠剥除。 |
 | `fetch` | fetch 实现；缺省取构造时捕获的 `globalThis.fetch`，两处都无即抛错（环境无 fetch 时快速失败，而非每次请求失败） |
-| `accessTokenStore` | 可选的仅内存令牌存储；缺席即请求不带 `Authorization`（cookie 会话与公开配置类端点都用这一档） |
+| `accessTokenStore` | 可选的仅内存令牌存储；缺席即请求不带 `Authorization`（cookie 会话用这一档） |
 | `credentials` | fetch 的 `credentials` 模式，原样传给 fetch；缺席取浏览器缺省（`same-origin`，cookie 会话靠它带上同源 cookie）。声明 `'same-origin'`/`'include'` 同时把本客户端标为 cookie 带凭据：一次带了 cookie 的 401（除声明 `omitAccessToken` 者）与带了 bearer 令牌的请求同等触发刷新钩子 |
 | `refreshAccessToken` | 静默 401 刷新钩子：成功返回 `true`（随后原请求重试一次）；只对带了凭据（bearer 令牌，或 cookie 模式下的同源 cookie）的请求触发；并发 401 共享一次在飞刷新；每请求至多调用一次 |
 | `timeoutMs` | 一次交换的超时毫秒；缺席即不装内部超时；`<= 0` 或非有限值抛错 |
@@ -119,7 +108,7 @@ export type UsePublicConfigResult
 
 ### 对外接口面
 
-主入口与 `./react` 子路径的导出集、各导出类型的字段与方法集、`createClient` 选项的语义、`RequestFn` 与 `RequestOptions` 的接口面、`SpeedClient` 与其 `openEventStream` 成员、保留码词表与保留的 `client.*` 前缀，是本包对消费方的接口面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。改缺省头、或不兼容地改保留码词表与保留的 `client.*` 前缀，同属语义层面的破坏性变更。主入口的导出集由 `src/index.test.ts` 的精确清单钉住：新增一个导出要同步更新那份清单，这是本包自己的回归守卫，不是对消费方的破坏；类型面有编译期漂移守卫。
+主入口的导出集、各导出类型的字段与方法集、`createClient` 选项的语义、`RequestFn` 与 `RequestOptions` 的接口面、`SpeedClient` 与其 `openEventStream` 成员、保留码词表与保留的 `client.*` 前缀，是本包对消费方的接口面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。改缺省头、或不兼容地改保留码词表与保留的 `client.*` 前缀，同属语义层面的破坏性变更。主入口的导出集由 `src/index.test.ts` 的精确清单钉住：新增一个导出要同步更新那份清单，这是本包自己的回归守卫，不是对消费方的破坏；类型面有编译期漂移守卫。
 
 ### 事件流的契约
 
@@ -143,11 +132,10 @@ export type UsePublicConfigResult
 | 依赖 | 用途 |
 |---|---|
 | 环境的 `fetch`（无第三方依赖） | 传输；可注入，构造时捕获 |
-| `react`（peer，可选） | 仅 `src/react.ts`（`./react` 子路径）import；可选 peer 使只用主入口的消费方不装 React |
 
 本包**不依赖任何同族前端包**：它是前端依赖图的另一条地板，契约无关，`api-sdk` 经其 `runtime.ts` 接缝读它的请求函数。方向到这里终止，本包不 import `api-sdk`、`auth-core` 或任何 UI 包。
 
-**React 只在 `./react` 子路径之后存在。** `src/react.ts` 是本包唯一可 import `react` 的文件；主入口的 import 图保持无 React。这条与 `@speed/i18n` 的 `./mui-locale` 隔离同形。
+**本包不依赖 React。** 它不 import `react`，也不声明任何 peer；消费方用本包不需要装 React。
 
 ## UML 图
 
@@ -234,10 +222,6 @@ sequenceDiagram
 
 `tenantProvider` 在每次尝试读一次，接成 `X-Tenant`（`null`/空串即不设该头），且不覆盖调用方自带的 `x-tenant`。租户是请求期的路由事实，**不在访问令牌的声明里**：后端解析层按配置从请求面（头、子域或路径）读租户名，指向受租户保护的端点的请求因此必须带上它，demo 的栈正是从该头解析。每次尝试读是这条的设计点：切租户后重试的请求播报用户当前所处的租户，与令牌、语言同一纪律。租户从哪来（宿主的路由、会话）是宿主的事实，本包不推导。
 
-### 配置端点的取回
-
-`fetchPublicConfig`／`fetchSystemFeatures` 是预认证端点的按键映射层，经同一 `RequestFn` 发出，并以 `requireJsonBody` 拒绝空 2xx——go/config 的端点总是写一份 JSON 文档，一个空应答是坏的，而解析成 `undefined` 会冒充成那份类型化文档直到消费方读到它的一个字段。取回函数不接受租户参数：这两个端点从请求 host 解析租户，不读传输播报的 `X-Tenant` 头。
-
 ## 错误与失败语义
 
 | 情形 | 表现 |
@@ -261,12 +245,10 @@ sequenceDiagram
 ### 非保证
 
 - **后端不发送 `traceId` 时，`ApiError` 不带它。** 实际后端写出的是 RFC 9457 问题对象（`{type, title, status, detail}`，机器可读的类在 `type`），它不带 `traceId`；把请求关联到服务端日志的 `traceId` 需要后端各模块的问题写出统一发出它。
-- **配置取回的响应形状是手工维护的契约。** 公开配置体的类型只能是动态键的记录（schema 按模块可扩），按 key 的类型化在钩子里手工维护；一个违反该形状的载荷须软失败。
 
 ## 并发与事务边界
 
 - **静默刷新是单飞。** 一次在飞刷新由所有并发的 401 共享；完成即释放槽位。这条防的是同一刷新令牌被同时呈现两次（认证服务读作盗用）。
-- **`./react` 的配置缓存按 `RequestFn` 标识键控，不按组件生命期。** 同一 `api` 上最先挂载的消费方发起唯一一次取回，其余实例读并重渲染那份共享状态（`useSyncExternalStore`）；`refresh()` 向所有共享者重新发布一次强制取回。失败状态**不**进共享缓存：一次落在错误上的取回什么都不缓存，此后订阅的实例发起一次全新取回，故重连或重试后的挂载自行恢复。
 - **本包不持连接池、不派生后台任务。** 一次请求是自足的一次调用；每次尝试的超时与取消接线在尝试结束时拆除。
 
 ## 扩展点
@@ -282,7 +264,6 @@ sequenceDiagram
 - **`languageProvider`**：把客户端的语言播报接到宿主的 i18n 实例。
 - **`tenantProvider`**：把客户端的租户播报接到宿主当前租户（宿主的路由事实）。
 
-**新增一个预认证端点的手写取回**即在 `config-fetcher.ts` 加一个常量与一个封装，与生成面保持路径一致。
 
 ## 实现状态
 
@@ -294,6 +275,6 @@ sequenceDiagram
 | 仅内存的访问令牌存储 | 已实现 | `web/packages/api-client/src/access-token.ts` `createMemoryAccessTokenStore`、`AccessTokenStore` |
 | 重试策略与纯退避函数 | 已实现 | `web/packages/api-client/src/retry.ts` `DEFAULT_RETRY_POLICY`、`retryDelayMs`、`retryAfterDelayMs` |
 | 结构化上报端 | 已实现 | `web/packages/api-client/src/reporter.ts` `createConsoleReporter`、`Reporter` |
-| 预认证配置端点的手写取回 | 已实现 | `web/packages/api-client/src/config-fetcher.ts` `fetchPublicConfig`、`fetchSystemFeatures`、`CONFIG_PUBLIC_PATH`、`SYSTEM_FEATURES_PATH` |
-| `./react` 配置钩子与按 `RequestFn` 标识的共享缓存 | 已实现 | `web/packages/api-client/src/react.ts` `usePublicConfig`、`useFeature` |
+| 公开面不含预认证配置取回 | 未实现 | — |
+| 公开面不含 `./react` 子路径，不声明 `react` peer | 未实现 | — |
 | 手写 HTTP 的 ESLint 白名单 | 已实现 | `web/eslint.config.mjs` `speed/no-direct-http` |

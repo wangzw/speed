@@ -9,7 +9,7 @@
 - **最高权限动作的因素门槛。** 回答 `MFA.Seasoned`；约定账户安全类动作对 `Requirement.Local` 与因素年龄的要求。
 - **因素的删除与重置，以及随账户删除的清理。** `MFA.Remove`、`MFA.Reset`，以及对账户生命周期钩子的实现。
 - **因素种类的实现。** TOTP、短信、WebAuthn 各是一个子包与一个模块，只做密码学与自己的状态。
-- **因素自助面的路由。** `GET B/factors`、`DELETE B/factors/:id`；基路径 `B` 由 [authn-gate](design-authn-gate.md) 声明。
+- **因素自助面的路由。** `GET B/factors`、`DELETE B/factors/:id`；基路径 `B` 由 [authn-gate](design-authn-gate.md) 声明。这个面以静态[特性](../../../glossary.md) `authn.mfa` 声明（见「声明的特性」）。
 
 认证功能目录的术语（因素、保障等级、认证方式、登录会话等）登记在 [authn](design-authn.md) 的模块局部术语表，本文沿用。
 
@@ -168,11 +168,19 @@ WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication
 
 一次加强认证（`purpose=step-up`）要求一个认证方式不落在会话已有方式里、且启用时刻不早于会话认证时刻的因素，所以只有一种因素种类的装配里没有可用的加强认证因素：这样的装配取到满足要求的 200 靠登录时完成第二因素，加强认证的入口留给种类多于一种的装配。同一份约束见 [design-authn-login](design-authn-login.md) 的「在已登录身份上开始流程」一节。
 
+### 声明的特性
+
+**`authn.mfa` 以[静态特性](../../../glossary.md) `authn.mfa` 声明多因素的自助面。** 描述符的 `Resources` 带 `feature.Spec{Name: "authn.mfa"}`（[feature](../design-feature.md)）。这个特性在场，表示本进程运行 `authn.mfa`、已挂出 `GET B/factors` 与 `DELETE B/factors/:id`。`mount.Mounter` 是必需依赖，模块进入启用集即挂出这组路由，挂与不挂不另取决于配置或装配，所以声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
+
+- **同一事实只有一个发布点。** 特性文档只说多因素的自助面是否存在，不按因素种类分出特性名；可登记的种类只经 `GET B/methods` 的 `mfa.factors` 发布（[authn-login](design-authn-login.md)、[ADR-feature-ownership-2026-10-17](../../../adr/adr-feature-ownership-2026-10-17.md)）。
+- **本模块的设置不发布。** 全局强制 MFA（`authn.mfa.global-required`）经登录流程的登记步送达；其余设置是时长、上限一类参数。
+
 ### 对外接口面
 
 - `Factor`、`MFA`、`FactorRecord`、`Pass`、`MFAOutcome`、`MFAResult` 的签名与上表所列同属对外接口面。
 - `FactorKind` 的取值是闭集，与 `authn_factors.kind` 的检查约束一致；新增种类要同时改根包常量、检查约束与迁移。
 - 可用的因素种类经登录发现端点 `GET B/methods` 的 `mfa.factors` 发布（[authn-login](design-authn-login.md)），属部署级：装配收哪些种类；本人已登记的因素另走 `GET B/factors`。
+- 声明的特性名 `authn.mfa` 与它所指的面：前端经生成的特性名类型引用它，改名、撤去或改变所指的面是宿主可见的破坏性变更。
 - 保障等级的非零取值是闭集：单因素与多因素。新增取值时合成处仍只有 `MFA.Assurance`。
 - 因素行的零值状态是待确认；待确认的行永不用于验证。
 - 哨兵错误的名字见「错误与失败语义」，经 `errors.Is` 判别。
@@ -195,7 +203,7 @@ WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication
 
 **被依赖方向。** `authn.login` 把 `MFA` 当必需：库里已有账户登记了因素而装配里没有因素编排时，登录不能无声跳过第二因素。`authn.impersonation` 也把 `MFA` 当必需：没有因素编排的装配里没有任何账户满足发起者的强认证要求。`authn.admin` 把 `MFA` 当可选，缺席时没有 `mfa-*` 与 `password` 路由，因为这些路由要核对 `MFA.Seasoned`。
 
-**方向核对。** 根包只依赖标准库；`authn.mfa` 位于认证功能目录内，依赖只指向 `pkg/db`、`pkg/core` 与认证功能目录的根包及 `authn.account` 的能力接口，不指向授权、租户或宿主。租户准入读本模块记录的值，不反向被本模块引用。
+**方向核对。** 根包只依赖标准库；`authn.mfa` 位于认证功能目录内，不指向授权、租户或宿主，也不 import 认证功能目录里别的实现子包。`pkg/feature` 根包只依赖标准库，为声明特性 import 它不扩大本模块的闭包；本模块不 import `pkg/feature/board`，也不取用 `feature.Board`（[feature](../design-feature.md)）。租户准入读本模块记录的值，不反向被本模块引用。
 
 ## UML 图
 
@@ -622,3 +630,4 @@ CREATE TABLE authn_webauthn_credentials (
 | 加强认证的 `Elevate` 与仪式数据承载；归 [authn-session](design-authn-session.md) 与 [authn-login](design-authn-login.md) | 已实现 | `pkg/authn/session/sessions.go` `Elevate`；`pkg/authn/login/engine.go` |
 | 根包 import 守卫 | 已实现 | `pkg/authn/deps_test.go` `TestTheRootPackageImportsOnlyWhatItMay`、`TestTheRootPackageClosureHoldsNoThirdPartyPackage` |
 | 对外契约片段：`openapi/mfa.json`，经模块的 `Spec` 资源声明 | 已实现 | `pkg/authn/mfa/mfa.go` `Module`、`defaultEndpoint` |
+| 静态特性 `authn.mfa` 的声明 | 未实现 | — |

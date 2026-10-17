@@ -182,6 +182,8 @@ type Resolved struct {
 
 **回绝映射是封闭的、fail-closed 的。** 400（`Problem.Type` 为 `urn:speed:sms:bad-request`）：请求在形状上不可读（路径参数或正文）、注册表以一个跑不起来的配置或一条不符的消息拒绝（`ErrInvalidConfig`／`ErrRejected`）。409：点名一条来自配置的模板（`Problem.Type` 为 `urn:speed:sms:config-template`，与名字冲突的 `urn:speed:sms:conflict` 分开），或名字已被持有（`urn:speed:sms:conflict`）。404：注册表不持有该名。503：其余失败，以及没落地的强制档审计；503 不带 `Problem.Type`，成因只进日志。`ErrNotSendable` 不在映射里：它是发送路径的哨兵，没有一条管理面路由会触到它，注册表若在这里答它就是答错了问题，落到与未知失败同一个 503。
 
+**`sms.admin` 声明静态[特性](../../glossary.md) `sms.admin`。** 描述符的 `Resources` 带 `feature.Spec{Name: "sms.admin"}`；这个特性在场，表示本进程挂出上表的模板管理面路由（[feature](design-feature.md)）。`sms.admin.endpoints` 必填、不接受空清单，挂路由而没有入口点是接线期故障，所以模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../architecture.md#架构不变量)）。
+
 ### 宿主可见面
 
 以下是宿主写进配置文件、或在命令树与网关上点名的面。
@@ -213,6 +215,7 @@ sms:
 - `Message` 的字段语义：`To` 是 E.164、`Template` 是调用方定义的逻辑名、`Params` 的键是模板声明的参数名、`Locale` 非空且对 `pkg/sms` 不透明、`DedupeID` 使载体至多对同一标识调厂商一次。`Resolved` 的字段语义：`Code` 是厂商编号、`Ordered` 按模板声明的次序铺开、`Params` 是键值表。
 - **模板声明的形状属于接口面**：`TemplateSpec` 的字段名与容器成形态（`params` 是列表、`codes` 是映射）是宿主写在配置文件里、也写在管理面 `Register` 正文里的东西，改它们使旧写法成为未知键或坏正文。
 - **宿主可见面**：模块名 `sms.registry`、`sms.admin`，配置键 `sms.registry.templates`、`sms.registry.poll-interval`、`sms.admin.endpoints`，管理面路由的路径与每条路由询问的权限（读 `sms.template.read`、写 `sms.template.manage`），以及权限常量 `sms.template.read`、`sms.template.manage` 与 `Problem.Type` 前缀 `urn:speed:sms:` 及其下的码（`bad-request`、`conflict`、`config-template`）。改动它们是宿主可见的破坏性变更。
+- 特性名 `sms.admin`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 单个载体叶子包、注册表模块、管理面模块各自可替换、可撤掉，不改变调用方的代码。
 
 ### 哨兵错误
@@ -241,6 +244,7 @@ sms:
 | `pkg/db` | `sms.registry`：`sms_templates` 表与迁移 |
 | `pkg/event` | `sms.registry`（可选）：变更事件，加速多副本收敛 |
 | `pkg/authz`、`pkg/authz/guard`、`pkg/audit`、`pkg/authn`、`pkg/http` | `sms.admin`：网关身份、handler 内判定、审计、问题应答 |
+| `pkg/feature` 根包 | `sms.admin`：声明静态特性（`feature.Spec`）；根包只依赖标准库 |
 | 各厂商 SDK | 只被对应的载体叶子包 import |
 | `pkg/internal/literal` | 与认证的登录叶子共用的脱敏字面量登记构造 |
 
@@ -482,6 +486,7 @@ type Spec[C any] struct {
 | 模板注册表 `sms.registry`（来源与可变权限、运行期状态、DB 表与迁移、后台轮询） | 已实现 | `pkg/sms/registry/registry.go` `Module`、`ModuleName`；`pkg/sms/registry/store.go` `registryStore`、`Resolve`、`Declared`、`List`、`Register`、`Offer`、`SetEnabled`、`Remove`、`upsert`；`pkg/sms/registry/snapshot.go` `snapshot`、`loadSnapshot`；`pkg/sms/registry/poll.go` `startPoll`、`pollOnce`、`pollTemplate`；`pkg/sms/registry/config.go` `schema`、`readSettings`；`pkg/sms/registry/migrations` |
 | 管理面 `sms.admin`（路由、判定、审计、回绝映射） | 已实现 | `pkg/sms/admin/admin.go` `Module`、`ModuleName`、`wire`；`pkg/sms/admin/routes.go` `routes`、`mount`、`declareOpen`；`pkg/sms/admin/templates.go` `handleTemplateList`、`handleTemplateRegister`、`handleTemplateOffer`、`handleTemplateSetEnabled`、`handleTemplateRemove`；`pkg/sms/admin/permissions.go` `PermissionTemplateRead`、`PermissionTemplateManage`、`permissionSpec`、`translationSpec`；`pkg/sms/admin/audit.go`、`pkg/sms/admin/pipeline.go` `require`、`answer`；`pkg/sms/admin/views.go` `templateView` |
 | 管理面 `sms.admin` 的 OpenAPI 片段与 `speedhttp.Spec` 资源 | 已实现 | `pkg/sms/admin/openapi/sms.admin.json`；`pkg/sms/admin/admin.go` `Module`、`defaultEndpoint`、`openAPIFragment` |
+| 静态特性 `sms.admin` 的 `feature.Spec` 声明 | 未实现 | — |
 | 阿里云载体 `sms.aliyun`（`Sender` + `Provider`） | 已实现 | `pkg/sms/aliyun/aliyun.go` `sender`、`Send`、`Offer`、`Approval`、`Retire`；`pkg/sms/aliyun/config.go` `items` |
 | 腾讯云载体 `sms.tencent`（`Sender` + `Provider`） | 已实现 | `pkg/sms/tencent/tencent.go` `sender`、`Send`；`pkg/sms/tencent/provider.go` `Offer`、`Approval`、`Retire`；`pkg/sms/tencent/classify.go` `classify`、`sentinelForCode`；`pkg/sms/tencent/config.go` `items` |
 | 根包依赖守卫与 SDK 封边、钉版 | 已实现 | `pkg/sms/deps_test.go` |

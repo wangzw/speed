@@ -31,6 +31,8 @@
 
 `audit.admin` 不交付任何功能接口（`Provides` 为空）。它 `Requires` 审计实现子包的读面 `(*journal.Reader)(nil)`、handler 内判定 `(*guard.Guard)(nil)`，并可选取 `log.Logger`。读面与 guard 各由唯一模块排他交付——读面与审计捕获同属 `audit.journal` 模块——命令的闭合不把它们拉进来，宿主在命令树上写下它们。表态是 `StateEnabled`、永不 `StateAuto`：挂不挂这面查询面是一个命令树上的决定，不是一个配置能推出的结论。HTTP 入口点与路由声明面在 `Init` 里取用而非声明——一个挂路由而没有入口点的命令是要在接线期报出的故障，而声明面的缺席是合法的：没有 gate 时路由不带声明，受守护的端把它们当未声明处理，所以挂这面路由的命令应同时点名授权模块。
 
+**本模块声明静态[特性](../../../glossary.md) `audit.admin`。** 描述符的 `Resources` 带 `feature.Spec{Name: "audit.admin"}`；这个特性在场，表示本进程挂出审计查询面的路由（[feature](../design-feature.md)）。`audit.admin.endpoints` 必填、不接受空清单，挂路由而没有入口点是接线期故障，所以模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。`audit.journal` 的捕获配置决定审计表里记下什么，不决定这面查询面在不在，不进入特性的判定。
+
 ### 读面（`pkg/audit/journal`）
 
 **读面加在审计实现子包里，不在接口包里。** `pkg/audit` 是接口包、只依赖标准库；检索要经审计模块自己的表与模型读，落在一个新增的读面上，由 `audit.journal` 与审计捕获一起交付。捕获通路只写，读面只读，两者不共用一条通路。
@@ -135,6 +137,7 @@ type Row struct {
 
 - 模块名 `audit.admin`、配置键 `audit.admin.endpoints`、管理面路由的路径与它们询问的权限（`audit.read`），以及 `Problem.Type` 前缀 `urn:speed:audit:` 及其下的码（`bad-request`），是本模块对宿主的接口面。改动它们是宿主可见的破坏性变更。
 - 记录视图的字段名（`id`、`tenant`、`occurred_at`、`actor`、`source`、`action`、`object`、`outcome`、`purpose`、`detail`）与列表应答的容器成形态（`entries`、`next`）是应答形状：宿主与前端据此读应答。
+- 特性名 `audit.admin`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 本模块可替换、可撤掉，不改变调用方或审计模块的代码。
 
 ## 依赖
@@ -148,6 +151,7 @@ type Row struct {
 | `pkg/http` | 路由挂载与问题应答（`speedhttp.Router`、`speedhttp.Fail`、`speedhttp.Problem`） |
 | `pkg/config` | 声明本模块的输入项 |
 | `pkg/core` | 模块描述符与功能取用 |
+| `pkg/feature` 根包 | 声明静态特性（`feature.Spec`）；根包只依赖标准库 |
 | `pkg/log` | 可选：记诊断 |
 
 **本模块可撤掉，不改变调用方或审计模块的代码。** 它 import `pkg/authz`、`pkg/authn`、`pkg/http` 来挂一条受保护的管理面，是审计能力目录里唯一这样做的一层；审计的捕获与写入本身不 import 授权层，不因它背上这些依赖。这一形态与 `sms.admin`、`tenant.admin` 相同（[design-sms](../design-sms.md)、[tenant/design-tenant-admin](../tenant/design-tenant-admin.md)）。
@@ -248,4 +252,5 @@ sequenceDiagram
 |---|---|---|
 | 管理面 `audit.admin`（路由、判定、日志、回绝映射） | 已实现 | `pkg/audit/admin/admin.go` `Module`；`pkg/audit/admin/routes.go` `routes`、`mount`；`pkg/audit/admin/handlers.go` `handleRecordList`、`handleRecordGet`、`listQuery`、`logRead`；`pkg/audit/admin/pipeline.go` `require`、`answer`、`bad`、`notFound`、`unavailable` |
 | 管理面 `audit.admin` 的 OpenAPI 片段与 `speedhttp.Spec` 资源 | 已实现 | `pkg/audit/admin/openapi/audit.admin.json`；`pkg/audit/admin/admin.go` `Module`、`defaultEndpoint`、`openAPIFragment` |
+| 静态特性 `audit.admin` 的 `feature.Spec` 声明 | 未实现 | — |
 | 审计实现子包的读面 `journal.Reader`、`journal.Query`、`journal.Row` | 已实现 | `pkg/audit/journal/read.go` `Reader`、`Query`、`Row`；`pkg/audit/journal/journal.go` `Module` |

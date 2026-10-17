@@ -30,6 +30,8 @@ Hub 在内存里，每个副本一个，只装本副本的连接。**Hub 唯一�
 
 **端名清单 `notification.stream.endpoints` 在路由能力在场时必填。** `Init` 见到 `(*http.Router)(nil)` 在场而这一项为空即启动失败，以完整路径 `notification.stream.endpoints` 点名这一项；`(*http.Router)(nil)` 缺席时本模块不挂路由，这一项不被读取，空清单合法。
 
+**本模块声明静态[特性](../../../glossary.md) `notification.stream`。** 描述符的 `Resources` 带 `feature.Spec{Name: "notification.stream"}`；这个特性在场，表示本进程挂出 `GET /api/v1/notifications/stream`（[feature](../design-feature.md)）。路由能力在场时端名清单必填，所以模块进入启用集、进程有路由器时这条路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
+
 ### 不交付功能接口
 
 本模块的描述符里 `Provides` 为空：没有别的模块按功能标识取用它，也没有一个数据面需要它回答。它从总线订阅、向 HTTP 连接推送，两端都不经功能标识。因此它对外只留下 `GET /stream` 这一条路由。
@@ -63,6 +65,7 @@ Hub 在内存里，每个副本一个，只装本副本的连接。**Hub 唯一�
 
 - **事件帧的形状属于接口面**：`event: message` 这一行，`data:` 里 JSON 载荷的字段名，以及结尾的空行。改它们使已连接的客户端解析失效。
 - **宿主可见面**：模块名 `notification.stream`，配置键 `notification.stream.endpoints`，路由 `GET /api/v1/notifications/stream`。改动它们是宿主可见的破坏性变更。
+- 特性名 `notification.stream`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 本模块不交付功能接口，因而不在功能标识面上；一个进程里恰好一个 `notification.stream`。
 
 ## 依赖
@@ -75,6 +78,7 @@ Hub 在内存里，每个副本一个，只装本副本的连接。**Hub 唯一�
 | `pkg/http` | 可选：把自己挂到入口模块的登记面上；沿 `Unwrap` 取 `http.Flusher` |
 | `pkg/tenant` | 路由从请求上下文取租户（`tenant.FromContext`），作为订阅作用域的一半 |
 | `pkg/authn` | 从请求上下文取调用方身份，作为订阅作用域的收件人 |
+| `pkg/feature` 根包 | 声明静态特性（`feature.Spec`）；根包只依赖标准库 |
 | `pkg/log` | 可选：启动诊断 |
 
 **`pkg/event` 是必需依赖，入口模块与日志是可选。** 没有总线就没有可订阅的事件，本模块无从起效，因此事件功能是必需依赖（`core.Requirement`，非 `Optional`）。入口模块只在本模块挂路由时需要，日志只在启动诊断上需要，两者都声明为可选：一个只做装配校验、不服务请求的驱动可以不带它们构造本模块。
@@ -195,3 +199,4 @@ classDiagram
 | `GET /stream` 路由与帧写出 | 已实现 | `pkg/notification/stream/routes.go` `routes`、`mount`、`handleStream`、`writeFrame` |
 | 停机与注销 | 已实现 | `pkg/notification/stream/stream.go` `Module`；`pkg/notification/stream/hub.go` `Close`、`closeAll`、`remove` |
 | OpenAPI 片段声明 | 已实现 | `pkg/notification/stream/openapi/stream.json`；`pkg/notification/stream/stream.go` `streamFragment`、`defaultEndpoint`、`Module` |
+| 静态特性 `notification.stream` 的 `feature.Spec` 声明 | 未实现 | — |

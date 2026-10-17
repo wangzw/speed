@@ -6,7 +6,7 @@
 
 提交面 `Dispatcher.Dispatch` 只校验并入队——**不发送、不渲染、不落库**；消费过半程的是 `jobs.Handler`：它从队列取到作业、再跑一遍校验（worker 可能见到校验方从未见过的载荷：作业由别的提交方写入、或那一行被改动过），按收件人解析有效渠道，逐渠道发送，落账。渠道的可用性由装配决定，接缝缺席时该渠道跳过、记一条 `skipped`，不当作失败。
 
-本模块排他交付提交面 `notification.Dispatcher`，并在 `Init` 里向 `jobs.Handlers` 登记自己的处理器。它经 [notification.preferences](design-notification-preferences.md) 的 `Effective` 读有效集，经 [notification.inbox](design-notification-inbox.md) 写站内信，经 `mail.Sender` 发邮件、经 `sms.Registry` 与 `sms.Sender` 发短信。
+本模块排他交付提交面 `notification.Dispatcher`，并在 `Init` 里向 `jobs.Handlers` 登记自己的处理器。它经 [notification.preferences](design-notification-preferences.md) 的 `Effective` 读有效集，经 [notification.inbox](design-notification-inbox.md) 写站内信，经 `mail.Sender` 发邮件、经 `sms.Registry` 与 `sms.Sender` 发短信。邮件与短信渠道在本进程能否兑现，本模块以[条件特性](../../../glossary.md)经 `feature.Board` 的 `Post` 报告（见「渠道的条件特性」）。
 
 ### 非职责
 
@@ -26,7 +26,7 @@
 |---|---|---|---|
 | `pkg/notification/delivery` | `notification.delivery` | 排他交付 `(*notification.Dispatcher)(nil)`；向 `jobs.Handlers` 登记处理器 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`；可选 `(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)` |
 
-可选依赖的缺席都不使本模块启动失败：`mail.Sender` 缺席则 `email` 渠道不可用，`sms.Registry` 或 `sms.Sender` 缺席则 `sms` 渠道不可用。**提交面 `notification.Dispatcher` 是本模块交付的功能**，本模块排他交付它（[ADR-notification-delivery-2026-10-15](../../../adr/adr-notification-delivery-2026-10-15.md)）。
+可选依赖的缺席都不使本模块启动失败：`mail.Sender` 缺席则 `email` 渠道不可用，`sms.Registry` 或 `sms.Sender` 缺席则 `sms` 渠道不可用，对应的条件特性也不报告（见「渠道的条件特性」）。**提交面 `notification.Dispatcher` 是本模块交付的功能**，本模块排他交付它（[ADR-notification-delivery-2026-10-15](../../../adr/adr-notification-delivery-2026-10-15.md)）。
 
 ### 交付的功能
 
@@ -93,6 +93,20 @@ sequenceDiagram
 
 **接缝缺席不是失败。** 一次投递到一个不可用的渠道记一条 `skipped` 结果、不产生错误、不进 `errors.Join`；这使「这次装配没有短信」与「这条短信被厂商拒绝」在账上分得开（[ADR-notification-channels-2026-10-15](../../../adr/adr-notification-channels-2026-10-15.md)）。`in_app` 依赖通知能力内的收件箱模块，该依赖是必需的，因此 `in_app` 恒可用。
 
+### 渠道的条件特性
+
+本模块不挂路由。渠道列由 [notification.preferences](design-notification-preferences.md) 恒挂的路由服务，一个渠道能否兑现却由本模块的接缝决定，所以邮件与短信渠道以本模块声明的条件特性发布（[feature](../design-feature.md)）。描述符的 `Resources` 带下列声明：
+
+```go
+feature.Spec{Name: "notification.channel.email", Conditional: true}
+feature.Spec{Name: "notification.channel.sms", Conditional: true}
+```
+
+- **报告与发送路径用同一处判定。** 可选依赖 `mail.Sender`、`sms.Registry`、`sms.Sender` 由 `New` 解析并存进 `channelSeams`；`Init` 取得到 `feature.Board` 时按这份接缝报告：`emailReady()` 为真即报告 `notification.channel.email`，`smsReady()` 为真（`sms.Registry` 与 `sms.Sender` 都在场）即报告 `notification.channel.sms`。发送路径据以落 `skipped` 的正是这些判定，报告不另写条件。这是架构不变量 18 里「面由不挂路由的模块兑现」的那一支（[architecture](../../architecture.md#架构不变量)、[ADR-feature-ownership-2026-10-17](../../../adr/adr-feature-ownership-2026-10-17.md)）。
+- **报告只在 `Init`。** 接缝在 `New` 就已解析，但 `New` 落在 `feature.Board` 接受 `Post` 的窗口之外，在那里调用 `Post` 即 panic。`feature.Board` 不在构造期依赖里，`Init` 经 `core.Resolve` 取用；进程里没有 `feature.board` 时报告静默跳过。
+- **`in_app` 不立特性名。** 它恒可用，没有缺席的情形。
+- **渠道特性缺席不改变偏好的取值集。** 偏好照旧按（类型，渠道）逐格存储，一个渠道的特性缺席时，它上面已存的偏好不变；装配补上该渠道的接缝之后，原值照旧生效（[ADR-notification-channels-2026-10-15](../../../adr/adr-notification-channels-2026-10-15.md)）。
+
 ### 去重键与幂等落账
 
 每个渠道各有一个去重键，取值由接口契约给出，改动它是破坏性变更：
@@ -117,6 +131,7 @@ idempotency_key = hex(sha256(canonicalJSON{
 
 - `notification.Dispatcher` 的方法集，以及本模块对 `notification.Dispatch` 字段语义的依赖，是与其他模块之间的接口面；本模块的包导出的 `ModuleName` 同属接口面。
 - **宿主可见面**：模块名 `notification.delivery`，以及提交面的功能标识 `(*notification.Dispatcher)(nil)`。命令树按模块名纳入本模块，或为它预置实例。
+- 特性名 `notification.channel.email`、`notification.channel.sms`，以及「接缝在场即报告」这条判定。前端经生成的特性名类型引用它们，改名或撤去是宿主可见的破坏性变更。
 - 表 `notification_sends` 属于本模块，宿主不读写它；它的列供运维查投放账，不在对外接口面内。
 
 ## 依赖
@@ -130,16 +145,17 @@ idempotency_key = hex(sha256(canonicalJSON{
 | `pkg/mail` | 可选：`email` 渠道的发送接缝 `mail.Sender`（`Send`、`Message`、`Receipt` 与哨兵 `ErrThrottled`、`ErrRejected`、`ErrUncertain`、`ErrInvalidConfig`）。本模块只引用这条接缝，不设计它的内部 |
 | `pkg/sms` | 可选：`sms` 渠道的 `sms.Registry`（解模板）与 `sms.Sender`（发送） |
 | `pkg/i18n` | 把消息渲染成收件人语言的文本（`i18n.Localizer`，必需依赖） |
+| `pkg/feature` 根包 | 声明渠道的条件特性（`feature.Spec`）；`Init` 经 `core.Resolve` 可选取用 `feature.Board` 报告，不列入构造期依赖。根包只依赖标准库 |
 
 **偏好、收件箱与渲染都在构造期依赖表里。** 本模块在 `New` 里用 `core.Resolve[notification.Preferences](reg)` 取偏好接缝、`core.Resolve[notification.Inbox](reg)` 取收件箱接缝、`core.Resolve[i18n.Localizer](reg)` 取渲染接缝，三者都是必需依赖，列在「登记单元与名字」的依赖列里。
 
-**依赖方向。** 本模块 import `pkg/jobs`、`pkg/db`、`pkg/tenant`、`pkg/i18n` 与 `pkg/notification` 根包，并可选 import `pkg/mail` 与 `pkg/sms` 的根包，不 import 通知能力目录内的其他实现子包，也不 import `pkg/authn` 与 `pkg/authz`。它不 import 任何厂商 SDK：`mail` 与 `sms` 的载体叶子绑定各自的库，本模块只经它们的接口包触达。这些依赖都在本模块之前构造、之后停止。
+**依赖方向。** 本模块 import `pkg/jobs`、`pkg/db`、`pkg/tenant`、`pkg/i18n`、`pkg/feature` 根包与 `pkg/notification` 根包，并可选 import `pkg/mail` 与 `pkg/sms` 的根包，不 import 通知能力目录内的其他实现子包，也不 import `pkg/authn` 与 `pkg/authz`。它不 import 任何厂商 SDK：`mail` 与 `sms` 的载体叶子绑定各自的库，本模块只经它们的接口包触达。这些依赖都在本模块之前构造、之后停止。
 
 **本模块不声明配置命名空间，不读任何输入项。** 一次发送的作业参数（超时、重试次数、优先级）在入队时由本模块给出确定取值，不来自配置；这是本模块没有可缺的启动项的直接结果（与 [event.outbox.relay](../event/design-event-outbox.md) 同形）。
 
 ## UML 图
 
-本模块的结构是一条提交接缝、一条消费路径与渠道接缝的关系。图里的约束不在图中：提交面排他交付，一个进程里至多一条流水线；偏好与收件箱接缝是**必需**依赖，渠道接缝都是**可选**的，缺席只让对应渠道跳过。
+本模块的结构是一条提交接缝、一条消费路径与渠道接缝的关系。图里的约束不在图中：提交面排他交付，一个进程里至多一条流水线；偏好与收件箱接缝是**必需**依赖，渠道接缝都是**可选**的，缺席只让对应渠道跳过、对应的条件特性不报告；`feature.Board` 不是构造期依赖，只在 `Init` 取用，取不到即不报告。
 
 ```mermaid
 classDiagram
@@ -171,6 +187,10 @@ classDiagram
         <<interface>>
         +Send(ctx, r) Receipt, error
     }
+    class Board {
+        <<interface>>
+        +Post(module, name)
+    }
     class pipeline {
         -queue jobs.Queue
         -taxonomy taxonomy
@@ -183,9 +203,10 @@ classDiagram
     pipeline ..> MailSender : email
     pipeline ..> SMSRegistry : sms 解模板
     pipeline ..> SMSSender : sms 发送
+    pipeline ..> Board : Init 报告渠道特性
 ```
 
-`pipeline` 同时实现 `Dispatcher` 并登记为一个 `jobs.Handler`；`channelSeams` 按本次装配在场的接缝决定哪些渠道可发。
+`pipeline` 同时实现 `Dispatcher` 并登记为一个 `jobs.Handler`；`channelSeams` 按本次装配在场的接缝决定哪些渠道可发，也决定 `Init` 向 `Board` 报告哪些渠道特性。
 
 ## 核心数据结构
 
@@ -242,7 +263,7 @@ classDiagram
 | `Prepare` | 无动作 |
 | `New` | 取用队列与登记面、数据库、租户名册、偏好接缝、收件箱接缝、渲染接缝与在场的渠道接缝；收齐并校验分类法 |
 | `Migrate` | 数据库模块施加本模块声明的迁移集，建立 `notification_sends` 表 |
-| `Init` | 向 `jobs.Handlers` 登记处理器（`Type()` 返回本模块的作业类型名） |
+| `Init` | 向 `jobs.Handlers` 登记处理器（`Type()` 返回本模块的作业类型名）；取得到 `feature.Board` 时按 `channelSeams` 报告渠道的条件特性。实例不是本模块的产物时，登记与报告都不做 |
 | `Start`、`Serve` | 无动作，消费由队列驱动 |
 | `Stop`、`Close` | 无动作；在飞的一次投递随队列的停机宽限跑完或取消 |
 
@@ -279,6 +300,8 @@ classDiagram
 - **不保证渲染目录覆盖。** 一条通知的类型键在 i18n 目录里没有对应条目时，渲染回落到引擎的默认文案（键本身）；本模块不校验覆盖面。
 - **不保证作业不被重复消费。** 队列的投递至少一次；本模块靠去重键使重复消费不重复投递，但一个尚未落账就崩溃的渠道在重试里会再发一次。
 - **不保证一次投递的结果对提交方可见。** `Dispatcher.Dispatch` 只返回入队结果，一条通知的逐渠道终态写在 `notification_sends` 里，提交方不收到回调。
+- **宿主为本模块预置实例时，渠道特性不报告。** 预置的实例不是本模块的产物，生命周期回调不处理它，`Init` 不报告任何渠道特性；特性文档里邮件与短信渠道的特性都缺席，不论预置的实例实际能发哪些渠道，方向是失败即关（[feature](../design-feature.md)）。
+- **渠道特性只反映报告它的那个进程的装配。** 本模块只向同一进程里的 `feature.Board` 报告，特性文档由运行 `feature.board` 的进程发布；投递作业却由认领它的那个进程里的本模块消费，实际发送按那个进程的接缝进行。发布进程与消费进程装配的渠道接缝不同，特性文档就与实际投递不符：特性在场而消费进程缺接缝，该渠道落 `skipped`；特性缺席而消费进程有接缝，该渠道照常按偏好发送，前端却按缺席处理它。本模块装进发布特性文档的进程之外的进程时，各进程须装配同样的渠道接缝。
 
 ## 并发与事务边界
 
@@ -305,3 +328,4 @@ classDiagram
 | 去重键与 `notification_sends` 幂等落账 | 已实现 | `pkg/notification/delivery/keys.go` `channelKey`、`dispatchKey`、`deriveKey`；`pkg/notification/delivery/store.go` `ledger`、`lookup`、`record` |
 | 外部渠道的目的地与短信参数的字符串化 | 已实现 | `pkg/notification/delivery/render.go` `destination`、`destinationParam`、`stringifyParams`、`stringify`、`renderValue` |
 | `notification_sends` 表与迁移 | 已实现 | `pkg/notification/delivery/store.go` `sendRow`、`tableName`；`pkg/notification/delivery/migrations` |
+| 渠道条件特性的声明与 `Init` 中按 `channelSeams` 的报告 | 未实现 | — |

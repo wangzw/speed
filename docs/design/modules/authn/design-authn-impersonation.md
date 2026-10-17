@@ -11,7 +11,7 @@
 - `Start` 内强制一组不依赖 `Decider` 的结构性限制，再询问 `Decider`，再写强制档审计，再写记录；载体挂接、补偿与 `started` 事件由登记 `B/impersonation` 的处理器在 `Start` 返回之后完成。
 - 回答一条记录此刻是否仍然有效，并把读时发现的失效惰性落库。
 - 把冒充的租户范围守在装配期：`ScopeGuard` 是必需依赖，没有准入层的装配启动失败。
-- 经 `authn.mount` 登记 `B/impersonation` 一组自助路由（`B` 是路由基路径，由 [design-authn-gate](design-authn-gate.md) 声明），其中结束与查询登记为 `Impersonable`。
+- 经 `authn.mount` 登记 `B/impersonation` 一组自助路由（`B` 是路由基路径，由 [design-authn-gate](design-authn-gate.md) 声明），其中结束与查询登记为 `Impersonable`；以静态[特性](../../../glossary.md) `authn.impersonation` 声明这组路由。
 - 定义冒充期间 authn 自己的处理器拒绝哪些操作，以及允许哪些路由。
 - 写冒充的接缝级审计，发布 `authn.impersonation.started`、`authn.impersonation.ended`，记录指标 `authn.impersonation.sessions`。
 
@@ -126,6 +126,15 @@ type Impersonation interface {
 
 `GET` 与 `DELETE` 登记为 `Impersonable`，使冒充中的管理员总能查看并结束冒充。本模块的挂载端不得是准入层所守的端：准入层对「冒充身份且无租户上下文」答 404，会让结束冒充都做不到。本模块在自己的 `Start` 里核对 `ScopeGuard.Covers(mount.endpoint)` 为假，为真即 `ErrInvalidConfig`（这既是所需依赖的用武之处，也使一段只被挂错端的装配当场失败）；网关在启动阶段的校验里对同一规则再核一次（[design-authn-gate](design-authn-gate.md)）。
 
+### 声明的特性
+
+**本模块以[静态特性](../../../glossary.md) `authn.impersonation` 声明 `B/impersonation` 这组路由。** 描述符的 `Resources` 带 `feature.Spec{Name: "authn.impersonation"}`（[feature](../design-feature.md)）。这个特性在场，表示本进程挂出「路由」一节的全部路由。路由无条件挂出：`mount.Mounter` 在 `Requires` 里，模块进入启用集即挂出它们，挂与不挂不另取决于配置或装配，所以声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
+
+- **`Decider` 与 `Tokens` 缺席不改变路由集，不另立特性名。** 它们只改变路由的应答：`Decider` 缺席即全拒，`Tokens` 缺席时只有 cookie 凭据下的开始可用。
+- **冒充的设置不发布。** `authn.impersonation.max-ttl` 与 `authn.impersonation.max-auth-age` 是参数，由 `Start` 逐次执行（「结构性限制」）。
+- **记录的管理面不由本特性代表。** 列出与撤销记录的路由归 `authn.admin`，以它的条件特性 `authn.admin.impersonations` 声明（[design-authn-admin](design-authn-admin.md)）。
+- **特性名属于对外接口面。** 前端经生成的特性名类型引用 `authn.impersonation`，改名、撤去或改变它所指的路由组是宿主可见的破坏性变更。
+
 ## 依赖
 
 下表是本模块的依赖（封闭集合）。「取用」列写 `Requires` 里的排他功能，或 `Init` 里 `core.Resolve` 取得的功能；缺席合法者标○，缺席时对应的子功能不启用，启动诊断写一行说明。
@@ -148,7 +157,7 @@ type Impersonation interface {
 
 `Requires` 里只有排他功能与 `db.Database`：`Decider` 与 `Tokens` 是否在场是宿主的选择，写进 `Requires` 会让依赖闭包替宿主纳入它们（[ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)）。`Decider` 缺提供者（`core.ErrMissingProvider`）是合法配置，行为是全拒，所以不需要一个「默认拒绝」的模块被宿主点名。
 
-方向满足架构不变量：本模块只依赖 `pkg/authn` 根包的接口与值类型、`pkg/db`、`pkg/audit`、`pkg/settings`、`pkg/event`、`pkg/log`、`pkg/observability` 与 `authn.mount`；不 import `pkg/tenant`，也不 import 别的 authn 叶子包。`ScopeGuard` 是根包接口，tenant 目录交付它，`pkg/authn` 因此不依赖 `pkg/tenant`（[ADR-tenant-admission-2026-10-10](../../../adr/adr-tenant-admission-2026-10-10.md)）。`authn.session` 与 `authn.token` 反向取用 `Impersonation` 只在 `Init` 里取已构造的实例，所以与本模块对 `Sessions` 的 `Requires` 不构成构造环。
+方向满足架构不变量：本模块不 import `pkg/tenant`、`pkg/feature/board`，也不 import 别的 authn 叶子包。`pkg/feature` 根包只依赖标准库，本模块为以 `feature.Spec` 声明静态特性 import 它，不取用 `feature.Board`（[feature](../design-feature.md)）。`ScopeGuard` 是根包接口，tenant 目录交付它，`pkg/authn` 因此不依赖 `pkg/tenant`（[ADR-tenant-admission-2026-10-10](../../../adr/adr-tenant-admission-2026-10-10.md)）。`authn.session` 与 `authn.token` 反向取用 `Impersonation` 只在 `Init` 里取已构造的实例，所以与本模块对 `Sessions` 的 `Requires` 不构成构造环。
 
 取用 `Impersonation` 的模块如下（宿主自写的取用者不在表内）。
 
@@ -436,7 +445,9 @@ WHERE id = ? AND ended_at IS NULL
 | 再次开始冒充 | `POST B/impersonation` |
 | 管理面 | 全部 `B/admin/*` |
 
-**冒充期间允许的路由**（封闭集合，登记为 `Impersonable`）：`DELETE B/impersonation`、`GET B/impersonation`、`POST B/logout`、`GET B/session`、`GET B/me`。`DELETE B/impersonation` 与 `GET B/impersonation` 由本模块登记；`POST B/logout` 与 `GET B/session` 由 [design-authn-session](design-authn-session.md) 经 `mount.Impersonable()` 登记，`GET B/me` 由 [design-authn-profile](design-authn-profile.md) 经 `mount.Impersonable()` 登记，路由的访问级别以各自的路由表为准。`POST B/logout` 登出的是发起者自己的会话，冒充随之结束：会话撤销使绑定的会话失效，`Active` 为假。
+**冒充期间允许的 authn 路由**（封闭集合，登记为 `Impersonable`）：`DELETE B/impersonation`、`GET B/impersonation`、`POST B/logout`、`GET B/session`、`GET B/me`。`DELETE B/impersonation` 与 `GET B/impersonation` 由本模块登记；`POST B/logout` 与 `GET B/session` 由 [design-authn-session](design-authn-session.md) 经 `mount.Impersonable()` 登记，`GET B/me` 由 [design-authn-profile](design-authn-profile.md) 经 `mount.Impersonable()` 登记，路由的访问级别以各自的路由表为准。`POST B/logout` 登出的是发起者自己的会话，冒充随之结束：会话撤销使绑定的会话失效，`Active` 为假。
+
+authn 之外的模块与宿主经 `Gate.Impersonable` 登记的路由不在这个集合里，由登记方各自的文档承载。例：`feature.board` 把特性文档的读面 `GET /features` 登记为 `Impersonable`，冒充期间前端照常读到特性文档；特性文档与调用者身份无关，冒充开始或结束都不改变它（[feature](../design-feature.md)）。
 
 **分层拒绝。** 不在允许集合内的 authn 路由，冒充身份先被网关挡下：authn 的挂载端不被准入层守，网关对冒充身份只放进准入层所守的端与登记为 `Impersonable` 的路由，其余 401。处理器对 `Impersonating()` 再自检一次，答 403 `impersonation-restricted`，作为路由登记出错时的后备防线；网关与准入层从不写 403（[design-authn-gate](design-authn-gate.md)）。
 
@@ -580,5 +591,6 @@ flowchart TD
 | 不缓存 `Active`（订阅 `authn.impersonation.ended` 清缓存的职责由校验后端承担） | 已实现 | `pkg/authn/impersonation/active.go` `Active` 每次读记录、会话与账户；订阅在 `pkg/authn/session/lifecycle.go`、`pkg/authn/token/subscribe.go` |
 | 守住假设的测试：并发开始、SQLite 文件库上的开始、各成因的失效、强认证与范围限制、装配测试 | 已实现 | `pkg/authn/impersonation/start_test.go` `TestTwoStartsOnOneSessionRaceToOne`、`TestStartWritesTheMandatoryAuditBeforeTheTransaction`、`TestStartRefusesEachStructuralRestriction`；`pkg/authn/impersonation/active_test.go` `TestActiveLapsesForEachReason`；`pkg/authn/impersonation/guard_test.go` `TestGuardRequireRefusesAnImpersonatingIdentity`、`TestAnImpersonatingIdentityIsKeyedByItsActor`（`Identity.Key()` 取冒充发起者）；`pkg/authn/impersonation/get_test.go` `TestListConfinesToTheQueriedTenant`；`pkg/authn/impersonation/assembly_test.go` `TestTheDriveRefusesAGuardedMountEndpoint` |
 | 本模块提供的 API 的 OpenAPI 片段 | 已实现 | `pkg/authn/impersonation/openapi/impersonation.json`；`pkg/authn/impersonation/impersonation.go` `Module`、`defaultEndpoint`、`impersonationFragment` |
+| 静态特性 `authn.impersonation` 的声明 | 未实现 | — |
 
 网关的范围规则、准入层的范围核对、会话与令牌载体的校验各自的实现状态由 [design-authn-gate](design-authn-gate.md)、[design-tenant-admission](../tenant/design-tenant-admission.md)、[design-authn-session](design-authn-session.md)、[design-authn-token](design-authn-token.md) 承载。

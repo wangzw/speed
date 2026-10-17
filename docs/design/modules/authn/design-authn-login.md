@@ -6,7 +6,7 @@
 - 定义 `LoginMethod` 接缝与方法的准入条件。接缝在根包 `pkg/authn` 导出；方法只回答「这个人证明了什么」，以 `Proof` 交出事实，不做账户解析、开户、关联、第二因素判定、建会话或发令牌。
 - 在第一因素通过之后做与方式无关的全部动作：把证明解析成账户（含开户与关联）、向 `MFA` 询问是否还要第二因素或登记因素、建登录会话或发令牌。账户解析的规则归 [authn-account](design-authn-account.md)，因素、策略与保障等级的合成归 [authn-mfa](design-authn-mfa.md)，本文只写引擎怎样调用它们、怎样处理它们的结果。
 - 让目的 `login`、`link`、`step-up`、`enroll` 共用同一台状态机，终态动作按目的区分。目的取值是封闭集。
-- 在 `authn.gate.mount.endpoint` 指定的端、`mount.base-path` 之下挂登录路由、回跳路由、方式列表与账户自助路由。路由与访问级别经 `mount.Mounter` 用同一个调用声明（[authn-gate](design-authn-gate.md)）。
+- 在 `authn.gate.mount.endpoint` 指定的端、`mount.base-path` 之下挂登录路由、回跳路由、方式列表与账户自助路由。路由与访问级别经 `mount.Mounter` 用同一个调用声明（[authn-gate](design-authn-gate.md)）。账户自助里随装配成立的面声明为[条件特性](../../../glossary.md)，在决定它们是否成立的同一处判定里经 `feature.Board` 的 `Post` 报告：手机号自助在挂其路由的分支里，邮箱分支在与该分支答 503 同源的判定处（见「声明的特性」）。
 - 规定认证前的失败退避与枚举防护在登录路径上的形状：在何处计数、何时拒绝校验、应答怎样同形同时。退避状态的存取面 `Throttle` 与 `authn_throttles` 表归 [authn-account](design-authn-account.md)（[ADR-authn-throttling-2026-10-10](../../../adr/adr-authn-throttling-2026-10-10.md)）。
 - 规定口令、社交登录（Google、GitHub）与微信各方式的流程。短信、通行密钥、企业 OIDC 与 SAML 作为方式接入同一接缝，各自的状态机与校验分别归 [authn-sms](design-authn-sms.md)、[authn-mfa](design-authn-mfa.md)、[authn-sso](design-authn-sso.md)。
 
@@ -159,11 +159,32 @@ type Proof struct {
 
 该端不得被 `tenant.resolve` 所守：全局账户的登录请求不带租户名，被守时拿到的是解析层的 404。装配期对此做核对，核不了（读不出 `tenant.resolve.endpoints` 的解码形状）时写一行 `Warn`，不终止启动。
 
+### 声明的特性
+
+本模块声明下表的[条件特性](../../../glossary.md)，描述符的 `Resources` 为每一个带一条 `feature.Spec{Name: <名字>, Conditional: true}`（[feature](../design-feature.md)）。下表是本模块声明的特性的全集：
+
+| 特性 | 指的面 | 报告的判定 |
+|---|---|---|
+| `authn.phone` | 手机号自助：`POST B/phone` 与 `POST B/phone/verify` | `SMSCodes` 在场；与挂这组路由的是同一个分支 |
+| `authn.identifiers.email` | `POST B/identifiers` 的邮箱分支 | `EmailCodeSender` 在场；路由恒挂，与邮箱分支在它缺席时答 503 的判定读同一个依赖 |
+
+- **报告与判定写在同一处。** 表中的判定都在 `Init` 里挂自助路由时做出（`pkg/authn/login/internal/selfservice/selfservice.go` `(*Service).Mount`，由 `pkg/authn/login/routes.go` `(*product).mountRoutes` 调用）。自助件不取 `feature.Board`：引擎把一个报告函数交给它的 `Mount`，它在表中的判定处调用。条件与报告写在一起，符合架构不变量 18（[architecture](../../architecture.md#架构不变量)，[ADR-feature-ownership-2026-10-17](../../../adr/adr-feature-ownership-2026-10-17.md)）。
+- **`feature.Board` 经 `core.Resolve` 取用，不列入 `Requires`。** 取不到时（没有纳入 `feature.board` 的进程）不报告，路由照表中的条件挂出。
+- **本模块不声明静态特性。** 发现、流程、回跳与其余账户自助路由随模块恒挂；服务前端的命令必须纳入本模块，前端不经特性门控直接依赖它（[web](../web/design-web.md)）。改口令 `PUT B/password` 同样恒挂，不立特性名。
+- **守住它的测试**断言：`SMSCodes` 在场当且仅当报告 `authn.phone`、当且仅当 `POST B/phone` 已登记；`EmailCodeSender` 在场当且仅当报告 `authn.identifiers.email`。
+
 ### 请求与应答的形状
 
 请求体一律 `application/json`，否则 415；拒绝未知字段；体上限 64 KiB（SAML 回跳例外），超过上限归 400 `bad-request`（与体不合法同答，不为超限另立码）。开始请求的 `input`（`Start.Fields`）至多 8 个字段、每个至多 512 字符；答复的 `input`（`StepInput.Fields`）至多 8 个字段，每个的上界更大——通行密钥的凭据 JSON 超过 1 KiB——且仍远小于 64 KiB 的体上限；两者越界一律归 400 `bad-request`。经 `Mounter` 登记的处理器所写的响应带 `Cache-Control: no-store`：`Wrap` 在调用处理器之前写好该头，处理器可以覆盖它（如密钥集自带缓存头）。网关在处理器之前自产的 401/503，以及入口模块对 panic 的缺陷响应，不在这一范围内：前者不经 `Wrap`，后者由入口模块按它自己的缺陷应答形状处置，会删去 `Cache-Control` 一类表示性头。
 
 `GET B/methods` 的应答是方法描述符文档：`{"methods":[{name, kind, protocol, label, opens_account, fields}], "signup":{"enabled"}, "mfa":{"factors":[...]}}`。`methods` 按方法名排序，每项是一个方法自报的描述符：`kind` 是渲染类别（`form`/`redirect`/`enterprise`/`webauthn`），`protocol` 是 `redirect` 与 `enterprise` 类方法所讲的线协议（`oauth2`/`oidc`/`saml`，其余为空），`label` 是方法品牌名（如 `Google`、`WeChat`，缺失时客户端按方法名查 i18n 回退），`fields` 是该方法首步所要的字段（仅 `form` 类给出，取自 `Begin` 以空字段调用时所答的首个 prompt），`opens_account` 是该法能否在首登为未知标识开户。`signup.enabled` 由账户模块的注册开关 `authn.account.signup` 派生；`mfa.factors` 是装配收到的第二因素种类，属部署级，与 `GET B/factors` 所答的本人已登记因素语义不同。企业 SSO 的提供方清单不进此应答，仍走 `POST B/sso/discover`。
+
+**`GET B/methods` 是认证的匿名发现面，只承载登录前就要用的认证事实**：方法描述符、注册开关与可登记的因素种类。进此应答的事实满足匿名发现面的准入判据（[architecture](../../architecture.md#特性与前端定制)）；往此应答加字段是本模块对外接口面的变更。此应答的边界由该准入判据与下列规则一起划定，这些规则是穷举的：
+
+- **登录后才需要的存在性事实不进此应答。** 手机号自助与自助添加邮箱是否成立经[特性文档](../../../glossary.md)发布（见「声明的特性」），特性文档只对已认证调用者可读（[feature](../design-feature.md)）。
+- **同一事实只有一个发布点。** 可登记的因素种类只在 `mfa.factors` 里；特性文档里只有多因素的自助面是否存在（`authn.mfa`，[authn-mfa](design-authn-mfa.md)），不按因素种类分出特性名（[ADR-feature-ownership-2026-10-17](../../../adr/adr-feature-ownership-2026-10-17.md)）。
+- **只是参数、经流程应答送达或会暴露租户、IdP、账户维度的事实不发布。** 例：`authn.account.auto-link` 的结果经 401 `link-required` 送达，`authn.sms.allowed-prefixes` 的违反答 400 `unsupported-region`，全局强制 MFA（`authn.mfa.global-required`）经登录流程的登记步送达。
+- **别的模块的登录前事实不进此应答。** 它们经拥有该事实的模块自己的匿名发现面发布。
 
 成功应答是 `{"seq": 2, "state": "...", "next": {"kind": "..."}}`。`next.kind` 的取值是封闭集：
 
@@ -216,6 +237,7 @@ type Proof struct {
 - 问题码是封闭集，新增码是兼容的，删除、改名或改变既有码的含义是破坏性变更。
 - 流程记录带版本字段，读到不认识的版本一律拒绝。
 - `LoginMethod`、`Step` 构造器、`Proof` 的字段是第三方方法依赖的面，增加字段不破坏既有方法；删改它们是不兼容变更，按宿主可见面的变更处理。
+- 声明的特性名 `authn.phone`、`authn.identifiers.email` 与各自指的面：前端经生成的特性名类型引用它们，改名、撤去或改变所指的面是宿主可见的破坏性变更；它们在不在随装配变化，不在接口面内。
 
 ## 依赖
 
@@ -237,8 +259,9 @@ type Proof struct {
 | `Provisioner` | 可选 | 首登开户之前的宿主钩子 |
 | `settings.Store` | 可选 | 本模块的设置，缺席取声明的默认值 |
 | `audit.Audit`、`event.Bus` | 可选 | 登录审计与 `authn.login.succeeded`；缺席时对应输出不做，启动诊断写一行 |
+| `feature.Board` | 可选，`Init` 经 `core.Resolve` 取用，不列入 `Requires` | 报告 `authn.phone` 与 `authn.identifiers.email`；缺席时不报告 |
 
-方向满足架构不变量：`authn/login` 只依赖根包、内部包与依赖表里的功能接口，不依赖任何方法叶子包，也不 import `pkg/tenant`；叶子包只依赖根包与 `internal/egress`、`internal/password` 这类内部包，库类型只出现在叶子包里，不出现在根包签名里（[ADR-authn-packaging-2026-10-10](../../../adr/adr-authn-packaging-2026-10-10.md)、[ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)）。`authn.login` 把 `MFA` 当必需：装配里没有 MFA 模块而库里已有账户登记了因素时，登录不得无声跳过第二因素。
+方向满足架构不变量：`authn/login` 只依赖根包、内部包、`pkg/feature` 根包与依赖表里的功能接口，不依赖任何方法叶子包，也不 import `pkg/tenant`；`pkg/feature` 根包只依赖标准库，`authn/login` 为声明特性 import 它不扩大自己的闭包，也不 import `pkg/feature/board`（[feature](../design-feature.md)）；叶子包只依赖根包与 `internal/egress`、`internal/password` 这类内部包，库类型只出现在叶子包里，不出现在根包签名里（[ADR-authn-packaging-2026-10-10](../../../adr/adr-authn-packaging-2026-10-10.md)、[ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)）。`authn.login` 把 `MFA` 当必需：装配里没有 MFA 模块而库里已有账户登记了因素时，登录不得无声跳过第二因素。
 
 状态放置按丢失的方向判：流程记录丢了只让流程失败，放 kv；退避计数、会话、账户丢了会放宽校验，放 db（[ADR-authn-state-placement-2026-10-10](../../../adr/adr-authn-state-placement-2026-10-10.md)）。
 
@@ -777,3 +800,4 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | GitHub 方法 `authn.login.github` | 已实现 | `pkg/authn/login/github/github.go` `Module`、`Begin`、`Answer`；`pkg/authn/login/github/api.go` `fetchUser`、`fetchPrimaryVerifiedEmail` |
 | 微信方法 `authn.login.wechat-web`、`authn.login.wechat-mp` 与共用客户端 | 已实现 | `pkg/authn/login/wechatweb/wechatweb.go` `Module`、`Begin`、`Answer`；`pkg/authn/login/wechatmp/wechatmp.go` `Module`、`Begin`、`Answer`；`pkg/authn/login/internal/wechat/client.go` `Client`、`Exchange`、`AuthorizeURL`；`pkg/authn/login/internal/wechat/identity.go`、`state.go` |
 | 对外契约片段：`openapi/login.json`，经模块的 `Spec` 资源声明 | 已实现 | `pkg/authn/login/login.go` `Module`、`defaultEndpoint` |
+| 条件特性 `authn.phone`、`authn.identifiers.email` 的声明与报告 | 未实现 | — |

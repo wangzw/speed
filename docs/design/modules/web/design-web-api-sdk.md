@@ -2,13 +2,14 @@
 
 ## 职责
 
-前端对 speed 平台的**生成式、契约优先的类型化接口面**，包 `web/packages/api-sdk`。操作函数、TanStack Query 钩子与响应模型由 orval 从合并的平台 OpenAPI 文档生成；每一次生成的调用都经 [`api-client`](design-web-api-client.md) 的请求函数发出。
+前端对 speed 平台的**生成式、契约优先的类型化接口面**，包 `web/packages/api-sdk`。操作函数、TanStack Query 钩子与响应模型由 orval 从合并的平台 OpenAPI 文档生成；特性名类型由特性名生成器从 `contracts/features.json` 生成；每一次生成的调用都经 [`api-client`](design-web-api-client.md) 的请求函数发出。
 
-- **整份生成。** `src/` 除一个文件外全是 orval 输出。`src/index.ts` 是生成产物，带 `web/orval.config.ts` 注入的 DO-NOT-EDIT 头，头里锚着生成器的版本，故生成器与已提交产物之间的漂移表现为头本身的一次 diff。
-- **唯一的源码接手点。** `src/runtime.ts` 是本包唯一的源码文件，作为 `./runtime` 子路径导出。它存在，是因为生成的代码不能知道宿主如何接上 HTTP 传输。
+- **整份由契约生成。** `src/` 除一个文件外全是生成产物：orval 从 `contracts/api.json` 生成 `src/index.ts`，特性名生成器 `web/scripts/feature-names.mjs` 从 `contracts/features.json` 生成 `src/features.ts`。`src/index.ts` 带 `web/orval.config.ts` 注入的 DO-NOT-EDIT 头，头里锚着生成器的版本，故生成器与已提交产物之间的漂移表现为头本身的一次 diff；`src/features.ts` 带同形的 DO-NOT-EDIT 头。
+- **唯一的源码接手点。** `src/runtime.ts` 是本包唯一的手写源码文件，作为 `./runtime` 子路径导出。它存在，是因为生成的代码不能知道宿主如何接上 HTTP 传输。
 - **生成面与传输无关。** 生成的调用把一个 axios 形状的选项对象交给一个 mutator；mutator 把它适配成 [`api-client`](design-web-api-client.md) 的请求函数形状并转发。生成的代码里没有 `fetch`、没有 `axios`、没有租户头，也没有租户查询键。
 - **生成面与租户无关。** 生成的查询键是裸的 spec 路径，不带租户维度；租户由服务端在请求期按端解析，生成面既不传也不收租户（[ADR-web-tenant-query-key-2026-10-15](../../../adr/adr-web-tenant-query-key-2026-10-15.md)）。
 - **契约从模块片段流入。** orval 的输入是各平台模块 HTTP 片段经示范宿主的 `gen` 命令合并出的一份文档（落 `contracts/api.json`）；一个有 HTTP 片段的平台模块即合并文档的成员，因而进入本包的生成面。每个片段的端点路径与操作经 [api-client](design-web-api-client.md) 发出。
+- **特性名从模块声明流入。** 后端模块以资源 `feature.Spec` 声明它服务的[特性](../../../glossary.md)（[feature](../design-feature.md)）；示范宿主的 `gen` 命令以 `--features` 写出 `contracts/features.json`：可用集里的全部特性声明，每项带名字、声明模块与是否条件特性，按名字排序。它与 `contracts/api.json` 同源，出自同一个二进制的 import 闭包，是同一份契约的另一半（[starters](../design-starters.md)、[ADR-feature-vocabulary-2026-10-17](../../../adr/adr-feature-vocabulary-2026-10-17.md)）。
 
 ### 非职责
 
@@ -16,13 +17,24 @@
 - **不认识租户。** 生成面里没有租户头、没有租户查询键，认证片段也不带任何租户字段：认证的请求与应答里没有 `tenant_id`，租户在请求期由服务端的解析层按端解析。租户查询键的分段是消费方壳的纪律（[auth-core](design-web-auth-core.md)）。
 - **不含用户可见文本，不带 i18n 资源。** 错误以契约的 RFC 9457 问题对象类型化（机器可读的类在 `type`，取值 `urn:speed:<模块>:<码>`）；码由消费包的文案目录译成双语文本。
 - **不构造 QueryClient。** `react` 与 `@tanstack/react-query` 是 peer，宿主共享一个 QueryClient/Provider；本包从不构造。
-- **不接受手工编辑。** `src/index.ts` 从不手改，也不在 `src/` 里另加一个源码文件来补生成的缺口：工具的问题归工具（见「核心算法与流程」的生成一节）。
+- **不接受手工编辑。** `src/index.ts` 与 `src/features.ts` 从不手改，也不在 `src/` 里另加一个手写源码文件来补生成的缺口：工具的问题归工具（见「核心算法与流程」的生成一节）。
+- **不回答一个面在不在。** 合并文档与特性名清单都取可用集（[ADR-ops-spec-reader-2026-10-15](../../../adr/adr-ops-spec-reader-2026-10-15.md)）：本包里有某个操作函数，不能据此推断本部署服务它；一个名字属于 `FeatureName`，只说明它在可用集里有声明。特性在场由特性文档在运行期回答（[auth-core](design-web-auth-core.md)）。
 
 ## 外部接口契约
 
 ### 入口
 
 - **`.`（生成的 `src/index.ts`）**——orval 从合并文档派生出的操作函数、钩子与响应模型。其形状是 orval 的，不是本包定义的；只有经生成器才会变。
+- **`./features`（生成的 `src/features.ts`）**——特性名类型与全部特性名，由特性名生成器从 `contracts/features.json` 写出：
+
+```ts
+export interface FeatureNameRegistry { 'audit.admin': true; /* … */ }
+export type FeatureName = keyof FeatureNameRegistry & string
+export const FEATURE_NAMES: readonly FeatureName[] = [ /* … */ ]
+```
+
+`FeatureNameRegistry` 是可增补的登记接口，`FeatureName` 是它的键类型。前端写特性名的位置一律取 `FeatureName`，名字拼错即编译失败（[web](design-web.md) 的「特性门控」）；`FEATURE_NAMES` 供运行期断言一个名字属于清单，例如宿主测试断言路由表里每个 `requires` 都在其中。
+
 - **`./runtime`（`src/runtime.ts`）**——宿主绑定的稳定手写接缝：
 
 ```ts
@@ -59,7 +71,7 @@ interface OrvalCall {
 
 ### 对外接口面
 
-`./runtime` 的导出集（`bindRequestFn`、`speedRequest`、`speedRequestCredentialless`）与 `OrvalCall` 的字段、以及 `.` 入口经 orval 派生的操作与钩子的形状，是消费方据以编写的接口面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。`.` 入口的形状归生成器；改动它要经 `web/orval.config.ts` 并重生成，绝不手改产物。`./runtime` 的改动要与 AGENTS、README、`src/runtime.test.ts` 在同一提交内更新。
+`./runtime` 的导出集（`bindRequestFn`、`speedRequest`、`speedRequestCredentialless`）与 `OrvalCall` 的字段、`.` 入口经 orval 派生的操作与钩子的形状，以及 `./features` 的 `FeatureNameRegistry`、`FeatureName`、`FEATURE_NAMES`，是消费方据以编写的接口面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。`.` 入口的形状归生成器；改动它要经 `web/orval.config.ts` 并重生成，绝不手改产物。`./features` 的形状归特性名生成器，名字集合归后端的特性声明：后端删除或改名一个特性，重生成后引用旧名的消费方编译失败，前后端名字的漂移借此在编译期被拦下（[ADR-feature-vocabulary-2026-10-17](../../../adr/adr-feature-vocabulary-2026-10-17.md)）。`./runtime` 的改动要与 AGENTS、README、`src/runtime.test.ts` 在同一提交内更新。
 
 ## 依赖
 
@@ -100,6 +112,21 @@ sequenceDiagram
     end
 ```
 
+本包的每份生成产物都来自同一个二进制写出的一份契约。图里画不出的约束：`contracts/api.json` 与 `contracts/features.json` 由同一次 `gen` 从同一个 import 闭包写出，彼此同源；每份产物有自己的生成器，再生成时须一并运行；`src/runtime.ts` 不在任何生成器的输出里。
+
+```mermaid
+flowchart LR
+    bin["示范宿主二进制的 gen 命令"] --> api["contracts/api.json"]
+    bin --> feats["contracts/features.json"]
+    api --> orval["orval 与 fixup"]
+    feats --> fgen["特性名生成器"]
+    orval --> index["src/index.ts"]
+    fgen --> features["src/features.ts"]
+    runtime["src/runtime.ts（手写）"] --> pkg["@speed/api-sdk"]
+    index --> pkg
+    features --> pkg
+```
+
 ## 核心数据结构
 
 | 概念 | 类型 | 说明 |
@@ -108,6 +135,7 @@ sequenceDiagram
 | 调用形状 | `OrvalCall` | mutator 接收的 axios 形状：`url`、`method`，按需 `headers`/`params`/`data`/`responseType`/`signal` |
 | 绑定槽 | `boundRequestFn`（模块级） | 宿主启动时经 `bindRequestFn` 绑定一次；重绑替换，最后绑定者胜 |
 | 适配器 | `forward`（`src/runtime.ts`） | 把 `OrvalCall` 映射为 `RequestOptions` 并转发；凭据为空按调用布尔量 |
+| 特性名类型 | `src/features.ts` 的导出 | `FeatureNameRegistry`、`FeatureName`、`FEATURE_NAMES`；名字集合取自 `contracts/features.json` |
 
 ## 核心算法与流程
 
@@ -118,6 +146,20 @@ sequenceDiagram
 3. 一个操作改走另一个 mutator：`authn.token.issue` 在配置里被覆写为 `speedRequestCredentialless`（见「转发的形状」的凭据为空一档）。
 4. orval 的若干行为在配置与后处理里被规避：它把每个 mutator 的 import 写得没有文件扩展名（在 nodenext 构建下报错），`web/scripts/orval-nodenext-fixup.mjs` 在每次生成后确定性地把它们改写为显式 `./runtime.js`，并覆盖按操作覆写能产出的每一个 mutator 名；一次已修好的文件（import 已带 `.js`）退出 0，因而 fixup 可自由重跑。生成的 `src/index.ts` 与 fixup 后的形状是提交进仓库的产物。
 5. DO-NOT-EDIT 头锚着生成器版本（当前 `8.17.0`），故生成器与产物之间的漂移在头的 diff 里可见。
+
+### 特性名的生成
+
+1. 输入是示范宿主的 `gen` 以 `--features` 写出的 `contracts/features.json`：可用集里的全部特性声明，按名字排序。
+2. 特性名生成器 `web/scripts/feature-names.mjs` 读它，写出 `src/features.ts`：`FeatureNameRegistry` 为每个名字登记一项，`FEATURE_NAMES` 按同一顺序列出全部名字，文件带 DO-NOT-EDIT 头。这份 `contracts/features.json` 由示范宿主写出，示范宿主的应用模块不声明特性（[starters](../design-starters.md)），它因而只含平台模块的声明，本包登记的是平台模块的特性名。
+3. 示范应用的契约再生成脚本（`starters/demo/web/package.json` 的 `api:gen`）在 `gen` 写出契约之后调用特性名生成器，`contracts/features.json` 与 `src/features.ts` 因此随同一次再生成更新。生成的 `src/features.ts` 是提交进仓库的产物。
+
+`contracts/features.json` 覆盖任何一份可能的特性文档：静态特性都在可用集声明里；经 `feature.Board` 的 `Post` 报告的名字不是报告者声明的条件特性时，`feature.board` 让启动失败（[feature](../design-feature.md)）。所以 `FeatureName` 覆盖前端可能读到的每一个特性名。
+
+### 特性名的对齐检查
+
+- **新鲜度测试。** 本包的测试比对 `src/features.ts` 与 `contracts/features.json`，不一致即失败。后端的同类测试比对已提交的 `contracts/features.json` 与二进制的声明；这条测试与后端的同类测试合起来，让后端改名、删名而前端没跟上时变红。
+- **类型断言。** 一条带 `// @ts-expect-error` 的断言确认拼错的名字（如 `'objectstore.objectz'`）不能赋给 `FeatureName`；类型若退化为 `string`，这条断言即失败。
+- 新鲜度测试与类型断言都随 `make check` 运行（[ADR-feature-vocabulary-2026-10-17](../../../adr/adr-feature-vocabulary-2026-10-17.md)）。
 
 ### 一次生成调用的转发
 
@@ -139,6 +181,8 @@ sequenceDiagram
 | 调用方取消 | 原生 `AbortError` 照原样传回（标准查询取消语义） |
 | 一个响应声明了文档却收到空 2xx | 接缝不拦；由消费方自己按其守卫拒为 `client.protocol`（见「转发的形状」） |
 | 契约里带字节的操作被经此接缝调用 | `responseType: 'blob'` 被转发，传输把 2xx 正文读成 `Blob`；二进制请求体原样送出 |
+| `src/features.ts` 与 `contracts/features.json` 不一致 | 本包的新鲜度测试失败 |
+| 前端代码写了一个不在 `FeatureName` 里的名字 | 编译失败 |
 
 本包不重试、不降级、不合成错误：瞬时重试属 `api-client`，带码的应答是重复无法挽回的确定答复。
 
@@ -152,6 +196,8 @@ sequenceDiagram
 - **新增一个平台模块的接口面**即让它的 HTTP 片段进入合并文档；重生成后其操作与钩子出现在 `.` 入口。本包不为任何单模块手写代码。
 - **新增一个按操作的 mutator 覆写**在 `web/orval.config.ts` 的 `override.operations` 里加一条，使该操作改走另一个已导出的 mutator；`src/runtime.ts` 里另加一个源码文件被禁止，缺口在工具里补。
 - **生成器升级**要同时改 `orval.config.ts` 的注释与每个调用方的命令（版本钉在一处，重生成后头里的版本随之更新）。
+- **平台模块声明一个特性**即让该模块以 `feature.Spec` 声明它；重生成后名字出现在 `./features` 入口。
+- **应用自己的特性名以模块增补并入。** 应用模块声明的特性不进平台包：应用的契约再生成写出的 `contracts/features.json` 含平台与应用两方的声明，生成器取其中不在平台包 `FEATURE_NAMES` 里的名字，在应用内写出 `declare module '@speed/api-sdk/features' { interface FeatureNameRegistry { … } }`，应用里的 `FeatureName` 因此同时含平台名与应用名，宿主与平台包读的是同一个类型。
 
 ## 实现状态
 
@@ -161,4 +207,8 @@ sequenceDiagram
 | 运行时接缝与 mutator、按操作覆写 | 已实现 | `web/packages/api-sdk/src/runtime.ts` `bindRequestFn`、`speedRequest`、`speedRequestCredentialless`、`forward`、`OrvalCall` |
 | 生成配置（输入、mutator、按操作覆写） | 已实现 | `web/orval.config.ts` |
 | nodenext 的 mutator import 后处理 | 已实现 | `web/scripts/orval-nodenext-fixup.mjs` |
-| 入口的对外面 | 已实现 | `web/packages/api-sdk/package.json` 的 `exports`（`.` 与 `./runtime`） |
+| 入口的对外面（`.`、`./runtime` 与 `./features`） | 部分实现 | `web/packages/api-sdk/package.json` 的 `exports` |
+| 特性名类型（`src/features.ts`） | 未实现 | — |
+| 特性名生成器 | 未实现 | — |
+| 特性名的新鲜度测试与类型断言 | 未实现 | — |
+| 应用特性名的模块增补 | 未实现 | — |

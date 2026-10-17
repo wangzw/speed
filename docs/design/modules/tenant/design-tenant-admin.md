@@ -23,6 +23,8 @@
 
 `tenant.admin` 不交付任何功能接口（`Provides` 为空）。它 `Requires` 名册功能 `(*tenant.Catalog)(nil)`、handler 内判定 `(*guard.Guard)(nil)` 与审计 `(*audit.Audit)(nil)`，并可选取 `log.Logger`。名册与 guard 各由唯一模块排他交付，命令的闭合不把它们拉进来，宿主在命令树上写下它们。表态是 `StateEnabled`、永不 `StateAuto`：挂不挂这面管理面是一个命令树上的决定，不是一个配置能推出的结论。HTTP 入口点与路由声明面在 `Init` 里取用而非声明——一个挂路由而没有入口点的命令是要在接线期报出的故障，而声明面的缺席是合法的：没有 gate 时路由不带声明，受守护的端把它们当未声明处理，所以挂这面路由的命令应同时点名授权模块。
 
+**本模块声明静态[特性](../../../glossary.md) `tenant.admin`。** 描述符的 `Resources` 带 `feature.Spec{Name: "tenant.admin"}`；这个特性在场，表示本进程挂出名册管理面的路由（[feature](../design-feature.md)）。`tenant.admin.endpoints` 必填、不接受空清单，挂路由而没有入口点是接线期故障，所以模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
+
 ### 路由
 
 基路径 `/tenant/admin`，下表是路由的全集（封闭集）：组、方法、路径与每条需要的权限。
@@ -81,6 +83,7 @@
 
 - 模块名 `tenant.admin`、配置键 `tenant.admin.endpoints`、管理面路由的路径与每条路由询问的权限（读 `tenant.read`、写 `tenant.manage`），以及权限常量 `tenant.read`、`tenant.manage` 与 `Problem.Type` 前缀 `urn:speed:tenant:` 及其下的码（`bad-request`、`conflict`），是本模块对宿主的接口面。改动它们是宿主可见的破坏性变更。
 - 租户视图的字段名（`id`、`alias`、`status`）与容器成形态是应答形状：宿主与前端据此读应答。
+- 特性名 `tenant.admin`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 本模块可替换、可撤掉，不改变调用方或名册的代码。
 
 ## 依赖
@@ -94,6 +97,7 @@
 | `pkg/http` | 路由挂载与问题应答（`speedhttp.Router`、`speedhttp.Fail`、`speedhttp.Problem`） |
 | `pkg/config` | 声明本模块的输入项 |
 | `pkg/core` | 模块描述符与功能取用 |
+| `pkg/feature` 根包 | 声明静态特性（`feature.Spec`）；根包只依赖标准库 |
 | `pkg/log` | 可选：记诊断 |
 
 **本模块可撤掉，不改变调用方或名册的代码。** 它 import `pkg/authz`、`pkg/audit`、`pkg/authn`、`pkg/http` 来挂一条受保护的管理面，是租户能力目录里唯一这样做的一层；名册与解析本身不因它背上这些依赖。这一形态与 `sms.admin` 相同（[design-sms](../design-sms.md)）。
@@ -209,3 +213,4 @@ sequenceDiagram
 |---|---|---|
 | 管理面 `tenant.admin`（路由、判定、审计、回绝映射） | 已实现 | `pkg/tenant/admin/admin.go` `Module`；`pkg/tenant/admin/routes.go` `routes`、`mount`；`pkg/tenant/admin/tenants.go` `handleTenantList`、`handleTenantGet`、`handleTenantCreate`、`handleTenantSetAlias`、`handleTenantSetStatus`；`pkg/tenant/admin/pipeline.go` `require`、`auditRequired`、`answer` |
 | 管理面 `tenant.admin` 的 OpenAPI 片段与 `speedhttp.Spec` 资源 | 已实现 | `pkg/tenant/admin/openapi/tenant.admin.json`；`pkg/tenant/admin/admin.go` `Module`、`defaultEndpoint`、`openAPIFragment` |
+| 静态特性 `tenant.admin` 的 `feature.Spec` 声明 | 未实现 | — |

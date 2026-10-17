@@ -155,6 +155,32 @@ graph TD
 
 箭头表示 import。根包只依赖标准库，因而一个只读语言偏好的模块 import 它不拉进任何第三方库；引擎 `pkg/i18n/catalog` 是这一能力目录里唯一用到 `golang.org/x/text` 的地方——它用 `language` 在受支持语言集中匹配、用 `feature/plural` 选一条消息的复数类别、用 `message` 与 `number` 按语言格式化数字，`i18n.http` 经 `i18n.Negotiator` 取用协商结果而不自己拉这个库。`i18n.http` 取用 `pkg/http` 的登记面在每个端挂两层中间件，并以 `(*authn.Gate)(nil)` 作为它内层中间件的 `After` 锚点，因而 import 认证的根包；`i18n.account` 经认证根包的 `Accounts` 读账户属性、并实现根包的 `Provisioner`，因而同样指向它。**认证的根包不 import `pkg/i18n`**，方向是 i18n 指向认证这一侧：需要同时读身份与语言的子包（如 `pkg/authn/login`）import `pkg/i18n`，而认证根包只依赖标准库与自己的内部包这一点不变（[authn](modules/authn/design-authn.md)、不变量 17 的同向精神）。**`pkg/http` import `pkg/i18n` 的根包**：它渲染自己写出的四类拒绝（无匹配路由的 404、方法不允许的 405、请求体超限的 413、接住 panic 的 500），把 `i18n.Localizer` 作为可选依赖取用；取用只到根包，根包只依赖标准库，因而不使入口模块的依赖预算增长（[ADR-i18n-error-rendering-2026-10-13](../adr/adr-i18n-error-rendering-2026-10-13.md)、[ADR-i18n-locale-type-2026-10-13](../adr/adr-i18n-locale-type-2026-10-13.md)）。
 
+**特性功能目录的依赖方向。** 声明特性的模块分布在多个功能目录里，图中把它们归为一个节点，不逐包罗列。
+
+```mermaid
+graph TD
+  subgraph feature["pkg/feature"]
+    froot["根包<br/>Spec、Board、名字规则"]
+    fboard["board<br/>feature.board"]
+  end
+  declarers["声明或报告特性的实现子包<br/>如 pkg/authn/admin、pkg/audit/admin、<br/>pkg/notification/delivery"]
+  core["pkg/core"]
+  config["pkg/config"]
+  http["pkg/http"]
+  authnroot["pkg/authn 根包"]
+  authzroot["pkg/authz 根包"]
+
+  declarers --> froot
+  fboard --> froot
+  fboard --> core
+  fboard --> config
+  fboard --> http
+  fboard --> authnroot
+  fboard --> authzroot
+```
+
+箭头表示 import。**根包只依赖标准库**，声明特性的模块 import 它不带进任何第三方库，认证的子包 import 它也不违反不变量 17。`feature.board` 取用 `pkg/http` 的登记面挂出特性文档的路由，经认证根包的 `Gate` 把该路由登记为可冒充，经授权根包的 `Gate` 把它登记为开放，方向是它指向这些包；`pkg/http`、认证根包与授权根包都不 import `pkg/feature`，`core` 也不 import 它（不变量 2）。`feature.board` 不被任何模块 import，声明模块只经注册表取用它交付的 `feature.Board`（[feature](modules/design-feature.md)）。
+
 ## 逻辑部署架构
 
 ```mermaid
@@ -293,6 +319,30 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 - **缓存与租户切换的逐出。** 客户端缓存以租户为键的一部分；租户切换时逐出上一个租户的缓存，不从缓存里读出不属于当前租户的数据。
 - **并发与竞态。** 离开界面时发出的请求随上下文取消，晚到的响应按发起它的上下文丢弃；并发写入以服务端能判定的方式收口，不由客户端据先后顺序猜定。
 
+### 特性与前端定制
+
+前端按本进程的装配定制自己：一张页面、一个区块或一个入口控件所依赖的后端面在不在，由服务它的模块自报为[特性](../glossary.md)，前端据此决定渲染与否（[ADR-feature-document-2026-10-17](../adr/adr-feature-document-2026-10-17.md)）。
+
+- **一个前端面在不在由装配决定时，这一存在性以特性表达。** 模块是否在本进程运行：声明模块进入启用集，它的静态特性即在场。模块内由配置或装配决定的子面，例如手机号自助、邮件渠道与认证管理面里随能力挂出的分组，声明为条件特性，由声明模块在 `Init` 中报告（不变量 18）。`feature.board` 在 `Start` 按启用集与 `AllResources` 覆盖算出本进程的[特性文档](../glossary.md)，经 `GET /features` 发布（[feature](modules/design-feature.md)）。
+- **特性文档只承载存在性。** 取值集合、渲染形状与登录前就要用的事实，归拥有该事实的模块自己的发现面；只是参数、经流程应答送达或会暴露租户、IdP、账户维度的事实不发布。同一事实只有一个发布点，判据见 [feature](modules/design-feature.md)（[ADR-feature-ownership-2026-10-17](../adr/adr-feature-ownership-2026-10-17.md)）。
+- **特性文档是进程级的。** 取值由装配决定、在 `Start` 冻结，与调用者身份无关，也不按权限过滤。租户级定制只能从进程集里做减法，接入位置见 [feature](modules/design-feature.md) 的扩展点。
+
+**匿名档边界。** 特性文档只对已认证调用者可读，网关由网关模块构造时匿名请求恒得 401。登录前的事实不经特性文档，只经拥有该事实的模块自己的、形状封闭的匿名发现面发布，例如认证的 `GET /auth/methods`（[authn-login](modules/authn/design-authn-login.md)）；一个模块的登录前事实不借别的模块的发现面发布，语言集归 i18n，不进 `/auth/methods`。一个事实进匿名发现面，须同时满足下列各条，这份清单是穷举的：
+
+- 某个登录前的前端面靠它决定怎么渲染；
+- 它已经能由一条匿名可达的路由（`Exempt` 或 `Optional` 登记的路由）探测出来，发布它不增加匿名者能得到的信息；
+- 它不带账户、租户或 IdP 维度。
+
+往一个匿名发现面里加字段，是拥有它的模块对外接口面的变更。
+
+**前端门控的分工。**
+
+- 特性文档由 auth-core 随会话提交一起取回、一起生效；取回失败是一个独立的状态，既不当作特性缺席，也不当作特性在场（[auth-core](modules/web/design-web-auth-core.md)）。
+- 只有宿主读特性态；能力 UI 包经属性或上下文组件接收特性在场的信息，不读特性态（[web](modules/web/design-web.md)）。
+- route-kit 按宿主给出的特性在场判定处理带 `requires` 的路由声明：特性缺席的页面与未登记的路径走同一个 `fallback`，导航里也不出现（[route-kit](modules/web/design-web-route-kit.md)）。
+- 判定次序是先存在性、后权限。特性缺席的面不渲染；特性在场而调用者无权限的写入控件照常渲染，授权由服务端判定。
+- 特性名在编译期对齐：宿主的 `gen` 命令写出 `contracts/features.json`，`@speed/api-sdk/features` 据它生成特性名类型，名字拼错即编译不过；运行期遇到不认识的名字一律忽略（[api-sdk](modules/web/design-web-api-sdk.md)、[ADR-feature-vocabulary-2026-10-17](../adr/adr-feature-vocabulary-2026-10-17.md)）。
+
 ## 架构不变量
 
 以下规则的违反都是可识别的，评审据其裁定。
@@ -314,6 +364,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 15. **每一处按类型收集资源的消费点自行裁定取材域，并把它写在该消费点所属模块的设计文档里。** 取材域在可用集、声明集、参与集与启用集之间选定：只校验声明而不让它生效的消费点取可用集；让声明生效的，判据是这份声明所描述之物的生命周期跟着这个二进制、跟着这次命令还是跟着这次运行，其中跟着这次命令的，按只被静态级纳入的模块是否同样携带该声明分取声明集与参与集。**减法只属于这样的消费点：这份声明所描述之物由这次运行产生或改写**：取材域之内，消解落选的模块其声明退出——那是本次装配给出的否定；只被静态级纳入的模块没有表态，不因此退出。**取可用集的消费点不做减法**：它读的是这个二进制的一份静态事实（形状，或一份与命令树无关的清单），减法会让同一个声明在一条命令下合法、在另一条下非法，而声明本身没变。未被本次命令纳入、也没有预置实例的模块由取材域决定去留，不在减法这一步表达：取声明集的消费点它不进来，取可用集的消费点它照常进来。同一种资源在不同消费点上可以有不同的取材域。`core` 不代任何消费点过滤：`Resources` 遍历全部已登记模块，它不解释资源，也就无从知道某一种该按哪个集合裁断（不变量 2）。未写明取材域的消费点，以及与所写不符的实现，都是缺陷（[ADR-module-resources-2026-09-21](../adr/adr-module-resources-2026-09-21.md)）。**宿主可以越过这一裁定**：命令树上带 `AllResources` 的静态级纳入，令所列模块的全部声明当作在册处理，消费点读到它时越过自己那个取材域。这一覆盖只对不在参与集里的静态级纳入模块生效：同时被运行级纳入的与预置了实例的都在参与集里，一律不生效；它不改写取材域，与消费点自己那份裁定并存。
 16. **凡丢失之后会使身份认定或准入校验比没有它时更宽的状态，一律放在 `pkg/db`。** 丢失只会让一次流程失败的状态才可放 `pkg/kv`，并带有界有效期；丢失只让一次计算或一次读取重做的状态只放进程内存，只作缓存、不作依据；方向无法判定的按会放宽处理，放进 `pkg/db`。本条约束的是身份认定与准入所依赖的状态——撤销标记、失败退避计数、验证码尝试计数与断言标识去重集属于它；不属于身份认定与准入的防滥用计数不在此列，放置与失败方向由各自模块的设计文档承载（[ratelimit](modules/design-ratelimit.md)）。口令表后端 `authn.static` 不接数据库，它的失败退避计数因此留在进程内，见 [design-authn-failure](modules/authn/design-authn-failure.md) 与 [design-authn-account](modules/authn/design-authn-account.md)。判据落在丢失的方向，不落在存活期的长短（[ADR-authn-state-placement-2026-10-10](../adr/adr-authn-state-placement-2026-10-10.md)）。
 17. **`pkg/authn` 的任何子包都不 import `pkg/tenant`，方向是租户指向认证。** 认证根包只依赖标准库与自己的内部包；租户的解析与准入子包 import 认证根包，不 import 认证的任何子包；授权位于准入层之上，认证不 import 授权。需要同时读身份与租户上下文的层放在租户目录，不放进认证目录（[ADR-authn-scope-2026-10-10](../adr/adr-authn-scope-2026-10-10.md)、[ADR-tenant-admission-2026-10-10](../adr/adr-tenant-admission-2026-10-10.md)）。
+18. **模块声明的[静态特性](../glossary.md)，必须是它进入启用集、且本进程有路由器时无条件成立的面。** 在此之上成立与否仍取决于配置或装配的面，一律声明为[条件特性](../glossary.md)，并在 `Init` 中、在决定它是否成立的同一处判定里经 `feature.Board` 的 `Post` 报告：面是路由的，在挂载该路由的分支里报告；面是路由内一个分支的，在与该分支同源的判定处报告；面由不挂路由的模块兑现的，在该模块据以决定能否兑现的判定处报告。例外：宿主经带 `AllResources` 的静态级纳入令其声明在册的静态特性，声明模块不在本进程运行时同样计为在场（不变量 15）（[feature](modules/design-feature.md)、[ADR-feature-document-2026-10-17](../adr/adr-feature-document-2026-10-17.md)、[ADR-feature-ownership-2026-10-17](../adr/adr-feature-ownership-2026-10-17.md)）。
 
 ## 实现状态
 
@@ -324,22 +375,23 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [log](modules/design-log.md) | 已实现 |
 | [db](modules/design-db.md) | 已实现 |
 | [http](modules/http/design-http.md) | 已实现 |
-| [authn](modules/authn/design-authn.md) | 已实现 |
-| [tenant](modules/tenant/design-tenant.md) | 已实现 |
-| [authz](modules/design-authz.md) | 已实现 |
+| [authn](modules/authn/design-authn.md) | 部分实现 |
+| [tenant](modules/tenant/design-tenant.md) | 部分实现 |
+| [authz](modules/design-authz.md) | 部分实现 |
 | [kv](modules/design-kv.md) | 已实现 |
-| [sms](modules/design-sms.md) | 已实现 |
+| [sms](modules/design-sms.md) | 部分实现 |
 | [mail](modules/design-mail.md) | 已实现 |
 | [event](modules/event/design-event.md) | 已实现 |
-| [audit](modules/audit/design-audit.md) | 已实现 |
-| [settings](modules/settings/design-settings.md) | 已实现 |
+| [audit](modules/audit/design-audit.md) | 部分实现 |
+| [settings](modules/settings/design-settings.md) | 部分实现 |
 | [ratelimit](modules/design-ratelimit.md) | 已实现 |
 | [observability](modules/design-observability.md) | 已实现 |
 | [i18n](modules/design-i18n.md) | 已实现 |
 | [jobs](modules/jobs/design-jobs.md) | 已实现 |
-| [notification](modules/notification/design-notification.md) | 已实现 |
-| [objectstore](modules/design-objectstore.md) | 已实现 |
+| [notification](modules/notification/design-notification.md) | 部分实现 |
+| [objectstore](modules/design-objectstore.md) | 部分实现 |
+| [feature](modules/design-feature.md) | 未实现 |
 | [ops](modules/design-ops.md) | 已实现 |
 | [web](modules/web/design-web.md) | 部分实现 |
 | [webui](modules/design-webui.md) | 已实现 |
-| [starters](modules/design-starters.md) | 已实现 |
+| [starters](modules/design-starters.md) | 部分实现 |

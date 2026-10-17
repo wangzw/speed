@@ -15,4 +15,4 @@
 | 子模块 | 状态 |
 |---|---|
 | [tenant-admission](design-tenant-admission.md) | 已实现 |
-| [tenant-admin](design-tenant-admin.md) | 已实现 |
+| [tenant-admin](design-tenant-admin.md) | 部分实现 |

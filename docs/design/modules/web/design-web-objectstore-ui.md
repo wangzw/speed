@@ -12,6 +12,8 @@
 
 页面由宿主装配：本包不 import 路由、不持路径、不导航。对象页挂在解析租户的端上，页面从 `@speed/auth-core` 的租户上下文读当前租户，把它作为每个读的查询键最外段，并据此启用读。
 
+**宿主挂载对象页的路由声明带 `requires: ['objectstore.objects']`。** 特性 `objectstore.objects` 由 `objectstore.metadata` 声明（[objectstore](../design-objectstore.md)）；该特性缺席时，宿主的路由层把对象页的路径与未登记路径同样渲染为 404，导航里也不出现该页（[route-kit](design-web-route-kit.md)）。本包不读特性态，也不另行处理特性缺席。
+
 ### 非职责
 
 - **不做路由、导航与路径。** 宿主把它挂在自选的路由上（示例宿主挂在 `/objects` 并加一条导航标签）；本包不知道任何路径。
@@ -104,7 +106,7 @@ sequenceDiagram
 
 ### 下载
 
-「下载」以 `objectstoreMetadataGetObjectContent(id)` 取回 Blob，交 `saveBlob`（`src/internal/download.ts`）经一个临时对象 URL 上的锚点另存，文件名取 `id` 加一个由 `mime` 推出的扩展名（`extensionForMime`）。对象 URL API 是特性探测的：无 `createObjectURL` 的环境（测试 DOM）仍得到锚点，运行不抛。
+「下载」以 `objectstoreMetadataGetObjectContent(id)` 取回 Blob，交 `saveBlob`（`src/internal/download.ts`）经一个临时对象 URL 上的锚点另存，文件名取 `id` 加一个由 `mime` 推出的扩展名（`extensionForMime`）。对象 URL API 按其是否存在探测：无 `createObjectURL` 的环境（测试 DOM）仍得到锚点，运行不抛。
 
 ## 错误与失败语义
 
@@ -132,7 +134,7 @@ sequenceDiagram
 
 - **页面大小的提示。** `ObjectsPageProps.pageSize` 是列表请求的页大小提示，模块另施自己的缺省与上限。
 - **措辞改写。** 宿主在启动处向 `OBJECTSTORE_UI_NAMESPACE` 注册自己的一对同键 bundle，`objectstoreUiResources` 只是发布的默认。
-- **挂点。** 宿主把 `ObjectsPage` 挂在自选的路由上、加自己的导航标签；本包不声明路由。
+- **挂点。** 宿主把 `ObjectsPage` 挂在自选的路由上、加自己的导航标签与 `requires`；本包不声明路由。
 
 ## 实现状态
 

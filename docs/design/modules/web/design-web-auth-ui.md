@@ -22,7 +22,7 @@
 - **不拥有邀请状态机，不做登录门禁，不引用生成契约的类型。** 邀请的读取与受理由宿主交给 `AcceptInvitationScreen` 的 `InvitationOperations` 执行（生成操作在宿主侧绑定）；本包不发邀请的 HTTP、不把 `@speed/api-sdk` 的类型带上公开面，也不判定令牌有效性——有效性由服务端在应答里给出（无此邀请 404、已失效 409）。接受是公开的、令牌即凭据：成员关系落到**被邀请地址**的账户上，而非登录账号。宿主可在受理面前渲染它自己的登录面（先登录或注册再受理是宿主的组合），本包不内建这道门禁，那道门禁也不约束成员关系落到哪个账户。
 - **不决定登录之后。** 登录成功之后导航到哪、是否刷新缓存、是否重新取权限，是宿主的；本包只触发一次回调。
 - **不内建注册面，但内建注册入口。** 账户没有独立的注册端点：账户在登录流程的账户解析阶段按注册设置创建，或经邀请受理、管理员建户产生（[authn-account](../authn/design-authn-account.md)、[authn-invite](../authn/design-authn-invite.md)）。一次「注册」因此是一次登录流程在当前部署下开户的结果，本包不内建独立表单；`SignInScreen` 在部署允许首登开户（`discovery.signup.enabled` 且至少一个可见方法带 `opens_account`）时呈现一个「注册」入口，起的是同一条流程，开户仍由服务端完成。
-- **不消费 auth-core 的钩子，不读存储。** 组件读到的会话状态只有它驱动的那些操作，其余状态经宿主的钩子观察。一个自己订阅会话的组件必须已挂在宿主的 `attachSession` 之下，故这一层留在宿主。**读取发现文档是一个例外**：`SignInScreen` 经它持有的 `session` 属性上的 `listMethods` 与 `discoverSso` 操作读取部署的登录方式与企业提供方——那是会话操作，不是 auth-core 的钩子，而组件本就在驱动这个会话；这条例外不放松「不消费钩子、不读存储」。
+- **不消费 auth-core 的钩子，不读存储。** 组件读到的会话状态只有它驱动的那些操作，其余状态经宿主的钩子观察。一个自己订阅会话的组件必须已挂在宿主的 `attachSession` 之下，故这一层留在宿主。**读取发现文档是一个例外**：`SignInScreen` 经它持有的 `session` 属性上的 `listMethods` 与 `discoverSso` 操作读取部署的登录方式与企业提供方，给了 `absent` 的 `SocialCallbackHandler` 经 `listMethods` 读取部署有没有 redirect 类与 enterprise 类方法——那是会话操作，不是 auth-core 的钩子，而组件本就在驱动这个会话；这条例外不放松「不消费钩子、不读存储」。
 - **不认识路由与权限。** 本包不匹配 URL、不判定权限、不做路由守卫；回调返给宿主，宿主经自己的路由与权限组合处置。
 - **不是运维面。** 平台员工的管理面与登录面无交集，那些面归 [console-ui](design-web-console-ui.md)。
 - **不绑定一种文案。** 内建文案取自命名空间；宿主改文案靠重新注册整个命名空间，不靠在组件里改字。
@@ -59,6 +59,13 @@ interface PasswordSignInFormProps {
   readonly onSignedIn?: () => void
 }
 
+// SocialCallbackHandler：在宿主的回调路由上读回流程并续接。
+interface SocialCallbackHandlerProps {
+  readonly session: AuthSession
+  readonly onSignedIn?: () => void
+  readonly absent?: ReactNode // 本部署没有 redirect 与 enterprise 方法时渲染；省略即不读发现
+}
+
 // AcceptInvitationScreen：读取一张邀请并受理它。两个邀请操作由宿主经
 // `invitations` 绑定，故本包不含 HTTP、公开面不引用生成契约的类型。
 interface AcceptInvitationScreenProps {
@@ -78,7 +85,7 @@ interface InvitationOperations {
 
 `SignInScreen` 的 `discovery` 缺省时经 `session.listMethods()` 读一次部署的发现文档（`useSignInDiscovery`）；给出时以注入的文档为准，不发起读取（SSR、测试）。`mode` 是纯呈现开关：注册入口的可见性由 `discovery.signup.enabled` 与至少一个可见方法带 `opens_account` 决定，起的是同一条登录流程。未知 `kind` 不渲染也不崩；描述符给出的 `label` 优先作为方法显示名，缺失时按方法名查 `auth-ui` 命名空间，再退回方法名本身。
 
-`SocialSignInSection` 的回调是 `onAuthorizeUrl?`，把某个渠道开始流程后得到的授权地址报给宿主，由宿主决定它是一次跳转、一个弹窗还是一个新标签。`SocialCallbackHandler` 在回调路由上读回流程，登录落地（会话已由服务端建于回跳应答）后触发一次 `onSignedIn`。
+`SocialSignInSection` 的回调是 `onAuthorizeUrl?`，把某个渠道开始流程后得到的授权地址报给宿主，由宿主决定它是一次跳转、一个弹窗还是一个新标签。`SocialCallbackHandler` 在回调路由上读回流程，登录落地（会话已由服务端建于回跳应答）后触发一次 `onSignedIn`。它的可选属性 `absent` 是本部署不提供回调落点时宿主要渲染的内容；只在宿主给了 `absent` 时，处理器才读发现文档，规则见[本部署不提供回调落点时](#本部署不提供回调落点时)。
 
 ### 会话契约的每一片都由一个组件驱动
 
@@ -91,7 +98,7 @@ interface InvitationOperations {
 | `SocialSignInSection` | `session.startFlow`（redirect 方法） |
 | 企业入口 | `session.discoverSso`、`session.startFlow`（enterprise 方法） |
 | 通行密钥入口 | `session.startFlow`（webauthn 方法）、`session.answerFlow` |
-| `SocialCallbackHandler` | `session.readFlow`（回跳续接） |
+| `SocialCallbackHandler` | `session.readFlow`（回跳续接）；给了 `absent` 时另有 `session.listMethods`（发现） |
 | `SignOutButton` | `session.logout` |
 | `SessionEndedScreen` | 无 |
 
@@ -187,7 +194,18 @@ sequenceDiagram
 
 ### 社交登录与回调
 
-`SocialSignInSection` 对某个渠道调 `session.startFlow`；开始应答的 `redirect` 步给出授权地址，经 `onAuthorizeUrl` 交给宿主，宿主把提供方的重定向引到该渠道的回调路由，在那里渲染 `SocialCallbackHandler`。**提供方自己的 `redirect_uri` 由服务端按部署的公开地址拼出，客户端不传**；`SocialProviderConfig` 的回调地址是宿主自己的回调路由，作为流程的 `return_to` 发出，使提供方的一次往返最终落回它。回跳以 303 落回 `return_to` 时流程停在就绪步（令牌不能放进回跳 URL）；处理器在挂载时调 `session.readFlow` 读回流程，若应答为 `next.kind = complete` 则以 `step: 'complete'` 取走令牌、登录落地，触发一次 `onSignedIn`；若流程仍停在一步（如需第二因素或登记因素）则渲染该步续接。
+`SocialSignInSection` 对某个渠道调 `session.startFlow`；开始应答的 `redirect` 步给出授权地址，经 `onAuthorizeUrl` 交给宿主，宿主把提供方的重定向引到该渠道的回调路由，在那里渲染 `SocialCallbackHandler`。**提供方自己的 `redirect_uri` 由服务端按部署的公开地址拼出，客户端不传**；`SocialProviderConfig` 的回调地址是宿主自己的回调路由，作为流程的 `return_to` 发出，使提供方的一次往返最终落回它。回跳以 303 落回 `return_to` 时流程停在就绪步（令牌不能放进回跳 URL）；处理器在挂载时调 `session.readFlow` 读回流程，若应答为 `next.kind = complete` 则以 `step: 'complete'` 取走令牌、登录落地，触发一次 `onSignedIn`；若流程仍停在一步（如需第二因素或登记因素）则渲染该步续接。挂载时会话已是已认证的，是一次登录完成之后重入回调路由：处理器不读流程，再触发一次 `onSignedIn`，由宿主把访客引向别处。
+
+### 本部署不提供回调落点时
+
+回调路由先于会话存在：宿主在任何会话门之前渲染处理器，匿名访客带着在途流程到达时照常完成登录。部署没有 redirect 类与 enterprise 类方法时，本部署上没有任何流程会回跳到这条路由，`absent` 让宿主在此给出与未登记路径相同的 404（[ADR-web-route-seam-2026-10-17](../../../adr/adr-web-route-seam-2026-10-17.md)）。是否提供回调落点是登录前的事实，取自发现文档，不经特性文档。
+
+宿主给了 `absent` 时：
+
+1. **会话已是已认证（重入）**：先读 `session.listMethods()`。没有 redirect 类与 enterprise 类方法，渲染 `absent`；有，触发 `onSignedIn`；发现读取失败，触发 `onSignedIn`。
+2. **会话不是已认证**：先读在途流程。读到即照常续接，不读发现文档——在途流程本身表明本部署有流程回跳到这条路由。`session.readFlow()` 返回 `null`（它对任何 401 都返回 `null`）时读 `session.listMethods()`：没有 redirect 类与 enterprise 类方法，渲染 `absent`；有，渲染失败横幅与重试按钮；发现读取失败，渲染失败横幅与重试按钮。这一读不是安全门：匿名者本就能直接读 `GET /auth/methods`。
+
+宿主没给 `absent` 时，处理器的行为与「社交登录与回调」所述逐项相同，不读发现文档。
 
 ### 企业登录
 
@@ -215,6 +233,7 @@ sequenceDiagram
 | 短信码步骤的验证码已用 | 用过的码渲染 `smsSignIn.codeUsed`，清空字段，对同一码的再提交在本地被拒 |
 | 社交开始被拒（方法关闭、账户不可用） | 一条横幅渲染应答的错误码文本 |
 | 回跳路由上读不到流程 | 一条横幅加一个重试按钮，重跑一次 `session.readFlow` |
+| 回跳路由上读不到流程或重入，宿主给了 `absent`，且发现文档里没有 redirect 类与 enterprise 类方法 | 渲染 `absent`，不渲染横幅，不触发 `onSignedIn` |
 | 邀请令牌不指向任何邀请（404） | 受理面渲染「邀请不存在」的标题与说明 |
 | 邀请已过期、已撤销或已被接受（409） | 受理面渲染「邀请已失效」的标题与说明 |
 | 邀请读取的其它失败 | 一条 `role="alert"` 横幅渲染应答的错误码文本，加一个重试按钮（重跑一次读取） |
@@ -240,3 +259,4 @@ sequenceDiagram
 | 会话面 | 已实现 | `web/packages/auth-ui/src/SignOutButton.tsx`；`web/packages/auth-ui/src/SessionEndedScreen.tsx` |
 | 邀请受理面 | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen` |
 | 命名空间资源 | 已实现 | `web/packages/auth-ui/src/resources.ts` |
+| 本部署不提供回调落点时渲染 `absent` | 未实现 | — |

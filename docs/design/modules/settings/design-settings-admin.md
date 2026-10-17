@@ -23,6 +23,8 @@
 
 `settings.admin` 不交付任何功能接口（`Provides` 为空）。它 `Requires` 设置功能 `(*settings.Store)(nil)`、handler 内判定 `(*guard.Guard)(nil)` 与审计 `(*audit.Audit)(nil)`，并可选取 `log.Logger`。设置与 guard 各由唯一模块排他交付，命令的闭合不把它们拉进来，宿主在命令树上写下它们。表态是 `StateEnabled`、永不 `StateAuto`：挂不挂这面管理面是一个命令树上的决定，不是一个配置能推出的结论。HTTP 入口点与路由声明面在 `Init` 里取用而非声明——一个挂路由而没有入口点的命令是要在接线期报出的故障，而声明面的缺席是合法的：没有 gate 时路由不带声明，受守护的端把它们当未声明处理，所以挂这面路由的命令应同时点名授权模块。
 
+**本模块声明静态[特性](../../../glossary.md) `settings.admin`。** 描述符的 `Resources` 带 `feature.Spec{Name: "settings.admin"}`；这个特性在场，表示本进程挂出设置管理面的路由（[feature](../design-feature.md)）。`settings.admin.endpoints` 必填、不接受空清单，挂路由而没有入口点是接线期故障，所以模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
+
 ### 路由
 
 基路径 `/settings/admin`，下表是路由的全集（封闭集）：组、方法、路径与每条需要的权限。权限的域随层变，见「访问控制」。
@@ -51,6 +53,8 @@
 **`:namespace` 与 `:key` 拼成全键 `<namespace>.<key>`，全键必须已声明。** `:namespace` 点名声明该项的命名空间——`Declared` 报出的 `Module`，也就是键的前缀段（如 `deals`、`authn.session`）；`:key` 点名该命名空间下的键的其余部分（可以带点）。一次写或删拼出的全键不在 `Declared()` 里即 404。列表路由取 `:namespace` 那一组：键的前缀段等于 `:namespace` 的声明项。
 
 **列表路由把层选作用到整份声明集上。** `GET /settings` 列出 `Declared()` 的全部声明项，`GET /settings/:namespace` 列出其中落在 `:namespace` 的那一组；列表交出的是该层解析到的值，`GET /settings/:namespace` 不匹配任何声明项即 404。
+
+**列表不按本进程的装配收窄。** `Declared()` 的声明集取可用集（[design-settings](design-settings.md)），本进程未运行的模块声明的键照常列出、照常可写：一个键可以由同一部署里的另一个进程读取。特性 `settings.admin` 只回答这面管理面在不在，不回答某个键所属的模块在不在本进程运行。
 
 ### 访问控制
 
@@ -84,6 +88,7 @@
 
 - 模块名 `settings.admin`、配置键 `settings.admin.endpoints`、管理面路由的路径与查询串的键（`layer`、`tenant` 及其取值）、每条路由询问的权限（读 `settings.read`、写 `settings.write`）与域（平台域与租户域），以及 `Problem.Type` 前缀 `urn:speed:settings:` 及其下的码（`bad-request`、`invalid-value`），是本模块对宿主的接口面。改动它们是宿主可见的破坏性变更。
 - 设置项视图的字段名（`key`、`namespace`、`type`、`description`、`domain`、`sensitive`、`default`、`written`、`has_row`、`value`）与敏感项遮蔽的规则是应答形状：宿主与前端据此读应答。`has_row` 报所选层是否真的有一行，使「默认」与「已覆盖」不靠文本值推断（空串值是一行，无行则不是）。
+- 特性名 `settings.admin`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 本模块可替换、可撤掉，不改变调用方或设置模块的代码。
 
 ## 依赖
@@ -97,6 +102,7 @@
 | `pkg/http` | 路由挂载与问题应答（`speedhttp.Router`、`speedhttp.Endpoint`、`speedhttp.Fail`、`speedhttp.Problem`） |
 | `pkg/config` | 声明本模块的输入项 |
 | `pkg/core` | 模块描述符与功能取用 |
+| `pkg/feature` 根包 | 声明静态特性（`feature.Spec`）；根包只依赖标准库 |
 | `pkg/log` | 可选：记诊断 |
 
 **本模块不 import `pkg/tenant` 与 `pkg/db`。** 它复述租户标识的取值域而不是 import 它，也不触存储——设置的表由设置模块拥有，本模块每个动作都是一次 `settings.Store` 调用。这一形态与 `sms.admin`、`tenant.admin` 相同（[design-sms](../design-sms.md)、[design-tenant-admin](../tenant/design-tenant-admin.md)）。
@@ -225,3 +231,4 @@ sequenceDiagram
 |---|---|---|
 | 管理面 `settings.admin`（路由、按层判定、审计、敏感遮蔽、回绝映射） | 已实现 | `pkg/settings/admin/admin.go` `Module`；`pkg/settings/admin/routes.go` `routes`、`mount`；`pkg/settings/admin/handlers.go` `handleList`、`handleListNamespace`、`handleSet`、`handleRemove`；`pkg/settings/admin/pipeline.go` `selectLayer`、`require`、`auditRequired`；`pkg/settings/admin/views.go` `maskedValue`、`viewOf` |
 | 管理面 `settings.admin` 的 OpenAPI 片段与 `speedhttp.Spec` 资源 | 已实现 | `pkg/settings/admin/openapi/settings.admin.json`；`pkg/settings/admin/admin.go` `Module`、`defaultEndpoint`、`openAPIFragment` |
+| 静态特性 `settings.admin` 的 `feature.Spec` 声明 | 未实现 | — |

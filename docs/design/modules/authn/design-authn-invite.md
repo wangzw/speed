@@ -138,18 +138,25 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 
 **判定接缝由本模块取用，不由 `authn.admin` 代挂。** 邀请有独立状态机与自己的表，路由因此挂在本模块；授权依据与成员关系的写一致，所以复用同一个动作，不新增动作常量。
 
+### 声明的特性
+
+**`authn.invite` 以[静态特性](../../../glossary.md) `authn.invitations` 声明邀请面。** 描述符的 `Resources` 带 `feature.Spec{Name: "authn.invitations"}`（[feature](../design-feature.md)）。这个特性在场，表示本进程挂出「路由」一节的全部路由：管理面的签发、列表与撤销，以及接受面的读取与接受。路由无条件挂出：`mount.Mounter` 是必需依赖，模块进入启用集即挂出它们，挂与不挂不另取决于配置或装配，所以声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。邀请的存活期 `authn.invite.ttl` 是参数，不发布。
+
+特性文档只对已认证调用者可读；接受面路由是 `Public`，但邀请是否装配不经任何匿名发现面发布。
+
 ### 宿主可见面
 
 - **模块名**：`authn.invite`。宿主的命令树点模块名纳入，配置命名空间取同一取值。
 - **配置输入项**：`authn.invite.ttl`（时长，缺省取声明的邀请存活期，取主配置源）。键的名字、取值域与缺省在 [design-authn-config](design-authn-config.md)。
 - **路由**：`B/admin/tenants/:tenant/invitations` 下的签发、列表与撤销，以及 `B/invitations/:token` 下的读取与接受；询问的动作 `authn.membership.manage`。
 - **令牌前缀**：接受令牌以 `spd_inv_` 起头，供日志脱敏识别（对照 `spd_rt_`、`spd_cs_` 两条既有前缀，见 [design-authn-token](design-authn-token.md)）。
+- **特性名**：`authn.invitations`，静态特性（见「声明的特性」）。
 
 ### 对外接口面
 
 - `Invites` 的方法集，`Invitation`、`InvitationStatus`、`Issued`、`IssueInvite`、`AcceptInvite` 的字段与方法集，以及本模块的全部哨兵，属于对外接口面。
 - 路由路径与每条管理面路由询问的动作属于对外接口面；`InvitationStatus` 的存量列与「已过期由时钟推出、不落列」同属接口面。
-- 成员行的 `Source = invite`、令牌前缀 `spd_inv_` 与配置键 `authn.invite.ttl` 是宿主可见面的一部分，改名即破坏性变更。
+- 成员行的 `Source = invite`、令牌前缀 `spd_inv_`、配置键 `authn.invite.ttl` 与特性名 `authn.invitations` 是宿主可见面的一部分，改名即破坏性变更；前端经生成的特性名类型引用特性名，撤去它或改变它所指的面同样是破坏性变更。
 
 ### 哨兵错误
 
@@ -182,8 +189,9 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 | `Throttle`（根包声明，由 `authn.account` 交付） | 接受面的来源层减负；可选 |
 | `event.Bus`、`outbox.Outbox` | 可选：邀请生命周期事件 |
 | `log.Logger` | 可选：诊断 |
+| `pkg/feature`（根包） | 以 `feature.Spec` 声明静态特性 `authn.invitations`；不取用 `feature.Board` |
 
-**方向核对。** `authn.invite` 位于认证功能目录内，依赖只指向 `pkg/core`、`pkg/audit` 的接口包与认证功能目录的根包与能力接口，不 import `pkg/tenant`、授权功能目录或宿主，也不 import 认证功能目录里别的实现子包。管理面判定经根包的 `Decider`，与 `authn.admin` 同一条接缝（[design-authn-admin](design-authn-admin.md)）。
+**方向核对。** `authn.invite` 位于认证功能目录内，不 import `pkg/tenant`、授权功能目录、宿主与 `pkg/feature/board`，也不 import 认证功能目录里别的实现子包。`pkg/feature` 根包只依赖标准库，为声明特性 import 它不扩大本模块的闭包（[feature](../design-feature.md)）。管理面判定经根包的 `Decider`，与 `authn.admin` 同一条接缝（[design-authn-admin](design-authn-admin.md)）。
 
 ## UML 图
 
@@ -370,3 +378,4 @@ CREATE UNIQUE INDEX authn_invitations_one_pending ON authn_invitations (tenant_i
 | 接受的账户创建与来源为 `invite` 的成员行 | 已实现 | `pkg/authn/invite/accept.go` `createAccount`、`putMembership`；`pkg/authn/invite/token.go` `SourceInvite` |
 | 地址验证渠道 `invite`（`pkg/authn/internal/model` `Verification` 的扩展） | 已实现 | `pkg/authn/internal/model/directory.go` `VerifiedViaInvite`、`Verification.Valid` |
 | 本模块提供的 API 的 OpenAPI 片段 | 已实现 | `pkg/authn/invite/openapi/invite.json`；`pkg/authn/invite/invite.go` `Module`、`defaultEndpoint`、`inviteFragment` |
+| 静态特性 `authn.invitations` 的声明 | 未实现 | — |

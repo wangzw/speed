@@ -30,6 +30,8 @@
 
 **端名清单 `notification.inbox.endpoints` 在路由能力在场时必填。** `Init` 见到 `(*http.Router)(nil)` 在场而这一项为空即启动失败，以完整路径 `notification.inbox.endpoints` 点名这一项；`(*http.Router)(nil)` 缺席时本模块不挂路由，这一项不被读取，空清单合法。
 
+**本模块声明静态[特性](../../../glossary.md) `notification.inbox`。** 描述符的 `Resources` 带 `feature.Spec{Name: "notification.inbox"}`；这个特性在场，表示本进程挂出「路由」一节的收件箱路由（[feature](../design-feature.md)）。路由能力在场时端名清单必填，所以模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
+
 ### 交付的功能
 
 ```go
@@ -86,6 +88,7 @@ type Inbox interface {
 
 - `Inbox` 的方法集，`ListQuery`、`MessagePage` 与根包的 `Message` 视图的字段名，以及哨兵 `ErrMessageNotFound`、`ErrInvalidRequest`，是本模块对调用方的接口面。加方法、改签名或改字段名对取用 `Inbox` 的调用方是不兼容变更。
 - **宿主可见面**：模块名 `notification.inbox`，配置键 `notification.inbox.endpoints`，路由的路径，事件类型名常量 `EventInboxCreated`（`"notification.inbox.created"`）与它的载荷字段，以及 `Problem.Type` 前缀 `urn:speed:notification:` 及其下的码（`bad-request`、`message-not-found`）。改动它们是宿主可见的破坏性变更。
+- 特性名 `notification.inbox`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 
 ## 依赖
 
@@ -98,6 +101,7 @@ type Inbox interface {
 | `pkg/http` | 可选：把自己挂到入口模块的登记面上 |
 | `pkg/event` | 可选：发布 `notification.inbox.created` |
 | `pkg/authn` | 从请求上下文取调用方身份，作为读与标记已读的收件人 |
+| `pkg/feature` 根包 | 声明静态特性（`feature.Spec`）；根包只依赖标准库 |
 | `pkg/log` | 可选：记诊断 |
 | `pkg/i18n` | 可选：`i18n.Localizer` 按请求的协商语言渲染本模块写出的 `Problem` 的标题与正文；缺席时用本模块内嵌的英文文案 |
 
@@ -238,3 +242,4 @@ classDiagram
 | 事件发布 | 已实现 | `pkg/notification/inbox/inbox.go` `EventInboxCreated`、`Created`；`pkg/notification/inbox/store.go` `publishCreated` |
 | 列出、计数与标记已读 | 已实现 | `pkg/notification/inbox/store.go` `List`、`UnreadCount`、`MarkRead`、`ReadAll` |
 | OpenAPI 片段声明 | 已实现 | `pkg/notification/inbox/openapi/inbox.json`；`pkg/notification/inbox/inbox.go` `inboxFragment`、`defaultEndpoint`、`Module` |
+| 静态特性 `notification.inbox` 的 `feature.Spec` 声明 | 未实现 | — |

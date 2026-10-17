@@ -177,6 +177,12 @@ const (
 
 **回绝映射是封闭的、fail-closed 的。** 400（`Problem.Type` 为 `urn:speed:objectstore:bad-request`）：`ErrInvalidRequest`——声明形状不可读，或一次上传的字节数与声明不符。403：路由声明的权限判定未通过，由 guard 写出。404（`urn:speed:objectstore:not-found`）：`ErrObjectNotFound`——未知 id、他人租户、已删除三合同形，不做泄露存在性的区分；**已删除的行在除 `Delete` 之外的每个操作上都答这个码**，它已经不在了、不是状态冲突，而 `Delete` 对已删除的行幂等成功。409（`urn:speed:objectstore:conflict`）：`ErrStateConflict`。503（无 `Problem.Type`）：`ErrStoreUnavailable`、`ErrContentMissing` 与其余失败，成因只进日志。`Title` 与 `Detail` 是渲染好的成品文本，由本模块从自己的消息目录渲染。
 
+### 特性声明
+
+`objectstore.metadata` 以资源 `feature.Spec{Name: "objectstore.objects"}` 声明静态[特性](../../glossary.md) `objectstore.objects`：它在场，表示本进程挂出「路由全表」里的对象路由（[feature](design-feature.md)）。路由能力在场时 `objectstore.metadata.endpoints` 必填、空清单即启动失败，所以模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../architecture.md#架构不变量)）。纳入的是哪一个字节后端不影响这个特性：`metadata` 对 `Store` 的依赖是必需的，没有后端的装配不启动。
+
+上传窗口、对象有效期与清扫间隔是参数，不经特性文档发布；超出上传窗口的上传由服务端逐次以 `ErrStateConflict` 拒绝（[ADR-feature-ownership-2026-10-17](../../adr/adr-feature-ownership-2026-10-17.md)）。
+
 ### 宿主可见面
 
 以下是宿主写进配置文件、或在命令树上点名的面。
@@ -193,6 +199,7 @@ const (
 - `Object` 的字段语义：`ID` 是对象标识、`Key` 是内部键、`State` 取 `pending`／`uploaded`／`completed`／`deleted` 之一、`Size` 与 `Checksum` 是上传后记录的实际值、`MIME` 是内容类型、`ExpiresAt` 可空。
 - **内部键从不经 API 暴露。** `Object.Key` 是模块的内部字段（导出，但不进任何对外面）：它不进任何 HTTP 视图，不进错误文本，日志里也不记它（日志只记对象标识）。改键的语法是内部变更，不影响调用方。`Store` 的 `key` 参数同样是内部键，接口不规定它的语法，实现只按自身后端把它映射到位。
 - **宿主可见面**：模块名 `objectstore.metadata`、`objectstore.fs`、`objectstore.s3`；配置键 `objectstore.metadata.{endpoints,upload-window,object-ttl,sweep-interval}`、`objectstore.fs.root`、`objectstore.s3.{endpoint,region,bucket,access-key,secret-key,use-path-style}`；路由的路径与每条路由的权限；权限常量 `objectstore.object.read`、`objectstore.object.write`；`Problem.Type` 前缀 `urn:speed:objectstore:` 及其下的码（`bad-request`、`not-found`、`conflict`）；审计动作的类型名。改动它们是宿主可见的破坏性变更。
+- 特性名 `objectstore.objects`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 单个 `Store` 实现、`metadata` 模块各自可替换、可撤掉，不改变调用方的代码。
 
 ### 哨兵错误
@@ -220,9 +227,10 @@ const (
 | `pkg/internal/literal` | 构造并登记字面量匹配器（各后端的凭据） |
 | `pkg/authz` | `objectstore.metadata`：`PermissionSpec`、`TranslationSpec` 与路由声明面 |
 | `pkg/http` | `objectstore.metadata`：入口模块的登记面，挂路由 |
+| `pkg/feature` 根包 | `objectstore.metadata`：声明静态特性（`feature.Spec`）；根包只依赖标准库 |
 | S3 SDK | 只被 `pkg/objectstore/s3` import |
 
-**根包依赖 `pkg/core`、`pkg/config`、`pkg/internal/literal` 与可选的 `pkg/log`，不 import 任何对象存储 SDK。** 工厂与公共类型都在根包，它经 `pkg/internal/literal` 登记字面量脱敏匹配器、取可选 `pkg/log` 的 logger（照 `pkg/sms/module.go` 的先例）；对象存储 SDK 只落在 `s3` 实现子包。方向是 `metadata` import `pkg/db`、`pkg/tenant`、`pkg/authz`、`pkg/http` 的接口包，`fs` 只 import 标准库与根包，`s3` import 根包与它自己的 SDK；根包不 import `metadata`、`fs`、`s3` 中的任何一个。
+**根包依赖 `pkg/core`、`pkg/config`、`pkg/internal/literal` 与可选的 `pkg/log`，不 import 任何对象存储 SDK。** 工厂与公共类型都在根包，它经 `pkg/internal/literal` 登记字面量脱敏匹配器、取可选 `pkg/log` 的 logger（照 `pkg/sms/module.go` 的先例）；对象存储 SDK 只落在 `s3` 实现子包。方向是 `metadata` import `pkg/db`、`pkg/tenant`、`pkg/authz`、`pkg/http`、`pkg/feature` 的接口包，`fs` 只 import 标准库与根包，`s3` import 根包与它自己的 SDK；根包不 import `metadata`、`fs`、`s3` 中的任何一个。
 
 **`s3` 的 SDK 落在绑定它的实现子包。** 根包与 `fs` 的传递闭包不含任何对象存储 SDK，也不含 `pkg/db`、`pkg/authz` 这类上层功能目录；这条由 `pkg/objectstore/deps_test.go` 的守卫守住（照 `pkg/sms/deps_test.go` 的形态），并守住 `fs` 不引入 SDK。
 
@@ -440,3 +448,4 @@ type Spec[C any] struct {
 | 本地目录后端 `objectstore.fs` | 已实现 | `pkg/objectstore/fs/fs.go` `Module`、`ModuleName`、`Put`、`Open`、`Delete`；`pkg/objectstore/fs/keys.go` `relativePath`、`splitKey`；`pkg/objectstore/fs/config.go` `items` |
 | S3 兼容后端 `objectstore.s3` | 已实现 | `pkg/objectstore/s3/s3.go` `Module`、`ModuleName`、`Put`、`Open`、`Delete`；`pkg/objectstore/s3/config.go` `items` |
 | 元数据面的 OpenAPI 片段声明 | 已实现 | `pkg/objectstore/metadata/openapi/metadata.json`；`pkg/objectstore/metadata/metadata.go` `metadataFragment`、`defaultEndpoint`、`Module` |
+| 静态特性 `objectstore.objects` 的 `feature.Spec` 声明 | 未实现 | — |

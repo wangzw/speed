@@ -14,7 +14,7 @@
 - **不解释参数。** 类型声明里的 `RecipientVisibleParams` 是参数白名单，本模块只保存它、交给投递侧核对；本模块不认识参数的含义，也不读参数的值。
 - **不持外部联系人的同意台账。** 该台账刻意后置（见 [notification](design-notification.md) 的范围一节）。
 - **不区分收件人类别。** 偏好只按用户收件人存；`RecipientClass` 为 `external` 的收件人本轮没有生产者。
-- **不做渠道的可用性判定。** 渠道是否可用由装配决定，归 [notification.delivery](design-notification-delivery.md)；本模块只据类型声明与偏好行算出渠道集合。
+- **不做渠道的可用性判定。** 渠道是否可用由装配决定，归 [notification.delivery](design-notification-delivery.md)；本模块只据类型声明与偏好行算出渠道集合。邮件与短信渠道能否兑现，由 `notification.delivery` 以条件[特性](../../../glossary.md) `notification.channel.email`、`notification.channel.sms` 发布；本模块的应答不带渠道可用性，`PUT` 照常接受渠道闭集里的每个渠道，偏好的取值集不因装配增减（[ADR-notification-channels-2026-10-15](../../../adr/adr-notification-channels-2026-10-15.md)、[ADR-feature-ownership-2026-10-17](../../../adr/adr-feature-ownership-2026-10-17.md)）。
 
 ## 术语表
 
@@ -36,6 +36,8 @@
 本模块的包导出 `ModuleName` 常量，命令树按这个名字纳入它。它取用 `(*notification.Preferences)(nil)` 这一功能标识的消费方写作 `core.Resolve[notification.Preferences](reg)`。
 
 **本模块声明配置命名空间 `notification.preferences`，读端名清单 `notification.preferences.endpoints`。** 端名清单在路由能力在场时必填：`Init` 见到 `(*http.Router)(nil)` 在场而这一项为空即启动失败，以完整路径 `notification.preferences.endpoints` 点名这一项；`(*http.Router)(nil)` 缺席时本模块不挂路由，这一项不被读取，空清单合法。清单是一组具体端名（封闭判据）：保留端名 `*`、空名与写了两遍的端名都被拒绝并点名这一项。
+
+**本模块声明静态[特性](../../../glossary.md) `notification.preferences`。** 描述符的 `Resources` 带 `feature.Spec{Name: "notification.preferences"}`；这个特性在场，表示本进程挂出「路由」一节的分类法与偏好路由（[feature](../design-feature.md)）。路由能力在场时端名清单必填，所以模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
 
 ### 交付的功能
 
@@ -105,6 +107,8 @@ type Preferences interface {
 
 第 7 步使一次重复的 PUT 不产生写入，也让「本就没有存储行的类型被 PUT 成它的 `DefaultChannels`」不落一行——那样的行与缺行语义相同，写下来只会让 `explicit` 谎报一次。
 
+**一次 PUT 只改（类型，渠道）这一格。** 第 6 步只把路径点名的渠道并入或移出当前有效集，同一类型其余渠道的有效值不变；前端按装配不显示某个渠道时，那一列上已有的偏好因此不随别的列的写入改变。
+
 图里的顺序不可调换：渠道与类型的校验都在算有效集之前，未知渠道因此不会被当成一个 no-op；可退订的校验在它之后，使「一个不可退订的类型收到一条写入」以 409 而不是 200 回绝。
 
 ```mermaid
@@ -129,6 +133,7 @@ flowchart TD
 
 - `notification.Preferences` 的方法集，以及 `notification.TypeSpec`、`notification.Preference`、`notification.Channel`、`notification.KnownChannel` 的字段与取值，是本模块与其他模块之间的接口面；本模块的包导出的 `ModuleName` 同属接口面，改名会让命令树上的纳入静默失配。
 - **宿主可见面**：模块名 `notification.preferences`，配置键 `notification.preferences.endpoints`，路由 `GET /api/v1/notifications/types`、`GET /api/v1/notifications/preferences`、`PUT /api/v1/notifications/preferences/:typeKey/:channel`，`Problem.Type` 前缀 `urn:speed:notification:` 及其下的码。改动它们是宿主可见的破坏性变更。
+- 特性名 `notification.preferences`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 表 `notification_preferences` 属于本模块，宿主不读写它；它的列供运维查看，不在对外接口面内。
 
 ### 哨兵错误
@@ -151,10 +156,11 @@ flowchart TD
 | `pkg/db` | `notification_preferences` 表与迁移 |
 | `pkg/tenant` | 租户上下文、`tenant.Model`、语句的租户过滤 |
 | `pkg/http` | 经登记面挂路由（可选依赖） |
+| `pkg/feature` 根包 | 声明静态特性（`feature.Spec`）；根包只依赖标准库 |
 | `pkg/log` | 可选：启动诊断 |
 | `pkg/i18n` | 可选：`i18n.Localizer` 按请求的协商语言渲染本模块写出的 `Problem` 的标题与正文；缺席时用本模块内嵌的英文文案 |
 
-**依赖方向。** 本模块 import 数据库、租户、`pkg/config`、`pkg/i18n`、`pkg/http` 与 `pkg/core`，不 import 通知能力目录内的其他实现子包：它不 import `pkg/notification/delivery` 或 `pkg/notification/inbox`，与它们只经 `pkg/notification` 根包的类型相认。它也不 import `pkg/authn` 与 `pkg/authz`——授权在宿主侧，本模块不参与判定。除 `pkg/http` 外，这些依赖都在本模块之前构造、之后停止。
+**依赖方向。** 本模块 import 数据库、租户、`pkg/config`、`pkg/i18n`、`pkg/http`、`pkg/feature` 根包与 `pkg/core`，不 import 通知能力目录内的其他实现子包：它不 import `pkg/notification/delivery` 或 `pkg/notification/inbox`，与它们只经 `pkg/notification` 根包的类型相认。它也不 import `pkg/authn` 与 `pkg/authz`——授权在宿主侧，本模块不参与判定。除 `pkg/http` 外，这些依赖都在本模块之前构造、之后停止。
 
 **根包 `pkg/notification` 不 import 本模块。** 根包依赖标准库与 `pkg/jobs` 这一个接口包（`Dispatcher.Dispatch` 的返回类型是 `jobs.JobID`），因而一个只读 `notification.Channel` 或 `notification.TypeSpec` 的业务模块 import 它，拉进来的是作业的标识类型，不是数据库、租户或本模块。
 
@@ -291,3 +297,4 @@ classDiagram
 | 偏好路由与 PUT 的判定顺序 | 已实现 | `pkg/notification/preferences/preferences.go` `routes`、`mount`；`pkg/notification/preferences/routes.go` `handleTypes`、`handlePreferences`、`handleSetPreference`；`pkg/notification/preferences/store.go` `Set` |
 | 配置命名空间与端名清单 | 已实现 | `pkg/notification/preferences/config.go` `ConfigNamespace`、`schema`、`validateEndpoints`、`readConfig`；`pkg/notification/preferences/preferences.go` `readerOf`、`mount` |
 | OpenAPI 片段声明 | 已实现 | `pkg/notification/preferences/openapi/preferences.json`；`pkg/notification/preferences/preferences.go` `preferencesFragment`、`defaultEndpoint`、`Module` |
+| 静态特性 `notification.preferences` 的 `feature.Spec` 声明 | 未实现 | — |

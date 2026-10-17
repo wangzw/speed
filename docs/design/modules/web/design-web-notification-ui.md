@@ -6,10 +6,11 @@
 
 - **未读铃铛**：`NotificationBell` 读调用方的未读数（`GET /api/v1/notifications/messages/unread-count`），渲染为带徽标的图标按钮。计数落在按钮的可及名上（前端规范的图标按钮规则），徽标字形对无障碍树隐藏，读屏只播报一次。它受控：`onClick` 是宿主的导航，铃铛本身不含路由。
 - **收件箱面**：`NotificationInbox` 读一页消息（`GET /api/v1/notifications/messages`），逐行渲染标题、正文、时间与未读/已读标记，未读行提供「标记为已读」（`POST /api/v1/notifications/messages/:id/read`），页头提供「全部标记为已读」（`POST /api/v1/notifications/messages/read-all`）。
-- **偏好矩阵**：`NotificationPreferences` 读按类型的渠道矩阵（`GET /api/v1/notifications/preferences`）与类型分类法（`GET /api/v1/notifications/types`，取每类型是否可退订），写入单个渠道的目标态（`PUT /api/v1/notifications/preferences/:typeKey/:channel`）。
-- **通知面**：`NotificationCenter` 是默认组合——收件箱与其下的偏好矩阵。
+- **偏好矩阵**：`NotificationPreferences` 读按类型的渠道矩阵（`GET /api/v1/notifications/preferences`）与类型分类法（`GET /api/v1/notifications/types`，取每类型是否可退订），写入单个渠道的目标态（`PUT /api/v1/notifications/preferences/:typeKey/:channel`）。渠道列是 `in_app` 加宿主给出的、特性在场的可选渠道。
+- **通知面**：`NotificationCenter` 是默认组合——收件箱与其下的偏好矩阵；特性 `notification.preferences` 缺席时只有收件箱。
 - **实时订阅**：`NotificationStreamProvider` 经宿主交来的开启器打开 `GET /api/v1/notifications/stream`，每来一帧 `message` 即失效当前租户的未读数与消息列表。
-- **声明式入口**：`notificationRoutes` 是包对声明式注册面的贡献——通知面在 `/notifications`，带标签因而贡献一条导航项。
+- **特性在场的接收**：`NotificationPresenceProvider` 承载宿主给出的特性在场事实：偏好面与各可选渠道。
+- **声明式入口**：`notificationRoutes` 是包对声明式注册面的贡献——通知面在 `/notifications`，带标签因而贡献一条导航项，依赖特性 `notification.inbox`。
 - **文案命名空间**：`NOTIFICATION_UI_NAMESPACE` 与 `notificationUiResources`。
 
 ### 非职责
@@ -34,9 +35,10 @@
 | `NotificationPreferences` | 组件 | 按类型的渠道偏好矩阵。 |
 | `NotificationCenter` | 组件 | 收件箱与偏好矩阵的组合页。 |
 | `NotificationStreamProvider` | 组件 | 实时订阅 provider；入参 `openStream`、`enabled`、`children`。 |
+| `NotificationPresenceProvider` | 组件 | 特性在场 provider；入参 `preferences`、`channels`、`children`。 |
 | `useNotificationStreamOpener` | hook | 读嵌套组件可见的开启器，无 provider 时为 null。 |
-| `notificationRoutes` | 声明表 | 通知面的一个声明：路径 `/notifications`、视图、导航标签。 |
-| `NotificationRoute`、`NotificationRouteContext`、`NotificationRouteParams`、`NotificationRouteTable` | 类型 | 声明面的结构性类型，与 route-kit 的声明形状相同。 |
+| `notificationRoutes` | 声明表 | 通知面的一个声明：路径 `/notifications`、视图、导航标签、`requires: ['notification.inbox']`。 |
+| `NotificationRoute`、`NotificationRouteContext`、`NotificationRouteParams`、`NotificationRouteTable` | 类型 | 声明面的结构性类型，与 route-kit 的声明形状相同；`NotificationRoute` 的可选字段 `requires` 的类型是 `readonly FeatureName[]`（`@speed/api-sdk/features`）。 |
 | `NOTIFICATION_UI_NAMESPACE`、`notificationUiResources` | 常量 | 裸名命名空间与其双语资源。 |
 
 ### 实时订阅的入参
@@ -44,16 +46,30 @@
 ```ts
 interface NotificationStreamProviderProps {
   openStream?: EventStreamOpener   // 装配客户端的事件流开启器；缺席即不连
-  enabled?: boolean                // 缺省 true；宿主据此在匿名时不连
+  enabled?: boolean                // 缺省 true；宿主据此在匿名时、实时流特性缺席时不连
   children: ReactNode
 }
 ```
 
-`openStream` 是装配处（`@speed/product-shell/bootstrap` 的 `bootstrapSpeedApp`）建的客户端的事件流开启器（`SpeedClient.openEventStream`）。`enabled` 是宿主的会话事实：本包不为它读会话状态，一个匿名的访客因此不会打开一个只会被拒的连接。两者之一缺席或 `enabled` 为 false 时，订阅是惰性的，面仍按挂载与聚焦各自读一次。
+`openStream` 是装配处（`@speed/product-shell/bootstrap` 的 `bootstrapSpeedApp`）建的客户端的事件流开启器（`SpeedClient.openEventStream`）。`enabled` 是宿主的会话事实：本包不为它读会话状态，一个匿名的访客因此不会打开一个只会被拒的连接。宿主把特性 `notification.stream` 是否在场并进同一个入参：该特性缺席的部署上，打开的连接每次被拒后都会按退避重开。两者之一缺席或 `enabled` 为 false 时，订阅是惰性的，面仍按挂载与聚焦各自读一次。
+
+### 特性在场的入参
+
+```ts
+interface NotificationPresenceProviderProps {
+  preferences: boolean                       // 特性 notification.preferences 是否在场
+  channels: readonly ('email' | 'sms')[]     // 特性在场的可选渠道；in_app 恒在，不列
+  children: ReactNode
+}
+```
+
+`NotificationPresenceProvider` 与 `NotificationStreamProvider` 同形：入参是宿主给出的特性在场事实，本包不为它读会话或特性态（[ADR-web-feature-state-2026-10-17](../../../adr/adr-web-feature-state-2026-10-17.md)）。宿主取特性 `notification.preferences` 给出 `preferences`，把特性在场的 `notification.channel.email`、`notification.channel.sms` 映射成 `channels`。没有 provider 时按 `preferences` 为假、`channels` 为空处理：偏好面与可选渠道都按特性缺席隐藏，方向是失败即关。
+
+收件箱与铃铛不经这个 provider：通知面的声明以 `requires` 列出 `notification.inbox`，特性缺席时由宿主的路由层渲染与未登记路径相同的 404（[route-kit](design-web-route-kit.md)）；铃铛由宿主按同一个特性决定挂不挂。
 
 ### 对外接口面
 
-`src/index.ts` 的导出集、各组件的 props 形状、`notificationRoutes` 的类型、`NotificationStreamProvider` 的入参语义，以及 `NOTIFICATION_UI_NAMESPACE` 与 `notificationUiResources` 是对使用者的接口面。包以锁定版本组发布。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。
+`src/index.ts` 的导出集、各组件的 props 形状、`notificationRoutes` 的类型与它所列的特性、`NotificationStreamProvider` 与 `NotificationPresenceProvider` 的入参语义（含没有 provider 时的处理），以及 `NOTIFICATION_UI_NAMESPACE` 与 `notificationUiResources` 是对使用者的接口面。包以锁定版本组发布。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。
 
 ## 依赖
 
@@ -61,7 +77,7 @@ interface NotificationStreamProviderProps {
 
 | 依赖 | 种类 | 用途 |
 |---|---|---|
-| `@speed/api-sdk` | 依赖 | 通知的生成 operation 与查询键构造器；响应类型 |
+| `@speed/api-sdk` | 依赖 | 通知的生成 operation 与查询键构造器；响应类型；子路径 `@speed/api-sdk/features` 的特性名类型 `FeatureName` |
 | `@speed/api-client` | 依赖 | 事件流开启器与帧的类型（`EventStreamOpener`、`EventStreamOptions`、`EventStreamHandle`、`ServerSentEvent`） |
 | `@speed/auth-core` | 依赖 | 当前租户（`useCurrentTenant`）与租户作用域查询键（`tenantQueryKey`、`useTenantQueryKey`） |
 | `@speed/i18n` | 依赖 | 命名空间翻译与错误码文本解析（`createErrorTextResolver`、会话生命周期与传输码） |
@@ -72,7 +88,7 @@ interface NotificationStreamProviderProps {
 
 ## UML 图
 
-图给出本包各符号与它依赖的同族包。图里画不出的约束：读写都经生成面的 hooks（经宿主绑定的请求函数发请求），实时连接只经宿主交来的开启器；查询键以租户标识为最外层段；包不做路由、不读会话。
+图给出本包各符号与它依赖的同族包。图里画不出的约束：读写都经生成面的 hooks（经宿主绑定的请求函数发请求），实时连接只经宿主交来的开启器；查询键以租户标识为最外层段；包不做路由、不读会话；特性在场只经宿主交来的 provider，缺 provider 时按特性缺席处理。
 
 ```mermaid
 graph TD
@@ -85,6 +101,8 @@ graph TD
     NotificationPreferences --> useSetNotificationPreference
     NotificationCenter --> NotificationInbox
     NotificationCenter --> NotificationPreferences
+    NotificationCenter --> NotificationPresenceProvider
+    NotificationPreferences --> NotificationPresenceProvider
     NotificationStreamProvider --> openEventStream
     notificationRoutes --> NotificationCenter
     useNotificationUnreadCount --> tenantQueryKey
@@ -123,7 +141,13 @@ graph TD
 
 ### 偏好矩阵的渲染
 
-矩阵的行来自偏好读（每个在册类型一行），渠道列取平台封闭渠道词表（`in_app`、`email`、`sms`），勾选态取该行的有效集。类型分类法给出每类型的 `unsubscribable`：为 false 的类型整行禁用并标注不可退订（一次写入会被拒 409），分类法尚未到时按未知处理、保持可勾。一次勾选写上该渠道的目标态并回读，勾选态因而始终是服务端的应答。
+矩阵的行来自偏好读（每个在册类型一行），渠道列是 `in_app` 加 `NotificationPresenceProvider` 给出的、特性在场的可选渠道，按平台封闭渠道词表（`in_app`、`email`、`sms`）的次序排列，勾选态取该行的有效集。类型分类法给出每类型的 `unsubscribable`：为 false 的类型整行禁用并标注不可退订（一次写入会被拒 409），分类法尚未到时按未知处理、保持可勾。一次勾选写上该渠道的目标态并回读，勾选态因而始终是服务端的应答；一次写只带被勾的那个渠道。
+
+**隐藏一个渠道列不改变偏好的取值。** 偏好按（类型，渠道）逐格写入，隐藏列的已存值不受影响，渠道的取值集也不因装配增减（[notification-preferences](../notification/design-notification-preferences.md)、[ADR-notification-channels-2026-10-15](../../../adr/adr-notification-channels-2026-10-15.md)）；渠道列只决定矩阵渲染哪些格。
+
+### 偏好面按特性在场渲染
+
+`NotificationCenter` 只在 `NotificationPresenceProvider` 给出 `preferences` 为真时渲染偏好矩阵；为假时只渲染收件箱，也不发分类法与偏好读。
 
 ## 错误与失败语义
 
@@ -134,6 +158,7 @@ graph TD
 | 无租户（无路由或未挂 provider） | 读以 `enabled: false` 不取，失败关闭而非造一个租户 |
 | 后端消息视图的 `read_at` 为 JSON `null` | 读成未读（`null`、`undefined`、空串等同） |
 | 未挂开启器或 `enabled` 为 false | 订阅惰性，面仍按挂载与聚焦各自读一次 |
+| 未挂 `NotificationPresenceProvider` | 按 `preferences` 为假、`channels` 为空处理：通知面不渲染偏好矩阵、不发分类法与偏好读，单独挂载的偏好矩阵只有 `in_app` 一列 |
 | 实时连接被拒或被断开 | 一次失败上报，provider 以退避重开；宿主不感知单次失败 |
 
 本包不重试读与写（重试归传输层与宿主的查询客户端），实时连接的重连是 provider 自己的策略。
@@ -141,7 +166,7 @@ graph TD
 ## 扩展点
 
 - **宿主改写措辞。** 在启动处向 `NOTIFICATION_UI_NAMESPACE` 注册自己的一对同键 bundle，`notificationUiResources` 只是发布的默认。
-- **偏好面的落点。** `NotificationCenter` 把偏好矩阵放在通知面内；一个宿主也可单独挂 `NotificationPreferences` 到自己的账户页。
+- **偏好面的落点。** `NotificationCenter` 把偏好矩阵放在通知面内；一个宿主也可单独挂 `NotificationPreferences` 到自己的账户页，挂不挂由宿主按特性 `notification.preferences` 决定，渠道列同样取自 `NotificationPresenceProvider`。
 - **不开实时。** 宿主不传 `openStream` 或传 `enabled: false` 即得一个只按挂载与聚焦读通知的面，无需改动本包。
 - **新增一个后端通知面的渲染。** 加一个组件并经生成面发请求，加进本包的公开面与命名空间；不改壳，不改传输。
 
@@ -157,3 +182,7 @@ graph TD
 | 声明式路由入口 | 已实现 | `web/packages/notification-ui/src/routes.tsx` `notificationRoutes` |
 | 租户作用域读写与失效 | 已实现 | `web/packages/notification-ui/src/internal/queries.ts` `useNotificationMessages`、`useNotificationUnreadCount`、`useNotificationPreferences`、`useMarkNotificationRead`、`useMarkAllNotificationsRead`、`useSetNotificationPreference` |
 | 文案命名空间与双语资源 | 已实现 | `web/packages/notification-ui/src/resources.ts` `NOTIFICATION_UI_NAMESPACE`、`notificationUiResources` |
+| 特性在场 provider `NotificationPresenceProvider` | 未实现 | — |
+| 偏好矩阵的渠道列取 `in_app` 与特性在场的可选渠道 | 未实现 | — |
+| 通知面在特性 `notification.preferences` 缺席时不渲染偏好矩阵、不发其读取 | 未实现 | — |
+| `notificationRoutes` 的 `requires` | 未实现 | — |

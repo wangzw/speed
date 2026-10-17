@@ -29,6 +29,7 @@ speed 是一个配置驱动的模块化应用程序框架，以 Go 库的形式�
 | [jobs](modules/jobs/README.md) | 作业队列：必须跨副本收敛的定时、周期与异步执行，作业生命周期与多副本认领；数据库后端与周期调度器为其子模块 |
 | [notification](modules/notification/README.md) | 通知：站内信收件箱、按类型的渠道偏好、经作业队列的出站投递与实时推送；收件箱、偏好、投递与推送为其子模块 |
 | [objectstore](modules/design-objectstore.md) | 对象存储：对象的声明与生命周期、上传窗口与过期清扫，字节经可插拔接缝存取；本地目录与 S3 各为一个后端 |
+| [feature](modules/design-feature.md) | 特性：模块以资源声明的特性、条件特性在运行期的报告、按启用集算出并只对已认证者发布的特性文档 |
 | [ops](modules/design-ops.md) | 运行面：探针路由与合并后的 API 规格，读取各模块声明的 OpenAPI 片段 |
 | [web](modules/web/README.md) | 前端：包的分层与判据、契约边界、装配与内容分离、装配入口与对外接口面；设计令牌、i18n、组件族、传输运行时、生成的契约面、路由、会话与各能力 UI 包为其子模块 |
 | [webui](modules/design-webui.md) | 前端产物交付：静态应答、客户端路由回退、缓存口径 |
