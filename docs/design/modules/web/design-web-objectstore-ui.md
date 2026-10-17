@@ -98,7 +98,7 @@ sequenceDiagram
 
 ### 上传三步
 
-`useObjectUploads`（`src/internal/uploads.ts`）持有队列并驱动每个文件的三步：一次 `create`（`POST /objects`，体为 `{name, size, content_type}`，`content_type` 取文件的 `type`，为空折成 `application/octet-stream`）→ 一次 `upload`（`PUT /objects/{id}/content`，文件作为 Blob 体）→ 一次 `complete`（`POST /objects/{id}/complete`）。三步按序 `await`；任一步失败即把该行置 `failed` 并带上宿主文案，前一步落下的声明留在原地（模块语义：一个上传失败的已声明对象保持 `pending` 直到窗口关闭）。成功即把该行置 `succeeded` 并失效租户前缀。重试用行上的文件重跑整条链。
+`useObjectUploads`（`src/internal/uploads.ts`）持有队列并驱动每个文件的三步：一次 `create`（`POST /objects`，体为 `{name, size, content_type}`，`content_type` 取文件的 `type`，为空折成 `application/octet-stream`）→ 一次 `upload`（`PUT /objects/{id}/content`，文件作为 Blob 体）→ 一次 `complete`（`POST /objects/{id}/complete`）。三步按序 `await`；任一步失败即把该行置 `failed` 并带上该失败码的文本，前一步落下的声明留在原地（模块语义：一个上传失败的已声明对象保持 `pending` 直到窗口关闭）。成功即把该行置 `succeeded` 并失效租户前缀。重试用行上的文件重跑整条链。
 
 ### 键集游标的分页
 
@@ -107,6 +107,16 @@ sequenceDiagram
 ### 下载
 
 「下载」以 `objectstoreMetadataGetObjectContent(id)` 取回 Blob，交 `saveBlob`（`src/internal/download.ts`）经一个临时对象 URL 上的锚点另存，文件名取 `id` 加一个由 `mime` 推出的扩展名（`extensionForMime`）。对象 URL API 按其是否存在探测：无 `createObjectURL` 的环境（测试 DOM）仍得到锚点，运行不抛。
+
+### 写入的反馈
+
+对象页的下载与删除共用一个反馈作用域，区域在列表之上，按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织（[ADR-web-write-feedback-2026-10-17](../../../adr/adr-web-write-feedback-2026-10-17.md)）。
+
+- **一个槽，翻页与刷新也 `reset`。** 下载的失败不与「对象已删除」并存；翻页与刷新改变了列表的上下文，旧的结果不留在新的一页之上。
+- **删除的确认对话框在确认点击时关闭，该行的删除控件在进行中禁用并标忙**；此前对话框关闭到横幅出现之间没有任何进行中的反馈。
+- **刷新控件在读进行中标忙，已有数据的刷新失败保留旧列表并渲染陈旧提示**，来源包括刷新、窗口重新聚焦与上传或删除后的失效重读。
+- **上传行的失败文本取自错误码。** 上传三步的任一步失败，行上渲染该失败码在当前语言下的文本，而不是一句固定的「上传失败」；非 ApiError 形状的抛出经 `errorCodeOf` 折叠，渲染未知兜底。
+- **错误白名单组合 `SESSION_LIFECYCLE_ERROR_CODES`。** 消费包组合自己的可达码与该族（[i18n](design-web-i18n.md) 的「扩展点」），本包的白名单与之对齐。
 
 ## 错误与失败语义
 
@@ -118,7 +128,7 @@ sequenceDiagram
 |---|---|
 | 列表读失败（5xx、传输失败） | 可重试的错误占位，一条重试按钮 |
 | 列表读被拒 403 | 无权限空态，无重试按钮（重试只会再被拒） |
-| 上传任一步失败 | 该行置 `failed` 并渲染宿主文案；`failed` 行给一个重试按钮 |
+| 上传任一步失败 | 该行置 `failed` 并渲染该失败码的文本；`failed` 行给一个重试按钮 |
 | 下载失败 | 列表旁一条横幅渲染错误码文本 |
 | 删除失败 | 列表旁一条横幅渲染错误码文本，列表重取以收敛 |
 | 无租户在场 | 读被禁用，列表停在加载占位，不发请求（fail-closed） |
@@ -147,3 +157,5 @@ sequenceDiagram
 | 格式化与下载落盘 | 已实现 | `web/packages/objectstore-ui/src/internal/format.ts` `formatUtc`、`formatByteNumber`、`downloadFilename`；`web/packages/objectstore-ui/src/internal/download.ts` `saveBlob` |
 | 错误文案与异步分支 | 已实现 | `web/packages/objectstore-ui/src/internal/error-text.ts` `useObjectstoreUiErrorText`；`web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection` |
 | 命名空间资源 | 已实现 | `web/packages/objectstore-ui/src/resources.ts` `OBJECTSTORE_UI_NAMESPACE`、`objectstoreUiResources` |
+| 对象页的反馈作用域、删除的忙态与刷新的陈旧提示 | 未实现 | — |
+| 上传行的失败文本取自错误码 | 未实现 | — |
