@@ -9,8 +9,8 @@
  * raw key.
  */
 
-import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
+import { act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useWriteFeedback } from '@speed/ui-kit'
 import { WriteFeedbackRegion } from './write-feedback.js'
@@ -117,10 +117,14 @@ describe('WriteFeedbackRegion', () => {
     // A null settlement -- the elevation gate took the write over -- does
     // not touch the slot: the attempt's own reset leaves it empty.
     await user.click(screen.getByRole('button', { name: 'first' }))
-    settleFirst(null)
-    await vi.waitFor(() => {
-      expect(screen.queryByText('first message')).toBeNull()
+    // Flush the settled attempt before reading the slot: the attempt's own
+    // reset empties it at the start, so an assertion made too early cannot
+    // tell an empty slot from one a null settlement wrongly filled.
+    await act(async () => {
+      settleFirst(null)
+      await new Promise((resolve) => setTimeout(resolve, 0))
     })
+    expect(screen.queryByText('first message')).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
     // The slot is empty, not merely silent about this attempt: the standing
     // polite region holds no message at all.

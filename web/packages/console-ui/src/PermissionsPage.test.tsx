@@ -596,6 +596,8 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     expect(await screen.findByText('权限不足')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    // A read's refusal never settles into a write scope's slot.
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it("reports each control group's failure in its own region", async () => {
