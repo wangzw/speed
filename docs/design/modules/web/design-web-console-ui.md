@@ -378,8 +378,8 @@ graph TD
 | 账户页（按标识前缀、显示名前缀、状态与类型筛选列出，详情、创建与全部写入） | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`、`AccountCreateForm`、`AccountDetailWrites`；`web/packages/console-ui/src/routes.tsx` `accountsAdminRoutes` |
 | 账户详情的侧边面板（反馈随发起面，所选账户存续到 `onExited`） | 未实现 | — |
 | 账户创建的侧边面板（页头打开、未保存守卫、成功文案在 `onExited` 后写入） | 未实现 | — |
-| 步进对话框先读本人因素，没有启用的因素时给出提示而不发起流程 | 未实现 | — |
-| 前往账户设置的入口由宿主经 `accountHref` 给出 | 未实现 | — |
+| 步进对话框先读本人因素，没有启用的因素时给出提示而不发起流程 | 已实现 | `web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`、`activeFactorCount` |
+| 前往账户设置的入口由宿主经 `accountHref` 给出 | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShellProps.accountHref`；`web/packages/console-ui/src/internal/account-href.tsx` `ConsoleAccountHrefProvider`、`useConsoleAccountHref`；`web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge` |
 | 各页的反馈作用域与成功确认 | 未实现 | — |
 | 一次性值的展示面板（邀请链接、SSO 令牌、服务密钥） | 未实现 | — |
 | 设置页的批量保存按一次尝试 | 未实现 | — |

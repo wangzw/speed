@@ -26,7 +26,10 @@ import layoutKitZhCN from '../../layout-kit/src/locales/zh-CN.json' with { type:
 import consoleUiZhCN from './locales/zh-CN.json' with { type: 'json' }
 import { ConsoleShell } from './ConsoleShell.js'
 import type { ConsoleNavGroup, ConsoleRoute } from './route.js'
+import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { bindConsoleRequest } from '../test-utils/request-rig.js'
+import { createStepUpSession } from '../test-utils/session.js'
 import {
   createConsoleOperations,
   makeConsoleBackend,
@@ -132,6 +135,36 @@ describe('ConsoleShell', () => {
     )
     const main = screen.getByRole('main')
     expect(within(main).getByText('body')).toBeInTheDocument()
+  })
+
+  it('carries the host account settings destination to the step-up dialog', async () => {
+    // The step-up dialog's no-factor state links to the host's account
+    // settings page; the shell is the one place the host supplies that
+    // destination, so the dialog rendered inside it must receive it.
+    bindConsoleRequest((call) => {
+      if (call.method === 'GET' && call.path === '/auth/factors') {
+        return { factors: [] }
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    })
+    renderWithProviders(
+      <ConsoleShell
+        routes={routes}
+        title="Console"
+        accountHref="/host/security"
+      >
+        <StepUpChallenge
+          open
+          session={createStepUpSession()}
+          onSuccess={() => undefined}
+          onCancel={() => undefined}
+        />
+      </ConsoleShell>,
+      { operations },
+    )
+    expect(
+      await screen.findByRole('link', { name: '前往账户设置' }),
+    ).toHaveAttribute('href', '/host/security')
   })
 
   it('pads the content region so a page does not butt against the chrome', () => {

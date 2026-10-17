@@ -62,6 +62,7 @@ import type {
   AppShellProps,
 } from '@speed/layout-kit'
 import type { ConsoleNavGroup, ConsoleRoute } from './route.js'
+import { ConsoleAccountHrefProvider } from './internal/account-href.js'
 import { ConsoleNavigationProvider } from './internal/navigation.js'
 import { ConsoleInvitationLinkProvider } from './internal/invitation-link.js'
 import { ConsoleSessionProvider } from './internal/session.js'
@@ -120,6 +121,14 @@ export interface ConsoleShellProps extends AppShellCollapseProps {
    * route). Absent, the page shows the bare token instead.
    */
   readonly invitationLink?: (token: string) => string
+  /**
+   * The host's account settings page (a host-relative path or an absolute
+   * URL), where an operator registers two-step verification. The step-up
+   * dialog renders it as a link when the caller's account has no active
+   * factor; absent, the dialog renders text only. The path is the host's
+   * route, so this package never holds one.
+   */
+  readonly accountHref?: string
   /**
    * The assembled session, published to the routed pages so a
    * step-up-gated write can raise it. Absent, a page's step-up-gated
@@ -194,6 +203,7 @@ export function ConsoleShell({
   headerActions,
   onNavigate,
   invitationLink,
+  accountHref,
   session,
   sidebarCollapsed,
   onSidebarCollapsedChange,
@@ -239,9 +249,11 @@ export function ConsoleShell({
             it. */}
         <Box sx={{ p: 3 }}>
           <ConsoleSessionProvider session={session ?? null}>
-            <ConsoleInvitationLinkProvider invitationLink={invitationLink}>
-              {children}
-            </ConsoleInvitationLinkProvider>
+            <ConsoleAccountHrefProvider accountHref={accountHref}>
+              <ConsoleInvitationLinkProvider invitationLink={invitationLink}>
+                {children}
+              </ConsoleInvitationLinkProvider>
+            </ConsoleAccountHrefProvider>
           </ConsoleSessionProvider>
         </Box>
       </ConsoleNavigationProvider>

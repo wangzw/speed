@@ -34,7 +34,7 @@ import { useNavigate } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
 import { useAppServices } from '../app-services.js'
 import { AppBrand, HeaderActions, UserMenu } from '../chrome.js'
-import { invitationPath } from '../paths.js'
+import { invitationPath, ACCOUNT_PATH } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 
 /** The tenant area's root: the app's business slot, which the console's exit
@@ -90,6 +90,10 @@ export function ConsoleArea({
       // the operator to hand over; the link points at this app's own landing
       // route, whose path only the host knows (src/paths).
       invitationLink={invitationPath}
+      // The account settings page the step-up dialog points at when the
+      // operator's account has no active factor; the path is this app's own
+      // (src/paths), reachable at /account.
+      accountHref={ACCOUNT_PATH}
       sidebarCollapsed={sidebarCollapsed}
       onSidebarCollapsedChange={onSidebarCollapsedChange}
     >

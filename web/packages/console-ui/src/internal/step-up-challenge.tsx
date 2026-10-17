@@ -22,8 +22,11 @@
  * Why a step-up cannot come is read before the flow starts, from the
  * caller's own factor list (GET /auth/factors). An account with no active
  * factor can never raise a single-factor session, so the dialog names the
- * missing two-step verification and points at the account settings, and
- * starts no flow at all -- a sign-in cannot add a factor. An account with
+ * missing two-step verification and starts no flow at all -- a sign-in
+ * cannot add a factor. The host supplies its account settings destination
+ * through ConsoleShell's `accountHref` (see internal/account-href): the
+ * dialog renders it as a link when present and text only when absent, so
+ * the package never holds a host path. An account with
  * factors whose start is refused 401 insufficient_user_authentication has
  * factors none of which may strengthen this session (the hook's
  * 'unavailable' phase): the dialog says the deployment cannot complete the
@@ -51,6 +54,7 @@ import {
 import type { AuthSession } from '@speed/auth-core'
 import type { AuthnFlowAnswer } from '@speed/auth-core'
 import { useStepUp } from '@speed/auth-core'
+import { useConsoleAccountHref } from './account-href.js'
 import { FlowStep } from './flow-step.js'
 import { InlineError } from './inline-error.js'
 import { ConsoleLink } from './navigation.js'
@@ -75,6 +79,10 @@ export function StepUpChallenge({
 }: StepUpChallengeProps) {
   const { t } = useConsoleUiTranslation()
   const titleId = useId()
+  // The host's account settings destination, published by the shell. The
+  // package holds no host path, so the no-factor state is text-only when
+  // the host supplies none.
+  const accountHref = useConsoleAccountHref()
   // The caller's own registered factors (GET /auth/factors), read while the
   // dialog is open. An account with no active factor cannot raise its
   // session, so the dialog answers the enrollment instead of starting a flow
@@ -146,9 +154,11 @@ export function StepUpChallenge({
             <Typography variant="body2" color="text.secondary">
               {t('stepUp.noFactor')}
             </Typography>
-            <Typography variant="body2" sx={{ mt: 1 }}>
-              <ConsoleLink href="/account">{t('stepUp.goToAccount')}</ConsoleLink>
-            </Typography>
+            {accountHref === undefined ? null : (
+              <Typography variant="body2" sx={{ mt: 1 }}>
+                <ConsoleLink href={accountHref}>{t('stepUp.goToAccount')}</ConsoleLink>
+              </Typography>
+            )}
           </>
         ) : unavailable ? (
           <Typography variant="body2" color="text.secondary">

@@ -69,6 +69,11 @@ host that holds the collapse state gives the operator the same
 host-controlled collapse the tenant-facing shell carries. Omit the pair and
 the sidebar stays open.
 
+The shell also takes the host's account settings destination as
+`accountHref` (a host-relative path or an absolute URL). The step-up
+dialog's "no active factor" state renders it as a link when supplied and
+text only when absent; the dialog never holds a host path itself.
+
 The navigation is a flat single column by default -- one entry per
 labelled declaration, in declaration order. Pass `navGroups` (the
 package's own `consoleNavGroups`, or a host-supplied table) to group the
@@ -190,6 +195,14 @@ mounts in `ConsoleOperationsProvider`: a plain object of react-query read
 hooks and write mutations. The hooks run on the host's query client (the
 host supplies it as it supplies the rest of the tree); no page builds a
 query client of its own and none writes a query key.
+
+Two caller-session surfaces sit outside the bundle. The impersonation
+page's own-session half calls the generated caller-session operations
+directly (`useAuthnImpersonationStatus`, `useAuthnImpersonationStart`,
+`useAuthnImpersonationEnd`), and the step-up dialog reads the operator's
+own factors through `GET /auth/factors`. Both act on the caller's own
+session rather than an administration surface, so neither is replaceable
+through the bundle.
 
 The package ships that bundle. `consoleOperations` is bound to the
 generated `@speed/api-sdk` surface -- every administration read and write

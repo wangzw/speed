@@ -11,13 +11,15 @@
  *
  * The failure cases pin the two different reasons a challenge cannot be
  * completed. An account with no active factor is recognised from its own
- * factor read: the dialog names the missing second factor, points at the
- * account settings and never starts a flow it knows cannot come. A start the
- * server refuses with 401 while the account does have factors (none of them
- * may strengthen this session) is the deployment's own refusal, and the
- * dialog offers the re-login instead. Any other start failure -- a 400
- * included -- is an ordinary error rendered as its code, never folded into
- * either of those two explanations.
+ * factor read: the dialog names the missing second factor and never starts a
+ * flow it knows cannot come; the host's account-settings destination is a
+ * link when the shell supplies one and text only when it does not, so the
+ * dialog itself holds no host path. A start the server refuses with 401
+ * while the account does have factors (none of them may strengthen this
+ * session) is the deployment's own refusal, and the dialog offers the
+ * re-login instead. Any other start failure -- a 400 included -- is an
+ * ordinary error rendered as its code, never folded into either of those
+ * two explanations.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -30,6 +32,7 @@ import type {
   AuthnFlowState,
 } from '@speed/auth-core'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
+import { ConsoleAccountHrefProvider } from './account-href.js'
 import { StepUpChallenge } from './step-up-challenge.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { bindConsoleRequest } from '../../test-utils/request-rig.js'
@@ -240,13 +243,11 @@ describe('StepUpChallenge', () => {
     )
 
     // The caller's own factor read says the account has no active factor:
-    // the dialog names that and points at the account settings, rather than
-    // offering a re-login that can only produce the same single-factor
-    // session.
+    // the dialog names that, rather than offering a re-login that can only
+    // produce the same single-factor session. With no accountHref from the
+    // host it renders no link at all -- the package holds no host path.
     expect(await screen.findByText(/尚未配置两步验证/)).toBeInTheDocument()
-    expect(
-      screen.getByRole('link', { name: '前往账户设置' }),
-    ).toHaveAttribute('href', '/account')
+    expect(screen.queryAllByRole('link')).toHaveLength(0)
     expect(
       screen.queryByRole('button', { name: '重新登录' }),
     ).toBeNull()
@@ -258,6 +259,26 @@ describe('StepUpChallenge', () => {
 
     await user.click(screen.getByRole('button', { name: '取消' }))
     expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses the account settings destination the shell supplies', async () => {
+    bindFactors([])
+    renderWithProviders(
+      <ConsoleAccountHrefProvider accountHref="/host/security">
+        <StepUpChallenge
+          open
+          session={createStepUpSession()}
+          onSuccess={() => undefined}
+          onCancel={() => undefined}
+        />
+      </ConsoleAccountHrefProvider>,
+    )
+
+    // The destination is the host's, carried through the shell's context;
+    // the dialog only renders it.
+    expect(
+      await screen.findByRole('link', { name: '前往账户设置' }),
+    ).toHaveAttribute('href', '/host/security')
   })
 
   it('renders a 400 start refusal as an ordinary error when a factor is registered', async () => {

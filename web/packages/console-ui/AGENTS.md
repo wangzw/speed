@@ -63,6 +63,12 @@ click is intercepted and handed to it (with the entry's path) instead of
 reloading the page — that is how a host routes an entry in place without
 this package importing a router.
 
+The shell also publishes host-owned destinations to its routed content
+through package context: `invitationLink`, the acceptance-link builder,
+and `accountHref`, the host's account settings page. The step-up dialog
+renders `accountHref` as its enrolment link when the host supplies it and
+text only when it does not; the dialog never holds a host path.
+
 ## The page declarations
 
 Each administration capability contributes declarations to the
@@ -117,11 +123,14 @@ the mutations go through the same bound client, and no page builds a
 query client of its own or writes a query key — the keys live inside the
 hooks the host binds.
 
-The step-up dialog's read of the caller's own factors is the one read
-outside the bundle: `GET /auth/factors` is a self-service read of the
-operator's own account (which factors may raise this session), not an
-administration surface the bundle substitutes, so the dialog runs the
-generated hook directly on the host's query client.
+Two caller-session surfaces sit outside the bundle. The impersonation
+page's own-session half calls the generated caller-session operations
+directly (`useAuthnImpersonationStatus`, `useAuthnImpersonationStart`,
+`useAuthnImpersonationEnd`), and the step-up dialog reads the caller's own
+factors through `GET /auth/factors`. Neither is an administration surface
+the bundle substitutes: they act on the operator's own session, so they
+run the generated hooks on the host's query client and are not
+replaceable through the bundle.
 
 Why the pages read through a bundle and not a direct `@speed/api-sdk`
 call each: the bundle is the substitution point. The shipped
