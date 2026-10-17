@@ -243,6 +243,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `ErrBindingConflict`、`ErrLastLoginMethod`、`ErrLastFactor` | 外部身份冲突；解绑最后一种登录方式；删最后一个因素 | 409 |
 | `ErrFactorNotEnrolled`、`ErrReplay`、`ErrFactorFlagged` | 因素未登记；TOTP 计数器或 WebAuthn 签名计数重放；WebAuthn 凭据疑似克隆 | 对外并入 `login-failed` |
 | `ErrStepUpRequired` | 保障等级或新鲜度不足 | 401 `insufficient_user_authentication` |
+| `ErrFactorNotSeasoned` | 冒充发起、管理员重置因素与重置口令时，发起者名下没有启用已满 `sensitive-min-age` 的非短信因素 | 403 `factor-not-seasoned` |
 | `ErrSessionNotFound`、`ErrCSRF` | 会话不存在、已撤销或已过期；跨源检查不符 | 网关：401（`Denied`，成因进日志） |
 | `ErrTokenInvalid`、`ErrInvalidGrant`、`ErrRefreshReuse`、`ErrNoSigningKey`、`ErrReservedClaim` | 访问令牌不合法；刷新令牌不合法或已用；重用命中（整族已撤销）；要签发而没有签名钥；`ClaimsContributor` 返回了保留名 | 401；令牌端点 `invalid_grant`；签发路径 503；`ErrReservedClaim` 是宿主实现的配置缺陷 |
 | `ErrImpersonationRestricted`、`ErrImpersonationActive`、`ErrNotImpersonating`、`ErrImpersonationNeedsSession` | 违反冒充的硬性限制；该会话上已有未结束的冒充；结束时没有未结束的记录；调用方没有会话可绑 | 403 `impersonation-restricted`；409；404；403 `impersonation-restricted` |

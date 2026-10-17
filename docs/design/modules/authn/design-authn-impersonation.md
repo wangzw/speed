@@ -305,7 +305,7 @@ CREATE UNIQUE INDEX authn_imp_one_active ON authn_impersonations (session_id) WH
 
 | 组 | 条件 | 守住的性质 |
 |---|---|---|
-| a 发起者 | 身份不是冒充身份，不得链式；账户不是静态口令表主体，种类是 `user`，状态启用；有会话可绑，否则 `ErrImpersonationNeedsSession`（口令表主体与客户端凭据没有会话可绑）；`Identity.Satisfies(Requirement{Assurance: AssuranceMulti, MaxAge: authn.impersonation.max-auth-age, Local: true})`，即本地验证过的多因素，IdP 声明的不算；那次认证的方式集含 `otp` 或 `webauthn`，不接受只靠短信的多因素；`MFA.Seasoned(actor)` 为真，即名下有启用已满 `authn.mfa.sensitive-min-age` 的非短信因素。强认证类条件（`Satisfies`、方式集、`Seasoned`）不满足时答 401 `insufficient_user_authentication`，管理员先做加强认证。 | 冒充只在发起者的强认证之下发生：发起者是有会话、可审计到人的用户账户，认证是本地验证过的新鲜多因素，且不只靠短信、不靠抢先登记的因素（[design-authn-mfa](design-authn-mfa.md)）。没有登记任何因素的账户因此永远不能冒充别人，这是设计内的结果。 |
+| a 发起者 | 身份不是冒充身份，不得链式；账户不是静态口令表主体，种类是 `user`，状态启用；有会话可绑，否则 `ErrImpersonationNeedsSession`（口令表主体与客户端凭据没有会话可绑）；`Identity.Satisfies(Requirement{Assurance: AssuranceMulti, MaxAge: authn.impersonation.max-auth-age, Local: true})`，即本地验证过的多因素，IdP 声明的不算；那次认证的方式集含 `otp` 或 `webauthn`，不接受只靠短信的多因素；`MFA.Seasoned(actor)` 为真，即名下有启用已满 `authn.mfa.sensitive-min-age` 的非短信因素。`Satisfies` 与方式集不满足时答 401 `insufficient_user_authentication`，管理员先做加强认证；`Seasoned` 不满足时答 403 `factor-not-seasoned`，加强认证解不了，要等因素启用满规定时长。 | 冒充只在发起者的强认证之下发生：发起者是有会话、可审计到人的用户账户，认证是本地验证过的新鲜多因素，且不只靠短信、不靠抢先登记的因素（[design-authn-mfa](design-authn-mfa.md)）。没有登记任何因素的账户因此永远不能冒充别人，这是设计内的结果。 |
 | b 目标 | 账户存在、状态启用、种类是 `user`；不是发起者自己，不是静态主体，`protected` 不为真；是 `Tenant` 的有效成员，读 `authn_memberships`，不经缓存。 | 影响面是「该租户里的这个成员」：目标是启用的人类用户账户，不是服务账户、静态主体、已停用或已删除的账户，不是发起者自己。`protected` 是宿主打在要保护的账户上的人工标记；authn 不认识超级管理员，那是授权的概念。 |
 | c 参数 | `Tenant` 非空且形状合法；`Reason` 去空白后 1 到 500 个字符；有效期取下列各项的最小值：请求的 TTL（零表示由设置决定）、设置 `authn.impersonation.max-ttl`、发起者会话的剩余寿命，且有效期不超过 1 小时。这个 1 小时是硬上限，独立于 `max-ttl` 的取值域（`max-ttl` 的上界当前也取 1 小时，与这个硬上限指向同一个秒数）。 | 没有全局冒充；理由是审计的一部分；冒充的期限有硬上限。 |
 | d 并发 | 同一个发起者会话任一时刻至多一条未结束的记录：先检是读 `authn_imp_session` 取该会话上未结束的记录，经 `Active` 求值仍有效即 `ErrImpersonationActive`；插入处的部分唯一索引是并发竞态的兜底。 | 同一会话上的冒充不并存。 |
@@ -501,7 +501,8 @@ flowchart TD
 | `ErrImpersonationActive` | 同一发起者会话上已有未结束的有效记录：并发组的先检，或部分唯一索引冲突 | 409 | 拒 |
 | `ErrNotImpersonating` | 结束时会话上没有未结束的记录；撤销的记录不存在；查询时会话上没有有效记录 | 404（裸 404，不带问题码） | 拒 |
 | `ErrImpersonationNeedsSession` | 调用方没有会话可绑 | 403 `impersonation-restricted`，与 `ErrImpersonationRestricted` 对外不区分 | 拒 |
-| `ErrStepUpRequired` | 发起者的保障等级、新鲜度、`Local`、认证方式集或 `Seasoned` 不满足 | 401 `insufficient_user_authentication` | 拒 |
+| `ErrStepUpRequired` | 发起者的保障等级、新鲜度、`Local` 或认证方式集不满足 | 401 `insufficient_user_authentication` | 拒 |
+| `ErrFactorNotSeasoned` | 发起者名下没有启用已满 `sensitive-min-age` 的非短信因素（`Seasoned` 为假），在上一行的各项都满足之后判定 | 403 `factor-not-seasoned` | 拒 |
 | `ErrForbidden` | `Decider` 判否；`Decider` 缺席 | 403 `forbidden` | 拒 |
 | `ErrAuditRequired` | 开始时强制档审计写失败，含 `ErrNotAccepting` | 503 | 拒 |
 | `ErrUnavailable` | db、`Decider`、`Sessions`、`Tokens` 不可用或返回错误；Bearer 凭据下开始而 `Tokens` 缺席 | 503 | 拒 |
@@ -576,6 +577,7 @@ flowchart TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
+| `Seasoned` 不满足答 403 `factor-not-seasoned`（`ErrFactorNotSeasoned`） | 未实现 | — |
 | 根包的接缝与值类型：`Impersonation`、`ImpersonationRequest`、`ImpersonationGrant`、`GrantQuery` | 已实现 | `pkg/authn/impersonation.go` `Impersonation`；`pkg/authn/internal/model/impersonation.go` `ImpersonationRequest`、`ImpersonationGrant`、`GrantQuery` |
 | 冒充的哨兵：`ErrImpersonationRestricted`、`ErrImpersonationActive`、`ErrNotImpersonating`、`ErrImpersonationNeedsSession` | 已实现 | `pkg/authn/errors.go` `ErrImpersonationRestricted`、`ErrImpersonationActive`、`ErrNotImpersonating`、`ErrImpersonationNeedsSession` |
 | `ScopeGuard` 的根包接口 | 已实现 | `pkg/authn/scope.go` `ScopeGuard`；`pkg/authn/gate/serve.go` `impersonationAdmitted` |

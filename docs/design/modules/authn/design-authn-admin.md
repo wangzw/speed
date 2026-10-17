@@ -383,6 +383,7 @@ flowchart TD
 | 租户在路径、请求体与已存记录之间不一致 | 400，不询问 `Decider` | 拒 |
 | 对象不存在（`ErrAccountNotFound`、`ErrSessionNotFound` 及对应的提供方、冒充记录） | 404 | 拒 |
 | 发起者的强度不足 | 401 `insufficient_user_authentication`（`ErrStepUpRequired`） | 拒 |
+| 管理员重置因素与重置口令时，发起者名下没有启用已满 `sensitive-min-age` 的非短信因素（`Seasoned` 为假），在强度判定通过之后判定 | 403 `factor-not-seasoned`（`ErrFactorNotSeasoned`） | 拒 |
 | 强制档审计写失败（含 `ErrNotAccepting`、`ErrWriteFailed`） | 503（`ErrAuditRequired`），动作不执行 | 拒 |
 | 写失败 | 为每个对象补一条 `failed` 审计行，按能力接口的哨兵映射应答 | 拒 |
 | 写已生效而清理失败（`ErrCleanupIncomplete`） | 503，重试同一请求幂等地补完 | 拒（状态已生效，清理待补） |
@@ -435,6 +436,7 @@ flowchart TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
+| 重置因素与重置口令在 `Seasoned` 不满足时答 403 `factor-not-seasoned` | 未实现 | — |
 | 根包的 `Decider`、`Decision`、`Action` 常量 | 已实现 | `pkg/authn/decide.go` `Decider`、`Decision`、`Action` |
 | 根包的 `ScopeGuard` | 已实现 | `pkg/authn/scope.go` `ScopeGuard`；`pkg/authn/gate/gate.go` `wire`；`pkg/tenant/admission/admission.go` `(*layer).Covers` |
 | `authn.admin` 模块：注册、必需与可选依赖、缺审计的启动失败、路由组的挂出与启动诊断 | 部分实现 | `pkg/authn/admin/admin.go` `Module`、`newProduct`、`product.wire`、`diagnose`；`pkg/authn/admin/routes.go` `mountRoutes` |

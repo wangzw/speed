@@ -150,7 +150,7 @@ type MFA interface {
 | 管理员重置因素、管理员重置口令 | 新鲜的本地多因素，且其强认证的方式集含 `otp` 或 `webauthn`；发起者 `MFA.Seasoned` 为真；发起者不是静态口令表主体、不在冒充中 |
 | 冒充发起 | 新鲜的本地多因素，方式集含 `otp` 或 `webauthn`；`MFA.Seasoned(actor)` 为真；其余限制见 [authn-impersonation](design-authn-impersonation.md) |
 
-短信因素允许登记与使用，但在管理员重置与冒充发起的强认证里不计：短信是受限认证器。没有登记任何因素的账户永远不能发起冒充，也不能重置他人的因素或口令，这是 `MFA.Seasoned` 的直接结果。`Seasoned` 的年龄门槛使登录期间抢先登记的因素换不到这些动作。
+短信因素允许登记与使用，但在管理员重置与冒充发起的强认证里不计：短信是受限认证器。没有登记任何因素的账户永远不能发起冒充，也不能重置他人的因素或口令，这是 `MFA.Seasoned` 的直接结果。`Seasoned` 为假时这些动作答 403 `factor-not-seasoned`（`ErrFactorNotSeasoned`），加强认证解不了这一条，要等因素启用满 `sensitive-min-age`，或先登记一个非短信因素再等；保障等级、新鲜度、`Local` 与认证方式集不满足答 401 `insufficient_user_authentication`，加强认证可解。应答不带年龄，年龄是部署配置，界面据码给出等待说明。`Seasoned` 的年龄门槛使登录期间抢先登记的因素换不到这些动作。
 
 ### 加强认证的应答与 `guard.Require`
 
@@ -560,6 +560,7 @@ CREATE TABLE authn_webauthn_credentials (
 | `ErrFactorFlagged` | WebAuthn 凭据疑似克隆（计数回退或库置的克隆告警） | 并入 `login-failed`；因素以此作成因拒绝，`MFA.Verify` 据它停用该因素行并发 `authn.factor.changed`（`flagged`） | 拒 |
 | `ErrThrottled` | `ScopeFactor` 退避中 | 429 带 `Retry-After` | 拒 |
 | `ErrStepUpRequired` | 保障等级、新鲜度或 `Local` 不满足 | 401 `insufficient_user_authentication` | 拒 |
+| `ErrFactorNotSeasoned` | `Seasoned` 为假：冒充发起、管理员重置因素与重置口令的发起者名下没有启用已满 `sensitive-min-age` 的非短信因素 | 403 `factor-not-seasoned` | 拒 |
 | `ErrNoFactor` | 纳入 `authn.mfa` 而没有任何 `Factor`，且设了 `global-required`，或库里已有账户登记了某个种类而该种类没有实现 | 启动失败，点名缺的模块 | 拒 |
 | `ErrFactorConflict` | 两个 `Factor` 同种 | 启动失败，点名双方 | 拒 |
 | `ErrForbidden`、`ErrAuditRequired` | 重置因素时 `Decider` 判否；强制审计写失败 | 403；503 | 拒 |
@@ -619,6 +620,7 @@ CREATE TABLE authn_webauthn_credentials (
 | `authn.mfa` 模块：登记簿、策略判定、`Challenge`、`Verify`、`Enroll`、`Remove` | 已实现 | `pkg/authn/mfa/mfa.go` `Module`；`pkg/authn/mfa/orchestrate.go` `Enroll`、`Verify`、`Challenge`；`pkg/authn/mfa/manage.go` `Remove`、`Factors`、`Kinds`；`pkg/authn/mfa/register.go` |
 | 保障等级的合成与 IdP 声明的采信条件 | 已实现 | `pkg/authn/mfa/policy.go` `Assurance`、`Require` |
 | `Seasoned`、`Reset` | 已实现 | `pkg/authn/mfa/manage.go` `Seasoned`、`Reset` |
+| `ErrFactorNotSeasoned` 与 403 `factor-not-seasoned` | 未实现 | — |
 | 待确认行的清扫协程 | 已实现 | `pkg/authn/mfa/sweep.go` |
 | `Start` 里对 `tenant.admission` 参与性的判定与 `Warn` | 已实现 | `pkg/authn/mfa/mfa.go` `admissionModule` |
 | 账户生命周期钩子与 `authn.account.deleted` 的补偿订阅 | 已实现 | `pkg/authn/mfa/manage.go` `AccountDeleted`、`AccountDisabled`、`ServiceSecretRevoked`；`pkg/authn/mfa/lifecycle.go` |
