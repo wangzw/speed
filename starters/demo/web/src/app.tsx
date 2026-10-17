@@ -463,10 +463,21 @@ function TenantFrame({
           sidebarCollapsed={sidebarCollapsed}
           onSidebarCollapsedChange={onSidebarCollapsedChange}
           // The tenant switcher sits in the userMenu slot (the design's
-          // placement for it) ahead of the account menu.
+          // placement for it) ahead of the account menu. It is not mounted
+          // while impersonating: the impersonation is confined to one tenant,
+          // the roster read is unreachable and its replacement list is the
+          // grant's tenant alone, so the switcher has nothing to offer and
+          // would show "no current tenant" against the banner that states the
+          // tenant. Not mounting it also keeps it out of the accessibility
+          // tree and the tab order, and the bar closes over the missing item
+          // (the slot is a flex row, so the remaining controls simply sit
+          // together). Once the impersonation ends the effect above settles
+          // the tenant from the roster again and the switcher returns.
           userMenu={
             <>
-              <TenantMenu tenantId={tenantId} onTenantSelect={setTenantId} />
+              {impersonating ? null : (
+                <TenantMenu tenantId={tenantId} onTenantSelect={setTenantId} />
+              )}
               <UserMenu />
             </>
           }

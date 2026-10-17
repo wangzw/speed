@@ -18,9 +18,11 @@ import type { AuthSnapshot } from '@speed/auth-core'
 import type { RequestFn, RequestOptions, SpeedClient } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import authUiEnUS from '../../../../web/packages/auth-ui/src/locales/en-US.json' with { type: 'json' }
+import tenancyUiEnUS from '../../../../web/packages/tenancy-ui/src/locales/en-US.json' with { type: 'json' }
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import {
   DEFAULT_TENANT_ID,
+  getCurrentTenantId,
   setCurrentTenantId,
   setTenantAliases,
 } from './chrome.js'
@@ -209,6 +211,20 @@ function banner(): HTMLElement | null {
   })
 }
 
+/**
+ * The tenant switcher's trigger, or null while it is not mounted. The trigger
+ * is named by the current tenant's row, or by the no-current-tenant label
+ * while the host has settled none.
+ */
+function tenantSwitcherTrigger(): HTMLElement | null {
+  return (
+    screen.queryByRole('button', { name: 'Acme Inc.' }) ??
+    screen.queryByRole('button', {
+      name: tenancyUiEnUS.tenantSwitcher.noCurrentTenant,
+    })
+  )
+}
+
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
   setCurrentTenantId(DEFAULT_TENANT_ID)
@@ -297,6 +313,89 @@ describe('the impersonation shell', () => {
     expect(
       screen.getByRole('region', { name: authUiEnUS.impersonation.regionLabel }),
     ).toBeInTheDocument()
+  })
+
+  it('does not mount the tenant switcher while impersonating', async () => {
+    window.history.replaceState({}, '', '/')
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+    })
+    bindRequestFn(backend.fn)
+
+    renderDemoApp({
+      session: scriptedSession(targetSnapshot(), () => targetSnapshot()),
+    })
+
+    // The status read settles the impersonated identity first, so the
+    // absence below is the mounted shell's, not a pending render's.
+    await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    await waitFor(() =>
+      expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
+    )
+
+    // The switcher is not in the tree at all -- neither as a live affordance
+    // nor as a disabled no-current-tenant button -- and the rest of the top
+    // bar renders without it.
+    expect(tenantSwitcherTrigger()).toBeNull()
+    expect(
+      screen.getByRole('button', { name: demoEnUS.languageSwitcher.label }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Target One' }),
+    ).toBeInTheDocument()
+  })
+
+  it('remounts the tenant switcher once the impersonation ends', async () => {
+    window.history.replaceState({}, '', '/')
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+    })
+    bindRequestFn(backend.fn)
+    const session = scriptedSession(targetSnapshot(), () => operatorSnapshot())
+    const user = userEvent.setup()
+
+    renderDemoApp({ session })
+
+    const notice = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    expect(tenantSwitcherTrigger()).toBeNull()
+    const rosterBefore = backend.rosterReads()
+
+    await user.click(
+      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+    )
+
+    // The identity change settled and the roster read ran under the
+    // operator again: the switcher is back over the roster's row, naming
+    // the tenant it settles as before.
+    await waitFor(() => expect(banner()).toBeNull())
+    await waitFor(() =>
+      expect(backend.rosterReads()).toBeGreaterThan(rosterBefore),
+    )
+    expect(
+      await screen.findByRole('button', { name: 'Acme Inc.' }),
+    ).toBeInTheDocument()
+    expect(getCurrentTenantId()).toBe('acme')
+  })
+
+  it('leaves the top bar unchanged for a member who is not impersonating', async () => {
+    window.history.replaceState({}, '', '/')
+    const backend = makeBackend()
+    bindRequestFn(backend.fn)
+
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    // The roster settles the current tenant and the switcher stays where
+    // the frame put it; no status read is issued and no banner appears.
+    await waitFor(() => expect(backend.rosterReads()).toBeGreaterThan(0))
+    expect(
+      await screen.findByRole('button', { name: 'Acme Inc.' }),
+    ).toBeInTheDocument()
+    expect(banner()).toBeNull()
+    expect(backend.statusReads()).toBe(0)
   })
 
   it('ends from the banner, re-reads the identity and re-registers the stream', async () => {
