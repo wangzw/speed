@@ -43,11 +43,15 @@ this file adds what is specific to the npm side.
 - Environment-dependent globals (navigator, localStorage, location) are
   never relied on implicitly: inject deterministic stand-ins or guard the
   reads, or the suite breaks under Node and CI.
-- Vitest runs from the package directory; pure packages need no vitest
-  config (Node environment). A DOM-rendering package declares its own
-  small config instead -- ui-kit's `vitest.config.ts` sets the jsdom
-  environment and its setup file -- and keeps jsdom, Testing Library and
-  friends in its own devDependencies, never the shared root.
+- Vitest runs from the package directory, and every package with tests
+  carries a `vitest.config.ts` whose `test` block is built with
+  `sharedTestOptions()` from `web/vitest.shared.ts` -- the workspace's one
+  timeout and coverage block. A package config declares only what differs:
+  a DOM-rendering package sets the jsdom environment and its setup file,
+  and keeps jsdom, Testing Library and friends in its own devDependencies,
+  never the shared root. The workspace guard
+  (`web/scripts/workspace-test-config.test.mjs`) fails a package whose
+  config stops spreading the preset.
 - CI runs `pnpm install --frozen-lockfile` from `web/`, then
   lint/typecheck/test/build per package with the root-provided toolchain.
 
@@ -79,8 +83,10 @@ exempt by config for these rules, because fixture strings and scripted
 stand-ins are data.
 The rules' unit tests run from the workspace root, not from a package
 directory (the rules live outside every package, so no per-package
-suite picks them up): `make web-check` runs them, and locally via
-`pnpm exec vitest run eslint-rules/` from `web/`.
+suite picks them up), together with the workspace configuration guard
+(`web/scripts/workspace-test-config.test.mjs`): `make web-check` runs
+both, and locally via `pnpm exec vitest run eslint-rules/ scripts/`
+from `web/`.
 
 Still deferred -- do not
 half-enable: the `react-hooks` plugin is not adopted, keeping

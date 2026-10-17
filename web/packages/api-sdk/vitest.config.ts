@@ -5,29 +5,22 @@
  * are needed here: package sources import only relative files plus the
  * @speed/api-client type surface (type-only imports, erased at runtime),
  * and react-query/react resolve from the package's own devDependencies.
+ * Timeout and the shared coverage block come from the workspace preset
+ * (web/vitest.shared.ts); the one coverage difference is the generated
+ * output's exclusion below.
  */
 import { defineConfig } from 'vitest/config'
+import { sharedTestOptions } from '../../vitest.shared.ts'
 
 export default defineConfig({
-  test: {
+  test: sharedTestOptions({
     environment: 'jsdom',
-    // Coverage: v8 over src/** only, so aliased sibling sources never
-    // count toward this package's numbers; text-summary for local runs,
-    // json-summary for the per-package coverage gate. The one file left
-    // out of src/** is src/index.ts, the orval-generated output (its
-    // DO-NOT-EDIT header); the hand-written src/runtime.ts seam stays
-    // measured, and the gate's floor -- 80% statements and 80% branches,
-    // enforced by the CI test leg running with --coverage -- applies to
-    // that measured set.
+    // The one file left out of src/** is src/index.ts, the
+    // orval-generated output (its DO-NOT-EDIT header); the hand-written
+    // src/runtime.ts seam stays measured, and the shared 80%
+    // statements/branches floor applies to that measured set.
     coverage: {
-      provider: 'v8',
-      include: ['src/**'],
       exclude: ['src/index.ts'],
-      reporter: ['text-summary', 'json-summary'],
-      thresholds: {
-        statements: 80,
-        branches: 80,
-      },
     },
-  },
+  }),
 })

@@ -12,26 +12,26 @@
  * package's config uses, so the @speed specifiers the harness imports
  * resolve onto the siblings' live src here exactly as they do there.
  *
- * No coverage thresholds, deliberately: this package's src is driven by
- * the consumers' suites (each of which enforces the workspace's 80%
- * floor over its own src, the src these helpers are imported into),
- * while the package's own suite pins the harness regression below. A
- * threshold over src/** here would demand a second suite for helpers
- * the consumers already drive.
+ * Timeout comes from the workspace preset (web/vitest.shared.ts). No
+ * coverage thresholds, deliberately: this package's src is driven by the
+ * consumers' suites (each of which enforces the workspace's 80% floor
+ * over its own src, the src these helpers are imported into), while the
+ * package's own suite pins the harness regression below. A threshold
+ * over src/** here would demand a second suite for helpers the consumers
+ * already drive, so the preset's thresholds are dropped below.
  */
 import { defineConfig } from 'vitest/config'
 import { speedAliases } from '../scripts/speed-aliases.mjs'
+import { sharedTestOptions } from '../vitest.shared.ts'
 
 export default defineConfig({
   resolve: {
     alias: speedAliases(),
   },
-  test: {
+  test: sharedTestOptions({
     environment: 'node',
     coverage: {
-      provider: 'v8',
-      include: ['src/**'],
-      reporter: ['text-summary', 'json-summary'],
+      thresholds: undefined,
     },
-  },
+  }),
 })
