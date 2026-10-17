@@ -10,15 +10,18 @@
  * The SMS administration surface is mounted only where the deployment
  * configures an SMS carrier: the surface has no meaning without one. A
  * process without it has no route to answer at all, so the read is
- * answered 404 and settles into the retryable error placeholder; a
- * mounted surface whose dependency fails answers 503 instead. The page
- * keeps that distinction: a 404 (the surface is absent) collapses both
- * write forms, since every submission would be answered by the same
- * missing route, leaving only the explanation and the retry; any other
- * read failure (a mounted surface that could not answer) leaves the forms
- * in place, because a write may still land there. The page says so in its
- * own words, so an operator who reaches it on a carrier-less process knows
- * why it is empty.
+ * answered 404 -- or, on a deployment that serves this console from the
+ * same endpoint as the API, with the front-end entry document, which the
+ * transport refuses as `client.html`. Either answer says the surface is
+ * absent, and it settles into the retryable error placeholder; a mounted
+ * surface whose dependency fails answers 503 instead. The page keeps that
+ * distinction: an absent surface collapses both write forms, since every
+ * submission would be answered by the same missing route, leaving only
+ * the explanation and the retry; any other read failure (a mounted
+ * surface that could not answer) leaves the forms in place, because a
+ * write may still land there. The page says so in its own words, so an
+ * operator who reaches it on a carrier-less process knows why it is
+ * empty.
  *
  * Every read and write is an operation on the console operations bundle,
  * so the page builds no client and writes no query key. The page opens
@@ -49,9 +52,17 @@ import type { ConsoleSmsTemplate } from './operations.js'
 /** The bare-HTTP code the transport synthesizes for a 404 with no readable envelope. */
 const NOT_FOUND_CODE = 'client.http.404'
 
+/** The code the transport synthesizes when a 2xx carries an HTML document:
+ * on a deployment that serves this console from the API's endpoint, that is
+ * the entry document answering a path no API route claims. */
+const ENTRY_DOCUMENT_CODE = 'client.html'
+
 /**
- * Whether a read's failure says the administration surface is absent: the
- * process mounts no route for it, so the answer is HTTP 404. A mounted
+ * Whether a read's failure says the administration surface is absent: no
+ * route claims the path. An API-only deployment answers HTTP 404 with no
+ * readable envelope; a deployment that serves this console from the same
+ * endpoint answers its front-end entry document with HTTP 200 and an HTML
+ * content type, which the transport refuses as an HTML document. A mounted
  * surface whose registry or dependency fails answers 503 (or fails at the
  * transport), which is a failure of the surface rather than its absence.
  */
@@ -60,7 +71,11 @@ function isSurfaceAbsent(error: unknown): boolean {
     return false
   }
   const candidate = error as { readonly status?: unknown; readonly code?: unknown }
-  return candidate.status === 404 || candidate.code === NOT_FOUND_CODE
+  return (
+    candidate.status === 404 ||
+    candidate.code === NOT_FOUND_CODE ||
+    candidate.code === ENTRY_DOCUMENT_CODE
+  )
 }
 
 /** Splits a comma- or whitespace-separated list into its non-empty parts. */

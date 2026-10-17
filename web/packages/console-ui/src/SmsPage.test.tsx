@@ -5,14 +5,19 @@
  * register and offer forms drive the bundle, the row's enable/disable
  * toggle and remove drive it too, and a failed read settles into the
  * retryable error placeholder. A 404 (the surface is not mounted) also
- * collapses both write forms; any other failure keeps them.
+ * collapses both write forms, and so does the entry document a shared
+ * endpoint answers an unclaimed path with; any other failure keeps them.
  */
 
 import { describe, expect, it, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { createClient } from '@speed/api-client'
 import { SmsPage } from './SmsPage.js'
-import type { ConsoleSmsTemplate } from './operations.js'
+import type {
+  ConsoleSmsTemplate,
+  ConsoleSmsTemplatePage,
+} from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
@@ -169,6 +174,36 @@ describe('SmsPage', () => {
     expect(screen.queryByText('提交审核')).toBeNull()
     expect(screen.queryByRole('button', { name: '登记' })).toBeNull()
     expect(screen.queryByRole('button', { name: '提交' })).toBeNull()
+  })
+
+  it('collapses both write forms when the entry document answers the read', async () => {
+    // A deployment that serves this console from the API's own endpoint
+    // answers a path no API route claims with the front-end entry document:
+    // HTTP 200 and text/html, not the 404 an API-only deployment gives.
+    // The read travels through the real transport, so the refusal under
+    // test is the one the deployment produces, not a hand-shaped error.
+    const api = createClient({
+      baseUrl: 'https://console.example.test',
+      fetch: async () =>
+        new Response('<!doctype html><html><body></body></html>', {
+          status: 200,
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+        }),
+    })
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSmsTemplates: () =>
+          api<ConsoleSmsTemplatePage>('/sms/admin/templates'),
+      }),
+    )
+    renderWithProviders(<SmsPage />, { operations })
+
+    // The surface is absent here too: the page says so and keeps the retry,
+    // and neither form is rendered.
+    expect(await screen.findByText('短信管理面未装载')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(screen.queryByText('登记模板')).toBeNull()
+    expect(screen.queryByText('提交审核')).toBeNull()
   })
 
   it('keeps both write forms when a mounted surface fails temporarily', async () => {
