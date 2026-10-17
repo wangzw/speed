@@ -226,10 +226,30 @@ request body.
   permission a declaration carries is never a gate this package applies.
 - **A read's failure branches on the answer.** A refused read — HTTP 403,
   or a bare 403 surfaced as the `client.http.403` code — renders the
-  permission placeholder with no retry (`ConsoleAsyncSection` in
-  `src/internal/async-section.tsx`); any other failure renders the retryable
-  error placeholder. The branch reads the answer the server wrote, never a
-  route-level permission read.
+  permission placeholder with no retry and replaces whatever content is on
+  screen: a refusal makes the older data meaningless, so it never becomes a
+  stale marker (`ConsoleAsyncSection` in `src/internal/async-section.tsx`).
+  Any other failure over an already settled payload keeps the content and
+  renders the stale marker above it — the console's own `stale.description`,
+  the section's retry label and callback; the page passes its read's
+  fetching state as `refreshing`, so the marker withdraws while the retry
+  runs and mounts anew when the retry fails again. Any other failure
+  without a settled payload renders the retryable error placeholder. The
+  branch reads the answer the server wrote, never a route-level permission
+  read.
+- **A control group's writes report through one feedback scope.** A page
+  holds one `useWriteFeedback` per control group and renders the console's
+  `WriteFeedbackRegion` (`src/internal/write-feedback.tsx`) directly under
+  it; the wrapper binds the console-ui error-text resolver, so a failure
+  code never renders as a raw key. A multi-request action — the settings
+  batch save — is one attempt: every request is issued through
+  `mutateAsync`, awaited together with `Promise.allSettled`, and reported
+  once. A partial landing is a failure: the first failure in submission
+  order is the reported code, landed items clear their drafts, failed items
+  keep theirs, and the settings table moves to the page holding the first
+  failed item. A destructive action confirmed through the shared
+  pending-confirmation dialog closes the dialog on the confirming click and
+  reports the outcome in the page's feedback area afterwards.
 - **Every write goes through a generated operation.** No page hand-writes
   a `fetch` or an endpoint path; a request body the generated client does
   not send is not hand-written here — the fragment declares it or the
@@ -283,9 +303,10 @@ own suite (its reads, writes and failure branches, with an axe scan); the
 surface, driven over the request rig, plus the provider fallback and the
 key-splitting helper); `routes` (the declarations' paths, permissions,
 `requires` names, icons and translated labels); `resources`,
-`internal/error-text`, `internal/identifier`, `internal/datetime` and
-`internal/async-section` (bundle key parity, whitelist pairing, the
-identifier rule, the timestamp formatting and the 403/retry split);
+`internal/error-text`, `internal/identifier`, `internal/datetime`,
+`internal/async-section` and `internal/write-feedback` (bundle key parity,
+whitelist pairing, the identifier rule, the timestamp formatting, the
+403/retry/stale split, and the region's resolver binding);
 `package.json` (the manifest contract); and `usage-example` (the README's
 composition, with the operations bundle substituted from test-utils).
 

@@ -407,9 +407,9 @@ graph TD
 | 前往账户设置的入口由宿主经 `accountHref` 给出 | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShellProps.accountHref`；`web/packages/console-ui/src/internal/account-href.tsx` `ConsoleAccountHrefProvider`、`useConsoleAccountHref`；`web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge` |
 | 各页的反馈作用域与成功确认 | 未实现 | — |
 | 一次性值的展示面板（邀请链接、SSO 令牌、服务密钥） | 未实现 | — |
-| 设置页的批量保存按一次尝试 | 未实现 | — |
+| 设置页的批量保存按一次尝试 | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage` |
 | 创建成功后表单复位与必填为空时提交禁用 | 未实现 | — |
-| 确认对话框在确认点击时关闭（含权限页的角色删除） | 未实现 | — |
+| 确认对话框在确认点击时关闭（含权限页的角色删除） | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/internal/confirm.tsx` `usePendingConfirm` |
 | 冒充状态读与结束后的呈现 | 未实现 | — |
 | 读的陈旧提示、刷新忙态与详情页 404 占位 | 未实现 | — |
 | 租户选择器的加载、失败与空态 | 未实现 | — |
