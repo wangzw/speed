@@ -40,8 +40,10 @@
  * `consoleNavGroups`) to group the pages by capability domain: the shell
  * folds each declaration into the group its `group` field names, groups
  * in table order and entries in declaration order, giving the frame's
- * `AppShell` the grouped navigation (`AppShellNavGroup`). Without the
- * table the flat column is unchanged.
+ * `AppShell` the grouped navigation (`AppShellNavGroup`). A group left
+ * with no entry is dropped, and one holding a single entry renders that
+ * entry alone, at the group's position, rather than a heading over one
+ * link. Without the table the flat column is unchanged.
  *
  * The shell reads no data and holds no operations: the pages it hosts
  * reach their reads and writes through the operations bundle the host
@@ -58,7 +60,6 @@ import type { FeatureName } from '@speed/api-sdk/features'
 import { AppShell } from '@speed/layout-kit'
 import type {
   AppShellNavEntry,
-  AppShellNavGroup,
   AppShellNavItem,
   AppShellProps,
 } from '@speed/layout-kit'
@@ -177,7 +178,10 @@ function navItemFor(
  * groups: groups in table order, each group's entries in declaration
  * order, and a declaration that names no group (or one the table omits)
  * stays a plain entry above the groups. A group with no matching
- * declaration is dropped, so an empty heading never renders.
+ * declaration is dropped, and a group holding exactly one entry becomes
+ * that entry, at the position the group would have taken -- a heading
+ * over a lone link is noise, and which groups hold one entry depends on
+ * the features the deployment serves.
  */
 function buildNavEntries(
   routes: readonly ConsoleRoute[],
@@ -192,18 +196,30 @@ function buildNavEntries(
   const ungrouped = labelled.filter(
     (route) => route.group === undefined || !groupIds.has(route.group),
   )
-  const groups: AppShellNavGroup[] = navGroups
-    .map((group) => ({
+  const grouped: AppShellNavEntry[] = []
+  for (const group of navGroups) {
+    const items = labelled
+      .filter((route) => route.group === group.id)
+      .map((route) => navItemFor(route, onNavigate))
+    if (items.length === 0) {
+      continue
+    }
+    if (items.length === 1) {
+      const [item] = items
+      if (item !== undefined) {
+        grouped.push(item)
+      }
+      continue
+    }
+    grouped.push({
       id: group.id,
       label: group.label,
       icon: group.icon,
       defaultCollapsed: group.defaultCollapsed,
-      items: labelled
-        .filter((route) => route.group === group.id)
-        .map((route) => navItemFor(route, onNavigate)),
-    }))
-    .filter((group) => group.items.length > 0)
-  return [...ungrouped.map((route) => navItemFor(route, onNavigate)), ...groups]
+      items,
+    })
+  }
+  return [...ungrouped.map((route) => navItemFor(route, onNavigate)), ...grouped]
 }
 
 export function ConsoleShell({

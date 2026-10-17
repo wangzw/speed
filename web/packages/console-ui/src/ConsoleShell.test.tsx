@@ -27,6 +27,8 @@ import layoutKitZhCN from '../../layout-kit/src/locales/zh-CN.json' with { type:
 import consoleUiZhCN from './locales/zh-CN.json' with { type: 'json' }
 import { ConsoleShell } from './ConsoleShell.js'
 import type { ConsoleShellProps } from './ConsoleShell.js'
+import { consoleNavGroups } from './nav-groups.js'
+import { consoleRoutes } from './routes.js'
 import type { ConsoleNavGroup, ConsoleRoute } from './route.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -347,12 +349,17 @@ describe('ConsoleShell', () => {
   describe('navigation groups', () => {
     // Labelled declarations that name groups, plus one ungrouped entry. The
     // group table orders the groups differently from the declaration order, so
-    // the grouped output cannot accidentally match the flat one.
+    // the grouped output cannot accidentally match the flat one. Every group
+    // holds two entries: a group with one visible entry renders ungrouped, so
+    // these cases are about the grouped form itself (see the single-entry
+    // cases below).
     const groupedRoutes: readonly ConsoleRoute[] = [
       { path: '/', view: () => null, label: 'Overview', group: 'overview' },
+      { path: '/activity', view: () => null, label: 'Activity', group: 'overview' },
       { path: '/accounts', view: () => null, label: 'Accounts', group: 'identity' },
       { path: '/roles', view: () => null, label: 'Roles', group: 'identity' },
       { path: '/settings', view: () => null, label: 'Settings', group: 'platform' },
+      { path: '/limits', view: () => null, label: 'Limits', group: 'platform' },
       { path: '/help', view: () => null, label: 'Help' },
     ]
     const navGroups: readonly ConsoleNavGroup[] = [
@@ -386,7 +393,15 @@ describe('ConsoleShell', () => {
         within(nav)
           .getAllByRole('link')
           .map((link) => link.textContent),
-      ).toEqual(['Help', 'Accounts', 'Roles', 'Settings', 'Overview'])
+      ).toEqual([
+        'Help',
+        'Accounts',
+        'Roles',
+        'Settings',
+        'Limits',
+        'Overview',
+        'Activity',
+      ])
     })
 
     it('drops a group that no declaration names', () => {
@@ -423,7 +438,15 @@ describe('ConsoleShell', () => {
         within(nav)
           .getAllByRole('link')
           .map((link) => link.textContent),
-      ).toEqual(['Overview', 'Accounts', 'Roles', 'Settings', 'Help'])
+      ).toEqual([
+        'Overview',
+        'Activity',
+        'Accounts',
+        'Roles',
+        'Settings',
+        'Limits',
+        'Help',
+      ])
     })
 
     it('has no axe violations with the grouped navigation', async () => {
@@ -436,6 +459,106 @@ describe('ConsoleShell', () => {
         { operations },
       )
       await expectNoAxeViolationsForPage()
+    })
+  })
+
+  describe('single-entry groups', () => {
+    // The demo's baseline serves every feature the console's pages require
+    // except sms.admin: the binary imports that module for the API contract,
+    // but no command names it for a run. Narrowing the declarations by that
+    // answer is what the demo's host hands the shell.
+    const demoRoutes = consoleRoutes.filter((route) =>
+      (route.requires ?? []).every((name) => name !== 'sms.admin'),
+    )
+
+    it('renders a group holding one visible item as that item alone, at the group position', () => {
+      mockMatchMedia(true)
+      renderWithProviders(
+        <Shell routes={demoRoutes} navGroups={consoleNavGroups} title="Console">
+          <h1>Home</h1>
+        </Shell>,
+        { operations },
+      )
+      const nav = screen.getByRole('navigation')
+      // Identity & access is the one group with more than one visible item;
+      // overview, tenants, platform and audit hold a lone entry each and
+      // render no heading over it.
+      expect(
+        within(nav)
+          .getAllByRole('button')
+          .map((button) => button.textContent),
+      ).toEqual(['身份与访问'])
+      // The lone entries stand where their groups would have, in the group
+      // table's order, with identity & access's six items between them.
+      expect(
+        within(nav)
+          .getAllByRole('link')
+          .map((link) => link.textContent),
+      ).toEqual([
+        '概览',
+        '账户',
+        '会话',
+        '冒充',
+        '权限',
+        '邀请与成员',
+        'SSO 提供方',
+        '租户',
+        '设置',
+        '审计记录',
+      ])
+    })
+
+    it('renders the heading again, with both items inside, when a second item is visible', () => {
+      mockMatchMedia(true)
+      // Every feature present: sms.admin is in force, so platform config
+      // holds settings and the SMS templates.
+      renderWithProviders(
+        <Shell
+          routes={consoleRoutes}
+          navGroups={consoleNavGroups}
+          title="Console"
+        >
+          <h1>Home</h1>
+        </Shell>,
+        { operations },
+      )
+      const nav = screen.getByRole('navigation')
+      // The same code now renders the platform heading; identity & access
+      // keeps its own.
+      expect(
+        within(nav)
+          .getAllByRole('button')
+          .map((button) => button.textContent),
+      ).toEqual(['身份与访问', '平台配置'])
+      expect(
+        within(nav)
+          .getAllByRole('link')
+          .map((link) => link.textContent),
+      ).toEqual([
+        '概览',
+        '账户',
+        '会话',
+        '冒充',
+        '权限',
+        '邀请与成员',
+        'SSO 提供方',
+        '租户',
+        '设置',
+        '短信模板',
+        '审计记录',
+      ])
+      // Both platform pages sit inside the heading's controlled content,
+      // not beside it as lone top-level items.
+      const heading = within(nav).getByRole('button', { name: '平台配置' })
+      const contentId = heading.getAttribute('aria-controls')
+      expect(contentId).not.toBeNull()
+      const content = document.getElementById(contentId as string)
+      expect(content).not.toBeNull()
+      expect(
+        within(content as HTMLElement)
+          .getAllByRole('link')
+          .map((link) => link.textContent),
+      ).toEqual(['设置', '短信模板'])
     })
   })
 
@@ -501,6 +624,8 @@ describe('ConsoleShell', () => {
 
     it('collapses the group heading to its group icon', () => {
       mockMatchMedia(true)
+      // Two entries: a group holding one renders as an ungrouped item, with
+      // no heading left to collapse.
       const groupedRoutes: readonly ConsoleRoute[] = [
         {
           path: '/accounts',
@@ -508,6 +633,12 @@ describe('ConsoleShell', () => {
           label: 'Accounts',
           group: 'identity',
           icon: <svg aria-hidden="true" data-testid="entry-icon" />,
+        },
+        {
+          path: '/roles',
+          view: () => null,
+          label: 'Roles',
+          group: 'identity',
         },
       ]
       const groupedNav: readonly ConsoleNavGroup[] = [
