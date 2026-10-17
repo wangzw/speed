@@ -22,6 +22,11 @@
  *  - one account's held bindings, looked up by the account chosen through
  *    the same picker.
  *
+ * Both binding tables render an account through the shared account identity
+ * unit, keeping the recorded identifier as the column's full value; the
+ * unbind control names the account by that same readable identity when the
+ * account read answers one, and by the recorded identifier otherwise.
+ *
  * Every read and write is an operation on the console operations bundle,
  * so the page builds no client and writes no query key. A failed list
  * settles into a retryable placeholder; a failed write renders the
@@ -46,6 +51,10 @@ import {
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import {
+  AccountIdentity,
+  useAccountIdentity,
+} from './internal/account-identity.js'
 import { AccountSelector } from './internal/account-selector.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { InlineError } from './internal/inline-error.js'
@@ -66,6 +75,41 @@ function SectionHeading({ children }: { readonly children: string }) {
     <Typography component="h2" variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
       {children}
     </Typography>
+  )
+}
+
+/**
+ * The unbind control of one binding row. Its accessible name names the
+ * account by its readable identity when the account read answers one, and
+ * by the recorded identifier otherwise, so a reader hears the same account
+ * the row's cell shows.
+ */
+function UnbindButton({
+  binding,
+  disabled,
+  onClick,
+}: {
+  readonly binding: ConsoleBinding
+  readonly disabled: boolean
+  readonly onClick: () => void
+}) {
+  const { t } = useConsoleUiTranslation()
+  const { name } = useAccountIdentity(binding.account)
+  return (
+    <Button
+      type="button"
+      size="small"
+      variant="outlined"
+      color="error"
+      aria-label={t('permissions.bindings.unbindAria', {
+        account: name ?? binding.account,
+        role: binding.role,
+      })}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {t('permissions.bindings.unbind')}
+    </Button>
   )
 }
 
@@ -288,7 +332,7 @@ export function PermissionsPage() {
       header: t('permissions.bindings.column.account'),
       cellWrap: 'nowrap',
       cellFullValue: (binding) => binding.account,
-      cell: (binding) => binding.account,
+      cell: (binding) => <AccountIdentity account={binding.account} />,
     },
     {
       id: 'role',
@@ -302,15 +346,8 @@ export function PermissionsPage() {
       header: t('permissions.bindings.column.actions'),
       cellWrap: 'nowrap',
       cell: (binding) => (
-        <Button
-          type="button"
-          size="small"
-          variant="outlined"
-          color="error"
-          aria-label={t('permissions.bindings.unbindAria', {
-            account: binding.account,
-            role: binding.role,
-          })}
+        <UnbindButton
+          binding={binding}
           disabled={unbindRole.isPending}
           onClick={() => {
             setSuccess(null)
@@ -323,9 +360,7 @@ export function PermissionsPage() {
               { onSuccess: () => setSuccess(t('permissions.bindings.unbound')) },
             )
           }}
-        >
-          {t('permissions.bindings.unbind')}
-        </Button>
+        />
       ),
     },
   ]

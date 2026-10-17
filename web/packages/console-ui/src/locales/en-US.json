@@ -714,7 +714,7 @@
       "title": "Current impersonation",
       "loading": "Loading the impersonation status",
       "none": "You are not impersonating any account.",
-      "target": "Impersonated account: {{target}}",
+      "target": "Impersonated account: ",
       "tenant": "Tenant: {{tenant}}",
       "ends": "Ends: {{ends}}",
       "end": "End impersonation"

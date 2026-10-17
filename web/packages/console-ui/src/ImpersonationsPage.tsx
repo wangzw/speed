@@ -32,7 +32,10 @@
  *
  * A record is in force while its `ended_at` is the zero instant (the
  * sentinel the view carries); the state column says so and the terminate
- * control is offered only then. The timestamps render in UTC through
+ * control is offered only then. Every account identifier the page shows --
+ * the record's actor and target and the in-force panel's target -- renders
+ * through the shared account identity unit, with the recorded identifier
+ * kept as the column's full value. The timestamps render in UTC through
  * Intl. The page opens with ui-kit's PageHeader.
  */
 
@@ -59,6 +62,7 @@ import {
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import { AccountIdentity } from './internal/account-identity.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { formatUtc, isZeroInstant } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
@@ -117,14 +121,14 @@ export function ImpersonationsPage() {
       header: t('impersonations.column.actor'),
       cellWrap: 'nowrap',
       cellFullValue: (record) => record.actor,
-      cell: (record) => record.actor,
+      cell: (record) => <AccountIdentity account={record.actor} />,
     },
     {
       id: 'target',
       header: t('impersonations.column.target'),
       cellWrap: 'nowrap',
       cellFullValue: (record) => record.target,
-      cell: (record) => record.target,
+      cell: (record) => <AccountIdentity account={record.target} />,
     },
     {
       id: 'tenant',
@@ -225,7 +229,8 @@ export function ImpersonationsPage() {
           <Alert severity="warning" variant="outlined">
             <Stack sx={{ gap: 0.5, mb: 1 }}>
               <Typography variant="body2">
-                {t('impersonations.current.target', { target: grant.target })}
+                {t('impersonations.current.target')}
+                <AccountIdentity account={grant.target} />
               </Typography>
               <Typography variant="body2">
                 {t('impersonations.current.tenant', { tenant: grant.tenant })}

@@ -25,6 +25,7 @@ import type { ConsoleImpersonation } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
+  accountFixture,
   createConsoleOperations,
   makeConsoleBackend,
   type ConsoleBackend,
@@ -128,12 +129,31 @@ async function pickTenant(user: ReturnType<typeof userEvent.setup>): Promise<voi
   await user.click(await screen.findByRole('option', { name: 'Acme' }))
 }
 
+/**
+ * The display name the account read answers for the identifiers the page
+ * records, so a test can tell a resolved identity from the raw id.
+ */
+const ACCOUNT_NAMES: Record<string, string> = {
+  'staff-1': 'Staff One',
+  'acc-1': 'Target One',
+  'acc-7': 'Target Seven',
+}
+
 function withPage(
   overrides: Partial<ConsoleBackend> = {},
 ): ReturnType<typeof createConsoleOperations> {
   return createConsoleOperations(
     makeConsoleBackend({
       listTenants: () => Promise.resolve([TENANT]),
+      getAccount: ({ id }) => {
+        const accountId = id ?? ''
+        return Promise.resolve(
+          accountFixture({
+            id: accountId,
+            display_name: ACCOUNT_NAMES[accountId] ?? accountId,
+          }),
+        )
+      },
       ...overrides,
     }),
   )
@@ -205,9 +225,37 @@ describe('ImpersonationsPage', () => {
     })
     renderWithProviders(<ImpersonationsPage />, { operations })
     await pickTenant(user)
-    expect(await screen.findByText('staff-1')).toBeInTheDocument()
-    expect(screen.getByText('acc-1')).toBeInTheDocument()
+    // The actor and target columns show the readable identities, not the
+    // recorded ids.
+    expect(await screen.findByText('Staff One')).toBeInTheDocument()
+    expect(screen.getByText('Target One')).toBeInTheDocument()
     expect(screen.getByText('生效中')).toBeInTheDocument()
+  })
+
+  it('keeps the recorded ids marked unresolved when the account read is refused', async () => {
+    const backend = makeCallerSessionBackend()
+    backend.setGrant({
+      id: 'imp-1',
+      target: 'acc-7',
+      tenant: 'acme',
+      starts_at: '2026-10-15T12:00:00Z',
+      ends_at: '2026-10-15T13:00:00Z',
+    })
+    bindRequestFn(backend.fn)
+    const user = userEvent.setup()
+    const operations = withPage({
+      listImpersonations: () => Promise.resolve([record()]),
+      getAccount: () => Promise.reject(new Error('forbidden')),
+    })
+    renderWithProviders(<ImpersonationsPage />, { operations })
+    await pickTenant(user)
+    // Every account identifier the page shows -- the in-force panel's
+    // target and the record's actor and target -- keeps the recorded id,
+    // labelled unresolved rather than passed off as a resolved identity.
+    const unresolved = await screen.findAllByLabelText(/身份未解析/)
+    expect(unresolved.map((cell) => cell.textContent)).toEqual(
+      expect.arrayContaining(['acc-7', 'staff-1', 'acc-1']),
+    )
   })
 
   it('marks an ended record with its reason and disables termination', async () => {
@@ -236,7 +284,7 @@ describe('ImpersonationsPage', () => {
     })
     renderWithProviders(<ImpersonationsPage />, { operations })
     await pickTenant(user)
-    await screen.findByText('staff-1')
+    await screen.findByText('Staff One')
     await user.click(screen.getByRole('button', { name: '终止' }))
     await vi.waitFor(() => {
       expect(ended).toEqual(['imp-1'])
@@ -272,7 +320,7 @@ describe('ImpersonationsPage', () => {
     })
     renderWithProviders(<ImpersonationsPage />, { operations })
     await pickTenant(user)
-    await screen.findByText('staff-1')
+    await screen.findByText('Staff One')
     await expectNoAxeViolations()
   })
 
@@ -343,7 +391,7 @@ describe('ImpersonationsPage', () => {
     })
     // The landed start invalidates the status read, so the page converges on
     // the record the server just wrote: the in-force panel replaces the form.
-    expect(await screen.findByText('被冒充账户：acc-1')).toBeInTheDocument()
+    expect(await screen.findByText('被冒充账户：Target One')).toBeInTheDocument()
     expect(
       screen.queryByLabelText('目标账户'),
     ).not.toBeInTheDocument()
@@ -378,7 +426,7 @@ describe('ImpersonationsPage', () => {
     const user = userEvent.setup()
     renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
 
-    expect(await screen.findByText('被冒充账户：acc-7')).toBeInTheDocument()
+    expect(await screen.findByText('被冒充账户：Target Seven')).toBeInTheDocument()
     expect(screen.getByText('租户：acme')).toBeInTheDocument()
     // The start form is offered only while none is in force.
     expect(screen.queryByLabelText('目标账户')).not.toBeInTheDocument()

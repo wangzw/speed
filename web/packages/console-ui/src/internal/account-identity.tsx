@@ -2,7 +2,9 @@
  * One account identifier rendered as its readable identity, shared by every
  * console surface that records an account identifier: the audit record's
  * actor (the audit query, the dashboard's recent activity and the audit
- * detail), an invitation's inviter and a membership's account.
+ * detail), an impersonation record's actor and target (the record list and
+ * the in-force panel of the operator's own session), an invitation's
+ * inviter, a membership's account, and an authorization binding's account.
  *
  * It reads the account's display name through the bound surface and shows
  * it. The account read is gated on authn.account.read, which a page's own
@@ -20,15 +22,33 @@ import Typography from '@mui/material/Typography'
 import { useConsoleUiTranslation } from './translation.js'
 import { useConsoleOperations } from '../operations.js'
 
-export function AccountIdentity({ account }: { readonly account: string }) {
-  const { t } = useConsoleUiTranslation()
+/**
+ * The account read's outcome for one identifier, for surfaces that need the
+ * readable name without rendering the unit -- an aria label that names the
+ * account, for one. `name` is the display name when the read answers a
+ * non-empty one; `refused` says the read failed, so the recorded identifier
+ * is not passed off as resolved.
+ */
+export function useAccountIdentity(account: string): {
+  readonly name: string | undefined
+  readonly refused: boolean
+} {
   const operations = useConsoleOperations()
   const read = operations.useAccount({ id: account })
-  const name = read.data?.display_name
-  if (name !== undefined && name !== '') {
+  const recorded = read.data?.display_name
+  return {
+    name: recorded !== undefined && recorded !== '' ? recorded : undefined,
+    refused: read.isError,
+  }
+}
+
+export function AccountIdentity({ account }: { readonly account: string }) {
+  const { t } = useConsoleUiTranslation()
+  const { name, refused } = useAccountIdentity(account)
+  if (name !== undefined) {
     return <>{name}</>
   }
-  if (read.isError) {
+  if (refused) {
     return (
       <Typography
         component="span"

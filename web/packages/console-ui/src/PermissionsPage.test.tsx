@@ -158,7 +158,9 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     expect(await screen.findByText('editor')).toBeInTheDocument()
     expect(screen.getByText('crm.deal.read')).toBeInTheDocument()
-    expect(screen.getByText('acc-1')).toBeInTheDocument()
+    // The binding's account column shows the readable identity the account
+    // read answers, not the recorded id.
+    expect(screen.getByText('Operator')).toBeInTheDocument()
   })
 
   it("keeps a read-only grants entry on a builtin role and drops its write controls", async () => {
@@ -277,7 +279,7 @@ describe('PermissionsPage', () => {
     })
     const removeRole = screen.getByRole('button', { name: '删除角色 editor' })
     const unbind = screen.getByRole('button', {
-      name: '解绑账户 acc-1 的角色 viewer',
+      name: '解绑账户 Operator 的角色 viewer',
     })
     const refresh = screen.getByRole('button', { name: '刷新' })
     // The grant revoke belongs to the selected role's grant list, which
@@ -403,7 +405,7 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    await screen.findByText('acc-1')
+    await screen.findByText('Operator')
     // A role alone is not a binding: the account must be chosen, and the
     // picker holds no id until then.
     await user.type(screen.getByLabelText('角色'), 'viewer')
@@ -412,13 +414,32 @@ describe('PermissionsPage', () => {
     // never the typed name.
     await chooseAccount(user, '账户', 'Ada', 'Ada (acc-2)')
     await user.click(screen.getByRole('button', { name: '绑定' }))
-    await user.click(screen.getByRole('button', { name: '解绑账户 acc-1 的角色 editor' }))
+    await user.click(screen.getByRole('button', { name: '解绑账户 Operator 的角色 editor' }))
     await vi.waitFor(() => {
       expect(bound).toEqual(['acc-2:viewer'])
       expect(unbound).toEqual(['editor'])
     })
     // The landed unbind fills the page's standing success region.
     expect(await screen.findByText('角色已解绑')).toBeInTheDocument()
+  })
+
+  it('keeps a binding account id marked unresolved when the account read is refused', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listBindings: () => Promise.resolve([binding({ role: 'viewer' })]),
+      getAccount: () => Promise.reject(new Error('forbidden')),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    // The cell keeps the recorded id, labelled unresolved rather than
+    // passed off as a resolved identity.
+    const cell = await screen.findByLabelText(/身份未解析/)
+    expect(cell).toHaveTextContent('acc-1')
+    // The unbind control names the account by the recorded id when no
+    // readable name was resolved.
+    expect(
+      screen.getByRole('button', { name: '解绑账户 acc-1 的角色 viewer' }),
+    ).toBeInTheDocument()
   })
 
   it('looks up the bindings of the chosen account by its id', async () => {

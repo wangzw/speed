@@ -714,7 +714,7 @@
       "title": "当前冒充",
       "loading": "正在读取冒充状态",
       "none": "当前未冒充任何账户。",
-      "target": "被冒充账户：{{target}}",
+      "target": "被冒充账户：",
       "tenant": "租户：{{tenant}}",
       "ends": "结束时间：{{ends}}",
       "end": "结束冒充"
