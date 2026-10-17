@@ -4,8 +4,8 @@
 
 `@speed/objectstore-ui` 是对象存储能力（[objectstore](../design-objectstore.md)）在浏览器里的面：一个租户作用域的对象页。它交付下列面：
 
-- `ObjectsPage`：本租户的对象列表（对象标识、状态、大小、内容类型、创建时间，以及每行的下载、详情与删除控件），经 `@speed/ui-kit` 的 `FileUploader` 驱动的上传面（每个文件走对象存储模块的三步传输：声明 → 上传字节 → 完成），一个逐对象的详情对话框，一次下载与一次删除。删除经 ui-kit 危险 `ConfirmDialog` 的 `doubleConfirm` 两步守卫确认——对象连同其字节一并销毁、界面上无从恢复。
-- `ObjectDetailDialog`：单个对象的元数据，读 `GET /api/v1/objects/{id}`，由 `ObjectsPage` 的「详情」控件打开。
+- `ObjectsPage`：本租户的对象列表（名称、对象标识、状态、大小、内容类型、创建时间，以及每行的下载、详情与删除控件），经 `@speed/ui-kit` 的 `FileUploader` 驱动的上传面（每个文件走对象存储模块的三步传输：声明 → 上传字节 → 完成），一个逐对象的详情对话框，一次下载与一次删除。删除经 ui-kit 危险 `ConfirmDialog` 的 `doubleConfirm` 两步守卫确认——对象连同其字节一并销毁、界面上无从恢复。
+- `ObjectDetailDialog`：单个对象的元数据（含名称），读 `GET /api/v1/objects/{id}`，由 `ObjectsPage` 的「详情」控件打开。
 - 命名为 `OBJECTSTORE_UI_NAMESPACE` 与 `objectstoreUiResources` 的双语命名空间资源。
 
 **本包是能力 UI 包，与一个后端能力目录对应**（[design-web](design-web.md) 的划分轴）：`@speed/objectstore-ui` 对 `pkg/objectstore`，把该模块的路由渲染成一个页面。它处在生成钩子这一层之上，与 `@speed/account-ui`、`@speed/console-ui` 同层而互不 import。
@@ -20,7 +20,7 @@
 - **不持会话、不落存储、不携令牌。** 它从不读访问令牌、写存储或驱动会话；凭据由宿主绑定进 api-sdk 运行期接缝的客户端携带。
 - **不自己写 HTTP。** 每次调用都是生成操作；本包不含 `fetch`/`axios`（工作区的 `speed/no-direct-http` 规则守住），也从不构造客户端、不定义查询键。
 - **不拥有查询客户端。** 每个读经 `@speed/api-sdk` 的生成 react-query 钩子、跑在宿主拥有的 QueryClient 上；失效一律用租户前缀。
-- **不显示声明名。** 对象视图不带 `name`（模块不存这个名字），故列表显示对象的 `id`，下载文件以 `id` 加一个由 `mime` 推出的扩展名命名。
+- **名称取模块规整后的值，按文本渲染。** 对象视图的 `name` 已由模块规整，不含路径分隔符与控制字符；本包把它当文本节点渲染，不当 HTML、不拼进路径。列表单元格单行截断，完整名称在详情对话框；`name` 为空串时列表显示「未命名」文案，下载文件名回落为 `id` 加一个由 `mime` 推出的扩展名。
 - **不判定权限。** 403 是服务端写出的应答，本包只渲染它；前端的权限判断是 UX 可供性，不是安全边界。
 
 ## 外部接口契约
@@ -98,7 +98,7 @@ sequenceDiagram
 
 ### 上传三步
 
-`useObjectUploads`（`src/internal/uploads.ts`）持有队列并驱动每个文件的三步：一次 `create`（`POST /objects`，体为 `{name, size, content_type}`，`content_type` 取文件的 `type`，为空折成 `application/octet-stream`）→ 一次 `upload`（`PUT /objects/{id}/content`，文件作为 Blob 体）→ 一次 `complete`（`POST /objects/{id}/complete`）。三步按序 `await`；任一步失败即把该行置 `failed` 并带上该失败码的文本，前一步落下的声明留在原地（模块语义：一个上传失败的已声明对象保持 `pending` 直到窗口关闭）。成功即把该行置 `succeeded` 并失效租户前缀。重试用行上的文件重跑整条链。
+`useObjectUploads`（`src/internal/uploads.ts`）持有队列并驱动每个文件的三步：一次 `create`（`POST /objects`，体为 `{name, size, content_type}`，`name` 取文件的 `name`，`content_type` 取文件的 `type`，为空折成 `application/octet-stream`）→ 一次 `upload`（`PUT /objects/{id}/content`，文件作为 Blob 体）→ 一次 `complete`（`POST /objects/{id}/complete`）。三步按序 `await`；任一步失败即把该行置 `failed` 并带上该失败码的文本，前一步落下的声明留在原地（模块语义：一个上传失败的已声明对象保持 `pending` 直到窗口关闭）。成功即把该行置 `succeeded` 并失效租户前缀。重试用行上的文件重跑整条链。
 
 ### 键集游标的分页
 
@@ -106,7 +106,7 @@ sequenceDiagram
 
 ### 下载
 
-「下载」以 `objectstoreMetadataGetObjectContent(id)` 取回 Blob，交 `saveBlob`（`src/internal/download.ts`）经一个临时对象 URL 上的锚点另存，文件名取 `id` 加一个由 `mime` 推出的扩展名（`extensionForMime`）。对象 URL API 按其是否存在探测：无 `createObjectURL` 的环境（测试 DOM）仍得到锚点，运行不抛。
+「下载」以 `objectstoreMetadataGetObjectContent(id)` 取回 Blob，交 `saveBlob`（`src/internal/download.ts`）经一个临时对象 URL 上的锚点另存，文件名取视图的 `name`，`name` 为空串时取 `id` 加一个由 `mime` 推出的扩展名（`extensionForMime`）。对象 URL API 按其是否存在探测：无 `createObjectURL` 的环境（测试 DOM）仍得到锚点，运行不抛。
 
 ### 写入的反馈
 
@@ -162,5 +162,6 @@ sequenceDiagram
 | 命名空间资源 | 已实现 | `web/packages/objectstore-ui/src/resources.ts` `OBJECTSTORE_UI_NAMESPACE`、`objectstoreUiResources` |
 | 对象页的反馈作用域、删除的忙态与刷新的陈旧提示 | 未实现 | — |
 | 删除失败后的失效重读 | 未实现 | — |
+| 对象名称的列表列、详情字段与下载文件名 | 未实现 | — |
 | 错误白名单组合会话生命周期码族及其双语文案 | 未实现 | — |
 | 上传行的失败文本取自错误码 | 未实现 | — |
