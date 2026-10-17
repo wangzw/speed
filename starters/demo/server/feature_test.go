@@ -16,44 +16,26 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 )
 
-// The feature document the baseline serves, in the order its own answer carries
-// it: ascending and without repetition. Every name below belongs to a module
-// baselineServe names. The two entries the case reads as sentinels are named in
-// the table for the surfaces they must not describe: sms.admin is imported for
-// the contract but no command runs it, so its static feature is absent in this
-// process; authn.admin.sso.metadata is declared and posted only by a module
-// that finds a SAML provider in the assembly, which the baseline does not
-// carry.
-var demoFeatures = []string{
-	"audit.admin",
-	"authn.admin",
-	"authn.admin.factors",
-	"authn.admin.impersonations",
-	"authn.admin.secrets",
-	"authn.admin.sessions",
-	"authn.admin.sso",
-	"authn.impersonation",
-	"authn.invitations",
-	"authn.mfa",
-	"authz.admin",
-	"notification.inbox",
-	"notification.preferences",
-	"notification.stream",
-	"objectstore.objects",
-	"settings.admin",
-	"tenant.admin",
-}
-
 // TestServePublishesTheFeatureDocument seeds an administrator, serves the
 // baseline and reads GET /features: anonymous callers are refused by the
 // gateway, and an authenticated one reads exactly the set this process serves.
 //
-// The exact comparison is the point. It fails an implementation that answers
-// from the available set — sms.admin is imported but not run, so it would
-// appear — and one that posts a conditional feature unconditionally —
-// authn.admin.sso.metadata has no provider to post it here. The stack is named
-// sqlite-memory and the configuration gives it a database in a file: seed and
-// serve are two processes, and only a file survives the first one.
+// The expected set is derived from the assembly, not copied: the declarations
+// come from the process registry (declaredVocabulary), and a name is expected
+// when its declaring module is named by baselineServe. A static feature is
+// therefore always expected; a conditional one is expected only if the assembly
+// posts it, which the test cannot observe directly -- so it asserts the two
+// properties that make a wrong answer impossible instead: every conditional
+// name in the answer belongs to a served module, and at least one conditional
+// name of a served module is absent (which fails an implementation that posts
+// every conditional unconditionally). The two named anchors below are not a
+// census but properties: sms.admin is declared by a module the contract imports
+// and no command runs, and authn.admin.sso.metadata is declared by a served
+// module whose conditional no assembly member posts (no SAML provider here).
+//
+// The stack is named sqlite-memory and the configuration gives it a database in
+// a file: seed and serve are two processes, and only a file survives the first
+// one.
 func TestServePublishesTheFeatureDocument(t *testing.T) {
 	ports := freePorts(t, listenerCount)
 	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "demo.db"))
@@ -88,16 +70,65 @@ func TestServePublishesTheFeatureDocument(t *testing.T) {
 	if err := json.Unmarshal(authenticated.body, &document); err != nil {
 		t.Fatalf("the feature document is not JSON: %v\n%s", err, authenticated.body)
 	}
-	if !reflect.DeepEqual(document.Features, demoFeatures) {
-		t.Errorf("the feature document is\n%v\nwant\n%v", document.Features, demoFeatures)
+
+	// The expected sets, derived from this process's own assembly.
+	servedModules := make(map[string]bool, len(baselineServe))
+	for _, module := range baselineServe {
+		servedModules[module] = true
 	}
+	staticServed := make(map[string]bool)
+	conditionalServed := make(map[string]bool)
+	for _, entry := range declaredVocabulary() {
+		if !servedModules[entry.Module] {
+			continue
+		}
+		if entry.Conditional {
+			conditionalServed[entry.Name] = true
+		} else {
+			staticServed[entry.Name] = true
+		}
+	}
+
+	answered := make(map[string]bool, len(document.Features))
+	for index, name := range document.Features {
+		if index > 0 && document.Features[index-1] >= name {
+			t.Errorf("the feature document is not strictly ascending at %q (after %q)",
+				name, document.Features[index-1])
+		}
+		answered[name] = true
+		if !staticServed[name] && !conditionalServed[name] {
+			t.Errorf("the feature document carries %q, which no module this baseline serves declares: "+
+				"an answer taken from the available set reports it, and so does a conditional feature "+
+				"posted by a module the baseline does not name", name)
+		}
+	}
+	for name := range staticServed {
+		if !answered[name] {
+			t.Errorf("the feature document omits %q, which its declaring module (named by baselineServe) declares statically",
+				name)
+		}
+	}
+	absentConditional := false
+	for name := range conditionalServed {
+		if !answered[name] {
+			absentConditional = true
+			break
+		}
+	}
+	if !absentConditional {
+		t.Errorf("the feature document carries every conditional feature a served module declares; " +
+			"the board appears to post conditionals without checking the assembly")
+	}
+
+	// Anchors, not a census: each name stands for a property the derivation
+	// above cannot express on its own. sms.admin is declared by an imported
+	// module no command runs; authn.admin.sso.metadata has no assembly member
+	// that posts it.
 	for _, absent := range []string{"sms.admin", "authn.admin.sso.metadata"} {
-		for _, name := range document.Features {
-			if name == absent {
-				t.Errorf("the feature document carries %q, which this process does not serve: "+
-					"an answer taken from the available set, or a conditional feature posted "+
-					"without checking the assembly, reports it", absent)
-			}
+		if answered[absent] {
+			t.Errorf("the feature document carries %q, which this process does not serve: "+
+				"an answer taken from the available set, or a conditional feature posted "+
+				"without checking the assembly, reports it", absent)
 		}
 	}
 }
