@@ -721,6 +721,30 @@ describe('the tenant area header controls', () => {
   })
 })
 
+describe('the not-found fallback', () => {
+  it('explains the dead link in the user terms and offers a way home', async () => {
+    window.history.replaceState({}, '', '/console/definitely-not-a-page')
+    // A platform permission admits the console frame; the path itself
+    // declares no page, so the frame renders the not-found fallback.
+    renderDemoApp({
+      session: createTestSession(authenticatedSnapshot({ system: ['tenant.read'] })),
+    })
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.notFound.heading,
+      }),
+    ).toBeInTheDocument()
+    // The body speaks to the user, not about the router's registration
+    // table.
+    expect(screen.getByText(demoEnUS.notFound.body)).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: demoEnUS.notFound.home }),
+    ).toHaveAttribute('href', '/')
+  })
+})
+
 describe('the account page', () => {
   it('mounts the account surfaces in the tenant shell at /account', async () => {
     window.history.replaceState({}, '', '/account')

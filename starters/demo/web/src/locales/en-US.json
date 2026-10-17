@@ -64,6 +64,8 @@
   },
   "notFound": {
     "heading": "Page not found",
-    "body": "No page is registered for {{path}}."
+    "body": "The page you are looking for may have been moved or removed. Check the address and try again.",
+    "home": "Back to home",
+    "path": "Requested address: {{path}}"
   }
 }

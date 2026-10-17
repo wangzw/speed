@@ -34,6 +34,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Link from '@mui/material/Link'
 import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
 import { TenantProvider, useAuthState, usePermission } from '@speed/auth-core'
@@ -482,18 +483,45 @@ function consoleGuardStatus(
   return set.includes(permission) ? 'allowed' : 'denied'
 }
 
-/** The fallback page for a URL no declaration matches. */
+/**
+ * The fallback page for a URL no declaration matches. The address stays on
+ * the page in a secondary line: it is what a user copies back to an operator
+ * when reporting the dead link.
+ */
 function NotFoundPage({ path }: { readonly path: string }): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
+  const navigate = useNavigate()
   return (
     <Box
       component="section"
-      sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: 2,
+      }}
     >
       <Typography component="h1" variant="h4">
         {t('notFound.heading')}
       </Typography>
-      <Typography variant="body1">{t('notFound.body', { path })}</Typography>
+      <Typography variant="body1">{t('notFound.body')}</Typography>
+      <Link
+        href={TENANT_HOME_PATH}
+        underline="hover"
+        onClick={(event) => {
+          event.preventDefault()
+          navigate(TENANT_HOME_PATH)
+        }}
+      >
+        {t('notFound.home')}
+      </Link>
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ wordBreak: 'break-all' }}
+      >
+        {t('notFound.path', { path })}
+      </Typography>
     </Box>
   )
 }
