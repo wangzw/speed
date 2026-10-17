@@ -25,6 +25,10 @@ import { CONSOLE_UI_NAMESPACE, consoleUiResources } from '@speed/console-ui'
 import { createI18n, I18nextProvider, registerNamespace } from '@speed/i18n'
 import { LAYOUT_KIT_NAMESPACE, layoutKitResources } from '@speed/layout-kit'
 import {
+  OBJECTSTORE_UI_NAMESPACE,
+  objectstoreUiResources,
+} from '@speed/objectstore-ui'
+import {
   NOTIFICATION_UI_NAMESPACE,
   notificationUiResources,
 } from '@speed/notification-ui'
@@ -89,6 +93,7 @@ export function renderDemoApp(
   registerNamespace(i18n, PRODUCT_SHELL_NAMESPACE, productShellResources)
   registerNamespace(i18n, CONSOLE_UI_NAMESPACE, consoleUiResources)
   registerNamespace(i18n, ACCOUNT_UI_NAMESPACE, accountUiResources)
+  registerNamespace(i18n, OBJECTSTORE_UI_NAMESPACE, objectstoreUiResources)
   registerNamespace(i18n, TENANCY_UI_NAMESPACE, tenancyUiResources)
   registerNamespace(i18n, NOTIFICATION_UI_NAMESPACE, notificationUiResources)
   registerNamespace(i18n, DEMO_NAMESPACE, demoResources)
