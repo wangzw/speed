@@ -381,8 +381,8 @@ describe('ObjectsPage', () => {
     renderWithProviders(<ObjectsPage />, { language: 'en-US' })
     await screen.findByText('o-aaa')
     // The row actions, the toolbar refresh and the cursor pager are all
-    // compact controls; on a finger-driven device each one gates up to
-    // the 44x44 floor through @speed/ui-kit's touchTargetSx.
+    // compact controls; on a finger-driven device each one reaches the
+    // 44x44 floor through the theme's touch-target overrides.
     const gated = [
       screen.getByRole('button', { name: 'Download object o-aaa' }),
       screen.getByRole('button', { name: 'Details' }),
