@@ -1040,11 +1040,21 @@ describe('AppShell', () => {
       expect(style.padding).toMatch(/^0(px)?$/)
       expect(style.borderWidth).toMatch(/^0(px)?$/)
       expect(style.minHeight).toBe('auto')
-      // Above the page content, below modal panels and dialogs.
+      // Same layer as the app bar (drawer + 1), which is above the
+      // permanent drawer paper and page content and below modal panels
+      // and dialogs. The strict equality pins the design's lower bound:
+      // a slot at `drawer` or below is painted under the permanent
+      // drawer paper's left edge.
       const { theme } = createAppTheme()
       const zIndex = Number(style.zIndex)
-      expect(zIndex).toBeGreaterThan(0)
+      expect(zIndex).toBe(theme.zIndex.drawer + 1)
       expect(zIndex).toBeLessThan(theme.zIndex.modal)
+      expect(String(zIndex)).toBe(getComputedStyle(appBar).zIndex)
+      const paper = document.querySelector('.MuiDrawer-paper')
+      expect(paper).not.toBeNull()
+      expect(zIndex).toBeGreaterThan(
+        Number(getComputedStyle(paper as Element).zIndex),
+      )
     })
 
     it('offsets the app bar and reserves the banner plus header height in every spacer', () => {
@@ -1078,6 +1088,153 @@ describe('AppShell', () => {
       const drawerSpacer = paper?.querySelector('.MuiToolbar-root') ?? null
       expect(drawerSpacer).not.toBeNull()
       expect(drawerSpacer).toHaveStyle({ minHeight: '160px' })
+      // The paper starts at the viewport top itself: the banner covers
+      // its first strip, and the spacer inside it reserves the head, so
+      // the paper carries no top offset of its own.
+      expect(paper).not.toBeNull()
+      expect(getComputedStyle(paper as Element).top).not.toBe('48px')
+    })
+
+    it('offsets the app bar and reserves the banner plus header in the temporary drawer at narrow widths', () => {
+      mockMatchMedia(false)
+      const resizeObserver = stubResizeObserver()
+      const { getByTestId, getByRole } = renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          banner={<p data-testid="notice">Impersonating</p>}
+        >
+          content
+        </AppShell>,
+      )
+      const slot = getByTestId('notice').parentElement
+      expect(slot).not.toBeNull()
+      // The temporary drawer is keepMounted, so its paper and spacer are
+      // reachable even while the drawer is closed.
+      const drawerSpacer =
+        document.querySelector('.MuiDrawer-paper .MuiToolbar-root')
+      expect(drawerSpacer).not.toBeNull()
+
+      resizeObserver.emitHeightFor(getByRole('banner'), 56)
+      resizeObserver.emitHeightFor(slot as Element, 48)
+
+      // The app bar shifts below the banner at this breakpoint too ...
+      expect(getByRole('banner')).toHaveStyle({ top: '48px' })
+      // ... and the mobile paper's first navigation item clears the same
+      // banner-plus-header height the content does.
+      expect(
+        getByRole('main').querySelector('.MuiToolbar-root'),
+      ).toHaveStyle({ minHeight: '104px' })
+      expect(drawerSpacer).toHaveStyle({ minHeight: '104px' })
+    })
+
+    it('takes the banner height as zero where no ResizeObserver exists', () => {
+      mockMatchMedia(true)
+      expect(typeof ResizeObserver).toBe('undefined')
+      const { getByRole } = renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          banner={<p data-testid="notice">Impersonating</p>}
+        >
+          content
+        </AppShell>,
+      )
+      // Unmeasured means zero: the app bar stays at the viewport top and
+      // the spacer keeps the plain theme toolbar height.
+      expect(getByRole('banner')).toHaveStyle({ top: '0px' })
+      const mainSpacer =
+        getByRole('main').querySelector<HTMLElement>('.MuiToolbar-root')
+      expect(mainSpacer).not.toBeNull()
+      expect((mainSpacer as HTMLElement).style.minHeight).toBe('')
+      expect(getComputedStyle(mainSpacer as Element).marginTop).toMatch(/^0(px)?$/)
+    })
+
+    it.each([null, undefined, false] as const)(
+      'zeroes the banner offset and the spacers when the banner becomes %s after being measured',
+      (banner) => {
+        mockMatchMedia(true)
+        const resizeObserver = stubResizeObserver()
+        const { getByTestId, getByRole, queryByTestId, rerender } =
+          renderWithProviders(
+            <AppShell
+              navItems={NAV_ITEMS}
+              banner={<p data-testid="notice">Impersonating</p>}
+            >
+              content
+            </AppShell>,
+          )
+        const slot = getByTestId('notice').parentElement
+        expect(slot).not.toBeNull()
+        resizeObserver.emitHeightFor(getByRole('banner'), 112)
+        resizeObserver.emitHeightFor(slot as Element, 48)
+        expect(getByRole('banner')).toHaveStyle({ top: '48px' })
+
+        rerender(
+          <AppShell navItems={NAV_ITEMS} banner={banner}>
+            content
+          </AppShell>,
+        )
+        expect(queryByTestId('notice')).not.toBeInTheDocument()
+        // The stale measurement no longer offsets the app bar ...
+        expect(getByRole('banner')).toHaveStyle({ top: '0px' })
+        // ... and the spacers keep only the header height.
+        expect(
+          getByRole('main').querySelector('.MuiToolbar-root'),
+        ).toHaveStyle({ minHeight: '112px' })
+        expect(
+          document.querySelector('.MuiDrawer-paper .MuiToolbar-root'),
+        ).toHaveStyle({ minHeight: '112px' })
+      },
+    )
+
+    it('disconnects the observer on every banner change and on unmount, measuring only the live banner', () => {
+      mockMatchMedia(true)
+      const resizeObserver = stubResizeObserver()
+      const { getByTestId, queryByTestId, rerender, unmount } =
+        renderWithProviders(
+          <AppShell
+            navItems={NAV_ITEMS}
+            banner={<p data-testid="notice">Impersonating</p>}
+          >
+            content
+          </AppShell>,
+        )
+      const firstSlot = getByTestId('notice').parentElement
+      expect(firstSlot).not.toBeNull()
+      expect(resizeObserver.observedElements()).toContain(firstSlot)
+      expect(resizeObserver.observedElements()).toHaveLength(2)
+      expect(resizeObserver.instances()).toHaveLength(1)
+
+      // The banner leaves: the old observer is disconnected (it watched
+      // a node that no longer exists) and its replacement watches the
+      // app bar alone.
+      rerender(<AppShell navItems={NAV_ITEMS}>content</AppShell>)
+      expect(queryByTestId('notice')).not.toBeInTheDocument()
+      expect(resizeObserver.observedElements()).not.toContain(firstSlot)
+      expect(resizeObserver.observedElements()).toHaveLength(1)
+      expect(resizeObserver.instances()).toHaveLength(2)
+      expect(resizeObserver.instances().at(0)?.disconnected).toBe(true)
+      expect(resizeObserver.instances().at(1)?.disconnected).toBe(false)
+
+      // A new banner mounts: the new node is the one watched, not the
+      // removed one.
+      rerender(
+        <AppShell
+          navItems={NAV_ITEMS}
+          banner={<p data-testid="notice">Impersonating</p>}
+        >
+          content
+        </AppShell>,
+      )
+      const secondSlot = getByTestId('notice').parentElement
+      expect(secondSlot).not.toBe(firstSlot)
+      expect(resizeObserver.observedElements()).toContain(secondSlot)
+      expect(resizeObserver.observedElements()).not.toContain(firstSlot)
+
+      unmount()
+      expect(resizeObserver.observedElements()).toHaveLength(0)
+      expect(
+        resizeObserver.instances().every((instance) => instance.disconnected),
+      ).toBe(true)
     })
 
     it('takes an empty host node as zero height, leaving the app bar at the top', () => {
@@ -1375,6 +1532,29 @@ describe('AppShell', () => {
           navItems={NAV_ITEMS}
           header={<span>Speed Admin</span>}
           userMenu={<span>Jane Doe</span>}
+        >
+          <h1>Main content</h1>
+        </AppShell>,
+      )
+      await expectNoAxeViolations()
+    })
+
+    it('has no axe violations with a focusable banner slot, with region enabled', async () => {
+      // The skip link now renders outside the shell's landmarks, ahead
+      // of the banner slot. axe's region rule exempts a skip link whose
+      // fragment target resolves (here, `main`), which this scan proves
+      // for a banner carrying a focusable control, the shape the host
+      // impersonation banner has. The banner fixture carries its own
+      // region role, as the host's does.
+      mockMatchMedia(true)
+      renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          banner={
+            <section aria-label="Impersonation">
+              <button type="button">End impersonation</button>
+            </section>
+          }
         >
           <h1>Main content</h1>
         </AppShell>,
