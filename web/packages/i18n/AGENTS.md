@@ -114,6 +114,18 @@ catalog) and is non-negotiable here.
   code never sets any of these; when the wrapper version moves, re-verify
   each against the runtime before changing tests, and pin `initAsync`
   while there.
+- **Interpolation is verbatim, and a host rendering outside React owns
+  escaping.** The instance fixes `interpolation.escapeValue: false`:
+  React renders a translated string as a text node and escapes it once,
+  so the engine must insert the interpolated values unchanged -- with
+  engine-side escaping a path's `/` would reach the page as `&#x2F;`
+  and a tenant name's `&` as `&amp;`. The premise is that no layer here
+  consumes HTML. A host that renders a translation outside React -- for
+  example, treats a translated string as HTML -- must escape the
+  interpolated values itself; no API path in this package escapes them
+  for the host. This obligation is part of the package's interface
+  surface: a host relying on engine-side escaping is broken by the
+  instance's fixed option, and the option is not configurable.
 
 ## React bindings
 

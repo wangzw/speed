@@ -96,7 +96,7 @@ sequenceDiagram
 | 存储绑定 | 挂在实例自身上的私有记录 | 创建时解析的存储与键以包内注册符号为键挂在实例上，切换经同一绑定写；从实例派生的对象（如 `useTranslation` 交回的包装）连同其余自有属性一起携带它 |
 | 缺键详情 | `MissingKeyDetails` | 查找涉及的语言、命名空间、键 |
 
-**实例由创建时的选项定型**：纪律选项（受支持集、`fallbackLng: false`、`load: 'currentOnly'`、`saveMissing` 与缺键处理器）保证缺键不回落到别的语言，协商结果（起始语言）决定从哪种语言开始。**插值按原样进入文本**：实例固定 `interpolation.escapeValue: false`，因为 React 把译文字符串当作文本节点渲染时已转义一次，引擎再转义一次会把实体本身（路径里的 `/` 显示成 `&#x2F;`、租户名里的 `&` 显示成 `&amp;`）呈现给用户；本包只渲染进 React，没有任何一层消费 HTML。`fallbackNamespaces` 是唯一到达 i18next 自身选项面的宿主选项（落为 `fallbackNS`），其未设状态（`fallbackNS` 为 false）与「没有配置回退命名空间」是同一件事。
+**实例由创建时的选项定型**：纪律选项（受支持集、`fallbackLng: false`、`load: 'currentOnly'`、`saveMissing` 与缺键处理器）保证缺键不回落到别的语言，协商结果（起始语言）决定从哪种语言开始。**插值按原样进入文本**：实例固定 `interpolation.escapeValue: false`，因为 React 把译文字符串当作文本节点渲染时已转义一次，引擎再转义一次会把实体本身（路径里的 `/` 显示成 `&#x2F;`、租户名里的 `&` 显示成 `&amp;`）呈现给用户；本包只渲染进 React，没有任何一层消费 HTML。这条前提由工作区的 `speed/no-dangerous-html` ESLint 规则守住：运行时源码里的 `dangerouslySetInnerHTML`、`innerHTML` 或 `outerHTML` 的赋值、`insertAdjacentHTML` 与 `document.write` 报错，故新增一处 HTML 消费点不会让本实例的原文插值静默变成 XSS 通道。`fallbackNamespaces` 是唯一到达 i18next 自身选项面的宿主选项（落为 `fallbackNS`），其未设状态（`fallbackNS` 为 false）与「没有配置回退命名空间」是同一件事。
 
 ## 核心算法与流程
 
