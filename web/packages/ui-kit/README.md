@@ -5,15 +5,19 @@ The platform's first DOM-rendering package: the theme factory that turns
 `AppThemeProvider`; the theme also carries the coarse-pointer 44x44
 floor for MUI's base controls), and the controlled components (`PageHeader`,
 `EmptyState`, `ConfirmDialog`, `SidePanel`, `FileUploader`, `FormField`,
-`FormLayout`, `DataTable`, `InlineError`, `InlineSuccess`, `ListSkeleton`,
-`AsyncSection`) that render only the state hosts give them --
+`FormLayout`, `DataTable`, `InlineError`, `InlineSuccess`,
+`WriteFeedbackRegion`, `ListSkeleton`, `AsyncSection`) that render only
+the state hosts give them --
 FileUploader renders the upload queue the host owns as `rows` props
 while the transfers themselves run in the host's own code. The
 cross-surface state primitives ship beside the components: the
 whole-attempt failure banner and its classifier
 (`InlineError` / `errorCodeOf`), its success twin (`InlineSuccess`, the
-mount-empty-then-fill `role="status"` notice), the pending/error/empty/content
-branches of an async read (`ListSkeleton`, `AsyncSection`) and the
+mount-empty-then-fill `role="status"` notice), the write-feedback scope
+(`useWriteFeedback`, the one exported hook that holds state, paired with
+`WriteFeedbackRegion`, which renders that slot), the
+pending/error/empty/content branches of an async read (`ListSkeleton`,
+`AsyncSection`) and the
 shared style recipes (`visuallyHiddenSx` for hidden elements,
 `touchTargetSx` for the coarse-pointer floor of elements the theme does
 not reach). Every
@@ -39,8 +43,10 @@ string lives in the bilingual `ui-kit` namespace registered through
 | `components/DataTable.tsx` | `DataTable`, `DataTableColumn`, `DataTableColumnCellWrap`, `DataTableColumnPriority`, `DataTableSort`, `DataTableSortDirection`, `DataTableFilter`, `DataTablePagination`, `DataTableProps` |
 | `components/InlineError.tsx` | `InlineError`, `InlineErrorProps`, `errorCodeOf` |
 | `components/InlineSuccess.tsx` | `InlineSuccess`, `InlineSuccessProps` |
+| `components/WriteFeedbackRegion.tsx` | `WriteFeedbackRegion`, `WriteFeedbackRegionProps` |
+| `write-feedback.ts` | `useWriteFeedback`, `WriteFeedback`, `WriteOutcome` |
 | `components/ListSkeleton.tsx` | `ListSkeleton`, `ListSkeletonProps` |
-| `components/AsyncSection.tsx` | `AsyncSection`, `AsyncSectionProps`, `AsyncSectionErrorState`, `AsyncSectionEmptyState` |
+| `components/AsyncSection.tsx` | `AsyncSection`, `AsyncSectionProps`, `AsyncSectionErrorState`, `AsyncSectionEmptyState`, `AsyncSectionStaleState` |
 | `visually-hidden.ts` | `visuallyHiddenSx` |
 | `touch-target.ts` | `touchTargetSx` |
 | `resources.ts` | `UI_KIT_NAMESPACE`, `uiKitResources` |
@@ -901,7 +907,81 @@ which would not be live) while the message is `null`, and filled when a
 write lands, so a screen reader announces a change to a region it already
 knows rather than one born together with its text. The text comes from
 the `message` prop (the surface family's own namespace); nothing renders
-for `null`. Props: `message` (required, `string | null`).
+for `null`. `sx` adjusts spacing only and serves `WriteFeedbackRegion`;
+call sites render the region, never this banner on its own.
+Props: `message` (required, `string | null`), `sx?`.
+
+### Write feedback (useWriteFeedback + WriteFeedbackRegion)
+
+One feedback scope per control group: the `useWriteFeedback` instance
+holds the group's single result slot, and `WriteFeedbackRegion` renders
+it directly under the controls. The slot holds at most one outcome, so a
+success and a failure never stand beside each other, and the attempt
+that settles last occupies it.
+
+`run(attempt)` is one operator-initiated action: it clears the slot,
+counts the attempt in flight (`pending` stays true until every attempt
+settles), awaits `attempt` and settles the slot from it -- a returned
+string becomes the success message, `null` leaves the slot empty (a
+write refused for step-up is handed to the elevation gate and its replay
+is a new `run`), and a throw becomes a failure classified through
+`errorCodeOf`. `run` never rejects. `succeed`, `fail` and `reset` serve
+flows that are not one promise; `reset` clears the slot without
+cancelling attempts in flight. Callbacks keep their identity for the
+component's lifetime.
+
+The success message is the string the host translated when it called
+`succeed` -- the slot stores it, so a later language switch does not
+rewrite it. Failure codes are stored as codes and resolved by the
+region's `resolve`, so they follow the active language.
+
+```tsx
+import { useState } from 'react'
+import Button from '@mui/material/Button'
+import TextField from '@mui/material/TextField'
+import { useTranslation } from '@speed/i18n'
+import { useWriteFeedback, WriteFeedbackRegion } from '@speed/ui-kit'
+
+function TenantNameSection() {
+  const feedback = useWriteFeedback()
+  const { t } = useTranslation('tenant')
+  const [name, setName] = useState('Acme')
+
+  return (
+    <section>
+      <TextField
+        label={t('nameLabel')}
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+      />
+      <Button
+        loading={feedback.pending}
+        disabled={feedback.pending}
+        onClick={() => {
+          void feedback.run(async () => {
+            if (name.trim() === '') {
+              throw { code: 'tenant.name_required' }
+            }
+            await renameTenant(name)
+            return t('renamed')
+          })
+        }}
+      >
+        {t('save')}
+      </Button>
+      <WriteFeedbackRegion
+        outcome={feedback.outcome}
+        resolve={(code) => t(`errors.${code}`)}
+        sx={{ marginTop: 2 }}
+      />
+    </section>
+  )
+}
+```
+
+`renameTenant` is the host's own API call, and the `tenant` namespace is
+registered by the host at bootstrap; ui-kit ships no endpoint and no
+copy for this scope. The region's `sx` applies to its root container.
 
 ### ListSkeleton (the pending-state placeholder)
 
@@ -925,9 +1005,25 @@ for); `emptyHeadingLevel` (default `headingLevel`) overrides the EMPTY
 placeholder's own level, so a host whose empty placeholder must not
 enter the heading outline passes it `'none'` while the error placeholder
 keeps `headingLevel`.
+
+`staleState` marks a refresh that failed while earlier data is still on
+screen. The caller supplies `{ description, retryLabel, onRetry }`
+exactly while that is the state -- the latest refresh failed, the data
+is still on screen and no read is in flight -- and withdraws it when the
+retry starts. The content keeps rendering and a `role="alert"` notice
+with the retry action renders above it; withdrawing `staleState`
+unmounts the notice, and a retry that fails again re-supplies it, so the
+alert mounts anew and announces again. `description` and `retryLabel`
+are the caller's translated copy and should say the shown content may be
+out of date. A refusal such as HTTP 403 does not use `staleState` -- the
+old data no longer means anything, so the caller replaces the content
+with the no-permission placeholder (the console and object-store
+packages do this in their own `AsyncSection` wrappers). Omitting
+`staleState` renders exactly the previous behaviour.
+
 Props: `pending`, `payload`, `empty`, `loading`, `errorState`,
-`emptyState?`, `headingLevel?`, `emptyHeadingLevel?`, `children` (all
-required except the marked ones).
+`emptyState?`, `headingLevel?`, `emptyHeadingLevel?`, `staleState?`,
+`children` (all required except the marked ones).
 
 ### visuallyHiddenSx (the hidden-element recipe)
 
@@ -1000,7 +1096,11 @@ live). The full key set:
 
 The two files (`src/locales/zh-CN.json` and `en-US.json`) carry
 identical leaf key sets, enforced by registration and by
-`tools/check_i18n_keys.py` in CI. Host content (a PageHeader title, a
+`tools/check_i18n_keys.py` in CI. The write-feedback scope adds no key:
+the success message is host copy passed to `succeed`, and a failure code
+resolves through the region's `resolve` prop in the calling package's
+namespace. `AsyncSection`'s `staleState` likewise takes the caller's
+`description` and `retryLabel`. Host content (a PageHeader title, a
 ConfirmDialog message, a column header) is the host's own translation
 surface, and hosts reword the kit by registering their own bilingual
 bundle pair -- identical key structure, their wording -- under

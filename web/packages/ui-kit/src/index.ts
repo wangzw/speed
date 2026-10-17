@@ -100,6 +100,15 @@ export {
   type InlineSuccessProps,
 } from './components/InlineSuccess.js'
 export {
+  WriteFeedbackRegion,
+  type WriteFeedbackRegionProps,
+} from './components/WriteFeedbackRegion.js'
+export {
+  useWriteFeedback,
+  type WriteFeedback,
+  type WriteOutcome,
+} from './write-feedback.js'
+export {
   ListSkeleton,
   type ListSkeletonProps,
 } from './components/ListSkeleton.js'
@@ -108,6 +117,7 @@ export {
   type AsyncSectionEmptyState,
   type AsyncSectionErrorState,
   type AsyncSectionProps,
+  type AsyncSectionStaleState,
 } from './components/AsyncSection.js'
 export { visuallyHiddenSx } from './visually-hidden.js'
 export { touchTargetSx } from './touch-target.js'

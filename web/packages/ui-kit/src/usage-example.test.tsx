@@ -31,10 +31,12 @@
 import { act, fireEvent, within } from '@testing-library/react'
 import { useEffect, useRef, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { switchLanguage } from '@speed/i18n'
+import { registerNamespace, switchLanguage, useTranslation } from '@speed/i18n'
+import Button from '@mui/material/Button'
+import TextField from '@mui/material/TextField'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
-import { renderWithProviders } from '../test-utils/render.js'
+import { createUiKitI18n, renderWithProviders } from '../test-utils/render.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { selectFiles } from '../test-utils/file-input.js'
 import { ConfirmDialog } from './components/ConfirmDialog.js'
@@ -44,6 +46,8 @@ import { EmptyState } from './components/EmptyState.js'
 import { FileUploader } from './components/FileUploader.js'
 import type { FileUploaderRow } from './components/FileUploader.js'
 import { PageHeader } from './components/PageHeader.js'
+import { WriteFeedbackRegion } from './components/WriteFeedbackRegion.js'
+import { useWriteFeedback } from './write-feedback.js'
 
 interface Member {
   id: number
@@ -623,3 +627,121 @@ async function expectAbort(promise: Promise<number>): Promise<void> {
   )
   expect(rejection).toMatchObject({ name: 'AbortError' })
 }
+
+const TENANT_NAMESPACE = 'tenant'
+
+const TENANT_BUNDLES = {
+  'zh-CN': {
+    save: '保存',
+    nameLabel: '租户名称',
+    renamed: '租户名称已更新',
+    errors: { 'tenant.name_required': '请输入租户名称。' },
+  },
+  'en-US': {
+    save: 'Save',
+    nameLabel: 'Tenant name',
+    renamed: 'Tenant name updated',
+    errors: { 'tenant.name_required': 'Enter a tenant name.' },
+  },
+} as const
+
+/**
+ * The host's own API call, standing in for the generated api-sdk operation
+ * the README composition calls. The composition owns the transport; the
+ * write-feedback scope only settles the promise it returns.
+ */
+async function renameTenant(): Promise<void> {
+  await Promise.resolve()
+}
+
+/** The README's write-feedback composition: one scope per control group. */
+function TenantNameSection() {
+  const feedback = useWriteFeedback()
+  const { t } = useTranslation(TENANT_NAMESPACE)
+  const [name, setName] = useState('Acme')
+
+  return (
+    <section>
+      <TextField
+        label={t('nameLabel')}
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+      />
+      <Button
+        loading={feedback.pending}
+        disabled={feedback.pending}
+        onClick={() => {
+          void feedback.run(async () => {
+            if (name.trim() === '') {
+              throw { code: 'tenant.name_required' }
+            }
+            await renameTenant()
+            return t('renamed')
+          })
+        }}
+      >
+        {t('save')}
+      </Button>
+      <WriteFeedbackRegion
+        outcome={feedback.outcome}
+        resolve={(code) => t(`errors.${code}`)}
+        sx={{ marginTop: 2 }}
+      />
+    </section>
+  )
+}
+
+describe('README write-feedback composition', () => {
+  function renderSection() {
+    const i18n = createUiKitI18n()
+    registerNamespace(i18n, TENANT_NAMESPACE, TENANT_BUNDLES)
+    return renderWithProviders(<TenantNameSection />, { i18n })
+  }
+
+  it('confirms a settled write and keeps the message across a language switch', async () => {
+    const utils = renderSection()
+    fireEvent.click(
+      utils.getByRole('button', { name: TENANT_BUNDLES['zh-CN'].save }),
+    )
+    await act(async () => {})
+
+    expect(utils.getByRole('status').textContent).toBe(
+      TENANT_BUNDLES['zh-CN'].renamed,
+    )
+
+    await act(async () => {
+      await switchLanguage(utils.i18n, 'en-US')
+    })
+    // The success message is the host's translation captured at succeed
+    // time; the control labels follow the new language, the message does not.
+    expect(utils.getByRole('status').textContent).toBe(
+      TENANT_BUNDLES['zh-CN'].renamed,
+    )
+    expect(
+      utils.getByRole('button', { name: TENANT_BUNDLES['en-US'].save }),
+    ).toBeInTheDocument()
+  })
+
+  it('reports a failed attempt through the host resolver in the active language', async () => {
+    const utils = renderSection()
+    fireEvent.change(utils.getByLabelText(TENANT_BUNDLES['zh-CN'].nameLabel), {
+      target: { value: '' },
+    })
+    fireEvent.click(
+      utils.getByRole('button', { name: TENANT_BUNDLES['zh-CN'].save }),
+    )
+    await act(async () => {})
+
+    expect(utils.getByRole('alert')).toHaveTextContent(
+      TENANT_BUNDLES['zh-CN'].errors['tenant.name_required'],
+    )
+    expect(utils.getByRole('status').textContent).toBe('')
+
+    await act(async () => {
+      await switchLanguage(utils.i18n, 'en-US')
+    })
+    expect(utils.getByRole('alert')).toHaveTextContent(
+      TENANT_BUNDLES['en-US'].errors['tenant.name_required'],
+    )
+  })
+})

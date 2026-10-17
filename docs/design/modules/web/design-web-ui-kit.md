@@ -320,8 +320,8 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 | 页头与空态 | 已实现 | `web/packages/ui-kit/src/components/PageHeader.tsx` `PageHeader`；`web/packages/ui-kit/src/components/EmptyState.tsx` `EmptyState` |
 | 确认弹窗与双次确认 | 已实现 | `web/packages/ui-kit/src/components/ConfirmDialog.tsx` `ConfirmDialog`、`CONFIRM_ARM_LOCKOUT_MS` |
 | 侧边面板 | 已实现 | `web/packages/ui-kit/src/components/SidePanel.tsx` `SidePanel` |
-| 写入反馈（`useWriteFeedback`、`WriteFeedbackRegion`） | 未实现 | — |
-| `InlineSuccess` 的 `sx` 与 `AsyncSection` 的 `staleState` | 未实现 | — |
+| 写入反馈（`useWriteFeedback`、`WriteFeedbackRegion`） | 已实现 | `web/packages/ui-kit/src/write-feedback.ts` `useWriteFeedback`、`WriteFeedback`、`WriteOutcome`；`web/packages/ui-kit/src/components/WriteFeedbackRegion.tsx` `WriteFeedbackRegion` |
+| `InlineSuccess` 的 `sx` 与 `AsyncSection` 的 `staleState` | 已实现 | `web/packages/ui-kit/src/components/InlineSuccess.tsx` `InlineSuccess`；`web/packages/ui-kit/src/components/AsyncSection.tsx` `AsyncSection`、`AsyncSectionStaleState` |
 | 表单家族与校验错误契约 | 已实现 | `web/packages/ui-kit/src/components/FormField.tsx` `FormField`、`REQUIRED_ERROR_KEY`；`web/packages/ui-kit/src/components/FormLayout.tsx` `FormLayout`；`web/packages/ui-kit/src/internal/validation-error.ts` `resolveValidationError` |
 | 表单校验的 zod 解析桥 | 已实现 | `web/packages/ui-kit/src/zod-form-resolver.ts` `zodFormResolver`、`INVALID_ERROR_KEY` |
 | 数据表与列优先级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`、`columnVisibilitySx` |

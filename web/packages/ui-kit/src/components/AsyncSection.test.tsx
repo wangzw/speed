@@ -11,8 +11,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { AsyncSection } from './AsyncSection.js'
+import type { AsyncSectionStaleState } from './AsyncSection.js'
 import { renderWithProviders } from '../../test-utils/render.js'
+import { expectNoAxeViolations } from '../../test-utils/axe.js'
 
 const ERROR_STATE = {
   title: 'Could not load items',
@@ -25,6 +28,57 @@ const EMPTY_STATE = {
   title: 'No items',
   description: 'Items will show up here.',
 } as const
+
+const STALE_DESCRIPTION = 'The list may be out of date.'
+const STALE_RETRY_LABEL = 'Refresh the list'
+
+function STALE_STATE(onRetry: () => void): AsyncSectionStaleState {
+  return {
+    description: STALE_DESCRIPTION,
+    retryLabel: STALE_RETRY_LABEL,
+    onRetry,
+  }
+}
+
+/**
+ * A host holding the stale marker as state: its retry withdraws the
+ * marker, and a later failed retry supplies it again -- the caller-side
+ * lifecycle `staleState` documents.
+ */
+function StaleSectionHost() {
+  const [stale, setStale] = useState<AsyncSectionStaleState | undefined>(() =>
+    STALE_STATE(() => {
+      setStale(undefined)
+    }),
+  )
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => {
+          setStale(
+            STALE_STATE(() => {
+              setStale(undefined)
+            }),
+          )
+        }}
+      >
+        retry failed
+      </button>
+      <AsyncSection
+        pending={false}
+        payload={['alpha']}
+        empty={false}
+        loading={<p>loading node</p>}
+        errorState={ERROR_STATE}
+        emptyState={EMPTY_STATE}
+        staleState={stale}
+      >
+        {(items) => <p>content {items.join(',')}</p>}
+      </AsyncSection>
+    </div>
+  )
+}
 
 describe('AsyncSection', () => {
   it('renders the loading announcement while pending', () => {
@@ -176,5 +230,99 @@ describe('AsyncSection', () => {
     expect(container.querySelector('[role="status"]')).toHaveTextContent(
       EMPTY_STATE.title,
     )
+  })
+
+  it('keeps the content and marks it stale when staleState is given', async () => {
+    const onRetry = vi.fn()
+    renderWithProviders(
+      <div>
+        <h1>Page title</h1>
+        <AsyncSection
+          pending={false}
+          payload={['alpha', 'beta']}
+          empty={false}
+          loading={<p>loading node</p>}
+          errorState={ERROR_STATE}
+          emptyState={EMPTY_STATE}
+          staleState={STALE_STATE(onRetry)}
+        >
+          {(items) => <p>content {items.join(',')}</p>}
+        </AsyncSection>
+      </div>,
+    )
+    // The earlier data stays on screen; the alert rides above it.
+    expect(screen.getByText('content alpha,beta')).toBeInTheDocument()
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent(STALE_DESCRIPTION)
+    expect(alert).toContainElement(
+      screen.getByRole('button', { name: STALE_RETRY_LABEL }),
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: STALE_RETRY_LABEL }),
+    )
+    expect(onRetry).toHaveBeenCalledTimes(1)
+    await expectNoAxeViolations()
+  })
+
+  it('withdraws the stale alert on retry and remounts it when the retry fails', async () => {
+    const view = renderWithProviders(<StaleSectionHost />)
+    const firstAlert = screen.getByRole('alert')
+    expect(firstAlert).toHaveTextContent(STALE_DESCRIPTION)
+
+    // The retry is issued: the host withdraws staleState and the alert
+    // unmounts while the read is in flight, content still on screen.
+    await userEvent.click(
+      screen.getByRole('button', { name: STALE_RETRY_LABEL }),
+    )
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(view.getByText('content alpha')).toBeInTheDocument()
+
+    // The retry failed again: the host re-supplies staleState; the alert
+    // mounts anew (a new node, so role="alert" announces again).
+    await userEvent.click(
+      screen.getByRole('button', { name: 'retry failed' }),
+    )
+    const secondAlert = screen.getByRole('alert')
+    expect(secondAlert).toHaveTextContent(STALE_DESCRIPTION)
+    expect(secondAlert).not.toBe(firstAlert)
+    expect(view.getByText('content alpha')).toBeInTheDocument()
+  })
+
+  it('ignores staleState outside the settled-content branch', () => {
+    const pendingView = renderWithProviders(
+      <AsyncSection
+        pending
+        payload={['alpha']}
+        empty={false}
+        loading={<p>loading node</p>}
+        errorState={ERROR_STATE}
+        emptyState={EMPTY_STATE}
+        staleState={STALE_STATE(vi.fn())}
+      >
+        {(items) => <p>content {items.join(',')}</p>}
+      </AsyncSection>,
+    )
+    // A read in flight shows the loading announcement, not stale data.
+    expect(screen.getByText('loading node')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+    pendingView.unmount()
+
+    renderWithProviders(
+      <AsyncSection
+        pending={false}
+        payload={undefined}
+        empty={false}
+        loading={<p>loading node</p>}
+        errorState={ERROR_STATE}
+        emptyState={EMPTY_STATE}
+        staleState={STALE_STATE(vi.fn())}
+      >
+        {(items: readonly string[]) => <p>content {items.join(',')}</p>}
+      </AsyncSection>,
+    )
+    // A settled read with no payload takes the error placeholder; stale
+    // marking belongs to the branch whose data is still on screen.
+    expect(screen.getByText(ERROR_STATE.title)).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })

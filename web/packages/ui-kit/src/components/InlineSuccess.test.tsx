@@ -37,4 +37,15 @@ describe('InlineSuccess', () => {
     expect(queryAllByRole('status')).toHaveLength(1)
     expect(getByRole('status')).toHaveTextContent('Setting saved')
   })
+
+  it('applies a passed sx to its own banner for spacing', () => {
+    const { getByRole } = renderWithProviders(
+      <InlineSuccess message="Setting saved" sx={{ marginTop: 2 }} />,
+    )
+    const status = getByRole('status')
+    expect(status).toHaveStyle({ marginTop: '16px' })
+    expect(status).toHaveTextContent('Setting saved')
+    // The banner keeps its full-width rendering beside the spacing.
+    expect(status).toHaveStyle({ width: '100%' })
+  })
 })

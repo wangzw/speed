@@ -22,9 +22,21 @@
  * own copy and heading level: a surface whose section header hides
  * while its placeholder shows passes the header's level, so the page's
  * heading order never skips.
+ *
+ * `staleState` marks a refresh that failed while earlier data is still
+ * on screen: the content keeps rendering and an alert with a retry
+ * action renders above it. The caller supplies it only for that state --
+ * the latest refresh failed, the data is still on screen and no read is
+ * in flight -- and withdraws it when the retry starts, which unmounts
+ * the alert; a retry that fails again re-supplies it, so the alert
+ * mounts anew and its `role="alert"` announces again. A refusal such as
+ * HTTP 403 does not use `staleState`: it makes the older data
+ * meaningless, so the caller replaces the content with the
+ * no-permission placeholder instead.
  */
 
 import type { ReactNode } from 'react'
+import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import {
   EmptyState,
@@ -50,6 +62,20 @@ export interface AsyncSectionEmptyState {
   readonly title: string
   /** The empty state's description. */
   readonly description: string
+}
+
+/**
+ * The stale-data marker: a refresh failed while the rendered data stayed
+ * on screen. The caller supplies it exactly while that is the state and
+ * withdraws it when the retry starts.
+ */
+export interface AsyncSectionStaleState {
+  /** The caller's notice; states that the shown content may be outdated. */
+  readonly description: string
+  /** The retry button's label. */
+  readonly retryLabel: string
+  /** Fired by the retry button. */
+  readonly onRetry: () => void
 }
 
 export interface AsyncSectionProps<Payload> {
@@ -81,6 +107,13 @@ export interface AsyncSectionProps<Payload> {
    * `headingLevel`.
    */
   readonly emptyHeadingLevel?: EmptyStateHeadingLevel | EmptyStateNoHeading
+  /**
+   * Marks a failed refresh whose earlier data is still on screen: the
+   * content keeps rendering with this alert and its retry above it.
+   * Omitted in every other state, including a refusal (403), which the
+   * caller renders as the no-permission placeholder instead.
+   */
+  readonly staleState?: AsyncSectionStaleState
   /** The settled content, built from the narrowed payload. */
   readonly children: (payload: Payload) => ReactNode
 }
@@ -95,6 +128,7 @@ export function AsyncSection<Payload>({
   emptyState,
   headingLevel = 'h2',
   emptyHeadingLevel,
+  staleState,
   children,
 }: AsyncSectionProps<Payload>) {
   if (pending) {
@@ -123,5 +157,25 @@ export function AsyncSection<Payload>({
       />
     )
   }
-  return children(payload)
+  const content = children(payload)
+  if (staleState === undefined) {
+    return content
+  }
+  return (
+    <>
+      <Alert
+        severity="warning"
+        role="alert"
+        action={
+          <Button color="inherit" onClick={staleState.onRetry}>
+            {staleState.retryLabel}
+          </Button>
+        }
+        sx={{ marginBottom: 2 }}
+      >
+        {staleState.description}
+      </Alert>
+      {content}
+    </>
+  )
 }
