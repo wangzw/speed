@@ -6,7 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -797,6 +800,84 @@ func TestTwoEndpointsClaimingOnePrefixIsAClaimConflict(t *testing.T) {
 			mustContain(t, err.Error(), "prefixes", "the key the failure tells the host to write")
 		})
 	}
+}
+
+// TestTheClaimConflictAdviceResolvesTheConflict pins that the example in the
+// failure message is itself a fix. The host that follows the advice writes the
+// suggested value on the endpoint the message names, so the rewritten
+// configuration has to resolve; an example that repeats the value the endpoint
+// already claims would send the host in a circle. The two entry points differ:
+// two endpoints that omitted prefixes are moved off the root by claiming a
+// literal prefix, while two endpoints that wrote one prefix need one of them to
+// claim a deeper one.
+func TestTheClaimConflictAdviceResolvesTheConflict(t *testing.T) {
+	cases := map[string]struct {
+		endpoints map[string]endpointConfig
+		// rootConflict marks the conflict on "/", the only one an omitted key
+		// can cause; its message must say so, and the other must not.
+		rootConflict bool
+	}{
+		"both omitted": {
+			endpoints: map[string]endpointConfig{
+				"a": {Listener: "backend"},
+				"b": {Listener: "backend"},
+			},
+			rootConflict: true,
+		},
+		"the same prefix": {
+			endpoints: map[string]endpointConfig{
+				"a": {Listener: "backend", Prefixes: []string{"/api"}},
+				"b": {Listener: "backend", Prefixes: []string{"/api"}},
+			},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			listeners := map[string]listenerConfig{"backend": {Address: ":8080"}}
+			_, _, err := moduleConfig{Listeners: listeners, Endpoints: tc.endpoints}.resolve()
+			if !errors.Is(err, ErrClaimConflict) {
+				t.Fatalf("the configuration resolved with %v, want ErrClaimConflict", err)
+			}
+			if hasHint := strings.Contains(err.Error(), "omits prefixes"); hasHint != tc.rootConflict {
+				t.Errorf("the message mentions omitted prefixes = %t, want %t: %v",
+					hasHint, tc.rootConflict, err)
+			}
+
+			// Follow the message literally: the example names the endpoint to
+			// rewrite and the prefix list to write on it.
+			endpoint, prefixes := suggestedClaim(t, err.Error())
+			fixed := make(map[string]endpointConfig, len(tc.endpoints))
+			for endpointName, e := range tc.endpoints {
+				fixed[endpointName] = e
+			}
+			rewritten := fixed[endpoint]
+			rewritten.Prefixes = prefixes
+			fixed[endpoint] = rewritten
+			if _, _, err := (moduleConfig{Listeners: listeners, Endpoints: fixed}).resolve(); err != nil {
+				t.Fatalf("writing the suggested %s.%s.%s.prefixes: %q still fails to resolve: %v",
+					configNamespace, endpointsItem, endpoint, prefixes, err)
+			}
+		})
+	}
+}
+
+// suggestedClaim reads the example the claim-conflict message writes for one
+// endpoint: the endpoint's name and the prefix list the message tells the host
+// to put there. It fails when the message carries no example, so rewording the
+// message cannot silently stop the example from being checked.
+func suggestedClaim(t *testing.T, message string) (string, []string) {
+	t.Helper()
+	pattern := regexp.MustCompile(regexp.QuoteMeta(configNamespace+"."+endpointsItem+".") +
+		`([A-Za-z0-9_-]+)\.prefixes: \[("(?:[^"\\]|\\.)*")\]`)
+	match := pattern.FindStringSubmatch(message)
+	if match == nil {
+		t.Fatalf("the conflict message names no endpoint prefixes example: %s", message)
+	}
+	prefix, err := strconv.Unquote(match[2])
+	if err != nil {
+		t.Fatalf("unquoting the suggested prefix %s: %v", match[2], err)
+	}
+	return match[1], []string{prefix}
 }
 
 // TestTwoListenersMayClaimTheSamePrefix pins that the conflict check is per

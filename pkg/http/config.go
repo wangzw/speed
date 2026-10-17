@@ -273,14 +273,31 @@ func checkClaims(endpoints []endpointSettings) error {
 		}
 		for _, prefix := range e.prefixes {
 			if previous, taken := byPrefix[prefix]; taken {
+				// The example has to be a fix, so it depends on the prefix:
+				// "/" is what an endpoint that omits prefixes claims, and
+				// claiming "/api" instead moves it off the root; any other
+				// prefix is already written down, so the example moves one of
+				// the two endpoints deeper rather than repeating the value that
+				// conflicts. A valid non-root prefix accepts another segment,
+				// so the example is always a legal claim.
+				if prefix == "/" {
+					return fmt.Errorf(
+						"%w: listener %q: the endpoints %q and %q both claim the path prefix %q. "+
+							"A listener selects the endpoint by the longest prefix a request falls "+
+							"under, so one prefix belongs to one endpoint. Give every endpoint its own "+
+							"prefixes, for example write %s.%s.%s.prefixes: [\"/api\"]; an endpoint that "+
+							"omits prefixes claims \"/\", so at most one endpoint on a listener may omit it",
+						ErrClaimConflict, e.listenerName, previous, e.name, prefix,
+						configNamespace, endpointsItem, e.name)
+				}
 				return fmt.Errorf(
 					"%w: listener %q: the endpoints %q and %q both claim the path prefix %q. "+
 						"A listener selects the endpoint by the longest prefix a request falls "+
 						"under, so one prefix belongs to one endpoint. Give every endpoint its own "+
-						"prefixes, for example write %s.%s.%s.prefixes: [\"/api\"]; an endpoint that "+
-						"omits prefixes claims \"/\", so at most one endpoint on a listener may omit it",
+						"prefixes: write a different prefix on one of them, for example "+
+						"%s.%s.%s.prefixes: [%q]",
 					ErrClaimConflict, e.listenerName, previous, e.name, prefix,
-					configNamespace, endpointsItem, e.name)
+					configNamespace, endpointsItem, e.name, prefix+"/b")
 			}
 			byPrefix[prefix] = e.name
 		}
