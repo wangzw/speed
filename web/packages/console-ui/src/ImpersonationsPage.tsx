@@ -478,7 +478,10 @@ export function ImpersonationsPage() {
  * selected. A landed start clears the form and invalidates the status read
  * through the generated key factory, so the page's status section converges
  * on the record the server just wrote; a refused start keeps the values so
- * the operator can correct them.
+ * the operator can correct them. A precondition line above the controls
+ * states the factor-age requirement: the server answers an unmet
+ * `MFA.Seasoned` with the same step-up refusal a weak session gets, and this
+ * line is what keeps an operator from retrying a sign-in that cannot help.
  */
 function StartImpersonationForm({
   tenant,
@@ -549,6 +552,14 @@ function StartImpersonationForm({
 
   return (
     <Box>
+      {/* The precondition stays visible above the controls: the server
+          answers an unmet factor-age requirement with the same step-up
+          refusal a weak session gets, and signing in again cannot fix that
+          one, so this is the only place that tells the operator why the
+          start keeps failing. */}
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        {t('impersonations.start.precondition')}
+      </Typography>
       <Box
         sx={{
           display: 'flex',

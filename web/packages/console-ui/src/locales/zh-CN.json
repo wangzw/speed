@@ -755,6 +755,7 @@
     },
     "start": {
       "title": "发起冒充",
+      "precondition": "发起冒充需要你本人的账户有已启用满 authn.mfa.sensitive-min-age（默认 24 小时）的非短信因素；刚登记的因素不算，重新登录也不能缩短这段等待。",
       "accountLabel": "目标账户",
       "tenantHint": "请先在上方选择一个租户；被冒充账户必须属于该租户。",
       "reasonLabel": "理由",

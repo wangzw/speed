@@ -755,6 +755,7 @@
     },
     "start": {
       "title": "Start an impersonation",
+      "precondition": "Starting an impersonation needs a non-SMS factor on your own account that has been enabled for at least authn.mfa.sensitive-min-age (24 hours by default). A factor enrolled just now does not count, and signing in again does not shorten the wait.",
       "accountLabel": "Target account",
       "tenantHint": "Select a tenant above first; the target account must belong to that tenant.",
       "reasonLabel": "Reason",
