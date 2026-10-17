@@ -6,6 +6,9 @@ action is a call on the roster, reached through the `tenant.Catalog` capability,
 and the module holds no tenant, no rule and no data of its own. It builds no
 table, caches nothing and migrates nothing.
 
+The descriptor declares the static feature `tenant.admin`, present whenever the
+module is in force.
+
 The roster owns which tenants exist — what names they carry, which are served —
 so this module only decides who may ask and how the answer is shaped. It carries
 no policy rule: it asks the decision of the handler-internal `authz.guard` API

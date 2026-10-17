@@ -213,4 +213,4 @@ sequenceDiagram
 |---|---|---|
 | 管理面 `tenant.admin`（路由、判定、审计、回绝映射） | 已实现 | `pkg/tenant/admin/admin.go` `Module`；`pkg/tenant/admin/routes.go` `routes`、`mount`；`pkg/tenant/admin/tenants.go` `handleTenantList`、`handleTenantGet`、`handleTenantCreate`、`handleTenantSetAlias`、`handleTenantSetStatus`；`pkg/tenant/admin/pipeline.go` `require`、`auditRequired`、`answer` |
 | 管理面 `tenant.admin` 的 OpenAPI 片段与 `speedhttp.Spec` 资源 | 已实现 | `pkg/tenant/admin/openapi/tenant.admin.json`；`pkg/tenant/admin/admin.go` `Module`、`defaultEndpoint`、`openAPIFragment` |
-| 静态特性 `tenant.admin` 的 `feature.Spec` 声明 | 未实现 | — |
+| 静态特性 `tenant.admin` 的 `feature.Spec` 声明 | 已实现 | `pkg/tenant/admin/admin.go` `Module`；`pkg/tenant/admin/feature_test.go` `TestTheModuleDeclaresTheTenantAdminFeature` |
