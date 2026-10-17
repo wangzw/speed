@@ -259,7 +259,15 @@ const railIconItemSx = { justifyContent: 'center', px: 1 } as const
  * whose entries carry no `icon` still gets identifiable, operable rows --
  * tooltipped and, for assistive tech, named by the label either way.
  */
-const railTextItemSx = { px: 1, overflow: 'hidden' } as const
+const railTextItemSx = {
+  px: 1,
+  overflow: 'hidden',
+  // One line, cut with an ellipsis: without `nowrap` the label wraps to as
+  // many lines as the rail's narrow width allows and the row grows tall
+  // instead of reading as a single clipped entry.
+  whiteSpace: 'nowrap',
+  textOverflow: 'ellipsis',
+} as const
 
 /** The rail entry's icon box: no reserved label width, itself centered. */
 const railIconSx = { minWidth: 0, mr: 0, justifyContent: 'center' } as const
