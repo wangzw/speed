@@ -63,7 +63,6 @@ import {
   ConfirmDialog,
   errorCodeOf,
   ListSkeleton,
-  touchTargetSx,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
@@ -433,7 +432,7 @@ export function SessionsSection() {
                                 void handleRevokeSession(id)
                               }
                             }}
-                            sx={[touchTargetSx, { color: 'text.secondary' }]}
+                            sx={{ color: 'text.secondary' }}
                           >
                             {revokingId === id ? (
                               <CircularProgress
@@ -504,7 +503,6 @@ export function SessionsSection() {
                   variant="outlined"
                   disabled={currentPage <= 1}
                   onClick={() => setPage(currentPage - 1)}
-                  sx={touchTargetSx}
                 >
                   {t('sessions.prevPage')}
                 </Button>
@@ -519,7 +517,6 @@ export function SessionsSection() {
                   variant="outlined"
                   disabled={currentPage >= pageCount}
                   onClick={() => setPage(currentPage + 1)}
-                  sx={touchTargetSx}
                 >
                   {t('sessions.nextPage')}
                 </Button>

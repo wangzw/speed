@@ -81,7 +81,6 @@ import {
   errorCodeOf,
   InlineSuccess,
   ListSkeleton,
-  touchTargetSx,
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 import { useProfileQuery } from './internal/queries.js'
@@ -447,7 +446,6 @@ export function SocialBindingsSection({
                               interpolation: { escapeValue: false },
                             })}
                             onClick={() => setUnbindTarget(id)}
-                            sx={touchTargetSx}
                           >
                             {t('bindings.unbind')}
                           </Button>

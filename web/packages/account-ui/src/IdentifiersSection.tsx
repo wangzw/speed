@@ -64,7 +64,6 @@ import {
   ConfirmDialog,
   errorCodeOf,
   ListSkeleton,
-  touchTargetSx,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
@@ -363,7 +362,6 @@ export function IdentifiersSection({ session }: IdentifiersSectionProps) {
                               interpolation: { escapeValue: false },
                             })}
                             onClick={() => setRemoveTarget(id)}
-                            sx={touchTargetSx}
                           >
                             {t('identifiers.remove')}
                           </Button>
@@ -397,7 +395,6 @@ export function IdentifiersSection({ session }: IdentifiersSectionProps) {
               setAdded(false)
               setAddOpen(true)
             }}
-            sx={touchTargetSx}
           >
             {t('identifiers.add.open')}
           </Button>
