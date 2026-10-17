@@ -46,9 +46,9 @@
  * responsive `flexWrap: 'wrap'` flex row, purely additive CSS, so a long
  * file name plus several action buttons cannot overflow a narrow queue
  * card regardless of name length. Those per-row action buttons carry the
- * shared touch-target floor (src/touch-target.ts): a finger-driven device
- * gets a 44px-minimum hit area on each, a precise pointer the stock
- * control size. The selection affordance is one drop zone: a labelled,
+ * shared touch-target floor through the theme's component overrides (see
+ * theme/touch-floor.ts): a finger-driven device gets a 44px-minimum hit area
+ * on each, a precise pointer the stock control size. The selection affordance is one drop zone: a labelled,
  * dashed surface whose text states the action (the built-in bilingual
  * text unless `chooseFilesLabel` overrides it) and whose hidden file
  * input is visually hidden but focusable inside it, so the whole zone is
