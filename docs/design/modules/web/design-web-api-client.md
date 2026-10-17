@@ -118,7 +118,7 @@ export type UsePublicConfigResult
 
 ### 稳定性承诺
 
-主入口与 `./react` 子路径的导出集、各导出类型的字段与方法集、`createClient` 选项的语义、`RequestFn` 与 `RequestOptions` 的契约、`SpeedClient` 与其 `openEventStream` 成员、保留码词表与保留的 `client.*` 前缀，是本包对消费方的契约。加导出、改签名、改字段名、改缺省头或不兼容地改保留码是不兼容变更。主入口的导出集由 `src/index.test.ts` 的精确清单钉住，类型面有编译期漂移守卫。
+主入口与 `./react` 子路径的导出集、各导出类型的字段与方法集、`createClient` 选项的语义、`RequestFn` 与 `RequestOptions` 的契约、`SpeedClient` 与其 `openEventStream` 成员、保留码词表与保留的 `client.*` 前缀，是本包对消费方的契约。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段、把必选放宽为可选是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型）、把可选收紧为必选，是不兼容变更。改缺省头、或不兼容地改保留码词表与保留的 `client.*` 前缀，同属语义层面的破坏性变更。主入口的导出集由 `src/index.test.ts` 的精确清单钉住：新增一个导出要同步更新那份清单，这是本包自己的回归守卫，不是对消费方的破坏；类型面有编译期漂移守卫。
 
 ### 事件流的契约
 

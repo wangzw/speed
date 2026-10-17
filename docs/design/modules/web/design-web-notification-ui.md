@@ -53,7 +53,7 @@ interface NotificationStreamProviderProps {
 
 ### 稳定性承诺
 
-`src/index.ts` 的导出集、各组件的 props 形状、`notificationRoutes` 的类型、`NotificationStreamProvider` 的入参语义，以及 `NOTIFICATION_UI_NAMESPACE` 与 `notificationUiResources` 是对使用者的契约。包以锁定版本组发布，公开面的一次改动即一次破坏性发布。
+`src/index.ts` 的导出集、各组件的 props 形状、`notificationRoutes` 的类型、`NotificationStreamProvider` 的入参语义，以及 `NOTIFICATION_UI_NAMESPACE` 与 `notificationUiResources` 是对使用者的契约。包以锁定版本组发布。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段、把必选放宽为可选是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型）、把可选收紧为必选，是不兼容变更。
 
 ## 依赖
 

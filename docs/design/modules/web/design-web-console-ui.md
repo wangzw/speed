@@ -124,7 +124,7 @@ interface ConsoleShellProps {
 
 本包的写请求经生成的客户端发出，请求体来自平台 OpenAPI 片段里该端点的 `requestBody`。片段为每个变更端点声明了请求体，故生成的客户端为每次写发送请求体，本包为每个写渲染控件。请求体的字段与后端处理器 `mount.Decode` 解码的目标结构一致，且片段里声明的 `requestBody` 与处理器是否解码请求体一致（`pkg/authn/admin/requestbody_test.go` 把这条当成契约守住：处理器解码请求体而片段未声明 `requestBody`，即该写从生成客户端不可达，测试即失败）。
 
-**稳定性承诺。** 公开面是 `src/index.ts` 的导出集；本包不提供当前租户，不 import `route-kit` 与 `tenancy-ui`；每条路的请求经绑定的客户端，写经生成的 mutation。改动这些是消费者可见的破坏性变更。
+**稳定性承诺。** 公开面是 `src/index.ts` 的导出集；每条路的请求经绑定的客户端，写经生成的 mutation。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段、把必选放宽为可选是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型）、把可选收紧为必选，是不兼容变更。本包不提供当前租户，不 import `route-kit` 与 `tenancy-ui`。
 
 ## 依赖
 

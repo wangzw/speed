@@ -85,7 +85,7 @@ function useNavigate(): (to: string) => void
 
 **声明面的每一处都由产品在一处给出。** 产品把它的全部页面声明组成一张 `RouteTable`，交给 `RouteProvider`；`RouteView` 渲染命中的页面，`useNavItems` 交出导航条目，而 `RouteView` 与 `useNavItems` 读同一份注册面，因而不一致无从产生。
 
-**稳定性承诺。** `RouteDeclaration`、`RouteTable`、`RouteContext`、`RouteParams` 的字段与形状，`RouteProvider`、`RouteView`、`RouteLink`、`useNavItems`、`useNavigate` 的签名，是宿主可见面。发布之后改登记面的形状是破坏性变更，须随发布对账（[ADR-web-route-seam-2026-10-15](../../../adr/adr-web-route-seam-2026-10-15.md)）。
+**稳定性承诺。** `RouteDeclaration`、`RouteTable`、`RouteContext`、`RouteParams` 的字段与形状，`RouteProvider`、`RouteView`、`RouteLink`、`useNavItems`、`useNavigate` 的签名，是宿主可见面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段、把必选放宽为可选是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型）、把可选收紧为必选，是不兼容变更，须随发布对账（[ADR-web-route-seam-2026-10-15](../../../adr/adr-web-route-seam-2026-10-15.md)）。
 
 ## 依赖
 

@@ -51,7 +51,7 @@ export { I18nextProvider, useTranslation } from 'react-i18next'
 
 ### 稳定性承诺
 
-`createI18n` 的选项、`registerNamespace` 的语义、入口的导出面（由 `index.test.ts` 的精确导出清单钉住），以及缺键纪律所依赖的实例选项（`fallbackLng: false`、`load: 'currentOnly'`、`saveMissing: true`、始终安装的缺键处理器），是本包对消费方的契约。版本锁步使导出签名的一次改动即一次破坏性发布；扩展入口面要与 AGENTS、README、导出清单与测试在同一提交内更新。
+`createI18n` 的选项、`registerNamespace` 的语义、入口的导出面（由 `index.test.ts` 的精确导出清单钉住），以及缺键纪律所依赖的实例选项（`fallbackLng: false`、`load: 'currentOnly'`、`saveMissing: true`、始终安装的缺键处理器），是本包对消费方的契约。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段、把必选放宽为可选是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型）、把可选收紧为必选，是不兼容变更。入口的精确导出清单在新增导出时同步更新——那是本包的回归守卫，不是对消费方的破坏；扩展入口面要与 AGENTS、README 与测试在同一提交内更新。
 
 ## 依赖
 

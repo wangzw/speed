@@ -91,7 +91,7 @@ interface SpeedAppDefinition {
 
 ### 稳定性承诺
 
-- 每个包的 `src/index.ts` 公开面、文档化的子路径出口，以及 `bootstrapSpeedApp` 与 `SpeedAppDefinition`、`SpeedAppBootstrap`、`SpeedAppServices`、`SpeedAppNamespace` 的形状，是对使用者的契约；加字段为兼容变更，改或删字段为不兼容变更。
+- 每个包的 `src/index.ts` 公开面、文档化的子路径出口，以及 `bootstrapSpeedApp` 与 `SpeedAppDefinition`、`SpeedAppBootstrap`、`SpeedAppServices`、`SpeedAppNamespace` 的形状，是对使用者的契约。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段、把必选放宽为可选是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型）、把可选收紧为必选，是不兼容变更。
 - 包以锁定版本组发布（`web/.changeset/config.json` 的 fixed 组），使用者不会同时持两个版本的同名包。
 - `SpeedAppDefinition.baseUrl` 的缺省同源是承诺：合一拓扑不写任何配置的前提就是它。
 

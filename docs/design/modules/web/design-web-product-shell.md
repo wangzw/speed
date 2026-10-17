@@ -124,7 +124,7 @@ export const productShellResources: Readonly<Record<string, ResourceBundle>>
 
 本包自身只渲染一句文字：会话结束翻转的礼貌播报。框架的内建文字来自 layout-kit 命名空间，缺省结束屏的来自 auth-ui 命名空间；其余都是宿主内容。`bootstrapSpeedApp` 为它组合的包自动注册四个族命名空间（含本包自己的），故经装配启动的页面不会漏注册。
 
-**稳定性承诺。** `ProductShell`、`ProductShellProps`、`PRODUCT_SHELL_NAMESPACE`、`productShellResources`，以及 `SpeedAppDefinition`、`SpeedAppNamespace`、`SpeedAppProvider`、`SpeedAppServices`、`SpeedSessionEndContext`、`SpeedSessionEndedHandler`、`SpeedAppBootstrap`、`bootstrapSpeedApp`、`watchSessionEnd`、`createQueryClient` 的字段与方法集，是宿主可见面。宿主可见面上的任何变更都须逐一评估对下游消费者的影响：纯附加的可选字段与新增导出，在未被使用时宿主行为不变；改既有字段或既有导出的含义、必选性、名或签名，是不兼容变更。
+**稳定性承诺。** `ProductShell`、`ProductShellProps`、`PRODUCT_SHELL_NAMESPACE`、`productShellResources`，以及 `SpeedAppDefinition`、`SpeedAppNamespace`、`SpeedAppProvider`、`SpeedAppServices`、`SpeedSessionEndContext`、`SpeedSessionEndedHandler`、`SpeedAppBootstrap`、`bootstrapSpeedApp`、`watchSessionEnd`、`createQueryClient` 的字段与方法集，是宿主可见面。宿主可见面上的变更按 TypeScript 的源码语义分类：新增导出、新增可选字段、把必选放宽为可选是源码兼容的，且未被使用时宿主行为不变；删除导出或字段、改既有字段或导出的含义或名、改签名（参数或返回类型）、把可选收紧为必选，是不兼容变更。
 
 ## 依赖
 
