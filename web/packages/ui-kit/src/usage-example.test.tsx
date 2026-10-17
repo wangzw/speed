@@ -1,11 +1,13 @@
 /**
  * The README usage example, compiled and executed by the suite.
  *
- * The README's Quick start composes host pages from the public exports
- * and registers the ui-kit namespace at bootstrap; this file renders
- * that composition through the same host tree (renderWithProviders) and
- * asserts what the pages show, so the documented usage cannot drift from
- * the API -- the package suite compiles and runs it. The upload panel
+ * The suite executes BOTH documented compositions: the README's Quick
+ * start composes host pages from the public exports and registers the
+ * ui-kit namespace at bootstrap, and its "Write feedback" section
+ * composes the write-feedback scope. This file renders both through the
+ * same host tree (renderWithProviders) and asserts what the pages show,
+ * so the documented usage cannot drift from the API -- the package suite
+ * compiles and runs them. The upload panel
  * the Quick start documents joins the members page on the same host
  * screen: the host owns the queue as `rows` state and every File it
  * picked (a retry hands the same bytes back), runs each transfer in its
@@ -31,7 +33,13 @@
 import { act, fireEvent, within } from '@testing-library/react'
 import { useEffect, useRef, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { registerNamespace, switchLanguage, useTranslation } from '@speed/i18n'
+import {
+  CLIENT_TRANSPORT_ERROR_CODES,
+  createErrorTextResolver,
+  registerNamespace,
+  switchLanguage,
+  useTranslation,
+} from '@speed/i18n'
 import Button from '@mui/material/Button'
 import TextField from '@mui/material/TextField'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -46,8 +54,7 @@ import { EmptyState } from './components/EmptyState.js'
 import { FileUploader } from './components/FileUploader.js'
 import type { FileUploaderRow } from './components/FileUploader.js'
 import { PageHeader } from './components/PageHeader.js'
-import { WriteFeedbackRegion } from './components/WriteFeedbackRegion.js'
-import { useWriteFeedback } from './write-feedback.js'
+import { useWriteFeedback, WriteFeedbackRegion } from './index.js'
 
 interface Member {
   id: number
@@ -635,23 +642,54 @@ const TENANT_BUNDLES = {
     save: '保存',
     nameLabel: '租户名称',
     renamed: '租户名称已更新',
-    errors: { 'tenant.name_required': '请输入租户名称。' },
+    errors: {
+      'tenant.name_required': '请输入租户名称。',
+      'client.network': '网络连接不可用，请检查后重试。',
+      unknown: '操作未完成，请稍后重试。',
+    },
   },
   'en-US': {
     save: 'Save',
     nameLabel: 'Tenant name',
     renamed: 'Tenant name updated',
-    errors: { 'tenant.name_required': 'Enter a tenant name.' },
+    errors: {
+      'tenant.name_required': 'Enter a tenant name.',
+      'client.network': 'No network connection. Check your connection and try again.',
+      unknown: 'Something went wrong. Please try again later.',
+    },
   },
 } as const
+
+/**
+ * The read-only whitelist of codes the tenant namespace carries text for:
+ * the attempt's own refusal codes plus the transport codes every write can
+ * reach. Anything else resolves to `errors.unknown`, so a raw key can
+ * never reach the alert.
+ */
+const TENANT_ERROR_CODES: ReadonlySet<string> = new Set([
+  ...CLIENT_TRANSPORT_ERROR_CODES,
+  'tenant.name_required',
+])
+
+/** What the next renameTenant call does, set by the failure cases. */
+let renameFailure: 'network' | 'plain' | null = null
+/** The name the last call received, asserted against the README's 'Acme'. */
+let renamedName: string | null = null
 
 /**
  * The host's own API call, standing in for the generated api-sdk operation
  * the README composition calls. The composition owns the transport; the
  * write-feedback scope only settles the promise it returns.
  */
-async function renameTenant(): Promise<void> {
+async function renameTenant(name: string): Promise<void> {
+  renamedName = name
   await Promise.resolve()
+  if (renameFailure === 'network') {
+    throw { code: 'client.network' }
+  }
+  if (renameFailure === 'plain') {
+    throw new Error('transport exploded')
+  }
 }
 
 /** The README's write-feedback composition: one scope per control group. */
@@ -675,7 +713,7 @@ function TenantNameSection() {
             if (name.trim() === '') {
               throw { code: 'tenant.name_required' }
             }
-            await renameTenant()
+            await renameTenant(name)
             return t('renamed')
           })
         }}
@@ -684,7 +722,7 @@ function TenantNameSection() {
       </Button>
       <WriteFeedbackRegion
         outcome={feedback.outcome}
-        resolve={(code) => t(`errors.${code}`)}
+        resolve={createErrorTextResolver(t, TENANT_ERROR_CODES)}
         sx={{ marginTop: 2 }}
       />
     </section>
@@ -693,6 +731,8 @@ function TenantNameSection() {
 
 describe('README write-feedback composition', () => {
   function renderSection() {
+    renameFailure = null
+    renamedName = null
     const i18n = createUiKitI18n()
     registerNamespace(i18n, TENANT_NAMESPACE, TENANT_BUNDLES)
     return renderWithProviders(<TenantNameSection />, { i18n })
@@ -705,6 +745,9 @@ describe('README write-feedback composition', () => {
     )
     await act(async () => {})
 
+    // The documented call passes the field's name through to the host's API
+    // operation.
+    expect(renamedName).toBe('Acme')
     expect(utils.getByRole('status').textContent).toBe(
       TENANT_BUNDLES['zh-CN'].renamed,
     )
@@ -743,5 +786,36 @@ describe('README write-feedback composition', () => {
     expect(utils.getByRole('alert')).toHaveTextContent(
       TENANT_BUNDLES['en-US'].errors['tenant.name_required'],
     )
+  })
+
+  it('renders the unknown fallback for a plain throw, never a raw key', async () => {
+    const utils = renderSection()
+    renameFailure = 'plain'
+    fireEvent.click(
+      utils.getByRole('button', { name: TENANT_BUNDLES['zh-CN'].save }),
+    )
+    await act(async () => {})
+
+    const alert = utils.getByRole('alert')
+    expect(alert).toHaveTextContent(
+      TENANT_BUNDLES['zh-CN'].errors.unknown,
+    )
+    // A hand-built `errors.${code}` resolver would render the raw key here.
+    expect(alert).not.toHaveTextContent('errors.client.unknown')
+  })
+
+  it('renders the transport text for a client.network failure, never a raw key', async () => {
+    const utils = renderSection()
+    renameFailure = 'network'
+    fireEvent.click(
+      utils.getByRole('button', { name: TENANT_BUNDLES['zh-CN'].save }),
+    )
+    await act(async () => {})
+
+    const alert = utils.getByRole('alert')
+    expect(alert).toHaveTextContent(
+      TENANT_BUNDLES['zh-CN'].errors['client.network'],
+    )
+    expect(alert).not.toHaveTextContent('errors.client.network')
   })
 })

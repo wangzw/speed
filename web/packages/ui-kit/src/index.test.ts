@@ -1,22 +1,19 @@
 /**
- * The entry's export coverage: a mechanism, not a list.
+ * The entry's export surface, guarded two ways.
  *
- * The package's public surface is exactly what src/index.ts re-exports,
- * and every public name a source module declares is public by definition
- * once that module is one of the entry's sources. The entry is the
- * single gate that keeps the two lists in step, so drift is guarded
- * structurally: this test walks the entry's own export-from
- * declarations, enumerates each resolved source module's exported
- * symbols with the TypeScript compiler API, and asserts the entry
- * re-exports every one of them. A public name declared in a module the
- * entry already exposes and forgotten in the entry fails here instead
- * of in a consumer's editor.
+ * The package's public surface is exactly what src/index.ts re-exports.
+ * The first assertion is a mechanism: it walks the entry's own
+ * export-from declarations, enumerates each resolved source module's
+ * exported symbols with the TypeScript compiler API, and asserts the
+ * entry re-exports every one of them. A public name declared in a module
+ * the entry already exposes and forgotten in the entry fails here.
  *
- * The assertion is deliberately one-directional: the module list derives
- * from the entry's own declarations, so a whole new module the entry
- * does not expose at all (a component deliberately kept out of the
- * surface) is invisible to this test by design -- the entry is the
- * deliberate gate for that.
+ * The mechanism is deliberately one-directional: the module list derives
+ * from the entry's own declarations, so deleting a whole export block --
+ * or a whole module the entry does not expose -- is invisible to it. The
+ * second assertion pins the entry's exported name list against a fixed
+ * list, so a lost export of either kind (a value, or a type-only name
+ * such as WriteOutcome) fails here too.
  */
 
 import { readFileSync } from 'node:fs'
@@ -62,42 +59,128 @@ const options: ts.CompilerOptions = {
   skipLibCheck: true,
 }
 
+function createEntryProgram(): {
+  readonly program: ts.Program
+  readonly indexPath: string
+  readonly entryFile: ts.SourceFile
+  readonly modulePaths: readonly string[]
+} {
+  const indexPath = resolve(srcDir, 'index.ts')
+  const entrySource = ts.createSourceFile(
+    indexPath,
+    readFileSync(indexPath, 'utf8'),
+    ts.ScriptTarget.ES2022,
+    /* setParentNodes */ true,
+    ts.ScriptKind.TS,
+  )
+  const moduleHost: ts.ModuleResolutionHost = {
+    fileExists: ts.sys.fileExists,
+    readFile: ts.sys.readFile,
+  }
+  const modulePaths = exportFromSpecifiers(entrySource).map((specifier) => {
+    const resolved = ts.resolveModuleName(
+      specifier,
+      indexPath,
+      options,
+      moduleHost,
+    )
+    return resolved.resolvedModule?.resolvedFileName
+  })
+  const program = ts.createProgram({
+    rootNames: [
+      indexPath,
+      ...modulePaths.filter((path): path is string => path !== undefined),
+    ],
+    options,
+  })
+  const entryFile = program.getSourceFile(indexPath)
+  expect(entryFile).not.toBeUndefined()
+  return {
+    program,
+    indexPath,
+    entryFile: entryFile!,
+    modulePaths: modulePaths.filter(
+      (path): path is string => path !== undefined,
+    ),
+  }
+}
+
+/** Every name a consumer can import from the package entry. */
+const PUBLIC_EXPORTS = [
+  'AppTheme',
+  'AppThemeMode',
+  'AppThemeModeControl',
+  'AppThemeProvider',
+  'AppThemeProviderProps',
+  'AsyncSection',
+  'AsyncSectionEmptyState',
+  'AsyncSectionErrorState',
+  'AsyncSectionProps',
+  'AsyncSectionStaleState',
+  'CONFIRM_ARM_LOCKOUT_MS',
+  'ConfirmDialog',
+  'ConfirmDialogProps',
+  'ConfirmDialogVariant',
+  'DataTable',
+  'DataTableColumn',
+  'DataTableColumnCellWrap',
+  'DataTableColumnPriority',
+  'DataTableFilter',
+  'DataTablePagination',
+  'DataTableProps',
+  'DataTableSort',
+  'DataTableSortDirection',
+  'EmptyState',
+  'EmptyStateHeadingLevel',
+  'EmptyStateNoHeading',
+  'EmptyStateProps',
+  'EmptyStateVariant',
+  'FileUploader',
+  'FileUploaderProps',
+  'FileUploaderRow',
+  'FileUploaderRowStatus',
+  'FormField',
+  'FormFieldProps',
+  'FormFieldRenderState',
+  'FormLayout',
+  'FormLayoutColumns',
+  'FormLayoutProps',
+  'INVALID_ERROR_KEY',
+  'InlineError',
+  'InlineErrorProps',
+  'InlineSuccess',
+  'InlineSuccessProps',
+  'ListSkeleton',
+  'ListSkeletonProps',
+  'PageHeader',
+  'PageHeaderBreadcrumb',
+  'PageHeaderProps',
+  'REQUIRED_ERROR_KEY',
+  'SidePanel',
+  'SidePanelProps',
+  'SidePanelSize',
+  'UI_KIT_NAMESPACE',
+  'WriteFeedback',
+  'WriteFeedbackRegion',
+  'WriteFeedbackRegionProps',
+  'WriteOutcome',
+  'createAppTheme',
+  'errorCodeOf',
+  'touchTargetSx',
+  'uiKitResources',
+  'useAppThemeMode',
+  'useWriteFeedback',
+  'visuallyHiddenSx',
+  'zodFormResolver',
+] as const
+
 describe('the entry export surface', () => {
   it('re-exports every public name its source modules declare', () => {
-    const indexPath = resolve(srcDir, 'index.ts')
-    const entrySource = ts.createSourceFile(
-      indexPath,
-      readFileSync(indexPath, 'utf8'),
-      ts.ScriptTarget.ES2022,
-      /* setParentNodes */ true,
-      ts.ScriptKind.TS,
-    )
-    const moduleHost: ts.ModuleResolutionHost = {
-      fileExists: ts.sys.fileExists,
-      readFile: ts.sys.readFile,
-    }
-    const modulePaths = exportFromSpecifiers(entrySource).map((specifier) => {
-      const resolved = ts.resolveModuleName(
-        specifier,
-        indexPath,
-        options,
-        moduleHost,
-      )
-      return resolved.resolvedModule?.resolvedFileName
-    })
+    const { program, entryFile, modulePaths } = createEntryProgram()
     expect(modulePaths.length).toBeGreaterThan(0)
-    const program = ts.createProgram({
-      rootNames: [indexPath, ...modulePaths.filter((p): p is string => p !== undefined)],
-      options,
-    })
-    const entryFile = program.getSourceFile(indexPath)
-    expect(entryFile).not.toBeUndefined()
-    const entryNames = new Set(exportedNames(program, entryFile!))
+    const entryNames = new Set(exportedNames(program, entryFile))
     const missingAcrossModules: string[] = []
     for (const modulePath of modulePaths) {
-      if (modulePath === undefined) {
-        continue
-      }
       const moduleFile = program.getSourceFile(modulePath)
       if (moduleFile === undefined) {
         continue
@@ -115,5 +198,12 @@ describe('the entry export surface', () => {
       'names a consumer cannot import from the package entry:',
     ).toEqual([])
     // Whole-tree type-checking under coverage instrumentation outruns vitest's 5s default.
+  }, 30000)
+
+  it('exports exactly the fixed public list, types included', () => {
+    const { program, entryFile } = createEntryProgram()
+    expect(exportedNames(program, entryFile).sort()).toEqual(
+      [...PUBLIC_EXPORTS].sort(),
+    )
   }, 30000)
 })

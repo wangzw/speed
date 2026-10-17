@@ -5,17 +5,20 @@
  * AppThemeProvider) that turns @speed/tokens into a MUI v9 theme, and the
  * fully controlled components (PageHeader, EmptyState, ConfirmDialog,
  * SidePanel, FormField, FormLayout, DataTable, FileUploader, InlineError,
- * InlineSuccess, ListSkeleton, AsyncSection) with their ui-kit-namespace
- * translations (UI_KIT_NAMESPACE + uiKitResources) for the host to register —
+ * InlineSuccess, WriteFeedbackRegion, ListSkeleton, AsyncSection) with
+ * their ui-kit-namespace translations (UI_KIT_NAMESPACE + uiKitResources)
+ * for the host to register —
  * FileUploader renders the queue the host owns as `rows` props while
  * uploads run in the host's own transport code. The form family's zod
  * bridge (zodFormResolver) ships beside the components so a host drives
  * RHF validation from one zod schema. The cross-surface state
  * primitives ship beside them: InlineError + errorCodeOf (the
  * whole-attempt failure banner), InlineSuccess (its success twin, the
- * mount-empty-then-fill role="status" notice), ListSkeleton and
- * AsyncSection (the pending/error/empty/content branches of an async
- * read) and
+ * mount-empty-then-fill role="status" notice), useWriteFeedback +
+ * WriteFeedbackRegion (one feedback scope's slot and the region that
+ * renders it), ListSkeleton and AsyncSection (the pending/error/empty/
+ * content branches of an async read, with `staleState` marking a failed
+ * refresh that kept its data) and
  * visuallyHiddenSx (the clip recipe for hidden live regions and file
  * inputs) and touchTargetSx (the coarse-pointer 44px floor for an
  * interactive target the theme's own control overrides cannot reach).
