@@ -982,6 +982,10 @@ describe('AppShell', () => {
       const mainSpacer = main.querySelector('.MuiToolbar-root')
       expect(mainSpacer).not.toBeNull()
       expect(mainSpacer).toHaveStyle({ minHeight: '112px' })
+      // The height is carried inline, so the theme toolbar's `sm`
+      // breakpoint rule cannot restore the single-row height at 600px
+      // and above -- the same protection the banner case needs.
+      expect((mainSpacer as HTMLElement).style.minHeight).toBe('112px')
 
       // ... and so does the drawer paper's spacer ...
       const paper = document.querySelector('.MuiDrawer-paper')
@@ -989,6 +993,7 @@ describe('AppShell', () => {
       const drawerSpacer = paper?.querySelector('.MuiToolbar-root') ?? null
       expect(drawerSpacer).not.toBeNull()
       expect(drawerSpacer).toHaveStyle({ minHeight: '112px' })
+      expect((drawerSpacer as HTMLElement).style.minHeight).toBe('112px')
 
       // ... so the first drawer item sits below the spacer in the
       // paper, exactly where the fixed header's overlay ends when the
@@ -1093,6 +1098,70 @@ describe('AppShell', () => {
       // the paper carries no top offset of its own.
       expect(paper).not.toBeNull()
       expect(getComputedStyle(paper as Element).top).not.toBe('48px')
+    })
+
+    it('writes each measured spacer height as an inline style, out of reach of the theme toolbar breakpoint rule', () => {
+      // The theme toolbar mixin contributes `min-height: 56` at the base
+      // and `64` under `sm`, and that breakpoint rule lands after an
+      // equal-specificity `sx` class -- an sx-written height is
+      // overridden from 600px up, where the banner plus header then
+      // covers the top of content again. jsdom evaluates no media
+      // conditions, so this test proves where the height is carried
+      // (the style attribute, which no class rule outranks), not how a
+      // real viewport paints; the declaration that survives there is
+      // the one asserted here.
+      mockMatchMedia(true)
+      const resizeObserver = stubResizeObserver()
+      const { getByTestId, getByRole } = renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          banner={<p data-testid="notice">Impersonating</p>}
+        >
+          content
+        </AppShell>,
+      )
+      const slot = getByTestId('notice').parentElement
+      expect(slot).not.toBeNull()
+      resizeObserver.emitHeightFor(getByRole('banner'), 112)
+      resizeObserver.emitHeightFor(slot as Element, 48)
+
+      const mainSpacer =
+        getByRole('main').querySelector<HTMLElement>('.MuiToolbar-root')
+      expect(mainSpacer).not.toBeNull()
+      expect((mainSpacer as HTMLElement).style.minHeight).toBe('160px')
+      const drawerSpacer = document.querySelector<HTMLElement>(
+        '.MuiDrawer-paper .MuiToolbar-root',
+      )
+      expect(drawerSpacer).not.toBeNull()
+      expect(drawerSpacer?.style.minHeight).toBe('160px')
+    })
+
+    it('leaves the spacer at the plain theme height when only the banner height has been measured', () => {
+      mockMatchMedia(true)
+      const resizeObserver = stubResizeObserver()
+      const { getByTestId, getByRole } = renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          banner={<p data-testid="notice">Impersonating</p>}
+        >
+          content
+        </AppShell>,
+      )
+      const slot = getByTestId('notice').parentElement
+      expect(slot).not.toBeNull()
+      // Only the banner's own height has arrived; the header's has not.
+      resizeObserver.emitHeightFor(slot as Element, 48)
+      const mainSpacer =
+        getByRole('main').querySelector<HTMLElement>('.MuiToolbar-root')
+      expect(mainSpacer).not.toBeNull()
+      // Still the theme's plain Toolbar: no measured height and no pixel
+      // value written as a theme spacing multiplier (48px must never
+      // become 384px).
+      expect((mainSpacer as HTMLElement).style.minHeight).toBe('')
+      expect(getComputedStyle(mainSpacer as Element).marginTop).toMatch(/^0(px)?$/)
+      const drawerSpacer = document.querySelector('.MuiDrawer-paper .MuiToolbar-root')
+      expect(drawerSpacer).not.toBeNull()
+      expect(getComputedStyle(drawerSpacer as Element).marginTop).toMatch(/^0(px)?$/)
     })
 
     it('offsets the app bar and reserves the banner plus header in the temporary drawer at narrow widths', () => {

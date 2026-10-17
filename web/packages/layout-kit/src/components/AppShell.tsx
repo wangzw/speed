@@ -806,12 +806,8 @@ export function AppShell({
     headerHeight !== null ? bannerOffset + headerHeight : null
   const spacer = (
     <Toolbar
-      sx={
-        spacerMinHeight !== null
-          ? { minHeight: spacerMinHeight }
-          : bannerOffset > 0
-            ? { marginTop: bannerOffset }
-            : undefined
+      style={
+        spacerMinHeight !== null ? { minHeight: spacerMinHeight } : undefined
       }
     />
   )
