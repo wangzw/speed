@@ -21,6 +21,7 @@
  */
 
 import type { ReactNode } from 'react'
+import type { FeatureName } from '@speed/api-sdk/features'
 
 /** The path parameters a matched declaration's `:name` segments collect. */
 export type ConsoleRouteParams = Readonly<Record<string, string>>
@@ -49,6 +50,15 @@ export interface ConsoleRoute {
   readonly label?: ReactNode
   /** The permission code the page needs (data; this package never decides on it). */
   readonly permission?: string
+  /**
+   * The feature names this page needs (data; this package never decides
+   * on it). The elements are the generated `FeatureName` type, narrower
+   * than route-kit's string array, so a declaration still assigns to
+   * RouteDeclaration while a misspelled name fails to compile. The host
+   * narrows its route table by these names before the shell derives the
+   * navigation; the shell itself does not filter.
+   */
+  readonly requires?: readonly FeatureName[]
   /**
    * Which navigation group this page belongs to, by a group id from the
    * console's own group table (`ConsoleNavGroup`). It is data the console

@@ -54,6 +54,7 @@ import { useMemo } from 'react'
 import Box from '@mui/material/Box'
 import type { SxProps, Theme } from '@mui/material/styles'
 import type { AuthSession } from '@speed/auth-core'
+import type { FeatureName } from '@speed/api-sdk/features'
 import { AppShell } from '@speed/layout-kit'
 import type {
   AppShellNavEntry,
@@ -63,6 +64,7 @@ import type {
 } from '@speed/layout-kit'
 import type { ConsoleNavGroup, ConsoleRoute } from './route.js'
 import { ConsoleAccountHrefProvider } from './internal/account-href.js'
+import { ConsoleFeatureProvider } from './internal/features.js'
 import { ConsoleNavigationProvider } from './internal/navigation.js'
 import { ConsoleInvitationLinkProvider } from './internal/invitation-link.js'
 import { ConsoleSessionProvider } from './internal/session.js'
@@ -97,6 +99,15 @@ export interface ConsoleShellProps extends AppShellCollapseProps {
    * the groups).
    */
   readonly navGroups?: readonly ConsoleNavGroup[]
+  /**
+   * The host's synchronous feature answer: whether the process serves
+   * the named feature. Required; the shell publishes it to the routed
+   * pages through the package's feature context, where a feature-gated
+   * control asks it. The shell itself never filters `routes` by it --
+   * the host hands over the declarations its presence predicate left in
+   * force.
+   */
+  readonly hasFeature: (name: FeatureName) => boolean
   /** The host's routed content, rendered inside the `main` landmark. */
   readonly children: ReactNode
   /** The console title, rendered in the banner (host content). */
@@ -198,6 +209,7 @@ function buildNavEntries(
 export function ConsoleShell({
   routes,
   navGroups,
+  hasFeature,
   children,
   title,
   headerActions,
@@ -252,7 +264,9 @@ export function ConsoleShell({
           <ConsoleSessionProvider session={session ?? null}>
             <ConsoleAccountHrefProvider accountHref={accountHref}>
               <ConsoleInvitationLinkProvider invitationLink={invitationLink}>
-                {children}
+                <ConsoleFeatureProvider hasFeature={hasFeature}>
+                  {children}
+                </ConsoleFeatureProvider>
               </ConsoleInvitationLinkProvider>
             </ConsoleAccountHrefProvider>
           </ConsoleSessionProvider>

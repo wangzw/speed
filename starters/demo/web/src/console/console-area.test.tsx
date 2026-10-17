@@ -111,7 +111,10 @@ function renderConsoleArea(children: ReactNode = <p>console page</p>) {
         <AppServicesProvider services={services}>
           <QueryClientProvider client={services.queryClient}>
             <RouteProvider table={[]} fallback={() => null}>
-              <ConsoleArea routes={consoleShellRoutes}>
+              <ConsoleArea
+                routes={consoleShellRoutes}
+                hasFeature={() => true}
+              >
                 {children}
               </ConsoleArea>
             </RouteProvider>

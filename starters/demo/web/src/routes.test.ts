@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { FEATURE_NAMES } from '@speed/api-sdk/features'
 import {
   BACKEND_PREFIXES,
   backendProxyRules,
@@ -100,6 +101,23 @@ describe('the route table', () => {
     // Unlabelled, so it adds no navigation entry; the app renders its page
     // outside both shells (src/app.tsx).
     expect(invitationRoutes[0]?.label).toBeUndefined()
+  })
+
+  it('gates only on names the platform feature vocabulary declares', () => {
+    const known = new Set<string>(FEATURE_NAMES)
+    let gated = 0
+    for (const route of routes) {
+      for (const name of route.requires ?? []) {
+        gated += 1
+        expect(
+          known.has(name),
+          `${route.path} requires ${name}, which FEATURE_NAMES does not declare`,
+        ).toBe(true)
+      }
+    }
+    // The table must actually exercise the vocabulary: every console page
+    // is gated.
+    expect(gated).toBeGreaterThan(0)
   })
 
   it('combines the business slot, the callback and invitation routes and the console pages', () => {

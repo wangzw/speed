@@ -58,6 +58,22 @@ describe('console page declarations', () => {
     })
   }
 
+  it('carries the list page permission on each detail declaration', () => {
+    expect(
+      consoleRoutes.find((route) => route.path === '/tenants/:id')?.permission,
+    ).toBe('tenant.read')
+    expect(
+      consoleRoutes.find((route) => route.path === '/audit/:id')?.permission,
+    ).toBe('audit.read')
+  })
+
+  it('gates every declaration, detail routes included, on a non-empty feature list', () => {
+    for (const route of consoleRoutes) {
+      expect(route.requires, `${route.path} carries no requires`).toBeDefined()
+      expect(route.requires?.length).toBeGreaterThan(0)
+    }
+  })
+
   it('gives every navigation entry a decorative icon and leaves the detail routes icon-less', () => {
     for (const route of consoleRoutes) {
       if (route.label === undefined) {
@@ -72,7 +88,7 @@ describe('console page declarations', () => {
 
   it('renders an aria-hidden icon for every navigation entry without changing its accessible name', () => {
     renderWithProviders(
-      <ConsoleShell routes={consoleRoutes} title="Console">
+      <ConsoleShell routes={consoleRoutes} title="Console" hasFeature={() => true}>
         <h1>Home</h1>
       </ConsoleShell>,
       { operations },
@@ -116,7 +132,7 @@ describe('console page declarations', () => {
 
   it('renders the translated navigation labels through the shell', () => {
     renderWithProviders(
-      <ConsoleShell routes={consoleRoutes} title="Console">
+      <ConsoleShell routes={consoleRoutes} title="Console" hasFeature={() => true}>
         <h1>Home</h1>
       </ConsoleShell>,
       { operations },

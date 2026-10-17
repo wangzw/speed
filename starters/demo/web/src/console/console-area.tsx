@@ -31,6 +31,7 @@ import type { ConsoleNavGroup, ConsoleRouteTable } from '@speed/console-ui'
 import { ConsoleShell, consoleNavGroups } from '@speed/console-ui'
 import { useTranslation } from '@speed/i18n'
 import { useNavigate } from '@speed/route-kit'
+import type { FeatureName } from '@speed/api-sdk/features'
 import type { ReactElement, ReactNode } from 'react'
 import { useAppServices } from '../app-services.js'
 import { AppBrand, HeaderActions, UserMenu } from '../chrome.js'
@@ -51,6 +52,11 @@ export interface ConsoleAreaProps {
    * explicit value only by overriding this.
    */
   readonly navGroups?: readonly ConsoleNavGroup[]
+  /**
+   * The host's synchronous feature answer, published to the routed pages so
+   * a feature-gated control can hide when its feature is absent.
+   */
+  readonly hasFeature: (name: FeatureName) => boolean
   /** The routed console page, rendered inside the frame's main landmark. */
   readonly children: ReactNode
   /**
@@ -67,6 +73,7 @@ export interface ConsoleAreaProps {
 export function ConsoleArea({
   routes,
   navGroups,
+  hasFeature,
   children,
   sidebarCollapsed,
   onSidebarCollapsedChange,
@@ -79,6 +86,7 @@ export function ConsoleArea({
       // The console's own group table groups the eleven pages by capability
       // domain, so the sidebar reads as sections rather than one long list.
       navGroups={navGroups ?? consoleNavGroups}
+      hasFeature={hasFeature}
       title={<AppBrand />}
       headerActions={<ConsoleHeaderActions />}
       onNavigate={navigate}

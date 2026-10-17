@@ -435,7 +435,7 @@ graph TD
 | SSO 提供方的创建与改动、域名认领 | 已实现 | `web/packages/console-ui/src/SsoPage.tsx` `SsoProviderWriteForm`；`web/packages/console-ui/src/operations.tsx` `useCreateSsoProvider`、`useUpdateSsoProvider`、`useClaimSsoDomain` |
 | 成员的写入与 SSO 豁免 | 已实现 | `web/packages/console-ui/src/InvitationsPage.tsx` `MemberWriteForm`；`web/packages/console-ui/src/operations.tsx` `useWriteMember`、`useSetMemberSsoExempt` |
 | 页头、双语资源与错误码白名单 | 已实现 | `web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json`；`web/packages/console-ui/src/internal/error-text.ts` |
-| 页面声明的 `requires`（每条声明非空，元素类型 `FeatureName`） | 未实现 | — |
-| 详情声明的权限码（`/tenants/:id` 带 `tenant.read`，`/audit/:id` 带 `audit.read`） | 未实现 | — |
-| `ConsoleShell` 的 `hasFeature` 与包内特性判定上下文 | 未实现 | — |
-| 页内控件按特性在场渲染（仪表盘、账户身份解析、账户详情、SSO 元数据刷新、成员 SSO 豁免） | 未实现 | — |
+| 页面声明的 `requires`（每条声明非空，元素类型 `FeatureName`） | 已实现 | `web/packages/console-ui/src/routes.tsx` `consoleRoutes`；`web/packages/console-ui/src/route.ts` `ConsoleRoute` |
+| 详情声明的权限码（`/tenants/:id` 带 `tenant.read`，`/audit/:id` 带 `audit.read`） | 已实现 | `web/packages/console-ui/src/routes.tsx` `tenantAdminRoutes`、`auditAdminRoutes` |
+| `ConsoleShell` 的 `hasFeature` 与包内特性判定上下文 | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell`；`web/packages/console-ui/src/internal/features.tsx` `ConsoleFeatureProvider`、`useConsoleHasFeature` |
+| 页内控件按特性在场渲染（仪表盘、审计页操作者解析、账户详情、SSO 元数据刷新、成员 SSO 豁免） | 未实现 | — |

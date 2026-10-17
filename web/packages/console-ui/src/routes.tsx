@@ -72,6 +72,7 @@ export const dashboardAdminRoutes: ConsoleRouteTable = [
     label: <ConsoleNavLabel labelKey="dashboard.title" />,
     icon: <DashboardIcon />,
     permission: 'tenant.read',
+    requires: ['tenant.admin'],
     group: 'overview',
   },
 ] satisfies readonly ConsoleRoute[]
@@ -91,6 +92,7 @@ export const tenantAdminRoutes: ConsoleRouteTable = [
     label: <ConsoleNavLabel labelKey="tenants.title" />,
     icon: <TenantsIcon />,
     permission: 'tenant.read',
+    requires: ['tenant.admin'],
     group: 'tenants',
   },
   {
@@ -102,6 +104,8 @@ export const tenantAdminRoutes: ConsoleRouteTable = [
         rootHref={context.path.replace(/\/tenants\/[^/]+$/, '')}
       />
     ),
+    permission: 'tenant.read',
+    requires: ['tenant.admin'],
   },
 ] satisfies readonly ConsoleRoute[]
 
@@ -113,6 +117,7 @@ export const accountsAdminRoutes: ConsoleRouteTable = [
     label: <ConsoleNavLabel labelKey="accounts.title" />,
     icon: <AccountsIcon />,
     permission: 'authn.account.read',
+    requires: ['authn.admin'],
     group: 'identity',
   },
 ] satisfies readonly ConsoleRoute[]
@@ -125,6 +130,7 @@ export const sessionsAdminRoutes: ConsoleRouteTable = [
     label: <ConsoleNavLabel labelKey="sessions.title" />,
     icon: <SessionsIcon />,
     permission: 'authn.session.read',
+    requires: ['authn.admin.sessions'],
     group: 'identity',
   },
 ] satisfies readonly ConsoleRoute[]
@@ -137,6 +143,7 @@ export const impersonationsAdminRoutes: ConsoleRouteTable = [
     label: <ConsoleNavLabel labelKey="impersonations.title" />,
     icon: <ImpersonationsIcon />,
     permission: 'authn.impersonation.read',
+    requires: ['authn.impersonation', 'authn.admin.impersonations', 'tenant.admin'],
     group: 'identity',
   },
 ] satisfies readonly ConsoleRoute[]
@@ -149,6 +156,7 @@ export const permissionsAdminRoutes: ConsoleRouteTable = [
     label: <ConsoleNavLabel labelKey="permissions.title" />,
     icon: <PermissionsIcon />,
     permission: 'authz.role.read',
+    requires: ['authz.admin', 'tenant.admin'],
     group: 'identity',
   },
 ] satisfies readonly ConsoleRoute[]
@@ -161,6 +169,7 @@ export const invitationsAdminRoutes: ConsoleRouteTable = [
     label: <ConsoleNavLabel labelKey="invitations.title" />,
     icon: <InvitationsIcon />,
     permission: 'authn.membership.manage',
+    requires: ['authn.invitations', 'authn.admin', 'tenant.admin'],
     group: 'identity',
   },
 ] satisfies readonly ConsoleRoute[]
@@ -173,6 +182,7 @@ export const ssoAdminRoutes: ConsoleRouteTable = [
     label: <ConsoleNavLabel labelKey="sso.title" />,
     icon: <SsoIcon />,
     permission: 'authn.idp.manage',
+    requires: ['authn.admin.sso', 'tenant.admin'],
     group: 'identity',
   },
 ] satisfies readonly ConsoleRoute[]
@@ -185,6 +195,7 @@ export const settingsAdminRoutes: ConsoleRouteTable = [
     label: <ConsoleNavLabel labelKey="settings.title" />,
     icon: <SettingsIcon />,
     permission: 'settings.read',
+    requires: ['settings.admin'],
     group: 'platform',
   },
 ] satisfies readonly ConsoleRoute[]
@@ -197,6 +208,7 @@ export const smsAdminRoutes: ConsoleRouteTable = [
     label: <ConsoleNavLabel labelKey="sms.title" />,
     icon: <SmsIcon />,
     permission: 'sms.template.read',
+    requires: ['sms.admin'],
     group: 'platform',
   },
 ] satisfies readonly ConsoleRoute[]
@@ -213,6 +225,7 @@ export const auditAdminRoutes: ConsoleRouteTable = [
     label: <ConsoleNavLabel labelKey="audit.title" />,
     icon: <AuditIcon />,
     permission: 'audit.read',
+    requires: ['audit.admin'],
     group: 'audit',
   },
   {
@@ -223,6 +236,8 @@ export const auditAdminRoutes: ConsoleRouteTable = [
         parentHref={context.path.replace(/\/[^/]+$/, '')}
       />
     ),
+    permission: 'audit.read',
+    requires: ['audit.admin'],
   },
 ] satisfies readonly ConsoleRoute[]
 

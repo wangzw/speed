@@ -12,6 +12,11 @@
     "backToApp": "返回应用",
     "accessPending": "正在检查控制台访问权限"
   },
+  "route": {
+    "pending": "正在读取本部署提供的特性",
+    "failed": "无法读取本部署提供的特性",
+    "retry": "重试"
+  },
   "signIn": {
     "heading": "登录",
     "subtitle": "使用你的账户继续。",

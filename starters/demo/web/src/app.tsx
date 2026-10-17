@@ -38,6 +38,7 @@ import Link from '@mui/material/Link'
 import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
 import { TenantProvider, useAuthState, usePermission } from '@speed/auth-core'
+import { featurePresence, useFeatureState } from '@speed/auth-core'
 import type { AuthSnapshot } from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
 import { RouteGuard } from '@speed/layout-kit'
@@ -48,12 +49,13 @@ import {
 } from '@speed/notification-ui'
 import { ProductShell } from '@speed/product-shell'
 import {
+  presentDeclarations,
   RouteProvider,
   RouteView,
   useNavigate,
   useNavItems,
 } from '@speed/route-kit'
-import type { RouteContext } from '@speed/route-kit'
+import type { RouteContext, RoutePresence } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { tenantAdminTenantsList } from './app-api/index.js'
@@ -92,20 +94,32 @@ const CONSOLE_PERMISSION_DOMAIN = 'system'
  * turns away, so a denied URL leaves the console's path space. */
 const TENANT_HOME_PATH = '/'
 
-/** The app view root: routing installed once, over the shell switch. */
+/** The app view root: routing installed once, over the shell switch. The
+ * route table is gated (the notification and console declarations carry
+ * `requires`), so the host hands the route layer its feature-presence
+ * answer -- derived from the session's feature state -- plus the views a
+ * gated path renders while that answer is pending or failed. */
 export function DemoApp(): ReactElement {
+  const presence = featurePresence(useFeatureState())
   return (
     <RouteProvider
       table={routes}
       fallback={(context: RouteContext) => <NotFoundPage path={context.path} />}
+      presence={presence}
+      pending={() => <RoutePresencePending />}
+      failed={() => <RoutePresenceFailed />}
     >
-      <AppFrame />
+      <AppFrame presence={presence} />
     </RouteProvider>
   )
 }
 
 /** Renders the area the current URL lands in: the console or the tenant shell. */
-function AppFrame(): ReactElement {
+function AppFrame({
+  presence,
+}: {
+  readonly presence: RoutePresence
+}): ReactElement {
   const items = useNavItems()
   const navigate = useNavigate()
   // The assembled client: its event-stream opener feeds the notification
@@ -198,11 +212,19 @@ function AppFrame(): ReactElement {
     (item) => item.selected && isConsolePath(item.id),
   )
   if (consoleSelected) {
+    // The console shell does not filter its navigation by `requires`: the
+    // host hands it the declarations the presence predicate left in force,
+    // and its own synchronous feature answer for the pages' in-page
+    // controls. A pending or failed predicate leaves every gated page out
+    // (fail-closed), which is also what the route layer renders.
+    const hasFeature =
+      presence.state === 'ready' ? presence.has : (): boolean => false
     return (
       <SessionGate>
         <ConsoleAreaGate>
           <ConsoleArea
-            routes={consoleShellRoutes}
+            routes={presentDeclarations(consoleShellRoutes, presence)}
+            hasFeature={hasFeature}
             sidebarCollapsed={sidebarCollapsed}
             onSidebarCollapsedChange={setSidebarCollapsed}
           >
@@ -425,6 +447,47 @@ function ConsoleAccessPending(): ReactElement {
       }}
     >
       <CircularProgress aria-label={t('console.accessPending')} />
+    </Box>
+  )
+}
+
+/** The view a feature-gated path renders while the host's presence
+ * answer is pending (including an anonymous session, which has no
+ * feature state). */
+function RoutePresencePending(): ReactElement {
+  const { t } = useTranslation(DEMO_NAMESPACE)
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingY: 6,
+      }}
+    >
+      <CircularProgress aria-label={t('route.pending')} />
+    </Box>
+  )
+}
+
+/** The view a feature-gated path renders when the feature document could
+ * not be read. A failed read is neither "absent" nor "present", so it gets
+ * a retry rather than the 404 a missing feature renders. */
+function RoutePresenceFailed(): ReactElement {
+  const { t } = useTranslation(DEMO_NAMESPACE)
+  const { session } = useAppServices()
+  return (
+    <Box
+      component="section"
+      role="alert"
+      sx={{ display: 'flex', flexDirection: 'column', gap: 2, p: 3 }}
+    >
+      <Typography variant="body1">{t('route.failed')}</Typography>
+      <Box>
+        <Button onClick={() => void session.retryFeatures()}>
+          {t('route.retry')}
+        </Button>
+      </Box>
     </Box>
   )
 }

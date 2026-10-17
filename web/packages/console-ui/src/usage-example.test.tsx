@@ -59,7 +59,11 @@ export function ConsoleApp(): ReactElement {
       <AppThemeProvider i18n={i18n}>
         <QueryClientProvider client={queryClient}>
           <ConsoleOperationsProvider operations={consoleOperations}>
-            <ConsoleShell routes={consoleRoutes} title="Speed Console">
+            <ConsoleShell
+              routes={consoleRoutes}
+              title="Speed Console"
+              hasFeature={() => true}
+            >
               {route?.view({ path: route.path, params: {} })}
             </ConsoleShell>
           </ConsoleOperationsProvider>

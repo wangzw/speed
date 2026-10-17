@@ -12,6 +12,11 @@
     "backToApp": "Back to app",
     "accessPending": "Checking console access"
   },
+  "route": {
+    "pending": "Checking which features this deployment serves",
+    "failed": "Could not read the features this deployment serves",
+    "retry": "Try again"
+  },
   "signIn": {
     "heading": "Sign in",
     "subtitle": "Use your account to continue.",

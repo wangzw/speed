@@ -18,6 +18,7 @@
  */
 
 import { useCallback, useState } from 'react'
+import type { ReactElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -25,6 +26,7 @@ import { mockMatchMedia } from '@speed/test-utils/matchMedia'
 import layoutKitZhCN from '../../layout-kit/src/locales/zh-CN.json' with { type: 'json' }
 import consoleUiZhCN from './locales/zh-CN.json' with { type: 'json' }
 import { ConsoleShell } from './ConsoleShell.js'
+import type { ConsoleShellProps } from './ConsoleShell.js'
 import type { ConsoleNavGroup, ConsoleRoute } from './route.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -35,6 +37,16 @@ import {
   makeConsoleBackend,
 } from '../test-utils/operations.js'
 import { expectNoAxeViolationsForPage } from '../test-utils/axe.js'
+
+/** The feature answer these shell-shape cases use: everything present. */
+function hasFeature(): boolean {
+  return true
+}
+
+/** ConsoleShell with the required feature answer filled in. */
+function Shell(props: Omit<ConsoleShellProps, 'hasFeature'>): ReactElement {
+  return <ConsoleShell {...props} hasFeature={hasFeature} />
+}
 
 const operations = createConsoleOperations(makeConsoleBackend())
 
@@ -73,23 +85,23 @@ function ControlledCollapseConsole({
     [onCollapseChange],
   )
   return (
-    <ConsoleShell
+    <Shell
       routes={routes}
       title="Console"
       sidebarCollapsed={collapsed}
       onSidebarCollapsedChange={reportCollapse}
     >
       <h1>Home</h1>
-    </ConsoleShell>
+    </Shell>
   )
 }
 
 describe('ConsoleShell', () => {
   it('renders a banner, a nav and a main landmark', () => {
     renderWithProviders(
-      <ConsoleShell routes={routes} title="Console">
+      <Shell routes={routes} title="Console">
         <h1>Home</h1>
-      </ConsoleShell>,
+      </Shell>,
       { operations },
     )
     expect(screen.getByRole('banner')).toBeInTheDocument()
@@ -99,9 +111,9 @@ describe('ConsoleShell', () => {
 
   it('fixes the banner to the top, matching the platform frame', () => {
     renderWithProviders(
-      <ConsoleShell routes={routes} title="Console">
+      <Shell routes={routes} title="Console">
         <h1>Home</h1>
-      </ConsoleShell>,
+      </Shell>,
       { operations },
     )
     // The banner does not scroll away with the page, the same treatment the
@@ -111,9 +123,9 @@ describe('ConsoleShell', () => {
 
   it('derives the navigation from the labelled declarations only', () => {
     renderWithProviders(
-      <ConsoleShell routes={routes} title="Console">
+      <Shell routes={routes} title="Console">
         <h1>Home</h1>
-      </ConsoleShell>,
+      </Shell>,
       { operations },
     )
     const nav = screen.getByRole('navigation')
@@ -127,10 +139,10 @@ describe('ConsoleShell', () => {
 
   it('renders the host content inside main', () => {
     renderWithProviders(
-      <ConsoleShell routes={routes} title="Console">
+      <Shell routes={routes} title="Console">
         <h1>Home</h1>
         <p>body</p>
-      </ConsoleShell>,
+      </Shell>,
       { operations },
     )
     const main = screen.getByRole('main')
@@ -169,9 +181,9 @@ describe('ConsoleShell', () => {
 
   it('pads the content region so a page does not butt against the chrome', () => {
     renderWithProviders(
-      <ConsoleShell routes={routes} title="Console">
+      <Shell routes={routes} title="Console">
         <h1>Home</h1>
-      </ConsoleShell>,
+      </Shell>,
       { operations },
     )
     // The page content sits inside the content region's padded container,
@@ -189,13 +201,13 @@ describe('ConsoleShell', () => {
 
   it('renders the title and the header actions in the banner', () => {
     renderWithProviders(
-      <ConsoleShell
+      <Shell
         routes={routes}
         title="Speed Console"
         headerActions={<span>account</span>}
       >
         <h1>Home</h1>
-      </ConsoleShell>,
+      </Shell>,
       { operations },
     )
     const banner = screen.getByRole('banner')
@@ -207,9 +219,9 @@ describe('ConsoleShell', () => {
     const user = userEvent.setup()
     const onNavigate = vi.fn()
     renderWithProviders(
-      <ConsoleShell routes={routes} title="Console" onNavigate={onNavigate}>
+      <Shell routes={routes} title="Console" onNavigate={onNavigate}>
         <h1>Home</h1>
-      </ConsoleShell>,
+      </Shell>,
       { operations },
     )
     const nav = screen.getByRole('navigation')
@@ -221,9 +233,9 @@ describe('ConsoleShell', () => {
   it('moves focus to main from the skip link, without navigating', async () => {
     const user = userEvent.setup()
     renderWithProviders(
-      <ConsoleShell routes={routes} title="Console">
+      <Shell routes={routes} title="Console">
         <h1>Home</h1>
-      </ConsoleShell>,
+      </Shell>,
       { operations },
     )
     const skip = screen.getByRole('link', {
@@ -235,10 +247,10 @@ describe('ConsoleShell', () => {
 
   it('has no axe violations as a page', async () => {
     renderWithProviders(
-      <ConsoleShell routes={routes} title="Console">
+      <Shell routes={routes} title="Console">
         <h1>Home</h1>
         <p>body</p>
-      </ConsoleShell>,
+      </Shell>,
       { operations },
     )
     await expectNoAxeViolationsForPage()
@@ -254,9 +266,9 @@ describe('ConsoleShell', () => {
       // wraps the nav, and the nav is not a descendant of main.
       mockMatchMedia(true)
       renderWithProviders(
-        <ConsoleShell routes={routes} title="Console">
+        <Shell routes={routes} title="Console">
           <h1>Home</h1>
-        </ConsoleShell>,
+        </Shell>,
         { operations },
       )
       const nav = screen.getByRole('navigation', {
@@ -273,9 +285,9 @@ describe('ConsoleShell', () => {
     it('shows no hamburger toggle on the desktop', () => {
       mockMatchMedia(true)
       renderWithProviders(
-        <ConsoleShell routes={routes} title="Console">
+        <Shell routes={routes} title="Console">
           <h1>Home</h1>
-        </ConsoleShell>,
+        </Shell>,
         { operations },
       )
       expect(
@@ -288,9 +300,9 @@ describe('ConsoleShell', () => {
     it('renders no collapse toggle when the host does not supply the collapse pair', () => {
       mockMatchMedia(true)
       renderWithProviders(
-        <ConsoleShell routes={routes} title="Console">
+        <Shell routes={routes} title="Console">
           <h1>Home</h1>
-        </ConsoleShell>,
+        </Shell>,
         { operations },
       )
       // Without the host's collapse callback the frame renders no toggle and
@@ -356,13 +368,13 @@ describe('ConsoleShell', () => {
     it('gathers the labelled declarations into their groups: groups in table order, entries in declaration order, ungrouped above', () => {
       mockMatchMedia(true)
       renderWithProviders(
-        <ConsoleShell
+        <Shell
           routes={groupedRoutes}
           navGroups={navGroups}
           title="Console"
         >
           <h1>Home</h1>
-        </ConsoleShell>,
+        </Shell>,
         { operations },
       )
       const nav = screen.getByRole('navigation')
@@ -384,13 +396,13 @@ describe('ConsoleShell', () => {
     it('drops a group that no declaration names', () => {
       mockMatchMedia(true)
       renderWithProviders(
-        <ConsoleShell
+        <Shell
           routes={groupedRoutes}
           navGroups={[...navGroups, { id: 'empty', label: 'Empty group' }]}
           title="Console"
         >
           <h1>Home</h1>
-        </ConsoleShell>,
+        </Shell>,
         { operations },
       )
       const nav = screen.getByRole('navigation')
@@ -402,9 +414,9 @@ describe('ConsoleShell', () => {
     it('keeps the flat single column when no group table is supplied', () => {
       mockMatchMedia(true)
       renderWithProviders(
-        <ConsoleShell routes={groupedRoutes} title="Console">
+        <Shell routes={groupedRoutes} title="Console">
           <h1>Home</h1>
-        </ConsoleShell>,
+        </Shell>,
         { operations },
       )
       const nav = screen.getByRole('navigation')
@@ -421,10 +433,10 @@ describe('ConsoleShell', () => {
     it('has no axe violations with the grouped navigation', async () => {
       mockMatchMedia(true)
       renderWithProviders(
-        <ConsoleShell routes={groupedRoutes} navGroups={navGroups} title="Console">
+        <Shell routes={groupedRoutes} navGroups={navGroups} title="Console">
           <h1>Home</h1>
           <p>body</p>
-        </ConsoleShell>,
+        </Shell>,
         { operations },
       )
       await expectNoAxeViolationsForPage()
@@ -439,9 +451,9 @@ describe('ConsoleShell', () => {
     it('renders a declaration icon beside the visible label while the sidebar is expanded', () => {
       mockMatchMedia(true)
       renderWithProviders(
-        <ConsoleShell routes={routes} title="Console">
+        <Shell routes={routes} title="Console">
           <h1>Home</h1>
-        </ConsoleShell>,
+        </Shell>,
         { operations },
       )
       const tenants = screen.getByRole('link', { name: 'Tenants' })
@@ -510,7 +522,7 @@ describe('ConsoleShell', () => {
         },
       ]
       renderWithProviders(
-        <ConsoleShell
+        <Shell
           routes={groupedRoutes}
           navGroups={groupedNav}
           sidebarCollapsed
@@ -518,7 +530,7 @@ describe('ConsoleShell', () => {
           title="Console"
         >
           <h1>Home</h1>
-        </ConsoleShell>,
+        </Shell>,
         { operations },
       )
       const groupButton = screen.getByRole('button', {
@@ -541,9 +553,9 @@ describe('ConsoleShell', () => {
       // overlay variant -- and is reachable through the hamburger toggle.
       mockMatchMedia(false)
       renderWithProviders(
-        <ConsoleShell routes={routes} title="Console">
+        <Shell routes={routes} title="Console">
           <h1>Home</h1>
-        </ConsoleShell>,
+        </Shell>,
         { operations },
       )
       // The toggle is the hamburger; it starts closed.
@@ -566,9 +578,9 @@ describe('ConsoleShell', () => {
       mockMatchMedia(false)
       const user = userEvent.setup()
       renderWithProviders(
-        <ConsoleShell routes={routes} title="Console">
+        <Shell routes={routes} title="Console">
           <h1>Home</h1>
-        </ConsoleShell>,
+        </Shell>,
         { operations },
       )
       await user.click(
@@ -605,10 +617,10 @@ describe('ConsoleShell', () => {
     it('has no axe violations on the narrow-viewport layout', async () => {
       mockMatchMedia(false)
       renderWithProviders(
-        <ConsoleShell routes={routes} title="Console">
+        <Shell routes={routes} title="Console">
           <h1>Home</h1>
           <p>body</p>
-        </ConsoleShell>,
+        </Shell>,
         { operations },
       )
       await expectNoAxeViolationsForPage()
