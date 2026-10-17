@@ -72,16 +72,22 @@ export interface ConsoleRoute {
 
 /**
  * One console navigation group: a stable id, an already-translated
- * heading, and an optional initial collapse state. The console shell
- * renders groups in the order its group table lists them, each group's
- * entries in declaration order beneath it. The shape is host-suppliable
- * so a host can reorder or relabel the console's groups.
+ * heading, an optional decorative icon and an optional initial collapse
+ * state. The console shell renders groups in the order its group table
+ * lists them, each group's entries in declaration order beneath it. The
+ * shape is host-suppliable so a host can reorder or relabel the console's
+ * groups.
  */
 export interface ConsoleNavGroup {
   /** Stable identity, matching the `group` a declaration names. */
   readonly id: string
   /** The group's visible heading, resolved through the console-ui namespace. */
   readonly label: ReactNode
+  /**
+   * Optional decorative icon, shown in the sidebar's collapsed icon rail
+   * in place of the clipped heading.
+   */
+  readonly icon?: ReactNode
   /** Whether the group starts collapsed; absent means expanded. */
   readonly defaultCollapsed?: boolean
 }

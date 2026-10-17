@@ -75,7 +75,10 @@ package's own `consoleNavGroups`, or a host-supplied table) to group the
 pages by capability domain instead: each declaration names its group
 through its `group` field, and the shell renders the groups in the
 table's order with each group's entries in declaration order beneath it.
-Omit `navGroups` and the flat column is unchanged.
+A group may also carry a decorative `icon`, which the shell passes through
+to `AppShellNavGroup.icon` and which replaces the clipped heading in the
+collapsed sidebar's icon rail. Omit `navGroups` and the flat column is
+unchanged.
 
 The package's own labelled declarations carry a decorative `icon`, which
 the shell passes to the frame's `AppShellNavItem.icon`; a host's own

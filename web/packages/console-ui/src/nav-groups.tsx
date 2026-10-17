@@ -17,31 +17,45 @@
  */
 
 import { ConsoleNavLabel } from './internal/nav-label.js'
+import {
+  AccountsIcon,
+  AuditIcon,
+  DashboardIcon,
+  SettingsIcon,
+  TenantsIcon,
+} from './internal/icons.js'
 import type { ConsoleNavGroup } from './route.js'
 
 /**
  * The console sidebar's groups in display order: the overview, identity
- * and access, tenant management, platform configuration, and audit.
+ * and access, tenant management, platform configuration, and audit. Each
+ * group carries the decorative icon its collapsed heading shows in the
+ * sidebar's icon rail; the page entries beneath it carry their own.
  */
 export const consoleNavGroups: readonly ConsoleNavGroup[] = [
   {
     id: 'overview',
     label: <ConsoleNavLabel labelKey="nav.groups.overview" />,
+    icon: <DashboardIcon />,
   },
   {
     id: 'identity',
     label: <ConsoleNavLabel labelKey="nav.groups.identity" />,
+    icon: <AccountsIcon />,
   },
   {
     id: 'tenants',
     label: <ConsoleNavLabel labelKey="nav.groups.tenants" />,
+    icon: <TenantsIcon />,
   },
   {
     id: 'platform',
     label: <ConsoleNavLabel labelKey="nav.groups.platform" />,
+    icon: <SettingsIcon />,
   },
   {
     id: 'audit',
     label: <ConsoleNavLabel labelKey="nav.groups.audit" />,
+    icon: <AuditIcon />,
   },
 ] satisfies readonly ConsoleNavGroup[]

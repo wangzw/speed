@@ -457,6 +457,47 @@ describe('ConsoleShell', () => {
         within(nav).getByRole('link', { name: 'Settings' }),
       ).toBeInTheDocument()
     })
+
+    it('collapses the group heading to its group icon', () => {
+      mockMatchMedia(true)
+      const groupedRoutes: readonly ConsoleRoute[] = [
+        {
+          path: '/accounts',
+          view: () => null,
+          label: 'Accounts',
+          group: 'identity',
+          icon: <svg aria-hidden="true" data-testid="entry-icon" />,
+        },
+      ]
+      const groupedNav: readonly ConsoleNavGroup[] = [
+        {
+          id: 'identity',
+          label: 'Identity & access',
+          icon: <svg aria-hidden="true" data-testid="group-icon" />,
+        },
+      ]
+      renderWithProviders(
+        <ConsoleShell
+          routes={groupedRoutes}
+          navGroups={groupedNav}
+          sidebarCollapsed
+          onSidebarCollapsedChange={() => undefined}
+          title="Console"
+        >
+          <h1>Home</h1>
+        </ConsoleShell>,
+        { operations },
+      )
+      const groupButton = screen.getByRole('button', {
+        name: 'Identity & access',
+      })
+      // The group icon replaces the clipped heading in the rail; the label
+      // stays as the button's accessible name.
+      expect(within(groupButton).getByTestId('group-icon')).toBeInTheDocument()
+      expect(
+        labelRootOf(within(groupButton).getByText('Identity & access')),
+      ).toHaveStyle({ position: 'absolute' })
+    })
   })
 
   describe('narrow-viewport frame: a hamburger drawer, not a stacked block', () => {

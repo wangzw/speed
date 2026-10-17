@@ -176,6 +176,7 @@ function buildNavEntries(
     .map((group) => ({
       id: group.id,
       label: group.label,
+      icon: group.icon,
       defaultCollapsed: group.defaultCollapsed,
       items: labelled
         .filter((route) => route.group === group.id)
