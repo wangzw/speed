@@ -76,6 +76,31 @@ describe('ObjectsPage', () => {
     await expectNoAxeViolations()
   })
 
+  it('keeps the identifier and state cells on one line and the identifier reachable in full', async () => {
+    // A short state value ('Completed') must not split across two lines
+    // and the identifier must not break mid-token. jsdom does no layout,
+    // so the proof is the declared `white-space: nowrap` on the rendered
+    // cells; the table's TableContainer scroll absorbs the resulting
+    // width (pinned in ui-kit's DataTable suite). The complete identifier
+    // stays reachable without that scroll: the cell carries it as its
+    // title and a focusable copy control copies it.
+    makeObjectStoreRig(() =>
+      jsonResponse(200, { objects: [OBJECT_A], next_cursor: '' }),
+    )
+    renderWithProviders(<ObjectsPage />, { language: 'en-US' })
+
+    const idCell = (await screen.findByText('o-aaa')).closest('td')
+    const stateCell = screen.getByText('Completed').closest('td')
+    for (const cell of [idCell, stateCell]) {
+      expect(cell).not.toBeNull()
+      expect(cell).toHaveStyle({ whiteSpace: 'nowrap' })
+    }
+    expect(idCell).toHaveAttribute('title', 'o-aaa')
+    expect(
+      within(idCell as HTMLElement).getByRole('button', { name: /o-aaa/ }),
+    ).toBeInTheDocument()
+  })
+
   it('renders the empty state when the tenant has no objects', async () => {
     makeObjectStoreRig(() => jsonResponse(200, { objects: [], next_cursor: '' }))
     renderWithProviders(<ObjectsPage />, { language: 'en-US' })

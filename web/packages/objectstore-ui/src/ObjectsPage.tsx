@@ -131,6 +131,7 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
       id: 'id',
       header: t('list.column.id'),
       cellWrap: 'nowrap',
+      cellFullValue: (object) => object.id,
       cell: (object) => <Typography variant="body2">{object.id}</Typography>,
     },
     {
