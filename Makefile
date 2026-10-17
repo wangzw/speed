@@ -89,12 +89,17 @@ test-integration-race: modules-present deps-up ## Test every module's integratio
 vet-integration: modules-present ## Compile every module's integration cases, running nothing
 	@failed=; $(call each,$(MODULES),vet integration,go -C $$it vet -tags=integration ./...); $(each-end)
 
+# `golangci-lint run` takes a process-wide lock by default, so two checkouts
+# running the gate at once make one of them die with "parallel golangci-lint
+# is running" — indistinguishable from a code failure. The flag lets
+# concurrent runs proceed; the cost is contention, not a wrong answer. `fmt`
+# takes no lock and rejects the flag.
 fmt: modules-present ## Format every module in place
 	@failed=; $(call each,$(MODULES),fmt,env -C $$it golangci-lint fmt ./...); $(each-end)
 
 lint: modules-present ## Report formatting drift and static-analysis findings
 	@failed=; $(call each,$(MODULES),lint fmt --diff,env -C $$it golangci-lint fmt --diff ./...); \
-	  $(call each,$(MODULES),lint run,env -C $$it golangci-lint run ./...); $(each-end)
+	  $(call each,$(MODULES),lint run,env -C $$it golangci-lint run --allow-parallel-runners ./...); $(each-end)
 
 tidy: modules-present ## Tidy every module's go.mod and go.sum in place
 	@failed=; $(call each,$(MODULES),tidy,GOWORK=off go -C $$it mod tidy); $(each-end)
@@ -165,6 +170,7 @@ web-a11y: ## Run the frontend's route-level accessibility sweep
 	@pnpm -C web --filter demo-web run test:a11y
 
 check: ## Run everything a commit is gated on (no external service needed)
+	@echo "check: run one gate per machine at a time — the lint leg now tolerates a concurrent runner, but two full gates starve the test processes and fail them on the clock, not on an assertion"
 	@$(MAKE) build
 	@$(MAKE) test
 	@$(MAKE) test-race
