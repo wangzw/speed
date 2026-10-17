@@ -87,6 +87,17 @@ this one may issue HTTP requests itself.
   one retry of the original request (any method), outside the
   transient-retry budget. Hook failure reports `access token refresh
   failed` and rejects the original 401 as an auth `ApiError`.
+- **A refresh hook is called with the round-scoped request function,
+  and requests issued through it are the round's own.** Their 401
+  surfaces to the hook instead of joining or starting the shared round
+  -- the round may be the very one awaiting the hook, so a joining
+  request would await itself forever. This is what a restore-shaped
+  hook needs: it reads GET /auth/session and then, after that answers
+  authenticated, GET /auth/me, which is issued after an await and is
+  therefore beyond the synchronous-invocation marker the 401 guard also
+  honours. A hook that ignores the argument still runs; one that issues
+  its round's reads through the client's ordinary request function can
+  self-await when an endpoint refuses.
 - **Credential-less-ness is declared per request, never manufactured
   by clearing the store.** `RequestOptions.omitAccessToken` skips the
   store read entirely, so no store token is attached and the request

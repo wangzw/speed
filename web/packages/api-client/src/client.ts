@@ -42,7 +42,9 @@
  *      own refresh request (sent credential-less) from re-entering
  *      the refresh path (and a host that forgot that declaration on
  *      its refresh request is refused the refresh path at runtime the
- *      same way). Caller cancellation is never muted by the pause: an
+ *      same way, as is any read the hook issues through the
+ *      round-scoped request function it is called with). Caller
+ *      cancellation is never muted by the pause: an
  *      abort landing during the refresh round races the round's wait
  *      and rejects the request raw -- the flight itself races no
  *      signal, so only the aborting request detaches, and the waiters
@@ -262,7 +264,19 @@ export interface ClientOptions {
    * retried once. @speed/auth-core supplies it against the
    * session-refresh operation (`() => session.refresh()`); hosts
    * without a session leave it out and every 401 surfaces as an auth
-   * ApiError. Never called more than once per request; concurrent 401s
+   * ApiError. The argument is the round-scoped request function: a
+   * function bound to this same client for the work the round itself
+   * performs. A request issued through it belongs to the round, so a
+   * 401 among them surfaces (the hook reads it as the session's own
+   * answer) instead of joining the shared round -- which may be the
+   * very round awaiting the hook, making the request await itself. A
+   * restore-shaped hook that reads GET /auth/session and then GET
+   * /auth/me is the case that needs it: the second read is issued
+   * after an await, long past the round's synchronous invocation. A
+   * hook that ignores the argument still compiles and runs; one that
+   * issues its round's reads through the client's ordinary request
+   * function can self-await when an endpoint refuses.
+   * Never called more than once per request; concurrent 401s
    * share one in-flight refresh. A caller abort landing while the
    * round is in flight rejects the request with the raw AbortError on
    * the next microtask -- the round's wait races the caller's own
@@ -290,12 +304,14 @@ export interface ClientOptions {
    * token from concurrent requests that still hold a valid one,
    * turning their 401s into spurious auth failures. A host that
    * forgets the declaration on its own refresh request is caught at
-   * runtime instead: a request born inside the refresh round is
-   * refused the refresh path (its 401 surfaces as the terminal auth
-   * error), so the round ends as a finite failure -- never a
-   * self-deadlock and never a second concurrent refresh.
+   * runtime instead: a request born inside the refresh round -- during
+   * the hook's synchronous invocation, or issued through the
+   * round-scoped function the hook is called with -- is refused the
+   * refresh path (its 401 surfaces as the terminal auth error), so the
+   * round ends as a finite failure -- never a self-deadlock and never a
+   * second concurrent refresh.
    */
-  refreshAccessToken?: () => Promise<boolean>
+  refreshAccessToken?: (issue: RequestFn) => Promise<boolean>
   /** Abort an HTTP exchange that exceeds this many milliseconds;
    * absent, no internal timeout is armed. The budget bounds one
    * exchange -- a send plus its body read -- and covers stalled body
@@ -1166,6 +1182,10 @@ export function createClient(options: ClientOptions): SpeedClient {
   // deliberately dropped once the hook has returned its promise: a
   // request born later in the round's pending window is an
   // independent request and must still be able to join the flight.
+  // The round's own reads issued after an await (a restore-shaped hook
+  // reading GET /auth/session and then GET /auth/me) cannot be caught
+  // by this marker; the hook reaches them through the round-scoped
+  // request function instead, whose requests carry `roundOwned`.
   let inRefreshHookCall = false
   const refreshOnce =
     refreshHook === undefined
@@ -1179,7 +1199,7 @@ export function createClient(options: ClientOptions): SpeedClient {
                 try {
                   hookOutcome = (async (): Promise<boolean> => {
                     try {
-                      return (await refreshHook()) === true
+                      return (await refreshHook(issueInRound)) === true
                     } catch {
                       // A throwing refresh hook is a failed refresh:
                       // the session is still gone and the request must
@@ -1222,15 +1242,18 @@ export function createClient(options: ClientOptions): SpeedClient {
           return refreshInFlight
         }
 
-  const request: RequestFn = async <T>(
+  const runRequest = async <T>(
     path: string,
     requestOptions: RequestOptions = {},
+    roundOwned = false,
   ): Promise<T> => {
     // A request born inside the refresh hook's own synchronous
-    // invocation (see refreshOnce's marker) is the refresh round's own
-    // request: the refresh operation travelling through this client
-    // without its credential-less declaration. Captured at entry for
-    // the 401 guard below -- the live marker is gone long before this
+    // invocation (see refreshOnce's marker), or issued through the
+    // round-scoped request function the hook is called with, is the
+    // refresh round's own request: the refresh operation travelling
+    // through this client without its credential-less declaration, or
+    // a read the hook issues after an await. Captured at entry for the
+    // 401 guard below -- the live marker is gone long before this
     // request's own 401 can arrive.
     const bornInsideRefresh = inRefreshHookCall
     if (typeof path !== 'string' || !path.startsWith('/')) {
@@ -1443,7 +1466,8 @@ export function createClient(options: ClientOptions): SpeedClient {
               !refreshed &&
               refreshOnce !== undefined &&
               presentedCredential &&
-              !bornInsideRefresh
+              !bornInsideRefresh &&
+              !roundOwned
             ) {
               refreshed = true
               // The refresh round is not part of this attempt's HTTP
@@ -1564,6 +1588,20 @@ export function createClient(options: ClientOptions): SpeedClient {
       throw failureError(outcome, attempts)
     }
   }
+
+  const request: RequestFn = <T>(
+    path: string,
+    requestOptions?: RequestOptions,
+  ): Promise<T> => runRequest<T>(path, requestOptions)
+
+  // The hook's own request function: a request issued through it belongs
+  // to the refresh round, so its 401 surfaces instead of joining (or
+  // starting) the shared round -- the round may be the one awaiting the
+  // hook that issued the request.
+  const issueInRound: RequestFn = <T>(
+    path: string,
+    requestOptions?: RequestOptions,
+  ): Promise<T> => runRequest<T>(path, requestOptions, true)
 
   const openEventStream = createEventStreamOpener({
     baseUrl,

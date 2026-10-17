@@ -1219,6 +1219,83 @@ describe('401 and the refresh hook', () => {
     await observed
   })
 
+  it('ends a restore-shaped recovery hook within a bounded time when its profile read is refused', { timeout: 5000 }, async () => {
+    // The cookie session wires the recovery hook to a restore() that
+    // reads GET /auth/session (the cookie still names a session) and
+    // then GET /auth/me. When that second read is refused while this
+    // hook is the round already in flight, a request that joined the
+    // round would await the hook, and the hook awaits the request -- a
+    // request awaiting itself, which never settles. The client hands
+    // the hook a round-scoped request function; requests issued through
+    // it are the round's own work, so the refusal surfaces to the hook
+    // (which reads a 401 as "nobody is signed in") and the round ends.
+    const standin = scriptedStandin(
+      jsonResponse(401, { ...SESSION_EXPIRED }),
+      jsonResponse(200, { authenticated: true }),
+      jsonResponse(401, { ...SESSION_EXPIRED, traceId: 'trace-me' }),
+    )
+    const memory = createMemoryReporter()
+    let roundSettled = false
+    let roundOutcome: boolean | undefined
+    // The hook accepts the round-scoped issuer. Falling back to the
+    // client's own request function when none is supplied is exactly
+    // the host wiring this test guards against: against a client that
+    // supplies no issuer, the fallback reproduces the self-await.
+    const restore = async (issueSession?: RequestFn): Promise<boolean> => {
+      const call = issueSession ?? api
+      const view = await call<{ authenticated: boolean }>('/auth/session')
+      if (!view.authenticated) {
+        return false
+      }
+      try {
+        await call('/auth/me')
+        return true
+      } catch (error) {
+        if (isApiError(error) && error.status === 401) {
+          return false
+        }
+        throw error
+      }
+    }
+    // The hook only ever runs after createClient has returned (it fires
+    // on a request's 401), so the const binding is initialized by the
+    // time the closure body executes.
+    const api: RequestFn = createClient({
+      baseUrl: BASE_URL,
+      fetch: standin.fetch,
+      credentials: 'same-origin',
+      refreshAccessToken: (issueSession?: RequestFn) => {
+        const round = restore(issueSession)
+        round.then(
+          (outcome) => {
+            roundSettled = true
+            roundOutcome = outcome
+          },
+          () => {
+            roundSettled = true
+          },
+        )
+        return round
+      },
+      reporter: memory.reporter,
+    })
+    const refused = expectApiError(api<{ ok: boolean }>('/notes'))
+    await expectSettled(() => roundSettled)
+    // The profile refusal reads as "nobody is signed in", so the hook
+    // answers false rather than throwing.
+    expect(roundOutcome).toBe(false)
+    // The refused outer request takes the ordinary failed-refresh path:
+    // the round answered false because the session is over.
+    const error = await refused
+    expect(error.auth).toBe(true)
+    expect(error.code).toBe('authn.session_expired')
+    // Three exchanges: the refused request and the hook's two reads. The
+    // profile refusal was neither retried nor sent a second time.
+    expect(standin.calls).toHaveLength(3)
+    expect(recorded(standin, 1).url).toBe(`${BASE_URL}/auth/session`)
+    expect(recorded(standin, 2).url).toBe(`${BASE_URL}/auth/me`)
+  })
+
   it('keeps a declared credential-less 401 terminal even while the store holds a token', async () => {
     // The refresh operation's own request is the canonical declared
     // credential-less one: when the endpoint refuses a stale refresh

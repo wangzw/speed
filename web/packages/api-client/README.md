@@ -52,14 +52,18 @@ export async function loadNotes(): Promise<Note[]> {
     // walks away with). A cookie host leaves it out.
     accessTokenStore: createMemoryAccessTokenStore(),
     // Silent 401 refresh: @speed/auth-core supplies the real hook. A
-    // cookie session wires `refreshAccessToken: () => session.restore()`
-    // (re-read GET /auth/session; a still-valid cookie keeps the request
-    // and it retries once, a dead one ends the session); a token session
-    // wires `() => session.refresh()`. It fires for a refused request
-    // that presented a credential -- a bearer token, or, with a cookie
-    // credential mode, the ambient cookie. With no session at all the
-    // 401 rejects an ApiError with auth: true and hosts route it to
-    // sign-in.
+    // cookie session wires the hook to session.restore (re-read
+    // GET /auth/session; a still-valid cookie keeps the request and it
+    // retries once, a dead one ends the session); a token session wires
+    // it to session.refresh. It fires for a refused request that
+    // presented a credential -- a bearer token, or, with a cookie
+    // credential mode, the ambient cookie. The hook is called with the
+    // round-scoped request function: reads the round itself performs
+    // go through it, so a refusal among them surfaces to the hook
+    // instead of joining the round that is awaiting it (a
+    // restore-shaped hook reads GET /auth/session and then
+    // GET /auth/me). With no session at all the 401 rejects an ApiError
+    // with auth: true and hosts route it to sign-in.
     refreshAccessToken: async () => false,
     // Abort requests slower than 10s. Transient retries follow
     // DEFAULT_RETRY_POLICY: idempotent methods only (GET/HEAD/OPTIONS),
@@ -265,6 +269,17 @@ function useAppChrome(clientApi: RequestFn): AppChrome {
   never the time spent in the refresh hook, so a refresh that outlives
   the timeout cannot degrade the refused 401's own envelope (its code
   and trace id) into a synthetic `client.http.401`.
+  **The hook receives the round-scoped request function.** A request
+  issued through it belongs to the round, so a 401 among them surfaces
+  to the hook instead of joining (or starting) the shared round -- the
+  round may be the very one awaiting the hook, which would leave the
+  request awaiting itself forever. A restore-shaped hook reads
+  GET /auth/session and, after it answers authenticated, GET /auth/me;
+  the second read is issued long after the round's synchronous
+  invocation, so it must go through the round-scoped function. A hook
+  that ignores the argument keeps compiling and running, but one that
+  issues its round's reads through the client's ordinary request
+  function can self-await when an endpoint refuses.
 - **Transient retry, conservatively.** Only idempotent methods
   (GET/HEAD/OPTIONS) are retried, only on 429 (honouring `Retry-After`,
   capped at `maxDelayMs`), 502/503/504, network failures and timeouts.
