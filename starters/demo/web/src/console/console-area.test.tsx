@@ -25,7 +25,6 @@ import {
   InvitationsPage,
   consoleUiResources,
 } from '@speed/console-ui'
-import type { ConsoleRouteTable } from '@speed/console-ui'
 import { LAYOUT_KIT_NAMESPACE, layoutKitResources } from '@speed/layout-kit'
 import type { SpeedAppServices } from '@speed/product-shell/bootstrap'
 import { RouteProvider } from '@speed/route-kit'
@@ -77,25 +76,7 @@ function hasCoarsePointerTouchTarget(element: Element): boolean {
   )
 }
 
-/**
- * The console declarations the demo's baseline serves: every page whose
- * required features are in force, minus the SMS templates page -- sms.admin
- * is absent from the skeleton's feature document (the binary imports the
- * module for the API contract, but no command names it for a run). This is
- * the set src/app.tsx hands the area after its own presence filter, so the
- * navigation is asserted over what the demo actually mounts.
- */
-const demoConsoleRoutes = consoleShellRoutes.filter((route) =>
-  (route.requires ?? []).every((name) => name !== 'sms.admin'),
-)
-
-function renderConsoleArea({
-  children = <p>console page</p>,
-  routes = consoleShellRoutes,
-}: {
-  readonly children?: ReactNode
-  readonly routes?: ConsoleRouteTable
-} = {}) {
+function renderConsoleArea(children: ReactNode = <p>console page</p>) {
   const i18n = createI18n({
     supportedLanguages: ['zh-CN', 'en-US'],
     defaultLanguage: 'en-US',
@@ -131,7 +112,7 @@ function renderConsoleArea({
           <QueryClientProvider client={services.queryClient}>
             <RouteProvider table={[]} fallback={() => null}>
               <ConsoleArea
-                routes={routes}
+                routes={consoleShellRoutes}
                 hasFeature={() => true}
               >
                 {children}
@@ -152,21 +133,36 @@ describe('ConsoleArea', () => {
   })
 
   it('groups the platform navigation by the console group table', () => {
-    renderConsoleArea({ routes: demoConsoleRoutes })
+    renderConsoleArea()
     const nav = screen.getByRole('navigation')
-    // Only identity & access holds more than one visible entry in the demo's
-    // baseline, so it is the one group that renders a heading; a group left
-    // with a single entry -- overview, tenants, platform (settings alone,
-    // with sms.admin absent) and audit -- renders that entry alone, at the
-    // position the group would have taken.
+    // The group headings are the disclosure controls, in the group table's
+    // order: identity & access and platform configuration are the groups with
+    // more than one entry here (the platform group holds settings and the SMS
+    // templates). Overview, tenants and audit hold a lone entry each and
+    // render no heading over it, so they are asserted absent below.
     expect(
       within(nav)
         .getAllByRole('button')
         .map((button) => button.textContent),
-    ).toEqual([consoleUiEnUS.nav.groups.identity])
-    // The entries keep the group table's order and the declaration order
-    // within each group: the lone entries and identity & access's six items
-    // interleave exactly as the groups would.
+    ).toEqual([
+      consoleUiEnUS.nav.groups.identity,
+      consoleUiEnUS.nav.groups.platform,
+    ])
+    // A single-entry group is promoted: its one page stands as a top-level
+    // link at the position the group would have taken, with no disclosure
+    // control of its own.
+    for (const loneGroup of [
+      consoleUiEnUS.nav.groups.overview,
+      consoleUiEnUS.nav.groups.tenants,
+      consoleUiEnUS.nav.groups.audit,
+    ]) {
+      expect(
+        within(nav).queryByRole('button', { name: loneGroup }),
+      ).toBeNull()
+    }
+    // The entries gather under their groups: groups in table order, entries in
+    // declaration order within each group (the identity group holds the account
+    // surfaces in the order the console declares them).
     expect(
       within(nav)
         .getAllByRole('link')
@@ -181,6 +177,7 @@ describe('ConsoleArea', () => {
       consoleUiEnUS.sso.title,
       consoleUiEnUS.tenants.title,
       consoleUiEnUS.settings.title,
+      consoleUiEnUS.sms.title,
       consoleUiEnUS.audit.title,
     ])
   })
@@ -249,7 +246,7 @@ describe('ConsoleArea', () => {
     }
     bindRequestFn(requestFn)
     const user = userEvent.setup()
-    renderConsoleArea({ children: <InvitationsPage /> })
+    renderConsoleArea(<InvitationsPage />)
 
     await user.click(screen.getByLabelText(consoleUiEnUS.common.tenant))
     await user.click(await screen.findByRole('option', { name: 'Acme' }))
