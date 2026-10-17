@@ -101,9 +101,9 @@ type Impersonation interface {
 |---|---|
 | `Start` | 在调用方身份 `actor` 上开始一次冒充：校验全部结构性限制，询问 `Decider`，写强制档审计，写记录。同一个会话同时至多一条未结束的记录。成功返回记录；失败返回的哨兵与对外形状见「错误与失败语义」。`Start` 不挂接载体、不签发令牌、不发 `started` 事件：换出的会话令牌与冒充访问令牌要交到响应里，而 `Start` 拿不到响应写出器，这三件事由处理器在 `Start` 返回之后完成。顺序与每一步的失败处置见「开始的顺序」。 |
 | `End` | 结束 `actor` 的会话上未结束的那条记录，结束原因记 `explicit`。`actor` 可以是冒充身份，也可以是发起者自己的身份；会话上没有未结束的记录返回 `ErrNotImpersonating`。只改记录、写审计、发事件，不碰载体：不摘除会话行上的记录标识，不轮换会话令牌；cookie 凭据下的摘除与换令牌由 `DELETE B/impersonation` 的处理器随后完成，撤销冒充令牌的路径没有 cookie，两者都不做。结束是向安全方向的动作，审计写失败不阻止结束。`reason` 是结束的说明，只进审计行，不进事件，也不进 `end_reason`。 |
-| `Revoke` | 管理面强制结束记录 `id`，结束原因记 `revoked`；`by` 是撤销者。幂等：记录已结束时无操作。`Revoke` 不询问 `Decider`，授权由 `authn.admin` 的处理器在调用之前完成。 |
+| `Revoke` | 管理面强制结束记录 `id`，结束原因记 `revoked`；`by` 是撤销者。幂等：记录已结束时无操作。写 `revoked` 之前先对记录按「有效性判定」求值并落库，已失效的记录以它自己的原因结束，撤销随即是已结束的无操作：到期或会话已死的记录不会被记成管理员撤销，审计与事件也不为它写撤销。`Revoke` 不询问 `Decider`，授权由 `authn.admin` 的处理器在调用之前完成。 |
 | `Active` | 回答记录 `id` 此刻是否仍然有效，判定条件见「有效性判定」。记录不存在、已结束或已失效时第二个返回值为假；读到失效而记录仍未结束时同时落库。返回错误时调用方按失败方向处理，不当作有效。 |
-| `List` | 按 `GrantQuery` 过滤的键集分页：`After` 是上一页返回的游标，第二个返回值是下一页的游标，空串表示没有下一页。次序按记录 `id` 升序，`id` 是 UUIDv7、接近开始次序，游标取上一页最后一条的 `id`；记录永不清除，所以按目标查询的结果是「谁冒充过谁」的完整来源。 |
+| `List` | 按 `GrantQuery` 过滤的键集分页：`After` 是上一页返回的游标，第二个返回值是下一页的游标，空串表示没有下一页。次序按记录 `id` 升序，`id` 是 UUIDv7、接近开始次序，游标取上一页最后一条的 `id`；记录永不清除，所以按目标查询的结果是「谁冒充过谁」的完整来源。返回之前对页内未结束的记录按「有效性判定」求值并落库，返回的是落库之后的记录；这一次求值不经 `check-ttl` 缓存，缓存只服务校验的热路径。列表因此不会把已到期或已失效的记录陈述为生效中，已落库的记录与列出时才落库的记录读起来没有区别。 |
 
 对外接口面：
 
@@ -405,13 +405,15 @@ WHERE id = ? AND ended_at IS NULL
 |---|---|---|
 | `explicit` | `End`（`DELETE B/impersonation`，或撤销冒充令牌） | `actor` |
 | `revoked` | `Revoke`（管理面） | `revoked` |
-| `expired` | `Start` 的事务里对本会话上 `ends_at` 不晚于当前时刻且未结束的记录落库；`Active` 读到到期时也落库 | 不发事件 |
-| `session-ended` | `Active` 读到绑定的发起者会话已撤销或过期时落库 | `session-ended` |
-| `actor-disabled`、`target-disabled` | `Active` 读到发起者或目标不再启用时落库 | `disabled` |
-| `membership-removed` | `Active` 读到目标不再是该租户的有效成员时落库 | `membership-removed` |
+| `expired` | `Start` 的事务里对本会话上 `ends_at` 不晚于当前时刻且未结束的记录落库；`Active`、`List` 或 `Revoke` 的求值读到到期时也落库 | 不发事件 |
+| `session-ended` | `Active`、`List` 或 `Revoke` 的求值读到绑定的发起者会话已撤销或过期时落库 | `session-ended` |
+| `actor-disabled`、`target-disabled` | `Active`、`List` 或 `Revoke` 的求值读到发起者或目标不再启用时落库 | `disabled` |
+| `membership-removed` | `Active`、`List` 或 `Revoke` 的求值读到目标不再是该租户的有效成员时落库 | `membership-removed` |
 | `start-failed` | 处理器在载体挂接失败时的补偿，不经 `End` | 不发事件（`started` 尚未发出） |
 
 到期没有可发事件的写入方：需要「到期」信号的宿主按 `started` 的 `expires_at` 自己计算。`Start` 的事务按「有效性判定」一节的次序对本会话上未结束的记录求值，失效者以对应原因落库，再插入新行，所以同一发起者会话在记录失效后可以再次开始冒充；仍有效的记录则是 `ErrImpersonationActive`。
+
+**落库由求值路径承担，没有后台清扫，登出也不即时结束记录。** 求值路径是 `Active`、`Start`、`List` 与 `Revoke`，它们对同一条记录给出同一个答案（「同一判断，同一失效」）。登出撤销的是承载会话，不碰记录；记录在下一次被求值路径读到时按 `session-ended`，或次序更靠前的 `expired` 落库。有效期不超过 1 小时，所以一条悬挂的记录最迟在 `ends_at` 之后的下一次求值落为 `expired`，管理员在这之前列出它时看到的也已是落库后的状态。没有求值路径读它的记录不发 `ended` 事件，各副本的校验缓存靠 `check-ttl` 收敛，缓存期本就是权威上界。
 
 ### 结束与撤销
 
@@ -586,6 +588,7 @@ flowchart TD
 | 结构性限制：发起者、目标、参数、并发各组 | 已实现 | `pkg/authn/impersonation/start.go` `checkActor`、`checkTarget`、`checkParams`、`checkConcurrency` |
 | 开始的顺序：`Decider`、事务之外的强制档审计、记录事务、载体挂接、事件，与各失败点的补偿 | 已实现 | `pkg/authn/impersonation/start.go` `Start`、`mandatoryAudit`、`record`；`pkg/authn/impersonation/routes.go` `handleStart`、`compensate` |
 | 有效性判定与惰性落库 | 已实现 | `pkg/authn/impersonation/active.go` `Active`、`lapseReason` |
+| `List` 与 `Revoke` 在返回、写入之前按有效性判定求值并落库 | 未实现 | — |
 | `End`、`Revoke`、`List` | 已实现 | `pkg/authn/impersonation/end.go` `End`、`Revoke`、`List`；`pkg/authn/impersonation/store.go` `list` |
 | 路由 `POST`、`GET`、`DELETE B/impersonation`，其中 `GET` 与 `DELETE` 登记为 `Impersonable` | 已实现 | `pkg/authn/impersonation/routes.go` `mountRoutes`、`handleStart`、`handleStatus`、`handleEnd` |
 | Bearer 凭据下的冒充访问令牌签发 | 已实现 | `pkg/authn/impersonation/routes.go` `issueImpersonation`（`authn.IssueToken` 的 `sub`、`act`、`imp`、`imp_tenant`、`sid`、有效期取 `min(access-ttl, 记录剩余时限)`）；令牌侧 `pkg/authn/token/issue.go` `signAccess` |
