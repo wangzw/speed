@@ -246,10 +246,12 @@ The design is `docs/design/modules/web/design-web-ui-kit.md` ("写入的反馈",
 - Close a `ConfirmDialog` no later than the moment its write settles and report the failure in the region after it closes. A modal that stays open (the step-up dialog, a side panel) renders its failure inside itself.
 - Give `AsyncSection` a `staleState` exactly while a refetch has failed with data on screen and no read is in flight, and `undefined` otherwise. A refused read (403) replaces the content with the no-permission placeholder instead.
 - Give a queue of independent per-item transfers (the `FileUploader` rows) one result per row, not one slot.
+- Leave the other scopes of the page alone when a write starts or settles: a scope's slot is replaced only by that scope's own attempts, so one scope's success can stand beside another scope's failure.
 
 **Prohibited:**
 - **DO NOT** aggregate the errors of several mutations into one page banner (a "first non-null error" array), and **DO NOT** keep a per-mutation `success` string beside the shared slot.
 - **DO NOT** hand-roll a success `Alert`.
+- **DO NOT** clear one scope's result from another scope's write, or couple sibling scopes through shared state, to avoid a success and a failure showing together.
 - **DO NOT** report a failure only in a region an open modal hides: while a modal panel or dialog is open, the page behind it is hidden from assistive technology.
 - **DO NOT** expect a standing success message to follow a language switch: it is the translation made when `succeed` was called.
 
