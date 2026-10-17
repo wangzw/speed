@@ -5,9 +5,9 @@
 本包是平台第一个渲染 DOM 的包。它交付：
 
 - **主题工厂**：`createAppTheme` 把合并后的 `@speed/tokens` token 树映射成一个 MUI v9 主题，并承载触摸设备上所有可点击目标的 44×44 下限（组件级 `styleOverrides`，见下文主题工厂一节）；`AppThemeProvider` 把主题、MUI 本地化联动与全局重置组成一个运行期。
-- **受控组件**：`PageHeader`、`EmptyState`、`ConfirmDialog`、`SidePanel`、`FormField`、`FormLayout`、`DataTable`、`FileUploader`、`InlineError`、`InlineSuccess`、`ListSkeleton`、`AsyncSection`，外加跨表面的状态原语（`errorCodeOf`、`visuallyHiddenSx`、`touchTargetSx`）。每个组件自带的文案来自 `ui-kit` 命名空间。
+- **受控组件**：`PageHeader`、`EmptyState`、`ConfirmDialog`、`SidePanel`、`FormField`、`FormLayout`、`DataTable`、`FileUploader`、`InlineError`、`InlineSuccess`、`WriteFeedbackRegion`、`ListSkeleton`、`AsyncSection`，外加跨表面的状态原语（`errorCodeOf`、`useWriteFeedback`、`visuallyHiddenSx`、`touchTargetSx`）。每个组件自带的文案来自 `ui-kit` 命名空间。
 
-**受控契约是本包全部组件的共同契约**：每一份状态都由宿主持有、经 props 流入；组件把状态回显并抛出变更回调，从不取数、从不改数据、从不持业务状态——同一个组件因此在表单、弹窗与服务端渲染的页面里表现一致。唯一的交互局部状态是 `ConfirmDialog` 的双次确认待命（弹窗一关即复位），且必须能证明只在交互内存在；`SidePanel` 不持有任何状态，打开、忙碌与内容都由宿主经 props 给出。
+**受控契约是本包全部组件的共同契约**：每一份状态都由宿主持有、经 props 流入；组件把状态回显并抛出变更回调，从不取数、从不改数据、从不持业务状态——同一个组件因此在表单、弹窗与服务端渲染的页面里表现一致。唯一的交互局部状态是 `ConfirmDialog` 的双次确认待命（弹窗一关即复位），且必须能证明只在交互内存在；`SidePanel` 不持有任何状态，打开、忙碌与内容都由宿主经 props 给出；`useWriteFeedback` 的状态属于调用它的宿主组件，ui-kit 的组件仍不持有状态。
 
 `FileUploader` 不是这条契约的例外：队列由宿主持有的 `rows` 渲染，每次选取、取消、重试、移除都经回调上报；一次上传进行中是宿主状态、跑在宿主自己的传输代码里，组件从不持有一个 File 超过收到它的事件处理器。
 
@@ -74,9 +74,35 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 | `DataTable` | `rows`、`columns`、`rowKey`、`loading`、`sort`、`filter`、选择、分页、空态文案 | `onSortChange`、`filter.onValueChange`、`onSelectionChange`、分页回调 |
 | `FileUploader` | `rows`、选取/取消/重试/移除回调、`multiple`、`accept`、`allowDrop`、`disabled`、标签 | `onSelectFiles`、`onCancel`、`onRetry`、`onRemove` |
 | `InlineError` | `code`、`resolve` | — |
-| `InlineSuccess` | `message`（`null` 时静默，仍挂载一个裁剪的 `role="status"` 区域） | — |
+| `InlineSuccess` | `message`（`null` 时静默，仍挂载一个裁剪的 `role="status"` 区域）、`sx`（只调间距，`severity` 恒为 success） | — |
+| `WriteFeedbackRegion` | `outcome`（`WriteOutcome` 或 `null`）、`resolve`（码到当前语言文本）、`sx` | — |
 | `ListSkeleton` | `label`、`rows` | — |
-| `AsyncSection` | `pending`、`payload`、`empty`、`loading`、`errorState`、`emptyState`、`headingLevel`、`emptyHeadingLevel`（空占位自己的标题级，含 `none`）、`children` | `errorState.onRetry` |
+| `AsyncSection` | `pending`、`payload`、`empty`、`loading`、`errorState`、`emptyState`、`headingLevel`、`emptyHeadingLevel`（空占位自己的标题级，含 `none`）、`staleState`（`{description, retryLabel, onRetry}`，缺省不渲染）、`children` | `errorState.onRetry`、`staleState.onRetry` |
+
+### 写入反馈
+
+```ts
+export type WriteOutcome =
+  | { readonly kind: 'success'; readonly message: string }
+  | { readonly kind: 'failure'; readonly code: string }
+
+export interface WriteFeedback {
+  readonly outcome: WriteOutcome | null          // 作用域的槽；null 即空
+  readonly reset: () => void                     // 清空槽位
+  readonly succeed: (message: string) => void    // 槽位换成一条成功文案
+  readonly fail: (error: unknown) => void        // 槽位换成一个失败码，经 errorCodeOf 折叠
+}
+export function useWriteFeedback(): WriteFeedback
+
+export interface WriteFeedbackRegionProps {
+  readonly outcome: WriteOutcome | null
+  readonly resolve: (code: string) => string     // 当前语言的码文本，各包绑定自己的解析器
+  readonly sx?: SxProps<Theme>
+}
+export function WriteFeedbackRegion(props: WriteFeedbackRegionProps): JSX.Element
+```
+
+`useWriteFeedback` 不取数、不认识 react-query，状态属于调用它的宿主组件，各回调在组件存续期内引用稳定。`WriteFeedbackRegion` 把槽渲染为 `InlineSuccess`（成功文案，始终挂载）与 `InlineError`（失败码，失败时才挂载），自己没有文案：成功文案由宿主翻译，失败文本经 `resolve` 取自各包自己的命名空间。各包把 `resolve` 绑定进自己的 `internal/` 包装，与 `InlineError` 的包装同形，调用点只传槽。使用条款见「写入的反馈」。
 
 ### 表单校验桥
 
@@ -226,6 +252,22 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 
 `AsyncSection` 拥有一个异步读的状态映射，使各表面不各自漂移：`pending` 渲染加载播报；已结算的 `payload` 为 `undefined` 渲染可重试的错误占位；`empty` 载荷渲染空占位（对不可能为空的表面可省）；否则内容回调以收窄后的载荷渲染。`ListSkeleton` 是列表读的进行中占位：它拥有播报契约（一个带可及名与 `aria-busy` 的 `role="status"` 区域）与行信封，行的长相由调用方给。
 
+**读的刷新失败保留旧数据并标明。** 已有数据时的刷新失败（重新取、窗口重新聚焦、写入后的失效再取）不清空内容：`payload` 已结算且 `staleState` 给出时，内容照常渲染，并在其上渲染一条 `role="alert"` 提示与重试动作；`staleState` 缺省不渲染，行为不变。发起刷新的控件在读进行中处于忙态。
+
+### 写入的反馈
+
+一次写入的结果落在一个**反馈作用域**里：作用域是一个 `useWriteFeedback` 实例加一个 `WriteFeedbackRegion`，区域紧贴发起写入的控件组之下。下列条款绑定每一个向操作者报告写入结果的界面，各 UI 包以自己的错误码解析器与文案使用它们（[ADR-web-write-feedback-2026-10-17](../../../adr/adr-web-write-feedback-2026-10-17.md)）。
+
+**单槽，最近一次尝试为准。** 作用域持有至多一个结果。`reset` 清空槽位；`succeed(message)` 与 `fail(error)` 各自替换槽位，成功与失败因此不会同时出现在一个作用域里。每次尝试以 `reset` 开头，包括被客户端校验拒绝、没有发出请求的提交，使上一次的服务端失败不与本次的字段错误并存；上下文切换（租户、所选对象）也调用 `reset`，使「已授予」之类的通用文案不被读成指向新上下文。结果不自动消失。`fail` 经 `errorCodeOf` 把任意抛出值折成码，文本由区域的 `resolve` 解析，不取 API 的 `message`。
+
+**一个动作是一次尝试。** 一个动作含多次请求（批量保存）时，`reset` 一次，全部落定后调用一次 `succeed` 或 `fail`；有失败时以首个失败的码调用 `fail`，失败项的草稿保留，成功项的草稿清掉。同一作用域内尝试重叠时，后落定者占槽；发起控件在写入进行中处于忙态，使重叠只可能出现在同一作用域的不同控件之间。
+
+**成功确认是默认。** 每个已落地的写入（服务端接受并改变了状态）都落一条成功文案，由宿主翻译，并点明被改动的对象。结果本身是一次性值的写入（只交出一次的令牌、服务密钥）另有展示面板，面板不替代成功文案：它挂在区域之内，是 live region，标明所属的租户或账户，保留到操作者显式关闭或离开页面。
+
+**一个界面同一时刻至多渲染一条整次尝试的失败横幅。** 区域里的失败横幅出现时，同一作用域内其它来源的失败横幅先被清掉，反之亦然；浏览器端通行密钥仪式的失败是这种来源——它是客户端原因，文本取自本包 bundle 的键而非 API 码。
+
+**对话框至迟在写入落定时关闭。** `ConfirmDialog` 的 `confirmLoading` 只表示进行中的窗口；失败不留在打开的对话框里，因为模态打开时背后的页面对辅助技术不可见，落在背后区域里的失败横幅读不到。失败落在对话框关闭之后的区域里。
+
 ## 错误与失败语义
 
 | 情形 | 表现 |
@@ -240,6 +282,9 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 | `muiLocaleFor` 被直呼且标签未知 | 抛错（直呼者要主题装配期的响亮失败） |
 | `SidePanel` 的 `busy` 为真时收到关闭请求（按钮、Escape、遮罩点击） | 不调用 `onClose` |
 | `SidePanel` 关闭时打开它的元素已不在文档中（例如面板内移除了列表中的那一行） | 焦点落回 `body`；宿主在 `onExited` 里自行落点 |
+| 同一反馈作用域内两次尝试几乎同时落定 | 后落定者占槽，先落定者的结果被替换 |
+| `fail` 收到非 ApiError 形状的抛出 | 经 `errorCodeOf` 坍缩到 `client.unknown`，区域经 `resolve` 渲染其未知兜底 |
+| `AsyncSection` 已有数据、`staleState` 给出，随后刷新失败 | 内容保留，其上渲染陈旧提示与重试动作 |
 
 命名空间键集在工作区 `no-literal-text` 规则与注册期校验下守住；组件内不出现语言字面量。本包无降级、无重试面。
 
@@ -259,6 +304,8 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 | 页头与空态 | 已实现 | `web/packages/ui-kit/src/components/PageHeader.tsx` `PageHeader`；`web/packages/ui-kit/src/components/EmptyState.tsx` `EmptyState` |
 | 确认弹窗与双次确认 | 已实现 | `web/packages/ui-kit/src/components/ConfirmDialog.tsx` `ConfirmDialog`、`CONFIRM_ARM_LOCKOUT_MS` |
 | 侧边面板 | 未实现 | — |
+| 写入反馈（`useWriteFeedback`、`WriteFeedbackRegion`） | 未实现 | — |
+| `InlineSuccess` 的 `sx` 与 `AsyncSection` 的 `staleState` | 未实现 | — |
 | 表单家族与校验错误契约 | 已实现 | `web/packages/ui-kit/src/components/FormField.tsx` `FormField`、`REQUIRED_ERROR_KEY`；`web/packages/ui-kit/src/components/FormLayout.tsx` `FormLayout`；`web/packages/ui-kit/src/internal/validation-error.ts` `resolveValidationError` |
 | 表单校验的 zod 解析桥 | 已实现 | `web/packages/ui-kit/src/zod-form-resolver.ts` `zodFormResolver`、`INVALID_ERROR_KEY` |
 | 数据表与列优先级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`、`columnVisibilitySx` |
