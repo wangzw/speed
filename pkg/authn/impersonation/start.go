@@ -228,7 +228,7 @@ func (m *product) checkConcurrency(ctx context.Context, actor authn.Identity, no
 	if !found {
 		return nil
 	}
-	_, lapsed, err := m.lapseReason(ctx, prior, now)
+	_, lapsed, err := m.newJudge(false).lapseReason(ctx, prior, now)
 	if err != nil {
 		return authn.ErrUnavailable
 	}
@@ -358,7 +358,7 @@ func (m *product) record(ctx context.Context, actor authn.Identity, r authn.Impe
 			return err
 		}
 		if found {
-			reason, lapsed, err := m.lapseReason(ctx, prior, now)
+			reason, lapsed, err := m.newJudge(false).lapseReason(ctx, prior, now)
 			if err != nil {
 				return err
 			}

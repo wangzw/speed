@@ -51,10 +51,17 @@ func (m *product) End(ctx context.Context, actor authn.Identity, reason string) 
 
 // Revoke ends record id by force, with the reason revoked; by is who revoked.
 //
-// It is idempotent: a record that is not there is ErrNotImpersonating, and one
-// already ended is a no-op. It asks no Decider, because the administration
-// handler has already authorized the call. The audit row and the ended event
-// are best-effort.
+// The record is judged by the validity conditions before revoked is written, and
+// a lapse is written back with its own reason first. A record that has expired,
+// or whose bound session is gone, therefore ends as it lapsed and the revoke is
+// a no-op: it writes no revoke audit row and publishes no ended event of its own.
+// The judgement reads the bound session from the store rather than from the
+// check-ttl cache, which serves the verification hot path only.
+//
+// Revoke is idempotent: a record that is not there is ErrNotImpersonating, and
+// one already ended is a no-op. It asks no Decider, because the administration
+// handler has already authorized the call. The audit row and the ended event of
+// a record it did revoke are best-effort.
 func (m *product) Revoke(ctx context.Context, id string, by authn.Identity, reason string) error {
 	g, found, err := m.store.find(ctx, id)
 	if err != nil {
@@ -65,6 +72,14 @@ func (m *product) Revoke(ctx context.Context, id string, by authn.Identity, reas
 	}
 
 	now := m.clock.Now()
+	g, ended, err := m.settle(ctx, m.newJudge(true), g, now)
+	if err != nil {
+		return fmt.Errorf("%w: %s", authn.ErrUnavailable, "revoking an impersonation record")
+	}
+	if ended {
+		return nil
+	}
+
 	endedBy := by.Key()
 	won, err := m.store.end(ctx, id, endedBy, authn.EndRevoked, now)
 	if err != nil {
@@ -113,10 +128,32 @@ func (m *product) endStartFailed(ctx context.Context, id string) error {
 
 // List returns one page of the records the query selects, keyed by cursor: the
 // second result is the cursor of the next page, empty when there is none.
+//
+// Before it returns, every record on the page whose end is unset is judged by
+// the validity conditions and a lapse is written back, so that a record that has
+// expired or lost its session is not told as in force. The page returned is the
+// page as persisted. The judgement reads the dependency state from the store and
+// not through the check-ttl cache, which serves the verification hot path only;
+// it judges the rows the page read rather than reading each record again, and a
+// page's rows share one judge, so an account or a membership they share is read
+// once.
 func (m *product) List(ctx context.Context, q authn.GrantQuery) ([]authn.ImpersonationGrant, string, error) {
 	out, next, err := m.store.list(ctx, q)
 	if err != nil {
 		return nil, "", fmt.Errorf("%w: %s", authn.ErrUnavailable, "listing impersonation records")
+	}
+
+	now := m.clock.Now()
+	j := m.newJudge(true)
+	for i := range out {
+		if !out[i].EndedAt.IsZero() {
+			continue
+		}
+		settled, _, err := m.settle(ctx, j, out[i], now)
+		if err != nil {
+			return nil, "", fmt.Errorf("%w: %s", authn.ErrUnavailable, "settling an impersonation record")
+		}
+		out[i] = settled
 	}
 	return out, next, nil
 }

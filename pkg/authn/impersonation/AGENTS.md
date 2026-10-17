@@ -37,13 +37,25 @@ The API is the package's godoc.
   ending the record with the reason `start-failed`. `End` never touches a
   carrier: the handler clears the marker, and the path that revokes an
   impersonation token has no cookie at all.
-- **A lapse is a read, written back once.** `Active` is the one judgement the
-  session and token backends share. A record that has lapsed is written back
-  with a conditional update, and the caller that changes the row publishes
-  the ended event and counts the end. An expiry publishes nothing.
+- **A lapse is a read, written back once.** `Active`, `List` and `Revoke`
+  share one judgement (`active.go` `judge`, `settle`). `Active` is what the
+  session and token backends ask; `List` settles every unended record on the
+  page before it returns and returns the page as persisted; `Revoke` settles
+  the record before it writes `revoked`, so a record that has already lapsed
+  ends with its own reason and the revoke is a no-op. `Get` does not judge. A
+  record that has lapsed is written back with a conditional update, and the
+  caller that changes the row publishes the ended event and counts the end. An
+  expiry publishes nothing.
+- **The management paths read the session from the store.** `List` and `Revoke`
+  judge the bound session with `Sessions.StatusFresh`, so an administrator sees
+  and revokes against the store rather than against what a verifying backend
+  may still believe. `Active` reads `Sessions.Status`, because it is the
+  verification hot path the check-ttl cache serves.
 - **The module caches nothing.** `Active` reads the record, the session and
   the account each time; the caching is the verifying backends', bounded by
-  `authn.session.check-ttl` and cleared by `authn.impersonation.ended`.
+  `authn.session.check-ttl` and cleared by `authn.impersonation.ended`. A
+  `List` page holds the account and membership answers it reads for the length
+  of the call, so rows that share them are judged from one read.
 - **The table is this module's.** `migrations/{postgres,sqlite}` hold the one
   migration that creates `authn_impersonations`, its indexes and the partial
   unique index `authn_imp_one_active`. `Start` probes the table and fails

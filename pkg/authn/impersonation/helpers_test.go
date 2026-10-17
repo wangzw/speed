@@ -164,6 +164,9 @@ type fakeSessions struct {
 	mu        sync.Mutex
 	session   authn.SessionStatus
 	statusErr error
+	// onStatus, when set, runs after a status read and before it returns, so a
+	// case can park concurrent readers at the same point.
+	onStatus func()
 
 	setErr    error
 	setCalls  []string
@@ -185,12 +188,30 @@ func newSessions(active bool, expiresAt time.Time) *fakeSessions {
 }
 
 func (s *fakeSessions) Status(_ context.Context, _ authn.SessionID) (authn.SessionStatus, error) {
+	return s.readStatus()
+}
+
+// StatusFresh reads the same store as Status: this fake holds no cache, so the
+// two answer alike. A case that needs the cache's staleness serves Status from
+// cachingSessions instead.
+func (s *fakeSessions) StatusFresh(_ context.Context, _ authn.SessionID) (authn.SessionStatus, error) {
+	return s.readStatus()
+}
+
+// readStatus takes the store's answer under the lock and hands it back, running
+// the case's hook outside the lock.
+func (s *fakeSessions) readStatus() (authn.SessionStatus, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.statusErr != nil {
-		return authn.SessionStatus{}, s.statusErr
+	status, err := s.session, s.statusErr
+	onStatus := s.onStatus
+	s.mu.Unlock()
+	if onStatus != nil {
+		onStatus()
 	}
-	return s.session, nil
+	if err != nil {
+		return authn.SessionStatus{}, err
+	}
+	return status, nil
 }
 
 func (s *fakeSessions) SetImpersonation(_ context.Context, _ authn.SessionID, grantID string) (authn.Issued, error) {
@@ -208,6 +229,63 @@ func (s *fakeSessions) SetCookie(_ http.ResponseWriter, in authn.Issued) {
 	defer s.mu.Unlock()
 	s.cookie = true
 	s.cookieVal = in
+}
+
+// cachingSessions serves Status from a per-session entry until check-ttl runs
+// out, as the session module does, and reads the store for StatusFresh. A case
+// uses it to show that a path does not judge through the cache: it warms an
+// entry with Status, changes the store, and expects the path to see the change.
+type cachingSessions struct {
+	*fakeSessions
+	mu      sync.Mutex
+	ttl     time.Duration
+	now     func() time.Time
+	entries map[authn.SessionID]cachedStatus
+}
+
+// cachedStatus is one cached answer and the instant it stops being served.
+type cachedStatus struct {
+	status  authn.SessionStatus
+	expires time.Time
+}
+
+func newCachingSessions(s *fakeSessions, ttl time.Duration, now func() time.Time) *cachingSessions {
+	return &cachingSessions{fakeSessions: s, ttl: ttl, now: now, entries: map[authn.SessionID]cachedStatus{}}
+}
+
+func (c *cachingSessions) Status(ctx context.Context, id authn.SessionID) (authn.SessionStatus, error) {
+	c.mu.Lock()
+	if entry, ok := c.entries[id]; ok && c.now().Before(entry.expires) {
+		c.mu.Unlock()
+		return entry.status, nil
+	}
+	c.mu.Unlock()
+
+	status, err := c.fakeSessions.Status(ctx, id)
+	if err != nil {
+		return authn.SessionStatus{}, err
+	}
+	c.mu.Lock()
+	c.entries[id] = cachedStatus{status: status, expires: c.now().Add(c.ttl)}
+	c.mu.Unlock()
+	return status, nil
+}
+
+// StatusFresh is the store's answer, as the session module's is.
+func (c *cachingSessions) StatusFresh(ctx context.Context, id authn.SessionID) (authn.SessionStatus, error) {
+	return c.fakeSessions.StatusFresh(ctx, id)
+}
+
+// replica builds a second product over the same dependencies: another replica of
+// the module over one store, for a case that races two of them.
+func (r *rig) replica() *product {
+	p := build(r.h, r.accounts, r.memberships, r.mfa, r.sessions, r.audit, r.guard, r.mounter)
+	p.logger = r.logs.logger()
+	p.settings = r.p.settings
+	p.bus = r.bus
+	p.meters = r.p.meters
+	p.clock = r.clock.read
+	return p
 }
 
 // recordingAudit keeps the rows it was asked to write, and can be told to fail.
