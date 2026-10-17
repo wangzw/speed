@@ -164,7 +164,7 @@ type Impersonation interface {
 | 取用方 | 用到的方法 |
 |---|---|
 | `authn.session` | `Active`（校验 cookie 时询问会话行上的记录标识） |
-| `authn.token` | `Active`（校验冒充令牌）、`End`（撤销冒充令牌时，以该令牌认定出的冒充身份结束它的记录；只结束记录，不摘除会话行上的标识，不轮换管理员的会话令牌） |
+| `authn.token` | `Active`（校验冒充令牌）、`Revoke`（撤销冒充令牌时，以零值 `Identity` 结束该令牌的记录，原因 `revoked`；只结束记录，不摘除会话行上的标识，不轮换管理员的会话令牌） |
 | `authn.admin` | `List`、`Revoke` |
 | 宿主的命令 | `Revoke`、`List`，运维手段 |
 
@@ -247,9 +247,9 @@ stateDiagram-v2
     有效 --> 已结束: Revoke（revoked）
     有效 --> 已结束: 处理器的载体挂接失败补偿（start-failed）
     有效 --> 已失效: Active 的判定条件不再成立
-    已失效 --> 已结束: Active 读到时落库
+    已失效 --> 已结束: Active、List 或 Revoke 的求值读到时落库
     已失效 --> 已结束: 同一会话的 Start 事务落库
-    已失效 --> 已结束: End 或 Revoke
+    已失效 --> 已结束: End（explicit）
     已结束 --> [*]
 ```
 
@@ -325,7 +325,7 @@ CREATE UNIQUE INDEX authn_imp_one_active ON authn_impersonations (session_id) WH
 4. **载体挂接，处理器完成。** 凭据种类按身份的 `Backend()` 分：`session` 是 cookie 凭据，`token` 是 Bearer 凭据。cookie 凭据：`Sessions.SetImpersonation(sid, grantID)` 换出会话令牌，再 `Sessions.SetCookie`，应答带 `{grant:{id, target, tenant, ends_at}}`。Bearer 凭据：不改会话，经 `Tokens.Issue` 签发冒充访问令牌，应答额外带这枚令牌。令牌的声明为 `sub`（目标）、`act.sub`（发起者）、`imp`（记录标识）、`imp_tenant`（租户）、`sid`（发起者的会话）、`acr` 恒为 `"1"`，另经 `IssueToken` 带上发起者的方式集（`amr`）与认证时刻（`auth_time`），与会话端对称；有效期取 `min(authn.token.access-ttl, 记录剩余时限)`，而记录的硬上限是 1 小时，所以令牌有效期至多 1 小时；不签发刷新令牌。挂接失败时处理器补偿：以条件更新结束记录，结束原因 `start-failed`，不经 `End`，其处置见「开始失败的处置」。
 5. **事件，处理器完成。** 载体挂接成功之后经 `Bus.Publish` 发 `authn.impersonation.started`，理由不进事件。发布失败只记 Warn，不使冒充失败。
 
-**载体挂接与事件不在 `Start` 里**，判据在于 `Start` 的返回值交不出令牌，`Start` 与 `End` 也都拿不到响应写出器：换出的会话令牌与冒充访问令牌只能由持有响应的处理器交给调用方。`End` 还被 `authn.token` 在撤销冒充令牌时调用，那条路径没有 cookie，`End` 不碰载体才不会误摘会话行上的标识。`started` 事件放在载体挂接之后，使一次挂接失败的开始不对外发出事件。
+**载体挂接与事件不在 `Start` 里**，判据在于 `Start` 的返回值交不出令牌，`Start` 与 `End` 也都拿不到响应写出器：换出的会话令牌与冒充访问令牌只能由持有响应的处理器交给调用方。`authn.token` 撤销冒充令牌时调用的是 `Revoke`，那条路径没有 cookie，`Revoke` 同样不碰载体，不会误摘会话行上的标识。`started` 事件放在载体挂接之后，使一次挂接失败的开始不对外发出事件。
 
 **强制档审计先于动作，且在事务之外**，判据在于审计接缝的写入另占一条连接、不加入调用方的事务：在调用方事务开着时调用它，单写者的 SQLite 上等的是调用方自己占着的写锁，只开一条连接的库上等的是调用方占着的那条连接，等满界限后 `Record` 以 `ErrWriteFailed` 失败，强制档因此永远写不成功（[ADR-audit-failure-2026-09-21](../../../adr/adr-audit-failure-2026-09-21.md)）。同一次序适用于全部管理面写操作：先 `Decider`，再强制审计，再写，再事件，写失败补一条 `failed` 的审计行（[design-authn-admin](design-authn-admin.md)）。
 
@@ -403,23 +403,23 @@ WHERE id = ? AND ended_at IS NULL
 
 | `end_reason` | 谁写、何时写 | 事件 `ended` 的 `ended_by` |
 |---|---|---|
-| `explicit` | `End`（`DELETE B/impersonation`，或撤销冒充令牌） | `actor` |
-| `revoked` | `Revoke`（管理面） | `revoked` |
+| `explicit` | `End`（`DELETE B/impersonation`） | `actor` |
+| `revoked` | `Revoke`（管理面，或撤销冒充令牌） | `revoked` |
 | `expired` | `Start` 的事务里对本会话上 `ends_at` 不晚于当前时刻且未结束的记录落库；`Active`、`List` 或 `Revoke` 的求值读到到期时也落库 | 不发事件 |
-| `session-ended` | `Active`、`List` 或 `Revoke` 的求值读到绑定的发起者会话已撤销或过期时落库 | `session-ended` |
-| `actor-disabled`、`target-disabled` | `Active`、`List` 或 `Revoke` 的求值读到发起者或目标不再启用时落库 | `disabled` |
-| `membership-removed` | `Active`、`List` 或 `Revoke` 的求值读到目标不再是该租户的有效成员时落库 | `membership-removed` |
+| `session-ended` | `Active`、`List`、`Revoke` 或 `Start` 的求值读到绑定的发起者会话已撤销或过期时落库 | `session-ended` |
+| `actor-disabled`、`target-disabled` | `Active`、`List`、`Revoke` 或 `Start` 的求值读到发起者或目标不再启用时落库 | `disabled` |
+| `membership-removed` | `Active`、`List`、`Revoke` 或 `Start` 的求值读到目标不再是该租户的有效成员时落库 | `membership-removed` |
 | `start-failed` | 处理器在载体挂接失败时的补偿，不经 `End` | 不发事件（`started` 尚未发出） |
 
 到期没有可发事件的写入方：需要「到期」信号的宿主按 `started` 的 `expires_at` 自己计算。`Start` 的事务按「有效性判定」一节的次序对本会话上未结束的记录求值，失效者以对应原因落库，再插入新行，所以同一发起者会话在记录失效后可以再次开始冒充；仍有效的记录则是 `ErrImpersonationActive`。
 
-**落库由求值路径承担，没有后台清扫，登出也不即时结束记录。** 求值路径是 `Active`、`Start`、`List` 与 `Revoke`，它们对同一条记录给出同一个答案（「同一判断，同一失效」）。登出撤销的是承载会话，不碰记录；记录在下一次被求值路径读到时按 `session-ended`，或次序更靠前的 `expired` 落库。有效期不超过 1 小时，所以一条悬挂的记录最迟在 `ends_at` 之后的下一次求值落为 `expired`，管理员在这之前列出它时看到的也已是落库后的状态。没有求值路径读它的记录不发 `ended` 事件，各副本的校验缓存靠 `check-ttl` 收敛，缓存期本就是权威上界。
+**落库由求值路径承担，没有后台清扫，登出也不即时结束记录。** 求值路径是 `Active`、`Start`、`List` 与 `Revoke`，它们对同一条记录给出同一个答案（「同一判断，同一失效」）。登出撤销的是承载会话，不碰记录；记录在下一次被求值路径读到时按 `session-ended`，或次序更靠前的 `expired` 落库。有效期不超过 1 小时，所以一条悬挂的记录最迟在 `ends_at` 之后的下一次求值落为 `expired`，管理员在这之前列出它时看到的也已是落库后的状态。没有求值路径读它的记录不发 `ended` 事件，各副本的校验缓存靠 `check-ttl` 收敛，缓存期本就是权威上界。`Start` 的事务里落库先前失效的记录时，赢得条件更新的一方在事务提交之后发事件并计数，事务内不发布，事务回滚时既不发事件也不计数。`List` 求值时依赖读失败，整页以 `ErrUnavailable` 失败，已落库的行保持，重试幂等。
 
 ### 结束与撤销
 
 **`End`。** 经 `authn_imp_session` 找到 `actor` 会话上未结束的记录，没有则 `ErrNotImpersonating`。条件更新写 `explicit`，写审计 `authn.impersonation.end`，发 `authn.impersonation.ended`，不碰载体。**审计失败不阻止结束**：结束是向安全方向的动作，失败写 Error 日志。`DELETE B/impersonation` 的处理器在 cookie 凭据下于 `End` 之后以 `Sessions.SetImpersonation(sid, "")` 清除会话行上的标识，不换令牌、不写 cookie，旧令牌继续有效，身份已回到发起者自己（决策见 [ADR-authn-impersonation-2026-10-10](../../../adr/adr-authn-impersonation-2026-10-10.md)）；撤销冒充令牌的路径没有 cookie，不做这一步。会话行上的标识摘除失败不使记录恢复：记录已结束，校验端读到 `Active` 为假即按未冒充处理。
 
-**`Revoke`。** 读记录，条件更新写 `revoked`，写审计 `authn.impersonation.revoke`，发 `authn.impersonation.ended`。记录不存在返回 `ErrNotImpersonating`；已结束则无操作。`Revoke` 不摘除发起者会话行上的标识，会话与令牌载体都经 `Active` 为假一致失效。
+**`Revoke`。** 先对记录按「有效性判定」求值并落库，已失效的记录以它自己的原因结束，撤销随即是已结束的无操作，不写撤销审计、不发撤销事件。求值之后记录仍未结束，才条件更新写 `revoked`，写审计 `authn.impersonation.revoke`，发 `authn.impersonation.ended`。记录不存在返回 `ErrNotImpersonating`；已结束则无操作。求值读依赖失败时返回 `ErrUnavailable`，记录保持未结束。`Revoke` 不摘除发起者会话行上的标识，会话与令牌载体都经 `Active` 为假一致失效。
 
 **同一判断，同一失效。** 记录结束的各成因（见「结束原因与写入点」）都体现为 `Active` 为假，所以会话与令牌载体一致失效。
 
@@ -562,7 +562,7 @@ flowchart TD
 - **部分唯一索引是并发开始的仲裁者。** 同一会话上的并发开始，恰一个插入成功，其余得 `ErrImpersonationActive`。
 - **条件更新是并发落库的仲裁者。** `WHERE id = ? AND ended_at IS NULL` 的影响行数判胜负，不依赖 `RETURNING`；多个副本同时读到同一条失效记录时，只有一个落库并发事件。
 - **审计与事件不进事务。** 接缝级审计的写入另占一条连接，事务内不调 `audit.Record`；事务内也不调 `Bus.Publish`。
-- **读路径含写。** `Active` 读到失效时落库，是校验路径上唯一的写，幂等，写失败不改变「失效」的结论。
+- **读路径含写。** `Active` 读到失效时落库，是校验路径上唯一的写，幂等，写失败不改变「失效」的结论；管理面的 `List` 与 `Revoke` 求值时同样落库。
 - **缓存在调用方。** 本模块不缓存 `Active`；会话与令牌的校验后端按 `check-ttl` 缓存，订阅 `authn.impersonation.ended` 清缓存。
 - **时间一律取自认证功能目录的统一时钟，写入 UTC。**
 
