@@ -67,17 +67,20 @@ One flat config at `web/eslint.config.mjs` serves the whole workspace
 carries the workspace's own rules behind the `speed/` plugin namespace:
 `speed/no-literal-text` (implementation and rule tests in
 `web/eslint-rules/`) errors on user-facing text written inline in
-package `src`, and `speed/no-direct-http` errors on hand-written HTTP
+package `src`, `speed/no-direct-http` errors on hand-written HTTP
 (fetch/XMLHttpRequest/axios/node-fetch) anywhere but `@speed/api-client`,
 the rule's single config-level whitelist -- every request must route
 through the api-client request function (see CLAUDE.md's API contract
-section). Package tests and `test-utils/` are exempt by config for
-both rules, because fixture strings and scripted stand-ins are data.
+section) -- and `speed/no-dangerous-html` errors on markup sinks
+(`innerHTML`, `dangerouslySetInnerHTML`, `insertAdjacentHTML`,
+`document.write` and the like), holding the premise the i18n instance's
+verbatim interpolation rests on. Package tests and `test-utils/` are
+exempt by config for these rules, because fixture strings and scripted
+stand-ins are data.
 The rules' unit tests run from the workspace root, not from a package
 directory (the rules live outside every package, so no per-package
-suite picks them up): locally via
-`pnpm exec vitest run eslint-rules/no-literal-text.test.mjs eslint-rules/no-direct-http.test.mjs`
-from `web/`.
+suite picks them up): `make web-check` runs them, and locally via
+`pnpm exec vitest run eslint-rules/` from `web/`.
 
 Still deferred -- do not
 half-enable: the `react-hooks` plugin is not adopted, keeping

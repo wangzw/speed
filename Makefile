@@ -143,10 +143,17 @@ python-version:
 # produces a report of its own. The demo host's default `test` run excludes
 # src/a11y/** and this leg runs only it (starters/demo/web/vitest.a11y.config.ts),
 # so the sweep is not run twice.
-web-check: ## Run the frontend checks (pnpm install + lint, typecheck, test, a11y, build)
+#
+# The eslint-rules unit tests are their own leg for the same reason web/ is its
+# own workspace root: the rules live outside every package, so the root vitest
+# (not any workspace member's `test` script) is what runs them. Without this
+# line the rules' own tests have no automatic execution path -- the lint leg
+# exercises the rules only over the code that happens to exist.
+web-check: ## Run the frontend checks (pnpm install + lint, typecheck, rule tests, test, a11y, build)
 	@pnpm -C web install --frozen-lockfile
 	@pnpm -C web -r lint
 	@pnpm -C web -r typecheck
+	@pnpm -C web exec vitest run eslint-rules/
 	@pnpm -C web -r test
 	@$(MAKE) web-a11y
 	@pnpm -C web -r build
