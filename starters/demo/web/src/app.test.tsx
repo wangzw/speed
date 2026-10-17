@@ -26,6 +26,7 @@ import uiKitEnUS from '../../../../web/packages/ui-kit/src/locales/en-US.json' w
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import demoZhCN from './locales/zh-CN.json' with { type: 'json' }
 import { renderDemoApp } from './test-utils/render.js'
+import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { AUTH_CALLBACK_PATH } from './routes.js'
 import {
   ANONYMOUS_SNAPSHOT,
@@ -637,6 +638,23 @@ describe('a staff viewer whose platform permission is not the entry code', () =>
 })
 
 describe('the tenant area header controls', () => {
+  it('raises the header icon controls to the 44px floor under a coarse pointer', async () => {
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+    // The language switch, the color-mode toggle and the account-menu
+    // trigger share the header row with the notification bell; on a
+    // finger-driven device each one gates up to the 44x44 floor.
+    const gated = [
+      await screen.findByRole('button', {
+        name: demoEnUS.languageSwitcher.label,
+      }),
+      screen.getByRole('button', { name: demoEnUS.colorMode.toDark }),
+      screen.getByRole('button', { name: 'Test User' }),
+    ]
+    for (const control of gated) {
+      expect(hasCoarsePointerTouchTarget(control)).toBe(true)
+    }
+  })
+
   it('switches the language from the header control', async () => {
     const user = userEvent.setup()
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })

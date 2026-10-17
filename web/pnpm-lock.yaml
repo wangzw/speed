@@ -90,6 +90,9 @@ importers:
       '@speed/auth-core':
         specifier: ^0.0.1
         version: link:../../../web/packages/auth-core
+      '@speed/test-utils':
+        specifier: workspace:*
+        version: link:../../../web/test-utils
       '@testing-library/jest-dom':
         specifier: ^7.0.1
         version: 7.0.1(@testing-library/dom@10.4.2)(vitest@4.1.11)
