@@ -1,0 +1,5 @@
+{
+  "account": ["/auth", "/features"],
+  "admin": ["/audit", "/authz", "/settings", "/sms", "/tenant"],
+  "api": ["/api"]
+}

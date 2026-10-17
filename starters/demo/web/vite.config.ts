@@ -21,12 +21,16 @@
  * Dev server: the demo's backend listener carries the api, account and admin
  * endpoints on one port (starters/demo/server/testdata/*.yaml). The app talks
  * to its own origin by default (the client base URL falls back to
- * window.location.origin), so this server proxies the paths the app uses onto
- * that port -- overridable through DEMO_WEB_BACKEND_PROXY when a run moves it.
+ * window.location.origin), so this server proxies the namespaces those
+ * endpoints claim onto that port -- overridable through
+ * DEMO_WEB_BACKEND_PROXY when a run moves it. The claimed namespaces come from
+ * backend-prefixes.json (src/backend-prefixes.ts), the same list the server
+ * configuration is checked against.
  */
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import { speedAliases } from '../../../web/scripts/speed-aliases.mjs'
+import { backendProxyRules } from './src/backend-prefixes.js'
 
 const sibling = (path: string): string =>
   fileURLToPath(new URL(path, import.meta.url))
@@ -102,16 +106,12 @@ export default defineConfig({
     fs: {
       allow: [appRoot, workspaceRoot],
     },
-    // Every path the app uses answers on the same backend listener, so every
-    // prefix proxies to the same origin; the paths are listed so a deployment
-    // that splits them again has the map already in place.
-    proxy: {
-      '/api': { target: backendProxy },
-      '/auth/admin': { target: backendProxy },
-      '/auth': { target: backendProxy },
-      '/tenant': { target: backendProxy },
-      '/settings': { target: backendProxy },
-      '/audit': { target: backendProxy },
-    },
+    // Every namespace the app's generated calls address answers on the same
+    // backend listener, so every claimed prefix proxies to the same origin.
+    // The keys are segment-anchored regular expressions (`^/auth(?:[/?]|$)`
+    // rather than `/auth`), because vite matches a key that begins with `^`
+    // as a regular expression and anything else with `startsWith`: a plain
+    // `/auth` key would also forward `/authz`.
+    proxy: backendProxyRules(backendProxy),
   },
 })

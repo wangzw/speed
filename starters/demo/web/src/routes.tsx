@@ -56,8 +56,13 @@ export {
 } from './paths.js'
 
 /** The route a social or enterprise provider's round trip lands on. The
- * app renders its page outside the tenant shell (src/app.tsx). */
-export const AUTH_CALLBACK_PATH = '/auth/callback'
+ * app renders its page outside the tenant shell (src/app.tsx).
+ *
+ * The path sits outside every prefix the backend endpoints claim
+ * (backend-prefixes.json). A page path under a claimed prefix is answered by
+ * that endpoint -- an anonymous navigation gets its 401 -- instead of being
+ * served the entry document. */
+export const AUTH_CALLBACK_PATH = '/sign-in/callback'
 
 /**
  * Whether a declared path belongs to the console area. The console's pages are

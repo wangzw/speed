@@ -6,6 +6,12 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  BACKEND_PREFIXES,
+  backendProxyRules,
+  fallsUnderPrefix,
+  proxyKeyFor,
+} from './backend-prefixes.js'
+import {
   ACCOUNT_CALLBACK_PATH,
   ACCOUNT_PATH,
   AUTH_CALLBACK_PATH,
@@ -116,5 +122,107 @@ describe('isConsolePath', () => {
     expect(isConsolePath('/')).toBe(false)
     expect(isConsolePath('/tenants')).toBe(false)
     expect(isConsolePath(`${CONSOLE_PREFIX}x`)).toBe(false)
+  })
+})
+
+/**
+ * The dev server's proxy matcher, mirrored from vite: a key that begins with
+ * `^` is a regular expression matched against the request URL (query string
+ * included), and every other key is a `startsWith` test. Asserting through
+ * this mirror is what makes a plain-string `/auth` key fail here: under
+ * `startsWith` it swallows `/authx`, and under the anchored form it does not.
+ */
+function proxyMatches(key: string, url: string): boolean {
+  return key.startsWith('^') ? new RegExp(key).test(url) : url.startsWith(key)
+}
+
+/** Every page path the route table declares, parameter patterns included. */
+const PAGE_PATHS = [...new Set(routes.map((route) => route.path))]
+
+/** The path prefixes the pages mount under, beside the route table's paths. */
+const PAGE_PREFIXES = [
+  CONSOLE_PREFIX,
+  INVITATION_PREFIX,
+  ACCOUNT_CALLBACK_PATH,
+  AUTH_CALLBACK_PATH,
+]
+
+describe('the backend prefix manifest', () => {
+  it('lists only concrete, slash-leading prefixes', () => {
+    expect(BACKEND_PREFIXES.length).toBeGreaterThan(0)
+    for (const prefix of BACKEND_PREFIXES) {
+      expect(prefix, `${prefix} is not an absolute path`).toMatch(/^\//)
+      // The root is the fallback endpoint's claim, not an API namespace: it
+      // would sit above every page path.
+      expect(prefix, 'the manifest lists the root').not.toBe('/')
+      expect(prefix, `${prefix} ends with a slash`).not.toMatch(/\/$/)
+    }
+    expect(new Set(BACKEND_PREFIXES).size).toBe(BACKEND_PREFIXES.length)
+  })
+
+  it('keeps every page path and page prefix outside every claimed prefix', () => {
+    for (const path of [...PAGE_PATHS, ...PAGE_PREFIXES]) {
+      for (const prefix of BACKEND_PREFIXES) {
+        expect(
+          fallsUnderPrefix(path, prefix),
+          `the page path ${path} falls under the backend prefix ${prefix}`,
+        ).toBe(false)
+      }
+    }
+  })
+
+  it('matches a claimed prefix at a segment boundary, not inside a segment', () => {
+    expect(fallsUnderPrefix('/auth', '/auth')).toBe(true)
+    expect(fallsUnderPrefix('/auth/methods', '/auth')).toBe(true)
+    expect(fallsUnderPrefix('/authz', '/auth')).toBe(false)
+    expect(fallsUnderPrefix('/authz/roles', '/auth')).toBe(false)
+  })
+
+  it('generates one segment-anchored proxy key per claimed prefix', () => {
+    const proxy = backendProxyRules('http://backend.test')
+    // One entry per prefix: no hand-written key rides beside the generated
+    // ones, and none is dropped.
+    expect(Object.keys(proxy)).toHaveLength(BACKEND_PREFIXES.length)
+    for (const prefix of BACKEND_PREFIXES) {
+      const key = proxyKeyFor(prefix)
+      expect(key.startsWith('^'), `${key} is not an anchored pattern`).toBe(true)
+      expect(proxy[key]).toEqual({ target: 'http://backend.test' })
+      // Both URL shapes the app sends: a descendant path and a query.
+      expect(proxyMatches(key, `${prefix}/x`), `${key} misses ${prefix}/x`).toBe(
+        true,
+      )
+      expect(proxyMatches(key, `${prefix}?q`), `${key} misses ${prefix}?q`).toBe(
+        true,
+      )
+      // A longer first segment is a different namespace.
+      expect(proxyMatches(key, `${prefix}x`), `${key} matches ${prefix}x`).toBe(
+        false,
+      )
+      expect(
+        proxyMatches(key, `${prefix}x/x`),
+        `${key} matches ${prefix}x/x`,
+      ).toBe(false)
+    }
+  })
+
+  it('never lets a proxy key claim a page path', () => {
+    const keys = Object.keys(backendProxyRules('http://backend.test'))
+    for (const key of keys) {
+      for (const path of PAGE_PATHS) {
+        expect(
+          proxyMatches(key, path),
+          `the proxy key ${key} matches the page path ${path}`,
+        ).toBe(false)
+      }
+    }
+  })
+
+  it('forwards both /auth and /authz without one swallowing the other', () => {
+    const keys = Object.keys(backendProxyRules('http://backend.test'))
+    const forwards = (url: string): boolean =>
+      keys.some((key) => proxyMatches(key, url))
+    expect(forwards('/auth/methods')).toBe(true)
+    expect(forwards('/authz/admin/permissions')).toBe(true)
+    expect(forwards('/authx')).toBe(false)
   })
 })

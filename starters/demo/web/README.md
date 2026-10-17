@@ -20,12 +20,14 @@ pnpm dev                            # vite dev server
 
 `pnpm dev` serves the app with hot module replacement on vite's own port. The
 app talks to its own origin by default (the client base URL falls back to
-`window.location.origin`), and the dev server proxies the paths the app uses
-onto the demo's backend listener: the api, account and admin endpoints all
-answer on one port (`/api`, `/auth`, `/auth/admin`, `/tenant`, `/settings` and
-`/audit`). The target defaults to the `sqlite-memory` stack's backend listener
-(`127.0.0.1:8080`); override it with `DEMO_WEB_BACKEND_PROXY` when a run moves
-it.
+`window.location.origin`), and the dev server proxies the namespaces the
+backend endpoints claim onto the demo's backend listener: the api, account and
+admin endpoints all answer on one port. The claimed prefixes live in
+`backend-prefixes.json` beside this package (`/api`; `/auth` and `/features`;
+`/audit`, `/authz`, `/settings`, `/sms` and `/tenant`), and `vite.config.ts`
+generates one segment-anchored proxy key per prefix from that list. The target
+defaults to the `sqlite-memory` stack's backend listener (`127.0.0.1:8080`);
+override it with `DEMO_WEB_BACKEND_PROXY` when a run moves it.
 
 Run the backend first (`go -C starters/demo/server run . --config
 file:testdata/sqlite-memory.yaml sqlite-memory serve`), then `pnpm dev`.
@@ -160,11 +162,11 @@ The app reaches every backend call at a single origin -- the client base URL,
 same-origin by default or the `runtime-config.json` origin -- but the demo's Go
 program mounts the API, account and admin surfaces on separate ports
 (`http.endpoints` in `testdata/sqlite.yaml`). The one origin the app talks to is
-therefore a **gateway** that routes `/api`, `/auth`, `/tenant`, `/settings` and
-`/audit` to the endpoint each belongs to:
+therefore a **gateway** that routes each claimed namespace to the endpoint it
+belongs to (`backend-prefixes.json` lists them):
 
-- In development the vite dev server is that gateway: `pnpm dev` proxies those
-  prefixes onto the endpoints (the `DEMO_WEB_*_PROXY` variables above).
+- In development the vite dev server is that gateway: `pnpm dev` proxies every
+  claimed prefix onto the endpoints (`DEMO_WEB_BACKEND_PROXY` above).
 - The demo's Go program ships no such gateway. Its `web` endpoint serves the
   built bundle alone, so loading the bundle straight from the Go program
   (`http://127.0.0.1:8084/`) renders for static browsing but cannot sign in:

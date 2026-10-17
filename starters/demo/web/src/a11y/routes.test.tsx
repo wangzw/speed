@@ -95,7 +95,7 @@ const EXPECTED_ROUTE_PATHS = [
   '/account/callback',
   '/objects',
   '/notifications',
-  '/auth/callback',
+  '/sign-in/callback',
   '/invitations/sample',
   '/console',
   '/console/tenants',
