@@ -147,12 +147,19 @@ export interface AccountSelectorProps {
   readonly value: ConsoleAccount | null
   /** Called with the chosen account, or null when the choice is cleared. */
   readonly onChange: (account: ConsoleAccount | null) => void
+  /**
+   * Whether the picker is disabled. A page disables it while a scope the
+   * chosen account drives has a write in flight: a change would reset that
+   * scope and leave a settling attempt describing the account left behind.
+   */
+  readonly disabled?: boolean
 }
 
 export function AccountSelector({
   label,
   value,
   onChange,
+  disabled = false,
 }: AccountSelectorProps) {
   const { t } = useConsoleUiTranslation()
   const [input, setInput] = useState('')
@@ -203,6 +210,7 @@ export function AccountSelector({
       <Autocomplete<ConsoleAccount>
         size="small"
         value={value}
+        disabled={disabled}
         onChange={(_event, next) => onChange(next)}
         inputValue={input}
         onInputChange={(_event, nextValue) => setInput(nextValue)}
