@@ -402,7 +402,7 @@ describe('ImpersonationsPage', () => {
     expect(screen.getByLabelText('租户')).toBeInTheDocument()
     expect(screen.queryByLabelText('租户标识')).toBeNull()
     expect(
-      screen.getByText('请先在上方选择一个租户；被冒充账户必须属于该租户。'),
+      screen.getByText('请先选择一个租户；被冒充账户必须属于该租户。'),
     ).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: '发起冒充' }),
