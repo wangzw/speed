@@ -195,6 +195,13 @@ the next run through the host's seeding surface, so the operator keeps
 everything the process declares while the management surface stays unable to
 change the role.
 
+`seed` writes no second factor. The public `pkg/authn` surface hands a host a
+registration step it does not let that host read, so a seed cannot finish an
+enrollment; the console's step-up gate therefore refuses every write until an
+operator adds a factor in account settings, and `seed` says so on its way out.
+The alternative — writing the factor's sealed row directly — would bind this
+skeleton to the factor module's internals.
+
 Seeding is a step of its own rather than something `serve` does on its way up,
 because a deployment nobody may administer until somebody says so is the posture
 this skeleton ships. On `sqlite-memory` the step achieves nothing — that stack's

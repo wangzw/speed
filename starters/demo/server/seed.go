@@ -281,6 +281,12 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 			}
 		}
 	}
+	// No second factor is seeded. The public authn surface hands back a
+	// registration step it does not let a host read, so a seed cannot finish an
+	// enrollment; write-path testing needs a factor added in account settings
+	// first, and the console's step-up gate refuses every write until then.
+	fmt.Print("note: no second factor is seeded; add one in account settings " +
+		"before testing a write path\n")
 	return nil
 }
 
