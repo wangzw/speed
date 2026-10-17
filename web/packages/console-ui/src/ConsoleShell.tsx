@@ -246,7 +246,8 @@ export function ConsoleShell({
             page's heading, breadcrumb, table and form sit clear of the
             sidebar and the banner rather than against them. The session is
             published to the routed pages so a step-up-gated write can raise
-            it. */}
+            it, and the host's account settings destination so the step-up
+            dialog can link to it (see internal/account-href). */}
         <Box sx={{ p: 3 }}>
           <ConsoleSessionProvider session={session ?? null}>
             <ConsoleAccountHrefProvider accountHref={accountHref}>
