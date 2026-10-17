@@ -75,6 +75,7 @@ const FLOWS_START = 'POST /auth/flows'
 const FLOWS_ANSWER = 'POST /auth/flows/answer'
 const METHODS = 'GET /auth/methods'
 const PROFILE = 'GET /auth/me'
+const FEATURES = 'GET /features'
 const LOGOUT = 'POST /auth/logout'
 const IDENTIFIER = 'alice@example.com'
 const PASSWORD = 'password-1'
@@ -107,6 +108,9 @@ const rig = makeRealClientRig((call) => {
   const key = `${call.method} ${call.path}`
   if (key === METHODS) {
     return jsonResponse(200, METHODS_BODY)
+  }
+  if (key === FEATURES) {
+    return jsonResponse(200, { features: [] })
   }
   if (key === FLOWS_START) {
     return jsonResponse(200, openFlow({ state: 'ready', next: { kind: 'complete' } }))
@@ -290,6 +294,7 @@ describe('README usage example', () => {
       FLOWS_START,
       FLOWS_ANSWER,
       PROFILE,
+      FEATURES,
       LOGOUT,
       METHODS,
     ])

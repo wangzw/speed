@@ -42,7 +42,11 @@
  * binds it once at bootstrap (last bind wins), useAuthState exposes the
  * snapshot and usePermission a fail-closed set lookup over the
  * host-attached per-domain permission lists (a UX affordance, never a
- * security boundary). The tenant is not the session's -- the server
+ * security boundary). The snapshot also carries the feature state the
+ * session read from the process's GET /features document; useFeature is
+ * a fail-closed membership lookup over it, useFeatureState hands the
+ * state itself, and featurePresence maps it onto the route layer's
+ * presence shape. The tenant is not the session's -- the server
  * resolves it per request -- so the host mounts its current tenant on
  * TenantProvider and useCurrentTenant reads it back. react is a peer
  * dependency of the main entry: any host of the hooks already renders
@@ -71,9 +75,12 @@ export {
 } from './session.js'
 export {
   attachSession,
+  featurePresence,
   TenantProvider,
   useAuthState,
   useCurrentTenant,
+  useFeature,
+  useFeatureState,
   usePermission,
 } from './hooks.js'
 export {
@@ -105,4 +112,5 @@ export type {
   AuthnSessionView,
   AuthnSsoProvider,
   AuthnStep,
+  FeatureState,
 } from './session.js'

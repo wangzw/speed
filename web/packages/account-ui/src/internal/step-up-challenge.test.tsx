@@ -160,6 +160,7 @@ const AUTHENTICATED_SNAPSHOT: AuthSnapshot = {
     links: [],
   },
   permissionSets: { tenant: null, system: null },
+  features: { state: 'ready', names: new Set() },
 }
 
 function unused(): never {
@@ -191,6 +192,7 @@ function refusingStartSession(
     logout,
     restore: unused,
     refresh: unused,
+    retryFeatures: unused,
     setPermissionSet: unused,
   }
 }

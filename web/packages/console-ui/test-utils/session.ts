@@ -37,6 +37,7 @@ export const AUTHENTICATED_SNAPSHOT: AuthSnapshot = {
     links: [],
   },
   permissionSets: { tenant: null, system: null },
+  features: { state: 'ready', names: new Set() },
 }
 
 /** The anonymous snapshot: no session, no permission sets. */
@@ -44,6 +45,7 @@ export const ANONYMOUS_SNAPSHOT: AuthSnapshot = {
   state: 'anonymous',
   principal: null,
   permissionSets: { tenant: null, system: null },
+  features: { state: 'none' },
 }
 
 const METHODS: AuthnMethodList = {
@@ -108,6 +110,7 @@ export function createStepUpSession(
     logout: unused,
     restore: unused,
     refresh: unused,
+    retryFeatures: () => Promise.resolve(),
     setPermissionSet: unused,
   }
 }

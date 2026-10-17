@@ -51,6 +51,7 @@ describe('SocialCallbackHandler', () => {
       'GET /auth/flows/current',
       'POST /auth/flows/answer',
       'GET /auth/me',
+      'GET /features',
     ])
     expect(harness.calls[1]?.options?.body).toMatchObject({ step: 'complete' })
     expect(harness.store.get()).toBe('access-1')

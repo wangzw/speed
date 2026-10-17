@@ -61,7 +61,13 @@ const ANSWER_FLOW = '/auth/flows/answer'
 const CURRENT_FLOW = '/auth/flows/current'
 const METHODS = '/auth/methods'
 const ME = '/auth/me'
+const FEATURES = '/features'
 const LOGOUT = '/auth/logout'
+
+/** The process's feature document: this journey's deployment serves an
+ * empty vocabulary. Every login commit and anonymous-start restore reads
+ * it, so every responder answers it. */
+const FEATURES_BODY = { features: [] }
 
 /** The deployment's method document: both form channels. The sign-in
  * surface reads it on mount, so every responder answers it. */
@@ -84,6 +90,9 @@ function AppView({ session }: { session: AuthSession }): ReactElement {
 describe('session journeys over the composed sign-in family', () => {
   it('signs in with an SMS code, from the phone step to the app', async () => {
     const rig = makeRealClientRig((call) => {
+      if (call.path === FEATURES) {
+        return jsonResponse(200, FEATURES_BODY)
+      }
       switch (call.path) {
         case METHODS:
           return jsonResponse(200, METHODS_BODY)
@@ -151,6 +160,7 @@ describe('session journeys over the composed sign-in family', () => {
       `POST ${ANSWER_FLOW}`,
       `POST ${ANSWER_FLOW}`,
       `GET ${ME}`,
+      `GET ${FEATURES}`,
     ])
     // The start and the code answer of an anonymous SMS sign-in travel
     // credential-less.
@@ -160,6 +170,9 @@ describe('session journeys over the composed sign-in family', () => {
 
   it('signs out from the app chrome and lands back on the sign-in surface', async () => {
     const rig = makeRealClientRig((call) => {
+      if (call.path === FEATURES) {
+        return jsonResponse(200, FEATURES_BODY)
+      }
       switch (call.path) {
         case METHODS:
           return jsonResponse(200, METHODS_BODY)
@@ -212,11 +225,12 @@ describe('session journeys over the composed sign-in family', () => {
       `POST ${START_FLOW}`,
       `POST ${ANSWER_FLOW}`,
       `GET ${ME}`,
+      `GET ${FEATURES}`,
       `POST ${LOGOUT}`,
     ])
     // The logout of an authenticated session travels with its access
     // token.
-    expect(rig.calls[4]?.authorization).toBe('Bearer access-1')
+    expect(rig.calls[5]?.authorization).toBe('Bearer access-1')
 
     // Sign in again from the ended screen: the gate hands the viewer
     // back to the sign-in surface.
@@ -240,6 +254,9 @@ describe('session journeys over the composed sign-in family', () => {
       resolveRead = resolve
     })
     const rig = makeRealClientRig((call) => {
+      if (call.path === FEATURES) {
+        return jsonResponse(200, FEATURES_BODY)
+      }
       switch (call.path) {
         case METHODS:
           return jsonResponse(200, METHODS_BODY)
@@ -348,6 +365,7 @@ describe('session journeys over the composed sign-in family', () => {
       `GET ${CURRENT_FLOW}`,
       `POST ${ANSWER_FLOW}`,
       `GET ${ME}`,
+      `GET ${FEATURES}`,
     ])
   })
 })

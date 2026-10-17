@@ -74,6 +74,7 @@ describe('PasswordSignInForm', () => {
       'POST /auth/flows',
       'POST /auth/flows/answer',
       'GET /auth/me',
+      'GET /features',
     ])
     expect(harness.calls[0]?.options?.body).toMatchObject({
       method: 'password',

@@ -97,6 +97,7 @@ function flowSession(): {
     logout: () => Promise.reject(new Error('unused')),
     restore: () => Promise.resolve(false),
     refresh: () => Promise.resolve(false),
+    retryFeatures: () => Promise.resolve(),
     setPermissionSet: () => undefined,
   }
   return { session, answers }

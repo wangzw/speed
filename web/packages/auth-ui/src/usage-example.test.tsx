@@ -81,6 +81,7 @@ const START_FLOW = '/auth/flows'
 const ANSWER_FLOW = '/auth/flows/answer'
 const METHODS = '/auth/methods'
 const ME = '/auth/me'
+const FEATURES = '/features'
 const TOKEN = '/auth/token'
 
 /** The deployment's method document: both form channels, so the surface
@@ -141,6 +142,9 @@ describe('the README quick start, exercised over a real api-client', () => {
     let meAttempts = 0
     let refreshAttempts = 0
     const rig = makeRealClientRig((call) => {
+      if (call.path === FEATURES) {
+        return jsonResponse(200, { features: [] })
+      }
       switch (call.path) {
         case METHODS:
           return jsonResponse(200, METHODS_BODY)
@@ -266,6 +270,7 @@ describe('the README quick start, exercised over a real api-client', () => {
       `POST ${START_FLOW}`,
       `POST ${ANSWER_FLOW}`,
       `GET ${ME}`,
+      `GET ${FEATURES}`,
       `GET ${ME}`,
       `POST ${TOKEN}`,
       `GET ${ME}`,

@@ -95,6 +95,7 @@ const FLOWS_START = 'POST /auth/flows'
 const FLOWS_ANSWER = 'POST /auth/flows/answer'
 const METHODS = 'GET /auth/methods'
 const PROFILE = 'GET /auth/me'
+const FEATURES = 'GET /features'
 const TOKEN = 'POST /auth/token'
 const IDENTIFIER = 'alice@example.com'
 const PASSWORD = 'password-1'
@@ -381,6 +382,9 @@ describe('host-side gating composition', () => {
       if (key === METHODS) {
         return jsonResponse(200, METHODS_BODY)
       }
+      if (key === FEATURES) {
+        return jsonResponse(200, { features: [] })
+      }
       if (key === FLOWS_START) {
         return jsonResponse(
           200,
@@ -551,6 +555,7 @@ describe('host-side gating composition', () => {
       FLOWS_START,
       FLOWS_ANSWER,
       PROFILE,
+      FEATURES,
     ])
   })
 
@@ -572,6 +577,9 @@ describe('host-side gating composition', () => {
         const key = `${call.method} ${call.path}`
         if (key === METHODS) {
           return jsonResponse(200, METHODS_BODY)
+        }
+        if (key === FEATURES) {
+          return jsonResponse(200, { features: [] })
         }
         if (key === FLOWS_START) {
           return jsonResponse(
@@ -664,12 +672,14 @@ describe('host-side gating composition', () => {
         FLOWS_START,
         FLOWS_ANSWER,
         PROFILE,
+        FEATURES,
         PROFILE,
         TOKEN,
         METHODS,
         FLOWS_START,
         FLOWS_ANSWER,
         PROFILE,
+        FEATURES,
       ])
     } finally {
       warn.mockRestore()

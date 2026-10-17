@@ -94,6 +94,17 @@
  * both: a login opens a fresh server session whose lists the host has
  * not fetched yet. A failed operation changes nothing, lists included.
  *
+ * Feature state: the snapshot also carries the feature document the
+ * process serves (GET /features), as a closed `FeatureState` set. A
+ * login completion and an anonymous-start restore read it in parallel
+ * with GET /auth/me and commit the two together; a failed feature read
+ * commits the session with `failed` rather than failing the login. The
+ * authenticated restore, refresh, step-up, link and enroll paths keep
+ * the state without a request, and logout (or a locally cleared
+ * session) resets it to `none`. retryFeatures() is the explicit retry
+ * for a failed read. The session never interprets a name; membership is
+ * decided by the hooks and the shells.
+ *
  * The failure semantics of `logout` deliberately diverge from the
  * above: a logout whose own request is refused still clears the local
  * session and rejects the raw ApiError, because a session it could no
@@ -114,6 +125,7 @@ import {
   authnSessionLogout,
   authnSsoDiscover,
   authnTokenIssue,
+  featureBoardList,
 } from '@speed/api-sdk'
 import type {
   AuthnLoginActionResult,
@@ -133,6 +145,7 @@ import type {
   AuthnProfileProfile,
   AuthnSessionView as AuthnSessionViewModel,
   AuthnSsoProvider as AuthnSsoProviderModel,
+  FeatureBoardDocument,
 } from '@speed/api-sdk'
 
 /** The permission domain a host-attached permission set belongs to.
@@ -263,7 +276,25 @@ export interface AuthSnapshot {
    * setPermissionSet). Always present; a null list means no set is
    * known for that domain. Empty in both domains while anonymous. */
   permissionSets: AuthPermissionSets
+  /** The feature document this process serves, as read for this
+   * session. See FeatureState. */
+  features: FeatureState
 }
+
+/** The closed set of feature-state values.
+ *
+ * `none` is the anonymous state: this package never requests
+ * GET /features while anonymous. `pending` exists only while a
+ * retryFeatures() call is in flight. `failed` carries the failed read's
+ * error: a failed read is neither "every feature absent" nor "every
+ * feature present". `ready` carries the set of names the process
+ * serves; a name the frontend does not know is accepted and ignored.
+ */
+export type FeatureState =
+  | { readonly state: 'none' }
+  | { readonly state: 'pending' }
+  | { readonly state: 'failed'; readonly error: unknown }
+  | { readonly state: 'ready'; readonly names: ReadonlySet<string> }
 
 /** Receives the new snapshot on every state change. */
 export type AuthSessionListener = (snapshot: AuthSnapshot) => void
@@ -349,6 +380,14 @@ export interface AuthSession {
    * synchronous-invocation marker no longer covers it. Absent, the
    * generated operations' bound request function serves both reads. */
   restore(issue?: RequestFn): Promise<boolean>
+  /** Re-reads the feature document for the current session. Only acts
+   * while authenticated: the feature state turns `pending`, GET /features
+   * is read, and the result lands as `ready` or `failed` if the session
+   * is still the one the read started under (same generation, still
+   * authenticated, same principal account). While anonymous this
+   * resolves without a request and changes nothing. Concurrent calls
+   * share one in-flight read. */
+  retryFeatures(): Promise<void>
   /** Silently refreshes the access token with the held refresh token
    * (a token session). Resolves true when the store holds a fresh token
    * afterwards; resolves false when there is nothing to refresh, when
@@ -908,6 +947,30 @@ const NO_PERMISSION_SETS: AuthPermissionSets = {
   system: null,
 }
 
+/** The feature state of every anonymous snapshot: no document is ever
+ * requested for an anonymous caller. */
+const NO_FEATURES: FeatureState = { state: 'none' }
+
+/** Validates the GET /features body into the served feature names. The
+ * document carries the names only; a name the frontend does not know is
+ * accepted (the set is the process's, not the build's). A body that is
+ * not an object, or whose `features` is not a string array, is a
+ * protocol violation -- never "no features". */
+function parseFeatureDocument(body: unknown): ReadonlySet<string> {
+  const rec = asObject(body, 'GET /features answered no document')
+  if (!Array.isArray(rec.features)) {
+    throw protocolViolation('GET /features carries no features array')
+  }
+  const names = new Set<string>()
+  for (const entry of rec.features) {
+    if (typeof entry !== 'string') {
+      throw protocolViolation('GET /features carries a non-string name')
+    }
+    names.add(entry)
+  }
+  return names
+}
+
 /** The purpose a flow was started for, as far as this package tracks it
  * to tell a cookie login completion from a cookie step-up completion
  * (both answer the same session body). `login` and `step-up` are the two
@@ -955,6 +1018,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
     state: 'anonymous',
     principal: null,
     permissionSets: NO_PERMISSION_SETS,
+    features: NO_FEATURES,
   }
   // The held refresh token: closure-only, never stored, never exposed.
   // Only a token-delivered session holds one.
@@ -972,6 +1036,9 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
   // The single-flight refresh: at most one in-flight request per held
   // refresh token.
   let refreshFlight: { held: string; promise: Promise<boolean> } | null = null
+  // The single-flight feature retry: concurrent retryFeatures() calls
+  // share one GET /features read.
+  let featuresFlight: Promise<void> | null = null
   const listeners = new Set<AuthSessionListener>()
 
   function notify(): void {
@@ -1004,6 +1071,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
       state: 'anonymous',
       principal: null,
       permissionSets: NO_PERMISSION_SETS,
+      features: NO_FEATURES,
     }
   }
 
@@ -1023,12 +1091,13 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
 
   /** Commits a login completion: the store gets the new access token (a
    * token session), the closure the minted refresh token, and the
-   * snapshot the freshly read principal with both permission domains
-   * cleared (a login opens a fresh server session, so nothing rides over
-   * from the previous one). */
+   * snapshot the freshly read principal and feature document with both
+   * permission domains cleared (a login opens a fresh server session, so
+   * nothing rides over from the previous one). */
   function commitLogin(
     issued: IssuedTokens,
     principal: AuthnPrincipal,
+    features: FeatureState,
   ): void {
     store?.set(issued.accessToken)
     if (issued.refreshToken !== null) {
@@ -1038,6 +1107,24 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
       state: 'authenticated',
       principal,
       permissionSets: NO_PERMISSION_SETS,
+      features,
+    }
+  }
+
+  /** The feature state a settled GET /features read yields: `ready`
+   * with the parsed names, `failed` carrying the read's error. A failed
+   * feature read never fails the commit that carried it: it is neither
+   * "every feature absent" nor "every feature present". */
+  function settledFeatures(
+    result: PromiseSettledResult<unknown>,
+  ): FeatureState {
+    if (result.status === 'rejected') {
+      return { state: 'failed', error: result.reason }
+    }
+    try {
+      return { state: 'ready', names: parseFeatureDocument(result.value) }
+    } catch (error) {
+      return { state: 'failed', error }
     }
   }
 
@@ -1045,8 +1132,10 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
    * first (a contract-violating 2xx rejects even when a newer commit
    * landed -- the caller deserves to know its own request failed), then
    * applied only if no other commit won meanwhile. The principal is read
-   * from GET /auth/me with the freshly written token; if that read fails
-   * the store is cleared and the commit rejects. */
+   * from GET /auth/me and the feature document from GET /features, the
+   * two reads in parallel with the freshly written token. A failed
+   * profile read clears the store and rejects the commit; a failed
+   * feature read commits the session with the feature state `failed`. */
   async function settleLogin(
     opGeneration: number,
     state: TokenCompletion,
@@ -1059,9 +1148,16 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
       throw new OperationSupersededError(snapshot)
     }
     store?.set(issued.accessToken)
+    const [profile, features] = await Promise.allSettled([
+      authnProfileGet(),
+      featureBoardList(),
+    ])
     let principal: AuthnPrincipal
     try {
-      principal = parsePrincipal(await authnProfileGet())
+      if (profile.status === 'rejected') {
+        throw profile.reason
+      }
+      principal = parsePrincipal(profile.value)
     } catch (error) {
       store?.set(null)
       refreshToken = null
@@ -1070,20 +1166,29 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
     if (generation !== opGeneration) {
       throw new OperationSupersededError(snapshot)
     }
-    commitLogin(issued, principal)
+    commitLogin(issued, principal, settledFeatures(features))
     generation += 1
     notify()
   }
 
   /** The commit of a cookie login completion: the server set the cookie,
    * so the session reads GET /auth/me for the freshly signed-in
-   * principal (riding the ambient cookie) and applies it with both
-   * permission domains cleared. No store is touched. */
+   * principal (riding the ambient cookie) and GET /features for the
+   * feature document, the two in parallel, and applies them with both
+   * permission domains cleared. A failed feature read commits the
+   * session with the feature state `failed`. No store is touched. */
   async function settleLoginSession(opGeneration: number): Promise<void> {
     if (generation !== opGeneration) {
       throw new OperationSupersededError(snapshot)
     }
-    const principal = parsePrincipal(await authnProfileGet())
+    const [profile, features] = await Promise.allSettled([
+      authnProfileGet(),
+      featureBoardList(),
+    ])
+    if (profile.status === 'rejected') {
+      throw profile.reason
+    }
+    const principal = parsePrincipal(profile.value)
     if (generation !== opGeneration) {
       throw new OperationSupersededError(snapshot)
     }
@@ -1091,6 +1196,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
       state: 'authenticated',
       principal,
       permissionSets: NO_PERMISSION_SETS,
+      features: settledFeatures(features),
     }
     generation += 1
     notify()
@@ -1117,8 +1223,9 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
   }
 
   /** The commit of a cookie step-up completion: the server rotated the
-   * cookie, the principal and the permission sets are kept (the same
-   * session continues), and no GET /auth/me read follows. */
+   * cookie, the principal, the permission sets and the feature state are
+   * kept (the same session continues), and no GET /auth/me read
+   * follows. */
   function settleElevatedSession(opGeneration: number): void {
     if (generation !== opGeneration) {
       throw new OperationSupersededError(snapshot)
@@ -1127,6 +1234,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
       state: 'authenticated',
       principal: snapshot.principal,
       permissionSets: snapshot.permissionSets,
+      features: snapshot.features,
     }
     generation += 1
     notify()
@@ -1351,6 +1459,10 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
 
     async restore(issue?: RequestFn): Promise<boolean> {
       const opGeneration = generation
+      // Whether this restore begins from an authenticated snapshot: only
+      // an anonymous start reads the feature document (the authenticated
+      // path continues the same session and keeps the state).
+      const wasAuthenticated = snapshot.state === 'authenticated'
       // The round-scoped request function, when the client supplied one,
       // carries both reads; otherwise the generated operations' bound
       // request function does. The profile read follows an await, so it
@@ -1364,6 +1476,10 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
         issue === undefined
           ? authnProfileGet()
           : issue<AuthnProfileProfile>('/auth/me')
+      const readFeatures = (): Promise<FeatureBoardDocument> =>
+        issue === undefined
+          ? featureBoardList()
+          : issue<FeatureBoardDocument>('/features')
       let view: AuthnSessionView
       try {
         view = parseSessionView(await readSession())
@@ -1389,15 +1505,42 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
         }
         return false
       }
-      const principal = parsePrincipal(await readProfile())
+      if (wasAuthenticated) {
+        const principal = parsePrincipal(await readProfile())
+        if (generation !== opGeneration) {
+          return false
+        }
+        // The same session continues: the permission sets and the
+        // feature state are kept.
+        snapshot = {
+          state: 'authenticated',
+          principal,
+          permissionSets: snapshot.permissionSets,
+          features: snapshot.features,
+        }
+        notify()
+        return true
+      }
+      // An anonymous start reads the principal and the feature document
+      // in parallel and commits them together. A failed profile read
+      // rethrows (the snapshot stands); a failed feature read commits
+      // the session with the feature state `failed`.
+      const [profile, features] = await Promise.allSettled([
+        readProfile(),
+        readFeatures(),
+      ])
+      if (profile.status === 'rejected') {
+        throw profile.reason
+      }
+      const principal = parsePrincipal(profile.value)
       if (generation !== opGeneration) {
         return false
       }
-      // The same session continues: the permission sets are kept.
       snapshot = {
         state: 'authenticated',
         principal,
         permissionSets: snapshot.permissionSets,
+        features: settledFeatures(features),
       }
       notify()
       return true
@@ -1449,6 +1592,63 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
         error.status === 401 &&
         snapshot.state === 'authenticated'
       )
+    },
+
+    retryFeatures(): Promise<void> {
+      // Anonymous sessions never request the document, and there is
+      // nothing to retry.
+      if (snapshot.state !== 'authenticated' || snapshot.principal === null) {
+        return Promise.resolve()
+      }
+      if (featuresFlight !== null) {
+        return featuresFlight
+      }
+      const capturedGeneration = generation
+      const capturedAccountId = snapshot.principal.account_id
+      const previous = snapshot.features
+      const pending: FeatureState = { state: 'pending' }
+      snapshot = { ...snapshot, features: pending }
+      notify()
+      const promise = (async (): Promise<void> => {
+        let next: FeatureState
+        try {
+          next = {
+            state: 'ready',
+            names: parseFeatureDocument(await featureBoardList()),
+          }
+        } catch (error) {
+          next = { state: 'failed', error }
+        }
+        // The write applies only to the session the read started under:
+        // same generation, still authenticated, same principal. The
+        // generation check alone is not enough -- the server-ended-session
+        // clears deliberately do not bump it.
+        const applies =
+          generation === capturedGeneration &&
+          snapshot.state === 'authenticated' &&
+          snapshot.principal !== null &&
+          snapshot.principal.account_id === capturedAccountId
+        if (!applies) {
+          // A commit landed while the read was in flight. If it kept this
+          // retry's pending marker (a step-up), restore the previous
+          // state; a login or logout replaced the marker with its own.
+          if (snapshot.features === pending) {
+            snapshot = { ...snapshot, features: previous }
+            notify()
+          }
+          return
+        }
+        snapshot = { ...snapshot, features: next }
+        notify()
+      })()
+      featuresFlight = promise
+      const clearFlight = (): void => {
+        if (featuresFlight === promise) {
+          featuresFlight = null
+        }
+      }
+      promise.then(clearFlight, clearFlight)
+      return promise
     },
 
     setPermissionSet(

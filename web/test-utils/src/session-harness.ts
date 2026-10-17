@@ -10,12 +10,15 @@
  * The harness covers the whole authn flow surface -- the login flow
  * (start, answer, current, abandon), the authenticated-purpose start
  * (link / step-up / enroll), the methods listing, logout, the token
- * endpoint a token refresh uses, the session read a restore makes and
- * the /me profile read a login completion makes -- so a package's suite
- * scripts only the operations its surface drives. The endpoint path
- * constants are literal request keys; a test that scripts a body shape
- * writes it with the builder the constant's reply needs (openFlow,
- * sessionCompletion, authenticatedCompletion, tokenResponse, ...).
+ * endpoint a token refresh uses, the session read a restore makes, the
+ * /me profile read a login completion makes and the /features read a
+ * login commit or anonymous-start restore makes -- so a package's suite
+ * scripts only the operations its surface drives. The feature document
+ * has a default answer (ready, no names); script FEATURES_GET to give it
+ * names or make it fail. The endpoint path constants are literal request
+ * keys; a test that scripts a body shape writes it with the builder the
+ * constant's reply needs (openFlow, sessionCompletion,
+ * authenticatedCompletion, tokenResponse, ...).
  *
  * The response builders return the snake_case bodies the wire carries,
  * exactly as the server sends them; the session's runtime guards
@@ -55,6 +58,7 @@ export const LOGOUT = 'POST /auth/logout'
 export const TOKEN_ISSUE = 'POST /auth/token'
 export const PROFILE_GET = 'GET /auth/me'
 export const SESSION_GET = 'GET /auth/session'
+export const FEATURES_GET = 'GET /features'
 
 /** The GET /auth/me profile the session reads for the principal after a
  * login completion. */
@@ -276,6 +280,15 @@ interface ScriptedCall {
  * (tests throw ApiError to script HTTP failures). */
 type Script = Record<string, (call: ScriptedCall) => unknown>
 
+/** The GET /features answer every harness provides unless the test
+ * scripts its own: a ready state with no names. Every login commit and
+ * every anonymous-start restore reads the document, so a real server
+ * always answers it; a test that needs names (or a failed read) scripts
+ * the key explicitly. */
+const DEFAULT_SCRIPT: Script = {
+  [FEATURES_GET]: () => ({ features: [] }),
+}
+
 interface Call {
   method: string
   path: string
@@ -305,8 +318,13 @@ export function makeHarness(script: Script = {}): Harness {
     // Read the handler only when the key is an own property of the
     // script object: a prototype-chain key such as 'constructor' or
     // 'toString' must take the same missing-handler path as any other
-    // unknown key, never dispatch onto an inherited function.
-    const handler = Object.hasOwn(script, key) ? script[key] : undefined
+    // unknown key, never dispatch onto an inherited function. The
+    // default document answers keys the test did not script.
+    const handler = Object.hasOwn(script, key)
+      ? script[key]
+      : Object.hasOwn(DEFAULT_SCRIPT, key)
+        ? DEFAULT_SCRIPT[key]
+        : undefined
     if (handler === undefined) {
       throw new Error(`no scripted handler for ${key}`)
     }
@@ -333,7 +351,11 @@ export function makeCookieHarness(script: Script = {}): Harness {
     const method = options?.method ?? 'GET'
     const key = `${method} ${path}`
     calls.push({ method, path, options })
-    const handler = Object.hasOwn(script, key) ? script[key] : undefined
+    const handler = Object.hasOwn(script, key)
+      ? script[key]
+      : Object.hasOwn(DEFAULT_SCRIPT, key)
+        ? DEFAULT_SCRIPT[key]
+        : undefined
     if (handler === undefined) {
       throw new Error(`no scripted handler for ${key}`)
     }

@@ -109,10 +109,10 @@ describe('SignOutButton', () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: LABEL_ZH }))
     await waitFor(() => expect(harness.store.get()).toBeNull())
-    expect(harness.calls).toHaveLength(3)
-    expect(harness.calls[2]?.method).toBe('POST')
-    expect(harness.calls[2]?.path).toBe('/auth/logout')
-    expect(harness.calls[2]?.options?.body).toBeUndefined()
+    expect(harness.calls).toHaveLength(4)
+    expect(harness.calls[3]?.method).toBe('POST')
+    expect(harness.calls[3]?.path).toBe('/auth/logout')
+    expect(harness.calls[3]?.options?.body).toBeUndefined()
     // Success is the host's to observe; the button itself returns to
     // its idle label, ready for the next (idempotent) click.
     await waitFor(() =>
@@ -134,7 +134,7 @@ describe('SignOutButton', () => {
     await user.click(screen.getByRole('button', { name: LABEL_ZH }))
     const busy = await screen.findByRole('button', { name: BUSY_ZH })
     expect(busy).toBeDisabled()
-    expect(harness.calls).toHaveLength(3)
+    expect(harness.calls).toHaveLength(4)
     await act(async () => {
       resolveLogout(undefined)
     })
@@ -164,7 +164,7 @@ describe('SignOutButton', () => {
       ),
     )
     expect(harness.store.get()).toBeNull()
-    expect(harness.calls).toHaveLength(3)
+    expect(harness.calls).toHaveLength(4)
     expect(screen.getByRole('button', { name: LABEL_ZH })).toBeEnabled()
   })
 

@@ -82,6 +82,7 @@ const ANONYMOUS = {
   state: 'anonymous',
   principal: null,
   permissionSets: { tenant: null, system: null },
+  features: { state: 'none' },
 }
 
 describe('initial state', () => {
@@ -360,11 +361,13 @@ describe('answer flow', () => {
       state: 'authenticated',
       principal: principal({ account_id: 'acct-9', display_name: 'Ada L.' }),
       permissionSets: { tenant: null, system: null },
+      features: { state: 'ready', names: new Set() },
     })
     expect(seen.map((snapshot) => snapshot.state)).toEqual(['authenticated'])
     expect(harness.calls.map((call) => call.path)).toEqual([
       '/auth/flows/answer',
       '/auth/me',
+      '/features',
     ])
   })
 
@@ -610,6 +613,7 @@ describe('operation supersession', () => {
       state: 'authenticated',
       principal: principal(),
       permissionSets: { tenant: null, system: null },
+      features: { state: 'ready', names: new Set() },
     }
     const duck = {
       name: 'OperationSupersededError',
@@ -1280,6 +1284,7 @@ describe('cookie session (store-less)', () => {
       state: 'authenticated',
       principal: principal(),
       permissionSets: { tenant: null, system: null },
+      features: { state: 'ready', names: new Set() },
     })
     // The cookie carries the credential: no access token was stored.
     expect(harness.store.get()).toBeNull()
@@ -1288,6 +1293,7 @@ describe('cookie session (store-less)', () => {
       '/auth/flows',
       '/auth/flows/answer',
       '/auth/me',
+      '/features',
     ])
   })
 
@@ -1323,10 +1329,12 @@ describe('cookie session (store-less)', () => {
         display_name: 'Ada Reload',
       }),
       permissionSets: { tenant: null, system: null },
+      features: { state: 'ready', names: new Set() },
     })
     expect(harness.calls.map((call) => call.path)).toEqual([
       '/auth/session',
       '/auth/me',
+      '/features',
     ])
   })
 

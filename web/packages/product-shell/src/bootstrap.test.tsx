@@ -22,7 +22,7 @@
  */
 
 import { QueryClient } from '@tanstack/react-query'
-import { act } from '@testing-library/react'
+import { act, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { isApiError } from '@speed/api-client'
@@ -70,6 +70,10 @@ const respond: RealResponder = (call) => {
     // mounted view stays on the sign-in surface; a test that needs a
     // remembered session overrides this responder.
     return jsonResponse(200, { authenticated: false })
+  }
+  if (key === 'GET /features') {
+    // The boot restore's feature read, and every login commit's.
+    return jsonResponse(200, { features: [] })
   }
   if (key === 'POST /auth/token') {
     return jsonResponse(200, tokenResponse())
@@ -279,7 +283,12 @@ describe('bootstrapSpeedApp', () => {
     const boot = await mountApp(container, { view: <div /> })
 
     // The reload kept the user logged in -- the bug this model fixes.
-    expect(boot.session.getSnapshot().state).toBe('authenticated')
+    // The boot restore commits the principal and the feature document
+    // together, so the assertion waits for that commit rather than for
+    // the boot call itself (which returns before the read settles).
+    await waitFor(() =>
+      expect(boot.session.getSnapshot().state).toBe('authenticated'),
+    )
     expect(boot.session.getSnapshot().principal).not.toBeNull()
 
     // The boot read and its /me follow both rode the cookie mode.

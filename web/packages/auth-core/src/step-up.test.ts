@@ -39,6 +39,7 @@ function session(
     state: 'authenticated',
     principal: null,
     permissionSets: { tenant: null, system: null },
+    features: { state: 'none' },
   },
 ): AuthSession {
   return {
@@ -56,6 +57,7 @@ function session(
     logout: unused,
     restore: unused,
     refresh: unused,
+    retryFeatures: unused,
     setPermissionSet: unused,
   }
 }
@@ -64,6 +66,7 @@ const ANONYMOUS: AuthSnapshot = {
   state: 'anonymous',
   principal: null,
   permissionSets: { tenant: null, system: null },
+  features: { state: 'none' },
 }
 
 describe('useStepUp', () => {

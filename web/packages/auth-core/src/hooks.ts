@@ -24,6 +24,14 @@
  * check never consults the 'system' list or vice versa. These checks
  * are a UX affordance, not a security boundary: the server authorizes.
  *
+ * Feature checks are the same shape over the session's feature state:
+ * useFeature is a fail-closed membership lookup over the names the
+ * process serves, useFeatureState hands the state itself to a host that
+ * must tell "reading", "failed" and "absent" apart, and featurePresence
+ * maps it onto route-kit's presence shape. Only hosts read these; the
+ * capability UI packages receive the answer through their props or
+ * provider components.
+ *
  * The tenant is not the session's: the server resolves it per request
  * (from the request host, a subdomain or a path) as a routing fact, and
  * the principal carries no tenant. So the host, which knows its own
@@ -41,10 +49,12 @@ import {
   useSyncExternalStore,
 } from 'react'
 import type { ReactElement, ReactNode } from 'react'
+import type { FeatureName } from '@speed/api-sdk/features'
 import type {
   AuthDomain,
   AuthSession,
   AuthSnapshot,
+  FeatureState,
 } from './session.js'
 
 /** The snapshot hooks report before any session is attached. A module
@@ -54,6 +64,7 @@ const NO_SESSION_SNAPSHOT: AuthSnapshot = {
   state: 'anonymous',
   principal: null,
   permissionSets: { tenant: null, system: null },
+  features: { state: 'none' },
 }
 
 /** The attached session; null before the first attachSession call. */
@@ -146,6 +157,46 @@ export function usePermission(
   }
   const set = snapshot.permissionSets[domain]
   return set !== null && set.includes(permission)
+}
+
+/** Whether the process serves the named feature. A pure set lookup that
+ * fails closed: false unless the feature state is `ready` and the set
+ * contains the name -- so `none`, `pending`, `failed` and the
+ * before-attach state all answer false. The name is a FeatureName, so a
+ * misspelled name fails to compile. */
+export function useFeature(name: FeatureName): boolean {
+  const features = useFeatureState()
+  return features.state === 'ready' && features.names.has(name)
+}
+
+/** The feature state itself. A host that must distinguish "still
+ * reading", "the read failed" and "the feature is absent" reads this.
+ * Before attachSession it is `none`. */
+export function useFeatureState(): FeatureState {
+  return useAuthState().features
+}
+
+/** Maps the feature state onto route-kit's presence shape without
+ * importing route-kit: `ready` becomes a ready predicate, `failed`
+ * becomes failed, and `pending`/`none` both read as pending -- an
+ * anonymous caller has no feature state, so the fail-closed direction is
+ * "not decided yet", never "everything present". The predicate takes a
+ * plain string because the route layer calls it with the names a
+ * declaration's `requires` carries; the FeatureName type governs where a
+ * name is written, not this lookup. */
+export function featurePresence(
+  state: FeatureState,
+):
+  | { readonly state: 'pending' }
+  | { readonly state: 'failed' }
+  | { readonly state: 'ready'; readonly has: (name: string) => boolean } {
+  if (state.state === 'ready') {
+    return { state: 'ready', has: (name) => state.names.has(name) }
+  }
+  if (state.state === 'failed') {
+    return { state: 'failed' }
+  }
+  return { state: 'pending' }
 }
 
 /** The tenant context. `undefined` means no provider is mounted (the

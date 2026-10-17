@@ -18,6 +18,7 @@ import type {
   AuthSnapshot,
   AuthnMethodList,
 } from '@speed/auth-core'
+import { FEATURE_NAMES } from '@speed/api-sdk/features'
 
 /** The method document the sign-in surface renders in these suites: the
  * password channel, the only one the skeleton offers. */
@@ -38,6 +39,7 @@ export const ANONYMOUS_SNAPSHOT: AuthSnapshot = {
   state: 'anonymous',
   principal: null,
   permissionSets: { tenant: null, system: null },
+  features: { state: 'none' },
 }
 
 /**
@@ -68,6 +70,10 @@ export function authenticatedSnapshot(options: {
       tenant: options.tenant ?? null,
       system: options.system ?? null,
     },
+    // The suite's session serves the whole platform vocabulary, so the
+    // feature-gated pages and controls are present unless a test narrows
+    // the set itself.
+    features: { state: 'ready', names: new Set(FEATURE_NAMES) },
   }
 }
 
@@ -115,6 +121,7 @@ export function createTestSession(
     logout: rejecting,
     restore: rejecting,
     refresh: rejecting,
+    retryFeatures: rejecting,
     isStepUpShortfall: () => false,
     // Host-attached permissions are out of scope here: the suites set the
     // snapshot's permission lists directly, so attaching is a no-op rather

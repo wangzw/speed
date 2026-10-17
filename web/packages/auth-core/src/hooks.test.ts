@@ -66,6 +66,7 @@ describe('before any session is attached', () => {
       state: 'anonymous',
       principal: null,
       permissionSets: { tenant: null, system: null },
+      features: { state: 'none' },
     })
     // The no-session snapshot is referentially stable across renders,
     // so useSyncExternalStore never re-renders on its own.
