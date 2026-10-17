@@ -2,8 +2,9 @@
  * The backend listener's claimed path prefixes: the namespaces its api,
  * account and admin endpoints own.
  *
- * `backend-prefixes.json` beside this package is the one list the server's
- * configuration and this app's dev proxy share. The namespaces an endpoint
+ * `backend-prefixes.json` beside this package is the list this app's dev proxy
+ * generates from; it is a hand-kept mirror of the claims in the server
+ * configuration, and a test comparing the two is not written yet. The namespaces an endpoint
  * owns are a product fact -- they do not follow which modules a particular
  * build imports or runs -- so the list stands even when a deployment splits
  * the listener again.

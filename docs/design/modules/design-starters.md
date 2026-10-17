@@ -331,9 +331,9 @@ flowchart TD
 | 宿主侧的特性读取与特性态失败的呈现 | 未实现 | — |
 | 登录页文案不断言装配 | 未实现 | — |
 | `backend` 监听上各端的认领前缀（`testdata/` 的每份配置与示范测试的配置） | 未实现 | — |
-| 后端前缀清单 `backend-prefixes.json` 与由它生成的开发代理 | 未实现 | — |
-| 回调页的路径 `/sign-in/callback` | 未实现 | — |
+| 后端前缀清单 `backend-prefixes.json` 与由它生成的开发代理 | 已实现 | `starters/demo/web/backend-prefixes.json`；`starters/demo/web/src/backend-prefixes.ts` `backendProxyRules`；`starters/demo/web/vite.config.ts` |
+| 回调页的路径 `/sign-in/callback` | 已实现 | `starters/demo/web/src/routes.tsx` `AUTH_CALLBACK_PATH` |
 | 认领覆盖平台命名空间的测试 | 未实现 | — |
 | 前缀清单、差分测试的前缀归属与配置认领的一致性测试 | 未实现 | — |
-| 页面路径不落在认领之下、代理键按段边界匹配的前端测试 | 未实现 | — |
+| 页面路径不落在认领之下、代理键按段边界匹配的前端测试 | 已实现 | `starters/demo/web/src/routes.test.ts` |
 | 去掉路由模块前后未认证应答的差分测试 | 未实现 | — |
