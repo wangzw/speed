@@ -621,6 +621,10 @@ export function DataTable<T>({
               ? t('dataTable.displayedRowsUnknown', { from, to })
               : t('dataTable.displayedRows', { from, to, count: total })
           }
+          sx={{
+            '& .MuiTablePagination-actions .MuiIconButton-root': touchTargetSx,
+            '& .MuiTablePagination-select': touchTargetSx,
+          }}
         />
       )}
     </Box>

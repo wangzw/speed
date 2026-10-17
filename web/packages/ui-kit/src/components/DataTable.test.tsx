@@ -948,6 +948,37 @@ describe('DataTable', () => {
       expect(css).toMatch(/@media \(pointer: coarse\)\{[^}]*min-(width|height):44px/)
     })
 
+    it('raises the pagination buttons and the rows-per-page selector to the floor', () => {
+      // The footer is the table's own control surface: its page buttons
+      // and the rows-per-page selector are compact MUI controls, so on a
+      // finger-driven device each one gates up to the 44x44 floor. The
+      // assertions name the footer's own selectors, so a rule emitted for
+      // another gated control on the page does not satisfy them.
+      renderWithProviders(
+        <DataTable
+          rows={MEMBERS}
+          columns={BASE_COLUMNS}
+          rowKey={keyOf}
+          pagination={{
+            page: 0,
+            rowsPerPage: 2,
+            count: 5,
+            rowsPerPageOptions: [2, 5],
+            onPageChange: vi.fn(),
+            onRowsPerPageChange: vi.fn(),
+          }}
+        />,
+        { language: 'en-US' },
+      )
+      const css = emittedStyleText()
+      expect(css).toMatch(
+        /@media \(pointer: coarse\)\{[^}]*\.MuiTablePagination-actions \.MuiIconButton-root\{[^}]*min-width:44px/,
+      )
+      expect(css).toMatch(
+        /@media \(pointer: coarse\)\{[^}]*\.MuiTablePagination-select\{[^}]*min-height:44px/,
+      )
+    })
+
     it('enables the row hover highlight only under a fine, hovering pointer', () => {
       renderTable()
       const css = emittedStyleText()
