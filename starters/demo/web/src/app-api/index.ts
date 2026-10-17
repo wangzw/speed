@@ -857,7 +857,6 @@ export interface AuthzAdminRoleView {
 }
 
 export interface AuthzAdminRoleWrite {
-  builtin: boolean;
   description_key: string;
 }
 
@@ -8558,6 +8557,7 @@ export const useAuthzAdminRolesDelete = <TError = Problem,
     }
 
 /**
+ * The request carries the role's description key only. The builtin mark is not writable here: it is set by the host that seeds the policy data, and once set it cannot be cleared through this surface.
  * @summary Create or rewrite a role
  */
 export const authzAdminRolesPut = (
