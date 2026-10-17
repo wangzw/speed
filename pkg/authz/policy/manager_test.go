@@ -216,14 +216,15 @@ func TestDeleteGrantRemovesTheRow(t *testing.T) {
 }
 
 // Rewriting a role that is not builtin replaces its description: PutRole is
-// create-or-rewrite, not create-only.
+// create-or-rewrite, not create-only. The rewrite leaves the builtin mark where
+// it is — the mark has its own write, and a role write never carries it.
 func TestPutRoleRewritesANonBuiltinRole(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
 	if err := f.PutRole(ctx, authz.RoleRecord{Tenant: "acme", Role: "roleA", DescriptionKey: "first"}); err != nil {
 		t.Fatalf("PutRole(first): %v", err)
 	}
-	if err := f.PutRole(ctx, authz.RoleRecord{Tenant: "acme", Role: "roleA", DescriptionKey: "second", Builtin: true}); err != nil {
+	if err := f.PutRole(ctx, authz.RoleRecord{Tenant: "acme", Role: "roleA", DescriptionKey: "second"}); err != nil {
 		t.Fatalf("PutRole(second): %v", err)
 	}
 	roles, err := f.Roles(ctx, "acme")
@@ -233,8 +234,8 @@ func TestPutRoleRewritesANonBuiltinRole(t *testing.T) {
 	if roles[0].DescriptionKey != "second" {
 		t.Errorf("the description reads back as %q, want the rewritten value", roles[0].DescriptionKey)
 	}
-	if !roles[0].Builtin {
-		t.Errorf("the builtin flag reads back false, want the rewritten value")
+	if roles[0].Builtin {
+		t.Errorf("the rewrite set the builtin flag")
 	}
 }
 

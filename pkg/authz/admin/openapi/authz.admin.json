@@ -37,6 +37,7 @@
       "put": {
         "operationId": "authz.admin.roles.put",
         "summary": "Create or rewrite a role",
+        "description": "The request carries the role's description key only. The builtin mark is not writable here: it is set by the host that seeds the policy data, and once set it cannot be cleared through this surface.",
         "parameters": [
           {"$ref": "#/components/parameters/AuthzAdminTenant"},
           {"$ref": "#/components/parameters/AuthzAdminRole"}
@@ -217,9 +218,8 @@
       },
       "AuthzAdminRoleWrite": {
         "type": "object",
-        "required": ["builtin", "description_key"],
+        "required": ["description_key"],
         "properties": {
-          "builtin": {"type": "boolean"},
           "description_key": {"type": "string"}
         }
       },

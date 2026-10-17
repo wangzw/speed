@@ -82,6 +82,14 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   `authz.ErrTenantMismatch`, and a binding that names no account is refused too.
   A builtin role may still be bound — that is how the platform operations'
   roles are handed to an account.
+- **The builtin mark has one write, and `PutRole` is not it.** `PutRole`
+  refuses a record carrying `builtin` with `authz.ErrBuiltinRole`, whether it
+  would create or rewrite the role: a role created with the mark could never
+  receive the grants that give it meaning, and a rewrite that could add it would
+  turn any role into one that can be neither rewritten nor deleted, with no path
+  back. `MarkRoleBuiltin(tenant, role)` sets the mark on an existing role — the
+  host's seeding step calls it once the grants are in place — and is idempotent;
+  an absent role is `authz.ErrUnknownRole`.
 - **Deleting a role revokes it.** `DeleteRole` removes the role's row together
   with its rows in `authz_grants` and `authz_bindings`, in one transaction. The
   engine decides from those two tables and never reads `authz_roles`, so the

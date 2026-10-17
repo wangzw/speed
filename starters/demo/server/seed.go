@@ -436,7 +436,9 @@ func seedRole(ctx context.Context, manager authz.Manager, domain string, now tim
 // A role an earlier seed wrote without the mark is corrected here, which is the
 // upgrade path for a database seeded before the mark existed. Re-running the
 // seed would otherwise skip the row and leave the console offering a delete
-// that locks the operator out.
+// that locks the operator out. The mark is set through the manager's own
+// marking method and not by rewriting the record: the mark is the one thing
+// this step changes, and a role write carrying it is refused.
 //
 // The grant set is fixed at this point, which is what the mark means. A
 // permission a module declares after this run is not added to the role: every
@@ -451,16 +453,11 @@ func markRoleBuiltin(ctx context.Context, manager authz.Manager, domain string) 
 	if i < 0 {
 		return fmt.Errorf("seed: the role %s/%s is not there to mark builtin", domain, platformAdminRole)
 	}
-	existing := roles[i]
-	if existing.Builtin {
+	if roles[i].Builtin {
 		fmt.Printf("skipped: role %s/%s (builtin)\n", domain, platformAdminRole)
 		return nil
 	}
-	existing.Builtin = true
-	if existing.DescriptionKey == "" {
-		existing.DescriptionKey = platformAdminDescriptionKey
-	}
-	if err := manager.PutRole(ctx, existing); err != nil {
+	if err := manager.MarkRoleBuiltin(ctx, domain, platformAdminRole); err != nil {
 		return fmt.Errorf("seed: marking the role %s/%s builtin: %w", domain, platformAdminRole, err)
 	}
 	fmt.Printf("seeded: role %s/%s (builtin mark)\n", domain, platformAdminRole)

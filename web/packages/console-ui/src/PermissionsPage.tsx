@@ -30,8 +30,6 @@
 import { useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Checkbox from '@mui/material/Checkbox'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
@@ -75,10 +73,11 @@ export function PermissionsPage() {
   const [tenant, setTenant] = useState('')
   const [selectedRole, setSelectedRole] = useState('')
 
-  // Role create/rewrite draft.
+  // Role create/rewrite draft. There is no builtin toggle: the mark is the
+  // host's to set when it seeds the role, and a role write carrying it is
+  // refused — see the create call below.
   const [roleName, setRoleName] = useState('')
   const [roleDescription, setRoleDescription] = useState('')
-  const [roleBuiltin, setRoleBuiltin] = useState(false)
 
   // Grant draft (the permission to grant to the selected role).
   const [grantPermission, setGrantPermission] = useState('')
@@ -376,15 +375,6 @@ export function PermissionsPage() {
                 onChange={(event) => setRoleDescription(event.target.value)}
                 label={t('permissions.roles.create.descriptionLabel')}
               />
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={roleBuiltin}
-                    onChange={(event) => setRoleBuiltin(event.target.checked)}
-                  />
-                }
-                label={t('permissions.roles.create.builtinLabel')}
-              />
               <Button
                 type="button"
                 variant="contained"
@@ -395,7 +385,6 @@ export function PermissionsPage() {
                     {
                       tenant,
                       role: roleName,
-                      builtin: roleBuiltin,
                       descriptionKey: roleDescription,
                     },
                     {

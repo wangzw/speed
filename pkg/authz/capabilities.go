@@ -79,9 +79,15 @@ type Manager interface {
 	Bindings(ctx context.Context, tenant string) ([]Binding, error)
 	// BindingsOf returns every binding a subject holds within a tenant.
 	BindingsOf(ctx context.Context, tenant, account string) ([]Binding, error)
-	// PutRole creates or rewrites a role. A builtin role's permissions cannot
-	// be changed.
+	// PutRole creates or rewrites a role without the builtin mark. A record
+	// carrying the mark is refused with ErrBuiltinRole, and a builtin role
+	// cannot be rewritten at all.
 	PutRole(ctx context.Context, r RoleRecord) error
+	// MarkRoleBuiltin sets the builtin mark on an existing role. It is the
+	// only write that sets the mark: after it, the role cannot be rewritten or
+	// deleted and its grants cannot be changed. An absent role is
+	// ErrUnknownRole; an already-builtin role is no work.
+	MarkRoleBuiltin(ctx context.Context, tenant string, role Role) error
 	// DeleteRole removes a role. A builtin role cannot be deleted.
 	DeleteRole(ctx context.Context, tenant string, role Role) error
 	// PutGrant creates a grant on a role that exists in the tenant.

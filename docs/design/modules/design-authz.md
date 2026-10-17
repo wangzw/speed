@@ -157,6 +157,7 @@ type Manager interface {
     Bindings(ctx context.Context, tenant string) ([]Binding, error)
     BindingsOf(ctx context.Context, tenant, account string) ([]Binding, error)
     PutRole(ctx context.Context, r RoleRecord) error
+    MarkRoleBuiltin(ctx context.Context, tenant string, role Role) error
     DeleteRole(ctx context.Context, tenant string, role Role) error
     PutGrant(ctx context.Context, g GrantRecord) error
     DeleteGrant(ctx context.Context, g GrantRecord) error
@@ -304,6 +305,8 @@ const (
 
 **读的应答是 200 加一份视图，落地写的应答是 204 无正文。** 视图逐字段从根包的值构造，从不把值原样交给客户端，记录日后新增一个字段不会因为它在就等于出现在应答里。各视图的字段：目录是 `permission`；角色是 `tenant`、`role`、`builtin`、`description_key`、`created_at`；授予是 `tenant`、`role`、`resource`、`action`、`created_at`；绑定是 `tenant`、`account`、`role`、`granted_at`。时间字段按 UTC 写出。
 
+**角色写入的正文只有 `description_key`。** `builtin` 是宿主的种入步骤经 `Manager.MarkRoleBuiltin` 置上的冻结标记，不是管理面可写的值：正文里带这个成员不会到达 `Manager`，`PutRole` 收到携带该标记的记录也一律拒绝。标记一旦置上就没有清回的通路——这正是它的含义。
+
 **授出的权限先经目录与翻译，再写。** 一条授予落到 `authz_grants` 的是（资源，动作）对，不是权限本身；目录不持有的权限在 `Manager` 被调用之前就是 400。写入的（资源，动作）由与中间件、`Decider` 共用的那份翻译给出（[动作到查询的翻译](#动作到查询的翻译)）。
 
 **回绝映射是封闭的、fail-closed 的。** 400（`Problem.Type` 为 `urn:speed:authz:bad-request`）：请求在形状上不可读（路径参数或正文）、授予一条目录不持有的权限、写里的角色未知（`ErrUnknownRole`）、租户不符（`ErrTenantMismatch`）、绑定写里的空账户。409（`Problem.Type` 为 `urn:speed:authz:conflict`）：写试图删除或改动内置角色（`ErrBuiltinRole`）。503：`Manager` 或存储的其余失败，以及没落地的强制档审计；503 不带 `Problem.Type`，它说的是一个依赖答不了而不是一个许可结论，成因只进日志。
@@ -389,6 +392,7 @@ classDiagram
         +Bindings(ctx, tenant)
         +BindingsOf(ctx, tenant, account)
         +PutRole(ctx, r)
+        +MarkRoleBuiltin(ctx, tenant, role)
         +DeleteRole(ctx, tenant, role)
         +PutGrant(ctx, g)
         +DeleteGrant(ctx, g)
@@ -516,7 +520,7 @@ m = g(r.sub, p.sub, r.dom) && r.dom == p.dom && r.obj == p.obj && r.act == p.act
 
 策略表都归 `authz.policy`，迁移在 `pkg/authz/policy/migrations/{sqlite,postgres}/0001_authz_policy.sql`。每张表都以 `tenant_id` 领衔主键，都带 `CHECK (tenant_id <> '')`，都不用方言专有类型与函数；`TIMESTAMPTZ`（Postgres）与 `DATETIME`（SQLite）的对照照行本模块自己的建表语句。
 
-- **`authz_roles(tenant_id, role, builtin, description_key, created_at)`**，主键 `(tenant_id, role)`。`builtin` 标记内置角色（不可删除、不可改权限），`description_key` 是说明文案的 i18n 键。
+- **`authz_roles(tenant_id, role, builtin, description_key, created_at)`**，主键 `(tenant_id, role)`。`builtin` 标记内置角色（不可删除、不可改权限）；标记只由 `Manager.MarkRoleBuiltin` 置位，置位后没有清回的通路。`description_key` 是说明文案的 i18n 键。
 
 ```sql
 CREATE TABLE authz_roles (
@@ -622,7 +626,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 **平台域与真实租户同名是一处配置冲突，在开始服务之前拦下。** `authz.policy` 在 `Start` 时经 `tenant.Catalog` 查一次标识为 `system` 的租户，存在即以 `ErrPlatformDomainTaken` 终止启动。这道核对只在有租户模块的装配里执行：一个真实租户叫 `system` 时，本模块的账户级动作会落到那个租户的策略行上，方向是安全的一侧，但语义不是设计所声明的那一个。策略行里的 `tenant_id` 是否对应一个真实租户不由本模块核对（见[非保证](#非保证)）。
 
-**平台域的绑定由宿主写，不在迁移里种。** 内置的运营角色只在 `authz_roles` 里建立形状（`builtin=true`），谁的账户获得哪个运营角色由宿主经 `Manager.PutBinding` 在 `system` 域写入。
+**平台域的绑定由宿主写，不在迁移里种。** 内置的运营角色只在 `authz_roles` 里建立形状（`builtin=true`，由宿主的种入步骤在其权限写完之后经 `Manager.MarkRoleBuiltin` 置上），谁的账户获得哪个运营角色由宿主经 `Manager.PutBinding` 在 `system` 域写入。
 
 ### Decider 的动作分派
 
@@ -663,7 +667,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 | `ErrUnknownPermission` | 启动期 | 一条路由登记引用了目录里没有的权限；一条路由声明了一个进程翻译没有行的权限；一个模块的翻译行与已有的行给出不同的（资源，动作）；一个模块的翻译行是空的（资源，动作）；两个模块把同一对（资源，动作）配给不同的权限 | 登记一个声明过的权限并给它一条翻译行，或改掉冲突的模块行 |
 | `ErrPlatformDomainTaken` | 启动期 | 经 `tenant.Catalog` 核对出名册里有一个名为 `system` 的租户 | 改名册里的那个租户，平台域是保留值 |
 | `ErrUnknownRole` | 写入期 | `PutGrant`、`PutBinding` 里的角色在 `authz_roles` 里不存在 | 先建立角色，或改用已存在的角色 |
-| `ErrBuiltinRole` | 写入期 | 试图删除或修改 `builtin=true` 的角色 | 内置角色的权限不可改；给账户绑别的角色 |
+| `ErrBuiltinRole` | 写入期 | 试图删除或修改 `builtin=true` 的角色；`PutRole` 的记录携带 `builtin` 标记 | 内置角色的权限不可改；给账户绑别的角色。标记由 `Manager.MarkRoleBuiltin` 置位，角色写入不携带它 |
 | `ErrTenantMismatch` | 写入期 | adapter 从 `rule` 取出的租户与调用方给的租户不一致 | 一次写入只作用一个租户；核对调用点的租户 |
 | `ErrUndeclaredRoute` | 请求期 | 一条路由没有任何声明（既非 `Require` 也非 `Open`），`undeclared=closed` 下拒 | 为那条路由声明权限或登记为开放 |
 | `ErrPolicyUnavailable` | 请求期或启动期 | 引擎快照、存储读或启动自检不可用 | 依赖可用即恢复；成因进日志，应答不区分 |

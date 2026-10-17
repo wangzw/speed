@@ -321,7 +321,6 @@
       "create": {
         "roleLabel": "角色名",
         "descriptionLabel": "描述键",
-        "builtinLabel": "内建角色",
         "submit": "保存角色"
       },
       "manageGrants": "管理授权",

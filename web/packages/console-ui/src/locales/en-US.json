@@ -321,7 +321,6 @@
       "create": {
         "roleLabel": "Role name",
         "descriptionLabel": "Description key",
-        "builtinLabel": "Built-in role",
         "submit": "Save role"
       },
       "manageGrants": "Manage grants",

@@ -128,8 +128,11 @@ func TestManagerRefusesAnUnknownRole(t *testing.T) {
 // changed, and it cannot be rewritten.
 func TestManagerRefusesToChangeABuiltinRole(t *testing.T) {
 	f := newFixture(t)
-	if err := f.PutRole(t.Context(), authz.RoleRecord{Tenant: "system", Role: "operator", Builtin: true, DescriptionKey: "k"}); err != nil {
-		t.Fatalf("PutRole(builtin): %v", err)
+	if err := f.PutRole(t.Context(), authz.RoleRecord{Tenant: "system", Role: "operator", DescriptionKey: "k"}); err != nil {
+		t.Fatalf("PutRole: %v", err)
+	}
+	if err := f.MarkRoleBuiltin(t.Context(), "system", "operator"); err != nil {
+		t.Fatalf("MarkRoleBuiltin: %v", err)
 	}
 	if err := f.DeleteRole(t.Context(), "system", "operator"); !errors.Is(err, authz.ErrBuiltinRole) {
 		t.Errorf("DeleteRole on a builtin role gave %v, want ErrBuiltinRole", err)
@@ -183,6 +186,74 @@ func TestManagerStillChangesANonBuiltinRole(t *testing.T) {
 	}
 	if err := f.DeleteRole(t.Context(), tenant, "editor"); err != nil {
 		t.Errorf("DeleteRole on a non-builtin role: %v", err)
+	}
+}
+
+// A role write never carries the builtin mark, whether it creates or rewrites
+// the role. A role created with the mark could never receive the grants that
+// give it meaning, and a rewrite that could add it would turn any role into one
+// the management surface may neither rewrite nor delete, with no path back.
+func TestManagerRefusesARoleWriteCarryingTheBuiltinMark(t *testing.T) {
+	f := newFixture(t)
+	const tenant = "acme"
+
+	// A rewrite of an existing plain role cannot promote it.
+	if err := f.PutRole(t.Context(), authz.RoleRecord{Tenant: tenant, Role: "editor", DescriptionKey: "k"}); err != nil {
+		t.Fatalf("PutRole: %v", err)
+	}
+	err := f.PutRole(t.Context(), authz.RoleRecord{Tenant: tenant, Role: "editor", Builtin: true, DescriptionKey: "k"})
+	if !errors.Is(err, authz.ErrBuiltinRole) {
+		t.Errorf("PutRole promoting a plain role gave %v, want ErrBuiltinRole", err)
+	}
+	roles, err := f.Roles(t.Context(), tenant)
+	if err != nil {
+		t.Fatalf("Roles: %v", err)
+	}
+	if len(roles) != 1 || roles[0].Builtin {
+		t.Errorf("the refused rewrite changed the role's mark: %+v", roles)
+	}
+
+	// A creation cannot carry it either: builtin with no grants is a role
+	// whose permissions can never be written.
+	if err := f.PutRole(t.Context(), authz.RoleRecord{Tenant: tenant, Role: "frozen", Builtin: true, DescriptionKey: "k"}); !errors.Is(err, authz.ErrBuiltinRole) {
+		t.Errorf("PutRole creating a builtin role gave %v, want ErrBuiltinRole", err)
+	}
+	if roles, listErr := f.Roles(t.Context(), tenant); listErr != nil || len(roles) != 1 {
+		t.Errorf("the refused creation wrote a role: %+v, %v", roles, listErr)
+	}
+}
+
+// The builtin mark has its own write. It sets the mark on an existing role,
+// refuses one that is not there, and an already-marked role is no work.
+func TestManagerMarksARoleBuiltin(t *testing.T) {
+	f := newFixture(t)
+	const tenant = "acme"
+
+	if err := f.MarkRoleBuiltin(t.Context(), tenant, "ghost"); !errors.Is(err, authz.ErrUnknownRole) {
+		t.Errorf("MarkRoleBuiltin on an unknown role gave %v, want ErrUnknownRole", err)
+	}
+	if err := f.PutRole(t.Context(), authz.RoleRecord{Tenant: tenant, Role: "operator", DescriptionKey: "k"}); err != nil {
+		t.Fatalf("PutRole: %v", err)
+	}
+	if err := f.MarkRoleBuiltin(t.Context(), tenant, "operator"); err != nil {
+		t.Fatalf("MarkRoleBuiltin: %v", err)
+	}
+	if err := f.MarkRoleBuiltin(t.Context(), tenant, "operator"); err != nil {
+		t.Errorf("marking an already-builtin role again gave %v, want no error", err)
+	}
+	roles, err := f.Roles(t.Context(), tenant)
+	if err != nil {
+		t.Fatalf("Roles: %v", err)
+	}
+	if len(roles) != 1 {
+		t.Fatalf("Roles = %+v, want the one role", roles)
+	}
+	if !roles[0].Builtin {
+		t.Errorf("Roles = %+v, want the role marked builtin", roles)
+	}
+	// The mark leaves the rest of the record as it stood.
+	if roles[0].DescriptionKey != "k" {
+		t.Errorf("the mark changed the description key to %q, want it kept", roles[0].DescriptionKey)
 	}
 }
 

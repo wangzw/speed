@@ -88,6 +88,12 @@ write that lands answers 204 and no body.
   permission as a rule. A write that would delete a builtin role or change its
   permissions is a 409 — the target exists but cannot be changed — and the
   `Manager` judges that one.
+- **The role write body carries the description key only, never the builtin
+  mark.** The mark freezes a role for good — it cannot be rewritten, deleted or
+  granted afterwards, and no path clears it — so the management surface does not
+  set it: the host's seeding step does, through `Manager.MarkRoleBuiltin`. A
+  `builtin` member a client sends reaches nothing; the handler forwards a record
+  without it, and `PutRole` refuses a record that carries it.
 - **The refusal mapping is closed and fail-closed.** An unknown role and a
   tenant mismatch — a request that named something that is not there, or crossed
   a tenant — are 400s; a builtin role is a 409; any other failure of the `Manager`

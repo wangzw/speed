@@ -92,7 +92,8 @@ type Binding struct {
 }
 
 // RoleRecord is one role of the role table as it is read and written. Builtin
-// marks a role that cannot be deleted and whose permissions cannot be changed.
+// marks a role that cannot be deleted and whose permissions cannot be changed;
+// it is set only by Manager.MarkRoleBuiltin and read back as it stands.
 type RoleRecord struct {
 	Tenant         string
 	Role           Role

@@ -249,6 +249,11 @@ func (m *managerStub) PutRole(_ context.Context, r authz.RoleRecord) error {
 	return m.errNow()
 }
 
+func (m *managerStub) MarkRoleBuiltin(_ context.Context, tenant string, role authz.Role) error {
+	m.note(managerCall{op: "MarkRoleBuiltin", tenant: tenant, role: role})
+	return m.errNow()
+}
+
 func (m *managerStub) DeleteRole(_ context.Context, tenant string, role authz.Role) error {
 	m.note(managerCall{op: "DeleteRole", tenant: tenant, role: role})
 	return m.errNow()

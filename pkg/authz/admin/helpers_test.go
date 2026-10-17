@@ -111,6 +111,11 @@ func (m *stubManager) PutRole(_ context.Context, r authz.RoleRecord) error {
 	return m.errNow()
 }
 
+func (m *stubManager) MarkRoleBuiltin(_ context.Context, tenant string, role authz.Role) error {
+	m.record(managerCall{op: "MarkRoleBuiltin", tenant: tenant, role: role})
+	return m.errNow()
+}
+
 func (m *stubManager) DeleteRole(_ context.Context, tenant string, role authz.Role) error {
 	m.record(managerCall{op: "DeleteRole", tenant: tenant, role: role})
 	return m.errNow()

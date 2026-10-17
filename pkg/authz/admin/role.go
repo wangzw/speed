@@ -32,17 +32,20 @@ func (p *product) handleRoleList(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"roles": views})
 }
 
-// roleBody is the request of a role write: whether the role is builtin, and the
-// i18n key of its description.
+// roleBody is the request of a role write: the i18n key of the role's
+// description. The builtin mark is not part of the request — a client cannot
+// set it, and the field a client sends for it reaches nothing. The mark is
+// what freezes a role for good, so it is set by the host that seeds the policy
+// data through Manager.MarkRoleBuiltin, never by the management surface.
 type roleBody struct {
-	Builtin        bool   `json:"builtin"`
 	DescriptionKey string `json:"description_key"`
 }
 
 // handleRolePut answers PUT /authz/admin/tenants/:tenant/roles/:role: it creates
-// or rewrites a role. It is a write, so the action is role.manage. The mandatory
-// audit row lands before the manager is called; a builtin role the manager
-// refuses is a 409 with a failed row beside the permitted one.
+// or rewrites a role without the builtin mark. It is a write, so the action is
+// role.manage. The mandatory audit row lands before the manager is called; a
+// builtin role the manager refuses is a 409 with a failed row beside the
+// permitted one.
 func (p *product) handleRolePut(c *gin.Context) {
 	if _, ok := p.caller(c); !ok {
 		return
@@ -67,7 +70,6 @@ func (p *product) handleRolePut(c *gin.Context) {
 	record := authz.RoleRecord{
 		Tenant:         tenant,
 		Role:           role,
-		Builtin:        body.Builtin,
 		DescriptionKey: body.DescriptionKey,
 	}
 	if err := p.manager.PutRole(c.Request.Context(), record); err != nil {

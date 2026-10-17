@@ -290,11 +290,14 @@ export type ConsoleGrant = AuthzAdminGrantView
 /** One role binding an account holds in a tenant (GET .../bindings). */
 export type ConsoleBinding = AuthzAdminBindingView
 
-/** PUT .../roles/:role body: a role's declared shape. */
+/**
+ * PUT .../roles/:role body: a role's declared shape. There is no builtin
+ * field: the mark is the host's to set when it seeds the role, and the server
+ * refuses a role write that carries it.
+ */
 export interface ConsoleWriteRoleInput {
   readonly tenant: string
   readonly role: string
-  readonly builtin: boolean
   readonly descriptionKey: string
 }
 
@@ -1032,7 +1035,6 @@ export const consoleOperations: ConsoleOperations = {
     return useMutation({
       mutationFn: (input: ConsoleWriteRoleInput) =>
         authzAdminRolesPut(input.tenant, input.role, {
-          builtin: input.builtin,
           description_key: input.descriptionKey,
         }),
       onSuccess: (_answer, input) => {

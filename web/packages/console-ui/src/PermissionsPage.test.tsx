@@ -17,6 +17,7 @@ import type {
   ConsoleGrant,
   ConsolePermission,
   ConsoleRole,
+  ConsoleWriteRoleInput,
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
@@ -133,8 +134,10 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     expect(await screen.findByText('platform-admin')).toBeInTheDocument()
     // The reason is visible text, not a colour or a tooltip on a disabled
-    // control: a disabled button is skipped by keyboard and screen-reader
-    // navigation, which would leave the reason unreachable.
+    // control: a disabled button cannot be focused and drops out of the Tab
+    // order, so a tooltip or aria-describedby that depends on focus or hover is
+    // unreachable to keyboard-only users. The control is still in the
+    // accessibility tree; visible text sits in every reader's order.
     expect(screen.getByText('内建角色不可修改或删除')).toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: '管理授权（角色 platform-admin）' }),
@@ -176,21 +179,26 @@ describe('PermissionsPage', () => {
     }
   })
 
-  it('creates a role through the bundle', async () => {
+  it('creates a role through the bundle, without a builtin member', async () => {
     const user = userEvent.setup()
-    const written: string[] = []
+    const written: ConsoleWriteRoleInput[] = []
     const operations = withAuthz({
       writeRole: (input) => {
-        written.push(input.role)
+        written.push(input)
         return Promise.resolve()
       },
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
+    // The form offers no builtin control: the mark freezes a role for good and
+    // is the host's to set when it seeds the role, not the console's.
+    expect(screen.queryByRole('checkbox', { name: '内建角色' })).toBeNull()
     await user.type(screen.getByLabelText('角色名'), 'auditor')
     await user.click(screen.getByRole('button', { name: '保存角色' }))
     await vi.waitFor(() => {
-      expect(written).toEqual(['auditor'])
+      expect(written).toEqual([
+        { tenant: 'acme', role: 'auditor', descriptionKey: '' },
+      ])
     })
     // The landed create fills the page's standing success region.
     expect(await screen.findByText('角色已保存')).toBeInTheDocument()

@@ -157,16 +157,23 @@ func bindingsOf(rows []bindingRow) []authz.Binding {
 	return out
 }
 
-// PutRole creates or rewrites a role. An existing builtin role is refused: a
-// builtin role's shape is fixed, and rewriting it would change what it means.
+// PutRole creates or rewrites a role without the builtin mark. A record that
+// carries the mark is refused: the mark is what freezes a role, and a role
+// created with it could never receive the grants that give it meaning (every
+// grant write on a builtin role is refused), so MarkRoleBuiltin is the one
+// path that sets it. An existing builtin role is refused as well: its shape is
+// fixed, and rewriting it would change what it means.
 func (p *product) PutRole(ctx context.Context, r authz.RoleRecord) error {
 	if err := requireTenant(r.Tenant); err != nil {
 		return err
 	}
+	if r.Builtin {
+		return fmt.Errorf("%w: the role %q of tenant %q cannot be written with the builtin mark; "+
+			"MarkRoleBuiltin sets it once the grants are in place", authz.ErrBuiltinRole, r.Role, r.Tenant)
+	}
 	row := roleRow{
 		Model:          tenancy.Model{TenantID: tenancy.ID(r.Tenant)},
 		Role:           string(r.Role),
-		Builtin:        r.Builtin,
 		DescriptionKey: r.DescriptionKey,
 		CreatedAt:      r.CreatedAt.UTC(),
 	}
@@ -183,7 +190,7 @@ func (p *product) PutRole(ctx context.Context, r authz.RoleRecord) error {
 		}
 		if err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "role"}},
-			DoUpdates: clause.AssignmentColumns([]string{"builtin", "description_key"}),
+			DoUpdates: clause.AssignmentColumns([]string{"description_key"}),
 		}).Create(&row).Error; err != nil {
 			return fmt.Errorf("authz/policy: writing the role %q of tenant %q: %w", r.Role, r.Tenant, err)
 		}
@@ -191,6 +198,50 @@ func (p *product) PutRole(ctx context.Context, r authz.RoleRecord) error {
 	})
 	if err != nil {
 		return err
+	}
+	return p.afterWrite(ctx)
+}
+
+// MarkRoleBuiltin freezes an existing role: it sets the builtin mark, after
+// which the management surface and this manager refuse to rewrite or delete
+// the role and to change its grants. It is the only write that sets the mark;
+// PutRole refuses a record carrying it, because a builtin role created that way
+// could never receive the grants that give it meaning.
+//
+// The caller is the host writing the policy data it owns: the demo seed marks
+// the administrator role once its grants are in place, and the mark keeps that
+// role — which holds every declared permission — off the management surface's
+// delete and rewrite paths. An already-builtin role is no work and no error;
+// an absent one is ErrUnknownRole.
+func (p *product) MarkRoleBuiltin(ctx context.Context, tenant string, role authz.Role) error {
+	if err := requireTenant(tenant); err != nil {
+		return err
+	}
+	changed := false
+	err := p.write(ctx, func(tx *gorm.DB) error {
+		builtin, found, err := roleState(ctx, tx, tenant, role)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return fmt.Errorf("%w: the role %q of tenant %q was not created", authz.ErrUnknownRole, role, tenant)
+		}
+		if builtin {
+			return nil
+		}
+		if err := tx.Model(&roleRow{}).
+			Where("tenant_id = ? AND role = ?", tenant, string(role)).
+			Update("builtin", true).Error; err != nil {
+			return fmt.Errorf("authz/policy: marking the role %q of tenant %q builtin: %w", role, tenant, err)
+		}
+		changed = true
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if !changed {
+		return nil
 	}
 	return p.afterWrite(ctx)
 }
