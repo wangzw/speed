@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -14,9 +15,11 @@ import (
 // The dispatch selects an endpoint by the path prefixes the configuration
 // gives its endpoints, and the claims are the product's fixed namespace map: a
 // capability dropped from a run, or from the imports, keeps its namespace
-// claimed. These cases hold the map to the platform's API surface, so a
-// namespace that lost its claim is reported here rather than showing through
-// an anonymous answer.
+// claimed. These cases hold the map to the platform's API surface in both
+// directions: a namespace that lost its claim is reported here rather than
+// showing through an anonymous answer, and a namespace claimed from outside
+// the map is reported too — the frontend's page paths depend on no non-root
+// claim covering them.
 //
 // Two documents are read. The served /openapi.json is the available set of
 // this binary — the fragments of every module the imports reach, whether or
@@ -275,6 +278,59 @@ func checkClaimsCover(t *testing.T, configName, documentName string,
 	}
 }
 
+// platformListener is the listener expectedOwners describes: the one carrying
+// the api, account, admin and web endpoints.
+const platformListener = "backend"
+
+// checkClaimsExact holds one configuration's claim table to the platform's
+// ownership table in the direction checkClaimsCover does not read: on the
+// backend listener, the non-root prefixes and the endpoint each belongs to
+// have to equal expectedOwners. checkClaimsCover reports a namespace that lost
+// its claim; this reports a namespace claimed from outside the table. Such a
+// claim is invisible to every other case — the frontend matches its routes
+// against the manifest, not against the configuration — and at run time the
+// claiming endpoint answers paths the platform leaves to the bundle.
+func checkClaimsExact(t *testing.T, configName string, claims map[string]endpointClaim) {
+	t.Helper()
+	claimed := map[string][]string{}
+	for endpoint, claim := range claims {
+		if claim.listener != platformListener {
+			continue
+		}
+		for _, prefix := range claim.prefixes {
+			if prefix == "/" {
+				continue
+			}
+			claimed[prefix] = append(claimed[prefix], endpoint)
+		}
+	}
+	for prefix := range claimed {
+		sort.Strings(claimed[prefix])
+	}
+	for prefix, owner := range expectedOwners {
+		endpoints, ok := claimed[prefix]
+		switch {
+		case !ok:
+			t.Errorf("%s: no endpoint on the %s listener claims %q, which the ownership table gives to %q",
+				configName, platformListener, prefix, owner)
+		case len(endpoints) > 1:
+			t.Errorf("%s: the %s listener claims %q from more than one endpoint (%s), and the ownership table gives it to %q",
+				configName, platformListener, prefix, strings.Join(endpoints, ", "), owner)
+		case endpoints[0] != owner:
+			t.Errorf("%s: the %s listener claims %q for %q, but the ownership table gives it to %q",
+				configName, platformListener, prefix, endpoints[0], owner)
+		}
+	}
+	for prefix, endpoints := range claimed {
+		if _, owned := expectedOwners[prefix]; owned {
+			continue
+		}
+		t.Errorf("%s: %s claims %q on the %s listener, which the ownership table gives to no endpoint: "+
+			"paths under it would reach that endpoint instead of the bundle",
+			configName, strings.Join(endpoints, ", "), prefix, platformListener)
+	}
+}
+
 // quote wraps a value in double quotes for a failure message.
 func quote(value string) string { return `"` + value + `"` }
 
@@ -308,13 +364,32 @@ func guardedEndpointSet(t *testing.T) map[string]bool {
 	return guarded
 }
 
+// namedClaims is one configuration's claim table under the name the failure
+// messages use.
+type namedClaims struct {
+	name   string
+	claims map[string]endpointClaim
+}
+
 // checkPlatformClaims reads the two documents and holds every configuration to
 // them: the one the case is running, and the six samples a copy starts from.
+// Each configuration is also held to the ownership table itself, in both
+// directions.
 func checkPlatformClaims(t *testing.T, locator string, served []byte) {
 	t.Helper()
 	contract, err := os.ReadFile(filepath.Clean(platformContractPath))
 	if err != nil {
 		t.Fatalf("reading the committed platform contract: %v", err)
+	}
+	configurations := []namedClaims{
+		{"the case's configuration", claimsFromFile(t, configFilePath(locator))},
+	}
+	for _, sample := range testdataFiles {
+		configurations = append(configurations,
+			namedClaims{"testdata/" + sample, claimsFromFile(t, filepath.Join("testdata", sample))})
+	}
+	for _, configuration := range configurations {
+		checkClaimsExact(t, configuration.name, configuration.claims)
 	}
 	documents := []struct {
 		name string
@@ -326,11 +401,9 @@ func checkPlatformClaims(t *testing.T, locator string, served []byte) {
 	for _, document := range documents {
 		operations := documentedOperations(t, document.name, document.body)
 		fragments := fragmentEndpoints(t, document.name, document.body)
-		checkClaimsCover(t, "the case's configuration", document.name,
-			claimsFromFile(t, configFilePath(locator)), operations, fragments)
-		for _, sample := range testdataFiles {
-			checkClaimsCover(t, "testdata/"+sample, document.name,
-				claimsFromFile(t, filepath.Join("testdata", sample)), operations, fragments)
+		for _, configuration := range configurations {
+			checkClaimsCover(t, configuration.name, document.name,
+				configuration.claims, operations, fragments)
 		}
 	}
 }
