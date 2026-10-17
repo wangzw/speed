@@ -9,8 +9,8 @@ coarse-pointer 44px floor for the base controls, `AppThemeProvider`
 `AppThemeMode` -- `'light'`/`'dark'` -- is read and flipped through
 `useAppThemeMode`, the dark surface reading the neutral ramp from its dark
 end), and the controlled
-components (`PageHeader`, `EmptyState`, `ConfirmDialog`, `FormField`,
-`FormLayout`, `DataTable`, `FileUploader`, `InlineError`,
+components (`PageHeader`, `EmptyState`, `ConfirmDialog`, `SidePanel`,
+`FormField`, `FormLayout`, `DataTable`, `FileUploader`, `InlineError`,
 `InlineSuccess`, `ListSkeleton`, `AsyncSection`) that render only the
 state hosts give them, plus the form family's zod validation bridge
 (`zodFormResolver`) and the shared state primitives (`errorCodeOf`, the
@@ -60,6 +60,10 @@ plumbing and deliberately not exported.
   every knob is a prop the host owns and a callback the component
   fires. Interaction-only state (a confirm's arming, a tooltip's open)
   is the allowed exception and must be provably interaction-local.
+  `SidePanel` follows the same contract: `open` and `busy` are host
+  props, the close button, Escape and backdrop clicks only report
+  `onClose`, and the exit lifecycle reports `onExited` after the
+  transition — the panel never closes itself and holds no state.
   `FileUploader` keeps that contract too: the queue is the host's
   `rows` state, interactions report up through its callbacks, and the
   upload transport is host code — never package code.

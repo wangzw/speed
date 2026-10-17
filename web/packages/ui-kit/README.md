@@ -4,7 +4,7 @@ The platform's first DOM-rendering package: the theme factory that turns
 `@speed/tokens` into an MUI v9 theme (`createAppTheme`,
 `AppThemeProvider`; the theme also carries the coarse-pointer 44x44
 floor for MUI's base controls), and the controlled components (`PageHeader`,
-`EmptyState`, `ConfirmDialog`, `FileUploader`, `FormField`,
+`EmptyState`, `ConfirmDialog`, `SidePanel`, `FileUploader`, `FormField`,
 `FormLayout`, `DataTable`, `InlineError`, `InlineSuccess`, `ListSkeleton`,
 `AsyncSection`) that render only the state hosts give them --
 FileUploader renders the upload queue the host owns as `rows` props
@@ -31,6 +31,7 @@ string lives in the bilingual `ui-kit` namespace registered through
 | `components/PageHeader.tsx` | `PageHeader`, `PageHeaderProps`, `PageHeaderBreadcrumb` |
 | `components/EmptyState.tsx` | `EmptyState`, `EmptyStateProps`, `EmptyStateVariant`, `EmptyStateHeadingLevel`, `EmptyStateNoHeading` |
 | `components/ConfirmDialog.tsx` | `ConfirmDialog`, `ConfirmDialogProps`, `ConfirmDialogVariant`, `CONFIRM_ARM_LOCKOUT_MS` |
+| `components/SidePanel.tsx` | `SidePanel`, `SidePanelProps`, `SidePanelSize` |
 | `components/FileUploader.tsx` | `FileUploader`, `FileUploaderProps`, `FileUploaderRow`, `FileUploaderRowStatus` |
 | `components/FormField.tsx` | `FormField`, `FormFieldProps`, `FormFieldRenderState`, `REQUIRED_ERROR_KEY` |
 | `components/FormLayout.tsx` | `FormLayout`, `FormLayoutProps`, `FormLayoutColumns` |
@@ -471,6 +472,59 @@ covers the confirm button alone -- Cancel, Escape and the backdrop stay
 live throughout it. Hosts should pass the real business content as
 `title`/`message` (any ReactNode, so their own translations flow
 naturally); buttons fall back to namespace defaults.
+
+### SidePanel
+
+The controlled modal side panel for a secondary task that needs more
+room than a dialog but still lets the operator refer to the page behind
+it -- a list row's detail, a create form wider than a confirmation.
+`open` shows it; the close button, Escape and a backdrop click all report
+`onClose` and nothing closes itself, so the host may refuse a close (an
+unsaved-content guard, a confirmation first). `busy` makes all three
+close paths inert: the close button is disabled and Escape and backdrop
+clicks do not report. `onExited` fires once after the exit transition,
+when the content has unmounted; during the exit the panel renders
+whatever children the host gave it, so a host that clears its content in
+the same state batch as the close gets a blank slide-out, and one that
+needs the content until the end clears it in `onExited`.
+
+The panel is anchored to the right edge and fills the viewport height.
+Its header (title, optional description, close control) is fixed and the
+content area is the only scroll layer. `size` picks the width tier from
+the viewport's `sm` up -- `'medium'` (the default) is 36rem, `'wide'` is
+52rem -- and below `sm` the panel fills the viewport width. The panel
+stacks at `theme.zIndex.modal`, above the AppShell AppBar (which sits at
+`theme.zIndex.drawer + 1`); dialogs use the same tier and sit above an
+open panel by mounting later.
+
+The title renders as an `h2` (the page heading is `PageHeader`'s `h1`,
+so the panel's own sections continue at `h3`) and names the dialog;
+`description`, when given, becomes its accessible description. `title`
+and `description` are host content -- pass them already translated. The
+close control's accessible name comes from `closeLabel`, defaulting to
+the namespace's `sidePanel.closeLabel`. Focus follows MUI's modal
+behaviour: opening moves focus into the panel, Tab loops inside it, and
+closing restores focus to the opener; if the opener has left the
+document, focus falls back to `body` and the host places it in
+`onExited`.
+
+```tsx
+<SidePanel
+  open={selectedId !== null}
+  title="Account details"
+  description="Review the account and its sessions."
+  size="wide"
+  busy={saving}
+  onClose={() => setSelectedId(null)}
+  onExited={() => setSavedNotice(null)}
+>
+  <AccountDetail id={selectedId} />
+</SidePanel>
+```
+
+Props: `open`, `title` (required), `description?`, `size?`, `busy?`,
+`closeLabel?`, `children`; callbacks `onClose` (required), `onExited`
+(required).
 
 ### The form family (FormField + FormLayout)
 
@@ -926,6 +980,7 @@ live). The full key set:
 | `confirmDialog.message` | generic caution text | host `message` overrides |
 | `confirmDialog.confirmLabel` / `cancelLabel` | button defaults | host labels override |
 | `confirmDialog.confirmAgainLabel` | danger double-confirm second click | |
+| `sidePanel.closeLabel` | close control's accessible name | `closeLabel` overrides |
 | `form.required` | required-rule message | `REQUIRED_ERROR_KEY` |
 | `form.invalid` | generic invalid-value message | |
 | `pageHeader.breadcrumbNav` | breadcrumb nav landmark accessible name | |

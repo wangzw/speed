@@ -20,6 +20,9 @@
     "cancelLabel": "Cancel",
     "confirmAgainLabel": "Click again to confirm"
   },
+  "sidePanel": {
+    "closeLabel": "Close"
+  },
   "fileUploader": {
     "chooseFiles": "Choose files",
     "dropOrChoose": "Choose files, or drag them here",

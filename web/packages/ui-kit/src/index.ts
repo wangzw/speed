@@ -4,7 +4,7 @@
  * Two kinds of things ship here: the theme factory (createAppTheme,
  * AppThemeProvider) that turns @speed/tokens into a MUI v9 theme, and the
  * fully controlled components (PageHeader, EmptyState, ConfirmDialog,
- * FormField, FormLayout, DataTable, FileUploader, InlineError,
+ * SidePanel, FormField, FormLayout, DataTable, FileUploader, InlineError,
  * InlineSuccess, ListSkeleton, AsyncSection) with their ui-kit-namespace
  * translations (UI_KIT_NAMESPACE + uiKitResources) for the host to register —
  * FileUploader renders the queue the host owns as `rows` props while
@@ -53,6 +53,11 @@ export {
   type ConfirmDialogProps,
   type ConfirmDialogVariant,
 } from './components/ConfirmDialog.js'
+export {
+  SidePanel,
+  type SidePanelProps,
+  type SidePanelSize,
+} from './components/SidePanel.js'
 export {
   FormField,
   REQUIRED_ERROR_KEY,

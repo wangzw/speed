@@ -1,6 +1,6 @@
 /**
- * Hand-authored geometric icons for EmptyState's built-in variants and
- * the DataTable copy control.
+ * Hand-authored geometric icons for EmptyState's built-in variants, the
+ * DataTable copy control and SidePanel's close control.
  *
  * Drawn as 24px-grid strokes in currentColor so they follow whatever
  * text color the surrounding theme paints -- no icon-font dependency,
@@ -112,6 +112,25 @@ export function ErrorIcon({ size = 40 }: IconProps) {
       <circle cx="12" cy="12" r="8.5" />
       <path d="M12 7.6v5.6" />
       <path d="M12 16.9h0.01" strokeWidth={2.4} />
+    </svg>
+  )
+}
+
+export function CloseIcon({ size = 20 }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+    >
+      <path d="M6 6l12 12" />
+      <path d="M18 6L6 18" />
     </svg>
   )
 }
