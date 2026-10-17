@@ -161,10 +161,14 @@ func TestAnImpersonationRecordWithNoCapabilityIsDenied(t *testing.T) {
 	if got := outcomeOf(v); got.String() != "denied" {
 		t.Errorf("a session naming a record with no capability to ask is %s, want denied", got)
 	}
-	// And without a record it is no refusal.
+	// And without a record it is no refusal. Ending keeps the token, so the one
+	// the attach returned is still the one the browser holds.
 	cleared, err := f.p.SetImpersonation(context.Background(), issued.ID, "")
 	noErr(t, err)
-	if got := outcomeOf(f.verify(cleared.Token)); got.String() != "authenticated" {
+	if cleared.Token != "" {
+		t.Errorf("ending the record returned a new token %q, want none", cleared.Token)
+	}
+	if got := outcomeOf(f.verify(attached.Token)); got.String() != "authenticated" {
 		t.Errorf("the same session without a record is %s", got)
 	}
 }

@@ -220,7 +220,7 @@ func TestStatusReturnsTheRecordInForceAndNotFoundWithout(t *testing.T) {
 }
 
 // TestEndOverCookieClearsTheMarker holds the delete route: the record ends and,
-// under a cookie, the marker is cleared and a fresh cookie written.
+// under a cookie, the marker is cleared without a new token or a cookie.
 func TestEndOverCookieClearsTheMarker(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.mounter.As(adminOpts()...)
@@ -229,6 +229,8 @@ func TestEndOverCookieClearsTheMarker(t *testing.T) {
 			t.Fatalf("the start answered %d", w.Code)
 		}
 		r.sessions.setCalls = nil
+		// The start wrote a cookie; the delete is what this case is about.
+		r.sessions.cookie = false
 
 		r.mounter.As(impersonatingOpts(sessionBackend)...)
 		w := r.mounter.Do(httptest.NewRequest(http.MethodDelete, "/auth/impersonation", nil))
@@ -238,8 +240,8 @@ func TestEndOverCookieClearsTheMarker(t *testing.T) {
 		if len(r.sessions.setCalls) != 1 || r.sessions.setCalls[0] != "" {
 			t.Errorf("the delete cleared the marker with %v, want one empty set", r.sessions.setCalls)
 		}
-		if !r.sessions.cookie {
-			t.Error("the delete wrote no cookie")
+		if r.sessions.cookie {
+			t.Error("the delete wrote a cookie, want none: ending keeps the token and the cookie")
 		}
 	})
 }

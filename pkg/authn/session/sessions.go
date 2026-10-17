@@ -364,12 +364,15 @@ func (p *product) Elevate(ctx context.Context, id authn.SessionID, e authn.Eleva
 }
 
 // SetImpersonation sets the impersonation record attached to the session, the
-// empty string ending it, and gives a browser session a new token.
+// empty string ending it. Attaching a record gives a browser session a new
+// token; ending one only clears the marker, and the token and its expiry stay,
+// so a request still in flight with the token when the record ends is not
+// refused.
 func (p *product) SetImpersonation(ctx context.Context, id authn.SessionID, grantID string) (authn.Issued, error) {
 	if len(grantID) > maxGrantIDLen || strings.IndexFunc(grantID, unicode.IsControl) >= 0 {
 		return authn.Issued{}, fmt.Errorf("%w: the record identifier is not well formed", authn.ErrInvalidArgument)
 	}
-	return p.change(ctx, id, change{rotate: true, impersonation: &grantID})
+	return p.change(ctx, id, change{rotate: grantID != "", impersonation: &grantID})
 }
 
 // change is one conditional update of a session row, with a new token for a

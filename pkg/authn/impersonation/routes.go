@@ -172,9 +172,11 @@ func (m *product) handleStatus(c *gin.Context) {
 }
 
 // handleEnd answers DELETE /impersonation: it ends the record on the caller's
-// session, then, under a cookie, clears the session's marker and writes a fresh
-// cookie. A failure to clear the marker does not bring the record back: the
-// record has ended and a verifying backend reads Active as false.
+// session, then, under a cookie, clears the session's marker without rotating
+// the token or writing a cookie, so the caller's cookie stays valid with the
+// initiator's own identity. A failure to clear the marker does not bring the
+// record back: the record has ended and a verifying backend reads Active as
+// false.
 func (m *product) handleEnd(c *gin.Context) {
 	ctx := c.Request.Context()
 	id, ok := authn.FromContext(ctx)
@@ -191,13 +193,9 @@ func (m *product) handleEnd(c *gin.Context) {
 		return
 	}
 	if id.Backend() == sessionBackend && id.Session() != "" {
-		issued, err := m.sessions.SetImpersonation(ctx, id.Session(), "")
-		switch {
-		case err != nil:
+		if _, err := m.sessions.SetImpersonation(ctx, id.Session(), ""); err != nil {
 			m.logger.Error(ModuleName+": clearing the impersonation marker of a session failed",
 				slog.String("cause", err.Error()))
-		default:
-			m.sessions.SetCookie(c.Writer, issued)
 		}
 	}
 	c.Status(http.StatusNoContent)

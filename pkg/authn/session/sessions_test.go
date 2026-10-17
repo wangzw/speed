@@ -745,8 +745,14 @@ func TestSetImpersonationAttachesAndEndsARecord(t *testing.T) {
 
 		ended, err := f.p.SetImpersonation(ctx, issued.ID, "")
 		noErr(t, err)
-		if ended.Token == "" || ended.Token == attached.Token {
-			t.Errorf("ending an impersonation did not rotate: %+v", ended)
+		if ended.Token != "" {
+			t.Errorf("ending an impersonation rotated the token: %+v", ended)
+		}
+		if got := f.row(issued.ID).TokenHash.String; got == "" {
+			t.Error("ending an impersonation cleared the token hash")
+		}
+		if got := outcomeOf(f.verify(attached.Token)).String(); got != "authenticated" {
+			t.Errorf("the token in force before the end verifies as %s, want authenticated", got)
 		}
 		if f.row(issued.ID).ImpersonationID.Valid {
 			t.Error("impersonation_id is not NULL after the record was ended")
