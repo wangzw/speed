@@ -600,6 +600,52 @@ describe('PermissionsPage', () => {
     expect(await screen.findByText('角色「editor」已删除')).toBeInTheDocument()
   })
 
+  it('judges the deleted role against the selection current when the removal settles', async () => {
+    const user = userEvent.setup()
+    const removal = deferred<void>()
+    const operations = withAuthz({
+      listRoles: () =>
+        Promise.resolve([role({ role: 'alpha' }), role({ role: 'beta' })]),
+      removeRole: () => removal.promise,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByRole('button', { name: '删除角色 beta' })
+
+    // The removal is confirmed while beta is the selected role.
+    await user.click(
+      screen.getByRole('button', { name: '管理授权（角色 beta）' }),
+    )
+    expect(await screen.findByText('角色「beta」的授权')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '删除角色 beta' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '删除' }))
+    await act(async () => {
+      await new Promise((resolve) =>
+        setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
+      )
+    })
+    await user.click(
+      within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
+    )
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    // While the deletion is in flight the operator moves to alpha. The
+    // settlement must clear a selection only if it still names beta.
+    await user.click(
+      screen.getByRole('button', { name: '管理授权（角色 alpha）' }),
+    )
+    expect(await screen.findByText('角色「alpha」的授权')).toBeInTheDocument()
+
+    await act(async () => {
+      removal.resolve()
+    })
+    await vi.waitFor(() =>
+      expect(screen.queryByText('角色「beta」已删除')).toBeInTheDocument(),
+    )
+    expect(screen.getByText('角色「alpha」的授权')).toBeInTheDocument()
+  })
+
   it('closes the delete dialog on confirm and reports a refusal in the page region', async () => {
     const user = userEvent.setup()
     const operations = withAuthz({

@@ -48,7 +48,7 @@
  * it. The page opens with ui-kit's PageHeader.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import MenuItem from '@mui/material/MenuItem'
@@ -156,6 +156,14 @@ export function PermissionsPage() {
 
   const [tenant, setTenant] = useState(tenantFromLocation)
   const [selectedRole, setSelectedRole] = useState('')
+  // A removal settles after the confirmation dialog has closed, and the
+  // operator may have moved to another role in between. The settlement
+  // judges the selection as it stands then, not the one the click captured
+  // in its closure.
+  const selectedRoleRef = useRef(selectedRole)
+  useEffect(() => {
+    selectedRoleRef.current = selectedRole
+  }, [selectedRole])
 
   // Role create/rewrite draft. There is no builtin toggle: the mark is the
   // host's to set when it seeds the role, and a role write carrying it is
@@ -311,7 +319,7 @@ export function PermissionsPage() {
         void roleFeedback.run(async () => {
           try {
             await removeRole.mutateAsync({ tenant, role: role.role })
-            if (selectedRole === role.role) {
+            if (selectedRoleRef.current === role.role) {
               setSelectedRole('')
               grantsFeedback.reset()
               setFailedGrant(null)
