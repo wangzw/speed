@@ -56,6 +56,23 @@
 - **设置页**：二级导航（比主侧栏窄）与一张占满内容区的表并列，底部固定一条保存条。
 - **仪表盘**：一行等宽的指标卡，其下是图表区与活动列表。
 
+### 次级任务的容器
+
+控制台页内的次级任务按下列性质选容器：任务是否需要立即决策，任务是否有自己的地址；其余留在页内的任务再按操作者是否需要参照背后的页面分流。
+
+- **对话框**（ui-kit 的 `ConfirmDialog`）：需要立即决策、内容限于一段说明与确认动作的任务，例如确认移除、确认丢弃、步进验证。
+- **侧边面板**（ui-kit 的 `SidePanel`）：任务需要比对话框更多的空间，且操作者在其间仍需参照背后的页面，例如查看列表行的详情、填写字段超出一两行的创建表单。
+- **整页**：任务有自己的地址，需要被链接或在新窗口打开，或要占满内容区才摆得下，例如租户详情、审计详情。
+
+下列约束绑定每一个侧边面板：
+
+- **侧边面板与导航抽屉是两种东西。** 导航抽屉是外壳的 `nav` 地标，随视口在常驻与临时之间切换；侧边面板是页内任务的容器，是带可及名的 `dialog`，只在页面发起任务时出现。
+- **侧边面板是模态的、锚定视口右缘的覆盖层。** 它占满视口高度，打开时背后的页面被遮罩盖住、不可交互，并对辅助技术不可见。
+- **层级自下而上为内容区、顶栏、侧边面板、对话框。** 顶栏取主题 `zIndex.drawer + 1`（[layout-kit](design-web-layout-kit.md)），侧边面板取 `zIndex.modal`，使面板的头部不被顶栏遮挡；对话框同取 `zIndex.modal`，挂载晚于面板而位于其上。
+- **宽度取档按视口，不按容器。** 面板是锚定视口的覆盖层，不在内容区的流里；它在 `sm` 及以上取所选档位的固定宽度，`sm` 以下占满视口宽度。面板内的组件（`FormLayout`、`DataTable`）仍按各自的容器响应，面板的宽度档因此决定其内的表单取一列还是两列。
+- **同一页面同时打开的侧边面板至多一个，面板内不再打开另一个面板。** 面板内需要二次确认或步进验证时用对话框；需要更重的流程时该流程升为整页。
+- **面板的打开状态是页内状态，不进路由，不进 URL。** 刷新页面回到未打开的状态（[ADR-web-side-panel-2026-10-17](../../../adr/adr-web-side-panel-2026-10-17.md)）。
+
 ### 断点标度
 
 断点取值来自 tokens 的 `breakpoints.values`，等于所安装 MUI 主题的默认值（[tokens](design-web-tokens.md) 把这一相等钉住），标签为 `xs`、`sm`、`md`、`lg`、`xl`。响应式只在既有标度上取区间；新增数值刻度是对本设计的偏离。
@@ -78,6 +95,7 @@
 - **数据表**：先隐藏低优先级列，仍放不下时在容器内横向滚动兜底。短值列与标识符列按列声明不折行，单元格因此不会被拆行压扁；内容撑不住容器宽度时，滚动兜底才实际发生。
 - **表单**：由多列收为单列。
 - **卡片网格**：由多列收为单列；档位取网格所在容器的宽度，不取视口。
+- **侧边面板**：从定宽收为占满视口宽度，档位取视口的 `sm`。
 
 ## 依赖
 
@@ -149,6 +167,7 @@ graph TD
 | 仪表盘骨架 | 已实现 | `web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage` |
 | 数据表的列优先级降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx` |
 | 数据表超宽的容器内滚动兜底 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable` |
+| 侧边面板的层级与视口宽度档 | 未实现 | — |
 | 卡片网格的多列收为单列 | 已实现 | `starters/demo/web/src/pages/home-page.tsx` `HomePage` |
 | 数据表按列的折行策略 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnCellWrapSx` |
 | 组件级容器查询 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx`；`starters/demo/web/src/pages/home-page.tsx` `HomePage` |
