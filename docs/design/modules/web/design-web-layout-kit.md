@@ -125,7 +125,7 @@ export const layoutKitResources: Readonly<Record<string, ResourceBundle>>
 | `@mui/material` | peer（必需） | `AppBar`、`Drawer`、`CircularProgress` 与经 `useTheme()` 读取的环境主题（断点、z-index） |
 | `@emotion/react`、`@emotion/styled` | peer（必需） | MUI 的运行时要求 |
 | `@speed/i18n` | dependency | 命名空间注册与翻译 hook |
-| `@speed/ui-kit` | dependency | `RouteGuard` 缺省拒绝态的 `EmptyState`；`AppShell` 收起窄栏的 `touchTargetSx`（触控目标下限）与 `visuallyHiddenSx`（裁剪标签保留可及名） |
+| `@speed/ui-kit` | dependency | `RouteGuard` 缺省拒绝态的 `EmptyState`；`AppShell` 收起窄栏的 `visuallyHiddenSx`（裁剪标签保留可及名）。触摸目标下限由主题层对基础控件统一给出，本包不逐处指定 |
 
 **方向是自下而上。** 本包位于 `@speed/i18n` 与 `@speed/ui-kit` 之上，被 `@speed/product-shell` 取用。**本包不 import `@speed/auth-core`、`@speed/api-client`、`@speed/api-sdk`**，也不 import 任何具体认证或路由包；`web/eslint.config.mjs` 的 `speed/no-direct-http` 规则（白名单只有 `api-client`）使本包无处可发起请求。**不直接依赖 `@speed/tokens`**：`AppShell` 经环境 MUI 主题读 `breakpoints.values` 与 `zIndex.values`，与 `ui-kit` 自家组件一致，二者都已是 MUI 同值缺省。
 

@@ -104,7 +104,7 @@ import ListItemText from '@mui/material/ListItemText'
 import Toolbar from '@mui/material/Toolbar'
 import Tooltip from '@mui/material/Tooltip'
 import useMediaQuery from '@mui/material/useMediaQuery'
-import { touchTargetSx, visuallyHiddenSx } from '@speed/ui-kit'
+import { visuallyHiddenSx } from '@speed/ui-kit'
 import { useLayoutKitTranslation } from '../internal/translation.js'
 import {
   ChevronLeftIcon,
@@ -360,12 +360,11 @@ function NavItemRow({
   // rail's own width cannot afford it).
   const indentSx = indented && !narrow ? { pl: 4 } : undefined
   const hasIcon = item.icon !== undefined
-  const contentSx =
-    narrow
-      ? [hasIcon ? railIconItemSx : railTextItemSx, touchTargetSx]
-      : indentSx === undefined
-        ? touchTargetSx
-        : [indentSx, touchTargetSx]
+  const contentSx = narrow
+    ? hasIcon
+      ? railIconItemSx
+      : railTextItemSx
+    : indentSx
   const iconSx = narrow && hasIcon ? railIconSx : undefined
   // In the rail an entry WITH an icon hides its label (the icon speaks,
   // the tooltip names it); an entry WITHOUT one keeps the label visible,
@@ -482,7 +481,7 @@ function NavGroupItem({
           // A group heading carries no icon, so in the rail it takes the
           // text fallback (its heading stays visible) rather than
           // centering around an absent icon.
-          sx={narrow ? [railTextItemSx, touchTargetSx] : touchTargetSx}
+          sx={narrow ? railTextItemSx : undefined}
         >
           <ListItemText
             primary={group.label}
@@ -750,7 +749,7 @@ export function AppShell({
               aria-label={mobileOpen ? t('appShell.closeNav') : t('appShell.openNav')}
               aria-expanded={mobileOpen}
               onClick={() => setMobileOpen(!mobileOpen)}
-              sx={[touchTargetSx, { marginRight: 2 }]}
+              sx={{ marginRight: 2 }}
             >
               {mobileOpen ? <CloseIcon /> : <MenuIcon />}
             </IconButton>
@@ -768,7 +767,7 @@ export function AppShell({
               onClick={() =>
                 onSidebarCollapsedChange?.(!sidebarCollapsed)
               }
-              sx={[touchTargetSx, { marginRight: 2 }]}
+              sx={{ marginRight: 2 }}
             >
               {sidebarCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
             </IconButton>
