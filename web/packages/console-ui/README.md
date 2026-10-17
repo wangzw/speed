@@ -128,8 +128,9 @@ feature-gated control without importing the host's session package.
 | `resources.ts` | `CONSOLE_UI_NAMESPACE`, `consoleUiResources` |
 
 Everything else (`src/internal/`) is shared plumbing -- the error-text
-resolver, the `InlineError` binding, the translation hook, the tenant
-selector and the timestamp formatter -- and is deliberately not exported.
+resolver, the `InlineError` and `WriteFeedbackRegion` bindings, the
+translation hook, the tenant selector and the timestamp formatter -- and
+is deliberately not exported.
 
 ## Quick start
 
