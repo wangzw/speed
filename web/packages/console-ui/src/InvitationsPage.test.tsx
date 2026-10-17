@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { InvitationsPage } from './InvitationsPage.js'
+import { consoleOperations } from './operations.js'
 import type {
   ConsoleAccount,
   ConsoleInvitation,
@@ -18,6 +19,7 @@ import type {
   ConsoleSetMemberSSOExemptInput,
   ConsoleWriteMemberInput,
 } from './operations.js'
+import { bindConsoleRequest } from '../test-utils/request-rig.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { chooseAccount } from '../test-utils/account-selector.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
@@ -562,6 +564,78 @@ describe('InvitationsPage', () => {
     })
     // The landed write clears both the selection and the box that named it.
     expect(screen.getByLabelText('账户')).toHaveValue('')
+  })
+
+  it('re-reads the member list after a landed write and leaves it alone after a refusal', async () => {
+    const user = userEvent.setup()
+    let memberRows = 0
+    let writeFails = false
+    const calls = bindConsoleRequest((call) => {
+      if (call.method === 'GET' && call.path === '/tenant/admin/tenants') {
+        return { tenants: [TENANT] }
+      }
+      if (
+        call.method === 'GET' &&
+        call.path === '/auth/admin/tenants/acme/invitations'
+      ) {
+        return { invitations: [], next_cursor: '' }
+      }
+      if (
+        call.method === 'GET' &&
+        call.path === '/auth/admin/tenants/acme/members'
+      ) {
+        memberRows += 1
+        return {
+          members: memberRows > 1 ? [member({ account: 'acc-2' })] : [],
+          next_cursor: '',
+        }
+      }
+      if (call.method === 'GET' && call.path === '/auth/admin/accounts') {
+        return { accounts: [account()], next_cursor: '' }
+      }
+      if (
+        call.method === 'GET' &&
+        call.path === '/auth/admin/accounts/acc-2'
+      ) {
+        return { account: account() }
+      }
+      if (
+        call.method === 'PUT' &&
+        call.path === '/auth/admin/tenants/acme/members/acc-2'
+      ) {
+        if (writeFails) {
+          throw { status: 403, code: 'client.http.403' }
+        }
+        return undefined
+      }
+      throw new Error(`unexpected request: ${call.method} ${call.path}`)
+    })
+    renderWithProviders(<InvitationsPage />, { operations: consoleOperations })
+    await pickTenant(user)
+    expect(await screen.findByText('暂无成员')).toBeInTheDocument()
+    const listReads = (): number =>
+      calls.filter(
+        (entry) =>
+          entry.method === 'GET' &&
+          entry.path === '/auth/admin/tenants/acme/members',
+      ).length
+
+    // A landed write re-runs the member read, so the row it created is on
+    // screen without the operator pressing refresh.
+    await chooseAccount(user, '账户', 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: '写入成员关系' }))
+    expect(
+      await screen.findByText('账户「Ada」的成员关系已保存'),
+    ).toBeInTheDocument()
+    expect(await screen.findByText('Ada')).toBeInTheDocument()
+    expect(listReads()).toBe(2)
+
+    // A refused write leaves the list as it was: no read follows it.
+    writeFails = true
+    await chooseAccount(user, '账户', 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: '写入成员关系' }))
+    expect(await within(section('成员')).findByRole('alert')).toBeInTheDocument()
+    expect(listReads()).toBe(2)
   })
 
   it('toggles a member SSO exemption through the bundle', async () => {
