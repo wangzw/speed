@@ -281,9 +281,9 @@ package whose strings render in the frame.
   supply `signIn`, or supply a `sessionEnded` node that owns its own way
   out.
 - Any `AppShell` chrome prop (`navItems`, `header`, `headerActions`,
-  `userMenu`, ...) is passed straight through; see `@speed/layout-kit`'s
-  `AppShell` for the full surface. `navItems` must arrive host-computed,
-  `selected` included — nothing here path-matches.
+  `userMenu`, `banner`, ...) is passed straight through; see
+  `@speed/layout-kit`'s `AppShell` for the full surface. `navItems` must
+  arrive host-computed, `selected` included — nothing here path-matches.
 - The `sessionEnded` slot is optional: with no slot, the default
   `@speed/auth-ui` `SessionEndedScreen` renders, whose action returns the
   viewer to the sign-in view. A custom node renders as-is and owns its own

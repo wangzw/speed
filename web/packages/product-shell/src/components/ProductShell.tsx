@@ -87,6 +87,7 @@ type AppShellChromeProps = Pick<
   | 'header'
   | 'headerActions'
   | 'userMenu'
+  | 'banner'
   | 'mobileOpen'
   | 'onMobileOpenChange'
   | 'sidebarCollapsed'
@@ -130,6 +131,7 @@ export function ProductShell({
   header,
   headerActions,
   userMenu,
+  banner,
   mobileOpen,
   onMobileOpenChange,
   sidebarCollapsed,
@@ -214,6 +216,7 @@ export function ProductShell({
           header={header}
           headerActions={headerActions}
           userMenu={userMenu}
+          banner={banner}
           mobileOpen={mobileOpen}
           onMobileOpenChange={onMobileOpenChange}
           sidebarCollapsed={sidebarCollapsed}

@@ -287,6 +287,26 @@ describe('ProductShell view machine', () => {
     await expectNoAxeViolations()
   })
 
+  it('passes the banner slot through to the frame above the app bar', async () => {
+    const rig = makeJourneyRig()
+    attachSession(rig.session)
+    const utils = renderWithProviders(
+      <ProductShell
+        navItems={NAV_ITEMS}
+        banner={<p>impersonation notice</p>}
+        signIn={<p>sign-in view</p>}
+      >
+        <p>app content</p>
+      </ProductShell>,
+    )
+    await signInTo(rig.session)
+    const notice = utils.getByText('impersonation notice')
+    // The frame renders it above the AppBar, exactly as the host mounted
+    // it: ProductShell adds no interpretation of its own.
+    expect(notice.compareDocumentPosition(utils.getByRole('banner')) &
+      Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('keeps a host without a sign-in view on the ended screen when its action is activated', async () => {
     // The no-signIn composition is legal (the README and the suite above
     // pin its blank fresh-visitor branch): such a host pairs its own

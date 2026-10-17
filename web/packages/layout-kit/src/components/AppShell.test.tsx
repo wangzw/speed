@@ -31,6 +31,7 @@ import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { switchLanguage } from '@speed/i18n'
+import { createAppTheme } from '@speed/ui-kit'
 import enUS from '../locales/en-US.json' with { type: 'json' }
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import { expectNoAxeViolations } from '../../test-utils/axe.js'
@@ -998,6 +999,179 @@ describe('AppShell', () => {
         (drawerSpacer as Node).compareDocumentPosition(nav as Node) &
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy()
+    })
+  })
+
+  describe('banner slot', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it('pins the host node to the viewport top, above the app bar', () => {
+      mockMatchMedia(true)
+      const { getByTestId, getByRole } = renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          banner={<p data-testid="notice">Impersonating</p>}
+        >
+          content
+        </AppShell>,
+      )
+      const notice = getByTestId('notice')
+      const appBar = getByRole('banner')
+      // Above the app bar: the slot precedes the header landmark in
+      // document order.
+      expect(
+        notice.compareDocumentPosition(appBar) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+      // Part of the fixed shell head: pinned to the viewport top and
+      // spanning its width, so it stays with the AppBar while the page
+      // scrolls. It is neither the banner landmark nor a live region.
+      const slot = notice.parentElement
+      expect(slot).not.toBeNull()
+      const style = getComputedStyle(slot as Element)
+      expect(style.position).toBe('fixed')
+      expect(style.top).toBe('0px')
+      expect(style.left).toBe('0px')
+      expect(style.right).toBe('0px')
+      // The slot adds no padding, border or minimum height of its own:
+      // its height is exactly the host node's.
+      expect(style.padding).toMatch(/^0(px)?$/)
+      expect(style.borderWidth).toMatch(/^0(px)?$/)
+      expect(style.minHeight).toBe('auto')
+      // Above the page content, below modal panels and dialogs.
+      const { theme } = createAppTheme()
+      const zIndex = Number(style.zIndex)
+      expect(zIndex).toBeGreaterThan(0)
+      expect(zIndex).toBeLessThan(theme.zIndex.modal)
+    })
+
+    it('offsets the app bar and reserves the banner plus header height in every spacer', () => {
+      mockMatchMedia(true)
+      const resizeObserver = stubResizeObserver()
+      const { getByTestId, getByRole } = renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          banner={<p data-testid="notice">Impersonating</p>}
+        >
+          content
+        </AppShell>,
+      )
+      const slot = getByTestId('notice').parentElement
+      expect(slot).not.toBeNull()
+      // Both measured boxes are observed: the AppBar's height feeds the
+      // spacers together with the banner's, which also offsets the AppBar.
+      expect(resizeObserver.observedElements()).toContain(slot)
+      const appBar = getByRole('banner')
+      resizeObserver.emitHeightFor(appBar, 112)
+      resizeObserver.emitHeightFor(slot as Element, 48)
+
+      // The AppBar starts below the banner ...
+      expect(appBar).toHaveStyle({ top: '48px' })
+      // ... and both the content and the navigation reserve the banner's
+      // height plus the header's.
+      const mainSpacer = getByRole('main').querySelector('.MuiToolbar-root')
+      expect(mainSpacer).not.toBeNull()
+      expect(mainSpacer).toHaveStyle({ minHeight: '160px' })
+      const paper = document.querySelector('.MuiDrawer-paper')
+      const drawerSpacer = paper?.querySelector('.MuiToolbar-root') ?? null
+      expect(drawerSpacer).not.toBeNull()
+      expect(drawerSpacer).toHaveStyle({ minHeight: '160px' })
+    })
+
+    it('takes an empty host node as zero height, leaving the app bar at the top', () => {
+      mockMatchMedia(true)
+      const resizeObserver = stubResizeObserver()
+      const { getByTestId, getByRole } = renderWithProviders(
+        <AppShell navItems={NAV_ITEMS} banner={<span data-testid="empty" />}>
+          content
+        </AppShell>,
+      )
+      const slot = getByTestId('empty').parentElement
+      expect(slot).not.toBeNull()
+      const appBar = getByRole('banner')
+      resizeObserver.emitHeightFor(appBar, 112)
+      // The host node rendered nothing: the container measures zero and
+      // contributes none of its own height.
+      resizeObserver.emitHeightFor(slot as Element, 0)
+      expect(appBar).toHaveStyle({ top: '0px' })
+      const mainSpacer = getByRole('main').querySelector('.MuiToolbar-root')
+      expect(mainSpacer).toHaveStyle({ minHeight: '112px' })
+    })
+
+    it('keeps the banner mounted when the route content changes', () => {
+      mockMatchMedia(true)
+      const banner = <p data-testid="notice">Impersonating</p>
+      const { getByTestId, rerender } = renderWithProviders(
+        <AppShell navItems={NAV_ITEMS} banner={banner}>
+          <p>route a</p>
+        </AppShell>,
+      )
+      const notice = getByTestId('notice')
+      rerender(
+        <AppShell navItems={NAV_ITEMS} banner={banner}>
+          <p>route b</p>
+        </AppShell>,
+      )
+      // The same host node survives the content swap: the slot belongs to
+      // the shell, not to the routed children.
+      expect(getByTestId('notice')).toBe(notice)
+      expect(screen.getByText('route b')).toBeInTheDocument()
+      expect(screen.queryByText('route a')).not.toBeInTheDocument()
+    })
+
+    it('renders no container and takes no height when the slot is absent, null or false', () => {
+      mockMatchMedia(true)
+      for (const banner of [undefined, null, false] as const) {
+        const { container, unmount } = renderWithProviders(
+          <AppShell navItems={NAV_ITEMS} banner={banner}>
+            content
+          </AppShell>,
+        )
+        // The AppBar, the sidebar column and main -- no wrapper behind.
+        expect(container.firstElementChild?.children).toHaveLength(3)
+        unmount()
+      }
+    })
+
+    it('adds no landmark and no live region around the host node', () => {
+      mockMatchMedia(true)
+      const { getByTestId, queryAllByRole } = renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          banner={<span data-testid="notice">Impersonating</span>}
+        >
+          content
+        </AppShell>,
+      )
+      const slot = getByTestId('notice').parentElement
+      expect(slot?.hasAttribute('role')).toBe(false)
+      expect(slot?.hasAttribute('aria-label')).toBe(false)
+      expect(slot?.hasAttribute('aria-live')).toBe(false)
+      // The shell's own landmark set is unchanged, and the slot created
+      // none of the roles the host node is expected to carry.
+      expect(queryAllByRole('region')).toHaveLength(0)
+      expect(queryAllByRole('status')).toHaveLength(0)
+    })
+
+    it('renders the banner at both breakpoints', () => {
+      mockMatchMedia(true)
+      const desktop = renderWithProviders(
+        <AppShell navItems={NAV_ITEMS} banner={<p>desktop notice</p>}>
+          content
+        </AppShell>,
+      )
+      expect(desktop.getByText('desktop notice')).toBeInTheDocument()
+      desktop.unmount()
+
+      mockMatchMedia(false)
+      const mobile = renderWithProviders(
+        <AppShell navItems={NAV_ITEMS} banner={<p>mobile notice</p>}>
+          content
+        </AppShell>,
+      )
+      expect(mobile.getByText('mobile notice')).toBeInTheDocument()
     })
   })
 
