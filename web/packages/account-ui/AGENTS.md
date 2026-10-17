@@ -165,7 +165,10 @@ session as a required prop; the read-only ones take no props.
    The bindings add area reports authorization URLs upward through
    `onAuthorizeUrl`; `BindingCallbackHandler` fires `onBound` after a
    `link` completion and never claims a login happened. The current
-   session is never revocable from the list.
+   session is never revocable from the list. The step-up dialog renders
+   its "no active factor" state as text only, never a link: these
+   sections are the account settings surface, so its copy is
+   self-sufficient and nothing here navigates.
 
 ## Public surface
 

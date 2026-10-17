@@ -271,8 +271,9 @@ describe('StepUpChallenge', () => {
   it('names the missing second factor instead of starting a flow that cannot come', async () => {
     // The caller's own factor read says the account has no active factor,
     // so no step-up can ever raise a single-factor session: the dialog
-    // names that and points at the account settings, and no flow start is
-    // sent at all.
+    // names that and renders no link at all -- these sections are the
+    // account settings surface, so nothing here navigates -- and no flow
+    // start is sent at all.
     const { rig } = mount(
       (call: RealCall) => {
         if (call.method === 'GET' && call.path === '/auth/factors') {
@@ -283,9 +284,7 @@ describe('StepUpChallenge', () => {
     )
 
     expect(await screen.findByText(zhCN.mfa.stepUp.noFactor)).toBeTruthy()
-    expect(
-      screen.getByRole('link', { name: zhCN.mfa.stepUp.goToAccount }),
-    ).toHaveAttribute('href', '/account')
+    expect(screen.queryAllByRole('link')).toHaveLength(0)
     expect(
       screen.queryByRole('button', { name: zhCN.mfa.stepUp.relogin }),
     ).toBeNull()

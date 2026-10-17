@@ -307,7 +307,11 @@ The step-up dialog (`src/internal/step-up-challenge.tsx`) drives one
 `factor` step and chooses one, where the flow then asks for its proof; a
 completion in state `elevated` (or the login-shaped `authenticated` body
 of a cookie-delivered session) fires its `onSuccess`, so the caller
-re-runs the gated action.
+re-runs the gated action. An account with no active factor gets the
+dialog's text explaining that two-step verification must be registered
+first, and no flow is started; the dialog renders text only and never a
+link -- these sections are the account settings surface, so nothing here
+navigates.
 
 ## Text and i18n
 

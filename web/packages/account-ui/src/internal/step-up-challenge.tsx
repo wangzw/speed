@@ -27,8 +27,10 @@
  * Why a step-up cannot come is read before the flow starts, from the
  * caller's own factor list (GET /auth/factors). An account with no active
  * factor can never raise a single-factor session, so the dialog names the
- * missing two-step verification and points at the account settings, and
- * starts no flow at all -- a sign-in cannot add a factor.
+ * missing two-step verification and starts no flow at all -- a sign-in
+ * cannot add a factor. The sections ARE the account settings surface, so
+ * the dialog renders that text only: it never renders a link, and nothing
+ * in this package navigates.
  *
  * A refusal of the start itself, with factors registered, is the
  * deployment declining to raise this session at all, which no step can
@@ -52,7 +54,6 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
-import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
 import type { AuthSession, AuthnFlowAnswer } from '@speed/auth-core'
 import { useStepUp } from '@speed/auth-core'
@@ -151,14 +152,9 @@ export function StepUpChallenge({
       <DialogTitle id={titleId}>{t('mfa.stepUp.title')}</DialogTitle>
       <DialogContent>
         {noFactor ? (
-          <>
-            <Typography variant="body2" color="text.secondary">
-              {t('mfa.stepUp.noFactor')}
-            </Typography>
-            <Typography variant="body2" sx={{ mt: 1 }}>
-              <Link href="/account">{t('mfa.stepUp.goToAccount')}</Link>
-            </Typography>
-          </>
+          <Typography variant="body2" color="text.secondary">
+            {t('mfa.stepUp.noFactor')}
+          </Typography>
         ) : unavailable ? (
           <Typography variant="body2" color="text.secondary">
             {t('mfa.stepUp.cannotElevate')}
