@@ -104,7 +104,9 @@ different hosts use different routers.
 An entry is either a plain `AppShellNavItem` or a titled, collapsible
 `AppShellNavGroup`. A group's heading is itself the disclosure control
 (`aria-expanded`), open by default unless `defaultCollapsed` is set, and
-its `items` sit beneath it. A plain item may carry `children`, which
+its `items` sit beneath it. A group may carry an optional `icon`; in the
+collapsed rail it replaces the clipped heading, exactly as an item's icon
+replaces its label. A plain item may carry `children`, which
 turns it into an expandable parent whose child entries render indented,
 each a real link or button; a parent with children is a disclosure, not a
 navigation row (its own `href` / `onClick` / `selected` are not
@@ -115,7 +117,7 @@ byte-for-byte unchanged.
 
 | Prop | Type | Notes |
 |---|---|---|
-| `navItems` | `readonly AppShellNavEntry[]` (required) | each element is an `AppShellNavItem` (`{ id, label, icon?, href?, onClick?, selected?, children? }`) or an `AppShellNavGroup` (`{ id, label, items, defaultCollapsed? }`); `href` renders a link, `onClick` fires regardless |
+| `navItems` | `readonly AppShellNavEntry[]` (required) | each element is an `AppShellNavItem` (`{ id, label, icon?, href?, onClick?, selected?, children? }`) or an `AppShellNavGroup` (`{ id, label, icon?, items, defaultCollapsed? }`); `href` renders a link, `onClick` fires regardless |
 | `header` | `ReactNode` | start-of-AppBar content (logo, product name) |
 | `headerActions` | `ReactNode` | end-of-AppBar content (search, notifications) |
 | `userMenu` | `ReactNode` | far end-of-AppBar content (account menu trigger) |

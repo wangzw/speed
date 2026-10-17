@@ -37,6 +37,7 @@ export interface AppShellNavItem {
 export interface AppShellNavGroup {
   readonly id: string                              // 稳定 id，兼作初始态键
   readonly label: ReactNode                        // 标题，宿主内容，已翻译
+  readonly icon?: ReactNode                         // 可选前导图标；窄栏以它代替被裁剪的标题
   readonly items: readonly AppShellNavItem[]       // 组内导航项
   readonly defaultCollapsed?: boolean              // 初始折叠态，缺省 false 即展开
 }
@@ -61,7 +62,7 @@ export interface AppShellProps {
 export function AppShell(props: AppShellProps): ReactElement
 ```
 
-- **导航项与分组是同一入口的两种元素，拓宽是纯附加的。** `navItems` 的元素类型由 `AppShellNavItem` 拓宽为 `AppShellNavItem | AppShellNavGroup`（`AppShellNavEntry`）。这是一处纯附加：`AppShellNavItem[]` 仍可赋值给这个联合数组，未使用分组的宿主逐字节不变。分组渲染为一个带标题的可折叠区：标题本身即展开控件（`aria-expanded` 与其目标 `aria-controls`），组内是普通导航项。带 `children` 的项渲染为一个可展开的父项，其子项缩进渲染，各是真实链接或按钮；父项自身不再是一条导航行（其 `href`/`onClick`/`selected` 不渲染，路由在子项里）。分组与嵌套都复用同一套叶子激活（先 `onClick`、再 `onNavigate`）与 `selected`/`aria-current` 约定。折叠态的组或父项把其子项以 `hidden` 留在 DOM 里，故无障碍树与角色查询在收起时都取不到它们。
+- **导航项与分组是同一入口的两种元素，拓宽是纯附加的。** `navItems` 的元素类型由 `AppShellNavItem` 拓宽为 `AppShellNavItem | AppShellNavGroup`（`AppShellNavEntry`）。这是一处纯附加：`AppShellNavItem[]` 仍可赋值给这个联合数组，未使用分组的宿主逐字节不变。分组渲染为一个带标题的可折叠区：标题本身即展开控件（`aria-expanded` 与其目标 `aria-controls`），组内是普通导航项。带 `children` 的项渲染为一个可展开的父项，其子项缩进渲染，各是真实链接或按钮；父项自身不再是一条导航行（其 `href`/`onClick`/`selected` 不渲染，路由在子项里）。分组与嵌套都复用同一套叶子激活（先 `onClick`、再 `onNavigate`）与 `selected`/`aria-current` 约定。折叠态的组或父项把其子项以 `hidden` 留在 DOM 里，故无障碍树与角色查询在收起时都取不到它们。分组标题可带一个可选图标（`AppShellNavGroup.icon`，纯附加的可选字段）：收起为窄栏时，带图标的标题按图标行呈现，标题文本裁剪但仍作可及名并由提示补足；无图标的标题保留截断的文本，与无图标条目同一回落。
 
 ### Avatar
 
@@ -172,7 +173,7 @@ classDiagram
 | 概念 | 类型 | 说明 |
 |---|---|---|
 | 导航项 | `AppShellNavItem` | 稳定 `id`、已翻译 `label`、可选 `icon`/`href`/`onClick`、宿主算出的 `selected`、可选 `children`（二级嵌套） |
-| 导航分组 | `AppShellNavGroup` | 稳定 `id`、已翻译 `label`、`items`、可选 `defaultCollapsed`（标题即折叠控件） |
+| 导航分组 | `AppShellNavGroup` | 稳定 `id`、已翻译 `label`、可选 `icon`、`items`、可选 `defaultCollapsed`（标题即折叠控件） |
 | 导航元素 | `AppShellNavEntry` | `AppShellNavItem \| AppShellNavGroup`，`navItems` 的元素类型 |
 | 外壳 prop | `AppShellProps` | 槽位加抽屉控制加 `sidebarWidth`/`sx` |
 | 门状态 | `RouteGuardStatus` | `allowed` / `denied` / `pending` 的闭集，互斥 |

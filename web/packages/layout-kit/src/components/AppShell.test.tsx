@@ -525,6 +525,39 @@ describe('AppShell', () => {
       })
     })
 
+    it('collapses a group heading to its icon instead of a clipped heading', () => {
+      mockMatchMedia(true)
+      const grouped: readonly AppShellNavEntry[] = [
+        {
+          id: 'overview',
+          label: 'Overview',
+          icon: <span data-testid="icon-overview">O</span>,
+          items: [
+            {
+              id: 'home',
+              label: 'Home',
+              href: '/home',
+              icon: <span data-testid="icon-home">H</span>,
+            },
+          ],
+        },
+      ]
+      const { getByRole, getByTestId, getByText } = renderWithProviders(
+        <ControlledCollapseHost
+          navItems={grouped}
+          initialCollapsed
+          onCollapseChange={() => undefined}
+        />,
+      )
+      // The heading keeps its accessible name (and its tooltip), but the
+      // rail shows the group's icon rather than half of the heading text.
+      expect(getByRole('button', { name: 'Overview' })).toBeInTheDocument()
+      expect(getByTestId('icon-overview')).toBeInTheDocument()
+      expect(labelRootOf(getByText('Overview'))).toHaveStyle({
+        position: 'absolute',
+      })
+    })
+
     it('expands back to the full icon+text drawer from the rail', async () => {
       mockMatchMedia(true)
       const user = userEvent.setup()

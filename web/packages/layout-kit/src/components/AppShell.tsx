@@ -55,7 +55,10 @@
  * screen reader) and the clipped label offered to a sighted pointer user
  * as a per-entry tooltip; an entry that carries no icon keeps its label
  * visible (clipped to the rail) so the rail is never a blank cell -- see
- * railTextItemSx. The rail therefore stays navigable instead of
+ * railTextItemSx. A group heading follows the same rule: with an icon it
+ * becomes an icon row (its label clipped but still the heading's
+ * accessible name and tooltip), and without one it keeps its clipped
+ * label. The rail therefore stays navigable instead of
  * disappearing. The
  * mobile (temporary) Drawer's paper width is capped to
  * `min(sidebarWidth, 85vw)`, and the nav content rendered inside it
@@ -156,6 +159,13 @@ export interface AppShellNavGroup {
   readonly id: string
   /** The group's visible heading; host content, already translated. */
   readonly label: ReactNode
+  /**
+   * Optional leading icon; host content. In the collapsed rail it is the
+   * group heading's visible content (the label stays as the heading's
+   * accessible name and the tooltip), exactly as an entry's icon replaces
+   * its label there.
+   */
+  readonly icon?: ReactNode
   /** The entries inside the group, in order. */
   readonly items: readonly AppShellNavItem[]
   /**
@@ -469,6 +479,7 @@ function NavGroupItem({
 }) {
   const contentId = useId()
   const [expanded, setExpanded] = useState(!(group.defaultCollapsed ?? false))
+  const hasIcon = group.icon !== undefined
   return (
     <ListItem disablePadding sx={{ display: 'block' }}>
       <RailTooltip enabled={narrow} label={group.label}>
@@ -478,18 +489,29 @@ function NavGroupItem({
           onClick={() => {
             setExpanded((previous) => !previous)
           }}
-          // A group heading carries no icon, so in the rail it takes the
-          // text fallback (its heading stays visible) rather than
-          // centering around an absent icon.
-          sx={narrow ? railTextItemSx : undefined}
+          // In the rail a group heading with an icon becomes an icon row,
+          // like an entry's; without one it keeps the text fallback (its
+          // heading stays visible, clipped) rather than rendering a blank
+          // cell.
+          sx={narrow ? (hasIcon ? railIconItemSx : railTextItemSx) : undefined}
         >
+          {group.icon !== undefined && (
+            <ListItemIcon sx={narrow && hasIcon ? railIconSx : undefined}>
+              {group.icon}
+            </ListItemIcon>
+          )}
           <ListItemText
             primary={group.label}
+            // With an icon the rail hides the label visually but keeps it
+            // as the heading's accessible name, matching an entry.
+            sx={narrow && hasIcon ? visuallyHiddenSx : undefined}
             slotProps={{
               primary: { variant: 'subtitle2', color: 'text.secondary' },
             }}
           />
-          <DisclosureChevron expanded={expanded} />
+          {/* The rail has no room for the chevron beside the icon; the
+              button's aria-expanded still reports the disclosure state. */}
+          {!narrow && <DisclosureChevron expanded={expanded} />}
         </ListItemButton>
       </RailTooltip>
       <Box id={contentId} hidden={!expanded}>
