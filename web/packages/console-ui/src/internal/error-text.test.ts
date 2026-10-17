@@ -122,6 +122,7 @@ describe('console-ui error text', () => {
       'authn.conflict',
       'authn.forbidden',
       'authn.impersonation_restricted',
+      'authn.factor_not_seasoned',
       'audit.bad_request',
       'settings.bad_request',
       'sms.bad_request',

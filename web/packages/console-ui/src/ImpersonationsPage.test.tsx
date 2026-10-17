@@ -675,4 +675,66 @@ describe('ImpersonationsPage', () => {
     expect(posts[1]).toEqual(posts[0])
     expect(posts[0]).toEqual({ account: 'acc-9', tenant: 'acme' })
   })
+
+  it('renders an unseasoned-factor refusal in the current scope without a step-up dialog', async () => {
+    // The 403 is not the step-up's 401: no re-authentication clears it, so the
+    // attempt settles as an ordinary write failure in the section's own
+    // region and the dialog must not open.
+    const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
+      const method = options?.method ?? 'GET'
+      if (path === '/auth/factors') {
+        return Promise.resolve({
+          factors: [
+            {
+              id: 'factor-1',
+              kind: 'totp',
+              label: 'Authenticator app',
+              status: 'active',
+              created_at: '2026-01-01T00:00:00Z',
+            },
+          ],
+        } as T)
+      }
+      if (path === '/auth/impersonation' && method === 'GET') {
+        return Promise.reject({ status: 404, code: 'client.http.404' })
+      }
+      if (path === '/auth/impersonation' && method === 'POST') {
+        return Promise.reject({
+          status: 403,
+          code: 'authn.factor_not_seasoned',
+          message: 'unseasoned',
+          auth: true,
+        })
+      }
+      return Promise.resolve(undefined as T)
+    }
+    bindRequestFn(fn)
+    const user = userEvent.setup()
+    renderWithProviders(<ImpersonationsPage />, {
+      operations: withPage(),
+      session: createStepUpSession(),
+    })
+
+    await screen.findByText('当前未冒充任何账户。')
+    await pickTenant(user)
+    await user.type(screen.getByLabelText('目标账户'), 'acc-9')
+    await user.click(screen.getByRole('button', { name: '发起冒充' }))
+
+    expect(
+      await screen.findByText(zhCN.errors.authn.factor_not_seasoned),
+    ).toBeInTheDocument()
+    // The refusal stays in the current-impersonation section's region: the
+    // section that owns the start form, not the record table's.
+    const section = screen
+      .getByRole('heading', { name: '当前冒充' })
+      .closest('section')
+    expect(section).not.toBeNull()
+    expect(
+      within(section as HTMLElement).getByText(
+        zhCN.errors.authn.factor_not_seasoned,
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByText(zhCN.stepUp.title)).not.toBeInTheDocument()
+  })
 })

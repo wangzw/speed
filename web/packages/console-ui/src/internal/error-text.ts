@@ -86,6 +86,11 @@ export const ERROR_TEXT_CODES = [
   'authn.conflict',
   'authn.forbidden',
   'authn.impersonation_restricted',
+  // authn's highest-privilege refused writes: the 403 of an initiator with no
+  // non-SMS factor enabled for the configured period. A stronger
+  // authentication cannot clear it, so it renders a waiting note rather than
+  // opening the step-up dialog.
+  'authn.factor_not_seasoned',
   // authn flow answers the step-up dialog can meet: a refused credential,
   // a flow the server no longer holds, throttling and an unavailable
   // service. Each renders its own text instead of the generic fallback.

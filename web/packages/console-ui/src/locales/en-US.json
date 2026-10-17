@@ -11,6 +11,7 @@
       "conflict": "That change conflicts with the account's current state.",
       "forbidden": "You do not have permission to do that.",
       "impersonation_restricted": "This is not allowed while impersonating.",
+      "factor_not_seasoned": "This requires a non-SMS verification method (an authenticator app or a passkey) that has been active for the required period. A newly added method must wait first.",
       "login_failed": "The verification did not pass. The email, phone, password or code is incorrect.",
       "flow_invalid": "This verification attempt is no longer valid. Start again.",
       "throttled": "Too many attempts. Try again later.",
