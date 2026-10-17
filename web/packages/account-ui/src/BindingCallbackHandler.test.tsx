@@ -155,4 +155,107 @@ describe('BindingCallbackHandler', () => {
     )
     await waitFor(() => expect(onBound).toHaveBeenCalledTimes(1))
   })
+
+  describe('the absent slot', () => {
+    const METHODS_PATH = '/auth/methods'
+
+    /** A GET /auth/methods document carrying the given method kinds. */
+    function methodsDoc(kinds: readonly string[]): Record<string, unknown> {
+      return {
+        methods: kinds.map((kind) => ({ name: kind, kind })),
+        signup: { enabled: false },
+        mfa: { factors: [] },
+      }
+    }
+
+    it('renders the host view when no flow is bound and no redirect method exists', async () => {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === FLOW_CURRENT) {
+          return errorResponse(401, 'authn.flow_invalid')
+        }
+        if (call.method === 'GET' && call.path === METHODS_PATH) {
+          return jsonResponse(200, methodsDoc(['password']))
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(
+        <BindingCallbackHandler
+          session={rig.session}
+          absent={<p>No such page</p>}
+        />,
+      )
+
+      // Nothing can reach this callback: the deployment offers no redirect
+      // method, so the host's 404 answers instead of a flow-not-found banner.
+      expect(await screen.findByText('No such page')).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('keeps the failure banner when a redirect method exists', async () => {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === FLOW_CURRENT) {
+          return errorResponse(401, 'authn.flow_invalid')
+        }
+        if (call.method === 'GET' && call.path === METHODS_PATH) {
+          return jsonResponse(200, methodsDoc(['redirect']))
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(
+        <BindingCallbackHandler
+          session={rig.session}
+          absent={<p>No such page</p>}
+        />,
+      )
+
+      expect(await screen.findByRole('alert')).toBeInTheDocument()
+      expect(screen.queryByText('No such page')).not.toBeInTheDocument()
+    })
+
+    it('keeps the failure banner when the discovery read fails', async () => {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === FLOW_CURRENT) {
+          return errorResponse(401, 'authn.flow_invalid')
+        }
+        if (call.method === 'GET' && call.path === METHODS_PATH) {
+          return errorResponse(503, 'authn.unavailable')
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(
+        <BindingCallbackHandler
+          session={rig.session}
+          absent={<p>No such page</p>}
+        />,
+      )
+
+      // An unreadable discovery document cannot settle "no binding exists";
+      // the retryable banner is the honest answer.
+      expect(await screen.findByRole('alert')).toBeInTheDocument()
+      expect(screen.queryByText('No such page')).not.toBeInTheDocument()
+    })
+
+    it('reads no discovery document without an absent slot', async () => {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === FLOW_CURRENT) {
+          return errorResponse(401, 'authn.flow_invalid')
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(<BindingCallbackHandler session={rig.session} />)
+
+      expect(await screen.findByRole('alert')).toBeInTheDocument()
+      expect(
+        rig.calls.some((call) => call.path === METHODS_PATH),
+      ).toBe(false)
+    })
+  })
 })

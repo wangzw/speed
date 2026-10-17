@@ -21,9 +21,16 @@
  * InlineError banner under a retry. The `link` flow never signs anyone in
  * (a binding is not a login), so there is no signed-elsewhere outcome.
  * Nothing here navigates: the callbacks are the host's.
+ *
+ * The optional `absent` slot answers a deployment with no social binding:
+ * when no flow is bound and `session.listMethods()` reports no `redirect`
+ * method, nothing can reach this callback, so the host's "no such page"
+ * renders instead of a flow-not-found banner. The discovery document is
+ * read only when `absent` is supplied.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -48,6 +55,15 @@ export interface BindingCallbackHandlerProps {
    * pending notice until the host reacts.
    */
   readonly onBound?: () => void
+  /**
+   * Rendered when no flow is bound AND the deployment offers no
+   * `redirect` method: nothing can reach this callback, so the host's
+   * "no such page" answers instead of a flow-not-found banner. When
+   * supplied, the handler reads `session.listMethods()` in that case
+   * (and only in that case); without it the handler behaves exactly as
+   * before and reads no discovery document.
+   */
+  readonly absent?: ReactNode
 }
 
 /**
@@ -74,6 +90,7 @@ function challengeStepOf(state: string): string {
 export function BindingCallbackHandler({
   session,
   onBound,
+  absent,
 }: BindingCallbackHandlerProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
@@ -84,6 +101,7 @@ export function BindingCallbackHandler({
   const [attempt, setAttempt] = useState(0)
   const [errorCode, setErrorCode] = useState<string | null>(null)
   const [answering, setAnswering] = useState(false)
+  const [absentShown, setAbsentShown] = useState(false)
 
   // A running read is not cancelled on cleanup: StrictMode's
   // mount/effect/cleanup/effect cycle would leave one start, so the first
@@ -124,9 +142,37 @@ export function BindingCallbackHandler({
    * taken, a parked one rendered, a settled non-link state a failure. */
   const applyState = useCallback(
     async (state: AuthnFlowState | null, run: number): Promise<void> => {
-      if (state === null || !('next' in state)) {
-        // No binding (the flow is done or gone), or a settled state
-        // reached without the complete step: not a link outcome.
+      if (state === null) {
+        // No binding (the flow is done or gone). With an absent slot, ask
+        // the discovery document whether this deployment offers any
+        // redirect method: without one nothing can reach this callback and
+        // the host's 404 answers. A discovery read that fails cannot settle
+        // it, so the failure banner stays.
+        if (absent !== undefined) {
+          let offersRedirect = true
+          try {
+            const doc = await session.listMethods()
+            offersRedirect = doc.methods.some(
+              (method) => method.kind === 'redirect',
+            )
+          } catch {
+            offersRedirect = true
+          }
+          if (run !== runRef.current) {
+            return
+          }
+          if (!offersRedirect) {
+            setAbsentShown(true)
+            return
+          }
+        }
+        setErrorCode('client.unknown')
+        setPhase('failed')
+        return
+      }
+      if (!('next' in state)) {
+        // A settled state reached without the complete step: not a link
+        // outcome.
         setErrorCode('client.unknown')
         setPhase('failed')
         return
@@ -148,7 +194,7 @@ export function BindingCallbackHandler({
       }
       await applySettled(settled, run)
     },
-    [session, applySettled],
+    [session, applySettled, absent],
   )
 
   // The pending live region must never mount together with its text: a
@@ -168,6 +214,7 @@ export function BindingCallbackHandler({
     setErrorCode(null)
     setStep(null)
     setSeq(null)
+    setAbsentShown(false)
     void (async () => {
       try {
         const state = await session.readFlow()
@@ -216,6 +263,10 @@ export function BindingCallbackHandler({
 
   const retry = (): void => {
     setAttempt((value) => value + 1)
+  }
+
+  if (absentShown && absent !== undefined) {
+    return <>{absent}</>
   }
 
   if (phase === 'failed') {
