@@ -115,9 +115,13 @@ describe('the route table', () => {
         ).toBe(true)
       }
     }
-    // The table must actually exercise the vocabulary: every console page
-    // is gated.
+    // The table must actually exercise the vocabulary: the notification
+    // surface and every console page are gated.
     expect(gated).toBeGreaterThan(0)
+    expect(
+      businessRoutes.find((route) => route.path === NOTIFICATIONS_PATH)
+        ?.requires,
+    ).toContain('notification.inbox')
   })
 
   it('combines the business slot, the callback and invitation routes and the console pages', () => {

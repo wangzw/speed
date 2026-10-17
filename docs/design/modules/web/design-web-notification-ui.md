@@ -199,4 +199,4 @@ graph TD
 | 特性在场 provider `NotificationPresenceProvider` | 未实现 | — |
 | 偏好矩阵的渠道列取 `in_app` 与特性在场的可选渠道 | 未实现 | — |
 | 通知面在特性 `notification.preferences` 缺席时不渲染偏好矩阵、不发其读取 | 未实现 | — |
-| `notificationRoutes` 的 `requires` | 未实现 | — |
+| `notificationRoutes` 的 `requires` | 已实现 | `web/packages/notification-ui/src/routes.tsx` `notificationRoutes`；`web/packages/notification-ui/src/route.ts` `NotificationRoute` |

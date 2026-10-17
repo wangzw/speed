@@ -36,5 +36,6 @@ export const notificationRoutes: NotificationRouteTable = [
     path: '/notifications',
     view: () => <NotificationCenter />,
     label: <NotificationNavLabel labelKey="inbox.title" />,
+    requires: ['notification.inbox'],
   },
 ] satisfies readonly NotificationRoute[]

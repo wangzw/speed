@@ -17,6 +17,7 @@
  */
 
 import type { ReactNode } from 'react'
+import type { FeatureName } from '@speed/api-sdk/features'
 
 /** The path parameters a matched declaration's `:name` segments collect. */
 export type NotificationRouteParams = Readonly<Record<string, string>>
@@ -47,6 +48,13 @@ export interface NotificationRoute {
   /** The permission code the page needs (data; this package never decides
    * on it). */
   readonly permission?: string
+  /**
+   * The feature names this page needs (data; this package never decides
+   * on it). The elements are the generated `FeatureName` type, narrower
+   * than route-kit's string array, so a declaration still assigns to
+   * RouteDeclaration while a misspelled name fails to compile.
+   */
+  readonly requires?: readonly FeatureName[]
 }
 
 /** The notification surface's page set: a collection of declarations. */
