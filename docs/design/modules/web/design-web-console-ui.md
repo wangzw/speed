@@ -220,7 +220,8 @@ graph TD
 | 请求形状不可读 | 服务端写出 400，页面渲染错误码文本 |
 | 名册的登记冲突 | 409（`urn:speed:tenant:conflict`），页面渲染冲突文本 |
 | 敏感设置项 | 值由服务端遮蔽，页面渲染遮蔽串 |
-| 短信管理面未挂载 | 读取失败，页面渲染可重试的错误占位，并说明该面只在配置了短信服务商的部署上挂载 |
+| 短信管理面未挂载（读取答 404） | 页面渲染可重试的错误占位并说明该面只在配置了短信服务商的部署上挂载，同时收起「登记模板」与「提交审核」两个写入表单——面上没有路由，填完必然失败 |
+| 短信管理面已挂载但暂时读取失败（503、传输错误） | 渲染可重试的错误占位；两个写入表单保留——失败的是服务面而非其缺席，写可能仍能落地 |
 | 审计操作者解析被拒（无 `authn.account.read`） | 该格渲染记录值并标注身份未解析，页面本身仍可读 |
 | 自身会话无冒充（`GET /auth/impersonation` 的裸 404） | 渲染「当前未冒充任何账户」的说明，按未冒充处理，不落入失败占位 |
 | 白名单外的码 | 渲染通用失败文本，不渲染裸键 |
@@ -248,7 +249,7 @@ graph TD
 | 邀请与成员页（邀请读写、成员列出与移除） | 已实现 | `web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/routes.tsx` `invitationsAdminRoutes` |
 | SSO 页（创建、改动、列出、删除、元数据、域名认领与操作） | 已实现 | `web/packages/console-ui/src/SsoPage.tsx` `SsoPage`、`SsoProviderWriteForm`；`web/packages/console-ui/src/routes.tsx` `ssoAdminRoutes` |
 | 设置读写页（PageHeader 开篇） | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/console-ui/src/routes.tsx` `settingsAdminRoutes` |
-| 短信模板页（列出、登记、提交、开关、移除） | 已实现 | `web/packages/console-ui/src/SmsPage.tsx` `SmsPage`；`web/packages/console-ui/src/routes.tsx` `smsAdminRoutes` |
+| 短信模板页（列出、登记、提交、开关、移除；面未装载时收起写入表单） | 已实现 | `web/packages/console-ui/src/SmsPage.tsx` `SmsPage`、`isSurfaceAbsent`；`web/packages/console-ui/src/routes.tsx` `smsAdminRoutes` |
 | 审计查询页（筛选、游标分页、操作者可读身份） | 已实现 | `web/packages/console-ui/src/AuditPage.tsx` `AuditPage`；`web/packages/console-ui/src/routes.tsx` `auditAdminRoutes` |
 | 按租户寻址页面的租户选择器 | 已实现 | `web/packages/console-ui/src/internal/tenant-scope.tsx` `TenantScope` |
 | 账户的创建、改动、状态变更、MFA 要求、口令重置、标识新增、服务密钥新建 | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountCreateForm`、`AccountDetailWrites`；`web/packages/console-ui/src/operations.tsx` `useCreateAccount`、`usePatchAccount`、`useSetAccountStatus`、`useSetMFARequired`、`useResetPassword`、`useAddIdentifier`、`useCreateSecret` |

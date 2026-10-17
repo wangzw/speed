@@ -863,7 +863,11 @@
     },
     "error": {
       "title": "SMS templates could not be loaded",
-      "description": "The SMS surface did not answer (no carrier may be mounted)."
+      "description": "The SMS surface did not answer."
+    },
+    "unmounted": {
+      "title": "SMS administration is not mounted",
+      "description": "This deployment configures no SMS carrier, so the administration surface is not mounted; registering templates and offering them for review are unavailable."
     },
     "retry": "Retry",
     "column": {

@@ -863,7 +863,11 @@
     },
     "error": {
       "title": "短信模板加载失败",
-      "description": "短信面未应答（可能未挂载短信服务商）。"
+      "description": "短信面未应答。"
+    },
+    "unmounted": {
+      "title": "短信管理面未装载",
+      "description": "此部署未配置短信服务商，管理面没有挂载；登记模板与提交审核不可用。"
     },
     "retry": "重试",
     "column": {

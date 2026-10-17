@@ -8,11 +8,17 @@
  * template's sending on or off, and drops a runtime template.
  *
  * The SMS administration surface is mounted only where the deployment
- * configures an SMS carrier: the surface has no meaning without one, so a
- * console that reaches a process without it answers 404/503 and every
- * read settles into the retryable error placeholder rather than a broken
- * page. The page says so in its own words, so an operator who reaches it
- * on a carrier-less process knows why it is empty.
+ * configures an SMS carrier: the surface has no meaning without one. A
+ * process without it has no route to answer at all, so the read is
+ * answered 404 and settles into the retryable error placeholder; a
+ * mounted surface whose dependency fails answers 503 instead. The page
+ * keeps that distinction: a 404 (the surface is absent) collapses both
+ * write forms, since every submission would be answered by the same
+ * missing route, leaving only the explanation and the retry; any other
+ * read failure (a mounted surface that could not answer) leaves the forms
+ * in place, because a write may still land there. The page says so in its
+ * own words, so an operator who reaches it on a carrier-less process knows
+ * why it is empty.
  *
  * Every read and write is an operation on the console operations bundle,
  * so the page builds no client and writes no query key. The page opens
@@ -39,6 +45,23 @@ import { InlineError } from './internal/inline-error.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleSmsTemplate } from './operations.js'
+
+/** The bare-HTTP code the transport synthesizes for a 404 with no readable envelope. */
+const NOT_FOUND_CODE = 'client.http.404'
+
+/**
+ * Whether a read's failure says the administration surface is absent: the
+ * process mounts no route for it, so the answer is HTTP 404. A mounted
+ * surface whose registry or dependency fails answers 503 (or fails at the
+ * transport), which is a failure of the surface rather than its absence.
+ */
+function isSurfaceAbsent(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false
+  }
+  const candidate = error as { readonly status?: unknown; readonly code?: unknown }
+  return candidate.status === 404 || candidate.code === NOT_FOUND_CODE
+}
 
 /** Splits a comma- or whitespace-separated list into its non-empty parts. */
 function parseList(text: string): string[] {
@@ -174,6 +197,12 @@ export function SmsPage() {
 
   const rows = templates.data?.templates
   const pending = templates.isPending && rows === undefined
+  // A 404 says no route is mounted for the surface; every write below would
+  // reach the same missing route, so both forms collapse to the one
+  // explanation the error placeholder carries. It counts only while no rows
+  // have settled: a stale page from an earlier read keeps rendering (and
+  // keeps its forms) because the error branch is not shown then either.
+  const surfaceAbsent = rows === undefined && isSurfaceAbsent(templates.error)
 
   const writeError = firstErrorCode([
     registerTemplate.error,
@@ -205,141 +234,145 @@ export function SmsPage() {
         {t('sms.carrierNote')}
       </Typography>
 
-      <Box component="section" sx={{ mb: 3 }}>
-        <Typography component="h2" variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
-          {t('sms.register.title')}
-        </Typography>
-        <Box
-          sx={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'flex-end',
-            columnGap: 2,
-            rowGap: 1,
-          }}
-        >
-          <TextField
-            size="small"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            label={t('sms.register.nameLabel')}
-          />
-          <TextField
-            size="small"
-            value={params}
-            onChange={(event) => setParams(event.target.value)}
-            label={t('sms.register.paramsLabel')}
-          />
-          <TextField
-            size="small"
-            value={codes}
-            onChange={(event) => setCodes(event.target.value)}
-            label={t('sms.register.codesLabel')}
-            placeholder={t('sms.register.codesPlaceholder')}
-          />
-          <Button
-            type="button"
-            variant="contained"
-            disabled={registerTemplate.isPending}
-            onClick={() => {
-              registerTemplate.mutate(
-                { name, params: parseList(params), codes: parseCodes(codes) },
-                {
-                  onSuccess: () => {
-                    setName('')
-                    setParams('')
-                    setCodes('')
-                  },
-                },
-              )
+      {!surfaceAbsent && (
+        <Box component="section" sx={{ mb: 3 }}>
+          <Typography component="h2" variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
+            {t('sms.register.title')}
+          </Typography>
+          <Box
+            sx={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'flex-end',
+              columnGap: 2,
+              rowGap: 1,
             }}
           >
-            {t('sms.register.submit')}
-          </Button>
+            <TextField
+              size="small"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              label={t('sms.register.nameLabel')}
+            />
+            <TextField
+              size="small"
+              value={params}
+              onChange={(event) => setParams(event.target.value)}
+              label={t('sms.register.paramsLabel')}
+            />
+            <TextField
+              size="small"
+              value={codes}
+              onChange={(event) => setCodes(event.target.value)}
+              label={t('sms.register.codesLabel')}
+              placeholder={t('sms.register.codesPlaceholder')}
+            />
+            <Button
+              type="button"
+              variant="contained"
+              disabled={registerTemplate.isPending}
+              onClick={() => {
+                registerTemplate.mutate(
+                  { name, params: parseList(params), codes: parseCodes(codes) },
+                  {
+                    onSuccess: () => {
+                      setName('')
+                      setParams('')
+                      setCodes('')
+                    },
+                  },
+                )
+              }}
+            >
+              {t('sms.register.submit')}
+            </Button>
+          </Box>
         </Box>
-      </Box>
+      )}
 
-      <Box component="section" sx={{ mb: 3 }}>
-        <Typography component="h2" variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
-          {t('sms.offer.title')}
-        </Typography>
-        <Box
-          sx={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'flex-end',
-            columnGap: 2,
-            rowGap: 1,
-          }}
-        >
-          <TextField
-            size="small"
-            value={offerName}
-            onChange={(event) => setOfferName(event.target.value)}
-            label={t('sms.offer.nameLabel')}
-          />
-          <TextField
-            size="small"
-            value={offerKind}
-            onChange={(event) => setOfferKind(event.target.value)}
-            label={t('sms.offer.kindLabel')}
-          />
-          <TextField
-            size="small"
-            value={offerLocale}
-            onChange={(event) => setOfferLocale(event.target.value)}
-            label={t('sms.offer.localeLabel')}
-          />
-          <TextField
-            size="small"
-            value={offerParams}
-            onChange={(event) => setOfferParams(event.target.value)}
-            label={t('sms.offer.paramsLabel')}
-          />
-          <TextField
-            size="small"
-            value={offerRemark}
-            onChange={(event) => setOfferRemark(event.target.value)}
-            label={t('sms.offer.remarkLabel')}
-          />
-          <TextField
-            size="small"
-            value={offerContent}
-            onChange={(event) => setOfferContent(event.target.value)}
-            label={t('sms.offer.contentLabel')}
-            sx={{ minWidth: 220 }}
-          />
-          <Button
-            type="button"
-            variant="contained"
-            disabled={offerTemplate.isPending}
-            onClick={() => {
-              offerTemplate.mutate(
-                {
-                  name: offerName,
-                  content: offerContent,
-                  kind: offerKind,
-                  locale: offerLocale,
-                  params: parseList(offerParams),
-                  remark: offerRemark,
-                },
-                {
-                  onSuccess: () => {
-                    setOfferName('')
-                    setOfferContent('')
-                    setOfferKind('')
-                    setOfferLocale('')
-                    setOfferParams('')
-                    setOfferRemark('')
-                  },
-                },
-              )
+      {!surfaceAbsent && (
+        <Box component="section" sx={{ mb: 3 }}>
+          <Typography component="h2" variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
+            {t('sms.offer.title')}
+          </Typography>
+          <Box
+            sx={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'flex-end',
+              columnGap: 2,
+              rowGap: 1,
             }}
           >
-            {t('sms.offer.submit')}
-          </Button>
+            <TextField
+              size="small"
+              value={offerName}
+              onChange={(event) => setOfferName(event.target.value)}
+              label={t('sms.offer.nameLabel')}
+            />
+            <TextField
+              size="small"
+              value={offerKind}
+              onChange={(event) => setOfferKind(event.target.value)}
+              label={t('sms.offer.kindLabel')}
+            />
+            <TextField
+              size="small"
+              value={offerLocale}
+              onChange={(event) => setOfferLocale(event.target.value)}
+              label={t('sms.offer.localeLabel')}
+            />
+            <TextField
+              size="small"
+              value={offerParams}
+              onChange={(event) => setOfferParams(event.target.value)}
+              label={t('sms.offer.paramsLabel')}
+            />
+            <TextField
+              size="small"
+              value={offerRemark}
+              onChange={(event) => setOfferRemark(event.target.value)}
+              label={t('sms.offer.remarkLabel')}
+            />
+            <TextField
+              size="small"
+              value={offerContent}
+              onChange={(event) => setOfferContent(event.target.value)}
+              label={t('sms.offer.contentLabel')}
+              sx={{ minWidth: 220 }}
+            />
+            <Button
+              type="button"
+              variant="contained"
+              disabled={offerTemplate.isPending}
+              onClick={() => {
+                offerTemplate.mutate(
+                  {
+                    name: offerName,
+                    content: offerContent,
+                    kind: offerKind,
+                    locale: offerLocale,
+                    params: parseList(offerParams),
+                    remark: offerRemark,
+                  },
+                  {
+                    onSuccess: () => {
+                      setOfferName('')
+                      setOfferContent('')
+                      setOfferKind('')
+                      setOfferLocale('')
+                      setOfferParams('')
+                      setOfferRemark('')
+                    },
+                  },
+                )
+              }}
+            >
+              {t('sms.offer.submit')}
+            </Button>
+          </Box>
         </Box>
-      </Box>
+      )}
 
       <ConsoleAsyncSection
         pending={pending}
@@ -357,8 +390,12 @@ export function SmsPage() {
           />
         }
         errorState={{
-          title: t('sms.error.title'),
-          description: t('sms.error.description'),
+          title: surfaceAbsent
+            ? t('sms.unmounted.title')
+            : t('sms.error.title'),
+          description: surfaceAbsent
+            ? t('sms.unmounted.description')
+            : t('sms.error.description'),
           retryLabel: t('sms.retry'),
           onRetry: () => void templates.refetch(),
         }}
