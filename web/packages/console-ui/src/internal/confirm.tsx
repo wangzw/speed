@@ -10,12 +10,11 @@
  * mutations and renders one `PendingConfirmDialog`, instead of re-wiring
  * the controlled dialog per action.
  *
- * The dialog closes as soon as it confirms (the mutation runs and the
- * page's own error face reports a refusal); a page that wanted to keep
- * the dialog busy across the mutation would wire ui-kit's ConfirmDialog
- * directly, as PermissionsPage's role removal does. The texts come from
- * the caller, so they resolve through the console-ui namespace and name
- * the concrete object.
+ * The dialog closes as soon as it confirms: the mutation runs and the
+ * page's own feedback area reports the outcome, so a refusal is never left
+ * behind a modal that hides the page from assistive technology. The texts
+ * come from the caller, so they resolve through the console-ui namespace
+ * and name the concrete object.
  *
  * The guard's WEIGHT is the caller's: a `doubleConfirm` request is the
  * heavier two-step arm (the first click only re-labels the button), set

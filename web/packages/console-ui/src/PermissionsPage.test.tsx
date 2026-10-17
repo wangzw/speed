@@ -494,8 +494,40 @@ describe('PermissionsPage', () => {
     await vi.waitFor(() => {
       expect(removed).toEqual(['editor'])
     })
-    // The landed delete fills the page's standing success region.
+    // The dialog closes on the confirming click, and the landed delete
+    // fills the page's standing success region after it closes.
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(await screen.findByText('角色已删除')).toBeInTheDocument()
+  })
+
+  it('closes the delete dialog on confirm and reports a refusal in the page region', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+      removeRole: () => Promise.reject({ code: 'authz.forbidden' }),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('editor')
+    await user.click(screen.getByRole('button', { name: '删除角色 editor' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '删除' }))
+    await act(async () => {
+      await new Promise((resolve) =>
+        setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
+      )
+    })
+    await user.click(
+      within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
+    )
+
+    // The dialog does not hold the write open: it closes on the confirming
+    // click, so the refusal lands in the page's region where it is readable
+    // rather than behind an aria-hidden modal.
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(
+      await screen.findByText('你没有执行此操作的权限。'),
+    ).toBeInTheDocument()
   })
 
   it('renders the retryable error placeholder when the roles read fails', async () => {

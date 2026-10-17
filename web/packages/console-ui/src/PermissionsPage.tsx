@@ -31,7 +31,10 @@
  * so the page builds no client and writes no query key. A failed list
  * settles into a retryable placeholder; a failed write renders the
  * answer's code text in one alert, resolved through the console-ui
- * namespace's whitelist. The page opens with ui-kit's PageHeader.
+ * namespace's whitelist. The role deletion is confirmed through the shared
+ * pending-confirmation dialog: it closes on the confirming click, and the
+ * write's outcome lands in the page's feedback area once the modal no
+ * longer hides it. The page opens with ui-kit's PageHeader.
  */
 
 import { useMemo, useState } from 'react'
@@ -42,7 +45,6 @@ import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
-  ConfirmDialog,
   DataTable,
   EmptyState,
   InlineSuccess,
@@ -57,6 +59,7 @@ import {
 } from './internal/account-identity.js'
 import { AccountSelector } from './internal/account-selector.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
+import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { InlineError } from './internal/inline-error.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
@@ -137,8 +140,10 @@ export function PermissionsPage() {
   const [lookupAccount, setLookupAccount] = useState<ConsoleAccount | null>(null)
   const [lookupApplied, setLookupApplied] = useState('')
 
-  // The destructive action a confirm dialog guards.
-  const [pendingRoleDelete, setPendingRoleDelete] = useState<string | null>(null)
+  // The destructive action the shared confirmation dialog guards. The
+  // dialog closes on the confirming click; the write's outcome lands in
+  // the page's feedback area after it closes.
+  const confirm = usePendingConfirm()
 
   // The confirmation a landed write fills into the page's success notice
   // (one standing role="status" region); cleared before each attempt so a
@@ -249,7 +254,33 @@ export function PermissionsPage() {
               variant="outlined"
               color="error"
               aria-label={t('permissions.roles.removeAria', { role: role.role })}
-              onClick={() => setPendingRoleDelete(role.role)}
+              onClick={() =>
+                confirm.ask({
+                  title: t('permissions.roles.removeTitle'),
+                  message: t('permissions.roles.removeMessage', {
+                    role: role.role,
+                  }),
+                  confirmLabel: t('permissions.roles.removeConfirm'),
+                  // Deleting a role revokes its grants and bindings with it
+                  // and cannot be undone from the interface: the heavier
+                  // two-step arm.
+                  doubleConfirm: true,
+                  run: () => {
+                    setSuccess(null)
+                    removeRole.mutate(
+                      { tenant, role: role.role },
+                      {
+                        onSuccess: () => {
+                          if (selectedRole === role.role) {
+                            setSelectedRole('')
+                          }
+                          setSuccess(t('permissions.roles.removed'))
+                        },
+                      },
+                    )
+                  },
+                })
+              }
             >
               {t('permissions.roles.remove')}
             </Button>
@@ -462,6 +493,7 @@ export function PermissionsPage() {
               pending={rolesPending}
               payload={roleRows}
               error={roles.error}
+              refreshing={roles.isFetching}
               empty={roleRows !== undefined && roleRows.length === 0}
               headingLevel="h3"
               loading={
@@ -559,6 +591,7 @@ export function PermissionsPage() {
                   pending={grants.isPending && grants.data === undefined}
                   payload={grants.data}
                   error={grants.error}
+                  refreshing={grants.isFetching}
                   empty={grants.data !== undefined && grants.data.length === 0}
                   headingLevel="h3"
                   loading={
@@ -596,6 +629,7 @@ export function PermissionsPage() {
               pending={catalog.isPending && catalog.data === undefined}
               payload={catalog.data}
               error={catalog.error}
+              refreshing={catalog.isFetching}
               empty={catalog.data !== undefined && catalog.data.length === 0}
               headingLevel="h3"
               loading={
@@ -676,6 +710,7 @@ export function PermissionsPage() {
               pending={bindings.isPending && bindings.data === undefined}
               payload={bindings.data}
               error={bindings.error}
+              refreshing={bindings.isFetching}
               empty={bindings.data !== undefined && bindings.data.length === 0}
               headingLevel="h3"
               loading={
@@ -743,38 +778,7 @@ export function PermissionsPage() {
           <InlineError code={writeErrorCode} />
           <InlineSuccess message={success} />
 
-          <ConfirmDialog
-            open={pendingRoleDelete !== null}
-            variant="danger"
-            // Deleting a role revokes its grants and bindings with it and
-            // cannot be undone from the interface: the heavier two-step arm.
-            doubleConfirm
-            title={t('permissions.roles.removeTitle')}
-            message={t('permissions.roles.removeMessage', {
-              role: pendingRoleDelete ?? '',
-            })}
-            confirmLabel={t('permissions.roles.removeConfirm')}
-            cancelLabel={t('common.cancel')}
-            confirmLoading={removeRole.isPending}
-            onConfirm={() => {
-              if (pendingRoleDelete !== null) {
-                setSuccess(null)
-                removeRole.mutate(
-                  { tenant, role: pendingRoleDelete },
-                  {
-                    onSuccess: () => {
-                      if (selectedRole === pendingRoleDelete) {
-                        setSelectedRole('')
-                      }
-                      setPendingRoleDelete(null)
-                      setSuccess(t('permissions.roles.removed'))
-                    },
-                  },
-                )
-              }
-            }}
-            onCancel={() => setPendingRoleDelete(null)}
-          />
+          <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
         </>
       )}
     </Box>
