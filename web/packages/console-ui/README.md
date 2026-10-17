@@ -94,6 +94,15 @@ truncated text. The icons ship as hand-authored 24px stroke SVGs
 (`src/internal/icons.tsx`) and render `aria-hidden`, so the label alone
 names each entry.
 
+**Feature gating is the host's.** A declaration may carry `requires`, a
+list of generated `FeatureName`s the page depends on (this package's own
+pages do). The shell does not filter by it: the host narrows the table
+with its own feature-presence predicate (for example `@speed/route-kit`'s
+`presentDeclarations`) before passing it, and hands the shell a required
+`hasFeature(name)` answer, which the shell publishes to the routed pages
+through the package's feature context. A page can therefore hide a
+feature-gated control without importing the host's session package.
+
 ## What ships
 
 | Module | Exports |
@@ -177,7 +186,15 @@ export function ConsoleApp(): ReactElement {
       <AppThemeProvider i18n={i18n}>
         <QueryClientProvider client={queryClient}>
           <ConsoleOperationsProvider operations={consoleOperations}>
-            <ConsoleShell routes={consoleRoutes} title="Speed Console">
+            <ConsoleShell
+              routes={consoleRoutes}
+              title="Speed Console"
+              // The host's synchronous feature answer, published to the
+              // routed pages. Pass the host's real predicate; `() => true`
+              // is only a stand-in for a deployment serving every named
+              // feature.
+              hasFeature={() => true}
+            >
               {route?.view({ path: route.path, params: {} })}
             </ConsoleShell>
           </ConsoleOperationsProvider>

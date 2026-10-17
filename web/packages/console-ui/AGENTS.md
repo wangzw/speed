@@ -69,6 +69,14 @@ and `accountHref`, the host's account settings page. The step-up dialog
 renders `accountHref` as its enrolment link when the host supplies it and
 text only when it does not; the dialog never holds a host path.
 
+`hasFeature` is a required prop: the host's synchronous answer to "does
+this process serve the named feature?", typed on the generated
+`FeatureName`. The shell publishes it to the routed pages through the
+package's feature context (`useFeature` inside the family's internal
+plumbing), so a page can hide a feature-gated control without importing a
+session package. The shell itself never asks it about its own routes: the
+host has already narrowed the table it passed in.
+
 ## The page declarations
 
 Each administration capability contributes declarations to the
@@ -82,10 +90,14 @@ a list page carries a navigation label and icon and a detail page (the
 tenant detail, the audit detail) carries neither, so it is reachable from
 a row without appearing in the navigation. A declaration carries a path
 pattern, a view, an optional navigation label, an optional decorative
-icon and the permission code the page's data is held to (`tenant.read`,
+icon, the permission code the page's data is held to (`tenant.read`,
 `authn.account.read`, `authn.session.read`,
 `authn.impersonation.read`, `authz.role.read`, `authn.membership.manage`,
-`authn.idp.manage`, `settings.read`, `sms.template.read`, `audit.read`).
+`authn.idp.manage`, `settings.read`, `sms.template.read`, `audit.read`)
+and an optional `requires` list of generated `FeatureName`s the page
+depends on. The shell never filters by `requires`: the host narrows the
+table with its own presence predicate before passing it, and hands the
+shell the required `hasFeature` answer (see "The second shell").
 A list declaration's view carries the page's own matched path (`basePath`)
 so the page links each row to `${basePath}/${id}`; a detail declaration's
 view carries the id and the parent path (`parentHref`).
@@ -264,15 +276,16 @@ binds a scripted request function into the api-sdk runtime seam, so the
 shipped `consoleOperations` can be driven endpoint by endpoint.
 
 Suites: `ConsoleShell` (the landmarks, the labelled-only navigation, the
-`onNavigate` seam, the skip link, the page-tier axe scan); each page's
+`onNavigate` seam, the skip link, the required `hasFeature` answer
+reaching the pages' feature context, the page-tier axe scan); each page's
 own suite (its reads, writes and failure branches, with an axe scan); the
 `operations` suite (the shipped bundle's generated bindings for every
 surface, driven over the request rig, plus the provider fallback and the
-key-splitting helper); `routes` (the declarations' paths, permissions, icons and
-translated labels); `resources`, `internal/error-text`,
-`internal/identifier`, `internal/datetime` and `internal/async-section`
-(bundle key parity, whitelist pairing, the identifier rule, the timestamp
-formatting and the 403/retry split);
+key-splitting helper); `routes` (the declarations' paths, permissions,
+`requires` names, icons and translated labels); `resources`,
+`internal/error-text`, `internal/identifier`, `internal/datetime` and
+`internal/async-section` (bundle key parity, whitelist pairing, the
+identifier rule, the timestamp formatting and the 403/retry split);
 `package.json` (the manifest contract); and `usage-example` (the README's
 composition, with the operations bundle substituted from test-utils).
 
