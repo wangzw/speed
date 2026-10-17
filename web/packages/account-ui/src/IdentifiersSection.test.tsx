@@ -27,6 +27,7 @@ import {
   type RealResponder,
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { IdentifiersSection } from './IdentifiersSection.js'
@@ -156,6 +157,7 @@ describe('IdentifiersSection', () => {
   })
 
   it('gates a step_up_required removal behind the dialog and re-runs it once', async () => {
+    const warn = captureRefreshWarning()
     let elevated = false
     let removed = false
     const respond: RealResponder = (call: RealCall) => {
@@ -248,6 +250,15 @@ describe('IdentifiersSection', () => {
           call.method === 'DELETE' && call.path === '/auth/identifiers/id-email',
       ),
     ).toHaveLength(2)
+    // The step-up shortfall's 401 is the expected refresh-failure diagnostic.
+    expect(warn).toHaveBeenCalledWith(
+      'access token refresh failed',
+      expect.objectContaining({
+        status: 401,
+        code: 'authn.insufficient_user_authentication',
+        trace_id: 'trace-1',
+      }),
+    )
   })
 
   it('renders the empty state for an account with no identifiers', async () => {
@@ -419,6 +430,7 @@ describe('IdentifiersSection', () => {
   })
 
   it('gates a step_up_required email add behind the dialog and re-runs it once', async () => {
+    const warn = captureRefreshWarning()
     let elevated = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -504,6 +516,15 @@ describe('IdentifiersSection', () => {
         (call) => call.method === 'POST' && call.path === '/auth/identifiers',
       ),
     ).toHaveLength(2)
+    // The step-up shortfall's 401 is the expected refresh-failure diagnostic.
+    expect(warn).toHaveBeenCalledWith(
+      'access token refresh failed',
+      expect.objectContaining({
+        status: 401,
+        code: 'authn.insufficient_user_authentication',
+        trace_id: 'trace-1',
+      }),
+    )
   })
 
   it('offers the email kind by default when the host does not gate identifiers', async () => {

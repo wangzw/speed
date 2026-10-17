@@ -27,6 +27,7 @@ import {
   type RealResponder,
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { PasswordSection } from './PasswordSection.js'
 
@@ -134,6 +135,7 @@ describe('PasswordSection', () => {
   })
 
   it('renders a wrong current password as its code text', async () => {
+    const warn = captureRefreshWarning()
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileBody({ password_set: true }))
@@ -156,9 +158,19 @@ describe('PasswordSection', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.login_failed)
+    // The wrong-password 401 is the expected refresh-failure diagnostic.
+    expect(warn).toHaveBeenCalledWith(
+      'access token refresh failed',
+      expect.objectContaining({
+        status: 401,
+        code: 'authn.login_failed',
+        trace_id: 'trace-1',
+      }),
+    )
   })
 
   it('gates a step_up_required change behind the dialog and re-runs it once', async () => {
+    const warn = captureRefreshWarning()
     let elevated = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -226,5 +238,14 @@ describe('PasswordSection', () => {
       current_password: 'old-pass',
       new_password: 'new-pass',
     })
+    // The step-up shortfall's 401 is the expected refresh-failure diagnostic.
+    expect(warn).toHaveBeenCalledWith(
+      'access token refresh failed',
+      expect.objectContaining({
+        status: 401,
+        code: 'authn.insufficient_user_authentication',
+        trace_id: 'trace-1',
+      }),
+    )
   })
 })

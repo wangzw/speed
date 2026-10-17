@@ -29,6 +29,7 @@ import {
   type RealResponder,
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { MfaSection } from './MfaSection.js'
@@ -211,6 +212,7 @@ describe('MfaSection', () => {
   })
 
   it('gates a step_up_required removal behind the dialog and re-runs it once', async () => {
+    const warn = captureRefreshWarning()
     let elevated = false
     let removed = false
     const respond: RealResponder = (call: RealCall) => {
@@ -289,6 +291,15 @@ describe('MfaSection', () => {
           call.method === 'DELETE' && call.path === '/auth/factors/factor-1',
       ),
     ).toHaveLength(2)
+    // The step-up shortfall's 401 is the expected refresh-failure diagnostic.
+    expect(warn).toHaveBeenCalledWith(
+      'access token refresh failed',
+      expect.objectContaining({
+        status: 401,
+        code: 'authn.insufficient_user_authentication',
+        trace_id: 'trace-1',
+      }),
+    )
   })
 
   it('walks the TOTP enrollment flow and refetches the factors', async () => {

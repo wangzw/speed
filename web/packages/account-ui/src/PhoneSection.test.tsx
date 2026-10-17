@@ -24,6 +24,7 @@ import {
   type RealResponder,
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { PhoneSection } from './PhoneSection.js'
 
@@ -144,6 +145,7 @@ describe('PhoneSection', () => {
   })
 
   it('gates a step_up_required send behind the dialog and re-runs it once', async () => {
+    const warn = captureRefreshWarning()
     let elevated = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'POST' && call.path === PHONE_PATH) {
@@ -218,5 +220,14 @@ describe('PhoneSection', () => {
     expect(
       rig.calls.filter((call) => call.path === PHONE_PATH),
     ).toHaveLength(2)
+    // The step-up shortfall's 401 is the expected refresh-failure diagnostic.
+    expect(warn).toHaveBeenCalledWith(
+      'access token refresh failed',
+      expect.objectContaining({
+        status: 401,
+        code: 'authn.insufficient_user_authentication',
+        trace_id: 'trace-1',
+      }),
+    )
   })
 })

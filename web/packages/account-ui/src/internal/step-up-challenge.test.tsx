@@ -34,6 +34,7 @@ import {
   type RealResponder,
 } from '../../test-utils/real-client.js'
 import { renderWithProviders } from '../../test-utils/render.js'
+import { captureRefreshWarning } from '../../test-utils/refresh-warning.js'
 import { StepUpChallenge } from './step-up-challenge.js'
 
 const FLOW_START = '/auth/flows/authenticated'
@@ -235,6 +236,7 @@ describe('StepUpChallenge', () => {
   })
 
   it('renders a refused answer as code text and stays retryable', async () => {
+    const warn = captureRefreshWarning()
     const { rig, onSuccess } = mount(
       makeStepUpResponder({
         codeAnswer: () => errorResponse(401, 'authn.login_failed'),
@@ -256,6 +258,15 @@ describe('StepUpChallenge', () => {
     // The flow is still open: the answer stayed parked on the code step.
     expect(screen.getByLabelText('code')).toBeTruthy()
     expect(rig.calls.length).toBeGreaterThan(0)
+    // The refused answer's 401 is the expected refresh-failure diagnostic.
+    expect(warn).toHaveBeenCalledWith(
+      'access token refresh failed',
+      expect.objectContaining({
+        status: 401,
+        code: 'authn.login_failed',
+        trace_id: 'trace-1',
+      }),
+    )
   })
 
   it('fires onCancel on the cancel button without elevating', async () => {

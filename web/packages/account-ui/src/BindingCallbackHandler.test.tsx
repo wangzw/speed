@@ -23,6 +23,7 @@ import {
   type RealResponder,
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
 import { BindingCallbackHandler } from './BindingCallbackHandler.js'
 
 const FLOW_CURRENT = '/auth/flows/current'
@@ -178,6 +179,7 @@ describe('BindingCallbackHandler', () => {
         }
         throw new Error(`unexpected ${call.method} ${call.path}`)
       }
+      const warn = captureRefreshWarning()
       const rig = makeRealClientRig(respond)
       rig.store.set('access-1')
       renderWithProviders(
@@ -191,6 +193,15 @@ describe('BindingCallbackHandler', () => {
       // method, so the host's 404 answers instead of a flow-not-found banner.
       expect(await screen.findByText('No such page')).toBeInTheDocument()
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      // The refused read's 401 is the expected refresh-failure diagnostic.
+      expect(warn).toHaveBeenCalledWith(
+        'access token refresh failed',
+        expect.objectContaining({
+          status: 401,
+          code: 'authn.flow_invalid',
+          trace_id: 'trace-1',
+        }),
+      )
     })
 
     it('keeps the failure banner when a redirect method exists', async () => {
@@ -203,6 +214,7 @@ describe('BindingCallbackHandler', () => {
         }
         throw new Error(`unexpected ${call.method} ${call.path}`)
       }
+      const warn = captureRefreshWarning()
       const rig = makeRealClientRig(respond)
       rig.store.set('access-1')
       renderWithProviders(
@@ -214,6 +226,14 @@ describe('BindingCallbackHandler', () => {
 
       expect(await screen.findByRole('alert')).toBeInTheDocument()
       expect(screen.queryByText('No such page')).not.toBeInTheDocument()
+      expect(warn).toHaveBeenCalledWith(
+        'access token refresh failed',
+        expect.objectContaining({
+          status: 401,
+          code: 'authn.flow_invalid',
+          trace_id: 'trace-1',
+        }),
+      )
     })
 
     it('keeps the failure banner when the discovery read fails', async () => {
@@ -226,6 +246,7 @@ describe('BindingCallbackHandler', () => {
         }
         throw new Error(`unexpected ${call.method} ${call.path}`)
       }
+      const warn = captureRefreshWarning()
       const rig = makeRealClientRig(respond)
       rig.store.set('access-1')
       renderWithProviders(
@@ -239,6 +260,14 @@ describe('BindingCallbackHandler', () => {
       // the retryable banner is the honest answer.
       expect(await screen.findByRole('alert')).toBeInTheDocument()
       expect(screen.queryByText('No such page')).not.toBeInTheDocument()
+      expect(warn).toHaveBeenCalledWith(
+        'access token refresh failed',
+        expect.objectContaining({
+          status: 401,
+          code: 'authn.flow_invalid',
+          trace_id: 'trace-1',
+        }),
+      )
     })
 
     it('reads no discovery document without an absent slot', async () => {
@@ -248,6 +277,7 @@ describe('BindingCallbackHandler', () => {
         }
         throw new Error(`unexpected ${call.method} ${call.path}`)
       }
+      const warn = captureRefreshWarning()
       const rig = makeRealClientRig(respond)
       rig.store.set('access-1')
       renderWithProviders(<BindingCallbackHandler session={rig.session} />)
@@ -256,6 +286,14 @@ describe('BindingCallbackHandler', () => {
       expect(
         rig.calls.some((call) => call.path === METHODS_PATH),
       ).toBe(false)
+      expect(warn).toHaveBeenCalledWith(
+        'access token refresh failed',
+        expect.objectContaining({
+          status: 401,
+          code: 'authn.flow_invalid',
+          trace_id: 'trace-1',
+        }),
+      )
     })
   })
 })
