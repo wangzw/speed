@@ -482,11 +482,13 @@ it -- a list row's detail, a create form wider than a confirmation.
 `onClose` and nothing closes itself, so the host may refuse a close (an
 unsaved-content guard, a confirmation first). `busy` makes all three
 close paths inert: the close button is disabled and Escape and backdrop
-clicks do not report. `onExited` fires once after the exit transition,
-when the content has unmounted; during the exit the panel renders
-whatever children the host gave it, so a host that clears its content in
-the same state batch as the close gets a blank slide-out, and one that
-needs the content until the end clears it in `onExited`.
+clicks do not report. `onExited` fires once when the exit transition
+ends: by then the page behind is reachable again and the panel is still
+in the document, and the content unmounts in the render commit
+immediately after. During the exit the panel renders whatever children
+the host gave it, so a host that clears its content in the same state
+batch as the close gets a blank slide-out, and one that needs the
+content until the end clears it in `onExited`.
 
 The panel is anchored to the right edge and fills the viewport height.
 Its header (title, optional description, close control) is fixed and the

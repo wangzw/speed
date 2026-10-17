@@ -29,6 +29,37 @@ const TITLE = 'Account details'
 const DESCRIPTION = 'Review the account and its sessions.'
 const BODY = 'Panel body'
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * The `width` declared for `element`'s emotion class inside the
+ * `@media (min-width: <minWidth>px)` block of the emitted CSS. Breakpoint-
+ * keyed `sx` values compile to a base rule and an at-rule jsdom cannot
+ * evaluate, so the assertion reads the generated text scoped to this
+ * element's own class rather than the whole document.
+ */
+function widthAt(
+  css: string,
+  element: Element,
+  minWidth: number,
+): string | undefined {
+  const emotionClass = Array.from(element.classList).find((name) =>
+    name.startsWith('css-'),
+  )
+  if (emotionClass === undefined) {
+    return undefined
+  }
+  const rule = new RegExp(
+    `@media \\(min-width:${minWidth}px\\)\\{\\.${escapeRegExp(emotionClass)}\\{([^}]*)\\}\\}`,
+  ).exec(css)
+  if (rule === null) {
+    return undefined
+  }
+  return /(?:^|;)width:([^;]+)/.exec(rule[1] ?? '')?.[1]
+}
+
 function setup(overrides: Partial<SidePanelProps> = {}) {
   const onClose = vi.fn()
   const onExited = vi.fn()
@@ -112,17 +143,23 @@ describe('SidePanel', () => {
     expect(document.getElementById(descriptionId!)).toHaveTextContent(DESCRIPTION)
   })
 
-  it('takes role="dialog" and aria-modal from the drawer exactly once', () => {
+  it('takes role="dialog", aria-modal and its tabIndex from the drawer exactly once', () => {
     setup()
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
     expect(document.querySelectorAll('[aria-modal]')).toHaveLength(1)
-    expect(document.querySelector('[aria-modal]')).toHaveAttribute('aria-modal', 'true')
+    const dialog = document.querySelector('[role="dialog"]')
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+    // The dialog is the drawer's paper itself -- not a second wrapper --
+    // and it carries the tabIndex={-1} MUI supplies for programmatic
+    // focus, never a duplicate tabIndex={0}.
+    expect(dialog).toBe(document.querySelector('.MuiDrawer-paper'))
+    expect(dialog).toHaveAttribute('tabindex', '-1')
   })
 
   it('stacks at theme.zIndex.modal, above the AppShell AppBar', () => {
-    // Read the resolved theme through the same provider tree the panel
-    // renders under, so the assertion compares against the theme's value
-    // rather than a number copied into the test.
+    // Render with a non-default modal token so the assertion cannot be
+    // satisfied by a hardcoded MUI default: the panel must read the
+    // resolved theme, not remember the number 1300.
     let theme: Theme | undefined
     function ThemeProbe() {
       theme = useTheme()
@@ -135,26 +172,62 @@ describe('SidePanel', () => {
           <p>{BODY}</p>
         </SidePanel>
       </>,
+      { tenantOverrides: { zIndex: { values: { modal: 1600 } } } },
     )
     expect(theme).toBeDefined()
+    expect(theme!.zIndex.modal).toBe(1600)
     const root = document.querySelector<HTMLElement>('.MuiDrawer-root')
     expect(root).not.toBeNull()
     // The AppShell AppBar sits at theme.zIndex.drawer + 1; the panel must
     // resolve its stacking context above that.
     expect(theme!.zIndex.modal).toBeGreaterThan(theme!.zIndex.drawer + 1)
-    expect(getComputedStyle(root!).zIndex).toBe(String(theme!.zIndex.modal))
+    expect(getComputedStyle(root!).zIndex).toBe('1600')
   })
 
-  it('takes the medium width by default and the wide tier when asked, filling narrow viewports', () => {
+  it('fills the viewport width below sm and takes the tier width from sm up', () => {
     const medium = setup()
+    const mediumPaper = document.querySelector('.MuiDrawer-paper')
+    expect(mediumPaper).not.toBeNull()
     const mediumCss = emittedStyleText()
-    expect(mediumCss).toContain('36rem')
+    expect(widthAt(mediumCss, mediumPaper!, 0)).toBe('100%')
+    expect(widthAt(mediumCss, mediumPaper!, 600)).toBe('36rem')
     expect(mediumCss).not.toContain('52rem')
-    expect(mediumCss).toContain('@media (min-width:600px)')
     medium.unmount()
 
     setup({ size: 'wide' })
-    expect(emittedStyleText()).toContain('52rem')
+    const widePaper = document.querySelector('.MuiDrawer-paper')
+    expect(widePaper).not.toBeNull()
+    const wideCss = emittedStyleText()
+    expect(widthAt(wideCss, widePaper!, 0)).toBe('100%')
+    expect(widthAt(wideCss, widePaper!, 600)).toBe('52rem')
+  })
+
+  it('anchors the panel to the right edge', () => {
+    setup()
+    const root = document.querySelector('.MuiDrawer-root')
+    const paper = document.querySelector<HTMLElement>('.MuiDrawer-paper')
+    expect(root).not.toBeNull()
+    expect(paper).not.toBeNull()
+    expect(root).toHaveClass('MuiDrawer-anchorRight')
+    expect(getComputedStyle(paper!).right).toBe('0px')
+    expect(getComputedStyle(paper!).left).toBe('auto')
+  })
+
+  it('keeps the paper fixed and makes the content box the only scroll layer', () => {
+    const { getByText } = setup()
+    const paper = document.querySelector<HTMLElement>('.MuiDrawer-paper')
+    expect(paper).not.toBeNull()
+    expect(paper).toHaveStyle({ overflowY: 'hidden' })
+
+    // The body paragraph sits directly inside the content box, which is
+    // the column's growing/shrinking child and the only scroll layer.
+    const content = getByText(BODY).parentElement
+    expect(content).not.toBeNull()
+    expect(content).toHaveStyle({
+      overflowY: 'auto',
+      flexGrow: '1',
+      minHeight: '0px',
+    })
   })
 
   it('calls onClose on Escape when not busy', () => {
@@ -197,7 +270,9 @@ describe('SidePanel', () => {
     const close = getByRole('button', { name: zhCN.sidePanel.closeLabel })
     expect(close).toBeDisabled()
     // fireEvent bypasses the pointer-events check user-event enforces on a
-    // disabled control; the handler's own gate is also under test here.
+    // disabled control, so this proves the disabled attribute alone stops
+    // the click. The handler's busy gate is exercised by the Escape and
+    // backdrop cases above, which reach requestClose on an enabled root.
     fireEvent.click(close)
     expect(onClose).not.toHaveBeenCalled()
   })
@@ -212,6 +287,39 @@ describe('SidePanel', () => {
     expect(getByRole('dialog')).toBeInTheDocument()
     expect(onExited).not.toHaveBeenCalled()
     await waitFor(() => expect(onExited).toHaveBeenCalledTimes(1))
+  })
+
+  it('fires onExited when the exit transition ends, with the page reachable and the panel still mounted', async () => {
+    const onExited = vi.fn(() => {
+      // The modal has stopped hiding the page behind it, but the panel's
+      // content is still in the document; it unmounts in the render
+      // commit that follows this callback.
+      expect(container).not.toHaveAttribute('aria-hidden')
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+    })
+    const { getByRole, container } = renderWithProviders(
+      <ExitHarness onExited={onExited} />,
+    )
+    // While the panel is open its modal hides the page container.
+    expect(container).toHaveAttribute('aria-hidden', 'true')
+
+    fireEvent.click(getByRole('button', { name: 'Close the panel' }))
+    await waitFor(() => expect(onExited).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(document.querySelector('[role="dialog"]')).toBeNull(),
+    )
+  })
+
+  it('unmounts the panel content after the exit transition', async () => {
+    const onExited = vi.fn()
+    const { getByRole } = renderWithProviders(<ExitHarness onExited={onExited} />)
+    fireEvent.click(getByRole('button', { name: 'Close the panel' }))
+    await waitFor(() => expect(onExited).toHaveBeenCalledTimes(1))
+    // The content lives only for the exit transition; keepMounted would
+    // leave the dialog in the document behind a hidden root.
+    await waitFor(() =>
+      expect(document.querySelector('[role="dialog"]')).toBeNull(),
+    )
   })
 
   it('moves focus into the panel on open and back to the opener on close', async () => {

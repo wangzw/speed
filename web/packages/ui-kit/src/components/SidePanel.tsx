@@ -72,7 +72,11 @@ export type SidePanelProps = {
    * backdrop click -- never on open. The host decides whether to close.
    */
   readonly onClose: () => void
-  /** Fired once after the exit transition, when the content has unmounted. */
+  /**
+   * Fired once when the exit transition ends: the page behind is
+   * reachable again and the panel is still in the document; the content
+   * unmounts in the render commit immediately after.
+   */
   readonly onExited: () => void
 }
 
