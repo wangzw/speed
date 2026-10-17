@@ -65,7 +65,7 @@
 - **外壳级响应走视口。** 整体形态的变化——导航在常驻与抽屉之间切换、侧栏是否显示——由视口宽度决定，读 MUI 主题的 `breakpoints`；`AppShell` 以 `useMediaQuery(theme.breakpoints.up('md'))` 在两态之间选择。
 - **组件级响应走容器。** 会随可用宽度改变自身排布的组件——数据表、表单、卡片网格——按**所在容器**的宽度响应，不按视口。容器上下文由组件自建：组件在自身根节点声明 `container-type: inline-size`。
 - **一次一行的组件用内在换行。** 有些行的排布既不需要断点，也不需要容器上下文：固定 `flex-basis` 配 `flex-wrap`，换行点自然跟随所在容器的可用宽度。控制台仪表盘的指标卡行是这个形态（`DashboardPage` 的 `KpiRow`）——它是「组件级响应」的免查询形态：判据与容器查询相同（按自身可用宽度重排），只是不必声明容器上下文。
-- **指针能力走能力查询。** 依赖悬停的交互（悬停展开、悬停显出的操作）只在指针设备上启用；触摸设备上这些操作常显，可点击目标不小于 44×44。判据是 `hover` 与 `pointer` 媒体特性，不是视口宽度——带键盘的平板与触屏笔记本都是宽视口下的触摸设备。
+- **指针能力走能力查询。** 依赖悬停的交互（悬停展开、悬停显出的操作）只在指针设备上启用；触摸设备上这些操作常显。触摸设备上**所有可点击目标**不小于 44×44——不分是否依赖悬停；下限由主题层对基础控件统一给出，各包继承，不逐处指定。判据是 `hover` 与 `pointer` 媒体特性，不是视口宽度——带键盘的平板与触屏笔记本都是宽视口下的触摸设备。
 - **页面骨架按视口取档。** 详情页的主栏与侧栏、设置页的二级导航与内容并列、以及内容区的受限宽，都是**页型骨架**：它们占满内容区，内容区的宽度由视口与外壳状态（侧栏是否常驻）决定，宿主不会把它们放进任意窄容器。因此它们按视口断点取档（`console-ui` 的 `DetailLayout`、`SettingsPage`、`FormWidth`），是「组件级响应走容器」的例外。
 
 外壳级、组件级与内在换行三条的判据是**一个区域的变化由视口决定，还是由它被放进多宽的容器决定**；内在换行只是组件级里不需要声明容器上下文的那一种写法。外壳的整体形态占满视口，故由视口决定；一个组件既可能占满内容区、也可能被放进窄侧栏，只有按容器响应才能在两种处境下各自正确。
@@ -152,4 +152,4 @@ graph TD
 | 卡片网格的多列收为单列 | 已实现 | `starters/demo/web/src/pages/home-page.tsx` `HomePage` |
 | 组件级容器查询 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx`；`starters/demo/web/src/pages/home-page.tsx` `HomePage` |
 | 窄视口逐档降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx`；`web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`（收起为仅图标的窄栏）；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx`；`starters/demo/web/src/pages/home-page.tsx` `HomePage` |
-| 指针能力查询 | 已实现 | `web/packages/ui-kit/src/internal/pointer.ts`；`web/packages/ui-kit/src/touch-target.ts` `touchTargetSx`；`web/packages/ui-kit/src/components/DataTable.tsx`、`web/packages/ui-kit/src/components/FileUploader.tsx`、`web/packages/layout-kit/src/components/AppShell.tsx`、`web/packages/notification-ui/src/NotificationBell.tsx`、`web/packages/account-ui/src/SessionsSection.tsx` |
+| 指针能力查询 | 已实现 | `web/packages/ui-kit/src/internal/pointer.ts`；`web/packages/ui-kit/src/theme/touch-floor.ts` `touchFloorComponents`；`web/packages/ui-kit/src/touch-target.ts` `touchTargetSx`；`web/packages/ui-kit/src/components/DataTable.tsx`、`web/packages/ui-kit/src/components/FileUploader.tsx`、`web/packages/layout-kit/src/components/AppShell.tsx`、`web/packages/notification-ui/src/NotificationBell.tsx`、`web/packages/account-ui/src/SessionsSection.tsx` |

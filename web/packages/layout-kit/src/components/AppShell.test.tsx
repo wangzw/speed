@@ -27,14 +27,17 @@
  */
 
 import { useCallback, useState } from 'react'
-import { act, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { switchLanguage } from '@speed/i18n'
 import enUS from '../locales/en-US.json' with { type: 'json' }
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import { expectNoAxeViolations } from '../../test-utils/axe.js'
-import { emittedStyleText } from '@speed/test-utils/emitted-css'
+import {
+  emittedStyleText,
+  hasCoarsePointerTouchTarget,
+} from '@speed/test-utils/emitted-css'
 import { mockMatchMedia } from '@speed/test-utils/matchMedia'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { stubResizeObserver } from '../../test-utils/resize-observer.js'
@@ -838,6 +841,19 @@ describe('AppShell', () => {
       const css = emittedStyleText()
       expect(css).toContain('@media (pointer: coarse)')
       expect(css).toMatch(/@media \(pointer: coarse\)\{[^}]*min-height:44px/)
+      // The samples are the shell's real controls, not the media block in
+      // the abstract: the navigation entry (a ListItemButton rendered as
+      // an anchor) and the collapse toggle both carry the floor.
+      expect(
+        hasCoarsePointerTouchTarget(
+          screen.getByRole('link', { name: 'Home' }),
+        ),
+      ).toBe(true)
+      expect(
+        hasCoarsePointerTouchTarget(
+          screen.getByRole('button', { name: zhCN.appShell.collapseNav }),
+        ),
+      ).toBe(true)
     })
   })
 

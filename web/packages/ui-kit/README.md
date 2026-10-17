@@ -2,7 +2,8 @@
 
 The platform's first DOM-rendering package: the theme factory that turns
 `@speed/tokens` into an MUI v9 theme (`createAppTheme`,
-`AppThemeProvider`), and the controlled components (`PageHeader`,
+`AppThemeProvider`; the theme also carries the coarse-pointer 44x44
+floor for MUI's base controls), and the controlled components (`PageHeader`,
 `EmptyState`, `ConfirmDialog`, `FileUploader`, `FormField`,
 `FormLayout`, `DataTable`, `InlineError`, `InlineSuccess`, `ListSkeleton`,
 `AsyncSection`) that render only the state hosts give them --
@@ -14,7 +15,8 @@ whole-attempt failure banner and its classifier
 mount-empty-then-fill `role="status"` notice), the pending/error/empty/content
 branches of an async read (`ListSkeleton`, `AsyncSection`) and the
 shared style recipes (`visuallyHiddenSx` for hidden elements,
-`touchTargetSx` for the coarse-pointer touch-target floor). Every
+`touchTargetSx` for the coarse-pointer floor of elements the theme does
+not reach). Every
 built-in user-facing
 string lives in the bilingual `ui-kit` namespace registered through
 `@speed/i18n` -- components never ship text in code, and the workspace's
@@ -336,6 +338,20 @@ MUI's theme surface:
 | `breakpoints.values` | `breakpoints.values` | direct (slot names are MUI's own) |
 | `zIndex.values` | `zIndex` | direct (slot names are MUI's own) |
 | `shadows` (6 elevation slots) | `theme.shadows` (25-entry ramp) | each elevation i uses the nearest token slot at or below i, floored, never exceeding the design scale; `none` at 0 |
+| touch-target floor | `components.*.styleOverrides` | each MUI base control gets a 44x44 minimum width and height under `@media (pointer: coarse)`; a precise pointer gets no declaration |
+
+**The theme carries the touch-target floor.** On a coarse pointer every
+MUI base control reaches 44x44 through the theme alone: `Button`,
+`IconButton`, `Checkbox`, `Radio`, `Switch`, `ListItemButton`, the
+remaining controls rooted in `ButtonBase` (`Tab`, `MenuItem`,
+`ToggleButton`, `CardActionArea`, `TableSortLabel`), `InputBase`'s root
+and input slot, `Link`, and a clickable `Chip` (a status chip keeps its
+compact size). The `Link` rule also makes the inline anchor an
+`inline-flex` box, because a minimum height has no effect on a
+non-replaced inline box. A precise pointer emits none of these
+declarations, so desktop rendering is unchanged. The rules live in
+`src/theme/touch-floor.ts`; `touchTargetSx` remains the fallback for
+interactive elements outside MUI's controls.
 
 The returned theme is locale-free on purpose: MUI's built-in texts
 (table pagination, tooltips) are language-bearing, so the locale merge
@@ -834,12 +850,18 @@ finger-sized hit area. It keys on the `pointer: coarse` media feature --
 not a breakpoint, so a touchscreen laptop or a keyboarded tablet at a
 wide viewport is gated too -- and contributes a 44x44 minimum width and
 height on a coarse pointer, nothing on a precise one. Applied as
-`sx={touchTargetSx}` on a Button / IconButton / ListItemButton, or inside
-an sx array beside a control's own styles. It serves the kit's own
-components (the `FileUploader` row actions, the `DataTable` selection
-controls) and, through this export, every consuming package's icon
-buttons and compact action controls (the shell's toggles, the
-notification bell, the session revoke control).
+`sx={touchTargetSx}` on a control, or inside an sx array beside the
+control's own styles.
+
+The theme already carries this floor for MUI's base controls
+(`src/theme/touch-floor.ts`, spread into the theme by `createAppTheme`),
+so a new surface inherits it without adding the recipe. The recipe is the
+fallback for an interactive element the theme cannot reach -- a bare
+`<a>`, a host-drawn clickable element -- and it stays as the explicit
+gate in the kit's own components (the `FileUploader` row actions, the
+`DataTable` selection controls) and in consuming packages' compact action
+controls (the shell's toggles, the notification bell, the session revoke
+control).
 
 ## Text and i18n
 

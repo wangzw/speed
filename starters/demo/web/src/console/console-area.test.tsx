@@ -43,6 +43,39 @@ afterEach(() => {
   window.history.replaceState({}, '', '/')
 })
 
+/**
+ * Whether `element` carries a coarse-pointer rule that sets both minimum
+ * edges to the 44px floor. The same probe `@speed/test-utils/emitted-css`
+ * ships, kept local because the demo host declares every `@speed`
+ * dependency by registry version and so cannot import the private
+ * workspace test-support package.
+ */
+function hasCoarsePointerTouchTarget(element: Element): boolean {
+  const css = Array.from(document.querySelectorAll('style'))
+    .map((style) => style.textContent ?? '')
+    .join('\n')
+  const classes = Array.from(element.classList).filter((name) =>
+    name.startsWith('css-'),
+  )
+  return classes.some((className) =>
+    css
+      .split('@media (pointer: coarse)')
+      .slice(1)
+      .some((block) => {
+        const at = block.indexOf(`.${className}`)
+        if (at < 0) return false
+        const open = block.indexOf('{', at)
+        const close = open < 0 ? -1 : block.indexOf('}', open)
+        if (open < 0 || close < 0) return false
+        const declarations = block.slice(open + 1, close)
+        return (
+          declarations.includes('min-width:44px') &&
+          declarations.includes('min-height:44px')
+        )
+      }),
+  )
+}
+
 function renderConsoleArea(children: ReactNode = <p>console page</p>) {
   const i18n = createI18n({
     supportedLanguages: ['zh-CN', 'en-US'],
@@ -155,6 +188,17 @@ describe('ConsoleArea', () => {
     const exit = screen.getByRole('link', { name: demoEnUS.console.backToApp })
     await user.click(exit)
     expect(window.location.pathname).toBe('/')
+  })
+
+  it('raises the exit link to the 44px touch floor under a coarse pointer', () => {
+    window.history.replaceState({}, '', '/console/tenants')
+    renderConsoleArea()
+
+    // The exit is a text link: on a fine pointer it is a 24px-tall inline
+    // box, below the finger floor. The theme's coarse rule makes it an
+    // inline-flex box of at least 44x44 -- no per-control gate here.
+    const exit = screen.getByRole('link', { name: demoEnUS.console.backToApp })
+    expect(hasCoarsePointerTouchTarget(exit)).toBe(true)
   })
 
   it("turns an issued invitation's token into this app's landing link", async () => {

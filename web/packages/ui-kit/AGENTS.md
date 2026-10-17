@@ -3,7 +3,8 @@
 ## What this package is
 
 The first DOM-rendering package: the `createAppTheme` theme factory that
-maps the merged token tree onto an MUI v9 theme, `AppThemeProvider`
+maps the merged token tree onto an MUI v9 theme and carries the
+coarse-pointer 44px floor for the base controls, `AppThemeProvider`
 (theme + MUI locale linkage + color mode + CssBaseline; the active
 `AppThemeMode` -- `'light'`/`'dark'` -- is read and flipped through
 `useAppThemeMode`, the dark surface reading the neutral ramp from its dark
@@ -13,8 +14,8 @@ components (`PageHeader`, `EmptyState`, `ConfirmDialog`, `FormField`,
 `InlineSuccess`, `ListSkeleton`, `AsyncSection`) that render only the
 state hosts give them, plus the form family's zod validation bridge
 (`zodFormResolver`) and the shared state primitives (`errorCodeOf`, the
-`visuallyHiddenSx` clip recipe, the `touchTargetSx` coarse-pointer
-44px floor). `FileUploader` is no carve-out: the queue renders from
+`visuallyHiddenSx` clip recipe, and the `touchTargetSx` recipe as the
+fallback floor for interactive elements the theme does not reach). `FileUploader` is no carve-out: the queue renders from
 host-owned `rows` props, every pick, cancel, retry and remove reports up
 through a callback (`onSelectFiles` / `onCancel` / `onRetry` /
 `onRemove`), and the upload transport — one logical transfer per picked

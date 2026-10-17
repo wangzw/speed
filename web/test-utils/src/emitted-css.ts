@@ -22,41 +22,166 @@ export function emittedStyleText(): string {
     .join('\n')
 }
 
+// The media feature the touch-target floor is gated on. Kept as a literal
+// because this package is a dev-only helper the presentational packages
+// depend on, not the reverse: it cannot import the ui-kit constant that
+// spells the same string in shipped code.
+const COARSE_POINTER_MEDIA = '@media (pointer: coarse)'
+
 /**
- * Whether `element` itself carries a coarse-pointer rule that raises its
- * hit area to the 44x44 floor -- i.e. the `touchTargetSx` recipe was
- * applied to this control.
+ * The body text of every `@media (pointer: coarse)` block in `css`. A
+ * media block can contain nested braces (a rule with its own nested
+ * selector), so the end is found by matching braces, not by the first
+ * `}`.
+ */
+function coarseMediaBodies(css: string): string[] {
+  const bodies: string[] = []
+  let cursor = 0
+  for (;;) {
+    const start = css.indexOf(COARSE_POINTER_MEDIA, cursor)
+    if (start < 0) return bodies
+    const open = css.indexOf('{', start)
+    if (open < 0) return bodies
+    let depth = 0
+    let end = open
+    for (; end < css.length; end += 1) {
+      if (css[end] === '{') depth += 1
+      else if (css[end] === '}') {
+        depth -= 1
+        if (depth === 0) break
+      }
+    }
+    bodies.push(css.slice(open + 1, end))
+    cursor = end + 1
+  }
+}
+
+interface FlatRule {
+  readonly selector: string
+  readonly declarations: string
+}
+
+/**
+ * The top-level `selector { declarations }` pairs of a stylesheet body.
+ * A rule's own nested blocks (`&:hover { ... }`) stay inside its
+ * declaration text rather than becoming separate entries, so a caller
+ * testing the rule's own declarations reads exactly those.
+ */
+function flatRules(body: string): FlatRule[] {
+  const rules: FlatRule[] = []
+  let cursor = 0
+  while (cursor < body.length) {
+    const open = body.indexOf('{', cursor)
+    if (open < 0) break
+    const selector = body.slice(cursor, open).trim()
+    let depth = 0
+    let end = open
+    for (; end < body.length; end += 1) {
+      if (body[end] === '{') depth += 1
+      else if (body[end] === '}') {
+        depth -= 1
+        if (depth === 0) break
+      }
+    }
+    rules.push({ selector, declarations: body.slice(open + 1, end) })
+    cursor = end + 1
+  }
+  return rules
+}
+
+/**
+ * Whether `element` matches `selector`, treating anything the selector
+ * engine rejects (a pseudo-element, a malformed fragment) as a non-match
+ * rather than an error.
+ */
+function matchesSelector(element: Element, selector: string): boolean {
+  try {
+    return element.matches(selector)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Whether `element` itself is covered by a coarse-pointer rule that
+ * raises its hit area to the 44x44 floor.
  *
- * The check is per element: one of the emotion classes on the element
- * must be named in a rule inside an `@media (pointer: coarse)` block,
- * and that rule must set both the minimum width and height. Gating one
- * control on a page therefore does not satisfy the check for another,
- * which is what makes the assertion a proof that *this* control was
- * wired up rather than that the page emitted the media query somewhere.
+ * The rule is matched by its selector against the element, so a compound
+ * selector only counts for the element it really selects (a clickable
+ * chip's `&.MuiChip-clickable` rule does not cover a status chip that
+ * shares the emotion class prefix), and both the minimum width and the
+ * minimum height must be set in the same rule. A rule written for another
+ * control on the page therefore does not satisfy the check for this one,
+ * which is what makes the assertion a proof that *this* control carries
+ * the floor -- whether it came from the theme's component overrides, from
+ * `touchTargetSx` through `sx`, or from a styled wrapper.
  */
 export function hasCoarsePointerTouchTarget(element: Element): boolean {
-  const css = emittedStyleText()
-  const classes = Array.from(element.classList).filter((name) =>
-    name.startsWith('css-'),
-  )
-  if (classes.length === 0) return false
-  for (const tail of css.split('@media (pointer: coarse)').slice(1)) {
-    const next = tail.indexOf('@media')
-    const mediaBody = next < 0 ? tail : tail.slice(0, next)
-    for (const className of classes) {
-      const at = mediaBody.indexOf(`.${className}`)
-      if (at < 0) continue
-      const open = mediaBody.indexOf('{', at)
-      const close = open < 0 ? -1 : mediaBody.indexOf('}', open)
-      if (open < 0 || close < 0) continue
-      const rule = mediaBody.slice(open + 1, close)
+  for (const body of coarseMediaBodies(emittedStyleText())) {
+    for (const rule of flatRules(body)) {
       if (
-        rule.includes('min-width:44px') &&
-        rule.includes('min-height:44px')
+        !rule.declarations.includes('min-width:44px') ||
+        !rule.declarations.includes('min-height:44px')
       ) {
-        return true
+        continue
       }
+      if (matchesSelector(element, rule.selector)) return true
     }
   }
   return false
+}
+
+export interface TouchTargetSample {
+  /** The control category the sample stands for ("primary button", ...). */
+  readonly category: string
+  /** The rendered control, or null when the fixture failed to render it. */
+  readonly element: Element | null
+}
+
+/**
+ * The categories whose sample does not carry the coarse-pointer floor.
+ * An empty list means every sampled control category reached 44x44 at
+ * once -- the category-level form of `hasCoarsePointerTouchTarget`, so a
+ * suite proves the whole set rather than a hand-picked element.
+ */
+export function missingCoarsePointerTouchTargets(
+  samples: readonly TouchTargetSample[],
+): string[] {
+  return samples
+    .filter(
+      (sample) =>
+        sample.element === null ||
+        !hasCoarsePointerTouchTarget(sample.element),
+    )
+    .map((sample) => sample.category)
+}
+
+/**
+ * The page's CSS with every `@media (pointer: coarse)` block removed --
+ * what a precise pointer sees of the injected styles. A test can assert
+ * that a touch-only declaration (the 44px floor) does not appear here:
+ * the floor must live entirely inside the media feature, so the desktop
+ * rendering is untouched.
+ */
+export function styleTextOutsideCoarsePointer(): string {
+  const css = emittedStyleText()
+  let result = ''
+  let cursor = 0
+  for (;;) {
+    const start = css.indexOf(COARSE_POINTER_MEDIA, cursor)
+    if (start < 0) return result + css.slice(cursor)
+    result += css.slice(cursor, start)
+    const open = css.indexOf('{', start)
+    if (open < 0) return result
+    let depth = 0
+    let end = open
+    for (; end < css.length; end += 1) {
+      if (css[end] === '{') depth += 1
+      else if (css[end] === '}') {
+        depth -= 1
+        if (depth === 0) break
+      }
+    }
+    cursor = end + 1
+  }
 }

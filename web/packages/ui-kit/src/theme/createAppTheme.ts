@@ -40,6 +40,10 @@
  *   'none' at 0. MUI 9 accepts any array length, so the 25-entry ramp is
  *   deliberate: consumers can index theme.shadows like any stock MUI
  *   theme.
+ * - components: the clickable-target floor. Every base control carries a
+ *   `minWidth`/`minHeight` of 44 nested under `@media (pointer: coarse)`
+ *   (see touch-floor.ts), so the floor reaches every consuming package
+ *   with no per-surface gating; a fine pointer emits none of it.
  *
  * The returned theme is locale-free on purpose: AppThemeProvider merges
  * the MUI locale matching the active language on top at render time, and
@@ -81,6 +85,7 @@ import {
   type SpeedTokens,
   type TokensOverride,
 } from '@speed/tokens'
+import { touchFloorComponents } from './touch-floor.js'
 
 /** Typography rem base; MUI's default htmlFontSize is 16, keep aligned. */
 const REM_BASE = 16
@@ -291,5 +296,6 @@ function tokensToThemeOptions(
     breakpoints: { values: { ...tokens.breakpoints.values } },
     zIndex: { ...tokens.zIndex.values },
     shadows: shadowRamp(tokens.shadows),
+    components: touchFloorComponents,
   }
 }
