@@ -23,7 +23,7 @@ import type { WriteOutcome } from '../write-feedback.js'
 import { InlineError } from './InlineError.js'
 import { InlineSuccess } from './InlineSuccess.js'
 
-export interface WriteFeedbackRegionProps {
+export type WriteFeedbackRegionProps = {
   /** The scope's slot; `null` renders no visible feedback. */
   readonly outcome: WriteOutcome | null
   /** Resolves a failure code to its current-language text. */
