@@ -362,10 +362,13 @@ export async function switchLanguage(
     storage === undefined ? (binding?.storage ?? null) : storage
   if (effectiveStorage !== null) {
     persistChoice(effectiveStorage, binding?.key ?? SPEED_LOCALE_STORAGE_KEY, target)
-  } else if (storage === undefined && binding === null) {
-    warnUnboundStorage(target)
   }
   await instance.changeLanguage(target)
+  // Reported after the switch settles: the warning says the switch happened
+  // but the choice will not survive a reload, which is only true if it did.
+  if (effectiveStorage === null && storage === undefined && binding === null) {
+    warnUnboundStorage(target)
+  }
 }
 
 /**

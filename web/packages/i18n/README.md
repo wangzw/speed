@@ -81,6 +81,12 @@ changed and a rejection always means the switch did not happen. Reads are
 protected the same way: a throwing storage read at creation falls back to
 "no stored choice", never to a failed creation.
 
+An instance that carries no storage binding -- one not created by
+`createI18n`, such as a framework wrapper -- gets the same visible
+`[speed-i18n]` warning when a switch cannot be persisted, and still
+switches. Opting out at creation with `storage: null` is deliberate and
+raises no warning.
+
 A surface that offers the languages the INSTANCE speaks (a language
 picker, a settings select) reads them off the instance rather than the
 package default, because a host may create the instance with a wider or

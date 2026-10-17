@@ -60,8 +60,29 @@ export interface ResourceBundle {
 
 const NAMESPACE_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/
 
-/** Namespaces already registered per instance (WeakMap: no leak, per-instance). */
-const registeredNamespaces = new WeakMap<I18nInstance, Set<string>>()
+/**
+ * Namespaces already registered per instance.
+ *
+ * Carried on the instance itself, under a registry-wide symbol, for the same
+ * reason the locale storage binding is (see storage.ts): a framework wrapper
+ * built from the instance's own property descriptors copies the mark, while a
+ * module-level WeakMap keyed on object identity would miss it -- and a second
+ * copy of this module would miss the WeakMap even for the same object.
+ */
+const REGISTERED_NAMESPACES = Symbol.for('@speed/i18n/registered-namespaces')
+
+function registeredNamespacesOf(instance: I18nInstance): Set<string> | undefined {
+  return (instance as unknown as Record<symbol, Set<string> | undefined>)[REGISTERED_NAMESPACES]
+}
+
+function markNamespaces(instance: I18nInstance, namespaces: Set<string>): void {
+  Object.defineProperty(instance, REGISTERED_NAMESPACES, {
+    value: namespaces,
+    enumerable: false,
+    configurable: true,
+    writable: true,
+  })
+}
 
 function describeLeaf(value: unknown): string {
   if (value === null) {
@@ -200,7 +221,7 @@ export function registerNamespace(
         "start with a letter and contain only letters, digits, '_' and '-'.",
     )
   }
-  const registered = registeredNamespaces.get(instance)
+  const registered = registeredNamespacesOf(instance)
   if (registered !== undefined && registered.has(namespace)) {
     throw new Error(
       `[speed-i18n] namespace "${namespace}" is already registered on this instance. ` +
@@ -348,5 +369,5 @@ export function registerNamespace(
   // that failed mid-loop must never be reported as registered.
   const instanceNamespaces = registered ?? new Set<string>()
   instanceNamespaces.add(namespace)
-  registeredNamespaces.set(instance, instanceNamespaces)
+  markNamespaces(instance, instanceNamespaces)
 }
