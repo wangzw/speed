@@ -149,6 +149,15 @@ graph TD
 
 `NotificationCenter` 只在 `NotificationPresenceProvider` 给出 `preferences` 为真时渲染偏好矩阵；为假时只渲染收件箱，也不发分类法与偏好读。
 
+### 写入的反馈
+
+收件箱与偏好矩阵各是一个反馈作用域，按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织（[ADR-web-write-feedback-2026-10-17](../../../adr/adr-web-write-feedback-2026-10-17.md)）。
+
+- **收件箱的标记已读与全部标记已读共用一个槽。** 一次标记已读的旧失败不与之后全部已读的成功文案并存，反之亦然。标记一条已读也落成功文案，不只靠行上的已读标记翻转。
+- **偏好矩阵的写入落成功文案，并点明类型与渠道。** 失败渲染一条横幅，文本点明失败的是哪个类型与渠道，而不是整张表之上的通用一句。
+- **列表的刷新失败保留旧列表并标明。** 标记已读之后的失效重读、窗口重新聚焦的重读失败时，已有的列表保持原样，其上渲染陈旧提示与重试。
+- **未读铃铛没有失败态，这是有意的。** 未读数读失败时铃铛保持最后一次读到的值（从未读到过则为零），不渲染错误与重试，也不显示实时连接的状态；读失败只在收件箱面的列表读上可见。
+
 ## 错误与失败语义
 
 | 情形 | 表现 |
@@ -182,6 +191,8 @@ graph TD
 | 声明式路由入口 | 已实现 | `web/packages/notification-ui/src/routes.tsx` `notificationRoutes` |
 | 租户作用域读写与失效 | 已实现 | `web/packages/notification-ui/src/internal/queries.ts` `useNotificationMessages`、`useNotificationUnreadCount`、`useNotificationPreferences`、`useMarkNotificationRead`、`useMarkAllNotificationsRead`、`useSetNotificationPreference` |
 | 文案命名空间与双语资源 | 已实现 | `web/packages/notification-ui/src/resources.ts` `NOTIFICATION_UI_NAMESPACE`、`notificationUiResources` |
+| 收件箱与偏好矩阵的反馈作用域与成功确认 | 未实现 | — |
+| 收件箱列表读的陈旧提示 | 未实现 | — |
 | 特性在场 provider `NotificationPresenceProvider` | 未实现 | — |
 | 偏好矩阵的渠道列取 `in_app` 与特性在场的可选渠道 | 未实现 | — |
 | 通知面在特性 `notification.preferences` 缺席时不渲染偏好矩阵、不发其读取 | 未实现 | — |
