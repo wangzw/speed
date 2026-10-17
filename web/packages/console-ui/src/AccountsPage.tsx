@@ -932,12 +932,14 @@ type CreateAccountFields = {
 /**
  * AccountCreateForm: the account-creation control (POST /auth/admin/accounts).
  * It names the fields the handler decodes into its create request; a field
- * left blank is not sent. The form requires a display name and at least one
- * login identifier (a username, an email address or a phone number): an
- * account without one has no way to sign in, and the server refuses it, so
- * the submit stays disabled until the form could produce a usable account --
- * and the submit handler itself re-checks, so no path sends a request the
- * server is known to refuse. The fields flow through ui-kit's form family
+ * left blank is not sent. A user account requires a display name and at
+ * least one login identifier (a username, an email address or a phone
+ * number): it has no way to sign in without one, and the server refuses it.
+ * A service account signs in with a service secret and so needs no
+ * identifier -- the server exempts it from that requirement -- and only the
+ * display name is required. The submit stays disabled until the form could
+ * produce a usable account, and the submit handler itself re-checks, so no
+ * path sends a request the server is known to refuse. The fields flow through ui-kit's form family
  * (FormLayout's responsive grid of FormField adapters), so they wrap into a
  * form rather than crowding one row. The attribute set is typed as a JSON
  * object and marks the field when it does not parse. A landed create clears
@@ -973,20 +975,23 @@ function AccountCreateForm() {
     </>
   )
 
-  // The form names an account once it carries a display name and at least
-  // one login identifier; before that the submit is disabled, and the
-  // handler below refuses to send anyway.
+  // The form names an account once it carries a display name and either a
+  // service kind or at least one login identifier; a service account signs
+  // in with a service secret, so it needs no identifier. Before that the
+  // submit is disabled, and the handler below refuses to send anyway.
   const watched = form.watch()
   const namesAnAccount =
     watched.displayName.trim() !== '' &&
-    (watched.username.trim() !== '' ||
+    (watched.kind === 'service' ||
+      watched.username.trim() !== '' ||
       watched.email.trim() !== '' ||
       watched.phone.trim() !== '')
 
   const onSubmit: SubmitHandler<CreateAccountFields> = (values) => {
     if (
       values.displayName.trim() === '' ||
-      (values.username.trim() === '' &&
+      (values.kind !== 'service' &&
+        values.username.trim() === '' &&
         values.email.trim() === '' &&
         values.phone.trim() === '')
     ) {

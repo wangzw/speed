@@ -560,6 +560,31 @@ describe('AccountsPage', () => {
     await vi.waitFor(() => expect(created).toHaveLength(1))
   })
 
+  it('creates an identifier-less service account from a display name alone', async () => {
+    const user = userEvent.setup()
+    const created: ConsoleCreateAccountInput[] = []
+    const operations = withAccounts({
+      createAccount: (input) => {
+        created.push(input)
+        return Promise.resolve(accountFixture())
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    const submit = screen.getByRole('button', { name: '新建' })
+
+    // A service account signs in with a service secret, so the server
+    // exempts it from the login-identifier requirement, and the submit must
+    // be enabled on a display name alone before any identifier is given.
+    await user.click(screen.getByLabelText('账户类型'))
+    await user.click(await screen.findByRole('option', { name: '服务' }))
+    await user.type(screen.getByLabelText('显示名'), 'Nightly')
+    await vi.waitFor(() => expect(submit).toBeEnabled())
+    await user.click(submit)
+    await vi.waitFor(() => {
+      expect(created).toEqual([{ kind: 'service', display_name: 'Nightly' }])
+    })
+  })
+
   it('lays the create fields out through the form family instead of one crowded row', async () => {
     const operations = withAccounts()
     const { container } = renderWithProviders(<AccountsPage />, { operations })
