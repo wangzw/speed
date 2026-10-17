@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
+import type { ReactElement } from 'react'
 import { ApiError } from '@speed/api-client'
 import type {
   EventStreamHandle,
@@ -79,6 +80,36 @@ describe('NotificationStreamProvider', () => {
 
     unmount()
     expect(opened[0]?.closed).toBe(1)
+  })
+
+  it('re-registers the stream when the identity generation changes', async () => {
+    const user = userEvent.setup()
+    const { opened, opener } = fakeOpener()
+    function Harness(): ReactElement {
+      const [generation, setGeneration] = useState(0)
+      return (
+        <>
+          <button type="button" onClick={() => setGeneration((n) => n + 1)}>
+            bump
+          </button>
+          <NotificationStreamProvider
+            openStream={opener}
+            identityGeneration={generation}
+          >
+            <div>content</div>
+          </NotificationStreamProvider>
+        </>
+      )
+    }
+    renderWithProviders(<Harness />)
+    expect(opened).toHaveLength(1)
+
+    // The effective account changed: the old connection is closed and a
+    // new registration opens at the same path, under the new identity.
+    await user.click(screen.getByRole('button', { name: 'bump' }))
+    expect(opened).toHaveLength(2)
+    expect(opened[0]?.closed).toBe(1)
+    expect(opened[1]?.path).toBe(STREAM_PATH)
   })
 
   it('reconnects after the connection ends', async () => {

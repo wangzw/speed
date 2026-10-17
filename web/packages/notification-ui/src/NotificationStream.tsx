@@ -70,6 +70,16 @@ export interface NotificationStreamProviderProps {
    * for it.
    */
   readonly enabled?: boolean
+  /**
+   * A counter the host bumps whenever the identity behind the connection
+   * changes -- starting or ending an impersonation, whose effective
+   * account swaps without the tenant necessarily changing. The
+   * subscription registers per (tenant, effective account), so a bump
+   * closes the current connection and opens a new one; children stay
+   * mounted, because the identity changed, not the page. Defaults to 0,
+   * which never triggers a rebuild.
+   */
+  readonly identityGeneration?: number
   readonly children: ReactNode
 }
 
@@ -78,12 +88,19 @@ export interface NotificationStreamProviderProps {
 export function NotificationStreamProvider({
   openStream,
   enabled = true,
+  identityGeneration = 0,
   children,
 }: NotificationStreamProviderProps): ReactElement {
   return (
     <NotificationStreamContext.Provider value={openStream ?? null}>
       {openStream !== undefined && enabled && (
-        <NotificationStreamSubscriber openStream={openStream} />
+        // Keyed by the identity generation, not by the children: a bump
+        // tears the subscription down and re-registers it under the new
+        // effective account, while the surfaces below stay mounted.
+        <NotificationStreamSubscriber
+          key={identityGeneration}
+          openStream={openStream}
+        />
       )}
       {children}
     </NotificationStreamContext.Provider>
