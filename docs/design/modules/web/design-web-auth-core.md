@@ -36,6 +36,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession
 export interface AuthSnapshot {
   state: 'anonymous' | 'authenticated'
   principal: AuthnPrincipal | null
+  impersonating: boolean                                        // 当前会话挂着一条有效冒充；匿名时恒为 false
   permissionSets: AuthPermissionSets
   features: FeatureState
 }
@@ -73,7 +74,7 @@ export interface AuthSession {
 ```
 
 - **流程操作接生成面；只有完成开启会话时改会话。** `startFlow`、`startAuthenticatedFlow`、`answerFlow`、`readFlow`、`abandonFlow` 把 `authn.login` 的流程操作转发给视图，交回该步的 `AuthnFlowState`。只有 `answerFlow` 落定一次完成时才改会话：一次 `purpose: 'login'` 的完成（`state: 'authenticated'`）建会话、转已认证；一次 `step-up` 的完成（`state: 'authenticated'`，服务端已轮换 cookie；令牌会话为 `state: 'elevated'`）更新凭据、主体不变；`purpose: 'link'` 与 `enroll` 的完成（`state: 'linked'`、`state: 'enrolled'`）不改登录态。`startFlow` 一律以 `delivery: 'session'` 开始（cookie 会话）；`startAuthenticatedFlow` 的交付方式留给调用方（账户面不设，服务端取其缺省，即 cookie 会话）。
-- **`restore()` 从 cookie 重建会话。** 它读 `GET /auth/session`：cookie 仍指向一个会话时，读 `GET /auth/me` 取主体、转已认证并 resolve `true`——从匿名状态开始的恢复同时并行读 `GET /features`，已认证状态下的恢复只读主体、保留特性态（见「特性态」）；无人登录（含读被 401 拒）时清本地并 resolve `false`；传输或服务端失败重抛原始 `ApiError`、本地快照不动。页面加载时调用一次即保持登录，同时也是 `@speed/api-client` 在被拒的带凭据请求上跑的那条静默腿。它接受可选的 `issue`——`@speed/api-client` 交给刷新钩子的轮作用域请求函数：两次读都经它发出，故其中任一次被拒即浮出给钩子，而不会加入正在 await 该调用的刷新轮；缺省时走生成的绑定请求函数。
+- **`restore()` 从 cookie 重建会话。** 它读 `GET /auth/session`：cookie 仍指向一个会话时，读 `GET /auth/me` 取主体、转已认证并 resolve `true`，主体与 `impersonating` 一起提交，`impersonating` 取自 `GET /auth/session` 应答的同名字段，缺省为 `false`——从匿名状态开始的恢复同时并行读 `GET /features`，已认证状态下的恢复只读主体、保留特性态（见「特性态」）；无人登录（含读被 401 拒）时清本地并 resolve `false`；传输或服务端失败重抛原始 `ApiError`、本地快照不动。页面加载时调用一次即保持登录，同时也是 `@speed/api-client` 在被拒的带凭据请求上跑的那条静默腿。它接受可选的 `issue`——`@speed/api-client` 交给刷新钩子的轮作用域请求函数：两次读都经它发出，故其中任一次被拒即浮出给钩子，而不会加入正在 await 该调用的刷新轮；缺省时走生成的绑定请求函数。
 - **`refresh()` 用被持有的刷新令牌换新令牌对（令牌会话）。** 走 `POST /auth/token` 的 `grant_type = refresh_token`，凭据为空（[api-client](design-web-api-client.md) 的凭据为空一档，即 `speedRequestCredentialless`）；其令牌的落地与世代守卫见「单飞刷新」与「世代守卫」。cookie 会话不持刷新令牌，`refresh()` 不发请求即 resolve `false`；其静默腿是 `restore()`。
 - **`listMethods` 读部署在场的登录方式发现文档。** 它转发 `GET /auth/methods` 并解析成方法描述符文档（每个方法自报渲染类别、线协议、品牌标签、首步字段与是否可开户，连同注册开关与部署级因素种类），随部署的 `authn.login.disabled-methods` 设置与在场模块而变，前端不写死；消费视图用它渲染渠道（[ADR-web-auth-channel-discovery-2026-10-16](../../../adr/adr-web-auth-channel-discovery-2026-10-16.md)、[ADR-authn-login-method-discovery-2026-10-16](../../../adr/adr-authn-login-method-discovery-2026-10-16.md)）。
 - **`discoverSso` 读一个邮箱域映射的企业提供方。** 它转发 `POST /auth/sso/discover`，交回 `{id, name, protocol}` 列表；应答恒同形同长，无匹配时为空列表，故「无匹配」是一次成功的空读而非错误。企业提供方清单不多进发现文档：它按域发现，不泄露账户存在性（[authn-sso](../authn/design-authn-sso.md)）。
@@ -138,6 +139,8 @@ export function isOperationSuperseded(value: unknown): value is OperationSuperse
 **特性文档有解析守卫。** `parseFeatureDocument` 校验应答是对象、`features` 是字符串数组；任一项不过，特性态以 `code: client.protocol` 的错误进入 `failed`。应答里有前端不认识的名字时照收，不报错。
 
 **冒充开始或结束都不重取。** 特性文档与调用者身份无关；冒充期间整页刷新时，从匿名状态开始的恢复照常读到它。
+
+**冒充开始与结束改变的是主体与 `impersonating`，auth-core 自己不得知这两个事件。** 冒充期间 `GET /auth/me` 读的是被冒充账户，快照的 `principal` 因此是被冒充者；快照不携带发起者的标识，看着屏幕的就是发起者。开始或结束冒充的写入由宿主绑定的操作发出，宿主在它落定后调用 `restore()` 重读，快照随之改变；`impersonating` 只由 `restore()` 写入，登录完成时为 `false`。冒充身份只到得了封闭的几条路由，`restore()` 所读的 `GET /auth/session` 与 `GET /auth/me` 都在其中。
 
 ### hook
 
@@ -251,7 +254,7 @@ stateDiagram-v2
 
 | 概念 | 类型 | 说明 |
 |---|---|---|
-| 快照 | `AuthSnapshot` | `state`、`principal`、按域权限表、特性态；按约定不可变 |
+| 快照 | `AuthSnapshot` | `state`、`principal`、`impersonating`、按域权限表、特性态；按约定不可变 |
 | 特性态 | `FeatureState` | `none`／`pending`／`failed`（带错误）／`ready`（带特性名集合） |
 | 权限表 | `AuthPermissionSets` | 每域一份 `readonly string[] \| null`，null 表示未知（对该域 fail-closed） |
 | 流程态 | `AuthnFlowState` | 生成的流程应答按 `state` 收窄：开放流程带 `seq` 与 `next`，或三类完成 |
@@ -367,5 +370,6 @@ stateDiagram-v2
 | 会话状态机（流程驱动登录、发现读取、登出、恢复、加强认证、刷新与世代守卫；特性态的取回、存活规则、提交检查与 `retryFeatures`） | 部分实现 | `web/packages/auth-core/src/session.ts` `createAuthSession` |
 | 生成响应模型的解析守卫（含特性文档的 `parseFeatureDocument`） | 部分实现 | `web/packages/auth-core/src/session.ts` `parseFlowState`、`parseStep`、`parsePrincipal`、`parseSessionView`、`parseIssuedTokens`、`parseMethodList`、`parseMethodDescriptor`、`parseSsoProviders`、`parseFeatureDocument` |
 | 会话 hook 与通知桥（含 `useFeature`、`useFeatureState` 与 `featurePresence`） | 部分实现 | `web/packages/auth-core/src/hooks.ts` `attachSession`、`useAuthState`、`usePermission`、`useFeature`、`useFeatureState`、`featurePresence` |
+| 快照的 `impersonating` 字段与 `restore()` 对它的写入 | 未实现 | — |
 | 步进认证的 hook | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp` |
 | 租户上下文、租户作用域 query key 工厂与逐出助手 | 已实现 | `web/packages/auth-core/src/hooks.ts` `TenantProvider`、`useCurrentTenant`；`web/packages/auth-core/src/query-key.ts` `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries` |
