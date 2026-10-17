@@ -151,6 +151,39 @@ func TestManagerRefusesToChangeABuiltinRole(t *testing.T) {
 	if !errors.Is(err, authz.ErrBuiltinRole) {
 		t.Errorf("PutRole over a builtin role gave %v, want ErrBuiltinRole", err)
 	}
+	// The refusals leave the role standing: a refused delete that removed the
+	// row anyway would still lock the operator out.
+	roles, err := f.Roles(t.Context(), "system")
+	if err != nil {
+		t.Fatalf("Roles: %v", err)
+	}
+	if len(roles) != 1 || roles[0].Role != "operator" || !roles[0].Builtin {
+		t.Errorf("Roles(system) = %+v, want the one builtin role", roles)
+	}
+}
+
+// The refusal belongs to the builtin flag and not to roles in general: a role
+// that is not builtin keeps its write paths, so the guard is not wider than the
+// defect it answers.
+func TestManagerStillChangesANonBuiltinRole(t *testing.T) {
+	f := newFixture(t)
+	const tenant = "acme"
+	if err := f.PutRole(t.Context(), authz.RoleRecord{Tenant: tenant, Role: "editor", DescriptionKey: "k"}); err != nil {
+		t.Fatalf("PutRole: %v", err)
+	}
+	grant := authz.GrantRecord{Tenant: tenant, Role: "editor", Resource: "deal", Action: "read"}
+	if err := f.PutGrant(t.Context(), grant); err != nil {
+		t.Errorf("PutGrant on a non-builtin role: %v", err)
+	}
+	if err := f.DeleteGrant(t.Context(), grant); err != nil {
+		t.Errorf("DeleteGrant on a non-builtin role: %v", err)
+	}
+	if err := f.PutRole(t.Context(), authz.RoleRecord{Tenant: tenant, Role: "editor", DescriptionKey: "changed"}); err != nil {
+		t.Errorf("PutRole over a non-builtin role: %v", err)
+	}
+	if err := f.DeleteRole(t.Context(), tenant, "editor"); err != nil {
+		t.Errorf("DeleteRole on a non-builtin role: %v", err)
+	}
 }
 
 // An empty tenant argument is refused: a row belonging to no tenant reaches no
