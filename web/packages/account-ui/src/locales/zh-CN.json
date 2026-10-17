@@ -145,6 +145,7 @@
     "redirectNotice": "请在打开的窗口中继续以完成此步骤。",
     "continueLabel": "继续",
     "enrollTotpHelp": "将下方内容添加进你的身份验证器应用，然后输入应用显示的 6 位验证码完成设置。",
+    "enrollTotpUriLabel": "身份验证器设置 URI",
     "codeLabel": "6 位验证码",
     "passkeyPrompt": "用你的设备登记或出示通行密钥。",
     "passkeyUnsupported": "此浏览器无法进行通行密钥仪式。",

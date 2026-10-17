@@ -20,10 +20,11 @@
  *  - Enroll. `startAuthenticatedFlow({purpose: 'enroll', input: {kind}})`
  *    opens the wizard; each reply's next step is rendered (FlowStep) and
  *    answered. A `webauthn` step hands the factor its own JSON -- TOTP's
- *    otpauth_uri, or a passkey's creation options -- which the package
- *    renders as text (it ships no QR or WebAuthn dependency) beside one
- *    free-text field. The flow settles `enrolled` without changing this
- *    session's level; the factors list is then refetched.
+ *    otpauth_uri, or a passkey's creation options -- of which the wizard
+ *    renders the URI alone, as its own read-only field (it ships no QR or
+ *    WebAuthn dependency) beside one free-text field. The flow settles
+ *    `enrolled` without changing this session's level; the factors list is
+ *    then refetched.
  *  - Remove. A row's row-end action sends DELETE /auth/factors/{id}
  *    behind the ui-kit danger ConfirmDialog (removing a factor is
  *    irreversible). The route asks for a fresh multi-factor

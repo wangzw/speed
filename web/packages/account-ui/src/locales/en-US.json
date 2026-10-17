@@ -145,6 +145,7 @@
     "redirectNotice": "Continue in the window that opens to finish this step.",
     "continueLabel": "Continue",
     "enrollTotpHelp": "Add the content below to your authenticator app, then enter the 6-digit code the app shows.",
+    "enrollTotpUriLabel": "Authenticator setup URI",
     "codeLabel": "6-digit code",
     "passkeyPrompt": "Use your device to register or present a passkey.",
     "passkeyUnsupported": "This browser cannot carry out a passkey ceremony.",

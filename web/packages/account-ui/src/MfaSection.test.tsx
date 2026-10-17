@@ -350,15 +350,16 @@ describe('MfaSection', () => {
     )
     expect(start?.body).toEqual({ purpose: 'enroll', input: { kind: 'totp' } })
 
-    // The webauthn step hands the factor's own JSON (the otpauth URI),
-    // rendered as text in a monospace block.
-    expect(
-      await screen.findByText(
-        (_content, element) =>
-          element?.tagName.toLowerCase() === 'pre' &&
-          (element.textContent ?? '').includes(OTPAUTH_URI),
-      ),
-    ).toBeTruthy()
+    // The step's otpauth URI is its own read-only field: the step's JSON is
+    // never rendered as a blob. The label is the field's accessible name,
+    // and its value is the URI alone.
+    const uriField = await screen.findByRole('textbox', {
+      name: zhCN.flowStep.enrollTotpUriLabel,
+    })
+    expect(uriField).toBeVisible()
+    expect(uriField).toHaveValue(OTPAUTH_URI)
+    expect(uriField).toHaveAttribute('readonly')
+    expect(screen.queryByText(/"otpauth_uri"/)).toBeNull()
     await user.type(
       screen.getByLabelText(zhCN.flowStep.codeLabel),
       '123456',
@@ -382,6 +383,39 @@ describe('MfaSection', () => {
       input: { code: '123456' },
     })
     expect(answers[1]?.body).toEqual({ seq: 2, step: 'complete' })
+  })
+
+  it('renders no payload when a TOTP step carries no setup URI', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'enroll',
+          // The key is there, so the step is the TOTP one, but it carries no
+          // usable URI. The code field still renders; the options do not.
+          next: { kind: 'webauthn', options: { otpauth_uri: '' } },
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.mfa.enroll.totp }),
+    )
+
+    expect(await screen.findByLabelText(zhCN.flowStep.codeLabel)).toBeVisible()
+    expect(
+      screen.queryByRole('textbox', { name: zhCN.flowStep.enrollTotpUriLabel }),
+    ).toBeNull()
+    expect(screen.queryByText(/"otpauth_uri"/)).toBeNull()
   })
 
   it('walks a passkey enrollment, answering the credential under the enroll step', async () => {

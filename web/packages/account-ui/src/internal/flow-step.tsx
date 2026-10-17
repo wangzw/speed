@@ -19,13 +19,14 @@
  *    identifier travels under `factor` as the field `factor`.
  *  - `enroll`: the factor kinds the assembly takes in; the chosen kind
  *    travels under `enroll` as the field `kind`.
- *  - `webauthn`: the factor's own JSON. TOTP's otpauth_uri is rendered as
- *    text beside a code field; a passkey's creation or request options
- *    are driven by the WebAuthn ceremony (./webauthn), whose credential
- *    is reported under the answer step the CALLER names. Both answer
- *    under the same step a `challenge` step would, because the record's
- *    state decides it: `enroll` in a registration, `factor` in the second
- *    factor of a step-up.
+ *  - `webauthn`: the factor's own JSON. TOTP's `otpauth_uri` is extracted
+ *    from it and rendered as its own read-only field -- the step's JSON is
+ *    never shown as a blob -- beside a code field; a passkey's creation or
+ *    request options are driven by the WebAuthn ceremony (./webauthn),
+ *    whose credential is reported under the answer step the CALLER names.
+ *    Both answer under the same step a `challenge` step would, because the
+ *    record's state decides it: `enroll` in a registration, `factor` in
+ *    the second factor of a step-up.
  *  - `complete`: a single confirm that takes the flow's result with
  *    `step: 'complete'`.
  *  - `redirect`: an external URL, reported upward; the component never
@@ -155,25 +156,34 @@ export function FlowStep({
     const options = step.options
     if (webauthnStepOf(options) === 'totp') {
       // TOTP's enrollment shows the otpauth_uri to add to an authenticator
-      // app, then takes the six-digit code the app shows.
+      // app, then takes the six-digit code the app shows. Only the URI is
+      // rendered, in a read-only field the reader can select and copy; the
+      // step's remaining options are the server's answer to the flow and
+      // are not a document to show.
+      const uri = otpauthUriOf(options)
       return (
         <Box sx={{ mt: 2 }}>
           <Typography variant="body2" color="text.secondary">
             {t('flowStep.enrollTotpHelp')}
           </Typography>
-          <Typography
-            variant="body2"
-            component="pre"
-            sx={{
-              fontFamily: 'monospace',
-              wordBreak: 'break-all',
-              whiteSpace: 'pre-wrap',
-              mt: 1,
-              mb: 1.5,
-            }}
-          >
-            {safeJson(options)}
-          </Typography>
+          {uri !== null && (
+            <TextField
+              label={t('flowStep.enrollTotpUriLabel')}
+              value={uri}
+              multiline
+              minRows={2}
+              fullWidth
+              slotProps={{ input: { readOnly: true } }}
+              sx={{
+                mt: 1,
+                mb: 1.5,
+                '& textarea': {
+                  fontFamily: 'monospace',
+                  wordBreak: 'break-all',
+                },
+              }}
+            />
+          )}
           <TextField
             label={t('flowStep.codeLabel')}
             value={values.code ?? ''}
@@ -319,12 +329,14 @@ function webauthnErrorKey(failure: unknown): string {
   return 'flowStep.passkeyFailed'
 }
 
-/** The step's payload as readable text; a non-serializable value reads
- * as its string form rather than throwing in a render. */
-function safeJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return String(value)
+/** The TOTP setup URI a step's options carry, or null when they carry none.
+ * Only this one field of the step's JSON is rendered: the options are the
+ * flow engine's answer, not a document to show, so a step without a usable
+ * URI renders no payload at all. */
+function otpauthUriOf(options: unknown): string | null {
+  if (typeof options !== 'object' || options === null) {
+    return null
   }
+  const uri = (options as Record<string, unknown>).otpauth_uri
+  return typeof uri === 'string' && uri !== '' ? uri : null
 }
