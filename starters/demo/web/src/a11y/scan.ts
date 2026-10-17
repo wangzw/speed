@@ -12,8 +12,9 @@
  * Rule tags and thresholds. The gate runs the WCAG 2.1 level AA success
  * criteria -- `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa` (A plus AA, level A
  * applying at every level above it) -- PLUS the page-structure rules (see
- * `PAGE_STRUCTURE_RULES`: a level-one heading, a single main landmark, landmark
- * containment, heading order). Those four carry only axe's best-practice tag,
+ * `PAGE_STRUCTURE_RULES`: a level-one heading, a single main landmark, a main
+ * landmark that is not nested in another landmark, landmark containment,
+ * heading order). Those six carry only axe's best-practice tag,
  * so a tag-only gate would never run them; the gate runs them by rule id and
  * fails on them by rule, because a page-structure defect is exactly the
  * composition-tier signal this tier exists to catch. The remaining
@@ -96,19 +97,30 @@ export const BEST_PRACTICE_TAGS = ['best-practice'] as const
 /**
  * The page-structure rules the gate runs and fails on beside the WCAG tags.
  *
- * axe 4.14 tags all four best-practice -- none carries a `wcag*` tag (measured:
- * page-has-heading-one, landmark-one-main and heading-order carry
- * `cat.semantics` + best-practice, region carries `cat.keyboard` + best-practice)
- * -- so a tag-only gate never runs them: they fall into the advisory pass and
- * warn, and the composition-tier defect the sweep claims to catch (a heading
- * order that breaks across the frame boundary, a page with no main landmark)
+ * axe 4.14 tags all six best-practice -- none carries a `wcag*` tag (measured
+ * with `axe._audit.rules`: page-has-heading-one, landmark-one-main,
+ * landmark-no-duplicate-main, landmark-main-is-top-level and heading-order
+ * carry `cat.semantics` + best-practice, region carries `cat.keyboard` +
+ * best-practice) -- so a tag-only gate never runs them: they fall into the
+ * advisory pass and warn, and the composition-tier defect the sweep claims to
+ * catch (a heading order that breaks across the frame boundary, a page with no
+ * main landmark, a page whose content nests a second main inside the frame's)
  * slips past the failing threshold. Running them here as gate rules closes
  * that gap. Their axe impact is only moderate, so the gate fails them by rule
  * id, not by impact (see `isFailing`).
+ *
+ * landmark-no-duplicate-main and landmark-main-is-top-level are here because
+ * the composition tier is exactly where a second main appears: a page that
+ * renders its own main inside a shell that already provides one is green in
+ * both packages' component scans and broken only once assembled. The absent
+ * view of the auth callback route was such a case, reported as an advisory
+ * warning nobody read.
  */
 export const PAGE_STRUCTURE_RULES = [
   'page-has-heading-one',
   'landmark-one-main',
+  'landmark-no-duplicate-main',
+  'landmark-main-is-top-level',
   'region',
   'heading-order',
 ] as const

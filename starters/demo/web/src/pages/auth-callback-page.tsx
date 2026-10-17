@@ -31,7 +31,13 @@ export function AuthCallbackPage({
   const navigate = useNavigate()
   return (
     <Box
-      component="main"
+      // The host's absent view is the tenant frame's 404, and that frame
+      // renders the page's main landmark itself (AppShell's content area, or
+      // the sign-in branch's own surface). Wrapping it in this page's main
+      // would nest two main landmarks, so the root is a plain container
+      // whenever the host supplies that frame; a host without an absent view
+      // keeps this page as the document's main.
+      component={absent === undefined ? 'main' : 'div'}
       sx={{
         minHeight: '100vh',
         display: 'flex',
