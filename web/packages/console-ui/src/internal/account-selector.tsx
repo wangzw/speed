@@ -10,10 +10,15 @@
  * read before the operator types, so opening the page never pulls the
  * account table.
  *
- * The searches are debounced and page-limited. A name prefix and the three
+ * The searches are debounced and page-limited. A name prefix and the
  * identifier kinds (username, email, phone) are separate list reads, so
- * their answers are merged and de-duplicated by account id. A failed
- * search is stated in the popup rather than shown as "no matches".
+ * their answers are merged and de-duplicated by account id. The listing
+ * refuses an identifier prefix that is shorter than three characters or
+ * that its kind's shape does not take, so only the kinds this text can
+ * name are read; a kind the server refuses anyway is treated as not
+ * applicable rather than as a failure. A failed search -- a transport or
+ * server failure -- is stated in the popup rather than shown as "no
+ * matches".
  *
  * The combobox is keyboard operable end to end (arrow keys move through
  * the options, Enter selects, Escape closes) and takes its accessible name
@@ -35,6 +40,18 @@ const SEARCH_LIMIT = 20
 /** The pause between the last keystroke and the read it triggers. */
 const SEARCH_DEBOUNCE_MS = 250
 
+/** The shortest identifier prefix the account listing accepts. */
+const MIN_IDENTIFIER_PREFIX_CHARS = 3
+
+/** The longest an email prefix may be; the listing's own bound is 254 bytes. */
+const EMAIL_PREFIX_MAX_BYTES = 254
+
+/** The username prefix shape the listing accepts, after folding. */
+const USERNAME_PREFIX_SHAPE = /^[a-z0-9][a-z0-9._-]{0,63}$/
+
+/** The phone prefix shape the listing accepts: the head of an E.164 number. */
+const PHONE_PREFIX_SHAPE = /^\+[1-9][0-9]{0,14}$/
+
 /** The rows the open search has settled, and its progress. */
 interface AccountSearchState {
   readonly rows: readonly ConsoleAccount[]
@@ -53,6 +70,68 @@ function accountOptionLabel(account: ConsoleAccount): string {
   return account.display_name === ''
     ? account.id
     : `${account.display_name} (${account.id})`
+}
+
+/** Whether every character is visible ASCII, the listing's email alphabet. */
+function printableASCII(text: string): boolean {
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index)
+    if (code < 0x21 || code > 0x7e) {
+      return false
+    }
+  }
+  return true
+}
+
+/** The identifier kinds an account search reads for its text. */
+interface IdentifierReads {
+  readonly username: boolean
+  readonly email: boolean
+  readonly phone: boolean
+}
+
+/**
+ * Which identifier reads the account listing accepts for this text.
+ *
+ * The listing normalizes a prefix before comparing it -- a username is
+ * NFKC-folded and lower-cased, an email trimmed and lower-cased -- and
+ * refuses a prefix shorter than three characters or one its kind's shape
+ * does not take: a username of [a-z0-9._-] beginning with a letter or a
+ * digit, an email of visible ASCII with at most one @, a phone the head of
+ * an E.164 number. The rules are pkg/authn/account's; mirroring them here
+ * keeps a search from issuing a read the route answers 400. Username and
+ * phone are mutually exclusive shapes; an ASCII word is both a username
+ * and an email prefix, so those two reads may both run.
+ */
+function identifierReadsFor(query: string): IdentifierReads {
+  const username = query.normalize('NFKC').toLowerCase()
+  const email = query.trim().toLowerCase()
+  return {
+    username:
+      username.length >= MIN_IDENTIFIER_PREFIX_CHARS &&
+      USERNAME_PREFIX_SHAPE.test(username),
+    email:
+      email.length >= MIN_IDENTIFIER_PREFIX_CHARS &&
+      email.length <= EMAIL_PREFIX_MAX_BYTES &&
+      printableASCII(email) &&
+      email.split('@').length <= 2,
+    phone:
+      query.length >= MIN_IDENTIFIER_PREFIX_CHARS &&
+      PHONE_PREFIX_SHAPE.test(query),
+  }
+}
+
+/**
+ * Whether a read failed because the listing refused its shape: HTTP 400,
+ * the answer the account listing gives a prefix it cannot read. That
+ * refusal says the kind does not apply to this text; a transport failure,
+ * a 5xx or any other answer says the search itself failed.
+ */
+function isShapeRefusal(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false
+  }
+  return (error as { readonly status?: unknown }).status === 400
 }
 
 export interface AccountSelectorProps {
@@ -74,7 +153,7 @@ export function AccountSelector({
   const [query, setQuery] = useState('')
   const [search, setSearch] = useState<AccountSearchState>(EMPTY_SEARCH)
 
-  // The four reads settle one after another; a settlement that leaves the
+  // The reads settle one after another; a settlement that leaves the
   // merged answer unchanged is dropped, so the page re-renders on a real
   // change rather than once per read.
   const applySearch = useCallback((next: AccountSearchState) => {
@@ -167,8 +246,8 @@ export function AccountSelector({
 /**
  * AccountSearch: the reads behind one account query. It is mounted only
  * while there is text to search, so an idle selector issues no request. A
- * display-name prefix and the three identifier kinds are separate reads;
- * their pages are merged by account id.
+ * display-name prefix and the identifier kinds the text can name are
+ * separate reads; their pages are merged by account id.
  */
 function AccountSearch({
   query,
@@ -178,25 +257,35 @@ function AccountSearch({
   readonly onState: (state: AccountSearchState) => void
 }) {
   const operations = useConsoleOperations()
+  const identifierReads = identifierReadsFor(query)
   const byName = operations.useAccounts({
     limit: SEARCH_LIMIT,
     display_name_prefix: query,
   })
-  const byUsername = operations.useAccounts({
-    limit: SEARCH_LIMIT,
-    identifier_prefix: query,
-    identifier_kind: 'username',
-  })
-  const byEmail = operations.useAccounts({
-    limit: SEARCH_LIMIT,
-    identifier_prefix: query,
-    identifier_kind: 'email',
-  })
-  const byPhone = operations.useAccounts({
-    limit: SEARCH_LIMIT,
-    identifier_prefix: query,
-    identifier_kind: 'phone',
-  })
+  const byUsername = operations.useAccounts(
+    {
+      limit: SEARCH_LIMIT,
+      identifier_prefix: query,
+      identifier_kind: 'username',
+    },
+    { enabled: identifierReads.username },
+  )
+  const byEmail = operations.useAccounts(
+    {
+      limit: SEARCH_LIMIT,
+      identifier_prefix: query,
+      identifier_kind: 'email',
+    },
+    { enabled: identifierReads.email },
+  )
+  const byPhone = operations.useAccounts(
+    {
+      limit: SEARCH_LIMIT,
+      identifier_prefix: query,
+      identifier_kind: 'phone',
+    },
+    { enabled: identifierReads.phone },
+  )
 
   const state = useMemo<AccountSearchState>(() => {
     const rows: ConsoleAccount[] = []
@@ -209,31 +298,38 @@ function AccountSearch({
         }
       }
     }
+    // A kind the text cannot name is declared disabled, and a disabled
+    // query reports pending forever (pending with nothing fetching):
+    // progress is read from isLoading (pending and fetching) so it clears
+    // when no read is left.
     const pending =
-      byName.isPending ||
-      byUsername.isPending ||
-      byEmail.isPending ||
-      byPhone.isPending
+      byName.isLoading ||
+      byUsername.isLoading ||
+      byEmail.isLoading ||
+      byPhone.isLoading
     const failed =
       rows.length === 0 &&
       (byName.isError ||
-        byUsername.isError ||
-        byEmail.isError ||
-        byPhone.isError)
+        (byUsername.isError && !isShapeRefusal(byUsername.error)) ||
+        (byEmail.isError && !isShapeRefusal(byEmail.error)) ||
+        (byPhone.isError && !isShapeRefusal(byPhone.error)))
     return { rows, pending, failed }
   }, [
     byName.data,
-    byName.isPending,
+    byName.isLoading,
     byName.isError,
     byUsername.data,
-    byUsername.isPending,
+    byUsername.isLoading,
     byUsername.isError,
+    byUsername.error,
     byEmail.data,
-    byEmail.isPending,
+    byEmail.isLoading,
     byEmail.isError,
+    byEmail.error,
     byPhone.data,
-    byPhone.isPending,
+    byPhone.isLoading,
     byPhone.isError,
+    byPhone.error,
   ])
 
   useEffect(() => {

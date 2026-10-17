@@ -646,9 +646,14 @@ export interface ConsoleOperations {
 
   // --- Account surface (/auth/admin) ------------------------------------
 
-  /** GET /auth/admin/accounts -- one page of accounts. */
+  /**
+   * GET /auth/admin/accounts -- one page of accounts. `enabled` false
+   * declares the read disabled (no request) when the params do not name an
+   * applicable search.
+   */
   readonly useAccounts: (
     params?: AuthnAdminAccountsListParams,
+    options?: { readonly enabled?: boolean },
   ) => UseQueryResult<ConsoleAccountPage, unknown>
   /** GET /auth/admin/accounts/:id -- one account (disabled while no id). */
   readonly useAccount: (
@@ -1137,10 +1142,11 @@ export const consoleOperations: ConsoleOperations = {
 
   // --- Account surface (/auth/admin) ------------------------------------
 
-  useAccounts: (params) =>
+  useAccounts: (params, options) =>
     useQuery({
       ...getAuthnAdminAccountsListQueryOptions(params),
       select: (page) => page,
+      enabled: options?.enabled ?? true,
     }),
 
   useAccount: ({ id }) =>

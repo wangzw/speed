@@ -2,14 +2,15 @@
  * AccountSelector: the searchable account picker.
  *
  * It issues no account read until the operator types; a typed name is
- * searched as a display-name prefix and as each identifier kind's prefix;
- * a choice hands the caller the account's id, by pointer or by keyboard;
- * and a failed search is stated rather than rendered as "no matches".
+ * searched as a display-name prefix and as the identifier kinds its shape
+ * can name; a choice hands the caller the account's id, by pointer or by
+ * keyboard; an empty answer is stated as "no matches"; and a failed search
+ * is stated rather than rendered as "no matches".
  */
 
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AccountSelector } from './account-selector.js'
 import type { ConsoleAccount } from '../operations.js'
@@ -65,7 +66,7 @@ describe('AccountSelector', () => {
     expect(listAccounts).not.toHaveBeenCalled()
   })
 
-  it('searches the display name and every identifier kind', async () => {
+  it('searches the display name and the identifier kinds the text can name', async () => {
     const user = userEvent.setup()
     const listAccounts = vi.fn(() =>
       Promise.resolve({ accounts: [account()], next_cursor: '' }),
@@ -80,7 +81,8 @@ describe('AccountSelector', () => {
         limit: 20,
         display_name_prefix: 'Ada',
       })
-      for (const kind of ['username', 'email', 'phone']) {
+      // An ASCII word is both a username and an email prefix.
+      for (const kind of ['username', 'email']) {
         expect(listAccounts).toHaveBeenCalledWith({
           limit: 20,
           identifier_prefix: 'Ada',
@@ -88,6 +90,89 @@ describe('AccountSelector', () => {
         })
       }
     })
+    // "Ada" is not the head of an E.164 number, so the listing would refuse
+    // that read: it is never issued.
+    expect(listAccounts).not.toHaveBeenCalledWith(
+      expect.objectContaining({ identifier_kind: 'phone' }),
+    )
+  })
+
+  it('does not read an identifier kind the text is too short to name', async () => {
+    const user = userEvent.setup()
+    const listAccounts = vi.fn(() =>
+      Promise.resolve({ accounts: [account()], next_cursor: '' }),
+    )
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listAccounts }),
+    )
+    renderWithProviders(<Harness onChoose={() => {}} />, { operations })
+    await user.type(screen.getByLabelText('账户'), 'Ab')
+    await vi.waitFor(() => {
+      expect(listAccounts).toHaveBeenCalledWith({
+        limit: 20,
+        display_name_prefix: 'Ab',
+      })
+    })
+    // Every identifier kind has a three-character floor on the listing.
+    expect(listAccounts).toHaveBeenCalledTimes(1)
+  })
+
+  it('states an empty answer as no matches', async () => {
+    const user = userEvent.setup()
+    // The listing refuses every identifier kind for a text with a space in
+    // it; the display-name prefix read is the only one it accepts and it
+    // finds nothing. The popup must say so rather than claim a failure.
+    const listAccounts = vi.fn(
+      (params?: { readonly identifier_kind?: string }) =>
+        params?.identifier_kind === undefined
+          ? Promise.resolve({ accounts: [], next_cursor: '' })
+          : Promise.reject({
+              status: 400,
+              code: 'authn.bad_request',
+              message: 'refused',
+              auth: false,
+            }),
+    )
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listAccounts }),
+    )
+    renderWithProviders(<Harness onChoose={() => {}} />, { operations })
+    await user.type(screen.getByLabelText('账户'), 'Ada Lovelace')
+    // The display-name read is the only one issued; wait for it to settle
+    // before reading the popup, so the empty state is the settled one.
+    await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledTimes(1))
+    await waitFor(() => {
+      expect(screen.getByText('没有匹配的账户')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('账户搜索失败')).toBeNull()
+  })
+
+  it('reads a refused identifier kind as not applicable, not as a failure', async () => {
+    const user = userEvent.setup()
+    const listAccounts = vi.fn(
+      (params?: { readonly identifier_kind?: string }) =>
+        params?.identifier_kind === undefined
+          ? Promise.resolve({ accounts: [], next_cursor: '' })
+          : Promise.reject({
+              status: 400,
+              code: 'authn.bad_request',
+              message: 'refused',
+              auth: false,
+            }),
+    )
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listAccounts }),
+    )
+    renderWithProviders(<Harness onChoose={() => {}} />, { operations })
+    await user.type(screen.getByLabelText('账户'), 'Ada')
+    // The name read plus the two applicable identifier reads.
+    await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledTimes(3))
+    // Re-query rather than hold the element: the popup re-renders as the
+    // reads settle and a held node can be replaced between find and assert.
+    await waitFor(() => {
+      expect(screen.getByText('没有匹配的账户')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('账户搜索失败')).toBeNull()
   })
 
   it('hands the chosen account over when picked with the keyboard', async () => {

@@ -602,10 +602,11 @@ export function createConsoleOperations(
       })
     },
 
-    useAccounts: (params) =>
+    useAccounts: (params, options) =>
       useQuery({
         queryKey: [...ACCOUNTS_KEY, params ?? null],
         queryFn: () => backend.listAccounts(params),
+        enabled: options?.enabled ?? true,
       }),
     useAccount: (query: ConsoleAccountQuery) =>
       useQuery({
