@@ -194,6 +194,10 @@ export function ImpersonationsPage() {
       recordsFeedback.run(async () => {
         try {
           await revokeImpersonation.mutateAsync({ id: record.id })
+          // A termination changes what the caller's own status read may
+          // name, so that read is refreshed alongside the list the bundle
+          // already invalidates.
+          void status.refetch()
           return t('impersonations.terminated', { account: record.target })
         } catch (error) {
           if (stepUp.intercept(error, () => void attempt())) {
@@ -382,6 +386,9 @@ export function ImpersonationsPage() {
               tenant={tenant}
               feedback={currentFeedback}
               stepUp={stepUp}
+              // A start writes a record into the selected tenant's list as
+              // well as onto the operator's own session.
+              onStarted={() => void impersonations.refetch()}
             />
           </Box>
         )}
@@ -477,10 +484,13 @@ function StartImpersonationForm({
   tenant,
   feedback,
   stepUp,
+  onStarted,
 }: {
   readonly tenant: string
   readonly feedback: WriteFeedback
   readonly stepUp: ConsoleStepUp
+  /** Fired after a start lands, so the page re-reads the tenant's records. */
+  readonly onStarted: () => void
 }) {
   const { t } = useConsoleUiTranslation()
   const queryClient = useQueryClient()
@@ -520,6 +530,7 @@ function StartImpersonationForm({
           setAccount('')
           setReason('')
           setTtl('')
+          onStarted()
           return t('impersonations.current.started', {
             account: answer.grant.target,
           })

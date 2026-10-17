@@ -274,9 +274,21 @@ describe('ImpersonationsPage', () => {
     expect(screen.getByRole('button', { name: '终止' })).toBeDisabled()
   })
 
-  it('terminates an in-force impersonation', async () => {
+  it('terminates an in-force impersonation and re-reads the session status', async () => {
     const user = userEvent.setup()
     const ended: string[] = []
+    let statusReads = 0
+    const countingIdle: RequestFn = <T,>(
+      path: string,
+      options?: RequestOptions,
+    ) => {
+      if (path === '/auth/impersonation' && (options?.method ?? 'GET') === 'GET') {
+        statusReads += 1
+        return Promise.reject<T>({ status: 404, code: 'client.http.404' })
+      }
+      return Promise.resolve(undefined as T)
+    }
+    bindRequestFn(countingIdle)
     const operations = withPage({
       listImpersonations: () => Promise.resolve([record()]),
       revokeImpersonation: (input) => {
@@ -291,6 +303,9 @@ describe('ImpersonationsPage', () => {
     await vi.waitFor(() => {
       expect(ended).toEqual(['imp-1'])
     })
+    // A termination can change what the operator's own status read names,
+    // so it is re-read alongside the record list the bundle invalidates.
+    await vi.waitFor(() => expect(statusReads).toBeGreaterThan(1))
   })
 
   it('renders the retryable error placeholder when the read fails', async () => {
@@ -567,12 +582,20 @@ describe('ImpersonationsPage', () => {
     const backend = makeCallerSessionBackend()
     bindRequestFn(backend.fn)
     const user = userEvent.setup()
-    renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
+    const listImpersonations = vi.fn(() => Promise.resolve([]))
+    renderWithProviders(<ImpersonationsPage />, {
+      operations: withPage({ listImpersonations }),
+    })
 
     await screen.findByText('当前未冒充任何账户。')
     await pickTenant(user)
     await user.type(screen.getByLabelText('目标账户'), 'acc-9')
     await user.click(screen.getByRole('button', { name: '发起冒充' }))
+    // A start writes a record into the tenant's list as well, so the list
+    // is re-read (the read ran once when the tenant was selected).
+    await vi.waitFor(() =>
+      expect(listImpersonations.mock.calls.length).toBeGreaterThan(1),
+    )
 
     // The landed start replaces the form with the in-force panel; the
     // confirmation is not unmounted with the form that produced it.
