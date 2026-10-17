@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TenantRosterPage } from './TenantRosterPage.js'
 import type { ConsoleTenant } from './operations.js'
@@ -88,10 +88,10 @@ describe('TenantRosterPage', () => {
     await screen.findByText('暂无租户')
 
     await user.type(screen.getByLabelText('标识'), 'acme')
-    await user.type(screen.getByLabelText('别名'), 'Acme Inc')
+    await user.type(screen.getByLabelText('别名'), 'Acme-Inc')
     await user.click(screen.getByRole('button', { name: '登记' }))
 
-    expect(await screen.findByText('Acme Inc')).toBeInTheDocument()
+    expect(await screen.findByText('Acme-Inc')).toBeInTheDocument()
   })
 
   it('renders the conflict text when a registration is refused', async () => {
@@ -184,7 +184,7 @@ describe('TenantRosterPage', () => {
 
     // The success notice is a standing status region: mounted clipped until a
     // write lands, then filled with the confirmation. The rename's lands here.
-    await user.type(screen.getByLabelText('租户 acme 的新别名'), 'Acme Inc')
+    await user.type(screen.getByLabelText('租户 acme 的新别名'), 'Acme-Inc')
     await user.click(screen.getByRole('button', { name: '为租户 acme 改名' }))
     expect(await screen.findByText('别名已更新')).toBeInTheDocument()
   })
@@ -206,9 +206,9 @@ describe('TenantRosterPage', () => {
     )
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
-    await user.type(screen.getByLabelText('租户 acme 的新别名'), 'Acme Inc')
+    await user.type(screen.getByLabelText('租户 acme 的新别名'), 'Acme-Inc')
     await user.click(screen.getByRole('button', { name: '为租户 acme 改名' }))
-    expect(calls).toEqual(['acme:Acme Inc'])
+    expect(calls).toEqual(['acme:Acme-Inc'])
   })
 
   it('opens with the page header: the title as h1, a breadcrumb trail, and a refresh action', async () => {
@@ -260,7 +260,7 @@ describe('TenantRosterPage', () => {
     await screen.findByText('暂无租户')
 
     await user.type(screen.getByLabelText('标识'), 'acme')
-    await user.type(screen.getByLabelText('别名'), 'Acme Inc')
+    await user.type(screen.getByLabelText('别名'), 'Acme-Inc')
     await user.click(screen.getByRole('button', { name: '登记' }))
 
     await waitFor(() => {
@@ -301,7 +301,7 @@ describe('TenantRosterPage', () => {
     await screen.findByText('Acme')
 
     const input = screen.getByLabelText('租户 acme 的新别名')
-    await user.type(input, 'Acme Inc')
+    await user.type(input, 'Acme-Inc')
     await user.click(screen.getByRole('button', { name: '为租户 acme 改名' }))
 
     await waitFor(() => expect(input).toHaveValue(''))
@@ -320,6 +320,74 @@ describe('TenantRosterPage', () => {
     await user.clear(input)
     await user.type(input, 'acme')
     expect(input).toHaveAttribute('aria-invalid', 'false')
+  })
+
+  it('withholds a registration whose identifier or alias carries a blank', async () => {
+    const user = userEvent.setup()
+    const created: string[] = []
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        createTenant: (input) => {
+          created.push(`${input.id}:${input.alias}`)
+          return Promise.resolve({
+            id: input.id,
+            alias: input.alias,
+            status: 'active',
+          })
+        },
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('暂无租户')
+
+    const id = screen.getByLabelText('标识')
+    const alias = screen.getByLabelText('别名')
+    const submit = screen.getByRole('button', { name: '登记' })
+
+    // A blank in either field is the identifier domain's refusal. The
+    // client rule is the gate: the input says why, the submit is inert,
+    // and no request is made — the server's generic bad-request text is
+    // never what the operator meets.
+    await user.type(id, 'acme 1')
+    await user.type(alias, 'Acme')
+    expect(id).toHaveAttribute('aria-invalid', 'true')
+    expect(submit).toBeDisabled()
+    fireEvent.click(submit)
+    expect(created).toEqual([])
+
+    await user.clear(id)
+    await user.type(id, 'acme')
+    await user.clear(alias)
+    await user.type(alias, 'Acme Inc')
+    expect(alias).toHaveAttribute('aria-invalid', 'true')
+    expect(submit).toBeDisabled()
+    fireEvent.click(submit)
+    expect(created).toEqual([])
+  })
+
+  it('withholds a rename whose alias carries a blank', async () => {
+    const user = userEvent.setup()
+    const calls: string[] = []
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () =>
+          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+        setTenantAlias: (input) => {
+          calls.push(`${input.id}:${input.alias}`)
+          return Promise.resolve()
+        },
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    const input = screen.getByLabelText('租户 acme 的新别名')
+    await user.type(input, 'Acme Inc')
+    const submit = screen.getByRole('button', { name: '为租户 acme 改名' })
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(submit).toBeDisabled()
+    fireEvent.click(submit)
+    expect(calls).toEqual([])
   })
 
   it('renders the retryable error placeholder when the read fails', async () => {

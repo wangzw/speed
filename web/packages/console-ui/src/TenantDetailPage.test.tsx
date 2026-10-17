@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TenantDetailPage } from './TenantDetailPage.js'
 import type { ConsoleTenant } from './operations.js'
@@ -56,9 +56,33 @@ describe('TenantDetailPage', () => {
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
     await screen.findByText('Acme')
 
-    await user.type(screen.getByLabelText('新别名'), 'Acme Inc')
+    await user.type(screen.getByLabelText('新别名'), 'Acme-Inc')
     await user.click(screen.getByRole('button', { name: '改名' }))
-    expect(calls).toEqual(['acme:Acme Inc'])
+    expect(calls).toEqual(['acme:Acme-Inc'])
+  })
+
+  it('withholds a rename whose alias carries a blank', async () => {
+    const user = userEvent.setup()
+    const calls: string[] = []
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        getTenant: () => Promise.resolve(tenantFixture({ id: 'acme', alias: 'Acme' })),
+        setTenantAlias: (input) => {
+          calls.push(`${input.id}:${input.alias}`)
+          return Promise.resolve()
+        },
+      }),
+    )
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    await screen.findByText('Acme')
+
+    const input = screen.getByLabelText('新别名')
+    await user.type(input, 'Acme Inc')
+    const submit = screen.getByRole('button', { name: '改名' })
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(submit).toBeDisabled()
+    fireEvent.click(submit)
+    expect(calls).toEqual([])
   })
 
   it('disables the tenant through the main-column control', async () => {

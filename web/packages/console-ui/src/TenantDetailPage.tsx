@@ -15,8 +15,11 @@
  * renders the generic label, never a raw value. A refused read settles
  * into a permission placeholder (403) or the retryable error placeholder
  * (any other failure); a refused write renders the answer's code text in
- * one banner, resolved from the console-ui whitelist. The page opens with
- * ui-kit's PageHeader, so the heading order never skips.
+ * one banner, resolved from the console-ui whitelist. The rename input
+ * marks itself invalid while the alias breaks the identifier domain and
+ * holds its submit disabled then, so an inadmissible alias is never sent.
+ * The page opens with ui-kit's PageHeader, so the heading order never
+ * skips.
  */
 
 import { useState } from 'react'
@@ -117,7 +120,7 @@ export function TenantDetailPage({ id, parentHref }: TenantDetailPageProps) {
             <Button
               type="button"
               variant="contained"
-              disabled={renameTenant.isPending}
+              disabled={renameTenant.isPending || aliasRejected}
               onClick={() => {
                 renameTenant.mutate(
                   { id: settled.id, alias },

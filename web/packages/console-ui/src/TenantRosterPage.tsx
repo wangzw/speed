@@ -21,13 +21,15 @@
  *
  * The identifier and alias inputs carry a helper that names the rule the
  * backend holds them to (no blanks or control characters) and mark
- * themselves as invalid while a typed value breaks it; the server still
- * judges every write. A write that lands clears the input that carried
- * it -- the create form's identifier and alias together, a row's rename
- * draft on its own -- so the next edit starts empty, and it also fills a
- * success notice (a polite live region), so a silent write never leaves
- * the operator guessing; a refused write keeps the input so it can be
- * corrected and retried.
+ * themselves as invalid while a typed value breaks it; a rejected value
+ * also holds its submit disabled, so an inadmissible name never leaves
+ * the browser and the generic bad-request text is never what the operator
+ * meets. The server still judges every write. A write that lands clears
+ * the input that carried it -- the create form's identifier and alias
+ * together, a row's rename draft on its own -- so the next edit starts
+ * empty, and it also fills a success notice (a polite live region), so a
+ * silent write never leaves the operator guessing; a refused write keeps
+ * the input so it can be corrected and retried.
  *
  * The page opens with ui-kit's PageHeader: the page title as the level-one
  * heading, a breadcrumb trail from the console to this page, and a
@@ -79,7 +81,8 @@ function statusLabel(
 /**
  * One row's write controls: the rename draft and the enable/disable
  * toggle. The draft lives here, per row; a landed rename clears it, while
- * a typed value the identifier domain would refuse marks the input.
+ * a typed value the identifier domain would refuse marks the input and
+ * holds the rename submit disabled.
  *
  * Every control here repeats across the rows, so each carries the row's
  * own tenant id in its accessible name (the input, the rename submit, the
@@ -128,7 +131,7 @@ function TenantRowActions({ tenant }: { readonly tenant: ConsoleTenant }) {
         size="small"
         variant="outlined"
         aria-label={t('tenants.rename.submitAria', { id: tenant.id })}
-        disabled={renameTenant.isPending}
+        disabled={renameTenant.isPending || aliasRejected}
         onClick={() => {
           setSuccess(null)
           renameTenant.mutate(
@@ -308,7 +311,7 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
           <Button
             type="button"
             variant="contained"
-            disabled={createTenant.isPending}
+            disabled={createTenant.isPending || idRejected || aliasRejected}
             onClick={() => {
               setCreated(null)
               createTenant.mutate(
