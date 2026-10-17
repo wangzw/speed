@@ -326,6 +326,21 @@ describe('ImpersonationsPage', () => {
     await expectNoAxeViolations()
   })
 
+  it('has no axe violations with an impersonation in force', async () => {
+    const backend = makeCallerSessionBackend()
+    backend.setGrant({
+      id: 'imp-1',
+      target: 'acc-7',
+      tenant: 'acme',
+      starts_at: '2026-10-15T12:00:00Z',
+      ends_at: '2026-10-15T13:00:00Z',
+    })
+    bindRequestFn(backend.fn)
+    renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
+    await screen.findByText('被冒充账户：Target Seven')
+    await expectNoAxeViolations()
+  })
+
   // --- The caller's own impersonation session (/auth/impersonation) -------
 
   it('shows the not-impersonating state and the start form when no impersonation is in force', async () => {

@@ -35,6 +35,7 @@ import type {
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import { ConsoleAccountHrefProvider } from './account-href.js'
 import { StepUpChallenge } from './step-up-challenge.js'
+import { expectNoAxeViolations } from '../../test-utils/axe.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { bindConsoleRequest } from '../../test-utils/request-rig.js'
 import {
@@ -540,6 +541,31 @@ describe('StepUpChallenge', () => {
         Object.defineProperty(window.navigator, 'credentials', original)
       }
     }
+  })
+
+  it('has no axe violations on the terminal failure surface', async () => {
+    bindFactors([ACTIVE_FACTOR])
+    const base = createStepUpSession()
+    const session: AuthSession = {
+      ...base,
+      startAuthenticatedFlow: () =>
+        Promise.reject({
+          status: 503,
+          code: 'authn.unavailable',
+          message: 'down',
+          auth: false,
+        }),
+    }
+    renderWithProviders(
+      <StepUpChallenge
+        open
+        session={session}
+        onSuccess={() => undefined}
+        onCancel={() => undefined}
+      />,
+    )
+    await screen.findByRole('alert')
+    await expectNoAxeViolations()
   })
 
   it('offers a re-login when the account has factors none of which may strengthen the session', async () => {
