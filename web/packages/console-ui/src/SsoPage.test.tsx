@@ -8,12 +8,13 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { act, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SsoPage } from './SsoPage.js'
 import type {
   ConsoleClaimSsoDomainInput,
   ConsoleCreateSsoProviderInput,
+  ConsoleSsoProvider,
   ConsoleWriteSsoProviderInput,
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -350,6 +351,296 @@ describe('SsoPage', () => {
     await pickTenant(user)
     expect(await screen.findByText('权限不足')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+  })
+
+  it('reports a provider action refusal in the list region and marks the row', async () => {
+    const user = userEvent.setup()
+    const operations = withProviders({
+      refreshSsoMetadata: () =>
+        Promise.reject({ status: 403, code: 'authn.forbidden' }),
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await user.click(screen.getByRole('button', { name: '刷新元数据（Acme IdP）' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('你没有执行此操作的权限。')
+    // The result lands under the provider list, not under the write form or
+    // the domain bar.
+    expect(alert.closest('section')).toContainElement(screen.getByRole('table'))
+    // The refused row control carries the same resolved text the region shows.
+    const button = screen.getByRole('button', { name: '刷新元数据（Acme IdP）' })
+    expect(button).toHaveAttribute('aria-invalid', 'true')
+    const describedBy = button.getAttribute('aria-describedby')
+    expect(describedBy).not.toBeNull()
+    expect(document.getElementById(describedBy ?? '')).toHaveTextContent(
+      '你没有执行此操作的权限。',
+    )
+  })
+
+  it('confirms each provider-list action with the provider it changed', async () => {
+    const user = userEvent.setup()
+    const operations = withProviders({
+      refreshSsoMetadata: () => Promise.resolve(),
+      reverifySsoDomains: () => Promise.resolve(),
+      deleteSsoProvider: () => Promise.resolve(),
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+
+    await user.click(screen.getByRole('button', { name: '刷新元数据（Acme IdP）' }))
+    expect(
+      await screen.findByText('已刷新提供方「Acme IdP」的元数据'),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '重新验证域名（Acme IdP）' }))
+    expect(
+      await screen.findByText('已重新验证提供方「Acme IdP」的域名'),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '删除提供方 Acme IdP' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    expect(await screen.findByText('已删除提供方「Acme IdP」')).toBeInTheDocument()
+  })
+
+  it('renders a write refused with a bare 403 as the permission copy, not a status line', async () => {
+    const user = userEvent.setup()
+    const operations = withProviders({
+      refreshSsoMetadata: () =>
+        Promise.reject({ status: 403, code: 'client.http.403' }),
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await user.click(screen.getByRole('button', { name: '刷新元数据（Acme IdP）' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('你没有执行此操作的权限。')
+    expect(alert).not.toHaveTextContent('HTTP 403')
+  })
+
+  it('lands a create refusal in the form region and a success naming the provider', async () => {
+    const user = userEvent.setup()
+    let attempts = 0
+    const operations = withProviders({
+      createSsoProvider: () => {
+        attempts += 1
+        return attempts === 1
+          ? Promise.reject({ status: 403, code: 'authn.forbidden' })
+          : Promise.resolve(providerFixture({ name: 'New IdP' }))
+      },
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await user.type(screen.getByLabelText('协议'), 'oidc')
+    await user.type(screen.getByLabelText('名称'), 'New IdP')
+    await user.type(screen.getByLabelText('开通方式'), 'manual')
+    await user.click(screen.getByRole('button', { name: '新建提供方' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('你没有执行此操作的权限。')
+    // The form's own scope: the region sits with the fields, not with the
+    // provider list or the domain bar.
+    expect(alert.closest('section')).toContainElement(screen.getByLabelText('名称'))
+    expect(screen.getByLabelText('名称')).toHaveValue('New IdP')
+
+    await user.click(screen.getByRole('button', { name: '新建提供方' }))
+    expect(await screen.findByText('已创建提供方「New IdP」')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('confirms an update with the provider it saved', async () => {
+    const user = userEvent.setup()
+    const operations = withProviders({
+      listSsoProviders: () =>
+        Promise.resolve([providerFixture({ name: 'Acme IdP', provisioning: 'manual' })]),
+      updateSsoProvider: () =>
+        Promise.resolve(providerFixture({ name: 'Acme IdP 2' })),
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await user.click(screen.getByLabelText('选择提供方'))
+    await user.click(await screen.findByRole('option', { name: 'Acme IdP' }))
+    const nameField = screen.getByLabelText('名称')
+    await user.clear(nameField)
+    await user.type(nameField, 'Acme IdP 2')
+    await user.click(screen.getByRole('button', { name: '保存提供方' }))
+    expect(
+      await screen.findByText('已保存提供方「Acme IdP 2」'),
+    ).toBeInTheDocument()
+  })
+
+  it('confirms the domain writes with the provider and domain they changed', async () => {
+    const user = userEvent.setup()
+    const operations = withProviders({
+      verifySsoDomain: () => Promise.resolve(),
+      claimSsoDomain: () => Promise.resolve({ verify_token: 'tok-1' }),
+      removeSsoDomain: () => Promise.resolve(),
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await pickProvider(user)
+    await user.type(screen.getByLabelText('域名'), 'acme.com')
+
+    await user.click(screen.getByRole('button', { name: '验证' }))
+    expect(
+      await screen.findByText('已验证提供方「Acme IdP」的域名「acme.com」'),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '认领' }))
+    expect(
+      await screen.findByText('已为提供方「Acme IdP」认领域名「acme.com」'),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '移除' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    expect(
+      await screen.findByText('已从提供方「Acme IdP」移除域名「acme.com」'),
+    ).toBeInTheDocument()
+  })
+
+  it('reports a domain refusal in the domain region', async () => {
+    const user = userEvent.setup()
+    const operations = withProviders({
+      verifySsoDomain: () =>
+        Promise.reject({ status: 403, code: 'authn.forbidden' }),
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await pickProvider(user)
+    await user.type(screen.getByLabelText('域名'), 'acme.com')
+    await user.click(screen.getByRole('button', { name: '验证' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('你没有执行此操作的权限。')
+    expect(alert.closest('section')).toContainElement(
+      screen.getByLabelText('域名'),
+    )
+  })
+
+  it('shows the claim token in a named, closable panel that survives a scope reset', async () => {
+    const user = userEvent.setup()
+    const operations = withProviders({
+      claimSsoDomain: () => Promise.resolve({ verify_token: 'tok-1' }),
+      verifySsoDomain: () =>
+        Promise.reject({ status: 403, code: 'authn.forbidden' }),
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await pickProvider(user)
+    await user.type(screen.getByLabelText('域名'), 'acme.com')
+    await user.click(screen.getByRole('button', { name: '认领' }))
+
+    const token = await screen.findByText('请在 DNS 中发布该令牌：tok-1')
+    expect(token.closest('[role="status"]')).not.toBeNull()
+    await expectNoAxeViolations()
+
+    // A second attempt in the domain scope resets its slot and settles as a
+    // failure; the token is page state, not slot state, and stays.
+    await user.click(screen.getByRole('button', { name: '验证' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '你没有执行此操作的权限。',
+    )
+    expect(screen.getByText('请在 DNS 中发布该令牌：tok-1')).toBeInTheDocument()
+
+    // The explicit close control names the tenant, provider and domain, and
+    // is the only way the value goes away.
+    const close = screen.getByRole('button', {
+      name: '关闭租户「acme」中提供方「Acme IdP」域名「acme.com」的认领令牌',
+    })
+    await user.click(close)
+    expect(screen.queryByText('请在 DNS 中发布该令牌：tok-1')).toBeNull()
+  })
+
+  it('disables the tenant and the driving provider selectors while the form write is pending', async () => {
+    const user = userEvent.setup()
+    let finish!: (provider: ConsoleSsoProvider) => void
+    const operations = withProviders({
+      createSsoProvider: () =>
+        new Promise<ConsoleSsoProvider>((resolve) => {
+          finish = resolve
+        }),
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await user.type(screen.getByLabelText('协议'), 'oidc')
+    await user.type(screen.getByLabelText('名称'), 'New IdP')
+    await user.type(screen.getByLabelText('开通方式'), 'manual')
+    await user.click(screen.getByRole('button', { name: '新建提供方' }))
+
+    await vi.waitFor(() => {
+      expect(screen.getByLabelText('租户')).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      )
+    })
+    // The form's own selector follows its scope; the domain bar's selector is
+    // a sibling scope and stays operable.
+    expect(screen.getByLabelText('选择提供方')).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(screen.getByLabelText('提供方')).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+
+    await act(async () => {
+      finish(providerFixture({ name: 'New IdP' }))
+    })
+    await vi.waitFor(() => {
+      expect(screen.getByLabelText('租户')).not.toHaveAttribute(
+        'aria-disabled',
+        'true',
+      )
+    })
+    expect(screen.getByLabelText('选择提供方')).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+  })
+
+  it('marks the refresh control busy while the provider read is in flight', async () => {
+    const user = userEvent.setup()
+    let calls = 0
+    let finishRefresh!: (providers: readonly ConsoleSsoProvider[]) => void
+    const operations = withProviders({
+      listSsoProviders: () => {
+        calls += 1
+        if (calls === 1) {
+          return Promise.resolve([providerFixture({ name: 'Acme IdP' })])
+        }
+        return new Promise<readonly ConsoleSsoProvider[]>((resolve) => {
+          finishRefresh = resolve
+        })
+      },
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+
+    await user.click(screen.getByRole('button', { name: '刷新' }))
+    const refresh = screen.getByRole('button', { name: '刷新' })
+    await vi.waitFor(() => {
+      expect(refresh).toBeDisabled()
+    })
+    expect(within(refresh).getByRole('progressbar')).toBeInTheDocument()
+
+    await act(async () => {
+      finishRefresh([providerFixture({ name: 'Acme IdP' })])
+    })
+    await vi.waitFor(() => {
+      expect(refresh).not.toBeDisabled()
+    })
   })
 
   it('has no axe violations', async () => {

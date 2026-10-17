@@ -15,6 +15,22 @@
  * controls name the provider from the loaded list and the domain by
  * hand: the operator types the domain to claim, verify or remove.
  *
+ * The page's three titled control groups are its three feedback scopes:
+ * the provider list (delete, refresh metadata, re-verify domains) reports
+ * under its table; the provider write form reports under itself; the domain
+ * bar (claim, verify, remove) reports under its controls. A refusal marks
+ * the affected provider row inline with the same resolved text the region
+ * shows and brings that region into view; a success names the provider or
+ * provider-and-domain it changed. The tenant seeds every write, so changing
+ * it resets all three scopes and disables the tenant selector while any of
+ * them is in flight; the provider selectors follow the scope they drive and
+ * are disabled only while that one is pending.
+ *
+ * A claimed domain's verification token is handed out once. Its display
+ * panel is the page's own state, rendered beside the domain group's region
+ * and outside that scope's slot, so a reset, a later failure or a context
+ * change never drops the only copy; it stays until the operator closes it.
+ *
  * Every read and write is an operation on the console operations bundle,
  * so the page builds no client and writes no query key. The page opens
  * with ui-kit's PageHeader.
@@ -32,16 +48,35 @@ import {
   EmptyState,
   ListSkeleton,
   PageHeader,
-  errorCodeOf,
+  useWriteFeedback,
 } from '@speed/ui-kit'
-import type { DataTableColumn } from '@speed/ui-kit'
+import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
-import { InlineError } from './internal/inline-error.js'
+import { useConsoleUiErrorText } from './internal/error-text.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
+import {
+  failureTextOf,
+  useFailureScroll,
+  WriteFeedbackRegion,
+} from './internal/write-feedback.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleSsoProvider } from './operations.js'
+
+/** The provider-row action a row's inline failure marker belongs to. */
+type ProviderAction = 'refresh' | 'reverify' | 'delete'
+
+/** The domain-bar action the shared button row is running. */
+type DomainAction = 'claim' | 'verify' | 'remove'
+
+/** The one-time verification token a claim hands out, with its owner. */
+interface ClaimToken {
+  readonly token: string
+  readonly tenant: string
+  readonly providerName: string
+  readonly domain: string
+}
 
 export function SsoPage() {
   const { t } = useConsoleUiTranslation()
@@ -51,7 +86,7 @@ export function SsoPage() {
   const [domainProvider, setDomainProvider] = useState('')
   const [domain, setDomain] = useState('')
   const [editProvider, setEditProvider] = useState('')
-  const [claimToken, setClaimToken] = useState<string | null>(null)
+  const [claimToken, setClaimToken] = useState<ClaimToken | null>(null)
   const confirm = usePendingConfirm()
 
   const providers = operations.useSsoProviders(tenant)
@@ -61,6 +96,183 @@ export function SsoPage() {
   const verifyDomain = operations.useVerifySsoDomain()
   const removeDomain = operations.useRemoveSsoDomain()
   const claimDomain = operations.useClaimSsoDomain()
+
+  // One scope per control group: the provider list and its row actions, the
+  // provider write form, and the domain bar.
+  const listFeedback = useWriteFeedback()
+  const formFeedback = useWriteFeedback()
+  const domainsFeedback = useWriteFeedback()
+  const listRegionRef = useFailureScroll(listFeedback.outcome)
+  const formRegionRef = useFailureScroll(formFeedback.outcome)
+  const domainsRegionRef = useFailureScroll(domainsFeedback.outcome)
+
+  // The row each list-scope failure names, and the row control currently
+  // running, cleared when the next attempt starts.
+  const [failedProvider, setFailedProvider] = useState<{
+    readonly id: string
+    readonly action: ProviderAction
+  } | null>(null)
+  const [busyProvider, setBusyProvider] = useState<{
+    readonly id: string
+    readonly action: ProviderAction
+  } | null>(null)
+  const [busyDomainAction, setBusyDomainAction] = useState<DomainAction | null>(
+    null,
+  )
+
+  // The one resolver every region binds: a row's inline marker resolves the
+  // same failure code through it, so the two can never carry different copy.
+  const resolveErrorText = useConsoleUiErrorText()
+  const listFailureText = failureTextOf(listFeedback.outcome, resolveErrorText)
+
+  const anyPending =
+    listFeedback.pending || formFeedback.pending || domainsFeedback.pending
+
+  // The tenant is an argument of every write here: a change clears all
+  // three slots and every row marker, and drops the provider selections
+  // whose ids no longer name this tenant's providers. The one-time token
+  // panel is page state, not a slot result, and stays: it names the tenant
+  // it was claimed under.
+  const changeTenant = (next: string) => {
+    setTenant(next)
+    listFeedback.reset()
+    formFeedback.reset()
+    domainsFeedback.reset()
+    setFailedProvider(null)
+    setBusyProvider(null)
+    setBusyDomainAction(null)
+    setEditProvider('')
+    setDomainProvider('')
+  }
+
+  // The provider form scope follows the provider it edits: another target's
+  // result would read as this one's.
+  const selectEditProvider = (next: string) => {
+    setEditProvider(next)
+    formFeedback.reset()
+  }
+
+  // The domain scope follows the provider the bar names.
+  const selectDomainProvider = (next: string) => {
+    setDomainProvider(next)
+    domainsFeedback.reset()
+  }
+
+  const runProviderAction = (
+    provider: ConsoleSsoProvider,
+    action: ProviderAction,
+    attempt: () => Promise<string>,
+  ) => {
+    setFailedProvider(null)
+    setBusyProvider({ id: provider.id, action })
+    void listFeedback.run(async () => {
+      try {
+        return await attempt()
+      } catch (error) {
+        setFailedProvider({ id: provider.id, action })
+        throw error
+      } finally {
+        setBusyProvider(null)
+      }
+    })
+  }
+
+  const runDomainAction = (
+    action: DomainAction,
+    attempt: () => Promise<string>,
+  ) => {
+    setBusyDomainAction(action)
+    void domainsFeedback.run(async () => {
+      try {
+        return await attempt()
+      } finally {
+        setBusyDomainAction(null)
+      }
+    })
+  }
+
+  const requestRefreshMetadata = (provider: ConsoleSsoProvider) => {
+    runProviderAction(provider, 'refresh', async () => {
+      await refreshMetadata.mutateAsync({ id: provider.id, tenant })
+      return t('sso.refreshMetadataSaved', { name: provider.name })
+    })
+  }
+
+  const requestReverifyDomains = (provider: ConsoleSsoProvider) => {
+    runProviderAction(provider, 'reverify', async () => {
+      await reverifyDomains.mutateAsync({ id: provider.id, tenant })
+      return t('sso.reverifyDomainsSaved', { name: provider.name })
+    })
+  }
+
+  const requestDelete = (provider: ConsoleSsoProvider) => {
+    confirm.ask({
+      title: t('sso.deleteTitle'),
+      message: t('sso.deleteMessage', { name: provider.name }),
+      confirmLabel: t('common.confirm'),
+      run: () => {
+        runProviderAction(provider, 'delete', async () => {
+          await deleteProvider.mutateAsync({ id: provider.id, tenant })
+          return t('sso.deleted', { name: provider.name })
+        })
+      },
+    })
+  }
+
+  const providerName = (id: string): string =>
+    (providers.data ?? []).find((provider) => provider.id === id)?.name ?? id
+
+  const requestClaimDomain = () => {
+    const name = providerName(domainProvider)
+    const claimed = domain
+    runDomainAction('claim', async () => {
+      const answer = await claimDomain.mutateAsync({
+        id: domainProvider,
+        tenant,
+        domain: claimed,
+      })
+      setClaimToken({
+        token: answer.verify_token,
+        tenant,
+        providerName: name,
+        domain: claimed,
+      })
+      return t('sso.domains.claimed', { name, domain: claimed })
+    })
+  }
+
+  const requestVerifyDomain = () => {
+    const name = providerName(domainProvider)
+    const verified = domain
+    runDomainAction('verify', async () => {
+      await verifyDomain.mutateAsync({
+        id: domainProvider,
+        tenant,
+        domain: verified,
+      })
+      return t('sso.domains.verified', { name, domain: verified })
+    })
+  }
+
+  const requestRemoveDomain = () => {
+    const name = providerName(domainProvider)
+    const removed = domain
+    confirm.ask({
+      title: t('sso.domains.removeTitle'),
+      message: t('sso.domains.removeMessage', { domain: removed }),
+      confirmLabel: t('common.confirm'),
+      run: () => {
+        runDomainAction('remove', async () => {
+          await removeDomain.mutateAsync({
+            id: domainProvider,
+            tenant,
+            domain: removed,
+          })
+          return t('sso.domains.removed', { name, domain: removed })
+        })
+      },
+    })
+  }
 
   const columns: DataTableColumn<ConsoleSsoProvider>[] = [
     {
@@ -95,64 +307,75 @@ export function SsoPage() {
       id: 'actions',
       header: t('sso.column.actions'),
       cellWrap: 'nowrap',
-      cell: (provider) => (
-        <Box sx={{ display: 'flex', columnGap: 1 }}>
-          <Button
-            type="button"
-            size="small"
-            variant="outlined"
-            aria-label={t('sso.refreshMetadataAria', { name: provider.name })}
-            disabled={refreshMetadata.isPending}
-            onClick={() =>
-              refreshMetadata.mutate({ id: provider.id, tenant })
-            }
-          >
-            {t('sso.refreshMetadata')}
-          </Button>
-          <Button
-            type="button"
-            size="small"
-            variant="outlined"
-            aria-label={t('sso.reverifyDomainsAria', { name: provider.name })}
-            disabled={reverifyDomains.isPending}
-            onClick={() => reverifyDomains.mutate({ id: provider.id, tenant })}
-          >
-            {t('sso.reverifyDomains')}
-          </Button>
-          <Button
-            type="button"
-            size="small"
-            variant="outlined"
-            color="error"
-            aria-label={t('sso.deleteAria', { name: provider.name })}
-            disabled={deleteProvider.isPending}
-            onClick={() =>
-              confirm.ask({
-                title: t('sso.deleteTitle'),
-                message: t('sso.deleteMessage', { name: provider.name }),
-                confirmLabel: t('common.confirm'),
-                run: () => deleteProvider.mutate({ id: provider.id, tenant }),
-              })
-            }
-          >
-            {t('sso.delete')}
-          </Button>
-        </Box>
-      ),
+      cell: (provider) => {
+        const failed =
+          failedProvider?.id === provider.id ? failedProvider.action : null
+        const busy =
+          busyProvider?.id === provider.id ? busyProvider.action : null
+        const errorId = `sso-provider-error-${encodeURIComponent(provider.id)}`
+        return (
+          <Box>
+            <Box sx={{ display: 'flex', columnGap: 1 }}>
+              <Button
+                type="button"
+                size="small"
+                variant="outlined"
+                aria-label={t('sso.refreshMetadataAria', { name: provider.name })}
+                aria-invalid={failed === 'refresh'}
+                aria-describedby={failed === 'refresh' ? errorId : undefined}
+                disabled={listFeedback.pending}
+                loading={busy === 'refresh'}
+                onClick={() => requestRefreshMetadata(provider)}
+              >
+                {t('sso.refreshMetadata')}
+              </Button>
+              <Button
+                type="button"
+                size="small"
+                variant="outlined"
+                aria-label={t('sso.reverifyDomainsAria', { name: provider.name })}
+                aria-invalid={failed === 'reverify'}
+                aria-describedby={failed === 'reverify' ? errorId : undefined}
+                disabled={listFeedback.pending}
+                loading={busy === 'reverify'}
+                onClick={() => requestReverifyDomains(provider)}
+              >
+                {t('sso.reverifyDomains')}
+              </Button>
+              <Button
+                type="button"
+                size="small"
+                variant="outlined"
+                color="error"
+                aria-label={t('sso.deleteAria', { name: provider.name })}
+                aria-invalid={failed === 'delete'}
+                aria-describedby={failed === 'delete' ? errorId : undefined}
+                disabled={listFeedback.pending}
+                loading={busy === 'delete'}
+                onClick={() => requestDelete(provider)}
+              >
+                {t('sso.delete')}
+              </Button>
+            </Box>
+            {failed !== null && listFailureText !== null && (
+              <Typography
+                id={errorId}
+                variant="caption"
+                color="error"
+                sx={{ display: 'block', mt: 0.5 }}
+              >
+                {listFailureText}
+              </Typography>
+            )}
+          </Box>
+        )
+      },
     },
   ]
 
   const rows = providers.data
   const pending = providers.isPending && rows === undefined
-
-  const writeError = firstErrorCode([
-    deleteProvider.error,
-    refreshMetadata.error,
-    reverifyDomains.error,
-    verifyDomain.error,
-    removeDomain.error,
-    claimDomain.error,
-  ])
+  const domainReady = domainProvider !== '' && domain.trim() !== ''
 
   return (
     <Box>
@@ -164,6 +387,8 @@ export function SsoPage() {
             type="button"
             variant="outlined"
             size="small"
+            disabled={providers.isFetching}
+            loading={providers.isFetching}
             onClick={() => void providers.refetch()}
           >
             {t('common.refresh')}
@@ -173,7 +398,7 @@ export function SsoPage() {
       />
 
       <Box component="section" sx={{ mb: 3 }}>
-        <TenantScope value={tenant} onSelect={setTenant} />
+        <TenantScope value={tenant} onSelect={changeTenant} disabled={anyPending} />
       </Box>
 
       {tenant === '' ? (
@@ -184,43 +409,48 @@ export function SsoPage() {
         />
       ) : (
         <>
-          <ConsoleAsyncSection
-            pending={pending}
-            payload={rows}
-            error={providers.error}
-            refreshing={providers.isFetching}
-            empty={rows !== undefined && rows.length === 0}
-            headingLevel="h2"
-            loading={
-              <ListSkeleton
-                label={t('sso.loading')}
-                rows={[
-                  <Skeleton key="a" variant="text" width="56%" />,
-                  <Skeleton key="b" variant="text" width="42%" />,
-                ]}
-              />
-            }
-            errorState={{
-              title: t('sso.error.title'),
-              description: t('sso.error.description'),
-              retryLabel: t('sso.retry'),
-              onRetry: () => void providers.refetch(),
-            }}
-            emptyState={{
-              title: t('sso.empty.title'),
-              description: t('sso.empty.description'),
-            }}
-          >
-            {(settled) => (
-              <DataTable
-                rows={settled}
-                columns={columns}
-                rowKey={(provider) => provider.id}
-              />
-            )}
-          </ConsoleAsyncSection>
+          <Box component="section" sx={{ mb: 3 }}>
+            <ConsoleAsyncSection
+              pending={pending}
+              payload={rows}
+              error={providers.error}
+              refreshing={providers.isFetching}
+              empty={rows !== undefined && rows.length === 0}
+              headingLevel="h2"
+              loading={
+                <ListSkeleton
+                  label={t('sso.loading')}
+                  rows={[
+                    <Skeleton key="a" variant="text" width="56%" />,
+                    <Skeleton key="b" variant="text" width="42%" />,
+                  ]}
+                />
+              }
+              errorState={{
+                title: t('sso.error.title'),
+                description: t('sso.error.description'),
+                retryLabel: t('sso.retry'),
+                onRetry: () => void providers.refetch(),
+              }}
+              emptyState={{
+                title: t('sso.empty.title'),
+                description: t('sso.empty.description'),
+              }}
+            >
+              {(settled) => (
+                <DataTable
+                  rows={settled}
+                  columns={columns}
+                  rowKey={(provider) => provider.id}
+                />
+              )}
+            </ConsoleAsyncSection>
+            <Box ref={listRegionRef}>
+              <WriteFeedbackRegion outcome={listFeedback.outcome} />
+            </Box>
+          </Box>
 
-          <Box component="section" sx={{ mt: 2, mb: 3 }}>
+          <Box component="section" sx={{ mb: 3 }}>
             <Typography component="h2" variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
               {t('sso.provider.title')}
             </Typography>
@@ -228,7 +458,8 @@ export function SsoPage() {
               select
               size="small"
               value={editProvider}
-              onChange={(event) => setEditProvider(event.target.value)}
+              disabled={formFeedback.pending}
+              onChange={(event) => selectEditProvider(event.target.value)}
               label={t('sso.provider.editLabel')}
               sx={{ minWidth: 220, mb: 1 }}
             >
@@ -243,10 +474,14 @@ export function SsoPage() {
               key={editProvider}
               tenant={tenant}
               provider={(rows ?? []).find((provider) => provider.id === editProvider)}
+              feedback={formFeedback}
             />
+            <Box ref={formRegionRef}>
+              <WriteFeedbackRegion outcome={formFeedback.outcome} />
+            </Box>
           </Box>
 
-          <Box component="section" sx={{ mt: 3 }}>
+          <Box component="section" sx={{ mb: 3 }}>
             <Typography
               component="h2"
               variant="h2"
@@ -270,7 +505,8 @@ export function SsoPage() {
                 select
                 size="small"
                 value={domainProvider}
-                onChange={(event) => setDomainProvider(event.target.value)}
+                disabled={domainsFeedback.pending}
+                onChange={(event) => selectDomainProvider(event.target.value)}
                 label={t('sso.domains.providerLabel')}
                 sx={{ minWidth: 200 }}
               >
@@ -289,35 +525,18 @@ export function SsoPage() {
               <Button
                 type="button"
                 variant="contained"
-                disabled={
-                  verifyDomain.isPending ||
-                  domainProvider === '' ||
-                  domain.trim() === ''
-                }
-                onClick={() =>
-                  verifyDomain.mutate({
-                    id: domainProvider,
-                    tenant,
-                    domain,
-                  })
-                }
+                disabled={domainsFeedback.pending || !domainReady}
+                loading={busyDomainAction === 'verify'}
+                onClick={requestVerifyDomain}
               >
                 {t('sso.domains.verify')}
               </Button>
               <Button
                 type="button"
                 variant="outlined"
-                disabled={
-                  claimDomain.isPending ||
-                  domainProvider === '' ||
-                  domain.trim() === ''
-                }
-                onClick={() =>
-                  claimDomain.mutate(
-                    { id: domainProvider, tenant, domain },
-                    { onSuccess: (answer) => setClaimToken(answer.verify_token) },
-                  )
-                }
+                disabled={domainsFeedback.pending || !domainReady}
+                loading={busyDomainAction === 'claim'}
+                onClick={requestClaimDomain}
               >
                 {t('sso.domains.claim')}
               </Button>
@@ -325,33 +544,22 @@ export function SsoPage() {
                 type="button"
                 variant="outlined"
                 color="error"
-                disabled={
-                  removeDomain.isPending ||
-                  domainProvider === '' ||
-                  domain.trim() === ''
-                }
-                onClick={() =>
-                  confirm.ask({
-                    title: t('sso.domains.removeTitle'),
-                    message: t('sso.domains.removeMessage', { domain }),
-                    confirmLabel: t('common.confirm'),
-                    run: () =>
-                      removeDomain.mutate({ id: domainProvider, tenant, domain }),
-                  })
-                }
+                disabled={domainsFeedback.pending || !domainReady}
+                loading={busyDomainAction === 'remove'}
+                onClick={requestRemoveDomain}
               >
                 {t('sso.domains.remove')}
               </Button>
             </Box>
             {claimToken !== null && (
-              <Typography variant="body2" sx={{ wordBreak: 'break-all', mt: 1 }}>
-                {t('sso.domains.claimToken', { token: claimToken })}
-              </Typography>
+              <ClaimTokenNotice
+                notice={claimToken}
+                onClose={() => setClaimToken(null)}
+              />
             )}
-          </Box>
-
-          <Box sx={{ mt: 2 }}>
-            <InlineError code={writeError} />
+            <Box ref={domainsRegionRef}>
+              <WriteFeedbackRegion outcome={domainsFeedback.outcome} />
+            </Box>
           </Box>
         </>
       )}
@@ -361,14 +569,55 @@ export function SsoPage() {
   )
 }
 
-/** The first defined error's code, or null when every error is absent. */
-function firstErrorCode(errors: readonly unknown[]): string | null {
-  for (const error of errors) {
-    if (error !== null && error !== undefined) {
-      return errorCodeOf(error)
-    }
-  }
-  return null
+/**
+ * ClaimTokenNotice: the display of a domain's verification token, a value
+ * handed out once.
+ *
+ * Its state is the page's (`SsoPage` holds it), so a scope reset, a later
+ * failure or a context change cannot drop the only copy. The notice is one
+ * polite live region with an explicit close control whose accessible name
+ * names the tenant, the provider and the domain it belongs to.
+ */
+function ClaimTokenNotice({
+  notice,
+  onClose,
+}: {
+  readonly notice: ClaimToken
+  readonly onClose: () => void
+}) {
+  const { t } = useConsoleUiTranslation()
+  return (
+    <Box
+      role="status"
+      sx={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        columnGap: 2,
+        mt: 1,
+        p: 2,
+        border: 1,
+        borderColor: 'divider',
+        borderRadius: 1,
+      }}
+    >
+      <Typography variant="body2" sx={{ flex: 1, wordBreak: 'break-all' }}>
+        {t('sso.domains.claimToken', { token: notice.token })}
+      </Typography>
+      <Button
+        type="button"
+        size="small"
+        variant="outlined"
+        aria-label={t('sso.domains.claimTokenCloseAria', {
+          tenant: notice.tenant,
+          name: notice.providerName,
+          domain: notice.domain,
+        })}
+        onClick={onClose}
+      >
+        {t('sso.domains.claimTokenClose')}
+      </Button>
+    </Box>
+  )
 }
 
 /**
@@ -397,13 +646,20 @@ type TriState = 'unchanged' | 'true' | 'false'
  * takes the module's false default) and the path tenant is the form's, and
  * on an update they start from the provider and an unset boolean leaves the
  * stored flag. The configuration is JSON and the client secret is write-only.
+ *
+ * The write reports through the page's provider-form scope (`feedback`), so
+ * its result lands in the region the page renders directly under this form;
+ * a landed create names the provider and returns the form to its initial
+ * state.
  */
 function SsoProviderWriteForm({
   tenant,
   provider,
+  feedback,
 }: {
   readonly tenant: string
   readonly provider?: ConsoleSsoProvider
+  readonly feedback: WriteFeedback
 }) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
@@ -422,8 +678,6 @@ function SsoProviderWriteForm({
   const [clientSecret, setClientSecret] = useState('')
 
   const configInvalid = config.trim() !== '' && parseConfig(config) === null
-  const busy = createProvider.isPending || updateProvider.isPending
-  const error = createProvider.error ?? updateProvider.error
   const requiredMissing =
     protocol.trim() === '' || name.trim() === '' || provisioning.trim() === ''
 
@@ -509,7 +763,8 @@ function SsoProviderWriteForm({
         <Button
           type="button"
           variant="contained"
-          disabled={busy || configInvalid || requiredMissing}
+          disabled={feedback.pending || configInvalid || requiredMissing}
+          loading={feedback.pending}
           onClick={() => {
             const parsed = config.trim() === '' ? null : parseConfig(config)
             const body = {
@@ -531,39 +786,36 @@ function SsoProviderWriteForm({
               ...(clientSecret === '' ? {} : { client_secret: clientSecret }),
             }
             if (provider === undefined) {
-              createProvider.mutate(
-                { tenant, ...body },
-                {
-                  // A landed create returns the form to its initial state,
-                  // the write-only client secret included: the provider now
-                  // exists, and none of what was typed belongs to the next
-                  // one. A refusal keeps every value for correction.
-                  onSuccess: () => {
-                    setProtocol('')
-                    setName('')
-                    setProvisioning('')
-                    setEnabled('unchanged')
-                    setTrustIdpMfa('unchanged')
-                    setAllowIdpInitiated('unchanged')
-                    setAllowSha1('unchanged')
-                    setMergeExisting('unchanged')
-                    setConfig('')
-                    setClientSecret('')
-                  },
-                },
-              )
+              const created = name
+              void feedback.run(async () => {
+                await createProvider.mutateAsync({ tenant, ...body })
+                // A landed create returns the form to its initial state, the
+                // write-only client secret included: the provider now exists,
+                // and none of what was typed belongs to the next one. A
+                // refusal keeps every value for correction.
+                setProtocol('')
+                setName('')
+                setProvisioning('')
+                setEnabled('unchanged')
+                setTrustIdpMfa('unchanged')
+                setAllowIdpInitiated('unchanged')
+                setAllowSha1('unchanged')
+                setMergeExisting('unchanged')
+                setConfig('')
+                setClientSecret('')
+                return t('sso.provider.created', { name: created })
+              })
             } else {
-              updateProvider.mutate({ id: provider.id, tenant, ...body })
+              const saved = name
+              void feedback.run(async () => {
+                await updateProvider.mutateAsync({ id: provider.id, tenant, ...body })
+                return t('sso.provider.updated', { name: saved })
+              })
             }
           }}
         >
           {provider === undefined ? t('sso.provider.createSubmit') : t('sso.provider.updateSubmit')}
         </Button>
-      </Box>
-      <Box sx={{ mt: 1 }}>
-        {/* A mutation that has not failed carries null, not undefined;
-            both mean there is no error to render. */}
-        <InlineError code={error == null ? null : errorCodeOf(error)} />
       </Box>
     </Box>
   )
