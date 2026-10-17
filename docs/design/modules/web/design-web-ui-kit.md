@@ -7,7 +7,7 @@
 - **主题工厂**：`createAppTheme` 把合并后的 `@speed/tokens` token 树映射成一个 MUI v9 主题，并承载触摸设备上所有可点击目标的 44×44 下限（组件级 `styleOverrides`，见下文主题工厂一节）；`AppThemeProvider` 把主题、MUI 本地化联动与全局重置组成一个运行期。
 - **受控组件**：`PageHeader`、`EmptyState`、`ConfirmDialog`、`SidePanel`、`FormField`、`FormLayout`、`DataTable`、`FileUploader`、`InlineError`、`InlineSuccess`、`WriteFeedbackRegion`、`ListSkeleton`、`AsyncSection`，外加跨表面的状态原语（`errorCodeOf`、`useWriteFeedback`、`visuallyHiddenSx`、`touchTargetSx`）。每个组件自带的文案来自 `ui-kit` 命名空间。
 
-**受控契约是本包全部组件的共同契约**：每一份状态都由宿主持有、经 props 流入；组件把状态回显并抛出变更回调，从不取数、从不改数据、从不持业务状态——同一个组件因此在表单、弹窗与服务端渲染的页面里表现一致。唯一的交互局部状态是 `ConfirmDialog` 的双次确认待命（弹窗一关即复位），且必须能证明只在交互内存在；`SidePanel` 不持有任何状态，打开、忙碌与内容都由宿主经 props 给出；`useWriteFeedback` 的状态属于调用它的宿主组件，ui-kit 的组件仍不持有状态。
+**受控契约是本包全部组件的共同契约**：每一份状态都由宿主持有、经 props 流入；组件把状态回显并抛出变更回调，从不取数、从不改数据、从不持业务状态——同一个组件因此在表单、弹窗与服务端渲染的页面里表现一致。唯一的交互局部状态是 `ConfirmDialog` 的双次确认待命（弹窗一关即复位），且必须能证明只在交互内存在；`SidePanel` 不持有任何状态，打开、忙碌与内容都由宿主经 props 给出；`useWriteFeedback` 的状态属于调用它的宿主组件，ui-kit 的组件仍不持有业务状态与写入结果。
 
 `FileUploader` 不是这条契约的例外：队列由宿主持有的 `rows` 渲染，每次选取、取消、重试、移除都经回调上报；一次上传进行中是宿主状态、跑在宿主自己的传输代码里，组件从不持有一个 File 超过收到它的事件处理器。
 
@@ -77,7 +77,7 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 | `InlineSuccess` | `message`（`null` 时静默，仍挂载一个裁剪的 `role="status"` 区域）、`sx`（只调间距，`severity` 恒为 success） | — |
 | `WriteFeedbackRegion` | `outcome`（`WriteOutcome` 或 `null`）、`resolve`（码到当前语言文本）、`sx` | — |
 | `ListSkeleton` | `label`、`rows` | — |
-| `AsyncSection` | `pending`、`payload`、`empty`、`loading`、`errorState`、`emptyState`、`headingLevel`、`emptyHeadingLevel`（空占位自己的标题级，含 `none`）、`staleState`（`{description, retryLabel, onRetry}`，缺省不渲染）、`children` | `errorState.onRetry`、`staleState.onRetry` |
+| `AsyncSection` | `pending`、`payload`、`empty`、`loading`、`errorState`、`emptyState`、`headingLevel`、`emptyHeadingLevel`（空占位自己的标题级，含 `none`）、`staleState`（`{description, retryLabel, onRetry}`，由调用方在最近一次刷新失败、数据在屏且读不在进行中时给出，缺省不渲染）、`children` | `errorState.onRetry`、`staleState.onRetry` |
 
 ### 写入反馈
 
@@ -88,7 +88,9 @@ export type WriteOutcome =
 
 export interface WriteFeedback {
   readonly outcome: WriteOutcome | null          // 作用域的槽；null 即空
-  readonly reset: () => void                     // 清空槽位
+  readonly pending: boolean                      // 作用域内有尝试在途
+  readonly run: (attempt: () => Promise<string | null>) => Promise<void>   // 一次尝试
+  readonly reset: () => void                     // 清空槽位，不取消在途的尝试
   readonly succeed: (message: string) => void    // 槽位换成一条成功文案
   readonly fail: (error: unknown) => void        // 槽位换成一个失败码，经 errorCodeOf 折叠
 }
@@ -102,7 +104,7 @@ export interface WriteFeedbackRegionProps {
 export function WriteFeedbackRegion(props: WriteFeedbackRegionProps): JSX.Element
 ```
 
-`useWriteFeedback` 不取数、不认识 react-query，状态属于调用它的宿主组件，各回调在组件存续期内引用稳定。`WriteFeedbackRegion` 把槽渲染为 `InlineSuccess`（成功文案，始终挂载）与 `InlineError`（失败码，失败时才挂载），自己没有文案：成功文案由宿主翻译，失败文本经 `resolve` 取自各包自己的命名空间。各包把 `resolve` 绑定进自己的 `internal/` 包装，与 `InlineError` 的包装同形，调用点只传槽。使用条款见「写入的反馈」。
+`run` 是一次尝试的标准形态：先 `reset`，把在途计数加一（`pending` 为真），再等待 `attempt`；`attempt` 以字符串落定即以该串调用 `succeed`，以 `null` 落定则槽位保持为空（提权门控接管的写，见「写入的反馈」），抛出则调用 `fail`；最后把在途计数减一。`run` 自身从不抛出。`succeed`、`fail` 与 `reset` 供不能表达为单个 promise 的流程使用，例如登录的逐步答复。`useWriteFeedback` 不取数、不认识 react-query，状态属于调用它的宿主组件，各回调在组件存续期内引用稳定。`WriteFeedbackRegion` 把槽渲染为 `InlineSuccess`（成功文案，始终挂载）与 `InlineError`（失败码，失败时才挂载），自己没有文案：成功文案由宿主翻译，失败文本经 `resolve` 取自各包自己的命名空间。各包把 `resolve` 绑定进自己的 `internal/` 包装，与 `InlineError` 的包装同形，调用点只传槽。区域的 `sx` 作用于它的根容器，成功与失败两部分都在其内；`InlineSuccess` 的 `sx` 供区域使用，调用点不单独渲染 `InlineSuccess`。使用条款见「写入的反馈」。
 
 ### 表单校验桥
 
@@ -252,21 +254,29 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 
 `AsyncSection` 拥有一个异步读的状态映射，使各表面不各自漂移：`pending` 渲染加载播报；已结算的 `payload` 为 `undefined` 渲染可重试的错误占位；`empty` 载荷渲染空占位（对不可能为空的表面可省）；否则内容回调以收窄后的载荷渲染。`ListSkeleton` 是列表读的进行中占位：它拥有播报契约（一个带可及名与 `aria-busy` 的 `role="status"` 区域）与行信封，行的长相由调用方给。
 
-**读的刷新失败保留旧数据并标明。** 已有数据时的刷新失败（重新取、窗口重新聚焦、写入后的失效再取）不清空内容：`payload` 已结算且 `staleState` 给出时，内容照常渲染，并在其上渲染一条 `role="alert"` 提示与重试动作；`staleState` 缺省不渲染，行为不变。发起刷新的控件在读进行中处于忙态。
+**读的刷新失败保留旧数据并标明。** 已有数据时的刷新失败（重新取、窗口重新聚焦、写入后的失效再取）不清空内容。`staleState` 由调用方在最近一次刷新失败、数据仍在屏且读不在进行中时给出，其余时候不给；组件自身不观察失败，与其余状态由调用方预先推导同形。`payload` 已结算且 `staleState` 给出时，内容照常渲染，并在其上渲染一条 `role="alert"` 提示与重试动作。重试一发出，调用方撤回 `staleState`，提示在读进行中卸载；再次失败时提示重新挂载，使 `role="alert"` 再次被播报。`staleState.description` 是调用方的文案，须说明所示内容可能已过期。`staleState` 只用于不使旧数据失去意义的失败：权限被撤（403）这类失败由调用方以对应占位替换内容，不经 `staleState`。发起刷新的控件在读进行中禁用并标忙（定义见「写入的反馈」）。`staleState` 缺省不渲染，行为不变。
 
 ### 写入的反馈
 
-一次写入的结果落在一个**反馈作用域**里：作用域是一个 `useWriteFeedback` 实例加一个 `WriteFeedbackRegion`，区域紧贴发起写入的控件组之下。下列条款绑定每一个向操作者报告写入结果的界面，各 UI 包以自己的错误码解析器与文案使用它们（[ADR-web-write-feedback-2026-10-17](../../../adr/adr-web-write-feedback-2026-10-17.md)）。
+一次写入的结果落在一个**反馈作用域**里：作用域是一个 `useWriteFeedback` 实例加一个 `WriteFeedbackRegion`，区域紧贴发起写入的控件组之下。**控件组**是共用同一个结果位置的一组写控件，通常是页面上一个带标题的节，含它的表单与表内行内动作；一张表及其行内动作是一组。这条说明是判据，各包按自己的页面应用它，具体划分在各包的设计文档里。下列条款绑定每一个以反馈作用域报告写入结果的界面，各 UI 包以自己的错误码解析器与文案使用它们（[ADR-web-write-feedback-2026-10-17](../../../adr/adr-web-write-feedback-2026-10-17.md)）。
 
-**单槽，最近一次尝试为准。** 作用域持有至多一个结果。`reset` 清空槽位；`succeed(message)` 与 `fail(error)` 各自替换槽位，成功与失败因此不会同时出现在一个作用域里。每次尝试以 `reset` 开头，包括被客户端校验拒绝、没有发出请求的提交，使上一次的服务端失败不与本次的字段错误并存；上下文切换（租户、所选对象）也调用 `reset`，使「已授予」之类的通用文案不被读成指向新上下文。结果不自动消失。`fail` 经 `errorCodeOf` 把任意抛出值折成码，文本由区域的 `resolve` 解析，不取 API 的 `message`。
+**单槽，最后落定的结果为准。** 作用域持有至多一个结果。`reset` 清空槽位，不取消在途的尝试；`succeed(message)` 与 `fail(error)` 各自替换槽位，成功与失败因此不会同时出现在一个作用域里；`pending` 在任一在途尝试落定之前为真。每次尝试以 `reset` 开头，包括被客户端校验拒绝、没有发出请求的提交，使上一次的服务端失败不与本次的字段错误并存。上下文变化也调用 `reset`，判据是变化之后旧结果会被读成描述另一个上下文，例如租户或所选对象改变、翻页与刷新。结果不自动消失。`fail` 经 `errorCodeOf` 把任意抛出值折成码，文本由区域的 `resolve` 解析，不取 API 的 `message`。成功文案是调用 `succeed` 时刻的译文快照，不随之后的语言切换更新，语言切换也不是 `reset` 的触发；失败码经 `resolve` 随活动语言重新渲染。写入本身会切换语言的动作（偏好节的语言写入）在切换落定之后才调用 `succeed`，使确认文案取自新语言。
 
-**一个动作是一次尝试。** 一个动作含多次请求（批量保存）时，`reset` 一次，全部落定后调用一次 `succeed` 或 `fail`；有失败时以首个失败的码调用 `fail`，失败项的草稿保留，成功项的草稿清掉。同一作用域内尝试重叠时，后落定者占槽；发起控件在写入进行中处于忙态，使重叠只可能出现在同一作用域的不同控件之间。
+**写入在途时，改变其作用域上下文的控件禁用。** 在途尝试落定时照常替换槽位，不因 `reset` 被丢弃；改变某作用域上下文的控件（租户选择器、所选对象的选择器、翻页与刷新）因此在该作用域 `pending` 时禁用，使 `reset` 之后不会有先前上下文发起的尝试落定。
 
-**成功确认是默认。** 每个已落地的写入（服务端接受并改变了状态）都落一条成功文案，由宿主翻译，并点明被改动的对象。结果本身是一次性值的写入（只交出一次的令牌、服务密钥）另有展示面板，面板不替代成功文案：它挂在区域之内，是 live region，标明所属的租户或账户，保留到操作者显式关闭或离开页面。
+**发起控件在写入进行中禁用并标忙。** 禁用即原生 `disabled`，不响应再次点击；标忙即 MUI `Button` 的 `loading`，与 `ConfirmDialog` 的 `confirmLoading` 同形；写入落定后恢复可用。写入由对话框确认发起时，对话框关闭后焦点回到触发控件，该控件随即进入禁用，焦点落回 `body`；结果由区域播报，不强制把焦点移回。
 
-**一个界面同一时刻至多渲染一条整次尝试的失败横幅。** 区域里的失败横幅出现时，同一作用域内其它来源的失败横幅先被清掉，反之亦然；浏览器端通行密钥仪式的失败是这种来源——它是客户端原因，文本取自本包 bundle 的键而非 API 码。
+**一个动作是一次尝试。** 一个动作含多次请求（批量保存）时，以一次 `run` 结算：`attempt` 内等待全部请求落定（`mutateAsync` 配 `Promise.allSettled`），不用逐次 `mutate` 的回调，因为同一个 mutation 观察者的逐次回调只对最后发起的请求触发，它的 `isPending` 也只反映那一次。有失败时以提交顺序中第一个失败项的码抛出，失败项的草稿保留，成功项的草稿清掉。重叠的动作各自 `await` 一次调用，在途状态取自作用域的 `pending`，不共用一个观察者的逐次回调、`isPending` 与 `variables`。
 
-**对话框至迟在写入落定时关闭。** `ConfirmDialog` 的 `confirmLoading` 只表示进行中的窗口；失败不留在打开的对话框里，因为模态打开时背后的页面对辅助技术不可见，落在背后区域里的失败横幅读不到。失败落在对话框关闭之后的区域里。
+**被 401 步进不足拒绝的写由提权门控接管。** 这样的拒绝不是整次尝试的失败：`attempt` 把它交给门控后以 `null` 落定，槽位保持为空，不调用 `fail`；挑战成功后的重放是一次新的 `run`；取消步进不留任何结果。
+
+**成功确认是默认。** 每个由操作者发起、落定且无一失败的动作都落一条成功文案，由宿主翻译，并点明被改动的对象：表单级与批量写入点明种类（「设置已保存」），行内动作、矩阵单元与逐项写入进一步点明那一行或那一项。含多次请求的动作只在整个动作完成时落一条；部分落地的批量以失败结算，不为已落地的各项另落成功文案，操作者靠保留草稿的失败项与待保存计数得知尚未落地的部分；多步流程的中间答复不单独确认，确认落在流程完成处。结果本身是一次性值的动作（只交出一次的令牌、服务密钥）另有展示面板，面板不替代成功文案：它由宿主组件自持，渲染在同一控件组之下、与区域并列，不经槽，因此不受 `reset`、`succeed`、`fail` 影响；它是单个 `role="status"` 的 live region，带一个显式关闭的按钮，可及名含它所属的租户、提供方、域名或账户的显示名；保留到操作者显式关闭或离开页面；同一控件组再次发放时，新值替换旧值。
+
+**队列式界面每项自成一个槽。** 一组并发、互相独立的逐项传输（`FileUploader` 的各行）不占用页面的反馈作用域：行的状态与错误是该行的结果，重试把行回到进行中即该行的 `reset`，失败文本取自错误码，结算播报点名文件；一次选取 N 个文件是 N 次尝试。
+
+**一个反馈作用域同一时刻至多渲染一条整次尝试的失败横幅。** 区域里的失败横幅出现时，同一作用域内其它来源的失败横幅先被清掉，反之亦然；浏览器端通行密钥仪式的失败是这种来源的一例——它是客户端原因，文本取自本包 bundle 的键而非 API 码，不进槽。任一次尝试开始与任一次 `succeed` 都清掉该来源的横幅。
+
+**`ConfirmDialog` 至迟在写入落定时关闭。** `ConfirmDialog` 没有自己的反馈区域，其写入的失败属于发起控件组的作用域；`confirmLoading` 只表示进行中的窗口。模态打开期间背后的页面对辅助技术不可见，失败不得只落在被模态遮蔽的区域；自带表单或流程的模态（步进对话框、侧边面板）把失败渲染在模态之内、贴近发起控件，满足同一条判据。对话框的「关闭」以退出过渡结束、背后页面重新可读为准：写入在退出过渡内落定时，失败横幅在退出结束之后才被读屏读到，窗口不超过一个过渡时长。
 
 ## 错误与失败语义
 
@@ -283,8 +293,13 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 | `SidePanel` 的 `busy` 为真时收到关闭请求（按钮、Escape、遮罩点击） | 不调用 `onClose` |
 | `SidePanel` 关闭时打开它的元素已不在文档中（例如面板内移除了列表中的那一行） | 焦点落回 `body`；宿主在 `onExited` 里自行落点 |
 | 同一反馈作用域内两次尝试几乎同时落定 | 后落定者占槽，先落定者的结果被替换 |
+| `reset` 时作用域仍有尝试在途（改变上下文的控件未按规则禁用的宿主） | 在途尝试落定时照常替换槽位，不被丢弃 |
 | `fail` 收到非 ApiError 形状的抛出 | 经 `errorCodeOf` 坍缩到 `client.unknown`，区域经 `resolve` 渲染其未知兜底 |
-| `AsyncSection` 已有数据、`staleState` 给出，随后刷新失败 | 内容保留，其上渲染陈旧提示与重试动作 |
+| 写入被 401 步进不足拒绝，`attempt` 交给门控后以 `null` 落定 | 槽位为空，不调用 `fail`；重放是一次新的 `run` |
+| 语言切换时槽里是成功文案 | 文案保持调用 `succeed` 时的译文；失败码随活动语言重新渲染 |
+| 写入在确认对话框的退出过渡内落定为失败 | 失败横幅在退出结束、背后页面重新可读之后才被读屏读到 |
+| 进行中的发起控件进入禁用而失去焦点 | 焦点落回 `body`，结果由区域播报，不强制把焦点移回 |
+| `AsyncSection` 已有数据、`staleState` 给出 | 内容保留，其上渲染陈旧提示与重试动作；重试发出后调用方撤回它，提示卸载，再次失败时重新挂载并再次播报 |
 
 命名空间键集在工作区 `no-literal-text` 规则与注册期校验下守住；组件内不出现语言字面量。本包无降级、无重试面。
 
