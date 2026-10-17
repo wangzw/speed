@@ -26,6 +26,7 @@ import {
   type RealCall,
   type RealResponder,
 } from '../test-utils/real-client.js'
+import { emittedStyleText } from '@speed/test-utils/emitted-css'
 import { renderWithProviders } from '../test-utils/render.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { SessionsSection } from './SessionsSection.js'
@@ -103,6 +104,32 @@ describe('SessionsSection', () => {
     ).toBeTruthy()
 
     await expectNoAxeViolations()
+  })
+
+  it('raises the row revoke control to the 44px touch-target floor under a coarse pointer', async () => {
+    // The per-row revoke control is a compact icon button; on a
+    // finger-driven device it gates up to the 44x44 floor (the layout
+    // design's pointer rule, through @speed/ui-kit's touchTargetSx). jsdom
+    // evaluates no media condition, so this proves the gated declaration
+    // was wired in.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: [session({ id: 'session-2', user_agent: '' })],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+    await screen.findByRole('button', {
+      name: revokeAria(zhCN.sessions.deviceUnknown),
+    })
+    const css = emittedStyleText()
+    expect(css).toContain('@media (pointer: coarse)')
+    expect(css).toMatch(/@media \(pointer: coarse\)\{[^}]*min-height:44px/)
   })
 
   it('pages a long session list instead of rendering every row at once', async () => {

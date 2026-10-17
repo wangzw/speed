@@ -63,6 +63,7 @@ import {
   ConfirmDialog,
   errorCodeOf,
   ListSkeleton,
+  touchTargetSx,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
@@ -432,7 +433,7 @@ export function SessionsSection() {
                                 void handleRevokeSession(id)
                               }
                             }}
-                            sx={{ color: 'text.secondary' }}
+                            sx={[touchTargetSx, { color: 'text.secondary' }]}
                           >
                             {revokingId === id ? (
                               <CircularProgress
