@@ -15,6 +15,7 @@ import { renderWithProviders } from '../test-utils/render.js'
 import { columnVisibility } from '../test-utils/container-visibility.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
+  accountFixture,
   createConsoleOperations,
   makeConsoleBackend,
   recordFixture,
@@ -66,6 +67,42 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('tenant.read')).toBeInTheDocument()
   })
 
+  it('renders the recent activity actor as the account display name', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listRecords: () =>
+          Promise.resolve({
+            entries: [recordFixture({ id: 'rec-9' })],
+            next: '',
+          }),
+        getAccount: () =>
+          Promise.resolve(accountFixture({ display_name: 'Ada Lovelace' })),
+      }),
+    )
+    renderWithProviders(<DashboardPage />, { operations })
+    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
+    expect(screen.queryByText('acc-1')).not.toBeInTheDocument()
+  })
+
+  it('marks a recent activity actor whose account read is refused as unresolved', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listRecords: () =>
+          Promise.resolve({
+            entries: [recordFixture({ id: 'rec-9' })],
+            next: '',
+          }),
+        getAccount: () => Promise.reject(new Error('forbidden')),
+      }),
+    )
+    renderWithProviders(<DashboardPage />, { operations })
+    // The cell keeps the recorded id but labels it unresolved rather than
+    // passing it off as a resolved (or system) actor.
+    const cell = await screen.findByLabelText(/身份未解析/)
+    expect(cell).toHaveTextContent('acc-1')
+    expect(cell).toHaveAttribute('title', '身份未解析（需账户读取权限）')
+  })
+
   it('renders recent activity with the audit page columns and priorities', async () => {
     const operations = createConsoleOperations(
       makeConsoleBackend({
@@ -80,7 +117,7 @@ describe('DashboardPage', () => {
     await screen.findByText('tenant.read')
     // The list carries the same set as the audit query page: action and
     // object identify the record, so the object column outranks the actor
-    // and the outcome -- almost always a success -- is shed first.
+    // and the outcome, which share the md tier so a failure stays visible.
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: '对象' })),
     ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
@@ -94,7 +131,7 @@ describe('DashboardPage', () => {
     ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: '结果' })),
-    ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
+    ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: '时间' })),
     ).toBeNull()

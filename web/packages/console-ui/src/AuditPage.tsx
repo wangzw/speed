@@ -51,8 +51,8 @@ import {
   PageHeader,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
-import Typography from '@mui/material/Typography'
 import { ConsoleAsyncSection } from './internal/async-section.js'
+import { AuditActorCell } from './internal/audit-actor-cell.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { ConsoleLink } from './internal/navigation.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
@@ -95,43 +95,6 @@ function toInstant(local: string): string | undefined {
   }
   const date = new Date(local)
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
-}
-
-/**
- * One row's actor cell: the readable identity. It reads the account's
- * display name through the bound surface and shows it. The account read
- * is gated on authn.account.read, which the page's own audit.read does
- * not imply, so a viewer holding audit.read but not account.read is
- * refused the lookup: the cell then shows the recorded value with a note
- * that the identity could not be resolved, rather than passing the raw id
- * off as a resolved (or system) actor. While the read is pending, or when
- * the actor names no account (a system or import actor), it shows the
- * recorded value instead of a spinner, so the column is never blank. The
- * lookup is keyed by the account id, so a page of rows that share an
- * actor -- and any re-render -- reuses one cached read.
- */
-function AuditActorCell({ actor }: { readonly actor: string }) {
-  const { t } = useConsoleUiTranslation()
-  const operations = useConsoleOperations()
-  const account = operations.useAccount({ id: actor })
-  const name = account.data?.display_name
-  if (name !== undefined && name !== '') {
-    return <>{name}</>
-  }
-  if (account.isError) {
-    return (
-      <Typography
-        component="span"
-        variant="body2"
-        sx={{ fontStyle: 'italic' }}
-        title={t('audit.actorUnresolved')}
-        aria-label={`${actor} (${t('audit.actorUnresolved')})`}
-      >
-        {actor}
-      </Typography>
-    )
-  }
-  return <>{actor}</>
 }
 
 export function AuditPage({ basePath }: { readonly basePath?: string }) {
@@ -205,8 +168,9 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
   // The columns the table renders: when it happened, what it was, to what,
   // who did it and how it ended. The object column carries the route the
   // action names, so it shares the record's identity with the action and
-  // outranks the actor; the priorities are the set both audit-record
-  // tables share (see AUDIT_RECORD_COLUMN_PRIORITY).
+  // outranks the actor; the actor and the outcome share the `md` tier so a
+  // failure stays visible at laptop width. The priorities are the set both
+  // audit-record tables share (see AUDIT_RECORD_COLUMN_PRIORITY).
   const columns: DataTableColumn<ConsoleAuditRecord>[] = [
     {
       id: 'time',

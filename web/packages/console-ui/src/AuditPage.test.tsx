@@ -88,22 +88,23 @@ describe('AuditPage', () => {
     }
   })
 
-  it('keeps the object column visible in a laptop-wide container and sheds the outcome first', async () => {
+  it('keeps the outcome visible in a laptop-wide container alongside the actor', async () => {
     const operations = createConsoleOperations(
       makeConsoleBackend({ listRecords: () => Promise.resolve(page([record])) }),
     )
     renderWithProviders(<AuditPage />, { operations })
     await screen.findByText('tenant.create')
     // The table's container is 1184px wide beside the console nav at a
-    // 1512px viewport: the object column (and the actor) must clear that
-    // width, while the outcome column degrades below it. Under a still
-    // narrower container the object column hides again below sm -- the
-    // restore is the low end of its tier, not an always-on column.
+    // 1512px viewport: the object, the actor AND the outcome must all clear
+    // that width, so a failed record is distinguishable without widening
+    // the window. Under a still narrower container the object column hides
+    // again below sm -- the restore is the low end of its tier, not an
+    // always-on column.
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: '对象' })),
     ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
     // The header and the body each apply the column's visibility rule on
-    // their own, so assert the body cell too: a divergence between the two
+    // their own, so assert the body cells too: a divergence between the two
     // would otherwise pass with only the header checked.
     expect(
       columnVisibility(screen.getByText('tenant/acme').closest('td')!),
@@ -113,7 +114,10 @@ describe('AuditPage', () => {
     ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: '结果' })),
-    ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
+    ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
+    expect(
+      columnVisibility(screen.getByText('ok').closest('td')!),
+    ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
     // The anchors never hide.
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: '时间' })),

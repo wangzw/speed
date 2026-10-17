@@ -13,7 +13,9 @@
  * counts come from the newest page of a windowed read, so a page that
  * carries a next cursor reports its count as a lower bound ("N+"). The
  * recent-activity list shows the newest page of records outright, through
- * the same column set and priorities as the audit query page. Nothing
+ * the same column set and priorities as the audit query page, and the same
+ * actor cell: the account's display name where the lookup answers, the
+ * recorded value with an unresolved note where it is refused. Nothing
  * here invents an aggregate the contract does not carry.
  *
  * Each surface renders through the console async section, so a refused
@@ -36,6 +38,7 @@ import {
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
+import { AuditActorCell } from './internal/audit-actor-cell.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { formatUtc } from './internal/datetime.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
@@ -141,8 +144,9 @@ export function DashboardPage() {
   }
 
   // The same columns and priorities as the audit query page: the action
-  // and its object carry the record's identity, the actor follows, and
-  // the outcome -- almost always a success here -- is shed first.
+  // and its object carry the record's identity, while the actor and the
+  // outcome stay visible together at the `md` tier so a failed record is
+  // distinguishable on a laptop-width container.
   const recentColumns: DataTableColumn<ConsoleAuditRecord>[] = [
     {
       id: 'time',
@@ -171,7 +175,7 @@ export function DashboardPage() {
       cellWrap: 'nowrap',
       cellFullValue: (record) =>
         record.actor === '' ? undefined : record.actor,
-      cell: (record) => record.actor,
+      cell: (record) => <AuditActorCell actor={record.actor} />,
     },
     {
       id: 'outcome',
