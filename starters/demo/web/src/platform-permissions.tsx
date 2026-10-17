@@ -26,13 +26,17 @@
  * another principal replaces them rather than inheriting the previous
  * principal's.
  *
- * The set is (re)read on every authenticated transition, and only while the
- * feature document is `ready` and serves `authz.admin` -- the feature that
- * owns the catalog endpoint. A `pending` or `failed` document keeps the set
- * unknown; a `ready` document without `authz.admin` attaches the empty set.
- * That gating is what keeps the console area's "feature state first, then
- * permission set" order meaningful: a failed read never looks like an empty
- * permission set.
+ * The set is (re)read whenever the effective identity changes -- an
+ * authenticated transition, a re-login as another principal, or a started
+ * or ended impersonation -- and only while the feature document is `ready`
+ * and serves `authz.admin` -- the feature that owns the catalog endpoint. A
+ * `pending` or `failed` document keeps the set unknown; a `ready` document
+ * without `authz.admin` attaches the empty set. That gating is what keeps
+ * the console area's "feature state first, then permission set" order
+ * meaningful: a failed read never looks like an empty permission set.
+ * During an impersonation the read is refused by the gateway, so the
+ * attached empty set hides the console until the end's re-read restores the
+ * operator's own set.
  */
 
 import { useEffect } from 'react'
@@ -85,7 +89,19 @@ export function PlatformPermissions({
  * failed read rather than escaping the effect.
  */
 function usePlatformPermissions(session: AuthSession): void {
-  const authenticated = useAuthState().state === 'authenticated'
+  const snapshot = useAuthState()
+  const authenticated = snapshot.state === 'authenticated'
+  // The identity is an input: a login attaches a set for a different
+  // principal, and a started or ended impersonation swaps the effective
+  // account without the feature state moving. restore() retains whatever
+  // set was attached and cannot know the identity changed, so re-reading on
+  // this edge is what keeps a stale (or, during an impersonation, refused)
+  // set from outliving the identity it was read under.
+  const principalId =
+    snapshot.state === 'authenticated'
+      ? (snapshot.principal?.account_id ?? '')
+      : ''
+  const impersonating = snapshot.impersonating
   const features = useFeatureState()
   const ready = features.state === 'ready'
   const authzAdminServed = ready && features.names.has('authz.admin')
@@ -124,5 +140,12 @@ function usePlatformPermissions(session: AuthSession): void {
     return () => {
       cancelled = true
     }
-  }, [authenticated, ready, authzAdminServed, session])
+  }, [
+    authenticated,
+    ready,
+    authzAdminServed,
+    session,
+    principalId,
+    impersonating,
+  ])
 }

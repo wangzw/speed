@@ -68,6 +68,14 @@ export interface ConsoleAreaProps {
   readonly sidebarCollapsed?: boolean
   /** Fired when the sidebar collapse state should change. */
   readonly onSidebarCollapsedChange?: (collapsed: boolean) => void
+  /**
+   * The host's action after an impersonation start or end settles. The
+   * console page reports the change without waiting for it; the host
+   * re-reads the identity the same way the tenant frame's banner does.
+   */
+  readonly onImpersonationChange?: (
+    change: 'started' | 'ended',
+  ) => void | Promise<void>
 }
 
 export function ConsoleArea({
@@ -77,6 +85,7 @@ export function ConsoleArea({
   children,
   sidebarCollapsed,
   onSidebarCollapsedChange,
+  onImpersonationChange,
 }: ConsoleAreaProps): ReactElement {
   const navigate = useNavigate()
   const { session } = useAppServices()
@@ -102,6 +111,11 @@ export function ConsoleArea({
       // operator's account has no active factor; the path is this app's own
       // (src/paths), reachable at /account.
       accountHref={ACCOUNT_PATH}
+      // Starting or ending an impersonation changes whose identity every
+      // later read belongs to; the app root's action settles the cache,
+      // the session and the identity-dependent host state, then moves the
+      // operator home after a start.
+      onImpersonationChange={onImpersonationChange}
       sidebarCollapsed={sidebarCollapsed}
       onSidebarCollapsedChange={onSidebarCollapsedChange}
     >

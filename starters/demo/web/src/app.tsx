@@ -87,6 +87,12 @@ import {
   firstConsoleTarget,
   isConsolePath,
 } from './console-routes.js'
+import {
+  IdentityChangeProvider,
+  ImpersonationBannerSlot,
+  useIdentityChange,
+  useImpersonationStatus,
+} from './impersonation.js'
 import { DemoNavLabel } from './nav-label.js'
 import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
@@ -122,7 +128,13 @@ export function DemoApp(): ReactElement {
       pending={() => <RoutePresencePending />}
       failed={() => <RoutePresenceFailed />}
     >
-      <AppFrame presence={presence} />
+      {/* The identity-change action both areas report to: a start or end
+          swaps whose identity every cached row, the session, the attached
+          permission set, the current tenant and the live subscription
+          belong to (src/impersonation). */}
+      <IdentityChangeProvider>
+        <AppFrame presence={presence} />
+      </IdentityChangeProvider>
     </RouteProvider>
   )
 }
@@ -139,6 +151,10 @@ function AppFrame({
   // one. Absent, pending or failed, no declaration matches and the path falls
   // through to the tenant area's own matching.
   const match = useMatch()
+  // The host's identity-change action, handed to the console page so a
+  // settled start or end re-reads the identity the way the tenant frame's
+  // banner does.
+  const { applyIdentityChange } = useIdentityChange()
   // The desktop sidebar's collapse state, host-held and shared by both areas:
   // each frame renders the toggle (the collapse props are supplied) and reports
   // each flip here, so the collapse carries across the tenant/console switch.
@@ -183,33 +199,42 @@ function AppFrame({
       presence.state === 'ready' ? presence.has : (): boolean => false
     return (
       <SessionGate>
-        <ConsoleFeatureGate presence={presence}>
-          <ConsoleAreaGate>
-            {consoleRoutes.length === 0 ? (
-              // No console page is served: the URL is the tenant area's,
-              // where the gated declarations render the same 404 an
-              // unregistered path does.
-              <TenantFrame
-                presence={presence}
-                sidebarCollapsed={sidebarCollapsed}
-                onSidebarCollapsedChange={setSidebarCollapsed}
-              >
-                <RouteView />
-              </TenantFrame>
-            ) : (
-              <ConsoleArea
-                routes={consoleRoutes}
-                hasFeature={hasFeature}
-                sidebarCollapsed={sidebarCollapsed}
-                onSidebarCollapsedChange={setSidebarCollapsed}
-              >
-                <ConsoleRouteGuard>
+        {/* An impersonated session never enters the console: its platform
+            management reads are refused by the gateway whatever the
+            impersonated account holds, so the whole area redirects to the
+            tenant home, silently, before the feature state is even
+            consulted. The explanation belongs to the tenant frame's
+            banner, not to this redirect. */}
+        <ConsoleImpersonationGate>
+          <ConsoleFeatureGate presence={presence}>
+            <ConsoleAreaGate>
+              {consoleRoutes.length === 0 ? (
+                // No console page is served: the URL is the tenant area's,
+                // where the gated declarations render the same 404 an
+                // unregistered path does.
+                <TenantFrame
+                  presence={presence}
+                  sidebarCollapsed={sidebarCollapsed}
+                  onSidebarCollapsedChange={setSidebarCollapsed}
+                >
                   <RouteView />
-                </ConsoleRouteGuard>
-              </ConsoleArea>
-            )}
-          </ConsoleAreaGate>
-        </ConsoleFeatureGate>
+                </TenantFrame>
+              ) : (
+                <ConsoleArea
+                  routes={consoleRoutes}
+                  hasFeature={hasFeature}
+                  onImpersonationChange={applyIdentityChange}
+                  sidebarCollapsed={sidebarCollapsed}
+                  onSidebarCollapsedChange={setSidebarCollapsed}
+                >
+                  <ConsoleRouteGuard>
+                    <RouteView />
+                  </ConsoleRouteGuard>
+                </ConsoleArea>
+              )}
+            </ConsoleAreaGate>
+          </ConsoleFeatureGate>
+        </ConsoleImpersonationGate>
       </SessionGate>
     )
   }
@@ -256,7 +281,24 @@ function TenantFrame({
   const inboxServed = useFeature('notification.inbox')
   const streamServed = useFeature('notification.stream')
   const rosterServed = useFeature('tenant.admin')
-  const authenticated = useAuthState().state === 'authenticated'
+  const snapshot = useAuthState()
+  const authenticated = snapshot.state === 'authenticated'
+  // Whose identity this session acts as right now. A start or end swaps it,
+  // and the identity-keyed effects below re-read what was read under the
+  // previous one.
+  const impersonating = authenticated && snapshot.impersonating
+  const principalId =
+    snapshot.state === 'authenticated'
+      ? (snapshot.principal?.account_id ?? '')
+      : ''
+  // The live subscription registers per (tenant, effective account); the
+  // generation bumps after each identity change so it re-registers under the
+  // new account even when the tenant stays the same.
+  const { generation } = useIdentityChange()
+  // The impersonation status read: enabled only while the snapshot says one
+  // is in force, so a visitor who is not impersonating issues no request. It
+  // owns the bare-404 ended path and the expiry timer.
+  const grant = useImpersonationStatus(impersonating)
   // Whether the feature document is settled at all. The roster read treats the
   // three states differently: `pending`/`failed` keep the current tenant
   // unknown (tenant-scoped queries stay disabled), `ready` without tenant.admin
@@ -290,6 +332,18 @@ function TenantFrame({
   // queries gate on the tenant being known (TenantProvider below).
   useEffect(() => {
     if (!authenticated) {
+      return
+    }
+    if (impersonating) {
+      // The roster read is a platform management read, refused to an
+      // impersonated identity. The current tenant is the grant's tenant
+      // identifier instead -- no roster read, no placeholder fallback --
+      // and stays unknown until the status read settles, which keeps
+      // tenant-scoped queries disabled. The request surface's alias comes
+      // from the previously read roster cache when it holds this id, and
+      // from the placeholder otherwise (the known limitation this shares
+      // with a member who cannot read the roster).
+      setTenantId(grant?.tenant ?? null)
       return
     }
     if (!featuresReady) {
@@ -329,7 +383,18 @@ function TenantFrame({
     return () => {
       cancelled = true
     }
-  }, [authenticated, featuresReady, rosterServed, setTenantId])
+    // The identity is an input: after an impersonation ends the roster
+    // decides the tenant again, and after a start the branch above keeps
+    // the roster out of it.
+  }, [
+    authenticated,
+    featuresReady,
+    rosterServed,
+    impersonating,
+    principalId,
+    grant?.tenant,
+    setTenantId,
+  ])
   const items = useNavItems()
   const consoleRoutes = presentDeclarations(consoleShellRoutes, presence)
 
@@ -366,10 +431,16 @@ function TenantFrame({
       <NotificationStreamProvider
         openStream={api.openEventStream}
         enabled={authenticated && streamServed}
+        identityGeneration={generation}
       >
         <ProductShell
           navItems={navItems}
           header={<AppBrand />}
+          // The impersonation banner sits above the app bar for the whole
+          // tenant frame. It is always mounted: the component tells the
+          // shell when there is nothing to show, and its live region keeps
+          // the end confirmation after the banner itself goes away.
+          banner={<ImpersonationBannerSlot grant={grant} />}
           // The notification bell rides the header actions slot beside the
           // shared chrome; it opens the notification surface. It lives only
           // in the tenant area (the console resolves no tenant, so its bell
@@ -434,6 +505,13 @@ function ConsoleEntry({
 }): ReactElement | null {
   const navigate = useNavigate()
   const snapshot = useAuthState()
+  // An impersonated session has no console to enter: the area redirects it
+  // home whatever the platform permission set says (the set it attached
+  // before the start is either reset by the identity change or answered
+  // empty during the impersonation). Hide the way in for the same reason.
+  if (snapshot.state === 'authenticated' && snapshot.impersonating) {
+    return null
+  }
   const target = firstConsoleTarget(routes, snapshot.permissionSets.system)
   if (target === null) {
     return null
@@ -467,6 +545,30 @@ function SessionGate({
   const snapshot = useAuthState()
   if (snapshot.state !== 'authenticated') {
     return <SignInView />
+  }
+  return <>{children}</>
+}
+
+/**
+ * The console area's impersonation gate: an impersonated session has no
+ * console. The gateway refuses every platform management read to an
+ * impersonated identity, whatever the impersonated account holds, so the
+ * whole area leaves the console path space for the tenant home. The
+ * redirect is silent, like the empty-permission redirect below it: the
+ * visitor's explanation is the tenant frame's persistent banner, which the
+ * tenant home now renders. The session gate runs first (an anonymous
+ * viewer sees the sign-in surface); this gate runs before the feature
+ * state, because no feature document makes the console available during an
+ * impersonation.
+ */
+function ConsoleImpersonationGate({
+  children,
+}: {
+  readonly children: ReactNode
+}): ReactElement {
+  const snapshot = useAuthState()
+  if (snapshot.state === 'authenticated' && snapshot.impersonating) {
+    return <Navigate to={TENANT_HOME_PATH} replace />
   }
   return <>{children}</>
 }
