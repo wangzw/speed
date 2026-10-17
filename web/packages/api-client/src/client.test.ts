@@ -715,6 +715,55 @@ describe('successful responses', () => {
     await expect(api<undefined>('/notes/n-1')).resolves.toBeUndefined()
   })
 
+  it('refuses a 204 as a coded client.protocol error when the request declares requireJsonBody', async () => {
+    // The empty-success shape is a protocol violation for a request
+    // that declared it needs a JSON document: the caller must be able
+    // to tell "the endpoint sent nothing" from a real body.
+    const standin = scriptedStandin(jsonResponse(204))
+    const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
+    const error = await expectApiError(
+      api<unknown>('/notes/n-1', { requireJsonBody: true }),
+    )
+    expect(error.code).toBe(ERROR_CODE_PROTOCOL)
+    expect(error.status).toBe(204)
+    expect(error.attempts).toBe(1)
+  })
+
+  it('refuses a whitespace-only 2xx body when the request declares requireJsonBody', async () => {
+    const standin = scriptedStandin(textResponse(200, ' \n '))
+    const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
+    const error = await expectApiError(
+      api<unknown>('/notes/n-1', { requireJsonBody: true }),
+    )
+    expect(error.code).toBe(ERROR_CODE_PROTOCOL)
+    expect(error.status).toBe(200)
+    expect(error.attempts).toBe(1)
+  })
+
+  it('reports the requireJsonBody refusal with the real attempts and status of the exchange', async () => {
+    // The refusal is raised inside the exchange, so it carries the
+    // exchange's truth -- three HTTP attempts (two transient 503s,
+    // then an empty 200) -- not the hardcoded 1/0 a wrapper-level
+    // error would synthesize.
+    const standin = scriptedStandin(
+      textResponse(503, 'Service Unavailable'),
+      textResponse(503, 'Service Unavailable'),
+      new Response(null, { status: 200 }),
+    )
+    const api = createClient({
+      baseUrl: BASE_URL,
+      fetch: standin.fetch,
+      retryPolicy: zeroDelay(3),
+    })
+    const error = await expectApiError(
+      api<unknown>('/config/public', { requireJsonBody: true }),
+    )
+    expect(error.code).toBe(ERROR_CODE_PROTOCOL)
+    expect(error.status).toBe(200)
+    expect(error.attempts).toBe(3)
+    expect(standin.calls).toHaveLength(3)
+  })
+
   it('retries a 2xx whose body fails to arrive, then succeeds', async () => {
     let first = true
     const standin = createStandinFetch(() => {
