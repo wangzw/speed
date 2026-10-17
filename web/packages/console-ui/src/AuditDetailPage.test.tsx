@@ -42,6 +42,25 @@ describe('AuditDetailPage', () => {
     expect(getRecord).toHaveBeenCalledWith({ id: 'rec-7' })
   })
 
+  it('shows the empty-value placeholder for fields the record carries empty', async () => {
+    // A journal field that is empty is still part of the record: the row
+    // stays, with a placeholder instead of a label and nothing beside it.
+    const getRecord = vi.fn(() =>
+      Promise.resolve(
+        recordFixture({ purpose: '', tenant: '', detail: { note: '' } }),
+      ),
+    )
+    const operations = createConsoleOperations(makeConsoleBackend({ getRecord }))
+    renderWithProviders(<AuditDetailPage id="rec-1" />, { operations })
+
+    await screen.findByText('tenant.read')
+    for (const label of ['用途', '租户', 'note']) {
+      const row = screen.getByText(label).parentElement as HTMLElement
+      expect(within(row).getByText('—')).toBeInTheDocument()
+    }
+    expect(screen.getAllByText('—')).toHaveLength(3)
+  })
+
   it('raises its refresh action to the 44px floor under a coarse pointer', async () => {
     const operations = createConsoleOperations(makeConsoleBackend())
     renderWithProviders(<AuditDetailPage id="rec-1" />, { operations })

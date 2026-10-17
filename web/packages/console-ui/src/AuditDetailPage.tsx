@@ -12,11 +12,16 @@
  * builds no client and writes no query key. The recorded time renders
  * through Intl in the current language and explicitly in UTC (the zone
  * the view carries), never the process-local default; a malformed
- * timestamp renders nothing. The record's own fields are journal data
+ * timestamp renders the empty-value placeholder, not a guess. The record's own fields are journal data
  * (not a closed vocabulary the surface guards) and render as recorded; a
- * detail object renders as its key/value pairs. A refused read settles
- * into a permission placeholder (403) or the retryable error placeholder
- * (any other failure). The page opens with ui-kit's PageHeader.
+ * detail object renders as its key/value pairs. An empty field renders
+ * the em-dash placeholder rather than a label with no value: a journal
+ * field being empty is itself part of the record (a platform-level event
+ * has no tenant, an action may carry no purpose), and dropping the row
+ * would hide that the record carries an empty value. A refused read
+ * settles into a permission placeholder (403) or the retryable error
+ * placeholder (any other failure). The page opens with ui-kit's
+ * PageHeader.
  */
 
 import { useMemo } from 'react'
@@ -53,6 +58,12 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
     return detail === undefined ? [] : Object.entries(detail).sort(([a], [b]) => a.localeCompare(b))
   }, [record.data])
 
+  // An empty journal field is a value like any other here: the placeholder
+  // shows that the record carries it empty, instead of a label with nothing
+  // beside it (or a row silently missing from the record's shape).
+  const shown = (value: string): string =>
+    value === '' ? t('common.emptyValue') : value
+
   const crumbs = [
     { label: t('shell.title') },
     ...(parentHref === undefined
@@ -74,15 +85,15 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
           <DefinitionRow label={t('auditDetail.field.id')} value={settled.id} />
           <DefinitionRow
             label={t('auditDetail.field.occurredAt')}
-            value={occurred ?? ''}
+            value={shown(occurred ?? '')}
           />
-          <DefinitionRow label={t('auditDetail.field.actor')} value={settled.actor} />
-          <DefinitionRow label={t('auditDetail.field.action')} value={settled.action} />
-          <DefinitionRow label={t('auditDetail.field.object')} value={settled.object} />
-          <DefinitionRow label={t('auditDetail.field.outcome')} value={settled.outcome} />
-          <DefinitionRow label={t('auditDetail.field.purpose')} value={settled.purpose} />
-          <DefinitionRow label={t('auditDetail.field.tenant')} value={settled.tenant} />
-          <DefinitionRow label={t('auditDetail.field.source')} value={settled.source} />
+          <DefinitionRow label={t('auditDetail.field.actor')} value={shown(settled.actor)} />
+          <DefinitionRow label={t('auditDetail.field.action')} value={shown(settled.action)} />
+          <DefinitionRow label={t('auditDetail.field.object')} value={shown(settled.object)} />
+          <DefinitionRow label={t('auditDetail.field.outcome')} value={shown(settled.outcome)} />
+          <DefinitionRow label={t('auditDetail.field.purpose')} value={shown(settled.purpose)} />
+          <DefinitionRow label={t('auditDetail.field.tenant')} value={shown(settled.tenant)} />
+          <DefinitionRow label={t('auditDetail.field.source')} value={shown(settled.source)} />
         </Box>
 
         {detailEntries.length > 0 && (
@@ -92,7 +103,7 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
             </Typography>
             <Box component="dl" sx={{ margin: 0 }}>
               {detailEntries.map(([key, value]) => (
-                <DefinitionRow key={key} label={key} value={value} />
+                <DefinitionRow key={key} label={key} value={shown(value)} />
               ))}
             </Box>
           </Box>
