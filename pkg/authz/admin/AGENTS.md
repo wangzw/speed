@@ -6,6 +6,9 @@ and delivers no capability of its own: every route's action is a table operation
 of the policy module, reached through the `Manager` capability, and the module
 holds no policy rule, no transaction and no data of its own.
 
+The descriptor declares the static feature `authz.admin`, present whenever the
+module is in force.
+
 The module grants itself no permission. It declares every management route open
 on the authorization middleware — so the middleware lets a request through to
 the handler — and the handler makes the decision itself: it reads the caller from

@@ -29,6 +29,7 @@ import (
 	"github.com/vislake/speed/pkg/authz/guard"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 )
@@ -120,6 +121,10 @@ func Module() core.Module {
 		Resources: []any{
 			schema(),
 			speedhttp.Spec{Endpoint: defaultEndpoint, Document: openAPIFragment},
+			// The management surface: its routes are mounted whenever the
+			// module is in force and the process has an entry point, neither of
+			// which the module itself varies, so the feature is static.
+			feature.Spec{Name: "authz.admin"},
 		},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
