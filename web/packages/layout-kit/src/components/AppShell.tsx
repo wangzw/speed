@@ -802,6 +802,15 @@ export function AppShell({
   // exact height; before any measurement exists it is a plain
   // theme-height Toolbar (the single-row case, which is also the whole
   // jsdom case, where the banner height is taken as zero).
+  //
+  // The measured height is written as an inline style, never through
+  // `sx`: the theme toolbar mixin contributes its own `min-height` --
+  // 56 at the base and 64 under the `sm` breakpoint -- and that
+  // breakpoint rule lands after an equal-specificity `sx` class, so an
+  // `sx` height is overridden to the theme's single-row height from
+  // 600px up, where the banner plus a wrapped header then cover the
+  // top of content again. An inline style outranks every class rule,
+  // so the measured height holds at every viewport width.
   const spacerMinHeight =
     headerHeight !== null ? bannerOffset + headerHeight : null
   const spacer = (
@@ -819,6 +828,56 @@ export function AppShell({
         ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
       ]}
     >
+      {/* Visually hidden until focused; the first focusable element in
+          the shell, so it renders before the banner slot and the AppBar
+          in DOM order -- a focusable control inside the banner slot
+          therefore follows it in the tab order instead of preceding it.
+          It sits outside the shell's landmarks (the skip target is
+          `main`), which is allowed for a link whose fragment target
+          resolves. Activating it focuses the main landmark directly
+          instead of navigating to the fragment: fragment navigation
+          rewrites location.hash, and in a hash-routed host the fragment
+          IS the route -- a skip link that navigates would replace the
+          app route with the generated target id. The keyboard path is
+          unchanged: Tab reaches the link, Enter activates it, and the
+          focus visibly moves into main (browsers scroll a focused
+          element into view, matching what fragment navigation would
+          have scrolled to). */}
+      <Link
+        href={`#${mainContentId}`}
+        onClick={(event) => {
+          event.preventDefault()
+          focusMainContent()
+        }}
+        sx={{
+          position: 'absolute',
+          width: 1,
+          height: 1,
+          padding: 0,
+          margin: -1,
+          overflow: 'hidden',
+          whiteSpace: 'nowrap',
+          clipPath: 'inset(50%)',
+          color: 'inherit',
+          '&:focus': {
+            position: 'fixed',
+            top: 8,
+            left: 8,
+            width: 'auto',
+            height: 'auto',
+            margin: 0,
+            padding: 1,
+            overflow: 'visible',
+            whiteSpace: 'normal',
+            clipPath: 'none',
+            zIndex: theme.zIndex.tooltip,
+            backgroundColor: 'background.paper',
+            color: 'text.primary',
+          },
+        }}
+      >
+        {t('appShell.skipToContent')}
+      </Link>
       {hasBanner && (
         // The banner is part of the fixed shell head, pinned to the
         // viewport top and spanning its full width; the AppBar starts
@@ -844,54 +903,6 @@ export function AppShell({
         ref={appBarRef}
         sx={{ zIndex: theme.zIndex.drawer + 1, top: bannerOffset }}
       >
-        {/* Visually hidden until focused; the first focusable element in
-            the shell, so it must live before the nav toggle in DOM order.
-            It stays inside the header/banner landmark so it never counts
-            as page content outside a landmark. Activating it focuses the
-            main landmark directly instead of navigating to the fragment:
-            fragment navigation rewrites location.hash, and in a
-            hash-routed host the fragment IS the route -- a skip link
-            that navigates would
-            replace the app route with the generated target id. The
-            keyboard path is unchanged: Tab reaches the link, Enter
-            activates it, and the focus visibly moves into main (browsers
-            scroll a focused element into view, matching what fragment
-            navigation would have scrolled to). */}
-        <Link
-          href={`#${mainContentId}`}
-          onClick={(event) => {
-            event.preventDefault()
-            focusMainContent()
-          }}
-          sx={{
-            position: 'absolute',
-            width: 1,
-            height: 1,
-            padding: 0,
-            margin: -1,
-            overflow: 'hidden',
-            whiteSpace: 'nowrap',
-            clipPath: 'inset(50%)',
-            color: 'inherit',
-            '&:focus': {
-              position: 'fixed',
-              top: 8,
-              left: 8,
-              width: 'auto',
-              height: 'auto',
-              margin: 0,
-              padding: 1,
-              overflow: 'visible',
-              whiteSpace: 'normal',
-              clipPath: 'none',
-              zIndex: theme.zIndex.tooltip,
-              backgroundColor: 'background.paper',
-              color: 'text.primary',
-            },
-          }}
-        >
-          {t('appShell.skipToContent')}
-        </Link>
         <Toolbar sx={{ flexWrap: 'wrap', rowGap: 1 }}>
           {!isDesktop && (
             <IconButton

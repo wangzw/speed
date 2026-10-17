@@ -781,6 +781,28 @@ describe('AppShell', () => {
       expect(document.activeElement).toBe(main)
     })
 
+    it('keeps the skip link first in tab order even when the banner slot holds a focusable control', async () => {
+      // The skip link is the first focusable element in the shell; a
+      // focusable control inside the banner slot (the impersonation
+      // banner's own end control is one) must follow it in DOM order, or
+      // the first Tab press lands in the banner and skips the way past
+      // the whole repeated region instead of leading to main.
+      mockMatchMedia(true)
+      const user = userEvent.setup()
+      const { getByRole } = renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          banner={<button type="button">End impersonation</button>}
+        >
+          content
+        </AppShell>,
+      )
+      await user.tab()
+      expect(
+        getByRole('link', { name: zhCN.appShell.skipToContent }),
+      ).toHaveFocus()
+    })
+
     it('relabels the nav landmark and toggle button when the language switches to en-US', async () => {
       mockMatchMedia(false)
       const { getByRole, i18n } = renderWithProviders(
@@ -1136,34 +1158,6 @@ describe('AppShell', () => {
       expect(drawerSpacer?.style.minHeight).toBe('160px')
     })
 
-    it('leaves the spacer at the plain theme height when only the banner height has been measured', () => {
-      mockMatchMedia(true)
-      const resizeObserver = stubResizeObserver()
-      const { getByTestId, getByRole } = renderWithProviders(
-        <AppShell
-          navItems={NAV_ITEMS}
-          banner={<p data-testid="notice">Impersonating</p>}
-        >
-          content
-        </AppShell>,
-      )
-      const slot = getByTestId('notice').parentElement
-      expect(slot).not.toBeNull()
-      // Only the banner's own height has arrived; the header's has not.
-      resizeObserver.emitHeightFor(slot as Element, 48)
-      const mainSpacer =
-        getByRole('main').querySelector<HTMLElement>('.MuiToolbar-root')
-      expect(mainSpacer).not.toBeNull()
-      // Still the theme's plain Toolbar: no measured height and no pixel
-      // value written as a theme spacing multiplier (48px must never
-      // become 384px).
-      expect((mainSpacer as HTMLElement).style.minHeight).toBe('')
-      expect(getComputedStyle(mainSpacer as Element).marginTop).toMatch(/^0(px)?$/)
-      const drawerSpacer = document.querySelector('.MuiDrawer-paper .MuiToolbar-root')
-      expect(drawerSpacer).not.toBeNull()
-      expect(getComputedStyle(drawerSpacer as Element).marginTop).toMatch(/^0(px)?$/)
-    })
-
     it('offsets the app bar and reserves the banner plus header in the temporary drawer at narrow widths', () => {
       mockMatchMedia(false)
       const resizeObserver = stubResizeObserver()
@@ -1215,6 +1209,34 @@ describe('AppShell', () => {
       expect(mainSpacer).not.toBeNull()
       expect((mainSpacer as HTMLElement).style.minHeight).toBe('')
       expect(getComputedStyle(mainSpacer as Element).marginTop).toMatch(/^0(px)?$/)
+    })
+
+    it('leaves the spacer at the plain theme height when only the banner height has been measured', () => {
+      mockMatchMedia(true)
+      const resizeObserver = stubResizeObserver()
+      const { getByTestId, getByRole } = renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          banner={<p data-testid="notice">Impersonating</p>}
+        >
+          content
+        </AppShell>,
+      )
+      const slot = getByTestId('notice').parentElement
+      expect(slot).not.toBeNull()
+      // Only the banner's own height has arrived; the header's has not.
+      resizeObserver.emitHeightFor(slot as Element, 48)
+      const mainSpacer =
+        getByRole('main').querySelector<HTMLElement>('.MuiToolbar-root')
+      expect(mainSpacer).not.toBeNull()
+      // Still the theme's plain Toolbar: no measured height and no pixel
+      // value written as a theme spacing multiplier (48px must never
+      // become 384px).
+      expect((mainSpacer as HTMLElement).style.minHeight).toBe('')
+      expect(getComputedStyle(mainSpacer as Element).marginTop).toMatch(/^0(px)?$/)
+      const drawerSpacer = document.querySelector('.MuiDrawer-paper .MuiToolbar-root')
+      expect(drawerSpacer).not.toBeNull()
+      expect(getComputedStyle(drawerSpacer as Element).marginTop).toMatch(/^0(px)?$/)
     })
 
     it.each([null, undefined, false] as const)(
@@ -1355,8 +1377,11 @@ describe('AppShell', () => {
             content
           </AppShell>,
         )
-        // The AppBar, the sidebar column and main -- no wrapper behind.
-        expect(container.firstElementChild?.children).toHaveLength(3)
+        // The skip link, the AppBar, the sidebar column and main -- no
+        // banner wrapper behind.
+        const root = container.firstElementChild
+        expect(root?.children).toHaveLength(4)
+        expect(root?.firstElementChild?.tagName).toBe('A')
         unmount()
       }
     })
