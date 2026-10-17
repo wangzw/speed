@@ -252,5 +252,5 @@ sequenceDiagram
 |---|---|---|
 | 管理面 `audit.admin`（路由、判定、日志、回绝映射） | 已实现 | `pkg/audit/admin/admin.go` `Module`；`pkg/audit/admin/routes.go` `routes`、`mount`；`pkg/audit/admin/handlers.go` `handleRecordList`、`handleRecordGet`、`listQuery`、`logRead`；`pkg/audit/admin/pipeline.go` `require`、`answer`、`bad`、`notFound`、`unavailable` |
 | 管理面 `audit.admin` 的 OpenAPI 片段与 `speedhttp.Spec` 资源 | 已实现 | `pkg/audit/admin/openapi/audit.admin.json`；`pkg/audit/admin/admin.go` `Module`、`defaultEndpoint`、`openAPIFragment` |
-| 静态特性 `audit.admin` 的 `feature.Spec` 声明 | 未实现 | — |
+| 静态特性 `audit.admin` 的 `feature.Spec` 声明 | 已实现 | `pkg/audit/admin/admin.go` `Module`；`pkg/audit/admin/feature_test.go` `TestTheModuleDeclaresTheAuditAdminFeature` |
 | 审计实现子包的读面 `journal.Reader`、`journal.Query`、`journal.Row` | 已实现 | `pkg/audit/journal/read.go` `Reader`、`Query`、`Row`；`pkg/audit/journal/journal.go` `Module` |

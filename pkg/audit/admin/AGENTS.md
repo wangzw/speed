@@ -6,6 +6,9 @@ action is one read of the audit table, reached through the audit implementation
 subpackage's read surface — `journal.Reader` — and the module holds no table, no
 rule and no data of its own.
 
+The descriptor declares the static feature `audit.admin`, present whenever the
+module is in force.
+
 The audit module owns what a record is — the table, its shape and its writing —
 so this module only decides who may ask and how the answer is shaped. It carries
 no policy rule: it asks the decision of the handler-internal `authz.guard` API
