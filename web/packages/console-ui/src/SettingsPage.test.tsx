@@ -5,7 +5,9 @@
  * item's value arriving already masked from the server renders as-is), the
  * secondary navigation groups them by namespace and narrows the read, and
  * its sticky save bar drives the writes -- one PUT per changed item, a
- * remove calling the remove operation. A refused write renders the
+ * remove calling the remove operation. A row whose layer holds no override
+ * is marked as the declared default and carries no remove control; only an
+ * overridden row can be removed. A refused write renders the
  * answer's code text (a value outside the domain reading the invalid-value
  * text); a landed save clears the item's draft; a refused save keeps it. A
  * refused read (403) renders the permission placeholder without a retry,
@@ -35,6 +37,14 @@ const item: ConsoleSetting = {
   default: '3',
   written: '5',
   value: '5',
+}
+
+/** A declared item with no row on the selected layer: it resolves to its default. */
+const defaultItem: ConsoleSetting = {
+  ...item,
+  key: 'mail.limit',
+  written: '',
+  value: '3',
 }
 
 describe('SettingsPage', () => {
@@ -72,6 +82,34 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('textbox', { name: 'mail.retry' })).toBeInTheDocument()
   })
 
+  it('marks the declared default apart from an override and offers removal only on the override', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSettings: () => Promise.resolve([defaultItem, item]),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+
+    // The default row resolves to its declared value and says so in words;
+    // the overridden row is marked as such.
+    expect(await screen.findByDisplayValue('3')).toBeInTheDocument()
+    expect(screen.getByText('默认')).toBeInTheDocument()
+    expect(screen.getByText('已覆盖')).toBeInTheDocument()
+
+    // Only the override has something to take back, so only its row carries
+    // a remove control; a default row renders none rather than a no-op.
+    expect(
+      screen.getByRole('button', { name: '移除设置项 mail.retry' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '移除设置项 mail.limit' }),
+    ).toBeNull()
+
+    // Both rows stay editable: writing a value over a default is the way a
+    // default row becomes overridden.
+    expect(screen.getByRole('textbox', { name: 'mail.limit' })).toBeEnabled()
+  })
+
   it('renders the items in a table and pages a large declared set', async () => {
     const many: ConsoleSetting[] = Array.from({ length: 12 }, (_, index) => ({
       ...item,
@@ -94,6 +132,7 @@ describe('SettingsPage', () => {
   })
 
   it("renders a sensitive item's masked value as the server sent it", async () => {
+    const user = userEvent.setup()
     const masked: ConsoleSetting = {
       ...item,
       key: 'mail.password',
@@ -107,6 +146,22 @@ describe('SettingsPage', () => {
     )
     renderWithProviders(<SettingsPage />, { operations })
     expect(await screen.findByDisplayValue('********')).toBeInTheDocument()
+
+    // The server masks `written` as well, so the answer cannot say whether
+    // the layer holds a row: the row is marked masked and keeps its remove
+    // control -- hiding it would take away the only way to clear a real
+    // override, and calling it default or overridden would be a claim the
+    // answer does not carry.
+    expect(screen.getByText('已遮蔽')).toBeInTheDocument()
+    await user.click(
+      screen.getByRole('button', { name: '移除设置项 mail.password' }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+
+    // The answer cannot say whether a row was there to clear, so the notice
+    // does not claim one was removed.
+    expect(await screen.findByText('移除请求已提交')).toBeInTheDocument()
   })
 
   it('lists the namespaces in the secondary navigation and narrows the read on selection', async () => {

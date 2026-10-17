@@ -222,6 +222,7 @@
       "key": "Key",
       "type": "Type",
       "value": "Current value",
+      "state": "State",
       "actions": "Actions"
     },
     "nav": {
@@ -239,8 +240,6 @@
     },
     "retry": "Retry",
     "field": {
-      "currentValue": "Current value",
-      "newValue": "New value",
       "sensitive": "Sensitive value masked"
     },
     "saveBar": {
@@ -253,7 +252,12 @@
     "removeAria": "Remove setting {{key}}",
     "saved": "Setting saved",
     "removed": "Setting removed",
-    "sensitive": "Yes"
+    "removedSubmitted": "Removal submitted",
+    "state": {
+      "default": "Default",
+      "overridden": "Overridden",
+      "masked": "Masked"
+    }
   },
   "audit": {
     "title": "Audit records",

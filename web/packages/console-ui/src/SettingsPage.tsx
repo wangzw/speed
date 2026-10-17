@@ -11,17 +11,34 @@
  * the navigation come from that whole-set read, so a namespace shows up
  * as soon as any of its items is declared.
  *
- * The items render as a full-width table (key, type, current value and
- * the row's remove control), through ui-kit's DataTable: a large declared
- * set is paged rather than run down one long column, so the list stays a
- * fixed height however many settings a deployment declares. The judgement
- * a write lands under is layered and server-side (the tenant layer in
- * that tenant's domain, the global layer on the platform); this page
- * renders the answer and nothing else. Every read and write is an
- * operation on the console operations bundle, so the page builds no
- * client and writes no query key. A sensitive item's value arrives
- * already masked by the server; the page renders the masked text as-is
- * and never masks a second time.
+ * The items render as a full-width table (key, type, current value, the
+ * row's state and its remove control), through ui-kit's DataTable: a
+ * large declared set is paged rather than run down one long column, so
+ * the list stays a fixed height however many settings a deployment
+ * declares. The judgement a write lands under is layered and
+ * server-side (the tenant layer in that tenant's domain, the global
+ * layer on the platform); this page renders the answer and nothing else.
+ * Every read and write is an operation on the console operations bundle,
+ * so the page builds no client and writes no query key. A sensitive
+ * item's value arrives already masked by the server; the page renders the
+ * masked text as-is and never masks a second time.
+ *
+ * A row's state comes from the selected layer's own override: for an
+ * ordinary item the view's `written` is that layer's row text and is empty
+ * when the item falls back to its declared default, so the page marks the
+ * row as overridden when it is non-empty and as default otherwise. Only an
+ * overridden row carries a remove control: a default row has nothing to
+ * take back, so the control is not rendered at all rather than offered as
+ * a switch that can only be a no-op. An explicitly written empty string is
+ * indistinguishable from no row in this view and is treated as the
+ * declared default.
+ *
+ * A sensitive item cannot be told apart that way: the server replaces its
+ * `written` with the mask string whether or not the layer holds a row, so
+ * the answer no longer says which of the two it is. The page marks such a
+ * row as masked and keeps its remove control, because hiding the control
+ * would take away the only way to clear a real override; whether the
+ * control will act is known only to the server.
  *
  * Editing an item fills its draft (the table's value cell is the draft
  * input); the sticky save bar writes every changed item (one PUT each)
@@ -67,6 +84,22 @@ const ALL = ''
 
 /** The table's default page size. */
 const DEFAULT_ROWS_PER_PAGE = 10
+
+/** A row's state as the answer lets the page tell it. */
+type SettingState = 'default' | 'overridden' | 'masked'
+
+/**
+ * The state of one row: `default` when the selected layer holds no row and
+ * the value falls back to the declaration, `overridden` when the layer wrote
+ * one, and `masked` for a sensitive item, whose `written` is the server's
+ * mask string whether or not a row exists. See the page comment.
+ */
+function settingState(setting: ConsoleSetting): SettingState {
+  if (setting.sensitive) {
+    return 'masked'
+  }
+  return setting.written === '' ? 'default' : 'overridden'
+}
 
 export function SettingsPage() {
   const { t } = useConsoleUiTranslation()
@@ -153,7 +186,16 @@ export function SettingsPage() {
             namespace: setting.namespace,
             key: settingKeyRest(setting.key, setting.namespace),
           },
-          { onSuccess: () => setSuccess(t('settings.removed')) },
+          {
+            // A masked item's answer never says whether the layer held a
+            // row, so the removal cannot claim one was there to clear.
+            onSuccess: () =>
+              setSuccess(
+                setting.sensitive
+                  ? t('settings.removedSubmitted')
+                  : t('settings.removed'),
+              ),
+          },
         )
       },
     })
@@ -212,23 +254,37 @@ export function SettingsPage() {
       ),
     },
     {
+      id: 'state',
+      header: t('settings.column.state'),
+      cell: (setting) => (
+        <Typography variant="body2" color="text.secondary">
+          {t(`settings.state.${settingState(setting)}`)}
+        </Typography>
+      ),
+    },
+    {
       id: 'actions',
       header: t('settings.column.actions'),
       cellWrap: 'nowrap',
-      cell: (setting) => (
-        <Button
-          type="button"
-          size="small"
-          variant="text"
-          color="error"
-          aria-label={t('settings.removeAria', { key: setting.key })}
-          disabled={removeSetting.isPending}
-          onClick={() => remove(setting)}
-          sx={touchTargetSx}
-        >
-          {t('settings.remove')}
-        </Button>
-      ),
+      // A declared default has no row to take back: the remove control is
+      // left out rather than rendered as a switch that can never act. A
+      // masked row keeps it: the answer cannot say whether a row exists, and
+      // removing the control would hide the only way to clear a real one.
+      cell: (setting) =>
+        settingState(setting) !== 'default' ? (
+          <Button
+            type="button"
+            size="small"
+            variant="text"
+            color="error"
+            aria-label={t('settings.removeAria', { key: setting.key })}
+            disabled={removeSetting.isPending}
+            onClick={() => remove(setting)}
+            sx={touchTargetSx}
+          >
+            {t('settings.remove')}
+          </Button>
+        ) : null,
     },
   ]
 
