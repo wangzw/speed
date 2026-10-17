@@ -13,6 +13,7 @@
     // src, and this section is the typecheck-time mirror of that map.
     "paths": {
       "@speed/api-sdk/runtime": ["../packages/api-sdk/src/runtime.ts"],
+      "@speed/api-sdk/features": ["../packages/api-sdk/src/features.ts"],
       "@speed/api-sdk": ["../packages/api-sdk/src/index.ts"],
       "@speed/api-client": ["../packages/api-client/src/index.ts"],
       "@speed/auth-core": ["../packages/auth-core/src/index.ts"],

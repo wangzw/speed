@@ -115,7 +115,7 @@ Deferred with reasons:
 
 ## Public surface
 
-Two entry points:
+Three entry points:
 
 - `.` (generated `src/index.ts`) -- the operation functions, hooks and
   response models orval derives from the merged document. The shape
@@ -124,6 +124,12 @@ Two entry points:
   mutator and the per-operation `speedRequestCredentialless` mutator
   (selected by `web/orval.config.ts`), the stable hand-written binding
   hosts bind.
+- `./features` (generated `src/features.ts`) -- `FeatureNameRegistry`,
+  the `FeatureName` key type and `FEATURE_NAMES`, written by
+  `web/scripts/feature-names.mjs` from `contracts/features.json`. A
+  feature name written in frontend code takes this type, so a
+  misspelled name fails to compile; `FEATURE_NAMES` is the run-time
+  membership list.
 
 `src/runtime.test.ts` pins the binding's behaviour; `src/index.test.ts`
 pins the generated surface's observable behaviour (hooks issue the

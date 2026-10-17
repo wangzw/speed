@@ -14,6 +14,10 @@
       "types": "./dist/runtime.d.ts",
       "import": "./dist/runtime.js"
     },
+    "./features": {
+      "types": "./dist/features.d.ts",
+      "import": "./dist/features.js"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -32,6 +36,7 @@
   "devDependencies": {
     "@tanstack/react-query": "^5.62.0",
     "@testing-library/react": "^16.3.3",
+    "@types/node": "^26.4.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "jsdom": "^30.0.1",

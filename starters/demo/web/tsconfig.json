@@ -21,6 +21,7 @@
     // the entry that is its prefix (first match wins in paths).
     "paths": {
       "@speed/api-sdk/runtime": ["../../../web/packages/api-sdk/src/runtime.ts"],
+      "@speed/api-sdk/features": ["../../../web/packages/api-sdk/src/features.ts"],
       "@speed/api-sdk": ["../../../web/packages/api-sdk/src/index.ts"],
       "@speed/api-client": ["../../../web/packages/api-client/src/index.ts"],
       "@speed/auth-core": ["../../../web/packages/auth-core/src/index.ts"],

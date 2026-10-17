@@ -207,8 +207,8 @@ flowchart LR
 | 运行时接缝与 mutator、按操作覆写 | 已实现 | `web/packages/api-sdk/src/runtime.ts` `bindRequestFn`、`speedRequest`、`speedRequestCredentialless`、`forward`、`OrvalCall` |
 | 生成配置（输入、mutator、按操作覆写） | 已实现 | `web/orval.config.ts` |
 | nodenext 的 mutator import 后处理 | 已实现 | `web/scripts/orval-nodenext-fixup.mjs` |
-| 入口的对外面（`.`、`./runtime` 与 `./features`） | 部分实现 | `web/packages/api-sdk/package.json` 的 `exports` |
-| 特性名类型（`src/features.ts`） | 未实现 | — |
-| 特性名生成器 | 未实现 | — |
-| 特性名的新鲜度测试与类型断言 | 未实现 | — |
+| 入口的对外面（`.`、`./runtime` 与 `./features`） | 已实现 | `web/packages/api-sdk/package.json` 的 `exports` |
+| 特性名类型（`src/features.ts`） | 已实现 | `web/packages/api-sdk/src/features.ts` `FeatureNameRegistry`、`FeatureName`、`FEATURE_NAMES` |
+| 特性名生成器 | 已实现 | `web/scripts/feature-names.mjs` |
+| 特性名的新鲜度测试与类型断言 | 已实现 | `web/packages/api-sdk/src/features.test.ts`；`web/packages/auth-core/src/features.test.ts` |
 | 应用特性名的模块增补 | 未实现 | — |

@@ -49,6 +49,10 @@ export const SPEED_PACKAGE_MAP = Object.freeze([
     specifier: '@speed/api-sdk/runtime',
     entry: 'packages/api-sdk/src/runtime.ts',
   },
+  {
+    specifier: '@speed/api-sdk/features',
+    entry: 'packages/api-sdk/src/features.ts',
+  },
   { specifier: '@speed/api-sdk', entry: 'packages/api-sdk/src/index.ts' },
   { specifier: '@speed/api-client', entry: 'packages/api-client/src/index.ts' },
   { specifier: '@speed/auth-core', entry: 'packages/auth-core/src/index.ts' },
