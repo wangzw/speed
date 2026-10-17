@@ -58,6 +58,26 @@ describe('SsoPage', () => {
     expect(screen.getByText('请选择租户')).toBeInTheDocument()
   })
 
+  it('opens on the tenant named by the query string', async () => {
+    window.history.replaceState({}, '', '/console/sso?tenant=acme')
+    try {
+      const listSsoProviders = vi.fn(() =>
+        Promise.resolve([providerFixture({ name: 'Acme IdP' })]),
+      )
+      const operations = withProviders({ listSsoProviders })
+      renderWithProviders(<SsoPage />, { operations })
+      // The link that carried the tenant arrives with a selection already
+      // made: the providers read runs for it and the selector shows its
+      // alias.
+      expect(await screen.findByText('Acme IdP')).toBeInTheDocument()
+      expect(screen.queryByText('请选择租户')).toBeNull()
+      expect(screen.getByLabelText('租户')).toHaveTextContent('Acme')
+      expect(listSsoProviders).toHaveBeenCalledWith('acme')
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
   it('lists the tenant providers', async () => {
     const user = userEvent.setup()
     const operations = withProviders()

@@ -106,6 +106,23 @@ describe('PermissionsPage', () => {
     expect(screen.getByText('请选择租户')).toBeInTheDocument()
   })
 
+  it('opens on the tenant named by the query string', async () => {
+    window.history.replaceState({}, '', '/console/permissions?tenant=acme')
+    try {
+      const listRoles = vi.fn(() => Promise.resolve([role()]))
+      const operations = withAuthz({ listRoles })
+      renderWithProviders(<PermissionsPage />, { operations })
+      // The link that carried the tenant arrives with a selection already
+      // made: the roles read runs for it and the selector shows its alias.
+      expect(await screen.findByText('editor')).toBeInTheDocument()
+      expect(screen.queryByText('请选择租户')).toBeNull()
+      expect(screen.getByLabelText('租户')).toHaveTextContent('Acme')
+      expect(listRoles).toHaveBeenCalledWith('acme')
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
   it('lists roles, catalog and bindings for the tenant', async () => {
     const user = userEvent.setup()
     const operations = withAuthz({
