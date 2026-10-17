@@ -38,7 +38,7 @@ import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { InlineError } from './internal/inline-error.js'
-import { TenantScope } from './internal/tenant-scope.js'
+import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleSsoProvider } from './operations.js'
@@ -47,7 +47,7 @@ export function SsoPage() {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
 
-  const [tenant, setTenant] = useState('')
+  const [tenant, setTenant] = useState(tenantFromLocation)
   const [domainProvider, setDomainProvider] = useState('')
   const [domain, setDomain] = useState('')
   const [editProvider, setEditProvider] = useState('')

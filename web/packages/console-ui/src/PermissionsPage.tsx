@@ -46,7 +46,7 @@ import {
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { InlineError } from './internal/inline-error.js'
-import { TenantScope } from './internal/tenant-scope.js'
+import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type {
@@ -69,7 +69,7 @@ export function PermissionsPage() {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
 
-  const [tenant, setTenant] = useState('')
+  const [tenant, setTenant] = useState(tenantFromLocation)
   const [selectedRole, setSelectedRole] = useState('')
 
   // Role create/rewrite draft. There is no builtin toggle: the mark is the

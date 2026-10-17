@@ -80,7 +80,9 @@ export const dashboardAdminRoutes: ConsoleRouteTable = [
  * The tenant pages: the roster and one tenant's detail. The detail
  * declaration is unlabelled (it is reached from a row, not the
  * navigation), and its view carries the roster's path (the matched path
- * with the tenant segment removed) so the detail page can link back.
+ * with the tenant segment removed) so the detail page can link back, plus
+ * the console's root path (the matched path with '/tenants/:id' removed)
+ * for its links to the tenant-addressed sibling pages.
  */
 export const tenantAdminRoutes: ConsoleRouteTable = [
   {
@@ -97,6 +99,7 @@ export const tenantAdminRoutes: ConsoleRouteTable = [
       <TenantDetailPage
         id={context.params.id ?? ''}
         parentHref={context.path.replace(/\/[^/]+$/, '')}
+        rootHref={context.path.replace(/\/tenants\/[^/]+$/, '')}
       />
     ),
   },

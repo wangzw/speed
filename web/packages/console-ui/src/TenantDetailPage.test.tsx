@@ -22,6 +22,40 @@ import {
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 
 describe('TenantDetailPage', () => {
+  it('links to the tenant-addressed pages carrying this tenant', async () => {
+    const operations = createConsoleOperations(makeConsoleBackend())
+    renderWithProviders(
+      <TenantDetailPage
+        id="acme"
+        parentHref="/console/tenants"
+        rootHref="/console"
+      />,
+      { operations },
+    )
+    await screen.findByText('Acme')
+
+    // Every link lands on the page's own path with the tenant in the query
+    // parameter those pages read their selection from.
+    const expected = [
+      ['权限与角色', '/console/permissions?tenant=acme'],
+      ['邀请与成员', '/console/invitations?tenant=acme'],
+      ['SSO 提供方', '/console/sso?tenant=acme'],
+      ['冒充记录', '/console/impersonations?tenant=acme'],
+    ] as const
+    for (const [name, href] of expected) {
+      expect(screen.getByRole('link', { name })).toHaveAttribute('href', href)
+    }
+  })
+
+  it('hides the related-page links when it has no console root path', async () => {
+    const operations = createConsoleOperations(makeConsoleBackend())
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    await screen.findByText('Acme')
+    expect(
+      screen.queryByRole('heading', { level: 2, name: '相关页面' }),
+    ).toBeNull()
+  })
+
   it('raises its refresh action to the 44px floor under a coarse pointer', async () => {
     const operations = createConsoleOperations(makeConsoleBackend())
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })

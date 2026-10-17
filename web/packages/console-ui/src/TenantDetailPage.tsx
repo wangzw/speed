@@ -18,8 +18,13 @@
  * one banner, resolved from the console-ui whitelist. The rename input
  * marks itself invalid while the alias breaks the identifier domain and
  * holds its submit disabled then, so an inadmissible alias is never sent.
- * The page opens with ui-kit's PageHeader, so the heading order never
- * skips.
+ * When given the console's root path, the page also links to the
+ * tenant-addressed administration pages (permissions, invitations and
+ * members, SSO providers, impersonation records), carrying this tenant in
+ * the `tenant` query parameter those pages seed their tenant selection
+ * from -- so the detail page is not a dead end and the link does not drop
+ * the tenant context. The page opens with ui-kit's PageHeader, so the
+ * heading order never skips.
  */
 
 import { useState } from 'react'
@@ -39,6 +44,7 @@ import { InlineError } from './internal/inline-error.js'
 import { ConsoleLink } from './internal/navigation.js'
 import { DefinitionRow, DetailLayout } from './internal/layout.js'
 import { isRejectedIdentifier } from './internal/identifier.js'
+import { TENANT_QUERY_PARAM } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleTenant } from './operations.js'
@@ -57,9 +63,15 @@ export interface TenantDetailPageProps {
   readonly id: string
   /** The roster's path, for the breadcrumb and the back link; absent hides them. */
   readonly parentHref?: string
+  /**
+   * The console's root path, for the tenant-addressed pages' links; absent
+   * hides the related-page section (the page has no other way to build the
+   * sibling paths).
+   */
+  readonly rootHref?: string
 }
 
-export function TenantDetailPage({ id, parentHref }: TenantDetailPageProps) {
+export function TenantDetailPage({ id, parentHref, rootHref }: TenantDetailPageProps) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const tenant = operations.useTenant({ id })
@@ -68,6 +80,32 @@ export function TenantDetailPage({ id, parentHref }: TenantDetailPageProps) {
   const [alias, setAlias] = useState('')
 
   const aliasRejected = alias !== '' && isRejectedIdentifier(alias)
+
+  // The tenant-addressed pages all read the tenant from the same query
+  // parameter (tenantFromLocation seeds their selector), so a link carries
+  // this tenant into them instead of landing on an empty selection.
+  const tenantParam = `${TENANT_QUERY_PARAM}=${encodeURIComponent(id)}`
+  const related =
+    rootHref === undefined
+      ? []
+      : [
+          {
+            href: `${rootHref}/permissions?${tenantParam}`,
+            label: t('tenantDetail.related.permissions'),
+          },
+          {
+            href: `${rootHref}/invitations?${tenantParam}`,
+            label: t('tenantDetail.related.invitations'),
+          },
+          {
+            href: `${rootHref}/sso?${tenantParam}`,
+            label: t('tenantDetail.related.sso'),
+          },
+          {
+            href: `${rootHref}/impersonations?${tenantParam}`,
+            label: t('tenantDetail.related.impersonations'),
+          },
+        ]
 
   const crumbs = [
     { label: t('shell.title') },
@@ -95,7 +133,7 @@ export function TenantDetailPage({ id, parentHref }: TenantDetailPageProps) {
           </Box>
         </Paper>
 
-        <Paper component="section" variant="outlined" sx={{ p: 2 }}>
+        <Paper component="section" variant="outlined" sx={{ p: 2, mb: 3 }}>
           <Typography component="h2" variant="h6" sx={{ mb: 1 }}>
             {t('tenantDetail.actions.title')}
           </Typography>
@@ -157,6 +195,31 @@ export function TenantDetailPage({ id, parentHref }: TenantDetailPageProps) {
             </Box>
           </Box>
         </Paper>
+
+        {related.length > 0 && (
+          <Paper component="section" variant="outlined" sx={{ p: 2 }}>
+            <Typography component="h2" variant="h6" sx={{ mb: 1 }}>
+              {t('tenantDetail.related.title')}
+            </Typography>
+            <Box
+              component="ul"
+              sx={{
+                listStyle: 'none',
+                margin: 0,
+                padding: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1,
+              }}
+            >
+              {related.map((link) => (
+                <Box component="li" key={link.href}>
+                  <ConsoleLink href={link.href}>{link.label}</ConsoleLink>
+                </Box>
+              ))}
+            </Box>
+          </Paper>
+        )}
       </>
     )
   }

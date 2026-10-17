@@ -39,7 +39,7 @@ import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
 import { useConsoleInvitationLink } from './internal/invitation-link.js'
-import { TenantScope } from './internal/tenant-scope.js'
+import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type {
@@ -76,7 +76,7 @@ export function InvitationsPage() {
   const operations = useConsoleOperations()
   const invitationLink = useConsoleInvitationLink()
 
-  const [tenant, setTenant] = useState('')
+  const [tenant, setTenant] = useState(tenantFromLocation)
   const [email, setEmail] = useState('')
   const [expiresAt, setExpiresAt] = useState('')
   // The invitation just issued, held so its acceptance token -- handed out
