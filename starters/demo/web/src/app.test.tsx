@@ -674,21 +674,21 @@ describe('the tenant area header controls', () => {
     ).toBeInTheDocument()
   })
 
-  it('switches the tenant from the header switcher', async () => {
+  it('offers only the tenants the seeded deployment registers', async () => {
     const user = userEvent.setup()
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
-    // The trigger shows the host's current tenant; picking another reports
-    // the choice and the trigger converges onto it.
+    // The seeded roster registers acme alone, so the switcher must not
+    // offer a second tenant: switching to one the server cannot resolve
+    // would leave every tenant-scoped read refused 404.
     await user.click(screen.getByRole('button', { name: 'Acme Inc.' }))
-    await user.click(screen.getByRole('menuitem', { name: 'Globex Corp.' }))
     expect(
-      screen.getByRole('button', { name: 'Globex Corp.' }),
+      screen.getByRole('menuitem', { name: 'Acme Inc.' }),
     ).toBeInTheDocument()
-    // The switch writes the one host-held tenant, so the client's
-    // tenantProvider announces the new tenant on the next request rather
-    // than the departing one.
-    expect(getCurrentTenantId()).toBe('globex')
+    expect(
+      screen.queryByRole('menuitem', { name: 'Globex Corp.' }),
+    ).toBeNull()
+    expect(getCurrentTenantId()).toBe('acme')
   })
 
   it('collapses and expands the sidebar from the header control', async () => {

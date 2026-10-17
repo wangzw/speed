@@ -72,12 +72,14 @@ export interface DemoTenant extends TenantOption {
  * roster -- there is no membership source -- so the app supplies a
  * placeholder list; a product replaces it with the tenants its own
  * generated operations return (each row's id and alias are what the roster
- * holds, so the two may differ after a rename). The current tenant is a
- * routing fact the server resolves per request, held here as host state.
+ * holds, so the two may differ after a rename). The placeholder must not
+ * name a tenant the deployment does not serve: the seeded roster in
+ * starters/demo/server/testdata registers `acme`, so that is the whole list
+ * here. The current tenant is a routing fact the server resolves per
+ * request, held here as host state.
  */
 export const DEMO_TENANTS: readonly DemoTenant[] = [
   { id: 'acme', alias: 'acme', name: 'Acme Inc.' },
-  { id: 'globex', alias: 'globex', name: 'Globex Corp.' },
 ]
 
 /**
