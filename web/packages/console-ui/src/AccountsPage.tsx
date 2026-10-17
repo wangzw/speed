@@ -26,11 +26,15 @@
  * The list and the detail's four reads each stand behind their own
  * AsyncSection, so every one of them shows its loading, empty and
  * retryable-error states rather than settling a failed read into a
- * silently empty table. A row's Manage control toggles the detail: it
- * opens below the list and the create form, so opening scrolls the
- * detail heading into view and moves focus to it -- otherwise the only
- * visible change is the row highlight -- and the same control closes it
- * again.
+ * silently empty table. The detail and the create form are carried by
+ * ui-kit's SidePanel: a row's Manage control only opens that account's
+ * detail panel (it reports `aria-haspopup="dialog"` and never toggles
+ * closed), and the page header's New account control opens the create
+ * panel. Both are `wide`. The panel is modal, so the list keeps its
+ * data, filters and scroll position without being clickable while it is
+ * open, and closing goes through the panel's own control. The selected
+ * account stays until the panel has animated out (its `onExited`), so the
+ * exit renders the account rather than an empty panel.
  *
  * Each write request body is the shape the module's OpenAPI fragment
  * declares for its endpoint, which the handler decodes; the account view
@@ -46,7 +50,7 @@
  * PageHeader.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -56,14 +60,17 @@ import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useForm } from 'react-hook-form'
-import type { SubmitHandler } from 'react-hook-form'
+import type { SubmitHandler, UseFormReturn } from 'react-hook-form'
+import type { UseMutationResult } from '@tanstack/react-query'
 import {
+  ConfirmDialog,
   DataTable,
   FormField,
   FormLayout,
   InlineSuccess,
   ListSkeleton,
   PageHeader,
+  SidePanel,
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
@@ -71,7 +78,6 @@ import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
-import { FormWidth } from './internal/layout.js'
 import { useConsoleStepUp } from './internal/step-up-gate.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
@@ -81,6 +87,7 @@ import type {
   ConsoleAccountSecret,
   ConsoleAccountSession,
   ConsoleAccountFactor,
+  ConsoleCreateAccountInput,
 } from './operations.js'
 
 /** The account status's label, guarding the closed set. */
@@ -119,29 +126,17 @@ export function AccountsPage() {
   const [status, setStatus] = useState('')
   const [accountKindDraft, setAccountKindDraft] = useState('')
   const [accountKind, setAccountKind] = useState('')
+  // The selected account outlives the close request: the detail panel keeps
+  // rendering it through the exit transition, and `selectedId` is cleared
+  // only once the panel reports `onExited`.
   const [selectedId, setSelectedId] = useState('')
-  const detailHeading = useRef<HTMLHeadingElement | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
   const [identifierToRemove, setIdentifierToRemove] = useState('')
   // The message a landed write fills into the page-level success notice (a
   // polite live region); null while nothing has landed since the last
   // attempt, and cleared at the start of each one.
   const [success, setSuccess] = useState<string | null>(null)
-
-  // The detail renders below the list and the create form, so a selection
-  // made in a row is otherwise only a highlight. Bring the detail's heading
-  // into view and focus it when the selection changes, so the opened detail
-  // is both visible and where the keyboard and a screen reader continue.
-  useEffect(() => {
-    if (selectedId === '') {
-      return
-    }
-    const heading = detailHeading.current
-    if (heading === null) {
-      return
-    }
-    heading.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
-    heading.focus({ preventScroll: true })
-  }, [selectedId])
 
   // The applied filters, committed together on submit so a keystroke never
   // fires a request. The identifier prefix is sent with its kind (the
@@ -184,6 +179,25 @@ export function AccountsPage() {
   // shortfall) arms the dialog with a re-fire of the same write and clears
   // the mutation's own error, so the dialog opens alone rather than beside
   // the 401 banner.
+
+  function openDetail(id: string): void {
+    setSelectedId(id)
+    setDetailOpen(true)
+  }
+
+  // The panel has animated out: only now drop the account it rendered, and
+  // reset the feedback and write state the panel carried so opening it
+  // again (for any account) starts clean.
+  function detailExited(): void {
+    setSelectedId('')
+    setIdentifierToRemove('')
+    setSuccess(null)
+    resetMFA.reset()
+    revokeSessions.reset()
+    revokeSecret.reset()
+    revokeSession.reset()
+    removeIdentifier.reset()
+  }
 
   function deleteOne(id: string): void {
     setSuccess(null)
@@ -313,18 +327,13 @@ export function AccountsPage() {
             type="button"
             size="small"
             variant="outlined"
-            aria-label={
-              selectedId === row.id
-                ? t('accounts.collapseAria', { id: row.id })
-                : t('accounts.manageAria', { id: row.id })
-            }
-            onClick={() =>
-              setSelectedId(selectedId === row.id ? '' : row.id)
-            }
+            aria-label={t('accounts.manageAria', { id: row.id })}
+            // The panel is modal: this control only opens it. Closing is
+            // the panel's own exit, never a second click here.
+            aria-haspopup="dialog"
+            onClick={() => openDetail(row.id)}
           >
-            {selectedId === row.id
-              ? t('accounts.collapse')
-              : t('accounts.manage')}
+            {t('accounts.manage')}
           </Button>
           <Button
             type="button"
@@ -498,19 +507,33 @@ export function AccountsPage() {
           { label: t('accounts.title') },
         ]}
         actions={
-          <Button
-            type="button"
-            variant="outlined"
-            size="small"
-            onClick={() => void accounts.refetch()}
-          >
-            {t('common.refresh')}
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              type="button"
+              variant="outlined"
+              size="small"
+              onClick={() => void accounts.refetch()}
+            >
+              {t('common.refresh')}
+            </Button>
+            <Button
+              type="button"
+              variant="contained"
+              size="small"
+              aria-haspopup="dialog"
+              onClick={() => setCreateOpen(true)}
+            >
+              {t('accounts.create.title')}
+            </Button>
+          </Box>
         }
         sx={{ mb: 2 }}
       />
 
-      <AccountCreateForm />
+      <AccountCreatePanel
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+      />
 
       <Box
         component="section"
@@ -625,239 +648,237 @@ export function AccountsPage() {
         )}
       </ConsoleAsyncSection>
 
-      {selectedId !== '' && (
-        <Box component="section" sx={{ mt: 3 }}>
-          <Typography
-            ref={detailHeading}
-            component="h2"
-            tabIndex={-1}
-            variant="h2"
-            sx={{ fontSize: '1.25rem', mb: 1 }}
-          >
-            {t('accounts.detail.title', { id: selectedId })}
-          </Typography>
-
-          <ConsoleAsyncSection
-            pending={account.isPending && account.data === undefined}
-            payload={account.data}
-            error={account.error}
-            empty={false}
-            headingLevel="h3"
-            loading={
-              <ListSkeleton
-                label={t('accounts.detail.loading')}
-                rows={[
-                  <Skeleton key="a" variant="text" width="42%" />,
-                  <Skeleton key="b" variant="text" width="34%" />,
-                ]}
-              />
-            }
-            errorState={{
-              title: t('accounts.detail.error.title'),
-              description: t('accounts.detail.error.description'),
-              retryLabel: t('accounts.detail.retry'),
-              onRetry: () => void account.refetch(),
-            }}
-          >
-            {(settled) => (
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="body2">
-                  {t('accounts.detail.displayNameLine', {
-                    value: settled.display_name,
-                  })}
-                </Typography>
-                <Typography variant="body2">
-                  {t('accounts.detail.statusLine', {
-                    value: statusLabel(settled.status, t),
-                  })}
-                </Typography>
-                <Typography variant="body2">
-                  {t('accounts.detail.kindLine', { value: settled.kind })}
-                </Typography>
-              </Box>
-            )}
-          </ConsoleAsyncSection>
-
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 1, rowGap: 1, mb: 2 }}>
-            <Button
-              type="button"
-              variant="outlined"
-              disabled={resetMFA.isPending}
-              onClick={() =>
-                confirm.ask({
-                  title: t('accounts.resetMFATitle'),
-                  message: t('accounts.resetMFAMessage'),
-                  confirmLabel: t('common.confirm'),
-                  run: () => resetAllFactors(),
-                })
+      <SidePanel
+        open={detailOpen}
+        size="wide"
+        title={t('accounts.detail.title', { id: selectedId })}
+        onClose={() => setDetailOpen(false)}
+        onExited={detailExited}
+      >
+        {selectedId !== '' && (
+          <>
+            <ConsoleAsyncSection
+              pending={account.isPending && account.data === undefined}
+              payload={account.data}
+              error={account.error}
+              empty={false}
+              headingLevel="h3"
+              loading={
+                <ListSkeleton
+                  label={t('accounts.detail.loading')}
+                  rows={[
+                    <Skeleton key="a" variant="text" width="42%" />,
+                    <Skeleton key="b" variant="text" width="34%" />,
+                  ]}
+                />
               }
+              errorState={{
+                title: t('accounts.detail.error.title'),
+                description: t('accounts.detail.error.description'),
+                retryLabel: t('accounts.detail.retry'),
+                onRetry: () => void account.refetch(),
+              }}
             >
-              {t('accounts.resetMFA')}
-            </Button>
-            <Button
-              type="button"
-              variant="outlined"
-              color="error"
-              disabled={revokeSessions.isPending}
-              onClick={() =>
-                confirm.ask({
-                  title: t('accounts.revokeSessionsTitle'),
-                  message: t('accounts.revokeSessionsMessage'),
-                  confirmLabel: t('common.confirm'),
-                  run: () => revokeAllSessions(),
-                })
+              {(settled) => (
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="body2">
+                    {t('accounts.detail.displayNameLine', {
+                      value: settled.display_name,
+                    })}
+                  </Typography>
+                  <Typography variant="body2">
+                    {t('accounts.detail.statusLine', {
+                      value: statusLabel(settled.status, t),
+                    })}
+                  </Typography>
+                  <Typography variant="body2">
+                    {t('accounts.detail.kindLine', { value: settled.kind })}
+                  </Typography>
+                </Box>
+              )}
+            </ConsoleAsyncSection>
+
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 1, rowGap: 1, mb: 2 }}>
+              <Button
+                type="button"
+                variant="outlined"
+                disabled={resetMFA.isPending}
+                onClick={() =>
+                  confirm.ask({
+                    title: t('accounts.resetMFATitle'),
+                    message: t('accounts.resetMFAMessage'),
+                    confirmLabel: t('common.confirm'),
+                    run: () => resetAllFactors(),
+                  })
+                }
+              >
+                {t('accounts.resetMFA')}
+              </Button>
+              <Button
+                type="button"
+                variant="outlined"
+                color="error"
+                disabled={revokeSessions.isPending}
+                onClick={() =>
+                  confirm.ask({
+                    title: t('accounts.revokeSessionsTitle'),
+                    message: t('accounts.revokeSessionsMessage'),
+                    confirmLabel: t('common.confirm'),
+                    run: () => revokeAllSessions(),
+                  })
+                }
+              >
+                {t('accounts.revokeSessions')}
+              </Button>
+            </Box>
+
+            {account.data !== undefined && (
+              <AccountDetailWrites key={selectedId} account={account.data} />
+            )}
+
+            <Typography component="h3" variant="subtitle1" sx={{ mb: 1 }}>
+              {t('accounts.factors.title')}
+            </Typography>
+            <ConsoleAsyncSection
+              pending={factors.isPending && factors.data === undefined}
+              payload={factors.data}
+              error={factors.error}
+              empty={factors.data !== undefined && factors.data.length === 0}
+              headingLevel="h3"
+              loading={
+                <ListSkeleton
+                  label={t('accounts.factors.loading')}
+                  rows={[<Skeleton key="a" variant="text" width="48%" />]}
+                />
               }
+              errorState={{
+                title: t('accounts.factors.error.title'),
+                description: t('accounts.factors.error.description'),
+                retryLabel: t('accounts.factors.retry'),
+                onRetry: () => void factors.refetch(),
+              }}
+              emptyState={{
+                title: t('accounts.factors.empty.title'),
+                description: t('accounts.factors.empty.description'),
+              }}
             >
-              {t('accounts.revokeSessions')}
-            </Button>
-          </Box>
+              {(settled) => (
+                <DataTable
+                  rows={settled}
+                  columns={factorColumns}
+                  rowKey={(row) => `${row.kind}:${row.label}`}
+                />
+              )}
+            </ConsoleAsyncSection>
 
-          {account.data !== undefined && (
-            <AccountDetailWrites key={selectedId} account={account.data} />
-          )}
-
-          <Typography component="h3" variant="subtitle1" sx={{ mb: 1 }}>
-            {t('accounts.factors.title')}
-          </Typography>
-          <ConsoleAsyncSection
-            pending={factors.isPending && factors.data === undefined}
-            payload={factors.data}
-            error={factors.error}
-            empty={factors.data !== undefined && factors.data.length === 0}
-            headingLevel="h3"
-            loading={
-              <ListSkeleton
-                label={t('accounts.factors.loading')}
-                rows={[<Skeleton key="a" variant="text" width="48%" />]}
-              />
-            }
-            errorState={{
-              title: t('accounts.factors.error.title'),
-              description: t('accounts.factors.error.description'),
-              retryLabel: t('accounts.factors.retry'),
-              onRetry: () => void factors.refetch(),
-            }}
-            emptyState={{
-              title: t('accounts.factors.empty.title'),
-              description: t('accounts.factors.empty.description'),
-            }}
-          >
-            {(settled) => (
-              <DataTable
-                rows={settled}
-                columns={factorColumns}
-                rowKey={(row) => `${row.kind}:${row.label}`}
-              />
-            )}
-          </ConsoleAsyncSection>
-
-          <Typography component="h3" variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
-            {t('accounts.secrets.title')}
-          </Typography>
-          <ConsoleAsyncSection
-            pending={secrets.isPending && secrets.data === undefined}
-            payload={secrets.data}
-            error={secrets.error}
-            empty={secrets.data !== undefined && secrets.data.length === 0}
-            headingLevel="h3"
-            loading={
-              <ListSkeleton
-                label={t('accounts.secrets.loading')}
-                rows={[<Skeleton key="a" variant="text" width="48%" />]}
-              />
-            }
-            errorState={{
-              title: t('accounts.secrets.error.title'),
-              description: t('accounts.secrets.error.description'),
-              retryLabel: t('accounts.secrets.retry'),
-              onRetry: () => void secrets.refetch(),
-            }}
-            emptyState={{
-              title: t('accounts.secrets.empty.title'),
-              description: t('accounts.secrets.empty.description'),
-            }}
-          >
-            {(settled) => (
-              <DataTable
-                rows={settled}
-                columns={secretColumns}
-                rowKey={(row) => row.id}
-              />
-            )}
-          </ConsoleAsyncSection>
-
-          <Typography component="h3" variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
-            {t('accounts.sessions.title')}
-          </Typography>
-          <ConsoleAsyncSection
-            pending={sessions.isPending && sessions.data === undefined}
-            payload={sessions.data}
-            error={sessions.error}
-            empty={sessions.data !== undefined && sessions.data.length === 0}
-            headingLevel="h3"
-            loading={
-              <ListSkeleton
-                label={t('accounts.sessions.loading')}
-                rows={[<Skeleton key="a" variant="text" width="48%" />]}
-              />
-            }
-            errorState={{
-              title: t('accounts.sessions.error.title'),
-              description: t('accounts.sessions.error.description'),
-              retryLabel: t('accounts.sessions.retry'),
-              onRetry: () => void sessions.refetch(),
-            }}
-            emptyState={{
-              title: t('accounts.sessions.empty.title'),
-              description: t('accounts.sessions.empty.description'),
-            }}
-          >
-            {(settled) => (
-              <DataTable
-                rows={settled}
-                columns={sessionColumns}
-                rowKey={(row) => row.id}
-              />
-            )}
-          </ConsoleAsyncSection>
-
-          <Box
-            sx={{
-              mt: 2,
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'flex-end',
-              columnGap: 2,
-              rowGap: 1,
-            }}
-          >
-            <TextField
-              size="small"
-              value={identifierToRemove}
-              onChange={(event) => setIdentifierToRemove(event.target.value)}
-              label={t('accounts.removeIdentifier.label')}
-            />
-            <Button
-              type="button"
-              variant="outlined"
-              color="error"
-              disabled={removeIdentifier.isPending || identifierToRemove.trim() === ''}
-              onClick={() =>
-                confirm.ask({
-                  title: t('accounts.removeIdentifier.confirmTitle'),
-                  message: t('accounts.removeIdentifier.confirmMessage', {
-                    identifier: identifierToRemove,
-                  }),
-                  confirmLabel: t('common.confirm'),
-                  run: () => removeOne(identifierToRemove),
-                })
+            <Typography component="h3" variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
+              {t('accounts.secrets.title')}
+            </Typography>
+            <ConsoleAsyncSection
+              pending={secrets.isPending && secrets.data === undefined}
+              payload={secrets.data}
+              error={secrets.error}
+              empty={secrets.data !== undefined && secrets.data.length === 0}
+              headingLevel="h3"
+              loading={
+                <ListSkeleton
+                  label={t('accounts.secrets.loading')}
+                  rows={[<Skeleton key="a" variant="text" width="48%" />]}
+                />
               }
+              errorState={{
+                title: t('accounts.secrets.error.title'),
+                description: t('accounts.secrets.error.description'),
+                retryLabel: t('accounts.secrets.retry'),
+                onRetry: () => void secrets.refetch(),
+              }}
+              emptyState={{
+                title: t('accounts.secrets.empty.title'),
+                description: t('accounts.secrets.empty.description'),
+              }}
             >
-              {t('accounts.removeIdentifier.submit')}
-            </Button>
-          </Box>
-        </Box>
-      )}
+              {(settled) => (
+                <DataTable
+                  rows={settled}
+                  columns={secretColumns}
+                  rowKey={(row) => row.id}
+                />
+              )}
+            </ConsoleAsyncSection>
+
+            <Typography component="h3" variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
+              {t('accounts.sessions.title')}
+            </Typography>
+            <ConsoleAsyncSection
+              pending={sessions.isPending && sessions.data === undefined}
+              payload={sessions.data}
+              error={sessions.error}
+              empty={sessions.data !== undefined && sessions.data.length === 0}
+              headingLevel="h3"
+              loading={
+                <ListSkeleton
+                  label={t('accounts.sessions.loading')}
+                  rows={[<Skeleton key="a" variant="text" width="48%" />]}
+                />
+              }
+              errorState={{
+                title: t('accounts.sessions.error.title'),
+                description: t('accounts.sessions.error.description'),
+                retryLabel: t('accounts.sessions.retry'),
+                onRetry: () => void sessions.refetch(),
+              }}
+              emptyState={{
+                title: t('accounts.sessions.empty.title'),
+                description: t('accounts.sessions.empty.description'),
+              }}
+            >
+              {(settled) => (
+                <DataTable
+                  rows={settled}
+                  columns={sessionColumns}
+                  rowKey={(row) => row.id}
+                />
+              )}
+            </ConsoleAsyncSection>
+
+            <Box
+              sx={{
+                mt: 2,
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'flex-end',
+                columnGap: 2,
+                rowGap: 1,
+              }}
+            >
+              <TextField
+                size="small"
+                value={identifierToRemove}
+                onChange={(event) => setIdentifierToRemove(event.target.value)}
+                label={t('accounts.removeIdentifier.label')}
+              />
+              <Button
+                type="button"
+                variant="outlined"
+                color="error"
+                disabled={removeIdentifier.isPending || identifierToRemove.trim() === ''}
+                onClick={() =>
+                  confirm.ask({
+                    title: t('accounts.removeIdentifier.confirmTitle'),
+                    message: t('accounts.removeIdentifier.confirmMessage', {
+                      identifier: identifierToRemove,
+                    }),
+                    confirmLabel: t('common.confirm'),
+                    run: () => removeOne(identifierToRemove),
+                  })
+                }
+              >
+                {t('accounts.removeIdentifier.submit')}
+              </Button>
+            </Box>
+          </>
+        )}
+      </SidePanel>
 
       <Box sx={{ mt: 2 }}>
         <InlineError code={writeError} />
@@ -929,41 +950,54 @@ type CreateAccountFields = {
   attributes: string
 }
 
-/**
- * AccountCreateForm: the account-creation control (POST /auth/admin/accounts).
- * It names the fields the handler decodes into its create request; a field
- * left blank is not sent. A user account requires a display name and at
- * least one login identifier (a username, an email address or a phone
- * number): it has no way to sign in without one, and the server refuses it.
- * A service account signs in with a service secret and so needs no
- * identifier -- the server exempts it from that requirement -- and only the
- * display name is required. The submit stays disabled until the form could
- * produce a usable account, and the submit handler itself re-checks, so no
- * path sends a request the server is known to refuse. The fields flow through ui-kit's form family
- * (FormLayout's responsive grid of FormField adapters), so they wrap into a
- * form rather than crowding one row. The attribute set is typed as a JSON
- * object and marks the field when it does not parse. A landed create clears
- * the form; a refused one keeps it to correct.
- */
-function AccountCreateForm() {
-  const { t } = useConsoleUiTranslation()
-  const operations = useConsoleOperations()
-  const createAccount = operations.useCreateAccount()
+/** The values every opening of the create panel starts from. */
+const CREATE_ACCOUNT_DEFAULTS: CreateAccountFields = {
+  kind: 'user',
+  displayName: '',
+  username: '',
+  email: '',
+  emailVia: '',
+  phone: '',
+  phoneVia: '',
+  password: '',
+  mfaRequired: false,
+  attributes: '',
+}
 
-  const form = useForm<CreateAccountFields>({
-    defaultValues: {
-      kind: 'user',
-      displayName: '',
-      username: '',
-      email: '',
-      emailVia: '',
-      phone: '',
-      phoneVia: '',
-      password: '',
-      mfaRequired: false,
-      attributes: '',
-    },
-  })
+/** The create mutation as the operations bundle returns it. */
+type CreateAccountMutation = UseMutationResult<
+  ConsoleAccount,
+  unknown,
+  ConsoleCreateAccountInput
+>
+
+/**
+ * AccountCreateForm: the account-creation control (POST /auth/admin/accounts),
+ * rendered inside the create panel. It names the fields the handler decodes
+ * into its create request; a field left blank is not sent. A user account
+ * requires a display name and at least one login identifier (a username, an
+ * email address or a phone number): it has no way to sign in without one, and
+ * the server refuses it. A service account signs in with a service secret and
+ * so needs no identifier -- the server exempts it from that requirement --
+ * and only the display name is required. The submit stays disabled until the
+ * form could produce a usable account, and the submit handler itself
+ * re-checks, so no path sends a request the server is known to refuse. The
+ * fields flow through ui-kit's form family (FormLayout's responsive grid of
+ * FormField adapters), kept two columns wide in the panel and collapsed to
+ * one when the panel itself is narrow. The attribute set is typed as a JSON
+ * object and marks the field when it does not parse. A landed create closes
+ * the panel; a refused one keeps the fields to correct.
+ */
+function AccountCreateForm({
+  form,
+  createAccount,
+  onCreated,
+}: {
+  readonly form: UseFormReturn<CreateAccountFields>
+  readonly createAccount: CreateAccountMutation
+  readonly onCreated: () => void
+}) {
+  const { t } = useConsoleUiTranslation()
 
   // An array, not a fragment: MUI's Select walks its children to build the
   // options and warns when one of them is a Fragment (the same warning the
@@ -1023,175 +1057,268 @@ function AccountCreateForm() {
         ...(parsed === null ? {} : { attributes: parsed }),
         ...(values.mfaRequired ? { mfa_required: true } : {}),
       },
-      { onSuccess: () => form.reset() },
+      {
+        onSuccess: () => {
+          // The form starts from the initial values on the next opening; the
+          // page closes the panel on the same success.
+          form.reset()
+          onCreated()
+        },
+      },
     )
   }
 
   return (
-    <Box component="section" sx={{ mb: 3 }}>
-      <Typography variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
-        {t('accounts.create.title')}
-      </Typography>
-      <FormWidth>
-        <FormLayout
-          form={form}
-          onSubmit={onSubmit}
-          columns={2}
-          maxWidth={false}
-          actions={
-            <Button
-              type="submit"
-              variant="contained"
-              disabled={createAccount.isPending || !namesAnAccount}
+    <>
+      <FormLayout
+        form={form}
+        onSubmit={onSubmit}
+        columns={2}
+        maxWidth={false}
+        actions={
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={createAccount.isPending || !namesAnAccount}
+          >
+            {t('accounts.create.submit')}
+          </Button>
+        }
+      >
+        <FormField
+          name="kind"
+          render={({ field }) => (
+            <TextField
+              {...field}
+              select
+              size="small"
+              fullWidth
+              label={t('accounts.create.kindLabel')}
             >
-              {t('accounts.create.submit')}
-            </Button>
-          }
-        >
-          <FormField
-            name="kind"
-            render={({ field }) => (
-              <TextField
-                {...field}
-                select
-                size="small"
-                fullWidth
-                label={t('accounts.create.kindLabel')}
-              >
-                <MenuItem value="user">{t('accounts.create.kind.user')}</MenuItem>
-                <MenuItem value="service">{t('accounts.create.kind.service')}</MenuItem>
-              </TextField>
-            )}
-          />
-          <FormField
-            name="displayName"
-            render={({ field }) => (
-              <TextField
-                {...field}
-                size="small"
-                fullWidth
-                label={t('accounts.create.displayNameLabel')}
-              />
-            )}
-          />
-          <FormField
-            name="username"
-            render={({ field }) => (
-              <TextField
-                {...field}
-                size="small"
-                fullWidth
-                label={t('accounts.create.usernameLabel')}
-              />
-            )}
-          />
-          <FormField
-            name="email"
-            render={({ field }) => (
-              <TextField
-                {...field}
-                size="small"
-                fullWidth
-                label={t('accounts.create.emailLabel')}
-              />
-            )}
-          />
-          <FormField
-            name="emailVia"
-            render={({ field }) => (
-              <TextField
-                {...field}
-                select
-                size="small"
-                fullWidth
-                label={t('accounts.create.emailViaLabel')}
-              >
-                {viaOptions}
-              </TextField>
-            )}
-          />
-          <FormField
-            name="phone"
-            render={({ field }) => (
-              <TextField
-                {...field}
-                size="small"
-                fullWidth
-                label={t('accounts.create.phoneLabel')}
-              />
-            )}
-          />
-          <FormField
-            name="phoneVia"
-            render={({ field }) => (
-              <TextField
-                {...field}
-                select
-                size="small"
-                fullWidth
-                label={t('accounts.create.phoneViaLabel')}
-              >
-                {viaOptions}
-              </TextField>
-            )}
-          />
-          <FormField
-            name="password"
-            render={({ field }) => (
-              <TextField
-                {...field}
-                size="small"
-                fullWidth
-                type="password"
-                label={t('accounts.create.passwordLabel')}
-              />
-            )}
-          />
-          <FormField
-            name="attributes"
-            rules={{
-              validate: (value) =>
-                value.trim() === '' ||
-                parseStringMap(value) !== null ||
-                t('accounts.create.attributesHelper'),
-            }}
-            render={({ field, invalid, errorText }) => (
-              <TextField
-                {...field}
-                size="small"
-                fullWidth
-                multiline
-                minRows={2}
-                label={t('accounts.create.attributesLabel')}
-                error={invalid}
-                helperText={errorText ?? t('accounts.create.attributesHelper')}
-              />
-            )}
-          />
-          <FormField
-            name="mfaRequired"
-            render={({ field }) => (
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={field.value}
-                    onChange={(event) => field.onChange(event.target.checked)}
-                    onBlur={field.onBlur}
-                    name={field.name}
-                  />
-                }
-                label={t('accounts.create.mfaLabel')}
-              />
-            )}
-          />
-        </FormLayout>
-      </FormWidth>
+              <MenuItem value="user">{t('accounts.create.kind.user')}</MenuItem>
+              <MenuItem value="service">{t('accounts.create.kind.service')}</MenuItem>
+            </TextField>
+          )}
+        />
+        <FormField
+          name="displayName"
+          render={({ field }) => (
+            <TextField
+              {...field}
+              size="small"
+              fullWidth
+              label={t('accounts.create.displayNameLabel')}
+            />
+          )}
+        />
+        <FormField
+          name="username"
+          render={({ field }) => (
+            <TextField
+              {...field}
+              size="small"
+              fullWidth
+              label={t('accounts.create.usernameLabel')}
+            />
+          )}
+        />
+        <FormField
+          name="email"
+          render={({ field }) => (
+            <TextField
+              {...field}
+              size="small"
+              fullWidth
+              label={t('accounts.create.emailLabel')}
+            />
+          )}
+        />
+        <FormField
+          name="emailVia"
+          render={({ field }) => (
+            <TextField
+              {...field}
+              select
+              size="small"
+              fullWidth
+              label={t('accounts.create.emailViaLabel')}
+            >
+              {viaOptions}
+            </TextField>
+          )}
+        />
+        <FormField
+          name="phone"
+          render={({ field }) => (
+            <TextField
+              {...field}
+              size="small"
+              fullWidth
+              label={t('accounts.create.phoneLabel')}
+            />
+          )}
+        />
+        <FormField
+          name="phoneVia"
+          render={({ field }) => (
+            <TextField
+              {...field}
+              select
+              size="small"
+              fullWidth
+              label={t('accounts.create.phoneViaLabel')}
+            >
+              {viaOptions}
+            </TextField>
+          )}
+        />
+        <FormField
+          name="password"
+          render={({ field }) => (
+            <TextField
+              {...field}
+              size="small"
+              fullWidth
+              type="password"
+              label={t('accounts.create.passwordLabel')}
+            />
+          )}
+        />
+        <FormField
+          name="attributes"
+          rules={{
+            validate: (value) =>
+              value.trim() === '' ||
+              parseStringMap(value) !== null ||
+              t('accounts.create.attributesHelper'),
+          }}
+          render={({ field, invalid, errorText }) => (
+            <TextField
+              {...field}
+              size="small"
+              fullWidth
+              multiline
+              minRows={2}
+              label={t('accounts.create.attributesLabel')}
+              error={invalid}
+              helperText={errorText ?? t('accounts.create.attributesHelper')}
+            />
+          )}
+        />
+        <FormField
+          name="mfaRequired"
+          render={({ field }) => (
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={field.value}
+                  onChange={(event) => field.onChange(event.target.checked)}
+                  onBlur={field.onBlur}
+                  name={field.name}
+                />
+              }
+              label={t('accounts.create.mfaLabel')}
+            />
+          )}
+        />
+      </FormLayout>
       <Box sx={{ mt: 1 }}>
         <InlineError
           code={createAccount.isError ? errorCodeOf(createAccount.error) : null}
         />
       </Box>
-    </Box>
+    </>
+  )
+}
+
+/**
+ * AccountCreatePanel: the create form's `wide` side panel, opened from the
+ * page header. The form starts from its initial values on every opening,
+ * and a landed create closes the panel. A modified form is not closed
+ * directly: a close request asks through a default-variant ConfirmDialog
+ * whether to discard the changes. While the create request is in flight the
+ * panel is busy, and SidePanel then reports no close request at all.
+ *
+ * The discarding confirmation is a dialog stacked above the panel (both
+ * stack at the modal tier; the dialog mounts later), and closing it returns
+ * focus to the panel's own close control, which asked.
+ */
+function AccountCreatePanel({
+  open,
+  onClose,
+}: {
+  readonly open: boolean
+  readonly onClose: () => void
+}) {
+  const { t } = useConsoleUiTranslation()
+  const operations = useConsoleOperations()
+  const createAccount = operations.useCreateAccount()
+  const form = useForm<CreateAccountFields>({
+    defaultValues: CREATE_ACCOUNT_DEFAULTS,
+  })
+  // Reading `isDirty` during render subscribes the form state to dirty
+  // tracking, so the close guard below judges the current draft rather than
+  // a value that was never computed.
+  const dirty = form.formState.isDirty
+  const [discardOpen, setDiscardOpen] = useState(false)
+
+  // Opening starts from the initial values and without the previous
+  // attempt's failure banner, so a reopened panel never shows a draft or an
+  // error it already dismissed. `form` is react-hook-form's stable
+  // controller; the mutation result is a fresh object each render, so the
+  // effect keys on the open flip alone.
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+    form.reset()
+    createAccount.reset()
+    setDiscardOpen(false)
+  }, [open])
+
+  function requestClose(): void {
+    if (createAccount.isPending) {
+      return
+    }
+    if (dirty) {
+      setDiscardOpen(true)
+      return
+    }
+    onClose()
+  }
+
+  return (
+    <>
+      <SidePanel
+        open={open}
+        title={t('accounts.create.title')}
+        size="wide"
+        busy={createAccount.isPending}
+        onClose={requestClose}
+        onExited={() => {
+          form.reset()
+          createAccount.reset()
+        }}
+      >
+        <AccountCreateForm
+          form={form}
+          createAccount={createAccount}
+          onCreated={onClose}
+        />
+      </SidePanel>
+      <ConfirmDialog
+        open={discardOpen}
+        title={t('accounts.create.discardTitle')}
+        message={t('accounts.create.discardMessage')}
+        confirmLabel={t('accounts.create.discardConfirm')}
+        cancelLabel={t('common.cancel')}
+        onConfirm={() => {
+          setDiscardOpen(false)
+          onClose()
+        }}
+        onCancel={() => setDiscardOpen(false)}
+      />
+    </>
   )
 }
 

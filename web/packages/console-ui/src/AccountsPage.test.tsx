@@ -2,10 +2,10 @@
  * AccountsPage: the account-administration page.
  *
  * It lists accounts (narrowed by an identifier prefix and its kind, a
- * display-name prefix, a status and a kind),
- * opens one account's detail (its fields, factors, secrets and sessions),
- * creates an account, and drives the detail writes -- status, MFA
- * requirement, patch, password reset, identifier add, secret create,
+ * display-name prefix, a status and a kind), opens one account's detail in
+ * a wide side panel (its fields, factors, secrets and sessions), creates an
+ * account in a second wide panel, and drives the detail writes -- status,
+ * MFA requirement, patch, password reset, identifier add, secret create,
  * delete, reset MFA, revoke sessions, revoke a secret, revoke a session
  * and remove a named identifier -- through the bundle, each destructive
  * one behind a confirmation.
@@ -15,6 +15,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
+import { emittedStyleText } from '@speed/test-utils/emitted-css'
 import { AccountsPage } from './AccountsPage.js'
 import { consoleOperations } from './operations.js'
 import type {
@@ -74,14 +75,107 @@ const CONFIRM_AGAIN_LABEL = (
   }
 ).confirmDialog.confirmAgainLabel
 
+/** The zh-CN label of the side panel's built-in close control. */
+const PANEL_CLOSE_LABEL = (
+  uiKitResources['zh-CN'] as unknown as {
+    readonly sidePanel: { readonly closeLabel: string }
+  }
+).sidePanel.closeLabel
+
+/** The create panel's heading, which is also its accessible name. */
+const CREATE_PANEL_NAME = '新建账户'
+
+/** The discard confirmation's heading. */
+const DISCARD_DIALOG_NAME = '放弃未保存的更改'
+
+/** Opens the create panel from the page header and returns its dialog. */
+async function openCreate(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<HTMLElement> {
+  await user.click(screen.getByRole('button', { name: CREATE_PANEL_NAME }))
+  return screen.findByRole('dialog', { name: CREATE_PANEL_NAME })
+}
+
+/**
+ * The body of the `@container (min-width:600px)` rule emotion emitted for
+ * `element`'s own class, or undefined when the element carries no such
+ * rule. Scoping to the element's class keeps the assertion proof for this
+ * form rather than for any earlier render whose styles are still injected.
+ */
+function elementContainerRule(
+  css: string,
+  element: Element,
+): string | undefined {
+  const emotionClass = Array.from(element.classList).find((name) =>
+    name.startsWith('css-'),
+  )
+  if (emotionClass === undefined) {
+    return undefined
+  }
+  const escaped = emotionClass.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(
+    `@container \\(min-width:600px\\)\\{\\.${escaped}\\{([^}]*)\\}\\}`,
+  ).exec(css)?.[1]
+}
+
+/** The `width` `element` declares inside `@media (min-width:<minWidth>px)`. */
+function elementWidthAt(
+  css: string,
+  element: Element,
+  minWidth: number,
+): string | undefined {
+  const emotionClass = Array.from(element.classList).find((name) =>
+    name.startsWith('css-'),
+  )
+  if (emotionClass === undefined) {
+    return undefined
+  }
+  const escaped = emotionClass.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const rule = new RegExp(
+    `@media \\(min-width:${minWidth}px\\)\\{\\.${escaped}\\{([^}]*)\\}\\}`,
+  ).exec(css)?.[1]
+  return rule === undefined ? undefined : /(?:^|;)width:([^;]+)/.exec(rule)?.[1]
+}
+
+/**
+ * Every declaration block emotion emitted for `element`'s own class, base
+ * rule and breakpoint/container overrides alike, so a caller can find a
+ * declaration without pinning which rule carries it.
+ */
+function elementDeclarations(css: string, element: Element): string {
+  const emotionClass = Array.from(element.classList).find((name) =>
+    name.startsWith('css-'),
+  )
+  if (emotionClass === undefined) {
+    return ''
+  }
+  const escaped = emotionClass.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const matches = css.matchAll(new RegExp(`\\.${escaped}\\{([^}]*)\\}`, 'g'))
+  return Array.from(matches, (match) => match[1] ?? '').join('\n')
+}
+
 /** Confirms the open danger dialog (the confirm button labelled 确认), then
  * waits for it to leave the tree so the next interaction is not blocked by
  * the modal's aria-hidden background. */
 async function confirmDialog(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  const dialog = await screen.findByRole('dialog')
+  // The page may carry an open side panel (itself a dialog), so the
+  // confirmation is picked out by its own confirm button rather than by
+  // being the only dialog in the tree.
+  const dialog = await waitFor(() => {
+    const candidate = screen
+      .getAllByRole('dialog')
+      .find(
+        (entry) =>
+          within(entry).queryByRole('button', { name: '确认' }) !== null,
+      )
+    expect(candidate).toBeDefined()
+    return candidate as HTMLElement
+  })
   await user.click(within(dialog).getByRole('button', { name: '确认' }))
   await waitFor(() => {
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '确认' }),
+    ).not.toBeInTheDocument()
   })
 }
 
@@ -125,18 +219,34 @@ describe('AccountsPage', () => {
         ]),
     })
     renderWithProviders(<AccountsPage />, { operations })
-    // The page header refresh is present before any search; the row and
-    // detail controls join it once the account is opened.
+    // The page header actions are present before any search; the panel's
+    // controls join them once it is open.
     expect(
       hasCoarsePointerTouchTarget(
         screen.getByRole('button', { name: '刷新' }),
       ),
     ).toBe(true)
-    await openDetail(user)
+    expect(
+      hasCoarsePointerTouchTarget(
+        screen.getByRole('button', { name: CREATE_PANEL_NAME }),
+      ),
+    ).toBe(true)
+    await search(user)
+    await screen.findByText('Ada Lovelace')
+    expect(
+      hasCoarsePointerTouchTarget(
+        screen.getByRole('button', { name: '管理账户 acc-1' }),
+      ),
+    ).toBe(true)
+    expect(
+      hasCoarsePointerTouchTarget(
+        screen.getByRole('button', { name: '删除账户 acc-1' }),
+      ),
+    ).toBe(true)
+    await user.click(screen.getByRole('button', { name: '管理账户 acc-1' }))
     await screen.findByText('ci')
     const gated = [
-      screen.getByRole('button', { name: '收起账户 acc-1' }),
-      screen.getByRole('button', { name: '删除账户 acc-1' }),
+      screen.getByRole('button', { name: PANEL_CLOSE_LABEL }),
       screen.getByRole('button', { name: '撤销密钥 ci' }),
       screen.getByRole('button', { name: '撤销会话 sess-1' }),
     ]
@@ -145,55 +255,268 @@ describe('AccountsPage', () => {
     }
   }, 20_000)
 
-  it('opens the detail at its heading and toggles it from the row control', async () => {
+  it('opens the account detail in a dialog instead of expanding the row', async () => {
     const user = userEvent.setup()
-    const scrollIntoView = vi.fn()
-    const original = Object.getOwnPropertyDescriptor(
-      HTMLElement.prototype,
-      'scrollIntoView',
-    )
-    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
-      configurable: true,
-      writable: true,
-      value: scrollIntoView,
+    const operations = withAccounts()
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    await screen.findByText('Ada Lovelace')
+
+    // Nothing detail-shaped is inline before the panel opens.
+    expect(
+      screen.queryByRole('heading', { level: 2, name: '账户「acc-1」' }),
+    ).toBeNull()
+    const manage = screen.getByRole('button', { name: '管理账户 acc-1' })
+    expect(manage).toHaveAttribute('aria-haspopup', 'dialog')
+
+    await user.click(manage)
+    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    // Both panels take the `wide` tier: 52rem from the viewport's `sm` up.
+    expect(elementWidthAt(emittedStyleText(), panel, 600)).toBe('52rem')
+    // The title names the account, and the detail's sections live inside the
+    // dialog -- not in the page flow below the table.
+    expect(
+      within(panel).getByRole('heading', { level: 2, name: '账户「acc-1」' }),
+    ).toBeInTheDocument()
+    expect(
+      within(panel).getByRole('heading', { name: '账户写入' }),
+    ).toBeInTheDocument()
+    // The row control only opens: no in-page collapse control exists.
+    expect(
+      screen.queryByRole('button', { name: '收起账户 acc-1' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps the selected account rendered until the panel has exited', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts()
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+
+    // Request the close. The panel is still sliding out, and during the
+    // transition it must still render the account: clearing the selection
+    // on the close request would leave a blank panel.
+    fireEvent.click(within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }))
+    const exiting = screen.getByRole('dialog', { name: '账户「acc-1」' })
+    expect(within(exiting).getByText('显示名：Operator')).toBeInTheDocument()
+
+    // Only the exit transition's end removes the panel (and the account).
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: '账户「acc-1」' }),
+      ).not.toBeInTheDocument()
     })
-    try {
-      const operations = withAccounts()
-      renderWithProviders(<AccountsPage />, { operations })
-      await search(user)
-      await screen.findByText('Ada Lovelace')
-      expect(
-        screen.queryByRole('heading', { level: 2, name: '账户「acc-1」' }),
-      ).toBeNull()
+  })
 
-      await user.click(screen.getByRole('button', { name: '管理账户 acc-1' }))
-      // The detail renders below the list and the create form, so opening it
-      // must move the viewport and focus to its heading rather than leave the
-      // row highlight as the only visible change.
-      const heading = await screen.findByRole('heading', {
-        level: 2,
-        name: '账户「acc-1」',
-      })
-      expect(heading).toHaveFocus()
-      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+  it('opens the create panel from the header with two columns and an actions-row submit', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts()
+    const { container } = renderWithProviders(<AccountsPage />, {
+      operations,
+    })
+    // The create form is not part of the page flow any more.
+    expect(container.querySelector('form')).toBeNull()
 
-      // The same control closes the detail, and the row returns to its
-      // "Manage" label.
-      await user.click(screen.getByRole('button', { name: '收起账户 acc-1' }))
+    const panel = await openCreate(user)
+    expect(panel).toHaveAttribute('aria-modal', 'true')
+    // The create panel takes the `wide` tier as well.
+    expect(elementWidthAt(emittedStyleText(), panel, 600)).toBe('52rem')
+    const form = panel.querySelector('form')
+    expect(form).not.toBeNull()
+    // The fields flow through FormLayout's two-column grid, which the
+    // panel's own container width keys (one column below `sm`).
+    expect(form).toHaveStyle({ display: 'grid' })
+    const css = emittedStyleText()
+    expect(elementContainerRule(css, form as Element)).toMatch(
+      /grid-template-columns:\s*repeat\(2,\s*1fr\)/,
+    )
+    // The submit sits in FormLayout's actions row, which spans both tracks
+    // instead of taking a field cell.
+    const submit = within(panel).getByRole('button', { name: '新建' })
+    const actions = submit.parentElement as HTMLElement
+    expect(actions).toHaveStyle({ justifyContent: 'flex-end' })
+    expect(elementDeclarations(css, actions)).toContain('grid-column:1/-1')
+  })
+
+  it('asks before closing a modified create form and closes an untouched one directly', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts()
+    renderWithProviders(<AccountsPage />, { operations })
+
+    // Untouched: the close request goes straight out, with no dialog.
+    let panel = await openCreate(user)
+    await user.click(
+      within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
+    )
+    expect(
+      screen.queryByRole('dialog', { name: DISCARD_DIALOG_NAME }),
+    ).not.toBeInTheDocument()
+    await waitFor(() => {
       expect(
-        screen.queryByRole('heading', { level: 2, name: '账户「acc-1」' }),
-      ).toBeNull()
+        screen.queryByRole('dialog', { name: CREATE_PANEL_NAME }),
+      ).not.toBeInTheDocument()
+    })
+
+    // Modified: the close request asks first. Cancelling keeps the panel
+    // and the typed values.
+    panel = await openCreate(user)
+    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
+    await user.click(
+      within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
+    )
+    const confirm = await screen.findByRole('dialog', {
+      name: DISCARD_DIALOG_NAME,
+    })
+    await user.click(within(confirm).getByRole('button', { name: '取消' }))
+    await waitFor(() => {
       expect(
-        screen.getByRole('button', { name: '管理账户 acc-1' }),
-      ).toBeInTheDocument()
-    } finally {
-      if (original === undefined) {
-        delete (HTMLElement.prototype as { scrollIntoView?: unknown })
-          .scrollIntoView
-      } else {
-        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', original)
-      }
-    }
+        screen.queryByRole('dialog', { name: DISCARD_DIALOG_NAME }),
+      ).not.toBeInTheDocument()
+    })
+    panel = screen.getByRole('dialog', { name: CREATE_PANEL_NAME })
+    expect(within(panel).getByLabelText('显示名')).toHaveValue('Grace')
+
+    // Confirming discards and closes.
+    await user.click(
+      within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
+    )
+    const again = await screen.findByRole('dialog', {
+      name: DISCARD_DIALOG_NAME,
+    })
+    await user.click(within(again).getByRole('button', { name: '放弃' }))
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: CREATE_PANEL_NAME }),
+      ).not.toBeInTheDocument()
+    })
+  })
+
+  it('marks the create panel busy while submitting and ignores close requests', async () => {
+    const user = userEvent.setup()
+    let finishCreate: (() => void) | undefined
+    const operations = withAccounts({
+      createAccount: () =>
+        new Promise((resolve) => {
+          finishCreate = () => resolve(accountFixture())
+        }),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    const panel = await openCreate(user)
+    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
+    await user.type(within(panel).getByLabelText('用户名'), 'grace')
+    await user.click(within(panel).getByRole('button', { name: '新建' }))
+
+    // In flight: the panel is busy, so the close control is disabled and
+    // Escape reports no close request at all.
+    const close = within(panel).getByRole('button', {
+      name: PANEL_CLOSE_LABEL,
+    })
+    await waitFor(() => expect(close).toBeDisabled())
+    fireEvent.keyDown(panel, { key: 'Escape' })
+    expect(
+      screen.getByRole('dialog', { name: CREATE_PANEL_NAME }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('dialog', { name: DISCARD_DIALOG_NAME }),
+    ).not.toBeInTheDocument()
+
+    await act(async () => {
+      finishCreate?.()
+    })
+  })
+
+  it('starts the create form at its initial values each time the panel opens', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts()
+    renderWithProviders(<AccountsPage />, { operations })
+
+    const panel = await openCreate(user)
+    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
+    await user.type(within(panel).getByLabelText('用户名'), 'grace')
+    await user.click(
+      within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
+    )
+    const confirm = await screen.findByRole('dialog', {
+      name: DISCARD_DIALOG_NAME,
+    })
+    await user.click(within(confirm).getByRole('button', { name: '放弃' }))
+    // Both the confirmation and the panel must finish exiting before the
+    // page behind is reachable again.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: DISCARD_DIALOG_NAME }),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('dialog', { name: CREATE_PANEL_NAME }),
+      ).not.toBeInTheDocument()
+    })
+
+    // The re-opened panel shows the initial values, not the discarded draft.
+    const reopened = await openCreate(user)
+    expect(within(reopened).getByLabelText('显示名')).toHaveValue('')
+    expect(within(reopened).getByLabelText('用户名')).toHaveValue('')
+  })
+
+  it('returns focus into the panel when the nested confirmation dialog closes', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts()
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    const reset = within(panel).getByRole('button', { name: '重置 MFA' })
+
+    await user.click(reset)
+    const confirm = await screen.findByRole('dialog', { name: '重置 MFA' })
+    await user.click(within(confirm).getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(reset).toHaveFocus())
+  })
+
+  it('returns focus into the panel when the nested step-up dialog closes', async () => {
+    const user = userEvent.setup()
+    const session = createStepUpSession()
+    const operations = withAccounts({
+      setAccountStatus: () => Promise.reject(stepUpRefusal()),
+    })
+    renderWithProviders(<AccountsPage />, { operations, session })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    await user.click(within(panel).getByLabelText('状态'))
+    await user.click(await screen.findByRole('option', { name: '已停用' }))
+    const save = within(panel).getByRole('button', { name: '保存状态' })
+
+    await user.click(save)
+    const challenge = await screen.findByRole('dialog', {
+      name: '需要重新验证',
+    })
+    await user.click(within(challenge).getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(save).toHaveFocus())
+  })
+
+  it('keeps the panel content reachable while the page behind is hidden', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts()
+    const { container } = renderWithProviders(<AccountsPage />, {
+      operations,
+    })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+
+    // The modal hides the page behind from assistive technology; the panel
+    // is the part that stays in the accessibility tree.
+    expect(container).toHaveAttribute('aria-hidden', 'true')
+    expect(
+      within(panel).getByRole('heading', { name: '已注册因子' }),
+    ).toBeInTheDocument()
+  })
+
+  it('has no axe violations with the detail panel open', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts()
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    await expectNoAxeViolations()
   })
 
   it('renders the empty state when no account matches', async () => {
@@ -505,18 +828,21 @@ describe('AccountsPage', () => {
       },
     })
     renderWithProviders(<AccountsPage />, { operations })
-    await user.type(screen.getByLabelText('显示名'), 'Grace')
-    await user.type(screen.getByLabelText('用户名'), 'grace')
-    await user.click(screen.getByRole('button', { name: '新建' }))
+    const panel = await openCreate(user)
+    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
+    await user.type(within(panel).getByLabelText('用户名'), 'grace')
+    await user.click(within(panel).getByRole('button', { name: '新建' }))
     await vi.waitFor(() => {
       expect(created).toEqual([
         { kind: 'user', display_name: 'Grace', username: 'grace' },
       ])
     })
-    // A landed create clears the form, so the next one starts empty.
-    await vi.waitFor(() => {
-      expect(screen.getByLabelText('显示名')).toHaveValue('')
-      expect(screen.getByLabelText('用户名')).toHaveValue('')
+    // A landed create closes the panel; the next opening starts from the
+    // initial values.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: CREATE_PANEL_NAME }),
+      ).not.toBeInTheDocument()
     })
   })
 
@@ -530,13 +856,14 @@ describe('AccountsPage', () => {
       },
     })
     renderWithProviders(<AccountsPage />, { operations })
+    const panel = await openCreate(user)
     // The guard trims before judging, so a padded value passes it; the
     // request must carry the same trimmed values the guard judged rather
     // than the raw input the server then refuses.
-    await user.type(screen.getByLabelText('显示名'), 'Grace')
-    await user.type(screen.getByLabelText('用户名'), '  grace  ')
-    await user.type(screen.getByLabelText('手机号'), '  +8613800000000  ')
-    await user.click(screen.getByRole('button', { name: '新建' }))
+    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
+    await user.type(within(panel).getByLabelText('用户名'), '  grace  ')
+    await user.type(within(panel).getByLabelText('手机号'), '  +8613800000000  ')
+    await user.click(within(panel).getByRole('button', { name: '新建' }))
     await vi.waitFor(() => {
       expect(created).toEqual([
         {
@@ -558,9 +885,10 @@ describe('AccountsPage', () => {
         return Promise.resolve(accountFixture())
       },
     })
-    const { container } = renderWithProviders(<AccountsPage />, { operations })
-    const submit = screen.getByRole('button', { name: '新建' })
-    const form = container.querySelector('form') as HTMLFormElement
+    renderWithProviders(<AccountsPage />, { operations })
+    const panel = await openCreate(user)
+    const submit = within(panel).getByRole('button', { name: '新建' })
+    const form = panel.querySelector('form') as HTMLFormElement
 
     // An empty form names nothing an account can sign in with: the submit
     // is disabled, and a submit of the form itself sends no request either
@@ -570,20 +898,20 @@ describe('AccountsPage', () => {
     expect(created).toEqual([])
 
     // A display name alone is not an account either.
-    await user.type(screen.getByLabelText('显示名'), 'Grace')
+    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
     expect(submit).toBeDisabled()
     fireEvent.submit(form)
     expect(created).toEqual([])
 
     // Nor is an identifier alone.
-    await user.clear(screen.getByLabelText('显示名'))
-    await user.type(screen.getByLabelText('用户名'), 'grace')
+    await user.clear(within(panel).getByLabelText('显示名'))
+    await user.type(within(panel).getByLabelText('用户名'), 'grace')
     expect(submit).toBeDisabled()
     fireEvent.submit(form)
     expect(created).toEqual([])
 
     // Both together make the account creatable.
-    await user.type(screen.getByLabelText('显示名'), 'Grace')
+    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
     await vi.waitFor(() => expect(submit).toBeEnabled())
     await user.click(submit)
     await vi.waitFor(() => expect(created).toHaveLength(1))
@@ -599,31 +927,20 @@ describe('AccountsPage', () => {
       },
     })
     renderWithProviders(<AccountsPage />, { operations })
-    const submit = screen.getByRole('button', { name: '新建' })
+    const panel = await openCreate(user)
+    const submit = within(panel).getByRole('button', { name: '新建' })
 
     // A service account signs in with a service secret, so the server
     // exempts it from the login-identifier requirement, and the submit must
     // be enabled on a display name alone before any identifier is given.
-    await user.click(screen.getByLabelText('账户类型'))
+    await user.click(within(panel).getByLabelText('账户类型'))
     await user.click(await screen.findByRole('option', { name: '服务' }))
-    await user.type(screen.getByLabelText('显示名'), 'Nightly')
+    await user.type(within(panel).getByLabelText('显示名'), 'Nightly')
     await vi.waitFor(() => expect(submit).toBeEnabled())
     await user.click(submit)
     await vi.waitFor(() => {
       expect(created).toEqual([{ kind: 'service', display_name: 'Nightly' }])
     })
-  })
-
-  it('lays the create fields out through the form family instead of one crowded row', async () => {
-    const operations = withAccounts()
-    const { container } = renderWithProviders(<AccountsPage />, { operations })
-    // The create fields flow through ui-kit's FormLayout: a real <form>
-    // whose field flow is a grid, so the many fields wrap into rows
-    // rather than crowding a single flex line.
-    const form = container.querySelector('form')
-    expect(form).not.toBeNull()
-    expect(form).toHaveStyle({ display: 'grid' })
-    expect(within(form as HTMLElement).getByLabelText('显示名')).toBeInTheDocument()
   })
 
   it('changes an account status through the bundle', async () => {
@@ -752,7 +1069,9 @@ describe('AccountsPage', () => {
       expect(calls.length).toBe(1)
     })
     expect(startFlow).not.toHaveBeenCalled()
-    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(
+      screen.queryByRole('dialog', { name: '需要重新验证' }),
+    ).not.toBeInTheDocument()
   })
 
   it('sets the MFA requirement through the bundle', async () => {

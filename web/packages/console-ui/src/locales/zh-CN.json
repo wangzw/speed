@@ -467,8 +467,6 @@
     "manage": "管理",
     "delete": "删除",
     "manageAria": "管理账户 {{id}}",
-    "collapse": "收起",
-    "collapseAria": "收起账户 {{id}}",
     "deleteAria": "删除账户 {{id}}",
     "deleteTitle": "删除账户",
     "deleteMessage": "删除账户「{{id}}」会一并移除其全部标识、密钥与会话。",
@@ -517,7 +515,10 @@
         "admin": "管理员断言",
         "importUnverified": "导入，未验证"
       },
-      "submit": "新建"
+      "submit": "新建",
+      "discardTitle": "放弃未保存的更改",
+      "discardMessage": "关闭面板会丢弃已填写的内容。",
+      "discardConfirm": "放弃"
     },
     "writes": {"title": "账户写入"},
     "patch": {

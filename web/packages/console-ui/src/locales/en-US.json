@@ -467,8 +467,6 @@
     "manage": "Manage",
     "delete": "Delete",
     "manageAria": "Manage account {{id}}",
-    "collapse": "Close",
-    "collapseAria": "Close account {{id}}",
     "deleteAria": "Delete account {{id}}",
     "deleteTitle": "Delete account",
     "deleteMessage": "Deleting account \"{{id}}\" also removes its identifiers, secrets and sessions.",
@@ -517,7 +515,10 @@
         "admin": "Administrator assertion",
         "importUnverified": "Imported, unverified"
       },
-      "submit": "Create"
+      "submit": "Create",
+      "discardTitle": "Discard unsaved changes",
+      "discardMessage": "Closing the panel discards what you have entered.",
+      "discardConfirm": "Discard"
     },
     "writes": {"title": "Account writes"},
     "patch": {
