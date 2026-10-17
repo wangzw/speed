@@ -80,14 +80,14 @@ sequenceDiagram
     P->>C: GET /api/v1/objects/{id}/content（responseType: blob）
     C-->>P: Blob 正文
     P->>S: 经内部键读字节
-    P->>U: 交给浏览器另存（id 加扩展名）
+    P->>U: 交给浏览器另存（取 name，空名时 id 加扩展名）
 ```
 
 ## 核心数据结构
 
 | 概念 | 形状 | 说明 |
 |---|---|---|
-| 对象视图 | `StoredObject` | 生成类型 `ObjectstoreObject` 的别名：`id`、`state`、`size`、`mime`、`checksum_sha256`、`expires_at`、`created_at`、`updated_at` |
+| 对象视图 | `StoredObject` | 生成类型 `ObjectstoreObject` 的别名：`id`、`name`、`state`、`size`、`mime`、`checksum_sha256`、`expires_at`、`created_at`、`updated_at` |
 | 生命周期状态 | `ObjectState` | `pending`／`uploaded`／`completed`／`deleted` 的闭集；页外的值渲染通用标签 |
 | 一页对象 | `ObjectPage` | 生成类型 `ObjectstoreMetadataListObjects200`：`objects` 与 `next_cursor` |
 | 单对象体 | `ObjectDetail` | 生成类型 `ObjectstoreMetadataGetObject200` |
