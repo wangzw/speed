@@ -129,6 +129,11 @@ in; replace them all before a deployment serves real traffic:
   not through an Authorization scheme.
 - **The database encryption key** (`db.<engine>.encryption-key`) seals the
   columns a module encrypts at rest. Replace the `dev-only-change-me-…` value.
+- **The lowered factor age** (`seed.settings`:
+  `authn.mfa.sensitive-min-age: 1h`) exists only so the impersonation path can be
+  exercised on a local copy; the declared default is 24h and this is the
+  setting's lower bound. A deployment removes that seed entry or restores the
+  declared default before serving real traffic.
 
 ## Layout
 
