@@ -49,10 +49,10 @@ interface TenantSwitcherProps {
 | 依赖 | 用途 |
 |---|---|
 | `@speed/i18n` | 命名空间注册与文案的翻译钩子 |
-| `@speed/ui-kit` | `Button`／`Menu`／`MenuItem` 原语与宿主拥有的 MUI 树 |
+| `@speed/ui-kit` | 声明的依赖，`src/` 不 import 它；只有 `test-utils/` 用它的主题 provider 与 `ui-kit` 命名空间，宿主在 ui-kit 的主题下组合本包 |
 | `@mui/material`、`react`、`react-dom`、`@emotion/*` | peer（必需）：`Button`／`Menu`／`MenuItem` 原语与宿主拥有的 MUI／React 树 |
 
-`@speed/auth-core`、`@speed/api-client` 与 `@speed/api-sdk` 是 devDependency：本包的 `src/` 不引用它们，公开类型也不引用。方向是 `@speed/tenancy-ui` 与 `@speed/auth-ui`、`@speed/ui-kit` 同层，同层之间互不 import。
+`@speed/auth-core`、`@speed/api-client` 与 `@speed/api-sdk` 是 devDependency：本包的 `src/` 不引用它们，公开类型也不引用。`@speed/ui-kit` 在本包之下，本包的 `src/` 不 import 它；本包与 `@speed/auth-ui` 同为能力 UI，同层之间互不 import。
 
 ## UML 图
 
@@ -82,7 +82,7 @@ sequenceDiagram
 
 1. 用户在列表里点一个非当前租户的行；行的点击守卫先确认它不是当前租户，再把菜单关掉、调 `onSelect(id)`。
 2. 宿主接手：把路由切到那个租户，更新它交给 `TenantProvider` 的租户标识，并用切换之前读到的离任租户 id 逐出该租户的查询子树。
-3. 控件报出已切换的租户（`role="status"`）。该区域在控件挂载时就已存在、内容为空，选择时才填入文本，使第一次选择也被播报；本包不 import ui-kit，区域是本包自己的，遵守与 `InlineSuccess` 同一条先挂空区域、再填文本的做法。
+3. 控件报出已切换的租户（`role="status"`）。该区域在控件挂载时就已存在、内容为空，选择时才填入文本，使第一次选择也被播报；控件挂在宿主的 `userMenu` 槽，运行期只依赖 `@speed/i18n` 与 MUI，不 import ui-kit，区域是本包自己的，遵守与 `InlineSuccess` 同一条先挂空区域、再填文本的做法；租户切换是宿主回调，不是写入，不在 `useWriteFeedback` 的作用域之内。
 
 ### 当前租户收敛
 
