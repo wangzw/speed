@@ -10,11 +10,14 @@
  * `run` is the standard attempt: it clears the slot, counts the attempt as
  * in flight, awaits it, and settles the slot from what it returned or
  * threw. An attempt that resolves a string confirms with that string; an
- * attempt that resolves `null` leaves the slot empty and is how a write
+ * attempt that resolves `null` does not touch the slot and is how a write
  * refused for insufficient step-up hands over to the elevation gate (the
- * replay after a successful challenge is a new `run`); an attempt that
- * throws lands as a failure, classified through `errorCodeOf`. `run`
- * never throws.
+ * replay after a successful challenge is a new `run`); the slot is empty
+ * from that attempt's own reset, and a result later filled by an
+ * overlapping attempt or by `succeed` / `fail` stays. An attempt that
+ * throws lands as a failure, classified through `errorCodeOf`. A returned
+ * string -- including the empty string -- is stored verbatim. `run` never
+ * throws.
  *
  * `succeed`, `fail` and `reset` serve flows that are not one promise (a
  * sign-in step settling through a sequence of answers). The success
@@ -45,8 +48,8 @@ export interface WriteFeedback {
   /**
    * Runs one attempt: clears the slot, counts the attempt in flight,
    * awaits `attempt`, and settles the slot with its string, its `null`
-   * (the slot stays empty -- the step-up gate took the write over) or
-   * its throw. Never rejects.
+   * (the slot is not touched -- the step-up gate took the write over)
+   * or its throw. Never rejects.
    */
   readonly run: (attempt: () => Promise<string | null>) => Promise<void>
   /** Clears the slot without cancelling attempts in flight. */

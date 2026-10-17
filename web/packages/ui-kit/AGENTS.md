@@ -70,23 +70,25 @@ plumbing and deliberately not exported.
   `FileUploader` keeps that contract too: the queue is the host's
   `rows` state, interactions report up through its callbacks, and the
   upload transport is host code — never package code.
-- **`useWriteFeedback` is the one state-holding export, and its state
-  belongs to the calling host component.** Every component above stays
-  controlled; `useAppThemeMode` only reads provider context. The
-  write-feedback hook is the accepted exception: it holds one feedback
-  scope's slot and in-flight count for the component that calls it --
-  never provider or global state, never data from the network. Its
-  callbacks keep their identity for the host component's lifetime.
+- **`useWriteFeedback` is the one exported hook that holds state, and
+  its state belongs to the calling host component.** Every component
+  above stays controlled; `useAppThemeMode` only reads provider context.
+  The hook holds one feedback scope's slot and in-flight count for the
+  component that calls it -- never provider or global state, never data
+  from the network. Its callbacks keep their identity for the host
+  component's lifetime.
 - **Write results go through exactly one feedback scope per control
   group.** The scope is one `useWriteFeedback` instance plus one
   `WriteFeedbackRegion` rendered directly under the controls. Each
   attempt starts with `reset`, and the slot holds at most one outcome --
   the one that settled last; overlapping attempts are never merged, and
   an old failure and a new success never coexist. `run` settles from the
-  attempt's return or throw: a string confirms, `null` leaves the slot
-  empty (a step-up refusal handed to the elevation gate; its replay is a
-  new `run`), and a throw becomes a code through `errorCodeOf`; `run`
-  never rejects. The success message is the string the host translated
+  attempt's return or throw: a string (including an empty one) confirms,
+  `null` does not touch the slot (a step-up refusal handed to the
+  elevation gate; its replay is a new `run`; the slot is empty from the
+  attempt's own reset, and a result filled later by an overlapping
+  attempt or by `succeed` / `fail` stays), and a throw becomes a code
+  through `errorCodeOf`; `run` never rejects. The success message is the string the host translated
   at `succeed` time and does not follow a later language switch; failure
   codes resolve at render time, so they do. The region carries no copy
   of its own: the host passes the success text and binds its package's
@@ -97,7 +99,11 @@ plumbing and deliberately not exported.
   data.** Supply it exactly while the latest refresh failed, the data is
   still on screen and no read is in flight; withdraw it when the retry
   starts (the alert unmounts) and supply it again if that retry fails
-  (the alert mounts anew and re-announces through `role="alert"`). Its
+  (the alert mounts anew and re-announces through `role="alert"`). The
+  notice renders above the settled content or, for an empty payload,
+  above the empty placeholder; both settled branches keep the same
+  fragment shape, so the notice's lifecycle never remounts the settled
+  node or loses its local state. Its
   `description` and `retryLabel` are the caller's translated copy. A
   refusal such as 403 does not use `staleState`: the caller replaces
   the content with the no-permission placeholder. Omitting `staleState`
@@ -173,11 +179,12 @@ double-registration guard never fires across tests — and
 `expectNoAxeViolations` runs axe; always `await` it: axe-core refuses
 concurrent runs). Bilingual assertions import the shipped bundles
 (`../locales/zh-CN.json`, `en-US.json`) — never inline a language
-literal. `src/usage-example.test.tsx` compiles and executes the README's
-Quick-start composition, so the documented usage cannot drift from the
-API; when the README composition changes, that file changes with it.
+literal. `src/usage-example.test.tsx` compiles and executes BOTH the
+README's Quick-start composition and its "Write feedback" section, so
+the documented usage cannot drift from the API; when either README
+composition changes, that file changes with it.
 The write-feedback suites pin the slot's rules -- overlapping attempts
-settling in landing order, a `null` settlement leaving the slot empty,
+settling in landing order, a `null` settlement not touching the slot,
 a rejected or synchronously thrown attempt captured as a failure while
 `run` itself resolves, `reset` clearing the slot without cancelling an
 attempt, `pending` holding until every overlapping attempt settles, and

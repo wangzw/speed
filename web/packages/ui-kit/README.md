@@ -907,9 +907,10 @@ which would not be live) while the message is `null`, and filled when a
 write lands, so a screen reader announces a change to a region it already
 knows rather than one born together with its text. The text comes from
 the `message` prop (the surface family's own namespace); nothing renders
-for `null`. `sx` adjusts spacing only and serves `WriteFeedbackRegion`;
-call sites render the region, never this banner on its own.
-Props: `message` (required, `string | null`), `sx?`.
+for `null`. The banner takes no styling props: `WriteFeedbackRegion`
+renders it inside the region's root and owns the spacing, and call sites
+render the region, never this banner on its own.
+Props: `message` (required, `string | null`).
 
 ### Write feedback (useWriteFeedback + WriteFeedbackRegion)
 
@@ -922,10 +923,12 @@ that settles last occupies it.
 `run(attempt)` is one operator-initiated action: it clears the slot,
 counts the attempt in flight (`pending` stays true until every attempt
 settles), awaits `attempt` and settles the slot from it -- a returned
-string becomes the success message, `null` leaves the slot empty (a
-write refused for step-up is handed to the elevation gate and its replay
-is a new `run`), and a throw becomes a failure classified through
-`errorCodeOf`. `run` never rejects. `succeed`, `fail` and `reset` serve
+string (including an empty one) becomes the success message, `null` does
+not touch the slot (a write refused for step-up is handed to the
+elevation gate and its replay is a new `run`; the slot is empty from the
+attempt's own reset, and a result filled later by an overlapping attempt
+or by `succeed` / `fail` stays), and a throw becomes a failure classified
+through `errorCodeOf`. `run` never rejects. `succeed`, `fail` and `reset` serve
 flows that are not one promise; `reset` clears the slot without
 cancelling attempts in flight. Callbacks keep their identity for the
 component's lifetime.
@@ -939,8 +942,20 @@ region's `resolve`, so they follow the active language.
 import { useState } from 'react'
 import Button from '@mui/material/Button'
 import TextField from '@mui/material/TextField'
-import { useTranslation } from '@speed/i18n'
+import {
+  CLIENT_TRANSPORT_ERROR_CODES,
+  createErrorTextResolver,
+  useTranslation,
+} from '@speed/i18n'
 import { useWriteFeedback, WriteFeedbackRegion } from '@speed/ui-kit'
+
+// The codes the tenant namespace carries text for: its own refusal codes
+// plus the transport codes every write can reach. Anything else resolves
+// to errors.unknown, so a raw key never reaches the alert.
+const ERROR_TEXT_CODES: ReadonlySet<string> = new Set([
+  ...CLIENT_TRANSPORT_ERROR_CODES,
+  'tenant.name_required',
+])
 
 function TenantNameSection() {
   const feedback = useWriteFeedback()
@@ -971,7 +986,7 @@ function TenantNameSection() {
       </Button>
       <WriteFeedbackRegion
         outcome={feedback.outcome}
-        resolve={(code) => t(`errors.${code}`)}
+        resolve={createErrorTextResolver(t, ERROR_TEXT_CODES)}
         sx={{ marginTop: 2 }}
       />
     </section>
@@ -981,7 +996,10 @@ function TenantNameSection() {
 
 `renameTenant` is the host's own API call, and the `tenant` namespace is
 registered by the host at bootstrap; ui-kit ships no endpoint and no
-copy for this scope. The region's `sx` applies to its root container.
+copy for this scope. The namespace must carry `errors.unknown` beside
+the codes in its whitelist. The region's `sx` applies to its root
+container after the root's default top margin, and the success and
+failure banners share that one margin.
 
 ### ListSkeleton (the pending-state placeholder)
 
@@ -1010,16 +1028,23 @@ keeps `headingLevel`.
 screen. The caller supplies `{ description, retryLabel, onRetry }`
 exactly while that is the state -- the latest refresh failed, the data
 is still on screen and no read is in flight -- and withdraws it when the
-retry starts. The content keeps rendering and a `role="alert"` notice
-with the retry action renders above it; withdrawing `staleState`
-unmounts the notice, and a retry that fails again re-supplies it, so the
-alert mounts anew and announces again. `description` and `retryLabel`
+retry starts. The settled rendering -- the content, or the empty
+placeholder when the payload is empty -- keeps rendering and a
+`role="alert"` notice with the retry action renders above it;
+withdrawing `staleState` unmounts the notice, and a retry that fails
+again re-supplies it, so the alert mounts anew and announces again. Both
+settled branches keep the same fragment shape, so the notice appearing
+or withdrawing never unmounts the settled node or loses the local state
+it holds (a draft input, an open row). `description` and `retryLabel`
 are the caller's translated copy and should say the shown content may be
 out of date. A refusal such as HTTP 403 does not use `staleState` -- the
-old data no longer means anything, so the caller replaces the content
-with the no-permission placeholder (the console and object-store
-packages do this in their own `AsyncSection` wrappers). Omitting
-`staleState` renders exactly the previous behaviour.
+old data no longer means anything, so the caller renders the
+no-permission placeholder in place of the content (the console and
+object-store packages do this in their own `AsyncSection` wrappers). That
+replacement applies when the refusal leaves no cached data to keep; a
+refresh-time 403 that must keep cached data on screen while denying
+further reads is not covered by `staleState` and is deferred to stage 2.
+Omitting `staleState` renders exactly the previous behaviour.
 
 Props: `pending`, `payload`, `empty`, `loading`, `errorState`,
 `emptyState?`, `headingLevel?`, `emptyHeadingLevel?`, `staleState?`,
@@ -1187,8 +1212,8 @@ that the intended declaration was wired into the render, not proofs
 that either side of a breakpoint looks correct at a real viewport or
 container width). Bilingual fixtures are the shipped locale files under `src/locales/`,
 imported by sources and tests; `src/usage-example.test.tsx` compiles and
-executes the Quick start composition above, so the documented usage
-cannot drift from the API. The workspace `no-literal-text` rule and its
+executes both the Quick start composition and the "Write feedback"
+section above, so the documented usage cannot drift from the API. The workspace `no-literal-text` rule and its
 rule tests live at `web/eslint-rules/` (rule tests run from the web
 workspace root: `pnpm exec vitest run eslint-rules/no-literal-text.test.mjs`);
 the rule applies to this package's `src` but not its test files --
