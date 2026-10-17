@@ -34,6 +34,13 @@ const tenantsItem = "tenants"
 // the platform domain and into each tenant the deployment serves. A role is a
 // per-domain row, so the platform domain's copy does not reach a tenant's, and
 // the seed writes one in each domain the administrator acts in.
+//
+// It is builtin: the management surface may neither rewrite it nor delete it.
+// Deleting it would revoke the operator's every permission and lock them out of
+// the console, and no command would put the role back while the administrator
+// still exists — the seed would only do so on a database with no role row at
+// all. The mark is set after the grants are written, because a builtin role's
+// grants cannot be written; its grant set is therefore fixed at that point.
 const platformAdminRole = authz.Role("platform-admin")
 
 // platformAdminDescriptionKey is the description key written with the role. It
@@ -149,7 +156,10 @@ func seedModule() core.Module {
 //
 // It is idempotent: an account, a tenant, a role, a grant or a binding already
 // there is left as it stands and reported as skipped, so the command is safe to
-// run at every deployment. Nothing else is touched — an account or a tenant the
+// run at every deployment. The one correction it makes to an existing row is the
+// builtin mark on the administrator role: a row an earlier seed wrote without it
+// is rewritten with it, because that mark is what keeps the role's deletion off
+// the management surface. Nothing else is touched — an account or a tenant the
 // configuration no longer names is not disabled or deleted.
 //
 // The role is written into two kinds of domain. The platform domain carries it
@@ -165,8 +175,11 @@ func seedModule() core.Module {
 // migration seeds a role or a binding, because who a deployment's
 // administrators are is the host's answer and not the library's. The
 // permissions the role holds are the ones the process declares, read from the
-// catalog, so a module that adds a permission and its translation row is
-// covered by the next run without an edit here.
+// catalog, so a first run covers every permission the process declares without
+// an edit here. The role is then marked builtin, and that freezes the set: a
+// permission a module declares after the mark cannot be granted to the role,
+// because every grant write on a builtin role is refused. A deployment that
+// adds one gives the operator a new role alongside this one.
 func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -361,11 +374,16 @@ func seedLoginName(identifier string) (authn.IdentifierKind, string, error) {
 }
 
 // seedAdministration writes what platform administration is made of in one
-// domain: the role, and every declared permission on it. Each is written only
-// when it is not already there. The caller runs it once per domain the role is
-// held in — the platform domain, and each tenant the deployment serves — because
-// a role and its grants are per-domain rows and one domain's do not answer for
-// another's.
+// domain: the role, every declared permission on it, and the builtin mark that
+// freezes both. Each is written only when it is not already there. The caller
+// runs it once per domain the role is held in — the platform domain, and each
+// tenant the deployment serves — because a role and its grants are per-domain
+// rows and one domain's do not answer for another's.
+//
+// The order is load-bearing: the role is created not builtin, the grants are
+// written, and only then is the mark set. A builtin role's grants cannot be
+// written at all — the manager refuses every grant write on one — so a role
+// created with the mark would be frozen holding nothing.
 //
 // It names no account, because neither does: the role and its grants belong to
 // the domain, so one write serves every administrator the configuration names.
@@ -376,11 +394,16 @@ func seedAdministration(ctx context.Context, manager authz.Manager, catalog auth
 	if err := seedRole(ctx, manager, domain, now); err != nil {
 		return err
 	}
-	return seedGrants(ctx, manager, catalog, domain, now)
+	if err := seedGrants(ctx, manager, catalog, domain, now); err != nil {
+		return err
+	}
+	return markRoleBuiltin(ctx, manager, domain)
 }
 
-// seedRole writes the administrator role into the platform domain unless it is
-// already there.
+// seedRole writes the administrator role into one domain unless it is already
+// there. The row is created without the builtin mark: the grants are written
+// next, and a builtin role's grants cannot be written, so markRoleBuiltin sets
+// the mark once they are in place.
 func seedRole(ctx context.Context, manager authz.Manager, domain string, now time.Time) error {
 	roles, err := manager.Roles(ctx, domain)
 	if err != nil {
@@ -400,6 +423,47 @@ func seedRole(ctx context.Context, manager authz.Manager, domain string, now tim
 		return fmt.Errorf("seed: writing the role %s/%s: %w", domain, platformAdminRole, err)
 	}
 	fmt.Printf("seeded: role %s/%s\n", domain, platformAdminRole)
+	return nil
+}
+
+// markRoleBuiltin freezes the administrator role once its grants are written.
+// The management surface may then neither rewrite it nor delete it, and the
+// manager refuses both here as well. Deleting the role would revoke the
+// operator's every permission with nothing to put it back: the seed rebuilds a
+// role row only when it is absent, and the account that lost the binding path
+// could no longer reach the surface that would restore it.
+//
+// A role an earlier seed wrote without the mark is corrected here, which is the
+// upgrade path for a database seeded before the mark existed. Re-running the
+// seed would otherwise skip the row and leave the console offering a delete
+// that locks the operator out.
+//
+// The grant set is fixed at this point, which is what the mark means. A
+// permission a module declares after this run is not added to the role: every
+// grant write on a builtin role is refused, and the seed reports that refusal
+// instead of leaving the operator silently short of a permission.
+func markRoleBuiltin(ctx context.Context, manager authz.Manager, domain string) error {
+	roles, err := manager.Roles(ctx, domain)
+	if err != nil {
+		return fmt.Errorf("seed: reading the roles of %s: %w", domain, err)
+	}
+	i := slices.IndexFunc(roles, func(r authz.RoleRecord) bool { return r.Role == platformAdminRole })
+	if i < 0 {
+		return fmt.Errorf("seed: the role %s/%s is not there to mark builtin", domain, platformAdminRole)
+	}
+	existing := roles[i]
+	if existing.Builtin {
+		fmt.Printf("skipped: role %s/%s (builtin)\n", domain, platformAdminRole)
+		return nil
+	}
+	existing.Builtin = true
+	if existing.DescriptionKey == "" {
+		existing.DescriptionKey = platformAdminDescriptionKey
+	}
+	if err := manager.PutRole(ctx, existing); err != nil {
+		return fmt.Errorf("seed: marking the role %s/%s builtin: %w", domain, platformAdminRole, err)
+	}
+	fmt.Printf("seeded: role %s/%s (builtin mark)\n", domain, platformAdminRole)
 	return nil
 }
 

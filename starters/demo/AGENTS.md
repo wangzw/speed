@@ -393,7 +393,13 @@ Under every stack:
 - **`seed`** writes the accounts under `seed.accounts`, each with the credential
   it is given — a plaintext `password` or a `password-hash` — the tenants under
   `seed.tenants`, and the platform-administrator role the ones marked with it
-  hold, carrying every permission the process declares. The role and its grants
+  hold, carrying every permission the process declares. The role is created, its
+  grants are written, and it is then marked builtin in every domain: the
+  management surface refuses to rewrite or delete it, because deleting it would
+  revoke the operator's every permission with no command to put it back. The mark
+  freezes the grant set — a permission a module declares after that run is not
+  added to the role, and the seed reports the refusal rather than leaving the
+  operator silently short of it. The role and its grants
   are written into two kinds of domain: the platform domain, which the
   platform's own management surface reads, and each tenant under `seed.tenants`,
   so the console's tenant-addressed pages — members, invitations and SSO
@@ -404,7 +410,10 @@ Under every stack:
   the seed refuses the name before writing it rather than seeding a roster the
   next serve would not start on. It is idempotent — an account, a tenant, a role,
   a grant or a binding already there is left as it stands and reported as skipped
-  — so it is safe to run at every deployment. Nothing else is touched, and an
+  — so it is safe to run at every deployment. The one existing role it corrects is
+  the administrator role's `builtin` mark: a role an earlier seed wrote without
+  it is marked once its grants are in place, because that mark is what keeps the
+  role off the console's delete control. Nothing else is touched, and an
   account or a tenant the configuration no longer names is neither disabled nor
   deleted. It drives to `StageStart`, past the migrations, so a database that was
   never migrated is one it can seed in a single command. A role and a binding come

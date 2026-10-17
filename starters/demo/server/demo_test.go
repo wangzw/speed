@@ -931,6 +931,40 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 		t.Errorf("the roster holds %d tenant(s), want the one the seed registered", len(listed.Tenants))
 	}
 
+	// The administrator role is builtin in every domain the seed wrote it —
+	// the platform domain and the tenant. The console reads the flag and
+	// withholds the role's write controls; the server refuses those writes
+	// whether or not a client does. A role without the flag is one the console
+	// offers to delete, and deleting the role that holds every declared
+	// permission locks the operator out of the console.
+	for _, domain := range []string{string(authz.PlatformDomain), demoTenant} {
+		got := adminGet(t, seedIdentifier, "/authz/admin/tenants/"+domain+"/roles")
+		if got.status != http.StatusOK {
+			t.Fatalf("reading the roles of %s answered %d: %s", domain, got.status, got.body)
+		}
+		var roles struct {
+			Roles []struct {
+				Role    string `json:"role"`
+				Builtin bool   `json:"builtin"`
+			} `json:"roles"`
+		}
+		if err := json.Unmarshal(got.body, &roles); err != nil {
+			t.Fatalf("reading the roles of %s: %v\n%s", domain, err, got.body)
+		}
+		found := false
+		for _, r := range roles.Roles {
+			if r.Role == string(platformAdminRole) {
+				found = true
+				if !r.Builtin {
+					t.Errorf("the administrator role in %s is not builtin: %s", domain, got.body)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("the roles of %s do not hold the administrator role: %s", domain, got.body)
+		}
+	}
+
 	// The administrator reaches the console's tenant-addressed pages for the
 	// tenant the seed registered. A binding in the platform domain alone does
 	// not answer for a tenant — the role is a per-domain row — so the seed
