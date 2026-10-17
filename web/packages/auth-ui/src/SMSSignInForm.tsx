@@ -53,7 +53,6 @@ import type { SubmitHandler } from 'react-hook-form'
 import {
   FormField,
   FormLayout,
-  touchTargetSx,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
 import type { AuthSession } from '@speed/auth-core'
@@ -259,11 +258,10 @@ export function SMSSignInForm({ session, onSignedIn }: SMSSignInFormProps) {
               size="small"
               onClick={() => void requestCode(sentToRef.current)}
               disabled={driver.busy}
-              sx={touchTargetSx}
             >
               {t('smsSignIn.resendCode')}
             </Button>
-            <Button size="small" onClick={editPhone} sx={touchTargetSx}>
+            <Button size="small" onClick={editPhone}>
               {t('smsSignIn.editPhone')}
             </Button>
           </Box>
