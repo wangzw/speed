@@ -11,9 +11,11 @@
  *
  * errorCodeOf is the companion classifier: an ApiError-shaped failure
  * keeps its code, and anything else -- a bug-shaped throw, an
- * un-normalized answer -- collapses to a code that no resolver lists,
- * so the family renders its unknown fallback. The pair is fail-closed:
- * an operation that throws at all always has a code to show.
+ * un-normalized answer, a value whose `code` read throws (a throwing
+ * getter, a revoked proxy) -- collapses to a code that no resolver
+ * lists, so the family renders its unknown fallback. The pair is
+ * fail-closed: an operation that throws at all always has a code to
+ * show, and classifying it never throws.
  */
 
 import Alert from '@mui/material/Alert'
@@ -23,7 +25,14 @@ export function errorCodeOf(error: unknown): string {
   if (typeof error !== 'object' || error === null) {
     return UNKNOWN_FAILURE_CODE
   }
-  const code = (error as { code?: unknown }).code
+  let code: unknown
+  try {
+    code = (error as { code?: unknown }).code
+  } catch {
+    // A throwing getter or a revoked proxy is still a failure with no
+    // readable code: classify it as unknown rather than let the read throw.
+    return UNKNOWN_FAILURE_CODE
+  }
   return typeof code === 'string' && code.length > 0
     ? code
     : UNKNOWN_FAILURE_CODE

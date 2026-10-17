@@ -1,17 +1,69 @@
 /**
  * WriteFeedbackRegion contract: one slot rendered as the scope's result
  * area -- a failure code through the caller's resolver and the success
- * message through the always-mounted status region, with `sx` landing on
- * the region's own root. An empty slot renders no visible feedback while
- * the status region stays in the tree for the next message.
+ * message through the always-mounted status region, with one default top
+ * margin on the region's root that both parts share and the caller's `sx`
+ * applied after it. An empty slot renders no visible feedback while the
+ * status region stays in the tree for the next message, clipped to 1x1.
  */
 
+import { useState } from 'react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { expectNoAxeViolations } from '../../test-utils/axe.js'
+import type { WriteOutcome } from '../write-feedback.js'
 import { WriteFeedbackRegion } from './WriteFeedbackRegion.js'
 
 const resolve = (code: string): string => `resolved:${code}`
+
+const CLIPPED = {
+  position: 'absolute',
+  width: '1px',
+  height: '1px',
+} as const
+
+/** A host holding the slot, so the region re-renders in place. */
+function RegionHost() {
+  const [outcome, setOutcome] = useState<WriteOutcome | null>(null)
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => {
+          setOutcome({ kind: 'success', message: 'first success' })
+        }}
+      >
+        first success
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setOutcome({ kind: 'success', message: 'second success' })
+        }}
+      >
+        second success
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setOutcome({ kind: 'failure', code: 'write_failed' })
+        }}
+      >
+        failure
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setOutcome(null)
+        }}
+      >
+        clear
+      </button>
+      <WriteFeedbackRegion outcome={outcome} resolve={resolve} />
+    </div>
+  )
+}
 
 describe('WriteFeedbackRegion', () => {
   it('renders a success message in the polite status region', async () => {
@@ -54,7 +106,77 @@ describe('WriteFeedbackRegion', () => {
     expect(view.getByRole('status')).toBeInTheDocument()
   })
 
-  it('applies sx to its own root container', () => {
+  it('clips the silent status region and leaves the painted banners unclipped', () => {
+    const empty = renderWithProviders(
+      <WriteFeedbackRegion outcome={null} resolve={resolve} />,
+    )
+    expect(empty.getByRole('status')).toHaveStyle(CLIPPED)
+    empty.unmount()
+
+    const failure = renderWithProviders(
+      <WriteFeedbackRegion
+        outcome={{ kind: 'failure', code: 'write_failed' }}
+        resolve={resolve}
+      />,
+    )
+    // The failure occupies the slot through its alert; the success region
+    // beside it is silent and clipped.
+    expect(failure.getByRole('status')).toHaveStyle(CLIPPED)
+    expect(failure.getByRole('alert')).not.toHaveStyle(CLIPPED)
+    failure.unmount()
+
+    const success = renderWithProviders(
+      <WriteFeedbackRegion
+        outcome={{ kind: 'success', message: 'Saved' }}
+        resolve={resolve}
+      />,
+    )
+    expect(success.getByRole('status')).not.toHaveStyle(CLIPPED)
+    expect(success.getByRole('status')).toHaveStyle({ width: '100%' })
+  })
+
+  it('renders the success severity', () => {
+    const view = renderWithProviders(
+      <WriteFeedbackRegion
+        outcome={{ kind: 'success', message: 'Saved' }}
+        resolve={resolve}
+      />,
+    )
+    expect(view.getByRole('status').className).toMatch(/MuiAlert-colorSuccess/)
+  })
+
+  it('carries one default top margin on the root that both parts share', () => {
+    const success = renderWithProviders(
+      <WriteFeedbackRegion
+        outcome={{ kind: 'success', message: 'Saved' }}
+        resolve={resolve}
+      />,
+    )
+    const successRoot = success.container.firstElementChild
+    expect(successRoot).toHaveStyle({ marginTop: '8px' })
+    expect(successRoot).toContainElement(success.getByRole('status'))
+    const successSpacing = getComputedStyle(
+      success.getByRole('status'),
+    ).marginTop
+    success.unmount()
+
+    const failure = renderWithProviders(
+      <WriteFeedbackRegion
+        outcome={{ kind: 'failure', code: 'write_failed' }}
+        resolve={resolve}
+      />,
+    )
+    const failureRoot = failure.container.firstElementChild
+    expect(failureRoot).toHaveStyle({ marginTop: '8px' })
+    expect(failureRoot).toContainElement(failure.getByRole('alert'))
+    // The two banners add the same (zero) spacing of their own: the one gap
+    // is the root's default margin in both states.
+    expect(getComputedStyle(failure.getByRole('alert')).marginTop).toBe(
+      successSpacing,
+    )
+  })
+
+  it('applies the caller sx after the default root margin', () => {
     const view = renderWithProviders(
       <WriteFeedbackRegion
         outcome={{ kind: 'success', message: 'Saved' }}
@@ -64,9 +186,37 @@ describe('WriteFeedbackRegion', () => {
     )
     const root = view.container.firstElementChild
     expect(root).not.toBeNull()
+    // The caller's spacing wins over the default, and the success banner
+    // renders inside that root.
     expect(root).toHaveStyle({ marginTop: '16px' })
-    // The success banner renders inside that root.
     expect(root).toContainElement(view.getByRole('status'))
+  })
+
+  it('keeps the success banner as one node across slot changes', async () => {
+    const view = renderWithProviders(<RegionHost />)
+    const status = view.getByRole('status')
+    expect(status).toHaveTextContent('')
+    expect(status).toHaveStyle(CLIPPED)
+
+    await userEvent.click(view.getByRole('button', { name: 'first success' }))
+    expect(view.getByRole('status')).toBe(status)
+    expect(status).toHaveTextContent('first success')
+
+    // Another success replaces the text on the same node.
+    await userEvent.click(view.getByRole('button', { name: 'second success' }))
+    expect(view.getByRole('status')).toBe(status)
+    expect(status).toHaveTextContent('second success')
+
+    // A failure fills the alert beside the same, now clipped, status node.
+    await userEvent.click(view.getByRole('button', { name: 'failure' }))
+    expect(view.getByRole('status')).toBe(status)
+    expect(status).toHaveTextContent('')
+    expect(status).toHaveStyle(CLIPPED)
+    expect(view.getByRole('alert')).toHaveTextContent('resolved:write_failed')
+
+    await userEvent.click(view.getByRole('button', { name: 'clear' }))
+    expect(view.getByRole('status')).toBe(status)
+    expect(view.queryByRole('alert')).toBeNull()
   })
 
   it('replaces a failure with a success when the slot changes', () => {

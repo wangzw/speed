@@ -16,33 +16,27 @@
  * message is null, and the message fills a region the screen reader already
  * knows when a write lands. This is the same mount-empty-then-fill recipe the
  * account surfaces use for their save notices.
+ *
+ * `WriteFeedbackRegion` renders this banner inside its root container and
+ * owns the region's spacing; a host renders the region, never the banner
+ * on its own.
  */
 
-import type { SxProps, Theme } from '@mui/material/styles'
 import Alert from '@mui/material/Alert'
 import { visuallyHiddenSx } from '../visually-hidden.js'
 
 export interface InlineSuccessProps {
   /** The confirmation text, or null for nothing to confirm (renders silent). */
   readonly message: string | null
-  /**
-   * Spacing adjustments for the banner, used by `WriteFeedbackRegion` to
-   * place it within the region; the banner keeps its own width and its
-   * clipped silent form.
-   */
-  readonly sx?: SxProps<Theme>
 }
 
 /** The whole-attempt success banner, one role="status" live region. */
-export function InlineSuccess({ message, sx }: InlineSuccessProps) {
+export function InlineSuccess({ message }: InlineSuccessProps) {
   return (
     <Alert
       severity="success"
       role="status"
-      sx={[
-        message === null ? visuallyHiddenSx : { width: '100%' },
-        ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
-      ]}
+      sx={message === null ? visuallyHiddenSx : { width: '100%' }}
     >
       {message ?? ''}
     </Alert>

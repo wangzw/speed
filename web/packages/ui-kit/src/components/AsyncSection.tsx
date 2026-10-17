@@ -24,15 +24,18 @@
  * heading order never skips.
  *
  * `staleState` marks a refresh that failed while earlier data is still
- * on screen: the content keeps rendering and an alert with a retry
- * action renders above it. The caller supplies it only for that state --
- * the latest refresh failed, the data is still on screen and no read is
- * in flight -- and withdraws it when the retry starts, which unmounts
- * the alert; a retry that fails again re-supplies it, so the alert
- * mounts anew and its `role="alert"` announces again. A refusal such as
- * HTTP 403 does not use `staleState`: it makes the older data
- * meaningless, so the caller replaces the content with the
- * no-permission placeholder instead.
+ * on screen: the settled rendering -- the content, or the empty
+ * placeholder when the payload is empty -- keeps rendering and an alert
+ * with a retry action renders above it. The caller supplies it only for
+ * that state -- the latest refresh failed, the data is still on screen
+ * and no read is in flight -- and withdraws it when the retry starts,
+ * which unmounts the alert; a retry that fails again re-supplies it, so
+ * the alert mounts anew and its `role="alert"` announces again. The
+ * settled branches always return the same fragment shape, so the notice
+ * appearing or withdrawing never unmounts the node beneath it and never
+ * loses the state that node holds. A refusal such as HTTP 403 does not
+ * use `staleState`: it makes the older data meaningless, so the caller
+ * replaces the content with the no-permission placeholder instead.
  */
 
 import type { ReactNode } from 'react'
@@ -147,35 +150,37 @@ export function AsyncSection<Payload>({
       />
     )
   }
-  if (empty && emptyState !== undefined) {
-    return (
+  const settled =
+    empty && emptyState !== undefined ? (
       <EmptyState
         variant="empty"
         title={emptyState.title}
         description={emptyState.description}
         headingLevel={emptyHeadingLevel ?? headingLevel}
       />
+    ) : (
+      children(payload)
     )
-  }
-  const content = children(payload)
-  if (staleState === undefined) {
-    return content
-  }
+  // Both settled branches return the same fragment: the stale notice
+  // mounts and unmounts as the fragment's first child, so the settled node
+  // keeps its identity and its local state across the notice's lifecycle.
   return (
     <>
-      <Alert
-        severity="warning"
-        role="alert"
-        action={
-          <Button color="inherit" onClick={staleState.onRetry}>
-            {staleState.retryLabel}
-          </Button>
-        }
-        sx={{ marginBottom: 2 }}
-      >
-        {staleState.description}
-      </Alert>
-      {content}
+      {staleState === undefined ? null : (
+        <Alert
+          severity="warning"
+          role="alert"
+          action={
+            <Button color="inherit" onClick={staleState.onRetry}>
+              {staleState.retryLabel}
+            </Button>
+          }
+          sx={{ marginBottom: 2 }}
+        >
+          {staleState.description}
+        </Alert>
+      )}
+      {settled}
     </>
   )
 }

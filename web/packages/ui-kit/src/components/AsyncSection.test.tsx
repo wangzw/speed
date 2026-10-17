@@ -32,7 +32,7 @@ const EMPTY_STATE = {
 const STALE_DESCRIPTION = 'The list may be out of date.'
 const STALE_RETRY_LABEL = 'Refresh the list'
 
-function STALE_STATE(onRetry: () => void): AsyncSectionStaleState {
+function staleStateOf(onRetry: () => void): AsyncSectionStaleState {
   return {
     description: STALE_DESCRIPTION,
     retryLabel: STALE_RETRY_LABEL,
@@ -47,7 +47,7 @@ function STALE_STATE(onRetry: () => void): AsyncSectionStaleState {
  */
 function StaleSectionHost() {
   const [stale, setStale] = useState<AsyncSectionStaleState | undefined>(() =>
-    STALE_STATE(() => {
+    staleStateOf(() => {
       setStale(undefined)
     }),
   )
@@ -57,7 +57,7 @@ function StaleSectionHost() {
         type="button"
         onClick={() => {
           setStale(
-            STALE_STATE(() => {
+            staleStateOf(() => {
               setStale(undefined)
             }),
           )
@@ -75,6 +75,57 @@ function StaleSectionHost() {
         staleState={stale}
       >
         {(items) => <p>content {items.join(',')}</p>}
+      </AsyncSection>
+    </div>
+  )
+}
+
+/** The settled content, holding state a remount would lose. */
+function StatefulContent() {
+  const [count, setCount] = useState(0)
+  return (
+    <div data-testid="settled-content">
+      <button
+        type="button"
+        onClick={() => {
+          setCount((current) => current + 1)
+        }}
+      >
+        increment
+      </button>
+      <output>{count}</output>
+      <input aria-label="draft" />
+    </div>
+  )
+}
+
+/** A settled section whose host flips the stale marker on and off. */
+function StatefulStaleHost() {
+  const [stale, setStale] = useState<AsyncSectionStaleState | undefined>(() =>
+    staleStateOf(vi.fn()),
+  )
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => {
+          setStale((current) =>
+            current === undefined ? staleStateOf(vi.fn()) : undefined,
+          )
+        }}
+      >
+        toggle stale
+      </button>
+      <AsyncSection
+        pending={false}
+        payload={['alpha']}
+        empty={false}
+        loading={<p>loading node</p>}
+        errorState={ERROR_STATE}
+        emptyState={EMPTY_STATE}
+        staleState={stale}
+      >
+        {() => <StatefulContent />}
       </AsyncSection>
     </div>
   )
@@ -244,16 +295,24 @@ describe('AsyncSection', () => {
           loading={<p>loading node</p>}
           errorState={ERROR_STATE}
           emptyState={EMPTY_STATE}
-          staleState={STALE_STATE(onRetry)}
+          staleState={staleStateOf(onRetry)}
         >
           {(items) => <p>content {items.join(',')}</p>}
         </AsyncSection>
       </div>,
     )
     // The earlier data stays on screen; the alert rides above it.
-    expect(screen.getByText('content alpha,beta')).toBeInTheDocument()
+    const content = screen.getByText('content alpha,beta')
+    expect(content).toBeInTheDocument()
     const alert = screen.getByRole('alert')
     expect(alert).toHaveTextContent(STALE_DESCRIPTION)
+    // The notice precedes the content and does not wrap it: it is a
+    // sibling above the settled node, not a container around it.
+    expect(
+      alert.compareDocumentPosition(content) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(alert).not.toContainElement(content)
     expect(alert).toContainElement(
       screen.getByRole('button', { name: STALE_RETRY_LABEL }),
     )
@@ -288,7 +347,130 @@ describe('AsyncSection', () => {
     expect(view.getByText('content alpha')).toBeInTheDocument()
   })
 
-  it('ignores staleState outside the settled-content branch', () => {
+  it('keeps the settled content mounted while the stale notice appears and withdraws', async () => {
+    const view = renderWithProviders(<StatefulStaleHost />)
+    const content = view.getByTestId('settled-content')
+    await userEvent.click(view.getByRole('button', { name: 'increment' }))
+    await userEvent.type(view.getByRole('textbox', { name: 'draft' }), 'draft text')
+    expect(content).toHaveTextContent('1')
+    expect(view.getByRole('alert')).toBeInTheDocument()
+
+    // The notice withdraws: the content node is the same node and keeps its
+    // local state -- it is not unmounted and remounted by the tree-shape
+    // change.
+    await userEvent.click(view.getByRole('button', { name: 'toggle stale' }))
+    expect(view.queryByRole('alert')).toBeNull()
+    expect(view.getByTestId('settled-content')).toBe(content)
+    expect(content).toHaveTextContent('1')
+    expect(view.getByRole('textbox', { name: 'draft' })).toHaveValue(
+      'draft text',
+    )
+
+    // The notice returns: still the same content node, still its state.
+    await userEvent.click(view.getByRole('button', { name: 'toggle stale' }))
+    expect(view.getByRole('alert')).toBeInTheDocument()
+    expect(view.getByTestId('settled-content')).toBe(content)
+    expect(content).toHaveTextContent('1')
+    expect(view.getByRole('textbox', { name: 'draft' })).toHaveValue(
+      'draft text',
+    )
+  })
+
+  it('keeps the stale notice when the content is a multi-node fragment', () => {
+    renderWithProviders(
+      <AsyncSection
+        pending={false}
+        payload={['alpha']}
+        empty={false}
+        loading={<p>loading node</p>}
+        errorState={ERROR_STATE}
+        emptyState={EMPTY_STATE}
+        staleState={staleStateOf(vi.fn())}
+      >
+        {() => (
+          <>
+            <p>first half</p>
+            <p>second half</p>
+          </>
+        )}
+      </AsyncSection>,
+    )
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent(STALE_DESCRIPTION)
+    expect(screen.getByText('first half')).toBeInTheDocument()
+    expect(screen.getByText('second half')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['false', false],
+  ])(
+    'keeps the stale notice when the content renders %s',
+    (_label, content) => {
+      renderWithProviders(
+        <AsyncSection
+          pending={false}
+          payload={['alpha']}
+          empty={false}
+          loading={<p>loading node</p>}
+          errorState={ERROR_STATE}
+          emptyState={EMPTY_STATE}
+          staleState={staleStateOf(vi.fn())}
+        >
+          {() => content}
+        </AsyncSection>,
+      )
+      expect(screen.getByRole('alert')).toHaveTextContent(STALE_DESCRIPTION)
+    },
+  )
+
+  it('keeps the content and notice when empty is true but emptyState is omitted', () => {
+    renderWithProviders(
+      <AsyncSection
+        pending={false}
+        payload={[]}
+        empty
+        loading={<p>loading node</p>}
+        errorState={ERROR_STATE}
+        staleState={staleStateOf(vi.fn())}
+      >
+        {(items) => <p>content {items.length}</p>}
+      </AsyncSection>,
+    )
+    // No empty placeholder to take over: the content callback still renders
+    // the settled payload, with the stale notice above it.
+    expect(screen.getByText('content 0')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent(STALE_DESCRIPTION)
+  })
+
+  it('renders the stale notice above the empty placeholder for an empty payload', () => {
+    renderWithProviders(
+      <AsyncSection
+        pending={false}
+        payload={[]}
+        empty
+        loading={<p>loading node</p>}
+        errorState={ERROR_STATE}
+        emptyState={EMPTY_STATE}
+        staleState={staleStateOf(vi.fn())}
+      >
+        {(items) => <p>content {items.length}</p>}
+      </AsyncSection>,
+    )
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent(STALE_DESCRIPTION)
+    const title = screen.getByText(EMPTY_STATE.title)
+    expect(title).toBeInTheDocument()
+    expect(
+      alert.compareDocumentPosition(title) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(alert).not.toContainElement(title)
+    expect(screen.queryByText(/content/)).not.toBeInTheDocument()
+  })
+
+  it('renders no stale notice while pending or in the error branch', () => {
     const pendingView = renderWithProviders(
       <AsyncSection
         pending
@@ -297,7 +479,7 @@ describe('AsyncSection', () => {
         loading={<p>loading node</p>}
         errorState={ERROR_STATE}
         emptyState={EMPTY_STATE}
-        staleState={STALE_STATE(vi.fn())}
+        staleState={staleStateOf(vi.fn())}
       >
         {(items) => <p>content {items.join(',')}</p>}
       </AsyncSection>,
@@ -315,7 +497,7 @@ describe('AsyncSection', () => {
         loading={<p>loading node</p>}
         errorState={ERROR_STATE}
         emptyState={EMPTY_STATE}
-        staleState={STALE_STATE(vi.fn())}
+        staleState={staleStateOf(vi.fn())}
       >
         {(items: readonly string[]) => <p>content {items.join(',')}</p>}
       </AsyncSection>,

@@ -13,8 +13,9 @@
  * The region carries no copy of its own. The success message is host
  * text -- the string the host translated when it settled the attempt --
  * and a failure code resolves through `resolve`, the calling package's
- * own error-text resolver. `sx` applies to the region's root container,
- * inside which both parts render.
+ * own error-text resolver. The root container carries one spacing unit
+ * of top margin, shared by the success and failure parts; the caller's
+ * `sx` applies after it and may override it.
  */
 
 import type { SxProps, Theme } from '@mui/material/styles'
@@ -43,8 +44,13 @@ export function WriteFeedbackRegion({
   const failureCode =
     outcome !== null && outcome.kind === 'failure' ? outcome.code : null
   return (
-    <Box sx={sx}>
-      <InlineSuccess message={successMessage} sx={{ marginTop: 1 }} />
+    <Box
+      sx={[
+        { marginTop: 1 },
+        ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
+      ]}
+    >
+      <InlineSuccess message={successMessage} />
       <InlineError code={failureCode} resolve={resolve} />
     </Box>
   )
