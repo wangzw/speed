@@ -45,18 +45,26 @@
  * the table. Every landed item clears its draft; a partial landing reports
  * the first failure in submission order, keeps every failed item's draft,
  * row marker and pending-save count, and pages the table to the page
- * holding that first failed item. Success is reported only when nothing
- * failed. The row's remove action shares the same scope and names the
- * removed setting. A refused write resolves through the console-ui
- * whitelist (a value outside the item's declared domain reads the
- * invalid-value text), never a raw key. A refused read settles into the
- * permission placeholder (403, which replaces any content on screen) or
- * the retryable error placeholder (a first failure); a failed refresh that
- * kept its content shows the stale marker. The page opens with ui-kit's
- * PageHeader, so the heading order never skips.
+ * holding that first failed item. The row marker is the failed item's own
+ * value field: it renders in error, names the row's error through its
+ * helper text, and MUI wires `aria-invalid` and the helper text's id into
+ * `aria-describedby`. The row's helper text is resolved from the same
+ * failure code the region resolves, so the two never carry different
+ * copy. A failure that settles in this scope also scrolls the region into
+ * view -- the region sits under the table, which may be taller than the
+ * viewport -- while a success leaves the page where it is; the scroll is
+ * unanimated when the operator asks for reduced motion. Success is
+ * reported only when nothing failed. The row's remove action shares the
+ * same scope and names the removed setting. A refused write resolves
+ * through the console-ui whitelist (a value outside the item's declared
+ * domain reads the invalid-value text), never a raw key. A refused read
+ * settles into the permission placeholder (403, which replaces any content
+ * on screen) or the retryable error placeholder (a first failure); a failed
+ * refresh that kept its content shows the stale marker. The page opens with
+ * ui-kit's PageHeader, so the heading order never skips.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import List from '@mui/material/List'
@@ -76,6 +84,7 @@ import {
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
+import { useConsoleUiErrorText } from './internal/error-text.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { settingKeyRest, useConsoleOperations } from './operations.js'
@@ -111,9 +120,26 @@ export function SettingsPage() {
   // The table's page and page size.
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_ROWS_PER_PAGE)
+  // The full key of the item the batch reported first, or null. It is the
+  // row the inline marker belongs to; cleared when a new attempt starts and
+  // when the namespace changes, so a marker never outlives the result it
+  // belongs to.
+  const [failedKey, setFailedKey] = useState<string | null>(null)
   // The settings table's feedback scope: the batch save and the row remove
   // actions share one slot and one region under the table.
   const feedback = useWriteFeedback()
+  // The region may sit under a table taller than the viewport, so a settled
+  // failure scrolls it into view (see the effect below).
+  const feedbackRef = useRef<HTMLDivElement | null>(null)
+  // The console's error-text resolver, the same one the region binds: the
+  // failed row's hint and the region's message resolve the one failure code
+  // through the same whitelist, so the two can never carry different copy.
+  const resolveErrorText = useConsoleUiErrorText()
+  const failureCode =
+    feedback.outcome !== null && feedback.outcome.kind === 'failure'
+      ? feedback.outcome.code
+      : null
+  const failureText = failureCode === null ? null : resolveErrorText(failureCode)
 
   // The whole declared set, read for the namespace navigation (its
   // namespaces are the grouping the page offers).
@@ -126,13 +152,37 @@ export function SettingsPage() {
 
   // A namespace change starts a fresh form: no draft belongs to a
   // namespace the operator has left, the list starts on its first page,
-  // and the scope's result would otherwise read as describing the new
-  // namespace, so it is cleared.
+  // the failed row's marker belongs to the result of the namespace being
+  // left, and the scope's result would otherwise read as describing the
+  // new namespace, so it is cleared.
   useEffect(() => {
     setDrafts({})
     setPage(0)
+    setFailedKey(null)
     feedback.reset()
   }, [selected, feedback.reset])
+
+  // A failure that settled in this scope brings its region into view: the
+  // region is pinned under the table by design, and a long declared set
+  // pushes it past the viewport, leaving the operator with no visible
+  // reason. Success never moves the page, and neither does a cleared slot.
+  // `block: 'center'` keeps the region clear of the sticky save bar that
+  // precedes it; reduced motion jumps instead of animating.
+  useEffect(() => {
+    if (feedback.outcome?.kind !== 'failure') {
+      return
+    }
+    const region = feedbackRef.current
+    if (region === null) {
+      return
+    }
+    const reduceMotion =
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+    region.scrollIntoView?.({
+      behavior: reduceMotion ? 'auto' : 'smooth',
+      block: 'center',
+    })
+  }, [feedback.outcome])
 
   const namespaces = useMemo(() => {
     const set = new Set<string>()
@@ -156,6 +206,9 @@ export function SettingsPage() {
     if (changed.length === 0) {
       return
     }
+    // The marker describes this attempt's result, so it is dropped before
+    // the new attempt starts and set again only if this one fails.
+    setFailedKey(null)
     // One attempt for the whole batch: every PUT is issued before any
     // settles, and `allSettled` keeps the submission order, so the first
     // rejected entry is the first failure in that order rather than
@@ -193,6 +246,9 @@ export function SettingsPage() {
       // retained draft that still needs attention is on screen.
       const failedSetting = changed[failedIndex]
       if (failedSetting !== undefined) {
+        // The marker belongs to the first failed item -- the one the
+        // region reports -- not to every item that failed behind it.
+        setFailedKey(failedSetting.key)
         const rowIndex = settled.indexOf(failedSetting)
         setPage(Math.max(0, Math.floor(rowIndex / rowsPerPage)))
       }
@@ -252,22 +308,33 @@ export function SettingsPage() {
     {
       id: 'value',
       header: t('settings.column.value'),
-      cell: (setting) => (
-        <TextField
-          size="small"
-          fullWidth
-          value={drafts[setting.key] ?? setting.value}
-          onChange={(event) =>
-            setDrafts((previous) => ({
-              ...previous,
-              [setting.key]: event.target.value,
-            }))
-          }
-          // The column header labels the cell; the key names the field for
-          // the accessibility tree, so each row's input is distinguishable.
-          slotProps={{ htmlInput: { 'aria-label': setting.key } }}
-        />
-      ),
+      cell: (setting) => {
+        // The failed row's field carries the row marker: MUI renders the
+        // helper text in the error color and wires the control's
+        // `aria-invalid` and `aria-describedby` to it, which is the form
+        // family's documented error contract rather than a second
+        // renderer. Both the field and the region read their text from the
+        // same resolved failure code.
+        const failed = failedKey !== null && setting.key === failedKey
+        return (
+          <TextField
+            size="small"
+            fullWidth
+            value={drafts[setting.key] ?? setting.value}
+            onChange={(event) =>
+              setDrafts((previous) => ({
+                ...previous,
+                [setting.key]: event.target.value,
+              }))
+            }
+            error={failed}
+            helperText={failed ? failureText ?? undefined : undefined}
+            // The column header labels the cell; the key names the field for
+            // the accessibility tree, so each row's input is distinguishable.
+            slotProps={{ htmlInput: { 'aria-label': setting.key } }}
+          />
+        )
+      },
     },
     {
       id: 'state',
@@ -450,7 +517,9 @@ export function SettingsPage() {
                     </Button>
                   </Box>
 
-                  <WriteFeedbackRegion outcome={feedback.outcome} />
+                  <Box ref={feedbackRef}>
+                    <WriteFeedbackRegion outcome={feedback.outcome} />
+                  </Box>
                 </Box>
               )
             }}

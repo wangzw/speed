@@ -16,13 +16,14 @@
  * every other failure the retryable error placeholder.
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SettingsPage } from './SettingsPage.js'
 import type { ConsoleSetting } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
+import { mockMatchMedia } from '@speed/test-utils/matchMedia'
 import {
   createConsoleOperations,
   makeConsoleBackend,
@@ -50,6 +51,26 @@ const defaultItem: ConsoleSetting = {
   has_row: false,
   value: '3',
 }
+
+/**
+ * jsdom implements no layout, so `scrollIntoView` does not exist on
+ * elements. The tests that observe the region's scroll install this spy;
+ * the ones that only drive a failure rely on the call site guarding a
+ * missing method.
+ */
+function stubScrollIntoView(): ReturnType<typeof vi.fn> {
+  const spy = vi.fn()
+  Object.defineProperty(Element.prototype, 'scrollIntoView', {
+    configurable: true,
+    writable: true,
+    value: spy,
+  })
+  return spy
+}
+
+afterEach(() => {
+  delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+})
 
 describe('SettingsPage', () => {
   it('renders the settled empty state when no item is declared', async () => {
@@ -368,10 +389,12 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: '保存改动' }))
 
     // The first failure in submission order is the one reported; the
-    // later failure's text stays out of the banner.
-    expect(
-      await screen.findByText('该值不在该设置项声明的取值范围内。'),
-    ).toBeInTheDocument()
+    // later failure's text stays out of the banner. The same text also
+    // stands in the failing row's helper, so the banner is addressed by
+    // its role rather than by text.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '该值不在该设置项声明的取值范围内。',
+    )
     expect(
       screen.queryByText('服务端无法读取该请求，请检查表单后重试。'),
     ).toBeNull()
@@ -389,6 +412,168 @@ describe('SettingsPage', () => {
     ).toHaveValue('x12')
     expect(screen.queryByRole('textbox', { name: 'mail.key-0' })).toBeNull()
     expect(screen.getByText('2 项待保存')).toBeInTheDocument()
+
+    // Only the first failed row carries the marker, and its described-by
+    // target is the resolved reason -- the same text the region shows.
+    const firstFailed = screen.getByRole('textbox', { name: 'mail.key-11' })
+    expect(firstFailed).toHaveAttribute('aria-invalid', 'true')
+    const hintId = firstFailed.getAttribute('aria-describedby')
+    expect(hintId).not.toBeNull()
+    const hint = document.getElementById(hintId as string)
+    expect(hint).toHaveTextContent('该值不在该设置项声明的取值范围内。')
+    expect(hint?.textContent).toBe(
+      screen.getByRole('alert').textContent,
+    )
+    // The later failure behind it is not the row the result names.
+    expect(
+      screen.getByRole('textbox', { name: 'mail.key-12' }),
+    ).toHaveAttribute('aria-invalid', 'false')
+  })
+
+  it('marks the first failed row inline and brings the region into view', async () => {
+    // No reduced-motion preference, so the scroll is animated.
+    mockMatchMedia(false)
+    const scrollIntoView = stubScrollIntoView()
+    const user = userEvent.setup()
+    // The failing item sits on the table's third page: scheduling a batch
+    // from there is exactly the case where the region is far below the
+    // viewport. Changing a valid item on the same page proves the marker
+    // follows the failure, not the whole batch.
+    const items: ConsoleSetting[] = Array.from({ length: 30 }, (_, index) => ({
+      ...item,
+      key: `mail.key-${index}`,
+      value: `${index}`,
+      written: `${index}`,
+    }))
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSettings: () => Promise.resolve(items),
+        setSetting: (input) =>
+          input.key === 'key-24'
+            ? Promise.reject({ code: 'settings.invalid_value' })
+            : Promise.resolve(),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+
+    await user.click(await screen.findByRole('button', { name: '下一页' }))
+    await user.click(await screen.findByRole('button', { name: '下一页' }))
+    const failed = await screen.findByRole('textbox', { name: 'mail.key-24' })
+    const valid = screen.getByRole('textbox', { name: 'mail.key-25' })
+    await user.clear(failed)
+    await user.type(failed, 'bad')
+    await user.clear(valid)
+    await user.type(valid, 'ok')
+    await user.click(screen.getByRole('button', { name: '保存改动' }))
+
+    // The row marker: the failing field is invalid and describes itself
+    // with the resolved message (never the raw code).
+    await waitFor(() => expect(failed).toHaveAttribute('aria-invalid', 'true'))
+    const describedBy = failed.getAttribute('aria-describedby')
+    expect(describedBy).not.toBeNull()
+    const hint = document.getElementById(describedBy as string)
+    expect(hint).not.toBeNull()
+    expect(hint).toHaveTextContent('该值不在该设置项声明的取值范围内。')
+
+    // The region carries that same text -- one resolved source, two places.
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('该值不在该设置项声明的取值范围内。')
+    expect(hint?.textContent).toBe(alert.textContent)
+
+    // The valid row in the same batch is not marked, and a partial landing
+    // is never a success.
+    expect(valid).toHaveAttribute('aria-invalid', 'false')
+    expect(screen.queryByText('设置已保存')).toBeNull()
+
+    // The region was scrolled into view, clear of the sticky save bar.
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'smooth',
+      block: 'center',
+    })
+
+    // The failed row itself is on screen: the table paged to it.
+    expect(screen.getByRole('textbox', { name: 'mail.key-24' })).toHaveValue(
+      'bad',
+    )
+
+    // The described-by target is real and reachable, so the scan adds no
+    // finding the page did not already have.
+    await expectNoAxeViolations()
+  })
+
+  it('jumps to the region instead of animating under reduced motion', async () => {
+    mockMatchMedia(true)
+    const scrollIntoView = stubScrollIntoView()
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSettings: () => Promise.resolve([item]),
+        setSetting: () => Promise.reject({ code: 'settings.invalid_value' }),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    const input = await screen.findByDisplayValue('5')
+    await user.clear(input)
+    await user.type(input, 'x')
+    await user.click(screen.getByRole('button', { name: '保存改动' }))
+
+    await screen.findByRole('alert')
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'auto',
+      block: 'center',
+    })
+  })
+
+  it('does not move the page when the batch lands', async () => {
+    const scrollIntoView = stubScrollIntoView()
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSettings: () => Promise.resolve([item]),
+        setSetting: () => Promise.resolve(),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    const input = await screen.findByDisplayValue('5')
+    await user.clear(input)
+    await user.type(input, '9')
+    await user.click(screen.getByRole('button', { name: '保存改动' }))
+
+    expect(await screen.findByText('设置已保存')).toBeInTheDocument()
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  it('clears the failed marker when the corrected batch lands', async () => {
+    const user = userEvent.setup()
+    let attempts = 0
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSettings: () => Promise.resolve([item]),
+        setSetting: () => {
+          attempts += 1
+          return attempts === 1
+            ? Promise.reject({ code: 'settings.invalid_value' })
+            : Promise.resolve()
+        },
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    const input = await screen.findByDisplayValue('5')
+    await user.clear(input)
+    await user.type(input, 'x')
+    await user.click(screen.getByRole('button', { name: '保存改动' }))
+    await screen.findByRole('alert')
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+
+    // The marker belongs to one attempt's result: correcting the draft and
+    // landing the next attempt leaves neither the marker nor a failure
+    // banner behind.
+    await user.clear(input)
+    await user.type(input, '6')
+    await user.click(screen.getByRole('button', { name: '保存改动' }))
+    expect(await screen.findByText('设置已保存')).toBeInTheDocument()
+    expect(input).toHaveAttribute('aria-invalid', 'false')
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('removes a setting through the row control after confirmation', async () => {
@@ -432,9 +617,9 @@ describe('SettingsPage', () => {
     await user.type(input, 'x')
     await user.click(screen.getByRole('button', { name: '保存改动' }))
 
-    expect(
-      await screen.findByText('该值不在该设置项声明的取值范围内。'),
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '该值不在该设置项声明的取值范围内。',
+    )
     // A refused save keeps the draft for a retry.
     expect(input).toHaveValue('x')
   })
