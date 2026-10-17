@@ -135,7 +135,7 @@ describe('AccountsPage', () => {
     await openDetail(user)
     await screen.findByText('ci')
     const gated = [
-      screen.getByRole('button', { name: '管理账户 acc-1' }),
+      screen.getByRole('button', { name: '收起账户 acc-1' }),
       screen.getByRole('button', { name: '删除账户 acc-1' }),
       screen.getByRole('button', { name: '撤销密钥 ci' }),
       screen.getByRole('button', { name: '撤销会话 sess-1' }),
@@ -144,6 +144,57 @@ describe('AccountsPage', () => {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
     }
   }, 20_000)
+
+  it('opens the detail at its heading and toggles it from the row control', async () => {
+    const user = userEvent.setup()
+    const scrollIntoView = vi.fn()
+    const original = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'scrollIntoView',
+    )
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: scrollIntoView,
+    })
+    try {
+      const operations = withAccounts()
+      renderWithProviders(<AccountsPage />, { operations })
+      await search(user)
+      await screen.findByText('Ada Lovelace')
+      expect(
+        screen.queryByRole('heading', { level: 2, name: '账户「acc-1」' }),
+      ).toBeNull()
+
+      await user.click(screen.getByRole('button', { name: '管理账户 acc-1' }))
+      // The detail renders below the list and the create form, so opening it
+      // must move the viewport and focus to its heading rather than leave the
+      // row highlight as the only visible change.
+      const heading = await screen.findByRole('heading', {
+        level: 2,
+        name: '账户「acc-1」',
+      })
+      expect(heading).toHaveFocus()
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+
+      // The same control closes the detail, and the row returns to its
+      // "Manage" label.
+      await user.click(screen.getByRole('button', { name: '收起账户 acc-1' }))
+      expect(
+        screen.queryByRole('heading', { level: 2, name: '账户「acc-1」' }),
+      ).toBeNull()
+      expect(
+        screen.getByRole('button', { name: '管理账户 acc-1' }),
+      ).toBeInTheDocument()
+    } finally {
+      if (original === undefined) {
+        delete (HTMLElement.prototype as { scrollIntoView?: unknown })
+          .scrollIntoView
+      } else {
+        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', original)
+      }
+    }
+  })
 
   it('renders the empty state when no account matches', async () => {
     const operations = withAccounts({

@@ -26,7 +26,11 @@
  * The list and the detail's four reads each stand behind their own
  * AsyncSection, so every one of them shows its loading, empty and
  * retryable-error states rather than settling a failed read into a
- * silently empty table.
+ * silently empty table. A row's Manage control toggles the detail: it
+ * opens below the list and the create form, so opening scrolls the
+ * detail heading into view and moves focus to it -- otherwise the only
+ * visible change is the row highlight -- and the same control closes it
+ * again.
  *
  * Each write request body is the shape the module's OpenAPI fragment
  * declares for its endpoint, which the handler decodes; the account view
@@ -42,7 +46,7 @@
  * PageHeader.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -116,11 +120,28 @@ export function AccountsPage() {
   const [accountKindDraft, setAccountKindDraft] = useState('')
   const [accountKind, setAccountKind] = useState('')
   const [selectedId, setSelectedId] = useState('')
+  const detailHeading = useRef<HTMLHeadingElement | null>(null)
   const [identifierToRemove, setIdentifierToRemove] = useState('')
   // The message a landed write fills into the page-level success notice (a
   // polite live region); null while nothing has landed since the last
   // attempt, and cleared at the start of each one.
   const [success, setSuccess] = useState<string | null>(null)
+
+  // The detail renders below the list and the create form, so a selection
+  // made in a row is otherwise only a highlight. Bring the detail's heading
+  // into view and focus it when the selection changes, so the opened detail
+  // is both visible and where the keyboard and a screen reader continue.
+  useEffect(() => {
+    if (selectedId === '') {
+      return
+    }
+    const heading = detailHeading.current
+    if (heading === null) {
+      return
+    }
+    heading.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+    heading.focus({ preventScroll: true })
+  }, [selectedId])
 
   // The applied filters, committed together on submit so a keystroke never
   // fires a request. The identifier prefix is sent with its kind (the
@@ -292,10 +313,18 @@ export function AccountsPage() {
             type="button"
             size="small"
             variant="outlined"
-            aria-label={t('accounts.manageAria', { id: row.id })}
-            onClick={() => setSelectedId(row.id)}
+            aria-label={
+              selectedId === row.id
+                ? t('accounts.collapseAria', { id: row.id })
+                : t('accounts.manageAria', { id: row.id })
+            }
+            onClick={() =>
+              setSelectedId(selectedId === row.id ? '' : row.id)
+            }
           >
-            {t('accounts.manage')}
+            {selectedId === row.id
+              ? t('accounts.collapse')
+              : t('accounts.manage')}
           </Button>
           <Button
             type="button"
@@ -599,7 +628,9 @@ export function AccountsPage() {
       {selectedId !== '' && (
         <Box component="section" sx={{ mt: 3 }}>
           <Typography
+            ref={detailHeading}
             component="h2"
+            tabIndex={-1}
             variant="h2"
             sx={{ fontSize: '1.25rem', mb: 1 }}
           >
