@@ -21,10 +21,22 @@
  * tenant detail page's related-page links do). The parameter seeds the
  * page's initial state only; the selector remains the way to change it
  * afterwards.
+ *
+ * The roster read behind the selector has three states beside its content,
+ * told apart in the field's helper text: while it loads the selector is
+ * disabled and says so; a 403 says the viewer may not list tenants and
+ * offers no retry (retrying can only be refused again); any other failure
+ * says the roster did not answer and offers a retry; an empty roster says no
+ * tenant is registered. A tenant seeded from the URL stays shown in every
+ * one of those states, so a carried link never blanks its selection.
  */
 
+import type { ReactNode } from 'react'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import MenuItem from '@mui/material/MenuItem'
 import TextField from '@mui/material/TextField'
+import { isForbidden } from './async-section.js'
 import { useConsoleUiTranslation } from './translation.js'
 import { useConsoleOperations } from '../operations.js'
 
@@ -68,13 +80,43 @@ export function TenantScope({ value, onSelect, disabled = false }: TenantScopePr
   // answers, the id and its alias are the same entry.
   const listed = options.some((tenant) => tenant.id === value)
 
+  const loading = tenants.isPending
+  const forbidden = isForbidden(tenants.error)
+  const failed =
+    !loading && !forbidden && tenants.error !== null && tenants.error !== undefined
+  const empty = tenants.data !== undefined && tenants.data.length === 0
+
+  let helperText: ReactNode
+  if (loading) {
+    helperText = t('common.tenantLoading')
+  } else if (forbidden) {
+    helperText = t('common.tenantForbidden')
+  } else if (failed) {
+    helperText = (
+      <Box component="span">
+        {t('common.tenantLoadFailed')}{' '}
+        <Button
+          type="button"
+          size="small"
+          variant="text"
+          onClick={() => void tenants.refetch()}
+        >
+          {t('common.tenantRetry')}
+        </Button>
+      </Box>
+    )
+  } else if (empty) {
+    helperText = t('common.tenantEmpty')
+  }
+
   return (
     <TextField
       select
       size="small"
       label={t('common.tenant')}
       value={value}
-      disabled={disabled}
+      disabled={disabled || loading}
+      helperText={helperText}
       onChange={(event) => onSelect(event.target.value)}
       sx={{ minWidth: 240 }}
     >
