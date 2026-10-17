@@ -14,6 +14,7 @@
 import { act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { emittedStyleText } from '@speed/test-utils/emitted-css'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { renderDemoApp } from '../test-utils/render.js'
 import {
@@ -139,6 +140,48 @@ describe('the start page', () => {
         name: demoEnUS.home.cards.console.title,
       }),
     ).toBeInTheDocument()
+  })
+
+  it('reflows the card grid by its own container width, not the viewport', () => {
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ system: ['tenant.read'] }),
+      ),
+    })
+
+    const card = cardFor(demoEnUS.home.cards.account.title)
+    const grid = card.closest('.MuiCard-root')?.parentElement
+    expect(grid).not.toBeNull()
+    expect(grid).toHaveStyle({ display: 'grid' })
+
+    // The grid's wrapper is the containment context. Without this
+    // declaration the grid's `@container` rule matches nothing and the
+    // grid never collapses in a narrow panel -- the failure the layout
+    // design records. jsdom evaluates no container queries, so the proof
+    // is the generated CSS text, the same assertion FormLayout's suite
+    // makes.
+    const containerClass = Array.from(
+      grid?.parentElement?.classList ?? [],
+    ).find((name) => name.startsWith('css-'))
+    expect(containerClass).toBeDefined()
+
+    const css = emittedStyleText()
+    expect(css).toMatch(
+      new RegExp(
+        `\\.${containerClass}\\s*\\{[^}]*container-type:\\s*inline-size`,
+      ),
+    )
+    // Both track declarations were wired in: one column at the
+    // container's narrow end, two equal tracks from its `sm` (600px) up.
+    // The second sits inside an `@container` block, not an `@media` one
+    // -- keyed on the viewport it would be blind to a narrow panel.
+    expect(css).toMatch(/grid-template-columns:1fr/)
+    expect(css).toMatch(
+      /@container \(min-width:600px\)\{[^}]*grid-template-columns:repeat\(2,\s*1fr\)/,
+    )
+    expect(css).not.toMatch(
+      /@media \(min-width:600px\)\{[^}]*grid-template-columns:repeat\(2,\s*1fr\)/,
+    )
   })
 
   it('shows the signed-in viewer no source-tree copy', () => {

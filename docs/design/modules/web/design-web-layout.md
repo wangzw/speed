@@ -65,8 +65,9 @@
 - **外壳级响应走视口。** 整体形态的变化——导航在常驻与抽屉之间切换、侧栏是否显示——由视口宽度决定，读 MUI 主题的 `breakpoints`；`AppShell` 以 `useMediaQuery(theme.breakpoints.up('md'))` 在两态之间选择。
 - **组件级响应走容器。** 会随可用宽度改变自身排布的组件——数据表、表单、卡片网格——按**所在容器**的宽度响应，不按视口。容器上下文由组件自建：组件在自身根节点声明 `container-type: inline-size`。
 - **指针能力走能力查询。** 依赖悬停的交互（悬停展开、悬停显出的操作）只在指针设备上启用；触摸设备上这些操作常显，可点击目标不小于 44×44。判据是 `hover` 与 `pointer` 媒体特性，不是视口宽度——带键盘的平板与触屏笔记本都是宽视口下的触摸设备。
+- **页面骨架按视口取档。** 详情页的主栏与侧栏、设置页的二级导航与内容并列、以及内容区的受限宽，都是**页型骨架**：它们占满内容区，内容区的宽度由视口与外壳状态（侧栏是否常驻）决定，宿主不会把它们放进任意窄容器。因此它们按视口断点取档（`console-ui` 的 `DetailLayout`、`SettingsPage`、`FormWidth`），是「组件级响应走容器」的例外。
 
-前两条的判据是**一个区域的变化由视口决定，还是由它被放进多宽的容器决定**。外壳的整体形态占满视口，故由视口决定；一个组件既可能占满内容区、也可能被放进窄侧栏，只有按容器响应才能在两种处境下各自正确。
+外壳级与组件级两条的判据是**一个区域的变化由视口决定，还是由它被放进多宽的容器决定**。外壳的整体形态占满视口，故由视口决定；一个组件既可能占满内容区、也可能被放进窄侧栏，只有按容器响应才能在两种处境下各自正确。
 
 ### 窄视口的降级
 
@@ -75,6 +76,7 @@
 - **侧栏**：从常驻变为覆盖式抽屉。
 - **数据表**：先隐藏低优先级列，仍放不下时在容器内横向滚动兜底。
 - **表单**：由多列收为单列。
+- **卡片网格**：由多列收为单列；档位取网格所在容器的宽度，不取视口。
 
 ## 依赖
 
@@ -146,6 +148,7 @@ graph TD
 | 仪表盘骨架 | 已实现 | `web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage` |
 | 数据表的列优先级降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx` |
 | 数据表超宽的容器内滚动兜底 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable` |
-| 组件级容器查询 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx` |
-| 窄视口逐档降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx`；`web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`（收起为仅图标的窄栏）；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx` |
+| 卡片网格的多列收为单列 | 已实现 | `starters/demo/web/src/pages/home-page.tsx` `HomePage` |
+| 组件级容器查询 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx`；`starters/demo/web/src/pages/home-page.tsx` `HomePage` |
+| 窄视口逐档降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx`；`web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`（收起为仅图标的窄栏）；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx`；`starters/demo/web/src/pages/home-page.tsx` `HomePage` |
 | 指针能力查询 | 已实现 | `web/packages/ui-kit/src/internal/pointer.ts`；`web/packages/ui-kit/src/touch-target.ts` `touchTargetSx`；`web/packages/ui-kit/src/components/DataTable.tsx`、`web/packages/ui-kit/src/components/FileUploader.tsx`、`web/packages/layout-kit/src/components/AppShell.tsx`、`web/packages/notification-ui/src/NotificationBell.tsx`、`web/packages/account-ui/src/SessionsSection.tsx` |

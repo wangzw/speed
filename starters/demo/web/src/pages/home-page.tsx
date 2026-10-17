@@ -97,16 +97,28 @@ export function HomePage(): ReactElement {
       sx={{ display: 'flex', flexDirection: 'column', gap: 4 }}
     >
       <PageHeader title={t('home.heading')} description={t('home.intro')} />
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' },
-          gap: 2,
-        }}
-      >
-        {START_CARDS.map((card) => (
-          <StartCardTile key={card.key} card={card} />
-        ))}
+      {/* The grid's containment context (the layout design's component-level
+          response: the wrapper declares `container-type: inline-size`, the
+          grid's tracks query it). A wrapper is needed because a container
+          query resolves against an ancestor, never the element that owns the
+          rule. */}
+      <Box sx={{ containerType: 'inline-size' }}>
+        <Box
+          sx={{
+            display: 'grid',
+            // Container-keyed tracks, the FormLayout/DataTable recipe: one
+            // column at the grid's own narrow end (the `@` shorthand's 0px
+            // baseline), two equal tracks from the container's `sm` (600px)
+            // up. The query resolves against the wrapper above, so the grid
+            // collapses in a narrow panel even on a wide viewport.
+            gridTemplateColumns: { '@': '1fr', '@sm': 'repeat(2, 1fr)' },
+            gap: 2,
+          }}
+        >
+          {START_CARDS.map((card) => (
+            <StartCardTile key={card.key} card={card} />
+          ))}
+        </Box>
       </Box>
     </Box>
   )

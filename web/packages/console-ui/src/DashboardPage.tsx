@@ -71,7 +71,12 @@ function KpiCard({ label, value }: { readonly label: string; readonly value: Rea
   )
 }
 
-/** The KPI row: the list of cards, wrapping on a narrow viewport. */
+/**
+ * The KPI row: the list of cards, wrapping when the row itself runs out of
+ * width. The wrap is intrinsic -- each card's `flex-basis` is a fixed
+ * length and flex lines break against the row's own available width -- so
+ * the row follows its container without a breakpoint or a container query.
+ */
 function KpiRow({ children }: { readonly children: ReactNode }) {
   return (
     <Box
