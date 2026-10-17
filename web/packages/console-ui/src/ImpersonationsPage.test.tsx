@@ -685,6 +685,89 @@ describe('ImpersonationsPage', () => {
     expect(posts[0]).toEqual({ account: 'acc-9', tenant: 'acme' })
   })
 
+  // --- The refusal of an impersonation-restricted write ------------------
+
+  it('renders the impersonation-restricted refusal without naming one cause', async () => {
+    // The code answers several refusals -- the common one is a target that
+    // is not a member of the tenant -- so the text states the requirements
+    // side by side instead of naming the rarest cause.
+    const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
+      const method = options?.method ?? 'GET'
+      if (path === '/auth/impersonation' && method === 'GET') {
+        return Promise.reject({ status: 404, code: 'client.http.404' })
+      }
+      if (path === '/auth/impersonation' && method === 'POST') {
+        return Promise.reject({
+          status: 403,
+          code: 'authn.impersonation_restricted',
+          message: 'restricted',
+          auth: true,
+        })
+      }
+      return Promise.resolve(undefined as T)
+    }
+    bindRequestFn(fn)
+    const user = userEvent.setup()
+    renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
+
+    await screen.findByText('当前未冒充任何账户。')
+    await pickTenant(user)
+    await user.type(screen.getByLabelText('目标账户'), 'acc-9')
+    await user.click(screen.getByRole('button', { name: '发起冒充' }))
+
+    const alert = await screen.findByRole('alert')
+    const rendered = alert.textContent ?? ''
+    // Every requirement is named as a peer; none is picked out as the
+    // cause, and the "during an impersonation" reading of the old text is
+    // gone in both languages.
+    expect(rendered).toContain('成员')
+    expect(rendered).toContain('已启用')
+    expect(rendered).toContain('未受保护')
+    expect(rendered).toContain('没有进行中的冒充')
+    expect(rendered).not.toContain('模拟登录期间')
+    expect(rendered).not.toContain('during an impersonation')
+    expect(rendered).not.toContain('while impersonating')
+  })
+
+  it('states the same requirements in the English refusal', async () => {
+    const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
+      const method = options?.method ?? 'GET'
+      if (path === '/auth/impersonation' && method === 'GET') {
+        return Promise.reject({ status: 404, code: 'client.http.404' })
+      }
+      if (path === '/auth/impersonation' && method === 'POST') {
+        return Promise.reject({
+          status: 403,
+          code: 'authn.impersonation_restricted',
+          message: 'restricted',
+          auth: true,
+        })
+      }
+      return Promise.resolve(undefined as T)
+    }
+    bindRequestFn(fn)
+    const user = userEvent.setup()
+    renderWithProviders(<ImpersonationsPage />, {
+      language: 'en-US',
+      operations: withPage(),
+    })
+
+    await screen.findByText('You are not impersonating any account.')
+    await user.click(screen.getByLabelText('Tenant'))
+    await user.click(await screen.findByRole('option', { name: 'Acme' }))
+    await user.type(screen.getByLabelText('Target account'), 'acc-9')
+    await user.click(screen.getByRole('button', { name: 'Start impersonation' }))
+
+    const alert = await screen.findByRole('alert')
+    const rendered = alert.textContent ?? ''
+    expect(rendered).toContain('member account')
+    expect(rendered).toContain('enabled')
+    expect(rendered).toContain('unprotected')
+    expect(rendered).toContain('no impersonation in progress')
+    expect(rendered).not.toContain('during an impersonation')
+    expect(rendered).not.toContain('while impersonating')
+  })
+
   it('renders an unseasoned-factor refusal in the current scope without a step-up dialog', async () => {
     // The 403 is not the step-up's 401: no re-authentication clears it, so the
     // attempt settles as an ordinary write failure in the section's own

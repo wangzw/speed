@@ -10,7 +10,7 @@
       "unsupported_region": "That region is not supported for this operation.",
       "conflict": "That change conflicts with the account's current state.",
       "forbidden": "You do not have permission to do that.",
-      "impersonation_restricted": "This is not allowed while impersonating.",
+      "impersonation_restricted": "This operation requires the target to be an enabled, unprotected member account of the tenant, and the current session to have no impersonation in progress.",
       "factor_not_seasoned": "This requires a non-SMS verification method (an authenticator app or a passkey) that has been active for the required period. A newly added method must wait first.",
       "login_failed": "The verification did not pass. The email, phone, password or code is incorrect.",
       "flow_invalid": "This verification attempt is no longer valid. Start again.",

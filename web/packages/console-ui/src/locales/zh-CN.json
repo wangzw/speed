@@ -10,7 +10,7 @@
       "unsupported_region": "此操作不支持该地区。",
       "conflict": "该改动与账户的当前状态冲突。",
       "forbidden": "你没有执行此操作的权限。",
-      "impersonation_restricted": "模拟登录期间不允许此操作。",
+      "impersonation_restricted": "此操作要求目标账户是该租户中已启用、未受保护的成员，且当前会话没有进行中的冒充。",
       "factor_not_seasoned": "此操作需要一个已启用满规定时长的非短信验证方式（认证器应用或通行密钥）。刚添加的验证方式需要先等待一段时间。",
       "login_failed": "验证未通过，邮箱、手机号、密码或验证码不正确。",
       "flow_invalid": "验证流程已失效，请重新开始。",
