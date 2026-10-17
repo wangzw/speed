@@ -23,10 +23,10 @@
  * between them -- so they drop straight into the table.
  */
 
-import { consoleRoutes } from '@speed/console-ui'
-import type { ConsoleRouteTable } from '@speed/console-ui'
+import type { FeatureName } from '@speed/api-sdk/features'
 import { notificationRoutes } from '@speed/notification-ui'
-import type { RouteTable } from '@speed/route-kit'
+import type { RouteDeclaration, RouteTable } from '@speed/route-kit'
+import { consoleShellRoutes } from './console-routes.js'
 import { DemoNavLabel } from './nav-label.js'
 import {
   AccountBindingCallbackPage,
@@ -39,7 +39,6 @@ import { ObjectStoreHostPage } from './pages/objects-page.js'
 import {
   ACCOUNT_CALLBACK_PATH,
   ACCOUNT_PATH,
-  CONSOLE_PREFIX,
   INVITATION_PREFIX,
   OBJECTS_PATH,
 } from './paths.js'
@@ -54,6 +53,31 @@ export {
   NOTIFICATIONS_PATH,
   OBJECTS_PATH,
 } from './paths.js'
+// The console area's prefixed declarations and the prefix test live in
+// src/console-routes.ts, shared with the start page (which must not import
+// this module back). Re-exported here so the table stays the single route
+// import site.
+export {
+  CONSOLE_LANDING_PATH,
+  consoleShellRoutes,
+  isConsolePath,
+} from './console-routes.js'
+
+/**
+ * The invitation landing's declaration path. The app renders its page outside
+ * both shells, so the shell switch identifies the declaration by this path
+ * rather than pre-empting every path that merely looks like one.
+ */
+export const INVITATION_ROUTE_PATH = `${INVITATION_PREFIX}/:token`
+
+/**
+ * The declaration shape this host writes: route-kit's own plus a `requires`
+ * narrowed to the generated `FeatureName`. The `satisfies` on each table below
+ * makes a misspelled feature name a compile error, not a test-time finding.
+ */
+type HostRouteDeclaration = RouteDeclaration & {
+  readonly requires?: readonly FeatureName[]
+}
 
 /** The route a social or enterprise provider's round trip lands on. The
  * app renders its page outside the tenant shell (src/app.tsx).
@@ -63,31 +87,6 @@ export {
  * that endpoint -- an anonymous navigation gets its 401 -- instead of being
  * served the entry document. */
 export const AUTH_CALLBACK_PATH = '/sign-in/callback'
-
-/**
- * Whether a declared path belongs to the console area. The console's pages are
- * all labelled, so a URL under the prefix selects one of them and the app can
- * tell the console area from the tenant area by the selected entry alone.
- */
-export function isConsolePath(path: string): boolean {
-  return path === CONSOLE_PREFIX || path.startsWith(`${CONSOLE_PREFIX}/`)
-}
-
-/**
- * The console's declarations mapped onto their prefixed URLs. The
- * dashboard declares itself at the console root (path '/'), so it mounts
- * at the prefix itself; every other page keeps its path below the prefix.
- */
-export const consoleShellRoutes: ConsoleRouteTable = consoleRoutes.map(
-  (route) => ({
-    ...route,
-    path: route.path === '/' ? CONSOLE_PREFIX : `${CONSOLE_PREFIX}${route.path}`,
-  }),
-)
-
-/** The path the console root serves: the dashboard. */
-export const CONSOLE_LANDING_PATH =
-  consoleShellRoutes[0]?.path ?? CONSOLE_PREFIX
 
 /** The business slot: the skeleton's placeholder page, its account page,
  * and the notification center (@speed/notification-ui's declaration, whose
@@ -107,6 +106,10 @@ export const businessRoutes: RouteTable = [
     path: OBJECTS_PATH,
     view: () => <ObjectStoreHostPage />,
     label: <DemoNavLabel labelKey="nav.objects" />,
+    // The object page's reads all land on the objectstore capability's
+    // routes: a deployment without objectstore.metadata does not serve the
+    // feature, so the page is a 404 and the navigation drops it.
+    requires: ['objectstore.objects'],
   },
   // The notification surface: the same declarative seam as the console's
   // pages -- notification-ui exports a structurally route-kit declaration,
@@ -118,7 +121,7 @@ export const businessRoutes: RouteTable = [
     path: ACCOUNT_CALLBACK_PATH,
     view: () => <AccountBindingCallbackPage />,
   },
-]
+] satisfies readonly HostRouteDeclaration[]
 
 /**
  * The auth callback route: where a redirect or enterprise provider's round
@@ -131,7 +134,7 @@ export const authCallbackRoutes: RouteTable = [
     path: AUTH_CALLBACK_PATH,
     view: () => <AuthCallbackPage />,
   },
-]
+] satisfies readonly HostRouteDeclaration[]
 
 /**
  * The invite-acceptance route: the public landing an invitation link points
@@ -139,15 +142,20 @@ export const authCallbackRoutes: RouteTable = [
  * and the app renders its page outside both shells (src/app.tsx), because an
  * invitee arrives before any session exists. It is inert until an
  * administrator issues an invitation.
+ *
+ * The declaration is gated on the invite module's feature: a deployment
+ * without authn.invite serves no invitation operations, so the landing is a
+ * 404 like any unregistered path (and the shell switch stops pre-empting it).
  */
 export const invitationRoutes: RouteTable = [
   {
-    path: `${INVITATION_PREFIX}/:token`,
+    path: INVITATION_ROUTE_PATH,
     view: (context) => (
       <AcceptInvitationPage token={context.params.token ?? ''} />
     ),
+    requires: ['authn.invitations'],
   },
-]
+] satisfies readonly HostRouteDeclaration[]
 
 /** The product's pages: the business slot, the callback and invitation
  * routes, and the mounted console area (the dashboard at the prefix

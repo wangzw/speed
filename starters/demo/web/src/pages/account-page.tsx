@@ -12,15 +12,19 @@
  * repeats a spinner or an error block; the catalog's states are the
  * sections' own.
  *
- * The phone write (account-ui's PhoneSection) is deliberately not mounted.
- * Its two routes are registered only when the deployment delivers an SMS
- * code provider (an assembly that names authn.sms), and this skeleton's
- * baseline carries no SMS family -- the family needs a carrier's
- * credentials, so it is a product's to add (see AGENTS.md and the
- * server's baseline criterion). A section whose submit would be answered
- * 404 is a write the page cannot keep, so the skeleton offers none; a
- * product that adds the SMS family puts PhoneSection here beside the other
- * writes.
+ * The phone write (account-ui's PhoneSection) is mounted only when the
+ * deployment serves the `authn.phone` feature: its two routes are registered
+ * only when the deployment delivers an SMS code provider (an assembly that
+ * names authn.sms), and this skeleton's baseline carries no SMS family -- the
+ * family needs a carrier's credentials, so it is a product's to add (see
+ * AGENTS.md and the server's baseline criterion). A section whose submit would
+ * be answered 404 is a write the page cannot keep, so a deployment without the
+ * feature offers none; a product that adds the SMS family gets the section
+ * here beside the other writes.
+ *
+ * The multifactor section is mounted only when `authn.mfa` is served, and the
+ * identifier section learns from `authn.identifiers.email` whether its add
+ * face may offer an email (a deployment without it records usernames only).
  *
  * The social-bindings section takes the assembled session (it starts the
  * `link` flow the callback completes) and the channels the host offers.
@@ -35,7 +39,9 @@
  * model completes the provider hand-off server-side and the handler reads
  * the `link` flow back here, then returns the viewer to the account page.
  * The client carries only the access token from step-up-gated writes; the
- * site's own signal handling stays inside account-ui.
+ * site's own signal handling stays inside account-ui. Its absent slot is the
+ * app's 404: a deployment that configures no redirect method has no binding
+ * round trip at all.
  */
 
 import type { ReactElement } from 'react'
@@ -45,22 +51,30 @@ import {
   IdentifiersSection,
   MfaSection,
   PasswordSection,
+  PhoneSection,
   PreferencesSection,
   ProfileSection,
   SessionsSection,
   SocialBindingsSection,
 } from '@speed/account-ui'
+import { useFeature } from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
 import { useNavigate } from '@speed/route-kit'
 import { PageHeader } from '@speed/ui-kit'
 import { useAppServices } from '../app-services.js'
-import { ACCOUNT_PATH } from '../paths.js'
+import { ACCOUNT_CALLBACK_PATH, ACCOUNT_PATH } from '../paths.js'
+import { NotFoundPage } from './not-found-page.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 
 /** The account-management page: the account-ui sections under a page header. */
 export function AccountSettingsPage(): ReactElement {
   const { session } = useAppServices()
   const { t } = useTranslation(DEMO_NAMESPACE)
+  // Only the host reads the feature document; each section is mounted (or
+  // told what it may offer) from the names this deployment serves.
+  const phoneServed = useFeature('authn.phone')
+  const mfaServed = useFeature('authn.mfa')
+  const emailIdentifierServed = useFeature('authn.identifiers.email')
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <PageHeader
@@ -69,11 +83,15 @@ export function AccountSettingsPage(): ReactElement {
       />
       <ProfileSection session={session} />
       <PasswordSection session={session} />
-      <IdentifiersSection session={session} />
+      {phoneServed ? <PhoneSection session={session} /> : null}
+      <IdentifiersSection
+        session={session}
+        emailAvailable={emailIdentifierServed}
+      />
       <PreferencesSection />
       <SessionsSection />
       <SocialBindingsSection session={session} providers={[]} />
-      <MfaSection session={session} />
+      {mfaServed ? <MfaSection session={session} /> : null}
     </Box>
   )
 }
@@ -85,7 +103,9 @@ export function AccountSettingsPage(): ReactElement {
  * exists so a product that configures one has the completion point wired.
  * The page carries its own PageHeader (the one h1 for the route), because
  * account-ui's handler renders none and the route still needs a
- * page-level heading.
+ * page-level heading. A deployment with no redirect method has no binding
+ * round trip: the handler renders the app's 404 instead of a
+ * flow-not-found banner.
  */
 export function AccountBindingCallbackPage(): ReactElement {
   const { session } = useAppServices()
@@ -97,6 +117,7 @@ export function AccountBindingCallbackPage(): ReactElement {
       <BindingCallbackHandler
         session={session}
         onBound={() => navigate(ACCOUNT_PATH)}
+        absent={<NotFoundPage path={ACCOUNT_CALLBACK_PATH} />}
       />
     </Box>
   )

@@ -13,13 +13,20 @@
  * redirect or enterprise method (`src/routes.tsx`).
  */
 
-import type { ReactElement } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import { SocialCallbackHandler } from '@speed/auth-ui'
 import { useNavigate } from '@speed/route-kit'
 import { useAppServices } from '../app-services.js'
 
-export function AuthCallbackPage(): ReactElement {
+export function AuthCallbackPage({
+  absent,
+}: {
+  /** Rendered when the deployment offers no redirect or enterprise method,
+   * so nothing ever returns to this route (the host passes the tenant
+   * frame's 404). */
+  readonly absent?: ReactNode
+} = {}): ReactElement {
   const { session } = useAppServices()
   const navigate = useNavigate()
   return (
@@ -35,7 +42,11 @@ export function AuthCallbackPage(): ReactElement {
       }}
     >
       <Box sx={{ width: '100%', maxWidth: 400 }}>
-        <SocialCallbackHandler session={session} onSignedIn={() => navigate('/')} />
+        <SocialCallbackHandler
+          session={session}
+          onSignedIn={() => navigate('/')}
+          absent={absent}
+        />
       </Box>
     </Box>
   )

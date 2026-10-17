@@ -7,38 +7,47 @@
  * useNavItems derives the navigation. The app adds the shell choice -- two
  * frames over one table:
  *
- *  - The tenant area renders ProductShell, the three-branch view machine, with
- *    the nav derived from every non-console entry and the host's console entry
- *    -- offered only to platform staff -- in the header's action slot, plus the
- *    auth-ui sign-in surface and sign-out action in the host slots. The shell
- *    renders the nav and content only while the session is authenticated; a
- *    fresh visitor meets the sign-in surface, and one whose session ends meets
- *    the ended screen. The routed page sits in a padded content region so it
- *    does not butt against the chrome.
+ *  - The tenant area renders `TenantFrame` (ProductShell, the three-branch view
+ *    machine, with the nav derived from every non-console entry and the host's
+ *    console entry -- offered only to platform staff -- in the header's action
+ *    slot, plus the auth-ui sign-in surface and sign-out action in the host
+ *    slots). The shell renders the nav and content only while the session is
+ *    authenticated; a fresh visitor meets the sign-in surface, and one whose
+ *    session ends meets the ended screen. The routed page sits in a padded
+ *    content region so it does not butt against the chrome.
  *
  *  - The console area renders @speed/console-ui's frame instead, with no tenant
- *    frame around it. The area is chosen by the selected navigation entry: the
- *    console's pages are labelled under CONSOLE_PREFIX, so a URL in that path
- *    space selects one and the app's two areas never overlap. It carries the
- *    same session gate the tenant shell does (the console frame is not
- *    ProductShell), an area gate over the platform permission set (a viewer
- *    who holds no platform permission never enters the shell), and a
- *    host-composed route guard over each page's permission code.
+ *    frame around it. The area is chosen by the path prefix alone: a URL under
+ *    CONSOLE_PREFIX enters the console area whatever the feature document says,
+ *    so a deep link or refresh renders the console's own pending/failed views
+ *    rather than the tenant frame. It carries the same session gate the tenant
+ *    shell does (the console frame is not ProductShell), a feature-state gate
+ *    (pending and failed render frameless), an area gate over the platform
+ *    permission set (a viewer who holds no platform permission never enters the
+ *    shell), and a host-composed route guard over each page's permission code.
+ *    When no console declaration is left in force the URL falls through to the
+ *    tenant area, where it is a 404 like any other unregistered path.
  *
  * A URL no declaration matches renders the fallback page inside the tenant area.
  * The auth callback route (a provider's round trip) renders outside both frames,
  * with no session gate: it lands before a session exists and finishes the flow
- * itself.
+ * itself. The invitation landing, too, renders outside both frames -- but only
+ * when the route layer matched its (feature-gated) declaration; otherwise it
+ * falls through to the tenant area like any other gated path.
  */
 
 import { useCallback, useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Link from '@mui/material/Link'
 import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
-import { TenantProvider, useAuthState, usePermission } from '@speed/auth-core'
-import { featurePresence, useFeatureState } from '@speed/auth-core'
+import {
+  TenantProvider,
+  useAuthState,
+  useFeature,
+  useFeatureState,
+} from '@speed/auth-core'
+import { featurePresence } from '@speed/auth-core'
 import type { AuthSnapshot } from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
 import { RouteGuard } from '@speed/layout-kit'
@@ -47,11 +56,13 @@ import {
   NotificationBell,
   NotificationStreamProvider,
 } from '@speed/notification-ui'
+import type { ConsoleRoute } from '@speed/console-ui'
 import { ProductShell } from '@speed/product-shell'
 import {
   presentDeclarations,
   RouteProvider,
   RouteView,
+  useMatch,
   useNavigate,
   useNavItems,
 } from '@speed/route-kit'
@@ -71,17 +82,23 @@ import {
   UserMenu,
 } from './chrome.js'
 import { ConsoleArea } from './console/console-area.js'
+import {
+  consoleShellRoutes,
+  firstConsoleTarget,
+  isConsolePath,
+} from './console-routes.js'
 import { DemoNavLabel } from './nav-label.js'
 import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
+import {
+  NotFoundPage,
+  TENANT_HOME_PATH,
+} from './pages/not-found-page.js'
 import { SignInView } from './pages/sign-in-view.js'
-import { matchInvitationToken } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
 import {
   AUTH_CALLBACK_PATH,
-  CONSOLE_PREFIX,
-  consoleShellRoutes,
-  isConsolePath,
+  invitationRoutes,
   NOTIFICATIONS_PATH,
   routes,
 } from './routes.js'
@@ -90,13 +107,9 @@ import {
  * auth-core names 'system' the tenant-independent platform-staff set. */
 const CONSOLE_PERMISSION_DOMAIN = 'system'
 
-/** The tenant area's home path: the shell the console area sends a viewer it
- * turns away, so a denied URL leaves the console's path space. */
-const TENANT_HOME_PATH = '/'
-
 /** The app view root: routing installed once, over the shell switch. The
- * route table is gated (the notification and console declarations carry
- * `requires`), so the host hands the route layer its feature-presence
+ * route table is gated (the notification, object and console declarations
+ * carry `requires`), so the host hands the route layer its feature-presence
  * answer -- derived from the session's feature state -- plus the views a
  * gated path renders while that answer is pending or failed. */
 export function DemoApp(): ReactElement {
@@ -120,15 +133,135 @@ function AppFrame({
 }: {
   readonly presence: RoutePresence
 }): ReactElement {
-  const items = useNavItems()
+  const { pathname } = useLocation()
+  // The declaration the current URL matches exactly on the narrowed surface:
+  // used to tell a live invitation landing from a path that merely looks like
+  // one. Absent, pending or failed, no declaration matches and the path falls
+  // through to the tenant area's own matching.
+  const match = useMatch()
+  // The desktop sidebar's collapse state, host-held and shared by both areas:
+  // each frame renders the toggle (the collapse props are supplied) and reports
+  // each flip here, so the collapse carries across the tenant/console switch.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+
+  // The invitation landing renders outside both shells: an invitee arrives
+  // before any session exists. Only a matched (present, ready) declaration
+  // reaches it; a deployment that does not serve authn.invitations falls
+  // through to the tenant area, where the gated declaration is a 404.
+  if (match !== undefined && match.declaration === invitationRoutes[0]) {
+    return <AcceptInvitationPage token={match.context.params.token ?? ''} />
+  }
+
+  // The auth callback route renders outside both shells: a provider's round
+  // trip lands here before a session exists, and the callback handler
+  // finishes the flow itself. The handler's absent slot -- the deployment
+  // offers no redirect or enterprise method -- is the tenant frame's 404.
+  if (pathname === AUTH_CALLBACK_PATH) {
+    return (
+      <AuthCallbackPage
+        absent={
+          <TenantFrame
+            presence={presence}
+            sidebarCollapsed={sidebarCollapsed}
+            onSidebarCollapsedChange={setSidebarCollapsed}
+          >
+            <NotFoundPage path={pathname} />
+          </TenantFrame>
+        }
+      />
+    )
+  }
+
+  if (isConsolePath(pathname)) {
+    // The console declarations the presence predicate left in force. Pending
+    // or failed leaves the set empty (fail-closed); a ready document may still
+    // leave nothing when no console page's feature is served.
+    const consoleRoutes = presentDeclarations(consoleShellRoutes, presence)
+    // The console shell's own synchronous feature answer for the pages'
+    // in-page controls.
+    const hasFeature =
+      presence.state === 'ready' ? presence.has : (): boolean => false
+    return (
+      <SessionGate>
+        <ConsoleFeatureGate presence={presence}>
+          <ConsoleAreaGate>
+            {consoleRoutes.length === 0 ? (
+              // No console page is served: the URL is the tenant area's,
+              // where the gated declarations render the same 404 an
+              // unregistered path does.
+              <TenantFrame
+                presence={presence}
+                sidebarCollapsed={sidebarCollapsed}
+                onSidebarCollapsedChange={setSidebarCollapsed}
+              >
+                <RouteView />
+              </TenantFrame>
+            ) : (
+              <ConsoleArea
+                routes={consoleRoutes}
+                hasFeature={hasFeature}
+                sidebarCollapsed={sidebarCollapsed}
+                onSidebarCollapsedChange={setSidebarCollapsed}
+              >
+                <ConsoleRouteGuard>
+                  <RouteView />
+                </ConsoleRouteGuard>
+              </ConsoleArea>
+            )}
+          </ConsoleAreaGate>
+        </ConsoleFeatureGate>
+      </SessionGate>
+    )
+  }
+
+  return (
+    <TenantFrame
+      presence={presence}
+      sidebarCollapsed={sidebarCollapsed}
+      onSidebarCollapsedChange={setSidebarCollapsed}
+    >
+      <RouteView />
+    </TenantFrame>
+  )
+}
+
+/**
+ * The tenant area's frame: the tenant context, the live notification
+ * subscription, and ProductShell with the host's chrome in each slot.
+ *
+ * The feature document decides which of those surfaces exist: the roster read
+ * runs only when tenant.admin is served, the bell only when notification.inbox
+ * is, and the live subscription opens only when notification.stream is (beside
+ * the session fact). The frame is also the wrapper the auth callback's absent
+ * view renders in, so an absent callback and an unregistered path look the
+ * same, inside the same shell.
+ */
+function TenantFrame({
+  presence,
+  sidebarCollapsed,
+  onSidebarCollapsedChange,
+  children,
+}: {
+  readonly presence: RoutePresence
+  readonly sidebarCollapsed: boolean
+  readonly onSidebarCollapsedChange: (collapsed: boolean) => void
+  readonly children: ReactNode
+}): ReactElement {
   const navigate = useNavigate()
   // The assembled client: its event-stream opener feeds the notification
   // surface's live subscription below.
   const { api } = useAppServices()
-  // The notification stream is authenticated; hold it open only once the
-  // session is, so an anonymous viewer on the sign-in surface never opens
-  // (and reconnects) a connection that can only 401.
+  // The notification surfaces and the roster are feature-gated; the hooks fail
+  // closed, so a pending or failed document opens and reads nothing.
+  const inboxServed = useFeature('notification.inbox')
+  const streamServed = useFeature('notification.stream')
+  const rosterServed = useFeature('tenant.admin')
   const authenticated = useAuthState().state === 'authenticated'
+  // Whether the feature document is settled at all. The roster read treats the
+  // three states differently: `pending`/`failed` keep the current tenant
+  // unknown (tenant-scoped queries stay disabled), `ready` without tenant.admin
+  // falls back to the placeholder, `ready` with it reads the roster.
+  const featuresReady = presence.state === 'ready'
   // The current tenant is a host fact (the server resolves it per request
   // from the request's tenant header). chrome.tsx holds the two values that
   // come off it -- the switcher's identity and the alias the request surface
@@ -137,26 +270,36 @@ function AppFrame({
   // chrome shows agree. It starts empty and is settled once the roster below
   // is read: a tenant-scoped request fired before then would announce the
   // placeholder's alias, which a rename has left behind, and be refused 404.
-  const [tenantId, setTenantIdState] = useState<string | null>(getCurrentTenantId())
+  const [tenantId, setTenantIdState] = useState<string | null>(
+    getCurrentTenantId(),
+  )
   const setTenantId = useCallback((id: string | null): void => {
     setCurrentTenantId(id)
     setTenantIdState(id)
   }, [])
-  // Read the roster once a viewer is signed in, so the value announced as
-  // X-Tenant is each tenant's CURRENT alias, not a name the placeholder fixed
-  // and a rename has since moved. The read is the app's own generated
-  // operation on the platform's management surface; it needs tenant.read in
-  // the platform domain, which the demo's operator holds but an ordinary member
-  // does not. A viewer answered 403 keeps the placeholder's aliases, which
-  // answer only while the roster's alias still equals them: this read is the
-  // only route to a renamed alias and no member-facing endpoint carries one, so
-  // after a rename such a viewer is refused 404 on every tenant-scoped call.
-  // The demo's own seed signs in the platform administrator alone, so the
-  // seeded deployment always answers. The tenant-scoped surfaces stay disabled
-  // until this settles, because their queries gate on the tenant being known
-  // (TenantProvider below).
+  // Settle the current tenant from the feature state and the roster. The read
+  // is the app's own generated operation on the platform's management surface;
+  // it needs tenant.read in the platform domain, which the demo's operator
+  // holds but an ordinary member does not. A viewer answered 403 keeps the
+  // placeholder's aliases, which answer only while the roster's alias still
+  // equals them: this read is the only route to a renamed alias and no
+  // member-facing endpoint carries one, so after a rename such a viewer is
+  // refused 404 on every tenant-scoped call. The demo's own seed signs in the
+  // platform administrator alone, so the seeded deployment always answers. The
+  // tenant-scoped surfaces stay disabled until this settles, because their
+  // queries gate on the tenant being known (TenantProvider below).
   useEffect(() => {
     if (!authenticated) {
+      return
+    }
+    if (!featuresReady) {
+      // A pending or failed document never stands in for "tenant.admin
+      // absent": the current tenant stays unknown.
+      setTenantId(null)
+      return
+    }
+    if (!rosterServed) {
+      setTenantId(DEFAULT_TENANT_ID)
       return
     }
     let cancelled = false
@@ -186,56 +329,9 @@ function AppFrame({
     return () => {
       cancelled = true
     }
-  }, [authenticated, setTenantId])
-  // The desktop sidebar's collapse state, host-held and shared by both areas:
-  // each frame renders the toggle (the collapse props are supplied) and reports
-  // each flip here, so the collapse carries across the tenant/console switch.
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const { pathname } = useLocation()
-
-  // The auth callback route renders outside both shells: a provider's round
-  // trip lands here before a session exists, and the callback handler
-  // finishes the flow itself.
-  if (pathname === AUTH_CALLBACK_PATH) {
-    return <AuthCallbackPage />
-  }
-
-  // The invitation landing renders outside both shells too: an invitee
-  // arrives before any session exists, and the accept screen gates itself on
-  // the host's sign-in surface.
-  const invitationToken = matchInvitationToken(pathname)
-  if (invitationToken !== null) {
-    return <AcceptInvitationPage token={invitationToken} />
-  }
-
-  const consoleSelected = items.some(
-    (item) => item.selected && isConsolePath(item.id),
-  )
-  if (consoleSelected) {
-    // The console shell does not filter its navigation by `requires`: the
-    // host hands it the declarations the presence predicate left in force,
-    // and its own synchronous feature answer for the pages' in-page
-    // controls. A pending or failed predicate leaves every gated page out
-    // (fail-closed), which is also what the route layer renders.
-    const hasFeature =
-      presence.state === 'ready' ? presence.has : (): boolean => false
-    return (
-      <SessionGate>
-        <ConsoleAreaGate>
-          <ConsoleArea
-            routes={presentDeclarations(consoleShellRoutes, presence)}
-            hasFeature={hasFeature}
-            sidebarCollapsed={sidebarCollapsed}
-            onSidebarCollapsedChange={setSidebarCollapsed}
-          >
-            <ConsoleRouteGuard>
-              <RouteView />
-            </ConsoleRouteGuard>
-          </ConsoleArea>
-        </ConsoleAreaGate>
-      </SessionGate>
-    )
-  }
+  }, [authenticated, featuresReady, rosterServed, setTenantId])
+  const items = useNavItems()
+  const consoleRoutes = presentDeclarations(consoleShellRoutes, presence)
 
   // The tenant navigation is every labelled entry outside the console area
   // (the console's pages are filtered out above, so nothing else points into
@@ -263,10 +359,13 @@ function AppFrame({
           event-stream seam (the assembled client's openEventStream) for
           the acting tenant and re-reads the unread count and message list
           on every pushed frame. Mounted here, inside the tenant area,
-          because the notification endpoints are tenant-scoped. */}
+          because the notification endpoints are tenant-scoped. It opens only
+          once the session is authenticated AND the process serves
+          notification.stream: an absent stream would otherwise reconnect
+          through its backoff against an unmounted endpoint. */}
       <NotificationStreamProvider
         openStream={api.openEventStream}
-        enabled={authenticated}
+        enabled={authenticated && streamServed}
       >
         <ProductShell
           navItems={navItems}
@@ -274,18 +373,24 @@ function AppFrame({
           // The notification bell rides the header actions slot beside the
           // shared chrome; it opens the notification surface. It lives only
           // in the tenant area (the console resolves no tenant, so its bell
-          // would have nothing to read). The console entry sits at the same
-          // end of the bar, nearest the account controls, and shows only to
-          // platform staff (ConsoleEntry gates itself).
+          // would have nothing to read) and only when notification.inbox is
+          // served: a deployment without it has no destination for the bell.
+          // The console entry sits at the same end of the bar, nearest the
+          // account controls, and shows only to platform staff (ConsoleEntry
+          // gates itself).
           headerActions={
             <>
-              <NotificationBell onClick={() => navigate(NOTIFICATIONS_PATH)} />
+              {inboxServed ? (
+                <NotificationBell
+                  onClick={() => navigate(NOTIFICATIONS_PATH)}
+                />
+              ) : null}
               <HeaderActions />
-              <ConsoleEntry />
+              <ConsoleEntry routes={consoleRoutes} />
             </>
           }
           sidebarCollapsed={sidebarCollapsed}
-          onSidebarCollapsedChange={setSidebarCollapsed}
+          onSidebarCollapsedChange={onSidebarCollapsedChange}
           // The tenant switcher sits in the userMenu slot (the design's
           // placement for it) ahead of the account menu.
           userMenu={
@@ -296,9 +401,7 @@ function AppFrame({
           }
           signIn={<SignInView />}
         >
-          <Box sx={{ p: 3 }}>
-            <RouteView />
-          </Box>
+          <Box sx={{ p: 3 }}>{children}</Box>
         </ProductShell>
       </NotificationStreamProvider>
     </TenantProvider>
@@ -306,37 +409,42 @@ function AppFrame({
 }
 
 /**
- * The header's console entry: a text button into the platform console, shown
- * only to a principal that holds a platform permission. Every console page's
- * permission code resolves in the platform domain -- auth-core names 'system'
- * that set -- so the entry keys on one of those codes rather than any page's
- * own, and the seed's platform administrator (which holds every permission the
- * process declares) is told apart from an ordinary member by any one of them.
+ * The header's console entry: a link into the first console page the principal
+ * may open, shown only to a principal that holds a platform permission and
+ * only while at least one console declaration is in force.
  *
- * The platform permission set is not known synchronously: the host attaches it
- * (setPermissionSet) once the caller's platform permissions have been read, and
- * usePermission answers false until then -- it fails closed, never throwing.
- * The entry is therefore hidden until the set lands and appears once the
- * principal is confirmed to hold the code, which is the safe direction: a
- * member never sees the entry for the moment before the set arrives.
+ * The target comes from firstConsoleTarget (src/console-routes.ts): the first
+ * labelled declaration, in table order, with no permission code or one the
+ * platform permission set holds. The set is not known synchronously -- the
+ * host attaches it once the caller's platform permissions have been read, and
+ * useAuthState reads null until then -- so the entry is hidden until the set
+ * lands, which is the safe direction: a member never sees the entry for the
+ * moment before the set arrives. The start page's console card shares this one
+ * derivation, so the two never disagree.
  *
  * It routes in place (the same seam every other entry uses), so entering the
  * console does not reload the page and sign the operator out, and it keeps its
  * href so a middle-click or a copied URL still reaches the console.
  */
-function ConsoleEntry(): ReactElement | null {
+function ConsoleEntry({
+  routes,
+}: {
+  /** The console declarations the presence predicate left in force. */
+  readonly routes: readonly ConsoleRoute[]
+}): ReactElement | null {
   const navigate = useNavigate()
-  const canEnterConsole = usePermission('system', 'tenant.read')
-  if (!canEnterConsole) {
+  const snapshot = useAuthState()
+  const target = firstConsoleTarget(routes, snapshot.permissionSets.system)
+  if (target === null) {
     return null
   }
   return (
     <Button
       color="inherit"
-      href={CONSOLE_PREFIX}
+      href={target}
       onClick={(event) => {
         event.preventDefault()
-        navigate(CONSOLE_PREFIX)
+        navigate(target)
       }}
     >
       <DemoNavLabel labelKey="nav.console" />
@@ -359,6 +467,30 @@ function SessionGate({
   const snapshot = useAuthState()
   if (snapshot.state !== 'authenticated') {
     return <SignInView />
+  }
+  return <>{children}</>
+}
+
+/**
+ * The console area's feature-state gate, frameless: while the document is
+ * pending (a retry is in flight) or failed, the console renders the same
+ * waiting/failure view the route layer would, with no shell around it. It runs
+ * before the permission gate: a failed read keeps the platform permission set
+ * unknown, and an operator whose read failed must see a retry, never a
+ * redirect that reads as "not staff".
+ */
+function ConsoleFeatureGate({
+  presence,
+  children,
+}: {
+  readonly presence: RoutePresence
+  readonly children: ReactNode
+}): ReactElement {
+  if (presence.state === 'pending') {
+    return <RoutePresencePending />
+  }
+  if (presence.state === 'failed') {
+    return <RoutePresenceFailed />
   }
   return <>{children}</>
 }
@@ -410,9 +542,9 @@ function ConsoleAreaGate({
  * The area tier's decision for the current session. The criterion is the
  * platform permission set, not any one page's code: the area is staff-only, so
  * holding a single platform permission is what tells staff from an ordinary
- * member. (The header entry keys on one representative code, tenant.read, to
- * decide whether to offer the way in; the two agree on the demo's principals,
- * which hold everything or nothing.) An unknown set is pending, never granted.
+ * member. (The header entry keys on the first page whose code is held; the two
+ * agree on the demo's principals, which hold everything or nothing.) An
+ * unknown set is pending, never granted.
  */
 function consoleAreaStatus(
   snapshot: AuthSnapshot,
@@ -544,47 +676,4 @@ function consoleGuardStatus(
     return 'pending'
   }
   return set.includes(permission) ? 'allowed' : 'denied'
-}
-
-/**
- * The fallback page for a URL no declaration matches. The address stays on
- * the page in a secondary line: it is what a user copies back to an operator
- * when reporting the dead link.
- */
-function NotFoundPage({ path }: { readonly path: string }): ReactElement {
-  const { t } = useTranslation(DEMO_NAMESPACE)
-  const navigate = useNavigate()
-  return (
-    <Box
-      component="section"
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-start',
-        gap: 2,
-      }}
-    >
-      <Typography component="h1" variant="h4">
-        {t('notFound.heading')}
-      </Typography>
-      <Typography variant="body1">{t('notFound.body')}</Typography>
-      <Link
-        href={TENANT_HOME_PATH}
-        underline="hover"
-        onClick={(event) => {
-          event.preventDefault()
-          navigate(TENANT_HOME_PATH)
-        }}
-      >
-        {t('notFound.home')}
-      </Link>
-      <Typography
-        variant="caption"
-        color="text.secondary"
-        sx={{ wordBreak: 'break-all' }}
-      >
-        {t('notFound.path', { path })}
-      </Typography>
-    </Box>
-  )
 }

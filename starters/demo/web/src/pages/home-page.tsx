@@ -8,14 +8,14 @@
  * console, the object store, the notification centre), each a real
  * destination into the app.
  *
- * A card carries an optional permission. A card without one is offered to
- * every signed-in viewer; a card with one is rendered only when the principal
- * holds it, so a capability that is not the member's to see is not announced
- * by its title either. The console is such a card: it is gated on the same
- * platform code the header entry is (src/app.tsx's ConsoleEntry), so the two
- * never disagree about who may reach the console. The gate fails closed: a
- * permission set the host has not attached yet reads as "not held", so a card
- * stays hidden until the principal is confirmed to hold its code.
+ * A card is offered only while its destination exists: the account card
+ * always, the object and notification cards when the route layer leaves their
+ * declarations in force (useHasRoute), and the console card only to platform
+ * staff while at least one console page is served -- pointing at the first such
+ * page the principal may open, the same derivation the header entry uses
+ * (src/console-routes.ts's firstConsoleTarget). The gates fail closed: a
+ * permission set or feature document the host has not settled reads as "not
+ * offered", so a card stays hidden until the fact it depends on is known.
  *
  * Each card is an anchor carrying its target path, so a middle click or a
  * copy opens the destination too; a plain click is caught and routed, so the
@@ -27,65 +27,57 @@ import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import Typography from '@mui/material/Typography'
-import { usePermission } from '@speed/auth-core'
-import type { AuthDomain } from '@speed/auth-core'
+import {
+  featurePresence,
+  useAuthState,
+  useFeatureState,
+} from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
-import { useNavigate } from '@speed/route-kit'
+import {
+  presentDeclarations,
+  useHasRoute,
+  useNavigate,
+} from '@speed/route-kit'
 import { PageHeader } from '@speed/ui-kit'
 import {
+  consoleShellRoutes,
+  firstConsoleTarget,
+} from '../console-routes.js'
+import {
   ACCOUNT_PATH,
-  CONSOLE_PREFIX,
   NOTIFICATIONS_PATH,
   OBJECTS_PATH,
 } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 
 /**
- * The domain and code a card is gated on. It is the same pair a route
- * declaration carries, checked through auth-core's usePermission -- a UX
- * affordance over the set the host attached, never a security boundary.
- */
-interface CardPermission {
-  /** The permission domain the code resolves in ('system' is the
-   * tenant-independent platform set). */
-  readonly domain: AuthDomain
-  /** The code the principal must hold to be offered the card. */
-  readonly permission: string
-}
-
-/**
  * One capability the start page offers: the demo-namespace key pair that
- * names it, the path it opens, and the platform code -- if any -- the
- * principal must hold to be offered it. The list is the skeleton's assembled
- * capabilities, each a route the app already serves.
+ * names it, the path it opens, and how its offer is decided -- always, by the
+ * route layer's presence answer for that path, or by the console's own
+ * permission-and-feature derivation.
  */
-interface StartCard {
-  /** The `home.cards.<key>` prefix its title and description resolve from. */
-  readonly key: 'account' | 'console' | 'objects' | 'notifications'
-  /** The route the card opens. */
-  readonly path: string
-  /**
-   * The platform code the principal must hold to be offered this card. A card
-   * with one is hidden until the principal is confirmed to hold it (the gate
-   * fails closed); a card without one is offered to every signed-in viewer.
-   */
-  readonly permission?: CardPermission
-}
+type StartCard =
+  | {
+      /** The `home.cards.<key>` prefix its title and description resolve from. */
+      readonly key: 'account' | 'objects' | 'notifications'
+      /** The route the card opens. */
+      readonly path: string
+      /**
+       * `route` cards follow their destination: they are offered exactly when
+       * the route layer leaves the declaration in force.
+       */
+      readonly gate: 'direct' | 'route'
+    }
+  | {
+      readonly key: 'console'
+      readonly gate: 'console'
+    }
 
 const START_CARDS: readonly StartCard[] = [
-  { key: 'account', path: ACCOUNT_PATH },
-  {
-    key: 'console',
-    path: CONSOLE_PREFIX,
-    // The platform-staff code the header's console entry gates on
-    // (src/app.tsx's ConsoleEntry): the console's pages resolve their codes in
-    // the platform domain, and any one of them tells platform staff apart from
-    // an ordinary member. Held to the same code the entry uses, so a member is
-    // offered neither the entry nor this card.
-    permission: { domain: 'system', permission: 'tenant.read' },
-  },
-  { key: 'objects', path: OBJECTS_PATH },
-  { key: 'notifications', path: NOTIFICATIONS_PATH },
+  { key: 'account', path: ACCOUNT_PATH, gate: 'direct' },
+  { key: 'console', gate: 'console' },
+  { key: 'objects', path: OBJECTS_PATH, gate: 'route' },
+  { key: 'notifications', path: NOTIFICATIONS_PATH, gate: 'route' },
 ]
 
 /** The app's starting page: the platform's capabilities as a card grid. */
@@ -127,47 +119,72 @@ export function HomePage(): ReactElement {
 }
 
 /**
- * One card in the grid. A card whose declaration names a permission is routed
- * through GatedStartCard, which runs the check; a card without one renders
- * directly. The split keeps usePermission out of this dispatcher and out of
- * the map above, where the rules of hooks forbid a conditional hook call.
+ * One card in the grid. The split keeps each gate's hooks out of this
+ * dispatcher and out of the map above, where the rules of hooks forbid a
+ * conditional hook call.
  */
 function StartCardTile({
   card,
 }: {
   readonly card: StartCard
 }): ReactElement | null {
-  if (card.permission === undefined) {
-    return <StartCardView card={card} />
+  if (card.gate === 'console') {
+    return <ConsoleStartCard />
   }
-  return <GatedStartCard card={card} permission={card.permission} />
+  if (card.gate === 'route') {
+    return <RouteStartCard card={card} />
+  }
+  return <StartCardView card={card} />
 }
 
 /**
- * A card whose declaration names a permission: it renders its card only once
- * usePermission confirms the principal holds the code. The check fails closed
- * -- false while the platform set is unknown (the host attaches it once the
- * caller's platform permissions have been read) and false when the code is not
- * held -- so the card stays hidden until the principal is confirmed to hold
- * it, the same direction the header's console entry takes: a member never sees
- * the card for the moment before the set arrives.
+ * A card that follows its destination: it renders only while the route
+ * layer leaves the declaration in force, so a deployment that does not serve
+ * the page's feature does not announce it by its title either.
  */
-function GatedStartCard({
+function RouteStartCard({
   card,
-  permission,
 }: {
-  readonly card: StartCard
-  readonly permission: CardPermission
+  readonly card: { readonly key: StartCard['key']; readonly path: string }
 }): ReactElement | null {
-  const allowed = usePermission(permission.domain, permission.permission)
-  if (!allowed) {
+  const offered = useHasRoute(card.path)
+  if (!offered) {
     return null
   }
   return <StartCardView card={card} />
 }
 
+/**
+ * The console card: offered only to a principal holding a platform permission,
+ * while at least one console declaration is in force, and pointing at the
+ * first console page the principal may open. It shares firstConsoleTarget with
+ * the header's console entry (src/app.tsx), so card and entry never disagree
+ * about where the console is or whether it is offered at all. While the
+ * feature document or the permission set is unsettled the card is hidden (both
+ * answers fail closed).
+ */
+function ConsoleStartCard(): ReactElement | null {
+  const presence = featurePresence(useFeatureState())
+  const platformPermissions = useAuthState().permissionSets.system
+  const target = firstConsoleTarget(
+    presentDeclarations(consoleShellRoutes, presence),
+    platformPermissions,
+  )
+  if (target === null) {
+    return null
+  }
+  return <StartCardView card={{ key: 'console', path: target }} />
+}
+
 /** One card as an anchor carrying its target path. */
-function StartCardView({ card }: { readonly card: StartCard }): ReactElement {
+function StartCardView({
+  card,
+}: {
+  readonly card: {
+    readonly key: StartCard['key']
+    readonly path: string
+  }
+}): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
   const navigate = useNavigate()
   const open = (path: string) => (event: MouseEvent<HTMLElement>): void => {

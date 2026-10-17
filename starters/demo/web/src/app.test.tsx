@@ -9,10 +9,11 @@
  * which lands the viewer in the console area. The console area carries the same
  * session gate (an anonymous viewer meets the sign-in surface, never a console
  * whose requests cannot answer) and a route guard over each page's permission
- * code. Its three tiers read the one platform permission set: the entry keys on
- * one representative code, the area gate on any non-empty set, and each page's
- * guard on its own code. A staff viewer whose set holds a permission other than
- * the entry's code reads the three apart.
+ * code. Its three tiers read the one platform permission set: the entry
+ * targets the first console page whose code the principal holds, the area gate
+ * on any non-empty set, and each page's guard on its own code. A staff viewer
+ * whose set holds a permission other than the dashboard's reads the three
+ * apart.
  */
 
 import { act, screen, within } from '@testing-library/react'
@@ -519,35 +520,32 @@ describe('the console area', () => {
   })
 })
 
-describe('a staff viewer whose platform permission is not the entry code', () => {
+describe('a staff viewer whose platform permission is not the dashboard code', () => {
   // The three tiers of the console gate read the one platform permission set:
-  // the header entry keys on a single representative code (tenant.read), the
-  // area gate admits any non-empty set, and each page's route guard reads its
-  // own code. A principal whose platform set holds a permission other than
-  // tenant.read pins the three apart -- the set is non-empty (so the area
-  // admits) without satisfying the entry's representative code (so the entry
-  // stays hidden), which the tenant.read-only suites cannot distinguish.
+  // the header entry targets the first console page whose code the principal
+  // holds, the area gate admits any non-empty set, and each page's route guard
+  // reads its own code. A principal whose platform set holds a permission
+  // other than the dashboard's pins the three apart -- the set is non-empty
+  // (so the area admits it) and some page's code is held (so the entry appears)
+  // while the dashboard's own code is not (so the entry cannot point at the
+  // console root).
 
   /** A session whose platform set holds exactly these codes. */
   const staff = (...codes: readonly string[]) =>
     createTestSession(authenticatedSnapshot({ system: [...codes] }))
 
-  it('keeps the console entry hidden, though the area would admit them', async () => {
+  it('offers an entry that targets the first console page whose code they hold', async () => {
     window.history.replaceState({}, '', '/')
     renderDemoApp({ session: staff('audit.read') })
 
-    // The entry keys on tenant.read alone, so a principal holding only
-    // audit.read meets no way in -- even though the area gate (any platform
-    // permission) would admit them were the URL typed. This is the entry tier
-    // read apart from the area tier: the same set admits the area below.
+    // The dashboard's code (tenant.read) is unheld, so the entry cannot point
+    // at the console root; the audit page is the first labelled declaration
+    // whose code the principal holds, and the entry targets it.
     const brand = await screen.findByText(demoEnUS.app.title)
     const banner = brand.closest('header') as HTMLElement
     expect(
-      within(banner).queryByRole('link', { name: demoEnUS.nav.console }),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('link', { name: demoEnUS.nav.console }),
-    ).not.toBeInTheDocument()
+      within(banner).getByRole('link', { name: demoEnUS.nav.console }),
+    ).toHaveAttribute('href', '/console/audit')
   })
 
   it('admits the console area, which keys on holding any platform permission', async () => {

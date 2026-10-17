@@ -22,14 +22,22 @@
  * set coincide here. A product whose principals hold a subset of the declared
  * permissions must replace this with its own source of the caller's held set.
  *
- * The set is (re)read on every authenticated transition: a login clears the
- * sets (auth-core's survival rule), so a re-login as another principal
- * replaces them rather than inheriting the previous principal's.
+ * A login clears the sets (auth-core's survival rule), so a re-login as
+ * another principal replaces them rather than inheriting the previous
+ * principal's.
+ *
+ * The set is (re)read on every authenticated transition, and only while the
+ * feature document is `ready` and serves `authz.admin` -- the feature that
+ * owns the catalog endpoint. A `pending` or `failed` document keeps the set
+ * unknown; a `ready` document without `authz.admin` attaches the empty set.
+ * That gating is what keeps the console area's "feature state first, then
+ * permission set" order meaningful: a failed read never looks like an empty
+ * permission set.
  */
 
 import { useEffect } from 'react'
 import type { ReactElement, ReactNode } from 'react'
-import { useAuthState } from '@speed/auth-core'
+import { useAuthState, useFeatureState } from '@speed/auth-core'
 import type { AuthSession } from '@speed/auth-core'
 import { authzAdminPermissionsList } from './app-api/index.js'
 
@@ -57,10 +65,20 @@ export function PlatformPermissions({
 }
 
 /**
- * Reads the caller's platform permissions and attaches them to the session
- * whenever it turns authenticated. A read that is refused (or fails) attaches
- * the empty set -- fail-closed, so a viewer whose permissions are unknown is
- * offered no platform surface rather than the benefit of the doubt.
+ * Reads the caller's platform permissions and attaches them to the session.
+ *
+ * The read is itself feature-gated: the catalog endpoint belongs to
+ * `authz.admin`, so a deployment that does not serve it can never answer.
+ * While the feature document is `pending` or `failed` the set stays unknown
+ * (null) -- neither "absent" nor "present" -- and the console area shows its
+ * frameless wait/failure rather than misreading the operator as a member.
+ * `ready` without `authz.admin` attaches the empty set (there is no platform
+ * surface to authorize), and `ready` with it (re)reads on every authenticated
+ * transition: a login clears the sets (auth-core's survival rule), so a
+ * re-login as another principal replaces them rather than inheriting the
+ * previous principal's. A read that is refused (or fails) attaches the empty
+ * set -- fail-closed, so a viewer whose permissions are unknown is offered no
+ * platform surface rather than the benefit of the doubt.
  *
  * The read is deferred into a promise so a synchronous throw from the api-sdk
  * request seam (no request function bound) lands in the same catch as any other
@@ -68,8 +86,21 @@ export function PlatformPermissions({
  */
 function usePlatformPermissions(session: AuthSession): void {
   const authenticated = useAuthState().state === 'authenticated'
+  const features = useFeatureState()
+  const ready = features.state === 'ready'
+  const authzAdminServed = ready && features.names.has('authz.admin')
   useEffect(() => {
     if (!authenticated) {
+      return
+    }
+    if (!ready) {
+      // A pending or failed document leaves the set unknown.
+      return
+    }
+    if (!authzAdminServed) {
+      // The deployment serves no platform authorization surface: there is
+      // nothing to read and nothing to hold.
+      session.setPermissionSet(PLATFORM_DOMAIN, [])
       return
     }
     let cancelled = false
@@ -93,5 +124,5 @@ function usePlatformPermissions(session: AuthSession): void {
     return () => {
       cancelled = true
     }
-  }, [authenticated, session])
+  }, [authenticated, ready, authzAdminServed, session])
 }
