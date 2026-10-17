@@ -35,7 +35,12 @@ function FullForm({
   onSubmit: SubmitHandler<MemberFormValues>
   defaultValues?: MemberFormValues
 }) {
-  const form = useForm<MemberFormValues>({ mode: 'onSubmit', defaultValues })
+  // Define every field's initial value: an undefined one renders the
+  // control uncontrolled and flips it when RHF writes the first value.
+  const form = useForm<MemberFormValues>({
+    mode: 'onSubmit',
+    defaultValues: defaultValues ?? { name: '', email: '' },
+  })
   return (
     <FormLayout
       form={form}
@@ -123,7 +128,9 @@ describe('FormLayout', () => {
 
   it('renders a bare field flow when no onSubmit is given', () => {
     function FlowOnly() {
-      const form = useForm<MemberFormValues>()
+      const form = useForm<MemberFormValues>({
+        defaultValues: { name: '', email: '' },
+      })
       return (
         <FormLayout form={form}>
           <FormField name="name" render={(s) => <TextFieldSlot state={s} label="Name" />} />
@@ -154,7 +161,10 @@ describe('FormLayout', () => {
     it('renders the default single-column flow the same way when columns={1} is passed explicitly', () => {
       const onSubmit = vi.fn<SubmitHandler<MemberFormValues>>()
       function OneColumnForm() {
-        const form = useForm<MemberFormValues>({ mode: 'onSubmit' })
+        const form = useForm<MemberFormValues>({
+          mode: 'onSubmit',
+          defaultValues: { name: '', email: '' },
+        })
         return (
           <FormLayout form={form} onSubmit={onSubmit} columns={1}>
             <FormField name="name" render={(s) => <TextFieldSlot state={s} label="Name" />} />
@@ -169,7 +179,10 @@ describe('FormLayout', () => {
     it('switches to a CSS Grid flow when columns={2} is passed', () => {
       const onSubmit = vi.fn<SubmitHandler<MemberFormValues>>()
       function TwoColumnForm() {
-        const form = useForm<MemberFormValues>({ mode: 'onSubmit' })
+        const form = useForm<MemberFormValues>({
+          mode: 'onSubmit',
+          defaultValues: { name: '', email: '' },
+        })
         return (
           <FormLayout
             form={form}
@@ -208,7 +221,10 @@ describe('FormLayout', () => {
     it('declares a containment context, so the grid column query can resolve -- the parent declaration without which it never fires', () => {
       const onSubmit = vi.fn<SubmitHandler<MemberFormValues>>()
       function TwoColumnForm() {
-        const form = useForm<MemberFormValues>({ mode: 'onSubmit' })
+        const form = useForm<MemberFormValues>({
+          mode: 'onSubmit',
+          defaultValues: { name: '', email: '' },
+        })
         return (
           <FormLayout form={form} onSubmit={onSubmit} columns={2}>
             <FormField name="name" render={(s) => <TextFieldSlot state={s} label="Name" />} />
@@ -231,7 +247,10 @@ describe('FormLayout', () => {
     it('still submits the collected values with columns={2}, unchanged behavior', async () => {
       const onSubmit = vi.fn<SubmitHandler<MemberFormValues>>()
       function TwoColumnForm() {
-        const form = useForm<MemberFormValues>({ mode: 'onSubmit' })
+        const form = useForm<MemberFormValues>({
+          mode: 'onSubmit',
+          defaultValues: { name: '', email: '' },
+        })
         return (
           <FormLayout
             form={form}

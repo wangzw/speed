@@ -35,8 +35,13 @@ function renderFieldForm(options: {
   const onSubmit = vi.fn<SubmitHandler<FormValues>>()
   const states: FormFieldRenderState<FormValues, 'name'>[] = []
   function Harness() {
+    // An undefined initial value renders the control uncontrolled and
+    // flips it to controlled when RHF writes the first value; define it
+    // up front unless the FormField's own defaultValue supplies it.
     const { control, handleSubmit } = useForm<FormValues>({
-      defaultValues: options.defaultValues,
+      defaultValues:
+        options.defaultValues ??
+        (options.withDefaultValueProp ? undefined : { name: '' }),
       mode: 'onSubmit',
     })
     return (
