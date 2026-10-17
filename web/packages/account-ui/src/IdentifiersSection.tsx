@@ -77,6 +77,13 @@ const STEP_UP_REQUIRED = 'authn.insufficient_user_authentication'
 export interface IdentifiersSectionProps {
   /** The session whose step-up flow the dialog drives. */
   readonly session: AuthSession
+  /**
+   * Whether the deployment serves the `authn.identifiers.email` feature.
+   * False removes the email option from the add face (usernames only);
+   * the host reads the feature document and passes the answer. Defaults
+   * to true, so a host that does not gate identifiers keeps the full face.
+   */
+  readonly emailAvailable?: boolean
 }
 
 /** The identifier kinds the authn account module records
@@ -93,6 +100,7 @@ const KNOWN_IDENTIFIER_KINDS = new Set<string>([
  * added through its own two-step surface (the SMS routes), not this one. */
 type AddKind = 'email' | 'username'
 const ADD_KINDS: readonly AddKind[] = ['email', 'username']
+const USERNAME_KINDS: readonly AddKind[] = ['username']
 
 /** The write a step-up dialog is armed for, so a won challenge re-runs
  * exactly it: a removal, the add that sends the code, or the code's
@@ -121,13 +129,18 @@ function IdentifierListSkeleton({ label }: { readonly label: string }) {
   )
 }
 
-export function IdentifiersSection({ session }: IdentifiersSectionProps) {
+export function IdentifiersSection({
+  session,
+  emailAvailable = true,
+}: IdentifiersSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
   const { data, isPending, refetch } = useProfileQuery()
   const removeIdentifier = useAuthnLoginRemoveIdentifier()
   const addIdentifier = useAuthnLoginAddIdentifier()
   const verifyIdentifier = useAuthnLoginVerifyIdentifier()
+  /** The kinds the add face offers in this deployment. */
+  const addKinds = emailAvailable ? ADD_KINDS : USERNAME_KINDS
 
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
   const [failureCode, setFailureCode] = useState<string | null>(null)
@@ -137,7 +150,9 @@ export function IdentifiersSection({ session }: IdentifiersSectionProps) {
   // or null while the value is being entered; code is the answer. added
   // fills the live region once a write lands.
   const [addOpen, setAddOpen] = useState(false)
-  const [addKind, setAddKind] = useState<AddKind>('email')
+  const [addKind, setAddKind] = useState<AddKind>(
+    emailAvailable ? 'email' : 'username',
+  )
   const [addValue, setAddValue] = useState('')
   const [sentTo, setSentTo] = useState<string | null>(null)
   const [code, setCode] = useState('')
@@ -438,7 +453,7 @@ export function IdentifiersSection({ session }: IdentifiersSectionProps) {
                       setAddKind(event.target.value as AddKind)
                     }
                   >
-                    {ADD_KINDS.map((option) => (
+                    {addKinds.map((option) => (
                       <MenuItem key={option} value={option}>
                         {t(`identifiers.add.kind.${option}`)}
                       </MenuItem>

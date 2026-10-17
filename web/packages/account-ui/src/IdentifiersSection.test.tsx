@@ -506,6 +506,47 @@ describe('IdentifiersSection', () => {
     ).toHaveLength(2)
   })
 
+  it('offers the email kind by default when the host does not gate identifiers', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    // The add face's kind selector starts on the email option.
+    const combo = await screen.findByRole('combobox')
+    expect(combo).toHaveTextContent(zhCN.identifiers.add.kind.email)
+    expect(combo).not.toHaveTextContent(zhCN.identifiers.add.kind.username)
+  })
+
+  it('offers usernames only when the deployment serves no email identifier', async () => {
+    // The host reads the feature document and tells the section whether
+    // authn.identifiers.email is served; a deployment without it must not
+    // offer a write that would be refused.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <IdentifiersSection session={rig.session} emailAvailable={false} />,
+    )
+    fireEvent.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    const combo = await screen.findByRole('combobox')
+    expect(combo).toHaveTextContent(zhCN.identifiers.add.kind.username)
+    expect(combo).not.toHaveTextContent(zhCN.identifiers.add.kind.email)
+  })
+
   it('raises the identifier actions to the 44px floor under a coarse pointer', async () => {
     // The row remove and the add-open controls are compact actions; on a
     // finger-driven device each one gates up to the 44x44 floor.
