@@ -120,10 +120,12 @@ func asUntrustedOrigin(r *nethttp.Request) {
 // the entry point answer them would show 405 with Allow or 404, and one that
 // passed unmatched paths through would show the route's own status. With no
 // credential, with a Bearer no backend accepts, and with an invalid cookie whose
-// name is read off the assembly's own backend configuration, every one of the
-// five must produce the same status, the same headers and the same body.
+// name is read off the backend's declaration, every one of the five must produce
+// the same status, the same headers and the same body. The declared name is one
+// no production code names, so a gateway that ignored the declaration and wrote
+// the session backend's default in its place would read no cookie here at all.
 func TestTheRefusalDoesNotDependOnTheMatchedRoute(t *testing.T) {
-	cookie := cookieBackend("session", "__Host-sid")
+	cookie := cookieBackend("session", "__Host-gate-probe")
 	cookieName := cookie.accepts.Cookies[0]
 	cleared := new(atomic.Int64)
 	backends := []authn.Verifier{
