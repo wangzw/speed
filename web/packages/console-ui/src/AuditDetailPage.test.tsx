@@ -167,6 +167,45 @@ describe('AuditDetailPage', () => {
     expect(getRecord).toHaveBeenCalledTimes(2)
   })
 
+  it('renders the not-found placeholder for an id the route cannot parse, and keeps the 404 and failure branches', async () => {
+    // A path identifier the route cannot parse is a 400: no record can carry
+    // it, so it says the same thing to the reader as a missing record.
+    const malformed = createConsoleOperations(
+      makeConsoleBackend({
+        getRecord: () =>
+          Promise.reject({ status: 400, code: 'audit.bad-request' }),
+      }),
+    )
+    const first = renderWithProviders(
+      <AuditDetailPage id="does-not-exist" />,
+      { operations: malformed },
+    )
+    expect(await screen.findByText('记录不存在或暂不可用')).toBeInTheDocument()
+    first.unmount()
+
+    // A 404 still renders the same placeholder.
+    const missing = createConsoleOperations(
+      makeConsoleBackend({
+        getRecord: () => Promise.reject({ status: 404, code: 'client.http.404' }),
+      }),
+    )
+    const second = renderWithProviders(<AuditDetailPage id="999999999" />, {
+      operations: missing,
+    })
+    expect(await screen.findByText('记录不存在或暂不可用')).toBeInTheDocument()
+    second.unmount()
+
+    // Any other failure keeps the retryable error placeholder.
+    const failed = createConsoleOperations(
+      makeConsoleBackend({
+        getRecord: () => Promise.reject({ status: 500, code: 'client.http.500' }),
+      }),
+    )
+    renderWithProviders(<AuditDetailPage id="rec-1" />, { operations: failed })
+    expect(await screen.findByText('审计记录加载失败')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+  })
+
   it('renders the retryable error placeholder when the read fails otherwise', async () => {
     const operations = createConsoleOperations(
       makeConsoleBackend({

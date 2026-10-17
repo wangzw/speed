@@ -47,7 +47,13 @@ describe('isForbidden', () => {
 })
 
 /** A probe mounting ConsoleAsyncSection with a settled failed read. */
-function Probe({ error }: { readonly error: unknown }) {
+function Probe({
+  error,
+  notFoundStatuses,
+}: {
+  readonly error: unknown
+  readonly notFoundStatuses?: readonly number[]
+}) {
   return (
     <ConsoleAsyncSection
       pending={false}
@@ -62,6 +68,13 @@ function Probe({ error }: { readonly error: unknown }) {
         retryLabel: '重试',
         onRetry: () => {},
       }}
+      notFoundState={{
+        title: 'not-found-title',
+        description: 'not-found-description',
+        retryLabel: '重试',
+        onRetry: () => {},
+      }}
+      notFoundStatuses={notFoundStatuses}
     >
       {() => <p>content</p>}
     </ConsoleAsyncSection>
@@ -90,6 +103,29 @@ describe('ConsoleAsyncSection', () => {
       <Probe error={{ status: 0, code: 'client.network' }} />,
     )
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+  })
+
+  it('renders the not-found placeholder for a status the page names as the same answer', () => {
+    // A route that answers 400 for an id it cannot parse names that status;
+    // the 404 answer renders it without being listed.
+    renderWithProviders(
+      <Probe
+        error={{ status: 400, code: 'audit.bad-request' }}
+        notFoundStatuses={[400]}
+      />,
+    )
+    expect(screen.getByText('not-found-title')).toBeInTheDocument()
+    expect(screen.queryByText('error-title')).toBeNull()
+  })
+
+  it('keeps a status outside the not-found set on the retryable placeholder', () => {
+    renderWithProviders(
+      <Probe
+        error={{ status: 400, code: 'audit.bad-request' }}
+        notFoundStatuses={[422]}
+      />,
+    )
+    expect(screen.getByText('error-title')).toBeInTheDocument()
   })
 })
 

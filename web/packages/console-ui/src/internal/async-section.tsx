@@ -21,8 +21,11 @@
  * that is answered 404 renders its own `notFoundState` placeholder instead,
  * still with a retry -- the server's bare 404 does not distinguish a deleted
  * record from a replica that does not know it -- and replaces any content on
- * screen, as a failure of meaning rather than a stale refresh. The pending,
- * empty and content branches are AsyncSection's own.
+ * screen, as a failure of meaning rather than a stale refresh. A page whose
+ * route answers another status for a path identifier it cannot parse (a 400
+ * on a malformed id) names that status in `notFoundStatuses`, because no
+ * record can carry an identifier the route cannot read. The pending, empty
+ * and content branches are AsyncSection's own.
  *
  * The refusal is detected from the answer, not from a route-level
  * permission read: the server writes the 403, and the console renders the
@@ -42,11 +45,21 @@ import {
 import type { EmptyStateHeadingLevel } from '@speed/ui-kit'
 import { useConsoleUiTranslation } from './translation.js'
 
-/** The bare-HTTP code the transport synthesizes for a 403 with no readable envelope. */
-const FORBIDDEN_CODE = 'client.http.403'
-
-/** The bare-HTTP code the transport synthesizes for a 404 with no readable envelope. */
-const NOT_FOUND_CODE = 'client.http.404'
+/**
+ * Whether a read's failure carries the given HTTP status: the answer's
+ * `status`, or the bare-HTTP code the transport synthesizes when the
+ * response carried no readable envelope. A transport failure, a bug-shaped
+ * throw and any other status are not this answer.
+ */
+function carriesStatus(error: unknown, status: number): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false
+  }
+  const candidate = error as { readonly status?: unknown; readonly code?: unknown }
+  return (
+    candidate.status === status || candidate.code === `client.http.${status}`
+  )
+}
 
 /**
  * Whether a read's failure is a permission refusal: the answer carried HTTP
@@ -55,14 +68,7 @@ const NOT_FOUND_CODE = 'client.http.404'
  * refusal, so the caller renders the retryable error instead.
  */
 export function isForbidden(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) {
-    return false
-  }
-  const candidate = error as { readonly status?: unknown; readonly code?: unknown }
-  if (candidate.status === 403) {
-    return true
-  }
-  return candidate.code === FORBIDDEN_CODE
+  return carriesStatus(error, 403)
 }
 
 /**
@@ -74,14 +80,7 @@ export function isForbidden(error: unknown): boolean {
  * value is not this failure.
  */
 export function isNotFound(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) {
-    return false
-  }
-  const candidate = error as { readonly status?: unknown; readonly code?: unknown }
-  if (candidate.status === 404) {
-    return true
-  }
-  return candidate.code === NOT_FOUND_CODE
+  return carriesStatus(error, 404)
 }
 
 export interface ConsoleAsyncSectionProps<Payload> {
@@ -104,6 +103,15 @@ export interface ConsoleAsyncSectionProps<Payload> {
    * the record. Absent leaves every failure on `errorState`.
    */
   readonly notFoundState?: AsyncSectionErrorState
+  /**
+   * Extra HTTP statuses this read's not-found branch also covers. A by-id
+   * route that answers 400 for an identifier it cannot parse (the path does
+   * not shape an id, so no record can carry it) means the same thing to the
+   * reader as a 404, and a page that knows its own route's refusal shape
+   * names it here. Only consulted when `notFoundState` is set; the 404
+   * answer is always covered and needs no entry.
+   */
+  readonly notFoundStatuses?: readonly number[]
   /** The empty placeholder. */
   readonly emptyState?: AsyncSectionEmptyState
   /** The heading element the placeholders' titles render as; defaults to 'h2'. */
@@ -125,6 +133,7 @@ export function ConsoleAsyncSection<Payload>({
   error,
   errorState,
   notFoundState,
+  notFoundStatuses,
   headingLevel = 'h2',
   refreshing,
   ...rest
@@ -143,11 +152,15 @@ export function ConsoleAsyncSection<Payload>({
       />
     )
   }
-  // A by-id read answered 404 renders its own placeholder in place of the
-  // content -- a refresh that answers 404 replaces what was on screen -- and
-  // keeps the retry: the answer does not distinguish a deleted record from a
-  // replica that does not know it yet.
-  if (!rest.pending && notFoundState !== undefined && isNotFound(error)) {
+  // A by-id read answered 404 (or another status the page names as the same
+  // answer) renders its own placeholder in place of the content -- a
+  // refresh that answers so replaces what was on screen -- and keeps the
+  // retry: the answer does not distinguish a deleted record from a replica
+  // that does not know it yet.
+  const notFound =
+    isNotFound(error) ||
+    (notFoundStatuses ?? []).some((status) => carriesStatus(error, status))
+  if (!rest.pending && notFoundState !== undefined && notFound) {
     return (
       <AsyncSection
         {...rest}

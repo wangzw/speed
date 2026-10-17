@@ -24,8 +24,11 @@
  * has no tenant, an action may carry no purpose), and dropping the row
  * would hide that the record carries an empty value. A refused read
  * settles into a permission placeholder (403) or the retryable error
- * placeholder (any other failure). The page opens with ui-kit's
- * PageHeader.
+ * placeholder (any other failure). A path identifier the route cannot
+ * parse is a 400, which says no record can carry that id, so it renders
+ * the not-found placeholder rather than a load failure; a 404 keeps
+ * rendering that placeholder and every other failure keeps the error
+ * placeholder. The page opens with ui-kit's PageHeader.
  */
 
 import { useMemo } from 'react'
@@ -180,6 +183,10 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
               retryLabel: t('auditDetail.retry'),
               onRetry: () => void record.refetch(),
             }}
+            // The route answers 400 for an id it cannot parse (the path is
+            // not an identifier), so no record can carry it: the same answer
+            // to the reader as a missing one.
+            notFoundStatuses={[400]}
           >
             {main}
           </ConsoleAsyncSection>
