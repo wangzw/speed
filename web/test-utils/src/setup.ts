@@ -6,6 +6,17 @@
  * deliberately does not, so the import must be explicit -- otherwise a
  * rendered tree leaks into the next test.
  *
+ * One environment adaptation is shared here too: jsdom ships
+ * `HTMLCanvasElement.getContext()` as a not-implemented stub that emits a
+ * `jsdomError` ("Not implemented: HTMLCanvasElement's getContext() method:
+ * without installing the canvas npm package") and returns null. axe-core
+ * probes a canvas while computing accessible text -- its `_isIconLigature`
+ * check, which detects icon fonts smuggled in as text -- so any axe scan
+ * over a document with such a text node prints that error. The stub below
+ * returns null directly, exactly the value jsdom already produced, so no
+ * scan verdict changes and no caller sees a new shape: only the emitted
+ * environment noise leaves the output.
+ *
  * A package's own test-utils/setup.ts (the file its vitest config
  * points setupFiles at) imports this module and adds whatever else its
  * environment needs -- the desktop-default matchMedia stub, say (see
@@ -18,3 +29,8 @@ import { afterEach } from 'vitest'
 afterEach(() => {
   cleanup()
 })
+
+if (typeof HTMLCanvasElement !== 'undefined') {
+  HTMLCanvasElement.prototype.getContext = (() =>
+    null) as unknown as HTMLCanvasElement['getContext']
+}
