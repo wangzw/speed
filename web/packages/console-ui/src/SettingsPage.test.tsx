@@ -114,6 +114,25 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('textbox', { name: 'mail.limit' })).toBeEnabled()
   })
 
+  it('keeps the state column on one line', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSettings: () => Promise.resolve([defaultItem, item]),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    await screen.findByText('默认')
+
+    // A short state label must not split across two rows when the table is
+    // squeezed. jsdom does no layout, so the proof is the declared
+    // `white-space: nowrap` on the rendered cells.
+    for (const text of ['默认', '已覆盖']) {
+      const cell = screen.getByText(text).closest('td')
+      expect(cell).not.toBeNull()
+      expect(cell).toHaveStyle({ whiteSpace: 'nowrap' })
+    }
+  })
+
   it('marks a row written as the empty string as an override', async () => {
     // An explicitly written empty string and a missing row both carry an
     // empty `written`; only `has_row` tells them apart. The row is a real

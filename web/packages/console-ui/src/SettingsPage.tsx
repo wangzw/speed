@@ -245,6 +245,7 @@ export function SettingsPage() {
     {
       id: 'state',
       header: t('settings.column.state'),
+      cellWrap: 'nowrap',
       cell: (setting) => (
         <Typography variant="body2" color="text.secondary">
           {t(`settings.state.${settingState(setting)}`)}
