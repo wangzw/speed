@@ -385,8 +385,9 @@ export interface AuthSession {
    * is read, and the result lands as `ready` or `failed` if the session
    * is still the one the read started under (same generation, still
    * authenticated, same principal account). While anonymous this
-   * resolves without a request and changes nothing. Concurrent calls
-   * share one in-flight read. */
+   * resolves without a request and changes nothing. Concurrent calls of
+   * the same session share one in-flight read; a read begun under a
+   * session that has since ended is never shared with the next one. */
   retryFeatures(): Promise<void>
   /** Silently refreshes the access token with the held refresh token
    * (a token session). Resolves true when the store holds a fresh token
@@ -1036,9 +1037,17 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
   // The single-flight refresh: at most one in-flight request per held
   // refresh token.
   let refreshFlight: { held: string; promise: Promise<boolean> } | null = null
-  // The single-flight feature retry: concurrent retryFeatures() calls
-  // share one GET /features read.
-  let featuresFlight: Promise<void> | null = null
+  // The single-flight feature retry: concurrent retryFeatures() calls of
+  // the same session share one GET /features read. The flight is keyed on
+  // the generation and account the read started under, so a read that
+  // outlived its session (a logout and re-login while it was in flight) is
+  // never handed to the next session: its own commit check is bound to
+  // discard it, and sharing it would silently skip the new session's retry.
+  let featuresFlight: {
+    readonly generation: number
+    readonly accountId: string
+    readonly promise: Promise<void>
+  } | null = null
   const listeners = new Set<AuthSessionListener>()
 
   function notify(): void {
@@ -1600,54 +1609,78 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
       if (snapshot.state !== 'authenticated' || snapshot.principal === null) {
         return Promise.resolve()
       }
-      if (featuresFlight !== null) {
-        return featuresFlight
-      }
       const capturedGeneration = generation
       const capturedAccountId = snapshot.principal.account_id
+      // Share only a read that belongs to this same session. A flight
+      // begun under another generation or account is already destined to
+      // be discarded by its own commit check, so handing it back would
+      // resolve this call without issuing the read it promised.
+      if (
+        featuresFlight !== null &&
+        featuresFlight.generation === capturedGeneration &&
+        featuresFlight.accountId === capturedAccountId
+      ) {
+        return featuresFlight.promise
+      }
       const previous = snapshot.features
       const pending: FeatureState = { state: 'pending' }
+      // The flight is registered before `pending` is published: a listener
+      // notified of the transition that re-enters retryFeatures() must find
+      // this read and share it, not start a second one.
+      let settle!: () => void
+      const promise = new Promise<void>((resolve) => {
+        settle = resolve
+      })
+      const flight = {
+        generation: capturedGeneration,
+        accountId: capturedAccountId,
+        promise,
+      }
+      featuresFlight = flight
       snapshot = { ...snapshot, features: pending }
       notify()
-      const promise = (async (): Promise<void> => {
-        let next: FeatureState
-        try {
-          next = {
-            state: 'ready',
-            names: parseFeatureDocument(await featureBoardList()),
-          }
-        } catch (error) {
-          next = { state: 'failed', error }
-        }
-        // The write applies only to the session the read started under:
-        // same generation, still authenticated, same principal. The
-        // generation check alone is not enough -- the server-ended-session
-        // clears deliberately do not bump it.
-        const applies =
-          generation === capturedGeneration &&
-          snapshot.state === 'authenticated' &&
-          snapshot.principal !== null &&
-          snapshot.principal.account_id === capturedAccountId
-        if (!applies) {
-          // A commit landed while the read was in flight. If it kept this
-          // retry's pending marker (a step-up), restore the previous
-          // state; a login or logout replaced the marker with its own.
-          if (snapshot.features === pending) {
-            snapshot = { ...snapshot, features: previous }
-            notify()
-          }
-          return
-        }
-        snapshot = { ...snapshot, features: next }
-        notify()
-      })()
-      featuresFlight = promise
       const clearFlight = (): void => {
-        if (featuresFlight === promise) {
+        if (featuresFlight === flight) {
           featuresFlight = null
         }
       }
       promise.then(clearFlight, clearFlight)
+      void (async (): Promise<void> => {
+        try {
+          let next: FeatureState
+          try {
+            next = {
+              state: 'ready',
+              names: parseFeatureDocument(await featureBoardList()),
+            }
+          } catch (error) {
+            next = { state: 'failed', error }
+          }
+          // The write applies only to the session the read started under:
+          // same generation, still authenticated, same principal. The
+          // generation check alone is not enough -- the server-ended-session
+          // clears deliberately do not bump it.
+          const applies =
+            generation === capturedGeneration &&
+            snapshot.state === 'authenticated' &&
+            snapshot.principal !== null &&
+            snapshot.principal.account_id === capturedAccountId
+          if (!applies) {
+            // A commit landed while the read was in flight. If it kept this
+            // retry's pending marker (a step-up), restore the previous
+            // state; a login or logout replaced the marker with its own.
+            if (snapshot.features === pending) {
+              snapshot = { ...snapshot, features: previous }
+              notify()
+            }
+            return
+          }
+          snapshot = { ...snapshot, features: next }
+          notify()
+        } finally {
+          settle()
+        }
+      })()
       return promise
     },
 
