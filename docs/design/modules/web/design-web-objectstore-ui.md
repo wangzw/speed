@@ -48,7 +48,7 @@ interface ObjectDetailDialogProps {
 |---|---|
 | `@speed/api-sdk` | 生成的 objectstore 操作与响应模型 |
 | `@speed/auth-core` | `TenantProvider`/`useCurrentTenant`、`useTenantQueryKey`、`tenantQueryKey` |
-| `@speed/ui-kit` | `DataTable`、`FileUploader`、`AsyncSection`、`ConfirmDialog`、`InlineError`、`PageHeader`、`ListSkeleton` |
+| `@speed/ui-kit` | `DataTable`、`FileUploader`、`AsyncSection`、`ConfirmDialog`、`InlineError`、`WriteFeedbackRegion`、`useWriteFeedback`、`PageHeader`、`ListSkeleton` |
 | `@speed/i18n` | 命名空间注册、文案翻译钩子与错误码文本解析器 |
 | `@tanstack/react-query` | peer（必需）：宿主供给的 QueryClient 与它上面的钩子 |
 | `react`、`react-dom`、`@mui/material`、`@emotion/*` | peer（必需）：宿主拥有的 React／MUI 树 |
@@ -110,13 +110,15 @@ sequenceDiagram
 
 ### 写入的反馈
 
-对象页的下载与删除共用一个反馈作用域，区域在列表之上，按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织（[ADR-web-write-feedback-2026-10-17](../../../adr/adr-web-write-feedback-2026-10-17.md)）。
+对象页的下载与删除共用一个反馈作用域，区域在列表之下、分页控件之上，按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织（[ADR-web-write-feedback-2026-10-17](../../../adr/adr-web-write-feedback-2026-10-17.md)）。
 
-- **一个槽，翻页与刷新也 `reset`。** 下载的失败不与「对象已删除」并存；翻页与刷新改变了列表的上下文，旧的结果不留在新的一页之上。
-- **删除的确认对话框在确认点击时关闭，该行的删除控件在进行中禁用并标忙**；此前对话框关闭到横幅出现之间没有任何进行中的反馈。
-- **刷新控件在读进行中标忙，已有数据的刷新失败保留旧列表并渲染陈旧提示**，来源包括刷新、窗口重新聚焦与上传或删除后的失效重读。
+- **一个槽，翻页与刷新也 `reset`，它们在下载或删除进行中禁用。** 下载的失败不与「对象已删除」并存；翻页与刷新改变列表的上下文，旧结果不留在新的一页之上，因此翻页与刷新在作用域 `pending` 时禁用。
+- **删除的确认对话框在确认点击时关闭；删除进行中，本页全部删除控件禁用并标忙。** 删除因此不重叠，一个槽不丢结果。
+- **刷新控件在读进行中禁用并标忙，已有数据的刷新失败保留旧列表并渲染陈旧提示**，来源包括刷新、窗口重新聚焦与上传或删除后的失效重读；刷新失败是 403 时，无权限空态替换旧列表并隐藏分页控件，不渲染陈旧提示、不给重试。
+- **删除失败也使租户子树失效重读**，使服务端已不存在的行（`objectstore.not_found`、`objectstore.conflict`）不留在屏上。
+- **上传队列每行自成一个槽，不占用页面的下载与删除的槽。** 行的状态与错误是该行的结果，重试把行回到上传中，结算播报点名文件；一次选取多个文件是多次尝试。
 - **上传行的失败文本取自错误码。** 上传三步的任一步失败，行上渲染该失败码在当前语言下的文本，而不是一句固定的「上传失败」；非 ApiError 形状的抛出经 `errorCodeOf` 折叠，渲染未知兜底。
-- **错误白名单组合 `SESSION_LIFECYCLE_ERROR_CODES`。** 消费包组合自己的可达码与该族（[i18n](design-web-i18n.md) 的「扩展点」），本包的白名单与之对齐。
+- **错误白名单组合 `SESSION_LIFECYCLE_ERROR_CODES`。** 本包的白名单在 `CLIENT_TRANSPORT_ERROR_CODES` 之外组合该族（[i18n](design-web-i18n.md) 的「扩展点」），每个码在 zh-CN 与 en-US 的 `errors.<码>` 下各有一条叶子，使会话在途中失效时到达的这类码渲染各自的文案，而不是 `errors.unknown`。
 
 ## 错误与失败语义
 
@@ -126,11 +128,12 @@ sequenceDiagram
 
 | 情形 | 表现 |
 |---|---|
-| 列表读失败（5xx、传输失败） | 可重试的错误占位，一条重试按钮 |
-| 列表读被拒 403 | 无权限空态，无重试按钮（重试只会再被拒） |
+| 列表读失败（5xx、传输失败），屏上没有数据 | 可重试的错误占位，一条重试按钮 |
+| 列表读被拒 403，不论是否有缓存数据 | 无权限空态替换内容，无重试按钮（重试只会再被拒），分页控件隐藏 |
+| 已有列表数据时刷新失败（非 403） | 旧列表保留，其上渲染陈旧提示与重试；重试发出后提示卸载，再次失败时重新挂载 |
 | 上传任一步失败 | 该行置 `failed` 并渲染该失败码的文本；`failed` 行给一个重试按钮 |
-| 下载失败 | 列表旁一条横幅渲染错误码文本 |
-| 删除失败 | 列表旁一条横幅渲染错误码文本，列表重取以收敛 |
+| 下载失败 | 列表之下的反馈区域渲染错误码文本 |
+| 删除失败 | 列表之下的反馈区域渲染错误码文本，租户子树失效重读以收敛 |
 | 无租户在场 | 读被禁用，列表停在加载占位，不发请求（fail-closed） |
 | 详情读失败 | 对话框内的可重试错误占位 |
 
@@ -158,4 +161,6 @@ sequenceDiagram
 | 错误文案与异步分支 | 已实现 | `web/packages/objectstore-ui/src/internal/error-text.ts` `useObjectstoreUiErrorText`；`web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection` |
 | 命名空间资源 | 已实现 | `web/packages/objectstore-ui/src/resources.ts` `OBJECTSTORE_UI_NAMESPACE`、`objectstoreUiResources` |
 | 对象页的反馈作用域、删除的忙态与刷新的陈旧提示 | 未实现 | — |
+| 删除失败后的失效重读 | 未实现 | — |
+| 错误白名单组合会话生命周期码族及其双语文案 | 未实现 | — |
 | 上传行的失败文本取自错误码 | 未实现 | — |
