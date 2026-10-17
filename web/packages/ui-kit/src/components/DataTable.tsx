@@ -80,6 +80,17 @@
  * `white-space: nowrap` on the opted-in cells and its absence on a
  * wrapping column, plus the existing overflow container).
  *
+ * An unbroken cell is not by itself a reachable value: when the column
+ * is wider than the table's container, the complete text lives past the
+ * scroll edge. `cellFullValue` is the column's second channel -- it
+ * returns a row's complete value, which the DataTable renders as the
+ * body cell's `title` (hover) and beside the cell content as a focusable
+ * copy control (keyboard and touch, its copy announced). Both are
+ * per-column opt-ins like the line policy: a column that omits the
+ * accessor renders exactly the cell its renderer returns, and a row it
+ * answers `undefined` for gets neither channel. Identifier columns are
+ * where a host sets both `cellWrap: 'nowrap'` and `cellFullValue`.
+ *
  * The whole table is a CSS container: the root box declares
  * `container-type: inline-size`, so every responsive rule inside it
  * answers to the table's own width -- how wide the host placed it --
@@ -141,6 +152,7 @@ import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Checkbox from '@mui/material/Checkbox'
 import CircularProgress from '@mui/material/CircularProgress'
+import IconButton from '@mui/material/IconButton'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
@@ -154,6 +166,7 @@ import type { SxProps, Theme } from '@mui/material/styles'
 import { EmptyState } from './EmptyState.js'
 import type { EmptyStateHeadingLevel } from './EmptyState.js'
 import { useUiKitTranslation } from '../internal/translation.js'
+import { CopiedIcon, CopyIcon } from '../internal/icons.js'
 import { POINTER_FINE_HOVER_QUERY } from '../internal/pointer.js'
 import { touchTargetSx } from '../touch-target.js'
 import { visuallyHiddenSx } from '../visually-hidden.js'
@@ -203,6 +216,18 @@ export interface DataTableColumn<T> {
    * prose-like cells. See the component header note.
    */
   readonly cellWrap?: DataTableColumnCellWrap
+  /**
+   * Opt-in full-value affordance for a column whose cell content can be
+   * clipped when the table scrolls horizontally -- an identifier, a key,
+   * a code. Returns a row's complete value; the DataTable then renders it
+   * as the body cell's `title` and beside the cell content as a focusable
+   * copy control, so the complete text is reachable by hover, keyboard and
+   * touch rather than only through the container's scroll position.
+   * Omitting it renders exactly the cell `cell` returns, so a host that
+   * sets it nowhere is unaffected. A row it returns `undefined` for gets
+   * neither the title nor the control.
+   */
+  readonly cellFullValue?: (row: T) => string | undefined
   /** Renders one row's cell; rowIndex is the index within `rows`. */
   readonly cell: (row: T, rowIndex: number) => ReactNode
 }
@@ -339,6 +364,55 @@ function columnCellWrapSx(
 ): { whiteSpace: 'nowrap' } | undefined {
   if (cellWrap !== 'nowrap') return undefined
   return { whiteSpace: 'nowrap' }
+}
+
+/** How long the copy control keeps its copied state and announcement. */
+const COPY_FEEDBACK_MS = 2000
+
+/**
+ * The full-value column's copy control: a focusable button that writes the
+ * complete value to the clipboard and announces the copy, so a value
+ * clipped by the table's horizontal scroll stays reachable by keyboard and
+ * touch. The value is also the body cell's `title` -- the hover channel --
+ * which remains when the Clipboard API is unavailable (an insecure context
+ * has no `navigator.clipboard`), and a refused write leaves the control
+ * silent rather than failing the page.
+ */
+function CopyValueButton({ value }: { readonly value: string }) {
+  const { t } = useUiKitTranslation()
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!copied) return undefined
+    const timer = window.setTimeout(() => setCopied(false), COPY_FEEDBACK_MS)
+    return () => window.clearTimeout(timer)
+  }, [copied])
+
+  const copy = (): void => {
+    const clipboard: Clipboard | undefined = navigator.clipboard
+    if (clipboard === undefined) return
+    void clipboard.writeText(value).then(
+      () => setCopied(true),
+      () => undefined,
+    )
+  }
+
+  return (
+    <>
+      <IconButton
+        type="button"
+        size="small"
+        aria-label={t('dataTable.copyValue', { value })}
+        onClick={copy}
+        sx={touchTargetSx}
+      >
+        {copied ? <CopiedIcon /> : <CopyIcon />}
+      </IconButton>
+      <Box component="span" role="status" sx={visuallyHiddenSx}>
+        {copied ? t('dataTable.copiedValue', { value }) : ''}
+      </Box>
+    </>
+  )
 }
 
 /**
@@ -640,19 +714,36 @@ export function DataTable<T>({
                       />
                     </TableCell>
                   )}
-                  {columns.map((column) => (
-                    <TableCell
-                      key={column.id}
-                      align={column.align}
-                      sx={{
-                        width: column.width,
-                        ...columnVisibilitySx(column.priority),
-                        ...columnCellWrapSx(column.cellWrap),
-                      }}
-                    >
-                      {column.cell(row, index)}
-                    </TableCell>
-                  ))}
+                  {columns.map((column) => {
+                    const fullValue = column.cellFullValue?.(row)
+                    return (
+                      <TableCell
+                        key={column.id}
+                        align={column.align}
+                        title={fullValue}
+                        sx={{
+                          width: column.width,
+                          ...columnVisibilitySx(column.priority),
+                          ...columnCellWrapSx(column.cellWrap),
+                        }}
+                      >
+                        {fullValue === undefined ? (
+                          column.cell(row, index)
+                        ) : (
+                          <Box
+                            sx={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              columnGap: 0.5,
+                            }}
+                          >
+                            {column.cell(row, index)}
+                            <CopyValueButton value={fullValue} />
+                          </Box>
+                        )}
+                      </TableCell>
+                    )
+                  })}
                 </TableRow>
               )
             })}

@@ -45,7 +45,9 @@
     "displayedRowsUnknown": "{{from}}–{{to}}",
     "selectAllRows": "Select all rows",
     "selectRow": "Select row {{row}}",
-    "filterLabel": "Filter"
+    "filterLabel": "Filter",
+    "copyValue": "Copy {{value}}",
+    "copiedValue": "Copied {{value}}"
   },
   "pageHeader": {
     "breadcrumbNav": "Breadcrumb",

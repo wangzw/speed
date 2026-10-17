@@ -45,7 +45,9 @@
     "displayedRowsUnknown": "第 {{from}}–{{to}} 条",
     "selectAllRows": "全选",
     "selectRow": "选择第 {{row}} 行",
-    "filterLabel": "筛选"
+    "filterLabel": "筛选",
+    "copyValue": "复制 {{value}}",
+    "copiedValue": "已复制 {{value}}"
   },
   "pageHeader": {
     "breadcrumbNav": "面包屑",

@@ -664,6 +664,21 @@ its absence on a column that does not opt in, and that an explicit
 `'wrap'` emits no declaration; jsdom does no layout, so this proves
 the declarations, not a rendered width.
 
+**An unbroken cell is not by itself a reachable value.** When a nowrap
+column is wider than the table's container, the complete text lives
+past the scroll edge. A column's `cellFullValue?: (row) => string |
+undefined` is the second channel: it returns a row's complete value,
+which the table renders as the body cell's `title` (hover) and beside
+the cell content as a focusable copy control (keyboard and touch, its
+copy announced in the active language). Both channels are per-column
+opt-ins like the line policy -- a column that omits the accessor renders
+exactly the cell its renderer returns, and a row it answers `undefined`
+for gets neither. Identifier columns are where a host sets both
+`cellWrap: 'nowrap'` and `cellFullValue`. `DataTable.test.tsx`'s
+"cell full-value affordance" cases pin the title and the copy control's
+clipboard write and announcement; the clipboard stub is the test's own,
+since jsdom ships no `navigator.clipboard`.
+
 **Column priority is the opt-in reflow alternative to that scroll
 fallback, and it is container-triggered.** The table's root box declares
 `container-type: inline-size`, so every responsive rule inside the table
@@ -725,8 +740,10 @@ const columns: DataTableColumn<Member>[] = [
     id: 'email',
     header: 'Email',
     // An identifier-like value: never break it mid-token; let the
-    // container scroll instead.
+    // container scroll instead, and keep the complete value reachable
+    // by hover, keyboard and touch.
     cellWrap: 'nowrap',
+    cellFullValue: (row) => row.email,
     cell: (row) => row.email,
   },
   // Dropped first as the container narrows (hidden below the container `lg`).
@@ -902,6 +919,8 @@ live). The full key set:
 | `dataTable.selectAllRows` | header checkbox label | |
 | `dataTable.selectRow` | row checkbox label | interpolates `{{row}}` |
 | `dataTable.filterLabel` | filter input label and placeholder | |
+| `dataTable.copyValue` | full-value copy control label | interpolates `{{value}}` |
+| `dataTable.copiedValue` | copy announcement | interpolates `{{value}}` |
 | `emptyState.empty.title` / `.description` | stock "no data yet" | |
 | `emptyState.noPermission.title` / `.description` | stock "no access" | |
 | `emptyState.error.title` / `.description` | stock "load failed" | |

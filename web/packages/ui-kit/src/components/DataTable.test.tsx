@@ -11,11 +11,11 @@
  * locale bundles (or English fixtures), never inline translations.
  */
 
-import { act, fireEvent } from '@testing-library/react'
+import { act, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { flushSync } from 'react-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { switchLanguage } from '@speed/i18n'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import enUS from '../locales/en-US.json' with { type: 'json' }
@@ -59,7 +59,7 @@ const keyOf = (row: Member): number => row.id
 
 function renderTable(
   props: Partial<DataTableProps<Member>> = {},
-  options: { heading?: string } = {},
+  options: { heading?: string; language?: string } = {},
 ) {
   const table = (
     <DataTable
@@ -82,6 +82,7 @@ function renderTable(
     ) : (
       table
     ),
+    { language: options.language },
   )
 }
 
@@ -912,6 +913,100 @@ describe('DataTable', () => {
       expect(
         utils.getByRole('columnheader', { name: 'Name' }),
       ).toHaveStyle({ whiteSpace: 'nowrap' })
+    })
+  })
+
+  // The full-value affordance is the identifier column's second channel:
+  // the wrap policy keeps the value unbroken, but the complete text can
+  // sit past the container's scroll edge. A column that returns the
+  // complete value through `cellFullValue` renders it as the body cell's
+  // title and beside the cell content as a focusable copy control; a
+  // column without the accessor is untouched. jsdom ships no
+  // `navigator.clipboard`, so the suite stubs it and asserts the value
+  // handed to it, the announcement that follows, and the locale-derived
+  // label the control carries.
+  describe('cell full-value affordance (per-column opt-in)', () => {
+    const FULL_VALUE_COLUMNS: readonly DataTableColumn<Member>[] = [
+      {
+        id: 'name',
+        header: 'Name',
+        cellWrap: 'nowrap',
+        cellFullValue: (row) => `member-${row.id}`,
+        cell: (row) => row.name,
+      },
+      {
+        id: 'credits',
+        header: 'Credits',
+        align: 'right',
+        width: 120,
+        cell: (row) => String(row.credits),
+      },
+    ]
+
+    function stubClipboard() {
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText },
+      })
+      return writeText
+    }
+
+    afterEach(() => {
+      Reflect.deleteProperty(navigator, 'clipboard')
+    })
+
+    it("renders the complete value as the opted-in cell's title", () => {
+      const utils = renderTable({ columns: FULL_VALUE_COLUMNS })
+      const nameCell = utils.getByText('Ada').closest('td')
+      expect(nameCell).toHaveAttribute('title', 'member-1')
+    })
+
+    it('leaves a column without the accessor exactly as its renderer returned it', () => {
+      const utils = renderTable({ columns: FULL_VALUE_COLUMNS })
+      const creditCell = utils.getByText('120').closest('td')
+      expect(creditCell).not.toHaveAttribute('title')
+      expect(within(creditCell as HTMLElement).queryByRole('button')).toBeNull()
+    })
+
+    it('copies the complete value through a focusable control and announces the copy', async () => {
+      // user-event installs its own clipboard stub at setup, so the spy
+      // must replace it afterwards -- otherwise the component writes to
+      // user-event's stub and the spy sees no call.
+      const user = userEvent.setup()
+      const writeText = stubClipboard()
+      const utils = renderTable({ columns: FULL_VALUE_COLUMNS })
+
+      const button = utils.getByRole('button', {
+        name: renderTemplate(zhCN.dataTable.copyValue, { value: 'member-1' }),
+      })
+      await user.click(button)
+
+      expect(button).toHaveFocus()
+      await vi.waitFor(() => {
+        expect(writeText).toHaveBeenCalledWith('member-1')
+      })
+      const announcement = await utils.findByText(
+        renderTemplate(zhCN.dataTable.copiedValue, { value: 'member-1' }),
+      )
+      expect(announcement).toHaveAttribute('role', 'status')
+    })
+
+    it("speaks the control's label and announcement in the active language", async () => {
+      const user = userEvent.setup()
+      stubClipboard()
+      const utils = renderTable(
+        { columns: FULL_VALUE_COLUMNS },
+        { language: 'en-US' },
+      )
+
+      const button = utils.getByRole('button', {
+        name: renderTemplate(enUS.dataTable.copyValue, { value: 'member-1' }),
+      })
+      await user.click(button)
+      await utils.findByText(
+        renderTemplate(enUS.dataTable.copiedValue, { value: 'member-1' }),
+      )
     })
   })
 
