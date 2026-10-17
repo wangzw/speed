@@ -19,9 +19,12 @@
  *
  * Inviting an address mints an invitation the invitee accepts through the
  * tenant-facing invite surface; the console issues and revokes, it does
- * not accept. Every read and write is an operation on the console
- * operations bundle, so the page builds no client and writes no query
- * key.
+ * not accept. The acceptance value is handed out once: it is displayed in a
+ * page-held panel beside the invitation group's region, named for the tenant
+ * and the invitee and closed only by its explicit control, so a scope reset
+ * or a later failure cannot drop the only copy. Every read and write is an
+ * operation on the console operations bundle, so the page builds no client
+ * and writes no query key.
  *
  * The two titled sections are the page's two feedback scopes: the
  * invitation list (issue and revoke) reports under its table, and the
@@ -74,6 +77,9 @@ import type {
   ConsoleMember,
 } from './operations.js'
 
+/** The invitation just issued, with the tenant it was issued under. */
+type IssuedInvitation = ConsoleIssuedInvitation & { readonly tenant: string }
+
 /** The invitation status's label, guarding the closed set. */
 const INVITATION_STATUSES = new Set<string>(['pending', 'accepted', 'revoked'])
 
@@ -105,9 +111,10 @@ export function InvitationsPage() {
   const [tenant, setTenant] = useState(tenantFromLocation)
   const [email, setEmail] = useState('')
   const [expiresAt, setExpiresAt] = useState('')
-  // The invitation just issued, held so its acceptance token -- handed out
-  // once -- can be shown as the invitee's link rather than dropped.
-  const [issued, setIssued] = useState<ConsoleIssuedInvitation | null>(null)
+  // The invitation just issued, held with the tenant it was issued under so
+  // its acceptance token -- handed out once -- can be shown as the invitee's
+  // link rather than dropped, and named for that tenant.
+  const [issued, setIssued] = useState<IssuedInvitation | null>(null)
   const confirm = usePendingConfirm()
 
   const invitations = operations.useInvitations(tenant)
@@ -162,7 +169,7 @@ export function InvitationsPage() {
         expiresAt: toInviteExpiry(expiresAt),
       })
       setEmail('')
-      setIssued(answer)
+      setIssued({ ...answer, tenant })
       return t('invitations.issued.confirm', {
         email: answer.invitation.email,
       })
@@ -391,6 +398,8 @@ export function InvitationsPage() {
             type="button"
             variant="outlined"
             size="small"
+            disabled={invitations.isFetching || members.isFetching}
+            loading={invitations.isFetching || members.isFetching}
             onClick={() => {
               void invitations.refetch()
               void members.refetch()
@@ -464,42 +473,12 @@ export function InvitationsPage() {
               </Button>
             </Box>
             {issued != null && (
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="body2">
-                  {invitationLink === undefined
-                    ? t('invitations.issued.token', {
-                        email: issued.invitation.email,
-                      })
-                    : t('invitations.issued.link', {
-                        email: issued.invitation.email,
-                      })}
-                </Typography>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    alignItems: 'center',
-                    columnGap: 1,
-                    rowGap: 0.5,
-                  }}
-                >
-                  <Typography
-                    variant="body2"
-                    sx={{ wordBreak: 'break-all', fontFamily: 'monospace' }}
-                  >
-                    {issuedValue}
-                  </Typography>
-                  <CopyControl
-                    key={issuedValue}
-                    value={issuedValue}
-                    label={
-                      invitationLink === undefined
-                        ? t('invitations.issued.copyToken')
-                        : t('invitations.issued.copyLink')
-                    }
-                  />
-                </Box>
-              </Box>
+              <InvitationLinkNotice
+                notice={issued}
+                value={issuedValue}
+                hasBuilder={invitationLink !== undefined}
+                onClose={() => setIssued(null)}
+              />
             )}
             <ConsoleAsyncSection
               pending={invitationsPending}
@@ -682,6 +661,91 @@ function acceptanceUrl(link: string): string {
 
 /** How long the copy control keeps its copied state and announcement. */
 const COPY_FEEDBACK_MS = 2000
+
+/**
+ * InvitationLinkNotice: the display of a just-issued invitation's acceptance
+ * value -- the host-built link, or the bare token when the host supplies no
+ * builder -- a value handed out once.
+ *
+ * Its state is the page's (`InvitationsPage` holds it beside the tenant it
+ * was issued under), so a scope reset, a later failure or a context change
+ * cannot drop the only copy; a second issuance in the same group replaces
+ * it. The notice is one polite live region with an explicit close control
+ * whose accessible name names the tenant and the invitee.
+ */
+function InvitationLinkNotice({
+  notice,
+  value,
+  hasBuilder,
+  onClose,
+}: {
+  readonly notice: IssuedInvitation
+  readonly value: string
+  readonly hasBuilder: boolean
+  readonly onClose: () => void
+}) {
+  const { t } = useConsoleUiTranslation()
+  return (
+    <Box
+      role="status"
+      sx={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        columnGap: 2,
+        mb: 2,
+        p: 2,
+        border: 1,
+        borderColor: 'divider',
+        borderRadius: 1,
+      }}
+    >
+      <Box sx={{ flex: 1 }}>
+        <Typography variant="body2">
+          {hasBuilder
+            ? t('invitations.issued.link', { email: notice.invitation.email })
+            : t('invitations.issued.token', { email: notice.invitation.email })}
+        </Typography>
+        <Box
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            columnGap: 1,
+            rowGap: 0.5,
+          }}
+        >
+          <Typography
+            variant="body2"
+            sx={{ wordBreak: 'break-all', fontFamily: 'monospace' }}
+          >
+            {value}
+          </Typography>
+          <CopyControl
+            key={value}
+            value={value}
+            label={
+              hasBuilder
+                ? t('invitations.issued.copyLink')
+                : t('invitations.issued.copyToken')
+            }
+          />
+        </Box>
+      </Box>
+      <Button
+        type="button"
+        size="small"
+        variant="outlined"
+        aria-label={t('invitations.issued.closeAria', {
+          tenant: notice.tenant,
+          email: notice.invitation.email,
+        })}
+        onClick={onClose}
+      >
+        {t('invitations.issued.close')}
+      </Button>
+    </Box>
+  )
+}
 
 /**
  * The copy control for the one-time hand-off value: it writes the complete

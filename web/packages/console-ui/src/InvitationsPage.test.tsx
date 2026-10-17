@@ -403,6 +403,57 @@ describe('InvitationsPage', () => {
     expect(screen.getByText('spd_inv_test_token')).toBeInTheDocument()
   })
 
+  it('shows the acceptance value in a named, closable live region', async () => {
+    const user = userEvent.setup()
+    const operations = withTenant()
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+
+    const display = await screen.findByText(
+      '「ada@example.com」的接受令牌（链接由宿主构造）：',
+    )
+    expect(display.closest('[role="status"]')).not.toBeNull()
+    // The close control names the tenant and the invitee it belongs to.
+    const close = screen.getByRole('button', {
+      name: '关闭租户「acme」发给「ada@example.com」的接受链接',
+    })
+    await user.click(close)
+    expect(screen.queryByText('spd_inv_test_token')).toBeNull()
+    // The scope's success confirmation stands beside the display and is not
+    // the display: closing the display leaves it in place.
+    expect(screen.getByText('已向「ada@example.com」发出邀请')).toBeInTheDocument()
+  })
+
+  it('keeps the acceptance value through a reset of the creating scope', async () => {
+    const user = userEvent.setup()
+    let attempts = 0
+    const operations = withTenant({
+      issueInvitation: () => {
+        attempts += 1
+        return attempts === 1
+          ? Promise.resolve(issuedInvitationFixture())
+          : Promise.reject({ status: 403, code: 'authn.forbidden' })
+      },
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    await screen.findByText('spd_inv_test_token')
+
+    // A second attempt resets the creating scope and settles as a failure.
+    // The display is page state, not slot state: it survives both.
+    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '你没有执行此操作的权限。',
+    )
+    expect(screen.getByText('spd_inv_test_token')).toBeInTheDocument()
+    expect(screen.queryByText('已向「ada@example.com」发出邀请')).toBeNull()
+  })
+
   it('revokes a pending invitation through the bundle', async () => {
     const user = userEvent.setup()
     const revoked: string[] = []
