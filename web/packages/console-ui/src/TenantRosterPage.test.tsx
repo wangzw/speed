@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TenantRosterPage } from './TenantRosterPage.js'
 import type { ConsoleTenant } from './operations.js'
@@ -353,6 +353,12 @@ describe('TenantRosterPage', () => {
     expect(id).toHaveAttribute('aria-invalid', 'true')
     expect(submit).toBeDisabled()
     fireEvent.click(submit)
+    // The write is dispatched asynchronously, so a request made from the
+    // click has not landed yet in this tick. Flush the queue before
+    // claiming none was made; the disabled mirror alone is not proof.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
     expect(created).toEqual([])
 
     await user.clear(id)
@@ -362,6 +368,9 @@ describe('TenantRosterPage', () => {
     expect(alias).toHaveAttribute('aria-invalid', 'true')
     expect(submit).toBeDisabled()
     fireEvent.click(submit)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
     expect(created).toEqual([])
   })
 
@@ -387,6 +396,12 @@ describe('TenantRosterPage', () => {
     expect(input).toHaveAttribute('aria-invalid', 'true')
     expect(submit).toBeDisabled()
     fireEvent.click(submit)
+    // The write is dispatched asynchronously, so a request made from the
+    // click has not landed yet in this tick. Flush the queue before
+    // claiming none was made; the disabled mirror alone is not proof.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
     expect(calls).toEqual([])
   })
 

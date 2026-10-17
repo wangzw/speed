@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TenantDetailPage } from './TenantDetailPage.js'
 import type { ConsoleTenant } from './operations.js'
@@ -82,6 +82,12 @@ describe('TenantDetailPage', () => {
     expect(input).toHaveAttribute('aria-invalid', 'true')
     expect(submit).toBeDisabled()
     fireEvent.click(submit)
+    // The write is dispatched asynchronously, so a request made from the
+    // click has not landed yet in this tick. Flush the queue before
+    // claiming none was made; the disabled mirror alone is not proof.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
     expect(calls).toEqual([])
   })
 
