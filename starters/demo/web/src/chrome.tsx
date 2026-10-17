@@ -34,7 +34,7 @@ import { Avatar } from '@speed/layout-kit'
 import { useNavigate } from '@speed/route-kit'
 import { TenantSwitcher } from '@speed/tenancy-ui'
 import type { TenantOption } from '@speed/tenancy-ui'
-import { touchTargetSx, useAppThemeMode } from '@speed/ui-kit'
+import { useAppThemeMode } from '@speed/ui-kit'
 import { useAppServices } from './app-services.js'
 import { ACCOUNT_PATH } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
@@ -258,7 +258,6 @@ export function LanguageSwitcher(): ReactElement {
         aria-expanded={menuOpen}
         aria-controls={menuOpen ? menuId : undefined}
         onClick={(event) => setAnchorEl(event.currentTarget)}
-        sx={touchTargetSx}
       >
         <GlobeIcon />
       </IconButton>
@@ -301,7 +300,6 @@ export function ColorModeToggle(): ReactElement {
       color="inherit"
       aria-label={dark ? t('colorMode.toLight') : t('colorMode.toDark')}
       onClick={toggleMode}
-      sx={touchTargetSx}
     >
       {dark ? <SunIcon /> : <MoonIcon />}
     </IconButton>
@@ -357,7 +355,6 @@ export function UserMenu(): ReactElement {
         aria-expanded={menuOpen}
         aria-controls={menuOpen ? menuId : undefined}
         onClick={(event) => setAnchorEl(event.currentTarget)}
-        sx={touchTargetSx}
       >
         <Avatar name={displayName} decorative size={32} />
       </IconButton>
