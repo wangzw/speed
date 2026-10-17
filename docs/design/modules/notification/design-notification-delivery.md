@@ -95,7 +95,7 @@ sequenceDiagram
 
 ### 去重键与幂等落账
 
-每个渠道各有一个去重键，取值是契约冻结的派生式：
+每个渠道各有一个去重键，取值由接口契约给出，改动它是破坏性变更：
 
 ```
 idempotency_key = hex(sha256(canonicalJSON{

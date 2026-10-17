@@ -233,8 +233,8 @@ var ErrMalformedHash error
 ### 对外接口面
 
 - 根包符号的接口面与不兼容变更的判据见 [design-authn](design-authn.md) 的对外接口面；本文不另列符号。
-- `(*authn.Gate)(nil)` 与它声明的鉴别阶段是别层定序的锚点，取值不变。
-- 收口计数器 `authn.gate.conclusions`、它的单位、属性名 `outcome` 与全部桶名冻结：已有取值不改名，只许新增取值。
+- `(*authn.Gate)(nil)` 与它声明的鉴别阶段是别层定序的锚点，取值属于对外接口面，改动它是破坏性变更。
+- 收口计数器 `authn.gate.conclusions`、它的单位、属性名 `outcome` 与全部桶名属于对外接口面：新增取值是兼容的，改名、删除或改变既有取值的含义是破坏性变更。
 - 模块名、配置命名空间与哨兵的名字属于对外接口面；哨兵的触发条件以本文的哨兵表为准。
 - `pkg/authn/static` 的 `Hash`、`HashPBKDF2`、`ParseHash`、`ErrMalformedHash` 与条目格式是它与写表者之间的接口面。
 

@@ -273,7 +273,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 ### 中间件在链上代表的功能
 
-解析模块登记的中间件以 `(*Resolution)(nil)` 作为自己的 `Provides`，与描述符里那条交付声明取同一个标识。**这是别的层在认定阶段内指向解析层的唯一锚点**，因而是本模块对外的稳定契约面；跨类别的先后由阶段给出，不由这条锚点给出。
+解析模块登记的中间件以 `(*Resolution)(nil)` 作为自己的 `Provides`，与描述符里那条交付声明取同一个标识。**这是别的层在认定阶段内指向解析层的唯一锚点**，因而是本模块的对外接口面，改动它是破坏性变更；跨类别的先后由阶段给出，不由这条锚点给出。
 
 该层声明 `StageIdentify`，与认证网关同处认定阶段。它用指向 `(*authn.Gate)(nil)` 的 `After` 把自己排在认证之内（[ADR-tenant-ordering-2026-09-21](../../../adr/adr-tenant-ordering-2026-09-21.md)）——这是一条阶段内的硬约束，不是跨类别的定位。本层不声明 `Order`：它在认定阶段内的位置由阶段内的约束与登记先后给出。
 
@@ -336,7 +336,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 ### 对外接口面
 
-`Resolution`、`Catalog`、`Extractor`、`Tenant`、`ID`、`IsIdentifier`、`Status`、`Model` 与 `CrossTenant`、`FromContext` 是本模块与其他模块之间的接口面。中间件在链上代表的那个功能标识与描述符里的交付标识同为 `(*Resolution)(nil)`，别的模块据它排序，取值不变。约定里那一列的名字 `tenant_id`、它的非空约束与它在主键里的位置同样在这个面上：迁移文件由声明方写，改名或改键都是一次全库迁移。准入层的定序锚点 `Admission` 与它交付的守卫见 [design-tenant-admission](design-tenant-admission.md) 的对外接口面。
+`Resolution`、`Catalog`、`Extractor`、`Tenant`、`ID`、`IsIdentifier`、`Status`、`Model` 与 `CrossTenant`、`FromContext` 是本模块与其他模块之间的接口面。中间件在链上代表的那个功能标识与描述符里的交付标识同为 `(*Resolution)(nil)`，别的模块据它排序，取值属于对外接口面，改动它是破坏性变更。约定里那一列的名字 `tenant_id`、它的非空约束与它在主键里的位置同样在这个面上：迁移文件由声明方写，改名或改键都是一次全库迁移。准入层的定序锚点 `Admission` 与它交付的守卫见 [design-tenant-admission](design-tenant-admission.md) 的对外接口面。
 
 **标识的取值域也在对外接口面内**：非空，且不含空白与控制字符，根包的 `IsIdentifier` 是本模块对这一条的唯一陈述，名册的字段判定（`pkg/tenant/catalog/roster.go` 的 `checkField`）也走它——空值在那次调用之前先判一档，只为挑出两种文本，取值域本身仍只有 `IsIdentifier` 一条陈述。按租户取值的模块各自复述这条判据——设置模块的 `ForTenant` 即一处——而不以 import 本模块的方式取用它（[settings](../settings/design-settings.md) 记有那条依赖为何不存在）。两处是否仍是同一条，由消费方自己的测试包 `pkg/settings/settings_test.go` 的 `TestForTenantAgreesWithTheTenantIdentifierDomain` 拿同一张标识形状表逐形状驱动双方守住。
 

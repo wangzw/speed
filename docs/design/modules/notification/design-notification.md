@@ -188,7 +188,7 @@ type Message struct {
 - `Channel` 的取值集合：`in_app`、`email`、`sms`，`KnownChannel` 的判定面。增删一个渠道是宿主可见的破坏性变更。
 - `TypeSpec` 的字段语义：`Key` 是全局唯一类型名、`DefaultChannels` 是 `Channel` 子集、`Unsubscribable` 的极性与「不可退订」相反、`RecipientVisibleParams` 非 `nil` 即白名单。改字段名或改极性使既有声明静默改变行为。
 - `Dispatch` 的字段语义：`Locale` 非空、`OccurrenceID` 参与去重键。`Message` 的字段语义：`Title` 与 `Body` 是已渲染文本。
-- 路由的路径、每条路由的过滤参数与分页界限、基路径 `/api/v1/notifications`，以及收件箱与偏好的应答形状，是宿主可见面；改动它们
+- 路由的路径、每条路由的过滤参数与分页界限、基路径 `/api/v1/notifications`，以及收件箱与偏好的应答形状，是宿主可见面；改动它们是宿主可见的破坏性变更。
 - 哨兵 `ErrUnknownType`、`ErrUnknownChannel`、`ErrNotUnsubscribable`、`ErrParamsNotAllowed`、`ErrMessageNotFound`、`ErrInvalidConfig`、`ErrInvalidRequest` 是判别面，调用方以 `errors.Is` 判别，包裹一律用 `%w`。
 
 ### 哨兵错误

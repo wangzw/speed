@@ -8,7 +8,7 @@
 
 `pkg/authn` 定义判定接缝 `Decider`、值类型 `Decision` 与动作常量 `Action`，由宿主或授权模块实现（[ADR-authn-decision-seam-2026-10-10](adr-authn-decision-seam-2026-10-10.md)）。授权模块 import `pkg/authn` 根包并交付接缝的实现，方向与 `tenant/admission` import `pkg/authn` 同形（[ADR-authn-scope-2026-10-10](adr-authn-scope-2026-10-10.md)）。
 
-`Decision` 的字段是 `Action`、`Actor`、`Tenant`、`Target`、`TargetAccount` 与 `Params`，其形状与逐项填法是 authn 对授权的稳定承诺。动作常量是闭集，归属判据是「作用于他人账户或租户级资源的管理面动作、冒充的开始与读写、非成员进入租户」；`Decision.Tenant` 为空表示平台范围、只用于账户级动作，租户级动作的 `Tenant` 一律由 `authn.admin` 解析对象归属后填入，`Decider` 不会收到租户为空的租户级动作。
+`Decision` 的字段是 `Action`、`Actor`、`Tenant`、`Target`、`TargetAccount` 与 `Params`，其形状与逐项填法是 authn 对授权的对外接口面。动作常量是闭集，归属判据是「作用于他人账户或租户级资源的管理面动作、冒充的开始与读写、非成员进入租户」；`Decision.Tenant` 为空表示平台范围、只用于账户级动作，租户级动作的 `Tenant` 一律由 `authn.admin` 解析对象归属后填入，`Decider` 不会收到租户为空的租户级动作。
 
 授权采用的模型是角色到权限、权限按（资源，动作）声明、租户即策略域（[ADR-authz-model-2026-10-12](adr-authz-model-2026-10-12.md)）。判定输入因此是「主体、域、资源、动作」，资源与动作要从 `Decision` 得出；`Decision` 携带这些信息里的 `Action`、`Target`、`TargetAccount` 与 `Tenant`，不携带资源的属性集或层级关系。
 
@@ -22,7 +22,7 @@ authn 为这条接缝列了失效条件，「授权要求 `Decision` 携带当�
 
 采纳它意味着授权可以按属性或角色层级判定，`Decision` 新增承载属性的字段，动作常量与填法随之扩展。
 
-**否决**：本设计的判定是（主体，域，资源，动作）的精确匹配，resource 与 action 由 `Action` 与 `Target` 经一张译表唯一得出，不需要属性集或层级。扩展 `Decision` 会触发 [ADR-authn-decision-seam-2026-10-10](adr-authn-decision-seam-2026-10-10.md) 的对应失效条件，把一次接缝内部的扩展变成对 authn 稳定承诺的改动，而这份能力本设计用不上。
+**否决**：本设计的判定是（主体，域，资源，动作）的精确匹配，resource 与 action 由 `Action` 与 `Target` 经一张译表唯一得出，不需要属性集或层级。扩展 `Decision` 会触发 [ADR-authn-decision-seam-2026-10-10](adr-authn-decision-seam-2026-10-10.md) 的对应失效条件，把一次接缝内部的扩展变成对 authn 对外接口面的改动，而这份能力本设计用不上。
 
 ### 批量判定
 
@@ -65,7 +65,7 @@ authn 为这条接缝列了失效条件，「授权要求 `Decision` 携带当�
 
 ## 后果
 
-接缝的实现是一个编译期可断言的 `authn.Decider`；authn 的稳定承诺（`Decision` 的字段与填法、动作常量）不被改动。平台级角色经平台域与 `authn.tenant.access` 的回退分支落地，准入层与 authn 都不改。
+接缝的实现是一个编译期可断言的 `authn.Decider`；authn 的对外接口面（`Decision` 的字段与填法、动作常量）不被改动。平台级角色经平台域与 `authn.tenant.access` 的回退分支落地，准入层与 authn 都不改。
 
 **接受的代价：**
 

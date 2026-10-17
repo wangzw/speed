@@ -168,7 +168,8 @@ The package imports **no** `@speed` sibling package, and no shell imports it.
 `RouteProvider`/`RouteView`/`RouteLink`/`useNavItems`/`useNavigate`
 signatures, and `NavItem` are the host-visible surface. The packages release
 as one locked version group (`.changeset/config.json`), so changing a shape
-after release is a breaking change and ships with a release reconciliation.
+after release is a breaking change, labelled with a `!` scope and a
+`BREAKING CHANGE` footer.
 
 ## Failure semantics
 

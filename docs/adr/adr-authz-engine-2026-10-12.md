@@ -46,7 +46,7 @@
 
 - **引擎与版本。** 判定经 Casbin v3 的强制器求值，版本在依赖里钉死。选型依据是许可（Apache-2.0）与直接依赖数量：v3.11.0 的直接依赖是 `bmatcuk/doublestar/v4`、`casbin/govaluate`、`google/uuid`。
 - **模型文本固定在代码里。** 模型定义是根包的一个常量 `ModelText`，经 `model.NewModelFromString` 装载，不读文件、不接受宿主提供。可插拔的模型文本不在本模块的承诺里。
-- **策略数据与判定语言分离。** 宿主经本模块的管理接口写角色、授权与绑定这些策略行，不能改模型文本；判定语言是设计承诺的一部分（[ADR-authz-reversal-2026-10-12](adr-authz-reversal-2026-10-12.md)）。
+- **策略数据与判定语言分离。** 宿主经本模块的管理接口写角色、授权与绑定这些策略行，不能改模型文本；判定语言属于设计对外接口面（[ADR-authz-reversal-2026-10-12](adr-authz-reversal-2026-10-12.md)）。
 - **策略的持久化不在本记录。** 引擎经策略存储接口装卸策略，其落点见 [ADR-authz-store-2026-10-12](adr-authz-store-2026-10-12.md)。
 
 ## 后果
