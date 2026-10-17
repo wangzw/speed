@@ -220,4 +220,4 @@ sequenceDiagram
 | 登录标识节的邮箱可用性属性 `emailAvailable` | 未实现 | — |
 | 社交绑定的 link 流程以顶层 `return_to` 发出回跳地址 | 未实现 | — |
 | 绑定添加区的渠道取自发现文档，`SocialBindingsSectionProps` 不含 `providers` | 未实现 | — |
-| 绑定回调在本部署不提供社交绑定时渲染 `absent` | 未实现 | — |
+| 绑定回调在本部署不提供社交绑定时渲染 `absent` | 已实现 | `web/packages/account-ui/src/BindingCallbackHandler.tsx` `BindingCallbackHandler` |

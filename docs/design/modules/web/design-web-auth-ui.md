@@ -284,4 +284,4 @@ sequenceDiagram
 | 交互之后出现的结果用先挂空区域、再填文本的 live region | 未实现 | — |
 | 不支持的步骤的出口 | 未实现 | — |
 | 命名空间资源 | 已实现 | `web/packages/auth-ui/src/resources.ts` |
-| 本部署不提供回调落点时渲染 `absent` | 未实现 | — |
+| 本部署不提供回调落点时渲染 `absent` | 已实现 | `web/packages/auth-ui/src/SocialCallbackHandler.tsx` `SocialCallbackHandler` |
