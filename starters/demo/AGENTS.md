@@ -239,6 +239,37 @@ which class of traffic belongs where:
 | `ops` | probes and documents; `GET /health`, `GET /ready`, `GET /openapi.json` |
 | `web` | the frontend bundle; its catch-all route covers the endpoint's whole path space and it carries no other route |
 
+### What each endpoint claims
+
+The dispatch selects an endpoint by the path prefixes the configuration gives
+it under `http.endpoints.<name>.prefixes`; the registered routes take no part in
+the choice. `server/testdata/` declares the table:
+
+| Endpoint | Claims |
+|---|---|
+| `api` | `/api` |
+| `account` | `/auth`, `/features` |
+| `admin` | `/audit`, `/authz`, `/settings`, `/sms`, `/tenant` |
+| `ops` | `/` (omitted: it is alone on its listener) |
+| `web` | `/` |
+
+The table is the product's fixed namespace map, not a description of the
+current run: a capability dropped from `baselineServe`, or removed from the
+imports altogether, keeps its namespace claimed. `sms.admin` is the example —
+the binary imports it for the contract and no command runs it, so `admin`
+claims `/sms` even though no route answers there. A path under a claim reaches
+that endpoint's chain even when no route matches: with no credentials the
+gateway refuses it 401, and an admitted caller gets the endpoint's own 404. A
+frontend page path must stay outside every non-root claim, or a page navigation
+would receive that endpoint's answer instead of the entry document.
+
+Two tests hold the table. `server/claims_test.go` holds every operation of the
+served `/openapi.json` and of the committed `contracts/api.json` to it, so an
+operation whose namespace lost its claim is reported. `server/differential_test.go`
+removes routing modules from `baselineServe` one group at a time and compares
+every anonymous answer of the variant with the baseline's — byte for byte apart
+from `Date` — on both deployment topologies.
+
 The five endpoints hang on two listeners, which the configuration under
 `server/testdata/` declares: `api`, `account`, `admin` and `web` share the
 `backend` listener, and `ops` has its own. A listener is one socket, so the

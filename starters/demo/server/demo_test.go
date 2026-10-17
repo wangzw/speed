@@ -61,6 +61,16 @@ func scaledForRace(d time.Duration) time.Duration {
 }
 
 func TestMain(m *testing.M) {
+	// A differential case re-executes this binary as the program, naming the
+	// modules its variant leaves out. That branch builds nothing and runs no
+	// test: it drops the modules from baselineServe, says what the run then
+	// includes, and becomes the program. The product code carries no switch for
+	// it; the variable is read here, in the test binary.
+	if list, ok := os.LookupEnv(serveWithoutEnv); ok {
+		serveWithout(list)
+		os.Exit(run())
+	}
+
 	dir, err := os.MkdirTemp("", "demo")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "creating the build directory failed:", err)
@@ -481,6 +491,64 @@ func get(t *testing.T, url string) response {
 	return send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet, url, nil, nil)
 }
 
+// rawResponse is one answer with its headers, for the cases that compare two
+// anonymous answers byte for byte.
+type rawResponse struct {
+	status int
+	header http.Header
+	body   []byte
+}
+
+// getRaw makes one unauthenticated request and keeps the answer's headers.
+func getRaw(t *testing.T, url string) rawResponse {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("building GET %s: %v", url, err)
+	}
+	res, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("reading the body of GET %s: %v", url, err)
+	}
+	return rawResponse{status: res.StatusCode, header: res.Header, body: body}
+}
+
+// sameExceptDate holds two answers to be identical apart from Date: status,
+// every header (names canonical, values in order) and the body. Nothing else is
+// filtered: a header that changes from one request to the next is a difference
+// the case reports rather than one it hides.
+func sameExceptDate(t *testing.T, what string, want, got rawResponse) {
+	t.Helper()
+	if want.status != got.status {
+		t.Errorf("%s: the statuses differ: %d and %d\nfirst body:\n%s\nsecond body:\n%s",
+			what, want.status, got.status, want.body, got.body)
+	}
+	names := map[string]bool{}
+	for name := range want.header {
+		names[name] = true
+	}
+	for name := range got.header {
+		names[name] = true
+	}
+	for name := range names {
+		if http.CanonicalHeaderKey(name) == "Date" {
+			continue
+		}
+		first, second := want.header.Values(name), got.header.Values(name)
+		if !slices.Equal(first, second) {
+			t.Errorf("%s: the %s headers differ: %q and %q", what, name, first, second)
+		}
+	}
+	if !bytes.Equal(want.body, got.body) {
+		t.Errorf("%s: the bodies differ:\nfirst:\n%s\nsecond:\n%s", what, want.body, got.body)
+	}
+}
+
 // send makes one request and reads the whole answer. A non-nil body is encoded
 // as JSON and the content type is set for it; the headers are set as given.
 func send(t *testing.T, client *http.Client, method, url string, body any,
@@ -635,6 +703,43 @@ func TestServeAnswersTheProbes(t *testing.T) {
 			t.Errorf("GET %s on the account endpoint answered %d, want 200:\n%s", path, res.status, res.body)
 		}
 	}
+
+	// The assembly does not show through an anonymous answer on a guarded
+	// endpoint. The two paths below are both under prefixes the admin endpoint
+	// claims, and the two capabilities behind them are assembled differently:
+	// sms.admin is imported for the contract but named by no command, so it
+	// registers no route, while tenant.admin runs. The dispatch selects an
+	// endpoint by its claims alone, so both requests reach the admin chain and
+	// the gateway refuses each before any route matters — same status, same
+	// headers but Date, same body, and a challenge for the admin realm. Before
+	// the claims existed the selection was derived from the assembly, and
+	// /sms/admin/templates answered with the frontend bundle while
+	// /tenant/admin/tenants answered 401.
+	templates := getRaw(t, accountBase+"/sms/admin/templates")
+	tenants := getRaw(t, accountBase+"/tenant/admin/tenants")
+	for _, answer := range []struct {
+		path string
+		got  rawResponse
+	}{
+		{"/sms/admin/templates", templates},
+		{"/tenant/admin/tenants", tenants},
+	} {
+		if answer.got.status != http.StatusUnauthorized {
+			t.Errorf("GET %s on the admin endpoint answered %d, want 401:\n%s",
+				answer.path, answer.got.status, answer.got.body)
+		}
+		if challenge := answer.got.header.Get("Www-Authenticate"); !strings.Contains(challenge, `realm="admin"`) {
+			t.Errorf("GET %s answered a 401 with %q, want a challenge for the admin realm",
+				answer.path, challenge)
+		}
+	}
+	sameExceptDate(t, "GET /sms/admin/templates and GET /tenant/admin/tenants", templates, tenants)
+
+	// Every operation of the platform's API surface falls under a prefix its
+	// own endpoint claims. The check reads the served document — the available
+	// set of this binary — and the committed platform contract, and holds each
+	// of them against this case's configuration and the six samples.
+	checkPlatformClaims(t, config, document.body)
 
 	// The deployment assembles two factor kinds, and the second one is what
 	// makes a step-up completable -- which is why it is here rather than left

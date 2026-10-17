@@ -22,6 +22,12 @@ http:
       address: "127.0.0.1:8080"
     ops:
       address: "127.0.0.1:8083"
+  # Each endpoint claims the path prefixes it answers on its listener. The
+  # dispatch selects an endpoint by these claims alone, the longest claim
+  # winning, and a path under no non-root claim goes to the endpoint that
+  # claims "/". The table is the product's fixed namespace map: a capability
+  # dropped from a run, or from the imports, keeps its namespace claimed. See
+  # AGENTS.md.
   endpoints:
     api:
       listener: backend
@@ -33,6 +39,7 @@ http:
       listener: backend
       prefixes: ["/audit", "/authz", "/settings", "/sms", "/tenant"]
     ops:
+      # Alone on its listener, so it claims "/" by default.
       listener: ops
     web:
       listener: backend
