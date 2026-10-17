@@ -530,7 +530,27 @@ function SsoProviderWriteForm({
               ...(clientSecret === '' ? {} : { client_secret: clientSecret }),
             }
             if (provider === undefined) {
-              createProvider.mutate({ tenant, ...body })
+              createProvider.mutate(
+                { tenant, ...body },
+                {
+                  // A landed create returns the form to its initial state,
+                  // the write-only client secret included: the provider now
+                  // exists, and none of what was typed belongs to the next
+                  // one. A refusal keeps every value for correction.
+                  onSuccess: () => {
+                    setProtocol('')
+                    setName('')
+                    setProvisioning('')
+                    setEnabled('unchanged')
+                    setTrustIdpMfa('unchanged')
+                    setAllowIdpInitiated('unchanged')
+                    setAllowSha1('unchanged')
+                    setMergeExisting('unchanged')
+                    setConfig('')
+                    setClientSecret('')
+                  },
+                },
+              )
             } else {
               updateProvider.mutate({ id: provider.id, tenant, ...body })
             }

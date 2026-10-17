@@ -213,6 +213,65 @@ describe('SsoPage', () => {
     })
   })
 
+  it('clears the create form, the write-only secret included, after a create lands', async () => {
+    const user = userEvent.setup()
+    const operations = withProviders({
+      createSsoProvider: () => Promise.resolve(providerFixture()),
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await user.type(screen.getByLabelText('协议'), 'oidc')
+    await user.type(screen.getByLabelText('名称'), 'New IdP')
+    await user.type(screen.getByLabelText('开通方式'), 'manual')
+    await user.type(
+      screen.getByLabelText('配置（JSON）'),
+      '{{"issuer":"https://idp"}',
+    )
+    await user.type(screen.getByLabelText('客户端密钥'), 'top-secret')
+    await user.click(screen.getByRole('button', { name: '新建提供方' }))
+
+    // A landed create returns the form to its initial state: every input is
+    // empty, the three-state selects read "unchanged", and the write-only
+    // client secret is cleared with the rest.
+    await vi.waitFor(() => {
+      expect(screen.getByLabelText('协议')).toHaveValue('')
+      expect(screen.getByLabelText('名称')).toHaveValue('')
+      expect(screen.getByLabelText('开通方式')).toHaveValue('')
+      expect(screen.getByLabelText('配置（JSON）')).toHaveValue('')
+      expect(screen.getByLabelText('客户端密钥')).toHaveValue('')
+    })
+    expect(screen.getByLabelText('已启用')).toHaveTextContent('保持不变')
+  })
+
+  it('keeps the create form content when the create is refused', async () => {
+    const user = userEvent.setup()
+    const operations = withProviders({
+      createSsoProvider: () =>
+        Promise.reject({
+          status: 403,
+          code: 'authn.forbidden',
+          message: 'denied',
+          auth: true,
+        }),
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await user.type(screen.getByLabelText('协议'), 'oidc')
+    await user.type(screen.getByLabelText('名称'), 'New IdP')
+    await user.type(screen.getByLabelText('开通方式'), 'manual')
+    await user.type(screen.getByLabelText('客户端密钥'), 'top-secret')
+    await user.click(screen.getByRole('button', { name: '新建提供方' }))
+
+    expect(await screen.findByText('你没有执行此操作的权限。')).toBeInTheDocument()
+    // The refused create keeps every field for correction.
+    expect(screen.getByLabelText('协议')).toHaveValue('oidc')
+    expect(screen.getByLabelText('名称')).toHaveValue('New IdP')
+    expect(screen.getByLabelText('开通方式')).toHaveValue('manual')
+    expect(screen.getByLabelText('客户端密钥')).toHaveValue('top-secret')
+  })
+
   it('updates a provider through the bundle', async () => {
     const user = userEvent.setup()
     const updates: ConsoleWriteSsoProviderInput[] = []
