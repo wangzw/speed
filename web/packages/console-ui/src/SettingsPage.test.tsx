@@ -231,7 +231,7 @@ describe('SettingsPage', () => {
 
     // The success confirmation names the setting that was removed.
     expect(
-      await screen.findByText('设置项 mail.password 已移除'),
+      await screen.findByText('设置项「mail.password」已移除'),
     ).toBeInTheDocument()
   })
 
@@ -598,7 +598,7 @@ describe('SettingsPage', () => {
     expect(writes).toContain('remove:mail.retry')
     // The landed remove fills the page's status region and names the row.
     expect(
-      await screen.findByText('设置项 mail.retry 已移除'),
+      await screen.findByText('设置项「mail.retry」已移除'),
     ).toBeInTheDocument()
   })
 

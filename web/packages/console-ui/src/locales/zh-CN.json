@@ -272,7 +272,7 @@
     "removeMessage": "移除设置项「{{key}}」的当前取值。",
     "removeAria": "移除设置项 {{key}}",
     "saved": "设置已保存",
-    "removed": "设置项 {{key}} 已移除",
+    "removed": "设置项「{{key}}」已移除",
     "state": {
       "default": "默认",
       "overridden": "已覆盖"
