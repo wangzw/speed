@@ -344,7 +344,7 @@ flowchart TD
 | 前端的组合次序：区域按路径前缀、先存在性后权限、权限码按精确命中 | 已实现 | `starters/demo/web/src/app.tsx` `AppFrame`、`ConsoleFeatureGate`、`ConsoleAreaGate`、`ConsoleRouteGuard` |
 | 租户框架 `TenantFrame` 与回调落点的 `absent` 视图 | 已实现 | `starters/demo/web/src/app.tsx` `TenantFrame`；`web/packages/auth-ui/src/SocialCallbackHandler.tsx` `SocialCallbackHandler`；`web/packages/account-ui/src/BindingCallbackHandler.tsx` `BindingCallbackHandler` |
 | 宿主侧的特性读取与特性态失败的呈现 | 部分实现 | `starters/demo/web/src/app.tsx` `TenantFrame`、`ConsoleFeatureGate`、`RoutePresenceFailed`；`starters/demo/web/src/platform-permissions.tsx` `PlatformPermissions`；`starters/demo/web/src/pages/account-page.tsx` `AccountSettingsPage`；`starters/demo/web/src/pages/home-page.tsx` `HomePage` |
-| 结束冒充落定后横幅随即撤下，不等快照翻转 | 未实现 | — |
+| 结束冒充落定后横幅随即撤下，不等快照翻转 | 已实现 | `starters/demo/web/src/impersonation.tsx` `ImpersonationBannerSlot`；`starters/demo/web/src/impersonation.test.tsx` |
 | 冒充期间不挂租户选择器 | 已实现 | `starters/demo/web/src/app.tsx` `TenantFrame` |
 | 冒充期间的壳（横幅挂载、身份变更动作、当前租户、实时订阅重建、到期的有界重读、控制台区在冒充中的重定向） | 已实现 | `starters/demo/web/src/impersonation.tsx` `IdentityChangeProvider`、`useImpersonationStatus`、`ImpersonationBannerSlot`；`starters/demo/web/src/app.tsx` `TenantFrame`、`ConsoleImpersonationGate`、`ConsoleEntry`；`starters/demo/web/src/platform-permissions.tsx` `usePlatformPermissions` |
 | 登录页文案不断言装配 | 已实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |

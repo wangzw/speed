@@ -146,6 +146,48 @@ function roundTripSession(
   }
 }
 
+/**
+ * A session whose restore() answers only when the suite releases it: the
+ * window between a settled end and the re-read that flips the snapshot,
+ * which the server widens whenever a replica's validity cache lags.
+ */
+function gatedSession(
+  initial: AuthSnapshot,
+  next: () => AuthSnapshot | null,
+): {
+  readonly session: ReturnType<typeof createTestSession>
+  readonly pendingRestores: () => number
+  readonly releaseRestore: () => Promise<void>
+} {
+  const base = createTestSession(initial)
+  const gates: (() => void)[] = []
+  return {
+    session: {
+      ...base,
+      restore: () =>
+        new Promise<boolean>((resolve) => {
+          gates.push(() => {
+            const snapshot = next()
+            if (snapshot !== null) {
+              base.set(snapshot)
+            }
+            resolve(snapshot !== null)
+          })
+        }),
+    },
+    pendingRestores: () => gates.length,
+    releaseRestore: async () => {
+      const gate = gates.shift()
+      if (gate === undefined) {
+        throw new Error('no pending restore to release')
+      }
+      await act(async () => {
+        gate()
+      })
+    },
+  }
+}
+
 interface Backend {
   readonly fn: RequestFn
   readonly rosterReads: () => number
@@ -170,6 +212,9 @@ function makeBackend(options: {
   readonly endStatus?: 'ok' | '404'
   /** Holds the roster read open until the suite resolves it. */
   readonly rosterGate?: Promise<void>
+  /** Keeps the status read answering the grant after the DELETE settles: a
+   * replica whose check-ttl cache has not expired yet. */
+  readonly statusLags?: boolean
 } = {}): Backend {
   let grant = options.grant
   let rosterReads = 0
@@ -204,7 +249,9 @@ function makeBackend(options: {
       }
       if (method === 'DELETE') {
         deletes += 1
-        grant = undefined
+        if (options.statusLags !== true) {
+          grant = undefined
+        }
         if (options.endStatus === '404') {
           return Promise.reject({ status: 404, code: 'client.http.404' })
         }
@@ -714,5 +761,197 @@ describe('the impersonation shell', () => {
     expect(
       await screen.findByRole('link', { name: demoEnUS.nav.console }),
     ).toBeInTheDocument()
+  })
+
+  it('withholds the banner as soon as the end settles, before the session re-read', async () => {
+    window.history.replaceState({}, '', '/')
+    // The replica's validity cache still answers the grant after the DELETE:
+    // the window the host must cover without waiting for the snapshot.
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+      statusLags: true,
+    })
+    bindRequestFn(backend.fn)
+    const gated = gatedSession(targetSnapshot(), () => operatorSnapshot())
+    const user = userEvent.setup()
+
+    renderDemoApp({ session: gated.session })
+
+    const notice = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    await user.click(
+      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+    )
+
+    // The DELETE settled and the re-read is held open. The banner is gone,
+    // the confirmation is in the live region that stays mounted, and the
+    // end control went with the banner.
+    await waitFor(() => expect(gated.pendingRestores()).toBe(1))
+    await waitFor(() => expect(banner()).toBeNull())
+    expect(screen.getByText(authUiEnUS.impersonation.ended)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: authUiEnUS.impersonation.end }),
+    ).toBeNull()
+
+    // The re-read settles the operator: the null is released and the banner
+    // stays absent, now because the snapshot says none is in force.
+    await gated.releaseRestore()
+    await waitFor(() => expect(gated.pendingRestores()).toBe(0))
+    expect(banner()).toBeNull()
+    expect(screen.getByText(authUiEnUS.impersonation.ended)).toBeInTheDocument()
+  })
+
+  it('returns the banner to the snapshot once the bounded re-read spends its check-ttl bound', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      window.history.replaceState({}, '', '/')
+      const backend = makeBackend({
+        grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+        endStatus: '404',
+        statusLags: true,
+      })
+      bindRequestFn(backend.fn)
+      // Every re-read keeps naming the impersonated identity: the bound is
+      // spent while the snapshot still says true.
+      const session = scriptedSession(targetSnapshot(), () => targetSnapshot())
+      const user = userEvent.setup({
+        advanceTimers: vi.advanceTimersByTimeAsync,
+      })
+
+      renderDemoApp({ session })
+      const notice = await screen.findByRole('region', {
+        name: authUiEnUS.impersonation.regionLabel,
+      })
+      await user.click(
+        within(notice).getByRole('button', {
+          name: authUiEnUS.impersonation.end,
+        }),
+      )
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(banner()).toBeNull()
+      expect(backend.deletes()).toBe(1)
+
+      // The bounded re-reads keep answering impersonating; short of the
+      // bound the null stands.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(55_000)
+      })
+      expect(banner()).toBeNull()
+
+      // The bound is spent: the null is released and the banner returns,
+      // snapshot-driven.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+      const restored = banner()
+      expect(restored).not.toBeNull()
+
+      // The end control works again: a bare 404 is a settled end, so the
+      // next identity change runs and converges from there.
+      await user.click(
+        within(restored!).getByRole('button', {
+          name: authUiEnUS.impersonation.end,
+        }),
+      )
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(banner()).toBeNull()
+      expect(backend.deletes()).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the banner withdrawn when the re-read settles within the bound', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      window.history.replaceState({}, '', '/')
+      const backend = makeBackend({
+        grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+        statusLags: true,
+      })
+      bindRequestFn(backend.fn)
+      // The identity change's own re-read still answers impersonating; the
+      // first bounded retry has settled back to the operator.
+      let restores = 0
+      const session = scriptedSession(targetSnapshot(), () => {
+        restores += 1
+        return restores === 1 ? targetSnapshot() : operatorSnapshot()
+      })
+      const user = userEvent.setup({
+        advanceTimers: vi.advanceTimersByTimeAsync,
+      })
+
+      renderDemoApp({ session })
+      const notice = await screen.findByRole('region', {
+        name: authUiEnUS.impersonation.regionLabel,
+      })
+      await user.click(
+        within(notice).getByRole('button', {
+          name: authUiEnUS.impersonation.end,
+        }),
+      )
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(banner()).toBeNull()
+
+      // The first bounded retry settles the operator; the banner never
+      // reappears, and the loop stops rather than polling to its bound.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6_000)
+        await Promise.resolve()
+      })
+      expect(banner()).toBeNull()
+      const settledRestores = restores
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(70_000)
+      })
+      expect(banner()).toBeNull()
+      expect(restores).toBe(settledRestores)
+      expect(screen.getByText(authUiEnUS.impersonation.ended)).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('starts without a blanking window: the banner appears when the re-read settles', async () => {
+    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+    const backend = makeBackend()
+    let phase: 'operator' | 'target' = 'operator'
+    const request: RequestFn = <T,>(
+      path: string,
+      requestOptions?: RequestOptions,
+    ) => {
+      const answer = backend.fn<T>(path, requestOptions)
+      if (path === '/auth/impersonation' && requestOptions?.method === 'POST') {
+        phase = 'target'
+      }
+      return answer
+    }
+    bindRequestFn(request)
+    const session = scriptedSession(operatorSnapshot(), () =>
+      phase === 'target' ? targetSnapshot() : operatorSnapshot(),
+    )
+    const user = userEvent.setup()
+
+    renderDemoApp({ session })
+
+    await screen.findByText('You are not impersonating any account.')
+    await user.type(screen.getByLabelText('Target account'), 'acc-1')
+    await user.click(screen.getByRole('button', { name: 'Start impersonation' }))
+
+    // A start announces itself through the re-read: the banner appears with
+    // the impersonated identity and no end confirmation precedes it.
+    expect(
+      await screen.findByRole('region', {
+        name: authUiEnUS.impersonation.regionLabel,
+      }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(authUiEnUS.impersonation.ended)).toBeNull()
   })
 })

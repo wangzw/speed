@@ -40,6 +40,20 @@
  * short interval for at most the check-ttl upper bound; it then stops and
  * leaves the banner and its end control in place, and a refocus re-reads
  * through the query client's staleTime 0.
+ *
+ * An explicit end is the write half of the same window. Its result is what
+ * the user acted on, so the banner stops claiming an impersonation is in
+ * force the moment the DELETE settles -- including a bare 404 -- without
+ * waiting for the snapshot to flip; the confirmation shows in the live
+ * region that outlives the banner, and the end control goes with it. The
+ * null holds until a re-read reports the session no longer impersonates, or
+ * until the bounded re-read runs out: the same interval and upper bound as
+ * the expiry path, because every replica's validity cache may lag one
+ * check-ttl behind an explicit end. When it runs out the banner returns to
+ * being snapshot-driven; its end control treats a bare 404 as a settled end
+ * and runs the change again, converging once the caches expire. A start has
+ * no corresponding blank: the banner appears when the re-read settles the
+ * impersonated identity.
  */
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
@@ -276,7 +290,12 @@ export function useImpersonationStatus(
  * The end action resolves when the DELETE settles, and a bare 404 counts
  * as settled (there was nothing left to end). It starts the identity
  * change without waiting for it: the banner's contract is the write, and
- * a failure of the re-read must not render as a failed end.
+ * a failure of the re-read must not render as a failed end. The banner
+ * itself is withheld from that instant -- the write's own result says the
+ * impersonation is over, and only the snapshot still says otherwise. The
+ * null is held through the bounded re-read described in this file's header
+ * and released when a re-read settles the operator or the bound runs out;
+ * a start never withholds, because starting is announced by the re-read.
  */
 export function ImpersonationBannerSlot({
   grant,
@@ -284,11 +303,95 @@ export function ImpersonationBannerSlot({
   readonly grant: AuthnImpersonationGrant | undefined
 }): ReactElement {
   const snapshot = useAuthState()
+  const { session } = useAppServices()
   const { applyIdentityChange } = useIdentityChange()
   const endImpersonation = useAuthnImpersonationEnd()
 
   const impersonating =
     snapshot.state === 'authenticated' && snapshot.impersonating
+
+  // Whether the banner is withheld after an explicit end whose re-read has
+  // not settled the operator yet. Releases on a re-read that reports the
+  // operator, or when the bounded re-read spends its check-ttl bound; a
+  // snapshot that says no impersonation is in force always releases it, so
+  // a later start renders normally.
+  const [withheld, setWithheld] = useState(false)
+
+  // Cancels an in-flight bounded re-read when another end starts or the
+  // frame unmounts, so no timer outlives the banner.
+  const stopReRead = useRef<(() => void) | null>(null)
+  useEffect(
+    () => () => {
+      stopReRead.current?.()
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (!impersonating) {
+      setWithheld(false)
+    }
+  }, [impersonating])
+
+  /**
+   * Runs the identity change and holds the banner withheld until a re-read
+   * stops naming the impersonated identity. The bound runs from the settled
+   * write: after it every replica's check-ttl cache has certainly expired,
+   * so a snapshot that still says impersonating is the one to render.
+   */
+  const holdUntilSettled = useCallback(async (): Promise<void> => {
+    stopReRead.current?.()
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    stopReRead.current = () => {
+      cancelled = true
+      if (timer !== undefined) {
+        clearTimeout(timer)
+      }
+    }
+    const deadline = Date.now() + CHECK_TTL_MAX_MS
+
+    // The only moment the null can be released without a re-read: once the
+    // bound is spent the banner follows the snapshot again.
+    const scheduleOrRelease = (): void => {
+      if (cancelled) {
+        return
+      }
+      if (Date.now() >= deadline) {
+        setWithheld(false)
+        return
+      }
+      timer = setTimeout(() => {
+        void retry()
+      }, CHECK_TTL_RETRY_MS)
+    }
+
+    // A retry that observes the flip runs the full change once more: rows
+    // read while the snapshot still said impersonating belong to that
+    // identity, and settle back out with it.
+    const retry = async (): Promise<void> => {
+      try {
+        await session.restore()
+      } catch {
+        // A failed re-read leaves the banner withheld; the next interval
+        // tries again.
+      }
+      if (cancelled) {
+        return
+      }
+      if (!session.getSnapshot().impersonating) {
+        await applyIdentityChange('ended')
+        return
+      }
+      scheduleOrRelease()
+    }
+
+    await applyIdentityChange('ended')
+    if (cancelled || !session.getSnapshot().impersonating) {
+      return
+    }
+    scheduleOrRelease()
+  }, [applyIdentityChange, session])
 
   const end = useCallback(async (): Promise<void> => {
     try {
@@ -298,8 +401,13 @@ export function ImpersonationBannerSlot({
         throw error
       }
     }
-    void applyIdentityChange('ended')
-  }, [applyIdentityChange, endImpersonation])
+    // The write settled, so the banner must not keep saying an
+    // impersonation is in force; the snapshot may take up to one check-ttl
+    // to agree. The identity change and its bounded re-read follow without
+    // being awaited: the banner's contract is the write.
+    setWithheld(true)
+    void holdUntilSettled()
+  }, [endImpersonation, holdUntilSettled])
 
   const principal = snapshot.principal
   const subject =
@@ -312,7 +420,7 @@ export function ImpersonationBannerSlot({
   return (
     <ImpersonationBanner
       impersonation={
-        impersonating
+        impersonating && !withheld
           ? {
               subject,
               ...(grant === undefined
