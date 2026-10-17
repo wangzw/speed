@@ -410,10 +410,10 @@ graph TD
 | 设置页的批量保存按一次尝试 | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage` |
 | 创建成功后表单复位与必填为空时提交禁用 | 未实现 | — |
 | 确认对话框在确认点击时关闭（含权限页的角色删除） | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/internal/confirm.tsx` `usePendingConfirm` |
-| 冒充状态读与结束后的呈现 | 未实现 | — |
+| 冒充状态读与结束后的呈现 | 已实现 | `web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`、`isNotImpersonating` |
 | 读的陈旧提示、刷新忙态与详情页 404 占位 | 未实现 | — |
 | 租户选择器的加载、失败与空态 | 未实现 | — |
-| 步进对话框的失败面 | 未实现 | — |
+| 步进对话框的失败面 | 已实现 | `web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`；`web/packages/console-ui/src/internal/flow-step.tsx` `FlowStep` |
 | 写入失败的裸 403 与裸 401 文案 | 未实现 | — |
 | 写入在途时改变上下文的控件禁用 | 未实现 | — |
 | 详情面板内写入在途时 `busy` 与服务密钥的关闭守卫 | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`（`detailBusy`、`requestDetailClose`）、`OneTimeSecretNotice` |
