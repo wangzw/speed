@@ -82,7 +82,7 @@ sequenceDiagram
 
 1. 用户在列表里点一个非当前租户的行；行的点击守卫先确认它不是当前租户，再把菜单关掉、调 `onSelect(id)`。
 2. 宿主接手：把路由切到那个租户，更新它交给 `TenantProvider` 的租户标识，并用切换之前读到的离任租户 id 逐出该租户的查询子树。
-3. 控件报出已切换的租户（`role="status"`）。
+3. 控件报出已切换的租户（`role="status"`）。该区域在控件挂载时就已存在、内容为空，选择时才填入文本，使第一次选择也被播报；本包不 import ui-kit，区域是本包自己的，遵守与 `InlineSuccess` 同一条先挂空区域、再填文本的做法。
 
 ### 当前租户收敛
 
@@ -109,3 +109,4 @@ sequenceDiagram
 |---|---|---|
 | 租户切换控件 | 已实现 | `web/packages/tenancy-ui/src/TenantSwitcher.tsx` `TenantSwitcher`、`TenantOption`、`TenantSwitcherProps` |
 | 命名空间资源 | 已实现 | `web/packages/tenancy-ui/src/resources.ts` `TENANCY_UI_NAMESPACE`、`tenancyUiResources` |
+| 切换通知的区域在控件挂载时存在 | 未实现 | — |
