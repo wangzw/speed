@@ -28,9 +28,9 @@ current-tenant kind.
 
 The package ships one entry (`src/index.ts`, the export set in the
 README's "What ships") and no subpath. Everything under `src/internal/`
-— the error-text resolver, the `InlineError` binding, the translation
-hook, the tenant selector and the timestamp formatter — is family
-plumbing and is deliberately not exported.
+— the error-text resolver, the `InlineError` and `WriteFeedbackRegion`
+bindings, the translation hook, the tenant selector and the timestamp
+formatter — is family plumbing and is deliberately not exported.
 
 ## The second shell (the one thing this package's frame decides)
 

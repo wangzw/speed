@@ -416,18 +416,18 @@ graph TD
 | 账户创建的侧边面板（页头打开、未保存守卫、成功文案在 `onExited` 后写入） | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountCreatePanel`、`AccountCreateForm`、`createPanelExited` |
 | 步进对话框先读本人因素，没有启用的因素时给出提示而不发起流程 | 已实现 | `web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`、`activeFactorCount` |
 | 前往账户设置的入口由宿主经 `accountHref` 给出 | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShellProps.accountHref`；`web/packages/console-ui/src/internal/account-href.tsx` `ConsoleAccountHrefProvider`、`useConsoleAccountHref`；`web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge` |
-| 各页的反馈作用域与成功确认 | 未实现 | — |
-| 一次性值的展示面板（邀请链接、SSO 令牌、服务密钥） | 未实现 | — |
+| 各页的反馈作用域与成功确认 | 部分实现 | `web/packages/console-ui/src/internal/write-feedback.tsx` `WriteFeedbackRegion`、`failureTextOf`、`useFailureScroll`；`web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`；`web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/SmsPage.tsx` `SmsPage`；`web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage` |
+| 一次性值的展示面板（邀请链接、SSO 令牌、服务密钥） | 部分实现 | `web/packages/console-ui/src/AccountsPage.tsx` `OneTimeSecretNotice`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`、`CopyControl`；`web/packages/console-ui/src/SsoPage.tsx` `SsoPage` |
 | 设置页的批量保存按一次尝试 | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage` |
 | 创建成功后表单复位与必填为空时提交禁用 | 未实现 | — |
 | 确认对话框在确认点击时关闭（含权限页的角色删除） | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/internal/confirm.tsx` `usePendingConfirm` |
 | 冒充状态读与结束后的呈现 | 已实现 | `web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`、`isNotImpersonating` |
-| 读的陈旧提示、刷新忙态与详情页 404 占位 | 未实现 | — |
+| 读的陈旧提示、刷新忙态与详情页 404 占位 | 部分实现 | `web/packages/console-ui/src/internal/async-section.tsx` `ConsoleAsyncSection`、`refreshing` |
 | 租户选择器的加载、失败与空态 | 未实现 | — |
 | 步进对话框的失败面 | 已实现 | `web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`；`web/packages/console-ui/src/internal/flow-step.tsx` `FlowStep` |
 | 写入失败的裸 403 与裸 401 文案 | 未实现 | — |
 | `authn.factor_not_seasoned` 的失败文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
-| 写入在途时改变上下文的控件禁用 | 未实现 | — |
+| 写入在途时改变上下文的控件禁用 | 部分实现 | `web/packages/console-ui/src/internal/tenant-scope.tsx` `TenantScope`；`web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`、`anyPending`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage` |
 | 详情面板内写入在途时 `busy` 与服务密钥的关闭守卫 | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`（`detailBusy`、`requestDetailClose`）、`OneTimeSecretNotice` |
 | 账户身份单元区分已删除或非账户行动者与无权限 | 未实现 | — |
 | 权限页账户绑定查询的加载、失败与空占位 | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`、`bindingColumns` |

@@ -59,9 +59,10 @@
  * but no identifier read), so identifier removal and add name the
  * identifier by hand.
  *
- * Every destructive write is confirmed through ui-kit's danger
- * ConfirmDialog before it fires, the same two-step-free confirmation the
- * authorization page's role removal uses. Every read
+ * Every destructive write is confirmed through ui-kit's ConfirmDialog
+ * before it fires; a delete that takes other records with it -- the account
+ * delete, like the authorization page's role removal -- adds the danger
+ * variant's two-step guard. Every read
  * and write is an operation on the console operations bundle, so the page
  * builds no client and writes no query key. The page opens with ui-kit's
  * PageHeader.

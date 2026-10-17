@@ -251,9 +251,12 @@ read that instead.
   browser.
 - **No failure conflation.** A refused read (HTTP 403, or a bare 403
   surfaced as the `client.http.403` code) renders the permission
-  placeholder with no retry; any other failure renders the retryable error
-  placeholder. The branch reads the answer the server wrote, not a
-  route-level permission read.
+  placeholder with no retry and replaces whatever content was on screen.
+  Any other failure over an already settled payload keeps that content
+  and renders the stale notice above it, withdrawn while the section is
+  re-reading; any other failure with no settled payload renders the
+  retryable error placeholder. The branch reads the answer the server
+  wrote, not a route-level permission read.
 - **No authorization decisions.** The permission code a declaration
   carries is data; the server decides on every request and the host
   composes any route guard. A page renders its write controls and lets
