@@ -117,18 +117,40 @@ describe('useStepUp', () => {
     expect(onElevated).not.toHaveBeenCalled()
   })
 
-  it('parks on unavailable for a 400 start while a real session stays authenticated', async () => {
+  it('keeps a 400 start on failed while a real session stays authenticated', async () => {
     // A real session, restored from a valid cookie, that meets a 400 when
-    // it starts the step-up: the deployment declined to raise it (an
-    // account with no factor at all), which no step can satisfy. The
-    // 'unavailable' branch reads the snapshot at the moment of the
-    // refusal, so the case pins what that read is made of -- the session
-    // the 400 did not end is still authenticated, and this is what tells
-    // the deployment-declined 400 apart from an ordinary failure the
-    // caller may retry.
+    // it starts the step-up. The 400 says the start named something the
+    // server cannot take; it does not say the account has no factor (that
+    // is read from the account's factor list), so the refusal is an
+    // ordinary failure rendered as its code, and the session it did not
+    // end staying authenticated changes nothing about that.
     const session = await authenticatedSession({
       [LOGIN_START_AUTHENTICATED]: () => {
         throw apiError(400, 'authn.bad_request')
+      },
+    })
+    const onElevated = vi.fn()
+    const { result, rerender } = renderHook(
+      ({ active }: { active: boolean }) => useStepUp(session, active, onElevated),
+      { initialProps: { active: false } },
+    )
+    rerender({ active: true })
+    await waitFor(() => {
+      expect(result.current.phase).toBe('failed')
+    })
+    expect(result.current.errorCode).toBe('authn.bad_request')
+    expect(session.getSnapshot().state).toBe('authenticated')
+    expect(onElevated).not.toHaveBeenCalled()
+  })
+
+  it('parks on unavailable for a 401 start while the session stays authenticated', async () => {
+    // The account has factors, but none whose methods may strengthen this
+    // session: the start answers 401 insufficient_user_authentication and
+    // the session stays authenticated -- the one refusal no step can
+    // satisfy, which the caller answers by re-establishing the session.
+    const session = await authenticatedSession({
+      [LOGIN_START_AUTHENTICATED]: () => {
+        throw apiError(401, 'authn.insufficient_user_authentication')
       },
     })
     const onElevated = vi.fn()

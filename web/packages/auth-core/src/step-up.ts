@@ -24,13 +24,15 @@
  * of an answer resolves to its code and renders as one banner; a fresh
  * answer is retryable, and the flow stays open. A refusal of the start
  * itself is the deployment declining to raise this session at all, which
- * no step can satisfy: it answers 401 (insufficient_user_authentication
- * -- the account has factors, but none whose methods may strengthen this
- * session) or 400 (the start named no method the deployment could take,
- * the answer an account with no factor at all meets, since a step-up is
- * started without one), and either way parks the challenge on
- * 'unavailable' so the caller tells the operator to re-establish the
- * session rather than retry a verification that cannot come.
+ * no step can satisfy: it answers 401 insufficient_user_authentication --
+ * the account has factors, but none whose methods may strengthen this
+ * session -- and parks the challenge on 'unavailable' so the caller tells
+ * the operator to re-establish the session rather than retry a
+ * verification that cannot come. Every other refusal of the start,
+ * a 400 included, is an ordinary failure and stays on 'failed' with its
+ * code: a 400 by itself does not say the account has no factor, because
+ * an account with no factor is recognised by reading its factors, and a
+ * caller that knows that renders the enrollment it needs.
  *
  * The step-up flow is named with no method: an account that has a usable
  * factor enters at the factor step, which is the case a step-up-gated
@@ -87,24 +89,18 @@ function codeOf(error: unknown): string {
 
 /**
  * Whether a refusal of the step-up start is this deployment declining to
- * raise the session at all. Two answers carry that meaning, and no step
- * can satisfy either: a 401 `insufficient_user_authentication` -- the
- * account has factors, but none whose methods may strengthen this session,
- * so the start names none (the session's own isStepUpShortfall); and a
- * 400 -- the start named no method the deployment could take, which is
- * where an account with no factor at all lands, since the flow is started
- * without a method. Both are read only while the session stays
- * established: a refusal that ended the session is a dead session, not an
- * unraisable one, and its code text renders instead. Any other status is
- * an ordinary failure the caller may retry.
+ * raise the session at all. One answer carries that meaning, and no step
+ * can satisfy it: a 401 `insufficient_user_authentication` -- the account
+ * has factors, but none whose methods may strengthen this session, so the
+ * start names none (the session's own isStepUpShortfall). It is read only
+ * while the session stays established: a refusal that ended the session is
+ * a dead session, not an unraisable one, and its code text renders
+ * instead. Every other status, a 400 included, is an ordinary failure the
+ * caller renders as its code -- the fact that an account has no factor is
+ * read from its factor list, not inferred from a 400.
  */
 function startUnavailable(session: AuthSession, error: unknown): boolean {
-  return (
-    session.isStepUpShortfall(error) ||
-    (isApiError(error) &&
-      error.status === 400 &&
-      session.getSnapshot().state === 'authenticated')
-  )
+  return session.isStepUpShortfall(error)
 }
 
 /**
