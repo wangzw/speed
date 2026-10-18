@@ -211,7 +211,7 @@ export function SessionsPage() {
             type="button"
             variant="outlined"
             size="small"
-            disabled={sessions.isFetching}
+            disabled={account === '' || sessions.isFetching}
             loading={sessions.isFetching}
             onClick={() => void sessions.refetch()}
           >

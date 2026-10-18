@@ -9,7 +9,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, screen, within } from '@testing-library/react'
+import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
 import { mockMatchMedia } from '@speed/test-utils/matchMedia'
@@ -168,6 +168,24 @@ describe('PermissionsPage', () => {
     const operations = withAuthz()
     renderWithProviders(<PermissionsPage />, { operations })
     expect(screen.getByText('请选择租户')).toBeInTheDocument()
+  })
+
+  it('does not read an empty tenant scope on refresh', async () => {
+    const listRoles = vi.fn(() => Promise.resolve([role()]))
+    const operations = withAuthz({ listRoles })
+    renderWithProviders(<PermissionsPage />, { operations })
+
+    // The roles read is disabled while no tenant is chosen; the refresh
+    // control follows it instead of issuing the read with an empty tenant.
+    const refresh = screen.getByRole('button', { name: '刷新' })
+    expect(refresh).toBeDisabled()
+    // A programmatic click, because user-event refuses a disabled target:
+    // the control must stay inert even when reached from a script.
+    fireEvent.click(refresh)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(listRoles).not.toHaveBeenCalled()
   })
 
   it('opens on the tenant named by the query string', async () => {

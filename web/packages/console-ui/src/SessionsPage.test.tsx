@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SessionsPage } from './SessionsPage.js'
 import type { ConsoleAccount, ConsoleAccountSession } from './operations.js'
@@ -87,6 +87,26 @@ describe('SessionsPage', () => {
     const operations = withSessions()
     renderWithProviders(<SessionsPage />, { operations })
     expect(screen.getByText('请指定账户')).toBeInTheDocument()
+  })
+
+  it('does not read an empty account scope on refresh', () => {
+    const queried: string[] = []
+    const operations = withSessions({
+      listAccountSessions: (query) => {
+        queried.push(query.id ?? '')
+        return Promise.resolve([session()])
+      },
+    })
+    renderWithProviders(<SessionsPage />, { operations })
+
+    // The read is disabled while no account is chosen; the refresh control
+    // follows it instead of issuing the read with an empty id.
+    const refresh = screen.getByRole('button', { name: '刷新' })
+    expect(refresh).toBeDisabled()
+    // A programmatic click, because user-event refuses a disabled target:
+    // the control must stay inert even when reached from a script.
+    fireEvent.click(refresh)
+    expect(queried).toEqual([])
   })
 
   it('reads an account\'s sessions as soon as it is chosen', async () => {
