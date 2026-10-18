@@ -34,9 +34,13 @@
  * (`discovery.signup.enabled` and at least one visible method carries
  * `opens_account`). Registration is not a separate form -- it is a login
  * flow's account-resolution outcome under the deployment's signup setting.
- * A successful sign-in on any channel fires onSignedIn once. The screen
- * renders no heading and nothing here navigates: the page above (branding,
- * the heading) is host content.
+ * A successful sign-in on a channel the screen drives itself fires
+ * onSignedIn once, with the mode the screen was in and that channel's
+ * method name (see SignInContext): a host can tell a registration from an
+ * ordinary sign-in. Redirect and enterprise channels complete through the
+ * callback route rather than this screen, so they carry no context. The
+ * screen renders no heading and nothing here navigates: the page above
+ * (branding, the heading) is host content.
  *
  * `discovery` lets a host inject a pre-fetched document (SSR, a test), in
  * which case the screen fires no read of its own. The deprecated
@@ -81,6 +85,17 @@ export type SignInChannel = 'password' | 'sms'
 /** The presentational mode of the surface (both run the one sign-in flow). */
 export type SignInMode = 'sign-in' | 'register'
 
+/**
+ * What a completion on this screen reports to the host: the mode the
+ * screen was in when the login settled, and the name of the method that
+ * drove it. The channel is the method's own name -- `password`, `sms`, a
+ * passkey method's name, or a descriptor-driven form method's name.
+ */
+export interface SignInContext {
+  readonly mode: SignInMode
+  readonly channel: string
+}
+
 /** The social / redirect block of the screen. */
 export interface SocialSignInOptions {
   /**
@@ -107,9 +122,10 @@ export interface SignInScreenProps {
   readonly discovery?: AuthnMethodList
   /** The presentational mode; `'sign-in'` by default. */
   readonly mode?: SignInMode
-  /** Fired once after a sign-in commits on any channel; the host
-   * navigates. */
-  readonly onSignedIn?: () => void
+  /** Fired once after a sign-in commits on a channel this screen drives,
+   * with the mode and the channel's method name; the host decides what
+   * follows. A host that ignores the argument is unaffected. */
+  readonly onSignedIn?: (context: SignInContext) => void
   /** The redirect / enterprise block of the screen; omitted to run without
    * one. */
   readonly social?: SocialSignInOptions
@@ -225,19 +241,37 @@ export function SignInScreen({
   const tabIdOf = (name: string): string => `${channelId}-${name}-tab`
   const panelIdOf = (name: string): string => `${channelId}-${name}-panel`
 
+  // The context the screen reports when a channel it drives completes. The
+  // channel forms keep their own no-argument onSignedIn (a leaf knows only
+  // its flow); the screen binds the method name here, and the mode is the
+  // one currently presented -- the register entry runs the same flow.
+  const completed = (channelName: string): void => {
+    onSignedIn?.({ mode: activeMode, channel: channelName })
+  }
+
   const renderForm = (method: AuthnMethodDescriptor): ReactNode => {
     switch (method.name) {
       case 'password':
-        return <PasswordSignInForm session={session} onSignedIn={onSignedIn} />
+        return (
+          <PasswordSignInForm
+            session={session}
+            onSignedIn={() => completed('password')}
+          />
+        )
       case 'sms':
-        return <SMSSignInForm session={session} onSignedIn={onSignedIn} />
+        return (
+          <SMSSignInForm
+            session={session}
+            onSignedIn={() => completed('sms')}
+          />
+        )
       default:
         return (
           <DescriptorSignInForm
             session={session}
             method={method.name}
             fields={method.fields ?? []}
-            onSignedIn={onSignedIn}
+            onSignedIn={() => completed(method.name)}
           />
         )
     }
@@ -311,7 +345,7 @@ export function SignInScreen({
           key={method.name}
           session={session}
           method={method}
-          onSignedIn={onSignedIn}
+          onSignedIn={() => completed(method.name)}
         />
       ))}
     </Box>

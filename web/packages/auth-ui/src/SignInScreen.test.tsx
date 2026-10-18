@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SignInScreen } from './SignInScreen.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -110,9 +110,59 @@ describe('SignInScreen', () => {
       screen.getByRole('button', { name: zhCN.passwordSignIn.submit }),
     )
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
+    // The screen reports the mode it presented and the channel's own name.
+    expect(onSignedIn).toHaveBeenCalledWith({
+      mode: 'sign-in',
+      channel: 'password',
+    })
     expect(harness.store.get()).toBe('access-1')
     // The password flow started with the password method.
     expect(harness.calls[0]?.options?.body).toMatchObject({ method: 'password' })
+  })
+
+  it('report the register mode and the SMS channel that completed', async () => {
+    const harness = makeSignInHarness()
+    const onSignedIn = vi.fn()
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        )}
+        onSignedIn={onSignedIn}
+      />,
+    )
+    const user = userEvent.setup()
+    // The register entry starts the same SMS flow; the mode travels with
+    // the completion, and the channel is the method that drove it.
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mode.registerEntry }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.smsSignIn.phoneLabel),
+      '+14155550123',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }),
+    )
+    await user.type(
+      await screen.findByLabelText(zhCN.smsSignIn.codeLabel),
+      '123456',
+    )
+    // The register entry's own "sign in" toggle shares the submit's label,
+    // so the submit is read inside the form.
+    const form = screen
+      .getByLabelText(zhCN.smsSignIn.codeLabel)
+      .closest('form') as HTMLFormElement
+    await user.click(
+      within(form).getByRole('button', { name: zhCN.smsSignIn.submit }),
+    )
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
+    expect(onSignedIn).toHaveBeenCalledWith({
+      mode: 'register',
+      channel: 'sms',
+    })
   })
 
   it('render a single form channel without a tab strip', () => {

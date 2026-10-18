@@ -58,6 +58,7 @@ export {
 export {
   SignInScreen,
   type SignInChannel,
+  type SignInContext,
   type SignInMode,
   type SocialSignInOptions,
   type SignInScreenProps,
