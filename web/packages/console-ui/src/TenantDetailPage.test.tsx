@@ -300,6 +300,7 @@ describe('TenantDetailPage', () => {
     )
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
     expect(await screen.findByText('租户加载失败')).toBeInTheDocument()
+    expect(screen.getByText('名册未能完成这次请求。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
   })
 

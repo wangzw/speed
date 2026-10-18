@@ -26,9 +26,10 @@
  * told apart in the field's helper text: while it loads the selector is
  * disabled and says so; a 403 says the viewer may not list tenants and
  * offers no retry (retrying can only be refused again); any other failure
- * says the roster did not answer and offers a retry; an empty roster says no
- * tenant is registered. A tenant seeded from the URL stays shown in every
- * one of those states, so a carried link never blanks its selection.
+ * says the roster could not complete this request and offers a retry; an
+ * empty roster says no tenant is registered. A tenant seeded from the URL
+ * stays shown in every one of those states, so a carried link never
+ * blanks its selection.
  */
 
 import type { ReactNode } from 'react'

@@ -18,10 +18,10 @@
  * distinction: an absent surface collapses both write forms, since every
  * submission would be answered by the same missing route, leaving only
  * the explanation and the retry; any other read failure (a mounted
- * surface that could not answer) leaves the forms in place, because a
- * write may still land there. The page says so in its own words, so an
- * operator who reaches it on a carrier-less process knows why it is
- * empty.
+ * surface that could not complete this request) leaves the forms in
+ * place, because a write may still land there. The page says so in its
+ * own words, so an operator who reaches it on a carrier-less process
+ * knows why it is empty.
  *
  * Every read and write is an operation on the console operations bundle,
  * so the page builds no client and writes no query key.

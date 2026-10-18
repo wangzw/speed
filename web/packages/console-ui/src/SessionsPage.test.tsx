@@ -393,6 +393,7 @@ describe('SessionsPage', () => {
     renderWithProviders(<SessionsPage />, { operations })
     await loadAccount(user)
     expect(await screen.findByText('会话加载失败')).toBeInTheDocument()
+    expect(screen.getByText('会话面未能完成这次请求。')).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when the read is refused with 403', async () => {

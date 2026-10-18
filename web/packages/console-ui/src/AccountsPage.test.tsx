@@ -938,6 +938,7 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
     expect(await screen.findByText('因子加载失败')).toBeInTheDocument()
+    expect(screen.getByText('账户面未能完成这次请求。')).toBeInTheDocument()
   })
 
   it('confirms before deleting an account, then deletes it through the bundle', async () => {
@@ -1994,6 +1995,7 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await search(user)
     expect(await screen.findByText('账户加载失败')).toBeInTheDocument()
+    expect(screen.getByText('账户面未能完成这次请求。')).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when the list read is refused with 403', async () => {

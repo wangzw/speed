@@ -254,6 +254,7 @@ describe('DashboardPage', () => {
     )
     renderWithProviders(<DashboardPage />, { operations })
     expect(await screen.findByText('平台健康度加载失败')).toBeInTheDocument()
+    expect(screen.getByText('审计面未能完成这次请求。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
   })
 
@@ -276,6 +277,7 @@ describe('DashboardPage', () => {
     )
     renderWithProviders(<DashboardPage />, { operations })
     expect(await screen.findByText('概览加载失败')).toBeInTheDocument()
+    expect(screen.getByText('数据面未能完成这次请求。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
   })
 

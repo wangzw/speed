@@ -816,6 +816,7 @@ describe('SettingsPage', () => {
     )
     renderWithProviders(<SettingsPage />, { operations })
     expect(await screen.findByText('设置加载失败')).toBeInTheDocument()
+    expect(screen.getByText('设置面未能完成这次请求。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
   })
 

@@ -889,6 +889,7 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
     expect(await screen.findByText('邀请加载失败')).toBeInTheDocument()
+    expect(screen.getByText('邀请面未能完成这次请求。')).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when a read is refused with 403', async () => {

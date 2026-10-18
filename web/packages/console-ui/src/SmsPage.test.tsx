@@ -343,6 +343,7 @@ describe('SmsPage', () => {
     // A 503 is the mounted surface failing, not its absence: the forms stay
     // available because a write may still land once the read recovers.
     expect(await screen.findByText('短信模板加载失败')).toBeInTheDocument()
+    expect(screen.getByText('短信面未能完成这次请求。')).toBeInTheDocument()
     expect(screen.getByText('登记模板')).toBeInTheDocument()
     expect(screen.getByText('提交审核')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '登记' })).toBeEnabled()
@@ -357,6 +358,7 @@ describe('SmsPage', () => {
     )
     renderWithProviders(<SmsPage />, { operations })
     expect(await screen.findByText('短信模板加载失败')).toBeInTheDocument()
+    expect(screen.getByText('短信面未能完成这次请求。')).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when the read is refused with 403', async () => {

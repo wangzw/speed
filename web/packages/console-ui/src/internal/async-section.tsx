@@ -5,7 +5,7 @@
  * A console read is answered 403 when the caller lacks the platform
  * permission the surface is held to, and that refusal is not a load
  * failure: the surface did answer, it refused. Rendering it as the same
- * retryable "the surface did not answer" placeholder both misdescribes it
+ * retryable "the surface could not complete this request" placeholder both
  * and offers a retry that can only ever be refused again. This component
  * branches the error state on the failure: a 403 renders ui-kit's
  * no-permission EmptyState with this package's forbidden copy and no

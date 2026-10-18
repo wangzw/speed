@@ -109,7 +109,7 @@
     },
     "error": {
       "title": "租户加载失败",
-      "description": "名册未应答。"
+      "description": "名册未能完成这次请求。"
     },
     "retry": "重试",
     "column": {
@@ -157,7 +157,7 @@
     "loading": "正在加载概览",
     "error": {
       "title": "概览加载失败",
-      "description": "数据面未应答。"
+      "description": "数据面未能完成这次请求。"
     },
     "retry": "重试",
     "kpi": {
@@ -170,7 +170,7 @@
       "loading": "正在加载平台健康度",
       "error": {
         "title": "平台健康度加载失败",
-        "description": "审计面未应答。"
+        "description": "审计面未能完成这次请求。"
       },
       "logins": "近 24 小时登录（成功）",
       "activity": "近 24 小时审计活动",
@@ -185,7 +185,7 @@
       },
       "error": {
         "title": "最近活动加载失败",
-        "description": "审计面未应答。"
+        "description": "审计面未能完成这次请求。"
       },
       "column": {
         "time": "时间",
@@ -202,7 +202,7 @@
     "loading": "正在加载租户",
     "error": {
       "title": "租户加载失败",
-      "description": "名册未应答。"
+      "description": "名册未能完成这次请求。"
     },
     "retry": "重试",
     "summary": "概要",
@@ -233,7 +233,7 @@
     "loading": "正在加载审计记录",
     "error": {
       "title": "审计记录加载失败",
-      "description": "审计面未应答。"
+      "description": "审计面未能完成这次请求。"
     },
     "retry": "重试",
     "summary": "记录",
@@ -271,7 +271,7 @@
     },
     "error": {
       "title": "设置加载失败",
-      "description": "设置面未应答。"
+      "description": "设置面未能完成这次请求。"
     },
     "retry": "重试",
     "field": {
@@ -301,7 +301,7 @@
     },
     "error": {
       "title": "审计记录加载失败",
-      "description": "审计面未应答。"
+      "description": "审计面未能完成这次请求。"
     },
     "retry": "重试",
     "column": {
@@ -350,7 +350,7 @@
       },
       "error": {
         "title": "角色加载失败",
-        "description": "授权面未应答。"
+        "description": "授权面未能完成这次请求。"
       },
       "retry": "重试",
       "column": {
@@ -393,7 +393,7 @@
       },
       "error": {
         "title": "授权加载失败",
-        "description": "授权面未应答。"
+        "description": "授权面未能完成这次请求。"
       },
       "retry": "重试",
       "column": {
@@ -414,7 +414,7 @@
       },
       "error": {
         "title": "权限目录加载失败",
-        "description": "权限目录未应答。"
+        "description": "权限目录未能完成这次请求。"
       },
       "retry": "重试",
       "column": {
@@ -433,7 +433,7 @@
       },
       "error": {
         "title": "绑定加载失败",
-        "description": "绑定面未应答。"
+        "description": "绑定面未能完成这次请求。"
       },
       "retry": "重试",
       "column": {
@@ -453,7 +453,7 @@
       "loading": "正在加载该账户的绑定",
       "error": {
         "title": "该账户的绑定加载失败",
-        "description": "授权面未应答。"
+        "description": "授权面未能完成这次请求。"
       },
       "retry": "重试",
       "empty": {
@@ -485,7 +485,7 @@
     },
     "error": {
       "title": "账户加载失败",
-      "description": "账户面未应答。"
+      "description": "账户面未能完成这次请求。"
     },
     "retry": "重试",
     "column": {
@@ -598,7 +598,7 @@
       "retry": "重试",
       "error": {
         "title": "账户详情加载失败",
-        "description": "账户面未应答。"
+        "description": "账户面未能完成这次请求。"
       }
     },
     "resetMFA": "重置 MFA",
@@ -614,7 +614,7 @@
       "retry": "重试",
       "error": {
         "title": "因子加载失败",
-        "description": "账户面未应答。"
+        "description": "账户面未能完成这次请求。"
       },
       "empty": {
         "title": "暂无因子",
@@ -632,7 +632,7 @@
       "retry": "重试",
       "error": {
         "title": "服务密钥加载失败",
-        "description": "账户面未应答。"
+        "description": "账户面未能完成这次请求。"
       },
       "empty": {
         "title": "暂无服务密钥",
@@ -657,7 +657,7 @@
       "retry": "重试",
       "error": {
         "title": "会话加载失败",
-        "description": "账户面未应答。"
+        "description": "账户面未能完成这次请求。"
       },
       "empty": {
         "title": "暂无会话",
@@ -699,7 +699,7 @@
     },
     "error": {
       "title": "会话加载失败",
-      "description": "会话面未应答。"
+      "description": "会话面未能完成这次请求。"
     },
     "retry": "重试",
     "column": {
@@ -740,7 +740,7 @@
     },
     "error": {
       "title": "冒充记录加载失败",
-      "description": "冒充面未应答。"
+      "description": "冒充面未能完成这次请求。"
     },
     "retry": "重试",
     "column": {
@@ -769,7 +769,7 @@
       "ended": "已结束冒充账户 {{account}}。",
       "error": {
         "title": "冒充状态读取失败",
-        "description": "冒充状态未应答。"
+        "description": "冒充状态未能完成这次请求。"
       }
     },
     "start": {
@@ -804,7 +804,7 @@
     },
     "error": {
       "title": "邀请加载失败",
-      "description": "邀请面未应答。"
+      "description": "邀请面未能完成这次请求。"
     },
     "retry": "重试",
     "column": {
@@ -845,7 +845,7 @@
     },
     "error": {
       "title": "成员加载失败",
-      "description": "成员面未应答。"
+      "description": "成员面未能完成这次请求。"
     },
     "retry": "重试",
     "column": {
@@ -889,7 +889,7 @@
     },
     "error": {
       "title": "提供方加载失败",
-      "description": "SSO 面未应答。"
+      "description": "SSO 面未能完成这次请求。"
     },
     "retry": "重试",
     "column": {
@@ -961,7 +961,7 @@
     },
     "error": {
       "title": "短信模板加载失败",
-      "description": "短信面未应答。"
+      "description": "短信面未能完成这次请求。"
     },
     "unmounted": {
       "title": "短信管理面未装载",

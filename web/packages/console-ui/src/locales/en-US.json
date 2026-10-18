@@ -109,7 +109,7 @@
     },
     "error": {
       "title": "Tenants could not be loaded",
-      "description": "The roster did not answer."
+      "description": "The roster could not complete this request."
     },
     "retry": "Retry",
     "column": {
@@ -157,7 +157,7 @@
     "loading": "Loading the overview",
     "error": {
       "title": "The overview could not be loaded",
-      "description": "The data surface did not answer."
+      "description": "The data surface could not complete this request."
     },
     "retry": "Retry",
     "kpi": {
@@ -170,7 +170,7 @@
       "loading": "Loading platform health",
       "error": {
         "title": "Platform health could not be loaded",
-        "description": "The audit surface did not answer."
+        "description": "The audit surface could not complete this request."
       },
       "logins": "Successful sign-ins (24h)",
       "activity": "Audit records (24h)",
@@ -185,7 +185,7 @@
       },
       "error": {
         "title": "Recent activity could not be loaded",
-        "description": "The audit surface did not answer."
+        "description": "The audit surface could not complete this request."
       },
       "column": {
         "time": "Time",
@@ -202,7 +202,7 @@
     "loading": "Loading the tenant",
     "error": {
       "title": "The tenant could not be loaded",
-      "description": "The roster did not answer."
+      "description": "The roster could not complete this request."
     },
     "retry": "Retry",
     "summary": "Summary",
@@ -233,7 +233,7 @@
     "loading": "Loading the audit record",
     "error": {
       "title": "The audit record could not be loaded",
-      "description": "The audit surface did not answer."
+      "description": "The audit surface could not complete this request."
     },
     "retry": "Retry",
     "summary": "Record",
@@ -271,7 +271,7 @@
     },
     "error": {
       "title": "Settings could not be loaded",
-      "description": "The settings surface did not answer."
+      "description": "The settings surface could not complete this request."
     },
     "retry": "Retry",
     "field": {
@@ -301,7 +301,7 @@
     },
     "error": {
       "title": "Audit records could not be loaded",
-      "description": "The audit surface did not answer."
+      "description": "The audit surface could not complete this request."
     },
     "retry": "Retry",
     "column": {
@@ -350,7 +350,7 @@
       },
       "error": {
         "title": "Roles could not be loaded",
-        "description": "The authorization surface did not answer."
+        "description": "The authorization surface could not complete this request."
       },
       "retry": "Retry",
       "column": {
@@ -393,7 +393,7 @@
       },
       "error": {
         "title": "Grants could not be loaded",
-        "description": "The grants surface did not answer."
+        "description": "The grants surface could not complete this request."
       },
       "retry": "Retry",
       "column": {
@@ -414,7 +414,7 @@
       },
       "error": {
         "title": "The permission catalog could not be loaded",
-        "description": "The permission catalog did not answer."
+        "description": "The permission catalog could not complete this request."
       },
       "retry": "Retry",
       "column": {
@@ -433,7 +433,7 @@
       },
       "error": {
         "title": "Bindings could not be loaded",
-        "description": "The bindings surface did not answer."
+        "description": "The bindings surface could not complete this request."
       },
       "retry": "Retry",
       "column": {
@@ -453,7 +453,7 @@
       "loading": "Loading the account's bindings",
       "error": {
         "title": "The account's bindings could not be loaded",
-        "description": "The bindings surface did not answer."
+        "description": "The bindings surface could not complete this request."
       },
       "retry": "Retry",
       "empty": {
@@ -485,7 +485,7 @@
     },
     "error": {
       "title": "Accounts could not be loaded",
-      "description": "The account surface did not answer."
+      "description": "The account surface could not complete this request."
     },
     "retry": "Retry",
     "column": {
@@ -598,7 +598,7 @@
       "retry": "Retry",
       "error": {
         "title": "The account detail could not be loaded",
-        "description": "The account surface did not answer."
+        "description": "The account surface could not complete this request."
       }
     },
     "resetMFA": "Reset MFA",
@@ -614,7 +614,7 @@
       "retry": "Retry",
       "error": {
         "title": "Factors could not be loaded",
-        "description": "The account surface did not answer."
+        "description": "The account surface could not complete this request."
       },
       "empty": {
         "title": "No factors",
@@ -632,7 +632,7 @@
       "retry": "Retry",
       "error": {
         "title": "Service secrets could not be loaded",
-        "description": "The account surface did not answer."
+        "description": "The account surface could not complete this request."
       },
       "empty": {
         "title": "No service secrets",
@@ -657,7 +657,7 @@
       "retry": "Retry",
       "error": {
         "title": "Sessions could not be loaded",
-        "description": "The account surface did not answer."
+        "description": "The account surface could not complete this request."
       },
       "empty": {
         "title": "No sessions",
@@ -699,7 +699,7 @@
     },
     "error": {
       "title": "Sessions could not be loaded",
-      "description": "The session surface did not answer."
+      "description": "The session surface could not complete this request."
     },
     "retry": "Retry",
     "column": {
@@ -740,7 +740,7 @@
     },
     "error": {
       "title": "Impersonation records could not be loaded",
-      "description": "The impersonation surface did not answer."
+      "description": "The impersonation surface could not complete this request."
     },
     "retry": "Retry",
     "column": {
@@ -769,7 +769,7 @@
       "ended": "Ended impersonating account {{account}}.",
       "error": {
         "title": "The impersonation status could not be loaded",
-        "description": "The impersonation status did not answer."
+        "description": "The impersonation status could not complete this request."
       }
     },
     "start": {
@@ -804,7 +804,7 @@
     },
     "error": {
       "title": "Invitations could not be loaded",
-      "description": "The invitation surface did not answer."
+      "description": "The invitation surface could not complete this request."
     },
     "retry": "Retry",
     "column": {
@@ -845,7 +845,7 @@
     },
     "error": {
       "title": "Members could not be loaded",
-      "description": "The membership surface did not answer."
+      "description": "The membership surface could not complete this request."
     },
     "retry": "Retry",
     "column": {
@@ -889,7 +889,7 @@
     },
     "error": {
       "title": "Providers could not be loaded",
-      "description": "The SSO surface did not answer."
+      "description": "The SSO surface could not complete this request."
     },
     "retry": "Retry",
     "column": {
@@ -961,7 +961,7 @@
     },
     "error": {
       "title": "SMS templates could not be loaded",
-      "description": "The SMS surface did not answer."
+      "description": "The SMS surface could not complete this request."
     },
     "unmounted": {
       "title": "SMS administration is not mounted",

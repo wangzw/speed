@@ -518,6 +518,7 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     expect(await screen.findByText('提供方加载失败')).toBeInTheDocument()
+    expect(screen.getByText('SSO 面未能完成这次请求。')).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when the read is refused with 403', async () => {

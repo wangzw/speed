@@ -203,6 +203,7 @@ describe('AuditDetailPage', () => {
     )
     renderWithProviders(<AuditDetailPage id="rec-1" />, { operations: failed })
     expect(await screen.findByText('审计记录加载失败')).toBeInTheDocument()
+    expect(screen.getByText('审计面未能完成这次请求。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
   })
 
@@ -214,6 +215,7 @@ describe('AuditDetailPage', () => {
     )
     renderWithProviders(<AuditDetailPage id="rec-1" />, { operations })
     expect(await screen.findByText('审计记录加载失败')).toBeInTheDocument()
+    expect(screen.getByText('审计面未能完成这次请求。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
   })
 

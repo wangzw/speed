@@ -734,6 +734,9 @@ describe('PermissionsPage', () => {
     expect(
       await within(lookup).findByText('该账户的绑定加载失败'),
     ).toBeInTheDocument()
+    expect(
+      within(lookup).getByText('授权面未能完成这次请求。'),
+    ).toBeInTheDocument()
     await user.click(within(lookup).getByRole('button', { name: '重试' }))
     expect(await within(lookup).findByText('暂无绑定')).toBeInTheDocument()
     expect(reads).toBe(2)
@@ -864,6 +867,7 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     expect(await screen.findByText('角色加载失败')).toBeInTheDocument()
+    expect(screen.getByText('授权面未能完成这次请求。')).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when the roles read is refused with 403', async () => {
