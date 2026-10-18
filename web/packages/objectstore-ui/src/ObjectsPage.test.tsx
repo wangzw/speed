@@ -24,7 +24,7 @@ import userEvent from '@testing-library/user-event'
 import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
-  emittedStyleText,
+  containerDeclarationsOf,
   hasCoarsePointerTouchTarget,
 } from '@speed/test-utils/emitted-css'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
@@ -65,46 +65,6 @@ const LIST_PATH = '/api/v1/objects'
 /** The recorded calls as "METHOD path" strings, for order assertions. */
 function sequence(calls: readonly RecordedRequest[]): string[] {
   return calls.map((call) => `${call.method} ${call.path}`)
-}
-
-/**
- * The declarations each `@container (min-width: Npx)` rule gives
- * `element`, keyed by N. Container-keyed styling is pure CSS emitted into
- * the stylesheet, and jsdom evaluates no container query, so the declared
- * value can only be read from the generated rules -- matched against the
- * element so a sibling column's rule is not mistaken for this one.
- */
-function containerDeclarationsOf(element: Element): Map<number, string> {
-  const css = emittedStyleText()
-  const declarations = new Map<number, string>()
-  const atRule = /@container \(min-width:(\d+)px\)\{/g
-  let match: RegExpExecArray | null
-  while ((match = atRule.exec(css)) !== null) {
-    const open = atRule.lastIndex - 1
-    let depth = 0
-    let end = open
-    for (; end < css.length; end += 1) {
-      if (css[end] === '{') depth += 1
-      else if (css[end] === '}') {
-        depth -= 1
-        if (depth === 0) break
-      }
-    }
-    const body = css.slice(open + 1, end)
-    const rule = /([^{}]+)\{([^{}]*)\}/g
-    let inner: RegExpExecArray | null
-    while ((inner = rule.exec(body)) !== null) {
-      const selector = inner[1]?.trim() ?? ''
-      if (!selector.includes('.css-')) continue
-      try {
-        if (!element.matches(selector)) continue
-      } catch {
-        continue
-      }
-      declarations.set(Number(match[1]), inner[2] ?? '')
-    }
-  }
-  return declarations
 }
 
 /** The `display` value each container rule gives `element`, keyed by N. */
@@ -228,7 +188,10 @@ describe('ObjectsPage', () => {
     renderWithProviders(<ObjectsPage />, { language: 'en-US' })
 
     const nameText = await screen.findByText(name)
-    const nameDeclarations = containerDeclarationsOf(nameText)
+    // The cap sits on the whole-cell wrapper, not on the text node.
+    const nameDeclarations = containerDeclarationsOf(
+      nameText.closest('td')!.firstElementChild!,
+    )
     expect(nameDeclarations.get(0)).toContain('max-width:160px')
     expect(nameDeclarations.get(900)).toContain('max-width:200px')
 
