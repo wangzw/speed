@@ -2186,6 +2186,39 @@ describe('the impersonation shell', () => {
     expect(chip).toHaveFocus()
   })
 
+  it('keeps the notice dismissed across a tenant-area route change', async () => {
+    window.history.replaceState({}, '', '/')
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+    })
+    bindRequestFn(backend.fn)
+    const session = scriptedSession(targetSnapshot(), () => targetSnapshot())
+    const user = userEvent.setup()
+
+    renderDemoApp({ session })
+
+    const notice = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    await user.click(
+      within(notice).getByRole('button', {
+        name: authUiEnUS.impersonation.hide,
+      }),
+    )
+    expect(banner()).toBeNull()
+
+    // A tenant-area route change keeps the same frame and the same
+    // dismissal: the notice does not pop back open on navigation.
+    await user.click(screen.getByRole('link', { name: demoEnUS.nav.account }))
+    await waitFor(() => expect(window.location.pathname).toBe('/account'))
+    expect(banner()).toBeNull()
+    expect(
+      screen.getByRole('button', {
+        name: authUiEnUS.impersonation.impersonating,
+      }),
+    ).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it('resets the dismissal when the impersonated identity changes', async () => {
     window.history.replaceState({}, '', '/')
     const backend = makeBackend({
