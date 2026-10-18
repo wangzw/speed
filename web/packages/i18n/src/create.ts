@@ -67,7 +67,8 @@ export interface CreateI18nOptions {
    * language preference: the stored preference drives backend-rendered
    * content (verification messages, notification emails, invitations),
    * which renders in the deployment's catalog languages -- the locales
-   * the shipped platform modules carry (`pkg/**/locales`) -- and a
+   * the shipped platform modules carry (a locales/ directory under pkg/)
+   * -- and a
    * preference outside them is refused with 400 authn.invalid_locale. A
    * host extending this option beyond the platform's shipped set must
    * first confirm the backend can render the extra languages, or the
