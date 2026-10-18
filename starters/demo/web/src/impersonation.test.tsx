@@ -449,7 +449,7 @@ function banner(): HTMLElement | null {
  */
 function tenantSwitcherTrigger(): HTMLElement | null {
   return (
-    screen.queryByRole('button', { name: 'Acme Inc.' }) ??
+    screen.queryByRole('button', { name: 'acme' }) ??
     screen.queryByRole('button', {
       name: tenancyUiEnUS.tenantSwitcher.noCurrentTenant,
     })
@@ -607,7 +607,7 @@ describe('the impersonation shell', () => {
       expect(backend.rosterReads()).toBeGreaterThan(rosterBefore),
     )
     expect(
-      await screen.findByRole('button', { name: 'Acme Inc.' }),
+      await screen.findByRole('button', { name: 'acme' }),
     ).toBeInTheDocument()
     expect(getCurrentTenantId()).toBe('acme')
   })
@@ -659,7 +659,7 @@ describe('the impersonation shell', () => {
       roster.resolve()
     })
     expect(
-      await screen.findByRole('button', { name: 'Acme Inc.' }),
+      await screen.findByRole('button', { name: 'acme' }),
     ).toBeInTheDocument()
     expect(getCurrentTenantId()).toBe('acme')
   })
@@ -696,7 +696,7 @@ describe('the impersonation shell', () => {
     // the frame put it; no status read is issued and no banner appears.
     await waitFor(() => expect(backend.rosterReads()).toBeGreaterThan(0))
     expect(
-      await screen.findByRole('button', { name: 'Acme Inc.' }),
+      await screen.findByRole('button', { name: 'acme' }),
     ).toBeInTheDocument()
     expect(banner()).toBeNull()
     expect(backend.statusReads()).toBe(0)

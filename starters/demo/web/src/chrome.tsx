@@ -227,7 +227,8 @@ export function HeaderActions(): ReactElement {
  * A personal tenant is the whole list while it is the current tenant: the
  * tenant record carries no display name, so the label is the host's bilingual
  * 「个人空间 / Personal workspace」 text rather than the alias. Any other
- * tenant is the placeholder list, whose rows render their names as they stand.
+ * tenant renders its alias, which is the request-surface name and is never
+ * translated.
  */
 export function TenantMenu({
   tenantId,
@@ -244,7 +245,7 @@ export function TenantMenu({
   const { t } = useTranslation(DEMO_NAMESPACE)
   const tenants: readonly DemoTenant[] =
     personalTenant === null
-      ? DEMO_TENANTS
+      ? DEMO_TENANTS.map((tenant) => ({ ...tenant, name: tenant.alias }))
       : [
           {
             id: personalTenant.id,

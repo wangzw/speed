@@ -683,9 +683,9 @@ describe('the tenant area header controls', () => {
     // The seeded roster registers acme alone, so the switcher must not
     // offer a second tenant: switching to one the server cannot resolve
     // would leave every tenant-scoped read refused 404.
-    await user.click(screen.getByRole('button', { name: 'Acme Inc.' }))
+    await user.click(screen.getByRole('button', { name: 'acme' }))
     expect(
-      screen.getByRole('menuitem', { name: 'Acme Inc.' }),
+      screen.getByRole('menuitem', { name: 'acme' }),
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('menuitem', { name: 'Globex Corp.' }),
