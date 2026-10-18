@@ -46,6 +46,7 @@ import {
   ListSkeleton,
   PageHeader,
   errorCodeOf,
+  primaryColumnMaxWidthSx,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { useObjectstoreUiTranslation } from './internal/translation.js'
@@ -146,13 +147,13 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
         // The module normalized the name once, so it is safe as a text
         // node; the full value lives in the details dialog, and the cell
         // stays one line with an ellipsis rather than widening the table.
-        // The cap answers to the table's container: the sm tier has only
+        // The cap is the shared primary-column cap: the sm tier has only
         // the name, state and actions columns to spend its width on, and a
         // 240px name there pushes the row actions past the edge.
         <Typography
           variant="body2"
           noWrap
-          sx={{ maxWidth: { '@': 160, '@md': 200 } }}
+          sx={primaryColumnMaxWidthSx}
           color={object.name === '' ? 'text.secondary' : undefined}
         >
           {object.name === '' ? t('list.unnamed') : object.name}
