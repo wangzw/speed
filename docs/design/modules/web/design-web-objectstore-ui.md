@@ -166,15 +166,15 @@ sequenceDiagram
 | 格式化与下载落盘 | 已实现 | `web/packages/objectstore-ui/src/internal/format.ts` `formatUtc`、`formatByteNumber`、`downloadFilename`；`web/packages/objectstore-ui/src/internal/download.ts` `saveBlob` |
 | 错误文案与异步分支 | 已实现 | `web/packages/objectstore-ui/src/internal/error-text.ts` `useObjectstoreUiErrorText`；`web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection` |
 | 命名空间资源 | 已实现 | `web/packages/objectstore-ui/src/resources.ts` `OBJECTSTORE_UI_NAMESPACE`、`objectstoreUiResources` |
-| 对象页的反馈作用域（下载与删除共用一个槽，下载成功落点名对象的确认，翻页与刷新 `reset`，作用域写入在途时它们禁用） | 未实现 | — |
-| 删除进行中本页全部删除控件禁用并标忙 | 未实现 | — |
-| 读忙态下刷新控件带 `aria-busy` 而不置原生 `disabled`、已有数据的刷新失败的陈旧提示、403 时替换旧列表并隐藏分页 | 未实现 | — |
-| 无租户在场时刷新控件禁用 | 未实现 | — |
-| 删除失败后的失效重读 | 未实现 | — |
+| 对象页的反馈作用域（下载与删除共用一个槽，下载成功落点名对象的确认，翻页与刷新 `reset`，作用域写入在途时它们禁用） | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage` |
+| 删除进行中本页全部删除控件禁用并标忙 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage` |
+| 读忙态下刷新控件带 `aria-busy` 而不置原生 `disabled`、已有数据的刷新失败的陈旧提示、403 时替换旧列表并隐藏分页 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage`；`web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection` |
+| 无租户在场时刷新控件禁用 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage` |
+| 删除失败后的失效重读 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage` |
 | 详情读答 `objectstore.not_found` 时渲染「已不存在」占位且不给重试 | 已实现 | `web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection`、`isObjectNotFound` |
 | 详情已有缓存时，`objectstore.not_found` 同样替换旧详情 | 已实现 | `web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection`、`isObjectNotFound` |
 | 对象名称的列表列、详情字段与下载文件名 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage`；`web/packages/objectstore-ui/src/ObjectDetailDialog.tsx` `ObjectDetailDialog`；`web/packages/objectstore-ui/src/internal/format.ts` `downloadFilename` |
 | 对象列表的列优先级与对象标识的短显示 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage` |
-| 错误白名单组合会话生命周期码族及其双语文案 | 未实现 | — |
-| 上传行的失败文本取自错误码 | 未实现 | — |
+| 错误白名单组合会话生命周期码族及其双语文案 | 已实现 | `web/packages/objectstore-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`、`SESSION_LIFECYCLE_ERROR_CODES` |
+| 上传行的失败文本取自错误码 | 已实现 | `web/packages/objectstore-ui/src/internal/uploads.ts` |
 | 准入层的裸 404 渲染为「无法访问当前组织」，不渲染成对象存储的失败占位 | 已实现 | `web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection`、`isTenantRefusal`；`web/packages/objectstore-ui/src/internal/error-text.ts` `useObjectstoreUiErrorText` |
