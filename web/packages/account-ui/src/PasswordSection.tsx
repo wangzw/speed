@@ -172,92 +172,86 @@ export function PasswordSection({ session }: PasswordSectionProps) {
           onRetry: () => void refetch(),
         }}
       >
-        {() =>
-          passwordSet === false ? (
-            <Typography variant="body2" color="text.secondary">
-              {t('password.noPassword')}
-            </Typography>
-          ) : (
-            <Box
-              component="form"
-              noValidate
-              onSubmit={submit}
-              sx={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                gap: 2,
-                maxWidth: 600,
-              }}
+        {() => (
+          <Box
+            component="form"
+            noValidate
+            onSubmit={submit}
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              gap: 2,
+              maxWidth: 600,
+            }}
+          >
+            <Alert
+              severity="success"
+              role="status"
+              sx={changed ? { width: '100%' } : visuallyHiddenSx}
             >
-              <Alert
-                severity="success"
-                role="status"
-                sx={changed ? { width: '100%' } : visuallyHiddenSx}
-              >
-                {changed ? t('password.changed') : ''}
-              </Alert>
+              {changed ? t('password.changed') : ''}
+            </Alert>
 
-              <InlineError code={failureCode} />
+            <InlineError code={failureCode} />
 
-              {passwordSet && (
-                <TextField
-                  fullWidth
-                  type="password"
-                  autoComplete="current-password"
-                  label={t('password.current.label')}
-                  value={current}
-                  disabled={changePassword.isPending}
-                  onChange={(event) => setCurrent(event.target.value)}
-                />
-              )}
-
+            {passwordSet && (
               <TextField
                 fullWidth
                 type="password"
-                autoComplete="new-password"
-                label={t('password.new.label')}
-                value={newPassword}
+                autoComplete="current-password"
+                label={t('password.current.label')}
+                value={current}
                 disabled={changePassword.isPending}
-                error={fieldError === 'missingNew'}
-                helperText={
-                  fieldError === 'missingNew'
-                    ? t('password.missingNew')
-                    : t('password.new.helper')
-                }
-                onChange={(event) => {
-                  setNewPassword(event.target.value)
-                  setFieldError(null)
-                }}
+                onChange={(event) => setCurrent(event.target.value)}
               />
+            )}
 
-              <TextField
-                fullWidth
-                type="password"
-                autoComplete="new-password"
-                label={t('password.confirm.label')}
-                value={confirm}
-                disabled={changePassword.isPending}
-                error={fieldError === 'mismatch'}
-                helperText={
-                  fieldError === 'mismatch' ? t('password.mismatch') : undefined
-                }
-                onChange={(event) => {
-                  setConfirm(event.target.value)
-                  setFieldError(null)
-                }}
-              />
+            <TextField
+              fullWidth
+              type="password"
+              autoComplete="new-password"
+              label={t('password.new.label')}
+              value={newPassword}
+              disabled={changePassword.isPending}
+              error={fieldError === 'missingNew'}
+              helperText={
+                fieldError === 'missingNew'
+                  ? t('password.missingNew')
+                  : t('password.new.helper')
+              }
+              onChange={(event) => {
+                setNewPassword(event.target.value)
+                setFieldError(null)
+              }}
+            />
 
-              <Button
-                type="submit"
-                variant="contained"
-                disabled={changePassword.isPending}
-              >
-                {t('password.submit')}
-              </Button>
-            </Box>
-          )
-        }
+            <TextField
+              fullWidth
+              type="password"
+              autoComplete="new-password"
+              label={t('password.confirm.label')}
+              value={confirm}
+              disabled={changePassword.isPending}
+              error={fieldError === 'mismatch'}
+              helperText={
+                fieldError === 'mismatch' ? t('password.mismatch') : undefined
+              }
+              onChange={(event) => {
+                setConfirm(event.target.value)
+                setFieldError(null)
+              }}
+            />
+
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={changePassword.isPending}
+            >
+              {t('password.submit')}
+            </Button>
+          </Box>
+        )}
       </AsyncSection>
 
       <StepUpChallenge

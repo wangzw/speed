@@ -12,7 +12,7 @@
       "impersonation_restricted": "This action is not available while you are viewing as another account.",
       "forbidden": "You do not have permission to do that.",
       "conflict": "The request conflicts with the account's current state. Refresh and try again.",
-      "login_identifier_required": "An email address is required for this account.",
+      "login_identifier_required": "This account needs a username or a verified email address before a password can be set.",
       "unsupported_media_type": "The request could not be read.",
       "throttled": "Too many attempts. Please try again later.",
       "unavailable": "The service is temporarily unavailable. Please try again later."
@@ -204,7 +204,6 @@
     "changed": "Your password has been changed. Other devices have been signed out.",
     "missingNew": "Enter a new password.",
     "mismatch": "The two passwords do not match.",
-    "noPassword": "This account signs in through a provider and has no password to change here.",
     "error": {
       "title": "Could not load password settings",
       "description": "Something went wrong while loading your password settings. Please try again."

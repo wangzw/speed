@@ -12,7 +12,7 @@
       "impersonation_restricted": "正在以其他账户身份查看时无法执行此操作。",
       "forbidden": "你没有执行该操作的权限。",
       "conflict": "该操作与账户当前状态冲突，请刷新后重试。",
-      "login_identifier_required": "此账户需要填写邮箱地址。",
+      "login_identifier_required": "此账户需要先添加用户名或已验证的邮箱地址，才能设置密码。",
       "unsupported_media_type": "请求无法被读取。",
       "throttled": "尝试次数过多，请稍后再试。",
       "unavailable": "服务暂时不可用，请稍后重试。"
@@ -204,7 +204,6 @@
     "changed": "密码已修改，其他设备已被退出登录。",
     "missingNew": "请输入新密码。",
     "mismatch": "两次输入的密码不一致。",
-    "noPassword": "该账户经提供方登录，此处没有可修改的密码。",
     "error": {
       "title": "无法加载密码设置",
       "description": "加载密码设置时出了问题，请稍后重试。"

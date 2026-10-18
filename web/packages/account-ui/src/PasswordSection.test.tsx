@@ -4,14 +4,14 @@
  * write (PUT /auth/password).
  *
  * What this suite pins: the current-password field renders only when the
- * profile says a password is set, and a provider-only account sees the
- * no-password note instead of a form; the two client-side guards (an
- * empty new password, a mismatched confirmation) render on their fields
- * and send no request; a valid change PUTs the current and new passwords,
- * fills the success live region and clears the fields; a wrong current
- * password (401 login-failed) renders its code text; and a change refused
- * with 401 authn.insufficient_user_authentication opens the step-up
- * dialog, a won step-up re-running it exactly once.
+ * profile says a password is set, and an account without one gets the
+ * two new-password fields alone (its first password); the two client-side
+ * guards (an empty new password, a mismatched confirmation) render on
+ * their fields and send no request; a valid change PUTs the current and
+ * new passwords, fills the success live region and clears the fields; a
+ * wrong current password (401 login-failed) renders its code text; and a
+ * change refused with 401 authn.insufficient_user_authentication opens the
+ * step-up dialog, a won step-up re-running it exactly once.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -63,7 +63,7 @@ describe('PasswordSection', () => {
     await expectNoAxeViolations()
   })
 
-  it('offers no password form to a provider-only account', async () => {
+  it('offers the first-password form to an account without a password', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileBody({ password_set: false }))
@@ -72,11 +72,16 @@ describe('PasswordSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findByText(zhCN.password.noPassword)).toBeTruthy()
-    expect(screen.queryByLabelText(zhCN.password.new.label)).toBeNull()
+    // No current password to ask for; the new-password pair is the whole
+    // form, so a holder whose account carries none sets the first one.
+    expect(await screen.findByLabelText(zhCN.password.new.label)).toBeTruthy()
+    expect(screen.getByLabelText(zhCN.password.confirm.label)).toBeTruthy()
+    expect(screen.queryByLabelText(zhCN.password.current.label)).toBeNull()
     expect(
-      screen.queryByRole('button', { name: zhCN.password.submit }),
-    ).toBeNull()
+      screen.getByRole('button', { name: zhCN.password.submit }),
+    ).toBeTruthy()
+
+    await expectNoAxeViolations()
   })
 
   it('refuses an empty or mismatched new password without a request', async () => {
