@@ -48,6 +48,7 @@ describe('ui-kit resources', () => {
       'fileUploader',
       'form',
       'pageHeader',
+      'phoneNumber',
       'sidePanel',
     ])
   })

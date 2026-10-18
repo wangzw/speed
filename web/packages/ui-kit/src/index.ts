@@ -4,8 +4,9 @@
  * Two kinds of things ship here: the theme factory (createAppTheme,
  * AppThemeProvider) that turns @speed/tokens into a MUI v9 theme, and the
  * fully controlled components (PageHeader, EmptyState, ConfirmDialog,
- * SidePanel, FormField, FormLayout, DataTable, FileUploader, InlineError,
- * InlineSuccess, WriteFeedbackRegion, ListSkeleton, AsyncSection) with
+ * SidePanel, FormField, FormLayout, PhoneNumberField, DataTable,
+ * FileUploader, InlineError, InlineSuccess, WriteFeedbackRegion,
+ * ListSkeleton, AsyncSection) with
  * their ui-kit-namespace translations (UI_KIT_NAMESPACE + uiKitResources)
  * for the host to register —
  * FileUploader renders the queue the host owns as `rows` props while
@@ -72,6 +73,24 @@ export {
   type FormLayoutColumns,
   type FormLayoutProps,
 } from './components/FormLayout.js'
+export {
+  PhoneNumberField,
+  type PhoneNumberFieldProps,
+} from './components/PhoneNumberField.js'
+export {
+  defaultPhoneCountry,
+  formatNationalPhoneNumber,
+  isPhoneCountry,
+  nationalNumberDigits,
+  parseInternationalPhoneNumber,
+  phoneCountries,
+  phoneCountryCallingCode,
+  phoneCountryName,
+  toE164,
+  validatePhoneNumber,
+  type PhoneNumberParts,
+  type PhoneNumberValidation,
+} from './phone-number.js'
 export {
   zodFormResolver,
   INVALID_ERROR_KEY,

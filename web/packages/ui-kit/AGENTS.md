@@ -10,11 +10,15 @@ coarse-pointer 44px floor for the base controls, `AppThemeProvider`
 `useAppThemeMode`, the dark surface reading the neutral ramp from its dark
 end), and the controlled
 components (`PageHeader`, `EmptyState`, `ConfirmDialog`, `SidePanel`,
-`FormField`, `FormLayout`, `DataTable`, `FileUploader`, `InlineError`,
-`InlineSuccess`, `WriteFeedbackRegion`, `ListSkeleton`, `AsyncSection`)
+`FormField`, `FormLayout`, `PhoneNumberField`, `DataTable`,
+`FileUploader`, `InlineError`, `InlineSuccess`, `WriteFeedbackRegion`,
+`ListSkeleton`, `AsyncSection`)
 that render only the
 state hosts give them, plus the form family's zod validation bridge
-(`zodFormResolver`), the write-feedback scope (`useWriteFeedback`, the
+(`zodFormResolver`), the phone parts' composition helpers (`toE164`,
+`validatePhoneNumber`, `defaultPhoneCountry` and the grouping/parsing
+functions in `src/phone-number.ts`), the write-feedback scope
+(`useWriteFeedback`, the
 one exported hook that holds state, with the slot's renderer
 `WriteFeedbackRegion`) and the shared state primitives (`errorCodeOf`, the
 `visuallyHiddenSx` clip recipe, and the `touchTargetSx` recipe as the
@@ -30,7 +34,19 @@ that are not in the current `rows` prop. Built-in user-facing strings
 live in the bilingual `ui-kit` namespace;
 the repo's text discipline (both languages, identical key sets, nothing
 inline) is enforced over this package's `src` by the workspace's own
-`speed/no-literal-text` ESLint rule. The public surface is `src/index.ts`
+`speed/no-literal-text` ESLint rule.
+
+`PhoneNumberField` is the package's one dependency on country data:
+`libphonenumber-js` (its `min` metadata build, about 84 KB raw / 20 KB
+gzipped plus the parser/formatter code) supplies calling codes, the
+as-you-type grouping and the per-country length/prefix validation. It is
+a regular dependency rather than a peer -- no host module or instance is
+shared -- and the package sets `sideEffects: false`, so a bundle that
+does not use the phone control tree-shakes it away. Country names are
+not a translation-key table: they come from `Intl.DisplayNames` at
+render time.
+
+The public surface is `src/index.ts`
 plus `resources.ts`'s exports; everything else under `src/internal/` is
 plumbing and deliberately not exported.
 

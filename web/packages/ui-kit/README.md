@@ -39,6 +39,8 @@ string lives in the bilingual `ui-kit` namespace registered through
 | `components/FileUploader.tsx` | `FileUploader`, `FileUploaderProps`, `FileUploaderRow`, `FileUploaderRowStatus` |
 | `components/FormField.tsx` | `FormField`, `FormFieldProps`, `FormFieldRenderState`, `REQUIRED_ERROR_KEY` |
 | `components/FormLayout.tsx` | `FormLayout`, `FormLayoutProps`, `FormLayoutColumns` |
+| `components/PhoneNumberField.tsx` | `PhoneNumberField`, `PhoneNumberFieldProps` |
+| `phone-number.ts` | `toE164`, `validatePhoneNumber`, `formatNationalPhoneNumber`, `parseInternationalPhoneNumber`, `nationalNumberDigits`, `defaultPhoneCountry`, `phoneCountries`, `phoneCountryCallingCode`, `phoneCountryName`, `isPhoneCountry`, `PhoneNumberParts`, `PhoneNumberValidation` |
 | `zod-form-resolver.ts` | `zodFormResolver`, `INVALID_ERROR_KEY` |
 | `components/DataTable.tsx` | `DataTable`, `DataTableColumn`, `DataTableColumnCellWrap`, `DataTableColumnContentMaxWidth`, `DataTableColumnPriority`, `DataTableSort`, `DataTableSortDirection`, `DataTableFilter`, `DataTablePagination`, `DataTableProps`, `PRIMARY_COLUMN_MAX_WIDTH`, `LONG_TEXT_COLUMN_MAX_WIDTH`, `primaryColumnMaxWidthSx` |
 | `components/InlineError.tsx` | `InlineError`, `InlineErrorProps`, `errorCodeOf` |
@@ -659,6 +661,72 @@ zod path, so a nested field (`address.city`) surfaces on that field.
 Dependencies): the host builds the schema, so the schema instance and
 the package's `ZodType` are one class.
 
+### PhoneNumberField
+
+The two-part phone control every phone surface shares: a searchable
+country/region selector and a local number, joined into E.164 for
+submission.
+
+```tsx
+import { useState } from 'react'
+import {
+  PhoneNumberField,
+  defaultPhoneCountry,
+  toE164,
+} from '@speed/ui-kit'
+
+const [country, setCountry] = useState(() => defaultPhoneCountry())
+const [nationalNumber, setNationalNumber] = useState('')
+const [attempted, setAttempted] = useState(false)
+
+<PhoneNumberField
+  country={country}
+  nationalNumber={nationalNumber}
+  onCountryChange={setCountry}
+  onNationalNumberChange={setNationalNumber}
+  countryLabel={t('phone.countryLabel')}
+  numberLabel={t('phone.label')}
+  numberHelperText={t('phone.helper')}
+  showValidationError={attempted}
+/>
+
+// On submit:
+const phone = toE164(country, nationalNumber) // null while invalid
+```
+
+- **The selector** lists every country the phone metadata covers. Each
+  option shows its flag, its name in the active language (from
+  `Intl.DisplayNames`, not a translation key per region) and its calling
+  code. Typing searches by name, ISO code or calling code; the field
+  selects its current label on focus, so the next keystroke starts a
+  search instead of appending to that label. The closed field stays
+  narrow (flag and calling code); the popup widens to the option
+  text.
+- **The local field** is `type=tel` and `inputMode=tel`, grouped with
+  spaces while the viewer types. A value that starts with `+` is parsed:
+  once it names a country the selector switches and the local part is
+  filled, so a pasted E.164 number needs no country pick first. Until it
+  is long enough to name one, the raw text stays on screen, so a
+  `+`-number typed by hand does not lose its leading sign.
+- **Validation** is per country and names the calling code:
+  `phoneNumber.incomplete` ("The number is incomplete under +86.") for a
+  number shorter than the country allows, `phoneNumber.invalid` for an
+  implausible one, and `form.required` when a submit arrived empty.
+  `showValidationError` gates the message so a viewer is not scolded
+  mid-typing; leaving the field also reveals it.
+- **`toE164(country, nationalNumber)`** is the one place the parts are
+  joined: the E.164 string, or `null` while they do not make a valid
+  number. `validatePhoneNumber`, `formatNationalPhoneNumber`,
+  `parseInternationalPhoneNumber`, `nationalNumberDigits`,
+  `defaultPhoneCountry`, `phoneCountries`, `phoneCountryCallingCode`,
+  `phoneCountryName` and `isPhoneCountry` ship beside it for hosts that
+  need the parts themselves.
+- The component never sends anything: the host owns the two parts and
+  decides when to submit.
+
+The country data is **`libphonenumber-js`'s** (`min` metadata build), not
+a table maintained here -- see Dependencies for the bundle cost.
+
 ### DataTable
 
 The fully controlled table view. `rows` is by contract the set of rows
@@ -1187,6 +1255,7 @@ same rationale documented here.
 | `react-hook-form` | peer (required, ^7) | the form family's `FormProvider`/`Controller` identity needs one RHF in the tree, and `FormLayout`'s `UseFormReturn` must be the host's own type. devDependency 7.87.0 is the tested point (the peer range is the ^7 API family) |
 | `zod` | peer (required, ^4) | the host builds the schema `zodFormResolver` consumes, so the schema instance and this package's `ZodType` must be one class -- one zod in the tree, exactly like `react-hook-form`. devDependency 4.6.7 is the tested point |
 | `@speed/tokens`, `@speed/i18n` | dependencies | the token tree this package maps, and the i18n instance/bindings every component renders through |
+| `libphonenumber-js` | dependency | the per-country phone data behind `PhoneNumberField` and its helpers: calling codes, as-you-type grouping and length/prefix validation. Imported from its `min` metadata build, about 84 KB raw / 20 KB gzipped of metadata plus the parser/formatter code. The package sets `sideEffects: false`, so a bundle that does not use the phone control tree-shakes it away |
 
 ## Deferrals and recorded decisions
 

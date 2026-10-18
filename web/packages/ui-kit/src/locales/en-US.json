@@ -39,6 +39,10 @@
     "required": "This field is required.",
     "invalid": "Enter a valid value."
   },
+  "phoneNumber": {
+    "incomplete": "The number is incomplete under +{{code}}.",
+    "invalid": "The number is not valid under +{{code}}."
+  },
   "dataTable": {
     "loading": "Loading",
     "noData": "No data",
