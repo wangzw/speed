@@ -25,8 +25,11 @@
  * rendering the tenant state. A caller that renders one object passes
  * `notFoundState`, and that code then renders the object-gone placeholder
  * with no retry: the server answered, and retrying cannot bring a deleted
- * object back. A caller that does not pass it -- the list, which the module
- * never answers with that code -- keeps the retryable placeholder.
+ * object back. The answer replaces the content even when a cached payload
+ * is still on screen -- a refetch that comes back not-found confirms the
+ * object is gone, so the older detail would misdescribe it. A caller that
+ * does not pass `notFoundState` -- the list, which the module never
+ * answers with that code -- keeps the retryable placeholder.
  *
  * The refusals are detected from the answer, not a route-level permission
  * read: the server writes the status, and the page renders the answer. The
@@ -165,12 +168,10 @@ export function ObjectAsyncSection<Payload>({
       />
     )
   }
-  if (
-    !rest.pending &&
-    rest.payload === undefined &&
-    notFoundState !== undefined &&
-    isObjectNotFound(error)
-  ) {
+  // The not-found answer replaces the content even when a cached payload
+  // is still on screen: the server has confirmed the object is gone, so
+  // the older detail would misdescribe it.
+  if (!rest.pending && notFoundState !== undefined && isObjectNotFound(error)) {
     return (
       <EmptyState
         title={notFoundState.title}

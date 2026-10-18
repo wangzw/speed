@@ -127,6 +127,30 @@ describe('ObjectAsyncSection', () => {
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
   })
 
+  it('replaces a cached payload with the not-found placeholder for a typed 404', () => {
+    // A refetch answered not-found while the earlier detail is still
+    // cached: the server has confirmed the object is gone, so the cached
+    // payload must not stay on screen.
+    renderWithProviders(
+      <ObjectAsyncSection<string>
+        pending={false}
+        payload="stale detail"
+        error={{ status: 404, code: 'objectstore.not_found' }}
+        empty={false}
+        loading={<p>loading</p>}
+        errorState={errorState}
+        notFoundState={{ title: 'Gone', description: 'It was deleted' }}
+      >
+        {(value) => <p>content: {value}</p>}
+      </ObjectAsyncSection>,
+      { language: 'en-US' },
+    )
+    expect(screen.getByText('Gone')).toBeInTheDocument()
+    expect(screen.getByText('It was deleted')).toBeInTheDocument()
+    expect(screen.queryByText('content: stale detail')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  })
+
   it('keeps the retryable error for a 5xx even when a not-found state is given', () => {
     renderWithProviders(
       <ObjectAsyncSection<unknown>

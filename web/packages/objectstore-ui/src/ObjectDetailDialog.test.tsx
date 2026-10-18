@@ -98,6 +98,42 @@ describe('ObjectDetailDialog', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('replaces a cached detail with the gone state when a refetch answers typed not-found', async () => {
+    // The dialog opened on a live object, then a refetch answered the
+    // typed not-found refusal. The cached detail must give way to the
+    // gone placeholder: the server confirmed the object no longer exists,
+    // and a retry cannot bring it back.
+    let fetched = false
+    makeObjectStoreRig(() => {
+      if (!fetched) {
+        fetched = true
+        return jsonResponse(200, { object: OBJECT })
+      }
+      return problemResponse(404, 'urn:speed:objectstore:not-found')
+    })
+    const { queryClient } = renderWithProviders(
+      <ObjectDetailDialog id="o-1" onClose={() => undefined} />,
+      { language: 'en-US' },
+    )
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => {
+      expect(within(dialog).getByText('deadbeef')).toBeInTheDocument()
+    })
+
+    await queryClient.refetchQueries()
+
+    expect(
+      await within(dialog).findByText('This object is no longer available'),
+    ).toBeInTheDocument()
+    expect(within(dialog).queryByText('deadbeef')).not.toBeInTheDocument()
+    expect(
+      within(dialog).queryByRole('button', { name: 'Try again' }),
+    ).not.toBeInTheDocument()
+    expect(
+      within(dialog).queryByText('The object could not be loaded'),
+    ).not.toBeInTheDocument()
+  })
+
   it('keeps the retryable detail error when the read fails with a 5xx', async () => {
     makeObjectStoreRig(() =>
       problemResponse(503, 'urn:speed:objectstore:unavailable'),

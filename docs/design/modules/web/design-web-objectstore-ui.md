@@ -172,7 +172,7 @@ sequenceDiagram
 | 无租户在场时刷新控件禁用 | 未实现 | — |
 | 删除失败后的失效重读 | 未实现 | — |
 | 详情读答 `objectstore.not_found` 时渲染「已不存在」占位且不给重试 | 已实现 | `web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection`、`isObjectNotFound` |
-| 详情已有缓存时，`objectstore.not_found` 同样替换旧详情 | 未实现 | — |
+| 详情已有缓存时，`objectstore.not_found` 同样替换旧详情 | 已实现 | `web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection`、`isObjectNotFound` |
 | 对象名称的列表列、详情字段与下载文件名 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage`；`web/packages/objectstore-ui/src/ObjectDetailDialog.tsx` `ObjectDetailDialog`；`web/packages/objectstore-ui/src/internal/format.ts` `downloadFilename` |
 | 对象列表的列优先级与对象标识的短显示 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage` |
 | 错误白名单组合会话生命周期码族及其双语文案 | 未实现 | — |
