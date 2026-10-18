@@ -12,7 +12,10 @@ import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import { DashboardPage } from './DashboardPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
-import { columnVisibility } from '../test-utils/container-visibility.js'
+import {
+  columnVisibility,
+  containerMaxWidthOf,
+} from '../test-utils/container-visibility.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   accountFixture,
@@ -138,6 +141,38 @@ describe('DashboardPage', () => {
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: '动作' })),
     ).toBeNull()
+  })
+
+  it('caps the recent-activity long-text columns like the audit page', async () => {
+    const action = 'pkg.objectstore.metadata.create'
+    const object = '/api/v1/objects/a-very-long-registered-route'
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listRecords: () =>
+          Promise.resolve({
+            entries: [recordFixture({ id: 'rec-9', action, object })],
+            next: '',
+          }),
+      }),
+    )
+    renderWithProviders(<DashboardPage />, { operations })
+    await screen.findByText(action)
+
+    const sharedCap = new Map([
+      [0, 160],
+      [900, 200],
+    ])
+    const actionText = screen.getByText(action)
+    expect(containerMaxWidthOf(actionText)).toEqual(sharedCap)
+    expect(actionText.closest('td')).toHaveAttribute('title', action)
+
+    const objectText = screen.getByText(object)
+    expect(containerMaxWidthOf(objectText)).toEqual(sharedCap)
+    expect(objectText.closest('td')).toHaveAttribute('title', object)
+
+    const actorText = await screen.findByText('Operator')
+    expect(containerMaxWidthOf(actorText)).toEqual(sharedCap)
+    expect(actorText.closest('td')).toHaveAttribute('title', 'acc-1')
   })
 
   it('derives the platform health row from the windowed audit read', async () => {
