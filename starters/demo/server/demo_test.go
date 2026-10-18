@@ -218,8 +218,8 @@ audit:
   journal:
     endpoints: [api, account, admin]
     requests:
-      - "GET /auth/me"
-      - "POST /auth/admin/accounts"
+      - "POST /api/v1/objects"
+      - "DELETE /api/v1/objects/:id"
   admin:
     endpoints: [admin]
 ratelimit:
@@ -1232,6 +1232,146 @@ func TestTheNotificationSurfaceIsReachable(t *testing.T) {
 		t.Errorf("the notification stream answered content type %q, want text/event-stream", ct)
 	}
 	cancel()
+}
+
+// TestTheRequestSampleRecordsTheOperatorsWrites holds the request-level audit
+// sample to what it demonstrates. The sample names the object store's
+// declaration and delete, both writes an operator initiates, and the case
+// performs one of each and reads the journal back: the sample is held to the
+// routes the engine registered, and a path written another way matches nothing
+// and fails nothing. The profile read the frontend polls on its own is
+// performed too and must leave no request row, and an account creation is held
+// to the seam row it already has, with no second request row beside it.
+func TestTheRequestSampleRecordsTheOperatorsWrites(t *testing.T) {
+	ports := freePorts(t, listenerCount)
+	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "demo.db"))
+
+	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
+		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
+	}
+
+	serve := start(t, config, "sqlite", serveCommand)
+	serve.waitReady(t)
+
+	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
+	token := signIn(t, base, seedIdentifier, seedPassword)
+	client := &http.Client{Timeout: 10 * time.Second}
+	headers := map[string]string{
+		"Authorization": "Bearer " + token,
+		"X-Tenant":      demoTenant,
+	}
+
+	// The frontend reads the caller's profile after every load. The sample
+	// names no read, so this one leaves the journal untouched.
+	if res := send(t, client, http.MethodGet, base+"/auth/me", nil, headers); res.status != http.StatusOK {
+		t.Fatalf("GET /auth/me answered %d, want 200:\n%s", res.status, res.body)
+	}
+
+	declared := send(t, client, http.MethodPost, base+"/api/v1/objects", map[string]any{
+		"name":         "sample-write.txt",
+		"size":         5,
+		"content_type": "text/plain",
+	}, headers)
+	if declared.status != http.StatusCreated {
+		t.Fatalf("declaring an object answered %d, want 201:\n%s", declared.status, declared.body)
+	}
+	var declaration struct {
+		Object struct {
+			ID string `json:"id"`
+		} `json:"object"`
+	}
+	if err := json.Unmarshal(declared.body, &declaration); err != nil || declaration.Object.ID == "" {
+		t.Fatalf("reading the declaration's object: %v\n%s", err, declared.body)
+	}
+
+	if res := send(t, client, http.MethodDelete,
+		base+"/api/v1/objects/"+declaration.Object.ID, nil, headers); res.status != http.StatusNoContent {
+		t.Fatalf("deleting the object answered %d, want 204:\n%s", res.status, res.body)
+	}
+
+	// The account-management actions are recorded at the seam. The sample does
+	// not name the create route, so one call leaves one row and no request row
+	// beside it.
+	created := send(t, client, http.MethodPost, base+"/auth/admin/accounts", map[string]any{
+		"kind":               "user",
+		"email":              "sample-admin-write@demo.test",
+		"email_verified_via": "admin",
+		"display_name":       "Sample Admin Write",
+	}, headers)
+	if created.status != http.StatusCreated {
+		t.Fatalf("creating an account answered %d, want 201:\n%s", created.status, created.body)
+	}
+
+	// The journal's query surface reads the rows back. The request rows are
+	// looked for until both writes are there: the capture layer writes after
+	// the handler returns, so a read can beat the row.
+	type record struct {
+		Source string `json:"source"`
+		Action string `json:"action"`
+		Object string `json:"object"`
+	}
+	var page struct {
+		Entries []record `json:"entries"`
+	}
+	readJournal := func() []record {
+		res := send(t, client, http.MethodGet, base+"/audit/admin/records?limit=200", nil, headers)
+		if res.status != http.StatusOK {
+			t.Fatalf("reading the journal answered %d, want 200:\n%s", res.status, res.body)
+		}
+		if err := json.Unmarshal(res.body, &page); err != nil {
+			t.Fatalf("reading the journal's answer: %v\n%s", err, res.body)
+		}
+		return page.Entries
+	}
+	count := func(entries []record, source, action, object string) int {
+		n := 0
+		for _, r := range entries {
+			if r.Source == source && r.Action == action && r.Object == object {
+				n++
+			}
+		}
+		return n
+	}
+	writes := [][2]string{
+		{http.MethodPost, "/api/v1/objects"},
+		{http.MethodDelete, "/api/v1/objects/:id"},
+	}
+	var entries []record
+	for deadline := time.Now().Add(scaledForRace(5 * time.Second)); ; {
+		entries = readJournal()
+		seen := 0
+		for _, w := range writes {
+			if count(entries, "request", w[0], w[1]) > 0 {
+				seen++
+			}
+		}
+		if seen == len(writes) || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	readable, err := json.Marshal(entries)
+	if err != nil {
+		t.Fatalf("rendering the journal's rows: %v", err)
+	}
+
+	for _, write := range writes {
+		if n := count(entries, "request", write[0], write[1]); n != 1 {
+			t.Errorf("the journal holds %d request row(s) for %q %q, want exactly 1:\n%s",
+				n, write[0], write[1], readable)
+		}
+	}
+	if n := count(entries, "request", http.MethodGet, "/auth/me"); n != 0 {
+		t.Errorf("the journal holds %d request row(s) for GET /auth/me, want none:\n%s", n, readable)
+	}
+	if n := count(entries, "request", http.MethodPost, "/auth/admin/accounts"); n != 0 {
+		t.Errorf("the journal holds %d request row(s) for POST /auth/admin/accounts, "+
+			"which the seam already records:\n%s", n, readable)
+	}
+	if n := count(entries, "seam", "authn.account.create", ""); n != 1 {
+		t.Errorf("the journal holds %d seam row(s) for authn.account.create, want exactly 1:\n%s",
+			n, readable)
+	}
 }
 
 // TestTheSeedRefusesAConfigurationItCannotWrite holds the two ways a seed whose

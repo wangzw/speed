@@ -127,8 +127,8 @@ audit:
   journal:
     endpoints: [api, account, admin]
     requests:
-      - "GET /auth/me"
-      - "POST /auth/admin/accounts"
+      - "POST /api/v1/objects"
+      - "DELETE /api/v1/objects/:id"
   admin:
     endpoints: [admin]
 

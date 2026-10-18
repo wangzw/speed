@@ -392,7 +392,14 @@ under `server/testdata/` names them:
   the matrix is empty and that step does not arise, and a product that declares
   one supplies the recipient.
 - The journal (`audit.journal`) records the requests its `requests` list names
-  on the endpoints its `endpoints` list names.
+  on the endpoints its `endpoints` list names. The sample files name the object
+  store's declaration and delete (`POST /api/v1/objects`,
+  `DELETE /api/v1/objects/:id`): writes an operator initiates on a business
+  route, which is what a copy names here. A read the frontend polls on its own
+  (the profile, the session, the impersonation status) would write a row per
+  poll and bury the changes worth finding, and a route whose action the
+  capability already records at the seam (login, impersonation, the
+  account-management actions) would record one fact twice.
 - `ops` and `web` carry no gateway: the operations surface serves probes and the
   document, and the frontend bundle is static.
 

@@ -134,15 +134,18 @@ authz:
 
 # The journal records the requests named below on the guarded endpoints, and
 # writes the audit trail the admin surface reads. Its route list is the routes
-# to capture, each a method and the path as the route was registered; the
-# platform's own profile and account-management routes stand in for a product's
-# business routes here.
+# to capture, each a method and the path as the route was registered. A product
+# names the writes its operators initiate, here the object store's declaration
+# and delete: a read the frontend polls on its own would land a row per poll and
+# bury the changes worth finding, and an action a capability already records at
+# the seam — login, impersonation, the account-management actions — would be
+# recorded twice.
 audit:
   journal:
     endpoints: [api, account, admin]
     requests:
-      - "GET /auth/me"
-      - "POST /auth/admin/accounts"
+      - "POST /api/v1/objects"
+      - "DELETE /api/v1/objects/:id"
   admin:
     endpoints: [admin]
 
