@@ -91,8 +91,10 @@ class LoopingLegTests(unittest.TestCase):
         # docker is here for the same reason as the two below: the test legs
         # bring the external backends up before they run, and without a stand-in
         # this gate would drive the real daemon -- starting containers on
-        # whatever machine runs it, or failing where there is none.
-        for tool in ("go", "golangci-lint", "docker"):
+        # whatever machine runs it, or failing where there is none. pnpm is
+        # here for the starter Makefile's build leg, whose frontend step runs
+        # before the Go one.
+        for tool in ("go", "golangci-lint", "docker", "pnpm"):
             path = self.bin / tool
             path.write_text(STAND_IN.format(python=sys.executable), encoding="utf-8")
             path.chmod(0o755)
@@ -158,6 +160,65 @@ class LoopingLegTests(unittest.TestCase):
                     )
                 self.assertIn(str(self.scratch / "red"), result.stderr)
                 self.assertNotIn(str(self.scratch / "green"), result.stderr)
+
+    def starter_make(self, leg: str) -> subprocess.CompletedProcess[str]:
+        # The starter's Makefile is the entry point a copy of the skeleton
+        # runs; the root Makefile does not call it.
+        env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
+        env["PATH"] = f"{self.bin}{os.pathsep}{env.get('PATH', '')}"
+        env["STAND_IN_LOG"] = str(self.log)
+        return subprocess.run(
+            [
+                "make",
+                "-C",
+                str(ROOT / "starters" / "demo"),
+                "--no-print-directory",
+                leg,
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_the_starter_build_names_its_output(self) -> None:
+        # The Go build embeds the frontend bundle, so the leg runs both steps.
+        # A build of a pattern covering several packages discards its results,
+        # which would leave a copy of the skeleton without a program: the leg
+        # has to name the binary.
+        result = self.starter_make("build")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = self.calls()
+        self.assertTrue(
+            any(c["tool"] == "pnpm" and c["dir"] == "web" for c in calls),
+            f"the starter's build never built the frontend:\n{result.stdout}{result.stderr}",
+        )
+        builds = [
+            c
+            for c in calls
+            if c["tool"] == "go" and c["dir"] == "server" and c["args"][:1] == ["build"]
+        ]
+        self.assertTrue(
+            builds,
+            f"the starter's build never ran go build:\n{result.stdout}{result.stderr}",
+        )
+        for call in builds:
+            self.assertIn(
+                "-o",
+                call["args"],
+                "a pattern build discards its output; the leg has to name the binary",
+            )
+            position = call["args"].index("-o")
+            self.assertLess(
+                position + 1,
+                len(call["args"]),
+                "the build's -o names no file",
+            )
+            self.assertNotIn(
+                "./...",
+                call["args"],
+                "a pattern build discards its output; the leg has to name the binary",
+            )
 
     def test_a_red_gate_hides_no_other_gates_result(self) -> None:
         result = self.make("repo-check", "red", "green")
