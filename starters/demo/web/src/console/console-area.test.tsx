@@ -242,7 +242,20 @@ describe('ConsoleArea', () => {
           token: 'spd_inv_x',
         } as T)
       }
-      return Promise.resolve(undefined as T)
+      // The page's list reads: answered so react-query never receives an
+      // undefined document (it logs "Query data cannot be undefined").
+      if (
+        path === '/auth/admin/tenants/acme/invitations' &&
+        method === 'GET'
+      ) {
+        return Promise.resolve({ invitations: [], next_cursor: '' } as T)
+      }
+      if (path === '/auth/admin/tenants/acme/members' && method === 'GET') {
+        return Promise.resolve({ members: [], next_cursor: '' } as T)
+      }
+      // A path this suite has not scripted is a hole, not an empty answer:
+      // fail loudly instead of letting react-query log a warning.
+      return Promise.reject(new Error(`unanswered ${method} ${path}`))
     }
     bindRequestFn(requestFn)
     const user = userEvent.setup()
