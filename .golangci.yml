@@ -10,11 +10,13 @@ version: "2"
 run:
   timeout: 5m
   tests: true
-  # The integration cases carry a build tag, and a linter that does not take the
-  # tag never sees them: without this, everything that moved behind the tag
-  # leaves the static analysis as well as the commit gate's test run.
+  # The integration cases and the review build's files carry build tags, and a
+  # linter that does not take the tags never sees them: without this, everything
+  # that moved behind a tag leaves the static analysis as well as the commit
+  # gate's test run.
   build-tags:
     - integration
+    - review
 
 linters:
   # "standard" is errcheck, govet, ineffassign, staticcheck and unused.

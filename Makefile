@@ -13,6 +13,21 @@ SHELL := /bin/bash
 # and silently come up empty on the other.
 MODULES := $(shell go work edit -json go.work | sed -n 's/^[[:space:]]*"DiskPath": "\(.*\)".*/\1/p')
 
+# The build tags whose cases the commit gate executes rather than merely
+# compiles. A tag listed here needs, among the legs `check` reaches, a test leg
+# that passes the tag and names its cases with -run: the tagged cases are what
+# the leg is for, and a leg without the pattern would re-run the unit cases as
+# well. tools/check_test_tiers.py holds this roster to the tree.
+GATED_TEST_TAGS := review
+
+# The modules whose tree carries a file compiled under a gated tag. A module
+# with none has no case for the tagged leg to select, and running the leg there
+# would build every test binary for nothing. The match is on the constraint
+# text; a path found here is the directory holding the tagged file, and the
+# leg runs from there, so a tagged case in a subpackage still runs with its
+# own package.
+REVIEW_MODULES := $(shell paths='$(strip $(MODULES))'; if [ -n "$$paths" ]; then grep -rlE --include='*.go' '^//go:build .*review' $$paths 2>/dev/null | sed -E 's|/[^/]+$$||' | sort -u; fi)
+
 # Every tools/check_*.py is a gate over this tree: it takes no arguments, it
 # reports against the current directory, and it is run by `make repo-check`.
 # A script under tools/ that is not a gate carries another prefix.
@@ -31,7 +46,7 @@ each = for it in $(1); do echo "==> $(2) $$it"; $(3) || failed="$${failed:+$$fai
 each-end = if [ -n "$$failed" ]; then echo "failed: $$failed" >&2; exit 1; fi
 
 .PHONY: help modules deps-up deps-down build test test-race test-integration test-integration-race \
-        vet-integration vet-review fmt lint tidy tidy-check repo-check tools-test check python-version \
+        vet-integration vet-review test-review fmt lint tidy tidy-check repo-check tools-test check python-version \
         modules-present web-check web-a11y
 
 help: ## List the entry points
@@ -96,6 +111,18 @@ vet-integration: modules-present ## Compile every module's integration cases, ru
 # test-tier gate requires of every tag written in the tree.
 vet-review: modules-present ## Compile the review build variant, running nothing
 	@failed=; $(call each,$(MODULES),vet review,go -C $$it vet -tags=review ./...); $(each-end)
+
+# The cases compiled only under the review tag are executed here: vet-review
+# above only builds them, so deleting or breaking the review guard would leave
+# every leg green. `-run` selects the TestReview prefix, which is why the leg
+# does not run the module's unit cases a second time; a review-tagged case whose
+# name falls outside the prefix is held to it by tools/check_test_tiers.py.
+test-review: modules-present ## Test the cases compiled only under the review tag
+	@if [ -z "$(strip $(REVIEW_MODULES))" ]; then \
+	  echo "no module carries a review-tagged Go file: the review cases are gone, which is not a pass." >&2; \
+	  exit 1; \
+	fi
+	@failed=; $(call each,$(REVIEW_MODULES),test review,go -C $$it test -tags=review -run '^TestReview' -timeout 10m ./...); $(each-end)
 
 # `golangci-lint run` takes a process-wide lock by default, so two checkouts
 # running the gate at once make one of them die with "parallel golangci-lint
@@ -184,6 +211,7 @@ check: ## Run everything a commit is gated on (no external service needed)
 	@$(MAKE) test-race
 	@$(MAKE) vet-integration
 	@$(MAKE) vet-review
+	@$(MAKE) test-review
 	@$(MAKE) lint
 	@$(MAKE) tidy-check
 	@$(MAKE) repo-check

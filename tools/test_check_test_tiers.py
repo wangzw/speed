@@ -6,17 +6,20 @@ executables with no third-party dependencies" convention. Run directly:
 
     python3 tools/test_check_test_tiers.py
 
-The subject is the two rulings the gate holds, and each is pinned by the
-case that would otherwise pass it: a tag the legs do not pass hides its
-file from every leg, in the file and in the Makefile alike, and a library
-that skips a case turns a layer green. The exit-code contract is the
-other half: a finding exits 1, while a root that is not a directory, a
-Makefile with no tag and a scan with no subject are infrastructure errors
-and exit 2. An uncaught traceback exits 1 and would read as a finding.
+The subject is the three rulings the gate holds, and each is pinned by
+the case that would otherwise pass it: a tag the legs do not pass hides
+its file from every leg, in the file and in the Makefile alike; a library
+that skips a case turns a layer green; and a gated tag whose cases the
+commit gate's `-run` pattern does not select runs nothing, while a
+pattern that also catches an untagged case runs the unit layer twice.
+The exit-code contract is the other half: a
+finding exits 1, while a root that is not a directory, a Makefile with no
+tag and a scan with no subject are infrastructure errors and exit 2. An
+uncaught traceback exits 1 and would read as a finding.
 
 Most cases are written over a scratch tree that starts with the least it
-can hold and still have a subject for both checks -- one file carrying
-the tag the legs pass, and one library importing testing. A case about a
+can hold and still have a subject for every check -- one file carrying
+each tag the legs pass, and one library importing testing. A case about a
 control asks for no baseline instead, because a tree with no subject is
 what that control is for.
 """
@@ -39,18 +42,27 @@ sys.path.insert(0, str(HERE))
 
 import check_test_tiers as m  # noqa: E402
 
-# A Makefile with the two legs the vocabulary is read from. The target
-# named `test-race` carries the text `-race` without passing it, which is
-# the second thing the reader has to get right.
-MAKEFILE = """test:
+# A Makefile with the legs the vocabulary is read from. The target named
+# `test-race` carries the text `-race` without passing it, which is the
+# second thing the reader has to get right. `check` reaches `test` and
+# `test-review` but not the scheduled integration legs, which is the
+# boundary the gated-tag check reads.
+MAKEFILE = """check:
+\t@$(MAKE) test
+\t@$(MAKE) test-review
+test:
 \tgo -C ./pkg test ./...
 test-race:
 \tgo -C ./pkg test -race ./...
 test-integration:
 \tgo -C ./pkg test -tags=integration ./...
+test-review:
+\tgo -C ./pkg test -tags=review -run '^TestReview' ./...
+GATED_TEST_TAGS := review
 """
 
-# The least a tree needs for both checks to have a subject.
+# The least a tree needs for every check to have a subject: a file carrying
+# each tag a leg passes, and a library importing testing.
 BASELINE = {
     "pkg/unit_test.go": """//go:build integration
 package pkg
@@ -58,6 +70,13 @@ package pkg
 import "testing"
 
 func TestSomething(t *testing.T) {}
+""",
+    "pkg/review_guard_test.go": """//go:build review
+package pkg
+
+import "testing"
+
+func TestReviewGuardIsLoopback(t *testing.T) {}
 """,
     "pkg/fixture.go": """package pkg
 
@@ -71,6 +90,15 @@ func Connect(tb testing.TB) {}
 def case_file(constraint: str) -> str:
     head = f"{constraint}\n" if constraint else ""
     return f"{head}package pkg\n\nimport \"testing\"\n\nfunc TestSomething(t *testing.T) {{}}\n"
+
+
+def review_case(name: str) -> str:
+    return (
+        "//go:build review\n"
+        "package pkg\n\n"
+        'import "testing"\n\n'
+        f"func {name}(t *testing.T) {{}}\n"
+    )
 
 
 class GateCase(unittest.TestCase):
@@ -207,6 +235,101 @@ func use(r Reader) { r.Skip(3) }
         )
         code, out, err = self.run_gate()
         self.assertEqual(0, code, f"stdout={out!r} stderr={err!r}")
+
+
+class TestTheCommitGateRunsGatedCases(GateCase):
+    """A gated tag's cases are selected by a test leg the gate reaches.
+
+    A tag absent from GATED_TEST_TAGS is not held to this rule: the baseline
+    tree carries an integration file whose leg passes no `-run`, and the
+    clean cases below would fail if that scheduled layer were included.
+    """
+
+    def test_a_new_gated_case_the_leg_selects_is_clean(self):
+        self.tree(**{"pkg/second_review_test.go": review_case("TestReviewSecondGuard")})
+        code, out, err = self.run_gate()
+        self.assertEqual(0, code, f"stdout={out!r} stderr={err!r}")
+
+    def test_a_gated_case_outside_the_pattern_is_a_finding(self):
+        # The failure the gate exists for: a review-tagged case the leg's
+        # -run pattern does not match is compiled by vet-review and executed
+        # by nothing.
+        self.tree(**{"pkg/second_review_test.go": review_case("TestGuardIsLoopback")})
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("pkg/second_review_test.go", out)
+        self.assertIn("TestGuardIsLoopback", out)
+
+    def test_only_the_cases_the_filter_sees_are_held_to_it(self):
+        # TestMain always runs and is never filtered, and a lowercase suffix
+        # is not a test the toolchain discovers; neither is a case the -run
+        # pattern would have to select.
+        self.tree(
+            **{
+                "pkg/helpers_review_test.go": """//go:build review
+package pkg
+
+import "testing"
+
+func TestMain(m *testing.M) {}
+
+func Testhelper(t *testing.T) {}
+""",
+            }
+        )
+        code, out, err = self.run_gate()
+        self.assertEqual(0, code, f"stdout={out!r} stderr={err!r}")
+
+    def test_a_pattern_that_also_selects_an_untagged_case_is_a_finding(self):
+        # The other way a tagged leg re-runs the unit layer: its pattern is
+        # broad enough to catch a case that the default leg already ran.
+        self.tree(
+            makefile=MAKEFILE.replace(" -run '^TestReview'", " -run '^Test'"),
+            **{
+                "pkg/plain_test.go": """package pkg
+
+import "testing"
+
+func TestSomething(t *testing.T) {}
+""",
+            },
+        )
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("TestSomething", out)
+
+    def test_a_gated_leg_without_run_is_a_finding(self):
+        # Without -run the leg runs the untagged cases a second time, which
+        # is what the review leg is forbidden to do.
+        self.tree(makefile=MAKEFILE.replace(" -run '^TestReview'", ""))
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("without -run", out)
+
+    def test_a_gated_tag_the_check_target_does_not_reach_is_a_finding(self):
+        # The tag still has a test leg, but no longer one the commit gate
+        # runs: the cases are executed by nothing that gates a commit.
+        self.tree(makefile=MAKEFILE.replace("\t@$(MAKE) test-review\n", ""))
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("no test leg", out)
+
+    def test_a_gated_tag_no_file_carries_is_an_infrastructure_error(self):
+        self.tree(
+            baseline=False,
+            **{
+                "pkg/unit_test.go": case_file("//go:build integration"),
+                "pkg/fixture.go": """package pkg
+
+import "testing"
+
+func Connect(tb testing.TB) {}
+""",
+            },
+        )
+        code, _, err = self.run_gate()
+        self.assertEqual(2, code)
+        self.assertIn("gates the tag review", err)
 
 
 class TestTheExitCodes(GateCase):

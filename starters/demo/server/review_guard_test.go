@@ -39,10 +39,10 @@ func (r stubReader) Decode(path string, target any) error {
 	return nil
 }
 
-// TestLoopbackAddresses pins the classification: an IP literal is asked whether
+// TestReviewLoopbackAddresses pins the classification: an IP literal is asked whether
 // it is loopback, localhost is the conventional loopback name, an empty host is
 // every interface, and a value that is not host:port is refused.
-func TestLoopbackAddresses(t *testing.T) {
+func TestReviewLoopbackAddresses(t *testing.T) {
 	cases := []struct {
 		address string
 		want    bool
@@ -67,9 +67,9 @@ func TestLoopbackAddresses(t *testing.T) {
 	}
 }
 
-// TestTheGuardRefusesANonLoopbackListener holds the refusal: one listener off
+// TestReviewGuardRefusesANonLoopbackListener holds the refusal: one listener off
 // loopback fails the guard, and a set of loopback listeners passes.
-func TestTheGuardRefusesANonLoopbackListener(t *testing.T) {
+func TestReviewGuardRefusesANonLoopbackListener(t *testing.T) {
 	loopback := stubReader{listeners: map[string]reviewListenerConfig{
 		"backend": {Address: "127.0.0.1:8080"},
 		"ops":     {Address: "[::1]:8083"},
@@ -96,13 +96,13 @@ func TestTheGuardRefusesANonLoopbackListener(t *testing.T) {
 	}
 }
 
-// TestTheReviewRunRefusesANonLoopbackListener builds the review binary and runs
+// TestReviewRunRefusesANonLoopbackListener builds the review binary and runs
 // it over the review configuration with the backend listener moved off
 // loopback: the startup fails with the guard's message, and no socket is
 // served. The review configuration is the one the build reads, so every module
 // the review adds has its item; only the listener address and the relative
 // paths, which would otherwise land in the source tree, are rewritten.
-func TestTheReviewRunRefusesANonLoopbackListener(t *testing.T) {
+func TestReviewRunRefusesANonLoopbackListener(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "demo-review")
 	build := exec.Command("go", "build", "-tags", "review", "-o", binary, ".")
 	build.Env = childEnv()
