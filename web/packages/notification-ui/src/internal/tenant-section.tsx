@@ -7,8 +7,8 @@
  * deliberately does not distinguish a tenant that does not exist, one that
  * is disabled and a caller who is not a member. That refusal is not a load
  * failure: the surface did answer, it refused. Rendering it as the same
- * retryable "the surface did not answer" placeholder both misdescribes it
- * and invites a retry that can only be refused again. This component
+ * generic retryable error placeholder both misdescribes it and invites a
+ * retry that can only be refused again. This component
  * branches the error state on that answer: a bare 404 renders ui-kit's
  * no-permission EmptyState with this package's tenant refusal copy and no
  * action, and every other failure falls through to AsyncSection's

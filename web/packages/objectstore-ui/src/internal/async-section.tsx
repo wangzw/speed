@@ -7,9 +7,8 @@
  * layer with a bare 404 that deliberately does not distinguish a tenant
  * that does not exist, one that is disabled and a caller who is not a
  * member. That refusal is not a load failure: the surface did answer, it
- * refused. Rendering it as the same retryable "the surface did not answer"
- * placeholder both misdescribes it and invites a retry that can only be
- * refused again. The bare 404 renders ui-kit's no-permission EmptyState
+ * refused. Rendering it as the same generic retryable error placeholder
+ * both misdescribes it and invites a retry that can only be refused again. The bare 404 renders ui-kit's no-permission EmptyState
  * with this package's tenant refusal copy and no action.
  *
  * A tenant-scoped read is answered 403 when the caller lacks the
