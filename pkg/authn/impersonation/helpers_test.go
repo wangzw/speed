@@ -83,9 +83,36 @@ type fakeAccounts struct {
 	mu       sync.Mutex
 	accounts map[authn.AccountID]authn.Account
 	err      error
+	errs     map[authn.AccountID]error
+	reads    int
 }
 
 func newAccounts() *fakeAccounts { return &fakeAccounts{accounts: map[authn.AccountID]authn.Account{}} }
+
+// failFor makes the read of one account fail, so that a case can fail the
+// target's read while the actor's still answers.
+func (a *fakeAccounts) failFor(id authn.AccountID, err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.errs == nil {
+		a.errs = map[authn.AccountID]error{}
+	}
+	a.errs[id] = err
+}
+
+// readCount is how many account reads the store has answered.
+func (a *fakeAccounts) readCount() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.reads
+}
+
+// resetReads clears the read count, so that a case can count one call alone.
+func (a *fakeAccounts) resetReads() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.reads = 0
+}
 
 func (a *fakeAccounts) put(id authn.AccountID, acct authn.Account) {
 	a.mu.Lock()
@@ -105,8 +132,12 @@ func (a *fakeAccounts) remove(id authn.AccountID) {
 func (a *fakeAccounts) Get(_ context.Context, id authn.AccountID) (authn.Account, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.reads++
 	if a.err != nil {
 		return authn.Account{}, a.err
+	}
+	if err := a.errs[id]; err != nil {
+		return authn.Account{}, err
 	}
 	acct, ok := a.accounts[id]
 	if !ok {
@@ -121,6 +152,7 @@ type fakeMemberships struct {
 	mu      sync.Mutex
 	members map[string]bool
 	err     error
+	reads   int
 }
 
 func newMemberships() *fakeMemberships { return &fakeMemberships{members: map[string]bool{}} }
@@ -136,10 +168,25 @@ func (f *fakeMemberships) set(id authn.AccountID, tenant string, member bool) {
 func (f *fakeMemberships) IsMember(_ context.Context, id authn.AccountID, tenant string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.reads++
 	if f.err != nil {
 		return false, f.err
 	}
 	return f.members[memberKey(id, tenant)], nil
+}
+
+// readCount is how many membership reads the store has answered.
+func (f *fakeMemberships) readCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.reads
+}
+
+// resetReads clears the read count, so that a case can count one call alone.
+func (f *fakeMemberships) resetReads() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reads = 0
 }
 
 // fakeMFA is the multi-factor composition as far as this module reads it: the
@@ -274,6 +321,63 @@ func (c *cachingSessions) Status(ctx context.Context, id authn.SessionID) (authn
 // StatusFresh is the store's answer, as the session module's is.
 func (c *cachingSessions) StatusFresh(ctx context.Context, id authn.SessionID) (authn.SessionStatus, error) {
 	return c.fakeSessions.StatusFresh(ctx, id)
+}
+
+// perSessionSessions answers only for the sessions a case names. Any other
+// identifier is ErrSessionNotFound, as the store answers for a session that is
+// not there, so a record judged on the wrong session is caught rather than
+// answered from a single shared status.
+type perSessionSessions struct {
+	authn.Sessions
+	mu    sync.Mutex
+	alive map[authn.SessionID]bool
+	asked []authn.SessionID
+}
+
+// newPerSessionSessions builds a store in which each named session is alive.
+func newPerSessionSessions(ids ...authn.SessionID) *perSessionSessions {
+	s := &perSessionSessions{alive: map[authn.SessionID]bool{}}
+	for _, id := range ids {
+		s.alive[id] = true
+	}
+	return s
+}
+
+// setActive changes whether one named session is alive.
+func (s *perSessionSessions) setActive(id authn.SessionID, active bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.alive[id] = active
+}
+
+func (s *perSessionSessions) Status(_ context.Context, id authn.SessionID) (authn.SessionStatus, error) {
+	return s.answer(id)
+}
+
+func (s *perSessionSessions) StatusFresh(_ context.Context, id authn.SessionID) (authn.SessionStatus, error) {
+	return s.answer(id)
+}
+
+// askedIDs is every identifier a read named, in the order it was read.
+func (s *perSessionSessions) askedIDs() []authn.SessionID {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]authn.SessionID(nil), s.asked...)
+}
+
+func (s *perSessionSessions) answer(id authn.SessionID) (authn.SessionStatus, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.asked = append(s.asked, id)
+	active, ok := s.alive[id]
+	if !ok {
+		return authn.SessionStatus{}, authn.ErrSessionNotFound
+	}
+	return authn.SessionStatus{
+		Active: active, Account: actorID, Kind: authn.SessionBrowser,
+		Methods:   []authn.Method{authn.MethodPassword, authn.MethodTOTP},
+		Assurance: authn.AssuranceMulti, AuthTime: base, ExpiresAt: base.Add(2 * time.Hour),
+	}, nil
 }
 
 // replica builds a second product over the same dependencies: another replica of
@@ -496,6 +600,7 @@ type rig struct {
 const (
 	actorID   = authn.AccountID("acct-admin")
 	targetID  = authn.AccountID("acct-user")
+	target2ID = authn.AccountID("acct-user-2")
 	tenantA   = "tenant-a"
 	tenantB   = "tenant-b"
 	sessionID = authn.SessionID("0190a6f2-3b6c-7c2e-8a4d-5e6f7a8b9c0d")
@@ -721,3 +826,25 @@ func onEachDialect(t *testing.T, run func(t *testing.T, r *rig)) {
 
 // errFromStore is a dependency failure a case injects.
 var errFromStore = errors.New("stand-in store failure")
+
+// blockEndWrites makes the conditional end update fail, as a database that reads
+// but cannot write would. The trigger is written for SQLite; another dialect
+// skips the case.
+func (r *rig) blockEndWrites(t *testing.T, dialect string) {
+	t.Helper()
+	if dialect != sqliteDialect {
+		t.Skipf("the trigger that blocks the end update is written for %s, not %s", sqliteDialect, dialect)
+	}
+	err := r.h.Exec("CREATE TRIGGER block_end BEFORE UPDATE ON " + grantTable +
+		" BEGIN SELECT RAISE(ABORT, 'write blocked'); END").Error
+	if err != nil {
+		t.Fatalf("blocking the end update: %v", err)
+	}
+}
+
+// withinASecond reports whether two instants name the same second, which is the
+// tolerance a stored time is compared with after a round trip.
+func withinASecond(a, b time.Time) bool {
+	d := a.Sub(b)
+	return d <= time.Second && d >= -time.Second
+}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/event"
 )
 
@@ -364,6 +365,9 @@ func TestListSettlesTheLapsedRecordsOnItsPage(t *testing.T) {
 				if endedAt == nil || reason == nil || *reason != c.want {
 					t.Errorf("the stored end is (%v, %v), want %q written back", endedAt, reason, c.want)
 				}
+				if endedAt == nil || !withinASecond(page[0].EndedAt, *endedAt) {
+					t.Errorf("List returned the end at %v, the store holds %v", page[0].EndedAt, endedAt)
+				}
 				if endedBy != nil {
 					t.Errorf("a lapse wrote an initiator %q, want none", *endedBy)
 				}
@@ -441,6 +445,11 @@ func TestListLeavesAValidRecordAlone(t *testing.T) {
 // warms the fake's check-ttl entry while the record is valid; the record then
 // lapses and the page is listed anyway. A judgement served from the cached entry
 // would call the record in force.
+//
+// The session subcase is what tells the store from the cache: a record that has
+// only expired is decided before the session is read, and the clock that expires
+// it also expires the cache entry. The expired subcase is a regression check and
+// carries no discriminating power of its own.
 func TestListDoesNotJudgeThroughTheCheckTTLCache(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -607,6 +616,593 @@ func TestEndIsWrittenOnceAndOnlyOnce(t *testing.T) {
 			t.Errorf("the ended counter reads %d, want 1", got)
 		}
 	})
+}
+
+// TestListSettlesEveryLapsedRowOfAPage holds the whole page: every unended
+// record on it is judged and written back, not only the first or the last one.
+func TestListSettlesEveryLapsedRowOfAPage(t *testing.T) {
+	onEachDialect(t, func(t *testing.T, r *rig) {
+		ctx := context.Background()
+		ids := []string{"rec-1", "rec-2", "rec-3"}
+		for _, id := range ids {
+			r.insertRecord(id, actorID, targetID, tenantA)
+		}
+		r.sessions.session.Active = false
+
+		page, _, err := r.p.List(ctx, authn.GrantQuery{})
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if len(page) != len(ids) {
+			t.Fatalf("the page holds %d records, want %d", len(page), len(ids))
+		}
+		for _, g := range page {
+			if g.EndedAt.IsZero() || g.EndReason != authn.EndSessionEnded {
+				t.Errorf("%s was returned (ended at %v, reason %q), want session-ended", g.ID, g.EndedAt, g.EndReason)
+			}
+		}
+		for _, id := range ids {
+			if endedAt, _, reason := r.stored(id); endedAt == nil || reason == nil || *reason != authn.EndSessionEnded {
+				t.Errorf("%s was stored (ended at %v, reason %v), want session-ended", id, endedAt, reason)
+			}
+		}
+		if got := r.counter(outcomeEnded); got != int64(len(ids)) {
+			t.Errorf("the ended counter reads %d, want %d", got, len(ids))
+		}
+		if got := len(r.bus.ofType(authn.EventImpersonationEnded)); got != len(ids) {
+			t.Errorf("%d ended events were published, want %d", got, len(ids))
+		}
+	})
+}
+
+// TestListJudgesEachRowsOwnMembership holds the page-level judge per row: two
+// targets in one tenant, one still a member and one removed, are judged apart
+// whichever order the page reads them in.
+func TestListJudgesEachRowsOwnMembership(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		memberID  string
+		removedID string
+	}{
+		{"the member is judged first", "rec-1", "rec-2"},
+		{"the removed member is judged first", "rec-2", "rec-1"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			onEachDialect(t, func(t *testing.T, r *rig) {
+				ctx := context.Background()
+				r.accounts.put(target2ID, authn.Account{Kind: authn.KindUser, Status: authn.StatusActive})
+				r.memberships.set(target2ID, tenantA, false)
+				r.insertRecord(c.memberID, actorID, targetID, tenantA)
+				r.insertRecord(c.removedID, actorID, target2ID, tenantA)
+
+				page, _, err := r.p.List(ctx, authn.GrantQuery{})
+				if err != nil {
+					t.Fatalf("List: %v", err)
+				}
+				if len(page) != 2 {
+					t.Fatalf("the page holds %d records, want 2", len(page))
+				}
+				for _, g := range page {
+					switch g.ID {
+					case c.memberID:
+						if !g.EndedAt.IsZero() {
+							t.Errorf("%s, whose target is a member, was ended as %q", g.ID, g.EndReason)
+						}
+					case c.removedID:
+						if g.EndedAt.IsZero() || g.EndReason != authn.EndMembershipRemoved {
+							t.Errorf("%s was returned (ended at %v, reason %q), want membership-removed", g.ID, g.EndedAt, g.EndReason)
+						}
+					}
+				}
+				if got := r.counter(outcomeEnded); got != 1 {
+					t.Errorf("the ended counter reads %d, want 1", got)
+				}
+				if got := len(r.bus.ofType(authn.EventImpersonationEnded)); got != 1 {
+					t.Errorf("%d ended events were published, want 1", got)
+				}
+			})
+		})
+	}
+}
+
+// TestAPageReadsSharedAnswersOnce holds the page-level judge's other side: rows
+// that share an actor, a target and a tenant are judged from one read of each,
+// while the bound session is read per record.
+func TestAPageReadsSharedAnswersOnce(t *testing.T) {
+	onEachDialect(t, func(t *testing.T, r *rig) {
+		ctx := context.Background()
+		for _, id := range []string{"rec-1", "rec-2", "rec-3"} {
+			r.insertRecord(id, actorID, targetID, tenantA)
+		}
+		r.accounts.resetReads()
+		r.memberships.resetReads()
+
+		page, _, err := r.p.List(ctx, authn.GrantQuery{})
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if len(page) != 3 {
+			t.Fatalf("the page holds %d records, want 3", len(page))
+		}
+		for _, g := range page {
+			if !g.EndedAt.IsZero() {
+				t.Errorf("%s was ended as %q, want it left alone", g.ID, g.EndReason)
+			}
+		}
+		if got := r.accounts.readCount(); got != 2 {
+			t.Errorf("the page read %d accounts, want 2 for the shared actor and target", got)
+		}
+		if got := r.memberships.readCount(); got != 1 {
+			t.Errorf("the page read %d memberships, want 1 for the shared pair", got)
+		}
+	})
+}
+
+// TestTheJudgeDoesNotOutliveTheListCall holds that each call judges from the
+// state of its own moment: a page read after the membership was removed ends
+// the record, which a judge held across calls would not see.
+func TestTheJudgeDoesNotOutliveTheListCall(t *testing.T) {
+	onEachDialect(t, func(t *testing.T, r *rig) {
+		ctx := context.Background()
+		g, err := r.p.Start(ctx, adminIdentity(t), request())
+		if err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		if _, _, err = r.p.List(ctx, authn.GrantQuery{}); err != nil {
+			t.Fatalf("the first List: %v", err)
+		}
+
+		r.memberships.set(targetID, tenantA, false)
+		page, _, err := r.p.List(ctx, authn.GrantQuery{})
+		if err != nil {
+			t.Fatalf("the second List: %v", err)
+		}
+		if len(page) != 1 || page[0].EndedAt.IsZero() || page[0].EndReason != authn.EndMembershipRemoved {
+			t.Errorf("the second page is %+v, want %s ended as membership-removed", page, g.ID)
+		}
+	})
+}
+
+// TestListLeavesEndedRecordsOutOfTheJudgement holds that a page's already ended
+// records are not judged again, so a dependency that cannot answer leaves the
+// page intact rather than failing it, and Revoke of one is a no-op.
+func TestListLeavesEndedRecordsOutOfTheJudgement(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		inject func(r *rig)
+	}{
+		{"the account store", func(r *rig) { r.accounts.err = errFromStore }},
+		{"the session store", func(r *rig) { r.sessions.statusErr = errFromStore }},
+		{"the membership store", func(r *rig) { r.memberships.err = errFromStore }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			onEachDialect(t, func(t *testing.T, r *rig) {
+				ctx := context.Background()
+				id := adminIdentity(t)
+				g, err := r.p.Start(ctx, id, request())
+				if err != nil {
+					t.Fatalf("Start: %v", err)
+				}
+				if err = r.p.End(ctx, id, "the call is over"); err != nil {
+					t.Fatalf("End: %v", err)
+				}
+				r.audit.rows = nil
+				events := len(r.bus.ofType(authn.EventImpersonationEnded))
+
+				c.inject(r)
+				page, _, err := r.p.List(ctx, authn.GrantQuery{})
+				if err != nil {
+					t.Fatalf("List with a failed dependency read = %v, want the ended page", err)
+				}
+				if len(page) != 1 || page[0].EndReason != authn.EndExplicit {
+					t.Errorf("the page is %+v, want the record as explicit", page)
+				}
+				if got := len(r.bus.ofType(authn.EventImpersonationEnded)); got != events {
+					t.Errorf("List published %d ended events, want the %d already published", got, events)
+				}
+
+				if err := r.p.Revoke(ctx, g.ID, adminIdentity(t), "abuse reported"); err != nil {
+					t.Errorf("Revoke of an ended record with a failed dependency read = %v, want nil", err)
+				}
+				if _, _, reason := r.stored(g.ID); reason == nil || *reason != authn.EndExplicit {
+					t.Errorf("the end reason is %v, want explicit left alone", reason)
+				}
+				if rows := r.audit.entries(); len(rows) != 0 {
+					t.Errorf("Revoke of an ended record wrote audit rows: %+v", rows)
+				}
+				if got := r.counter(outcomeEnded); got != 1 {
+					t.Errorf("the ended counter reads %d, want the 1 from End", got)
+				}
+			})
+		})
+	}
+}
+
+// TestListReturnsUnavailableWhenADependencyFails holds the failure direction of
+// the management page: a dependency that cannot answer fails the whole page and
+// leaves the record unended.
+func TestListReturnsUnavailableWhenADependencyFails(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		inject func(r *rig)
+	}{
+		{"the bound session", func(r *rig) { r.sessions.statusErr = errFromStore }},
+		{"the target account", func(r *rig) { r.accounts.failFor(targetID, errFromStore) }},
+		{"the membership", func(r *rig) { r.memberships.err = errFromStore }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			onEachDialect(t, func(t *testing.T, r *rig) {
+				ctx := context.Background()
+				g, err := r.p.Start(ctx, adminIdentity(t), request())
+				if err != nil {
+					t.Fatalf("Start: %v", err)
+				}
+				c.inject(r)
+
+				page, next, err := r.p.List(ctx, authn.GrantQuery{})
+				if !errors.Is(err, authn.ErrUnavailable) {
+					t.Fatalf("List = %v, want ErrUnavailable", err)
+				}
+				if page != nil || next != "" {
+					t.Errorf("a failed page returned %v with cursor %q, want none", page, next)
+				}
+				if endedAt, _, _ := r.stored(g.ID); endedAt != nil {
+					t.Errorf("a failed page ended the record: %v", *endedAt)
+				}
+				if got := len(r.bus.ofType(authn.EventImpersonationEnded)); got != 0 {
+					t.Errorf("a failed page published %d ended events, want none", got)
+				}
+			})
+		})
+	}
+}
+
+// TestListKeepsTheRowsItAlreadySettledWhenALaterRowFails holds the page's
+// partial progress: a row settled before a later row's dependency fails stays
+// settled, is not announced twice, and the retry completes the page.
+func TestListKeepsTheRowsItAlreadySettledWhenALaterRowFails(t *testing.T) {
+	onEachDialect(t, func(t *testing.T, r *rig) {
+		ctx := context.Background()
+		r.accounts.put(target2ID, authn.Account{Kind: authn.KindUser, Status: authn.StatusActive})
+		r.memberships.set(target2ID, tenantA, true)
+		r.insertRecord("rec-1", actorID, targetID, tenantA)
+		r.insertRecord("rec-2", actorID, target2ID, tenantA)
+		sessions := newPerSessionSessions("sess-rec-2")
+		sessions.setActive("sess-rec-1", false)
+		r.p.sessions = sessions
+		r.accounts.failFor(target2ID, errFromStore)
+
+		page, _, err := r.p.List(ctx, authn.GrantQuery{})
+		if !errors.Is(err, authn.ErrUnavailable) {
+			t.Fatalf("List = %v, want ErrUnavailable", err)
+		}
+		if page != nil {
+			t.Errorf("a failed page returned %v, want none", page)
+		}
+		if _, _, reason := r.stored("rec-1"); reason == nil || *reason != authn.EndSessionEnded {
+			t.Errorf("the row the page settled before the failure is %v, want session-ended", reason)
+		}
+		if endedAt, _, _ := r.stored("rec-2"); endedAt != nil {
+			t.Errorf("the failing row was ended: %v", *endedAt)
+		}
+		if got := r.counter(outcomeEnded); got != 1 {
+			t.Errorf("the ended counter reads %d, want 1", got)
+		}
+		events := len(r.bus.ofType(authn.EventImpersonationEnded))
+		if events != 1 {
+			t.Errorf("%d ended events were published, want 1", events)
+		}
+
+		r.accounts.failFor(target2ID, nil)
+		page, _, err = r.p.List(ctx, authn.GrantQuery{})
+		if err != nil {
+			t.Fatalf("the retried List: %v", err)
+		}
+		if len(page) != 2 {
+			t.Errorf("the retried page holds %d records, want 2", len(page))
+		}
+		if got := r.counter(outcomeEnded); got != 1 {
+			t.Errorf("the retry counted the settled row again: %d", got)
+		}
+		if got := len(r.bus.ofType(authn.EventImpersonationEnded)); got != events {
+			t.Errorf("the retry published another ended event: %d then %d", events, got)
+		}
+	})
+}
+
+// TestAPageReportsTheEndAnotherCallerWrote holds the loser's re-read: the
+// judgement read the record unended and the conditional update then lost, so
+// the record returned is the one that landed, with the other caller's reason
+// and initiator, and nothing is counted or published again.
+func TestAPageReportsTheEndAnotherCallerWrote(t *testing.T) {
+	overwrite := func(t *testing.T, r *rig, id string) {
+		t.Helper()
+		r.sessions.onStatus = func() {
+			err := r.h.Exec("UPDATE "+grantTable+" SET ended_at = ?, ended_by = ?, end_reason = ? WHERE id = ? AND ended_at IS NULL",
+				base.UTC(), string(actorID), authn.EndRevoked, id).Error
+			if err != nil {
+				t.Errorf("writing the competing end: %v", err)
+			}
+		}
+	}
+
+	t.Run("List", func(t *testing.T) {
+		onEachDialect(t, func(t *testing.T, r *rig) {
+			ctx := context.Background()
+			g, err := r.p.Start(ctx, adminIdentity(t), request())
+			if err != nil {
+				t.Fatalf("Start: %v", err)
+			}
+			r.sessions.session.Active = false
+			overwrite(t, r, g.ID)
+
+			page, _, err := r.p.List(ctx, authn.GrantQuery{})
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			if len(page) != 1 {
+				t.Fatalf("the page holds %d records, want 1", len(page))
+			}
+			if page[0].EndReason != authn.EndRevoked || page[0].EndedBy != string(actorID) {
+				t.Errorf("the page reports (%q, %q), want the end that landed (%q, %q)",
+					page[0].EndReason, page[0].EndedBy, authn.EndRevoked, actorID)
+			}
+			if got := len(r.bus.ofType(authn.EventImpersonationEnded)); got != 0 {
+				t.Errorf("the losing caller published %d ended events, want none", got)
+			}
+			if got := r.counter(outcomeEnded); got != 0 {
+				t.Errorf("the losing caller counted %d ends, want none", got)
+			}
+		})
+	})
+
+	t.Run("Revoke", func(t *testing.T) {
+		onEachDialect(t, func(t *testing.T, r *rig) {
+			ctx := context.Background()
+			g, err := r.p.Start(ctx, adminIdentity(t), request())
+			if err != nil {
+				t.Fatalf("Start: %v", err)
+			}
+			r.audit.rows = nil
+			r.sessions.session.Active = false
+			overwrite(t, r, g.ID)
+
+			if err := r.p.Revoke(ctx, g.ID, adminIdentity(t), "abuse reported"); err != nil {
+				t.Fatalf("Revoke = %v, want nil: another caller ended the record", err)
+			}
+			if _, _, reason := r.stored(g.ID); reason == nil || *reason != authn.EndRevoked {
+				t.Errorf("the end reason is %v, want the end that landed", reason)
+			}
+			if rows := r.audit.entries(); len(rows) != 0 {
+				t.Errorf("the losing revoke wrote audit rows: %+v", rows)
+			}
+			if got := len(r.bus.ofType(authn.EventImpersonationEnded)); got != 0 {
+				t.Errorf("the losing revoke published %d ended events, want none", got)
+			}
+			if got := r.counter(outcomeEnded); got != 0 {
+				t.Errorf("the losing revoke counted %d ends, want none", got)
+			}
+		})
+	})
+}
+
+// TestRevokeReturnsUnavailableWhenADependencyFails holds the failure direction
+// of the management revoke: a dependency that cannot answer is ErrUnavailable,
+// and the record stays unended with no audit row and no event.
+func TestRevokeReturnsUnavailableWhenADependencyFails(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		inject func(r *rig)
+	}{
+		{"the bound session", func(r *rig) { r.sessions.statusErr = errFromStore }},
+		{"the target account", func(r *rig) { r.accounts.failFor(targetID, errFromStore) }},
+		{"the membership", func(r *rig) { r.memberships.err = errFromStore }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			onEachDialect(t, func(t *testing.T, r *rig) {
+				ctx := context.Background()
+				g, err := r.p.Start(ctx, adminIdentity(t), request())
+				if err != nil {
+					t.Fatalf("Start: %v", err)
+				}
+				r.audit.rows = nil
+				c.inject(r)
+
+				if err := r.p.Revoke(ctx, g.ID, adminIdentity(t), "abuse reported"); !errors.Is(err, authn.ErrUnavailable) {
+					t.Fatalf("Revoke = %v, want ErrUnavailable", err)
+				}
+				if endedAt, endedBy, reason := r.stored(g.ID); endedAt != nil || endedBy != nil || reason != nil {
+					t.Errorf("a failed revoke wrote the record ended: (%v, %v, %v)", endedAt, endedBy, reason)
+				}
+				if rows := r.audit.entries(); len(rows) != 0 {
+					t.Errorf("a failed revoke wrote audit rows: %+v", rows)
+				}
+				if got := len(r.bus.ofType(authn.EventImpersonationEnded)); got != 0 {
+					t.Errorf("a failed revoke published %d ended events, want none", got)
+				}
+				if got := r.counter(outcomeEnded); got != 0 {
+					t.Errorf("a failed revoke counted %d ends, want none", got)
+				}
+			})
+		})
+	}
+}
+
+// TestRevokeDoesNotJudgeThroughTheCheckTTLCache holds the management read the
+// design fixes: the revoke judges the bound session from the store, so a cache
+// entry that still says the session is alive cannot turn a dead one into a
+// revoked record.
+func TestRevokeDoesNotJudgeThroughTheCheckTTLCache(t *testing.T) {
+	onEachDialect(t, func(t *testing.T, r *rig) {
+		ctx := context.Background()
+		g, err := r.p.Start(ctx, adminIdentity(t), request())
+		if err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		r.p.sessions = newCachingSessions(r.sessions, time.Minute, r.clock.read)
+
+		if _, active, err := r.p.Active(ctx, g.ID); err != nil || !active {
+			t.Fatalf("warming the cache: Active = (active %v, err %v), want the valid record", active, err)
+		}
+		r.audit.rows = nil
+		r.sessions.session.Active = false
+
+		if err := r.p.Revoke(ctx, g.ID, adminIdentity(t), "abuse reported"); err != nil {
+			t.Fatalf("Revoke: %v", err)
+		}
+		_, endedBy, reason := r.stored(g.ID)
+		if reason == nil || *reason != authn.EndSessionEnded {
+			t.Errorf("the end reason is %v, want session-ended from the store", reason)
+		}
+		if endedBy != nil {
+			t.Errorf("a lapsed revoke wrote an initiator %q, want none", *endedBy)
+		}
+		if rows := r.audit.entries(); len(rows) != 0 {
+			t.Errorf("a lapsed revoke wrote audit rows: %+v", rows)
+		}
+		if got := r.endedPayload().EndedBy; got != "session-ended" {
+			t.Errorf("the ended event's cause is %q, want session-ended", got)
+		}
+		if got := r.counter(outcomeEnded); got != 1 {
+			t.Errorf("the ended counter reads %d, want 1", got)
+		}
+	})
+}
+
+// TestRevokeIsWrittenOnceAndOnlyOnce holds the conditional update as the arbiter
+// under a race on Revoke: both calls read the record unended and reach the
+// update together, and only the winner writes the audit row, publishes and
+// counts.
+func TestRevokeIsWrittenOnceAndOnlyOnce(t *testing.T) {
+	onEachDialect(t, func(t *testing.T, r *rig) {
+		ctx := context.Background()
+		g, err := r.p.Start(ctx, adminIdentity(t), request())
+		if err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		r.audit.rows = nil
+		by := adminIdentity(t)
+
+		var (
+			mu      sync.Mutex
+			arrived int
+			release = make(chan struct{})
+		)
+		r.p.clock = func() time.Time {
+			mu.Lock()
+			arrived++
+			if arrived == 2 {
+				close(release)
+			}
+			mu.Unlock()
+			<-release
+			return base
+		}
+
+		var wg sync.WaitGroup
+		errs := make([]error, 2)
+		for i := range errs {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				errs[i] = r.p.Revoke(ctx, g.ID, by, "abuse reported")
+			}()
+		}
+		wg.Wait()
+
+		for _, err := range errs {
+			if err != nil {
+				t.Errorf("a concurrent Revoke returned %v, want nil", err)
+			}
+		}
+		if _, _, reason := r.stored(g.ID); reason == nil || *reason != authn.EndRevoked {
+			t.Errorf("the end reason is %v, want revoked", reason)
+		}
+		if got := len(r.audit.entries()); got != 1 {
+			t.Errorf("the race wrote %d revoke audit rows, want 1", got)
+		}
+		if got := len(r.bus.ofType(authn.EventImpersonationEnded)); got != 1 {
+			t.Errorf("the race published %d ended events, want 1", got)
+		}
+		if got := r.counter(outcomeEnded); got != 1 {
+			t.Errorf("the ended counter reads %d, want 1", got)
+		}
+	})
+}
+
+// TestTheEndIsWrittenAtTheInstantItIsJudged holds the date of every write path:
+// the end column is the instant the path read, not the record's own end time and
+// not an offset from it.
+func TestTheEndIsWrittenAtTheInstantItIsJudged(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		judge func(t *testing.T, r *rig, g authn.ImpersonationGrant)
+	}{
+		{
+			name: "Active",
+			judge: func(t *testing.T, r *rig, g authn.ImpersonationGrant) {
+				r.clock.advance(31*time.Minute + 17*time.Second)
+				if _, active, err := r.p.Active(context.Background(), g.ID); err != nil || active {
+					t.Fatalf("Active = (active %v, err %v), want the lapse", active, err)
+				}
+			},
+		},
+		{
+			name: "List",
+			judge: func(t *testing.T, r *rig, _ authn.ImpersonationGrant) {
+				r.clock.advance(31*time.Minute + 17*time.Second)
+				if _, _, err := r.p.List(context.Background(), authn.GrantQuery{}); err != nil {
+					t.Fatalf("List: %v", err)
+				}
+			},
+		},
+		{
+			name: "End",
+			judge: func(t *testing.T, r *rig, _ authn.ImpersonationGrant) {
+				r.clock.advance(5*time.Minute + 17*time.Second)
+				if err := r.p.End(context.Background(), adminIdentity(t), "the call is over"); err != nil {
+					t.Fatalf("End: %v", err)
+				}
+			},
+		},
+		{
+			name: "Revoke",
+			judge: func(t *testing.T, r *rig, g authn.ImpersonationGrant) {
+				r.clock.advance(5*time.Minute + 17*time.Second)
+				if err := r.p.Revoke(context.Background(), g.ID, adminIdentity(t), "abuse reported"); err != nil {
+					t.Fatalf("Revoke: %v", err)
+				}
+			},
+		},
+		{
+			name: "Start settling a lapsed record",
+			judge: func(t *testing.T, r *rig, _ authn.ImpersonationGrant) {
+				r.clock.advance(31*time.Minute + 17*time.Second)
+				id := adminIdentity(t, authntest.WithAuthTime(r.clock.read()))
+				if _, err := r.p.Start(context.Background(), id, request()); err != nil {
+					t.Fatalf("the second Start: %v", err)
+				}
+			},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			onEachDialect(t, func(t *testing.T, r *rig) {
+				ctx := context.Background()
+				g, err := r.p.Start(ctx, adminIdentity(t), request())
+				if err != nil {
+					t.Fatalf("Start: %v", err)
+				}
+				c.judge(t, r, g)
+				endedAt, _, _ := r.stored(g.ID)
+				if endedAt == nil {
+					t.Fatal("the record was not ended")
+				}
+				if want := r.clock.read(); !withinASecond(*endedAt, want) {
+					t.Errorf("the end was written at %v, want the instant it was judged %v", *endedAt, want)
+				}
+			})
+		})
+	}
 }
 
 // insertRecord writes a record directly, the way another replica would.
