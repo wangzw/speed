@@ -153,6 +153,12 @@ export interface AccountSelectorProps {
    * scope and leave a settling attempt describing the account left behind.
    */
   readonly disabled?: boolean
+  /**
+   * Whether the combobox fills its container. A caller that places it in a
+   * narrow row (the sessions page's selector row) sets this so the row
+   * shrinks instead of wrapping; the stock form keeps its fixed minimum.
+   */
+  readonly fullWidth?: boolean
 }
 
 export function AccountSelector({
@@ -160,6 +166,7 @@ export function AccountSelector({
   value,
   onChange,
   disabled = false,
+  fullWidth = false,
 }: AccountSelectorProps) {
   const { t } = useConsoleUiTranslation()
   const [input, setInput] = useState('')
@@ -255,7 +262,11 @@ export function AccountSelector({
             }}
           />
         )}
-        sx={{ minWidth: 260 }}
+        sx={
+          fullWidth
+            ? { minWidth: 0, width: '100%' }
+            : { minWidth: 260 }
+        }
       />
       {query !== '' && search.truncated && !search.failed && (
         <Typography

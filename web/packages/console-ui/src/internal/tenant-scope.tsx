@@ -37,6 +37,7 @@ import Button from '@mui/material/Button'
 import MenuItem from '@mui/material/MenuItem'
 import TextField from '@mui/material/TextField'
 import { isForbidden } from './async-section.js'
+import { SelectorRow } from './selector-row.js'
 import { useConsoleUiTranslation } from './translation.js'
 import { useConsoleOperations } from '../operations.js'
 
@@ -66,10 +67,21 @@ export interface TenantScopeProps {
    * scopes and leave a settling attempt describing the tenant left behind.
    */
   readonly disabled?: boolean
+  /**
+   * A control rendered in the selector's own row, to its right. The page
+   * whose body is addressed by this selector puts its refresh here, next
+   * to what the refresh re-reads.
+   */
+  readonly trailing?: ReactNode
 }
 
 /** The tenant selector, fed by the platform roster read. */
-export function TenantScope({ value, onSelect, disabled = false }: TenantScopeProps) {
+export function TenantScope({
+  value,
+  onSelect,
+  disabled = false,
+  trailing,
+}: TenantScopeProps) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const tenants = operations.useTenants()
@@ -109,7 +121,7 @@ export function TenantScope({ value, onSelect, disabled = false }: TenantScopePr
     helperText = t('common.tenantEmpty')
   }
 
-  return (
+  const selector = (
     <TextField
       select
       size="small"
@@ -118,7 +130,7 @@ export function TenantScope({ value, onSelect, disabled = false }: TenantScopePr
       disabled={disabled || loading}
       helperText={helperText}
       onChange={(event) => onSelect(event.target.value)}
-      sx={{ minWidth: 240 }}
+      sx={{ minWidth: trailing === undefined ? 240 : 0 }}
     >
       <MenuItem value="">{t('common.tenantNone')}</MenuItem>
       {value !== '' && !listed && <MenuItem value={value}>{value}</MenuItem>}
@@ -128,5 +140,13 @@ export function TenantScope({ value, onSelect, disabled = false }: TenantScopePr
         </MenuItem>
       ))}
     </TextField>
+  )
+  if (trailing === undefined) {
+    return selector
+  }
+  return (
+    <SelectorRow selectorMaxWidth={240} trailing={trailing}>
+      {selector}
+    </SelectorRow>
   )
 }

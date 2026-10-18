@@ -98,6 +98,7 @@ import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
 import { identifierPrefix } from './internal/identifier-prefix.js'
+import { RefreshButton } from './internal/refresh-button.js'
 import { useConsoleStepUp } from './internal/step-up-gate.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
@@ -724,20 +725,15 @@ export function AccountsPage() {
         ]}
         actions={
           <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button
-              type="button"
-              variant="outlined"
-              size="small"
+            <RefreshButton
               // Refreshing changes the list scope's context: while one of
               // its writes is in flight it is disabled, so a late result
               // cannot land against a list it no longer describes. While
-              // the read itself is in flight it is disabled and marked busy.
-              disabled={listWrite.pending || accounts.isFetching}
-              loading={accounts.isFetching}
+              // the read itself is in flight it is marked busy.
+              busy={accounts.isFetching}
+              disabled={listWrite.pending}
               onClick={() => void accounts.refetch()}
-            >
-              {t('common.refresh')}
-            </Button>
+            />
             <Button
               type="button"
               variant="contained"

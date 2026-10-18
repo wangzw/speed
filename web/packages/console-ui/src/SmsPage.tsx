@@ -50,6 +50,7 @@ import { ConsoleAsyncSection } from './internal/async-section.js'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { useConsoleUiErrorText } from './internal/error-text.js'
+import { RefreshButton } from './internal/refresh-button.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
   failureTextOf,
@@ -344,16 +345,10 @@ export function SmsPage() {
         title={t('sms.title')}
         breadcrumbs={[{ label: t('shell.title') }, { label: t('sms.title') }]}
         actions={
-          <Button
-            type="button"
-            variant="outlined"
-            size="small"
-            disabled={templates.isFetching}
-            loading={templates.isFetching}
+          <RefreshButton
+            busy={templates.isFetching}
             onClick={() => void templates.refetch()}
-          >
-            {t('common.refresh')}
-          </Button>
+          />
         }
         sx={{ mb: 2 }}
       />

@@ -85,6 +85,7 @@ import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { useConsoleUiErrorText } from './internal/error-text.js'
+import { RefreshButton } from './internal/refresh-button.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { settingKeyRest, useConsoleOperations } from './operations.js'
@@ -388,19 +389,14 @@ export function SettingsPage() {
         title={t('settings.title')}
         breadcrumbs={[{ label: t('shell.title') }, { label: t('settings.title') }]}
         actions={
-          <Button
-            type="button"
-            variant="outlined"
-            size="small"
+          <RefreshButton
             // A refresh changes the set the batch is settling against,
             // so it is disabled while the scope is pending; while the read
-            // itself is in flight it is disabled and marked busy.
-            disabled={feedback.pending || settings.isFetching}
-            loading={settings.isFetching}
+            // itself is in flight it is marked busy.
+            busy={settings.isFetching}
+            disabled={feedback.pending}
             onClick={() => void settings.refetch()}
-          >
-            {t('common.refresh')}
-          </Button>
+          />
         }
         sx={{ mb: 2 }}
       />

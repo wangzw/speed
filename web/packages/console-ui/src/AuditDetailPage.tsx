@@ -33,7 +33,6 @@
 
 import { useMemo } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Paper from '@mui/material/Paper'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
@@ -43,6 +42,7 @@ import { AccountIdentity } from './internal/account-identity.js'
 import { formatUtc } from './internal/datetime.js'
 import { ConsoleLink } from './internal/navigation.js'
 import { DefinitionRow, DetailLayout } from './internal/layout.js'
+import { RefreshButton } from './internal/refresh-button.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleAuditRecord } from './operations.js'
@@ -138,16 +138,10 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
         title={t('auditDetail.title')}
         breadcrumbs={crumbs}
         actions={
-          <Button
-            type="button"
-            variant="outlined"
-            size="small"
-            disabled={record.isFetching}
-            loading={record.isFetching}
+          <RefreshButton
+            busy={record.isFetching}
             onClick={() => void record.refetch()}
-          >
-            {t('common.refresh')}
-          </Button>
+          />
         }
         sx={{ mb: 2 }}
       />

@@ -55,6 +55,7 @@ import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { useConsoleUiErrorText } from './internal/error-text.js'
+import { RefreshButton } from './internal/refresh-button.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
@@ -64,6 +65,12 @@ import {
 } from './internal/write-feedback.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleSsoProvider } from './operations.js'
+
+/**
+ * The id of the page's own "choose a tenant first" text. The disabled
+ * refresh is described by it, so the explanation has one copy on the page.
+ */
+const TENANT_HINT_ID = 'sso-tenant-hint'
 
 /** The provider-row action a row's inline failure marker belongs to. */
 type ProviderAction = 'refresh' | 'reverify' | 'delete'
@@ -393,30 +400,35 @@ export function SsoPage() {
       <PageHeader
         title={t('sso.title')}
         breadcrumbs={[{ label: t('shell.title') }, { label: t('sso.title') }]}
-        actions={
-          <Button
-            type="button"
-            variant="outlined"
-            size="small"
-            disabled={providers.isFetching}
-            loading={providers.isFetching}
-            onClick={() => void providers.refetch()}
-          >
-            {t('common.refresh')}
-          </Button>
-        }
         sx={{ mb: 2 }}
       />
 
       <Box component="section" sx={{ mb: 3 }}>
-        <TenantScope value={tenant} onSelect={changeTenant} disabled={anyPending} />
+        <TenantScope
+          value={tenant}
+          onSelect={changeTenant}
+          disabled={anyPending}
+          trailing={
+            <RefreshButton
+              busy={providers.isFetching}
+              disabled={tenant === ''}
+              describedBy={TENANT_HINT_ID}
+              disabledReason={t('sso.needTenant.description')}
+              onClick={() => void providers.refetch()}
+            />
+          }
+        />
       </Box>
 
       {tenant === '' ? (
         <EmptyState
           headingLevel="h2"
           title={t('sso.needTenant.title')}
-          description={t('sso.needTenant.description')}
+          description={
+            <span id={TENANT_HINT_ID}>
+              {t('sso.needTenant.description')}
+            </span>
+          }
         />
       ) : (
         <>

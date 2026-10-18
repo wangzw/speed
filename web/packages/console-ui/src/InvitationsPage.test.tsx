@@ -139,6 +139,35 @@ describe('InvitationsPage', () => {
     expect(screen.getByText('请选择租户')).toBeInTheDocument()
   })
 
+  it('does not read an empty tenant scope on refresh', async () => {
+    const listInvitations = vi.fn(() =>
+      Promise.resolve({ invitations: [], next_cursor: '' }),
+    )
+    const listMembers = vi.fn(() => Promise.resolve([]))
+    const operations = withTenant({ listInvitations, listMembers })
+    renderWithProviders(<InvitationsPage />, { operations })
+
+    // Both reads are disabled while no tenant is chosen; the refresh
+    // control follows them instead of refetching with an empty tenant.
+    const refresh = screen.getByRole('button', { name: '刷新' })
+    expect(refresh).toBeDisabled()
+    // The disabled control is described by the page's own "choose a tenant
+    // first" text.
+    const describedBy = refresh.getAttribute('aria-describedby')
+    expect(describedBy).not.toBeNull()
+    expect(document.getElementById(describedBy as string)).toHaveTextContent(
+      '邀请与成员都按租户存储，请先选择一个租户。',
+    )
+    // A programmatic click, because user-event refuses a disabled target:
+    // the control must stay inert even when reached from a script.
+    fireEvent.click(refresh)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(listInvitations).not.toHaveBeenCalled()
+    expect(listMembers).not.toHaveBeenCalled()
+  })
+
   it('opens on the tenant named by the query string', async () => {
     window.history.replaceState({}, '', '/console/invitations?tenant=acme')
     try {

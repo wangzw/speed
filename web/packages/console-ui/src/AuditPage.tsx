@@ -59,6 +59,7 @@ import { ConsoleAsyncSection } from './internal/async-section.js'
 import { AccountIdentity } from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { ConsoleLink } from './internal/navigation.js'
+import { RefreshButton } from './internal/refresh-button.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleAuditRecord } from './operations.js'
@@ -279,16 +280,10 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
           { label: t('audit.title') },
         ]}
         actions={
-          <Button
-            type="button"
-            variant="outlined"
-            size="small"
-            disabled={records.isFetching}
-            loading={records.isFetching}
+          <RefreshButton
+            busy={records.isFetching}
             onClick={() => void records.refetch()}
-          >
-            {t('common.refresh')}
-          </Button>
+          />
         }
         sx={{ mb: 2 }}
       />

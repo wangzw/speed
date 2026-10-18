@@ -58,6 +58,7 @@ import { ConsoleAsyncSection } from './internal/async-section.js'
 import { useConsoleUiErrorText } from './internal/error-text.js'
 import { ConsoleLink } from './internal/navigation.js'
 import { isRejectedIdentifier } from './internal/identifier.js'
+import { RefreshButton } from './internal/refresh-button.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
   failureTextOf,
@@ -323,16 +324,10 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
           { label: t('tenants.title') },
         ]}
         actions={
-          <Button
-            type="button"
-            variant="outlined"
-            size="small"
-            disabled={tenants.isFetching}
-            loading={tenants.isFetching}
+          <RefreshButton
+            busy={tenants.isFetching}
             onClick={() => void tenants.refetch()}
-          >
-            {t('common.refresh')}
-          </Button>
+          />
         }
         sx={{ mb: 2 }}
       />

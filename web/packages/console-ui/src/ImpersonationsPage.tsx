@@ -102,6 +102,7 @@ import {
   useConsoleImpersonationChange,
   type ConsoleImpersonationChange,
 } from './internal/impersonation-change.js'
+import { RefreshButton } from './internal/refresh-button.js'
 import { useConsoleStepUp } from './internal/step-up-gate.js'
 import type { ConsoleStepUp } from './internal/step-up-gate.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
@@ -368,12 +369,8 @@ export function ImpersonationsPage() {
           { label: t('impersonations.title') },
         ]}
         actions={
-          <Button
-            type="button"
-            variant="outlined"
-            size="small"
-            disabled={status.isFetching || impersonations.isFetching}
-            loading={status.isFetching || impersonations.isFetching}
+          <RefreshButton
+            busy={status.isFetching || impersonations.isFetching}
             onClick={() => {
               void status.refetch()
               // The record read is refused while impersonating and waits for
@@ -381,9 +378,7 @@ export function ImpersonationsPage() {
               // fetches it.
               if (recordsEnabled) void impersonations.refetch()
             }}
-          >
-            {t('common.refresh')}
-          </Button>
+          />
         }
         sx={{ mb: 2 }}
       />

@@ -27,7 +27,6 @@
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Paper from '@mui/material/Paper'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
@@ -43,6 +42,7 @@ import { ConsoleAsyncSection } from './internal/async-section.js'
 import { AccountIdentity } from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { formatUtc } from './internal/datetime.js'
+import { RefreshButton } from './internal/refresh-button.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleAuditRecord, ConsoleTenant } from './operations.js'
@@ -237,21 +237,15 @@ export function DashboardPage() {
         title={t('dashboard.title')}
         breadcrumbs={[{ label: t('shell.title') }, { label: t('dashboard.title') }]}
         actions={
-          <Button
-            type="button"
-            variant="outlined"
-            size="small"
-            disabled={refreshing}
-            loading={refreshing}
+          <RefreshButton
+            busy={refreshing}
             onClick={() => {
               void tenants.refetch()
               void healthActivity.refetch()
               void healthLogins.refetch()
               void records.refetch()
             }}
-          >
-            {t('common.refresh')}
-          </Button>
+          />
         }
         sx={{ mb: 2 }}
       />

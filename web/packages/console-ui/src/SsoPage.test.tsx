@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { act, screen, within } from '@testing-library/react'
+import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SsoPage } from './SsoPage.js'
 import type {
@@ -61,6 +61,31 @@ describe('SsoPage', () => {
     const operations = withProviders()
     renderWithProviders(<SsoPage />, { operations })
     expect(screen.getByText('请选择租户')).toBeInTheDocument()
+  })
+
+  it('does not read an empty tenant scope on refresh', async () => {
+    const listSsoProviders = vi.fn(() => Promise.resolve([]))
+    const operations = withProviders({ listSsoProviders })
+    renderWithProviders(<SsoPage />, { operations })
+
+    // The providers read is disabled while no tenant is chosen; the refresh
+    // control follows it instead of issuing the read with an empty tenant.
+    const refresh = screen.getByRole('button', { name: '刷新' })
+    expect(refresh).toBeDisabled()
+    // The disabled control is described by the page's own "choose a tenant
+    // first" text.
+    const describedBy = refresh.getAttribute('aria-describedby')
+    expect(describedBy).not.toBeNull()
+    expect(document.getElementById(describedBy as string)).toHaveTextContent(
+      'SSO 提供方按租户存储，请先选择一个租户。',
+    )
+    // A programmatic click, because user-event refuses a disabled target:
+    // the control must stay inert even when reached from a script.
+    fireEvent.click(refresh)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(listSsoProviders).not.toHaveBeenCalled()
   })
 
   it('opens on the tenant named by the query string', async () => {
@@ -677,16 +702,23 @@ describe('SsoPage', () => {
     await user.click(screen.getByRole('button', { name: '刷新' }))
     const refresh = screen.getByRole('button', { name: '刷新' })
     await vi.waitFor(() => {
-      expect(refresh).toBeDisabled()
+      expect(refresh).toHaveAttribute('aria-busy', 'true')
     })
+    // A busy refresh stays enabled and keeps keyboard focus: MUI's
+    // `loading` would set the native disabled state, which drops focus to
+    // the document body until the read settles.
+    expect(refresh).not.toBeDisabled()
+    expect(refresh).toBe(document.activeElement)
     expect(within(refresh).getByRole('progressbar')).toBeInTheDocument()
 
     await act(async () => {
       finishRefresh([providerFixture({ name: 'Acme IdP' })])
     })
     await vi.waitFor(() => {
-      expect(refresh).not.toBeDisabled()
+      expect(refresh).not.toHaveAttribute('aria-busy')
     })
+    expect(refresh).not.toBeDisabled()
+    expect(refresh).toBe(document.activeElement)
   })
 
   it('has no axe violations', async () => {

@@ -40,9 +40,17 @@ import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
 import { identifierPrefix } from './internal/identifier-prefix.js'
 import { InlineError } from './internal/inline-error.js'
+import { RefreshButton } from './internal/refresh-button.js'
+import { SelectorRow } from './internal/selector-row.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleAccount, ConsoleAccountSession } from './operations.js'
+
+/**
+ * The id of the page's own "choose an account first" text. The disabled
+ * refresh is described by it, so the explanation has one copy on the page.
+ */
+const ACCOUNT_HINT_ID = 'sessions-account-hint'
 
 /** The assurance level's label from its integer (0 none, 1 single, 2 multi). */
 function assuranceKey(assurance: number): string {
@@ -206,44 +214,40 @@ export function SessionsPage() {
           { label: t('shell.title') },
           { label: t('sessions.title') },
         ]}
-        actions={
-          <Button
-            type="button"
-            variant="outlined"
-            size="small"
-            disabled={account === '' || sessions.isFetching}
-            loading={sessions.isFetching}
-            onClick={() => void sessions.refetch()}
-          >
-            {t('common.refresh')}
-          </Button>
-        }
         sx={{ mb: 2 }}
       />
 
-      <Box
-        component="section"
-        sx={{
-          mb: 3,
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'flex-end',
-          columnGap: 2,
-          rowGap: 1,
-        }}
-      >
-        <AccountSelector
-          label={t('sessions.accountLabel')}
-          value={selectedAccount}
-          onChange={setSelectedAccount}
-        />
+      <Box component="section" sx={{ mb: 3 }}>
+        <SelectorRow
+          selectorMaxWidth={260}
+          trailing={
+            <RefreshButton
+              busy={sessions.isFetching}
+              disabled={account === ''}
+              describedBy={ACCOUNT_HINT_ID}
+              disabledReason={t('sessions.needAccount.description')}
+              onClick={() => void sessions.refetch()}
+            />
+          }
+        >
+          <AccountSelector
+            label={t('sessions.accountLabel')}
+            value={selectedAccount}
+            onChange={setSelectedAccount}
+            fullWidth
+          />
+        </SelectorRow>
       </Box>
 
       {account === '' ? (
         <EmptyState
           headingLevel="h2"
           title={t('sessions.needAccount.title')}
-          description={t('sessions.needAccount.description')}
+          description={
+            <span id={ACCOUNT_HINT_ID}>
+              {t('sessions.needAccount.description')}
+            </span>
+          }
         />
       ) : (
         <ConsoleAsyncSection

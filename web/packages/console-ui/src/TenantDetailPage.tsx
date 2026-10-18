@@ -44,6 +44,7 @@ import { InlineError } from './internal/inline-error.js'
 import { ConsoleLink } from './internal/navigation.js'
 import { DefinitionRow, DetailLayout } from './internal/layout.js'
 import { isRejectedIdentifier } from './internal/identifier.js'
+import { RefreshButton } from './internal/refresh-button.js'
 import { TENANT_QUERY_PARAM } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
@@ -233,16 +234,10 @@ export function TenantDetailPage({ id, parentHref, rootHref }: TenantDetailPageP
         title={t('tenantDetail.title', { id })}
         breadcrumbs={crumbs}
         actions={
-          <Button
-            type="button"
-            variant="outlined"
-            size="small"
-            disabled={tenant.isFetching}
-            loading={tenant.isFetching}
+          <RefreshButton
+            busy={tenant.isFetching}
             onClick={() => void tenant.refetch()}
-          >
-            {t('common.refresh')}
-          </Button>
+          />
         }
         sx={{ mb: 2 }}
       />

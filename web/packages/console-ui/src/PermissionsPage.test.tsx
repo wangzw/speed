@@ -179,6 +179,13 @@ describe('PermissionsPage', () => {
     // control follows it instead of issuing the read with an empty tenant.
     const refresh = screen.getByRole('button', { name: '刷新' })
     expect(refresh).toBeDisabled()
+    // The disabled control is described by the page's own "choose a tenant
+    // first" text.
+    const describedBy = refresh.getAttribute('aria-describedby')
+    expect(describedBy).not.toBeNull()
+    expect(document.getElementById(describedBy as string)).toHaveTextContent(
+      '权限面的角色、授权与绑定都按租户存储，请先选择一个租户。',
+    )
     // A programmatic click, because user-event refuses a disabled target:
     // the control must stay inert even when reached from a script.
     fireEvent.click(refresh)

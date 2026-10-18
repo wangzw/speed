@@ -272,10 +272,20 @@ request body.
   generic fallback. A new write surface extends the whitelist with the
   codes it can meet.
 - **Each page opens with ui-kit's `PageHeader`.** The page title is the
-  level-one heading, a breadcrumb trail runs from the console to the
-  page, and a refresh action re-reads the page's data (its `refetch`).
-  The sections and `AsyncSection` placeholders continue from that `h1`
-  (`headingLevel="h2"`), so the heading order never skips.
+  level-one heading and a breadcrumb trail runs from the console to the
+  page. The refresh action that re-reads the page's data (its `refetch`)
+  sits in the header, except on a page whose body is addressed by a
+  selector (the sessions page's account, and the tenant-addressed pages'
+  tenant): there it sits in the selector's own row, immediately to the
+  selector's right. The sections and `AsyncSection` placeholders continue
+  from that `h1` (`headingLevel="h2"`), so the heading order never skips.
+- **The refresh control is the same everywhere.** It is disabled only
+  while the scope it re-reads is empty; a disabled one points
+  `aria-describedby` at the page's existing "choose a scope first" text
+  (and shows that text as its tooltip), and an enabled one carries
+  neither. While its read is in flight it stays enabled and reports
+  `aria-busy` with a spinner, so an operator who pressed Enter keeps
+  keyboard focus on it.
 
 ## Testing
 

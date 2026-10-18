@@ -71,6 +71,7 @@ import { AccountSelector } from './internal/account-selector.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { useConsoleUiErrorText } from './internal/error-text.js'
+import { RefreshButton } from './internal/refresh-button.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
@@ -86,6 +87,12 @@ import type {
   ConsolePermission,
   ConsoleRole,
 } from './operations.js'
+
+/**
+ * The id of the page's own "choose a tenant first" text. The disabled
+ * refresh is described by it, so the explanation has one copy on the page.
+ */
+const TENANT_HINT_ID = 'permissions-tenant-hint'
 
 /** A section heading; the page's sections sit one level under the h1. */
 function SectionHeading({ children }: { readonly children: string }) {
@@ -712,18 +719,6 @@ export function PermissionsPage() {
           { label: t('shell.title') },
           { label: t('permissions.title') },
         ]}
-        actions={
-          <Button
-            type="button"
-            variant="outlined"
-            size="small"
-            disabled={tenant === '' || roles.isFetching}
-            loading={roles.isFetching}
-            onClick={() => void roles.refetch()}
-          >
-            {t('common.refresh')}
-          </Button>
-        }
         sx={{ mb: 2 }}
       />
 
@@ -732,6 +727,15 @@ export function PermissionsPage() {
           value={tenant}
           onSelect={changeTenant}
           disabled={anyPending}
+          trailing={
+            <RefreshButton
+              busy={roles.isFetching}
+              disabled={tenant === ''}
+              describedBy={TENANT_HINT_ID}
+              disabledReason={t('permissions.needTenant.description')}
+              onClick={() => void roles.refetch()}
+            />
+          }
         />
       </Box>
 
@@ -739,7 +743,11 @@ export function PermissionsPage() {
         <EmptyState
           headingLevel="h2"
           title={t('permissions.needTenant.title')}
-          description={t('permissions.needTenant.description')}
+          description={
+            <span id={TENANT_HINT_ID}>
+              {t('permissions.needTenant.description')}
+            </span>
+          }
         />
       ) : (
         <>

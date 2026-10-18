@@ -60,6 +60,7 @@ import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
 import { useConsoleUiErrorText } from './internal/error-text.js'
 import { useConsoleInvitationLink } from './internal/invitation-link.js'
+import { RefreshButton } from './internal/refresh-button.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
@@ -74,6 +75,12 @@ import type {
   ConsoleIssuedInvitation,
   ConsoleMember,
 } from './operations.js'
+
+/**
+ * The id of the page's own "choose a tenant first" text. The disabled
+ * refresh is described by it, so the explanation has one copy on the page.
+ */
+const TENANT_HINT_ID = 'invitations-tenant-hint'
 
 /** The invitation just issued, with the tenant it was issued under. */
 type IssuedInvitation = ConsoleIssuedInvitation & { readonly tenant: string }
@@ -402,21 +409,6 @@ export function InvitationsPage() {
           { label: t('shell.title') },
           { label: t('invitations.title') },
         ]}
-        actions={
-          <Button
-            type="button"
-            variant="outlined"
-            size="small"
-            disabled={invitations.isFetching || members.isFetching}
-            loading={invitations.isFetching || members.isFetching}
-            onClick={() => {
-              void invitations.refetch()
-              void members.refetch()
-            }}
-          >
-            {t('common.refresh')}
-          </Button>
-        }
         sx={{ mb: 2 }}
       />
 
@@ -425,6 +417,18 @@ export function InvitationsPage() {
           value={tenant}
           onSelect={changeTenant}
           disabled={invitationFeedback.pending || membersFeedback.pending}
+          trailing={
+            <RefreshButton
+              busy={invitations.isFetching || members.isFetching}
+              disabled={tenant === ''}
+              describedBy={TENANT_HINT_ID}
+              disabledReason={t('invitations.needTenant.description')}
+              onClick={() => {
+                void invitations.refetch()
+                void members.refetch()
+              }}
+            />
+          }
         />
       </Box>
 
@@ -432,7 +436,11 @@ export function InvitationsPage() {
         <EmptyState
           headingLevel="h2"
           title={t('invitations.needTenant.title')}
-          description={t('invitations.needTenant.description')}
+          description={
+            <span id={TENANT_HINT_ID}>
+              {t('invitations.needTenant.description')}
+            </span>
+          }
         />
       ) : (
         <>

@@ -103,10 +103,44 @@ describe('SessionsPage', () => {
     // follows it instead of issuing the read with an empty id.
     const refresh = screen.getByRole('button', { name: '刷新' })
     expect(refresh).toBeDisabled()
+    // The disabled control is described by the page's own "choose an
+    // account first" text, not by a second copy of it.
+    const describedBy = refresh.getAttribute('aria-describedby')
+    expect(describedBy).not.toBeNull()
+    expect(document.getElementById(describedBy as string)).toHaveTextContent(
+      '会话按账户列出，请搜索并选择要列出的账户。',
+    )
+    // MUI's Tooltip listens on its child element; a native disabled button
+    // receives no pointer events, so the control gets a span wrapper.
+    expect(refresh.parentElement?.tagName).toBe('SPAN')
     // A programmatic click, because user-event refuses a disabled target:
     // the control must stay inert even when reached from a script.
     fireEvent.click(refresh)
     expect(queried).toEqual([])
+  })
+
+  it('enables the refresh and drops its explanation once an account is chosen', async () => {
+    const user = userEvent.setup()
+    const operations = withSessions({
+      listAccountSessions: () => Promise.resolve([session()]),
+    })
+    renderWithProviders(<SessionsPage />, { operations })
+    const disabled = screen.getByRole('button', { name: '刷新' })
+    expect(disabled).toBeDisabled()
+
+    // The tooltip names the same text the page already renders.
+    await user.hover(disabled.parentElement as HTMLElement)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      '会话按账户列出，请搜索并选择要列出的账户。',
+    )
+
+    await loadAccount(user)
+    await vi.waitFor(() => {
+      expect(screen.getByRole('button', { name: '刷新' })).not.toBeDisabled()
+    })
+    const enabled = screen.getByRole('button', { name: '刷新' })
+    expect(enabled).not.toHaveAttribute('aria-describedby')
+    expect(enabled.parentElement?.tagName).not.toBe('SPAN')
   })
 
   it('reads an account\'s sessions as soon as it is chosen', async () => {

@@ -41,8 +41,12 @@ The tenant detail and audit detail pages are declared without a navigation
 label -- reachable from a list row, not listed in the navigation.
 
 Each page opens with `@speed/ui-kit`'s `PageHeader`: the page title as the
-level-one heading, a breadcrumb trail from the console to the page, and a
-refresh action that re-reads the page's data.
+level-one heading and a breadcrumb trail from the console to the page. The
+refresh action that re-reads the page's data sits in the header on pages
+that are not addressed by a selector; a page whose body is addressed by a
+selector (the sessions page's account, or the tenant-addressed pages'
+tenant) puts it in the selector's row, immediately to the selector's
+right.
 
 The pages whose routes carry the tenant as a path segment (authorization,
 invitations and membership, SSO), and the impersonation page (whose read
