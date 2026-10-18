@@ -615,6 +615,43 @@ describe('StepUpChallenge', () => {
     }
   })
 
+  it('reads the session view once per opening', async () => {
+    // One opening decides the refusal from one read of the caller's own
+    // session. The read is issued by the dialog's effect; the query itself
+    // is held back, because an enabled query beside that refetch issues a
+    // second GET whenever the cache already holds a view -- the default
+    // `cancelRefetch` replaces the in-flight read. The cold-cache first
+    // opening would dedupe to one either way; the warm-cache reopening is
+    // the one that shows the second read.
+    const rig = makeRealClientRig((call: RealCall) => {
+      if (call.method === 'GET' && call.path === '/auth/factors') {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'GET' && call.path === '/auth/session') {
+        return jsonResponse(200, sessionBody())
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    })
+    rig.store.set('access-1')
+    const onSuccess = vi.fn()
+    const onCancel = vi.fn()
+    const control = renderControlled(rig.session, { onSuccess, onCancel })
+    const reads = () =>
+      rig.calls.filter(
+        (call) => call.method === 'GET' && call.path === '/auth/session',
+      )
+
+    // A cold-cache opening reads once.
+    expect(await screen.findByText(zhCN.mfa.stepUp.noFactor)).toBeTruthy()
+    expect(reads()).toHaveLength(1)
+
+    // A reopening reads once more, with the cache already holding a view.
+    act(() => control.setOpen(false))
+    act(() => control.setOpen(true))
+    expect(await screen.findByText(zhCN.mfa.stepUp.noFactor)).toBeTruthy()
+    expect(reads()).toHaveLength(2)
+  })
+
   it('offers a re-login when the session names no first-factor method', async () => {
     // A social or enterprise sign-in establishes the session through a
     // channel this dialog cannot re-prove, so no step-up is started and

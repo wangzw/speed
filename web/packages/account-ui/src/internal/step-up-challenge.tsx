@@ -131,11 +131,14 @@ export function StepUpChallenge({
   const noFactor =
     open && factors.isSuccess && activeFactorCount(factors.data) === 0
   // Only an account with no factor needs its session read: with a factor
-  // the flow enters at the factor step and names no method. The hook's own
-  // data is never read -- the cached view may predate a sign-in completed
+  // the flow enters at the factor step and names no method. The query
+  // stays disabled -- the cached view may predate a sign-in completed
   // while the dialog was closed, so the verdict below is taken from the
-  // read this opening forces through `refetch`.
-  const { refetch: readSessionView } = useSessionViewQuery(open && noFactor)
+  // read this opening forces through `refetch`, and an enabled query would
+  // race that read: with a cached view present, `refetch`'s default
+  // `cancelRefetch` would replace the query's own in-flight read with a
+  // second request for the same opening.
+  const { refetch: readSessionView } = useSessionViewQuery(false)
   // The refusal's requirement, decided once per opening and frozen while
   // the dialog stays open: a parked dialog does not start a flow because a
   // later render puts the stored authentication time outside the window.
