@@ -8,7 +8,7 @@
 - **唯一的源码接手点。** `src/runtime.ts` 是本包唯一的手写源码文件，作为 `./runtime` 子路径导出。它存在，是因为生成的代码不能知道宿主如何接上 HTTP 传输。
 - **生成面与传输无关。** 生成的调用把一个 axios 形状的选项对象交给一个 mutator；mutator 把它适配成 [`api-client`](design-web-api-client.md) 的请求函数形状并转发。生成的代码里没有 `fetch`、没有 `axios`、没有租户头，也没有租户查询键。
 - **生成面与租户无关。** 生成的查询键是裸的 spec 路径，不带租户维度；租户由服务端在请求期按端解析，生成面既不传也不收租户（[ADR-web-tenant-query-key-2026-10-15](../../../adr/adr-web-tenant-query-key-2026-10-15.md)）。
-- **契约从模块片段流入。** orval 的输入是各平台模块 HTTP 片段经示范宿主的 `gen` 命令合并出的一份文档（落 `contracts/api.json`）；一个有 HTTP 片段的平台模块即合并文档的成员，因而进入本包的生成面。每个片段的端点路径与操作经 [api-client](design-web-api-client.md) 发出。
+- **契约从模块片段流入。** orval 的输入是各平台模块 HTTP 片段经示范宿主的 `gen` 命令合并出的一份文档（落 `contracts/api.json`）；一个有 HTTP 片段的平台模块即合并文档的成员，因而进入本包的生成面。合并文档的成员带所有者：平台模块的片段为平台所有，示范宿主自己的模块的片段为应用所有；应用所有的操作带应用所有的标记（标记的形态须能被 orval 的过滤读取），本包的生成过滤掉它们，应用级生成（[starters](../design-starters.md) 的第二级契约）取全部，本包的生成面因此始终只含平台操作。一条测试断言本包的生成面不含任何带应用标记的操作。每个片段的端点路径与操作经 [api-client](design-web-api-client.md) 发出。
 - **特性名从模块声明流入。** 后端模块以资源 `feature.Spec` 声明它服务的[特性](../../../glossary.md)（[feature](../design-feature.md)）；示范宿主的 `gen` 命令以 `--features` 写出 `contracts/features.json`：可用集里的全部特性声明，每项带名字、声明模块与是否条件特性，按名字排序。它与 `contracts/api.json` 同源，出自同一个二进制的 import 闭包，是同一份契约的另一半（[starters](../design-starters.md)、[ADR-feature-vocabulary-2026-10-17](../../../adr/adr-feature-vocabulary-2026-10-17.md)）。
 
 ### 非职责
@@ -141,7 +141,7 @@ flowchart LR
 
 ### 生成
 
-1. 输入是合并的平台文档——各平台模块 HTTP 片段经示范宿主的 `gen` 命令合并出的那份（落 `contracts/api.json`）。一个有 HTTP 片段的平台模块是成员。一个片段只有进入合并才到达本包。
+1. 输入是合并的平台文档——各平台模块 HTTP 片段经示范宿主的 `gen` 命令合并出的那份（落 `contracts/api.json`）。一个有 HTTP 片段的平台模块是成员；应用所有的片段也在这份文档里，本包的生成按所有者标记过滤掉它们。一个平台片段只有进入合并才到达本包。
 2. `web/orval.config.ts` 定下 `client: 'react-query'`（生成 TanStack Query 钩子）与 `httpClient: 'axios'`；`httpClient` 使生成的调用是 axios 形状的选项对象，路由到 `src/runtime.ts` 导出的 `speedRequest`。`mode: 'single'` 使全部输出落进单个 `src/index.ts`。
 3. 一个操作改走另一个 mutator：`authn.token.issue` 在配置里被覆写为 `speedRequestCredentialless`（见「转发的形状」的凭据为空一档）。
 4. orval 的若干行为在配置与后处理里被规避：它把每个 mutator 的 import 写得没有文件扩展名（在 nodenext 构建下报错），`web/scripts/orval-nodenext-fixup.mjs` 在每次生成后确定性地把它们改写为显式 `./runtime.js`，并覆盖按操作覆写能产出的每一个 mutator 名；一次已修好的文件（import 已带 `.js`）退出 0，因而 fixup 可自由重跑。生成的 `src/index.ts` 与 fixup 后的形状是提交进仓库的产物。
@@ -150,7 +150,7 @@ flowchart LR
 ### 特性名的生成
 
 1. 输入是示范宿主的 `gen` 以 `--features` 写出的 `contracts/features.json`：可用集里的全部特性声明，按名字排序。
-2. 特性名生成器 `web/scripts/feature-names.mjs` 读它，写出 `src/features.ts`：`FeatureNameRegistry` 为每个名字登记一项，`FEATURE_NAMES` 按同一顺序列出全部名字，文件带 DO-NOT-EDIT 头。这份 `contracts/features.json` 由示范宿主写出，示范宿主的应用模块不声明特性（[starters](../design-starters.md)），它因而只含平台模块的声明，本包登记的是平台模块的特性名。
+2. 特性名生成器 `web/scripts/feature-names.mjs` 读它，写出 `src/features.ts`：`FeatureNameRegistry` 为每个名字登记一项，`FEATURE_NAMES` 按同一顺序列出全部名字，文件带 DO-NOT-EDIT 头。`contracts/features.json` 的每一项带所有者：声明它的模块由平台交付的为平台所有，由示范宿主自己的模块交付的为应用所有，`gen` 按声明模块的归属机械写出，不靠名字约定。生成器写 `src/features.ts` 只取平台所有的项，本包登记的因此始终是平台模块的特性名；应用所有的项由应用内的模块增补承载（见扩展点）。一条测试断言本包的 `features.ts` 不含任何应用所有的名字。
 3. 示范应用的契约再生成脚本（`starters/demo/web/package.json` 的 `api:gen`）在 `gen` 写出契约之后调用特性名生成器，`contracts/features.json` 与 `src/features.ts` 因此随同一次再生成更新。生成的 `src/features.ts` 是提交进仓库的产物。
 
 `contracts/features.json` 覆盖任何一份可能的特性文档：静态特性都在可用集声明里；经 `feature.Board` 的 `Post` 报告的名字不是报告者声明的条件特性时，`feature.board` 让启动失败（[feature](../design-feature.md)）。所以 `FeatureName` 覆盖前端可能读到的每一个特性名。
@@ -197,7 +197,7 @@ flowchart LR
 - **新增一个按操作的 mutator 覆写**在 `web/orval.config.ts` 的 `override.operations` 里加一条，使该操作改走另一个已导出的 mutator；`src/runtime.ts` 里另加一个源码文件被禁止，缺口在工具里补。
 - **生成器升级**要同时改 `orval.config.ts` 的注释与每个调用方的命令（版本钉在一处，重生成后头里的版本随之更新）。
 - **平台模块声明一个特性**即让该模块以 `feature.Spec` 声明它；重生成后名字出现在 `./features` 入口。
-- **应用自己的特性名以模块增补并入。** 应用模块声明的特性不进平台包：应用的契约再生成写出的 `contracts/features.json` 含平台与应用两方的声明，生成器取其中不在平台包 `FEATURE_NAMES` 里的名字，在应用内写出 `declare module '@speed/api-sdk/features' { interface FeatureNameRegistry { … } }`，应用里的 `FeatureName` 因此同时含平台名与应用名，宿主与平台包读的是同一个类型。
+- **应用自己的特性名以模块增补并入。** 应用模块声明的特性不进平台包：应用的契约再生成写出的 `contracts/features.json` 含平台与应用两方的声明，生成器取其中所有者为应用的名字，在应用内写出 `declare module '@speed/api-sdk/features' { interface FeatureNameRegistry { … } }`，应用里的 `FeatureName` 因此同时含平台名与应用名，宿主与平台包读的是同一个类型。
 
 ## 实现状态
 
@@ -208,6 +208,7 @@ flowchart LR
 | 生成配置（输入、mutator、按操作覆写） | 已实现 | `web/orval.config.ts` |
 | nodenext 的 mutator import 后处理 | 已实现 | `web/scripts/orval-nodenext-fixup.mjs` |
 | 入口的对外面（`.`、`./runtime` 与 `./features`） | 已实现 | `web/packages/api-sdk/package.json` 的 `exports` |
+| 本包的生成面与特性名只含平台所有的成员，由测试守住 | 未实现 | — |
 | 特性名类型（`src/features.ts`） | 已实现 | `web/packages/api-sdk/src/features.ts` `FeatureNameRegistry`、`FeatureName`、`FEATURE_NAMES` |
 | 特性名生成器 | 已实现 | `web/scripts/feature-names.mjs` |
 | 特性名的新鲜度测试与类型断言 | 已实现 | `web/packages/api-sdk/src/features.test.ts`；`web/packages/auth-core/src/features.test.ts` |
