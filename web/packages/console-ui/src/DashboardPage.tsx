@@ -12,7 +12,11 @@
  * successful sign-ins among them (the audit action authn.login). Those
  * counts come from the newest page of a windowed read, so a page that
  * carries a next cursor reports its count as a lower bound ("N+"). The
- * recent-activity list shows the newest page of records outright, through
+ * window start moves forward on the page's refresh action and at the
+ * query client's automatic re-read moments -- the tab becoming visible
+ * and the connection coming back -- and the numbers already on screen
+ * stay until the new window settles. The recent-activity list shows the
+ * newest page of records outright, through
  * the same column set and priorities as the audit query page, and the same
  * account identity unit: the account's display name where the lookup
  * answers, the recorded value with an unresolved note where it is
@@ -24,8 +28,9 @@
  * with ui-kit's PageHeader.
  */
 
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { focusManager, onlineManager } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Skeleton from '@mui/material/Skeleton'
@@ -58,6 +63,62 @@ const HEALTH_WINDOW_MS = 24 * 60 * 60 * 1000
 
 /** The page size of the platform-health reads; a full page reports as a bound. */
 const HEALTH_LIMIT = 100
+
+/**
+ * The behaviour of the platform-health reads: the previous answer stays as
+ * placeholder data while the read under a moved window is in flight, and the
+ * query client's automatic re-reads of the old key are off because the moved
+ * window is what re-reads the row at those moments.
+ */
+const HEALTH_READ_OPTIONS = {
+  keepPrevious: true,
+  refetchOnWindowFocus: false,
+  refetchOnReconnect: false,
+} as const
+
+/**
+ * The platform-health window start, as the `since` parameter its reads
+ * carry. It moves forward on the page's refresh action and on the two
+ * moments the query client re-reads on its own -- the tab becoming visible
+ * and the connection coming back. Those signals come from the client's own
+ * focus and online managers, the same ones its automatic re-reads listen
+ * to, so the page installs no listener of its own. Each move is strictly
+ * later than the last, so a signal arriving within the same millisecond as
+ * the previous one still changes the reads' key and issues a new read.
+ */
+function useHealthWindow(): {
+  readonly since: string
+  readonly advance: () => void
+} {
+  const [start, setStart] = useState(() => Date.now())
+  const advance = useCallback(() => {
+    setStart((previous) => {
+      const now = Date.now()
+      return now > previous ? now : previous + 1
+    })
+  }, [])
+  useEffect(() => {
+    const stopFocus = focusManager.subscribe((focused) => {
+      if (focused) {
+        advance()
+      }
+    })
+    const stopOnline = onlineManager.subscribe((online) => {
+      if (online) {
+        advance()
+      }
+    })
+    return () => {
+      stopFocus()
+      stopOnline()
+    }
+  }, [advance])
+  const since = useMemo(
+    () => new Date(start - HEALTH_WINDOW_MS).toISOString(),
+    [start],
+  )
+  return { since, advance }
+}
 
 /** One KPI card: a label and a large count. */
 function KpiCard({ label, value }: { readonly label: string; readonly value: ReactNode }) {
@@ -117,21 +178,19 @@ export function DashboardPage() {
   const records = operations.useAuditRecords({ limit: RECENT_LIMIT })
 
   // The platform-health reads: the trailing 24 hours of audit records, and the
-  // successful sign-ins among them. The window instant is computed once per
-  // mount, so the query key (which carries it) does not change every render.
-  const since = useMemo(
-    () => new Date(Date.now() - HEALTH_WINDOW_MS).toISOString(),
-    [],
+  // successful sign-ins among them. The window start is state, so its query
+  // key changes only when the window moves, not every render. The previous
+  // answer stays as placeholder data while the read under a new window is in
+  // flight, so the numbers on screen do not flicker to a placeholder.
+  const healthWindow = useHealthWindow()
+  const healthActivity = operations.useAuditRecords(
+    { since: healthWindow.since, limit: HEALTH_LIMIT },
+    HEALTH_READ_OPTIONS,
   )
-  const healthActivity = operations.useAuditRecords({
-    since,
-    limit: HEALTH_LIMIT,
-  })
-  const healthLogins = operations.useAuditRecords({
-    since,
-    action: [LOGIN_ACTION],
-    limit: HEALTH_LIMIT,
-  })
+  const healthLogins = operations.useAuditRecords(
+    { since: healthWindow.since, action: [LOGIN_ACTION], limit: HEALTH_LIMIT },
+    HEALTH_READ_OPTIONS,
+  )
 
   const kpi = (settled: readonly ConsoleTenant[]) => {
     const active = settled.filter((tenant) => tenant.status === 'active').length
@@ -240,9 +299,11 @@ export function DashboardPage() {
           <RefreshButton
             busy={refreshing}
             onClick={() => {
+              // Moving the window changes the health reads' key, which is
+              // what re-reads them; the roster and the recent-activity list
+              // re-read in place.
+              healthWindow.advance()
               void tenants.refetch()
-              void healthActivity.refetch()
-              void healthLogins.refetch()
               void records.refetch()
             }}
           />

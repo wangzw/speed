@@ -78,6 +78,7 @@ export {
   type ConsoleAuditRecord,
   type ConsoleAuditPage,
   type ConsoleAuditRecordQuery,
+  type ConsoleAuditRecordsOptions,
   type ConsoleCreateTenantInput,
   type ConsoleSetTenantAliasInput,
   type ConsoleSetTenantStatusInput,

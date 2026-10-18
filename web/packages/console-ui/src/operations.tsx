@@ -42,7 +42,12 @@
 
 import { createContext, useContext } from 'react'
 import type { ReactNode } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 import {
   authnAdminAccountsAddIdentifier,
@@ -541,6 +546,31 @@ export interface ConsoleSetSmsTemplateEnabledInput {
 }
 
 /**
+ * The query-level behaviour a caller can ask of the audit-record read.
+ * An absent member leaves the generated options and the query client's
+ * own defaults in charge.
+ */
+export interface ConsoleAuditRecordsOptions {
+  /**
+   * Keep the previous answer as placeholder data while a read under a
+   * different parameter set is in flight. The dashboard's platform-health
+   * window moves its start forward -- and so changes the query key -- while
+   * the numbers of the window it left stay rendered until the new window
+   * settles.
+   */
+  readonly keepPrevious?: boolean
+  /**
+   * Whether the query client's automatic re-read when the tab becomes
+   * visible applies. The dashboard advances its window start on that signal
+   * and re-reads through the new key, so it turns the automatic re-read of
+   * the old key off.
+   */
+  readonly refetchOnWindowFocus?: boolean
+  /** The same for the connection coming back. */
+  readonly refetchOnReconnect?: boolean
+}
+
+/**
  * The console's data operations, in react-query hook shape. Every member
  * is a hook the pages call during render (on the host's QueryClient);
  * consoleOperations below binds them to the generated @speed/api-sdk
@@ -601,6 +631,7 @@ export interface ConsoleOperations {
    */
   readonly useAuditRecords: (
     params?: AuditAdminRecordsListParams,
+    options?: ConsoleAuditRecordsOptions,
   ) => UseQueryResult<ConsoleAuditPage, unknown>
   /** GET /audit/admin/records/:id -- one audit record (disabled while no id). */
   readonly useAuditRecord: (
@@ -1014,8 +1045,14 @@ export const consoleOperations: ConsoleOperations = {
     })
   },
 
-  useAuditRecords: (params) =>
-    useQuery({ ...getAuditAdminRecordsListQueryOptions(params) }),
+  useAuditRecords: (params, options) =>
+    useQuery({
+      ...getAuditAdminRecordsListQueryOptions(params),
+      placeholderData:
+        options?.keepPrevious === true ? keepPreviousData : undefined,
+      refetchOnWindowFocus: options?.refetchOnWindowFocus,
+      refetchOnReconnect: options?.refetchOnReconnect,
+    }),
 
   useAuditRecord: ({ id }) =>
     useQuery({

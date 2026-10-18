@@ -26,7 +26,12 @@
  * the member it exercises.
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { getAuthnAdminImpersonationsListQueryKey } from '@speed/api-sdk'
 import type {
   ConsoleAccount,
@@ -495,10 +500,14 @@ export function createConsoleOperations(
         },
       })
     },
-    useAuditRecords: (params) =>
+    useAuditRecords: (params, options) =>
       useQuery({
         queryKey: [...AUDIT_KEY, params ?? null],
         queryFn: () => backend.listRecords(params),
+        placeholderData:
+          options?.keepPrevious === true ? keepPreviousData : undefined,
+        refetchOnWindowFocus: options?.refetchOnWindowFocus,
+        refetchOnReconnect: options?.refetchOnReconnect,
       }),
     useAuditRecord: (query: ConsoleAuditRecordQuery) =>
       useQuery({
