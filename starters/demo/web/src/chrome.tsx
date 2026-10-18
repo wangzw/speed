@@ -18,7 +18,9 @@
  *    tenant list. product-shell places the switcher in the userMenu slot;
  *    the console banner, which resolves no tenant, does not render it.
  *  - UserMenu: an avatar trigger opening a menu of profile / account-settings
- *    / sign-out, replacing the bare sign-out button.
+ *    / sign-out, replacing the bare sign-out button. While an impersonation
+ *    is in force, auth-ui's end item sits first: closing the banner must not
+ *    strand the operator without a way to end it.
  */
 
 import { useId, useState } from 'react'
@@ -29,6 +31,7 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
 import { useAuthState } from '@speed/auth-core'
+import { ImpersonationEndMenuItem } from '@speed/auth-ui'
 import { readSupportedLanguages, switchLanguage, useTranslation } from '@speed/i18n'
 import { Avatar } from '@speed/layout-kit'
 import { useNavigate } from '@speed/route-kit'
@@ -368,6 +371,10 @@ export function UserMenu(): ReactElement {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
+        {/* Renders only inside an impersonation (and inside auth-ui's notice
+            provider); it starts the same end attempt the banner carries, so
+            the two are disabled and busy together. */}
+        <ImpersonationEndMenuItem divider onActivate={closeMenu} />
         <MenuItem onClick={goToAccount}>{t('userMenu.profile')}</MenuItem>
         <MenuItem onClick={goToAccount}>
           {t('userMenu.accountSettings')}

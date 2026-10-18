@@ -49,6 +49,7 @@ import {
 } from '@speed/auth-core'
 import { featurePresence } from '@speed/auth-core'
 import type { AuthSnapshot } from '@speed/auth-core'
+import { ImpersonationNoticeProvider } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
 import { RouteGuard } from '@speed/layout-kit'
 import type { AppShellNavItem, RouteGuardStatus } from '@speed/layout-kit'
@@ -90,7 +91,9 @@ import {
 import {
   IdentityChangeProvider,
   ImpersonationBannerSlot,
+  ImpersonationChip,
   useIdentityChange,
+  useImpersonationNoticeState,
   useImpersonationStatus,
 } from './impersonation.js'
 import { DemoNavLabel } from './nav-label.js'
@@ -320,6 +323,10 @@ function TenantFrame({
   // is in force, so a visitor who is not impersonating issues no request. It
   // owns the bare-404 ended path and the expiry timer.
   const grant = useImpersonationStatus(impersonating)
+  // The notice the shell renders: the banner in the slot below the app bar,
+  // the "impersonating" chip in the user-menu slot, and the account menu's
+  // end item all read this one state and one shared end attempt.
+  const notice = useImpersonationNoticeState(grant)
   // Whether the feature document is settled at all. The roster read treats the
   // three states differently: `pending`/`failed` keep the current tenant
   // unknown (tenant-scoped queries stay disabled), `ready` without tenant.admin
@@ -490,14 +497,22 @@ function TenantFrame({
         enabled={authenticated && streamServed}
         identityGeneration={generation}
       >
+        <ImpersonationNoticeProvider
+          impersonation={notice.impersonation}
+          identityKey={notice.identityKey}
+          onEnd={notice.onEnd}
+          pending={notice.pending}
+          failureCode={notice.failureCode}
+          successMessage={notice.successMessage}
+        >
         <ProductShell
           navItems={navItems}
           header={<AppBrand />}
-          // The impersonation banner sits above the app bar for the whole
+          // The impersonation notice sits below the app bar for the whole
           // tenant frame. It is always mounted: the component tells the
           // shell when there is nothing to show, and its live region keeps
           // the end confirmation after the banner itself goes away.
-          banner={<ImpersonationBannerSlot grant={grant} />}
+          banner={<ImpersonationBannerSlot />}
           // The notification bell rides the header actions slot beside the
           // shared chrome; it opens the notification surface. It lives only
           // in the tenant area (the console resolves no tenant, so its bell
@@ -539,6 +554,11 @@ function TenantFrame({
               {impersonating || identitySettling ? null : (
                 <TenantMenu tenantId={tenantId} onTenantSelect={setTenantId} />
               )}
+              {/* The chip sits ahead of the account menu: while an
+                  impersonation is in force it is the persistent visible
+                  indication, and it toggles the notice (its close control
+                  moves focus here). */}
+              <ImpersonationChip />
               <UserMenu />
             </>
           }
@@ -546,6 +566,7 @@ function TenantFrame({
         >
           <Box sx={{ p: 3 }}>{children}</Box>
         </ProductShell>
+        </ImpersonationNoticeProvider>
       </NotificationStreamProvider>
     </TenantProvider>
   )

@@ -1,7 +1,8 @@
 /**
  * The impersonation shell's host half: one identity-change action shared by
- * both areas, the status read the banner renders from, and the banner the
- * tenant frame mounts.
+ * both areas, the status read the banner renders from, the banner the tenant
+ * frame mounts, and the one end-impersonation write attempt that the banner,
+ * the header's impersonating chip and the account menu's end item all share.
  *
  * Starting or ending an impersonation swaps whose identity every later read
  * belongs to: the query cache's rows were taken under the old identity, the
@@ -87,8 +88,16 @@ import { onlineManager } from '@tanstack/react-query'
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 import { useAuthState } from '@speed/auth-core'
-import { ImpersonationBanner } from '@speed/auth-ui'
+import {
+  AUTH_UI_NAMESPACE,
+  ImpersonationBanner,
+  ImpersonationIndicator,
+  useImpersonationNotice,
+} from '@speed/auth-ui'
+import type { ImpersonationBannerState } from '@speed/auth-ui'
+import { useTranslation } from '@speed/i18n'
 import { useNavigate } from '@speed/route-kit'
+import { useWriteFeedback } from '@speed/ui-kit'
 import {
   getAuthnImpersonationStartMutationOptions,
   getAuthnImpersonationStatusQueryKey,
@@ -522,36 +531,54 @@ export function useImpersonationStatus(
   return grant
 }
 
+/** The notice state the auth-ui provider and its consumers render from. */
+export interface ImpersonationNoticeState {
+  /** The current impersonation, or null when none is displayed. */
+  readonly impersonation: ImpersonationBannerState | null
+  /** The effective identity plus the host's identity generation: any
+   * identity change resets a dismissal. */
+  readonly identityKey: string
+  /** Starts the one end-impersonation write attempt. */
+  readonly onEnd: () => void
+  /** Whether that shared attempt is in flight. */
+  readonly pending: boolean
+  /** The attempt's failure code, rendered inside the banner. */
+  readonly failureCode: string | null
+  /** The attempt's success message, announced in the banner's live region. */
+  readonly successMessage: string | null
+}
+
 /**
- * The banner the tenant frame mounts in ProductShell's `banner` slot.
+ * The impersonation notice's host state: what the tenant frame tells the
+ * auth-ui notice provider, and the one end write every entry point shares.
  *
- * It is always mounted: `impersonation` is non-null exactly while the
- * snapshot says the session impersonates, so the component's one live
- * region survives the banner's disappearance and keeps the end
- * confirmation. The subject is the snapshot principal's display name --
- * during an impersonation the principal is the impersonated account --
- * with the account identifier as the fallback. The tenant and expiry come
- * from the status read; both stay absent when that read has not settled.
+ * The subject is the snapshot principal's display name -- during an
+ * impersonation the principal is the impersonated account -- with the
+ * account identifier as the fallback. The tenant, expiry and grant id come
+ * from the status read; all stay absent when that read has not settled.
  *
- * The end action resolves when the DELETE settles, and a bare 404 counts
- * as settled (there was nothing left to end). It starts the identity
- * change without waiting for it: the banner's contract is the write, and
- * a failure of the re-read must not render as a failed end. The banner
- * itself is withheld from that instant -- the write's own result says the
- * impersonation is over, and only the snapshot still says otherwise. The
- * null is held through the bounded re-read described in this file's header
- * and released when a re-read settles the operator or the bound runs out;
- * a start never withholds, because starting is announced by the re-read.
+ * The end attempt is one write-feedback scope, so the banner's control and
+ * the account menu's item are the same attempt: both read `pending` and
+ * disable together, and a rejection renders inside the banner. A bare 404
+ * counts as settled (there was nothing left to end). The write starts the
+ * identity change without waiting for it: the attempt's contract is the
+ * write, and a failure of the re-read must not render as a failed end. The
+ * banner is withheld from the settled instant -- the write's own result
+ * says the impersonation is over, and only the snapshot still says
+ * otherwise. The null is held through the bounded re-read described in
+ * this file's header and released when a re-read settles the operator or
+ * the bound runs out; a start never withholds, because starting is
+ * announced by the re-read.
  */
-export function ImpersonationBannerSlot({
-  grant,
-}: {
-  readonly grant: AuthnImpersonationGrant | undefined
-}): ReactElement {
+export function useImpersonationNoticeState(
+  grant: AuthnImpersonationGrant | undefined,
+): ImpersonationNoticeState {
   const snapshot = useAuthState()
   const { session } = useAppServices()
-  const { applyIdentityChange } = useIdentityChange()
+  const { applyIdentityChange, generation } = useIdentityChange()
   const endImpersonation = useAuthnImpersonationEnd()
+  const { t } = useTranslation(AUTH_UI_NAMESPACE)
+  const feedback = useWriteFeedback()
 
   const impersonating =
     snapshot.state === 'authenticated' && snapshot.impersonating
@@ -639,27 +666,43 @@ export function ImpersonationBannerSlot({
     scheduleOrRelease()
   }, [applyIdentityChange, session])
 
-  const end = useCallback(async (): Promise<void> => {
-    try {
-      await endImpersonation.mutateAsync()
-    } catch (error) {
-      if (!isNotImpersonating(error)) {
-        throw error
-      }
+  // The shared attempt's duplicate guard. A synchronous double activation
+  // can reach this before React commits the busy state; the ref closes that
+  // window so every entry point really is one write.
+  const inFlight = useRef(false)
+  const end = useCallback((): void => {
+    if (inFlight.current) {
+      return
     }
-    // The write settled, so the banner must not keep saying an
-    // impersonation is in force; the snapshot may take up to one check-ttl
-    // to agree. A snapshot that flipped while the write was in flight --
-    // an expiry, a bare 404 elsewhere, another tab -- already withdrew it,
-    // and withholding again would outlive the flip: the release edge has
-    // run and will not run again, so a later impersonation in this mount
-    // would stay hidden. The identity change and its bounded re-read follow
-    // without being awaited: the banner's contract is the write.
-    if (session.getSnapshot().impersonating) {
-      setWithheld(true)
-    }
-    void holdUntilSettled()
-  }, [endImpersonation, holdUntilSettled, session])
+    inFlight.current = true
+    void feedback
+      .run(async () => {
+        try {
+          await endImpersonation.mutateAsync()
+        } catch (error) {
+          if (!isNotImpersonating(error)) {
+            throw error
+          }
+        }
+        // The write settled, so the banner must not keep saying an
+        // impersonation is in force; the snapshot may take up to one
+        // check-ttl to agree. A snapshot that flipped while the write was
+        // in flight -- an expiry, a bare 404 elsewhere, another tab --
+        // already withdrew it, and withholding again would outlive the
+        // flip: the release edge has run and will not run again, so a later
+        // impersonation in this mount would stay hidden. The identity change
+        // and its bounded re-read follow without being awaited: the
+        // attempt's contract is the write.
+        if (session.getSnapshot().impersonating) {
+          setWithheld(true)
+        }
+        void holdUntilSettled()
+        return t('impersonation.ended')
+      })
+      .finally(() => {
+        inFlight.current = false
+      })
+  }, [endImpersonation, feedback, holdUntilSettled, session, t])
 
   const principal = snapshot.principal
   const subject =
@@ -669,19 +712,78 @@ export function ImpersonationBannerSlot({
         ? principal.display_name
         : principal.account_id
 
+  const outcome = feedback.outcome
+
+  return {
+    impersonation:
+      impersonating && !withheld
+        ? {
+            subject,
+            ...(grant === undefined
+              ? {}
+              : {
+                  tenant: grant.tenant,
+                  expiresAt: new Date(grant.ends_at),
+                  grantId: grant.id,
+                }),
+          }
+        : null,
+    identityKey: `${principal?.account_id ?? ''}:${generation}`,
+    onEnd: end,
+    pending: feedback.pending,
+    failureCode: outcome?.kind === 'failure' ? outcome.code : null,
+    successMessage: outcome?.kind === 'success' ? outcome.message : null,
+  }
+}
+
+/**
+ * The banner the tenant frame mounts in ProductShell's `banner` slot.
+ *
+ * It is always mounted: the notice's `impersonation` is non-null exactly
+ * while the snapshot says the session impersonates and the end has not
+ * withheld it, so the component's one live region survives the banner's
+ * disappearance and keeps the end confirmation. The dismissed state, the
+ * shared attempt's state and the region id come from auth-ui's notice
+ * provider, which also supplies the header chip and the account menu's end
+ * item, so all three tell the same story.
+ */
+export function ImpersonationBannerSlot(): ReactElement | null {
+  const notice = useImpersonationNotice()
+  if (notice === null) {
+    return null
+  }
   return (
     <ImpersonationBanner
-      impersonation={
-        impersonating && !withheld
-          ? {
-              subject,
-              ...(grant === undefined
-                ? {}
-                : { tenant: grant.tenant, expiresAt: new Date(grant.ends_at) }),
-            }
-          : null
-      }
-      onEnd={end}
+      impersonation={notice.impersonation}
+      onEnd={notice.end}
+      pending={notice.pending}
+      failureCode={notice.failureCode}
+      successMessage={notice.successMessage}
+      dismissed={notice.dismissed}
+      onDismiss={notice.dismiss}
+      regionId={notice.regionId}
+    />
+  )
+}
+
+/**
+ * The header's "impersonating" chip, mounted in the `userMenu` slot ahead
+ * of the account menu. It reads the same notice state as the banner and
+ * is the disclosure control over it: activating toggles the banner, and
+ * the banner's close control moves focus here.
+ */
+export function ImpersonationChip(): ReactElement | null {
+  const notice = useImpersonationNotice()
+  if (notice === null) {
+    return null
+  }
+  return (
+    <ImpersonationIndicator
+      impersonation={notice.impersonation}
+      expanded={!notice.dismissed}
+      controls={notice.regionId}
+      onToggle={notice.toggle}
+      ref={notice.indicatorRef}
     />
   )
 }

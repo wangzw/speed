@@ -23,6 +23,7 @@ import { FEATURE_NAMES } from '@speed/api-sdk/features'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import authUiEnUS from '../../../../web/packages/auth-ui/src/locales/en-US.json' with { type: 'json' }
 import consoleUiEnUS from '../../../../web/packages/console-ui/src/locales/en-US.json' with { type: 'json' }
+import layoutKitEnUS from '../../../../web/packages/layout-kit/src/locales/en-US.json' with { type: 'json' }
 import tenancyUiEnUS from '../../../../web/packages/tenancy-ui/src/locales/en-US.json' with { type: 'json' }
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { PlatformPermissions } from './platform-permissions.js'
@@ -2081,5 +2082,197 @@ describe('the impersonation shell', () => {
       }),
     ).toBeInTheDocument()
     expect(screen.queryByText(authUiEnUS.impersonation.ended)).toBeNull()
+  })
+
+  it('closes the notice, keeps the live region, and ends from the account menu', async () => {
+    window.history.replaceState({}, '', '/')
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+    })
+    bindRequestFn(backend.fn)
+    const session = scriptedSession(targetSnapshot(), () => operatorSnapshot())
+    const user = userEvent.setup()
+
+    renderDemoApp({ session })
+
+    const notice = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    await user.click(
+      within(notice).getByRole('button', {
+        name: authUiEnUS.impersonation.hide,
+      }),
+    )
+
+    // The visible notice is gone; the start announcement stays in the
+    // permanent live region.
+    expect(banner()).toBeNull()
+    expect(
+      document.querySelector(
+        `section[aria-label="${authUiEnUS.impersonation.regionLabel}"]`,
+      ),
+    ).toBeNull()
+    expect(screen.getByRole('status')).toHaveTextContent(
+      authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
+    )
+
+    // The header chip is now collapsed, and it took the focus the close
+    // control could no longer hold.
+    const chip = screen.getByRole('button', {
+      name: authUiEnUS.impersonation.impersonating,
+    })
+    expect(chip).toHaveAttribute('aria-expanded', 'false')
+    expect(chip).toHaveFocus()
+
+    // The account menu still carries the way out while the banner is
+    // hidden, and it is the same write attempt.
+    await user.click(screen.getByRole('button', { name: 'Target One' }))
+    await user.click(
+      screen.getByRole('menuitem', { name: authUiEnUS.impersonation.end }),
+    )
+
+    await waitFor(() => expect(banner()).toBeNull())
+    expect(
+      screen.queryByRole('button', {
+        name: authUiEnUS.impersonation.impersonating,
+      }),
+    ).toBeNull()
+    expect(screen.getByRole('status')).toHaveTextContent(
+      authUiEnUS.impersonation.ended,
+    )
+    expect(backend.deletes()).toBe(1)
+  })
+
+  it('restores the notice from the header chip and keeps focus on it', async () => {
+    window.history.replaceState({}, '', '/')
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+    })
+    bindRequestFn(backend.fn)
+    const session = scriptedSession(targetSnapshot(), () => targetSnapshot())
+    const user = userEvent.setup()
+
+    renderDemoApp({ session })
+
+    const notice = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    await user.click(
+      within(notice).getByRole('button', {
+        name: authUiEnUS.impersonation.hide,
+      }),
+    )
+    const chip = screen.getByRole('button', {
+      name: authUiEnUS.impersonation.impersonating,
+    })
+    await user.click(chip)
+
+    expect(
+      await screen.findByRole('region', {
+        name: authUiEnUS.impersonation.regionLabel,
+      }),
+    ).toBeInTheDocument()
+    expect(chip).toHaveAttribute('aria-expanded', 'true')
+    expect(chip).toHaveFocus()
+  })
+
+  it('resets the dismissal when the impersonated identity changes', async () => {
+    window.history.replaceState({}, '', '/')
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+    })
+    bindRequestFn(backend.fn)
+    const session = scriptedSession(targetSnapshot(), () => targetSnapshot())
+    const user = userEvent.setup()
+
+    renderDemoApp({ session })
+
+    const notice = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    await user.click(
+      within(notice).getByRole('button', {
+        name: authUiEnUS.impersonation.hide,
+      }),
+    )
+    expect(banner()).toBeNull()
+
+    // The same grant now names another impersonated account: an identity
+    // change, which is a reset edge.
+    const next = targetSnapshot()
+    act(() => {
+      session.set({
+        ...next,
+        principal: {
+          ...next.principal!,
+          account_id: 'acc-2',
+          display_name: 'Target Two',
+        },
+      })
+    })
+
+    expect(
+      await screen.findByRole('region', {
+        name: authUiEnUS.impersonation.regionLabel,
+      }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(
+      authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target Two'),
+    )
+  })
+
+  it('places the notice below the app bar, with header controls before banner controls in tab order', async () => {
+    window.history.replaceState({}, '', '/')
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+    })
+    bindRequestFn(backend.fn)
+    const session = scriptedSession(targetSnapshot(), () => targetSnapshot())
+    const user = userEvent.setup()
+
+    renderDemoApp({ session })
+
+    const notice = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    // The AppBar is the shell's banner landmark; the page may carry a
+    // header of its own inside main, so take the first one.
+    const header = screen.getAllByRole('banner')[0]
+    if (header === undefined) {
+      throw new Error('expected the shell banner landmark')
+    }
+    // Below the header in document order, inside the same fixed head.
+    expect(
+      header.compareDocumentPosition(notice) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(notice.parentElement?.parentElement).toBe(header.parentElement)
+
+    // The skip link is the shell's first focusable element.
+    await user.tab()
+    expect(
+      screen.getByRole('link', { name: layoutKitEnUS.appShell.skipToContent }),
+    ).toHaveFocus()
+
+    // Then the header's controls (the chip and the account trigger), then
+    // the banner's own controls.
+    const chip = screen.getByRole('button', {
+      name: authUiEnUS.impersonation.impersonating,
+    })
+    chip.focus()
+    await user.tab()
+    expect(
+      screen.getByRole('button', { name: 'Target One' }),
+    ).toHaveFocus()
+    await user.tab()
+    expect(
+      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+    ).toHaveFocus()
+    await user.tab()
+    expect(
+      within(notice).getByRole('button', {
+        name: authUiEnUS.impersonation.hide,
+      }),
+    ).toHaveFocus()
   })
 })
