@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -25,6 +26,9 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/feature"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -42,37 +46,61 @@ var (
 	unitUnmapped    authz.Permission = "unmapped.permission"
 )
 
-// fakeRoster is the tenant.Catalog the unit cases use. Only Get and Create are
-// called by the ensure; every other method panics through the embedded nil
-// interface if a case ever reaches one.
+// fakeRoster is the tenant.Catalog the unit cases use. Get and Create are the
+// rows' store, and lagging hides a row Get would otherwise find, standing for a
+// snapshot that predates it. EnterRegistered clears that; every other method
+// panics through the embedded nil interface if a case ever reaches one.
 type fakeRoster struct {
 	tenant.Catalog
 
-	mu      sync.Mutex
-	rows    map[tenant.ID]tenant.Tenant
-	creates int
+	mu        sync.Mutex
+	rows      map[tenant.ID]tenant.Tenant
+	lagging   map[tenant.ID]bool
+	createErr error
+	creates   int
+	entered   int
 }
 
 func newFakeRoster() *fakeRoster {
-	return &fakeRoster{rows: map[tenant.ID]tenant.Tenant{}}
+	return &fakeRoster{
+		rows:    map[tenant.ID]tenant.Tenant{},
+		lagging: map[tenant.ID]bool{},
+	}
 }
 
 func (r *fakeRoster) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	row, found := r.rows[id]
+	if found && r.lagging[id] {
+		return tenant.Tenant{}, false, nil
+	}
 	return row, found, nil
 }
 
 func (r *fakeRoster) Create(_ context.Context, t tenant.Tenant) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.createErr != nil {
+		return r.createErr
+	}
 	if _, held := r.rows[t.ID]; held {
 		return fmt.Errorf("%w: identifier %q", tenant.ErrTenantExists, t.ID)
 	}
 	r.creates++
 	r.rows[t.ID] = t
 	return nil
+}
+
+func (r *fakeRoster) EnterRegistered(ctx context.Context, id tenant.ID) (context.Context, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.entered++
+	if _, found := r.rows[id]; !found {
+		return ctx, tenant.ErrInvalidTenant
+	}
+	delete(r.lagging, id)
+	return ctx, nil
 }
 
 // fakeMemberships is the authn.Memberships the unit cases use.
@@ -110,6 +138,28 @@ func (m *fakeMemberships) Put(_ context.Context, membership authn.Membership) er
 	return nil
 }
 
+// fakeGrants is the grant table the manager and the seeding surface share, as
+// the two share one in the process: the ensure reads what it seeded.
+type fakeGrants struct {
+	mu   sync.Mutex
+	sets map[string]map[authz.Role]map[authz.Grant]struct{}
+}
+
+func newFakeGrants() *fakeGrants {
+	return &fakeGrants{sets: map[string]map[authz.Role]map[authz.Grant]struct{}{}}
+}
+
+// held returns the grants a role holds, for a case to assert on.
+func (g *fakeGrants) held(tenantID string, role authz.Role) []authz.Grant {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	out := make([]authz.Grant, 0, len(g.sets[tenantID][role]))
+	for grant := range g.sets[tenantID][role] {
+		out = append(out, grant)
+	}
+	return out
+}
+
 // fakeManager is the authz.Manager the unit cases use.
 type fakeManager struct {
 	authz.Manager
@@ -117,16 +167,19 @@ type fakeManager struct {
 	mu       sync.Mutex
 	roles    map[string][]authz.RoleRecord
 	bindings map[string][]authz.Binding
+	grants   *fakeGrants
 
 	putRoleErr error
 	putRole    int
 	putBinding int
+	deleted    int
 }
 
-func newFakeManager() *fakeManager {
+func newFakeManager(grants *fakeGrants) *fakeManager {
 	return &fakeManager{
 		roles:    map[string][]authz.RoleRecord{},
 		bindings: map[string][]authz.Binding{},
+		grants:   grants,
 	}
 }
 
@@ -134,6 +187,28 @@ func (m *fakeManager) Roles(_ context.Context, tenantID string) ([]authz.RoleRec
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]authz.RoleRecord(nil), m.roles[tenantID]...), nil
+}
+
+func (m *fakeManager) Grants(_ context.Context, tenantID string, role authz.Role) ([]authz.GrantRecord, error) {
+	out := make([]authz.GrantRecord, 0)
+	for _, grant := range m.grants.held(tenantID, role) {
+		out = append(out, authz.GrantRecord{
+			Tenant: tenantID, Role: role, Resource: grant.Resource, Action: grant.Action,
+		})
+	}
+	return out, nil
+}
+
+func (m *fakeManager) DeleteGrant(_ context.Context, grant authz.GrantRecord) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.deleted++
+	m.grants.mu.Lock()
+	defer m.grants.mu.Unlock()
+	delete(m.grants.sets[grant.Tenant][grant.Role], authz.Grant{
+		Resource: grant.Resource, Action: grant.Action,
+	})
+	return nil
 }
 
 func (m *fakeManager) PutRole(_ context.Context, record authz.RoleRecord) error {
@@ -181,35 +256,39 @@ func (m *fakeManager) PutBinding(_ context.Context, binding authz.Binding) error
 	return nil
 }
 
-// fakeSeeder is the authz.Seeder the unit cases use.
+// fakeSeeder is the authz.Seeder the unit cases use. It writes into the same
+// grant table the manager reads.
 type fakeSeeder struct {
 	authz.Seeder
 
+	grants *fakeGrants
+
 	mu   sync.Mutex
-	sets map[string]map[authz.Role]map[authz.Grant]struct{}
 	seed int
 }
 
-func newFakeSeeder() *fakeSeeder {
-	return &fakeSeeder{sets: map[string]map[authz.Role]map[authz.Grant]struct{}{}}
+func newFakeSeeder(grants *fakeGrants) *fakeSeeder {
+	return &fakeSeeder{grants: grants}
 }
 
 func (s *fakeSeeder) SeedGrants(_ context.Context, tenantID string, role authz.Role, grants []authz.Grant) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.seed++
-	if s.sets[tenantID] == nil {
-		s.sets[tenantID] = map[authz.Role]map[authz.Grant]struct{}{}
+	s.grants.mu.Lock()
+	defer s.grants.mu.Unlock()
+	if s.grants.sets[tenantID] == nil {
+		s.grants.sets[tenantID] = map[authz.Role]map[authz.Grant]struct{}{}
 	}
-	if s.sets[tenantID][role] == nil {
-		s.sets[tenantID][role] = map[authz.Grant]struct{}{}
+	if s.grants.sets[tenantID][role] == nil {
+		s.grants.sets[tenantID][role] = map[authz.Grant]struct{}{}
 	}
 	added := 0
 	for _, grant := range grants {
-		if _, held := s.sets[tenantID][role][grant]; held {
+		if _, held := s.grants.sets[tenantID][role][grant]; held {
 			continue
 		}
-		s.sets[tenantID][role][grant] = struct{}{}
+		s.grants.sets[tenantID][role][grant] = struct{}{}
 		added++
 	}
 	return added, nil
@@ -227,9 +306,9 @@ func (fakeCatalog) Declared() []authz.Permission {
 func (fakeCatalog) ObjectAction(p authz.Permission) (string, string, bool) {
 	switch p {
 	case unitObjectRead:
-		return "objects", "read", true
+		return "object", "read", true
 	case unitObjectWrite:
-		return "objects", "write", true
+		return "object", "write", true
 	default:
 		return "", "", false
 	}
@@ -239,8 +318,9 @@ func (fakeCatalog) ObjectAction(p authz.Permission) (string, string, bool) {
 func unitProduct() (*personalProduct, *fakeRoster, *fakeMemberships, *fakeManager, *fakeSeeder) {
 	roster := newFakeRoster()
 	memberships := newFakeMemberships()
-	manager := newFakeManager()
-	seeder := newFakeSeeder()
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	seeder := newFakeSeeder(grants)
 	return &personalProduct{
 		config:      personalConfig{Enabled: true},
 		roster:      roster,
@@ -293,12 +373,12 @@ func TestEnsureIsIdempotent(t *testing.T) {
 	if seeder.seed != 2 {
 		t.Errorf("the grants were seeded %d time(s), want once per ensure", seeder.seed)
 	}
-	grants := seeder.sets[string(wantID)][personalOwnerRole]
+	grants := seeder.grants.held(string(wantID), personalOwnerRole)
 	for _, want := range []authz.Grant{
-		{Resource: "objects", Action: "read"},
-		{Resource: "objects", Action: "write"},
+		{Resource: "object", Action: "read"},
+		{Resource: "object", Action: "write"},
 	} {
-		if _, held := grants[want]; !held {
+		if !slices.Contains(grants, want) {
 			t.Errorf("the owner role does not hold %+v; it holds %v", want, grants)
 		}
 	}
@@ -321,8 +401,8 @@ func TestEnsureCompletesAMidwayFailureOnTheNextCall(t *testing.T) {
 	if len(memberships.rows[unitAccount]) != 1 {
 		t.Errorf("the membership did not survive the failure")
 	}
-	if _, held := seeder.sets[wantID][personalOwnerRole]; held {
-		t.Errorf("the grants were seeded after the role write failed")
+	if held := seeder.grants.held(wantID, personalOwnerRole); len(held) != 0 {
+		t.Errorf("the grants were seeded after the role write failed: %v", held)
 	}
 
 	manager.putRoleErr = nil
@@ -339,9 +419,9 @@ func TestEnsureCompletesAMidwayFailureOnTheNextCall(t *testing.T) {
 	if len(manager.roles[wantID]) != 1 {
 		t.Errorf("the owner role is not there after the completing call")
 	}
-	if len(seeder.sets[wantID][personalOwnerRole]) != 2 {
-		t.Errorf("the owner role holds %d grant(s), want the two translated permissions",
-			len(seeder.sets[wantID][personalOwnerRole]))
+	if held := seeder.grants.held(wantID, personalOwnerRole); len(held) != 2 {
+		t.Errorf("the owner role holds %d grant(s), want the two allowlisted permissions: %v",
+			len(held), held)
 	}
 	if len(manager.bindings[wantID]) != 1 {
 		t.Errorf("the account is not bound after the completing call")
@@ -420,6 +500,375 @@ func TestTheDerivedIdentifierFitsTheRostersDomain(t *testing.T) {
 	}
 	if strings.ContainsAny(strings.TrimPrefix(string(id), personalIDPrefix), "@+ ") {
 		t.Errorf("the derived identifier carries personal data: %q", id)
+	}
+}
+
+// TestEnsureCatchesTheRosterSnapshotUp holds the read-back path after a create
+// the roster's table already held: the first Get reads a snapshot that predates
+// the row, EnterRegistered rereads the table, and the second Get finds it. The
+// call succeeds with created=false instead of answering 503.
+func TestEnsureCatchesTheRosterSnapshotUp(t *testing.T) {
+	product, roster, _, _, _ := unitProduct()
+	ctx := context.Background()
+	id := personalTenantID(unitAccount)
+	roster.rows[id] = tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusActive}
+	roster.lagging[id] = true
+
+	result, err := product.ensure(ctx, unitAccount)
+	if err != nil {
+		t.Fatalf("the ensure over a lagging snapshot failed: %v", err)
+	}
+	if result.Created {
+		t.Errorf("the ensure reports created=true, want false: the table already held the row")
+	}
+	if result.Tenant.ID != id {
+		t.Errorf("the ensure answered %q, want %q", result.Tenant.ID, id)
+	}
+	if roster.entered != 1 {
+		t.Errorf("the roster was caught up %d time(s), want once", roster.entered)
+	}
+}
+
+// TestEnsureKeepsAMembershipTheOperatorWrote holds the ensure's promise not to
+// overwrite an operator's decision: a membership row that exists is left as it
+// stands, whether it is suspended or active, and its source and SSO exemption
+// are not rewritten.
+func TestEnsureKeepsAMembershipTheOperatorWrote(t *testing.T) {
+	cases := []struct {
+		name       string
+		membership authn.Membership
+	}{
+		{
+			name: "suspended by an administrator",
+			membership: authn.Membership{
+				Account: unitAccount, Active: false, Source: "admin", SSOExempt: true,
+			},
+		},
+		{
+			name: "active with another source",
+			membership: authn.Membership{
+				Account: unitAccount, Active: true, Source: "invite", SSOExempt: true,
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			product, roster, memberships, manager, seeder := unitProduct()
+			id := personalTenantID(unitAccount)
+			roster.rows[id] = tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusActive}
+			want := tc.membership
+			want.Tenant = string(id)
+			memberships.rows[unitAccount] = []authn.Membership{want}
+
+			result, err := product.ensure(context.Background(), unitAccount)
+			if err != nil {
+				t.Fatalf("the ensure over an existing membership failed: %v", err)
+			}
+			if result.Created {
+				t.Errorf("the ensure reports created=true, want false")
+			}
+			if memberships.puts != 0 {
+				t.Errorf("the ensure wrote the membership %d time(s), want none", memberships.puts)
+			}
+			held := memberships.rows[unitAccount]
+			if len(held) != 1 || held[0] != want {
+				t.Errorf("the membership is %+v, want the operator's row %+v", held, want)
+			}
+			// The rest of the tenant is still completed.
+			if manager.putRole != 1 || manager.putBinding != 1 || seeder.seed != 1 {
+				t.Errorf("the ensure completed the rest %d role(s), %d binding(s), %d seeding(s), want one of each",
+					manager.putRole, manager.putBinding, seeder.seed)
+			}
+		})
+	}
+}
+
+// TestEnsureWritesNothingForADisabledTenant holds the withdrawal path: an
+// operator disables the personal tenant, and the ensure answers
+// tenant-unavailable while writing nothing at all.
+func TestEnsureWritesNothingForADisabledTenant(t *testing.T) {
+	product, roster, memberships, manager, seeder := unitProduct()
+	id := personalTenantID(unitAccount)
+	roster.rows[id] = tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusDisabled}
+
+	_, err := product.ensure(context.Background(), unitAccount)
+	if !errors.Is(err, errTenantUnavailable) {
+		t.Fatalf("the ensure over a disabled tenant gave %v, want errTenantUnavailable", err)
+	}
+	if memberships.puts != 0 || manager.putRole != 0 || manager.putBinding != 0 || seeder.seed != 0 {
+		t.Errorf("the ensure wrote %d membership(s), %d role(s), %d binding(s), %d seeding(s), want none",
+			memberships.puts, manager.putRole, manager.putBinding, seeder.seed)
+	}
+	if roster.rows[id].Status != tenant.StatusDisabled {
+		t.Errorf("the ensure changed the tenant's status to %v", roster.rows[id].Status)
+	}
+}
+
+// TestEnsureReadsBackThePersonalTenantBesideAnotherMembership holds the
+// eligibility rule for an account that already has its personal tenant and
+// later joined another one: the personal tenant is read back, and the call does
+// not answer already-member.
+func TestEnsureReadsBackThePersonalTenantBesideAnotherMembership(t *testing.T) {
+	product, _, memberships, _, _ := unitProduct()
+	ctx := context.Background()
+	first, err := product.ensure(ctx, unitAccount)
+	if err != nil {
+		t.Fatalf("the first ensure: %v", err)
+	}
+	memberships.rows[unitAccount] = append(memberships.rows[unitAccount],
+		authn.Membership{Account: unitAccount, Tenant: "beta", Active: true, Source: "invite"})
+
+	second, err := product.ensure(ctx, unitAccount)
+	if err != nil {
+		t.Fatalf("the ensure after joining another tenant failed: %v", err)
+	}
+	if second.Created || second.Tenant.ID != first.Tenant.ID {
+		t.Errorf("the second ensure answered %+v, want the same tenant %q and created=false",
+			second, first.Tenant.ID)
+	}
+}
+
+// TestEnsureConvergesTheOwnersGrantsToTheAllowlist holds the reconciliation an
+// older tenant gets: a grant outside the host's allowlist is revoked on the
+// next ensure, and the allowlist's own grants stay.
+func TestEnsureConvergesTheOwnersGrantsToTheAllowlist(t *testing.T) {
+	product, _, _, manager, seeder := unitProduct()
+	ctx := context.Background()
+	if _, err := product.ensure(ctx, unitAccount); err != nil {
+		t.Fatalf("the first ensure: %v", err)
+	}
+	id := string(personalTenantID(unitAccount))
+	extra := authz.Grant{Resource: "account", Action: "read"}
+	seeder.grants.mu.Lock()
+	seeder.grants.sets[id][personalOwnerRole][extra] = struct{}{}
+	seeder.grants.mu.Unlock()
+
+	if _, err := product.ensure(ctx, unitAccount); err != nil {
+		t.Fatalf("the second ensure: %v", err)
+	}
+	if manager.deleted != 1 {
+		t.Errorf("the ensure revoked %d grant(s), want the one outside the allowlist", manager.deleted)
+	}
+	held := seeder.grants.held(id, personalOwnerRole)
+	if len(held) != 2 {
+		t.Errorf("the owner role holds %v, want the allowlist's two grants", held)
+	}
+	if slices.Contains(held, extra) {
+		t.Errorf("the grant outside the allowlist survived: %v", held)
+	}
+}
+
+// TestTheEnsureRefusesAServiceAccount holds the account-kind refusal: a
+// client-secret identity is a non-interactive API client and gets no workspace,
+// and nothing is written for it.
+func TestTheEnsureRefusesAServiceAccount(t *testing.T) {
+	product, roster, memberships, manager, seeder := unitProduct()
+	ctx := authntest.Context(t, context.Background(),
+		authntest.WithAccount("svc-automation"),
+		authntest.WithMethods(authn.MethodClientSecret),
+	)
+	c, recorder := ginContext(ctx)
+	product.handleEnsure(c)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("a service account's ensure answered %d, want 403:\n%s", recorder.Code, recorder.Body.String())
+	}
+	if roster.creates != 0 || memberships.puts != 0 || manager.putRole != 0 ||
+		manager.putBinding != 0 || seeder.seed != 0 {
+		t.Errorf("the refused ensure wrote %d tenant(s), %d membership(s), %d role(s), %d binding(s), %d seeding(s)",
+			roster.creates, memberships.puts, manager.putRole, manager.putBinding, seeder.seed)
+	}
+}
+
+// TestTheEnsureAnswersAnIdentifierConflict409 holds the mapping of the two
+// states a retry cannot change: an alias another tenant holds, and a derived
+// identifier outside the roster's domain.
+func TestTheEnsureAnswersAnIdentifierConflict409(t *testing.T) {
+	t.Run("the alias is held by another tenant", func(t *testing.T) {
+		product, roster, _, _, _ := unitProduct()
+		roster.createErr = fmt.Errorf("%w: another tenant holds it", tenant.ErrAliasConflict)
+		ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
+		c, recorder := ginContext(ctx)
+		product.handleEnsure(c)
+		assertPersonalType(t, recorder, http.StatusConflict, identifierUnavailableCode)
+	})
+	t.Run("the derived identifier is outside the roster's domain", func(t *testing.T) {
+		product, _, _, _, _ := unitProduct()
+		_, err := product.ensure(context.Background(), authn.AccountID("outside the domain"))
+		if !errors.Is(err, errIdentifierUnavailable) {
+			t.Fatalf("the ensure gave %v, want errIdentifierUnavailable", err)
+		}
+	})
+}
+
+// TestTheEnsureAnswers401AndForbiddenCallers holds the two refusals the handler
+// makes before the ensure runs, and the refusal of a static-table subject.
+func TestTheEnsureAnswers401AndForbiddenCallers(t *testing.T) {
+	product, roster, memberships, manager, seeder := unitProduct()
+
+	c, recorder := ginContext(context.Background())
+	product.handleEnsure(c)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Errorf("an unauthenticated ensure answered %d, want 401", recorder.Code)
+	}
+
+	static := authntest.Context(t, context.Background(),
+		authntest.WithAccount("static.ops"),
+		authntest.WithBackend("static"),
+	)
+	c, recorder = ginContext(static)
+	product.handleEnsure(c)
+	if recorder.Code != http.StatusForbidden {
+		t.Errorf("a static subject's ensure answered %d, want 403", recorder.Code)
+	}
+	if roster.creates != 0 || memberships.puts != 0 || manager.putRole != 0 ||
+		manager.putBinding != 0 || seeder.seed != 0 {
+		t.Errorf("a refused ensure wrote something")
+	}
+}
+
+// TestTheEnsureAnswersADependencyFailure503WithoutTheCause holds the failure
+// mapping: a dependency error is a 503 whose body does not repeat the cause.
+func TestTheEnsureAnswersADependencyFailure503WithoutTheCause(t *testing.T) {
+	product, roster, _, _, _ := unitProduct()
+	roster.createErr = errors.New("the tenant table is unavailable")
+	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
+	c, recorder := ginContext(ctx)
+	product.handleEnsure(c)
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("a dependency failure answered %d, want 503:\n%s", recorder.Code, recorder.Body.String())
+	}
+	if strings.Contains(recorder.Body.String(), "the tenant table is unavailable") {
+		t.Errorf("the 503 body repeats the cause:\n%s", recorder.Body.String())
+	}
+}
+
+// assertPersonalType holds one 409's problem type.
+func assertPersonalType(t *testing.T, recorder *httptest.ResponseRecorder, status int, code string) {
+	t.Helper()
+	if recorder.Code != status {
+		t.Fatalf("the ensure answered %d, want %d:\n%s", recorder.Code, status, recorder.Body.String())
+	}
+	var problem struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("the answer is not JSON: %v\n%s", err, recorder.Body.String())
+	}
+	if want := personalProblemPrefix + code; problem.Type != want {
+		t.Errorf("the answer carries type %q, want %q", problem.Type, want)
+	}
+}
+
+// The stand-ins the wiring case hands the product. The registry resolves an
+// optional capability by what a module provides, so each one is a module of its
+// own supplying its instance.
+type stubEndpoint struct{ routes []string }
+
+func (e *stubEndpoint) Route(method, path string, _ ...gin.HandlerFunc) {
+	e.routes = append(e.routes, method+" "+path)
+}
+
+func (e *stubEndpoint) Use(speedhttp.Middleware) {}
+
+func (e *stubEndpoint) Accepting() bool { return true }
+
+type stubRouter struct{ endpoint *stubEndpoint }
+
+func (r *stubRouter) Endpoint(name string) (speedhttp.Endpoint, error) {
+	if name != personalEndpoint {
+		return nil, fmt.Errorf("%w: %q", speedhttp.ErrUnknownEndpoint, name)
+	}
+	return r.endpoint, nil
+}
+
+func (r *stubRouter) Endpoints() []string { return []string{personalEndpoint} }
+
+type stubGate struct{ impersonable []string }
+
+func (g *stubGate) Exempt(string, string, string)   {}
+func (g *stubGate) Optional(string, string, string) {}
+func (g *stubGate) Impersonable(endpoint, method, path string) {
+	g.impersonable = append(g.impersonable, endpoint+" "+method+" "+path)
+}
+
+type stubBoard struct{ posted []string }
+
+func (b *stubBoard) Post(module, name string) { b.posted = append(b.posted, module+" "+name) }
+
+// TestTheWireRegistersTheRouteTheGateAndTheFeature holds the three writes the
+// module makes when it is switched on: the route, the gateway's let-through for
+// an impersonating caller, and the conditional feature the frontend reads to
+// trigger the ensure.
+func TestTheWireRegistersTheRouteTheGateAndTheFeature(t *testing.T) {
+	reg := core.New()
+	reg.Register(core.Module{
+		Name:     "test.router",
+		Provides: []core.Provision{{Token: (*speedhttp.Router)(nil)}},
+	})
+	reg.Register(core.Module{
+		Name:     "test.gate",
+		Provides: []core.Provision{{Token: (*authn.Gate)(nil)}},
+	})
+	reg.Register(core.Module{
+		Name:     "test.board",
+		Provides: []core.Provision{{Token: (*feature.Board)(nil)}},
+	})
+	endpoint := &stubEndpoint{}
+	router := &stubRouter{endpoint: endpoint}
+	gate := &stubGate{}
+	board := &stubBoard{}
+	reg.Supply(router, "test.router")
+	reg.Supply(gate, "test.gate")
+	reg.Supply(board, "test.board")
+
+	product := &personalProduct{
+		config: personalConfig{Enabled: true},
+		logger: log.Default(),
+	}
+	if err := product.wire(reg); err != nil {
+		t.Fatalf("the wiring failed: %v", err)
+	}
+	if want := []string{http.MethodPost + " " + personalRoutePath}; !slices.Equal(endpoint.routes, want) {
+		t.Errorf("the endpoint carries %v, want %v", endpoint.routes, want)
+	}
+	if want := []string{personalEndpoint + " " + http.MethodPost + " " + personalRoutePath}; !slices.Equal(gate.impersonable, want) {
+		t.Errorf("the gateway was told %v, want %v", gate.impersonable, want)
+	}
+	if want := []string{personalModuleName + " " + personalFeature}; !slices.Equal(board.posted, want) {
+		t.Errorf("the board was told %v, want %v", board.posted, want)
+	}
+}
+
+// TestTheWireRegistersNothingWithTheSwitchOff holds the switch: nothing is
+// mounted and no feature is posted.
+func TestTheWireRegistersNothingWithTheSwitchOff(t *testing.T) {
+	reg := core.New()
+	reg.Register(core.Module{
+		Name:     "test.router",
+		Provides: []core.Provision{{Token: (*speedhttp.Router)(nil)}},
+	})
+	reg.Register(core.Module{
+		Name:     "test.gate",
+		Provides: []core.Provision{{Token: (*authn.Gate)(nil)}},
+	})
+	reg.Register(core.Module{
+		Name:     "test.board",
+		Provides: []core.Provision{{Token: (*feature.Board)(nil)}},
+	})
+	endpoint := &stubEndpoint{}
+	gate := &stubGate{}
+	board := &stubBoard{}
+	reg.Supply(&stubRouter{endpoint: endpoint}, "test.router")
+	reg.Supply(gate, "test.gate")
+	reg.Supply(board, "test.board")
+
+	product := &personalProduct{config: personalConfig{Enabled: false}, logger: log.Default()}
+	if err := product.wire(reg); err != nil {
+		t.Fatalf("the wiring with the switch off failed: %v", err)
+	}
+	if len(endpoint.routes) != 0 || len(gate.impersonable) != 0 || len(board.posted) != 0 {
+		t.Errorf("the switched-off module mounted %v, registered %v, posted %v",
+			endpoint.routes, gate.impersonable, board.posted)
 	}
 }
 
@@ -586,14 +1035,31 @@ func TestThePersonalTenantUnblocksTheObjectRoutes(t *testing.T) {
 			second, reply.Tenant.ID)
 	}
 
-	// The tenant's owner holds every declared permission, the object store's
-	// pair included: the tenant-scoped object routes work.
+	// The tenant's owner holds the host's allowlist, the object store's pair
+	// included: the tenant-scoped object routes work.
 	tenantHeaders := map[string]string{
 		"Authorization": "Bearer " + token,
 		"X-Tenant":      reply.Tenant.Alias,
 	}
 	if res := send(t, client, http.MethodGet, base+"/api/v1/objects", nil, tenantHeaders); res.status != http.StatusOK {
 		t.Fatalf("the object list after the ensure answered %d, want 200:\n%s", res.status, res.body)
+	}
+
+	// The conditional feature is posted while the route is mounted: it is what
+	// the frontend reads before it triggers the ensure.
+	features := send(t, client, http.MethodGet, base+"/features", nil, auth)
+	if features.status != http.StatusOK {
+		t.Fatalf("reading the feature document answered %d:\n%s", features.status, features.body)
+	}
+	var document struct {
+		Features []string `json:"features"`
+	}
+	if err := json.Unmarshal(features.body, &document); err != nil {
+		t.Fatalf("the feature document is not JSON: %v\n%s", err, features.body)
+	}
+	if !slices.Contains(document.Features, personalFeature) {
+		t.Errorf("the feature document with the switch on does not carry %q: %s",
+			personalFeature, features.body)
 	}
 
 	body := []byte("hello")
@@ -699,15 +1165,117 @@ func TestTheEnsureRefusesAnAccountOfAnotherTenant(t *testing.T) {
 	}
 }
 
+// TestTheOwnerHoldsTheAllowlistAndCannotManageTheTenant runs the authorization
+// consequence of the personal tenant through the program: the owner role holds
+// exactly the host's allowlist, and the account holding it is refused the
+// tenant's membership and invitation management, which every self-registered
+// account would otherwise wield in its own tenant.
+func TestTheOwnerHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
+	base, memberToken := personalServe(t, true)
+	client := &http.Client{Timeout: 10 * time.Second}
+	memberAuth := map[string]string{"Authorization": "Bearer " + memberToken}
+
+	ensured := send(t, client, http.MethodPost, base+personalRoutePath, nil, memberAuth)
+	if ensured.status != http.StatusOK {
+		t.Fatalf("the ensure answered %d, want 200:\n%s", ensured.status, ensured.body)
+	}
+	var reply personalCallReply
+	if err := json.Unmarshal(ensured.body, &reply); err != nil {
+		t.Fatalf("the ensure's answer is not JSON: %v\n%s", err, ensured.body)
+	}
+	personalID := reply.Tenant.ID
+
+	operatorToken := signIn(t, base, seedIdentifier, seedPassword)
+	operatorAuth := map[string]string{"Authorization": "Bearer " + operatorToken}
+
+	// The role's grants, read by the administrator through the policy surface,
+	// are the allowlist's two (object, action) pairs and nothing else.
+	grants := send(t, client, http.MethodGet,
+		base+"/authz/admin/tenants/"+personalID+"/roles/"+string(personalOwnerRole)+"/grants",
+		nil, operatorAuth)
+	if grants.status != http.StatusOK {
+		t.Fatalf("reading the owner role's grants answered %d:\n%s", grants.status, grants.body)
+	}
+	var listed struct {
+		Grants []struct {
+			Resource string `json:"resource"`
+			Action   string `json:"action"`
+		} `json:"grants"`
+	}
+	if err := json.Unmarshal(grants.body, &listed); err != nil {
+		t.Fatalf("the grant list is not JSON: %v\n%s", err, grants.body)
+	}
+	held := make(map[string]bool, len(listed.Grants))
+	for _, grant := range listed.Grants {
+		held[grant.Resource+"/"+grant.Action] = true
+	}
+	want := map[string]bool{"object/read": true, "object/write": true}
+	if len(held) != len(want) {
+		t.Errorf("the owner role holds %v, want exactly the allowlist %v", held, want)
+	}
+	for pair := range want {
+		if !held[pair] {
+			t.Errorf("the owner role does not hold the allowlisted %q; it holds %v", pair, held)
+		}
+	}
+
+	// The administrator's account identifier, to attempt a membership write
+	// that a tenant administrator would be allowed.
+	profile := send(t, client, http.MethodGet, base+"/auth/me", nil, operatorAuth)
+	if profile.status != http.StatusOK {
+		t.Fatalf("reading the administrator's profile answered %d:\n%s", profile.status, profile.body)
+	}
+	var who struct {
+		AccountID string `json:"account_id"`
+	}
+	if err := json.Unmarshal(profile.body, &who); err != nil || who.AccountID == "" {
+		t.Fatalf("reading the administrator's account identifier: %v\n%s", err, profile.body)
+	}
+
+	added := send(t, client, http.MethodPut,
+		base+"/auth/admin/tenants/"+personalID+"/members/"+who.AccountID,
+		map[string]any{"active": true}, memberAuth)
+	if added.status != http.StatusForbidden {
+		t.Errorf("the personal tenant's owner wrote a membership and answered %d, want 403:\n%s",
+			added.status, added.body)
+	}
+
+	invited := send(t, client, http.MethodPost,
+		base+"/auth/admin/tenants/"+personalID+"/invitations",
+		map[string]any{"email": "someone@example.test"}, memberAuth)
+	if invited.status != http.StatusForbidden {
+		t.Errorf("the personal tenant's owner issued an invitation and answered %d, want 403:\n%s",
+			invited.status, invited.body)
+	}
+}
+
 // TestThePersonalTenantRouteIsAbsentWithTheSwitchOff holds the switch: the
 // prefix stays claimed, and the route is not mounted, so an authenticated call
 // answers the entry point's 404.
 func TestThePersonalTenantRouteIsAbsentWithTheSwitchOff(t *testing.T) {
 	base, token := personalServe(t, false)
-	res := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodPost,
+	client := &http.Client{Timeout: 10 * time.Second}
+	res := send(t, client, http.MethodPost,
 		base+personalRoutePath, nil, map[string]string{"Authorization": "Bearer " + token})
 	if res.status != http.StatusNotFound {
 		t.Fatalf("the ensure with the switch off answered %d, want 404:\n%s", res.status, res.body)
+	}
+
+	// The conditional feature is not posted while the route is not mounted.
+	features := send(t, client, http.MethodGet, base+"/features", nil,
+		map[string]string{"Authorization": "Bearer " + token})
+	if features.status != http.StatusOK {
+		t.Fatalf("reading the feature document answered %d:\n%s", features.status, features.body)
+	}
+	var document struct {
+		Features []string `json:"features"`
+	}
+	if err := json.Unmarshal(features.body, &document); err != nil {
+		t.Fatalf("the feature document is not JSON: %v\n%s", err, features.body)
+	}
+	if slices.Contains(document.Features, personalFeature) {
+		t.Errorf("the feature document with the switch off carries %q: %s",
+			personalFeature, features.body)
 	}
 }
 

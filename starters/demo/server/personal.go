@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -43,6 +44,7 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
+	objectstoremeta "github.com/vislake/speed/pkg/objectstore/metadata"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -77,9 +79,27 @@ const personalEndpoint = "account"
 const personalIDPrefix = "personal-"
 
 // personalOwnerRole is the non-builtin role the ensure writes in the personal
-// tenant. It is the tenant's owner: every permission the process declares in
-// that tenant's domain, and nothing outside it.
+// tenant. It is the tenant's owner, holding the allowlist below and nothing
+// else.
 const personalOwnerRole = authz.Role("owner")
+
+// personalOwnerPermissions is the host-declared set of permissions the owner
+// role holds. It is the personal workspace's business surface: the object
+// store's two permissions today, and the notification surface declares no
+// permission point. The set is written out in code and not derived from the
+// process catalog, so a permission a module declares later does not join the
+// owner role on its own.
+//
+// The authentication module's tenant-level management actions are deliberately
+// absent — membership management, invitations, identity providers,
+// impersonation, client management and non-member admission are decided in the
+// tenant in the path, so granting them here would make every self-registered
+// account an administrator of its tenant, able to add any known account to it
+// and lock that account's own ensure out.
+var personalOwnerPermissions = []authz.Permission{
+	objectstoremeta.PermissionObjectRead,
+	objectstoremeta.PermissionObjectWrite,
+}
 
 // personalOwnerDescriptionKey is the description key written with the owner
 // role. It travels in the API answer wherever a role is listed; the demo renders
@@ -96,16 +116,35 @@ const personalMemberSource = "personal"
 const personalKind = "personal"
 
 // The problem types the module writes. A 403, a 401 and a 503 carry no type of
-// their own in this surface; the 409 does, because the frontend distinguishes it
-// from a dependency failure.
+// their own in this surface; the 409 does, because the frontend distinguishes
+// the refusals a retry cannot change from a dependency failure.
 const (
-	personalProblemPrefix = "urn:speed:workspace:"
-	alreadyMemberCode     = "already-member"
+	personalProblemPrefix     = "urn:speed:workspace:"
+	alreadyMemberCode         = "already-member"
+	tenantUnavailableCode     = "tenant-unavailable"
+	identifierUnavailableCode = "identifier-unavailable"
 )
 
-// errAlreadyMember is the ensure's own refusal of an account that belongs to
-// another tenant. It is not returned by a dependency and so carries no cause.
-var errAlreadyMember = errors.New("the account already has a membership outside its personal tenant")
+// The ensure's own refusals. None is returned by a dependency and so none
+// carries a cause.
+var (
+	// errAlreadyMember refuses an account with no personal tenant of its own
+	// that belongs to another tenant.
+	errAlreadyMember = errors.New("the account already has a membership outside its personal tenant")
+	// errTenantUnavailable refuses an account whose personal tenant row exists
+	// and is not enabled. The ensure then writes nothing, so disabling the
+	// tenant is how an operator withdraws a personal workspace.
+	errTenantUnavailable = errors.New("the personal tenant exists and is not enabled")
+	// errIdentifierUnavailable refuses an identifier or alias the personal
+	// tenant cannot take: the derived identifier is outside the roster's
+	// domain, or another tenant holds the alias. Retrying does not succeed.
+	errIdentifierUnavailable = errors.New("the personal tenant's identifier or alias is unavailable")
+	// errRosterLagging reports a row the create saw in the table and this
+	// replica's roster snapshot does not carry yet. It is the expected race
+	// between concurrent ensure calls and between replicas, and it is
+	// retryable.
+	errRosterLagging = errors.New("the roster's snapshot has not caught up with the tenant row")
+)
 
 //go:embed personal-openapi.json
 var personalFragment []byte
@@ -347,10 +386,12 @@ type personalResult struct {
 //
 // The caller has to be authenticated; the gateway has usually settled that, and
 // the check here is what answers a run whose account endpoint is unguarded. An
-// impersonating identity is a 403, a static-table subject is not an account and
-// is a 403, and an account that belongs to another tenant is the 409
-// already-member. Every dependency failure is a 503 that carries no part of the
-// result.
+// impersonating identity is a 403, a service account is a 403, a static-table
+// subject is not an account and is a 403, and an account that belongs to
+// another tenant is the 409 already-member. An account whose personal tenant is
+// not enabled is the 409 tenant-unavailable, and an identifier or alias the
+// tenant cannot take is the 409 identifier-unavailable. Every dependency
+// failure is a 503 that carries no part of the result.
 func (p *personalProduct) handleEnsure(c *gin.Context) {
 	ctx := c.Request.Context()
 	id, ok := authn.FromContext(ctx)
@@ -359,6 +400,13 @@ func (p *personalProduct) handleEnsure(c *gin.Context) {
 		return
 	}
 	if id.Impersonating() {
+		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusForbidden})
+		return
+	}
+	if slices.Contains(id.Methods(), authn.MethodClientSecret) {
+		// A service account authenticates only with its client secret, so the
+		// method is the account kind: a non-interactive API client is given
+		// tenant access by an administrator and gets no workspace of its own.
 		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusForbidden})
 		return
 	}
@@ -385,83 +433,105 @@ func (p *personalProduct) handleEnsure(c *gin.Context) {
 			Status: http.StatusConflict,
 			Type:   personalProblemPrefix + alreadyMemberCode,
 		})
+	case errors.Is(err, errTenantUnavailable):
+		p.logger.Warn(personalModuleName+": the personal tenant is not enabled",
+			"account", account.String(), "tenant", string(personalTenantID(account)), "cause", err.Error())
+		speedhttp.Fail(c, speedhttp.Problem{
+			Status: http.StatusConflict,
+			Type:   personalProblemPrefix + tenantUnavailableCode,
+		})
+	case errors.Is(err, errIdentifierUnavailable):
+		p.logger.Warn(personalModuleName+": the personal tenant's identifier is unavailable",
+			"account", account.String(), "tenant", string(personalTenantID(account)), "cause", err.Error())
+		speedhttp.Fail(c, speedhttp.Problem{
+			Status: http.StatusConflict,
+			Type:   personalProblemPrefix + identifierUnavailableCode,
+		})
+	case errors.Is(err, errRosterLagging):
+		// The expected race: another call or another replica wrote the row and
+		// this replica's snapshot has not caught up. It is retryable, not a
+		// failure of the run, so it is not an error-level record.
+		p.logger.Warn(personalModuleName+": the roster's snapshot lags the personal tenant row",
+			"account", account.String(), "tenant", string(personalTenantID(account)), "cause", err.Error())
+		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
 	default:
 		p.logger.Error(personalModuleName+": the personal tenant could not be ensured",
-			"cause", err.Error())
+			"account", account.String(), "tenant", string(personalTenantID(account)), "cause", err.Error())
 		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
 	}
 }
 
 // ensure checks and completes the five pieces of a personal tenant:
 //
-//  1. the tenant row (created, or read back when a concurrent call won the race),
+//  1. the tenant row (created, or read back when it already exists),
 //  2. the account's membership in it,
 //  3. the non-builtin owner role,
-//  4. the role's grants over every permission the process declares in the
-//     tenant's domain (the seeding surface is add-only, so a permission a module
-//     declares later joins on the next call),
+//  4. the owner role's grants, converged to the host's allowlist: the missing
+//     ones added, the ones outside it revoked,
 //  5. the account's binding to that role.
 //
 // Each step is idempotent, and a failure leaves the earlier steps in place for
-// the next call to complete. The eligibility check runs first: an account with a
-// membership outside its own personal tenant is refused and no tenant is
-// created.
+// the next call to complete. What the ensure does not do is rewrite a decision
+// an operator made: a membership row that exists is left as it stands, whatever
+// its state, and a tenant row that is not enabled is answered with a refusal
+// before anything is written.
+//
+// The eligibility check runs first. An account that already holds a membership
+// in its personal tenant reads that tenant back, whether or not it belongs to
+// other tenants too. An account with no personal membership and a membership
+// elsewhere is refused and no tenant is created.
 func (p *personalProduct) ensure(ctx context.Context, account authn.AccountID) (personalResult, error) {
 	personalID := personalTenantID(account)
 	// The roster admits an identifier without blanks or control characters and
 	// with no length bound; the account identifier's own domain is 1 to 64
-	// bytes of [A-Za-z0-9._-], so the derived string always fits and is never
-	// truncated.
+	// bytes of [A-Za-z0-9._-], so the derived string normally fits. A caller
+	// outside that domain is refused rather than retried.
 	if !tenant.IsIdentifier(string(personalID)) {
-		return personalResult{}, fmt.Errorf("the derived personal tenant identifier %q is outside the "+
-			"roster's domain", personalID)
+		return personalResult{}, fmt.Errorf("%w: the derived personal tenant identifier is outside "+
+			"the roster's domain", errIdentifierUnavailable)
 	}
 
 	memberships, err := p.memberships.Tenants(ctx, account)
 	if err != nil {
 		return personalResult{}, fmt.Errorf("reading the account's memberships: %w", err)
 	}
+	own, elsewhere := false, false
 	for _, membership := range memberships {
-		if membership.Tenant != string(personalID) {
-			return personalResult{}, errAlreadyMember
+		if membership.Tenant == string(personalID) {
+			own = true
+		} else {
+			elsewhere = true
 		}
 	}
+	if !own && elsewhere {
+		return personalResult{}, errAlreadyMember
+	}
 
-	record := tenant.Tenant{ID: personalID, Alias: string(personalID), Status: tenant.StatusActive}
+	var record tenant.Tenant
 	created := false
-	err = p.roster.Create(ctx, record)
-	switch {
-	case err == nil:
-		created = true
-	case errors.Is(err, tenant.ErrTenantExists):
-		// A concurrent call got there first. The deterministic identifier makes
-		// this the expected race, and the row is the answer.
-		held, found, readErr := p.roster.Get(ctx, personalID)
-		if readErr != nil {
-			return personalResult{}, fmt.Errorf("reading the personal tenant back: %w", readErr)
-		}
-		if !found {
-			return personalResult{}, fmt.Errorf("the personal tenant was reported as existing but "+
-				"could not be read back: %w", err)
-		}
-		record = held
-	case errors.Is(err, tenant.ErrAliasConflict):
-		// The alias is held by a tenant whose identifier is not the derived one.
-		// The deterministic pair therefore no longer names this account's
-		// personal tenant, and writing the rest against it would attach the
-		// account to someone else's row.
-		return personalResult{}, fmt.Errorf("the personal tenant alias is held by another tenant: %w", err)
-	default:
-		return personalResult{}, fmt.Errorf("registering the personal tenant: %w", err)
+	if own {
+		record, err = p.registeredTenant(ctx, personalID)
+	} else {
+		record, created, err = p.createTenant(ctx, personalID)
+	}
+	if err != nil {
+		return personalResult{}, err
+	}
+	if record.Status != tenant.StatusActive {
+		// A disabled tenant is the operator's decision. Nothing below runs, so
+		// the next ensure leaves the row and its policy as they are.
+		return personalResult{}, errTenantUnavailable
 	}
 
-	if err = p.memberships.Put(ctx, authn.Membership{
-		Account: account,
-		Tenant:  string(personalID),
-		Active:  true,
-		Source:  personalMemberSource,
-	}); err != nil {
-		return personalResult{}, fmt.Errorf("writing the membership: %w", err)
+	if !own {
+		if err = p.memberships.Put(ctx, authn.Membership{
+			Account: account,
+			Tenant:  string(personalID),
+			Active:  true,
+			Source:  personalMemberSource,
+		}); err != nil {
+			return personalResult{}, fmt.Errorf("writing the membership: %w", err)
+		}
 	}
 
 	roles, err := p.manager.Roles(ctx, string(personalID))
@@ -486,19 +556,8 @@ func (p *personalProduct) ensure(ctx context.Context, account authn.AccountID) (
 		}
 	}
 
-	grants := make([]authz.Grant, 0, len(p.catalog.Declared()))
-	for _, permission := range p.catalog.Declared() {
-		object, action, ok := p.catalog.ObjectAction(permission)
-		if !ok {
-			// A declared permission with no translation row. Nothing can be
-			// granted for it; the next call retries in case a module declares
-			// the row later.
-			continue
-		}
-		grants = append(grants, authz.Grant{Resource: object, Action: action})
-	}
-	if _, err = p.seeder.SeedGrants(ctx, string(personalID), personalOwnerRole, grants); err != nil {
-		return personalResult{}, fmt.Errorf("seeding the owner role's grants: %w", err)
+	if err = p.convergeOwnerGrants(ctx, string(personalID)); err != nil {
+		return personalResult{}, err
 	}
 
 	bindings, err := p.manager.BindingsOf(ctx, string(personalID), account.String())
@@ -524,6 +583,94 @@ func (p *personalProduct) ensure(ctx context.Context, account authn.AccountID) (
 	}
 
 	return personalResult{Tenant: record, Created: created}, nil
+}
+
+// registeredTenant reads the personal tenant's row back. The roster's Get reads
+// this replica's snapshot, which may predate another replica's registration or
+// this process's own commit, so EnterRegistered catches the snapshot up first:
+// it admits from the snapshot as it stands, reads the table only where the
+// snapshot would refuse, and brings a snapshot that is behind the table up to
+// it.
+func (p *personalProduct) registeredTenant(ctx context.Context, id tenant.ID) (tenant.Tenant, error) {
+	if _, enterErr := p.roster.EnterRegistered(ctx, id); enterErr != nil {
+		return tenant.Tenant{}, fmt.Errorf("catching the roster's snapshot up with the personal "+
+			"tenant: %w", enterErr)
+	}
+	held, found, err := p.roster.Get(ctx, id)
+	if err != nil {
+		return tenant.Tenant{}, fmt.Errorf("reading the personal tenant back: %w", err)
+	}
+	if !found {
+		return tenant.Tenant{}, fmt.Errorf("%w: identifier %q", errRosterLagging, id)
+	}
+	return held, nil
+}
+
+// createTenant registers the personal tenant. A row the roster's table already
+// holds is read back instead: the deterministic identifier makes that the
+// expected race between concurrent ensure calls, and the row is the answer.
+// An alias another tenant holds, or a write that fails, is returned as it
+// stands.
+func (p *personalProduct) createTenant(ctx context.Context, id tenant.ID) (tenant.Tenant, bool, error) {
+	record := tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusActive}
+	err := p.roster.Create(ctx, record)
+	switch {
+	case err == nil:
+		return record, true, nil
+	case errors.Is(err, tenant.ErrTenantExists):
+		held, readErr := p.registeredTenant(ctx, id)
+		return held, false, readErr
+	case errors.Is(err, tenant.ErrAliasConflict):
+		// The alias is held by a tenant whose identifier is not the derived
+		// one. The deterministic pair therefore no longer names this account's
+		// personal tenant, and writing the rest against it would attach the
+		// account to someone else's row.
+		return tenant.Tenant{}, false, fmt.Errorf("%w: the alias is held by another tenant: %w",
+			errIdentifierUnavailable, err)
+	default:
+		return tenant.Tenant{}, false, fmt.Errorf("registering the personal tenant: %w", err)
+	}
+}
+
+// convergeOwnerGrants brings the owner role's grants to the host's allowlist:
+// a grant outside it is revoked, and a missing one is added. The seeding
+// surface only adds, which is why the revocation reads the grants first.
+func (p *personalProduct) convergeOwnerGrants(ctx context.Context, tenantID string) error {
+	held, err := p.manager.Grants(ctx, tenantID, personalOwnerRole)
+	if err != nil {
+		return fmt.Errorf("reading the owner role's grants: %w", err)
+	}
+	allowed := make(map[authz.Grant]struct{}, len(personalOwnerPermissions))
+	grants := make([]authz.Grant, 0, len(personalOwnerPermissions))
+	for _, permission := range personalOwnerPermissions {
+		object, action, ok := p.catalog.ObjectAction(permission)
+		if !ok {
+			// The allowlist names a permission the process translation has no
+			// row for, so no grant row can express it. Nothing is written for
+			// it; the next call tries again in case a module adds the row.
+			continue
+		}
+		grant := authz.Grant{Resource: object, Action: action}
+		allowed[grant] = struct{}{}
+		grants = append(grants, grant)
+	}
+	for _, grant := range held {
+		if _, keep := allowed[authz.Grant{Resource: grant.Resource, Action: grant.Action}]; keep {
+			continue
+		}
+		if err := p.manager.DeleteGrant(ctx, authz.GrantRecord{
+			Tenant:   tenantID,
+			Role:     personalOwnerRole,
+			Resource: grant.Resource,
+			Action:   grant.Action,
+		}); err != nil {
+			return fmt.Errorf("revoking a grant outside the owner role's allowlist: %w", err)
+		}
+	}
+	if _, err := p.seeder.SeedGrants(ctx, tenantID, personalOwnerRole, grants); err != nil {
+		return fmt.Errorf("seeding the owner role's grants: %w", err)
+	}
+	return nil
 }
 
 // personalTenantID derives the tenant identifier and alias from the account.

@@ -6,15 +6,15 @@
       "post": {
         "operationId": "workspace.personal.ensure",
         "summary": "Ensure the caller's personal tenant exists and is complete",
-        "description": "Creates the caller's personal tenant on first call and completes its membership, owner role, grants and binding on every call. The tenant identifier and alias are derived from the account identifier; the answer names the tenant and whether this call created it.",
+        "description": "Creates the caller's personal tenant on first call and reads it back afterwards, completing its owner role and binding and converging the role's grants to the host's allowlist on every call. A membership row that exists is left as it stands, and a tenant that is not enabled is refused without a write. The tenant identifier and alias are derived from the account identifier; the answer names the tenant and whether this call created it.",
         "responses": {
           "200": {
             "description": "The personal tenant, complete; created says whether this call registered it",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkspacePersonalReply"}}}
           },
           "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller is impersonating, or is a static-table subject that cannot own a tenant", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "409": {"description": "The caller already belongs to a tenant other than its personal one", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating, is a service account, or is a static-table subject that cannot own a tenant", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The caller cannot have a personal tenant: it belongs to another tenant while holding none of its own (already-member), its personal tenant exists and is not enabled (tenant-unavailable), or the derived identifier or alias is unavailable (identifier-unavailable); the type field names which, and a retry does not change any of them", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "503": {"description": "A dependency could not answer; no part of the result is returned", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }

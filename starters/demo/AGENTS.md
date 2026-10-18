@@ -401,12 +401,19 @@ under `server/testdata/` names them:
   claimed `/workspace` prefix answers the account endpoint's 404. The route
   requires an authenticated caller, refuses an impersonating one 403 (it is
   registered `Impersonable` so the handler, not the gateway's default 401,
-  answers), refuses a caller that belongs to another tenant 409 `already-member`,
-  and otherwise ensures five idempotent pieces: the tenant row (identifier and
+  answers), refuses a service account or a static-credential principal 403,
+  reads back the caller's own personal tenant when that membership already
+  exists, refuses a caller that belongs to another tenant 409 `already-member`,
+  and otherwise ensures the idempotent pieces: the tenant row (identifier and
   alias both `personal-<account-id>`), the account's membership, a non-builtin
-  `owner` role, that role's grants over every declared permission in the tenant
-  domain, and the account's binding. A dependency failure is a 503 with no part
-  of the result. The frontend calls it from the tenant frame when an
+  `owner` role, that role's grants converged to the allowlist the host declares
+  (the object store's permissions; never the tenant domain's management
+  actions), and the account's binding. It never overwrites an operator's
+  decision: an existing membership is left alone, and a tenant row whose status
+  is not enabled answers 409 `tenant-unavailable` without writing anything. An
+  alias collision or a derived identifier outside the roster domain answers 409
+  `identifier-unavailable`. A dependency failure is a 503 with no part of the
+  result. The frontend calls it from the tenant frame when an
   authenticated, non-impersonating viewer has no current tenant and the feature
   is served; a registration completed through SMS lands on `/` (the tenant home)
   with a one-time setup notice, and without the feature it lands on
