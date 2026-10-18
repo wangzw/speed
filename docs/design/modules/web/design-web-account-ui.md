@@ -5,7 +5,7 @@
 `@speed/account-ui` 是一个 speed 前端已登录一方的账户管理组件族：一组节（section）组成宿主的账户页。账户自助写面归本包的理由见 [ADR-web-account-ui-selfservice-2026-10-16](../../../adr/adr-web-account-ui-selfservice-2026-10-16.md)。它交付下列面：
 
 - `ProfileSection`：账户显示名的编辑，读 `GET /auth/me` 取存下的值、写 `PATCH /auth/me` 提交单字段的修改，走账户档案的自写面（[authn-profile](../authn/design-authn-profile.md)）。
-- `PasswordSection`：改口令，走登录自助面的 `PUT /auth/password`（[authn 登录](../authn/design-authn-login.md)）。账户 `password_set` 为假（经提供方开户、无口令）时不显示当前口令字段，只给新口令两项；确认口令是客户端自己的校验，不上线。
+- `PasswordSection`：改口令，走登录自助面的 `PUT /auth/password`（[authn 登录](../authn/design-authn-login.md)）。账户 `password_set` 为假（经提供方开户、无口令）时不显示当前口令字段，只给新口令两项；确认口令是客户端自己的校验，不上线。账户没有可作登录名的标识（没有用户名也没有已验证邮箱）时，`PUT /auth/password` 答 409 `login-identifier-required`，口令节渲染这条码的文本，说明需要先添加用户名或已验证邮箱。
 - `PhoneSection`：添加或更换手机号的两步——`POST /auth/phone` 发送验证码、`POST /auth/phone/verify` 提交它；第二步只带验证码，号码是服务端按会话存下的（[authn 登录](../authn/design-authn-login.md)）。
 - `IdentifiersSection`：账户登录标识的列表、逐条删除与自助添加。标识读自 `GET /auth/me` 的 `identifiers` 字段（规格无独立的清单路由），删除走 `DELETE /auth/identifiers/{id}`。添加面走登录自助的 `POST /auth/identifiers`（体 `{kind, value}`，`kind` 取 `username` 或 `email`）：用户名一步写入；邮箱先发验证码、再经 `POST /auth/identifiers/verify` 提交码，通过才写标识（[authn 登录](../authn/design-authn-login.md)）。邮箱一项只在宿主经 `emailAvailable` 表明可用时出现在添加面里。
 - `PreferencesSection`：语言与时区两个下拉，编辑账户存下的偏好，走账户档案的自写面（`PATCH /auth/me`，[authn-profile](../authn/design-authn-profile.md)）。语言的取值集是 i18n 实例自己的受支持集；语言的选取先写账户、确认写入后再落设备（手选槽位），清空偏好只动账户；时区取值集是引擎的 IANA 列表加一个显式的「未选」。
@@ -203,6 +203,7 @@ sequenceDiagram
 |---|---|---|
 | 档案显示名节 | 已实现 | `web/packages/account-ui/src/ProfileSection.tsx` `ProfileSection` |
 | 口令节 | 已实现 | `web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection` |
+| `login-identifier-required` 的文本点名用户名或已验证邮箱 | 未实现 | — |
 | 手机号节 | 已实现 | `web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection` |
 | 登录标识节 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
 | 自助写的提权门控 | 已实现 | `web/packages/account-ui/src/internal/step-up-gate.ts` `useStepUpGate` |
