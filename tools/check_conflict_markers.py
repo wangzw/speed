@@ -23,8 +23,8 @@ that narrowing is a file whose sole residue is a bare `=======`; the
 benefit is that no document acquires a false finding by using a heading
 style this repository has so far not used.
 
-Everything tracked is in scope, the earlier implementations under `go/`
-and the generated site included: a marker left there is the same defect,
+Everything tracked is in scope, the generated site included: a marker
+left there is the same defect,
 and a gate whose subject is drawn by directory needs its rule restated
 every time the tree is rearranged. `node_modules` is skipped because it
 is a package manager's copy of someone else's files, and any file that

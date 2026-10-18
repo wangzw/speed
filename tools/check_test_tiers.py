@@ -58,11 +58,10 @@ import os
 import re
 import sys
 
-# The directories that are not this repository's own: the earlier
-# implementations, which `go.work` does not list and the Makefile does not
-# build, and the package manager's copy of someone else's files. A build
-# tag written in one of them is that tree's business.
-SKIPPED_DIRS = frozenset({"go", "web-legacy", "node_modules", ".git", ".claude"})
+# The directories that are not this repository's own code: the package
+# manager's copy of someone else's files, and the session directories that
+# carry no Go module of this repository.
+SKIPPED_DIRS = frozenset({"node_modules", ".git", ".claude"})
 
 # The prefixes Go reads a build constraint from. Both spellings are in
 # scope: the modern one the toolchain requires and the one it still reads

@@ -81,8 +81,8 @@ class InScopeTests(unittest.TestCase):
         # The corpus is the workspace. Prose in a tree no use directive
         # names is not checked, and the root guide's statement that no
         # command builds or checks those trees stays true.
-        self.assertFalse(m._in_scope("go/dbkit/AGENTS.md", ROSTER))
-        self.assertFalse(m._in_scope("go/dbkit/README.md", ROSTER))
+        self.assertFalse(m._in_scope("legacy/dbkit/AGENTS.md", ROSTER))
+        self.assertFalse(m._in_scope("legacy/dbkit/README.md", ROSTER))
         self.assertFalse(m._in_scope("web/packages/ui-kit/README.md", ROSTER))
         self.assertFalse(m._in_scope("starters/other-app/README.md", ROSTER))
 
@@ -90,14 +90,16 @@ class InScopeTests(unittest.TestCase):
         # The same path is in scope once the workspace lists the module it
         # lives in: adding a module registers its prose, and no list of
         # trees is maintained in the script.
-        self.assertTrue(m._in_scope("go/dbkit/AGENTS.md", ROSTER | {"go/dbkit"}))
+        self.assertTrue(
+            m._in_scope("legacy/dbkit/AGENTS.md", ROSTER | {"legacy/dbkit"})
+        )
 
     def test_documentation_tree_is_out_of_scope(self):
         # Design and decision documents sketch shapes under design; a
         # sketch that does not parse is normal there.
         self.assertFalse(m._in_scope("docs/adr/0001-something.md", ROSTER))
         self.assertFalse(m._in_scope("docs/design/modules/design-core.md", ROSTER))
-        self.assertFalse(m._in_scope("docs/internal/AGENTS.md", ROSTER))
+        self.assertFalse(m._in_scope("docs/site/AGENTS.md", ROSTER))
         self.assertFalse(m._in_scope("docs/internal/07-platform-services.md", ROSTER))
 
     def test_other_markdown_in_a_module_is_out_of_scope(self):
@@ -270,10 +272,10 @@ class ModuleDirsForBlockTests(unittest.TestCase):
     def test_import_outside_the_workspace_is_unresolved(self):
         # Nothing in the workspace provides it, and the script does not
         # guess a directory from the import path -- the caller reports it.
-        body = 'import "github.com/vislake/speed/go/pkgcore/i18n"\n'
+        body = 'import "github.com/vislake/speed/legacy/pkgcore/i18n"\n'
         self.assertEqual(
             m._module_dirs_for_block(body, ROSTER),
-            (set(), {"go/pkgcore/i18n"}),
+            (set(), {"legacy/pkgcore/i18n"}),
         )
 
     def test_longest_matching_module_wins(self):
@@ -439,7 +441,7 @@ class CheckCompleteBlockTests(unittest.TestCase):
             root = pathlib.Path(td)
             body = (
                 'package p\n\n'
-                'import "github.com/vislake/speed/go/dbkit"\n\n'
+                'import "github.com/vislake/speed/legacy/dbkit"\n\n'
                 'func F() { dbkit.Foo() }\n'
             )
             block = m.GoBlock(1, 5, body, False)
@@ -447,7 +449,7 @@ class CheckCompleteBlockTests(unittest.TestCase):
                 root, "fake.md", block, self.workspace, keep_temp=False
             )
         self.assertEqual(len(violations), 1)
-        self.assertIn("go/dbkit", violations[0])
+        self.assertIn("legacy/dbkit", violations[0])
         self.assertIn("go.work", violations[0])
 
     def test_roster_entry_without_a_module_is_reported(self):
@@ -512,7 +514,7 @@ class MainExitCodeTests(unittest.TestCase):
             self._tree(
                 pathlib.Path(td),
                 "# Fake\n\n```go\nnot go at all {{{ ]]]\n```\n",
-                rel="go/dbkit/AGENTS.md",
+                rel="legacy/dbkit/AGENTS.md",
             )
             rc = m.main(["--root", td])
         self.assertEqual(rc, 0)

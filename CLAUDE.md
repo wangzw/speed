@@ -17,7 +17,7 @@ restates nothing another file already carries:
 
 ## Language Rule (read this first)
 
-- **`docs/internal/**`, `docs/design/**`, `docs/adr/**` and `docs/glossary.md` are written in Chinese.** They hold design documents, decision records and the shared glossary.
+- **`docs/design/**`, `docs/adr/**` and `docs/glossary.md` are written in Chinese.** They hold design documents, decision records and the shared glossary.
 - **Everything else is English**: code comments, godoc/TSDoc, module docs, per-module `AGENTS.md` files, package READMEs, the root `README.md`, `.claude/skills/**`, commit messages, and GitHub Issues (titles, bodies, and comments — including the coding-flow role workflow).
 - User-facing product text is bilingual (zh-CN + en-US) and lives in i18n resources, never in code.
 
@@ -51,15 +51,14 @@ through `go.work` like every other.
 | `pkg/` | The implementation: one Go module. Each top-level directory under it is a capability directory, and each carries its own `AGENTS.md`. The shared units and their test fixtures live under `pkg/internal/`, each shared unit with an `AGENTS.md` of its own. |
 | `starters/` | Runnable, copyable product skeletons that assemble the modules into a running program; `starters/demo` is the starting point. |
 | `web/` | The frontend package library: the platform's deliverable npm packages, a pnpm workspace of its own. |
-| `web-legacy/` | The earlier implementation's frontend package library, kept whole as read-only history. |
 | `docs/design`, `docs/adr`, `docs/glossary.md` | The design authority. Chinese, per the language rule above. |
 | `tools/` | Repository self-checks. `tools/README.md` says what each one does. |
 | `Makefile`, `.mise.toml`, `.golangci.yml`, `.github/workflows/` | The engineering machinery: entry points, toolchain pins, lint configuration, CI. |
 | `compose.yaml` | The external backends the `integration`-tagged cases run against: PostgreSQL, Redis, NATS and memcached. The tests connect to it; it is the only thing that starts it. |
 | `.claude/skills/` | How the work is done. Each handbook's own description says what it covers; the ones that apply here are at the bottom of this file. |
-| `go/`, `docs/internal/`, `docs/site/` | An earlier implementation and its documentation. Nothing `make check` runs builds or checks them: every leg of it is scoped to the modules `go.work` lists. |
+| `docs/site/` | Documentation generated for the earlier implementation. Nothing `make check` runs builds or checks it. |
 
-**`go/`, `web-legacy/`, `docs/internal/` and `docs/site/` are legacy and out of scope by default.** They belong to the earlier implementation this repository is superseding — do not read, edit or reason about them for ordinary work here, and do not extend the language rule, the boundaries below, or `docs/design`/`docs/adr` authority to them. `docs/site/` was generated from that implementation and describes an assembly API this repository no longer has, so it is not a second opinion on anything `docs/design` settles. A task explicitly scoped to `go/` follows `backend-coding-standards` instead of this file; one scoped to `docs/internal/` or `docs/site/` follows whatever that legacy tree's own convention is, not `document-standards`; `web-legacy/` is the earlier implementation's frontend and keeps its own skill (`frontend-coding-standards`) rather than being called out again here.
+**`docs/site/` is legacy and out of scope by default.** It was generated from the implementation this repository superseded and describes an assembly API this repository no longer has, so it is not a second opinion on anything `docs/design` settles. Do not extend the language rule, the boundaries below, or `docs/design`/`docs/adr` authority to it, and do not read it for ordinary work here.
 
 ## Boundaries
 

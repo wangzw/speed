@@ -8,7 +8,7 @@
  * this package's handler -- the visible warning below by default, whatever
  * the host passes as onMissingKey otherwise. registerNamespace's parity and
  * coverage checks are the companion guarantee: keys cannot go missing in
- * one language while another has them. This mirrors go/pkgcore/i18n's
+ * one language while another has them. This mirrors pkg/i18n's
  * design (never let the underlying catalog silently fall back across
  * languages); see README.md's "Missing keys".
  */

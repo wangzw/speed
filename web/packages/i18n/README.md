@@ -4,7 +4,7 @@ The platform's i18n layer for web packages: one react-i18next-wrapped
 instance per host, a negotiated start language, per-package namespaces
 registered with parity and coverage validation, and a missing-key
 discipline with **no silent cross-language fallback** -- the frontend
-counterpart of `go/pkgcore/i18n`'s catalog. The MUI locale helper lives at
+counterpart of `pkg/i18n`'s catalog. The MUI locale helper lives at
 `@speed/i18n/mui-locale`.
 
 ## Language negotiation
@@ -250,10 +250,10 @@ Chinese UI with English locale text. It is identity-stable per language.
 
 ## Platform error copy (`./platform-errors`)
 
-The backend modules already publish their error text: each
-`go/*/locales/*.toml` key is an apperr code and its value is the message
-the backend renders for it. `tools/gen_platform_error_bundle.py` turns
-those catalogs into this package's one generated client bundle
+The backend modules already publish their error text: each catalog entry's
+key is an apperr code and its value is the message the backend renders for
+it. A generator turns those catalogs into this package's one generated
+client bundle
 (`src/platform-errors/locales/{zh-CN,en-US}.json`), a host registers it
 once at bootstrap, and the fallback namespace above makes it reachable
 from every package lookup:

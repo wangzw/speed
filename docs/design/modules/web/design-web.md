@@ -140,7 +140,7 @@ interface SpeedAppDefinition {
 
 **`api-sdk` 是唯一 import 后端契约的包**，它只依赖 `api-client` 的请求函数类型，本身不 import 任何 UI 包。**`api-client` 不依赖任何同族包**，也不认识 tenant。**能力 UI 包之间同层不互依赖**：`auth-ui` 与 `account-ui` 各自定义 provider 词表。**`route-kit` 与 `product-shell` 都不 import 对方**，两者由应用的组合层分别消费。
 
-**`billing-ui` 不在新树里。** 后端不做计费，对应的前端包随旧树留在 `web-legacy/`，不进本模块的包清单（[ADR-web-reuse-2026-10-15](../../../adr/adr-web-reuse-2026-10-15.md)）。
+**`billing-ui` 不在新树里。** 后端不做计费，对应的前端包随早期实现一并删除，不进本模块的包清单（[ADR-web-reuse-2026-10-15](../../../adr/adr-web-reuse-2026-10-15.md)）。
 
 ### 不经特性门控的后端模块
 

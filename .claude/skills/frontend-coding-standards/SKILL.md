@@ -22,7 +22,7 @@ globs:
 
 # speed Frontend Coding Standards
 
-**Scope: the `web/` tree** — the platform's frontend package library: a pnpm workspace whose `packages/*` publish as `@speed/*` into business projects. The frontend's own gates run from `web/` through `pnpm` (`pnpm -r lint | typecheck | test | build`, or `pnpm --filter @speed/<name> <script>`). (The earlier npm implementation is kept whole under `web-legacy/` as history; it is not built or checked, and this handbook does not govern it.)
+**Scope: the `web/` tree** — the platform's frontend package library: a pnpm workspace whose `packages/*` publish as `@speed/*` into business projects. The frontend's own gates run from `web/` through `pnpm` (`pnpm -r lint | typecheck | test | build`, or `pnpm --filter @speed/<name> <script>`).
 
 **Coding rules here, design conclusions in `docs/design/modules/web/`.** The design documents (Chinese) are the authority for the shape — package layering and its criteria, the contract boundary, the assembly/content split, the extension points, the stability promises. This handbook is the authority for how the code is written. It does not restate a design conclusion: where it needs one it names the document. When the two disagree, fix whichever is stale — do not let them drift into two accounts of the same thing.
 

@@ -1,5 +1,5 @@
 /**
- * Namespace registration: the counterpart of go/pkgcore/i18n's
+ * Namespace registration: the counterpart of pkg/i18n's
  * Builder.AddModule. One namespace per package, registered once per
  * instance, validated completely before anything is added.
  *

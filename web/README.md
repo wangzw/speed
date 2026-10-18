@@ -6,20 +6,6 @@ also carries two private members: the shared test-support package
 `web/test-utils/` and the demo starter's web host `starters/demo/web/`
 (see `web/pnpm-workspace.yaml`).
 
-## web-legacy/ — the earlier implementation
-
-`web-legacy/` is the **earlier** frontend implementation. It is kept
-whole and permanently, under version control, as a complete backup of the
-npm side as it stood before this package library was rebuilt — the same
-standing that `go/`, `docs/internal/` and `docs/site/` hold for the Go
-half. It is a sibling of `web/`, not an ancestor of it: the new library
-was seeded from `web-legacy/packages/` but the two are independent trees
-from here on (the workspace root files were rewritten, not inherited).
-
-Nothing in the repo's checks builds or verifies `web-legacy/`; like the
-other legacy trees, it is read-only history — do not edit it, and do not
-treat it as a second opinion on anything `docs/design` settles.
-
 ## Why web/ is its own workspace root
 
 The repo root is a Go workspace (`go.work` + one module per directory under

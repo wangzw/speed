@@ -52,7 +52,7 @@ Follows [Conventional Commits](https://www.conventionalcommits.org/); the conven
 
 ### Go packages under `pkg/`
 
-The scope is the capability directory under `pkg/` the change belongs to: `pkg/core` commits under `core`, and `pkg/tenant/catalog` commits under `tenant` -- the capability directory, never a subpackage. A change inside `pkg/internal/` commits under the shared unit it belongs to: `pkg/internal/pgpool/pgtest` commits under `pgpool`, and `pkg/internal/natstest` under `natstest`. The membership authority is the set of those directories: read the directory rather than a list here, which would go stale. A commit inside the earlier implementation under `go/` takes the directory name there the same way, even though `go.work` does not list it.
+The scope is the capability directory under `pkg/` the change belongs to: `pkg/core` commits under `core`, and `pkg/tenant/catalog` commits under `tenant` -- the capability directory, never a subpackage. A change inside `pkg/internal/` commits under the shared unit it belongs to: `pkg/internal/pgpool/pgtest` commits under `pgpool`, and `pkg/internal/natstest` under `natstest`. The membership authority is the set of those directories: read the directory rather than a list here, which would go stale.
 
 ### Frontend npm packages (`web/packages/<scope>/`)
 

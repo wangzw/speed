@@ -300,9 +300,10 @@ renders a cap at its declared width.
 - **No in-workspace host wires uploads over the generated storage
   operations** — the storage operations are generated into
   `@speed/api-sdk` from the merged document, which carries
-  `go/storage`'s fragment like every platform module's, so a host's
-  upload code can pair with `FileUploader`; no consumer page does
+  `pkg/objectstore/metadata`'s fragment like every platform module's, so a
+  host's upload code can pair with `FileUploader`; no consumer page does
   so yet, and this package ships no transport either way. The wire
-  contract's authority is `go/storage/api/openapi.yaml` itself; the
-  gap is recorded in `go/storage/AGENTS.md` and the generation
-  config's header comment as well, so no single doc owns the claim.
+  contract's authority is
+  `pkg/objectstore/metadata/openapi/metadata.json` itself; the gap is
+  recorded in `pkg/objectstore/AGENTS.md` and the generation config's
+  header comment as well, so no single doc owns the claim.

@@ -6,9 +6,9 @@
 
 ## 背景
 
-早先的实现 `go/rbac` 与其文档成文否决了 Casbin，否决给出的理由落在存储、适配器与引擎上。存储一侧：官方 `casbin_rule` 表没有 `tenant_id` 列，租户藏在策略串（domain）里，于是全产品最安全敏感的一张表会同时退出租户隔离——GORM 插件注入不到过滤条件、用不了 `Repository[T]`、Postgres 行级安全策略以 `tenant_id` 列为准而无从下手，`tenancytest.AssertIsolated` 对它跑不起来。适配器一侧：官方 `gorm-adapter` 自己持有 `*gorm.DB` 并自行发查询，正是本仓库数据规则禁止的裸访问形态，且默认 `AutoMigrate`。引擎一侧的价值判断：Casbin 的可插拔 `model.conf`、ABAC、RESTful matcher 在那个设计里用不上，判定链就是 `subject → bindings → role → permissions` 加一次物化路径前缀判断。
+早先的实现与其文档成文否决了 Casbin，否决给出的理由落在存储、适配器与引擎上。存储一侧：官方 `casbin_rule` 表没有 `tenant_id` 列，租户藏在策略串（domain）里，于是全产品最安全敏感的一张表会同时退出租户隔离——GORM 插件注入不到过滤条件、用不了 `Repository[T]`、Postgres 行级安全策略以 `tenant_id` 列为准而无从下手，`tenancytest.AssertIsolated` 对它跑不起来。适配器一侧：官方 `gorm-adapter` 自己持有 `*gorm.DB` 并自行发查询，正是本仓库数据规则禁止的裸访问形态，且默认 `AutoMigrate`。引擎一侧的价值判断：Casbin 的可插拔 `model.conf`、ABAC、RESTful matcher 在那个设计里用不上，判定链就是 `subject → bindings → role → permissions` 加一次物化路径前缀判断。
 
-本设计为授权选择引擎与存储（[ADR-authz-engine-2026-10-12](adr-authz-engine-2026-10-12.md)、[ADR-authz-store-2026-10-12](adr-authz-store-2026-10-12.md)），结论是采纳 Casbin 引擎、经自写薄适配器落到带真实 `tenant_id` 列的表上。这与旧树的结论直接冲突：旧树说的是「不用 Casbin」。旧树仍在仓库里，`docs/internal/05-identity-and-access.md` 与站点 rbac 页把「不用 Casbin」写成了明确的否定结论，读者会把它当作现行设计。
+本设计为授权选择引擎与存储（[ADR-authz-engine-2026-10-12](adr-authz-engine-2026-10-12.md)、[ADR-authz-store-2026-10-12](adr-authz-store-2026-10-12.md)），结论是采纳 Casbin 引擎、经自写薄适配器落到带真实 `tenant_id` 列的表上。这与旧树的结论直接冲突：旧树说的是「不用 Casbin」。旧树的代码与内部文档已随早期实现一并删除，站点 rbac 页仍把「不用 Casbin」写成明确的否定结论，读者可能把它当作现行设计。
 
 ## 考虑过的选项
 
@@ -56,5 +56,5 @@
 ## 失效条件
 
 - 若出现需要自定义判定语言的宿主（可插拔 `model.conf`、ABAC、RESTful matcher、通配权限），「模型文本固定在代码里、宿主只写策略数据」成为阻碍，本记录对旧树价值判断那条理由的处置（承认它、接受为代价）需要重新裁定。
-- 若仓库移除旧树（`go/`、`docs/internal/`、`docs/site/`），指引行的落点消失，取代关系需要新的承载。
+- 若仓库移除旧树（`go/`、`docs/internal/`、`docs/site/`），指引行的落点消失，取代关系需要新的承载。（2026-10-18：`go/` 与 `docs/internal/` 已删除；`docs/site/` 仍在但只作历史留存。取代关系此后只由本记录承载。）
 - 若官方 `casbin/gorm-adapter` 改为能接入本仓库的句柄、插件与租户过滤同一条路，且仍带真实租户列，自写薄适配器的必要性需要重新比较（[ADR-authz-store-2026-10-12](adr-authz-store-2026-10-12.md) 记有同一条件的失效面）。

@@ -4,7 +4,7 @@
  * namespace (namespace fallback, never language fallback), persistence
  * semantics, and the end-to-end proof that a missing key in the loaded
  * language never renders another language's text (the no-silent-fallback
- * analogue of go/pkgcore/i18n, whose catalog never falls back across
+ * analogue of pkg/i18n, whose catalog never falls back across
  * languages).
  *
  * CJK assertions compare against the imported fixtures; no language

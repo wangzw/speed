@@ -4,7 +4,7 @@
  * One react-i18next-wrapped instance per host, negotiated start language,
  * per-package namespaces registered with parity and coverage validation,
  * and a missing-key discipline with no silent cross-language fallback
- * (mirroring go/pkgcore/i18n). See README.md for the design; the MUI
+ * (mirroring pkg/i18n). See README.md for the design; the MUI
  * localization helper lives at @speed/i18n/mui-locale.
  *
  * The react bindings (I18nextProvider, useTranslation) are re-exported

@@ -146,7 +146,7 @@ const KNOWN_PROVIDERS = new Set<string>([
 ])
 
 /**
- * The enterprise-SSO provider family prefix: go/authn stores each
+ * The enterprise-SSO provider family prefix: pkg/authn stores each
  * tenant's enterprise connection binding under the per-tenant provider
  * name "oidc:<tenant>", so the value set is dynamic -- enumeration can
  * never suffice. A provider value carrying this prefix renders the

@@ -17,7 +17,7 @@ error-code text convention the error surfaces resolve through
 It wraps react-i18next/i18next and adds the platform's discipline on top:
 pinned supported-language sets, per-language coverage, key-set parity, and
 missing keys that warn and render as the key -- never another language's
-text. That discipline mirrors `go/pkgcore/i18n` (see the Go module's
+text. That discipline mirrors `pkg/i18n` (see that module's
 catalog) and is non-negotiable here.
 
 ## Non-negotiable rules

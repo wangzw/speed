@@ -482,7 +482,7 @@ def check_complete_block(
         # working tree regardless of GOPROXY (replace always wins over the
         # proxy), so GOPROXY=off buys nothing for that goal -- it only blocks
         # `go mod tidy` from fetching real third-party transitive
-        # dependencies (e.g. go/pkgcore pulls in BurntSushi/toml,
+        # dependencies (e.g. a platform module pulls in BurntSushi/toml,
         # nicksnyder/go-i18n, golang.org/x/text, go-redis, minio-go) on a
         # cold module cache, which would misreport an infrastructure/network
         # problem as a documentation bug.

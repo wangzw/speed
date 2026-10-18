@@ -14,7 +14,7 @@
 
 本仓的既有做法是把成熟库桥接进来而不重复发明，例如：命令行与配置的解析委托给成熟库（[ADR-config-parsing-2026-09-20](adr-config-parsing-2026-09-20.md)），入口模块的登记面锚定 gin（[ADR-http-surface-2026-09-14](adr-http-surface-2026-09-14.md)），遥测模块装配上游 SDK 的 provider（[ADR-observability-library-2026-09-22](adr-observability-library-2026-09-22.md)）。匹配求值与模型解析属于同一类可桥接的能力。
 
-旧实现 `go/rbac` 自研了一套判定引擎，其适用范围止于 `resource:action` 的精确匹配加一次物化路径前缀判断。Casbin 提供可插拔的模型文本、ABAC 谓词与 RESTful matcher：这些能力在本模型里用不上，但其中「判定语言可由一份策略模型表达」是宿主可能需要用到的扩展面。
+早期实现自研了一套判定引擎，其适用范围止于 `resource:action` 的精确匹配加一次物化路径前缀判断。Casbin 提供可插拔的模型文本、ABAC 谓词与 RESTful matcher：这些能力在本模型里用不上，但其中「判定语言可由一份策略模型表达」是宿主可能需要用到的扩展面。
 
 ## 考虑过的选项
 

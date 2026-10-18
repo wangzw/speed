@@ -3,8 +3,7 @@
  *
  * The bundle is the client-side text for every backend apperr code whose
  * module publishes a catalog entry, generated mechanically from the same
- * locales/*.toml catalogs the backend renders from
- * (tools/gen_platform_error_bundle.py); it is not hand-maintained, and
+ * locales catalogs the backend renders from; it is not hand-maintained, and
  * backend-only content (invitation emails, notification templates, SMS
  * bodies, seed copy) has no code to be looked up with and is therefore
  * absent by construction. Keys are the `errors` section the packages'
