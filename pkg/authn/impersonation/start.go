@@ -341,6 +341,11 @@ func (m *product) refuse(ctx context.Context, actor authn.Identity, r authn.Impe
 // module's table: it calls neither audit.Record nor Bus.Publish. A valid record
 // left on the session makes the insert break the partial unique index, which the
 // caller reads as ErrImpersonationActive.
+//
+// The lapse the transaction writes is remembered and announced only after the
+// transaction commits: the caller that wins the conditional update counts the
+// end and publishes its event, while a transaction that rolls back counted and
+// announced nothing.
 func (m *product) record(ctx context.Context, actor authn.Identity, r authn.ImpersonationRequest, ttl time.Duration, grantID string, now time.Time) (authn.ImpersonationGrant, error) {
 	g := authn.ImpersonationGrant{
 		ID:        grantID,
@@ -352,6 +357,7 @@ func (m *product) record(ctx context.Context, actor authn.Identity, r authn.Impe
 		StartedAt: now,
 		EndsAt:    now.Add(ttl),
 	}
+	var settled *authn.ImpersonationGrant
 	err := m.store.session(ctx).Transaction(func(tx *gorm.DB) error {
 		prior, found, err := m.store.unendedForSessionTx(tx, actor.Session())
 		if err != nil {
@@ -363,8 +369,14 @@ func (m *product) record(ctx context.Context, actor authn.Identity, r authn.Impe
 				return err
 			}
 			if lapsed {
-				if _, err := m.store.endTx(tx, prior.ID, "", reason, now); err != nil {
+				won, err := m.store.endTx(tx, prior.ID, "", reason, now)
+				if err != nil {
 					return err
+				}
+				if won {
+					prior.EndedAt = now
+					prior.EndReason = reason
+					settled = &prior
 				}
 			}
 		}
@@ -372,6 +384,10 @@ func (m *product) record(ctx context.Context, actor authn.Identity, r authn.Impe
 	})
 	if err != nil {
 		return authn.ImpersonationGrant{}, err
+	}
+	if settled != nil {
+		m.recordSession(ctx, outcomeEnded)
+		m.publishEnded(ctx, *settled)
 	}
 	return g, nil
 }

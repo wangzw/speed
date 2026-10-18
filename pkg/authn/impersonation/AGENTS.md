@@ -37,15 +37,18 @@ The API is the package's godoc.
   ending the record with the reason `start-failed`. `End` never touches a
   carrier: the handler clears the marker, and the path that revokes an
   impersonation token has no cookie at all.
-- **A lapse is a read, written back once.** `Active`, `List` and `Revoke`
-  share one judgement (`active.go` `judge`, `settle`). `Active` is what the
-  session and token backends ask; `List` settles every unended record on the
+- **A lapse is a read, written back once.** `Active`, `Start`, `List` and
+  `Revoke` share one judgement (`active.go` `judge`, `settle`). `Active` is
+  what the session and token backends ask; `Start` judges the session's
+  unended record inside its record transaction and writes a lapse back there
+  before inserting the new record; `List` settles every unended record on the
   page before it returns and returns the page as persisted; `Revoke` settles
   the record before it writes `revoked`, so a record that has already lapsed
   ends with its own reason and the revoke is a no-op. `Get` does not judge. A
   record that has lapsed is written back with a conditional update, and the
-  caller that changes the row publishes the ended event and counts the end. An
-  expiry publishes nothing.
+  caller that changes the row publishes the ended event and counts the end;
+  `Start` does both only after its transaction commits, and a rolled-back
+  transaction neither publishes nor counts. An expiry publishes nothing.
 - **The management paths read the session from the store.** `List` and `Revoke`
   judge the bound session with `Sessions.StatusFresh`, so an administrator sees
   and revokes against the store rather than against what a verifying backend
