@@ -420,6 +420,7 @@ func (a *recordingAudit) entries() []audit.Entry {
 
 // fakeDecider answers a decision a case scripts.
 type fakeDecider struct {
+	mu    sync.Mutex
 	allow bool
 	err   error
 	panic bool
@@ -427,27 +428,33 @@ type fakeDecider struct {
 }
 
 func (d *fakeDecider) Decide(_ context.Context, dec authn.Decision) (bool, error) {
+	d.mu.Lock()
 	d.calls = append(d.calls, dec)
-	if d.panic {
+	allow, err, panics := d.allow, d.err, d.panic
+	d.mu.Unlock()
+	if panics {
 		panic("the decider panicked")
 	}
-	return d.allow, d.err
+	return allow, err
 }
 
 // fakeTokens signs a token a case reads back.
 type fakeTokens struct {
 	authn.Tokens
+	mu      sync.Mutex
 	err     error
 	issued  []authn.IssueToken
 	expires time.Time
 }
 
 func (f *fakeTokens) Issue(_ context.Context, in authn.IssueToken) (authn.AccessToken, error) {
+	f.mu.Lock()
 	f.issued = append(f.issued, in)
-	if f.err != nil {
-		return authn.AccessToken{}, f.err
+	err, expires := f.err, f.expires
+	f.mu.Unlock()
+	if err != nil {
+		return authn.AccessToken{}, err
 	}
-	expires := f.expires
 	if expires.IsZero() {
 		expires = base.Add(in.TTL)
 	}
