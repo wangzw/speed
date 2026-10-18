@@ -199,15 +199,14 @@ function StepUpFlow({
   // server-side banner, and starting an answer clears it.
   const [ceremonyError, setCeremonyError] = useState<string | null>(null)
 
-  // Closing the dialog or restarting unmounts this driver. Abandon the
-  // flow so no stale binding lingers on the server, as the shared hook
-  // does when its active flag turns false. `abandonFlow` treats an
-  // already-gone flow as the same success.
+  // Closing the dialog or restarting unmounts this driver. Releasing the
+  // flow belongs to the shared hook, which abandons a flow it opened and
+  // has not seen settle -- a refused start or a settled elevation leaves
+  // nothing to release. This driver only drops a reply that outlives it.
   useEffect(() => {
     mounted.current = true
     return () => {
       mounted.current = false
-      void session.abandonFlow().catch(() => undefined)
     }
   }, [session])
 

@@ -14,12 +14,15 @@
  *
  * The challenge is controlled by `active`: while it is false the hook
  * does nothing -- a flow this mount opened and left open is abandoned on
- * the way out, so a stale binding never lingers. A mount that opened no
- * flow (its `active` never turned true) sends no abandon request at all,
- * because there is no binding to release; nor does a flow that already
- * settled, which the server has consumed. When `active` turns true the
- * hook starts one `purpose: 'step-up'` flow on the session and parks on
- * its first step. Each `answer` forwards one step's input; a reply that
+ * the way out, so a stale binding never lingers. Unmounting is the same
+ * departure: a caller whose surface goes away instead of closing (a
+ * dialog that renders nothing while closed, a restart that remounts the
+ * driver) gets the same release without a cleanup of its own. A mount
+ * that opened no flow (its `active` never turned true) sends no abandon
+ * request at all, because there is no binding to release; nor does a
+ * flow that already settled, which the server has consumed. When
+ * `active` turns true the hook starts one `purpose: 'step-up'` flow on
+ * the session and parks on its first step. Each `answer` forwards one step's input; a reply that
  * settles the elevation -- `state: 'elevated'` for a token-delivered
  * session, the login-shaped `state: 'authenticated'` (the cookie
  * rotated) for the cookie-delivered one -- is the completion the caller
@@ -148,6 +151,14 @@ export function useStepUp(
   // would send a request for a binding that never existed -- a mount that
   // stays closed opened no flow.
   const openRef = useRef(false)
+  // The unmount release is deferred by one microtask, so a remount in the
+  // same commit cancels it (see the release effect below). The flag is the
+  // pending release.
+  const releasePendingRef = useRef(false)
+  // The session the release targets, read through a ref so the cleanup
+  // below needs no dependency and never re-registers.
+  const sessionRef = useRef(session)
+  sessionRef.current = session
 
   useEffect(() => {
     if (!active) {
@@ -201,6 +212,32 @@ export function useStepUp(
       }
     })()
   }, [active, session, method])
+
+  // Unmounting is a departure like `active` turning false: a flow this
+  // mount opened and has not seen settle is released, so no stale binding
+  // lingers on the server; a refused start or a settled flow has nothing
+  // to release. The release waits one microtask so StrictMode's double
+  // effect invocation -- a cleanup immediately followed by a remount,
+  // both in the same task -- cancels it in the remount's own setup: the
+  // flow the remounted hook starts is the one that must live, and a
+  // DELETE sent while that start is in flight would race it.
+  useEffect(() => {
+    releasePendingRef.current = false
+    return () => {
+      if (!openRef.current) {
+        return
+      }
+      releasePendingRef.current = true
+      void Promise.resolve().then(() => {
+        if (!releasePendingRef.current) {
+          return
+        }
+        releasePendingRef.current = false
+        openRef.current = false
+        void sessionRef.current.abandonFlow().catch(() => undefined)
+      })
+    }
+  }, [])
 
   function settle(state: AuthnFlowState): void {
     if ('next' in state) {

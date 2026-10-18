@@ -8,6 +8,8 @@
  * callback.
  */
 
+import { StrictMode } from 'react'
+import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import {
@@ -78,6 +80,95 @@ describe('useStepUp', () => {
     const { session, calls } = makeCookieHarness({})
     renderHook(() => useStepUp(session, false, () => undefined))
     expect(calls).toEqual([])
+  })
+
+  it('abandons exactly once when the surface unmounts with its flow still open', async () => {
+    // A surface may unmount instead of turning `active` false: the
+    // console's StepUpChallenge renders nothing while closed, and a
+    // restart remounts its driver. The flow this mount opened and left
+    // open is released on the way out.
+    const { session, calls } = makeCookieHarness({
+      [LOGIN_START_AUTHENTICATED]: () =>
+        openFlow({
+          next: { kind: 'factor', factors: [{ id: 'f1', kind: 'totp' }] },
+        }),
+      [LOGIN_ABANDON]: () => ({}),
+    })
+    const { result, unmount } = renderHook(() =>
+      useStepUp(session, true, () => undefined),
+    )
+    await waitFor(() => {
+      expect(result.current.phase).toBe('step')
+    })
+    expect(abandons(calls)).toHaveLength(0)
+
+    unmount()
+    await waitFor(() => {
+      expect(abandons(calls)).toHaveLength(1)
+    })
+  })
+
+  it('sends no abandon when a settled flow unmounts', async () => {
+    // The server consumed the settled flow; unmounting afterwards has no
+    // binding to release.
+    const { session, calls } = makeCookieHarness({
+      [LOGIN_START_AUTHENTICATED]: () =>
+        openFlow({
+          next: { kind: 'factor', factors: [{ id: 'f1', kind: 'totp' }] },
+        }),
+      [LOGIN_ANSWER]: () => sessionCompletion(),
+      [LOGIN_ABANDON]: () => ({}),
+    })
+    const { result, unmount } = renderHook(() =>
+      useStepUp(session, true, () => undefined),
+    )
+    await waitFor(() => {
+      expect(result.current.phase).toBe('step')
+    })
+    act(() => {
+      result.current.answer({ step: 'factor', input: { factor: 'f1' } })
+    })
+    await waitFor(() => {
+      expect(result.current.phase).toBe('elevated')
+    })
+
+    unmount()
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(abandons(calls)).toHaveLength(0)
+  })
+
+  it('sends no abandon when StrictMode remounts the effect', async () => {
+    // The development double effect invocation cleans up and remounts in
+    // the same task. The deferred release is cancelled by the remount's
+    // setup, so opening a challenge never sends a DELETE of its own.
+    const { session, calls } = makeCookieHarness({
+      [LOGIN_START_AUTHENTICATED]: () =>
+        openFlow({
+          next: { kind: 'factor', factors: [{ id: 'f1', kind: 'totp' }] },
+        }),
+      [LOGIN_ABANDON]: () => ({}),
+    })
+    const wrapper = ({ children }: { readonly children: ReactNode }) => (
+      <StrictMode>{children}</StrictMode>
+    )
+    const { result, unmount } = renderHook(
+      () => useStepUp(session, true, () => undefined),
+      { wrapper },
+    )
+    await waitFor(() => {
+      expect(result.current.phase).toBe('step')
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(abandons(calls)).toHaveLength(0)
+
+    unmount()
+    await waitFor(() => {
+      expect(abandons(calls)).toHaveLength(1)
+    })
   })
 
   it('abandons exactly once when a flow it started turns inactive', async () => {

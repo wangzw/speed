@@ -126,6 +126,16 @@ function bindFactors(factors: readonly unknown[]): ReturnType<typeof bindConsole
   })
 }
 
+/** A session whose flow release is recorded, so a suite can assert whether
+ * the dialog sent any abandon request. */
+function withRecordedAbandon(session: AuthSession): {
+  readonly session: AuthSession
+  readonly abandon: ReturnType<typeof vi.fn>
+} {
+  const abandon = vi.fn<AuthSession['abandonFlow']>(() => Promise.resolve())
+  return { session: { ...session, abandonFlow: abandon }, abandon }
+}
+
 /** A session whose step-up start is refused by `refusal`. Its shortfall
  * classifier is auth-core's own: a 401 on an established session. */
 function refusingStartSession(
@@ -356,6 +366,170 @@ describe('StepUpChallenge', () => {
       await Promise.resolve()
     })
     expect(onSuccess).not.toHaveBeenCalled()
+  })
+
+  it('sends no abandon request when a refused start is closed', async () => {
+    const user = userEvent.setup()
+    bindFactors([ACTIVE_FACTOR])
+    const { session, abandon } = withRecordedAbandon(
+      refusingStartSession({
+        status: 400,
+        code: 'authn.bad_request',
+        message: 'refused',
+        auth: false,
+      }),
+    )
+    function Harness() {
+      const [open, setOpen] = useState(true)
+      return (
+        <StepUpChallenge
+          open={open}
+          session={session}
+          onSuccess={() => undefined}
+          onCancel={() => setOpen(false)}
+        />
+      )
+    }
+    renderWithProviders(<Harness />)
+
+    // The start was refused, so the server created no flow: closing the
+    // dialog must not invent a binding to release.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.bad_request,
+    )
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(abandon).not.toHaveBeenCalled()
+  })
+
+  it('sends no abandon request when a settled elevation is closed', async () => {
+    const user = userEvent.setup()
+    bindFactors([ACTIVE_FACTOR])
+    const { session, abandon } = withRecordedAbandon(flowSession().session)
+    const onSuccess = vi.fn()
+    function Harness() {
+      const [open, setOpen] = useState(true)
+      return (
+        <StepUpChallenge
+          open={open}
+          session={session}
+          onSuccess={() => {
+            onSuccess()
+            setOpen(false)
+          }}
+          onCancel={() => setOpen(false)}
+        />
+      )
+    }
+    renderWithProviders(<Harness />)
+
+    // The flow settles the elevation and the host closes the dialog, as it
+    // does after a won challenge.
+    await user.click(await screen.findByRole('button', { name: 'totp' }))
+    await user.type(await screen.findByLabelText(/code/), '123456')
+    await user.click(screen.getByRole('button', { name: '验证' }))
+    await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+
+    // The server consumed the settled flow: the closed dialog has no
+    // binding to release.
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(abandon).not.toHaveBeenCalled()
+  })
+
+  it('abandons once when a still-open flow unmounts with the dialog', async () => {
+    const user = userEvent.setup()
+    bindFactors([ACTIVE_FACTOR])
+    const base = createStepUpSession()
+    const { session, abandon } = withRecordedAbandon({
+      ...base,
+      startAuthenticatedFlow: () =>
+        Promise.resolve<AuthnFlowState>({
+          seq: 1,
+          state: 'second',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'code', kind: 'code', required: true }],
+          },
+        }),
+    })
+    function Harness() {
+      const [open, setOpen] = useState(true)
+      return (
+        <StepUpChallenge
+          open={open}
+          session={session}
+          onSuccess={() => undefined}
+          onCancel={() => setOpen(false)}
+        />
+      )
+    }
+    renderWithProviders(<Harness />)
+
+    // The flow is parked on its step when the operator closes the dialog:
+    // the binding is live, so it is released exactly once -- not once per
+    // layer that happens to unmount.
+    await screen.findByLabelText(/code/)
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(abandon).toHaveBeenCalledTimes(1)
+  })
+
+  it('abandons the still-open flow once when a restart remounts the driver', async () => {
+    const user = userEvent.setup()
+    bindFactors([ACTIVE_FACTOR])
+    const base = createStepUpSession()
+    let starts = 0
+    const { session, abandon } = withRecordedAbandon({
+      ...base,
+      startAuthenticatedFlow: () => {
+        starts += 1
+        return Promise.resolve<AuthnFlowState>({
+          seq: starts,
+          state: 'second',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'code', kind: 'code', required: true }],
+          },
+        })
+      },
+      answerFlow: () =>
+        Promise.reject({
+          status: 401,
+          code: 'authn.flow_invalid',
+          message: 'gone',
+          auth: true,
+        }),
+    })
+    renderWithProviders(
+      <StepUpChallenge
+        open
+        session={session}
+        onSuccess={() => undefined}
+        onCancel={() => undefined}
+      />,
+    )
+
+    // The answer says the flow is gone, which offers a restart. The old
+    // driver left its flow open (an answer refusal is not a settlement),
+    // so remounting releases it -- exactly once, while the new flow lives.
+    await user.type(await screen.findByLabelText(/code/), '123456')
+    await user.click(screen.getByRole('button', { name: '验证' }))
+    await screen.findByRole('button', { name: '重新开始验证' })
+    await user.click(screen.getByRole('button', { name: '重新开始验证' }))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(abandon).toHaveBeenCalledTimes(1)
+    expect(starts).toBe(2)
   })
 
   it('renders a failed start as its code with a restart and a cancel', async () => {
