@@ -16,7 +16,10 @@ import userEvent from '@testing-library/user-event'
 import { AuditPage } from './AuditPage.js'
 import type { ConsoleAuditRecord } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
-import { columnVisibility } from '../test-utils/container-visibility.js'
+import {
+  columnVisibility,
+  containerMaxWidthOf,
+} from '../test-utils/container-visibility.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   accountFixture,
@@ -125,6 +128,37 @@ describe('AuditPage', () => {
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: '动作' })),
     ).toBeNull()
+  })
+
+  it('caps the action, object and actor cells with the shared width cap', async () => {
+    const action = 'pkg.objectstore.metadata.create'
+    const object = '/api/v1/objects/a-very-long-registered-route'
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listRecords: () =>
+          Promise.resolve(page([{ ...record, action, object }])),
+      }),
+    )
+    renderWithProviders(<AuditPage />, { operations })
+    await screen.findByText(action)
+
+    const sharedCap = new Map([
+      [0, 160],
+      [900, 200],
+    ])
+    const actionText = screen.getByText(action)
+    expect(containerMaxWidthOf(actionText)).toEqual(sharedCap)
+    expect(actionText.closest('td')).toHaveAttribute('title', action)
+
+    const objectText = screen.getByText(object)
+    expect(containerMaxWidthOf(objectText)).toEqual(sharedCap)
+    expect(objectText.closest('td')).toHaveAttribute('title', object)
+
+    // The actor renders its resolved display name inside the capped box;
+    // the complete recorded identifier stays on the cell title.
+    const actorText = await screen.findByText('Operator')
+    expect(containerMaxWidthOf(actorText)).toEqual(sharedCap)
+    expect(actorText.closest('td')).toHaveAttribute('title', 'acc-1')
   })
 
   it('formats the recorded time in UTC in the current language', async () => {

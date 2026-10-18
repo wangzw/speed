@@ -46,14 +46,16 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
 import {
   DataTable,
   ListSkeleton,
   PageHeader,
+  primaryColumnMaxWidthSx,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
-import { AccountIdentity } from './internal/account-identity.js'
+import { CappedAccountIdentity } from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { ConsoleLink } from './internal/navigation.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
@@ -187,17 +189,20 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       header: t('audit.column.action'),
       cellWrap: 'nowrap',
       cellFullValue: (record) => record.action,
-      // When the host supplies the audit query's own path (basePath), the
-      // action links to that record's detail page; without it the cell is
-      // plain text.
-      cell: (record) =>
-        basePath === undefined ? (
-          record.action
-        ) : (
-          <ConsoleLink href={`${basePath}/${encodeURIComponent(record.id)}`}>
-            {record.action}
-          </ConsoleLink>
-        ),
+      // A recorded action (an HTTP method and route) can run long; the
+      // shared width cap truncates the cell and the complete value stays
+      // on the title and copy control.
+      cell: (record) => (
+        <Typography variant="body2" noWrap sx={primaryColumnMaxWidthSx}>
+          {basePath === undefined ? (
+            record.action
+          ) : (
+            <ConsoleLink href={`${basePath}/${encodeURIComponent(record.id)}`}>
+              {record.action}
+            </ConsoleLink>
+          )}
+        </Typography>
+      ),
     },
     {
       id: 'object',
@@ -206,7 +211,11 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       cellWrap: 'nowrap',
       cellFullValue: (record) =>
         record.object === '' ? undefined : record.object,
-      cell: (record) => record.object,
+      cell: (record) => (
+        <Typography variant="body2" noWrap sx={primaryColumnMaxWidthSx}>
+          {record.object}
+        </Typography>
+      ),
     },
     {
       id: 'actor',
@@ -215,7 +224,7 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       cellWrap: 'nowrap',
       cellFullValue: (record) =>
         record.actor === '' ? undefined : record.actor,
-      cell: (record) => <AccountIdentity account={record.actor} />,
+      cell: (record) => <CappedAccountIdentity account={record.actor} />,
     },
     {
       id: 'outcome',
