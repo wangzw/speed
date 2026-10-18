@@ -1,14 +1,17 @@
 /**
- * SMSSignInForm behaviour: the phone step begins the sms login flow and
- * the server's code challenge flips the form to its code step (asserted on
- * the request bodies), the sent notice announces the receiving number, the
- * code answer takes the ready step's result and fires onSignedIn (asserted
- * on the store token), a wrong code renders its text in one alert and
- * keeps the code step, resend repeats the send against the same number and
- * clears the code field, changing the phone returns to the first step, a
- * national-format number is refused locally with the E.164 requirement
- * stated, a superseded code answer renders the used-code notice and refuses
- * a re-submission of that exact code locally, the en-US bundle renders on an
+ * SMSSignInForm behaviour: the phone step begins the sms login flow with
+ * the country/local parts assembled into E.164 and the server's code
+ * challenge flips the form to its code step (asserted on the request
+ * bodies), the sent notice announces the assembled number, a pasted
+ * international number switches the country and fills the local part, the
+ * selector starts on the browser locale's region, the code answer takes
+ * the ready step's result and fires onSignedIn (asserted on the store
+ * token), a wrong code renders its text in one alert and keeps the code
+ * step, resend repeats the send against the same number and clears the
+ * code field, changing the phone returns to the first step, a number too
+ * short for its country is refused locally naming the calling code, a
+ * superseded code answer renders the used-code notice and refuses a
+ * re-submission of that exact code locally, the en-US bundle renders on an
  * English-starting instance, and the tree passes axe. Text expectations
  * read the bundle values, never inline language.
  */
@@ -31,10 +34,35 @@ import {
   principal,
 } from '@speed/test-utils/session-harness'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import { uiKitResources } from '@speed/ui-kit'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
-const PHONE = '+8613800138000'
+const CN_NATIONAL = '13800000001'
+const CN_E164 = '+8613800000001'
+const US_NATIONAL = '4155552671'
+const US_E164 = '+14155552671'
+const UI_KIT_ZH = uiKitResources['zh-CN'] as {
+  readonly phoneNumber: { readonly incomplete: string }
+  readonly form: { readonly required: string }
+}
+
+/** Pick a country in the selector, searching by its ISO code. */
+async function selectCountry(
+  user: ReturnType<typeof userEvent.setup>,
+  code: string,
+  callingCode: string,
+): Promise<void> {
+  const selector = screen.getByRole('combobox', {
+    name: zhCN.smsSignIn.countryLabel,
+  })
+  await user.type(selector, code)
+  await user.click(
+    await screen.findByRole('option', {
+      name: new RegExp(`\\+${callingCode}$`),
+    }),
+  )
+}
 
 /** The server's code challenge for the sms method. */
 function codeChallenge() {
@@ -48,10 +76,27 @@ function codeChallenge() {
   })
 }
 
-async function sendCode(phone: string = PHONE): Promise<void> {
+async function sendCode(national: string = CN_NATIONAL): Promise<void> {
   const user = userEvent.setup()
-  await user.type(screen.getByLabelText(zhCN.smsSignIn.phoneLabel), phone)
+  await selectCountry(user, 'CN', '86')
+  await user.type(screen.getByLabelText(zhCN.smsSignIn.phoneLabel), national)
   await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }))
+}
+
+/** A navigator.language override for the duration of one render. */
+function stubNavigatorLanguage(language: string): () => void {
+  const own = Object.getOwnPropertyDescriptor(window.navigator, 'language')
+  Object.defineProperty(window.navigator, 'language', {
+    configurable: true,
+    value: language,
+  })
+  return () => {
+    if (own !== undefined) {
+      Object.defineProperty(window.navigator, 'language', own)
+    } else {
+      delete (window.navigator as unknown as Record<string, unknown>).language
+    }
+  }
 }
 
 describe('SMSSignInForm', () => {
@@ -73,11 +118,11 @@ describe('SMSSignInForm', () => {
       method: 'sms',
       delivery: 'session',
       binding: 'cookie',
-      input: { phone: PHONE },
+      input: { phone: CN_E164 },
     })
     expect(
       screen.getByRole('status'),
-    ).toHaveTextContent(zhCN.smsSignIn.sentNotice.replace('{{phone}}', PHONE))
+    ).toHaveTextContent(zhCN.smsSignIn.sentNotice.replace('{{phone}}', CN_E164))
   })
 
   it('name no token delivery on the code request -- the session delivery is auth-core’s', async () => {
@@ -138,7 +183,11 @@ describe('SMSSignInForm', () => {
     })
     renderWithProviders(<SMSSignInForm session={harness.session} />)
     const user = userEvent.setup()
-    await user.type(screen.getByLabelText(zhCN.smsSignIn.phoneLabel), PHONE)
+    await selectCountry(user, 'CN', '86')
+    await user.type(
+      screen.getByLabelText(zhCN.smsSignIn.phoneLabel),
+      CN_NATIONAL,
+    )
     const send = screen.getByRole('button', { name: zhCN.smsSignIn.sendCode })
     await user.click(send)
     await waitFor(() => expect(send).toBeDisabled())
@@ -223,29 +272,104 @@ describe('SMSSignInForm', () => {
     expect(harness.calls).toHaveLength(0)
   })
 
-  it('refuse a national-format number locally and state the E.164 requirement', async () => {
+  it('refuse a number too short for its country locally, naming the calling code', async () => {
     const harness = makeHarness({
       [LOGIN_START]: () => codeChallenge(),
     })
     renderWithProviders(<SMSSignInForm session={harness.session} />)
-    // The requirement is on screen before a submit.
-    expect(
-      screen.getByText(zhCN.smsSignIn.phoneHint),
-    ).toBeInTheDocument()
+    // The hint is on screen before a submit.
+    expect(screen.getByText(zhCN.smsSignIn.phoneHint)).toBeInTheDocument()
 
     const user = userEvent.setup()
+    await selectCountry(user, 'CN', '86')
     const phone = screen.getByLabelText(zhCN.smsSignIn.phoneLabel)
-    await user.type(phone, '13800000001')
+    await user.type(phone, '138000')
     await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }))
 
+    // The message names the calling code the typed length fails under.
     await waitFor(() =>
-      expect(screen.getByText(zhCN.smsSignIn.phoneFormat)).toBeInTheDocument(),
+      expect(
+        screen.getByText(
+          UI_KIT_ZH.phoneNumber.incomplete.replace('{{code}}', '86'),
+        ),
+      ).toBeInTheDocument(),
     )
     expect(phone).toHaveAttribute('aria-invalid', 'true')
     // The invalid number never reaches the server, so its generic refusal
     // copy is not what the viewer meets.
     expect(harness.calls).toHaveLength(0)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('assemble a picked US number into E.164 as well', async () => {
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(),
+    })
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    // jsdom starts on en-US, so the selector starts on the US.
+    expect(
+      screen.getByRole('combobox', { name: zhCN.smsSignIn.countryLabel }),
+    ).toHaveValue('🇺🇸 +1')
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.smsSignIn.phoneLabel),
+      US_NATIONAL,
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }))
+    await waitFor(() => expect(harness.calls).toHaveLength(1))
+    expect(harness.calls[0]?.options?.body).toMatchObject({
+      method: 'sms',
+      input: { phone: US_E164 },
+    })
+  })
+
+  it('switch the country and fill the local part from a pasted E.164 number', async () => {
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(),
+    })
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    const user = userEvent.setup()
+    const phone = screen.getByLabelText(zhCN.smsSignIn.phoneLabel)
+    await user.click(phone)
+    await user.paste(CN_E164)
+
+    // China is selected and the local field holds the local part,
+    // grouped as it would be if typed.
+    expect(
+      screen.getByRole('combobox', { name: zhCN.smsSignIn.countryLabel }),
+    ).toHaveValue('🇨🇳 +86')
+    expect(phone).toHaveValue('138 0000 0001')
+
+    await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }))
+    await waitFor(() => expect(harness.calls).toHaveLength(1))
+    expect(harness.calls[0]?.options?.body).toMatchObject({
+      method: 'sms',
+      input: { phone: CN_E164 },
+    })
+  })
+
+  it('start the selector on the country the browser locale names', () => {
+    const restore = stubNavigatorLanguage('zh-CN')
+    try {
+      const harness = makeHarness({})
+      renderWithProviders(<SMSSignInForm session={harness.session} />)
+      expect(
+        screen.getByRole('combobox', { name: zhCN.smsSignIn.countryLabel }),
+      ).toHaveValue('🇨🇳 +86')
+    } finally {
+      restore()
+    }
+  })
+
+  it('name the selector and the number field for assistive technology', () => {
+    const harness = makeHarness({})
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    expect(
+      screen.getByRole('combobox', { name: zhCN.smsSignIn.countryLabel }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByLabelText(zhCN.smsSignIn.phoneLabel),
+    ).toBeInTheDocument()
   })
 
   it('resend against the same number and clear the typed code', async () => {
@@ -261,7 +385,7 @@ describe('SMSSignInForm', () => {
     await waitFor(() => expect(harness.calls).toHaveLength(2))
     expect(harness.calls[1]?.options?.body).toMatchObject({
       method: 'sms',
-      input: { phone: PHONE },
+      input: { phone: CN_E164 },
     })
     await waitFor(() => expect(code).toHaveValue(''))
   })
@@ -371,10 +495,16 @@ describe('SMSSignInForm', () => {
       language: 'en-US',
     })
     expect(
+      screen.getByRole('combobox', { name: enUS.smsSignIn.countryLabel }),
+    ).toHaveValue('🇺🇸 +1')
+    expect(
       screen.getByLabelText(enUS.smsSignIn.phoneLabel),
     ).toBeInTheDocument()
     const user = userEvent.setup()
-    await user.type(screen.getByLabelText(enUS.smsSignIn.phoneLabel), PHONE)
+    await user.type(
+      screen.getByLabelText(enUS.smsSignIn.phoneLabel),
+      US_NATIONAL,
+    )
     await user.click(
       screen.getByRole('button', { name: enUS.smsSignIn.sendCode }),
     )

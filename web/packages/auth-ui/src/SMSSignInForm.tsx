@@ -13,11 +13,16 @@
  * request for a changed phone) resets any code typed against the one it
  * invalidates, so a stale code can never ride along to a new code session.
  *
- * The phone field takes an E.164 number only -- a leading `+` and the
- * country code -- and states that requirement under the field before any
- * submit; a number in another form is refused locally and never sent. The
- * server's refusal copy still renders for the failures it alone can judge
- * (an unsupported region, a send-policy refusal).
+ * The phone field is the shared two-part control: a country/region
+ * selector and a local number, assembled into the E.164 string the flow
+ * takes. The selector starts on the country the browser locale names
+ * (zh-CN -> +86, en-US -> +1) and searches by country name, ISO code or
+ * calling code; a pasted international number switches it and fills the
+ * local part itself. The number is validated per country before any
+ * request: a number too short for the country is refused locally with the
+ * calling code named, and never sent. The server's refusal copy still
+ * renders for the failures it alone can judge (an unsupported region, a
+ * send-policy refusal).
  *
  * A wrong or expired code is refused by the server as `authn.login_failed`
  * (a spent login code reads exactly like a wrong one, deliberately), and
@@ -59,6 +64,9 @@ import type { SubmitHandler } from 'react-hook-form'
 import {
   FormField,
   FormLayout,
+  PhoneNumberField,
+  defaultPhoneCountry,
+  toE164,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
 import type { AuthSession } from '@speed/auth-core'
@@ -76,15 +84,8 @@ export interface SMSSignInFormProps {
 }
 
 interface SmsFields {
-  phone: string
   code: string
 }
-
-/** An E.164 number: a leading `+`, a non-zero country-code digit, and at
- * most fifteen digits in all. The account design takes phone numbers in
- * E.164 only; national-format input has no unambiguous country code here, so
- * the form refuses it before a request is sent. */
-const E164_PHONE = /^\+[1-9]\d{6,14}$/
 
 /** The SMS method's first code prompt: state `first` with a challenge. */
 function isCodePrompt(step: OpenFlowState): boolean {
@@ -94,8 +95,16 @@ function isCodePrompt(step: OpenFlowState): boolean {
 export function SMSSignInForm({ session, onSignedIn }: SMSSignInFormProps) {
   const { t } = useAuthUiTranslation()
   const form = useForm<SmsFields>({
-    defaultValues: { phone: '', code: '' },
+    defaultValues: { code: '' },
   })
+  // The phone step's two parts. The country starts on the browser
+  // locale's own region, never blank; the assembled E.164 string is what
+  // the flow receives.
+  const [country, setCountry] = useState(() => defaultPhoneCountry())
+  const [nationalNumber, setNationalNumber] = useState('')
+  // Set by a submit that could not assemble a number, so the control
+  // shows its per-country message only when the viewer asked to send.
+  const [phoneAttempted, setPhoneAttempted] = useState(false)
   const [sentTo, setSentTo] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<string | null>(null)
   // The used-code notice: the current code session's last answer lost a
@@ -164,9 +173,16 @@ export function SMSSignInForm({ session, onSignedIn }: SMSSignInFormProps) {
 
   const onSubmit: SubmitHandler<SmsFields> = async (values) => {
     if (driver.step === null || !isCodePrompt(driver.step)) {
-      // The phone step's submit is the code request; the code field is
-      // not mounted yet, so RHF validates the phone alone.
-      await requestCode(values.phone)
+      // The phone step's submit is the code request: assemble the two
+      // parts first, and answer a number the country rejects locally --
+      // no request carries a number the viewer can still fix.
+      const phone = toE164(country, nationalNumber)
+      if (phone === null) {
+        setPhoneAttempted(true)
+        return
+      }
+      setPhoneAttempted(false)
+      await requestCode(phone)
       return
     }
     setErrorCode(null)
@@ -279,30 +295,16 @@ export function SMSSignInForm({ session, onSignedIn }: SMSSignInFormProps) {
           </Box>
         </>
       ) : (
-        <FormField
-          name="phone"
-          required
-          rules={{
-            pattern: {
-              value: E164_PHONE,
-              message: t('smsSignIn.phoneFormat'),
-            },
-          }}
-          render={({ field, invalid, errorText }) => (
-            <TextField
-              {...field}
-              label={t('smsSignIn.phoneLabel')}
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel"
-              fullWidth
-              error={invalid}
-              // The format requirement is stated before a submit as well:
-              // a viewer typing a national-format number needs the
-              // international form named, not a refusal after the fact.
-              helperText={errorText ?? t('smsSignIn.phoneHint')}
-            />
-          )}
+        <PhoneNumberField
+          country={country}
+          nationalNumber={nationalNumber}
+          onCountryChange={setCountry}
+          onNationalNumberChange={setNationalNumber}
+          countryLabel={t('smsSignIn.countryLabel')}
+          numberLabel={t('smsSignIn.phoneLabel')}
+          numberHelperText={t('smsSignIn.phoneHint')}
+          showValidationError={phoneAttempted}
+          autoComplete="tel"
         />
       )}
       {codeUsed ? (

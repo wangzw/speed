@@ -323,10 +323,15 @@ along to a new code session. A wrong or expired code is refused as
 `authn.login_failed` (a spent login code reads exactly like a wrong one,
 deliberately).
 
-The phone field takes an E.164 number only -- a leading `+`, a country code
-and at most fifteen digits in all -- and states that requirement under the
-field before any submit. A number in another form never reaches the
-server: the field refuses it with its own message. The server's refusal
+The phone step uses the shared two-part control
+(`PhoneNumberField` from `@speed/ui-kit`): a country/region selector and
+a local number, assembled into the E.164 string the flow takes. The
+selector starts on the country the browser locale names (zh-CN -> +86,
+en-US -> +1) and searches by country name, ISO code or calling code; a
+pasted international number switches it and fills the local part itself.
+The number is validated per country before a request: a number too short
+for its country is refused locally with the calling code named, and never
+reaches the server. The server's refusal
 copy still renders for the failures only it can judge (an unsupported
 region, a send-policy refusal).
 
@@ -533,7 +538,7 @@ enforced by registration):
 | Section | Purpose |
 |---|---|
 | `passwordSignIn.*` | the password channel: title, field labels (identifier, password, new password), submit, the credential refusal |
-| `smsSignIn.*` | the SMS channel: title, phone/code labels, the phone format hint and refusal, send/resubmit/change-phone actions, the sent notice, the used-code notice |
+| `smsSignIn.*` | the SMS channel: title, country/phone labels, the phone hint, send/resubmit/change-phone actions, the sent notice (the assembled E.164 number), the used-code notice. The per-country validation messages live in the `ui-kit` namespace (`phoneNumber.*`) |
 | `signInFlow.*` | the step renderer: the continue action, the factor/enroll titles, the factor-kind names (a guarded closed set plus an "other" label), the passkey prompt and its unsupported/cancelled/failed messages, the unavailable-step notice |
 | `discovery.*` | the sign-in surface: the loading notice and the retry action |
 | `mode.*` | the sign-in surface: the register / sign-in entries and the register hint |

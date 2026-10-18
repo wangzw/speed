@@ -10,8 +10,8 @@
   "smsSignIn": {
     "title": "SMS code",
     "phoneLabel": "Phone number",
-    "phoneHint": "Enter the number in international format with its country code, e.g. +8613800000001.",
-    "phoneFormat": "Enter the number in international format: a leading + and the country code.",
+    "countryLabel": "Country/region",
+    "phoneHint": "Choose your country/region, then enter your local number.",
     "sendCode": "Send code",
     "sentNotice": "Code sent to {{phone}}",
     "codeLabel": "Verification code",
