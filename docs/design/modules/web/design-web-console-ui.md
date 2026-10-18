@@ -253,6 +253,8 @@ graph TD
 
 两张审计记录表——审计查询页与仪表盘的最近活动——共用同一套列与优先级。记录的身份是动作（HTTP 方法）与对象（路由）的组合，故时间与动作不带优先级、永不隐藏，对象紧随其后（容器 ≥600px 起显示，`sm` 档），操作者与结果同在 `md` 档（≥900px 起显示）。结果不能最先让位：在 13/14 寸笔记本上，容器宽 1184px（低于 `lg` 的 1200px），若结果按 `lg` 隐藏，失败的记录与成功的记录在列表上就看不出差别，而排查恰恰先看失败；故它与操作者一起留在 `md` 档。判定宽度取自表格自身的容器（`container-type: inline-size`），不取自视口。
 
+**各列表页的列优先级与宽度上限**服从 [layout](design-web-layout.md) 的数据表规则。标识符列（账户与会话的 `id`）只显示前 8 个字符、设 `low`，完整值经 `cellFullValue` 给出（悬停标题与复制控件）；主辨识列不设优先级，取主辨识列的宽度上限；状态列设 `high`。逐页：账户页以显示名为主辨识列，状态 `high`，类型 `medium`，MFA 与标识 `low`；会话页以创建时间为主辨识列，状态 `high`，保障等级 `medium`，种类、最近使用、到期与标识 `low`，`lg` 档放不下时按种类、到期的次序移出列；邀请页以邮箱为主辨识列，状态 `high`，邀请人 `medium`，到期 `low`；成员表同形，以账户为主辨识列，状态 `high`，来源 `medium`，SSO 豁免 `low`；SSO 页以名称为主辨识列，协议与启用 `medium`，版本 `low`；审计表的优先级不变（见上），动作、对象与操作者三列另设宽度上限，完整值已由 `cellFullValue` 给出。账户详情面板里的表（服务密钥、会话、因素）按面板内容自身的容器宽度适用同一规则。
+
 **账户身份单元**把一处记录的账户标识解析成可读身份，页面展示另一条记录所携带的账户标识处都经它渲染：审计查询页与仪表盘最近活动的操作者列、审计详情页的操作者、邀请与成员页的邀请人与成员账户、冒充记录页与当前冒充面板的操作者与被冒充账户、权限页绑定表及其账户查询结果的账户列。特性 `authn.admin` 在场时，它经 `GET /auth/admin/accounts/:id` 读账户的显示名；特性缺席时不发这条读，见「特性在场的接收」。该读受 `authn.account.read` 把守，页面自身的权限（`audit.read`、`authz.role.read` 等）不含它，因此只持页面权限的查看者的解析会被拒；该格此时渲染记录值并标注身份未解析，而不是把它当作已解析（或系统）的账户。读按账户标识缓存：同一账户的多行与重渲染共用一次读。绑定表的解绑控件以同一个解析结果命名账户：解析到显示名时用显示名，否则用记录值。成功文案点名账户时同样经它：文案是 `succeed` 时刻的译文快照，所以解析在调用 `succeed` 之前完成，解析失败或被拒时回落记录值，不阻塞确认；成员移除、成员写入与 SSO 豁免的切换这类点名成员账户的确认都属此列；邀请的签发与撤销点名的是被邀请人的邮箱，不是账户，不经此单元。
 
 ### 账户查询的筛选
@@ -431,6 +433,7 @@ graph TD
 | 详情面板内写入在途时 `busy` 与服务密钥的关闭守卫 | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`（`detailBusy`、`requestDetailClose`）、`OneTimeSecretNotice` |
 | 账户身份单元区分已删除或非账户行动者与无权限 | 已实现 | `web/packages/console-ui/src/internal/account-identity.tsx` `AccountIdentity`、`useAccountIdentity` |
 | 权限页账户绑定查询的加载、失败与空占位 | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`、`bindingColumns` |
+| 各列表页的列优先级与宽度上限（账户、会话、邀请与成员、SSO、审计及账户详情面板里的表） | 未实现 | — |
 | 会话页标记调用方自己的当前会话并在确认文案里说明 | 已实现 | `web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | 会话页（按账户列出与撤销） | 已实现 | `web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/routes.tsx` `sessionsAdminRoutes` |
 | 冒充页（记录列出与终止；本会话冒充的状态、发起与结束） | 已实现 | `web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`、`StartImpersonationForm`；`web/packages/console-ui/src/routes.tsx` `impersonationsAdminRoutes` |
