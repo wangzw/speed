@@ -218,6 +218,7 @@ const SESSION_ROW = {
   last_seen_at: '2026-10-15T12:00:00Z',
   expires_at: '2026-10-16T12:00:00Z',
   revoked: false,
+  current: false,
 }
 
 /** Every element matching `selector` outside the panel: the page-level
@@ -434,6 +435,7 @@ describe('AccountsPage', () => {
             last_seen_at: '2026-10-15T12:00:00Z',
             expires_at: '2026-10-16T12:00:00Z',
             revoked: false,
+            current: false,
           },
         ]),
     })
@@ -913,6 +915,7 @@ describe('AccountsPage', () => {
             last_seen_at: '2026-10-15T12:00:00Z',
             expires_at: '2026-10-16T12:00:00Z',
             revoked: false,
+            current: false,
           },
         ]),
     })
@@ -1016,6 +1019,7 @@ describe('AccountsPage', () => {
             last_seen_at: '2026-10-15T12:00:00Z',
             expires_at: '2026-10-16T12:00:00Z',
             revoked: false,
+            current: false,
           },
         ]),
       revokeSecret: (input) => {

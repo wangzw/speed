@@ -682,7 +682,7 @@
       },
       "AuthnAdminSession": {
         "type": "object",
-        "required": ["id", "kind", "assurance", "auth_time", "created_at", "last_seen_at", "expires_at", "revoked"],
+        "required": ["id", "kind", "assurance", "auth_time", "created_at", "last_seen_at", "expires_at", "revoked", "current"],
         "properties": {
           "id": {"type": "string"},
           "kind": {"type": "string"},
@@ -692,7 +692,8 @@
           "created_at": {"type": "string", "format": "date-time"},
           "last_seen_at": {"type": "string", "format": "date-time"},
           "expires_at": {"type": "string", "format": "date-time"},
-          "revoked": {"type": "boolean"}
+          "revoked": {"type": "boolean"},
+          "current": {"type": "boolean", "description": "True when the row is the caller's own session"}
         }
       },
       "AuthnAdminSessionList": {

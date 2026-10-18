@@ -9,7 +9,9 @@ import (
 )
 
 // sessionView is one session as the management routes show it: no credential and
-// nothing a caller could use to take the session over.
+// nothing a caller could use to take the session over. Current marks the row
+// whose session is the caller's own, the same flag the self-service list
+// carries.
 type sessionView struct {
 	ID              string    `json:"id"`
 	Kind            string    `json:"kind"`
@@ -20,9 +22,10 @@ type sessionView struct {
 	LastSeenAt      time.Time `json:"last_seen_at"`
 	ExpiresAt       time.Time `json:"expires_at"`
 	Revoked         bool      `json:"revoked"`
+	Current         bool      `json:"current"`
 }
 
-func sessionViewOf(s authn.SessionInfo) sessionView {
+func sessionViewOf(s authn.SessionInfo, current authn.SessionID) sessionView {
 	return sessionView{
 		ID:              string(s.ID),
 		Kind:            string(s.Kind),
@@ -33,6 +36,7 @@ func sessionViewOf(s authn.SessionInfo) sessionView {
 		LastSeenAt:      s.LastSeenAt.UTC(),
 		ExpiresAt:       s.ExpiresAt.UTC(),
 		Revoked:         s.Revoked,
+		Current:         s.ID == current,
 	}
 }
 
@@ -61,7 +65,7 @@ func (m *product) handleAccountSessions(c *gin.Context) {
 	}
 	views := make([]sessionView, len(sessions))
 	for i, s := range sessions {
-		views[i] = sessionViewOf(s)
+		views[i] = sessionViewOf(s, id.Session())
 	}
 	c.JSON(200, gin.H{"sessions": views})
 }

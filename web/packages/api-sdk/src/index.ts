@@ -380,6 +380,8 @@ export interface AuthnAdminSession {
   last_seen_at: string;
   expires_at: string;
   revoked: boolean;
+  /** True when the row is the caller's own session */
+  current: boolean;
 }
 
 export interface AuthnAdminSessionList {

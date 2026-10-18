@@ -32,6 +32,7 @@ function session(overrides: Partial<ConsoleAccountSession> = {}): ConsoleAccount
     last_seen_at: '2026-10-15T12:30:00Z',
     expires_at: '2026-10-16T12:00:00Z',
     revoked: false,
+    current: false,
     ...overrides,
   }
 }
