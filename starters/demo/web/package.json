@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json && vite build",
-    "api:gen": "go -C ../server run . --config file:testdata/sqlite-memory.yaml sqlite-memory gen --title speed -o ../../../contracts/api.json --features ../../../contracts/features.json && node ../../../web/scripts/feature-names.mjs ../../../contracts/features.json ../../../web/packages/api-sdk/src/features.ts && pnpm dlx orval@8.17.0 --config orval.config.ts && node ../../../web/scripts/orval-nodenext-fixup.mjs src/app-api/index.ts src/app-api/runtime.ts",
+    "api:gen": "go -C ../server run . --config file:testdata/sqlite-memory.yaml sqlite-memory gen --title speed -o ../../../contracts/api.json --features ../../../contracts/features.json && node ../../../web/scripts/feature-names.mjs ../../../contracts/features.json ../../../web/packages/api-sdk/src/features.ts src/app-api/features.ts && pnpm dlx orval@8.17.0 --config orval.config.ts && node ../../../web/scripts/orval-nodenext-fixup.mjs src/app-api/index.ts src/app-api/runtime.ts",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",

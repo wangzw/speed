@@ -67,6 +67,27 @@ describe('the feature vocabulary', () => {
     expect(new Set(FEATURE_NAMES).size).toBe(FEATURE_NAMES.length)
   })
 
+  it('carries no application-owned name', () => {
+    // The vocabulary splits each declaration by the module that made it;
+    // this package registers the platform's names only. An application
+    // reaches its own names through the module augmentation its build
+    // generates, never through this package.
+    const vocabulary = JSON.parse(readFileSync(contractPath, 'utf8')) as {
+      features: { name: string; owner: string }[]
+    }
+    const applicationOwned = vocabulary.features
+      .filter((entry) => entry.owner === 'application')
+      .map((entry) => entry.name)
+    // A test that finds nothing to check would pass vacuously; the demo
+    // host declares at least one application-owned feature.
+    expect(applicationOwned.length).toBeGreaterThan(0)
+    const committed = readFileSync(committedPath, 'utf8')
+    for (const name of applicationOwned) {
+      expect(FEATURE_NAMES).not.toContain(name)
+      expect(committed).not.toContain(`'${name}'`)
+    }
+  })
+
   it('types a declared name but not a misspelled one', () => {
     expect(declared).toBe('authn.mfa')
     expect(FEATURE_NAMES).toContain(declared)

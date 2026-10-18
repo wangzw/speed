@@ -27,10 +27,15 @@
  * so every platform module with an HTTP fragment is a member of the merged
  * document and this generated surface, which is regenerated wholesale from
  * the fragments and does not rot from being uncalled. The consuming app's
- * own fragments are deliberately not members -- the platform SDK covers the
- * platform, and the app's own API generates into the app's own SDK through
- * a second configuration the app carries. The starter has none: it declares
- * no API of its own yet, so that leg arrives with its first fragment.
+ * own fragments are members of that same document, but its operations
+ * carry the application-owner tag the host's gen command writes from the
+ * declaring module's provenance; the `input.filters` below excludes that
+ * tag, so the platform surface covers only the platform's operations. The
+ * app's own API generates into the app's own SDK through a second
+ * configuration the app carries, without a filter (it takes both). The tag
+ * is a plain operation tag because orval 8.17.0's `input.filters` selects
+ * operations by tags; the owner vocabulary itself (`platform` /
+ * `application`) is the one contracts/features.json uses.
  * Output covers types AND TanStack Query hooks (client: react-query),
  * written to src/index.ts; generated files carry the DO-NOT-EDIT header
  * below.
@@ -69,6 +74,15 @@ export default {
   speed: {
     input: {
       target: '../contracts/api.json',
+      // Operations the host's own modules declare are in the merged document
+      // and carry this tag; the platform package takes only the rest. orval
+      // 8.17.0 filters by operation tags (`mode: 'exclude'` keeps everything
+      // whose tags do not match), and the matching component schemas are
+      // pruned with them.
+      filters: {
+        mode: 'exclude',
+        tags: ['speed.application'],
+      },
     },
     output: {
       target: './packages/api-sdk/src/index.ts',

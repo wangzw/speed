@@ -20,6 +20,103 @@ import type {
 import { speedRequest } from './runtime.js';
 import { speedRequestCredentialless } from './runtime.js';
 /**
+ * @nullable
+ */
+export type NotificationMessageParams = { [key: string]: unknown } | null;
+
+export interface NotificationMessage {
+  id: string;
+  type_key: string;
+  group: string;
+  title: string;
+  body: string;
+  /** @nullable */
+  params: NotificationMessageParams;
+  link: string;
+  read_at?: string;
+  created_at: string;
+}
+
+export interface Problem {
+  type: string;
+  title?: string;
+  status: number;
+  detail?: string;
+  instance?: string;
+}
+
+export type NotificationPreferenceChannelsItem = typeof NotificationPreferenceChannelsItem[keyof typeof NotificationPreferenceChannelsItem];
+
+
+export const NotificationPreferenceChannelsItem = {
+  in_app: 'in_app',
+  email: 'email',
+  sms: 'sms',
+} as const;
+
+export interface NotificationPreference {
+  type_key: string;
+  group: string;
+  channels: NotificationPreferenceChannelsItem[];
+  /** True when the channels came from a stored row, false when they are the type's default channels */
+  explicit: boolean;
+}
+
+export interface NotificationSetPreferenceRequest {
+  /** The target state of the channel; a body naming none is told apart from one naming false */
+  enabled: boolean;
+}
+
+export type NotificationTypeDefaultChannelsItem = typeof NotificationTypeDefaultChannelsItem[keyof typeof NotificationTypeDefaultChannelsItem];
+
+
+export const NotificationTypeDefaultChannelsItem = {
+  in_app: 'in_app',
+  email: 'email',
+  sms: 'sms',
+} as const;
+
+export interface NotificationType {
+  key: string;
+  group: string;
+  default_channels: NotificationTypeDefaultChannelsItem[];
+  unsubscribable: boolean;
+  recipient_visible_params: string[];
+}
+
+export type ObjectstoreObjectState = typeof ObjectstoreObjectState[keyof typeof ObjectstoreObjectState];
+
+
+export const ObjectstoreObjectState = {
+  pending: 'pending',
+  uploaded: 'uploaded',
+  completed: 'completed',
+  deleted: 'deleted',
+} as const;
+
+export interface ObjectstoreObject {
+  id: string;
+  /** The declared label, normalized once when the object was created; empty when none was declared or it normalized to nothing */
+  name: string;
+  state: ObjectstoreObjectState;
+  size: number;
+  mime: string;
+  checksum_sha256: string;
+  expires_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ObjectstoreDeclaration {
+  /** An optional label for the object; normalized before storing, and omitted or empty stores an empty name */
+  name?: string;
+  size: number;
+  content_type: string;
+  /** The declared SHA-256 as 64 hex digits; empty declares no checksum */
+  checksum_sha256?: string;
+}
+
+/**
  * Empty object when the row carries no detail
  */
 export type AuditAdminRecordDetail = {[key: string]: string};
@@ -81,6 +178,12 @@ export interface AuthnAdminAccount {
   created_at: string;
 }
 
+export interface AuthnAdminAccountList {
+  accounts: AuthnAdminAccount[];
+  /** The cursor of the next page, empty on the last page */
+  next_cursor: string;
+}
+
 export type AuthnAdminAccountCreateKind = typeof AuthnAdminAccountCreateKind[keyof typeof AuthnAdminAccountCreateKind];
 
 
@@ -138,12 +241,6 @@ export interface AuthnAdminAccountEnvelope {
   account: AuthnAdminAccount;
 }
 
-export interface AuthnAdminAccountList {
-  accounts: AuthnAdminAccount[];
-  /** The cursor of the next page, empty on the last page */
-  next_cursor: string;
-}
-
 /**
  * Absent leaves the attribute set as it is
  */
@@ -156,26 +253,6 @@ export interface AuthnAdminAccountPatch {
   attributes?: AuthnAdminAccountPatchAttributes;
   /** Absent leaves the protected flag as it is */
   protected?: boolean;
-}
-
-/**
- * The deleted state is reached only through the delete route
- */
-export type AuthnAdminAccountStatusStatus = typeof AuthnAdminAccountStatusStatus[keyof typeof AuthnAdminAccountStatusStatus];
-
-
-export const AuthnAdminAccountStatusStatus = {
-  active: 'active',
-  disabled: 'disabled',
-} as const;
-
-export interface AuthnAdminAccountStatus {
-  /** The deleted state is reached only through the delete route */
-  status: AuthnAdminAccountStatusStatus;
-}
-
-export interface AuthnAdminDomainClaim {
-  domain: string;
 }
 
 export type AuthnAdminFactorStatus = typeof AuthnAdminFactorStatus[keyof typeof AuthnAdminFactorStatus];
@@ -227,6 +304,87 @@ export interface AuthnAdminIdentifierWrite {
   verified_via?: AuthnAdminIdentifierWriteVerifiedVia;
 }
 
+export interface AuthnAdminMFARequired {
+  required: boolean;
+}
+
+export interface AuthnAdminRemoved {
+  /** The number of factors removed */
+  removed: number;
+}
+
+export interface AuthnAdminPasswordReset {
+  /** The temporary password, handed out once and never echoed, logged or audited */
+  password: string;
+}
+
+export interface AuthnAdminRevoked {
+  /** The number of sessions revoked */
+  revoked: number;
+}
+
+export interface AuthnAdminSecret {
+  id: string;
+  label: string;
+  expires_at: string;
+  revoked: boolean;
+}
+
+export interface AuthnAdminSecretList {
+  secrets: AuthnAdminSecret[];
+}
+
+export interface AuthnAdminSecretCreate {
+  label: string;
+  /** Absent mints a secret with no expiry */
+  expires_at?: string;
+}
+
+export interface AuthnAdminSecretCreated {
+  id: string;
+  label: string;
+  /** The secret itself, handed out once and never again */
+  secret: string;
+  /** The zero instant 0001-01-01T00:00:00Z when the request named no expiry */
+  expires_at: string;
+}
+
+export interface AuthnAdminSession {
+  id: string;
+  kind: string;
+  /** 0 none, 1 single factor, 2 multi-factor */
+  assurance: number;
+  auth_time: string;
+  /** Absent unless the session carries an impersonation */
+  impersonation_id?: string;
+  created_at: string;
+  last_seen_at: string;
+  expires_at: string;
+  revoked: boolean;
+  /** True when the row is the caller's own session */
+  current: boolean;
+}
+
+export interface AuthnAdminSessionList {
+  sessions: AuthnAdminSession[];
+}
+
+/**
+ * The deleted state is reached only through the delete route
+ */
+export type AuthnAdminAccountStatusStatus = typeof AuthnAdminAccountStatusStatus[keyof typeof AuthnAdminAccountStatusStatus];
+
+
+export const AuthnAdminAccountStatusStatus = {
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+export interface AuthnAdminAccountStatus {
+  /** The deleted state is reached only through the delete route */
+  status: AuthnAdminAccountStatusStatus;
+}
+
 export interface AuthnAdminImpersonation {
   id: string;
   actor: string;
@@ -245,38 +403,6 @@ export interface AuthnAdminImpersonationList {
   impersonations: AuthnAdminImpersonation[];
   /** The cursor of the next page, empty on the last page */
   next_cursor: string;
-}
-
-export interface AuthnAdminMFARequired {
-  required: boolean;
-}
-
-export interface AuthnAdminMember {
-  account: string;
-  tenant: string;
-  active: boolean;
-  sso_exempt: boolean;
-  source: string;
-}
-
-export interface AuthnAdminMemberList {
-  members: AuthnAdminMember[];
-}
-
-export interface AuthnAdminMemberSSOExempt {
-  sso_exempt: boolean;
-}
-
-export interface AuthnAdminMemberWrite {
-  active?: boolean;
-  /** Absent records the change as an administrator's */
-  source?: string;
-  sso_exempt?: boolean;
-}
-
-export interface AuthnAdminPasswordReset {
-  /** The temporary password, handed out once and never echoed, logged or audited */
-  password: string;
 }
 
 export interface AuthnAdminProvider {
@@ -299,10 +425,6 @@ export interface AuthnAdminProvider {
 
 export interface AuthnAdminProviderEnvelope {
   provider: AuthnAdminProvider;
-}
-
-export interface AuthnAdminProviderList {
-  providers: AuthnAdminProvider[];
 }
 
 /**
@@ -332,98 +454,13 @@ export interface AuthnAdminProviderWrite {
   client_secret?: string;
 }
 
-export interface AuthnAdminRemoved {
-  /** The number of factors removed */
-  removed: number;
-}
-
-export interface AuthnAdminRevoked {
-  /** The number of sessions revoked */
-  revoked: number;
-}
-
-export interface AuthnAdminSecret {
-  id: string;
-  label: string;
-  expires_at: string;
-  revoked: boolean;
-}
-
-export interface AuthnAdminSecretCreate {
-  label: string;
-  /** Absent mints a secret with no expiry */
-  expires_at?: string;
-}
-
-export interface AuthnAdminSecretCreated {
-  id: string;
-  label: string;
-  /** The secret itself, handed out once and never again */
-  secret: string;
-  /** The zero instant 0001-01-01T00:00:00Z when the request named no expiry */
-  expires_at: string;
-}
-
-export interface AuthnAdminSecretList {
-  secrets: AuthnAdminSecret[];
-}
-
-export interface AuthnAdminSession {
-  id: string;
-  kind: string;
-  /** 0 none, 1 single factor, 2 multi-factor */
-  assurance: number;
-  auth_time: string;
-  /** Absent unless the session carries an impersonation */
-  impersonation_id?: string;
-  created_at: string;
-  last_seen_at: string;
-  expires_at: string;
-  revoked: boolean;
-  /** True when the row is the caller's own session */
-  current: boolean;
-}
-
-export interface AuthnAdminSessionList {
-  sessions: AuthnAdminSession[];
+export interface AuthnAdminDomainClaim {
+  domain: string;
 }
 
 export interface AuthnAdminVerifyToken {
   /** The token to publish in DNS */
   verify_token: string;
-}
-
-export interface AuthnImpersonationGrant {
-  id: string;
-  /** The impersonated account */
-  target: string;
-  /** The tenant the impersonation is confined to */
-  tenant: string;
-  /** Absent on the answer to a start, present on a record in force */
-  started_at?: string;
-  ends_at: string;
-}
-
-export interface AuthnImpersonationGrantEnvelope {
-  grant: AuthnImpersonationGrant;
-}
-
-export interface AuthnImpersonationStart {
-  grant: AuthnImpersonationGrant;
-  /** Present on a bearer start; absent on a cookie start, whose carrier is the session cookie */
-  access_token?: string;
-  /** Present with access_token; always Bearer */
-  token_type?: string;
-  /** Present with access_token; the access token's lifetime in whole seconds */
-  expires_in?: number;
-}
-
-export interface AuthnInviteAccept {
-  account: string;
-  tenant: string;
-  active: boolean;
-  source: string;
-  sso_exempt: boolean;
 }
 
 export type AuthnInviteInvitationStatus = typeof AuthnInviteInvitationStatus[keyof typeof AuthnInviteInvitationStatus];
@@ -448,42 +485,43 @@ export interface AuthnInviteInvitation {
   created_at: string;
 }
 
-export interface AuthnInviteIssued {
-  invitation: AuthnInviteInvitation;
-  /** The acceptance token, handed out once */
-  token: string;
-}
-
 export interface AuthnInvitePage {
   invitations: AuthnInviteInvitation[];
   /** The cursor of the next page, empty on the last page */
   next_cursor: string;
 }
 
-export interface AuthnInviteView {
+export interface AuthnInviteIssued {
   invitation: AuthnInviteInvitation;
+  /** The acceptance token, handed out once */
+  token: string;
 }
 
-/**
- * linked when the flow bound an external identity; enrolled when it registered a factor
- */
-export type AuthnLoginActionResultState = typeof AuthnLoginActionResultState[keyof typeof AuthnLoginActionResultState];
-
-
-export const AuthnLoginActionResultState = {
-  linked: 'linked',
-  enrolled: 'enrolled',
-} as const;
-
-export interface AuthnLoginActionResult {
-  /** linked when the flow bound an external identity; enrolled when it registered a factor */
-  state: AuthnLoginActionResultState;
+export interface AuthnAdminMember {
+  account: string;
+  tenant: string;
+  active: boolean;
+  sso_exempt: boolean;
+  source: string;
 }
 
-export interface AuthnLoginFactor {
-  id: string;
-  kind: string;
-  label?: string;
+export interface AuthnAdminMemberList {
+  members: AuthnAdminMember[];
+}
+
+export interface AuthnAdminMemberWrite {
+  active?: boolean;
+  /** Absent records the change as an administrator's */
+  source?: string;
+  sso_exempt?: boolean;
+}
+
+export interface AuthnAdminMemberSSOExempt {
+  sso_exempt: boolean;
+}
+
+export interface AuthnAdminProviderList {
+  providers: AuthnAdminProvider[];
 }
 
 export interface AuthnLoginField {
@@ -491,6 +529,12 @@ export interface AuthnLoginField {
   kind: string;
   required?: boolean;
   secret?: boolean;
+}
+
+export interface AuthnLoginFactor {
+  id: string;
+  kind: string;
+  label?: string;
 }
 
 export interface AuthnLoginStep {
@@ -524,63 +568,26 @@ export interface AuthnLoginFlow {
   next: AuthnLoginStep;
 }
 
-/**
- * added when the identifier is written; pending when a code was sent to an address and its answer is still to come
- */
-export type AuthnLoginIdentifierStateState = typeof AuthnLoginIdentifierStateState[keyof typeof AuthnLoginIdentifierStateState];
+export type AuthnMfaFactorStatus = typeof AuthnMfaFactorStatus[keyof typeof AuthnMfaFactorStatus];
 
 
-export const AuthnLoginIdentifierStateState = {
-  added: 'added',
+export const AuthnMfaFactorStatus = {
   pending: 'pending',
+  active: 'active',
+  disabled: 'disabled',
 } as const;
 
-export interface AuthnLoginIdentifierState {
-  /** added when the identifier is written; pending when a code was sent to an address and its answer is still to come */
-  state: AuthnLoginIdentifierStateState;
-  /** How long the code lives, in seconds; absent when the state is added */
-  expires_in?: number;
-  /** How soon another code may be asked for, in seconds; absent when the state is added */
-  resend_after?: number;
-}
-
-export interface AuthnLoginMFA {
-  /** The kinds of second factor the deployment takes in */
-  factors: string[];
-}
-
-export interface AuthnMethodDescriptor {
-  /** The method's stable name */
-  name: string;
-  /** How a client renders the method: form, redirect, enterprise or webauthn */
+export interface AuthnMfaFactor {
+  id: string;
   kind: string;
-  /** The wire protocol a redirect or enterprise method speaks: oauth2, oidc or saml; empty otherwise */
-  protocol?: string;
-  /** The method's brand name where it has one, otherwise empty for a name-keyed translation */
-  label?: string;
-  /** Whether the method may open an account for an identifier it does not yet know */
-  opens_account?: boolean;
-  /** The inputs the method's first step asks for, empty for a method that does not open with a form */
-  fields?: AuthnLoginField[];
-}
-
-export interface AuthnLoginSignup {
-  /** Whether a first login may open an account */
-  enabled: boolean;
-}
-
-export interface AuthnLoginMethods {
-  /** The methods taking part that are not turned off, one descriptor each, sorted by name */
-  methods: AuthnMethodDescriptor[];
-  signup: AuthnLoginSignup;
-  mfa: AuthnLoginMFA;
-}
-
-export interface AuthnLoginPhoneChallenge {
-  /** How long the code lives, in seconds */
-  expires_in: number;
-  /** How soon another code may be asked for, in seconds */
-  resend_after: number;
+  label: string;
+  status: AuthnMfaFactorStatus;
+  /** When the factor row was created, as an RFC 3339 instant */
+  created_at: string;
+  /** When the factor became active, as an RFC 3339 instant; absent until it is */
+  activated_at?: string;
+  /** When the factor last held, as an RFC 3339 instant; absent until it does */
+  last_used_at?: string;
 }
 
 export type AuthnLoginSessionState = typeof AuthnLoginSessionState[keyof typeof AuthnLoginSessionState];
@@ -630,27 +637,104 @@ export interface AuthnLoginToken {
   refresh_token: string;
 }
 
-export type AuthnMfaFactorStatus = typeof AuthnMfaFactorStatus[keyof typeof AuthnMfaFactorStatus];
+/**
+ * linked when the flow bound an external identity; enrolled when it registered a factor
+ */
+export type AuthnLoginActionResultState = typeof AuthnLoginActionResultState[keyof typeof AuthnLoginActionResultState];
 
 
-export const AuthnMfaFactorStatus = {
-  pending: 'pending',
-  active: 'active',
-  disabled: 'disabled',
+export const AuthnLoginActionResultState = {
+  linked: 'linked',
+  enrolled: 'enrolled',
 } as const;
 
-export interface AuthnMfaFactor {
-  id: string;
-  kind: string;
-  label: string;
-  status: AuthnMfaFactorStatus;
-  /** When the factor row was created, as an RFC 3339 instant */
-  created_at: string;
-  /** When the factor became active, as an RFC 3339 instant; absent until it is */
-  activated_at?: string;
-  /** When the factor last held, as an RFC 3339 instant; absent until it does */
-  last_used_at?: string;
+export interface AuthnLoginActionResult {
+  /** linked when the flow bound an external identity; enrolled when it registered a factor */
+  state: AuthnLoginActionResultState;
 }
+
+/**
+ * added when the identifier is written; pending when a code was sent to an address and its answer is still to come
+ */
+export type AuthnLoginIdentifierStateState = typeof AuthnLoginIdentifierStateState[keyof typeof AuthnLoginIdentifierStateState];
+
+
+export const AuthnLoginIdentifierStateState = {
+  added: 'added',
+  pending: 'pending',
+} as const;
+
+export interface AuthnLoginIdentifierState {
+  /** added when the identifier is written; pending when a code was sent to an address and its answer is still to come */
+  state: AuthnLoginIdentifierStateState;
+  /** How long the code lives, in seconds; absent when the state is added */
+  expires_in?: number;
+  /** How soon another code may be asked for, in seconds; absent when the state is added */
+  resend_after?: number;
+}
+
+export interface AuthnImpersonationGrant {
+  id: string;
+  /** The impersonated account */
+  target: string;
+  /** The tenant the impersonation is confined to */
+  tenant: string;
+  /** Absent on the answer to a start, present on a record in force */
+  started_at?: string;
+  ends_at: string;
+}
+
+export interface AuthnImpersonationGrantEnvelope {
+  grant: AuthnImpersonationGrant;
+}
+
+export interface AuthnImpersonationStart {
+  grant: AuthnImpersonationGrant;
+  /** Present on a bearer start; absent on a cookie start, whose carrier is the session cookie */
+  access_token?: string;
+  /** Present with access_token; always Bearer */
+  token_type?: string;
+  /** Present with access_token; the access token's lifetime in whole seconds */
+  expires_in?: number;
+}
+
+export interface AuthnInviteView {
+  invitation: AuthnInviteInvitation;
+}
+
+export interface AuthnInviteAccept {
+  account: string;
+  tenant: string;
+  active: boolean;
+  source: string;
+  sso_exempt: boolean;
+}
+
+export interface AuthnTokenJWK {
+  /** The key type, for example EC or RSA */
+  kty: string;
+  /** The key use, signature */
+  use?: string;
+  /** The RFC 7638 thumbprint of the public key */
+  kid: string;
+  /** The signature algorithm the key signs and verifies with */
+  alg?: string;
+  crv?: string;
+  x?: string;
+  y?: string;
+  n?: string;
+  e?: string;
+  [key: string]: unknown;
+ }
+
+export interface AuthnTokenJWKS {
+  keys: AuthnTokenJWK[];
+}
+
+/**
+ * Never null; the empty object when the account carries none
+ */
+export type AuthnProfileProfileAttributes = {[key: string]: string};
 
 export interface AuthnProfileIdentifier {
   id: string;
@@ -673,26 +757,6 @@ export interface AuthnProfileLink {
   last_login_at?: string;
 }
 
-/**
- * The whole attribute set as it stands, never null
- */
-export type AuthnProfilePatchAttributes = {[key: string]: string};
-
-export interface AuthnProfilePatch {
-  display_name: string;
-  /** The whole attribute set as it stands, never null */
-  attributes: AuthnProfilePatchAttributes;
-  /** Read out of the attribute set, empty when it carries none */
-  locale: string;
-  /** Read out of the attribute set, empty when it carries none */
-  time_zone: string;
-}
-
-/**
- * Never null; the empty object when the account carries none
- */
-export type AuthnProfileProfileAttributes = {[key: string]: string};
-
 export interface AuthnProfileProfile {
   account_id: string;
   kind: string;
@@ -711,27 +775,58 @@ export interface AuthnProfileProfile {
   links: AuthnProfileLink[];
 }
 
-export interface AuthnSessionItem {
-  id: string;
+/**
+ * The whole attribute set as it stands, never null
+ */
+export type AuthnProfilePatchAttributes = {[key: string]: string};
+
+export interface AuthnProfilePatch {
+  display_name: string;
+  /** The whole attribute set as it stands, never null */
+  attributes: AuthnProfilePatchAttributes;
+  /** Read out of the attribute set, empty when it carries none */
+  locale: string;
+  /** Read out of the attribute set, empty when it carries none */
+  time_zone: string;
+}
+
+export interface AuthnMethodDescriptor {
+  /** The method's stable name */
+  name: string;
+  /** How a client renders the method: form, redirect, enterprise or webauthn */
   kind: string;
-  created_at: string;
-  last_seen_at: string;
-  expires_at: string;
-  /** Empty when the session carries none */
-  client_ip: string;
-  /** Empty when the session carries none */
-  user_agent: string;
-  /** Whether this is the session the request came with */
-  current: boolean;
+  /** The wire protocol a redirect or enterprise method speaks: oauth2, oidc or saml; empty otherwise */
+  protocol?: string;
+  /** The method's brand name where it has one, otherwise empty for a name-keyed translation */
+  label?: string;
+  /** Whether the method may open an account for an identifier it does not yet know */
+  opens_account?: boolean;
+  /** The inputs the method's first step asks for, empty for a method that does not open with a form */
+  fields?: AuthnLoginField[];
 }
 
-export interface AuthnSessionList {
-  sessions: AuthnSessionItem[];
+export interface AuthnLoginSignup {
+  /** Whether a first login may open an account */
+  enabled: boolean;
 }
 
-export interface AuthnSessionRevoked {
-  /** The number of sessions revoked */
-  revoked: number;
+export interface AuthnLoginMFA {
+  /** The kinds of second factor the deployment takes in */
+  factors: string[];
+}
+
+export interface AuthnLoginMethods {
+  /** The methods taking part that are not turned off, one descriptor each, sorted by name */
+  methods: AuthnMethodDescriptor[];
+  signup: AuthnLoginSignup;
+  mfa: AuthnLoginMFA;
+}
+
+export interface AuthnLoginPhoneChallenge {
+  /** How long the code lives, in seconds */
+  expires_in: number;
+  /** How soon another code may be asked for, in seconds */
+  resend_after: number;
 }
 
 export type AuthnSessionViewMethodsItem = typeof AuthnSessionViewMethodsItem[keyof typeof AuthnSessionViewMethodsItem];
@@ -775,6 +870,29 @@ export interface AuthnSessionView {
   provider?: string;
 }
 
+export interface AuthnSessionRevoked {
+  /** The number of sessions revoked */
+  revoked: number;
+}
+
+export interface AuthnSessionItem {
+  id: string;
+  kind: string;
+  created_at: string;
+  last_seen_at: string;
+  expires_at: string;
+  /** Empty when the session carries none */
+  client_ip: string;
+  /** Empty when the session carries none */
+  user_agent: string;
+  /** Whether this is the session the request came with */
+  current: boolean;
+}
+
+export interface AuthnSessionList {
+  sessions: AuthnSessionItem[];
+}
+
 /**
  * The protocol the provider's sign-in entry uses
  */
@@ -793,27 +911,6 @@ export interface AuthnSsoProvider {
   protocol: AuthnSsoProviderProtocol;
 }
 
-export interface AuthnTokenJWK {
-  /** The key type, for example EC or RSA */
-  kty: string;
-  /** The key use, signature */
-  use?: string;
-  /** The RFC 7638 thumbprint of the public key */
-  kid: string;
-  /** The signature algorithm the key signs and verifies with */
-  alg?: string;
-  crv?: string;
-  x?: string;
-  y?: string;
-  n?: string;
-  e?: string;
-  [key: string]: unknown;
- }
-
-export interface AuthnTokenJWKS {
-  keys: AuthnTokenJWK[];
-}
-
 export interface AuthnTokenResponse {
   access_token: string;
   /** Always Bearer */
@@ -824,23 +921,15 @@ export interface AuthnTokenResponse {
   refresh_token?: string;
 }
 
+export interface AuthzAdminPermissionView {
+  permission: string;
+}
+
 export interface AuthzAdminBindingView {
   tenant: string;
   account: string;
   role: string;
   granted_at: string;
-}
-
-export interface AuthzAdminGrantView {
-  tenant: string;
-  role: string;
-  resource: string;
-  action: string;
-  created_at: string;
-}
-
-export interface AuthzAdminPermissionView {
-  permission: string;
 }
 
 export interface AuthzAdminRoleView {
@@ -855,104 +944,18 @@ export interface AuthzAdminRoleWrite {
   description_key: string;
 }
 
+export interface AuthzAdminGrantView {
+  tenant: string;
+  role: string;
+  resource: string;
+  action: string;
+  created_at: string;
+}
+
 export interface FeatureBoardDocument {
   /** The feature names this process serves, ascending and without repetition. Each name answers whether a frontend surface the caller's build carries is served here; the response carries no configuration value, method descriptor or rendering description. */
   features: string[];
 }
-
-/**
- * @nullable
- */
-export type NotificationMessageParams = { [key: string]: unknown } | null;
-
-export interface NotificationMessage {
-  id: string;
-  type_key: string;
-  group: string;
-  title: string;
-  body: string;
-  /** @nullable */
-  params: NotificationMessageParams;
-  link: string;
-  read_at?: string;
-  created_at: string;
-}
-
-export type NotificationPreferenceChannelsItem = typeof NotificationPreferenceChannelsItem[keyof typeof NotificationPreferenceChannelsItem];
-
-
-export const NotificationPreferenceChannelsItem = {
-  in_app: 'in_app',
-  email: 'email',
-  sms: 'sms',
-} as const;
-
-export interface NotificationPreference {
-  type_key: string;
-  group: string;
-  channels: NotificationPreferenceChannelsItem[];
-  /** True when the channels came from a stored row, false when they are the type's default channels */
-  explicit: boolean;
-}
-
-export interface NotificationSetPreferenceRequest {
-  /** The target state of the channel; a body naming none is told apart from one naming false */
-  enabled: boolean;
-}
-
-export type NotificationTypeDefaultChannelsItem = typeof NotificationTypeDefaultChannelsItem[keyof typeof NotificationTypeDefaultChannelsItem];
-
-
-export const NotificationTypeDefaultChannelsItem = {
-  in_app: 'in_app',
-  email: 'email',
-  sms: 'sms',
-} as const;
-
-export interface NotificationType {
-  key: string;
-  group: string;
-  default_channels: NotificationTypeDefaultChannelsItem[];
-  unsubscribable: boolean;
-  recipient_visible_params: string[];
-}
-
-export interface ObjectstoreDeclaration {
-  /** An optional label for the object; normalized before storing, and omitted or empty stores an empty name */
-  name?: string;
-  size: number;
-  content_type: string;
-  /** The declared SHA-256 as 64 hex digits; empty declares no checksum */
-  checksum_sha256?: string;
-}
-
-export type ObjectstoreObjectState = typeof ObjectstoreObjectState[keyof typeof ObjectstoreObjectState];
-
-
-export const ObjectstoreObjectState = {
-  pending: 'pending',
-  uploaded: 'uploaded',
-  completed: 'completed',
-  deleted: 'deleted',
-} as const;
-
-export interface ObjectstoreObject {
-  id: string;
-  /** The declared label, normalized once when the object was created; empty when none was declared or it normalized to nothing */
-  name: string;
-  state: ObjectstoreObjectState;
-  size: number;
-  mime: string;
-  checksum_sha256: string;
-  expires_at?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-/**
- * The merged OpenAPI document: the version it declares, its info section, every merged path, the components its fragments declared, and x-fragments naming each source
- */
-export interface OpsDocument { [key: string]: unknown }
 
 /**
  * The literal the liveness route writes; a live process always answers ok
@@ -970,6 +973,11 @@ export interface OpsHealth {
 }
 
 /**
+ * The merged OpenAPI document: the version it declares, its info section, every merged path, the components its fragments declared, and x-fragments naming each source
+ */
+export interface OpsDocument { [key: string]: unknown }
+
+/**
  * ready when every part answered, unavailable otherwise
  */
 export type OpsReadinessStatus = typeof OpsReadinessStatus[keyof typeof OpsReadinessStatus];
@@ -985,14 +993,6 @@ export interface OpsReadiness {
   status: OpsReadinessStatus;
   /** One line per part that failed; absent when the verdict is ready */
   failures?: string[];
-}
-
-export interface Problem {
-  type: string;
-  title?: string;
-  status: number;
-  detail?: string;
-  instance?: string;
 }
 
 export interface SettingsAdminSetting {
@@ -1019,6 +1019,20 @@ export interface SmsAdminApproval {
   reason?: string;
 }
 
+export type SmsAdminTemplateApprovals = {[key: string]: SmsAdminApproval};
+
+export interface SmsAdminTemplate {
+  name: string;
+  source: string;
+  params: string[];
+  locales: string[];
+  approvals: SmsAdminTemplateApprovals;
+  enabled: boolean;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export type SmsAdminRegisterCodes = {[key: string]: string};
 
 export interface SmsAdminRegister {
@@ -1034,20 +1048,6 @@ export interface SmsAdminSubmission {
   locale: string;
   params: string[];
   remark: string;
-}
-
-export type SmsAdminTemplateApprovals = {[key: string]: SmsAdminApproval};
-
-export interface SmsAdminTemplate {
-  name: string;
-  source: string;
-  params: string[];
-  locales: string[];
-  approvals: SmsAdminTemplateApprovals;
-  enabled: boolean;
-  version: number;
-  created_at: string;
-  updated_at: string;
 }
 
 export type TenantAdminTenantStatus = typeof TenantAdminTenantStatus[keyof typeof TenantAdminTenantStatus];
