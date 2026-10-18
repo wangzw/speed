@@ -364,7 +364,7 @@
       "builtinLocked": "A built-in role cannot be changed or deleted",
       "create": {
         "roleLabel": "Role name",
-        "descriptionLabel": "Description key",
+        "descriptionLabel": "Description (message key)",
         "submit": "Save role"
       },
       "viewGrants": "View grants",

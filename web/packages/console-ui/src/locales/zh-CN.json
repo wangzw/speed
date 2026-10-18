@@ -364,7 +364,7 @@
       "builtinLocked": "内建角色不可修改或删除",
       "create": {
         "roleLabel": "角色名",
-        "descriptionLabel": "描述键",
+        "descriptionLabel": "描述（文案键）",
         "submit": "保存角色"
       },
       "viewGrants": "查看授权",
