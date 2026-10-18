@@ -15,6 +15,7 @@
       "@speed/console-ui",
       "@speed/notification-ui",
       "@speed/tenancy-ui",
+      "@speed/objectstore-ui",
       "@speed/product-shell"
     ]
   ],

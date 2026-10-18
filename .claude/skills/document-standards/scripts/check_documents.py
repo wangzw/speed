@@ -20,7 +20,7 @@ skipped, not failed -- a project using only design documents and ADRs is
 a normal configuration.
 
 Usage:
-    python3 tools/check_documents.py [--root PATH]
+    python3 .claude/skills/document-standards/scripts/check_documents.py [--root PATH]
 
 --root defaults to the current directory and must hold CLAUDE.md. Paths
 in the report are relative to --root. Exit code is 0 when every check

@@ -4,14 +4,14 @@ This directory is the changesets bootstrap of the `web/` pnpm workspace
 (the conventional location changesets tooling reads). It exists so that
 when the release round lands, changesets has nothing left to invent: the
 configuration that encodes the repository's lockstep discipline is already
-committed and verified.
+committed.
 
 ## What exists today (M0)
 
-- `config.json` — one **fixed version group** over every deliverable npm
-  package of the workspace (`@speed/tokens`, `@speed/i18n`,
-  `@speed/ui-kit`), `access: public`, `baseBranch: main`. This is
-  configuration only, no version bookkeeping.
+- `config.json` — one **fixed version group** over the workspace's
+  deliverable npm packages; the authoritative list is `config.json`
+  itself, `access: public`, `baseBranch: main`. This is configuration
+  only, no version bookkeeping.
 - This README. There are deliberately **no changeset entries** — a
   changeset entry is a request for a version bump. The v0.0.1 attempt
   (2026-09-10) bumped the twelve packages straight to `0.0.1` without
@@ -30,27 +30,26 @@ internally. Any future configuration that lets one package bump alone
 would violate the release contract and must not be introduced.
 
 `config.json` lists today's packages. The list is not derived from the
-workspace at runtime (changesets cannot do that), so the release
-coordinator verifies it instead: `tools/release/lockstep-release.py`
-asserts, in its default verification mode, that the fixed group covers
-exactly the packages found under `web/packages/` — the npm mirror of the
-`go.work` drift guard on the Go side. **When a package joins or leaves
-the workspace, update the fixed group in `config.json` in the same
-change, or release verification fails loudly.**
+workspace at runtime (changesets cannot do that), and the release
+coordinator that used to verify it — asserting, in its default
+verification mode, that the fixed group covers exactly the packages found
+under `web/packages/`, the npm mirror of the `go.work` drift guard on the
+Go side — retired with the earlier scaffolding. The release plan is
+deferred to its own round, so nothing in the tree verifies the fixed group
+today. **When a package joins or leaves the workspace, update the fixed
+group in `config.json` in the same change** — nothing fails loudly until
+that verification returns.
 
 ## Cross-half alignment
 
 The fixed group keeps the npm half uniform internally; it says nothing
 about the Go half. Cross-half alignment — both halves at the SAME version
-number — is enforced by the release coordinator, not by changesets: one
+number — belongs to the release coordinator, not to changesets: one
 version input drives both halves of the plan, and the coordinator's
 verification (uniform package versions, fixed-group coverage, one version
 per module tag) is what makes a mixed-version release unrepresentable.
-Run it from the repository root:
-
-```
-python3 tools/release/lockstep-release.py v1.2.0   # offline verification
-```
+That coordinator retired with the earlier scaffolding and the release
+plan is deferred to its own round, so there is no command to run today.
 
 ## What is not here yet (waits for the release round at M4)
 

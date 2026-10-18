@@ -64,9 +64,11 @@ plumbing and deliberately not exported.
 - **The two locale files stay a bilingual pair.** A new built-in string
   adds one key to both `src/locales/zh-CN.json` and `en-US.json` in the
   same commit, with identical nested structure. Registration rejects
-  drift at runtime (`registerNamespace` in the host and in
-  `renderWithProviders`), and `tools/check_i18n_keys.py` checks the raw
-  files in CI. Hosts reword the kit by registering their own identical-
+  drift at runtime (`registerNamespace`'s leaf-parity and plural-coverage
+  validation, `web/packages/i18n/src/register.ts`, called in the host and
+  in `renderWithProviders`), and `src/resources.test.ts` exercises that
+  validation over the shipped pair. Nothing in CI reads the raw files.
+  Hosts reword the kit by registering their own identical-
   key bundle pair under `UI_KIT_NAMESPACE` at bootstrap — never by
   editing component text.
 - **The namespace registers once, at host bootstrap — never inside the

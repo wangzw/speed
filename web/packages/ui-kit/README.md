@@ -1217,8 +1217,12 @@ live). The full key set:
 | `fileUploader.announceFailed` | live-region announcement when a file fails | interpolates `{{name}}` |
 
 The two files (`src/locales/zh-CN.json` and `en-US.json`) carry
-identical leaf key sets, enforced by registration and by
-`tools/check_i18n_keys.py` in CI. The write-feedback scope adds no key:
+identical leaf key sets. That parity is a runtime guarantee:
+`registerNamespace` (`web/packages/i18n/src/register.ts`) validates leaf
+parity and plural coverage at registration, and `src/resources.test.ts`
+exercises that validation over the shipped pair. No CI leg reads the raw
+files; drift surfaces when the namespace registers. The write-feedback
+scope adds no key:
 the success message is host copy passed to `succeed`, and a failure code
 resolves through the region's `resolve` prop in the calling package's
 namespace. `AsyncSection`'s `staleState` likewise takes the caller's

@@ -209,13 +209,15 @@ reason the tier runs on a schedule rather than in the commit gate.
 
 ## Status
 
-The release machinery is the lockstep plan shared with the Go half: the
-changesets bootstrap at `.changeset/` (a fixed version group over every
-deliverable package in `web/packages/`, `config.json`) and the release
-coordinator in `tools/release/`, which checks from the repository root that
-the fixed group covers exactly the packages that exist, that package
-versions are uniform, and that the Go half of the same one-version plan is
-consistent. Real publishing — changesets installed in `web/` with version
+The release plan is the lockstep plan shared with the Go half: the
+changesets bootstrap at `.changeset/` (a fixed version group over the
+deliverable packages in `web/packages/`, `config.json`). The release
+coordinator that used to verify it from the repository root -- that the
+fixed group covers exactly the packages that exist, that package versions
+are uniform, and that the Go half of the same one-version plan is
+consistent -- retired with the earlier scaffolding, and the release plan
+is deferred to its own round: nothing in the tree verifies the fixed
+group today. Real publishing — changesets installed in `web/` with version
 and publish runs — comes with the v1.0 release.
 
 The lockfile is **not** carried over from the earlier implementation: the

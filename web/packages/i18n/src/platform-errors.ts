@@ -1,12 +1,12 @@
 /**
  * The platform error-copy bundle and its registration.
  *
- * The bundle is the client-side text for every backend apperr code whose
- * module publishes a catalog entry, generated mechanically from the same
- * locales catalogs the backend renders from; it is not hand-maintained, and
- * backend-only content (invitation emails, notification templates, SMS
- * bodies, seed copy) has no code to be looked up with and is therefore
- * absent by construction. Keys are the `errors` section the packages'
+ * The bundle is the client-side text for the apperr codes the earlier
+ * implementation published a catalog entry for; it is hand-maintained now
+ * (its generator retired with that implementation), and backend-only
+ * content (invitation emails, notification templates, SMS bodies, seed
+ * copy) has no code to be looked up with and is therefore absent by
+ * construction. Keys are the `errors` section the packages'
  * resolvers already navigate, one flat dotted apperr code per leaf
  * (`errors.authn.invalid_credentials`), so `t('errors.' + code)` resolves
  * through i18next's own deepFind without a lookup helper.
@@ -32,7 +32,7 @@ import zhCN from './platform-errors/locales/zh-CN.json' with { type: 'json' }
 /** The namespace the platform error bundle registers under. */
 export const PLATFORM_ERRORS_NAMESPACE = 'platform-errors' as const
 
-/** The generated bundles, one per language the generator ships. */
+/** The committed bundles, one per language the bundle ships. */
 const PLATFORM_ERROR_RESOURCES: Readonly<Record<string, ResourceBundle>> = {
   'zh-CN': zhCN as ResourceBundle,
   'en-US': enUS as ResourceBundle,
@@ -46,8 +46,8 @@ const PLATFORM_ERROR_RESOURCES: Readonly<Record<string, ResourceBundle>> = {
  * non-empty strings. A supported language the bundle has no file for is
  * reported with the fix inline instead of registering a bundle that
  * would force the render-as-key path on that language's users -- the
- * generator's language pair is fixed, so a new platform language is a
- * generator (and catalog) change, not a silent partial registration.
+ * bundle's language pair is fixed, so a new platform language is a bundle
+ * change, not a silent partial registration.
  */
 export function registerPlatformErrors(instance: I18nInstance): void {
   const supported = readSupportedLanguages(instance)
@@ -65,9 +65,9 @@ export function registerPlatformErrors(instance: I18nInstance): void {
     throw new Error(
       `[speed-i18n] the platform error bundle has no resources for ` +
         `[${missing.join(', ')}]; the bundle ships ` +
-        `[${Object.keys(PLATFORM_ERROR_RESOURCES).join(', ')}]. Extend ` +
-        'tools/gen_platform_error_bundle.py and the backend modules\' locale ' +
-        'catalogs before adding the language, then regenerate the bundle.',
+        `[${Object.keys(PLATFORM_ERROR_RESOURCES).join(', ')}]. The bundle ` +
+        'is hand-maintained at src/platform-errors/locales/; add its ' +
+        'language file there before adding the language.',
     )
   }
   const resources: Record<string, ResourceBundle> = {}

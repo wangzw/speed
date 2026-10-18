@@ -83,9 +83,11 @@ rule. The public surface is `src/index.ts`; everything under
 - **The two locale files stay a bilingual pair.** A new built-in string
   adds one key to both `src/locales/zh-CN.json` and `en-US.json` in
   the same commit, with identical nested structure. Registration
-  rejects drift at runtime (`registerNamespace` in the host and in
-  `renderWithProviders`), and `tools/check_i18n_keys.py` checks the raw
-  files in CI.
+  rejects drift at runtime (`registerNamespace`'s leaf-parity and
+  plural-coverage validation, `web/packages/i18n/src/register.ts`, called
+  in the host and in `renderWithProviders`). The package has no
+  `resources.test.ts`, so nothing asserts the pair at file level; a
+  package-level test would be the natural home if one is wanted.
 - **The namespace registers once, at host bootstrap — never inside the
   package.** Components only consume the registered namespace; the
   package never imports `@speed/i18n`'s `registerNamespace` outside

@@ -250,13 +250,13 @@ Chinese UI with English locale text. It is identity-stable per language.
 
 ## Platform error copy (`./platform-errors`)
 
-The backend modules already publish their error text: each catalog entry's
-key is an apperr code and its value is the message the backend renders for
-it. A generator turns those catalogs into this package's one generated
-client bundle
-(`src/platform-errors/locales/{zh-CN,en-US}.json`), a host registers it
-once at bootstrap, and the fallback namespace above makes it reachable
-from every package lookup:
+The backend modules publish their error text: each catalog entry's key is
+an apperr code and its value is the message the backend renders for it.
+This package's client bundle
+(`src/platform-errors/locales/{zh-CN,en-US}.json`) was generated from the
+earlier implementation's catalogs and is hand-maintained now, a host
+registers it once at bootstrap, and the fallback namespace above makes it
+reachable from every package lookup:
 
 ```ts
 import { createI18n } from '@speed/i18n'
@@ -271,14 +271,14 @@ registerPlatformErrors(i18n)
 // platform bundle where the welcome bundle has no such leaf
 ```
 
-Two properties of the generated bundle are deliberate and worth knowing
+Two properties of the bundle are deliberate and worth knowing
 before reading a miss as a bug:
 
 - **It is not status-filtered.** Every catalog entry ships, including
   refusal classes a user is unlikely to see and wording that reads like
   a developer's note (a boot-time wiring refusal, for one). The bundle is
   a lookup table, not a curated user-facing catalog; what a client shows
-  is the resolver's decision, not the generator's.
+  is the resolver's decision, not the bundle's.
 - **It covers the codes the catalogs cover, not every code.** Codes the
   backend declares no copy for (request-time refusals answered as a
   structured code only, boot-time refusals) have no entry here and keep
@@ -293,16 +293,19 @@ property has no test on the web side. Closing the gap means building a
 census from the `pkg/` modules and pinning the bundle against it; no tool
 in the tree does that today.
 
-Regenerate after any backend catalog or apperr code change:
-`python3 tools/gen_platform_error_bundle.py`; `--check` fails when the
-committed bundle is stale. Run the generator's own suite next to it.
+The committed bundle at `src/platform-errors/locales/` is
+hand-maintained: its generator retired with the earlier implementation,
+and the current `pkg/` catalogs (`pkg/<module>/locales/*.json`, a
+different set of codes in a different format) cannot reproduce it.
+Entries left from that implementation stay only so old error codes still
+render. There is no regeneration command.
 
 ## Error-code text convention
 
 The main entry also owns the one convention every error surface resolves
 through: a whitelisted code resolves to its own leaf under the bundle's
-`errors` section (`errors.<code>` — the same section the generated
-platform bundle ships), and anything unlisted to `errors.unknown`, so a
+`errors` section (`errors.<code>` — the same section the platform error
+bundle ships), and anything unlisted to `errors.unknown`, so a
 resolver can never render a raw key and a missing translation never
 leaks another language's text.
 

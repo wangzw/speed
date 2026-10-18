@@ -238,8 +238,12 @@ separate boolean "loading" flag that could disagree with "allowed".
 `routeGuard`'s denied fallback carries no text of its own -- it is
 entirely `ui-kit`'s `emptyState.noPermission.*` bundle, by design (see
 RouteGuard above). The two files (`src/locales/zh-CN.json`,
-`en-US.json`) carry identical leaf key sets, enforced by registration
-and by `tools/check_i18n_keys.py` in CI. Hosts reword the kit by
+`en-US.json`) carry identical leaf key sets; parity is enforced when the
+namespace is registered (`registerNamespace`'s leaf-parity and
+plural-coverage validation, `web/packages/i18n/src/register.ts`). The
+package has no `resources.test.ts`, so nothing here asserts the pair at
+file level; a package-level test over the two catalogs would be the
+natural home if one is wanted. Hosts reword the kit by
 registering their own identical-key bundle pair under
 `LAYOUT_KIT_NAMESPACE` at bootstrap -- never by editing component
 text.

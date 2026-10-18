@@ -7,11 +7,10 @@ carry a copy of.
 It is **private and never published** — a workspace member consumed by
 the packages' tests, not a deliverable library. It lives beside
 `packages/` rather than inside it because `web/packages/*` is the
-release pipeline's deliverable set (`tools/release/lockstep-release.py`
-derives the npm publish order from exactly that directory, without a
-private-package filter and under one uniform version), and a private
-member inside that set would enter the release plan and the publish
-loop.
+release plan's deliverable set (the deferred lockstep release treats
+exactly that directory as the npm publish set, without a private-package
+filter and under one uniform version), and a private member inside that
+set would enter the release plan and the publish loop.
 
 The demo starter's web host — the workspace's other private member —
 lives outside `web/packages/*` for the same reason, and it does **not**

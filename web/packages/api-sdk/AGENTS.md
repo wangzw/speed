@@ -168,5 +168,8 @@ pnpm dlx orval@8.17.0 --config orval.config.ts
 node scripts/orval-nodenext-fixup.mjs
 ```
 
-The committed artifact is the post-fixup file; CI reproduces both steps
-and diffs.
+The committed artifact is the post-fixup file. Regeneration and the
+fixup are manual steps — no CI job reruns them — and the unit surface-drift
+check in `src/ownership.test.ts` is what the gate runs: it holds the
+committed surface against `contracts/api.json` in both directions. Run the
+pair above whenever `contracts/api.json` changes.
