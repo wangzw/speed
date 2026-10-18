@@ -51,11 +51,11 @@ import {
   DataTable,
   ListSkeleton,
   PageHeader,
-  primaryColumnMaxWidthSx,
+  PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
-import { CappedAccountIdentity } from './internal/account-identity.js'
+import { AccountIdentity } from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { ConsoleLink } from './internal/navigation.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
@@ -190,10 +190,11 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       cellWrap: 'nowrap',
       cellFullValue: (record) => record.action,
       // A recorded action (an HTTP method and route) can run long; the
-      // shared width cap truncates the cell and the complete value stays
-      // on the title and copy control.
+      // shared whole-cell cap truncates the text and the complete value
+      // stays on the title and copy control.
+      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
       cell: (record) => (
-        <Typography variant="body2" noWrap sx={primaryColumnMaxWidthSx}>
+        <Typography variant="body2" noWrap>
           {basePath === undefined ? (
             record.action
           ) : (
@@ -211,8 +212,9 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       cellWrap: 'nowrap',
       cellFullValue: (record) =>
         record.object === '' ? undefined : record.object,
+      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
       cell: (record) => (
-        <Typography variant="body2" noWrap sx={primaryColumnMaxWidthSx}>
+        <Typography variant="body2" noWrap>
           {record.object}
         </Typography>
       ),
@@ -224,7 +226,8 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       cellWrap: 'nowrap',
       cellFullValue: (record) =>
         record.actor === '' ? undefined : record.actor,
-      cell: (record) => <CappedAccountIdentity account={record.actor} />,
+      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+      cell: (record) => <AccountIdentity account={record.actor} />,
     },
     {
       id: 'outcome',

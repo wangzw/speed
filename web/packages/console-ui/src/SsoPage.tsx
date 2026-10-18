@@ -48,7 +48,7 @@ import {
   EmptyState,
   ListSkeleton,
   PageHeader,
-  primaryColumnMaxWidthSx,
+  PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
@@ -281,15 +281,13 @@ export function SsoPage() {
       header: t('sso.column.name'),
       cellWrap: 'nowrap',
       cellFullValue: (provider) => provider.name,
+      // The provider's primary identity: never hidden, and the shared
+      // whole-cell cap -- which counts the copy control -- keeps it from
+      // widening the table past its container. The complete name stays on
+      // the cell title and copy control.
+      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
       cell: (provider) => (
-        // The provider's primary identity: never hidden, and the shared
-        // cap keeps it from widening the table past its container. The
-        // complete name stays on the cell title and copy control.
-        <Typography
-          variant="body2"
-          noWrap
-          sx={primaryColumnMaxWidthSx}
-        >
+        <Typography variant="body2" noWrap>
           {provider.name}
         </Typography>
       ),

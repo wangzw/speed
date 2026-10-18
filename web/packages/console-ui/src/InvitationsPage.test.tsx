@@ -295,9 +295,9 @@ describe('InvitationsPage', () => {
       visibleFrom: 1200,
     })
     expect(columnVisibility(header(inviteSection, '操作'))).toBeNull()
-    const emailText = screen.getByText(email)
-    expect(emailText.closest('td')).toHaveAttribute('title', email)
-    expect(containerMaxWidthOf(emailText)).toEqual(
+    const emailCell = screen.getByText(email).closest('td')
+    expect(emailCell).toHaveAttribute('title', email)
+    expect(containerMaxWidthOf(emailCell!.firstElementChild!)).toEqual(
       new Map([
         [0, 160],
         [900, 200],
@@ -322,7 +322,7 @@ describe('InvitationsPage', () => {
     })
     expect(columnVisibility(header(memberSection, '操作'))).toBeNull()
     const memberIdentity = await within(memberSection).findByText('Operator')
-    expect(containerMaxWidthOf(memberIdentity)).toEqual(
+    expect(containerMaxWidthOf(memberIdentity.closest('td')!.firstElementChild!)).toEqual(
       new Map([
         [0, 160],
         [900, 200],

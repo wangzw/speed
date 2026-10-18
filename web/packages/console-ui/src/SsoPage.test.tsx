@@ -122,9 +122,11 @@ describe('SsoPage', () => {
     })
     expect(columnVisibility(header('操作'))).toBeNull()
 
-    const nameText = screen.getByText(name)
-    expect(nameText.closest('td')).toHaveAttribute('title', name)
-    expect(containerMaxWidthOf(nameText)).toEqual(
+    const nameCell = screen.getByText(name).closest('td')
+    expect(nameCell).toHaveAttribute('title', name)
+    // The whole-cell wrapper carries the cap, so the copy control beside
+    // the name is counted inside it.
+    expect(containerMaxWidthOf(nameCell!.firstElementChild!)).toEqual(
       new Map([
         [0, 160],
         [900, 200],

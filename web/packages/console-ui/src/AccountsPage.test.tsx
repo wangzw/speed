@@ -2196,8 +2196,17 @@ describe('AccountsPage', () => {
         name: `复制 ${id}`,
       }),
     ).toBeInTheDocument()
+    // The identifier column's cap counts that copy control: the whole
+    // wrapper is 160px below `md`, 200px from `md` up.
+    expect(containerMaxWidthOf(idCell!.firstElementChild!)).toEqual(
+      new Map([
+        [0, 160],
+        [900, 200],
+      ]),
+    )
 
-    // The shared cap: 160px below `md`, 200px from `md` up.
+    // The display name (no copy control) keeps its text cap: 160px below
+    // `md`, 200px from `md` up.
     expect(containerMaxWidthOf(screen.getByText('Ada Lovelace'))).toEqual(
       new Map([
         [0, 160],

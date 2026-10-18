@@ -19,9 +19,7 @@
  * account -- and any re-render -- reuse one cached read.
  */
 
-import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
-import { primaryColumnMaxWidthSx } from '@speed/ui-kit'
 import { useConsoleUiTranslation } from './translation.js'
 import { isNotFound } from './async-section.js'
 import { useConsoleOperations } from '../operations.js'
@@ -86,32 +84,4 @@ export function AccountIdentity({ account }: { readonly account: string }) {
     )
   }
   return <>{account}</>
-}
-
-/**
- * `AccountIdentity` inside the shared primary-column width cap: the
- * identity truncates with an ellipsis instead of widening a table that
- * would otherwise overflow its container. The complete value stays on the
- * cell's title and copy control (the column's `cellFullValue`).
- */
-export function CappedAccountIdentity({
-  account,
-}: {
-  readonly account: string
-}) {
-  return (
-    <Box
-      component="span"
-      sx={{
-        ...primaryColumnMaxWidthSx,
-        display: 'inline-block',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        verticalAlign: 'bottom',
-      }}
-    >
-      <AccountIdentity account={account} />
-    </Box>
-  )
 }

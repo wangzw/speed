@@ -49,15 +49,11 @@ import {
   EmptyState,
   ListSkeleton,
   PageHeader,
-  primaryColumnMaxWidthSx,
+  PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
-import {
-  AccountIdentity,
-  CappedAccountIdentity,
-  useAccountIdentity,
-} from './internal/account-identity.js'
+import { AccountIdentity, useAccountIdentity } from './internal/account-identity.js'
 import { AccountSelector } from './internal/account-selector.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
@@ -257,14 +253,12 @@ export function InvitationsPage() {
       header: t('invitations.column.email'),
       cellWrap: 'nowrap',
       cellFullValue: (invitation) => invitation.email,
+      // The invitation's primary identity: never hidden, and the shared
+      // whole-cell cap -- which counts the copy control -- keeps the row
+      // actions on screen.
+      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
       cell: (invitation) => (
-        // The invitation's primary identity: never hidden, capped by the
-        // shared primary-column width so the row actions stay on screen.
-        <Typography
-          variant="body2"
-          noWrap
-          sx={primaryColumnMaxWidthSx}
-        >
+        <Typography variant="body2" noWrap>
           {invitation.email}
         </Typography>
       ),
@@ -339,7 +333,8 @@ export function InvitationsPage() {
       header: t('members.column.account'),
       cellWrap: 'nowrap',
       cellFullValue: (member) => member.account,
-      cell: (member) => <CappedAccountIdentity account={member.account} />,
+      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+      cell: (member) => <AccountIdentity account={member.account} />,
     },
     {
       id: 'active',

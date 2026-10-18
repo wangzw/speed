@@ -146,19 +146,28 @@ describe('AuditPage', () => {
       [0, 160],
       [900, 200],
     ])
-    const actionText = screen.getByText(action)
-    expect(containerMaxWidthOf(actionText)).toEqual(sharedCap)
-    expect(actionText.closest('td')).toHaveAttribute('title', action)
+    // The cap sits on the wrapper that holds the text and the copy
+    // control together, so the control is counted inside the budget.
+    const actionCell = screen.getByText(action).closest('td')
+    expect(actionCell).toHaveAttribute('title', action)
+    expect(containerMaxWidthOf(actionCell!.firstElementChild!)).toEqual(
+      sharedCap,
+    )
 
-    const objectText = screen.getByText(object)
-    expect(containerMaxWidthOf(objectText)).toEqual(sharedCap)
-    expect(objectText.closest('td')).toHaveAttribute('title', object)
+    const objectCell = screen.getByText(object).closest('td')
+    expect(objectCell).toHaveAttribute('title', object)
+    expect(containerMaxWidthOf(objectCell!.firstElementChild!)).toEqual(
+      sharedCap,
+    )
 
     // The actor renders its resolved display name inside the capped box;
     // the complete recorded identifier stays on the cell title.
     const actorText = await screen.findByText('Operator')
-    expect(containerMaxWidthOf(actorText)).toEqual(sharedCap)
-    expect(actorText.closest('td')).toHaveAttribute('title', 'acc-1')
+    const actorCell = actorText.closest('td')
+    expect(actorCell).toHaveAttribute('title', 'acc-1')
+    expect(containerMaxWidthOf(actorCell!.firstElementChild!)).toEqual(
+      sharedCap,
+    )
   })
 
   it('formats the recorded time in UTC in the current language', async () => {

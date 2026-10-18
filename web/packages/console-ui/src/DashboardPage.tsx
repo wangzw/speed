@@ -35,11 +35,11 @@ import {
   DataTable,
   ListSkeleton,
   PageHeader,
-  primaryColumnMaxWidthSx,
+  PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
-import { CappedAccountIdentity } from './internal/account-identity.js'
+import { AccountIdentity } from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { formatUtc } from './internal/datetime.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
@@ -160,8 +160,9 @@ export function DashboardPage() {
       header: t('dashboard.recent.column.action'),
       cellWrap: 'nowrap',
       cellFullValue: (record) => record.action,
+      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
       cell: (record) => (
-        <Typography variant="body2" noWrap sx={primaryColumnMaxWidthSx}>
+        <Typography variant="body2" noWrap>
           {record.action}
         </Typography>
       ),
@@ -173,8 +174,9 @@ export function DashboardPage() {
       cellWrap: 'nowrap',
       cellFullValue: (record) =>
         record.object === '' ? undefined : record.object,
+      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
       cell: (record) => (
-        <Typography variant="body2" noWrap sx={primaryColumnMaxWidthSx}>
+        <Typography variant="body2" noWrap>
           {record.object}
         </Typography>
       ),
@@ -186,7 +188,8 @@ export function DashboardPage() {
       cellWrap: 'nowrap',
       cellFullValue: (record) =>
         record.actor === '' ? undefined : record.actor,
-      cell: (record) => <CappedAccountIdentity account={record.actor} />,
+      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+      cell: (record) => <AccountIdentity account={record.actor} />,
     },
     {
       id: 'outcome',
