@@ -50,8 +50,8 @@ rule. The public surface is `src/index.ts`; everything under
   behavior.** The mobile drawer's paper width cap (a CSS `min()`) and
   the AppBar Toolbar/`headerActions` `flexWrap: 'wrap'` are purely
   additive styling with no prop added or changed. The one non-CSS
-  piece is a ResizeObserver on the banner whose measurement feeds the
-  offset placeholders that keep content clear of the fixed
+  piece is a ResizeObserver on the app bar and the banner slot, whose
+  measurements feed the offset placeholders that keep content clear of the fixed
   (wrap-capable) AppBar -- internal-only, no prop and no host-visible
   behavior. Do not "fix" a narrow-viewport complaint by inventing an
   auto-collapsing overflow menu or similar new behavior here —
@@ -133,7 +133,7 @@ rule. The public surface is `src/index.ts`; everything under
 - **Accessibility is asserted, with recorded exceptions.** `AppShell`
   is page-level chrome (fixed header, nav drawer, main region), so its
   tests run axe with the `region` rule left **enabled** and its
-  landmarks (`nav`, `header`/banner, `main`) explicitly asserted;
+  landmarks (`nav`, `header`, `main`) explicitly asserted;
   `RouteGuard` gates per-widget host content, so its tests use the same
   `region`-disabled carve-out `ui-kit`'s own component tests use.
   `color-contrast` is disabled everywhere in this package's tests for

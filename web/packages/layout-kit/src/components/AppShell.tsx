@@ -1,7 +1,7 @@
 /**
  * AppShell: the responsive app-chrome shell.
  *
- * Renders a fixed `AppBar` (the `header`/banner landmark), a responsive
+ * Renders a fixed `AppBar` (the `header` landmark), a responsive
  * navigation drawer (a `nav` landmark: permanent at `md`+, temporary and
  * overlaid below `md`), and a `main` content landmark. The desktop/mobile
  * split is a JS boolean from `useMediaQuery(theme.breakpoints.up('md'))`
@@ -34,7 +34,7 @@
  * the host node's own concern) and belongs to the shell rather than to
  * `children`, so a host that swaps the content on a route change never
  * unmounts it. The slot adds no landmark and no live region -- it is not
- * the banner landmark, which stays the AppBar -- so the shell's landmark
+ * the `banner` landmark, which is the AppBar -- so the shell's landmark
  * structure (header, nav, main) is unchanged. Absent, `null` or `false`
  * renders no container and takes no height.
  *
@@ -101,7 +101,8 @@
  * the host's own next render.
  *
  * Because the header row can wrap, its rendered height is measured
- * (ResizeObserver on the banner, where the browser supports it) and
+ * (ResizeObserver on the app bar and the banner slot, where the browser
+ * supports it) and
  * the three spacer placeholders -- the one inside the drawer paper and
  * the one inside `main` for each drawer variant -- derive their height
  * from that measurement rather than assuming the theme's single-row

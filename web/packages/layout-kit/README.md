@@ -86,7 +86,7 @@ from the API.
 
 ## AppShell
 
-The responsive app-chrome shell: a fixed `AppBar` (the `header`/banner
+The responsive app-chrome shell: a fixed `AppBar` (the `header`
 landmark), a nav `Drawer` (a labelled `nav` landmark: permanent at the
 `md` breakpoint and up, temporary and overlaid below it -- driven off
 `useMediaQuery(theme.breakpoints.up('md'))`, no new breakpoint
@@ -169,8 +169,8 @@ avoids elsewhere). No prop was added or changed, and every existing
 consumer is visually unaffected outside the narrow-viewport cases
 these protections exist for. Because a wrapped header row is taller
 than the theme's single-row toolbar height, the header's rendered
-height is measured (a ResizeObserver on the banner, where the browser
-provides one) and the three offset placeholders that keep content
+height is measured (a ResizeObserver on the app bar and the banner slot,
+where the browser provides one) and the three offset placeholders that keep content
 clear of the fixed AppBar -- inside the drawer paper and inside
 `main`, for whichever drawer variant is mounted -- derive their height
 from that measurement, so a wrapped header never covers the top of
