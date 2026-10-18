@@ -16,6 +16,10 @@ import { renderWithProviders } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { chooseAccount } from '../test-utils/account-selector.js'
 import {
+  columnVisibility,
+  containerMaxWidthOf,
+} from '../test-utils/container-visibility.js'
+import {
   createConsoleOperations,
   makeConsoleBackend,
   type ConsoleBackend,
@@ -115,11 +119,12 @@ describe('SessionsPage', () => {
     })
     renderWithProviders(<SessionsPage />, { operations })
     await loadAccount(user)
-    await screen.findByText('sess-current')
-    // The marker sits on the current row only.
+    await screen.findByText('sess-cur')
+    // The marker sits on the current row only. The cell shows the id
+    // prefix; the complete id stays on the title and copy control.
     const marker = screen.getByText('当前会话')
-    expect(marker.closest('tr')).toHaveTextContent('sess-current')
-    expect(marker.closest('tr')).not.toHaveTextContent('sess-other')
+    expect(marker.closest('tr')).toHaveTextContent('sess-cur')
+    expect(marker.closest('tr')).not.toHaveTextContent('sess-oth')
     // The current row's revocation says the caller is signed out too.
     await user.click(
       screen.getByRole('button', { name: '撤销会话 sess-current' }),
@@ -248,6 +253,89 @@ describe('SessionsPage', () => {
     await loadAccount(user)
     expect(await screen.findByText('权限不足')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+  })
+
+  it('declares the designed column priorities and caps the primary identity', async () => {
+    const user = userEvent.setup()
+    const id = 'sess-0123456789abcdef'
+    const operations = withSessions({
+      listAccountSessions: () =>
+        Promise.resolve([session({ id, current: true })]),
+    })
+    renderWithProviders(<SessionsPage />, { operations })
+    await loadAccount(user)
+    await screen.findByText(id.slice(0, 8))
+
+    const header = (label: string): Element =>
+      screen.getByRole('columnheader', { name: label })
+    // The created time is the primary identity: no priority, shared cap.
+    // The identifier and the descriptive columns shed first; state stays
+    // to `sm`; the row actions never hide.
+    expect(columnVisibility(header('标识'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 1200,
+    })
+    expect(columnVisibility(header('类型'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 1200,
+    })
+    expect(columnVisibility(header('保证级别'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 900,
+    })
+    expect(columnVisibility(header('创建时间'))).toBeNull()
+    expect(columnVisibility(header('最近活动'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 1200,
+    })
+    expect(columnVisibility(header('过期时间'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 1200,
+    })
+    expect(columnVisibility(header('状态'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 600,
+    })
+    expect(columnVisibility(header('操作'))).toBeNull()
+
+    // The current-session marker rides the same row and column as the id;
+    // the whole cell keeps the shared width budget in the real layout.
+    expect(screen.getByText('当前会话')).toBeInTheDocument()
+
+    // The identifier cell shows the 8-character prefix; the complete id
+    // rides the cell title and the copy control.
+    const prefix = screen.getByText(id.slice(0, 8))
+    const idCell = prefix.closest('td')
+    expect(idCell).not.toBeNull()
+    expect(within(idCell as HTMLElement).queryByText(id)).toBeNull()
+    expect(idCell).toHaveAttribute('title', id)
+    expect(
+      within(idCell as HTMLElement).getByRole('button', {
+        name: `复制 ${id}`,
+      }),
+    ).toBeInTheDocument()
+
+    // The shared cap on the created-time cell: 160px below `md`, 200px
+    // from `md` up.
+    const headerLabels = screen
+      .getAllByRole('columnheader')
+      .map((cell) => cell.textContent)
+    const createdIndex = headerLabels.indexOf('创建时间')
+    expect(createdIndex).toBeGreaterThanOrEqual(0)
+    const row = screen.getByText(id.slice(0, 8)).closest('tr')
+    expect(row).not.toBeNull()
+    const createdCell = within(row as HTMLElement).getAllByRole('cell')[
+      createdIndex
+    ]
+    expect(createdCell).toBeDefined()
+    const createdText = createdCell?.firstElementChild
+    expect(createdText).not.toBeNull()
+    expect(containerMaxWidthOf(createdText as Element)).toEqual(
+      new Map([
+        [0, 160],
+        [900, 200],
+      ]),
+    )
   })
 
   it('has no axe violations', async () => {

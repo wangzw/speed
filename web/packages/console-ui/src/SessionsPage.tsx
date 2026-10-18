@@ -30,12 +30,14 @@ import {
   ListSkeleton,
   PageHeader,
   errorCodeOf,
+  primaryColumnMaxWidthSx,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { AccountSelector } from './internal/account-selector.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
+import { identifierPrefix } from './internal/identifier-prefix.js'
 import { InlineError } from './internal/inline-error.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
@@ -71,11 +73,14 @@ export function SessionsPage() {
     {
       id: 'id',
       header: t('sessions.column.id'),
+      priority: 'low',
       cellWrap: 'nowrap',
       cellFullValue: (session) => session.id,
       cell: (session) => (
         <Box sx={{ display: 'flex', alignItems: 'center', columnGap: 1 }}>
-          <Typography variant="body2">{session.id}</Typography>
+          <Typography variant="body2">
+            {identifierPrefix(session.id)}
+          </Typography>
           {session.current === true && (
             <Chip
               size="small"
@@ -105,7 +110,23 @@ export function SessionsPage() {
       id: 'created',
       header: t('sessions.column.created'),
       cellWrap: 'nowrap',
-      cell: (session) => formatUtc(session.created_at, i18n.language),
+      cell: (session) => {
+        // The page's primary identity: a session id identifies nothing to
+        // a human, so the created time is what the table anchors on. It
+        // never hides, and the shared cap keeps it from crowding the
+        // actions out of a narrow container.
+        const formatted = formatUtc(session.created_at, i18n.language)
+        return (
+          <Typography
+            variant="body2"
+            noWrap
+            sx={primaryColumnMaxWidthSx}
+            title={formatted ?? undefined}
+          >
+            {formatted}
+          </Typography>
+        )
+      },
     },
     {
       id: 'lastSeen',
@@ -124,7 +145,7 @@ export function SessionsPage() {
     {
       id: 'state',
       header: t('sessions.column.state'),
-      priority: 'medium',
+      priority: 'high',
       cellWrap: 'nowrap',
       cell: (session) =>
         session.revoked ? t('sessions.revoked') : t('sessions.active'),
