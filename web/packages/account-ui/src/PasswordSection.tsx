@@ -199,8 +199,6 @@ export function PasswordSection({ session }: PasswordSectionProps) {
             >
               {/* A first password is set, not changed, and no other device
                   was signed out by a change's rotation. */}
-              {/* A first password is set, not changed, and no other device
-                  was signed out by a change's rotation. */}
               {changed
                 ? t(firstPassword ? 'password.changedFirst' : 'password.changed')
                 : ''}

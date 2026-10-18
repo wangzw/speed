@@ -23,11 +23,12 @@ app talks to its own origin by default (the client base URL falls back to
 `window.location.origin`), and the dev server proxies the namespaces the
 backend endpoints claim onto the demo's backend listener: the api, account and
 admin endpoints all answer on one port. The claimed prefixes live in
-`backend-prefixes.json` beside this package (`/api`; `/auth` and `/features`;
-`/audit`, `/authz`, `/settings`, `/sms` and `/tenant`), and `vite.config.ts`
-generates one segment-anchored proxy key per prefix from that list. The target
-defaults to the `sqlite-memory` stack's backend listener (`127.0.0.1:8080`);
-override it with `DEMO_WEB_BACKEND_PROXY` when a run moves it.
+`backend-prefixes.json` beside this package (`/api`; `/auth`, `/features` and
+`/workspace`; `/audit`, `/authz`, `/settings`, `/sms` and `/tenant`), and
+`vite.config.ts` generates one segment-anchored proxy key per prefix from that
+list. The target defaults to the `sqlite-memory` stack's backend listener
+(`127.0.0.1:8080`); override it with `DEMO_WEB_BACKEND_PROXY` when a run moves
+it.
 
 Run the backend first (`go -C starters/demo/server run . --config
 file:testdata/sqlite-memory.yaml sqlite-memory serve`), then `pnpm dev`.
