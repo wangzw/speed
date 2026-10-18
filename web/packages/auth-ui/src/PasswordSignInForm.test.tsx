@@ -160,6 +160,17 @@ describe('PasswordSignInForm', () => {
     expect(harness.calls).toHaveLength(1)
   })
 
+  it('advertise only the identifiers a password login accepts', () => {
+    // The account contract defines a password login name as a username or
+    // email; a phone is not one (it is the SMS channel's identifier), and a
+    // phone plus a password always ends in the collapsed refusal. The
+    // identifier label and the refusal copy must not offer a phone.
+    expect(zhCN.passwordSignIn.identifierLabel).not.toMatch(/手机/)
+    expect(zhCN.passwordSignIn.loginFailed).not.toMatch(/手机/)
+    expect(enUS.passwordSignIn.identifierLabel).not.toMatch(/phone/i)
+    expect(enUS.passwordSignIn.loginFailed).not.toMatch(/phone/i)
+  })
+
   it('never reach the network for an empty submit', async () => {
     const harness = makeHarness({})
     renderWithProviders(<PasswordSignInForm session={harness.session} />)

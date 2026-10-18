@@ -228,8 +228,9 @@ groups the descriptors by `kind`:
   strip -- a tablist with nothing to switch between is not a choice);
   password and SMS code keep their own forms, and any other form method is
   driven by its descriptor's `fields`. Switching tabs unmounts the previous
-  form, so its half-typed state and whole-attempt error are gone with it --
-  a deliberate reset: channel errors must not leak across surfaces.
+  form, so its half-typed state, parked step and whole-attempt error are
+  gone with it -- a deliberate reset, including between two
+  descriptor-driven forms: channel errors must not leak across surfaces.
 - `redirect` methods render as buttons in the social block.
 - `enterprise` methods render an email-first entry that discovers the
   viewer's identity providers (`session.discoverSso`).
@@ -243,9 +244,14 @@ enterprise methods complete through the callback route instead: the screen
 hands their authorization URLs to the host and fires no `onSignedIn`. The
 screen renders no heading of its own: the page above (branding, the heading)
 is host content. `mode` is a presentational switch: a "register" entry
-appears (with a "sign in" entry back) where the deployment lets a first
-login open an account, but it runs the one sign-in flow -- the account opens
-server-side.
+appears (with a "sign in instead" entry back) where the deployment lets a
+first login open an account, but it runs the one sign-in flow -- the account
+opens server-side. The register hint says an account is created on first use
+only where the chosen method can create one; the password method does not
+open accounts, so the hint does not claim it does. The register entry itself
+counts only the methods the screen renders: a method with an unknown `kind`,
+or a form channel narrowed away by the deprecated `channels` prop, cannot
+make it appear.
 
 While the read is in flight a `role="status"` notice shows; a failed read
 renders its error code in a banner with a retry button. The tab strip is
@@ -294,11 +300,12 @@ them reads the session snapshot or renders a title.
 
 ### PasswordSignInForm
 
-One identifier field -- email, phone, or username, the backend decides
-which -- and a password field, sent as a `method: 'password'` flow's first
-step. A
-forced password change or a second factor the flow then parks on is
-rendered by the shared step renderer in place of these fields.
+One identifier field -- email or username, the two identifiers the account
+contract accepts as a password login name; a phone number is not one, and
+the SMS channel is where it belongs -- and a password field, sent as a
+`method: 'password'` flow's first step. A forced password change or a
+second factor the flow then parks on is rendered by the shared step
+renderer in place of these fields.
 
 A refused credential submit (`authn.login_failed`) is rendered as the
 password field's own message (`passwordSignIn.loginFailed`): the server
@@ -545,7 +552,7 @@ enforced by registration):
 |---|---|
 | `passwordSignIn.*` | the password channel: title, field labels (identifier, password, new password), submit, the credential refusal |
 | `smsSignIn.*` | the SMS channel: title, country/phone labels, the phone hint, send/resubmit/change-phone actions, the sent notice (the assembled E.164 number), the used-code notice. The per-country validation messages live in the `ui-kit` namespace (`phoneNumber.*`) |
-| `signInFlow.*` | the step renderer: the continue action, the factor/enroll titles, the factor-kind names (a guarded closed set plus an "other" label), the passkey prompt, its waiting notice and cancel/retry actions, and its unsupported/cancelled/failed messages, the unavailable-step notice |
+| `signInFlow.*` | the step renderer: the continue action, the factor/enroll titles, the factor-kind names (a guarded closed set plus an "other" label), the passkey prompt for a login and for a registration, the waiting/cancel/retry controls, and its unsupported/cancelled/failed messages, the unavailable-step notice |
 | `discovery.*` | the sign-in surface: the loading notice and the retry action |
 | `mode.*` | the sign-in surface: the register / sign-in entries and the register hint |
 | `enterprise.*` | the enterprise entry: the email label, the continue action, the provider-picker title and the no-match notice |
@@ -595,11 +602,13 @@ violation, with two recorded exceptions shared with `ui-kit`:
 `color-contrast` is disabled because jsdom computes no layout or color (a
 contrast result there is neither trustworthy nor actionable -- the theme
 owns contrast and is verified browser-side), and `region` is disabled
-because the units under test are components, not full app pages. The
-interaction semantics are asserted by the tests rather than left to axe:
-sent notices and the social-callback pending state announce through
-`role="status"` containers (the pending spinner is `aria-hidden`, so the
-notice is not read twice), every failure renders in one `role="alert"`,
+because the units under test are components, not full app pages.
+Interaction semantics are asserted by the tests rather than left to axe:
+sent notices and the social-callback and passkey-waiting states announce
+through `role="status"` containers mounted empty and filled a commit later
+(the pending spinners are `aria-hidden`, so the notice is not read twice;
+entering the passkey waiting state moves focus to its cancel control),
+every failure renders in one `role="alert"`,
 buttons disable while their request is in flight, the channel strip is MUI
 `Tabs` (arrow-key navigation, labelled by the channel titles) whose tabs
 each carry an `id` and the `aria-controls` of their own panel -- the

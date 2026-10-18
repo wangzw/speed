@@ -1,11 +1,11 @@
 {
   "passwordSignIn": {
     "title": "Password",
-    "identifierLabel": "Email, phone, or username",
+    "identifierLabel": "Email or username",
     "passwordLabel": "Password",
     "newPasswordLabel": "New password",
     "submit": "Sign in",
-    "loginFailed": "The email, phone, or username and password are incorrect."
+    "loginFailed": "The email or username and password are incorrect."
   },
   "smsSignIn": {
     "title": "SMS code",
@@ -28,6 +28,7 @@
     "enrollTotpHelp": "Scan or copy this setup URI into your authenticator app.",
     "codeLabel": "Authenticator code",
     "passkeyPrompt": "Use your device to sign in with a passkey.",
+    "passkeyRegisterPrompt": "Use your device to register a passkey.",
     "passkeyWaiting": "Waiting for your device…",
     "passkeyCancel": "Cancel",
     "passkeyRetry": "Try again",
@@ -47,8 +48,8 @@
   },
   "mode": {
     "registerEntry": "Create an account",
-    "signInEntry": "Sign in",
-    "registerHint": "Your account is created the first time you sign in with one of these methods."
+    "signInEntry": "Sign in instead",
+    "registerHint": "If the sign-in method you choose can create an account, your account is created the first time you use it."
   },
   "enterprise": {
     "emailLabel": "Work email",

@@ -226,9 +226,21 @@ export function SignInScreen({
         : (formNames[0] ?? '')
   const activeDescriptor = formMethods.find((method) => method.name === selected)
 
+  // The methods this screen actually renders: the form channels left after
+  // the deprecated narrowing, the redirect methods (unless the deprecated
+  // provider override replaces them), and the enterprise / webauthn
+  // entries. A method with an unknown kind renders nothing, so it cannot
+  // make the register entry visible.
+  const renderedMethods = [
+    ...formMethods,
+    ...(social?.providers === undefined ? redirectMethods : []),
+    ...enterpriseMethods,
+    ...webauthnMethods,
+  ]
+
   const registerVisible =
     doc.signup?.enabled === true &&
-    doc.methods.some((method) => method.opens_account === true)
+    renderedMethods.some((method) => method.opens_account === true)
 
   const redirectConfigs: readonly SocialProviderConfig[] =
     social?.providers ??
@@ -317,6 +329,7 @@ export function SignInScreen({
       ) : null}
       {formMethods.length > 1 ? (
         <Box
+          key={selected}
           role="tabpanel"
           id={panelIdOf(selected)}
           aria-labelledby={tabIdOf(selected)}

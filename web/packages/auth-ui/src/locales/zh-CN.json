@@ -1,11 +1,11 @@
 {
   "passwordSignIn": {
     "title": "密码登录",
-    "identifierLabel": "邮箱、手机号或用户名",
+    "identifierLabel": "邮箱或用户名",
     "passwordLabel": "密码",
     "newPasswordLabel": "新密码",
     "submit": "登录",
-    "loginFailed": "邮箱、手机号或用户名与密码不正确。"
+    "loginFailed": "邮箱或用户名与密码不正确。"
   },
   "smsSignIn": {
     "title": "短信登录",
@@ -28,6 +28,7 @@
     "enrollTotpHelp": "将以下设置 URI 扫描或复制到验证器应用。",
     "codeLabel": "验证器验证码",
     "passkeyPrompt": "用你的设备以通行密钥登录。",
+    "passkeyRegisterPrompt": "用你的设备登记通行密钥。",
     "passkeyWaiting": "正在等待你的设备…",
     "passkeyCancel": "取消",
     "passkeyRetry": "重试",
@@ -47,8 +48,8 @@
   },
   "mode": {
     "registerEntry": "创建账户",
-    "signInEntry": "登录",
-    "registerHint": "首次用下列任一方式登录时会为你创建账户。"
+    "signInEntry": "改为登录",
+    "registerHint": "若所用的登录方式可以创建账户，你的账户会在首次登录时创建。"
   },
   "enterprise": {
     "emailLabel": "工作邮箱",

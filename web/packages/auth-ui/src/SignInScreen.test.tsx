@@ -11,7 +11,8 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { flushSync } from 'react-dom'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SignInScreen } from './SignInScreen.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -64,6 +65,23 @@ function stubCredentials(value: unknown): () => void {
       Object.defineProperty(window.navigator, 'credentials', original)
     }
   }
+}
+
+/** A credential shaped as navigator.credentials.get returns one. */
+function assertionCredential(): PublicKeyCredential {
+  return {
+    id: 'AQID',
+    rawId: new Uint8Array([1, 2, 3]).buffer,
+    type: 'public-key',
+    response: {
+      clientDataJSON: new Uint8Array([4]).buffer,
+      authenticatorData: new Uint8Array([5]).buffer,
+      signature: new Uint8Array([6]).buffer,
+      userHandle: null,
+    },
+    getClientExtensionResults: () => ({}),
+    authenticatorAttachment: 'platform',
+  } as unknown as PublicKeyCredential
 }
 
 /** A harness whose passkey flow opens on its assertion step. No answer is
@@ -186,13 +204,8 @@ describe('SignInScreen', () => {
       await screen.findByLabelText(zhCN.smsSignIn.codeLabel),
       '123456',
     )
-    // The register entry's own "sign in" toggle shares the submit's label,
-    // so the submit is read inside the form.
-    const form = screen
-      .getByLabelText(zhCN.smsSignIn.codeLabel)
-      .closest('form') as HTMLFormElement
     await user.click(
-      within(form).getByRole('button', { name: zhCN.smsSignIn.submit }),
+      screen.getByRole('button', { name: zhCN.smsSignIn.submit }),
     )
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     expect(onSignedIn).toHaveBeenCalledWith({
@@ -389,19 +402,7 @@ describe('SignInScreen', () => {
     // The ceremony is the browser's own API: stub the one method an
     // assertion step reaches and hand back a credential shaped as
     // navigator.credentials.get returns one.
-    const credential = {
-      id: 'AQID',
-      rawId: new Uint8Array([1, 2, 3]).buffer,
-      type: 'public-key',
-      response: {
-        clientDataJSON: new Uint8Array([4]).buffer,
-        authenticatorData: new Uint8Array([5]).buffer,
-        signature: new Uint8Array([6]).buffer,
-        userHandle: null,
-      },
-      getClientExtensionResults: () => ({}),
-      authenticatorAttachment: 'platform',
-    } as unknown as PublicKeyCredential
+    const credential = assertionCredential()
     const get = vi.fn().mockResolvedValue(credential)
     const original = Object.getOwnPropertyDescriptor(window.navigator, 'credentials')
     Object.defineProperty(window.navigator, 'credentials', {
@@ -622,6 +623,117 @@ describe('SignInScreen', () => {
     ).toBeUndefined()
   })
 
+  it('discard a passkey ceremony that settles after the surface unmounted', async () => {
+    const harness = makePasskeyHarness()
+    let resolveGet: (value: unknown) => void = () => {}
+    const pending = new Promise((resolve) => {
+      resolveGet = resolve
+    })
+    const get = vi.fn().mockReturnValue(pending)
+    const restore = stubCredentials({ get, create: vi.fn() })
+    const onSignedIn = vi.fn()
+    try {
+      const { unmount } = renderWithProviders(
+        <SignInScreen
+          session={harness.session}
+          discovery={PASSKEY_ONLY}
+          onSignedIn={onSignedIn}
+        />,
+      )
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'Passkey' }))
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+      )
+      await screen.findByText(zhCN.signInFlow.passkeyWaiting)
+      const signal = (
+        get.mock.calls[0]?.[0] as { signal?: AbortSignal } | undefined
+      )?.signal
+      unmount()
+      // The surface abandoned the ceremony with itself: the browser was
+      // asked to give it up, and the attempt no longer matches.
+      expect(signal?.aborted).toBe(true)
+      await act(async () => {
+        resolveGet(assertionCredential())
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      // The late success answered nothing and completed nothing for the
+      // screen the viewer already left.
+      expect(
+        harness.calls.find((call) => call.path === '/auth/flows/answer'),
+      ).toBeUndefined()
+      expect(onSignedIn).not.toHaveBeenCalled()
+    } finally {
+      restore()
+    }
+    expect(get).toHaveBeenCalledTimes(1)
+  })
+
+  it('mount the passkey waiting notice empty, fill it a commit later, and focus cancel', async () => {
+    const harness = makePasskeyHarness()
+    const pending = new Promise<PublicKeyCredential>(() => {})
+    const get = vi.fn().mockReturnValue(pending)
+    const restore = stubCredentials({ get, create: vi.fn() })
+    try {
+      renderWithProviders(
+        <SignInScreen session={harness.session} discovery={PASSKEY_ONLY} />,
+      )
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'Passkey' }))
+      act(() => {
+        flushSync(() => {
+          screen
+            .getByRole('button', { name: zhCN.signInFlow.submit })
+            .click()
+        })
+        // The region is born empty: a live region announces only content
+        // changes that follow its own insertion, and the text fills the
+        // existing region a commit later.
+        expect(screen.getByRole('status').textContent).toBe('')
+      })
+      await waitFor(() =>
+        expect(screen.getByRole('status')).toHaveTextContent(
+          zhCN.signInFlow.passkeyWaiting,
+        ),
+      )
+      // The Continue button that had focus unmounted with the phase; the
+      // control the waiting state offers has it now.
+      expect(
+        screen.getByRole('button', { name: zhCN.signInFlow.passkeyCancel }),
+      ).toHaveFocus()
+    } finally {
+      restore()
+    }
+    expect(get).toHaveBeenCalledTimes(1)
+  })
+
+  it('prompt for registration on a passkey enrollment step', async () => {
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'enroll',
+          next: {
+            kind: 'webauthn',
+            options: { challenge: 'abc', user: { id: 'dXNlcg' } },
+          },
+        }),
+    })
+    renderWithProviders(
+      <SignInScreen session={harness.session} discovery={PASSKEY_ONLY} />,
+    )
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Passkey' }))
+    // A creation ceremony registers a passkey; the prompt says so instead
+    // of claiming a sign-in.
+    expect(
+      await screen.findByText(zhCN.signInFlow.passkeyRegisterPrompt),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(zhCN.signInFlow.passkeyPrompt),
+    ).not.toBeInTheDocument()
+  })
+
   it('present the register entry only where a first login may open an account', async () => {
     const harness = makeHarness({})
     renderWithProviders(
@@ -657,6 +769,86 @@ describe('SignInScreen', () => {
         )}
       />,
     )
+    expect(
+      screen.queryByRole('button', { name: zhCN.mode.registerEntry }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('name the register-mode toggle apart from the channel submit', async () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [
+            { name: 'password', kind: 'form' },
+            { name: 'sms', kind: 'form', opens_account: true },
+          ],
+          { signup: true },
+        )}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mode.registerEntry }),
+    )
+    // Register mode shows the mode toggle and the selected channel's submit
+    // at once. Each answers to its own name, so a viewer listing buttons
+    // does not hear the same name twice.
+    expect(
+      screen.getAllByRole('button', { name: zhCN.mode.signInEntry }),
+    ).toHaveLength(1)
+    expect(
+      screen.getAllByRole('button', { name: zhCN.passwordSignIn.submit }),
+    ).toHaveLength(1)
+    expect(zhCN.mode.signInEntry).not.toBe(zhCN.passwordSignIn.submit)
+  })
+
+  it('state the register hint conditionally, not for every listed method', () => {
+    // The password method does not open accounts, and it can be the tab the
+    // hint sits above, so the hint must not claim that every listed method
+    // creates an account.
+    expect(zhCN.mode.registerHint).not.toMatch(/任一|每种|所有|这些方式/)
+    expect(enUS.mode.registerHint).not.toMatch(
+      /one of these|any of these|every/i,
+    )
+  })
+
+  it('count only rendered methods for the register entry', () => {
+    const harness = makeHarness({})
+    const { unmount } = renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [
+            { name: 'password', kind: 'form' },
+            { name: 'sms', kind: 'form', opens_account: true },
+          ],
+          { signup: true },
+        )}
+        channels={['password']}
+      />,
+    )
+    // The account-opening SMS form is narrowed away, so no rendered channel
+    // can open an account and the entry is absent.
+    expect(
+      screen.queryByRole('button', { name: zhCN.mode.registerEntry }),
+    ).not.toBeInTheDocument()
+    unmount()
+
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [
+            { name: 'password', kind: 'form' },
+            { name: 'quantum', kind: 'telepathy', opens_account: true },
+          ],
+          { signup: true },
+        )}
+      />,
+    )
+    // An unknown kind renders nothing, so it cannot make the entry visible.
     expect(
       screen.queryByRole('button', { name: zhCN.mode.registerEntry }),
     ).not.toBeInTheDocument()
@@ -734,6 +926,105 @@ describe('SignInScreen', () => {
     )
     await waitFor(() => expect(startFlow).toHaveBeenCalledTimes(1))
     expect(startFlow.mock.calls[0]?.[0]?.delivery).not.toBe('token')
+  })
+
+  it('unmount the previous descriptor form when switching between descriptor channels', async () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([
+          {
+            name: 'alpha',
+            kind: 'form',
+            label: 'Alpha',
+            fields: [{ name: 'identifier', kind: 'text', required: true }],
+          },
+          {
+            name: 'beta',
+            kind: 'form',
+            label: 'Beta',
+            fields: [{ name: 'identifier', kind: 'text', required: true }],
+          },
+        ])}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+      'typed-under-alpha',
+    )
+    await user.click(screen.getByRole('tab', { name: 'Beta' }))
+    // Both channels render the same element type at the same position, so
+    // the reset comes from the panel's key: beta's form is a fresh
+    // instance, not alpha's instance re-rendered with half-typed state.
+    expect(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+    ).toHaveValue('')
+  })
+
+  it('drop a parked descriptor flow when switching to another descriptor channel', async () => {
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'alpha_code', kind: 'code' }],
+          },
+        }),
+    })
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([
+          {
+            name: 'alpha',
+            kind: 'form',
+            label: 'Alpha',
+            fields: [{ name: 'identifier', kind: 'text', required: true }],
+          },
+          {
+            name: 'beta',
+            kind: 'form',
+            label: 'Beta',
+            fields: [{ name: 'recovery', kind: 'text', required: true }],
+          },
+        ])}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+      'stale-value',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+    )
+    // Alpha's flow parks on its own challenge step.
+    await screen.findByLabelText('alpha_code')
+    await user.click(screen.getByRole('tab', { name: 'Beta' }))
+    // The parked alpha step went with the unmounted alpha form; beta's
+    // first step is the surface.
+    expect(screen.queryByLabelText('alpha_code')).not.toBeInTheDocument()
+    const recovery = screen.getByLabelText('recovery')
+    expect(recovery).toHaveValue('')
+    await user.type(recovery, 'fresh-value')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+    )
+    await waitFor(() => expect(harness.calls).toHaveLength(2))
+    // Beta's submit carries beta's field only: alpha's value did not ride
+    // along.
+    expect(harness.calls[1]?.options?.body).toMatchObject({
+      method: 'beta',
+      input: { recovery: 'fresh-value' },
+    })
+    expect(
+      (harness.calls[1]?.options?.body as { input?: Record<string, string> })
+        .input,
+    ).not.toHaveProperty('identifier')
   })
 
   it('honor the deprecated channels override to narrow the form strip', () => {

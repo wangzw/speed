@@ -37,7 +37,7 @@
  * and a server-supplied label wins over both.
  */
 
-import { useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
@@ -207,14 +207,21 @@ function TotpFields({
  * device (a page with no authenticator at all keeps it pending until it is
  * dismissed), so a click moves the step into an explicit waiting state: the
  * waiting message and a cancel control replace the button instead of
- * leaving a disabled button as the only signal. Cancel is its own state
+ * leaving a disabled button as the only signal. The waiting notice mounts
+ * as an empty `role="status"` region and fills a commit later, so a screen
+ * reader announces it; focus moves to the cancel control, since the button
+ * that had it unmounted. Cancel is its own state
  * transition, taken at once: it shows the failure and retry without waiting
  * for the ceremony to settle, and only best-effort asks the browser to give
  * up the ceremony (the credential API does not guarantee it honours an
  * abort). A late answer from an abandoned ceremony is discarded by attempt.
+ * Unmount abandons the ceremony the same way: the attempt is invalidated
+ * and the browser is asked to give it up, so a ceremony that settles after
+ * the surface is gone answers nothing and completes nothing.
  * A browser without WebAuthn, a cancelled or dismissed ceremony and a
  * failed ceremony each render their own message, and the retry action runs
- * the ceremony again against the same step. */
+ * the ceremony again against the same step. The prompt names the ceremony
+ * the step asks for: a login assertion or a passkey to register. */
 function PasskeyFields({
   options,
   busy,
@@ -229,6 +236,10 @@ function PasskeyFields({
   const { t } = useAuthUiTranslation()
   const [working, setWorking] = useState(false)
   const [errorKey, setErrorKey] = useState<string | null>(null)
+  // The waiting notice's text, one commit behind the waiting phase (see
+  // the effect below): the region must mount empty.
+  const [waitingCommitted, setWaitingCommitted] = useState(false)
+  const cancelRef = useRef<HTMLButtonElement>(null)
   // The ceremony currently being waited on. Cancel clears it before the
   // failure renders, so the ceremony's late settlement and a retry's own
   // attempt stay apart from this one.
@@ -237,6 +248,36 @@ function PasskeyFields({
     controller: AbortController
   } | null>(null)
   const attemptRef = useRef(0)
+
+  // Abandon the ceremony with the surface. An unmounted step has no flow to
+  // answer and no host to complete for, so the attempt is invalidated (a
+  // late success or failure no longer matches it) and the browser is asked
+  // to give the ceremony up. Without this, a ceremony that settles after
+  // the surface is gone would still answer the parked step and fire the
+  // host's completion for a screen the viewer already left.
+  useEffect(
+    () => () => {
+      const pending = pendingRef.current
+      pendingRef.current = null
+      pending?.controller.abort()
+    },
+    [],
+  )
+
+  // The waiting notice's role="status" region must never mount together
+  // with its text: a live region announces only content changes that
+  // follow its own insertion, so a notice born in the same commit as the
+  // region would be silent. The text is therefore gated on
+  // `waitingCommitted`, which lags the waiting phase by one commit: the
+  // region is born empty and the text fills it a commit later. The same
+  // effect moves focus to the cancel control, because the Continue button
+  // that had it unmounted with the phase change.
+  useEffect(() => {
+    setWaitingCommitted(working)
+    if (working) {
+      cancelRef.current?.focus()
+    }
+  }, [working])
 
   async function run(): Promise<void> {
     const attempt = attemptRef.current + 1
@@ -276,7 +317,9 @@ function PasskeyFields({
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, width: '100%' }}>
       <Typography variant="body2" color="text.secondary">
-        {t('signInFlow.passkeyPrompt')}
+        {webauthnStepOf(options) === 'register'
+          ? t('signInFlow.passkeyRegisterPrompt')
+          : t('signInFlow.passkeyPrompt')}
       </Typography>
       {errorKey !== null && (
         <Alert severity="error" role="alert">
@@ -290,9 +333,12 @@ function PasskeyFields({
             sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}
           >
             <CircularProgress size={18} aria-hidden={true} />
-            <Typography>{t('signInFlow.passkeyWaiting')}</Typography>
+            <Typography>
+              {waitingCommitted ? t('signInFlow.passkeyWaiting') : ''}
+            </Typography>
           </Box>
           <Button
+            ref={cancelRef}
             type="button"
             variant="outlined"
             disabled={busy}
