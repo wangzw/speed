@@ -380,9 +380,9 @@ flowchart TD
 | 签名密钥的首次运行生成 | 已实现 | `starters/demo/server/signingkey.go` `ensureSigningKey`、`signingKeyPath`；`starters/demo/server/main.go` `run` |
 | 平台基线（`serve`/`worker` 的点名集与配置样例） | 部分实现 | `starters/demo/server/main.go` `baselineServe`、`baselineWorker`；`starters/demo/server/testdata/` |
 | 审查装配（`-tags review` 的构建变体与 `server/review/sqlite.yaml`） | 已实现 | `starters/demo/server/review.go` `reviewModules`、`reviewSender`；`starters/demo/server/review_off.go` `reviewModules`；`starters/demo/server/review/sqlite.yaml` |
-| 审查装配的提交门禁腿 | 已实现 | `./Makefile` `vet-review` |
+| 审查装配的提交门禁腿 | 已实现 | `./Makefile` `vet-review`、`test-review` |
 | 审查装配的回环守卫 | 已实现 | `starters/demo/server/review.go` `reviewGuardModule`、`loopbackAddress` |
-| 只在 `review` 标签下编译的用例在提交门禁里被执行 | 未实现 | — |
+| 只在 `review` 标签下编译的用例在提交门禁里被执行 | 已实现 | `./Makefile` `test-review`；`tools/check_test_tiers.py` |
 | 通知面的宿主侧授权 | 已实现 | `starters/demo/server/notification.go` `notificationModule`、`notificationRoutes`；纳入见 `starters/demo/server/main.go` `baselineServe` |
 | `seed` 命令 | 已实现 | `starters/demo/server/seed.go` `seedModule`、`seedSchema`、`seedDatabase`、`seedTenant`、`seedAdministration`、`seedBinding`、`seedSettings`；命令见 `starters/demo/server/main.go` `addStack` |
 | `gen` 命令 | 已实现 | `starters/demo/server/main.go` `genModule`、`genDocument`、`featureVocabulary` |
