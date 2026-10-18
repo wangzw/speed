@@ -13,7 +13,6 @@ Thumbs.db
 *.local
 
 # Go
-/go/**/bin/
 *.test
 *.out
 # Workspace-mode dependency checksums; go.work lists only in-repo modules.
