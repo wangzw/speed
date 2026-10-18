@@ -13,7 +13,7 @@
 - `SignOutButton` 驱动 `session.logout()`。
 - `SessionEndedScreen` 是宿主挂在一处已认证视图刚翻成匿名时的占位屏。
 - `AcceptInvitationScreen` 渲染邀请受理面：读取令牌指向的邀请（acceptView）并受理它（accept）。它驱动的不是会话操作，而是宿主交给它的两个邀请操作。
-- `ImpersonationBanner` 渲染冒充期间应用壳顶部栏之下的横幅：谁被冒充、租户、到期时刻与「结束冒充」，并带一个隐藏控件。`ImpersonationIndicator` 是顶部栏里的身份指示，冒充期间始终渲染，同时是横幅的显示开关。两者都不驱动会话，也不发请求，结束操作由宿主交给它们；横幅与宿主账户菜单里的「结束冒充」项共用同一次结束尝试。
+- `ImpersonationBanner` 渲染冒充期间应用壳顶部栏之下的横幅：谁被冒充、租户、到期时刻与「结束冒充」，并带一个隐藏控件。`ImpersonationIndicator` 是顶部栏里的身份指示，冒充期间始终渲染，同时是横幅的显示开关。`ImpersonationEndMenuItem` 是宿主账户菜单里的「结束冒充」项。`ImpersonationNoticeProvider` 把这三个部件连到同一个隐藏状态与宿主的同一次结束尝试。这些部件都不驱动会话，也不发请求，结束操作由宿主交给提供者。
 
 驱动会话的组件各持有一个 `session` 属性，会话由宿主传入；`AcceptInvitationScreen` 不驱动会话，它的两个操作经属性的 `invitations` 取用（见「外部接口契约」）。组件不消费 auth-core 的**钩子**（`useAuthState`、`usePermission`），只经属性调用会话的**操作**——发现读取（`listMethods`、`discoverSso`）即在其列（见「非职责」）。内建文案一律取自 `auth-ui` 命名空间；品牌名（提供方自己的名字）由发现文档带，不进命名空间。
 
@@ -84,26 +84,66 @@ interface InvitationOperations {
 }
 
 // ImpersonationBanner：冒充期间应用壳顶部栏之下的横幅。宿主始终挂载它，经
-// `impersonation` 告诉它当前有没有冒充，经 `onEnd` 绑定结束冒充的操作，经
-// `dismissed` 与 `onDismiss` 持有横幅的隐藏状态。
+// `impersonation` 告诉它当前有没有冒充；结束尝试的状态与操作由宿主持有，经
+// `onEnd`、`pending`、`failureCode`、`successMessage` 交给它。
 interface ImpersonationBannerProps {
   readonly impersonation: ImpersonationBannerState | null // null 即当前没有冒充
-  readonly onEnd: () => Promise<void>                      // 兑现即已结束，抛出即失败
-  readonly dismissed?: boolean                             // 为真时不渲染横幅本体，常驻的 live region 不受影响；缺省 false
+  readonly onEnd: () => void                               // 发起宿主的那一次结束尝试
+  readonly pending?: boolean                               // 该尝试在途：结束控件禁用并标忙
+  readonly failureCode?: string | null                     // 该尝试的失败码，渲染在横幅内
+  readonly successMessage?: string | null                  // 该尝试的成功文案，落在常驻 live region
+  readonly dismissed?: boolean                             // 为真时不渲染横幅本体，常驻 live region 不受影响；缺省 false
   readonly onDismiss?: () => void                          // 给出时横幅渲染「隐藏」控件，缺省则没有该控件
-}
-
-// ImpersonationIndicator：顶部栏里的身份指示，也是横幅的显示开关。
-interface ImpersonationIndicatorProps {
-  readonly impersonation: ImpersonationBannerState | null // null 时不渲染
-  readonly expanded: boolean                               // 横幅当前是否显示
-  readonly onToggle: () => void                            // 显示或隐藏横幅
+  readonly regionId?: string                               // 横幅本体的 id，供身份指示的 aria-controls 引用
 }
 
 interface ImpersonationBannerState {
   readonly subject: string     // 被冒充账户的显示名，宿主已解析成文本
   readonly tenant?: string     // 冒充所在租户的展示文本，示范宿主传租户标识；读不到时缺省
   readonly expiresAt?: Date    // 冒充到期时刻，读不到时缺省
+  readonly grantId?: string    // 冒充授予的稳定标识，隐藏状态据它判定是否新一次冒充；读不到时缺省
+}
+
+// ImpersonationNoticeProvider：把横幅、身份指示与账户菜单项连到同一个隐藏状态与
+// 宿主的同一次结束尝试，三个部件都从它读。宿主把它挂在外壳之外。
+interface ImpersonationNoticeProviderProps {
+  readonly impersonation: ImpersonationBannerState | null
+  readonly identityKey?: string          // 生效身份的稳定值；变化即复位隐藏
+  readonly onEnd: () => void
+  readonly pending?: boolean
+  readonly failureCode?: string | null
+  readonly successMessage?: string | null
+  readonly children: ReactNode
+}
+
+// useImpersonationNotice()：在提供者之内返回下面的值，之外返回 null（从不冒充的外壳）。
+interface ImpersonationNotice {
+  readonly impersonation: ImpersonationBannerState | null
+  readonly dismissed: boolean
+  readonly regionId: string
+  readonly pending: boolean
+  readonly failureCode: string | null
+  readonly successMessage: string | null
+  readonly end: () => void               // 发起共用的结束尝试
+  readonly show: () => void
+  readonly dismiss: () => void           // 隐藏横幅并把焦点移到身份指示
+  readonly toggle: () => void
+  readonly indicatorRef: RefObject<HTMLDivElement | null> // 隐藏时焦点的去处
+}
+
+// ImpersonationIndicator：顶部栏里的身份指示，也是横幅的显示开关。
+interface ImpersonationIndicatorProps {
+  readonly impersonation: ImpersonationBannerState | null // null 时不渲染
+  readonly expanded: boolean                               // 横幅当前是否显示
+  readonly controls?: string                               // 横幅本体的 id，显示时作 aria-controls
+  readonly onToggle: () => void                            // 显示或隐藏横幅，焦点留在指示上
+  readonly ref?: Ref<HTMLDivElement>
+}
+
+// ImpersonationEndMenuItem：账户菜单里的「结束冒充」项；提供者之外或没有冒充时不渲染。
+interface ImpersonationEndMenuItemProps {
+  readonly onActivate?: () => void       // 激活之后，通常用来关闭菜单
+  readonly divider?: boolean
 }
 ```
 
@@ -126,7 +166,7 @@ interface ImpersonationBannerState {
 | `SignOutButton` | `session.logout` |
 | `SessionEndedScreen` | 无 |
 
-`AcceptInvitationScreen` 不在上表：它驱动的不是会话操作，而是宿主交给它的两个邀请操作（`invitations.readInvitation` 与 `invitations.acceptInvitation`）。`ImpersonationBanner` 与 `ImpersonationIndicator` 同样不在上表：它们不持 `session`，状态与操作都经属性交给它们（`impersonation`、`onEnd`、`dismissed`、`onDismiss`、`expanded`、`onToggle`），结束冒充的 HTTP 在宿主绑定的操作里。
+`AcceptInvitationScreen` 不在上表：它驱动的不是会话操作，而是宿主交给它的两个邀请操作（`invitations.readInvitation` 与 `invitations.acceptInvitation`）。冒充通告的部件（`ImpersonationBanner`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`ImpersonationNoticeProvider`）同样不在上表：它们不持 `session`，状态与操作都由宿主经属性交给提供者（`impersonation`、`identityKey`、`onEnd`、`pending`、`failureCode`、`successMessage`），结束冒充的 HTTP 在宿主绑定的那次尝试里。
 
 每个渠道的表单只驱动它那一个方法：`startFlow` 起流程，后续每一步（第二因素、改口令、登记因素、通行密钥仪式）由步进渲染器按 `next.kind` 渲染并交 `session.answerFlow`，直到流程落到完成。一次登录的落地由 auth-core 在同一会话上提交，视图不自己持有登录态。
 
@@ -248,12 +288,13 @@ sequenceDiagram
 
 决策见 [ADR-web-impersonation-shell-2026-10-18](../../../adr/adr-web-impersonation-shell-2026-10-18.md)。
 
-1. **宿主始终挂载它，`impersonation` 为 `null` 时只留一个空的 live region。** 没有冒充时不渲染横幅，不占高度；区域先挂空、冒充出现时再填入文本，刚结束冒充的成功文案也留在这个仍挂载的区域里，不随横幅卸载。播报状态下这个区域视觉隐藏，且不得成为可聚焦的滚动区域：键盘用户在横幅槽里的第一次 Tab 落在「结束冒充」上，不落在看不见的节点上。组件首次挂载时 `impersonation` 已非空（开始冒充后租户框架新挂载，或冒充中整页重载）同样先挂空区域、下一 tick 再填入文本，所以这两种情形都播报一次；冒充中重载时的这次播报是对仍处于冒充的提醒，不抑制。
-2. **`impersonation` 非空且 `dismissed` 不为真时渲染横幅。** 横幅是带可及名的 `region` 地标，文字说明正在以 `subject` 的身份操作，给出了 `tenant` 与 `expiresAt` 就一并陈述，`tenant` 按原样陈述，它可能是租户标识而不是可读名，并说明冒充期间管理功能不可用。观看者就是发起者，横幅不陈述发起者。组件不倒计时，也不在到期时自行动作；到期后的重读由宿主负责。版式压低占用的高度：这几句在 `md` 及以上同排、允许换行，窄屏自然折成多行；纵向内边距与正文字号取最小的一档，`md` 及以上单行时的高度目标是 40 到 48px；租户标识过长时单行省略，完整值作为 `title`；结束与隐藏控件靠右同排，窄屏上同样靠右。
+1. **宿主始终挂载它，`impersonation` 为 `null` 时只留一个空的 live region。** 没有冒充时不渲染横幅，不占高度；区域先挂空、冒充出现时再填入文本，刚结束冒充的成功文案也留在这个仍挂载的区域里，不随横幅卸载。播报状态下这个区域视觉隐藏，且不得成为可聚焦的滚动区域：键盘用户在横幅槽里的第一次 Tab 落在「结束冒充」上，不落在看不见的节点上。组件首次挂载时 `impersonation` 已非空（开始冒充后租户框架新挂载，或冒充中整页重载）同样先挂空区域、下一 tick 再填入文本，所以这两种情形都播报一次；冒充中重载时的这次播报是对仍处于冒充的提醒，不抑制。结束若发生在别的入口、使横幅所展示的冒充消失，组件自己在这个区域里落「冒充已结束」；宿主那次结束尝试自己的成功文案同样落在这里。
+2. **`impersonation` 非空且 `dismissed` 不为真时渲染横幅。** 横幅是带可及名的 `region` 地标，文字说明正在以 `subject` 的身份操作，给出了 `tenant` 与 `expiresAt` 就一并陈述，`tenant` 按原样陈述，它可能是租户标识而不是可读名，并说明冒充期间管理功能不可用。观看者就是发起者，横幅不陈述发起者。组件不倒计时，也不在到期时自行动作；到期后的重读由宿主负责。版式压低占用的高度：这几句事实作为同一段文字行内流动，不按句分行；结束与隐藏控件与文字同排并靠右，仅在 `xs` 以下另起一行；纵向内边距与正文字号取最小的一档。高度目标：视口 1280px 时文字单行，高度 40 到 48px；800px 时文字至多两行。租户标识过长时单行省略，完整值作为 `title`，使它不把控件挤出栏外。
 3. **「结束冒充」不依赖 `tenant` 与 `expiresAt`。** 这两项是宿主读状态得来的，读不到时缺省，结束控件照常渲染、照常可用。
-4. **结束是一次写入尝试，横幅与宿主的其他结束入口共用它。** 点击经 `run` 调 `onEnd`；宿主账户菜单里的「结束冒充」项是同一次尝试的另一个入口。在途时所有入口禁用并标忙，不发第二次；兑现即成功，成功文案「冒充已结束」落在组件自己的常驻区域，与横幅是否被隐藏无关；抛出即失败，失败码文本只落在横幅内、控件保持可重试，横幅此刻被隐藏时由宿主先复位隐藏状态使它出现（见 [starters](../design-starters.md) 的「冒充期间的壳」）。「当前已无冒充可结束」（服务端的裸 404）由宿主的 `onEnd` 当成兑现，组件不认识 HTTP 状态。
-5. **横幅可隐藏，隐藏的是横幅本体。** 给了 `onDismiss` 才渲染「隐藏」控件（图标按钮，可及名「隐藏冒充提示」）。点击调 `onDismiss`，宿主把 `dismissed` 置真，横幅本体卸载，**焦点移到顶部栏里的 `ImpersonationIndicator`**，不留在已卸载的控件上。常驻的 live region 与身份指示不受影响，开始与结束的播报照常。隐藏状态不在本组件里：组件只按 `dismissed` 渲染并在点击时报 `onDismiss`，状态由宿主持有，复位条件与持有位置见 [starters](../design-starters.md)。
+4. **结束是宿主持有的一次写入尝试，所有入口共用它。** 宿主以 ui-kit 的 `useWriteFeedback` 持有这次尝试，横幅的结束控件与账户菜单里的「结束冒充」项都只调同一个 `onEnd`；`pending`、`failureCode`、`successMessage` 由该尝试派生，经提供者交给两处。在途时两处同时禁用并标忙，不发第二次；兑现即成功，成功文案「冒充已结束」落在组件自己的常驻区域，与横幅是否被隐藏无关；抛出即失败，失败码文本只落在横幅内、控件保持可重试，横幅此刻被隐藏时提供者在 `failureCode` 由空变为有值的那一刻复位隐藏状态，使它出现。「当前已无冒充可结束」（服务端的裸 404）由宿主的尝试当成兑现，组件不认识 HTTP 状态。
+5. **横幅可隐藏，隐藏的是横幅本体；隐藏状态由 `ImpersonationNoticeProvider` 持有。** 给了 `onDismiss` 才渲染「隐藏」控件（图标按钮，可及名「隐藏冒充提示」）。点击调 `dismiss`，横幅本体卸载，**焦点移到应用栏里的 `ImpersonationIndicator`**，不留在已卸载的控件上。常驻的 live region 与身份指示不受影响，开始与结束的播报照常。隐藏状态是提供者的内存状态，不落任何存储，整页重载复位。下列时刻复位为显示：`grantId` 在两个已读到的值之间变化（同一账户被再次冒充也算）；`identityKey` 变化；冒充结束（`impersonation` 变为 `null`）；结束尝试失败。读到 `grantId` 之前做出的隐藏、随后 `grantId` 读到，不复位；同一授予内状态读的重读、聚焦重读与路由切换也不复位；到期临近不自动再显示。
 6. **身份指示在冒充期间始终渲染。** `ImpersonationIndicator` 在 `impersonation` 非空时渲染为一个按钮，可见文字「冒充中」，可及名取这段可见文字，颜色与图标不单独承载含义；`null` 时不渲染。它是披露控件：`aria-expanded` 为横幅是否显示，`aria-controls` 指向横幅，激活调 `onToggle`，焦点留在指示上。它的提示文字随状态在「隐藏冒充提示」与「显示冒充提示」之间切换。触屏上的可点击目标不小于 44×44（[布局](design-web-layout.md)）。
+7. **账户菜单在冒充期间多一项「结束冒充」。** `ImpersonationEndMenuItem` 在提供者之内且 `impersonation` 非空时渲染，文字是「结束冒充」，在途时是「正在结束冒充…」并禁用；激活调共用的 `end`，再调 `onActivate`（宿主用它关闭菜单）；提供者之外或没有冒充时不渲染。
 
 ### 失败横幅与步骤的推进
 
@@ -287,7 +328,7 @@ sequenceDiagram
 | 邀请读取的其它失败 | 一条 `role="alert"` 横幅渲染应答的错误码文本，加一个重试按钮（重跑一次读取） |
 | 邀请受理被拒 | 一条 `role="alert"` 横幅渲染应答的错误码文本，受理动作保持可重试 |
 | 冒充的结束被拒或传输失败（任一结束入口发起） | 横幅内一条 `role="alert"` 渲染应答的错误码文本，结束控件保持可重试；横幅此刻被隐藏时先复位隐藏状态使它出现 |
-| 冒充的 `onEnd` 兑现 | 渲染「冒充已结束」的成功文案；横幅随宿主把 `impersonation` 置空而消失，文案留在仍挂载的区域里 |
+| 冒充的结束尝试兑现 | 渲染「冒充已结束」的成功文案；横幅随宿主把 `impersonation` 置空而消失，文案留在仍挂载的区域里 |
 | 隐藏横幅 | 横幅本体卸载，焦点移到顶部栏的身份指示；常驻 live region 与身份指示保留 |
 | 一步答复被拒后，下一次答复成功而流程停在新步骤 | 旧的失败横幅被清掉，不留在新步骤旁 |
 | 通行密钥仪式失败与服务端失败横幅先后出现 | 互斥：出现一条时清掉另一条 |
@@ -317,7 +358,8 @@ sequenceDiagram
 | 会话面 | 已实现 | `web/packages/auth-ui/src/SignOutButton.tsx`；`web/packages/auth-ui/src/SessionEndedScreen.tsx` |
 | 邀请受理面 | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen` |
 | 冒充横幅 `ImpersonationBanner` | 已实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerProps`、`ImpersonationBannerState` |
-| 横幅的隐藏控件与单行版式、顶部栏的 `ImpersonationIndicator`、与其他结束入口共用结束尝试 | 已实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerProps`、`ImpersonationBannerState`；`web/packages/auth-ui/src/ImpersonationNotice.tsx` `ImpersonationNoticeProvider`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`useImpersonationNotice` |
+| 横幅的隐藏控件、顶部栏的 `ImpersonationIndicator`、与账户菜单项共用结束尝试 | 已实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerProps`、`ImpersonationBannerState`；`web/packages/auth-ui/src/ImpersonationNotice.tsx` `ImpersonationNoticeProvider`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`useImpersonationNotice` |
+| 横幅文字行内流动（1280 宽单行、800 宽至多两行） | 未实现 | — |
 | 渠道组件的反馈作用域，答复一步清掉失败横幅，仪式失败与服务端失败横幅互斥 | 未实现 | — |
 | 社交回跳路由上的步骤失败原地保留，没有停着步骤时的重试 | 未实现 | — |
 | 重发的「验证码已发送」可闻，步骤切换后的焦点 | 未实现 | — |
