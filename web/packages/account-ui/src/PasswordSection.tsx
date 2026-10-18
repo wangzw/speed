@@ -17,12 +17,16 @@
  * Two client-side guards run before the request -- a non-empty new
  * password and a matching confirmation -- and render on their own fields;
  * a refusal from the server resolves through the code whitelist into the
- * banner (a wrong current password is the 401 login-failed the route
- * answers, distinct from the step-up 401). The route asks for a fresh
- * authentication: a 401 authn.insufficient_user_authentication opens the
- * step-up dialog with the typed values remembered, and a won challenge
- * re-runs that one change exactly once. A successful change clears the
- * fields and fills the role="status" live region.
+ * banner. A 400 bad-request on this route is the password policy, which is
+ * the route's only other 400 (the client has already checked the fields
+ * the answer could name), so it renders the section's policy sentence
+ * instead of the generic bad-request text. A wrong current password is the
+ * 401 login-failed the route answers, distinct from the step-up 401. The
+ * route asks for a fresh authentication: a 401
+ * authn.insufficient_user_authentication opens the step-up dialog with the
+ * typed values remembered, and a won challenge re-runs that one change
+ * exactly once. A successful change clears the fields and fills the
+ * role="status" live region.
  */
 
 import { useState } from 'react'
@@ -88,8 +92,9 @@ export function PasswordSection({ session }: PasswordSectionProps) {
   const [changed, setChanged] = useState(false)
   // Whether the completed change set the account's first password. It is read
   // before the write: the profile refetch that follows reports the password as
-  // set, and the success text must still be the first-password one -- no other
-  // device was signed out by setting a password that did not exist.
+  // set, and the success text must still be the first-password one. A first
+  // password and a change differ only in the verb: the server rotates this
+  // session and revokes the account's other sessions in both cases.
   const [firstPassword, setFirstPassword] = useState(false)
 
   const gate = useStepUpGate<ChangeAction>((action) => {
@@ -197,14 +202,20 @@ export function PasswordSection({ session }: PasswordSectionProps) {
               role="status"
               sx={changed ? { width: '100%' } : visuallyHiddenSx}
             >
-              {/* A first password is set, not changed, and no other device
-                  was signed out by a change's rotation. */}
+              {/* The first password is set, not changed, and the server
+                  signs the other devices out either way. */}
               {changed
                 ? t(firstPassword ? 'password.changedFirst' : 'password.changed')
                 : ''}
             </Alert>
 
-            <InlineError code={failureCode} />
+            {failureCode === 'authn.bad_request' ? (
+              <Alert severity="error" role="alert" sx={{ width: '100%' }}>
+                {t('password.policyFailure')}
+              </Alert>
+            ) : (
+              <InlineError code={failureCode} />
+            )}
 
             {passwordSet && (
               <TextField
@@ -229,7 +240,9 @@ export function PasswordSection({ session }: PasswordSectionProps) {
               helperText={
                 fieldError === 'missingNew'
                   ? t('password.missingNew')
-                  : t('password.new.helper')
+                  : passwordSet
+                    ? t('password.new.helper')
+                    : t('password.new.helperFirst')
               }
               onChange={(event) => {
                 setNewPassword(event.target.value)

@@ -135,13 +135,17 @@ and refetches the profile.
 Changes the password through `PUT /auth/password`. The current-password
 field renders only when the profile says a password is set (an account
 opened through a provider holds none); a provider-only account changes to
-its first password with the new-password fields alone. Two client-side
-guards -- a non-empty new password, a matching confirmation -- render on
-their fields before any request; a refusal from the server (a wrong
-current password is the 401 `login-failed`) renders its code text. A
+its first password with the new-password fields alone, and that form's
+helper states the policy instead of the change's "not used before"
+sentence. Two client-side guards -- a non-empty new password, a matching
+confirmation -- render on their fields before any request; a refusal from
+the server (a wrong current password is the 401 `login-failed`) renders
+its code text, except a 400 `bad-request`, which is this route's
+password-policy refusal and renders the section's policy sentence. A
 successful change clears the fields, refetches the profile and the
 session list (the route rotates this session's token and revokes the
-others) and reports the change.
+others) and reports the change -- a first password too, whose notice
+therefore also names the other devices signed out.
 
 ### PhoneSection
 
@@ -169,7 +173,9 @@ Below the list an add face adds one identifier the caller chooses, its kind
 `username` or `email` (a phone is added through its own two-step surface).
 A username is a login name with no ownership to prove, so
 `POST /auth/identifiers` writes it in one step and the answer reports the
-addition. An email is a contact address, so the add sends a code to it (the
+addition; a username already in use is answered 409 `conflict` and
+rendered as the taken-name sentence (the same code on a removal keeps its
+generic text). An email is a contact address, so the add sends a code to it (the
 answer is state `pending`) and the code is submitted through
 `POST /auth/identifiers/verify`; only the matching code writes the address.
 The email branch is unavailable on a deployment with no email channel (a

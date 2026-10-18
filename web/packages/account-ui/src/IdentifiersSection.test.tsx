@@ -345,6 +345,50 @@ describe('IdentifiersSection', () => {
     await waitFor(() => expect(screen.getByText('ada2')).toBeTruthy())
   })
 
+  it('names a taken username instead of the generic conflict text', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      if (call.method === 'POST' && call.path === '/auth/identifiers') {
+        // An existing username is the expected 409 of the one write the
+        // setup page's add face exists for.
+        return errorResponse(409, 'authn.conflict')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    fireEvent.mouseDown(
+      screen.getByRole('combobox', { name: zhCN.identifiers.add.kind.label }),
+    )
+    await user.click(
+      screen.getByRole('option', { name: zhCN.identifiers.add.kind.username }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelUsername),
+      'alice',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitUsername }),
+    )
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.identifiers.add.usernameTaken)
+    // The generic account-state sentence sends the user to refresh, which
+    // can never free the name.
+    expect(alert).not.toHaveTextContent(zhCN.errors.authn.conflict)
+    expect(enUS.identifiers.add.usernameTaken).toMatch(/already taken/i)
+    // The form stays open so another name can be typed.
+    expect(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelUsername),
+    ).toBeTruthy()
+  })
+
   it('states the username first-character rule in the add helper', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {

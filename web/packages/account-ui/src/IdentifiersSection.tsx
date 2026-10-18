@@ -20,7 +20,11 @@
  *
  * Below the list is the add face: POST /auth/identifiers
  * (authn.login.addIdentifier) with a kind and a value. A username is a
- * login name with no ownership to prove, so it is written in one step. An
+ * login name with no ownership to prove, so it is written in one step; a
+ * username already in use is answered 409 authn.conflict, and because that
+ * is the expected outcome of the one write this face exists for, the
+ * section names the username rather than rendering the code's
+ * account-state sentence. An
  * email is a contact address, so the add sends a code to it (the answer is
  * state "pending") and the code is submitted through POST
  * /auth/identifiers/verify (authn.login.verifyIdentifier); only the
@@ -144,6 +148,10 @@ export function IdentifiersSection({
 
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
   const [failureCode, setFailureCode] = useState<string | null>(null)
+  // The kind an add failure belongs to, so a 409 on a username renders the
+  // taken-name sentence instead of the generic account-state one. Null for
+  // a removal's failure, which keeps the generic text.
+  const [addFailureKind, setAddFailureKind] = useState<AddKind | null>(null)
 
   // The add face's own state. addOpen shows the form; addKind picks the
   // kind; addValue holds the entry; sentTo is the address a code went to,
@@ -197,6 +205,12 @@ export function IdentifiersSection({
     ])
   }
 
+  /** Clear the failure banner and the add failure's kind together. */
+  function clearFailure(): void {
+    setFailureCode(null)
+    setAddFailureKind(null)
+  }
+
   function closeAdd(): void {
     setAddOpen(false)
     setSentTo(null)
@@ -205,7 +219,7 @@ export function IdentifiersSection({
   }
 
   async function remove(id: string): Promise<void> {
-    setFailureCode(null)
+    clearFailure()
     try {
       await removeIdentifier.mutateAsync({ id })
       setRemoveTarget(null)
@@ -222,7 +236,7 @@ export function IdentifiersSection({
   }
 
   async function add(kind: AddKind, value: string): Promise<void> {
-    setFailureCode(null)
+    clearFailure()
     setAdded(false)
     try {
       const result = await addIdentifier.mutateAsync({ data: { kind, value } })
@@ -242,12 +256,13 @@ export function IdentifiersSection({
         gate.arm({ step: 'add', kind, value })
         return
       }
+      setAddFailureKind(kind)
       setFailureCode(failure)
     }
   }
 
   async function verify(nextCode: string): Promise<void> {
-    setFailureCode(null)
+    clearFailure()
     setAdded(false)
     try {
       await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
@@ -272,6 +287,20 @@ export function IdentifiersSection({
     addKind === 'email'
       ? t('identifiers.add.value.helperEmail')
       : t('identifiers.add.value.helperUsername')
+
+  // A username is the one add whose taken-name 409 the server can answer
+  // with that exact meaning (an email's conflict is reported under the same
+  // code but means the address belongs to another account), so that case
+  // renders its own sentence; every other failure keeps the code's text.
+  const usernameTaken =
+    failureCode === 'authn.conflict' && addFailureKind === 'username'
+  const failureBanner = usernameTaken ? (
+    <Alert severity="error" role="alert" sx={{ width: '100%' }}>
+      {t('identifiers.add.usernameTaken')}
+    </Alert>
+  ) : (
+    <InlineError code={failureCode} />
+  )
 
   return (
     <Box>
@@ -301,7 +330,7 @@ export function IdentifiersSection({
       >
         {(settledRows) => (
           <Box>
-            <InlineError code={failureCode} />
+            {failureBanner}
             {/* The rows are one real list, as the sessions and bindings
                 rows are: a screen-reader user hears each identifier as one
                 item of a numbered set. role="list" keeps the list
@@ -406,7 +435,7 @@ export function IdentifiersSection({
             size="small"
             disabled={writeBusy || addBusy}
             onClick={() => {
-              setFailureCode(null)
+              clearFailure()
               setAdded(false)
               setAddOpen(true)
             }}
@@ -420,7 +449,7 @@ export function IdentifiersSection({
             </Typography>
             {/* Banners for the add face live here; the removal's banner sits
                 above the list. This one is only shown while the form is. */}
-            <InlineError code={failureCode} />
+            {failureBanner}
             <Box
               component="form"
               noValidate
@@ -515,7 +544,7 @@ export function IdentifiersSection({
                       onClick={() => {
                         setSentTo(null)
                         setCode('')
-                        setFailureCode(null)
+                        clearFailure()
                       }}
                     >
                       {t('identifiers.add.change')}

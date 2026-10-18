@@ -196,7 +196,8 @@
     },
     "new": {
       "label": "New password",
-      "helper": "Choose a password this account has not used before."
+      "helper": "Choose a password this account has not used before.",
+      "helperFirst": "Choose a password to sign in with. It cannot be the same as your username, email address or phone number."
     },
     "confirm": {
       "label": "Confirm new password"
@@ -204,7 +205,8 @@
     "submit": "Change password",
     "submitFirst": "Set password",
     "changed": "Your password has been changed. Other devices have been signed out.",
-    "changedFirst": "Your password has been set.",
+    "changedFirst": "Your password has been set. Other devices have been signed out.",
+    "policyFailure": "The new password does not meet the requirements. Make it longer, and do not reuse your username, email address or phone number.",
     "missingNew": "Enter a new password.",
     "mismatch": "The two passwords do not match.",
     "error": {
@@ -272,6 +274,7 @@
       },
       "submitEmail": "Send code",
       "submitUsername": "Add",
+      "usernameTaken": "That username is already taken. Try another one.",
       "cancel": "Cancel",
       "sent": "A verification code was sent to {{value}}.",
       "code": {

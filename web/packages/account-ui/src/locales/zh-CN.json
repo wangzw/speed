@@ -196,7 +196,8 @@
     },
     "new": {
       "label": "新密码",
-      "helper": "请设置一个该账户未使用过的密码。"
+      "helper": "请设置一个该账户未使用过的密码。",
+      "helperFirst": "设置一个用于登录的密码，不能与用户名、邮箱或手机号相同。"
     },
     "confirm": {
       "label": "确认新密码"
@@ -204,7 +205,8 @@
     "submit": "修改密码",
     "submitFirst": "设置密码",
     "changed": "密码已修改，其他设备已被退出登录。",
-    "changedFirst": "密码已设置。",
+    "changedFirst": "密码已设置，其他设备已被退出登录。",
+    "policyFailure": "新密码不符合要求：请加长，并且不要与用户名、邮箱或手机号相同。",
     "missingNew": "请输入新密码。",
     "mismatch": "两次输入的密码不一致。",
     "error": {
@@ -272,6 +274,7 @@
       },
       "submitEmail": "发送验证码",
       "submitUsername": "添加",
+      "usernameTaken": "该用户名已被使用，请换一个。",
       "cancel": "取消",
       "sent": "验证码已发送至 {{value}}。",
       "code": {

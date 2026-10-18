@@ -17,6 +17,7 @@
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import enUS from './locales/en-US.json' with { type: 'json' }
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import { profileBody } from '../test-utils/fixtures.js'
 import {
@@ -80,11 +81,45 @@ describe('PasswordSection', () => {
     expect(
       screen.getByRole('button', { name: zhCN.password.submitFirst }),
     ).toBeTruthy()
+    // "A password this account has not used before" describes a change; an
+    // account with no password needs the rule instead.
+    expect(screen.getByText(zhCN.password.new.helperFirst)).toBeTruthy()
+    expect(screen.queryByText(zhCN.password.new.helper)).toBeNull()
 
     await expectNoAxeViolations()
   })
 
-  it('reports a first password as set, without the other-devices clause', async () => {
+  it('states the password policy when the server refuses a new password', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ password_set: false }))
+      }
+      if (call.method === 'PUT' && call.path === PASSWORD_PATH) {
+        // The route's only 400 is the policy: min length, max bytes, or a
+        // password equal to one of the account's own identifiers.
+        return errorResponse(400, 'authn.bad_request')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.password.new.label),
+      'short',
+    )
+    await user.type(screen.getByLabelText(zhCN.password.confirm.label), 'short')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.password.submitFirst }),
+    )
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.password.policyFailure)
+    expect(alert).not.toHaveTextContent(zhCN.errors.authn.bad_request)
+    expect(enUS.password.policyFailure).toMatch(/does not meet the requirements/)
+  })
+
+  it('reports a first password as set and names the other devices signed out', async () => {
     let passwordSet = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -114,8 +149,13 @@ describe('PasswordSection', () => {
       ),
     )
     // The profile's refetch reports the password as set, but the text this
-    // write produced is the first-password one: no other device was signed
-    // out by setting a password that did not exist.
+    // write produced is the first-password one. The server rotates this
+    // session and revokes the account's others for a first password too, so
+    // the notice must still say the other devices were signed out.
+    expect(zhCN.password.changedFirst).toMatch(/其他设备已被退出登录/)
+    expect(enUS.password.changedFirst).toMatch(
+      /Other devices have been signed out/,
+    )
     const put = rig.calls.find((call) => call.method === 'PUT')
     expect(put?.body).toEqual({ new_password: 'first-pass' })
     expect(screen.getByRole('status')).not.toHaveTextContent(
