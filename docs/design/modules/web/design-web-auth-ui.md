@@ -299,7 +299,7 @@ sequenceDiagram
 决策见 [ADR-web-impersonation-shell-2026-10-18](../../../adr/adr-web-impersonation-shell-2026-10-18.md)。
 
 1. **宿主始终挂载它，`impersonation` 为 `null` 时只留一个空的 live region。** 没有冒充时不渲染横幅，不占高度；区域先挂空、冒充出现时再填入文本，刚结束冒充的成功文案也留在这个仍挂载的区域里，不随横幅卸载。播报状态下这个区域视觉隐藏，且不得成为可聚焦的滚动区域：键盘用户在横幅槽里的第一次 Tab 落在「结束冒充」上，不落在看不见的节点上。组件首次挂载时 `impersonation` 已非空（开始冒充后租户框架新挂载，或冒充中整页重载）同样先挂空区域、下一 tick 再填入文本，所以这两种情形都播报一次；冒充中重载时的这次播报是对仍处于冒充的提醒，不抑制。结束若发生在别的入口、使横幅所展示的冒充消失，组件自己在这个区域里落「冒充已结束」；宿主那次结束尝试自己的成功文案同样落在这里。
-2. **`impersonation` 非空且 `dismissed` 不为真时渲染横幅。** 横幅是带可及名的 `region` 地标，文字说明正在以 `subject` 的身份操作，给出了 `tenant` 与 `expiresAt` 就一并陈述，`tenant` 按原样陈述，它可能是租户标识而不是可读名，并说明冒充期间管理功能不可用。观看者就是发起者，横幅不陈述发起者。组件不倒计时，也不在到期时自行动作；到期后的重读由宿主负责。版式压低占用的高度：这几句事实作为同一段文字行内流动，不按句分行；结束与隐藏控件与文字同排并靠右，仅在 `xs` 以下另起一行；纵向内边距与正文字号取最小的一档。高度目标：视口 1280px 时文字单行，高度 40 到 48px；800px 时文字至多两行。租户标识过长时单行省略，完整值作为 `title`，使它不把控件挤出栏外。
+2. **`impersonation` 非空且 `dismissed` 不为真时渲染横幅。** 横幅是带可及名的 `region` 地标，文字说明正在以 `subject` 的身份操作，给出了 `tenant` 与 `expiresAt` 就一并陈述，`tenant` 按原样陈述，它可能是租户标识而不是可读名，并说明冒充期间管理功能不可用。观看者就是发起者，横幅不陈述发起者。组件不倒计时，也不在到期时自行动作；到期后的重读由宿主负责。版式压低占用的高度：这几句事实作为同一段文字行内流动，不按句分行；结束与隐藏控件与文字同排并靠右，仅在 `xs` 以下另起一行；纵向内边距与正文字号取最小的一档。主体与租户标识各取限宽（约 20 个字符宽），超出时单行省略，完整值作为 `title`，使值的长短不把控件挤出栏外，也使文字的行数有上界。高度目标按值的长短分两档：主体与租户标识都不被省略时，视口 1280px 的文字单行，高度 40 到 48px，800px 至多两行；值被限宽省略时，1280px 至多两行，800px 至多三行。固定的几句事实不为凑单行而删减：到期时刻与管理功能不可用是操作者在冒充期间要知道的内容，目标服从内容。
 3. **「结束冒充」不依赖 `tenant` 与 `expiresAt`。** 这两项是宿主读状态得来的，读不到时缺省，结束控件照常渲染、照常可用。
 4. **结束是宿主持有的一次写入尝试，所有入口共用它。** 宿主以 ui-kit 的 `useWriteFeedback` 持有这次尝试，横幅的结束控件与账户菜单里的「结束冒充」项都只调同一个 `onEnd`；`pending`、`failureCode`、`successMessage` 由该尝试派生，经提供者交给两处。在途时两处同时禁用并标忙，不发第二次；兑现即成功，成功文案「冒充已结束」落在组件自己的常驻区域，与横幅是否被隐藏无关；抛出即失败，失败码文本只落在横幅内、控件保持可重试，横幅此刻被隐藏时提供者在 `failureCode` 由空变为有值的那一刻复位隐藏状态，使它出现。「当前已无冒充可结束」（服务端的裸 404）由宿主的尝试当成兑现，组件不认识 HTTP 状态。
 5. **横幅可隐藏，隐藏的是横幅本体；隐藏状态由 `ImpersonationNoticeProvider` 持有。** 给了 `onDismiss` 才渲染「隐藏」控件（图标按钮，可及名「隐藏冒充提示」）。点击调 `dismiss`，横幅本体卸载，**焦点移到应用栏里的 `ImpersonationIndicator`**，不留在已卸载的控件上。常驻的 live region 与身份指示不受影响，开始与结束的播报照常。隐藏状态是提供者的内存状态，不落任何存储，整页重载复位。下列时刻复位为显示：`grantId` 在两个已读到的值之间变化（同一账户被再次冒充也算）；`identityKey` 变化；冒充结束（`impersonation` 变为 `null`）；结束尝试失败。读到 `grantId` 之前做出的隐藏、随后 `grantId` 读到，不复位；同一授予内状态读的重读、标签页重新可见的重读与路由切换也不复位；到期临近不自动再显示。
@@ -371,7 +371,7 @@ sequenceDiagram
 | 冒充横幅 `ImpersonationBanner` | 已实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerProps`、`ImpersonationBannerState` |
 | 横幅的隐藏控件、顶部栏的 `ImpersonationIndicator`、与账户菜单项共用结束尝试 | 已实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerProps`、`ImpersonationBannerState`；`web/packages/auth-ui/src/ImpersonationNotice.tsx` `ImpersonationNoticeProvider`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`useImpersonationNotice` |
 | 登录屏的 `onSignedIn` 带模式与渠道上下文 | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`、`SignInContext` |
-| 横幅文字行内流动（1280 宽单行、800 宽至多两行） | 已实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerState` |
+| 横幅文字行内流动，主体与租户标识限宽省略，行数按值的长短有上界 | 已实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerState` |
 | 渠道组件的反馈作用域，答复一步清掉失败横幅，仪式失败与服务端失败横幅互斥 | 未实现 | — |
 | 社交回跳路由上的步骤失败原地保留，没有停着步骤时的重试 | 未实现 | — |
 | 重发的「验证码已发送」可闻，步骤切换后的焦点 | 未实现 | — |
