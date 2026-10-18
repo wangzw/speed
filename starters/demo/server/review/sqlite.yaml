@@ -46,7 +46,7 @@ http:
       prefixes: ["/api"]
     account:
       listener: backend
-      prefixes: ["/auth", "/features"]
+      prefixes: ["/auth", "/features", "/workspace"]
     admin:
       listener: backend
       prefixes: ["/audit", "/authz", "/settings", "/sms", "/tenant"]
@@ -179,6 +179,13 @@ settings:
 feature:
   board:
     endpoint: account
+
+# REVIEW: the personal tenant the review walkthrough exercises. A registration
+# completed through the SMS sign-in lands in the tenant area with a personal
+# tenant this host creates on the first ensure call.
+workspace:
+  personal:
+    enabled: true
 
 notification:
   inbox:

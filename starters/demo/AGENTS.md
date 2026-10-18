@@ -301,7 +301,7 @@ the choice. `server/testdata/` declares the table:
 | Endpoint | Claims |
 |---|---|
 | `api` | `/api` |
-| `account` | `/auth`, `/features` |
+| `account` | `/auth`, `/features`, `/workspace` |
 | `admin` | `/audit`, `/authz`, `/settings`, `/sms`, `/tenant` |
 | `ops` | `/` (omitted: it is alone on its listener) |
 | `web` | `/` |
@@ -391,6 +391,26 @@ under `server/testdata/` names them:
   (`preferences.WithRecipient`); this skeleton declares no notification type, so
   the matrix is empty and that step does not arise, and a product that declares
   one supplies the recipient.
+- **The personal tenant** is the host's own policy, not a platform capability
+  (`workspace.personal`, `server/personal.go`, named in `baselineServe`). Its
+  switch is `workspace.personal.enabled`, off in every `testdata/` file and on
+  in the review assembly (`server/review/sqlite.yaml`). With it on, the module
+  mounts `POST /workspace/personal` on the `account` endpoint — no tenant
+  resolution — and posts the conditional feature `workspace.personal`; with it
+  off, no route is mounted, the feature is absent from the document, and the
+  claimed `/workspace` prefix answers the account endpoint's 404. The route
+  requires an authenticated caller, refuses an impersonating one 403 (it is
+  registered `Impersonable` so the handler, not the gateway's default 401,
+  answers), refuses a caller that belongs to another tenant 409 `already-member`,
+  and otherwise ensures five idempotent pieces: the tenant row (identifier and
+  alias both `personal-<account-id>`), the account's membership, a non-builtin
+  `owner` role, that role's grants over every declared permission in the tenant
+  domain, and the account's binding. A dependency failure is a 503 with no part
+  of the result. The frontend calls it from the tenant frame when an
+  authenticated, non-impersonating viewer has no current tenant and the feature
+  is served; a registration completed through SMS lands on `/` (the tenant home)
+  with a one-time setup notice, and without the feature it lands on
+  `/account/setup` as before.
 - The journal (`audit.journal`) records the requests its `requests` list names
   on the endpoints its `endpoints` list names. The sample files name the object
   store's declaration and delete (`POST /api/v1/objects`,

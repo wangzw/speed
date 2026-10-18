@@ -157,7 +157,7 @@ const demoConfig = `http:
       prefixes: ["/api"]
     account:
       listener: backend
-      prefixes: ["/auth", "/features"]
+      prefixes: ["/auth", "/features", "/workspace"]
     admin:
       listener: backend
       prefixes: ["/audit", "/authz", "/settings", "/sms", "/tenant"]
@@ -230,6 +230,9 @@ settings:
 feature:
   board:
     endpoint: account
+workspace:
+  personal:
+    enabled: false
 notification:
   inbox:
     endpoints: [api]

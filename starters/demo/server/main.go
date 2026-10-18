@@ -358,6 +358,12 @@ var (
 		// See notification.go.
 		notificationModuleName,
 
+		// The host's own personal-tenant policy: off by configuration in the
+		// baseline, on in the review assembly. When on it mounts
+		// POST /workspace/personal on the account endpoint and declares the
+		// conditional feature workspace.personal. See personal.go.
+		personalModuleName,
+
 		objectstorefs.ModuleName,
 		objectstoremeta.ModuleName,
 		outboxrelay.ModuleName,

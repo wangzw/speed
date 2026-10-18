@@ -1,0 +1,55 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "workspace personal", "version": "1.0.0"},
+  "paths": {
+    "/workspace/personal": {
+      "post": {
+        "operationId": "workspace.personal.ensure",
+        "summary": "Ensure the caller's personal tenant exists and is complete",
+        "description": "Creates the caller's personal tenant on first call and completes its membership, owner role, grants and binding on every call. The tenant identifier and alias are derived from the account identifier; the answer names the tenant and whether this call created it.",
+        "responses": {
+          "200": {
+            "description": "The personal tenant, complete; created says whether this call registered it",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkspacePersonalReply"}}}
+          },
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating, or is a static-table subject that cannot own a tenant", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The caller already belongs to a tenant other than its personal one", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer; no part of the result is returned", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "WorkspacePersonalReply": {
+        "type": "object",
+        "required": ["tenant", "created"],
+        "properties": {
+          "tenant": {"$ref": "#/components/schemas/WorkspacePersonalTenant"},
+          "created": {"type": "boolean", "description": "Whether this call registered the tenant"}
+        }
+      },
+      "WorkspacePersonalTenant": {
+        "type": "object",
+        "required": ["id", "alias", "kind"],
+        "properties": {
+          "id": {"type": "string", "description": "The tenant identifier"},
+          "alias": {"type": "string", "description": "The request-surface name, equal to the identifier for a personal tenant"},
+          "kind": {"type": "string", "enum": ["personal"], "description": "The tenant kind; the frontend renders the personal label from it"}
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "required": ["type", "status"],
+        "properties": {
+          "type": {"type": "string"},
+          "title": {"type": "string"},
+          "status": {"type": "integer"},
+          "detail": {"type": "string"},
+          "instance": {"type": "string"}
+        }
+      }
+    }
+  }
+}

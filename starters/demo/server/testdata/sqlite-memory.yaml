@@ -33,7 +33,7 @@ http:
       prefixes: ["/api"]
     account:
       listener: backend
-      prefixes: ["/auth", "/features"]
+      prefixes: ["/auth", "/features", "/workspace"]
     admin:
       listener: backend
       prefixes: ["/audit", "/authz", "/settings", "/sms", "/tenant"]
@@ -164,6 +164,14 @@ settings:
 feature:
   board:
     endpoint: account
+
+# The host's own personal-tenant policy. Off by default: when on, an account
+# with no membership gets a personal tenant from POST /workspace/personal so a
+# registration can use the tenant area at once. The /workspace prefix above is
+# claimed either way; with the switch off that path answers 404.
+workspace:
+  personal:
+    enabled: false
 
 # The notification inbox, the live stream and the preference matrix mount on the
 # API endpoint. None of them names the web endpoint: the frontend bundle's

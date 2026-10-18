@@ -1,5 +1,5 @@
 {
-  "account": ["/auth", "/features"],
+  "account": ["/auth", "/features", "/workspace"],
   "admin": ["/audit", "/authz", "/settings", "/sms", "/tenant"],
   "api": ["/api"]
 }

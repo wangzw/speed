@@ -72,14 +72,15 @@ func serveWithout(list string) {
 // table is what testdata/ and the case's configuration claim, and the D2 case
 // holds the two together.
 var expectedOwners = map[string]string{
-	"/api":      "api",
-	"/auth":     "account",
-	"/features": "account",
-	"/audit":    "admin",
-	"/authz":    "admin",
-	"/settings": "admin",
-	"/sms":      "admin",
-	"/tenant":   "admin",
+	"/api":       "api",
+	"/auth":      "account",
+	"/features":  "account",
+	"/workspace": "account",
+	"/audit":     "admin",
+	"/authz":     "admin",
+	"/settings":  "admin",
+	"/sms":       "admin",
+	"/tenant":    "admin",
 }
 
 // expectedEndpoint answers which endpoint the table says answers a path on the
@@ -550,6 +551,17 @@ type variantGroup struct {
 // reason, may be left out of the guarantee.
 var mayNotStartGroups = map[string]string{}
 
+// mayLeaveRouteCountUnchanged names the routing modules whose removal cannot
+// lower an endpoint's route count in this case's configuration, each with the
+// reason. A module that mounts its routes only when a switch is on mounts none
+// here, so dropping it changes nothing and the removal check cannot tell a
+// real module from a name that registered nothing. The check stays
+// fail-closed otherwise: every other vacuous removal fails.
+var mayLeaveRouteCountUnchanged = map[string]string{
+	"workspace.personal": "its route is mounted only when workspace.personal.enabled is on, " +
+		"and the case's configuration leaves the host switch off (the baseline default)",
+}
+
 // variantStartOutcome decides what a variant's readiness result means. A run
 // that became ready passes. One that did not fails unless mayNotStartGroups
 // exempts the group, in which case the exemption's reason is returned for the
@@ -594,6 +606,22 @@ func TestEveryRoutingVariantMustStart(t *testing.T) {
 	for id := range mayNotStartGroups {
 		if !built[id] {
 			t.Errorf("mayNotStartGroups names %q, which buildGroups does not produce: the exemption outlived its variant", id)
+		}
+	}
+	// The route-count exemptions are held the same way: an entry has to name a
+	// module this case removes and classifies as routing, and it has to carry
+	// its reason, so an exemption cannot silently outlive the module or the
+	// switch it was written for.
+	for name, reason := range mayLeaveRouteCountUnchanged {
+		if strings.TrimSpace(reason) == "" {
+			t.Errorf("mayLeaveRouteCountUnchanged exempts %q without a reason", name)
+		}
+		if _, known := modules[name]; !known {
+			t.Errorf("mayLeaveRouteCountUnchanged names %q, which baselineServe does not include", name)
+			continue
+		}
+		if classes[name] != classRouting {
+			t.Errorf("mayLeaveRouteCountUnchanged names %q, which this case does not classify as routing", name)
 		}
 	}
 }
@@ -1094,6 +1122,11 @@ func checkVariantRemoval(t *testing.T, baseline, variant *variantProcess, group 
 				continue
 			}
 			if after.routes >= before.routes {
+				if reason, exempt := mayLeaveRouteCountUnchanged[removed]; exempt {
+					t.Logf("dropping %q leaves endpoint %q at %d route(s); exempt: %s",
+						removed, endpoint, after.routes, reason)
+					continue
+				}
 				t.Errorf("dropping %q left endpoint %q with %d route(s), not fewer than the baseline's %d: "+
 					"the removal is vacuous", removed, endpoint, after.routes, before.routes)
 			}

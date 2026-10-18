@@ -33,6 +33,7 @@ export interface FeatureNameRegistry {
   'settings.admin': true
   'sms.admin': true
   'tenant.admin': true
+  'workspace.personal': true
 }
 
 /** The name of a feature a frontend surface may require. */
@@ -63,4 +64,5 @@ export const FEATURE_NAMES: readonly FeatureName[] = [
   'settings.admin',
   'sms.admin',
   'tenant.admin',
+  'workspace.personal',
 ]
