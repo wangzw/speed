@@ -51,7 +51,7 @@
     "registerTitle": "Create an account",
     "registerEntry": "Create an account",
     "signInEntry": "Already have an account? Sign in",
-    "registerHint": "If the sign-in method you choose can create an account, your account is created the first time you use it.",
+    "registerHint": "Signing in with one of these methods for the first time creates your account.",
     "signInAccountHint": "An unregistered phone number creates an account."
   },
   "enterprise": {

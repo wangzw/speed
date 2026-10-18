@@ -288,6 +288,51 @@ describe('SMSSignInForm', () => {
     expect(harness.calls).toHaveLength(0)
   })
 
+  it('re-announce the same phone refusal on every refused submit', async () => {
+    // A live region announces a text change, not a value written again. The
+    // second submit repeats the same rejected number, so the region must
+    // pass through empty between the two announcements for a screen reader
+    // to speak the rejection again.
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(),
+    })
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    const user = userEvent.setup()
+    await selectCountry(user, 'CN', '86')
+    const phone = screen.getByLabelText(zhCN.smsSignIn.phoneLabel)
+    await user.type(phone, '138000')
+    const submit = screen.getByRole('button', { name: zhCN.smsSignIn.sendCode })
+    const region = screen.getByRole('status')
+    const mutations: MutationRecord[] = []
+    const observer = new MutationObserver((records) => {
+      mutations.push(...records)
+    })
+    observer.observe(region, {
+      characterData: true,
+      characterDataOldValue: true,
+      childList: true,
+      subtree: true,
+    })
+    const message = UI_KIT_ZH.phoneNumber.incomplete.replace('{{code}}', '86')
+    try {
+      await user.click(submit)
+      await waitFor(() => expect(region).toHaveTextContent(message))
+      // The first rejection filled the region once.
+      expect(mutations.length).toBeGreaterThan(0)
+
+      mutations.length = 0
+      await user.click(submit)
+      await waitFor(() => expect(region).toHaveTextContent(message))
+      // Clearing the region and writing the message again are two changes:
+      // at least a removal and a new insertion (or two text-node rewrites)
+      // reached the DOM, so the repeated rejection is spoken again.
+      expect(mutations.length).toBeGreaterThanOrEqual(2)
+      expect(harness.calls).toHaveLength(0)
+    } finally {
+      observer.disconnect()
+    }
+  })
+
   it('return to the phone step when the flow is gone (flow-invalid)', async () => {
     // A step answered after the flow expired, was consumed, or was bound
     // to another browser answers flow-invalid: the flow cannot continue,

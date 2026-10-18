@@ -31,14 +31,18 @@
  * `mode` is a pure presentational switch over the one sign-in flow: the
  * component presents a "register" entry where the deployment allows a
  * first login to open an account (`discovery.signup.enabled` and at least
- * one visible method carries `opens_account`). In register mode the
- * channel strip narrows to the methods that open an account and selects
- * the first of them, the screen names itself "Create an account" and
- * offers the way back as "Already have an account? Sign in"; in sign-in
- * mode, where that entry is offered, one sentence below the channels says
- * an unregistered phone number creates an account, the same sentence for
- * every number. Registration is not a separate form -- it is a login
- * flow's account-resolution outcome under the deployment's signup setting.
+ * one visible method carries `opens_account`). In register mode every
+ * channel on the screen -- the form strip, the social buttons, the
+ * enterprise entry and the passkey entry -- narrows to the methods that
+ * open an account, and the form strip selects the first of them; the
+ * screen names itself "Create an account" and offers the way back as
+ * "Already have an account? Sign in". In sign-in mode, where that entry is
+ * offered and the screen has an SMS channel that opens an account, one
+ * sentence below the channels says an unregistered phone number creates an
+ * account, the same sentence for every number; the sentence names a phone
+ * number, so it is absent where no such channel is on screen. Registration
+ * is not a separate form -- it is a login flow's account-resolution outcome
+ * under the deployment's signup setting.
  * A successful sign-in on a channel the screen drives itself fires
  * onSignedIn once, with the mode the screen was in and that channel's
  * method name (see SignInContext): a host can tell a registration from an
@@ -225,13 +229,20 @@ export function SignInScreen({
   )
   const webauthnMethods = doc.methods.filter((method) => method.kind === 'webauthn')
 
-  // Register mode can only mean the methods that open an account: the
-  // strip narrows to them, and a channel the viewer picked in sign-in
-  // mode is honored only while it survives that narrowing.
-  const visibleForms =
-    activeMode === 'register'
-      ? formMethods.filter((method) => method.opens_account === true)
-      : formMethods
+  // Register mode can only mean the methods that open an account; the same
+  // criterion narrows every channel class, and a channel the viewer picked
+  // in sign-in mode is honored only while it survives the form narrowing.
+  const opensAccount = (method: AuthnMethodDescriptor): boolean =>
+    method.opens_account === true
+  const inMode = (
+    methods: readonly AuthnMethodDescriptor[],
+  ): readonly AuthnMethodDescriptor[] =>
+    activeMode === 'register' ? methods.filter(opensAccount) : methods
+
+  const visibleForms = inMode(formMethods)
+  const visibleRedirects = inMode(redirectMethods)
+  const visibleEnterprise = inMode(enterpriseMethods)
+  const visibleWebauthn = inMode(webauthnMethods)
   const formNames = visibleForms.map((method) => method.name)
   const selected =
     channel !== null && formNames.includes(channel)
@@ -243,29 +254,58 @@ export function SignInScreen({
           : (formNames[0] ?? '')
   const activeDescriptor = visibleForms.find((method) => method.name === selected)
 
-  // The methods this screen actually renders: the form channels left after
-  // the deprecated narrowing, the redirect methods (unless the deprecated
-  // provider override replaces them), and the enterprise / webauthn
-  // entries. A method with an unknown kind renders nothing, so it cannot
-  // make the register entry visible.
+  // The redirect methods the screen renders in sign-in mode: the discovery
+  // set, or -- under the deprecated provider override -- the descriptors of
+  // the providers the host named, in the document's order. A provider the
+  // document does not describe carries no `opens_account` fact.
+  const signInRedirects =
+    social?.providers === undefined
+      ? redirectMethods
+      : redirectMethods.filter((method) =>
+          social.providers?.some((config) => config.provider === method.name),
+        )
+
+  // The methods this screen actually renders in sign-in mode: the form
+  // channels left after the deprecated narrowing, the redirect methods,
+  // and the enterprise / webauthn entries. A method with an unknown kind
+  // renders nothing, so it cannot make the register entry visible.
   const renderedMethods = [
     ...formMethods,
-    ...(social?.providers === undefined ? redirectMethods : []),
+    ...signInRedirects,
     ...enterpriseMethods,
     ...webauthnMethods,
   ]
 
+  // The register entry and the register-mode channel sets share one
+  // criterion: a method opens an account when it carries `opens_account`.
   const registerVisible =
-    doc.signup?.enabled === true &&
-    renderedMethods.some((method) => method.opens_account === true)
+    doc.signup?.enabled === true && renderedMethods.some(opensAccount)
 
+  // The sign-in mode's account sentence names a phone number, so it is
+  // offered only where signup is on and an SMS channel that opens an
+  // account is on screen.
+  const smsOpensAccount =
+    doc.signup?.enabled === true &&
+    visibleForms.some((method) => method.name === 'sms' && opensAccount(method))
+
+  // A deprecated provider override names channels without descriptors; in
+  // register mode it can only keep the ones whose discovery descriptor
+  // opens an account, in the host's own order. The override is honored as
+  // given in sign-in mode.
   const redirectConfigs: readonly SocialProviderConfig[] =
-    social?.providers ??
-    redirectMethods.map((method) => ({
-      provider: method.name,
-      label: method.label,
-      redirectUri: social?.returnTo ?? '',
-    }))
+    social?.providers === undefined
+      ? visibleRedirects.map((method) => ({
+          provider: method.name,
+          label: method.label,
+          redirectUri: social?.returnTo ?? '',
+        }))
+      : activeMode === 'register'
+        ? social.providers.filter((config) =>
+            visibleRedirects.some(
+              (method) => method.name === config.provider,
+            ),
+          )
+        : social.providers
 
   const tabIdOf = (name: string): string => `${channelId}-${name}-tab`
   const panelIdOf = (name: string): string => `${channelId}-${name}-panel`
@@ -354,7 +394,7 @@ export function SignInScreen({
       ) : activeDescriptor ? (
         renderForm(activeDescriptor)
       ) : null}
-      {activeMode === 'sign-in' && registerVisible ? (
+      {activeMode === 'sign-in' && smsOpensAccount ? (
         <Typography variant="body2" color="text.secondary">
           {t('mode.signInAccountHint')}
         </Typography>
@@ -366,14 +406,14 @@ export function SignInScreen({
           onAuthorizeUrl={social?.onAuthorizeUrl}
         />
       ) : null}
-      {enterpriseMethods.length > 0 ? (
+      {visibleEnterprise.length > 0 ? (
         <EnterpriseSignIn
           session={session}
           returnTo={social?.returnTo}
           onAuthorizeUrl={social?.onAuthorizeUrl}
         />
       ) : null}
-      {webauthnMethods.map((method) => (
+      {visibleWebauthn.map((method) => (
         <PasskeySignIn
           key={method.name}
           session={session}

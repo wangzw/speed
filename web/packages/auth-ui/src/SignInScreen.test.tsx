@@ -949,14 +949,136 @@ describe('SignInScreen', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('state the register hint conditionally, not for every listed method', () => {
-    // The password method does not open accounts, and it can be the tab the
-    // hint sits above, so the hint must not claim that every listed method
-    // creates an account.
-    expect(zhCN.mode.registerHint).not.toMatch(/任一|每种|所有|这些方式/)
-    expect(enUS.mode.registerHint).not.toMatch(
-      /one of these|any of these|every/i,
+  it('list only account-opening methods on every channel in register mode', async () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [
+            { name: 'sms', kind: 'form', opens_account: true },
+            {
+              name: 'google',
+              kind: 'redirect',
+              protocol: 'oidc',
+              label: 'Google',
+              opens_account: true,
+            },
+            { name: 'github', kind: 'redirect', protocol: 'oauth2', label: 'GitHub' },
+            { name: 'passkey', kind: 'webauthn', label: 'Passkey' },
+            {
+              name: 'okta',
+              kind: 'enterprise',
+              protocol: 'oidc',
+              opens_account: true,
+            },
+          ],
+          { signup: true },
+        )}
+      />,
     )
+    const user = userEvent.setup()
+    // Sign-in mode renders every channel, whichever one carries the flag.
+    expect(screen.getByRole('button', { name: 'GitHub' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Passkey' })).toBeInTheDocument()
+    expect(screen.getByLabelText(zhCN.enterprise.emailLabel)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: zhCN.mode.registerEntry }))
+
+    // Register mode lists only the methods that open an account: the social
+    // block, the enterprise entry and the passkey button obey the same
+    // criterion as the form channel strip.
+    expect(screen.getByRole('button', { name: 'Google' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'GitHub' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Passkey' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText(zhCN.enterprise.emailLabel)).toBeInTheDocument()
+    expect(screen.getByLabelText(zhCN.smsSignIn.phoneLabel)).toBeInTheDocument()
+  })
+
+  it('narrow the deprecated provider override in register mode too', async () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [
+            { name: 'sms', kind: 'form', opens_account: true },
+            {
+              name: 'google',
+              kind: 'redirect',
+              protocol: 'oidc',
+              label: 'Google',
+              opens_account: true,
+            },
+            { name: 'github', kind: 'redirect', protocol: 'oauth2', label: 'GitHub' },
+          ],
+          { signup: true },
+        )}
+        social={{
+          providers: [
+            { provider: 'google', label: 'Google', redirectUri: '' },
+            { provider: 'github', label: 'GitHub', redirectUri: '' },
+          ],
+        }}
+      />,
+    )
+    const user = userEvent.setup()
+    expect(screen.getByRole('button', { name: 'GitHub' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: zhCN.mode.registerEntry }))
+    expect(screen.getByRole('button', { name: 'Google' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'GitHub' })).not.toBeInTheDocument()
+  })
+
+  it('omit an enterprise entry that opens no account in register mode', async () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [
+            { name: 'sms', kind: 'form', opens_account: true },
+            { name: 'corp', kind: 'enterprise', protocol: 'oidc' },
+          ],
+          { signup: true },
+        )}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: zhCN.mode.registerEntry }))
+    expect(
+      screen.queryByLabelText(zhCN.enterprise.emailLabel),
+    ).not.toBeInTheDocument()
+  })
+
+  it('show no phone-number sentence where only a social method opens accounts', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [
+            { name: 'password', kind: 'form' },
+            {
+              name: 'google',
+              kind: 'redirect',
+              protocol: 'oidc',
+              label: 'Google',
+              opens_account: true,
+            },
+          ],
+          { signup: true },
+        )}
+      />,
+    )
+    // The register entry is offered because the social method opens
+    // accounts, but the sentence names a phone number and no SMS channel on
+    // screen opens one.
+    expect(
+      screen.getByRole('button', { name: zhCN.mode.registerEntry }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(zhCN.mode.signInAccountHint),
+    ).not.toBeInTheDocument()
   })
 
   it('count only rendered methods for the register entry', () => {

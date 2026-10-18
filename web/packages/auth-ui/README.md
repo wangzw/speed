@@ -247,15 +247,19 @@ heading of its own in sign-in mode, and in register mode it renders the
 mode's own title ("Create an account"). `mode` is a presentational switch
 over the one flow: a "register" entry appears where the deployment lets a
 first login open an account, but it runs the one sign-in flow -- the
-account opens server-side. Register mode narrows the channel strip to the
-methods that carry `opens_account` and selects the first of them, states
-its title, and offers the way back as "Already have an account? Sign in";
-no two buttons on the surface share an accessible name in either mode. In
-sign-in mode, where that entry is offered, one sentence below the channels
-says an unregistered phone number creates an account -- the same sentence
-for every number, so it cannot reveal whether a number is registered. The
-register hint says an account is created on first use only where the
-chosen method can create one; the register entry itself counts only the
+account opens server-side. Register mode narrows every channel on the
+screen -- the form strip, the social buttons, the enterprise entry and the
+passkey entry -- to the methods that carry `opens_account`, and the form
+strip selects the first of them; it states its title, offers the way back
+as "Already have an account? Sign in", and its hint names the listed
+methods without conditioning on whether each one can create an account.
+No two buttons on the surface share an accessible name in either mode. In
+sign-in mode, where that entry is offered and an SMS channel that opens an
+account is on screen, one sentence below the channels says an
+unregistered phone number creates an account -- the same sentence for
+every number, so it cannot reveal whether a number is registered; the
+sentence names a phone number, so a deployment where only social methods
+open accounts shows none. The register entry itself counts only the
 methods the screen renders: a method with an unknown `kind`, or a form
 channel narrowed away by the deprecated `channels` prop, cannot make it
 appear.

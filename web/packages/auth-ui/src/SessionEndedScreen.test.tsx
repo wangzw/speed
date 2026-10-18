@@ -30,6 +30,17 @@ describe('SessionEndedScreen', () => {
     expect(enUS.sessionEnded.description).toContain('no longer valid')
   })
 
+  it('name the same action in the description as in the button', () => {
+    // The description tells the viewer to sign in again with the wording
+    // the button itself uses, in both bundles.
+    expect(zhCN.sessionEnded.description).toContain(
+      zhCN.sessionEnded.signInAction,
+    )
+    expect(enUS.sessionEnded.description).toContain(
+      enUS.sessionEnded.signInAction,
+    )
+  })
+
   it('render the zh-CN title, description and sign-in action', () => {
     renderWithProviders(<SessionEndedScreen onSignIn={() => {}} />)
     expect(screen.getByText(zhCN.sessionEnded.title)).toBeInTheDocument()

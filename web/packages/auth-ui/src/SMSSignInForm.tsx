@@ -23,9 +23,11 @@
  * calling code named, and never sent. That refusal moves focus to the
  * number field and carries the field's own message into the form's
  * persistent status region, so a viewer who submitted from the button
- * hears which number failed. The server's refusal copy still renders for
- * the failures it alone can judge (an unsupported region, a send-policy
- * refusal).
+ * hears which number failed. Every refused submit clears the region before
+ * writing the message again, so a repeated identical rejection is
+ * announced again rather than staying silent as one unchanged string. The
+ * server's refusal copy still renders for the failures it alone can judge
+ * (an unsupported region, a send-policy refusal).
  *
  * A wrong or expired code is refused by the server as `authn.login_failed`
  * (a spent login code reads exactly like a wrong one, deliberately). On
@@ -166,7 +168,9 @@ export function SMSSignInForm({ session, onSignedIn }: SMSSignInFormProps) {
   // After a refused submit the control has rendered its per-country
   // message under the number; mirror that same text into the status
   // region, so a viewer who cannot see the field hears what was wrong.
-  // It runs per refused submit, never per keystroke.
+  // It runs per refused submit, never per keystroke. The submit cleared
+  // the region first, so this write is a change even when the rejection
+  // repeats the previous one.
   useEffect(() => {
     if (phoneAttempt === 0) {
       return
@@ -218,6 +222,10 @@ export function SMSSignInForm({ session, onSignedIn }: SMSSignInFormProps) {
       const phone = toE164(country, nationalNumber)
       if (phone === null) {
         setPhoneAttempted(true)
+        // Clear the region before the effect below fills the message in
+        // again: a region whose text never changed would announce nothing,
+        // so the same rejection submitted twice must pass through empty.
+        setPhoneNotice('')
         setPhoneAttempt((value) => value + 1)
         // The refusal is the field's: focus it, so a viewer who submitted
         // from the button lands on the number the message is about.
