@@ -12,7 +12,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import MenuList from '@mui/material/MenuList'
 import { I18nextProvider } from '@speed/i18n'
@@ -152,6 +152,33 @@ describe('ImpersonationIndicator', () => {
     expect(chip).toHaveAttribute('aria-expanded', 'true')
     expect(chip).toHaveAttribute('aria-controls')
     expect(chip).toHaveFocus()
+  })
+
+  it('describes the chip with the hide hint while expanded and the show hint while collapsed', async () => {
+    const user = userEvent.setup()
+    renderHost({ impersonation: IMPERSONATION })
+    const chip = screen.getByRole('button', {
+      name: zhCN.impersonation.impersonating,
+    })
+    await user.hover(chip)
+    expect(
+      await screen.findByRole('tooltip', {
+        name: zhCN.impersonation.hideHint,
+      }),
+    ).toBeInTheDocument()
+
+    // Collapse first, then hover again: the hint follows the state.
+    await user.unhover(chip)
+    await user.click(chip)
+    await waitFor(() =>
+      expect(chip).toHaveAttribute('aria-expanded', 'false'),
+    )
+    await user.hover(chip)
+    expect(
+      await screen.findByRole('tooltip', {
+        name: zhCN.impersonation.showHint,
+      }),
+    ).toBeInTheDocument()
   })
 
   it('is the focus target a dismissal moves to', async () => {
