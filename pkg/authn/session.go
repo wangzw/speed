@@ -58,8 +58,10 @@ type Sessions interface {
 	// session is made.
 	Elevate(ctx context.Context, id SessionID, e Elevation) (Issued, error)
 	// SetImpersonation sets the identifier of the impersonation record attached
-	// to the session, the empty string ending it, and gives a browser session a
-	// new token.
+	// to the session, the empty string ending it. Attaching a non-empty
+	// identifier gives a browser session a new token; ending only clears the
+	// identifier and leaves the token and the expiry as they are, and the
+	// returned Issued carries no Token.
 	SetImpersonation(ctx context.Context, id SessionID, grantID string) (Issued, error)
 	// Status says whether a session is still valid and returns what a backend
 	// needs to build an identity. It is cached for the check-ttl setting. A

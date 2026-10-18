@@ -16,8 +16,9 @@ import (
 // the winner, and a caller that finds the record already ended does nothing.
 // The audit row and the ended event are best-effort: ending is a move in the
 // safe direction, so a failed audit write is an Error and never stops it. End
-// touches no carrier: the handler clears the session marker and rotates the
-// cookie, and the path that revokes an impersonation token has no cookie at all.
+// touches no carrier: the handler clears the session marker without rotating
+// the token or writing a cookie, and the path that revokes an impersonation
+// token has no cookie at all.
 func (m *product) End(ctx context.Context, actor authn.Identity, reason string) error {
 	session := actor.Session()
 	if session == "" {
