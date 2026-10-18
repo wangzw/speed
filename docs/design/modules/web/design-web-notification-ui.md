@@ -51,7 +51,7 @@ interface NotificationStreamProviderProps {
 }
 ```
 
-`openStream` 是装配处（`@speed/product-shell/bootstrap` 的 `bootstrapSpeedApp`）建的客户端的事件流开启器（`SpeedClient.openEventStream`）。`enabled` 是宿主的会话事实：本包不为它读会话状态，一个匿名的访客因此不会打开一个只会被拒的连接。宿主把特性 `notification.stream` 是否在场并进同一个入参：该特性缺席的部署上，打开的连接每次被拒后都会按退避重开。两者之一缺席或 `enabled` 为 false 时，订阅是惰性的，面仍按挂载与标签页重新可见各自读一次。
+`openStream` 是装配处（`@speed/product-shell/bootstrap` 的 `bootstrapSpeedApp`）建的客户端的事件流开启器（`SpeedClient.openEventStream`）。`enabled` 是宿主的会话事实：本包不为它读会话状态，一个匿名的访客因此不会打开一个只会被拒的连接。宿主把特性 `notification.stream` 是否在场并进同一个入参：该特性缺席的部署上，打开的连接被准入层以裸 404 拒绝后停止重连，只在租户或生效身份改变、或标签页重新可见时重开一次；宿主仍应把特性是否在场并进 `enabled`，使缺席的部署不去打开它。两者之一缺席或 `enabled` 为 false 时，订阅是惰性的，面仍按挂载与标签页重新可见各自读一次。
 
 ### 特性在场的入参
 
@@ -174,7 +174,7 @@ graph TD
 | 后端消息视图的 `read_at` 为 JSON `null` | 读成未读（`null`、`undefined`、空串等同） |
 | 未挂开启器或 `enabled` 为 false | 订阅惰性，面仍按挂载与标签页重新可见各自读一次 |
 | 未挂 `NotificationPresenceProvider` | 按 `preferences` 为假、`channels` 为空处理：通知面不渲染偏好矩阵、不发分类法与偏好读，单独挂载的偏好矩阵只有 `in_app` 一列 |
-| 实时连接被断开 | 一次失败上报，provider 以封顶的指数退避重开，退避随连续失败增长、只在收到一帧时复位；宿主不感知单次失败 |
+| 实时连接被断开 | 一次失败上报，provider 以封顶的指数退避重开，退避随连续失败增长，在收到一帧或标签页由隐藏变为可见时复位；宿主不感知单次失败 |
 | 打开连接被准入层拒绝（没有问题对象的裸 404） | provider 停止重连：重试不能改变这个拒绝，每次重连都会刷新一条控制台错误；租户或生效身份改变、或标签页由隐藏变为可见时重新打开一次 |
 
 本包不重试读与写（重试归传输层与宿主的查询客户端），实时连接的重连是 provider 自己的策略。

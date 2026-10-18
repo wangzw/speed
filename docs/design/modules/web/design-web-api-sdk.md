@@ -150,10 +150,10 @@ flowchart LR
 ### 特性名的生成
 
 1. 输入是示范宿主的 `gen` 以 `--features` 写出的 `contracts/features.json`：可用集里的全部特性声明，按名字排序。
-2. 特性名生成器 `web/scripts/feature-names.mjs` 读它，写出 `src/features.ts`：`FeatureNameRegistry` 为每个名字登记一项，`FEATURE_NAMES` 按同一顺序列出全部名字，文件带 DO-NOT-EDIT 头。`contracts/features.json` 的每一项带所有者：声明它的模块由平台交付的为平台所有，由示范宿主自己的模块交付的为应用所有，`gen` 按声明模块的归属机械写出，不靠名字约定。生成器写 `src/features.ts` 只取平台所有的项，本包登记的因此始终是平台模块的特性名；应用所有的项由应用内的模块增补承载（见扩展点）。一条测试断言本包的 `features.ts` 不含任何应用所有的名字。
+2. 特性名生成器 `web/scripts/feature-names.mjs` 读它，写出 `src/features.ts`：`FeatureNameRegistry` 为每个名字登记一项，`FEATURE_NAMES` 按同一顺序列出全部名字，文件带 DO-NOT-EDIT 头。`contracts/features.json` 的每一项带所有者：声明它的代码在平台的模块路径之下的为平台所有，其余为应用所有，`gen` 按声明所在的包机械写出，不靠名字约定；经平台导出的工厂构造的宿主模块，其声明在平台代码里，按平台所有。生成器写 `src/features.ts` 只取平台所有的项，本包登记的因此始终是平台模块的特性名；应用所有的项由应用内的模块增补承载（见扩展点）。一条测试断言本包的 `features.ts` 不含任何应用所有的名字。
 3. 示范应用的契约再生成脚本（`starters/demo/web/package.json` 的 `api:gen`）在 `gen` 写出契约之后调用特性名生成器，`contracts/features.json` 与 `src/features.ts` 因此随同一次再生成更新。生成的 `src/features.ts` 是提交进仓库的产物。
 
-`contracts/features.json` 覆盖任何一份可能的特性文档：静态特性都在可用集声明里；经 `feature.Board` 的 `Post` 报告的名字不是报告者声明的条件特性时，`feature.board` 让启动失败（[feature](../design-feature.md)）。所以 `FeatureName` 覆盖前端可能读到的每一个特性名。
+`contracts/features.json` 覆盖任何一份可能的特性文档：静态特性都在可用集声明里；经 `feature.Board` 的 `Post` 报告的名字不是报告者声明的条件特性时，`feature.board` 让启动失败（[feature](../design-feature.md)）。所以平台包的 `FeatureName` 覆盖前端可能读到的每一个平台所有的特性名，应用所有的名字由应用内的模块增补补齐。
 
 ### 特性名的对齐检查
 
@@ -170,7 +170,7 @@ flowchart LR
 
 ### 模块片段的纳入
 
-一个平台模块的 HTTP 片段进入合并文档即进入本包的生成面；反之，一个刻意不作为成员的片段（如应用自己的 API）不进平台 SDK——由应用经自己的生成流生成自己的 SDK。本包因此在发布层只能含平台端点，不能含某个应用的业务端点。
+一个平台模块的 HTTP 片段进入合并文档即进入本包的生成面；反之，应用所有的片段是合并文档的成员，但带应用所有的标记，本包的生成过滤掉它们，应用经应用级生成取全部。本包因此在发布层只能含平台端点，不能含某个应用的业务端点。
 
 ## 错误与失败语义
 
