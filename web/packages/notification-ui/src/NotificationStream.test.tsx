@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import type { ReactElement } from 'react'
@@ -18,6 +18,7 @@ import type {
   EventStreamOpener,
   EventStreamOptions,
 } from '@speed/api-client'
+import { TenantProvider } from '@speed/auth-core'
 import { renderWithProviders, TEST_TENANT_ID } from '../test-utils/render.js'
 import { NotificationStreamProvider } from './NotificationStream.js'
 
@@ -171,8 +172,7 @@ describe('NotificationStreamProvider', () => {
     }
   })
 
-  it('is inert when the host mounts no opener', () => {
-    const { opened } = fakeOpener()
+  it('is inert when the host mounts no opener', () => {    const { opened } = fakeOpener()
     const rendered = render(
       <NotificationStreamProvider>
         <div>content</div>
@@ -202,4 +202,157 @@ describe('NotificationStreamProvider', () => {
     await userEvent.click(screen.getByRole('button', { name: 'enable' }))
     expect(opened).toHaveLength(1)
   })
+
+  it('stops reconnecting after the admission layer refuses with a bare 404', () => {
+    vi.useFakeTimers()
+    try {
+      const { opened, opener } = fakeOpener()
+      renderWithProviders(
+        <NotificationStreamProvider openStream={opener}>
+          <div>content</div>
+        </NotificationStreamProvider>,
+      )
+      expect(opened).toHaveLength(1)
+      // The transport's terminal pair for one refusal: onError with the bare
+      // status, then onClose. Retrying cannot change the answer, so no timer
+      // may be left behind.
+      act(() => {
+        opened[0]?.options.onError?.(
+          new ApiError({ status: 404, code: 'client.http.404', attempts: 1 }),
+        )
+        opened[0]?.options.onClose?.()
+      })
+      act(() => {
+        vi.advanceTimersByTime(120_000)
+      })
+      expect(opened).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reads the refusal off the answer status, not only an ApiError code', () => {
+    vi.useFakeTimers()
+    try {
+      const { opened, opener } = fakeOpener()
+      renderWithProviders(
+        <NotificationStreamProvider openStream={opener}>
+          <div>content</div>
+        </NotificationStreamProvider>,
+      )
+      // A stream failure the transport surfaced as a plain object: the
+      // status is the fact, so the refusal is still recognised.
+      act(() => {
+        opened[0]?.options.onError?.({
+          status: 404,
+        } as unknown as ApiError)
+        opened[0]?.options.onClose?.()
+      })
+      act(() => {
+        vi.advanceTimersByTime(120_000)
+      })
+      expect(opened).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("keeps reconnecting after the module's own typed 404", () => {
+    vi.useFakeTimers()
+    try {
+      const { opened, opener } = fakeOpener()
+      renderWithProviders(
+        <NotificationStreamProvider openStream={opener}>
+          <div>content</div>
+        </NotificationStreamProvider>,
+      )
+      act(() => {
+        opened[0]?.options.onError?.(
+          new ApiError({
+            status: 404,
+            code: 'notification.message_not_found',
+            attempts: 1,
+          }),
+        )
+        opened[0]?.options.onClose?.()
+      })
+      act(() => {
+        vi.advanceTimersByTime(1000)
+      })
+      expect(opened).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reopens after a refusal when the tenant changes', () => {
+    const { opened, opener } = fakeOpener()
+    function TenantHarness(): ReactElement {
+      const [tenantId, setTenantId] = useState(TEST_TENANT_ID)
+      return (
+        <>
+          <button type="button" onClick={() => setTenantId('other-tenant')}>
+            switch
+          </button>
+          <TenantProvider tenantId={tenantId}>
+            <NotificationStreamProvider openStream={opener}>
+              <div>content</div>
+            </NotificationStreamProvider>
+          </TenantProvider>
+        </>
+      )
+    }
+    renderWithProviders(<TenantHarness />)
+    expect(opened).toHaveLength(1)
+    act(() => {
+      opened[0]?.options.onError?.(
+        new ApiError({ status: 404, code: 'client.http.404', attempts: 1 }),
+      )
+      opened[0]?.options.onClose?.()
+    })
+    expect(opened).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'switch' }))
+    expect(opened).toHaveLength(2)
+    expect(opened[1]?.path).toBe(STREAM_PATH)
+  })
+
+  it('reopens after a refusal when a hidden tab becomes visible', () => {
+    const { opened, opener } = fakeOpener()
+    renderWithProviders(
+      <NotificationStreamProvider openStream={opener}>
+        <div>content</div>
+      </NotificationStreamProvider>,
+    )
+    expect(opened).toHaveLength(1)
+    act(() => {
+      opened[0]?.options.onError?.(
+        new ApiError({ status: 404, code: 'client.http.404', attempts: 1 }),
+      )
+      opened[0]?.options.onClose?.()
+    })
+    expect(opened).toHaveLength(1)
+    try {
+      act(() => {
+        setDocumentVisibility('hidden')
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      act(() => {
+        setDocumentVisibility('visible')
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      expect(opened).toHaveLength(2)
+      expect(opened[1]?.path).toBe(STREAM_PATH)
+    } finally {
+      Reflect.deleteProperty(document, 'visibilityState')
+    }
+  })
 })
+
+/** Overrides jsdom's visibility state for the visibility cases; the caller
+ * removes the own property afterwards so the prototype's getter is back. */
+function setDocumentVisibility(state: 'visible' | 'hidden'): void {
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    get: () => state,
+  })
+}

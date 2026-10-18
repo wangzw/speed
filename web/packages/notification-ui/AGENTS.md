@@ -26,9 +26,13 @@ live stream through the assembled client's event-stream opener.
   `openEventStream`) and, on a `message` frame, invalidates the tenant's
   reads -- it never patches a cache from the frame, which names only a
   message id (the stream module's contract). Reconnecting with capped
-  exponential backoff and pausing while the tab is hidden are this
-  provider's policy, because the transport neither times out nor
-  reconnects. The endpoint path is taken from the generated contract's own
+  exponential backoff, pausing while the tab is hidden, and stopping the
+  loop on the admission layer's bare 404 are this provider's policy,
+  because the transport neither times out nor reconnects. A refusal by
+  the admission layer cannot change through retry -- every attempt would
+  refresh a console error -- so a rejected connection stops reconnecting
+  until the tenant or effective identity changes or a hidden tab becomes
+  visible. The endpoint path is taken from the generated contract's own
   query-key constructor (`getNotificationStreamSubscribeQueryKey`), never
   hand-written.
 - **The stream gate is the host's.** `NotificationStreamProvider`'s
