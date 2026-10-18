@@ -31,7 +31,7 @@ func TestEndEndsTheRecordOnTheSession(t *testing.T) {
 		}
 		_, endedBy, reason := r.stored(g.ID)
 		if reason == nil || *reason != authn.EndExplicit {
-			t.Errorf("the end reason is %v, want explicit", reason)
+			t.Errorf("the end reason is %q, want explicit", reasonText(reason))
 		}
 		if endedBy == nil || *endedBy != string(actorID) {
 			t.Errorf("the initiator is %v, want the actor's key", endedBy)
@@ -107,7 +107,7 @@ func TestEndToleratesAFailedAudit(t *testing.T) {
 		}
 		_, _, reason := r.stored(g.ID)
 		if reason == nil || *reason != authn.EndExplicit {
-			t.Errorf("the end reason is %v, want explicit despite the failed audit", reason)
+			t.Errorf("the end reason is %q, want explicit despite the failed audit", reasonText(reason))
 		}
 	})
 }
@@ -129,7 +129,7 @@ func TestRevokeEndsByIdForceAndIsIdempotent(t *testing.T) {
 		}
 		_, endedBy, reason := r.stored(g.ID)
 		if reason == nil || *reason != authn.EndRevoked {
-			t.Errorf("the end reason is %v, want revoked", reason)
+			t.Errorf("the end reason is %q, want revoked", reasonText(reason))
 		}
 		if endedBy == nil || *endedBy != string(actorID) {
 			t.Errorf("the revoker is %v, want the revoker's key", endedBy)
@@ -193,7 +193,7 @@ func TestRevokeOfALapsedRecordEndsItByItsOwnReason(t *testing.T) {
 				}
 				_, endedBy, reason := r.stored(g.ID)
 				if reason == nil || *reason != c.want {
-					t.Errorf("the end reason is %v, want %q", reason, c.want)
+					t.Errorf("the end reason is %q, want %q", reasonText(reason), c.want)
 				}
 				if endedBy != nil {
 					t.Errorf("the revoke recorded an initiator %q, want none", *endedBy)
@@ -363,7 +363,7 @@ func TestListSettlesTheLapsedRecordsOnItsPage(t *testing.T) {
 				}
 				endedAt, endedBy, reason := r.stored(g.ID)
 				if endedAt == nil || reason == nil || *reason != c.want {
-					t.Errorf("the stored end is (%v, %v), want %q written back", endedAt, reason, c.want)
+					t.Errorf("the stored end is (%v, %q), want %q written back", endedAt, reasonText(reason), c.want)
 				}
 				if endedAt == nil || !withinASecond(page[0].EndedAt, *endedAt) {
 					t.Errorf("List returned the end at %v, the store holds %v", page[0].EndedAt, endedAt)
@@ -486,7 +486,7 @@ func TestListDoesNotJudgeThroughTheCheckTTLCache(t *testing.T) {
 						page[0].EndedAt, page[0].EndReason, c.want)
 				}
 				if _, _, reason := r.stored(g.ID); reason == nil || *reason != c.want {
-					t.Errorf("the stored end reason is %v, want %q", reason, c.want)
+					t.Errorf("the stored end reason is %q, want %q", reasonText(reason), c.want)
 				}
 			})
 		})
@@ -549,7 +549,7 @@ func TestListSettlesOnceWhenTwoReplicasJudgeTheSameRecord(t *testing.T) {
 			}
 		}
 		if _, _, reason := r.stored(g.ID); reason == nil || *reason != authn.EndSessionEnded {
-			t.Errorf("the stored end reason is %v, want session-ended", reason)
+			t.Errorf("the stored end reason is %q, want session-ended", reasonText(reason))
 		}
 		if got := len(r.bus.ofType(authn.EventImpersonationEnded)); got != 1 {
 			t.Errorf("the race published %d ended events, want 1", got)
@@ -643,7 +643,7 @@ func TestListSettlesEveryLapsedRowOfAPage(t *testing.T) {
 		}
 		for _, id := range ids {
 			if endedAt, _, reason := r.stored(id); endedAt == nil || reason == nil || *reason != authn.EndSessionEnded {
-				t.Errorf("%s was stored (ended at %v, reason %v), want session-ended", id, endedAt, reason)
+				t.Errorf("%s was stored (ended at %v, reason %q), want session-ended", id, endedAt, reasonText(reason))
 			}
 		}
 		if got := r.counter(outcomeEnded); got != int64(len(ids)) {
@@ -805,7 +805,7 @@ func TestListLeavesEndedRecordsOutOfTheJudgement(t *testing.T) {
 					t.Errorf("Revoke of an ended record with a failed dependency read = %v, want nil", err)
 				}
 				if _, _, reason := r.stored(g.ID); reason == nil || *reason != authn.EndExplicit {
-					t.Errorf("the end reason is %v, want explicit left alone", reason)
+					t.Errorf("the end reason is %q, want explicit left alone", reasonText(reason))
 				}
 				if rows := r.audit.entries(); len(rows) != 0 {
 					t.Errorf("Revoke of an ended record wrote audit rows: %+v", rows)
@@ -880,7 +880,7 @@ func TestListKeepsTheRowsItAlreadySettledWhenALaterRowFails(t *testing.T) {
 			t.Errorf("a failed page returned %v, want none", page)
 		}
 		if _, _, reason := r.stored("rec-1"); reason == nil || *reason != authn.EndSessionEnded {
-			t.Errorf("the row the page settled before the failure is %v, want session-ended", reason)
+			t.Errorf("the row the page settled before the failure is %q, want session-ended", reasonText(reason))
 		}
 		if endedAt, _, _ := r.stored("rec-2"); endedAt != nil {
 			t.Errorf("the failing row was ended: %v", *endedAt)
@@ -971,7 +971,7 @@ func TestAPageReportsTheEndAnotherCallerWrote(t *testing.T) {
 				t.Fatalf("Revoke = %v, want nil: another caller ended the record", err)
 			}
 			if _, _, reason := r.stored(g.ID); reason == nil || *reason != authn.EndRevoked {
-				t.Errorf("the end reason is %v, want the end that landed", reason)
+				t.Errorf("the end reason is %q, want the end that landed", reasonText(reason))
 			}
 			if rows := r.audit.entries(); len(rows) != 0 {
 				t.Errorf("the losing revoke wrote audit rows: %+v", rows)
@@ -1012,7 +1012,7 @@ func TestRevokeReturnsUnavailableWhenADependencyFails(t *testing.T) {
 					t.Fatalf("Revoke = %v, want ErrUnavailable", err)
 				}
 				if endedAt, endedBy, reason := r.stored(g.ID); endedAt != nil || endedBy != nil || reason != nil {
-					t.Errorf("a failed revoke wrote the record ended: (%v, %v, %v)", endedAt, endedBy, reason)
+					t.Errorf("a failed revoke wrote the record ended: (%v, %v, %q)", endedAt, endedBy, reasonText(reason))
 				}
 				if rows := r.audit.entries(); len(rows) != 0 {
 					t.Errorf("a failed revoke wrote audit rows: %+v", rows)
@@ -1052,7 +1052,7 @@ func TestRevokeDoesNotJudgeThroughTheCheckTTLCache(t *testing.T) {
 		}
 		_, endedBy, reason := r.stored(g.ID)
 		if reason == nil || *reason != authn.EndSessionEnded {
-			t.Errorf("the end reason is %v, want session-ended from the store", reason)
+			t.Errorf("the end reason is %q, want session-ended from the store", reasonText(reason))
 		}
 		if endedBy != nil {
 			t.Errorf("a lapsed revoke wrote an initiator %q, want none", *endedBy)
@@ -1116,7 +1116,7 @@ func TestRevokeIsWrittenOnceAndOnlyOnce(t *testing.T) {
 			}
 		}
 		if _, _, reason := r.stored(g.ID); reason == nil || *reason != authn.EndRevoked {
-			t.Errorf("the end reason is %v, want revoked", reason)
+			t.Errorf("the end reason is %q, want revoked", reasonText(reason))
 		}
 		if got := len(r.audit.entries()); got != 1 {
 			t.Errorf("the race wrote %d revoke audit rows, want 1", got)

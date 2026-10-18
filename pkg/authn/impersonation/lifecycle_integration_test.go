@@ -39,7 +39,7 @@ func TestTheListAndRevokeLifecycleOnPostgres(t *testing.T) {
 	}
 	_, endedBy, reason := r.stored(g.ID)
 	if reason == nil || *reason != authn.EndExpired {
-		t.Errorf("the end reason is %v, want expired left alone", reason)
+		t.Errorf("the end reason is %q, want expired left alone", reasonText(reason))
 	}
 	if endedBy != nil {
 		t.Errorf("the revoke recorded an initiator %q, want none", *endedBy)

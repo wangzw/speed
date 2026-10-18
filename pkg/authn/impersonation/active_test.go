@@ -82,7 +82,7 @@ func TestActiveLapsesForEachReason(t *testing.T) {
 					t.Errorf("Active returned the end at %v, the store holds %v", got.EndedAt, endedAt)
 				}
 				if reason == nil || *reason != c.want {
-					t.Errorf("the end reason is %v, want %q", reason, c.want)
+					t.Errorf("the end reason is %q, want %q", reasonText(reason), c.want)
 				}
 				if endedBy != nil {
 					t.Errorf("a lapse wrote an initiator %q, want none", *endedBy)
@@ -159,7 +159,7 @@ func TestActiveIsFalseWhenTheEndArrivesExactly(t *testing.T) {
 			t.Error("a record whose end time equals the instant still reads as active")
 		}
 		if _, _, reason := r.stored(g.ID); reason == nil || *reason != authn.EndExpired {
-			t.Errorf("the end reason is %v, want expired", reason)
+			t.Errorf("the end reason is %q, want expired", reasonText(reason))
 		}
 	})
 }
@@ -242,7 +242,7 @@ func TestStartEndsALapsedRecordInItsOwnTransaction(t *testing.T) {
 		}
 		_, _, reason := r.stored(first.ID)
 		if reason == nil || *reason != authn.EndExpired {
-			t.Errorf("the lapsed record's end reason is %v, want expired", reason)
+			t.Errorf("the lapsed record's end reason is %q, want expired", reasonText(reason))
 		}
 		if second.ID == first.ID {
 			t.Error("the second start reused the first record")
@@ -360,7 +360,7 @@ func TestTheLapseCauseFollowsTheFixedOrder(t *testing.T) {
 					t.Fatal("a lapsed record reads as active")
 				}
 				if _, _, reason := r.stored(g.ID); reason == nil || *reason != c.want {
-					t.Errorf("the end reason is %v, want %q", reason, c.want)
+					t.Errorf("the end reason is %q, want %q", reasonText(reason), c.want)
 				}
 				if got := r.endedPayload().EndedBy; got != c.wantEndedBy {
 					t.Errorf("the ended event's cause is %q, want %q", got, c.wantEndedBy)
@@ -413,7 +413,7 @@ func TestActiveReturnsAnErrorForEveryFailedDependencyRead(t *testing.T) {
 					t.Error("a failed dependency read the record as active")
 				}
 				if endedAt, endedBy, reason := r.stored(g.ID); endedAt != nil || endedBy != nil || reason != nil {
-					t.Errorf("a failed dependency read wrote the record ended: (%v, %v, %v)", endedAt, endedBy, reason)
+					t.Errorf("a failed dependency read wrote the record ended: (%v, %v, %q)", endedAt, endedBy, reasonText(reason))
 				}
 
 				c.clear(r)
@@ -493,7 +493,7 @@ func TestTheJudgeReadsTheRecordsOwnSession(t *testing.T) {
 				t.Fatalf("Revoke: %v", err)
 			}
 			if _, _, reason := r.stored(g.ID); reason == nil || *reason != authn.EndRevoked {
-				t.Errorf("the end reason is %v, want revoked: the record was judged on a session that is not its own", reason)
+				t.Errorf("the end reason is %q, want revoked: the record was judged on a session that is not its own", reasonText(reason))
 			}
 			if asked := sessions.askedIDs(); len(asked) != 1 || asked[0] != sessionID {
 				t.Errorf("the judgement read the sessions %v, want %q alone", asked, sessionID)
@@ -531,7 +531,7 @@ func TestActiveJudgesThroughTheCheckTTLCache(t *testing.T) {
 			t.Errorf("after the check-ttl window Active = (active %v, err %v), want the lapse", active, err)
 		}
 		if _, _, reason := r.stored(g.ID); reason == nil || *reason != authn.EndSessionEnded {
-			t.Errorf("the end reason is %v, want session-ended", reason)
+			t.Errorf("the end reason is %q, want session-ended", reasonText(reason))
 		}
 	})
 }
@@ -589,7 +589,7 @@ func TestActiveSettlesOnceWhenTwoReplicasJudgeTheSameLapsedRecord(t *testing.T) 
 			}
 		}
 		if _, _, reason := r.stored(g.ID); reason == nil || *reason != authn.EndSessionEnded {
-			t.Errorf("the stored end reason is %v, want session-ended", reason)
+			t.Errorf("the stored end reason is %q, want session-ended", reasonText(reason))
 		}
 		if got := len(r.bus.ofType(authn.EventImpersonationEnded)); got != 1 {
 			t.Errorf("the race published %d ended events, want 1", got)

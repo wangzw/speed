@@ -35,7 +35,7 @@ func TestStartSettlesALapsedRecordWithItsOwnEvent(t *testing.T) {
 		}
 		_, endedBy, reason := r.stored(first.ID)
 		if reason == nil || *reason != authn.EndMembershipRemoved {
-			t.Errorf("the lapsed record's end reason is %v, want membership-removed", reason)
+			t.Errorf("the lapsed record's end reason is %q, want membership-removed", reasonText(reason))
 		}
 		if endedBy != nil {
 			t.Errorf("a lapse wrote an initiator %q, want none", *endedBy)

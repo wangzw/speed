@@ -754,6 +754,15 @@ func (r *rig) stored(id string) (endedAt *time.Time, endedBy *string, endReason 
 	return rows[0].EndedAt, rows[0].EndedBy, rows[0].EndReason
 }
 
+// reasonText renders a stored end reason for a failure message. The column is
+// scanned as a pointer, and %v on it prints the address rather than the value.
+func reasonText(p *string) string {
+	if p == nil {
+		return "<nil>"
+	}
+	return *p
+}
+
 // applyMigrations builds the module's table from the files it ships.
 func applyMigrations(t *testing.T, h *gorm.DB, dialect string) {
 	t.Helper()
