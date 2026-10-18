@@ -20,6 +20,7 @@ import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from '@speed/i18n'
 import { AppThemeProvider } from '@speed/ui-kit'
 import { apiError } from '@speed/test-utils/session-harness'
+import { emittedStyleText } from '@speed/test-utils/emitted-css'
 import {
   ImpersonationBanner,
   type ImpersonationBannerState,
@@ -47,6 +48,77 @@ const EXPIRY_ZH = zhCN.impersonation.expiresAt.replace(
     timeStyle: 'short',
   }).format(EXPIRES_AT),
 )
+
+/** The fixed text before a template's first placeholder. A negative
+ * assertion built from a value the test never passes is always true, so
+ * the "not stated" checks look for the label itself, independent of the
+ * interpolated value. */
+function labelBeforeValue(template: string): string {
+  const placeholder = template.indexOf('{{')
+  return placeholder < 0 ? template : template.slice(0, placeholder)
+}
+
+const TENANT_LABEL_ZH = labelBeforeValue(zhCN.impersonation.tenant)
+const EXPIRY_LABEL_ZH = labelBeforeValue(zhCN.impersonation.expiresAt)
+
+/** Whether the element is clipped to the 1x1 visually-hidden box by
+ * itself or an ancestor. jsdom renders no layout, but it resolves the
+ * emotion class rules into computed styles, so the clip recipe of every
+ * ancestor is observable. */
+function isVisuallyHidden(element: Element): boolean {
+  for (
+    let node: Element | null = element;
+    node !== null;
+    node = node.parentElement
+  ) {
+    const style = getComputedStyle(node)
+    if (style.position !== 'absolute') {
+      continue
+    }
+    const clipped =
+      (style.clip !== '' && style.clip !== 'auto') ||
+      (style.clipPath !== '' && style.clipPath !== 'none')
+    if (clipped) {
+      return true
+    }
+  }
+  return false
+}
+
+/** The declaration emotion emitted for `property` in the rule that
+ * targets the MUI message slot under one of `owner`'s classes. The
+ * element's generated stylesheet is the thing a browser applies; the
+ * focusability Chromium derives from a scroll container cannot be
+ * measured in jsdom. */
+function messageSlotDeclaration(
+  owner: Element,
+  property: string,
+): string | null {
+  const ownerClasses = Array.from(owner.classList)
+  for (const rule of emittedStyleText().split('}')) {
+    const open = rule.indexOf('{')
+    if (open < 0) {
+      continue
+    }
+    const selector = rule.slice(0, open).trim()
+    const suffix = ' .MuiAlert-message'
+    if (!selector.endsWith(suffix)) {
+      continue
+    }
+    const ancestors = selector.slice(0, -suffix.length).split(/\s+/)
+    if (!ownerClasses.some((name) => ancestors.includes(`.${name}`))) {
+      continue
+    }
+    const declarations = rule.slice(open + 1)
+    const match = new RegExp(
+      `(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`,
+    ).exec(declarations)
+    if (match?.[1] !== undefined) {
+      return match[1].trim()
+    }
+  }
+  return null
+}
 
 describe('ImpersonationBanner', () => {
   it('renders only one empty live region while no impersonation is active', () => {
@@ -157,23 +229,42 @@ describe('ImpersonationBanner', () => {
 
   it('keeps the end control usable when tenant and expiry are unknown', async () => {
     const onEnd = vi.fn(async () => {})
+    // `null` is what an unread optional field looks like at the wire
+    // boundary; the cast passes that shape through the declared type.
+    const unread = { subject: SUBJECT, expiresAt: null as unknown as Date }
     renderWithProviders(
-      <ImpersonationBanner
-        impersonation={{ subject: SUBJECT }}
-        onEnd={onEnd}
-      />,
+      <ImpersonationBanner impersonation={unread} onEnd={onEnd} />,
     )
     const region = screen.getByRole('region', {
       name: zhCN.impersonation.regionLabel,
     })
-    expect(region).not.toHaveTextContent(TENANT_ZH)
-    expect(region).not.toHaveTextContent(EXPIRY_ZH)
+    // Neither line is stated: the labels are looked for as fixed text,
+    // not as a value the test never passed.
+    expect(region).not.toHaveTextContent(TENANT_LABEL_ZH)
+    expect(region).not.toHaveTextContent(EXPIRY_LABEL_ZH)
     expect(region).toHaveTextContent(ACTING_AS_ZH)
 
     await userEvent
       .setup()
       .click(screen.getByRole('button', { name: zhCN.impersonation.end }))
     await waitFor(() => expect(onEnd).toHaveBeenCalledTimes(1))
+  })
+
+  it('renders the banner for a malformed expiry instead of throwing out of Intl', () => {
+    renderWithProviders(
+      <ImpersonationBanner
+        impersonation={{ subject: SUBJECT, expiresAt: new Date('nope') }}
+        onEnd={async () => {}}
+      />,
+    )
+    const region = screen.getByRole('region', {
+      name: zhCN.impersonation.regionLabel,
+    })
+    expect(region).toHaveTextContent(ACTING_AS_ZH)
+    expect(region).not.toHaveTextContent(EXPIRY_LABEL_ZH)
+    expect(
+      screen.getByRole('button', { name: zhCN.impersonation.end }),
+    ).toBeEnabled()
   })
 
   it('disables and marks the end control busy while the attempt is in flight', async () => {
@@ -231,9 +322,135 @@ describe('ImpersonationBanner', () => {
     await waitFor(() =>
       expect(screen.queryByRole('region')).not.toBeInTheDocument(),
     )
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent(zhCN.impersonation.ended)
+    // The confirmed text is shown, not left inside the 1x1 hidden box.
+    expect(isVisuallyHidden(status)).toBe(false)
+  })
+
+  it('keeps the hidden announcement region from becoming a scroll container', () => {
+    // MUI's message slot carries `overflow: auto`; squeezed to the 1px
+    // clipped width it would overflow into a scroll region, which
+    // Chromium makes a keyboard focus stop. jsdom cannot construct that
+    // focusability, so the emitted rule is the observable half: the
+    // hidden branch removes the scroll container.
+    renderWithProviders(
+      <ImpersonationBanner
+        impersonation={{ subject: SUBJECT }}
+        onEnd={async () => {}}
+      />,
+    )
+    const status = screen.getByRole('status')
+    const outer = status.parentElement
+    expect(outer).not.toBeNull()
+    expect(messageSlotDeclaration(outer as Element, 'overflow')).toBe(
+      'hidden',
+    )
+  })
+
+  it('keeps the announcement clipped to the hidden box while impersonating', () => {
+    renderWithProviders(
+      <ImpersonationBanner
+        impersonation={{ subject: SUBJECT }}
+        onEnd={async () => {}}
+      />,
+    )
+    // The region is the announcement's carrier, but the banner itself
+    // states the same line: the region must stay visually hidden.
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent(ACTING_AS_ZH)
+    expect(isVisuallyHidden(status)).toBe(true)
+  })
+
+  it('confirms the end while the banner is still mounted, and the confirmation outlives an explicit clear', async () => {
+    // A real host's end write settles over a network round trip: the
+    // promise resolves before the host's own re-read clears
+    // `impersonation`. The confirmation must be readable in the region
+    // while the banner is still on screen, and must stay after the
+    // host clears it.
+    function Host() {
+      const [impersonation, setImpersonation] =
+        useState<ImpersonationBannerState | null>({ subject: SUBJECT })
+      return (
+        <>
+          <button type="button" onClick={() => setImpersonation(null)}>
+            clear
+          </button>
+          <ImpersonationBanner
+            impersonation={impersonation}
+            onEnd={async () => {}}
+          />
+        </>
+      )
+    }
+    const user = userEvent.setup()
+    renderWithProviders(<Host />)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.impersonation.end }),
+    )
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        zhCN.impersonation.ended,
+      ),
+    )
+    expect(
+      screen.getByRole('region', { name: zhCN.impersonation.regionLabel }),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'clear' }))
+    expect(screen.queryByRole('region')).not.toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent(
       zhCN.impersonation.ended,
     )
+  })
+
+  it('replaces a standing end confirmation when a new impersonation appears', async () => {
+    function Host() {
+      const [impersonation, setImpersonation] =
+        useState<ImpersonationBannerState | null>({ subject: SUBJECT })
+      return (
+        <>
+          <button type="button" onClick={() => setImpersonation(null)}>
+            clear
+          </button>
+          <button
+            type="button"
+            onClick={() => setImpersonation({ subject: 'Bob' })}
+          >
+            start again
+          </button>
+          <ImpersonationBanner
+            impersonation={impersonation}
+            onEnd={async () => {}}
+          />
+        </>
+      )
+    }
+    const user = userEvent.setup()
+    renderWithProviders(<Host />)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.impersonation.end }),
+    )
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        zhCN.impersonation.ended,
+      ),
+    )
+    await user.click(screen.getByRole('button', { name: 'clear' }))
+    expect(screen.getByRole('status')).toHaveTextContent(
+      zhCN.impersonation.ended,
+    )
+
+    // The next impersonation is the current context: the stale
+    // confirmation must not cover its announcement.
+    await user.click(screen.getByRole('button', { name: 'start again' }))
+    const status = screen.getByRole('status')
+    await waitFor(() =>
+      expect(status).toHaveTextContent(
+        zhCN.impersonation.actingAs.replace('{{subject}}', 'Bob'),
+      ),
+    )
+    expect(status).not.toHaveTextContent(zhCN.impersonation.ended)
   })
 
   it('renders a failed end inside the banner with the answer code text, and stays retryable', async () => {

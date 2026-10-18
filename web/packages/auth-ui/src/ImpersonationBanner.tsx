@@ -141,7 +141,7 @@ export function ImpersonationBanner({
   }
 
   const expiry =
-    impersonation?.expiresAt === undefined
+    impersonation?.expiresAt == null
       ? null
       : formatExpiry(impersonation.expiresAt, i18n.language ?? 'en-US')
 
@@ -150,8 +150,22 @@ export function ImpersonationBanner({
       {/* The component's one live region, mounted for its whole life:
           empty while idle, the start announcement while impersonating,
           and the end confirmation afterwards. Its confirmation stays
-          here after the banner below unmounts. */}
-      <Box sx={successMessage !== null ? { width: '100%' } : visuallyHiddenSx}>
+          here after the banner below unmounts. MUI's message slot
+          carries `overflow: auto`; squeezed to the 1px clipped width it
+          would overflow into a scroll container, which Chromium treats
+          as a keyboard focus stop. The hidden branch keeps the slot
+          non-scrollable, so the first Tab in the banner reaches the end
+          control. */}
+      <Box
+        sx={
+          successMessage !== null
+            ? { width: '100%' }
+            : {
+                ...visuallyHiddenSx,
+                '& .MuiAlert-message': { overflow: 'hidden' },
+              }
+        }
+      >
         <InlineSuccess message={successMessage ?? announcement} />
       </Box>
       {impersonation !== null && (
