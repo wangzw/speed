@@ -31,6 +31,10 @@
             "description": "The body could not be read, or it names no domain",
             "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
           },
+          "415": {
+            "description": "The request body is not application/json",
+            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
           "503": {
             "description": "The provider register could not be reached",
             "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
@@ -59,7 +63,7 @@
           "type": {"type": "string", "description": "The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>."},
           "title": {"type": "string", "description": "A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code."},
           "status": {"type": "integer", "description": "The HTTP status code the response is written with, repeated from the status line."},
-          "detail": {"type": "string", "description": "A longer explanation of this occurrence. Present only when the answering module has one to give, and those that set one render it in the request language."},
+          "detail": {"type": "string", "description": "A longer explanation of this occurrence, present only when the answering module has one to give. It may be a sentence rendered in the request language or a language-neutral token such as \"forbidden\", so clients must not parse it."},
           "instance": {"type": "string", "description": "A URI identifying this occurrence; absent when there is none to give."}
         }
       }

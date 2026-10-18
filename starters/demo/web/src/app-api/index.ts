@@ -523,7 +523,7 @@ export interface AuthnAdminSecret {
  */
 export interface AuthnAdminSecretCreate {
   /** The label for the administrator's own reference: at most 100 bytes of valid UTF-8 with no control character. */
-  label: string;
+  label?: string;
   /** Absent mints a secret with no expiry */
   expires_at?: string;
 }
@@ -1199,6 +1199,28 @@ export interface AuthnTokenJWKS {
 }
 
 /**
+ * The machine-readable failure code, one of `invalid_request`, `invalid_client`, `invalid_grant`, `unsupported_grant_type` and `temporarily_unavailable`.
+ */
+export type AuthnTokenOAuthErrorError = typeof AuthnTokenOAuthErrorError[keyof typeof AuthnTokenOAuthErrorError];
+
+
+export const AuthnTokenOAuthErrorError = {
+  invalid_request: 'invalid_request',
+  invalid_client: 'invalid_client',
+  invalid_grant: 'invalid_grant',
+  unsupported_grant_type: 'unsupported_grant_type',
+  temporarily_unavailable: 'temporarily_unavailable',
+} as const;
+
+/**
+ * The failure body of RFC 6749 §5.2, which the token and revocation endpoints answer in place of the entry point's problem+json. Its only member is `error`; no `error_description` accompanies it.
+ */
+export interface AuthnTokenOAuthError {
+  /** The machine-readable failure code, one of `invalid_request`, `invalid_client`, `invalid_grant`, `unsupported_grant_type` and `temporarily_unavailable`. */
+  error: AuthnTokenOAuthErrorError;
+}
+
+/**
  * The success body of `POST /auth/token`, per RFC 6749 §5.1. A `client_credentials` response carries no `refresh_token`.
  */
 export interface AuthnTokenResponse {
@@ -1476,7 +1498,7 @@ export interface Problem {
   title?: string;
   /** The HTTP status code the response is written with, repeated from the status line. */
   status: number;
-  /** A longer explanation of this occurrence. Present only when the answering module has one to give, and those that set one render it in the request language. */
+  /** A longer explanation of this occurrence, present only when the answering module has one to give. It may be a sentence rendered in the request language or a language-neutral token such as "forbidden", so clients must not parse it. */
   detail?: string;
   /** A URI identifying this occurrence; absent when there is none to give. */
   instance?: string;
@@ -1788,7 +1810,7 @@ export type AuthnLoginStartBodyInput = {[key: string]: string};
 export type AuthnLoginStartBody = {
   /** The stable name of a login method, as returned in `name` by `GET /auth/methods`. A name the deployment does not take in is a 400 bad-request; a method turned off by the deployment is a 403 method-disabled. */
   method?: string;
-  /** Not read by this route: a flow started here always has the purpose login. Use `POST /auth/flows/authenticated` for link, step-up or enroll. */
+  /** Accepted but not read by this route: a flow started here always has the purpose login. Use `POST /auth/flows/authenticated` for link, step-up or enroll. */
   purpose?: string;
   /** How a completed login is delivered: `session` (the default) sets the session cookie and answers the session view; `token` answers an access and refresh token pair. `token` must be enabled by the deployment and requires the token capability, otherwise the request is a 400 bad-request. */
   delivery?: string;
@@ -1830,8 +1852,6 @@ export type AuthnLoginStartAuthenticatedBody = {
   method?: string;
   /** Required, and one of `link`, `step-up` or `enroll`: bind an external identity, strengthen the current session, or register a factor. Any other value, including an empty one, is a 400 bad-request. */
   purpose?: string;
-  /** Not read by this route: the delivery follows the kind of the session the request came with — a browser session completes as `session`, a token session as `token`. */
-  delivery?: string;
   /** Where to send the user agent after a callback login completes: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts. Anything else is a 400 bad-request. The value is stored in the flow record, and no parameter of the callback request can change it. */
   return_to?: string;
   /** How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method. */
@@ -1846,7 +1866,7 @@ export type AuthnLoginStartAuthenticatedBody = {
 export type AuthnLoginAddIdentifierBody = {
   /** The identifier kind to add: username or email; a phone is added through /auth/phone */
   kind: string;
-  /** The login name or address to add. A username must be non-empty after trimming whitespace and is written as given. An email address is trimmed and lowercased first, then accepted only when it is ASCII, contains exactly one `@` with no whitespace, and is at most 254 bytes; anything else is a 400 bad-request. */
+  /** The login name or address to add. A username is NFKC-normalized and lowercased first, then accepted only when it is 3 to 64 characters of [a-z0-9._-] beginning with a letter or a digit and does not carry the reserved static-credential prefix; the stored value is the normalized one. An email address is trimmed and lowercased first, then accepted only when it is ASCII, contains exactly one `@` with no whitespace, and is at most 254 bytes; anything else is a 400 bad-request. */
   value: string;
 };
 
@@ -1917,8 +1937,6 @@ export type AuthnLoginChangePasswordBody = {
 export type AuthnLoginStartPhoneBody = {
   /** The number in international E.164 form: a leading `+`, a non-zero country digit, then 6 to 14 more digits. The value is not parsed, completed or reformatted, so a national-format number is a 400 bad-request. */
   phone?: string;
-  /** Not accepted by this route: the body is decoded with unknown members refused, so a body carrying this member is a 400 bad-request. The challenge is held server-side against the caller's session and is never sent to the client. */
-  challenge_id?: string;
 };
 
 /**
@@ -2495,7 +2513,7 @@ export const getAuthnAdminAccountsListQueryKey = (params?: AuthnAdminAccountsLis
     }
 
 
-export const getAuthnAdminAccountsListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = void>(params?: AuthnAdminAccountsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData>>, }
+export const getAuthnAdminAccountsListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = Problem>(params?: AuthnAdminAccountsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -2514,10 +2532,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnAdminAccountsListQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsList>>>
-export type AuthnAdminAccountsListQueryError = void
+export type AuthnAdminAccountsListQueryError = Problem
 
 
-export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = void>(
+export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = Problem>(
  params: undefined |  AuthnAdminAccountsListParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnAdminAccountsList>>,
@@ -2527,7 +2545,7 @@ export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof auth
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = void>(
+export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = Problem>(
  params?: AuthnAdminAccountsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnAdminAccountsList>>,
@@ -2537,7 +2555,7 @@ export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof auth
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = void>(
+export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = Problem>(
  params?: AuthnAdminAccountsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -2545,7 +2563,7 @@ export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof auth
  * @summary List accounts, one page at a time
  */
 
-export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = void>(
+export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = Problem>(
  params?: AuthnAdminAccountsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -2583,7 +2601,7 @@ export const authnAdminAccountsCreate = (
 
 
 
-export const getAuthnAdminAccountsCreateMutationOptions = <TError = void,
+export const getAuthnAdminAccountsCreateMutationOptions = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, TError,{data: AuthnAdminAccountCreate}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, TError,{data: AuthnAdminAccountCreate}, TContext> => {
 
@@ -2612,12 +2630,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminAccountsCreateMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsCreate>>>
     export type AuthnAdminAccountsCreateMutationBody = AuthnAdminAccountCreate
-    export type AuthnAdminAccountsCreateMutationError = void
+    export type AuthnAdminAccountsCreateMutationError = Problem
 
     /**
  * @summary Create an account
  */
-export const useAuthnAdminAccountsCreate = <TError = void,
+export const useAuthnAdminAccountsCreate = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, TError,{data: AuthnAdminAccountCreate}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsCreate>>,
@@ -2646,7 +2664,7 @@ export const authnAdminAccountsDelete = (
 
 
 
-export const getAuthnAdminAccountsDeleteMutationOptions = <TError = void,
+export const getAuthnAdminAccountsDeleteMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsDelete>>, TError,{id: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsDelete>>, TError,{id: string}, TContext> => {
 
@@ -2675,12 +2693,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminAccountsDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsDelete>>>
 
-    export type AuthnAdminAccountsDeleteMutationError = void
+    export type AuthnAdminAccountsDeleteMutationError = Problem | void
 
     /**
  * @summary Delete an account
  */
-export const useAuthnAdminAccountsDelete = <TError = void,
+export const useAuthnAdminAccountsDelete = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsDelete>>, TError,{id: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsDelete>>,
@@ -2717,7 +2735,7 @@ export const getAuthnAdminAccountsGetQueryKey = (id: string,) => {
     }
 
 
-export const getAuthnAdminAccountsGetQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData>>, }
+export const getAuthnAdminAccountsGetQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = Problem | void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -2736,10 +2754,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnAdminAccountsGetQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsGet>>>
-export type AuthnAdminAccountsGetQueryError = void
+export type AuthnAdminAccountsGetQueryError = Problem | void
 
 
-export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = void>(
+export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = Problem | void>(
  id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnAdminAccountsGet>>,
@@ -2749,7 +2767,7 @@ export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authn
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = void>(
+export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = Problem | void>(
  id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnAdminAccountsGet>>,
@@ -2759,7 +2777,7 @@ export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authn
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = void>(
+export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = Problem | void>(
  id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -2767,7 +2785,7 @@ export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authn
  * @summary Read one account
  */
 
-export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = void>(
+export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = Problem | void>(
  id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -2806,7 +2824,7 @@ export const authnAdminAccountsPatch = (
 
 
 
-export const getAuthnAdminAccountsPatchMutationOptions = <TError = void,
+export const getAuthnAdminAccountsPatchMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, TError,{id: string;data: AuthnAdminAccountPatch}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, TError,{id: string;data: AuthnAdminAccountPatch}, TContext> => {
 
@@ -2835,12 +2853,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminAccountsPatchMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsPatch>>>
     export type AuthnAdminAccountsPatchMutationBody = AuthnAdminAccountPatch
-    export type AuthnAdminAccountsPatchMutationError = void
+    export type AuthnAdminAccountsPatchMutationError = Problem | void
 
     /**
  * @summary Update an account
  */
-export const useAuthnAdminAccountsPatch = <TError = void,
+export const useAuthnAdminAccountsPatch = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, TError,{id: string;data: AuthnAdminAccountPatch}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsPatch>>,
@@ -2877,7 +2895,7 @@ export const getAuthnAdminAccountsFactorsQueryKey = (id: string,) => {
     }
 
 
-export const getAuthnAdminAccountsFactorsQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData>>, }
+export const getAuthnAdminAccountsFactorsQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = Problem | void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -2896,10 +2914,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnAdminAccountsFactorsQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsFactors>>>
-export type AuthnAdminAccountsFactorsQueryError = void
+export type AuthnAdminAccountsFactorsQueryError = Problem | void
 
 
-export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = void>(
+export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = Problem | void>(
  id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnAdminAccountsFactors>>,
@@ -2909,7 +2927,7 @@ export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof a
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = void>(
+export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = Problem | void>(
  id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnAdminAccountsFactors>>,
@@ -2919,7 +2937,7 @@ export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof a
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = void>(
+export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = Problem | void>(
  id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -2927,7 +2945,7 @@ export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof a
  * @summary List an account's registered factors
  */
 
-export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = void>(
+export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = Problem | void>(
  id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -2966,7 +2984,7 @@ export const authnAdminAccountsAddIdentifier = (
 
 
 
-export const getAuthnAdminAccountsAddIdentifierMutationOptions = <TError = void,
+export const getAuthnAdminAccountsAddIdentifierMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, TError,{id: string;data: AuthnAdminIdentifierWrite}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, TError,{id: string;data: AuthnAdminIdentifierWrite}, TContext> => {
 
@@ -2995,12 +3013,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminAccountsAddIdentifierMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>>
     export type AuthnAdminAccountsAddIdentifierMutationBody = AuthnAdminIdentifierWrite
-    export type AuthnAdminAccountsAddIdentifierMutationError = void
+    export type AuthnAdminAccountsAddIdentifierMutationError = Problem | void
 
     /**
  * @summary Add an identifier to an account
  */
-export const useAuthnAdminAccountsAddIdentifier = <TError = void,
+export const useAuthnAdminAccountsAddIdentifier = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, TError,{id: string;data: AuthnAdminIdentifierWrite}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>,
@@ -3030,7 +3048,7 @@ export const authnAdminAccountsRemoveIdentifier = (
 
 
 
-export const getAuthnAdminAccountsRemoveIdentifierMutationOptions = <TError = void,
+export const getAuthnAdminAccountsRemoveIdentifierMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRemoveIdentifier>>, TError,{id: string;identifier: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRemoveIdentifier>>, TError,{id: string;identifier: string}, TContext> => {
 
@@ -3059,12 +3077,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminAccountsRemoveIdentifierMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsRemoveIdentifier>>>
 
-    export type AuthnAdminAccountsRemoveIdentifierMutationError = void
+    export type AuthnAdminAccountsRemoveIdentifierMutationError = Problem | void
 
     /**
  * @summary Remove an identifier from an account
  */
-export const useAuthnAdminAccountsRemoveIdentifier = <TError = void,
+export const useAuthnAdminAccountsRemoveIdentifier = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRemoveIdentifier>>, TError,{id: string;identifier: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsRemoveIdentifier>>,
@@ -3096,7 +3114,7 @@ export const authnAdminAccountsSetMFARequired = (
 
 
 
-export const getAuthnAdminAccountsSetMFARequiredMutationOptions = <TError = void,
+export const getAuthnAdminAccountsSetMFARequiredMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, TError,{id: string;data: AuthnAdminMFARequired}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, TError,{id: string;data: AuthnAdminMFARequired}, TContext> => {
 
@@ -3125,12 +3143,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminAccountsSetMFARequiredMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>>
     export type AuthnAdminAccountsSetMFARequiredMutationBody = AuthnAdminMFARequired
-    export type AuthnAdminAccountsSetMFARequiredMutationError = void
+    export type AuthnAdminAccountsSetMFARequiredMutationError = Problem | void
 
     /**
  * @summary Set whether an account must register a factor
  */
-export const useAuthnAdminAccountsSetMFARequired = <TError = void,
+export const useAuthnAdminAccountsSetMFARequired = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, TError,{id: string;data: AuthnAdminMFARequired}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>,
@@ -3159,7 +3177,7 @@ export const authnAdminAccountsResetMFA = (
 
 
 
-export const getAuthnAdminAccountsResetMFAMutationOptions = <TError = void,
+export const getAuthnAdminAccountsResetMFAMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetMFA>>, TError,{id: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetMFA>>, TError,{id: string}, TContext> => {
 
@@ -3188,12 +3206,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminAccountsResetMFAMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsResetMFA>>>
 
-    export type AuthnAdminAccountsResetMFAMutationError = void
+    export type AuthnAdminAccountsResetMFAMutationError = Problem | void
 
     /**
  * @summary Remove an account's registered factors
  */
-export const useAuthnAdminAccountsResetMFA = <TError = void,
+export const useAuthnAdminAccountsResetMFA = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetMFA>>, TError,{id: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsResetMFA>>,
@@ -3225,7 +3243,7 @@ export const authnAdminAccountsResetPassword = (
 
 
 
-export const getAuthnAdminAccountsResetPasswordMutationOptions = <TError = void,
+export const getAuthnAdminAccountsResetPasswordMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, TError,{id: string;data: AuthnAdminPasswordReset}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, TError,{id: string;data: AuthnAdminPasswordReset}, TContext> => {
 
@@ -3254,12 +3272,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminAccountsResetPasswordMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>>
     export type AuthnAdminAccountsResetPasswordMutationBody = AuthnAdminPasswordReset
-    export type AuthnAdminAccountsResetPasswordMutationError = void
+    export type AuthnAdminAccountsResetPasswordMutationError = Problem | void
 
     /**
  * @summary Reset an account's password
  */
-export const useAuthnAdminAccountsResetPassword = <TError = void,
+export const useAuthnAdminAccountsResetPassword = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, TError,{id: string;data: AuthnAdminPasswordReset}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>,
@@ -3288,7 +3306,7 @@ export const authnAdminAccountsRevokeSessions = (
 
 
 
-export const getAuthnAdminAccountsRevokeSessionsMutationOptions = <TError = void,
+export const getAuthnAdminAccountsRevokeSessionsMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRevokeSessions>>, TError,{id: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRevokeSessions>>, TError,{id: string}, TContext> => {
 
@@ -3317,12 +3335,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminAccountsRevokeSessionsMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsRevokeSessions>>>
 
-    export type AuthnAdminAccountsRevokeSessionsMutationError = void
+    export type AuthnAdminAccountsRevokeSessionsMutationError = Problem | void
 
     /**
  * @summary Revoke every session of an account
  */
-export const useAuthnAdminAccountsRevokeSessions = <TError = void,
+export const useAuthnAdminAccountsRevokeSessions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRevokeSessions>>, TError,{id: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsRevokeSessions>>,
@@ -3359,7 +3377,7 @@ export const getAuthnAdminAccountsSecretsListQueryKey = (id: string,) => {
     }
 
 
-export const getAuthnAdminAccountsSecretsListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData>>, }
+export const getAuthnAdminAccountsSecretsListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = Problem | void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -3378,10 +3396,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnAdminAccountsSecretsListQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>>
-export type AuthnAdminAccountsSecretsListQueryError = void
+export type AuthnAdminAccountsSecretsListQueryError = Problem | void
 
 
-export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = void>(
+export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = Problem | void>(
  id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>,
@@ -3391,7 +3409,7 @@ export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<type
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = void>(
+export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = Problem | void>(
  id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>,
@@ -3401,7 +3419,7 @@ export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<type
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = void>(
+export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = Problem | void>(
  id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -3409,7 +3427,7 @@ export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<type
  * @summary List an account's service secrets
  */
 
-export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = void>(
+export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = Problem | void>(
  id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -3448,7 +3466,7 @@ export const authnAdminAccountsSecretsCreate = (
 
 
 
-export const getAuthnAdminAccountsSecretsCreateMutationOptions = <TError = void,
+export const getAuthnAdminAccountsSecretsCreateMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, TError,{id: string;data: AuthnAdminSecretCreate}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, TError,{id: string;data: AuthnAdminSecretCreate}, TContext> => {
 
@@ -3477,12 +3495,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminAccountsSecretsCreateMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>>
     export type AuthnAdminAccountsSecretsCreateMutationBody = AuthnAdminSecretCreate
-    export type AuthnAdminAccountsSecretsCreateMutationError = void
+    export type AuthnAdminAccountsSecretsCreateMutationError = Problem | void
 
     /**
  * @summary Create a service secret for an account
  */
-export const useAuthnAdminAccountsSecretsCreate = <TError = void,
+export const useAuthnAdminAccountsSecretsCreate = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, TError,{id: string;data: AuthnAdminSecretCreate}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>,
@@ -3512,7 +3530,7 @@ export const authnAdminAccountsSecretsRevoke = (
 
 
 
-export const getAuthnAdminAccountsSecretsRevokeMutationOptions = <TError = void,
+export const getAuthnAdminAccountsSecretsRevokeMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsRevoke>>, TError,{id: string;secret: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsRevoke>>, TError,{id: string;secret: string}, TContext> => {
 
@@ -3541,12 +3559,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminAccountsSecretsRevokeMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsSecretsRevoke>>>
 
-    export type AuthnAdminAccountsSecretsRevokeMutationError = void
+    export type AuthnAdminAccountsSecretsRevokeMutationError = Problem | void
 
     /**
  * @summary Revoke a service secret
  */
-export const useAuthnAdminAccountsSecretsRevoke = <TError = void,
+export const useAuthnAdminAccountsSecretsRevoke = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsRevoke>>, TError,{id: string;secret: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsSecretsRevoke>>,
@@ -3583,7 +3601,7 @@ export const getAuthnAdminAccountsSessionsQueryKey = (id: string,) => {
     }
 
 
-export const getAuthnAdminAccountsSessionsQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData>>, }
+export const getAuthnAdminAccountsSessionsQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = Problem | void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -3602,10 +3620,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnAdminAccountsSessionsQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsSessions>>>
-export type AuthnAdminAccountsSessionsQueryError = void
+export type AuthnAdminAccountsSessionsQueryError = Problem | void
 
 
-export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = void>(
+export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = Problem | void>(
  id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnAdminAccountsSessions>>,
@@ -3615,7 +3633,7 @@ export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof 
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = void>(
+export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = Problem | void>(
  id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnAdminAccountsSessions>>,
@@ -3625,7 +3643,7 @@ export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof 
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = void>(
+export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = Problem | void>(
  id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -3633,7 +3651,7 @@ export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof 
  * @summary List an account's sessions
  */
 
-export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = void>(
+export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = Problem | void>(
  id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -3672,7 +3690,7 @@ export const authnAdminAccountsStatus = (
 
 
 
-export const getAuthnAdminAccountsStatusMutationOptions = <TError = void,
+export const getAuthnAdminAccountsStatusMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, TError,{id: string;data: AuthnAdminAccountStatus}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, TError,{id: string;data: AuthnAdminAccountStatus}, TContext> => {
 
@@ -3701,12 +3719,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminAccountsStatusMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsStatus>>>
     export type AuthnAdminAccountsStatusMutationBody = AuthnAdminAccountStatus
-    export type AuthnAdminAccountsStatusMutationError = void
+    export type AuthnAdminAccountsStatusMutationError = Problem | void
 
     /**
  * @summary Change an account's status
  */
-export const useAuthnAdminAccountsStatus = <TError = void,
+export const useAuthnAdminAccountsStatus = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, TError,{id: string;data: AuthnAdminAccountStatus}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsStatus>>,
@@ -3744,7 +3762,7 @@ export const getAuthnAdminImpersonationsListQueryKey = (params?: AuthnAdminImper
     }
 
 
-export const getAuthnAdminImpersonationsListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = void>(params: AuthnAdminImpersonationsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>>, }
+export const getAuthnAdminImpersonationsListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(params: AuthnAdminImpersonationsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -3763,10 +3781,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnAdminImpersonationsListQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminImpersonationsList>>>
-export type AuthnAdminImpersonationsListQueryError = void
+export type AuthnAdminImpersonationsListQueryError = Problem
 
 
-export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = void>(
+export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(
  params: AuthnAdminImpersonationsListParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnAdminImpersonationsList>>,
@@ -3776,7 +3794,7 @@ export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeo
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = void>(
+export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(
  params: AuthnAdminImpersonationsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnAdminImpersonationsList>>,
@@ -3786,7 +3804,7 @@ export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeo
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = void>(
+export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(
  params: AuthnAdminImpersonationsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -3794,7 +3812,7 @@ export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeo
  * @summary List impersonation records, one page at a time
  */
 
-export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = void>(
+export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(
  params: AuthnAdminImpersonationsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -3830,7 +3848,7 @@ export const authnAdminImpersonationsRevoke = (
 
 
 
-export const getAuthnAdminImpersonationsRevokeMutationOptions = <TError = void,
+export const getAuthnAdminImpersonationsRevokeMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, TError,{id: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, TError,{id: string}, TContext> => {
 
@@ -3859,12 +3877,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminImpersonationsRevokeMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>>
 
-    export type AuthnAdminImpersonationsRevokeMutationError = void
+    export type AuthnAdminImpersonationsRevokeMutationError = Problem | void
 
     /**
  * @summary Revoke an impersonation record
  */
-export const useAuthnAdminImpersonationsRevoke = <TError = void,
+export const useAuthnAdminImpersonationsRevoke = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, TError,{id: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>,
@@ -3893,7 +3911,7 @@ export const authnAdminSessionsRevoke = (
 
 
 
-export const getAuthnAdminSessionsRevokeMutationOptions = <TError = void,
+export const getAuthnAdminSessionsRevokeMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSessionsRevoke>>, TError,{id: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSessionsRevoke>>, TError,{id: string}, TContext> => {
 
@@ -3922,12 +3940,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminSessionsRevokeMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSessionsRevoke>>>
 
-    export type AuthnAdminSessionsRevokeMutationError = void
+    export type AuthnAdminSessionsRevokeMutationError = Problem | void
 
     /**
  * @summary Revoke one session by its identifier
  */
-export const useAuthnAdminSessionsRevoke = <TError = void,
+export const useAuthnAdminSessionsRevoke = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSessionsRevoke>>, TError,{id: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminSessionsRevoke>>,
@@ -3956,7 +3974,7 @@ export const authnAdminSsoProvidersDelete = (
 
 
 
-export const getAuthnAdminSsoProvidersDeleteMutationOptions = <TError = void,
+export const getAuthnAdminSsoProvidersDeleteMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersDelete>>, TError,{id: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersDelete>>, TError,{id: string}, TContext> => {
 
@@ -3985,12 +4003,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminSsoProvidersDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersDelete>>>
 
-    export type AuthnAdminSsoProvidersDeleteMutationError = void
+    export type AuthnAdminSsoProvidersDeleteMutationError = Problem | void
 
     /**
  * @summary Delete an SSO provider
  */
-export const useAuthnAdminSsoProvidersDelete = <TError = void,
+export const useAuthnAdminSsoProvidersDelete = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersDelete>>, TError,{id: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminSsoProvidersDelete>>,
@@ -4027,7 +4045,7 @@ export const getAuthnAdminSsoProvidersGetQueryKey = (id: string,) => {
     }
 
 
-export const getAuthnAdminSsoProvidersGetQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData>>, }
+export const getAuthnAdminSsoProvidersGetQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = Problem | void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -4046,10 +4064,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnAdminSsoProvidersGetQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>>
-export type AuthnAdminSsoProvidersGetQueryError = void
+export type AuthnAdminSsoProvidersGetQueryError = Problem | void
 
 
-export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = void>(
+export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = Problem | void>(
  id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>,
@@ -4059,7 +4077,7 @@ export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof a
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = void>(
+export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = Problem | void>(
  id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>,
@@ -4069,7 +4087,7 @@ export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof a
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = void>(
+export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = Problem | void>(
  id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -4077,7 +4095,7 @@ export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof a
  * @summary Read one SSO provider
  */
 
-export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = void>(
+export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = Problem | void>(
  id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -4116,7 +4134,7 @@ export const authnAdminSsoProvidersUpdate = (
 
 
 
-export const getAuthnAdminSsoProvidersUpdateMutationOptions = <TError = void,
+export const getAuthnAdminSsoProvidersUpdateMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, TError,{id: string;data: AuthnAdminProviderWrite}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, TError,{id: string;data: AuthnAdminProviderWrite}, TContext> => {
 
@@ -4145,12 +4163,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminSsoProvidersUpdateMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>>
     export type AuthnAdminSsoProvidersUpdateMutationBody = AuthnAdminProviderWrite
-    export type AuthnAdminSsoProvidersUpdateMutationError = void
+    export type AuthnAdminSsoProvidersUpdateMutationError = Problem | void
 
     /**
  * @summary Update an SSO provider
  */
-export const useAuthnAdminSsoProvidersUpdate = <TError = void,
+export const useAuthnAdminSsoProvidersUpdate = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, TError,{id: string;data: AuthnAdminProviderWrite}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>,
@@ -4182,7 +4200,7 @@ export const authnAdminSsoProvidersClaimDomain = (
 
 
 
-export const getAuthnAdminSsoProvidersClaimDomainMutationOptions = <TError = void,
+export const getAuthnAdminSsoProvidersClaimDomainMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, TError,{id: string;data: AuthnAdminDomainClaim}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, TError,{id: string;data: AuthnAdminDomainClaim}, TContext> => {
 
@@ -4211,12 +4229,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminSsoProvidersClaimDomainMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>>
     export type AuthnAdminSsoProvidersClaimDomainMutationBody = AuthnAdminDomainClaim
-    export type AuthnAdminSsoProvidersClaimDomainMutationError = void
+    export type AuthnAdminSsoProvidersClaimDomainMutationError = Problem | void
 
     /**
  * @summary Claim a domain for an SSO provider
  */
-export const useAuthnAdminSsoProvidersClaimDomain = <TError = void,
+export const useAuthnAdminSsoProvidersClaimDomain = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, TError,{id: string;data: AuthnAdminDomainClaim}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>,
@@ -4246,7 +4264,7 @@ export const authnAdminSsoProvidersRemoveDomain = (
 
 
 
-export const getAuthnAdminSsoProvidersRemoveDomainMutationOptions = <TError = void,
+export const getAuthnAdminSsoProvidersRemoveDomainMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRemoveDomain>>, TError,{id: string;domain: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRemoveDomain>>, TError,{id: string;domain: string}, TContext> => {
 
@@ -4275,12 +4293,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminSsoProvidersRemoveDomainMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersRemoveDomain>>>
 
-    export type AuthnAdminSsoProvidersRemoveDomainMutationError = void
+    export type AuthnAdminSsoProvidersRemoveDomainMutationError = Problem | void
 
     /**
  * @summary Remove a domain from an SSO provider
  */
-export const useAuthnAdminSsoProvidersRemoveDomain = <TError = void,
+export const useAuthnAdminSsoProvidersRemoveDomain = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRemoveDomain>>, TError,{id: string;domain: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminSsoProvidersRemoveDomain>>,
@@ -4310,7 +4328,7 @@ export const authnAdminSsoProvidersVerifyDomain = (
 
 
 
-export const getAuthnAdminSsoProvidersVerifyDomainMutationOptions = <TError = void,
+export const getAuthnAdminSsoProvidersVerifyDomainMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersVerifyDomain>>, TError,{id: string;domain: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersVerifyDomain>>, TError,{id: string;domain: string}, TContext> => {
 
@@ -4339,12 +4357,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminSsoProvidersVerifyDomainMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersVerifyDomain>>>
 
-    export type AuthnAdminSsoProvidersVerifyDomainMutationError = void
+    export type AuthnAdminSsoProvidersVerifyDomainMutationError = Problem | void
 
     /**
  * @summary Verify a claimed domain of an SSO provider
  */
-export const useAuthnAdminSsoProvidersVerifyDomain = <TError = void,
+export const useAuthnAdminSsoProvidersVerifyDomain = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersVerifyDomain>>, TError,{id: string;domain: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminSsoProvidersVerifyDomain>>,
@@ -4373,7 +4391,7 @@ export const authnAdminSsoProvidersRefreshMetadata = (
 
 
 
-export const getAuthnAdminSsoProvidersRefreshMetadataMutationOptions = <TError = void,
+export const getAuthnAdminSsoProvidersRefreshMetadataMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRefreshMetadata>>, TError,{id: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRefreshMetadata>>, TError,{id: string}, TContext> => {
 
@@ -4402,12 +4420,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminSsoProvidersRefreshMetadataMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersRefreshMetadata>>>
 
-    export type AuthnAdminSsoProvidersRefreshMetadataMutationError = void
+    export type AuthnAdminSsoProvidersRefreshMetadataMutationError = Problem | void
 
     /**
  * @summary Refresh an SSO provider's metadata
  */
-export const useAuthnAdminSsoProvidersRefreshMetadata = <TError = void,
+export const useAuthnAdminSsoProvidersRefreshMetadata = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRefreshMetadata>>, TError,{id: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminSsoProvidersRefreshMetadata>>,
@@ -4436,7 +4454,7 @@ export const authnAdminSsoProvidersReverifyDomains = (
 
 
 
-export const getAuthnAdminSsoProvidersReverifyDomainsMutationOptions = <TError = void,
+export const getAuthnAdminSsoProvidersReverifyDomainsMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersReverifyDomains>>, TError,{id: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersReverifyDomains>>, TError,{id: string}, TContext> => {
 
@@ -4465,12 +4483,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminSsoProvidersReverifyDomainsMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersReverifyDomains>>>
 
-    export type AuthnAdminSsoProvidersReverifyDomainsMutationError = void
+    export type AuthnAdminSsoProvidersReverifyDomainsMutationError = Problem | void
 
     /**
  * @summary Re-verify every claimed domain of an SSO provider
  */
-export const useAuthnAdminSsoProvidersReverifyDomains = <TError = void,
+export const useAuthnAdminSsoProvidersReverifyDomains = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersReverifyDomains>>, TError,{id: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminSsoProvidersReverifyDomains>>,
@@ -4510,7 +4528,7 @@ export const getAuthnInviteListQueryKey = (tenant: string,
     }
 
 
-export const getAuthnInviteListQueryOptions = <TData = Awaited<ReturnType<typeof authnInviteList>>, TError = void>(tenant: string,
+export const getAuthnInviteListQueryOptions = <TData = Awaited<ReturnType<typeof authnInviteList>>, TError = Problem>(tenant: string,
     params?: AuthnInviteListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteList>>, TError, TData>>, }
 ) => {
 
@@ -4530,10 +4548,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnInviteListQueryResult = NonNullable<Awaited<ReturnType<typeof authnInviteList>>>
-export type AuthnInviteListQueryError = void
+export type AuthnInviteListQueryError = Problem
 
 
-export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInviteList>>, TError = void>(
+export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInviteList>>, TError = Problem>(
  tenant: string,
     params: undefined |  AuthnInviteListParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteList>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
@@ -4544,7 +4562,7 @@ export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInvite
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInviteList>>, TError = void>(
+export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInviteList>>, TError = Problem>(
  tenant: string,
     params?: AuthnInviteListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteList>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
@@ -4555,7 +4573,7 @@ export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInvite
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInviteList>>, TError = void>(
+export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInviteList>>, TError = Problem>(
  tenant: string,
     params?: AuthnInviteListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteList>>, TError, TData>>, }
  , queryClient?: QueryClient
@@ -4564,7 +4582,7 @@ export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInvite
  * @summary One page of a tenant's invitations
  */
 
-export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInviteList>>, TError = void>(
+export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInviteList>>, TError = Problem>(
  tenant: string,
     params?: AuthnInviteListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteList>>, TError, TData>>, }
  , queryClient?: QueryClient
@@ -4604,7 +4622,7 @@ export const authnInviteIssue = (
 
 
 
-export const getAuthnInviteIssueMutationOptions = <TError = void,
+export const getAuthnInviteIssueMutationOptions = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnInviteIssue>>, TError,{tenant: string;data: AuthnInviteIssueBody}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnInviteIssue>>, TError,{tenant: string;data: AuthnInviteIssueBody}, TContext> => {
 
@@ -4633,12 +4651,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnInviteIssueMutationResult = NonNullable<Awaited<ReturnType<typeof authnInviteIssue>>>
     export type AuthnInviteIssueMutationBody = AuthnInviteIssueBody
-    export type AuthnInviteIssueMutationError = void
+    export type AuthnInviteIssueMutationError = Problem
 
     /**
  * @summary Issue an invitation to an address in a tenant
  */
-export const useAuthnInviteIssue = <TError = void,
+export const useAuthnInviteIssue = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnInviteIssue>>, TError,{tenant: string;data: AuthnInviteIssueBody}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnInviteIssue>>,
@@ -4668,7 +4686,7 @@ export const authnInviteRevoke = (
 
 
 
-export const getAuthnInviteRevokeMutationOptions = <TError = void,
+export const getAuthnInviteRevokeMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnInviteRevoke>>, TError,{tenant: string;id: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnInviteRevoke>>, TError,{tenant: string;id: string}, TContext> => {
 
@@ -4697,12 +4715,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnInviteRevokeMutationResult = NonNullable<Awaited<ReturnType<typeof authnInviteRevoke>>>
 
-    export type AuthnInviteRevokeMutationError = void
+    export type AuthnInviteRevokeMutationError = Problem | void
 
     /**
  * @summary Revoke a pending invitation
  */
-export const useAuthnInviteRevoke = <TError = void,
+export const useAuthnInviteRevoke = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnInviteRevoke>>, TError,{tenant: string;id: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnInviteRevoke>>,
@@ -4742,7 +4760,7 @@ export const getAuthnAdminMembersListQueryKey = (tenant: string,
     }
 
 
-export const getAuthnAdminMembersListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = void>(tenant: string,
+export const getAuthnAdminMembersListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = Problem>(tenant: string,
     params?: AuthnAdminMembersListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminMembersList>>, TError, TData>>, }
 ) => {
 
@@ -4762,10 +4780,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnAdminMembersListQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminMembersList>>>
-export type AuthnAdminMembersListQueryError = void
+export type AuthnAdminMembersListQueryError = Problem
 
 
-export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = void>(
+export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = Problem>(
  tenant: string,
     params: undefined |  AuthnAdminMembersListParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminMembersList>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
@@ -4776,7 +4794,7 @@ export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authn
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = void>(
+export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = Problem>(
  tenant: string,
     params?: AuthnAdminMembersListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminMembersList>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
@@ -4787,7 +4805,7 @@ export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authn
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = void>(
+export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = Problem>(
  tenant: string,
     params?: AuthnAdminMembersListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminMembersList>>, TError, TData>>, }
  , queryClient?: QueryClient
@@ -4796,7 +4814,7 @@ export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authn
  * @summary List a tenant's members
  */
 
-export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = void>(
+export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = Problem>(
  tenant: string,
     params?: AuthnAdminMembersListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminMembersList>>, TError, TData>>, }
  , queryClient?: QueryClient
@@ -4834,7 +4852,7 @@ export const authnAdminMembersRemove = (
 
 
 
-export const getAuthnAdminMembersRemoveMutationOptions = <TError = void,
+export const getAuthnAdminMembersRemoveMutationOptions = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersRemove>>, TError,{tenant: string;account: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersRemove>>, TError,{tenant: string;account: string}, TContext> => {
 
@@ -4863,12 +4881,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminMembersRemoveMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminMembersRemove>>>
 
-    export type AuthnAdminMembersRemoveMutationError = void
+    export type AuthnAdminMembersRemoveMutationError = Problem
 
     /**
  * @summary Remove an account's membership from a tenant
  */
-export const useAuthnAdminMembersRemove = <TError = void,
+export const useAuthnAdminMembersRemove = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersRemove>>, TError,{tenant: string;account: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminMembersRemove>>,
@@ -4901,7 +4919,7 @@ export const authnAdminMembersPut = (
 
 
 
-export const getAuthnAdminMembersPutMutationOptions = <TError = void,
+export const getAuthnAdminMembersPutMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersPut>>, TError,{tenant: string;account: string;data: AuthnAdminMemberWrite}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersPut>>, TError,{tenant: string;account: string;data: AuthnAdminMemberWrite}, TContext> => {
 
@@ -4930,12 +4948,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminMembersPutMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminMembersPut>>>
     export type AuthnAdminMembersPutMutationBody = AuthnAdminMemberWrite
-    export type AuthnAdminMembersPutMutationError = void
+    export type AuthnAdminMembersPutMutationError = Problem | void
 
     /**
  * @summary Write an account's membership in a tenant
  */
-export const useAuthnAdminMembersPut = <TError = void,
+export const useAuthnAdminMembersPut = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersPut>>, TError,{tenant: string;account: string;data: AuthnAdminMemberWrite}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminMembersPut>>,
@@ -4968,7 +4986,7 @@ export const authnAdminMembersSsoExempt = (
 
 
 
-export const getAuthnAdminMembersSsoExemptMutationOptions = <TError = void,
+export const getAuthnAdminMembersSsoExemptMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, TError,{tenant: string;account: string;data: AuthnAdminMemberSSOExempt}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, TError,{tenant: string;account: string;data: AuthnAdminMemberSSOExempt}, TContext> => {
 
@@ -4997,12 +5015,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminMembersSsoExemptMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>>
     export type AuthnAdminMembersSsoExemptMutationBody = AuthnAdminMemberSSOExempt
-    export type AuthnAdminMembersSsoExemptMutationError = void
+    export type AuthnAdminMembersSsoExemptMutationError = Problem | void
 
     /**
  * @summary Set an account's exemption from a tenant's SSO requirement
  */
-export const useAuthnAdminMembersSsoExempt = <TError = void,
+export const useAuthnAdminMembersSsoExempt = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, TError,{tenant: string;account: string;data: AuthnAdminMemberSSOExempt}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>,
@@ -5039,7 +5057,7 @@ export const getAuthnAdminSsoProvidersListQueryKey = (tenant: string,) => {
     }
 
 
-export const getAuthnAdminSsoProvidersListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = void>(tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData>>, }
+export const getAuthnAdminSsoProvidersListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = Problem>(tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -5058,10 +5076,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnAdminSsoProvidersListQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>>
-export type AuthnAdminSsoProvidersListQueryError = void
+export type AuthnAdminSsoProvidersListQueryError = Problem
 
 
-export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = void>(
+export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = Problem>(
  tenant: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnAdminSsoProvidersList>>,
@@ -5071,7 +5089,7 @@ export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof 
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = void>(
+export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = Problem>(
  tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnAdminSsoProvidersList>>,
@@ -5081,7 +5099,7 @@ export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof 
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = void>(
+export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = Problem>(
  tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -5089,7 +5107,7 @@ export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof 
  * @summary List a tenant's SSO providers
  */
 
-export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = void>(
+export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = Problem>(
  tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -5128,7 +5146,7 @@ export const authnAdminSsoProvidersCreate = (
 
 
 
-export const getAuthnAdminSsoProvidersCreateMutationOptions = <TError = void,
+export const getAuthnAdminSsoProvidersCreateMutationOptions = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, TError,{tenant: string;data: AuthnAdminProviderWrite}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, TError,{tenant: string;data: AuthnAdminProviderWrite}, TContext> => {
 
@@ -5157,12 +5175,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminSsoProvidersCreateMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>>
     export type AuthnAdminSsoProvidersCreateMutationBody = AuthnAdminProviderWrite
-    export type AuthnAdminSsoProvidersCreateMutationError = void
+    export type AuthnAdminSsoProvidersCreateMutationError = Problem
 
     /**
  * @summary Create an SSO provider in a tenant
  */
-export const useAuthnAdminSsoProvidersCreate = <TError = void,
+export const useAuthnAdminSsoProvidersCreate = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, TError,{tenant: string;data: AuthnAdminProviderWrite}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>,
@@ -5199,7 +5217,7 @@ export const getAuthnLoginCallbackGetQueryKey = (provider: string,) => {
     }
 
 
-export const getAuthnLoginCallbackGetQueryOptions = <TData = Awaited<ReturnType<typeof authnLoginCallbackGet>>, TError = Problem>(provider: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnLoginCallbackGet>>, TError, TData>>, }
+export const getAuthnLoginCallbackGetQueryOptions = <TData = Awaited<ReturnType<typeof authnLoginCallbackGet>>, TError = void | Problem>(provider: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnLoginCallbackGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -5218,10 +5236,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnLoginCallbackGetQueryResult = NonNullable<Awaited<ReturnType<typeof authnLoginCallbackGet>>>
-export type AuthnLoginCallbackGetQueryError = Problem
+export type AuthnLoginCallbackGetQueryError = void | Problem
 
 
-export function useAuthnLoginCallbackGet<TData = Awaited<ReturnType<typeof authnLoginCallbackGet>>, TError = Problem>(
+export function useAuthnLoginCallbackGet<TData = Awaited<ReturnType<typeof authnLoginCallbackGet>>, TError = void | Problem>(
  provider: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnLoginCallbackGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnLoginCallbackGet>>,
@@ -5231,7 +5249,7 @@ export function useAuthnLoginCallbackGet<TData = Awaited<ReturnType<typeof authn
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnLoginCallbackGet<TData = Awaited<ReturnType<typeof authnLoginCallbackGet>>, TError = Problem>(
+export function useAuthnLoginCallbackGet<TData = Awaited<ReturnType<typeof authnLoginCallbackGet>>, TError = void | Problem>(
  provider: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnLoginCallbackGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnLoginCallbackGet>>,
@@ -5241,7 +5259,7 @@ export function useAuthnLoginCallbackGet<TData = Awaited<ReturnType<typeof authn
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnLoginCallbackGet<TData = Awaited<ReturnType<typeof authnLoginCallbackGet>>, TError = Problem>(
+export function useAuthnLoginCallbackGet<TData = Awaited<ReturnType<typeof authnLoginCallbackGet>>, TError = void | Problem>(
  provider: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnLoginCallbackGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -5249,7 +5267,7 @@ export function useAuthnLoginCallbackGet<TData = Awaited<ReturnType<typeof authn
  * @summary Handle a provider's callback as a browser navigation
  */
 
-export function useAuthnLoginCallbackGet<TData = Awaited<ReturnType<typeof authnLoginCallbackGet>>, TError = Problem>(
+export function useAuthnLoginCallbackGet<TData = Awaited<ReturnType<typeof authnLoginCallbackGet>>, TError = void | Problem>(
  provider: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnLoginCallbackGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -5285,7 +5303,7 @@ export const authnLoginCallbackPost = (
 
 
 
-export const getAuthnLoginCallbackPostMutationOptions = <TError = Problem,
+export const getAuthnLoginCallbackPostMutationOptions = <TError = void | Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginCallbackPost>>, TError,{provider: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnLoginCallbackPost>>, TError,{provider: string}, TContext> => {
 
@@ -5314,12 +5332,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnLoginCallbackPostMutationResult = NonNullable<Awaited<ReturnType<typeof authnLoginCallbackPost>>>
 
-    export type AuthnLoginCallbackPostMutationError = Problem
+    export type AuthnLoginCallbackPostMutationError = void | Problem
 
     /**
  * @summary Handle a provider's callback as a cross-site form post
  */
-export const useAuthnLoginCallbackPost = <TError = Problem,
+export const useAuthnLoginCallbackPost = <TError = void | Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginCallbackPost>>, TError,{provider: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnLoginCallbackPost>>,
@@ -6050,7 +6068,7 @@ export const authnImpersonationEnd = (
 
 
 
-export const getAuthnImpersonationEndMutationOptions = <TError = void,
+export const getAuthnImpersonationEndMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnImpersonationEnd>>, TError,void, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnImpersonationEnd>>, TError,void, TContext> => {
 
@@ -6079,12 +6097,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnImpersonationEndMutationResult = NonNullable<Awaited<ReturnType<typeof authnImpersonationEnd>>>
 
-    export type AuthnImpersonationEndMutationError = void
+    export type AuthnImpersonationEndMutationError = Problem | void
 
     /**
  * @summary End the impersonation on the caller's session
  */
-export const useAuthnImpersonationEnd = <TError = void,
+export const useAuthnImpersonationEnd = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnImpersonationEnd>>, TError,void, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnImpersonationEnd>>,
@@ -6121,7 +6139,7 @@ export const getAuthnImpersonationStatusQueryKey = () => {
     }
 
 
-export const getAuthnImpersonationStatusQueryOptions = <TData = Awaited<ReturnType<typeof authnImpersonationStatus>>, TError = void>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnImpersonationStatus>>, TError, TData>>, }
+export const getAuthnImpersonationStatusQueryOptions = <TData = Awaited<ReturnType<typeof authnImpersonationStatus>>, TError = Problem | void>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnImpersonationStatus>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -6140,10 +6158,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnImpersonationStatusQueryResult = NonNullable<Awaited<ReturnType<typeof authnImpersonationStatus>>>
-export type AuthnImpersonationStatusQueryError = void
+export type AuthnImpersonationStatusQueryError = Problem | void
 
 
-export function useAuthnImpersonationStatus<TData = Awaited<ReturnType<typeof authnImpersonationStatus>>, TError = void>(
+export function useAuthnImpersonationStatus<TData = Awaited<ReturnType<typeof authnImpersonationStatus>>, TError = Problem | void>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnImpersonationStatus>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnImpersonationStatus>>,
@@ -6153,7 +6171,7 @@ export function useAuthnImpersonationStatus<TData = Awaited<ReturnType<typeof au
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnImpersonationStatus<TData = Awaited<ReturnType<typeof authnImpersonationStatus>>, TError = void>(
+export function useAuthnImpersonationStatus<TData = Awaited<ReturnType<typeof authnImpersonationStatus>>, TError = Problem | void>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnImpersonationStatus>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnImpersonationStatus>>,
@@ -6163,7 +6181,7 @@ export function useAuthnImpersonationStatus<TData = Awaited<ReturnType<typeof au
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnImpersonationStatus<TData = Awaited<ReturnType<typeof authnImpersonationStatus>>, TError = void>(
+export function useAuthnImpersonationStatus<TData = Awaited<ReturnType<typeof authnImpersonationStatus>>, TError = Problem | void>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnImpersonationStatus>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -6171,7 +6189,7 @@ export function useAuthnImpersonationStatus<TData = Awaited<ReturnType<typeof au
  * @summary The impersonation in force on the caller's session
  */
 
-export function useAuthnImpersonationStatus<TData = Awaited<ReturnType<typeof authnImpersonationStatus>>, TError = void>(
+export function useAuthnImpersonationStatus<TData = Awaited<ReturnType<typeof authnImpersonationStatus>>, TError = Problem | void>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnImpersonationStatus>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -6209,7 +6227,7 @@ export const authnImpersonationStart = (
 
 
 
-export const getAuthnImpersonationStartMutationOptions = <TError = void,
+export const getAuthnImpersonationStartMutationOptions = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnImpersonationStart>>, TError,{data: AuthnImpersonationStartBody}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnImpersonationStart>>, TError,{data: AuthnImpersonationStartBody}, TContext> => {
 
@@ -6238,12 +6256,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnImpersonationStartMutationResult = NonNullable<Awaited<ReturnType<typeof authnImpersonationStart>>>
     export type AuthnImpersonationStartMutationBody = AuthnImpersonationStartBody
-    export type AuthnImpersonationStartMutationError = void
+    export type AuthnImpersonationStartMutationError = Problem
 
     /**
  * @summary Start impersonating another account
  */
-export const useAuthnImpersonationStart = <TError = void,
+export const useAuthnImpersonationStart = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnImpersonationStart>>, TError,{data: AuthnImpersonationStartBody}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnImpersonationStart>>,
@@ -6280,7 +6298,7 @@ export const getAuthnInviteAcceptViewQueryKey = (token: string,) => {
     }
 
 
-export const getAuthnInviteAcceptViewQueryOptions = <TData = Awaited<ReturnType<typeof authnInviteAcceptView>>, TError = void>(token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteAcceptView>>, TError, TData>>, }
+export const getAuthnInviteAcceptViewQueryOptions = <TData = Awaited<ReturnType<typeof authnInviteAcceptView>>, TError = void | Problem>(token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteAcceptView>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -6299,10 +6317,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnInviteAcceptViewQueryResult = NonNullable<Awaited<ReturnType<typeof authnInviteAcceptView>>>
-export type AuthnInviteAcceptViewQueryError = void
+export type AuthnInviteAcceptViewQueryError = void | Problem
 
 
-export function useAuthnInviteAcceptView<TData = Awaited<ReturnType<typeof authnInviteAcceptView>>, TError = void>(
+export function useAuthnInviteAcceptView<TData = Awaited<ReturnType<typeof authnInviteAcceptView>>, TError = void | Problem>(
  token: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteAcceptView>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnInviteAcceptView>>,
@@ -6312,7 +6330,7 @@ export function useAuthnInviteAcceptView<TData = Awaited<ReturnType<typeof authn
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnInviteAcceptView<TData = Awaited<ReturnType<typeof authnInviteAcceptView>>, TError = void>(
+export function useAuthnInviteAcceptView<TData = Awaited<ReturnType<typeof authnInviteAcceptView>>, TError = void | Problem>(
  token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteAcceptView>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnInviteAcceptView>>,
@@ -6322,7 +6340,7 @@ export function useAuthnInviteAcceptView<TData = Awaited<ReturnType<typeof authn
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnInviteAcceptView<TData = Awaited<ReturnType<typeof authnInviteAcceptView>>, TError = void>(
+export function useAuthnInviteAcceptView<TData = Awaited<ReturnType<typeof authnInviteAcceptView>>, TError = void | Problem>(
  token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteAcceptView>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -6330,7 +6348,7 @@ export function useAuthnInviteAcceptView<TData = Awaited<ReturnType<typeof authn
  * @summary Read the invitation a token points to
  */
 
-export function useAuthnInviteAcceptView<TData = Awaited<ReturnType<typeof authnInviteAcceptView>>, TError = void>(
+export function useAuthnInviteAcceptView<TData = Awaited<ReturnType<typeof authnInviteAcceptView>>, TError = void | Problem>(
  token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteAcceptView>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -6369,7 +6387,7 @@ export const authnInviteAccept = (
 
 
 
-export const getAuthnInviteAcceptMutationOptions = <TError = void,
+export const getAuthnInviteAcceptMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnInviteAccept>>, TError,{token: string;data: AuthnInviteAcceptBody}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnInviteAccept>>, TError,{token: string;data: AuthnInviteAcceptBody}, TContext> => {
 
@@ -6398,12 +6416,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnInviteAcceptMutationResult = NonNullable<Awaited<ReturnType<typeof authnInviteAccept>>>
     export type AuthnInviteAcceptMutationBody = AuthnInviteAcceptBody
-    export type AuthnInviteAcceptMutationError = void
+    export type AuthnInviteAcceptMutationError = Problem | void
 
     /**
  * @summary Redeem an invitation, creating the account when the address has none
  */
-export const useAuthnInviteAccept = <TError = void,
+export const useAuthnInviteAccept = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnInviteAccept>>, TError,{token: string;data: AuthnInviteAcceptBody}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnInviteAccept>>,
@@ -6440,7 +6458,7 @@ export const getAuthnTokenJwksQueryKey = () => {
     }
 
 
-export const getAuthnTokenJwksQueryOptions = <TData = Awaited<ReturnType<typeof authnTokenJwks>>, TError = void>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnTokenJwks>>, TError, TData>>, }
+export const getAuthnTokenJwksQueryOptions = <TData = Awaited<ReturnType<typeof authnTokenJwks>>, TError = Problem>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnTokenJwks>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -6459,10 +6477,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnTokenJwksQueryResult = NonNullable<Awaited<ReturnType<typeof authnTokenJwks>>>
-export type AuthnTokenJwksQueryError = void
+export type AuthnTokenJwksQueryError = Problem
 
 
-export function useAuthnTokenJwks<TData = Awaited<ReturnType<typeof authnTokenJwks>>, TError = void>(
+export function useAuthnTokenJwks<TData = Awaited<ReturnType<typeof authnTokenJwks>>, TError = Problem>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnTokenJwks>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnTokenJwks>>,
@@ -6472,7 +6490,7 @@ export function useAuthnTokenJwks<TData = Awaited<ReturnType<typeof authnTokenJw
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnTokenJwks<TData = Awaited<ReturnType<typeof authnTokenJwks>>, TError = void>(
+export function useAuthnTokenJwks<TData = Awaited<ReturnType<typeof authnTokenJwks>>, TError = Problem>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnTokenJwks>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnTokenJwks>>,
@@ -6482,7 +6500,7 @@ export function useAuthnTokenJwks<TData = Awaited<ReturnType<typeof authnTokenJw
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnTokenJwks<TData = Awaited<ReturnType<typeof authnTokenJwks>>, TError = void>(
+export function useAuthnTokenJwks<TData = Awaited<ReturnType<typeof authnTokenJwks>>, TError = Problem>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnTokenJwks>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -6490,7 +6508,7 @@ export function useAuthnTokenJwks<TData = Awaited<ReturnType<typeof authnTokenJw
  * @summary The public keys that verify the issued tokens
  */
 
-export function useAuthnTokenJwks<TData = Awaited<ReturnType<typeof authnTokenJwks>>, TError = void>(
+export function useAuthnTokenJwks<TData = Awaited<ReturnType<typeof authnTokenJwks>>, TError = Problem>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnTokenJwks>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -6572,7 +6590,7 @@ export const useAuthnLoginUnlink = <TError = Problem,
     }
 
 /**
- * Revokes the session the request's credential belongs to and writes a Set-Cookie header that has the browser drop the session cookie. When the identity is impersonating, the session revoked is the administrator's own, the one the credential belongs to, so the impersonation ends with it. A repeated call from the same credential is answered 401 on the replica that revoked the session, which clears its verification cache when it writes; another replica keeps accepting it until its check cache expires (check-ttl, five seconds by default) and answers 204 idempotently until then.
+ * Revokes the session the request's credential belongs to and writes a Set-Cookie header that has the browser drop the session cookie. When the identity is impersonating, the session revoked is the administrator's own, the one the credential belongs to, so the impersonation ends with it. A repeated call from the same credential is answered 401 on the replica that revoked the session, which clears its verification cache as it revokes. Another replica can still accept it while its own check cache holds (check-ttl, five seconds by default), unless the revocation event clears that entry first; such a call is answered 204, and it clears that replica's cache too, so a further call there is 401 as well.
  * @summary Revoke the session the request came with and clear its cookie
  */
 export const authnSessionLogout = (
@@ -6589,7 +6607,7 @@ export const authnSessionLogout = (
 
 
 
-export const getAuthnSessionLogoutMutationOptions = <TError = void,
+export const getAuthnSessionLogoutMutationOptions = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnSessionLogout>>, TError,void, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnSessionLogout>>, TError,void, TContext> => {
 
@@ -6618,12 +6636,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnSessionLogoutMutationResult = NonNullable<Awaited<ReturnType<typeof authnSessionLogout>>>
 
-    export type AuthnSessionLogoutMutationError = void
+    export type AuthnSessionLogoutMutationError = Problem
 
     /**
  * @summary Revoke the session the request came with and clear its cookie
  */
-export const useAuthnSessionLogout = <TError = void,
+export const useAuthnSessionLogout = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnSessionLogout>>, TError,void, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnSessionLogout>>,
@@ -6660,7 +6678,7 @@ export const getAuthnProfileGetQueryKey = () => {
     }
 
 
-export const getAuthnProfileGetQueryOptions = <TData = Awaited<ReturnType<typeof authnProfileGet>>, TError = void>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnProfileGet>>, TError, TData>>, }
+export const getAuthnProfileGetQueryOptions = <TData = Awaited<ReturnType<typeof authnProfileGet>>, TError = Problem>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnProfileGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -6679,10 +6697,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnProfileGetQueryResult = NonNullable<Awaited<ReturnType<typeof authnProfileGet>>>
-export type AuthnProfileGetQueryError = void
+export type AuthnProfileGetQueryError = Problem
 
 
-export function useAuthnProfileGet<TData = Awaited<ReturnType<typeof authnProfileGet>>, TError = void>(
+export function useAuthnProfileGet<TData = Awaited<ReturnType<typeof authnProfileGet>>, TError = Problem>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnProfileGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnProfileGet>>,
@@ -6692,7 +6710,7 @@ export function useAuthnProfileGet<TData = Awaited<ReturnType<typeof authnProfil
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnProfileGet<TData = Awaited<ReturnType<typeof authnProfileGet>>, TError = void>(
+export function useAuthnProfileGet<TData = Awaited<ReturnType<typeof authnProfileGet>>, TError = Problem>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnProfileGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnProfileGet>>,
@@ -6702,7 +6720,7 @@ export function useAuthnProfileGet<TData = Awaited<ReturnType<typeof authnProfil
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnProfileGet<TData = Awaited<ReturnType<typeof authnProfileGet>>, TError = void>(
+export function useAuthnProfileGet<TData = Awaited<ReturnType<typeof authnProfileGet>>, TError = Problem>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnProfileGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -6710,7 +6728,7 @@ export function useAuthnProfileGet<TData = Awaited<ReturnType<typeof authnProfil
  * @summary The caller's own profile
  */
 
-export function useAuthnProfileGet<TData = Awaited<ReturnType<typeof authnProfileGet>>, TError = void>(
+export function useAuthnProfileGet<TData = Awaited<ReturnType<typeof authnProfileGet>>, TError = Problem>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnProfileGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -6748,7 +6766,7 @@ export const authnProfilePatch = (
 
 
 
-export const getAuthnProfilePatchMutationOptions = <TError = void,
+export const getAuthnProfilePatchMutationOptions = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnProfilePatch>>, TError,{data: AuthnProfilePatchBody}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnProfilePatch>>, TError,{data: AuthnProfilePatchBody}, TContext> => {
 
@@ -6777,12 +6795,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnProfilePatchMutationResult = NonNullable<Awaited<ReturnType<typeof authnProfilePatch>>>
     export type AuthnProfilePatchMutationBody = AuthnProfilePatchBody
-    export type AuthnProfilePatchMutationError = void
+    export type AuthnProfilePatchMutationError = Problem
 
     /**
  * @summary Write the caller's own display name, attribute set, locale and time zone
  */
-export const useAuthnProfilePatch = <TError = void,
+export const useAuthnProfilePatch = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnProfilePatch>>, TError,{data: AuthnProfilePatchBody}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnProfilePatch>>,
@@ -7108,7 +7126,7 @@ export const getAuthnSessionGetQueryKey = () => {
     }
 
 
-export const getAuthnSessionGetQueryOptions = <TData = Awaited<ReturnType<typeof authnSessionGet>>, TError = void>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnSessionGet>>, TError, TData>>, }
+export const getAuthnSessionGetQueryOptions = <TData = Awaited<ReturnType<typeof authnSessionGet>>, TError = Problem>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnSessionGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -7127,10 +7145,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnSessionGetQueryResult = NonNullable<Awaited<ReturnType<typeof authnSessionGet>>>
-export type AuthnSessionGetQueryError = void
+export type AuthnSessionGetQueryError = Problem
 
 
-export function useAuthnSessionGet<TData = Awaited<ReturnType<typeof authnSessionGet>>, TError = void>(
+export function useAuthnSessionGet<TData = Awaited<ReturnType<typeof authnSessionGet>>, TError = Problem>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnSessionGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnSessionGet>>,
@@ -7140,7 +7158,7 @@ export function useAuthnSessionGet<TData = Awaited<ReturnType<typeof authnSessio
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnSessionGet<TData = Awaited<ReturnType<typeof authnSessionGet>>, TError = void>(
+export function useAuthnSessionGet<TData = Awaited<ReturnType<typeof authnSessionGet>>, TError = Problem>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnSessionGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnSessionGet>>,
@@ -7150,7 +7168,7 @@ export function useAuthnSessionGet<TData = Awaited<ReturnType<typeof authnSessio
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnSessionGet<TData = Awaited<ReturnType<typeof authnSessionGet>>, TError = void>(
+export function useAuthnSessionGet<TData = Awaited<ReturnType<typeof authnSessionGet>>, TError = Problem>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnSessionGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -7158,7 +7176,7 @@ export function useAuthnSessionGet<TData = Awaited<ReturnType<typeof authnSessio
  * @summary Who is signed in on this session
  */
 
-export function useAuthnSessionGet<TData = Awaited<ReturnType<typeof authnSessionGet>>, TError = void>(
+export function useAuthnSessionGet<TData = Awaited<ReturnType<typeof authnSessionGet>>, TError = Problem>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnSessionGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -7194,7 +7212,7 @@ export const authnSessionRevokeOthers = (
 
 
 
-export const getAuthnSessionRevokeOthersMutationOptions = <TError = void,
+export const getAuthnSessionRevokeOthersMutationOptions = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnSessionRevokeOthers>>, TError,void, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnSessionRevokeOthers>>, TError,void, TContext> => {
 
@@ -7223,12 +7241,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnSessionRevokeOthersMutationResult = NonNullable<Awaited<ReturnType<typeof authnSessionRevokeOthers>>>
 
-    export type AuthnSessionRevokeOthersMutationError = void
+    export type AuthnSessionRevokeOthersMutationError = Problem
 
     /**
  * @summary Revoke every session of the caller's but the current one
  */
-export const useAuthnSessionRevokeOthers = <TError = void,
+export const useAuthnSessionRevokeOthers = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnSessionRevokeOthers>>, TError,void, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnSessionRevokeOthers>>,
@@ -7265,7 +7283,7 @@ export const getAuthnSessionListQueryKey = () => {
     }
 
 
-export const getAuthnSessionListQueryOptions = <TData = Awaited<ReturnType<typeof authnSessionList>>, TError = void>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnSessionList>>, TError, TData>>, }
+export const getAuthnSessionListQueryOptions = <TData = Awaited<ReturnType<typeof authnSessionList>>, TError = Problem>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnSessionList>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -7284,10 +7302,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnSessionListQueryResult = NonNullable<Awaited<ReturnType<typeof authnSessionList>>>
-export type AuthnSessionListQueryError = void
+export type AuthnSessionListQueryError = Problem
 
 
-export function useAuthnSessionList<TData = Awaited<ReturnType<typeof authnSessionList>>, TError = void>(
+export function useAuthnSessionList<TData = Awaited<ReturnType<typeof authnSessionList>>, TError = Problem>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnSessionList>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnSessionList>>,
@@ -7297,7 +7315,7 @@ export function useAuthnSessionList<TData = Awaited<ReturnType<typeof authnSessi
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnSessionList<TData = Awaited<ReturnType<typeof authnSessionList>>, TError = void>(
+export function useAuthnSessionList<TData = Awaited<ReturnType<typeof authnSessionList>>, TError = Problem>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnSessionList>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof authnSessionList>>,
@@ -7307,7 +7325,7 @@ export function useAuthnSessionList<TData = Awaited<ReturnType<typeof authnSessi
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnSessionList<TData = Awaited<ReturnType<typeof authnSessionList>>, TError = void>(
+export function useAuthnSessionList<TData = Awaited<ReturnType<typeof authnSessionList>>, TError = Problem>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnSessionList>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -7315,7 +7333,7 @@ export function useAuthnSessionList<TData = Awaited<ReturnType<typeof authnSessi
  * @summary List the caller's own live sessions
  */
 
-export function useAuthnSessionList<TData = Awaited<ReturnType<typeof authnSessionList>>, TError = void>(
+export function useAuthnSessionList<TData = Awaited<ReturnType<typeof authnSessionList>>, TError = Problem>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnSessionList>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -7351,7 +7369,7 @@ export const authnSessionRevokeOne = (
 
 
 
-export const getAuthnSessionRevokeOneMutationOptions = <TError = void,
+export const getAuthnSessionRevokeOneMutationOptions = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnSessionRevokeOne>>, TError,{id: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnSessionRevokeOne>>, TError,{id: string}, TContext> => {
 
@@ -7380,12 +7398,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnSessionRevokeOneMutationResult = NonNullable<Awaited<ReturnType<typeof authnSessionRevokeOne>>>
 
-    export type AuthnSessionRevokeOneMutationError = void
+    export type AuthnSessionRevokeOneMutationError = Problem
 
     /**
  * @summary Revoke one of the caller's own sessions
  */
-export const useAuthnSessionRevokeOne = <TError = void,
+export const useAuthnSessionRevokeOne = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnSessionRevokeOne>>, TError,{id: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnSessionRevokeOne>>,
@@ -7588,7 +7606,7 @@ if(authnTokenIssueBody.client_secret !== undefined) {
 
 
 
-export const getAuthnTokenIssueMutationOptions = <TError = void,
+export const getAuthnTokenIssueMutationOptions = <TError = AuthnTokenOAuthError,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnTokenIssue>>, TError,{data: AuthnTokenIssueBody}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnTokenIssue>>, TError,{data: AuthnTokenIssueBody}, TContext> => {
 
@@ -7617,12 +7635,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnTokenIssueMutationResult = NonNullable<Awaited<ReturnType<typeof authnTokenIssue>>>
     export type AuthnTokenIssueMutationBody = AuthnTokenIssueBody
-    export type AuthnTokenIssueMutationError = void
+    export type AuthnTokenIssueMutationError = AuthnTokenOAuthError
 
     /**
  * @summary Exchange a client credential or a refresh token for an access token
  */
-export const useAuthnTokenIssue = <TError = void,
+export const useAuthnTokenIssue = <TError = AuthnTokenOAuthError,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnTokenIssue>>, TError,{data: AuthnTokenIssueBody}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnTokenIssue>>,
@@ -7657,7 +7675,7 @@ if(authnTokenRevokeBody.token !== undefined) {
 
 
 
-export const getAuthnTokenRevokeMutationOptions = <TError = void,
+export const getAuthnTokenRevokeMutationOptions = <TError = AuthnTokenOAuthError,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnTokenRevoke>>, TError,{data: AuthnTokenRevokeBody}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnTokenRevoke>>, TError,{data: AuthnTokenRevokeBody}, TContext> => {
 
@@ -7686,12 +7704,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnTokenRevokeMutationResult = NonNullable<Awaited<ReturnType<typeof authnTokenRevoke>>>
     export type AuthnTokenRevokeMutationBody = AuthnTokenRevokeBody
-    export type AuthnTokenRevokeMutationError = void
+    export type AuthnTokenRevokeMutationError = AuthnTokenOAuthError
 
     /**
  * @summary Revoke a refresh token
  */
-export const useAuthnTokenRevoke = <TError = void,
+export const useAuthnTokenRevoke = <TError = AuthnTokenOAuthError,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnTokenRevoke>>, TError,{data: AuthnTokenRevokeBody}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnTokenRevoke>>,
@@ -10451,7 +10469,7 @@ export const smsAdminTemplatesRemove = (
 
 
 
-export const getSmsAdminTemplatesRemoveMutationOptions = <TError = Problem,
+export const getSmsAdminTemplatesRemoveMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof smsAdminTemplatesRemove>>, TError,{name: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof smsAdminTemplatesRemove>>, TError,{name: string}, TContext> => {
 
@@ -10480,12 +10498,12 @@ const {mutation: mutationOptions} = options ?
 
     export type SmsAdminTemplatesRemoveMutationResult = NonNullable<Awaited<ReturnType<typeof smsAdminTemplatesRemove>>>
 
-    export type SmsAdminTemplatesRemoveMutationError = Problem
+    export type SmsAdminTemplatesRemoveMutationError = Problem | void
 
     /**
  * @summary Drop a runtime template from this process, the vendor left alone
  */
-export const useSmsAdminTemplatesRemove = <TError = Problem,
+export const useSmsAdminTemplatesRemove = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof smsAdminTemplatesRemove>>, TError,{name: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof smsAdminTemplatesRemove>>,
@@ -10517,7 +10535,7 @@ export const smsAdminTemplatesSetEnabled = (
 
 
 
-export const getSmsAdminTemplatesSetEnabledMutationOptions = <TError = Problem,
+export const getSmsAdminTemplatesSetEnabledMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof smsAdminTemplatesSetEnabled>>, TError,{name: string;data: SmsAdminTemplatesSetEnabledBody}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof smsAdminTemplatesSetEnabled>>, TError,{name: string;data: SmsAdminTemplatesSetEnabledBody}, TContext> => {
 
@@ -10546,12 +10564,12 @@ const {mutation: mutationOptions} = options ?
 
     export type SmsAdminTemplatesSetEnabledMutationResult = NonNullable<Awaited<ReturnType<typeof smsAdminTemplatesSetEnabled>>>
     export type SmsAdminTemplatesSetEnabledMutationBody = SmsAdminTemplatesSetEnabledBody
-    export type SmsAdminTemplatesSetEnabledMutationError = Problem
+    export type SmsAdminTemplatesSetEnabledMutationError = Problem | void
 
     /**
  * @summary Turn a runtime template's ability to send on or off
  */
-export const useSmsAdminTemplatesSetEnabled = <TError = Problem,
+export const useSmsAdminTemplatesSetEnabled = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof smsAdminTemplatesSetEnabled>>, TError,{name: string;data: SmsAdminTemplatesSetEnabledBody}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof smsAdminTemplatesSetEnabled>>,

@@ -2157,7 +2157,7 @@ describe('AccountsPage', () => {
         calls.push(input)
         return Promise.resolve({
           id: 'secret-9',
-          label: input.label,
+          label: input.label ?? '',
           secret: 'one-time-value',
           expires_at: '0001-01-01T00:00:00Z',
         })

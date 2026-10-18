@@ -34,7 +34,7 @@
                 "description": "The start request; `method` must name a login method this deployment takes in, or the call is a bad request.",
                 "properties": {
                   "method": {"type": "string", "description": "The stable name of a login method, as returned in `name` by `GET /auth/methods`. A name the deployment does not take in is a 400 bad-request; a method turned off by the deployment is a 403 method-disabled."},
-                  "purpose": {"type": "string", "description": "Not read by this route: a flow started here always has the purpose login. Use `POST /auth/flows/authenticated` for link, step-up or enroll."},
+                  "purpose": {"type": "string", "description": "Accepted but not read by this route: a flow started here always has the purpose login. Use `POST /auth/flows/authenticated` for link, step-up or enroll."},
                   "delivery": {"type": "string", "description": "How a completed login is delivered: `session` (the default) sets the session cookie and answers the session view; `token` answers an access and refresh token pair. `token` must be enabled by the deployment and requires the token capability, otherwise the request is a 400 bad-request."},
                   "return_to": {"type": "string", "description": "Where to send the user agent after a callback login completes: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts. Anything else is a 400 bad-request. The value is stored in the flow record, and no parameter of the callback request can change it."},
                   "binding": {"type": "string", "description": "How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method."},
@@ -96,7 +96,6 @@
                 "properties": {
                   "method": {"type": "string", "description": "The method to run for `link`, and for a `step-up` of an account that holds no factor. For an enrollment it is not read, and for a step-up the policy answers with usable factors it is not read either; a step-up whose account holds factors but none usable for this session is refused with 401 insufficient_user_authentication before the method is consulted. A name the deployment does not take in is a 400 bad-request."},
                   "purpose": {"type": "string", "description": "Required, and one of `link`, `step-up` or `enroll`: bind an external identity, strengthen the current session, or register a factor. Any other value, including an empty one, is a 400 bad-request."},
-                  "delivery": {"type": "string", "description": "Not read by this route: the delivery follows the kind of the session the request came with — a browser session completes as `session`, a token session as `token`."},
                   "return_to": {"type": "string", "description": "Where to send the user agent after a callback login completes: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts. Anything else is a 400 bad-request. The value is stored in the flow record, and no parameter of the callback request can change it."},
                   "binding": {"type": "string", "description": "How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method."},
                   "input": {"type": "object", "additionalProperties": {"type": "string"}, "description": "The fields the started step takes, as name-to-value strings: the method's first step for `link`, the enrollment step for `enroll` where `kind` names the factor kind, and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes."}
@@ -269,6 +268,9 @@
             "description": "The flow, advanced by the callback",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnLoginFlow"}}}
           },
+          "303": {
+            "description": "The user agent is sent to the flow's stored return target instead of being answered a body: a completed cookie login writes its session cookie in this response, and a flow that still needs a second factor or an enrollment keeps the flow cookie and resumes with `GET /auth/flows/current`"
+          },
           "400": {
             "description": "The callback is malformed",
             "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
@@ -302,6 +304,9 @@
           "200": {
             "description": "The flow, advanced by the callback",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnLoginFlow"}}}
+          },
+          "303": {
+            "description": "The user agent is sent to the flow's stored return target instead of being answered a body: a completed cookie login writes its session cookie in this response, and a flow that still needs a second factor or an enrollment keeps the flow cookie and resumes with `GET /auth/flows/current`"
           },
           "400": {
             "description": "The callback is malformed",
@@ -394,8 +399,7 @@
                 "type": "object",
                 "description": "The phone number to send a verification code to.",
                 "properties": {
-                  "phone": {"type": "string", "description": "The number in international E.164 form: a leading `+`, a non-zero country digit, then 6 to 14 more digits. The value is not parsed, completed or reformatted, so a national-format number is a 400 bad-request."},
-                  "challenge_id": {"type": "string", "description": "Not accepted by this route: the body is decoded with unknown members refused, so a body carrying this member is a 400 bad-request. The challenge is held server-side against the caller's session and is never sent to the client."}
+                  "phone": {"type": "string", "description": "The number in international E.164 form: a leading `+`, a non-zero country digit, then 6 to 14 more digits. The value is not parsed, completed or reformatted, so a national-format number is a 400 bad-request."}
                 }
               }
             }
@@ -416,10 +420,6 @@
           },
           "403": {
             "description": "The identity is impersonating, which the route refuses",
-            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
-          },
-          "409": {
-            "description": "Not produced by this operation: a number another account holds is sent a code exactly as a free one is, so the conflict is answered only when `POST /auth/phone/verify` writes the verified number",
             "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
           },
           "415": {
@@ -512,10 +512,6 @@
             "description": "The identity is impersonating, which the route refuses",
             "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
           },
-          "409": {
-            "description": "Not produced by this operation: removing an identifier is not checked against the account's remaining ways to sign in, so the last one can be removed",
-            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
-          },
           "429": {
             "description": "Too many attempts; retry after the stated delay",
             "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
@@ -543,7 +539,7 @@
                 "required": ["kind", "value"],
                 "properties": {
                   "kind": {"type": "string", "description": "The identifier kind to add: username or email; a phone is added through /auth/phone"},
-                  "value": {"type": "string", "description": "The login name or address to add. A username must be non-empty after trimming whitespace and is written as given. An email address is trimmed and lowercased first, then accepted only when it is ASCII, contains exactly one `@` with no whitespace, and is at most 254 bytes; anything else is a 400 bad-request."}
+                  "value": {"type": "string", "description": "The login name or address to add. A username is NFKC-normalized and lowercased first, then accepted only when it is 3 to 64 characters of [a-z0-9._-] beginning with a letter or a digit and does not carry the reserved static-credential prefix; the stored value is the normalized one. An email address is trimmed and lowercased first, then accepted only when it is ASCII, contains exactly one `@` with no whitespace, and is at most 254 bytes; anything else is a 400 bad-request."}
                 }
               }
             }
@@ -834,7 +830,7 @@
           "type": {"type": "string", "description": "The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>."},
           "title": {"type": "string", "description": "A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code."},
           "status": {"type": "integer", "description": "The HTTP status code the response is written with, repeated from the status line."},
-          "detail": {"type": "string", "description": "A longer explanation of this occurrence. Present only when the answering module has one to give, and those that set one render it in the request language."},
+          "detail": {"type": "string", "description": "A longer explanation of this occurrence, present only when the answering module has one to give. It may be a sentence rendered in the request language or a language-neutral token such as \"forbidden\", so clients must not parse it."},
           "instance": {"type": "string", "description": "A URI identifying this occurrence; absent when there is none to give."}
         }
       }

@@ -21,10 +21,10 @@
             "description": "The page of accounts and the next cursor",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminAccountList"}}}
           },
-          "400": {"description": "The list's query could not be read, or a query parameter the route does not accept"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not read accounts"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The list's query could not be read, or a query parameter the route does not accept", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not read accounts", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "post": {
@@ -37,11 +37,11 @@
             "description": "The created account",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminAccountEnvelope"}}}
           },
-          "400": {"description": "The body could not be read, or an argument is invalid"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not create accounts"},
-          "409": {"description": "An account with that identifier already exists"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The body could not be read, or an argument is invalid", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not create accounts", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "An account with that identifier already exists", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -58,10 +58,10 @@
             "description": "The account",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminAccountEnvelope"}}}
           },
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not read the account"},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not read the account", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such account"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "patch": {
@@ -77,12 +77,11 @@
             "description": "The updated account",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminAccountEnvelope"}}}
           },
-          "400": {"description": "The body could not be read, or an argument is invalid"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not update the account"},
+          "400": {"description": "The body could not be read, or an argument is invalid", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not update the account", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such account"},
-          "409": {"description": "Never produced by this route: the display name, attribute set and protected flag it writes carry no binding or last-login-method conflict"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "delete": {
@@ -94,11 +93,10 @@
         ],
         "responses": {
           "204": {"description": "The account was deleted"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not delete the account"},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not delete the account", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such account"},
-          "409": {"description": "Never produced by this route: deletion checks no last-login-method guard"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -116,11 +114,11 @@
             "description": "The account at its new status",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminAccountEnvelope"}}}
           },
-          "400": {"description": "The body could not be read, or names no known status"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not change the status"},
+          "400": {"description": "The body could not be read, or names no known status", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not change the status", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such account"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -135,12 +133,12 @@
         ],
         "responses": {
           "204": {"description": "The identifier was added"},
-          "400": {"description": "The body could not be read, or the identifier is malformed"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not add the identifier"},
+          "400": {"description": "The body could not be read, or the identifier is malformed", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not add the identifier", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such account"},
-          "409": {"description": "The identifier is bound elsewhere"},
-          "503": {"description": "A dependency could not answer"}
+          "409": {"description": "The identifier is bound elsewhere", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -155,10 +153,10 @@
         ],
         "responses": {
           "204": {"description": "The identifier was removed"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not remove the identifier"},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not remove the identifier", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such account; an identifier the account does not hold is already unbound and answers 204"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -173,11 +171,11 @@
         ],
         "responses": {
           "204": {"description": "The password was set"},
-          "400": {"description": "The body could not be read, or the password fails the policy"},
-          "401": {"description": "No usable credential, or a step-up is required"},
-          "403": {"description": "The caller is impersonating, may not reset the password, or has no seasoned non-SMS factor (factor-not-seasoned)"},
+          "400": {"description": "The body could not be read, or the password fails the policy", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential, or a step-up is required", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating, may not reset the password, or has no seasoned non-SMS factor (factor-not-seasoned)", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such account"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -194,10 +192,10 @@
             "description": "The account's factors",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminFactorList"}}}
           },
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not read the factors"},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not read the factors", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such account"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -212,11 +210,11 @@
         ],
         "responses": {
           "204": {"description": "The flag was written"},
-          "400": {"description": "The body could not be read"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not change the flag"},
+          "400": {"description": "The body could not be read", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not change the flag", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such account"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -233,10 +231,10 @@
             "description": "The number of factors removed",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminRemoved"}}}
           },
-          "401": {"description": "No usable credential, or a step-up is required"},
-          "403": {"description": "The caller is impersonating, may not reset the factors, or has no seasoned non-SMS factor (factor-not-seasoned)"},
+          "401": {"description": "No usable credential, or a step-up is required", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating, may not reset the factors, or has no seasoned non-SMS factor (factor-not-seasoned)", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such account"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -253,10 +251,10 @@
             "description": "The account's sessions",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminSessionList"}}}
           },
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not read the sessions"},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not read the sessions", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such account"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -273,10 +271,10 @@
             "description": "The number of sessions revoked",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminRevoked"}}}
           },
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not revoke the sessions"},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not revoke the sessions", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such account"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -290,10 +288,10 @@
         ],
         "responses": {
           "204": {"description": "The session was revoked"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not revoke the session"},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not revoke the session", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such session"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -310,10 +308,10 @@
             "description": "The account's service secrets",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminSecretList"}}}
           },
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not read the secrets"},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not read the secrets", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such account"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "post": {
@@ -329,11 +327,11 @@
             "description": "The secret's identifier, label, one-time secret and expiry",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminSecretCreated"}}}
           },
-          "400": {"description": "The body could not be read"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not create the secret"},
+          "400": {"description": "The body could not be read", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not create the secret", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such account"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -348,10 +346,10 @@
         ],
         "responses": {
           "204": {"description": "The secret was revoked"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not revoke the secret"},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not revoke the secret", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such account or secret"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -370,10 +368,10 @@
             "description": "The tenant's members",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminMemberList"}}}
           },
-          "400": {"description": "The page query could not be read"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not read memberships"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The page query could not be read", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not read memberships", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -389,11 +387,11 @@
         ],
         "responses": {
           "204": {"description": "The membership was written"},
-          "400": {"description": "The body could not be read, an unknown field included, the tenant is invalid, or source is longer than 128 bytes. The module has no role."},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not write memberships"},
+          "400": {"description": "The body could not be read, an unknown field included, the tenant is invalid, or source is longer than 128 bytes. The module has no role.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not write memberships", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such account"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "delete": {
@@ -406,10 +404,9 @@
         ],
         "responses": {
           "204": {"description": "The membership was removed"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not remove memberships"},
-          "404": {"description": "Never produced by this route: a membership that is not there is already removed and the call answers 204"},
-          "503": {"description": "A dependency could not answer"}
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not remove memberships", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -425,11 +422,11 @@
         ],
         "responses": {
           "204": {"description": "The exemption was written"},
-          "400": {"description": "The body could not be read"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not write the exemption"},
+          "400": {"description": "The body could not be read", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not write the exemption", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such membership"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -446,9 +443,9 @@
             "description": "The tenant's providers",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminProviderList"}}}
           },
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not read providers"},
-          "503": {"description": "A dependency could not answer"}
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not read providers", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "post": {
@@ -464,11 +461,10 @@
             "description": "The created provider",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminProviderEnvelope"}}}
           },
-          "400": {"description": "The body could not be read, or an argument is invalid"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not create providers"},
-          "409": {"description": "Never produced by this route: creating a provider claims no domain, so no claim can conflict"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The body could not be read, or an argument is invalid", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not create providers", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -485,10 +481,10 @@
             "description": "The provider",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminProviderEnvelope"}}}
           },
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not read the provider"},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not read the provider", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such provider"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "put": {
@@ -504,12 +500,11 @@
             "description": "The updated provider",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminProviderEnvelope"}}}
           },
-          "400": {"description": "The body could not be read, or an argument is invalid"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not update the provider"},
+          "400": {"description": "The body could not be read, or an argument is invalid", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not update the provider", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such provider"},
-          "409": {"description": "Never produced by this route: an update writes the provider, not its domains, so no claim can conflict"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "delete": {
@@ -521,10 +516,10 @@
         ],
         "responses": {
           "204": {"description": "The provider was deleted"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not delete the provider"},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not delete the provider", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such provider"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -542,12 +537,12 @@
             "description": "The verification token to publish",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminVerifyToken"}}}
           },
-          "400": {"description": "The body could not be read, or the domain field is empty. A non-empty domain that is not well formed is refused by the domain normalizer, whose failure this route does not map and answers 503."},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not claim domains"},
+          "400": {"description": "The body could not be read, or the domain field is empty. A non-empty domain that is not well formed is refused by the domain normalizer, whose failure this route does not map and answers 503.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not claim domains", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such provider"},
-          "409": {"description": "Another provider has already verified the domain; an unverified claim by another provider may stand beside this one"},
-          "503": {"description": "A dependency could not answer"}
+          "409": {"description": "Another provider has already verified the domain; an unverified claim by another provider may stand beside this one", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -562,10 +557,10 @@
         ],
         "responses": {
           "204": {"description": "The domain was removed"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not write domains"},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not write domains", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such provider; removing a claim the provider does not hold succeeds without changing anything and answers 204"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -580,10 +575,11 @@
         ],
         "responses": {
           "204": {"description": "The domain was verified"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not write domains"},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not write domains", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such provider; a domain with no claim and a TXT record without the token are not mapped by this route and answer 503"},
-          "503": {"description": "A dependency could not answer"}
+          "409": {"description": "Another provider has verified the domain, so the uniqueness index refuses this verification", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -597,10 +593,10 @@
         ],
         "responses": {
           "204": {"description": "The re-verification ran"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not write domains"},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not write domains", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such provider"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -617,11 +613,11 @@
             "description": "The refreshed provider",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminProviderEnvelope"}}}
           },
-          "400": {"description": "The provider's protocol has no registered refresher in this assembly, or its stored config cannot be decoded. The request carries no body."},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not refresh metadata"},
+          "400": {"description": "The provider's protocol has no registered refresher in this assembly, or its stored config cannot be decoded. The request carries no body.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not refresh metadata", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such provider"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -640,10 +636,10 @@
             "description": "The page of records and the next cursor",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminImpersonationList"}}}
           },
-          "400": {"description": "The page query could not be read"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not read records"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The page query could not be read", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not read records", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -657,10 +653,10 @@
         ],
         "responses": {
           "204": {"description": "The record was revoked"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The caller is impersonating or may not revoke records"},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating or may not revoke records", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No such record"},
-          "503": {"description": "A dependency could not answer"}
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     }
@@ -921,7 +917,6 @@
       "AuthnAdminSecretCreate": {
         "type": "object",
         "description": "The request that mints a service secret.",
-        "required": ["label"],
         "properties": {
           "label": {"type": "string", "description": "The label for the administrator's own reference: at most 100 bytes of valid UTF-8 with no control character."},
           "expires_at": {"type": "string", "format": "date-time", "description": "Absent mints a secret with no expiry"}

@@ -12,7 +12,7 @@
             "description": "The identity on the request, or that nobody is signed in",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnSessionView"}}}
           },
-          "401": {"description": "A credential was presented and does not hold"}
+          "401": {"description": "A credential was presented and does not hold", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -20,12 +20,12 @@
       "post": {
         "operationId": "authn.session.logout",
         "summary": "Revoke the session the request came with and clear its cookie",
-        "description": "Revokes the session the request's credential belongs to and writes a Set-Cookie header that has the browser drop the session cookie. When the identity is impersonating, the session revoked is the administrator's own, the one the credential belongs to, so the impersonation ends with it. A repeated call from the same credential is answered 401 on the replica that revoked the session, which clears its verification cache when it writes; another replica keeps accepting it until its check cache expires (check-ttl, five seconds by default) and answers 204 idempotently until then.",
+        "description": "Revokes the session the request's credential belongs to and writes a Set-Cookie header that has the browser drop the session cookie. When the identity is impersonating, the session revoked is the administrator's own, the one the credential belongs to, so the impersonation ends with it. A repeated call from the same credential is answered 401 on the replica that revoked the session, which clears its verification cache as it revokes. Another replica can still accept it while its own check cache holds (check-ttl, five seconds by default), unless the revocation event clears that entry first; such a call is answered 204, and it clears that replica's cache too, so a further call there is 401 as well.",
         "responses": {
           "204": {"description": "The session was revoked"},
-          "400": {"description": "The request carries no session"},
-          "401": {"description": "No usable credential"},
-          "503": {"description": "The session store could not be reached"}
+          "400": {"description": "The request carries no session", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "The session store could not be reached", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -39,9 +39,9 @@
             "description": "The page of the caller's sessions",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnSessionList"}}}
           },
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The identity is impersonating, which the route refuses"},
-          "503": {"description": "The session store could not be reached"}
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The identity is impersonating, which the route refuses", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "The session store could not be reached", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "delete": {
@@ -53,9 +53,9 @@
             "description": "The number of sessions revoked",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnSessionRevoked"}}}
           },
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The identity is impersonating, which the route refuses"},
-          "503": {"description": "The session store could not be reached"}
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The identity is impersonating, which the route refuses", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "The session store could not be reached", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -69,9 +69,9 @@
         ],
         "responses": {
           "204": {"description": "The session was revoked"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The session is not the caller's, does not exist, or the identity is impersonating"},
-          "503": {"description": "The session store could not be reached"}
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The session is not the caller's, does not exist, or the identity is impersonating", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "The session store could not be reached", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     }
@@ -123,6 +123,18 @@
         "required": ["revoked"],
         "properties": {
           "revoked": {"type": "integer", "description": "The number of sessions revoked"}
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "description": "An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.",
+        "required": ["type", "status"],
+        "properties": {
+          "type": {"type": "string", "description": "The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>."},
+          "title": {"type": "string", "description": "A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code."},
+          "status": {"type": "integer", "description": "The HTTP status code the response is written with, repeated from the status line."},
+          "detail": {"type": "string", "description": "A longer explanation of this occurrence, present only when the answering module has one to give. It may be a sentence rendered in the request language or a language-neutral token such as \"forbidden\", so clients must not parse it."},
+          "instance": {"type": "string", "description": "A URI identifying this occurrence; absent when there is none to give."}
         }
       }
     }

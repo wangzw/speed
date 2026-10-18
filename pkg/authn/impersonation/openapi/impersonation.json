@@ -31,11 +31,11 @@
             "description": "The started record, and an access token under a bearer credential",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnImpersonationStart"}}}
           },
-          "400": {"description": "The body could not be read"},
-          "401": {"description": "No usable credential, or a step-up is required"},
-          "403": {"description": "Impersonation is refused for this caller or target, or the caller has no seasoned non-SMS factor (factor-not-seasoned)"},
-          "409": {"description": "An impersonation is already in force"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The body could not be read", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "No usable credential, or a step-up is required", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "Impersonation is refused for this caller or target, or the caller has no seasoned non-SMS factor (factor-not-seasoned)", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "An impersonation is already in force", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "get": {
@@ -47,9 +47,9 @@
             "description": "The record still valid on the session",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnImpersonationGrantEnvelope"}}}
           },
-          "401": {"description": "No usable credential"},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "No impersonation is in force"},
-          "503": {"description": "The record could not be read"}
+          "503": {"description": "The record could not be read", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "delete": {
@@ -58,9 +58,9 @@
         "description": "Ends the unended record on the caller's session with the reason explicit, whether or not it is still valid, and answers 204. Repeating it is safe: once the record is ended a further call answers 404. Under a cookie credential the impersonation marker is cleared from the session without rotating its token, so the caller continues as its own identity; a failed audit write does not undo the end.",
         "responses": {
           "204": {"description": "The impersonation ended"},
-          "401": {"description": "No usable credential"},
+          "401": {"description": "No usable credential", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
           "404": {"description": "The caller is not impersonating"},
-          "503": {"description": "The record could not be ended"}
+          "503": {"description": "The record could not be ended", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     }
