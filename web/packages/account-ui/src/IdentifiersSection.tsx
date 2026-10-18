@@ -19,12 +19,15 @@
  * the list; the section never computes that count client-side.
  *
  * Below the list is the add face: POST /auth/identifiers
- * (authn.login.addIdentifier) with a kind and a value. A username is a
- * login name with no ownership to prove, so it is written in one step; a
- * username already in use is answered 409 authn.conflict, and because that
- * is the expected outcome of the one write this face exists for, the
- * section names the username rather than rendering the code's
- * account-state sentence. An
+ * (authn.login.addIdentifier) with a kind and a value. An account holds at
+ * most one username, and the server answers a second one with the same 409
+ * authn.conflict as a name someone else took -- copy cannot distinguish
+ * them -- so the add face does not offer the username kind once the
+ * profile lists one. A username is a login name with no ownership to
+ * prove, so it is written in one step; a username already in use is
+ * answered 409 authn.conflict, and because that is the expected outcome of
+ * the one write this face exists for, the section names the username
+ * rather than rendering the code's account-state sentence. An
  * email is a contact address, so the add sends a code to it (the answer is
  * state "pending") and the code is submitted through POST
  * /auth/identifiers/verify (authn.login.verifyIdentifier); only the
@@ -38,6 +41,10 @@
  * write's inputs remembered, and a won challenge re-runs that one write
  * exactly once. A successful write refetches the profile so the rows
  * converge on the server's answer.
+ *
+ * The section has one failure slot: removal, add and verification share
+ * it, so a failure renders exactly one role="alert" banner (it sits above
+ * the add face, after the list).
  *
  * The section takes the session as its only prop -- the step-up dialog
  * drives it -- while the profile read and the writes travel on the shared
@@ -83,9 +90,11 @@ export interface IdentifiersSectionProps {
   readonly session: AuthSession
   /**
    * Whether the deployment serves the `authn.identifiers.email` feature.
-   * False removes the email option from the add face (usernames only);
-   * the host reads the feature document and passes the answer. Defaults
-   * to true, so a host that does not gate identifiers keeps the full face.
+   * False removes the email option from the add face (usernames only,
+   * unless the profile already lists a username, which leaves nothing to
+   * add); the host reads the feature document and passes the answer.
+   * Defaults to true, so a host that does not gate identifiers keeps the
+   * full face.
    */
   readonly emailAvailable?: boolean
 }
@@ -103,8 +112,6 @@ const KNOWN_IDENTIFIER_KINDS = new Set<string>([
 /** The kinds the add face offers here: a username and an email. A phone is
  * added through its own two-step surface (the SMS routes), not this one. */
 type AddKind = 'email' | 'username'
-const ADD_KINDS: readonly AddKind[] = ['email', 'username']
-const USERNAME_KINDS: readonly AddKind[] = ['username']
 
 /** The write a step-up dialog is armed for, so a won challenge re-runs
  * exactly it: a removal, the add that sends the code, or the code's
@@ -143,8 +150,6 @@ export function IdentifiersSection({
   const removeIdentifier = useAuthnLoginRemoveIdentifier()
   const addIdentifier = useAuthnLoginAddIdentifier()
   const verifyIdentifier = useAuthnLoginVerifyIdentifier()
-  /** The kinds the add face offers in this deployment. */
-  const addKinds = emailAvailable ? ADD_KINDS : USERNAME_KINDS
 
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
   const [failureCode, setFailureCode] = useState<string | null>(null)
@@ -186,6 +191,27 @@ export function IdentifiersSection({
 
   const pending = isPending && data === undefined
   const rows = !pending && data !== undefined ? data.identifiers : undefined
+  // An account holds at most one username. The server answers a second
+  // username with the same 409 authn.conflict as a name someone else took,
+  // so once the profile lists one the add face does not offer that kind:
+  // the client never sends a write whose refusal the copy cannot describe.
+  const usernamePresent =
+    rows !== undefined && rows.some((row) => row.kind === 'username')
+  /** The kinds the add face offers in this deployment and profile. */
+  const addKinds: AddKind[] = []
+  if (emailAvailable) {
+    addKinds.push('email')
+  }
+  if (!usernamePresent) {
+    addKinds.push('username')
+  }
+  // The selector's value: the chosen kind while it is still offered, and
+  // otherwise the first offered one (the profile can change under an open
+  // form). With no offered kind the face renders nothing, so the fallback
+  // is never shown.
+  const formKind: AddKind = addKinds.includes(addKind)
+    ? addKind
+    : (addKinds[0] ?? 'username')
   // A settled read that lists none, or one whose body omitted the key,
   // hands the section to the EmptyState, whose title stands in for the
   // hidden h2 header at its own level (headingLevel="h2" below) -- the
@@ -280,11 +306,11 @@ export function IdentifiersSection({
   }
 
   const valueLabel =
-    addKind === 'email'
+    formKind === 'email'
       ? t('identifiers.add.value.labelEmail')
       : t('identifiers.add.value.labelUsername')
   const valueHelper =
-    addKind === 'email'
+    formKind === 'email'
       ? t('identifiers.add.value.helperEmail')
       : t('identifiers.add.value.helperUsername')
 
@@ -330,7 +356,6 @@ export function IdentifiersSection({
       >
         {(settledRows) => (
           <Box>
-            {failureBanner}
             {/* The rows are one real list, as the sessions and bindings
                 rows are: a screen-reader user hears each identifier as one
                 item of a numbered set. role="list" keeps the list
@@ -420,6 +445,10 @@ export function IdentifiersSection({
         )}
       </AsyncSection>
 
+      {/* The section's one failure slot: removal, add and verification
+          render through it, so a failure is exactly one role="alert". */}
+      {failureBanner}
+
       <Box sx={{ mt: 2 }}>
         <Alert
           severity="success"
@@ -429,7 +458,7 @@ export function IdentifiersSection({
           {added ? t('identifiers.add.added') : ''}
         </Alert>
 
-        {!addOpen ? (
+        {addKinds.length === 0 ? null : !addOpen ? (
           <Button
             variant="outlined"
             size="small"
@@ -447,16 +476,13 @@ export function IdentifiersSection({
             <Typography variant="subtitle1" component="h3" sx={{ mb: 1 }}>
               {t('identifiers.add.title')}
             </Typography>
-            {/* Banners for the add face live here; the removal's banner sits
-                above the list. This one is only shown while the form is. */}
-            {failureBanner}
             <Box
               component="form"
               noValidate
               onSubmit={(event) => {
                 event.preventDefault()
                 if (sentTo === null) {
-                  void add(addKind, addValue)
+                  void add(formKind, addValue)
                 } else {
                   void verify(code)
                 }
@@ -476,7 +502,7 @@ export function IdentifiersSection({
                     select
                     fullWidth
                     label={t('identifiers.add.kind.label')}
-                    value={addKind}
+                    value={formKind}
                     disabled={addBusy}
                     onChange={(event) =>
                       setAddKind(event.target.value as AddKind)
@@ -490,8 +516,8 @@ export function IdentifiersSection({
                   </TextField>
                   <TextField
                     fullWidth
-                    type={addKind === 'email' ? 'email' : 'text'}
-                    autoComplete={addKind === 'email' ? 'email' : 'username'}
+                    type={formKind === 'email' ? 'email' : 'text'}
+                    autoComplete={formKind === 'email' ? 'email' : 'username'}
                     label={valueLabel}
                     helperText={valueHelper}
                     value={addValue}
@@ -504,7 +530,7 @@ export function IdentifiersSection({
                       variant="contained"
                       disabled={addBusy || addValue.trim() === ''}
                     >
-                      {addKind === 'email'
+                      {formKind === 'email'
                         ? t('identifiers.add.submitEmail')
                         : t('identifiers.add.submitUsername')}
                     </Button>

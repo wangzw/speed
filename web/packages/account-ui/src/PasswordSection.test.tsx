@@ -82,9 +82,13 @@ describe('PasswordSection', () => {
       screen.getByRole('button', { name: zhCN.password.submitFirst }),
     ).toBeTruthy()
     // "A password this account has not used before" describes a change; an
-    // account with no password needs the rule instead.
+    // account with no password needs the rule instead, and the rule names
+    // the length requirement without a number (the minimum is the
+    // deployment's setting).
     expect(screen.getByText(zhCN.password.new.helperFirst)).toBeTruthy()
     expect(screen.queryByText(zhCN.password.new.helper)).toBeNull()
+    expect(zhCN.password.new.helperFirst).toMatch(/长度需足够/)
+    expect(enUS.password.new.helperFirst).toMatch(/long enough/i)
 
     await expectNoAxeViolations()
   })
@@ -116,7 +120,18 @@ describe('PasswordSection', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.password.policyFailure)
     expect(alert).not.toHaveTextContent(zhCN.errors.authn.bad_request)
-    expect(enUS.password.policyFailure).toMatch(/does not meet the requirements/)
+    // The route's 400 covers a password that is too long and, when
+    // changing, one identical to the current password, so the sentence
+    // names both without a number.
+    expect(zhCN.password.policyFailure).toMatch(/不能过短，也不能过长/)
+    expect(zhCN.password.policyFailure).toMatch(/当前口令/)
+    expect(enUS.password.policyFailure).toMatch(
+      /neither too short nor too long/i,
+    )
+    expect(enUS.password.policyFailure).toMatch(/current password/i)
+    expect(enUS.password.policyFailure).toMatch(
+      /does not meet the requirements/,
+    )
   })
 
   it('reports a first password as set and names the other devices signed out', async () => {

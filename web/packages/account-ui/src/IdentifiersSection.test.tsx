@@ -742,6 +742,112 @@ describe('IdentifiersSection', () => {
     expect(combo).not.toHaveTextContent(zhCN.identifiers.add.kind.email)
   })
 
+  it('does not offer the username kind when the profile already lists one', async () => {
+    // An account holds at most one username, and the server answers a
+    // second one with the same 409 as a name someone else took. The add
+    // face never sends that write: once a username is listed, the kind
+    // leaves the selector.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({ id: 'id-user', kind: 'username', value: 'ada' }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    // The listed username still renders as a row.
+    expect(await screen.findByText('ada')).toBeTruthy()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    const combo = await screen.findByRole('combobox', {
+      name: zhCN.identifiers.add.kind.label,
+    })
+    expect(combo).toHaveTextContent(zhCN.identifiers.add.kind.email)
+    fireEvent.mouseDown(combo)
+    expect(
+      await screen.findByRole('option', {
+        name: zhCN.identifiers.add.kind.email,
+      }),
+    ).toBeTruthy()
+    expect(
+      screen.queryByRole('option', {
+        name: zhCN.identifiers.add.kind.username,
+      }),
+    ).toBeNull()
+  })
+
+  it('renders no add face when a username exists and email is unavailable', async () => {
+    // With the username kind gone and no email channel there is nothing
+    // left to add, so the section does not offer the opening at all.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({ id: 'id-user', kind: 'username', value: 'ada' }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <IdentifiersSection session={rig.session} emailAvailable={false} />,
+    )
+
+    expect(await screen.findByText('ada')).toBeTruthy()
+    expect(
+      screen.queryByRole('button', { name: zhCN.identifiers.add.open }),
+    ).toBeNull()
+  })
+
+  it('renders one failure banner while the add face is open', async () => {
+    // Removal, add and verification share one slot: a failure with a
+    // non-empty list and the open form is still exactly one alert.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({ identifiers: [identifier({ id: 'id-email' })] }),
+        )
+      }
+      if (call.method === 'POST' && call.path === '/auth/identifiers') {
+        return errorResponse(503, 'authn.unavailable')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await screen.findByText('ada@example.test')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+      'new@x.test',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+    )
+
+    const alerts = await screen.findAllByRole('alert')
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0]).toHaveTextContent(zhCN.errors.authn.unavailable)
+  })
+
   it('raises the identifier actions to the 44px floor under a coarse pointer', async () => {
     // The row remove and the add-open controls are compact actions; on a
     // finger-driven device each one gates up to the 44x44 floor.
