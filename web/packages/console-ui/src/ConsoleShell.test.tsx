@@ -134,16 +134,20 @@ describe('ConsoleShell', () => {
     expect(screen.getByRole('main')).toBeInTheDocument()
   })
 
-  it('fixes the banner to the top, matching the platform frame', () => {
+  it('keeps the banner in the fixed shell head, matching the platform frame', () => {
     renderWithProviders(
       <Shell routes={routes} title="Console">
         <h1>Home</h1>
       </Shell>,
       { operations },
     )
-    // The banner does not scroll away with the page, the same treatment the
-    // tenant frame's top bar carries.
-    expect(screen.getByRole('banner')).toHaveClass('MuiAppBar-positionFixed')
+    // The banner does not scroll away with the page: AppShell pins the
+    // one head container and keeps the AppBar in normal flow inside it.
+    const banner = screen.getByRole('banner')
+    const head = banner.parentElement
+    expect(head).not.toBeNull()
+    expect(getComputedStyle(head as Element).position).toBe('fixed')
+    expect(banner).toHaveClass('MuiAppBar-positionStatic')
   })
 
   it('derives the navigation from the labelled declarations only', () => {

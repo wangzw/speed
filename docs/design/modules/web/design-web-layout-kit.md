@@ -215,7 +215,7 @@ classDiagram
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | `AppShell`（响应式头部、导航抽屉、内容区与地标） | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`、`AppShellProps`、`AppShellNavItem` |
-| `AppShell` 的 `banner` 槽（应用栏之下的整幅横幅） | 部分实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`、`AppShellProps`、`banner` |
+| `AppShell` 的 `banner` 槽（应用栏之下的整幅横幅） | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`、`AppShellProps`、`banner` |
 | 桌面侧边栏收起（受控 prop 对，收为仅图标的窄栏） | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `sidebarCollapsed`、`onSidebarCollapsedChange`、`railIconItemSx`／`railTextItemSx`、`RailTooltip` |
 | 身份块 Avatar | 已实现 | `web/packages/layout-kit/src/components/Avatar.tsx` `Avatar`、`AvatarProps` |
 | `RouteGuard`（按注入状态放行的三态门） | 已实现 | `web/packages/layout-kit/src/components/RouteGuard.tsx` `RouteGuard`、`RouteGuardProps`、`RouteGuardStatus` |

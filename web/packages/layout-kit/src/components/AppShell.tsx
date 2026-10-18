@@ -21,22 +21,27 @@
  * render exactly the host content passed in and nothing implicit -- an
  * absent slot renders nothing, never a placeholder.
  *
- * The `banner` slot is part of the shell's fixed head, with the AppBar:
- * it is pinned to the top of the viewport, spans the full width, and
- * stays there with the AppBar when the page scrolls. The AppBar starts
- * below it, and the spacers inside `main` and the drawer papers reserve
- * the banner's height plus the AppBar's, so neither the header nor the
- * navigation covers content. The slot container carries no padding,
+ * The `banner` slot is part of the shell's fixed head, below the AppBar:
+ * the head is one fixed container pinned to the top of the viewport,
+ * holding the AppBar first and the banner immediately after it in normal
+ * flow. The whole head stays in the viewport while the page scrolls, the
+ * banner sits below the header visually and in DOM order, and the
+ * spacers inside `main` and the drawer papers reserve the fixed head's
+ * measured height, so neither the header nor the navigation covers
+ * content. Measuring the one container -- rather than the AppBar and the
+ * banner separately and deriving an offset from one of them -- keeps a
+ * wrapped header and a tall banner in lockstep with the spacers with no
+ * mutually recursive offsets. The slot container carries no padding,
  * border or minimum height: its height is exactly what the host node
- * renders, so an empty host node takes zero height and the AppBar stays
- * at the viewport top. It sits above page content but below modal panels
- * and dialogs. The banner is visible at every breakpoint (wrapping is
- * the host node's own concern) and belongs to the shell rather than to
- * `children`, so a host that swaps the content on a route change never
- * unmounts it. The slot adds no landmark and no live region -- it is not
- * the `banner` landmark, which is the AppBar -- so the shell's landmark
- * structure (header, nav, main) is unchanged. Absent, `null` or `false`
- * renders no container and takes no height.
+ * renders, so an empty host node adds nothing to the head. The fixed
+ * head sits above page content and the drawer papers but below modal
+ * panels and dialogs. The banner is visible at every breakpoint
+ * (wrapping is the host node's own concern) and belongs to the shell
+ * rather than to `children`, so a host that swaps the content on a route
+ * change never unmounts it. The slot adds no landmark and no live region
+ * -- it is not the `banner` landmark, which is the AppBar -- so the
+ * shell's landmark structure (header, nav, main) is unchanged. Absent,
+ * `null` or `false` renders no slot container and adds no height.
  *
  * The navigation has two optional levels beyond a flat list, both purely
  * additive over the original `AppShellNavItem[]`. A `navItems` element
@@ -100,15 +105,15 @@
  * contract untouched: nav activation reports nothing and closing stays
  * the host's own next render.
  *
- * Because the header row can wrap, its rendered height is measured
- * (ResizeObserver on the app bar and the banner slot, where the browser
- * supports it) and
- * the three spacer placeholders -- the one inside the drawer paper and
- * the one inside `main` for each drawer variant -- derive their height
- * from that measurement rather than assuming the theme's single-row
- * toolbar height, so a wrapped header can never cover the top of the
- * content it overlays. Where no ResizeObserver exists (jsdom), the
- * spacers keep the plain theme-height Toolbar.
+ * Because the header row can wrap and the banner has its own height, the
+ * fixed head container's rendered height is measured (ResizeObserver,
+ * where the browser supports it) and the three spacer placeholders --
+ * the one inside the drawer paper and the one inside `main` for each
+ * drawer variant -- derive their height from that measurement rather
+ * than assuming the theme's single-row toolbar height, so the head can
+ * never cover the top of the content it overlays. Where no
+ * ResizeObserver exists (jsdom), the spacers keep the plain theme-height
+ * Toolbar and the banner contributes no measured height.
  */
 
 import { useEffect, useId, useRef, useState } from 'react'
@@ -215,16 +220,18 @@ export interface AppShellProps {
   /** Far end-of-AppBar content: typically an account/user menu trigger. */
   readonly userMenu?: ReactNode
   /**
-   * A full-width banner above the app bar, host content and already
-   * translated. It is part of the fixed shell head: pinned to the top of
-   * the viewport with the app bar, which starts below it, and reserved
-   * by the content spacers at every breakpoint. The slot adds no
-   * padding, border or minimum height -- its height is exactly what the
-   * host node renders, and an empty node takes none. The slot belongs to
-   * the shell, so a route change never unmounts it; it adds no landmark
-   * and no live region -- the host node carries whatever roles it needs,
-   * and the banner landmark remains the app bar. Absent, `null` or
-   * `false` renders no container and takes no height.
+   * A full-width banner below the app bar, host content and already
+   * translated. It is part of the fixed shell head: the head is one
+   * fixed container holding the app bar first and the banner after it in
+   * normal flow, so the banner sits below the header in DOM order and on
+   * screen, and the content spacers reserve the head's measured height
+   * at every breakpoint. The slot adds no padding, border or minimum
+   * height -- its height is exactly what the host node renders, and an
+   * empty node adds none. The slot belongs to the shell, so a route
+   * change never unmounts it; it adds no landmark and no live region --
+   * the host node carries whatever roles it needs, and the banner
+   * landmark remains the app bar. Absent, `null` or `false` renders no
+   * slot container and adds no height.
    */
   readonly banner?: ReactNode
   /**
@@ -716,59 +723,38 @@ export function AppShell({
     }
   }, [isDesktop, isControlled, mobileOpen, onMobileOpenChange])
 
-  // The banner is part of the fixed shell head: pinned to the viewport
-  // top, with the AppBar starting below it. Its height is measured for
-  // the same reason the header's is -- only the rendered box knows it --
-  // and every spacer reserves the banner's height plus the AppBar's.
-  // The slot has no padding or minimum height, so an empty host node
-  // measures zero and the AppBar stays at the viewport top. Without a
-  // ResizeObserver (jsdom) the banner's height is taken as zero, exactly
-  // as the header's measurement is inert there.
+  // Whether the host supplied a banner at all. An absent, null or false
+  // slot renders no container; a truthy node -- including one that
+  // renders as a zero-height live region -- keeps the slot in the head.
   const hasBanner = banner !== undefined && banner !== null && banner !== false
-  const [bannerHeight, setBannerHeight] = useState<number | null>(null)
-  const bannerRef = useRef<HTMLDivElement | null>(null)
 
-  // The header row wraps under real overflow pressure, so its rendered
-  // height is measured and every spacer placeholder derives its height
-  // from the measurement (see the "spacer" note at the placeholders).
-  // Without a ResizeObserver (jsdom) the measurement never arrives and
-  // the spacers keep the theme toolbar height, exactly as before. One
-  // observer watches both measured boxes: the AppBar's height is what
-  // the spacers clear, the banner's is the offset the AppBar starts at
-  // and an addition to every spacer.
-  const [headerHeight, setHeaderHeight] = useState<number | null>(null)
-  const appBarRef = useRef<HTMLDivElement | null>(null)
+  // The fixed head's rendered height is the number every spacer clears.
+  // The header row wraps under real overflow pressure and the banner has
+  // its own height, so only the rendered container knows the total; one
+  // ResizeObserver on that container keeps the spacers in lockstep with
+  // it without deriving an offset from either child. Without a
+  // ResizeObserver (jsdom) the measurement never arrives and the
+  // spacers keep the theme toolbar height, exactly as before.
+  const [headHeight, setHeadHeight] = useState<number | null>(null)
+  const headRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     if (typeof ResizeObserver === 'undefined') {
       return undefined
     }
-    const appBar = appBarRef.current
-    const bannerNode = bannerRef.current
-    if (appBar === null && bannerNode === null) {
+    const head = headRef.current
+    if (head === null) {
       return undefined
     }
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        if (entry.target === appBar) {
-          setHeaderHeight(Math.round(entry.contentRect.height))
-        } else if (entry.target === bannerNode) {
-          setBannerHeight(Math.round(entry.contentRect.height))
+        if (entry.target === head) {
+          setHeadHeight(Math.round(entry.contentRect.height))
         }
       }
     })
-    if (appBar !== null) {
-      observer.observe(appBar)
-    }
-    if (bannerNode !== null) {
-      observer.observe(bannerNode)
-    }
+    observer.observe(head)
     return () => observer.disconnect()
-  }, [hasBanner])
-
-  // How far the AppBar starts below the top of the viewport: the
-  // banner's measured height while one is mounted, zero otherwise (and
-  // zero without a ResizeObserver, where nothing is measured).
-  const bannerOffset = hasBanner && bannerHeight !== null ? bannerHeight : 0
+  }, [])
 
   // The skip link's activation target. Kept in a ref rather than
   // resolved by id so the handler never touches the document: the
@@ -798,22 +784,20 @@ export function AppShell({
 
   // The three offset placeholders that keep content clear of the fixed
   // shell head: one inside the drawer paper and one inside `main`, for
-  // whichever drawer variant is mounted. When the header height has been
-  // measured, each spacer carries the banner's height plus the header's
-  // exact height; before any measurement exists it is a plain
-  // theme-height Toolbar (the single-row case, which is also the whole
-  // jsdom case, where the banner height is taken as zero).
+  // whichever drawer variant is mounted. When the fixed head's height
+  // has been measured, each spacer carries exactly that height; before
+  // any measurement exists it is a plain theme-height Toolbar (the
+  // single-row case, which is also the whole jsdom case).
   //
   // The measured height is written as an inline style, never through
   // `sx`: the theme toolbar mixin contributes its own `min-height` --
   // 56 at the base and 64 under the `sm` breakpoint -- and that
   // breakpoint rule lands after an equal-specificity `sx` class, so an
   // `sx` height is overridden to the theme's single-row height from
-  // 600px up, where the banner plus a wrapped header then cover the
+  // 600px up, where a wrapped header plus the banner then cover the
   // top of content again. An inline style outranks every class rule,
   // so the measured height holds at every viewport width.
-  const spacerMinHeight =
-    headerHeight !== null ? bannerOffset + headerHeight : null
+  const spacerMinHeight = headHeight
   const spacer = (
     <Toolbar
       style={
@@ -830,8 +814,9 @@ export function AppShell({
       ]}
     >
       {/* Visually hidden until focused; the first focusable element in
-          the shell, so it renders before the banner slot and the AppBar
-          in DOM order -- a focusable control inside the banner slot
+          the shell, so it renders before the fixed head (the AppBar and
+          the banner below it) in DOM order -- every control inside the
+          head, including the banner's own end and close controls,
           therefore follows it in the tab order instead of preceding it.
           It sits outside the shell's landmarks (the skip target is
           `main`), which is allowed for a link whose fragment target
@@ -879,81 +864,81 @@ export function AppShell({
       >
         {t('appShell.skipToContent')}
       </Link>
-      {hasBanner && (
-        // The banner is part of the fixed shell head, pinned to the
-        // viewport top and spanning its full width; the AppBar starts
-        // below it. The slot container adds no padding, border or
-        // minimum height -- its height is exactly what the host node
-        // renders -- and no landmark (the AppBar is the banner landmark)
-        // and no live region.
-        <Box
-          ref={bannerRef}
-          sx={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            zIndex: theme.zIndex.drawer + 1,
-          }}
-        >
-          {banner}
-        </Box>
-      )}
-      <AppBar
-        position="fixed"
-        ref={appBarRef}
-        sx={{ zIndex: theme.zIndex.drawer + 1, top: bannerOffset }}
+      {/* The fixed shell head: one pinned container holding the AppBar
+          first and the banner immediately after it, in normal flow. Its
+          measured height is what every spacer reserves; keeping both
+          children in one container means neither child's position
+          derives from the other's measurement. The container carries the
+          layer the AppBar used to carry (drawer + 1): above page content
+          and the drawer papers, below modal panels and dialogs. The
+          banner slot adds no padding, border or minimum height -- its
+          height is exactly what the host node renders -- and no landmark
+          (the AppBar is the banner landmark) and no live region. */}
+      <Box
+        ref={headRef}
+        sx={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: theme.zIndex.drawer + 1,
+          display: 'flex',
+          flexDirection: 'column',
+        }}
       >
-        <Toolbar sx={{ flexWrap: 'wrap', rowGap: 1 }}>
-          {!isDesktop && (
-            <IconButton
-              color="inherit"
-              edge="start"
-              aria-label={mobileOpen ? t('appShell.closeNav') : t('appShell.openNav')}
-              aria-expanded={mobileOpen}
-              onClick={() => setMobileOpen(!mobileOpen)}
-              sx={{ marginRight: 2 }}
-            >
-              {mobileOpen ? <CloseIcon /> : <MenuIcon />}
-            </IconButton>
-          )}
-          {isDesktop && collapseToggleEnabled && (
-            <IconButton
-              color="inherit"
-              edge="start"
-              aria-label={
-                sidebarCollapsed
-                  ? t('appShell.expandNav')
-                  : t('appShell.collapseNav')
-              }
-              aria-expanded={!sidebarCollapsed}
-              onClick={() =>
-                onSidebarCollapsedChange?.(!sidebarCollapsed)
-              }
-              sx={{ marginRight: 2 }}
-            >
-              {sidebarCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
-            </IconButton>
-          )}
-          <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', minWidth: 0 }}>
-            {header}
-          </Box>
-          {headerActions !== undefined && (
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: 1,
-                marginRight: userMenu !== undefined ? 2 : 0,
-              }}
-            >
-              {headerActions}
+        <AppBar position="static">
+          <Toolbar sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+            {!isDesktop && (
+              <IconButton
+                color="inherit"
+                edge="start"
+                aria-label={mobileOpen ? t('appShell.closeNav') : t('appShell.openNav')}
+                aria-expanded={mobileOpen}
+                onClick={() => setMobileOpen(!mobileOpen)}
+                sx={{ marginRight: 2 }}
+              >
+                {mobileOpen ? <CloseIcon /> : <MenuIcon />}
+              </IconButton>
+            )}
+            {isDesktop && collapseToggleEnabled && (
+              <IconButton
+                color="inherit"
+                edge="start"
+                aria-label={
+                  sidebarCollapsed
+                    ? t('appShell.expandNav')
+                    : t('appShell.collapseNav')
+                }
+                aria-expanded={!sidebarCollapsed}
+                onClick={() =>
+                  onSidebarCollapsedChange?.(!sidebarCollapsed)
+                }
+                sx={{ marginRight: 2 }}
+              >
+                {sidebarCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+              </IconButton>
+            )}
+            <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', minWidth: 0 }}>
+              {header}
             </Box>
-          )}
-          {userMenu}
-        </Toolbar>
-      </AppBar>
+            {headerActions !== undefined && (
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 1,
+                  marginRight: userMenu !== undefined ? 2 : 0,
+                }}
+              >
+                {headerActions}
+              </Box>
+            )}
+            {userMenu}
+          </Toolbar>
+        </AppBar>
+        {hasBanner && <Box sx={{ width: '100%' }}>{banner}</Box>}
+      </Box>
       <Box
         sx={{
           width: {

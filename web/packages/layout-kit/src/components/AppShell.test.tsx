@@ -993,8 +993,11 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      // The observer watches the header/banner itself ...
-      expect(resizeObserver.observedElement()).toBe(getByRole('banner'))
+      // The observer watches the one fixed head container (the AppBar's
+      // parent), whose height is the AppBar plus anything below it.
+      expect(resizeObserver.observedElement()).toBe(
+        getByRole('banner').parentElement,
+      )
 
       // ... and reports a wrapped, two-row header height.
       resizeObserver.emitHeight(112)
@@ -1034,7 +1037,18 @@ describe('AppShell', () => {
       vi.unstubAllGlobals()
     })
 
-    it('pins the host node to the viewport top, above the app bar', () => {
+    /** The one fixed head container: the banner slot's parent, holding
+     * the AppBar first and the banner after it. */
+    const headOf = (notice: Element): HTMLElement => {
+      const slot = notice.parentElement
+      const head = slot?.parentElement ?? null
+      if (slot === null || head === null) {
+        throw new Error('expected the banner inside the fixed head')
+      }
+      return head
+    }
+
+    it('places the banner below the app bar inside one fixed shell head', () => {
       mockMatchMedia(true)
       const { getByTestId, getByRole } = renderWithProviders(
         <AppShell
@@ -1046,37 +1060,42 @@ describe('AppShell', () => {
       )
       const notice = getByTestId('notice')
       const appBar = getByRole('banner')
-      // Above the app bar: the slot precedes the header landmark in
-      // document order.
+      // Below the app bar: the AppBar precedes the banner in document
+      // order, and the two are children of the same fixed head.
       expect(
-        notice.compareDocumentPosition(appBar) &
+        appBar.compareDocumentPosition(notice) &
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy()
-      // Part of the fixed shell head: pinned to the viewport top and
-      // spanning its width, so it stays with the AppBar while the page
-      // scrolls. It is neither the banner landmark nor a live region.
-      const slot = notice.parentElement
-      expect(slot).not.toBeNull()
-      const style = getComputedStyle(slot as Element)
-      expect(style.position).toBe('fixed')
-      expect(style.top).toBe('0px')
-      expect(style.left).toBe('0px')
-      expect(style.right).toBe('0px')
+      const head = headOf(notice)
+      expect(head).toContainElement(appBar)
+      expect(head).toContainElement(notice)
+      expect(head.children[0]).toBe(appBar)
+      expect(head.children[1]).toBe(notice.parentElement)
+
+      // The head is the fixed, full-width, pinned container; the AppBar
+      // itself stays in normal flow inside it.
+      const headStyle = getComputedStyle(head)
+      expect(headStyle.position).toBe('fixed')
+      expect(headStyle.top).toBe('0px')
+      expect(headStyle.left).toBe('0px')
+      expect(headStyle.right).toBe('0px')
+      expect(headStyle.display).toBe('flex')
+      expect(headStyle.flexDirection).toBe('column')
+      expect(appBar).toHaveClass('MuiAppBar-positionStatic')
+
       // The slot adds no padding, border or minimum height of its own:
       // its height is exactly the host node's.
-      expect(style.padding).toMatch(/^0(px)?$/)
-      expect(style.borderWidth).toMatch(/^0(px)?$/)
-      expect(style.minHeight).toBe('auto')
-      // Same layer as the app bar (drawer + 1), which is above the
-      // permanent drawer paper and page content and below modal panels
-      // and dialogs. The strict equality pins the design's lower bound:
-      // a slot at `drawer` or below is painted under the permanent
-      // drawer paper's left edge.
+      const slot = getComputedStyle(notice.parentElement as Element)
+      expect(slot.padding).toMatch(/^0(px)?$/)
+      expect(slot.borderWidth).toMatch(/^0(px)?$/)
+      expect(slot.minHeight).toBe('auto')
+
+      // Same layer the AppBar carried before: above the permanent drawer
+      // paper and page content, below modal panels and dialogs.
       const { theme } = createAppTheme()
-      const zIndex = Number(style.zIndex)
+      const zIndex = Number(headStyle.zIndex)
       expect(zIndex).toBe(theme.zIndex.drawer + 1)
       expect(zIndex).toBeLessThan(theme.zIndex.modal)
-      expect(String(zIndex)).toBe(getComputedStyle(appBar).zIndex)
       const paper = document.querySelector('.MuiDrawer-paper')
       expect(paper).not.toBeNull()
       expect(zIndex).toBeGreaterThan(
@@ -1084,7 +1103,7 @@ describe('AppShell', () => {
       )
     })
 
-    it('offsets the app bar and reserves the banner plus header height in every spacer', () => {
+    it('measures the one fixed head container and reserves that height in every spacer', () => {
       mockMatchMedia(true)
       const resizeObserver = stubResizeObserver()
       const { getByTestId, getByRole } = renderWithProviders(
@@ -1095,43 +1114,49 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      const slot = getByTestId('notice').parentElement
-      expect(slot).not.toBeNull()
-      // Both measured boxes are observed: the AppBar's height feeds the
-      // spacers together with the banner's, which also offsets the AppBar.
-      expect(resizeObserver.observedElements()).toContain(slot)
-      const appBar = getByRole('banner')
-      resizeObserver.emitHeightFor(appBar, 112)
-      resizeObserver.emitHeightFor(slot as Element, 48)
+      const head = headOf(getByTestId('notice'))
+      // Exactly one observed box: the head. Its height already contains
+      // the AppBar and the banner, so no child's measurement is needed.
+      expect(resizeObserver.observedElements()).toEqual([head])
+      expect(resizeObserver.instances()).toHaveLength(1)
 
-      // The AppBar starts below the banner ...
-      expect(appBar).toHaveStyle({ top: '48px' })
-      // ... and both the content and the navigation reserve the banner's
-      // height plus the header's.
+      // The AppBar keeps no independent top offset.
+      expect((getByRole('banner') as HTMLElement).style.top).toBe('')
+
+      resizeObserver.emitHeightFor(head, 160)
+
+      // The main landmark's spacer carries the head's measured height ...
       const mainSpacer = getByRole('main').querySelector('.MuiToolbar-root')
       expect(mainSpacer).not.toBeNull()
       expect(mainSpacer).toHaveStyle({ minHeight: '160px' })
+      // ... and so does the drawer paper's spacer ...
       const paper = document.querySelector('.MuiDrawer-paper')
+      expect(paper).not.toBeNull()
       const drawerSpacer = paper?.querySelector('.MuiToolbar-root') ?? null
       expect(drawerSpacer).not.toBeNull()
       expect(drawerSpacer).toHaveStyle({ minHeight: '160px' })
-      // The paper starts at the viewport top itself: the banner covers
-      // its first strip, and the spacer inside it reserves the head, so
-      // the paper carries no top offset of its own.
-      expect(paper).not.toBeNull()
-      expect(getComputedStyle(paper as Element).top).not.toBe('48px')
+      // ... and the paper itself carries no top offset: the fixed head
+      // covers its first strip, and the spacer inside it reserves the
+      // same head height.
+      expect(getComputedStyle(paper as Element).top).not.toBe('160px')
+      // The first drawer item sits below the spacer.
+      const nav = paper?.querySelector('nav') ?? null
+      expect(nav).not.toBeNull()
+      expect(
+        (drawerSpacer as Node).compareDocumentPosition(nav as Node) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
     })
 
-    it('writes each measured spacer height as an inline style, out of reach of the theme toolbar breakpoint rule', () => {
+    it('writes the measured head height as an inline style, out of reach of the theme toolbar breakpoint rule', () => {
       // The theme toolbar mixin contributes `min-height: 56` at the base
       // and `64` under `sm`, and that breakpoint rule lands after an
       // equal-specificity `sx` class -- an sx-written height is
-      // overridden from 600px up, where the banner plus header then
-      // covers the top of content again. jsdom evaluates no media
-      // conditions, so this test proves where the height is carried
-      // (the style attribute, which no class rule outranks), not how a
-      // real viewport paints; the declaration that survives there is
-      // the one asserted here.
+      // overridden from 600px up, where the head then covers the top of
+      // content again. jsdom evaluates no media conditions, so this test
+      // proves where the height is carried (the style attribute, which no
+      // class rule outranks), not how a real viewport paints; the
+      // declaration that survives there is the one asserted here.
       mockMatchMedia(true)
       const resizeObserver = stubResizeObserver()
       const { getByTestId, getByRole } = renderWithProviders(
@@ -1142,10 +1167,8 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      const slot = getByTestId('notice').parentElement
-      expect(slot).not.toBeNull()
-      resizeObserver.emitHeightFor(getByRole('banner'), 112)
-      resizeObserver.emitHeightFor(slot as Element, 48)
+      const head = headOf(getByTestId('notice'))
+      resizeObserver.emitHeightFor(head, 160)
 
       const mainSpacer =
         getByRole('main').querySelector<HTMLElement>('.MuiToolbar-root')
@@ -1158,7 +1181,7 @@ describe('AppShell', () => {
       expect(drawerSpacer?.style.minHeight).toBe('160px')
     })
 
-    it('offsets the app bar and reserves the banner plus header in the temporary drawer at narrow widths', () => {
+    it('reserves the head height in the temporary drawer at narrow widths', () => {
       mockMatchMedia(false)
       const resizeObserver = stubResizeObserver()
       const { getByTestId, getByRole } = renderWithProviders(
@@ -1169,31 +1192,25 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      const slot = getByTestId('notice').parentElement
-      expect(slot).not.toBeNull()
+      const head = headOf(getByTestId('notice'))
       // The temporary drawer is keepMounted, so its paper and spacer are
       // reachable even while the drawer is closed.
       const drawerSpacer =
         document.querySelector('.MuiDrawer-paper .MuiToolbar-root')
       expect(drawerSpacer).not.toBeNull()
 
-      resizeObserver.emitHeightFor(getByRole('banner'), 56)
-      resizeObserver.emitHeightFor(slot as Element, 48)
+      resizeObserver.emitHeightFor(head, 104)
 
-      // The app bar shifts below the banner at this breakpoint too ...
-      expect(getByRole('banner')).toHaveStyle({ top: '48px' })
-      // ... and the mobile paper's first navigation item clears the same
-      // banner-plus-header height the content does.
       expect(
         getByRole('main').querySelector('.MuiToolbar-root'),
       ).toHaveStyle({ minHeight: '104px' })
       expect(drawerSpacer).toHaveStyle({ minHeight: '104px' })
     })
 
-    it('takes the banner height as zero where no ResizeObserver exists', () => {
+    it('keeps the plain theme toolbar spacer where no ResizeObserver exists', () => {
       mockMatchMedia(true)
       expect(typeof ResizeObserver).toBe('undefined')
-      const { getByRole } = renderWithProviders(
+      const { getByRole, getByTestId } = renderWithProviders(
         <AppShell
           navItems={NAV_ITEMS}
           banner={<p data-testid="notice">Impersonating</p>}
@@ -1201,9 +1218,11 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      // Unmeasured means zero: the app bar stays at the viewport top and
-      // the spacer keeps the plain theme toolbar height.
-      expect(getByRole('banner')).toHaveStyle({ top: '0px' })
+      // Unmeasured means the theme's single-row toolbar: the banner still
+      // follows the AppBar in document order, so it cannot overlap it.
+      const head = headOf(getByTestId('notice'))
+      expect(head.children[0]).toBe(getByRole('banner'))
+      expect(head.children[1]).not.toBeUndefined()
       const mainSpacer =
         getByRole('main').querySelector<HTMLElement>('.MuiToolbar-root')
       expect(mainSpacer).not.toBeNull()
@@ -1211,76 +1230,10 @@ describe('AppShell', () => {
       expect(getComputedStyle(mainSpacer as Element).marginTop).toMatch(/^0(px)?$/)
     })
 
-    it('leaves the spacer at the plain theme height when only the banner height has been measured', () => {
+    it('drops the banner slot and re-reserves the head when the banner leaves after being measured', () => {
       mockMatchMedia(true)
       const resizeObserver = stubResizeObserver()
-      const { getByTestId, getByRole } = renderWithProviders(
-        <AppShell
-          navItems={NAV_ITEMS}
-          banner={<p data-testid="notice">Impersonating</p>}
-        >
-          content
-        </AppShell>,
-      )
-      const slot = getByTestId('notice').parentElement
-      expect(slot).not.toBeNull()
-      // Only the banner's own height has arrived; the header's has not.
-      resizeObserver.emitHeightFor(slot as Element, 48)
-      const mainSpacer =
-        getByRole('main').querySelector<HTMLElement>('.MuiToolbar-root')
-      expect(mainSpacer).not.toBeNull()
-      // Still the theme's plain Toolbar: no measured height and no pixel
-      // value written as a theme spacing multiplier (48px must never
-      // become 384px).
-      expect((mainSpacer as HTMLElement).style.minHeight).toBe('')
-      expect(getComputedStyle(mainSpacer as Element).marginTop).toMatch(/^0(px)?$/)
-      const drawerSpacer = document.querySelector('.MuiDrawer-paper .MuiToolbar-root')
-      expect(drawerSpacer).not.toBeNull()
-      expect(getComputedStyle(drawerSpacer as Element).marginTop).toMatch(/^0(px)?$/)
-    })
-
-    it.each([null, undefined, false] as const)(
-      'zeroes the banner offset and the spacers when the banner becomes %s after being measured',
-      (banner) => {
-        mockMatchMedia(true)
-        const resizeObserver = stubResizeObserver()
-        const { getByTestId, getByRole, queryByTestId, rerender } =
-          renderWithProviders(
-            <AppShell
-              navItems={NAV_ITEMS}
-              banner={<p data-testid="notice">Impersonating</p>}
-            >
-              content
-            </AppShell>,
-          )
-        const slot = getByTestId('notice').parentElement
-        expect(slot).not.toBeNull()
-        resizeObserver.emitHeightFor(getByRole('banner'), 112)
-        resizeObserver.emitHeightFor(slot as Element, 48)
-        expect(getByRole('banner')).toHaveStyle({ top: '48px' })
-
-        rerender(
-          <AppShell navItems={NAV_ITEMS} banner={banner}>
-            content
-          </AppShell>,
-        )
-        expect(queryByTestId('notice')).not.toBeInTheDocument()
-        // The stale measurement no longer offsets the app bar ...
-        expect(getByRole('banner')).toHaveStyle({ top: '0px' })
-        // ... and the spacers keep only the header height.
-        expect(
-          getByRole('main').querySelector('.MuiToolbar-root'),
-        ).toHaveStyle({ minHeight: '112px' })
-        expect(
-          document.querySelector('.MuiDrawer-paper .MuiToolbar-root'),
-        ).toHaveStyle({ minHeight: '112px' })
-      },
-    )
-
-    it('disconnects the observer on every banner change and on unmount, measuring only the live banner', () => {
-      mockMatchMedia(true)
-      const resizeObserver = stubResizeObserver()
-      const { getByTestId, queryByTestId, rerender, unmount } =
+      const { getByTestId, getByRole, queryByTestId, rerender } =
         renderWithProviders(
           <AppShell
             navItems={NAV_ITEMS}
@@ -1289,26 +1242,28 @@ describe('AppShell', () => {
             content
           </AppShell>,
         )
-      const firstSlot = getByTestId('notice').parentElement
-      expect(firstSlot).not.toBeNull()
-      expect(resizeObserver.observedElements()).toContain(firstSlot)
-      expect(resizeObserver.observedElements()).toHaveLength(2)
-      expect(resizeObserver.instances()).toHaveLength(1)
+      const head = headOf(getByTestId('notice'))
+      resizeObserver.emitHeightFor(head, 160)
+      expect(
+        getByRole('main').querySelector('.MuiToolbar-root'),
+      ).toHaveStyle({ minHeight: '160px' })
 
-      // The banner leaves: the old observer is disconnected (it watched
-      // a node that no longer exists) and its replacement watches the
-      // app bar alone.
       rerender(<AppShell navItems={NAV_ITEMS}>content</AppShell>)
       expect(queryByTestId('notice')).not.toBeInTheDocument()
-      expect(resizeObserver.observedElements()).not.toContain(firstSlot)
-      expect(resizeObserver.observedElements()).toHaveLength(1)
-      expect(resizeObserver.instances()).toHaveLength(2)
-      expect(resizeObserver.instances().at(0)?.disconnected).toBe(true)
-      expect(resizeObserver.instances().at(1)?.disconnected).toBe(false)
+      // The head itself stays mounted (it holds the AppBar); only the
+      // banner slot is gone, and the observer reports the new height.
+      expect(getByRole('banner').parentElement).toBe(head)
+      expect(head.children).toHaveLength(1)
+      resizeObserver.emitHeightFor(head, 112)
+      expect(
+        getByRole('main').querySelector('.MuiToolbar-root'),
+      ).toHaveStyle({ minHeight: '112px' })
+    })
 
-      // A new banner mounts: the new node is the one watched, not the
-      // removed one.
-      rerender(
+    it('keeps one observer on the fixed head for the component lifetime and disconnects on unmount', () => {
+      mockMatchMedia(true)
+      const resizeObserver = stubResizeObserver()
+      const { getByTestId, unmount, rerender } = renderWithProviders(
         <AppShell
           navItems={NAV_ITEMS}
           banner={<p data-testid="notice">Impersonating</p>}
@@ -1316,10 +1271,20 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      const secondSlot = getByTestId('notice').parentElement
-      expect(secondSlot).not.toBe(firstSlot)
-      expect(resizeObserver.observedElements()).toContain(secondSlot)
-      expect(resizeObserver.observedElements()).not.toContain(firstSlot)
+      const head = headOf(getByTestId('notice'))
+      expect(resizeObserver.observedElements()).toEqual([head])
+      expect(resizeObserver.instances()).toHaveLength(1)
+
+      // A different banner node reuses the same head and the same
+      // observer: the measured box did not change.
+      const other = <p data-testid="other">Other notice</p>
+      rerender(
+        <AppShell navItems={NAV_ITEMS} banner={other}>
+          content
+        </AppShell>,
+      )
+      expect(resizeObserver.observedElements()).toEqual([head])
+      expect(resizeObserver.instances()).toHaveLength(1)
 
       unmount()
       expect(resizeObserver.observedElements()).toHaveLength(0)
@@ -1328,7 +1293,7 @@ describe('AppShell', () => {
       ).toBe(true)
     })
 
-    it('takes an empty host node as zero height, leaving the app bar at the top', () => {
+    it('adds no height of its own when the host node renders empty', () => {
       mockMatchMedia(true)
       const resizeObserver = stubResizeObserver()
       const { getByTestId, getByRole } = renderWithProviders(
@@ -1336,16 +1301,13 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      const slot = getByTestId('empty').parentElement
-      expect(slot).not.toBeNull()
-      const appBar = getByRole('banner')
-      resizeObserver.emitHeightFor(appBar, 112)
-      // The host node rendered nothing: the container measures zero and
-      // contributes none of its own height.
-      resizeObserver.emitHeightFor(slot as Element, 0)
-      expect(appBar).toHaveStyle({ top: '0px' })
-      const mainSpacer = getByRole('main').querySelector('.MuiToolbar-root')
-      expect(mainSpacer).toHaveStyle({ minHeight: '112px' })
+      const head = headOf(getByTestId('empty'))
+      // The empty host node contributes no slot height; the head's own
+      // measured height is the AppBar alone.
+      resizeObserver.emitHeightFor(head, 112)
+      expect(
+        getByRole('main').querySelector('.MuiToolbar-root'),
+      ).toHaveStyle({ minHeight: '112px' })
     })
 
     it('keeps the banner mounted when the route content changes', () => {
@@ -1369,7 +1331,7 @@ describe('AppShell', () => {
       expect(screen.queryByText('route a')).not.toBeInTheDocument()
     })
 
-    it('renders no container and takes no height when the slot is absent, null or false', () => {
+    it('renders no slot container when the slot is absent, null or false', () => {
       mockMatchMedia(true)
       for (const banner of [undefined, null, false] as const) {
         const { container, unmount } = renderWithProviders(
@@ -1377,11 +1339,13 @@ describe('AppShell', () => {
             content
           </AppShell>,
         )
-        // The skip link, the AppBar, the sidebar column and main -- no
-        // banner wrapper behind.
+        // The skip link, the fixed head, the sidebar column and main.
         const root = container.firstElementChild
         expect(root?.children).toHaveLength(4)
         expect(root?.firstElementChild?.tagName).toBe('A')
+        // The head holds only the AppBar.
+        const head = root?.children[1]
+        expect(head?.children).toHaveLength(1)
         unmount()
       }
     })
@@ -1423,6 +1387,35 @@ describe('AppShell', () => {
         </AppShell>,
       )
       expect(mobile.getByText('mobile notice')).toBeInTheDocument()
+    })
+
+    it('keeps the skip link first and puts header controls before banner controls in tab order', async () => {
+      // The design's order: skip link, the AppBar's controls, then the
+      // banner slot's own controls, then main.
+      mockMatchMedia(false)
+      const user = userEvent.setup()
+      const { getByRole } = renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          banner={<button type="button">End impersonation</button>}
+        >
+          content
+        </AppShell>,
+      )
+      await user.tab()
+      expect(
+        getByRole('link', { name: zhCN.appShell.skipToContent }),
+      ).toHaveFocus()
+      await user.tab()
+      expect(
+        getByRole('button', { name: zhCN.appShell.openNav }),
+      ).toHaveFocus()
+      await user.tab()
+      expect(
+        getByRole('button', { name: 'End impersonation' }),
+      ).toHaveFocus()
+      // Main itself is not a Tab stop (tabIndex -1); the skip link is the
+      // keyboard path into it, which the first assertion above covers.
     })
   })
 

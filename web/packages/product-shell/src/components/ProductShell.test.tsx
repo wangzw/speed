@@ -287,7 +287,7 @@ describe('ProductShell view machine', () => {
     await expectNoAxeViolations()
   })
 
-  it('passes the banner slot through to the frame above the app bar', async () => {
+  it('passes the banner slot through to the frame below the app bar', async () => {
     const rig = makeJourneyRig()
     attachSession(rig.session)
     const utils = renderWithProviders(
@@ -301,9 +301,9 @@ describe('ProductShell view machine', () => {
     )
     await signInTo(rig.session)
     const notice = utils.getByText('impersonation notice')
-    // The frame renders it above the AppBar, exactly as the host mounted
-    // it: ProductShell adds no interpretation of its own.
-    expect(notice.compareDocumentPosition(utils.getByRole('banner')) &
+    // The frame renders it below the AppBar, exactly where the AppShell
+    // slot places it: ProductShell adds no interpretation of its own.
+    expect(utils.getByRole('banner').compareDocumentPosition(notice) &
       Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
