@@ -20,6 +20,16 @@ import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
 describe('SessionEndedScreen', () => {
+  it('state both ways a session ends, so neither reads as a verdict', () => {
+    // The screen cannot tell a deliberate sign-out from an expiry, so its
+    // copy has to hold for both; naming only the expiry misreports a
+    // viewer who just signed out.
+    expect(zhCN.sessionEnded.description).toContain('退出登录')
+    expect(zhCN.sessionEnded.description).toContain('失效')
+    expect(enUS.sessionEnded.description).toContain('signed out')
+    expect(enUS.sessionEnded.description).toContain('no longer valid')
+  })
+
   it('render the zh-CN title, description and sign-in action', () => {
     renderWithProviders(<SessionEndedScreen onSignIn={() => {}} />)
     expect(screen.getByText(zhCN.sessionEnded.title)).toBeInTheDocument()

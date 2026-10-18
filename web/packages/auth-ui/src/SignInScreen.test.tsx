@@ -775,7 +775,17 @@ describe('SignInScreen', () => {
   })
 
   it('name the register-mode toggle apart from the channel submit', async () => {
-    const harness = makeHarness({})
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'code', kind: 'code', required: true }],
+          },
+        }),
+    })
     renderWithProviders(
       <SignInScreen
         session={harness.session}
@@ -792,16 +802,151 @@ describe('SignInScreen', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.mode.registerEntry }),
     )
-    // Register mode shows the mode toggle and the selected channel's submit
-    // at once. Each answers to its own name, so a viewer listing buttons
-    // does not hear the same name twice.
+    // Register mode shows the title, the mode toggle and the selected
+    // channel's actions at once. No two buttons answer to one name: the
+    // toggle says which mode it returns to, and each channel action keeps
+    // its own.
+    expect(
+      screen.getByRole('heading', { name: zhCN.mode.registerTitle }),
+    ).toBeInTheDocument()
     expect(
       screen.getAllByRole('button', { name: zhCN.mode.signInEntry }),
     ).toHaveLength(1)
     expect(
-      screen.getAllByRole('button', { name: zhCN.passwordSignIn.submit }),
+      screen.getAllByRole('button', { name: zhCN.smsSignIn.sendCode }),
     ).toHaveLength(1)
-    expect(zhCN.mode.signInEntry).not.toBe(zhCN.passwordSignIn.submit)
+    expect(zhCN.mode.signInEntry).not.toBe(zhCN.smsSignIn.submit)
+    expect(zhCN.mode.signInEntry).not.toBe(zhCN.smsSignIn.sendCode)
+    // The code step's submit is "Sign in"; the toggle that leaves the mode
+    // is not, so the two never collide.
+    await user.type(
+      screen.getByLabelText(zhCN.smsSignIn.phoneLabel),
+      '+14155550123',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }),
+    )
+    await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
+    expect(
+      screen.getAllByRole('button', { name: zhCN.mode.signInEntry }),
+    ).toHaveLength(1)
+    expect(
+      screen.getAllByRole('button', { name: zhCN.smsSignIn.submit }),
+    ).toHaveLength(1)
+    expect(zhCN.mode.signInEntry).not.toBe(zhCN.smsSignIn.submit)
+  })
+
+  it('list only account-opening channels in register mode, first one selected', async () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [
+            { name: 'password', kind: 'form' },
+            { name: 'sms', kind: 'form', opens_account: true },
+            {
+              name: 'magic',
+              kind: 'form',
+              opens_account: true,
+              fields: [{ name: 'identifier', kind: 'text', required: true }],
+            },
+          ],
+          { signup: true },
+        )}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mode.registerEntry }),
+    )
+    // The password method opens no account, so the register strip drops it;
+    // the first remaining channel -- SMS, in the document's own order -- is
+    // selected without the viewer choosing anything.
+    expect(
+      screen.queryByRole('tab', { name: zhCN.passwordSignIn.title }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByLabelText(zhCN.passwordSignIn.identifierLabel),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('tab', { name: zhCN.smsSignIn.title }),
+    ).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'magic' })).toBeInTheDocument()
+    expect(
+      screen.getByLabelText(zhCN.smsSignIn.phoneLabel),
+    ).toBeInTheDocument()
+    // The password channel returns with the sign-in mode's own default.
+    await user.click(screen.getByRole('button', { name: zhCN.mode.signInEntry }))
+    expect(
+      screen.getByRole('tab', { name: zhCN.passwordSignIn.title }),
+    ).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('name the register mode and offer the way back with the account the viewer has', async () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        )}
+      />,
+    )
+    const user = userEvent.setup()
+    expect(
+      screen.queryByRole('heading', { name: zhCN.mode.registerTitle }),
+    ).not.toBeInTheDocument()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mode.registerEntry }),
+    )
+    // Register mode states its own title and asks about the account the
+    // viewer already has, rather than offering a bare "sign in".
+    expect(
+      screen.getByRole('heading', { name: zhCN.mode.registerTitle }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: zhCN.mode.signInEntry }),
+    ).toBeInTheDocument()
+    expect(enUS.mode.signInEntry).toBe('Already have an account? Sign in')
+    expect(zhCN.mode.signInEntry).toBe('已有账户？登录')
+  })
+
+  it('say in sign-in mode that an unregistered number creates an account', () => {
+    const harness = makeHarness({})
+    // The sentence is the same for every number: no placeholder to fill in,
+    // so it cannot reveal whether a number is registered.
+    expect(zhCN.mode.signInAccountHint).not.toMatch(/\{\{/)
+    expect(enUS.mode.signInAccountHint).not.toMatch(/\{\{/)
+
+    const { unmount } = renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        )}
+      />,
+    )
+    // An account-opening channel is on screen: the sentence sits below it.
+    expect(screen.getByText(zhCN.mode.signInAccountHint)).toBeInTheDocument()
+    unmount()
+
+    // No account-opening channel: the sentence would be false, so it is
+    // absent along with the register entry.
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [{ name: 'password', kind: 'form' }],
+          { signup: true },
+        )}
+      />,
+    )
+    expect(
+      screen.queryByText(zhCN.mode.signInAccountHint),
+    ).not.toBeInTheDocument()
   })
 
   it('state the register hint conditionally, not for every listed method', () => {

@@ -197,7 +197,7 @@ describe('SMSSignInForm', () => {
     )
   })
 
-  it('render a wrong-code answer in one alert and keep the code step', async () => {
+  it('refuse a wrong code with this step’s own copy, not the password sentence', async () => {
     const harness = makeHarness({
       [LOGIN_START]: () => codeChallenge(),
       [LOGIN_ANSWER]: () => {
@@ -209,13 +209,83 @@ describe('SMSSignInForm', () => {
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText(zhCN.smsSignIn.codeLabel), '000000')
     await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.submit }))
+    // The server collapses a wrong, expired, spent or exhausted code into
+    // this one answer, so the step says what it can: enter it again or ask
+    // for a new code. It never names the password this surface has no field
+    // for.
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        zhCN.smsSignIn.loginFailed,
+      ),
+    )
+    expect(screen.queryByText(zhCN.errors.authn.login_failed)).toBeNull()
+    expect(screen.getByRole('alert')).not.toHaveTextContent('密码')
+    expect(harness.store.get()).toBeNull()
+    expect(screen.getByLabelText(zhCN.smsSignIn.codeLabel)).toBeInTheDocument()
+  })
+
+  it('keep the generic refusal for a step after the code', async () => {
+    // A second factor the flow parks after the code is not this form's code
+    // step: its refusal keeps the family's sentence for that step.
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(),
+      [LOGIN_ANSWER]: (call) => {
+        const step = (call.options?.body as { step?: string }).step
+        if (step === 'answer') {
+          return openFlow({
+            seq: 2,
+            state: 'second',
+            next: {
+              kind: 'challenge',
+              fields: [{ name: 'code', kind: 'code', required: true }],
+            },
+          })
+        }
+        throw apiError(401, 'authn.login_failed')
+      },
+    })
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    await sendCode()
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText(zhCN.smsSignIn.codeLabel), '123456')
+    await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.submit }))
+    // The second factor's own challenge renders through the shared step
+    // renderer; answering it wrong keeps the generic sentence.
+    await user.type(
+      await screen.findByLabelText(zhCN.smsSignIn.codeLabel),
+      '000000',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+    )
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(
         zhCN.errors.authn.login_failed,
       ),
     )
-    expect(harness.store.get()).toBeNull()
-    expect(screen.getByLabelText(zhCN.smsSignIn.codeLabel)).toBeInTheDocument()
+    expect(screen.queryByText(zhCN.smsSignIn.loginFailed)).toBeNull()
+  })
+
+  it('focus the number and announce its own message when the local check refuses', async () => {
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(),
+    })
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    const user = userEvent.setup()
+    await selectCountry(user, 'CN', '86')
+    const phone = screen.getByLabelText(zhCN.smsSignIn.phoneLabel)
+    await user.type(phone, '138000')
+    await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }))
+
+    const message = UI_KIT_ZH.phoneNumber.incomplete.replace('{{code}}', '86')
+    // The refusal belongs to the field: focus lands on the number, and the
+    // same message the control shows enters the form's status region, so a
+    // viewer who submitted from the button hears it.
+    await waitFor(() => expect(phone).toHaveFocus())
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(message),
+    )
+    expect(harness.calls).toHaveLength(0)
   })
 
   it('return to the phone step when the flow is gone (flow-invalid)', async () => {
@@ -286,13 +356,15 @@ describe('SMSSignInForm', () => {
     await user.type(phone, '138000')
     await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }))
 
-    // The message names the calling code the typed length fails under.
+    // The message names the calling code the typed length fails under. It
+    // appears under the field and in the form's status region (announced,
+    // not visible), so the assertion allows both.
     await waitFor(() =>
       expect(
-        screen.getByText(
+        screen.getAllByText(
           UI_KIT_ZH.phoneNumber.incomplete.replace('{{code}}', '86'),
-        ),
-      ).toBeInTheDocument(),
+        ).length,
+      ).toBeGreaterThan(0),
     )
     expect(phone).toHaveAttribute('aria-invalid', 'true')
     // The invalid number never reaches the server, so its generic refusal

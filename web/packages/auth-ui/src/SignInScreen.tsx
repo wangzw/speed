@@ -29,18 +29,24 @@
  * it has never seen.
  *
  * `mode` is a pure presentational switch over the one sign-in flow: the
- * component presents a "register" entry (and a matching "sign in" entry
- * back) where the deployment allows a first login to open an account
- * (`discovery.signup.enabled` and at least one visible method carries
- * `opens_account`). Registration is not a separate form -- it is a login
+ * component presents a "register" entry where the deployment allows a
+ * first login to open an account (`discovery.signup.enabled` and at least
+ * one visible method carries `opens_account`). In register mode the
+ * channel strip narrows to the methods that open an account and selects
+ * the first of them, the screen names itself "Create an account" and
+ * offers the way back as "Already have an account? Sign in"; in sign-in
+ * mode, where that entry is offered, one sentence below the channels says
+ * an unregistered phone number creates an account, the same sentence for
+ * every number. Registration is not a separate form -- it is a login
  * flow's account-resolution outcome under the deployment's signup setting.
  * A successful sign-in on a channel the screen drives itself fires
  * onSignedIn once, with the mode the screen was in and that channel's
  * method name (see SignInContext): a host can tell a registration from an
  * ordinary sign-in. Redirect and enterprise channels complete through the
- * callback route rather than this screen, so they carry no context. The
- * screen renders no heading and nothing here navigates: the page above
- * (branding, the heading) is host content.
+ * callback route rather than this screen, so they carry no context.
+ * Nothing here navigates: the page above (branding, the heading) is host
+ * content, except that register mode renders its own title -- the page
+ * heading still names the sign-in surface the host mounted.
  *
  * `discovery` lets a host inject a pre-fetched document (SSR, a test), in
  * which case the screen fires no read of its own. The deprecated
@@ -136,8 +142,10 @@ export interface SignInScreenProps {
    */
   readonly channels?: readonly SignInChannel[]
   /**
-   * The form channel selected on first render; password by default. When
-   * the named channel is not offered, the first offered one is shown.
+   * The form channel selected in sign-in mode on first render; password by
+   * default. When the named channel is not offered, the first offered one
+   * is shown. Register mode always starts on the first account-opening
+   * channel.
    * @deprecated The channel selection is presentational; still honored for
    * one major.
    */
@@ -217,14 +225,23 @@ export function SignInScreen({
   )
   const webauthnMethods = doc.methods.filter((method) => method.kind === 'webauthn')
 
-  const formNames = formMethods.map((method) => method.name)
+  // Register mode can only mean the methods that open an account: the
+  // strip narrows to them, and a channel the viewer picked in sign-in
+  // mode is honored only while it survives that narrowing.
+  const visibleForms =
+    activeMode === 'register'
+      ? formMethods.filter((method) => method.opens_account === true)
+      : formMethods
+  const formNames = visibleForms.map((method) => method.name)
   const selected =
     channel !== null && formNames.includes(channel)
       ? channel
-      : formNames.includes(defaultChannel)
-        ? defaultChannel
-        : (formNames[0] ?? '')
-  const activeDescriptor = formMethods.find((method) => method.name === selected)
+      : activeMode === 'register'
+        ? (formNames[0] ?? '')
+        : formNames.includes(defaultChannel)
+          ? defaultChannel
+          : (formNames[0] ?? '')
+  const activeDescriptor = visibleForms.find((method) => method.name === selected)
 
   // The methods this screen actually renders: the form channels left after
   // the deprecated narrowing, the redirect methods (unless the deprecated
@@ -291,32 +308,30 @@ export function SignInScreen({
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%' }}>
-      {registerVisible ? (
+      {activeMode === 'register' ? (
         <>
-          {activeMode === 'register' ? (
-            <Typography variant="body2" color="text.secondary">
-              {t('mode.registerHint')}
-            </Typography>
-          ) : null}
-          <Button
-            variant="text"
-            onClick={() =>
-              setActiveMode(activeMode === 'sign-in' ? 'register' : 'sign-in')
-            }
-          >
-            {activeMode === 'sign-in'
-              ? t('mode.registerEntry')
-              : t('mode.signInEntry')}
+          <Typography variant="h6" component="h2">
+            {t('mode.registerTitle')}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {t('mode.registerHint')}
+          </Typography>
+          <Button variant="text" onClick={() => setActiveMode('sign-in')}>
+            {t('mode.signInEntry')}
           </Button>
         </>
+      ) : registerVisible ? (
+        <Button variant="text" onClick={() => setActiveMode('register')}>
+          {t('mode.registerEntry')}
+        </Button>
       ) : null}
-      {formMethods.length > 1 ? (
+      {visibleForms.length > 1 ? (
         <Tabs
           value={selected}
           onChange={(_event, value: string) => setChannel(value)}
           variant="fullWidth"
         >
-          {formMethods.map((method) => (
+          {visibleForms.map((method) => (
             <Tab
               key={method.name}
               label={methodLabel(method, t)}
@@ -327,7 +342,7 @@ export function SignInScreen({
           ))}
         </Tabs>
       ) : null}
-      {formMethods.length > 1 ? (
+      {visibleForms.length > 1 ? (
         <Box
           key={selected}
           role="tabpanel"
@@ -338,6 +353,11 @@ export function SignInScreen({
         </Box>
       ) : activeDescriptor ? (
         renderForm(activeDescriptor)
+      ) : null}
+      {activeMode === 'sign-in' && registerVisible ? (
+        <Typography variant="body2" color="text.secondary">
+          {t('mode.signInAccountHint')}
+        </Typography>
       ) : null}
       {redirectConfigs.length > 0 ? (
         <SocialSignInSection

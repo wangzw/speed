@@ -16,6 +16,7 @@
     "sentNotice": "验证码已发送至 {{phone}}",
     "codeLabel": "验证码",
     "submit": "登录",
+    "loginFailed": "验证码不正确或已失效，请重新输入或重新获取。",
     "codeUsed": "该验证码已被使用，请重新获取。",
     "resendCode": "重新发送",
     "editPhone": "更换手机号"
@@ -47,9 +48,11 @@
     "retry": "重试"
   },
   "mode": {
+    "registerTitle": "创建账户",
     "registerEntry": "创建账户",
-    "signInEntry": "改为登录",
-    "registerHint": "若所用的登录方式可以创建账户，你的账户会在首次登录时创建。"
+    "signInEntry": "已有账户？登录",
+    "registerHint": "若所用的登录方式可以创建账户，你的账户会在首次登录时创建。",
+    "signInAccountHint": "未登记的手机号会创建账户。"
   },
   "enterprise": {
     "emailLabel": "工作邮箱",
@@ -83,7 +86,7 @@
   },
   "sessionEnded": {
     "title": "会话已结束",
-    "description": "你的登录状态已失效，请重新登录后继续。",
+    "description": "你已退出登录，或登录状态已失效。请再次登录后继续。",
     "signInAction": "重新登录"
   },
   "acceptInvitation": {

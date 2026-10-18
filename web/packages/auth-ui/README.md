@@ -242,16 +242,23 @@ drives itself -- a form or the passkey ceremony -- fires `onSignedIn` once
 with the mode and that channel's method name (`SignInContext`). Redirect and
 enterprise methods complete through the callback route instead: the screen
 hands their authorization URLs to the host and fires no `onSignedIn`. The
-screen renders no heading of its own: the page above (branding, the heading)
-is host content. `mode` is a presentational switch: a "register" entry
-appears (with a "sign in instead" entry back) where the deployment lets a
-first login open an account, but it runs the one sign-in flow -- the account
-opens server-side. The register hint says an account is created on first use
-only where the chosen method can create one; the password method does not
-open accounts, so the hint does not claim it does. The register entry itself
-counts only the methods the screen renders: a method with an unknown `kind`,
-or a form channel narrowed away by the deprecated `channels` prop, cannot
-make it appear.
+page above (branding, the heading) is host content; the screen adds no
+heading of its own in sign-in mode, and in register mode it renders the
+mode's own title ("Create an account"). `mode` is a presentational switch
+over the one flow: a "register" entry appears where the deployment lets a
+first login open an account, but it runs the one sign-in flow -- the
+account opens server-side. Register mode narrows the channel strip to the
+methods that carry `opens_account` and selects the first of them, states
+its title, and offers the way back as "Already have an account? Sign in";
+no two buttons on the surface share an accessible name in either mode. In
+sign-in mode, where that entry is offered, one sentence below the channels
+says an unregistered phone number creates an account -- the same sentence
+for every number, so it cannot reveal whether a number is registered. The
+register hint says an account is created on first use only where the
+chosen method can create one; the register entry itself counts only the
+methods the screen renders: a method with an unknown `kind`, or a form
+channel narrowed away by the deprecated `channels` prop, cannot make it
+appear.
 
 While the read is in flight a `role="status"` notice shows; a failed read
 renders its error code in a banner with a retry button. The tab strip is
@@ -269,7 +276,7 @@ switching unmounts the previous form.
 | `social` | `SocialSignInOptions` | the redirect / enterprise block host config; omitted to run without one |
 | `onSignedIn` | `(context: SignInContext) => void` | fired once after a sign-in commits on a channel the screen drives (a form or the passkey ceremony), with the mode and the channel's method name; redirect and enterprise methods complete through the callback route and fire none |
 | `channels` | `readonly ('password' \| 'sms')[]` | **deprecated**: still narrows the form strip for one major |
-| `defaultChannel` | `'password' \| 'sms'` | **deprecated**: the channel selected on first render |
+| `defaultChannel` | `'password' \| 'sms'` | **deprecated**: the channel selected in sign-in mode on first render (register mode starts on the first account-opening channel) |
 
 `SocialSignInOptions` carries the host callback route (sent as a redirect or
 enterprise flow's `return_to`) and the same `onAuthorizeUrl` seam
@@ -334,7 +341,11 @@ send (the first, a resend, or a request for a changed phone) resets any
 code typed against the one it invalidates, so a stale code can never ride
 along to a new code session. A wrong or expired code is refused as
 `authn.login_failed` (a spent login code reads exactly like a wrong one,
-deliberately).
+deliberately). On this form's code step that refusal renders the step's
+own copy (`smsSignIn.loginFailed`: the code is wrong or expired, enter it
+again or request a new one) rather than the family's generic sentence
+naming a password this surface has no field for; a further step the flow
+parks after the code keeps the generic banner.
 
 The phone step uses the shared two-part control
 (`PhoneNumberField` from `@speed/ui-kit`): a country/region selector and
@@ -344,9 +355,11 @@ en-US -> +1) and searches by country name, ISO code or calling code; a
 pasted international number switches it and fills the local part itself.
 The number is validated per country before a request: a number too short
 for its country is refused locally with the calling code named, and never
-reaches the server. The server's refusal
-copy still renders for the failures only it can judge (an unsupported
-region, a send-policy refusal).
+reaches the server. That refusal focuses the number field and mirrors the
+control's own message into the form's persistent status region, so a
+viewer who submitted from the button lands on the field and hears why. The
+server's refusal copy still renders for the failures only it can judge (an
+unsupported region, a send-policy refusal).
 
 A code answer whose login lost a concurrent race answers
 `OperationSupersededError`; the code it verified is single-use
@@ -551,10 +564,10 @@ enforced by registration):
 | Section | Purpose |
 |---|---|
 | `passwordSignIn.*` | the password channel: title, field labels (identifier, password, new password), submit, the credential refusal |
-| `smsSignIn.*` | the SMS channel: title, country/phone labels, the phone hint, send/resubmit/change-phone actions, the sent notice (the assembled E.164 number), the used-code notice. The per-country validation messages live in the `ui-kit` namespace (`phoneNumber.*`) |
+| `smsSignIn.*` | the SMS channel: title, country/phone labels, the phone hint, send/resubmit/change-phone actions, the sent notice (the assembled E.164 number), the code step's own refusal, the used-code notice. The per-country validation messages live in the `ui-kit` namespace (`phoneNumber.*`) |
 | `signInFlow.*` | the step renderer: the continue action, the factor/enroll titles, the factor-kind names (a guarded closed set plus an "other" label), the passkey prompt for a login and for a registration, the waiting/cancel/retry controls, and its unsupported/cancelled/failed messages, the unavailable-step notice |
 | `discovery.*` | the sign-in surface: the loading notice and the retry action |
-| `mode.*` | the sign-in surface: the register / sign-in entries and the register hint |
+| `mode.*` | the sign-in surface: the register mode's title and hint, the register / sign-in entries, and the sign-in mode's account-opening sentence |
 | `enterprise.*` | the enterprise entry: the email label, the continue action, the provider-picker title and the no-match notice |
 | `passkey.*` | the passkey entry: the divider title |
 | `social.*` | the social section: the divider title and one name per provider (`social.provider.<provider>`), including the per-mode names for a brand with several sign-in modes |

@@ -16,6 +16,7 @@
     "sentNotice": "Code sent to {{phone}}",
     "codeLabel": "Verification code",
     "submit": "Sign in",
+    "loginFailed": "The code is incorrect or has expired. Enter it again or request a new one.",
     "codeUsed": "That code has already been used. Request a new one.",
     "resendCode": "Resend code",
     "editPhone": "Change phone number"
@@ -47,9 +48,11 @@
     "retry": "Try again"
   },
   "mode": {
+    "registerTitle": "Create an account",
     "registerEntry": "Create an account",
-    "signInEntry": "Sign in instead",
-    "registerHint": "If the sign-in method you choose can create an account, your account is created the first time you use it."
+    "signInEntry": "Already have an account? Sign in",
+    "registerHint": "If the sign-in method you choose can create an account, your account is created the first time you use it.",
+    "signInAccountHint": "An unregistered phone number creates an account."
   },
   "enterprise": {
     "emailLabel": "Work email",
@@ -83,7 +86,7 @@
   },
   "sessionEnded": {
     "title": "Session ended",
-    "description": "Your sign-in is no longer valid. Sign in again to continue.",
+    "description": "You signed out, or your sign-in is no longer valid. Sign in again to continue.",
     "signInAction": "Sign in again"
   },
   "acceptInvitation": {

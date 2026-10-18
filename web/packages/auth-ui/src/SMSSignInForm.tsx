@@ -20,13 +20,20 @@
  * calling code; a pasted international number switches it and fills the
  * local part itself. The number is validated per country before any
  * request: a number too short for the country is refused locally with the
- * calling code named, and never sent. The server's refusal copy still
- * renders for the failures it alone can judge (an unsupported region, a
- * send-policy refusal).
+ * calling code named, and never sent. That refusal moves focus to the
+ * number field and carries the field's own message into the form's
+ * persistent status region, so a viewer who submitted from the button
+ * hears which number failed. The server's refusal copy still renders for
+ * the failures it alone can judge (an unsupported region, a send-policy
+ * refusal).
  *
  * A wrong or expired code is refused by the server as `authn.login_failed`
- * (a spent login code reads exactly like a wrong one, deliberately), and
- * renders through the one InlineError banner. Busy states: the send button
+ * (a spent login code reads exactly like a wrong one, deliberately). On
+ * this form's code step that refusal renders this step's own copy -- the
+ * code is wrong or expired, enter it again or request a new one -- never
+ * the family's generic sentence naming a password this surface has no
+ * field for; a further step (a second factor) keeps the generic banner.
+ * Busy states: the send button
  * disables for the request's flight, the code step's submit while the
  * answer is in flight (RHF's isSubmitting). A further step the flow parks
  * after the code (a required second factor) is rendered by the shared step
@@ -54,7 +61,7 @@
  * refused locally.
  */
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
@@ -105,6 +112,16 @@ export function SMSSignInForm({ session, onSignedIn }: SMSSignInFormProps) {
   // Set by a submit that could not assemble a number, so the control
   // shows its per-country message only when the viewer asked to send.
   const [phoneAttempted, setPhoneAttempted] = useState(false)
+  // Counts the refused phone submits: each one re-reads the control's
+  // message into the status region, so the same refusal is announced
+  // again rather than tracking every later keystroke.
+  const [phoneAttempt, setPhoneAttempt] = useState(0)
+  // The field container a refused submit focuses and reads the message
+  // from: the shared control forwards no ref of its own.
+  const phoneFieldRef = useRef<HTMLDivElement | null>(null)
+  // The phone step's announcement: the exact message the control renders
+  // under the number, filled after the refused submit has rendered it.
+  const [phoneNotice, setPhoneNotice] = useState('')
   const [sentTo, setSentTo] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<string | null>(null)
   // The used-code notice: the current code session's last answer lost a
@@ -146,6 +163,28 @@ export function SMSSignInForm({ session, onSignedIn }: SMSSignInFormProps) {
     },
   })
 
+  // After a refused submit the control has rendered its per-country
+  // message under the number; mirror that same text into the status
+  // region, so a viewer who cannot see the field hears what was wrong.
+  // It runs per refused submit, never per keystroke.
+  useEffect(() => {
+    if (phoneAttempt === 0) {
+      return
+    }
+    const input = phoneFieldRef.current?.querySelector<HTMLInputElement>(
+      'input[type="tel"]',
+    )
+    if (input === null || input === undefined) {
+      return
+    }
+    const describedBy = input.getAttribute('aria-describedby')
+    const message =
+      describedBy === null
+        ? ''
+        : (document.getElementById(describedBy)?.textContent ?? '')
+    setPhoneNotice(message)
+  }, [phoneAttempt])
+
   const requestCode = async (phone: string): Promise<void> => {
     setErrorCode(null)
     // A request does not yet open a new code session: whether one opens is
@@ -179,9 +218,16 @@ export function SMSSignInForm({ session, onSignedIn }: SMSSignInFormProps) {
       const phone = toE164(country, nationalNumber)
       if (phone === null) {
         setPhoneAttempted(true)
+        setPhoneAttempt((value) => value + 1)
+        // The refusal is the field's: focus it, so a viewer who submitted
+        // from the button lands on the number the message is about.
+        phoneFieldRef.current
+          ?.querySelector<HTMLInputElement>('input[type="tel"]')
+          ?.focus()
         return
       }
       setPhoneAttempted(false)
+      setPhoneNotice('')
       await requestCode(phone)
       return
     }
@@ -249,20 +295,23 @@ export function SMSSignInForm({ session, onSignedIn }: SMSSignInFormProps) {
         )
       }
     >
-      {/* The sent-notice live region. It must never mount together with
-          its text: a role="status" region announces only content changes
-          that follow its own insertion, so a notice born in the same
-          commit as the region would be silent. The region therefore
-          stands for the whole life of the form -- mounted empty and
-          visually silent (clipped, never display:none) while nothing was
-          sent -- and the accepted request fills the text into a region
-          the screen reader already knows. */}
+      {/* The form's one status region: the sent notice on the code step,
+          the number field's refusal on the phone step. It must never
+          mount together with its text: a role="status" region announces
+          only content changes that follow its own insertion, so a notice
+          born in the same commit as the region would be silent. The
+          region therefore stands for the whole life of the form --
+          mounted empty and visually silent (clipped, never display:none)
+          while nothing is announced -- and each accepted notice fills
+          the text into a region the screen reader already knows. */}
       <Alert
         severity="info"
         role="status"
         sx={onCodeStep ? { width: '100%' } : visuallyHiddenSx}
       >
-        {onCodeStep ? t('smsSignIn.sentNotice', { phone: sentTo ?? '' }) : ''}
+        {onCodeStep
+          ? t('smsSignIn.sentNotice', { phone: sentTo ?? '' })
+          : phoneNotice}
       </Alert>
       {onCodeStep ? (
         <>
@@ -295,21 +344,32 @@ export function SMSSignInForm({ session, onSignedIn }: SMSSignInFormProps) {
           </Box>
         </>
       ) : (
-        <PhoneNumberField
-          country={country}
-          nationalNumber={nationalNumber}
-          onCountryChange={setCountry}
-          onNationalNumberChange={setNationalNumber}
-          countryLabel={t('smsSignIn.countryLabel')}
-          numberLabel={t('smsSignIn.phoneLabel')}
-          numberHelperText={t('smsSignIn.phoneHint')}
-          showValidationError={phoneAttempted}
-          autoComplete="tel"
-        />
+        <Box ref={phoneFieldRef} sx={{ width: '100%' }}>
+          <PhoneNumberField
+            country={country}
+            nationalNumber={nationalNumber}
+            onCountryChange={setCountry}
+            onNationalNumberChange={setNationalNumber}
+            countryLabel={t('smsSignIn.countryLabel')}
+            numberLabel={t('smsSignIn.phoneLabel')}
+            numberHelperText={t('smsSignIn.phoneHint')}
+            showValidationError={phoneAttempted}
+            autoComplete="tel"
+          />
+        </Box>
       )}
       {codeUsed ? (
         <Alert severity="error" role="alert" sx={{ width: '100%' }}>
           {t('smsSignIn.codeUsed')}
+        </Alert>
+      ) : errorCode === 'authn.login_failed' && onCodeStep ? (
+        // The code step's own refusal: the server collapses a wrong,
+        // expired, spent or exhausted code into this one answer, so the
+        // text says what this step can promise -- try it again or ask
+        // for a new code -- and never names a password this surface has
+        // no field for.
+        <Alert severity="error" role="alert" sx={{ width: '100%' }}>
+          {t('smsSignIn.loginFailed')}
         </Alert>
       ) : (
         <InlineError code={errorCode} />
