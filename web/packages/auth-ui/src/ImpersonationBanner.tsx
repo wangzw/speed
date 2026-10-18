@@ -45,11 +45,13 @@
  * The component never counts down and never acts at `expiresAt`; the
  * host re-reads the session when the impersonation expires.
  *
- * Layout: the notice states the four facts on one wrapping line at every
- * width, with the end and close controls at its end. The tenant
- * identifier is capped and ellipsized (its full value carried as the
- * element's title), so a long identifier cannot push the controls out of
- * the bar.
+ * Layout: the four facts are one inline-flowing text block -- one
+ * paragraph whose sentences run together and break by word (or
+ * character) wherever the line ends, never one sentence per line. The end
+ * and close controls share the row with that text, flush right; only
+ * below `xs` do they take their own line. The tenant identifier is capped
+ * and ellipsized (its full value carried as the element's title), so a
+ * long identifier cannot push the controls out of the bar.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -58,6 +60,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
+import type { Theme } from '@mui/material/styles'
 import { InlineSuccess, visuallyHiddenSx } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
@@ -103,10 +106,10 @@ export interface ImpersonationBannerProps {
   readonly regionId?: string
 }
 
-/** The notice's one wrapping row: the facts, then the controls. The
- * 40px floor is the design's single-line target (40 to 48px); the caption
- * line and the small controls settle a little under it at 38px, and the
- * floor holds the bar at the target without changing its padding. */
+/** The notice's one wrapping row: the facts, then the controls. The 40px
+ * floor is the design's single-line target (40 to 48px): one caption line
+ * beside the small controls settles at exactly that with the 4px vertical
+ * padding, and each further text line grows the bar by a caption line. */
 const bannerSx = {
   display: 'flex',
   flexWrap: 'wrap',
@@ -120,32 +123,45 @@ const bannerSx = {
   color: 'warning.contrastText',
 } as const
 
-/** The facts block: inline sentences that wrap naturally at any width. */
+/** The facts block: one paragraph, so the sentences share one text flow
+ * and break at the line end instead of each occupying a line of its own.
+ * Its flex base is zero, so line breaking never pushes the controls onto
+ * a second row when the viewport is wide enough for them: the paragraph
+ * takes whatever width the controls leave and wraps inside it. */
 const detailsSx = {
   flexGrow: 1,
+  flexBasis: 0,
   minWidth: 0,
   overflow: 'hidden',
+  margin: 0,
 } as const
 
 /** A long tenant identifier stays one line and ellipsizes; the full value
- * rides on the element's title. */
+ * rides on the element's title. It is an inline block inside the facts
+ * paragraph, so it keeps the surrounding text's baseline. */
 const tenantSx = {
   display: 'inline-block',
   maxWidth: 'min(24ch, 100%)',
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
-  verticalAlign: 'bottom',
 } as const
 
-/** The controls sit at the end of the row and never shrink. */
-const controlsSx = {
+/** The controls sit at the end of the row and never shrink. Below `xs`
+ * they take a line of their own, flush right, so the facts keep the full
+ * width on a phone. */
+const controlsSx = (theme: Theme) => ({
   display: 'flex',
   alignItems: 'center',
   gap: 1,
   marginLeft: 'auto',
   flexShrink: 0,
-} as const
+  [theme.breakpoints.down('sm')]: {
+    flexBasis: '100%',
+    marginLeft: 0,
+    justifyContent: 'flex-end',
+  },
+})
 
 /** The separator between facts, decorative. */
 function FactSeparator(): ReactElement {
@@ -275,44 +291,42 @@ export function ImpersonationBanner({
           aria-label={t('impersonation.regionLabel')}
           sx={bannerSx}
         >
-          <Box sx={detailsSx}>
-            <Typography
-              component="span"
-              variant="caption"
-              sx={{ fontWeight: 600 }}
-            >
+          {/* One paragraph: the four statements share one text flow, so
+              the line breaks fall where the width ends, not between
+              sentences. */}
+          <Typography component="p" variant="caption" sx={detailsSx}>
+            <Box component="span" sx={{ fontWeight: 600 }}>
               {t('impersonation.actingAs', {
                 subject: impersonation.subject,
               })}
-            </Typography>
+            </Box>
             {impersonation.tenant !== undefined && (
               <>
                 <FactSeparator />
-                <Typography
+                <Box
                   component="span"
-                  variant="caption"
                   title={impersonation.tenant}
                   sx={tenantSx}
                 >
                   {t('impersonation.tenant', {
                     tenant: impersonation.tenant,
                   })}
-                </Typography>
+                </Box>
               </>
             )}
             {expiry !== null && (
               <>
                 <FactSeparator />
-                <Typography component="span" variant="caption">
+                <Box component="span">
                   {t('impersonation.expiresAt', { expiresAt: expiry })}
-                </Typography>
+                </Box>
               </>
             )}
             <FactSeparator />
-            <Typography component="span" variant="caption">
+            <Box component="span">
               {t('impersonation.managementUnavailable')}
-            </Typography>
-          </Box>
+            </Box>
+          </Typography>
           <Box sx={controlsSx}>
             <Button
               type="button"

@@ -549,10 +549,14 @@ describe('ImpersonationBanner', () => {
     })
   })
 
-  it('lays the facts out in one wrapping row with the controls after them', () => {
+  it('flows the facts as one inline paragraph, the controls at the row end', () => {
     renderWithProviders(
       <ImpersonationBanner
-        impersonation={{ subject: SUBJECT, tenant: TENANT }}
+        impersonation={{
+          subject: SUBJECT,
+          tenant: TENANT,
+          expiresAt: EXPIRES_AT,
+        }}
         onEnd={() => {}}
         onDismiss={() => {}}
       />,
@@ -561,18 +565,59 @@ describe('ImpersonationBanner', () => {
       name: zhCN.impersonation.regionLabel,
     })
     // The design's compact row: one flex line that wraps, small vertical
-    // padding, and the button group at the row's end.
+    // padding.
     expect(getComputedStyle(notice).flexWrap).toBe('wrap')
     expect(getComputedStyle(notice).paddingTop).toBe('4px')
     expect(getComputedStyle(notice).paddingBottom).toBe('4px')
     // The design's 40-48px single-line target, held as a floor.
     expect(getComputedStyle(notice).minHeight).toBe('40px')
+
+    // The four statements are children of ONE paragraph and flow inline:
+    // the line breaks fall by text flow, not one sentence per line.
+    const facts = notice.firstElementChild as HTMLElement | null
+    expect(facts?.tagName).toBe('P')
+    // Flex line breaking uses the paragraph's base size, not its shrunk
+    // size: a non-zero base pushes the controls onto their own row at
+    // widths where the wrapped text would still fit beside them.
+    expect(getComputedStyle(facts as HTMLElement).flexBasis).toBe('0px')
+    const statements = within(facts as HTMLElement)
+    const statementTexts = [
+      ACTING_AS_ZH,
+      TENANT_ZH,
+      EXPIRY_ZH,
+      zhCN.impersonation.managementUnavailable,
+    ]
+    for (const text of statementTexts) {
+      const node = statements.getByText(text)
+      expect(getComputedStyle(node).display).not.toBe('block')
+    }
+    // The tenant identifier is the one inline block, so it can ellipsize.
+    expect(getComputedStyle(statements.getByText(TENANT_ZH)).display).toBe(
+      'inline-block',
+    )
+
+    // The controls share the row, at its end, from sm up.
     const end = screen.getByRole('button', { name: zhCN.impersonation.end })
     const close = screen.getByRole('button', { name: zhCN.impersonation.hide })
     expect(end.parentElement).toBe(close.parentElement)
-    expect(getComputedStyle(end.parentElement as Element).marginLeft).toBe(
-      'auto',
+    const controls = end.parentElement as HTMLElement
+    expect(getComputedStyle(controls).marginLeft).toBe('auto')
+
+    // Below xs they take their own line, flush right: emotion emitted the
+    // breakpoint rule jsdom itself cannot evaluate.
+    const emotionClass = Array.from(controls.classList).find((name) =>
+      name.startsWith('css-'),
     )
+    expect(emotionClass).toBeDefined()
+    const escaped = (emotionClass as string).replace(
+      /[.*+?^${}()|[\]\\]/g,
+      '\\$&',
+    )
+    const belowXs = new RegExp(
+      `@media \\(max-width:599\\.95px\\)\\{\\.${escaped}\\{([^}]*)\\}\\}`,
+    ).exec(emittedStyleText())
+    expect(belowXs?.[1]).toContain('flex-basis:100%')
+    expect(belowXs?.[1]).toContain('margin-left:0')
   })
 
   /** Mounts the banner with a working host clear control, the real host
