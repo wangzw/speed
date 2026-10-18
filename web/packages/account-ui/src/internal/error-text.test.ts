@@ -138,15 +138,14 @@ describe('error-text whitelist', () => {
   })
 
   it('name both a username and a verified email in the missing-login-identifier text', () => {
-    // The 409 covers every account without a login name, and two kinds of
-    // identifier restore one: a username the holder adds in one step, or
-    // an email address once it is verified. The text must name both, and
-    // the email as verified -- an unverified address is not a login name.
+    // The wording is pinned through the bundle's own labels: the sentence
+    // must name a username, an email address, and the verified qualifier
+    // -- an unverified address is not a login name.
     const zh = zhCN.errors.authn.login_identifier_required
     const en = enUS.errors.authn.login_identifier_required
-    expect(zh).toContain('用户名')
-    expect(zh).toContain('已验证')
-    expect(zh).toContain('邮箱')
+    expect(zh).toContain(zhCN.identifiers.add.value.labelUsername)
+    expect(zh).toContain(zhCN.identifiers.add.value.labelEmail)
+    expect(zh).toContain(zhCN.identifiers.verified)
     expect(en).toContain('username')
     expect(en).toContain('verified email')
   })

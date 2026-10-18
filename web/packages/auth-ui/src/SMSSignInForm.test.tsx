@@ -219,7 +219,11 @@ describe('SMSSignInForm', () => {
       ),
     )
     expect(screen.queryByText(zhCN.errors.authn.login_failed)).toBeNull()
-    expect(screen.getByRole('alert')).not.toHaveTextContent('密码')
+    // The password channel's own label is the bundle's word for a
+    // password; a code refusal must not name it.
+    expect(screen.getByRole('alert')).not.toHaveTextContent(
+      zhCN.passwordSignIn.passwordLabel,
+    )
     expect(harness.store.get()).toBeNull()
     expect(screen.getByLabelText(zhCN.smsSignIn.codeLabel)).toBeInTheDocument()
   })

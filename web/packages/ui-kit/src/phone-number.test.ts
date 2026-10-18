@@ -46,7 +46,10 @@ describe('country data', () => {
   })
 
   it('names a country through Intl.DisplayNames', () => {
-    expect(phoneCountryName('CN', 'zh-CN')).toBe('中国')
+    // Two locales for one country: the name follows the requested locale,
+    // and neither expectation is a literal sentence of ours.
+    expect(phoneCountryName('DE', 'de-DE')).toBe('Deutschland')
+    expect(phoneCountryName('DE', 'en-US')).toBe('Germany')
     expect(phoneCountryName('US', 'en-US')).toBe('United States')
   })
 })

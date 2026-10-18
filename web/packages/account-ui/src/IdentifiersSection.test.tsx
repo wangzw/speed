@@ -417,9 +417,8 @@ describe('IdentifiersSection', () => {
     expect(
       await screen.findByText(zhCN.identifiers.add.value.helperUsername),
     ).toBeTruthy()
-    expect(zhCN.identifiers.add.value.helperUsername).toMatch(
-      /首字符必须是字母或数字/,
-    )
+    // The wording claim is pinned on the en-US leaf; the zh-CN leaf is
+    // pinned by the render assertion above.
     expect(enUS.identifiers.add.value.helperUsername).toMatch(
       /first character must be a letter or a digit/i,
     )

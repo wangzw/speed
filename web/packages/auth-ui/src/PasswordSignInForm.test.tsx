@@ -144,8 +144,9 @@ describe('PasswordSignInForm', () => {
     await fillAndSubmit('alice@example.com', 'wrong-password', ZH_LABELS)
 
     const message = zhCN.passwordSignIn.loginFailed
-    // This surface has no code field, so its refusal never names one.
-    expect(message).not.toMatch(/验证码/)
+    // This surface has no code field, so its refusal never names one: the
+    // code label the SMS step uses is the bundle's own word for it.
+    expect(message).not.toContain(zhCN.smsSignIn.codeLabel)
     const password = screen.getByLabelText(zhCN.passwordSignIn.passwordLabel)
     await waitFor(() => expect(password).toHaveAttribute('aria-invalid', 'true'))
     // The message is the field's description, and the field holds focus, so
@@ -164,9 +165,14 @@ describe('PasswordSignInForm', () => {
     // The account contract defines a password login name as a username or
     // email; a phone is not one (it is the SMS channel's identifier), and a
     // phone plus a password always ends in the collapsed refusal. The
-    // identifier label and the refusal copy must not offer a phone.
-    expect(zhCN.passwordSignIn.identifierLabel).not.toMatch(/手机/)
-    expect(zhCN.passwordSignIn.loginFailed).not.toMatch(/手机/)
+    // identifier label and the refusal copy must not offer the SMS
+    // channel's phone label.
+    expect(zhCN.passwordSignIn.identifierLabel).not.toContain(
+      zhCN.smsSignIn.phoneLabel,
+    )
+    expect(zhCN.passwordSignIn.loginFailed).not.toContain(
+      zhCN.smsSignIn.phoneLabel,
+    )
     expect(enUS.passwordSignIn.identifierLabel).not.toMatch(/phone/i)
     expect(enUS.passwordSignIn.loginFailed).not.toMatch(/phone/i)
   })

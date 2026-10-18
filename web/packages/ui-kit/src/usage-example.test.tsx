@@ -660,15 +660,19 @@ async function expectAbort(promise: Promise<number>): Promise<void> {
 
 const TENANT_NAMESPACE = 'tenant'
 
+// The host's own namespace, written here as the host would write it. The
+// zh-CN values are pseudo-translations: each one stays visibly distinct
+// from its en-US counterpart, so a case that asserts the message captured
+// at succeed time still catches the wrong bundle rendering.
 const TENANT_BUNDLES = {
   'zh-CN': {
-    save: '保存',
-    nameLabel: '租户名称',
-    renamed: '租户名称已更新',
+    save: '[zh-CN] Save',
+    nameLabel: '[zh-CN] Tenant name',
+    renamed: '[zh-CN] Tenant name updated',
     errors: {
-      'tenant.name_required': '请输入租户名称。',
-      'client.network': '网络连接不可用，请检查后重试。',
-      unknown: '操作未完成，请稍后重试。',
+      'tenant.name_required': '[zh-CN] Enter a tenant name.',
+      'client.network': '[zh-CN] No network connection. Check your connection and try again.',
+      unknown: '[zh-CN] Something went wrong. Please try again later.',
     },
   },
   'en-US': {

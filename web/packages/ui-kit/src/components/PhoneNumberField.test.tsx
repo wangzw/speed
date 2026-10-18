@@ -13,10 +13,13 @@ import userEvent from '@testing-library/user-event'
 import { emittedStyleText } from '@speed/test-utils/emitted-css'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { PhoneNumberField } from './PhoneNumberField.js'
+import { phoneCountryName } from '../phone-number.js'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 
-const COUNTRY_LABEL = '国家/地区'
-const NUMBER_LABEL = '手机号'
+// The host supplies both labels as props; the field renders them as the
+// controls' accessible names.
+const COUNTRY_LABEL = 'Country/region'
+const NUMBER_LABEL = 'Phone number'
 
 type HarnessProps = {
   readonly initialCountry?: string
@@ -59,11 +62,20 @@ describe('PhoneNumberField', () => {
     const user = userEvent.setup()
     const selector = screen.getByRole('combobox', { name: COUNTRY_LABEL })
     await user.type(selector, 'CN')
+    // The options carry the country's name in the active language; the
+    // expected names come from the same source the field reads them from,
+    // never from a sentence typed into the test. The matcher is a substring
+    // test rather than a RegExp so a name with regex metacharacters cannot
+    // break the query.
+    const optionNamed = (country: string) => {
+      const name = phoneCountryName(country, 'zh-CN')
+      return (accessibleName: string) => accessibleName.includes(name)
+    }
     expect(
-      await screen.findByRole('option', { name: /中国/ }),
+      await screen.findByRole('option', { name: optionNamed('CN') }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('option', { name: /美国/ }),
+      screen.queryByRole('option', { name: optionNamed('US') }),
     ).not.toBeInTheDocument()
   })
 

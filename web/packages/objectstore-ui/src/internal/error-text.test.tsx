@@ -3,6 +3,7 @@ import { screen, waitFor } from '@testing-library/react'
 import { switchLanguage } from '@speed/i18n'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { useObjectstoreUiErrorText } from './error-text.js'
+import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 
 /** A probe that renders the resolver's text for each code, one per line. */
 function Probe({ codes }: { readonly codes: readonly string[] }) {
@@ -101,7 +102,7 @@ describe('useObjectstoreUiErrorText', () => {
     expect(textFor('client.network')).toMatch(/network connection/i)
     await switchLanguage(i18n, 'zh-CN')
     await waitFor(() => {
-      expect(textFor('client.network')).toContain('网络连接')
+      expect(textFor('client.network')).toBe(zhCN.errors.client.network)
     })
   })
 })

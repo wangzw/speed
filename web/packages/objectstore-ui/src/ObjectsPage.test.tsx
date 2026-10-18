@@ -37,6 +37,7 @@ import {
   type RecordedRequest,
 } from '../test-utils/real-client.js'
 import { ObjectsPage } from './ObjectsPage.js'
+import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 // The download side effect is stubbed: the suite asserts the bytes and
 // filename handed to it, without jsdom attempting a navigation.
@@ -643,7 +644,7 @@ describe('ObjectsPage', () => {
   it('renders in Chinese when the active language is zh-CN', async () => {
     makeObjectStoreRig(() => jsonResponse(200, { objects: [OBJECT_A], next_cursor: '' }))
     renderWithProviders(<ObjectsPage />, { language: 'zh-CN' })
-    expect(await screen.findByText('对象存储')).toBeInTheDocument()
-    expect(await screen.findByText('已完成')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.page.title)).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.state.completed)).toBeInTheDocument()
   })
 })

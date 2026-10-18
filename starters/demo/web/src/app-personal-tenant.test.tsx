@@ -421,8 +421,8 @@ describe('the tenant frame and the personal tenant', () => {
     expect(ensureCalls).toHaveLength(1)
     // No personal tenant was set, and no retryable failure is shown: the
     // tenant-scoped reads fire under the placeholder and render the admission
-    // layer's refusal (「无法访问当前组织」), which is the tenant area's state
-    // for an account without a readable roster.
+    // layer's access-refused state, which is the tenant area's answer for an
+    // account without a readable roster.
     expect(
       screen.queryByRole('button', { name: demoEnUS.workspace.personal }),
     ).not.toBeInTheDocument()

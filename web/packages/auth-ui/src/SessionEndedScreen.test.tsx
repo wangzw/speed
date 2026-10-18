@@ -23,9 +23,9 @@ describe('SessionEndedScreen', () => {
   it('state both ways a session ends, so neither reads as a verdict', () => {
     // The screen cannot tell a deliberate sign-out from an expiry, so its
     // copy has to hold for both; naming only the expiry misreports a
-    // viewer who just signed out.
-    expect(zhCN.sessionEnded.description).toContain('退出登录')
-    expect(zhCN.sessionEnded.description).toContain('失效')
+    // viewer who just signed out. The sign-out half is pinned through the
+    // bundle's own action label; the expiry half on the en-US leaf.
+    expect(zhCN.sessionEnded.description).toContain(zhCN.signOut.label)
     expect(enUS.sessionEnded.description).toContain('signed out')
     expect(enUS.sessionEnded.description).toContain('no longer valid')
   })

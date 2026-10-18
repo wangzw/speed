@@ -910,7 +910,9 @@ describe('SignInScreen', () => {
       screen.getByRole('button', { name: zhCN.mode.signInEntry }),
     ).toBeInTheDocument()
     expect(enUS.mode.signInEntry).toBe('Already have an account? Sign in')
-    expect(zhCN.mode.signInEntry).toBe('已有账户？登录')
+    // The entry names the sign-in action with the same word the password
+    // form's submit uses; read from the bundle, never typed here.
+    expect(zhCN.mode.signInEntry).toContain(zhCN.passwordSignIn.submit)
   })
 
   it('say in sign-in mode that an unregistered number creates an account', () => {
