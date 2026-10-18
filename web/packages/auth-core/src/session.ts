@@ -15,7 +15,7 @@
  * Every request the generated operations make rides the ambient cookie
  * through @speed/api-client, whose configured credential mode
  * (`credentials`) sends it. Because the cookie outlives the page, a
- * reload no longer signs the user out: restore() reads GET /auth/session,
+ * reload no longer signs the user out: restore() reads GET /api/v1/auth/session,
  * and a session the cookie still names re-establishes the snapshot -- the
  * point that keeps a refresh logged in. restore() is also the client's
  * silent-401 leg: @speed/api-client's session hook runs it when a
@@ -35,11 +35,11 @@
  * cookie one whatever a view asked for.
  *
  * Login is a server-side flow the client advances, not one request:
- * POST /auth/flows starts `purpose: 'login'`, POST /auth/flows/answer
- * answers the current step, GET /auth/flows/current resumes after a
- * page refresh and DELETE /auth/flows/current abandons it. The flow is
+ * POST /api/v1/auth/flows starts `purpose: 'login'`, POST /api/v1/auth/flows/answer
+ * answers the current step, GET /api/v1/auth/flows/current resumes after a
+ * page refresh and DELETE /api/v1/auth/flows/current abandons it. The flow is
  * bound with a cookie by default (binding: 'cookie'), so the frontend
- * never reads a flow token; POST /auth/flows/authenticated starts the
+ * never reads a flow token; POST /api/v1/auth/flows/authenticated starts the
  * same machine on the identity already signed in for `purpose: 'link'`,
  * `'step-up'` or `'enroll'`. Those operations never change the session
  * -- they only hand the step back to the view (see the interface docs).
@@ -95,7 +95,7 @@
  * not fetched yet. A failed operation changes nothing, lists included.
  *
  * Impersonation: the snapshot carries `impersonating`, read from
- * GET /auth/session by restore(). Only restore() writes it -- a login
+ * GET /api/v1/auth/session by restore(). Only restore() writes it -- a login
  * completion and every anonymous snapshot carry false, and a step-up,
  * which continues the same session, keeps the value it read. This
  * package is never told that an impersonation started or ended: the host
@@ -105,9 +105,9 @@
  * impersonated account.
  *
  * Feature state: the snapshot also carries the feature document the
- * process serves (GET /features), as a closed `FeatureState` set. A
+ * process serves (GET /api/v1/features), as a closed `FeatureState` set. A
  * login completion and an anonymous-start restore read it in parallel
- * with GET /auth/me and commit the two together; a failed feature read
+ * with GET /api/v1/auth/me and commit the two together; a failed feature read
  * commits the session with `failed` rather than failing the login. The
  * authenticated restore, refresh, step-up, link and enroll paths keep
  * the state without a request, and logout (or a locally cleared
@@ -174,7 +174,7 @@ export interface AuthPermissionSets {
   system: readonly string[] | null
 }
 
-/** The authenticated principal: the fields of GET /auth/me. The
+/** The authenticated principal: the fields of GET /api/v1/auth/me. The
  * generated response model of the profile fragment (AuthnProfileProfile).
  * `account_id` is the account's identity; `identifiers` and `links` are
  * its verified identifiers and its external bindings, each with its own
@@ -182,11 +182,11 @@ export interface AuthPermissionSets {
 export type AuthnPrincipal = AuthnProfileProfile
 
 /** One verified identifier of an account (phone, email, ...): the
- * generated identifier row of GET /auth/me. */
+ * generated identifier row of GET /api/v1/auth/me. */
 export type AuthnIdentifier = AuthnProfileIdentifier
 
 /** One external binding of an account (a social or enterprise
- * provider): the generated link row of GET /auth/me. */
+ * provider): the generated link row of GET /api/v1/auth/me. */
 export type AuthnLink = AuthnProfileLink
 
 /** One input a challenge step asks the client for: the generated field
@@ -251,14 +251,14 @@ export type AuthnFlowState =
   | ElevatedCompletion
   | AuthnLoginActionResult
 
-/** The login methods this deployment offers (GET /auth/methods): the
+/** The login methods this deployment offers (GET /api/v1/auth/methods): the
  * generated response model. The list varies with the deployment's
  * settings and the modules in the assembly, so the frontend renders it
  * rather than hard-coding a set. */
 export type AuthnMethodList = AuthnLoginMethods
 
 /** One login method as the discovery endpoint reports it (a member of
- * GET /auth/methods' `methods`): the generated descriptor. `kind` names
+ * GET /api/v1/auth/methods' `methods`): the generated descriptor. `kind` names
  * the rendering class (form, redirect, enterprise or webauthn), `label`
  * the method's brand name where it has one, `fields` the inputs a form
  * method's first step asks for, and `opens_account` whether the method
@@ -266,12 +266,12 @@ export type AuthnMethodList = AuthnLoginMethods
 export type AuthnMethodDescriptor = AuthnMethodDescriptorModel
 
 /** One enterprise sign-in entry the email-domain discovery answers
- * (POST /auth/sso/discover): the provider's opaque id, its display name
+ * (POST /api/v1/auth/sso/discover): the provider's opaque id, its display name
  * and the protocol a flow for it speaks (oidc or saml). */
 export type AuthnSsoProvider = AuthnSsoProviderModel
 
 /** Who is signed in on the session the request's cookie carries: the
- * generated response model of GET /auth/session. `authenticated` is
+ * generated response model of GET /api/v1/auth/session. `authenticated` is
  * false when nobody is signed in; the rest of the fields are then
  * absent. */
 export type AuthnSessionView = AuthnSessionViewModel
@@ -283,7 +283,7 @@ export interface AuthSnapshot {
   /** The authenticated principal, or null while anonymous. */
   principal: AuthnPrincipal | null
   /** Whether the current session carries an impersonation, read from
-   * GET /auth/session's `impersonating`. Only restore() writes it;
+   * GET /api/v1/auth/session's `impersonating`. Only restore() writes it;
    * false while anonymous and on every login completion. The snapshot
    * carries no initiator identity -- during an impersonation the
    * principal is the impersonated account. A host re-reads the session
@@ -301,7 +301,7 @@ export interface AuthSnapshot {
 /** The closed set of feature-state values.
  *
  * `none` is the anonymous state: this package never requests
- * GET /features while anonymous. `pending` exists only while a
+ * GET /api/v1/features while anonymous. `pending` exists only while a
  * retryFeatures() call is in flight. `failed` carries the failed read's
  * error: a failed read is neither "every feature absent" nor "every
  * feature present". `ready` carries the set of names the process
@@ -352,7 +352,7 @@ export interface AuthSession {
   /** Answers the current step of the flow the request is bound to and
    * returns the resulting flow state. This is the one operation that
    * commits the session: a `login` completion (state 'authenticated')
-   * opens the session -- the principal is re-read from GET /auth/me, and
+   * opens the session -- the principal is re-read from GET /api/v1/auth/me, and
    * for a token delivery the freshly minted tokens are written; a
    * `step-up` completion (state 'authenticated' for a cookie session
    * with the cookie rotated, or 'elevated' for a token session with a
@@ -379,9 +379,9 @@ export interface AuthSession {
    * wins over a refresh that resolves after it. */
   logout(): Promise<void>
   /** Restores the session the request's cookie names, by reading
-   * GET /auth/session. Resolves true when a session is signed in
+   * GET /api/v1/auth/session. Resolves true when a session is signed in
    * afterwards -- the snapshot is authenticated, the principal is read
-   * from GET /auth/me, and `impersonating` is taken from the session
+   * from GET /api/v1/auth/me, and `impersonating` is taken from the session
    * read's own field (false when the answer omits it) -- which is what
    * keeps a page reload logged in, and is also the leg
    * @speed/api-client runs on a refused
@@ -400,7 +400,7 @@ export interface AuthSession {
    * generated operations' bound request function serves both reads. */
   restore(issue?: RequestFn): Promise<boolean>
   /** Re-reads the feature document for the current session. Only acts
-   * while authenticated: the feature state turns `pending`, GET /features
+   * while authenticated: the feature state turns `pending`, GET /api/v1/features
    * is read, and the result lands as `ready` or `failed` if the session
    * is still the one the read started under (same generation, still
    * authenticated, same principal account). While anonymous this
@@ -494,7 +494,7 @@ export function isOperationSuperseded(
 /** A validated token issuance: the access token, plus the minted
  * refresh token, or null when none was minted (a step-up reuses the
  * caller's). The principal is fetched separately (a login reads
- * GET /auth/me) or carried over (a step-up keeps it): the token
+ * GET /api/v1/auth/me) or carried over (a step-up keeps it): the token
  * responses do not carry it. */
 interface IssuedTokens {
   accessToken: string
@@ -591,7 +591,7 @@ function parseStringMap(value: unknown): Readonly<Record<string, string>> {
   return out
 }
 
-/** Validates the GET /auth/me body into the generated principal model.
+/** Validates the GET /api/v1/auth/me body into the generated principal model.
  * `account_id` is the required field; the rest are carried as the wire
  * sends them. */
 function parsePrincipal(body: unknown): AuthnPrincipal {
@@ -618,7 +618,7 @@ function parsePrincipal(body: unknown): AuthnPrincipal {
   }
 }
 
-/** Validates the GET /auth/session body into the generated session view.
+/** Validates the GET /api/v1/auth/session body into the generated session view.
  * `authenticated` is the one required field; the rest are carried as the
  * wire sends them (a false `authenticated` carries none of them). */
 function parseSessionView(body: unknown): AuthnSessionView {
@@ -743,7 +743,7 @@ function parseStep(body: unknown): AuthnStep {
 
 /** The live-flow states the wire carries on an open reply (the
  * record's states, pkg/authn/login flow.go). A terminal record state
- * ('done'/'failed') never reaches a 2xx -- GET /auth/flows/current
+ * ('done'/'failed') never reaches a 2xx -- GET /api/v1/auth/flows/current
  * refuses it with a 401 -- so it is not in the set. */
 const OPEN_FLOW_STATES = [
   'first',
@@ -884,7 +884,7 @@ function parseIssuedTokens(
   }
 }
 
-/** Validates one method descriptor of the GET /auth/methods body. `name`
+/** Validates one method descriptor of the GET /api/v1/auth/methods body. `name`
  * and `kind` are the required fields; the rest are carried as the wire
  * sends them (a method that opens with a form carries its `fields`). */
 function parseMethodDescriptor(value: unknown): AuthnMethodDescriptorModel {
@@ -932,7 +932,7 @@ function parseMethodList(body: unknown): AuthnMethodList {
   }
 }
 
-/** Validates the POST /auth/sso/discover body into the enterprise
+/** Validates the POST /api/v1/auth/sso/discover body into the enterprise
  * sign-in entries it carries. The answer is always the same shape -- an
  * empty list when an email's domain has no provider -- so a 2xx without
  * a providers array is a contract violation, not "no providers". */
@@ -971,20 +971,20 @@ const NO_PERMISSION_SETS: AuthPermissionSets = {
  * requested for an anonymous caller. */
 const NO_FEATURES: FeatureState = { state: 'none' }
 
-/** Validates the GET /features body into the served feature names. The
+/** Validates the GET /api/v1/features body into the served feature names. The
  * document carries the names only; a name the frontend does not know is
  * accepted (the set is the process's, not the build's). A body that is
  * not an object, or whose `features` is not a string array, is a
  * protocol violation -- never "no features". */
 function parseFeatureDocument(body: unknown): ReadonlySet<string> {
-  const rec = asObject(body, 'GET /features answered no document')
+  const rec = asObject(body, 'GET /api/v1/features answered no document')
   if (!Array.isArray(rec.features)) {
-    throw protocolViolation('GET /features carries no features array')
+    throw protocolViolation('GET /api/v1/features carries no features array')
   }
   const names = new Set<string>()
   for (const entry of rec.features) {
     if (typeof entry !== 'string') {
-      throw protocolViolation('GET /features carries a non-string name')
+      throw protocolViolation('GET /api/v1/features carries a non-string name')
     }
     names.add(entry)
   }
@@ -1058,7 +1058,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
   // refresh token.
   let refreshFlight: { held: string; promise: Promise<boolean> } | null = null
   // The single-flight feature retry: concurrent retryFeatures() calls of
-  // the same session share one GET /features read. The flight is keyed on
+  // the same session share one GET /api/v1/features read. The flight is keyed on
   // the generation and account the read started under, so a read that
   // outlived its session (a logout and re-login while it was in flight) is
   // never handed to the next session: its own commit check is bound to
@@ -1142,7 +1142,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
     }
   }
 
-  /** The feature state a settled GET /features read yields: `ready`
+  /** The feature state a settled GET /api/v1/features read yields: `ready`
    * with the parsed names, `failed` carrying the read's error. A failed
    * feature read never fails the commit that carried it: it is neither
    * "every feature absent" nor "every feature present". */
@@ -1163,7 +1163,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
    * first (a contract-violating 2xx rejects even when a newer commit
    * landed -- the caller deserves to know its own request failed), then
    * applied only if no other commit won meanwhile. The principal is read
-   * from GET /auth/me and the feature document from GET /features, the
+   * from GET /api/v1/auth/me and the feature document from GET /api/v1/features, the
    * two reads in parallel with the freshly written token. A failed
    * profile read clears the store and rejects the commit; a failed
    * feature read commits the session with the feature state `failed`. */
@@ -1203,8 +1203,8 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
   }
 
   /** The commit of a cookie login completion: the server set the cookie,
-   * so the session reads GET /auth/me for the freshly signed-in
-   * principal (riding the ambient cookie) and GET /features for the
+   * so the session reads GET /api/v1/auth/me for the freshly signed-in
+   * principal (riding the ambient cookie) and GET /api/v1/features for the
    * feature document, the two in parallel, and applies them with both
    * permission domains cleared. A failed feature read commits the
    * session with the feature state `failed`. No store is touched. */
@@ -1236,7 +1236,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
 
   /** The commit of a token step-up completion: the access token is
    * replaced, the principal and the permission sets are kept (the same
-   * session continues), and no GET /auth/me read follows. Validation
+   * session continues), and no GET /api/v1/auth/me read follows. Validation
    * precedes the generation check, as for a login. */
   function settleElevated(
     opGeneration: number,
@@ -1256,7 +1256,7 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
 
   /** The commit of a cookie step-up completion: the server rotated the
    * cookie, the principal, the permission sets and the feature state are
-   * kept (the same session continues), and no GET /auth/me read
+   * kept (the same session continues), and no GET /api/v1/auth/me read
    * follows. */
   function settleElevatedSession(opGeneration: number): void {
     if (generation !== opGeneration) {
@@ -1504,15 +1504,15 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
       const readSession = (): Promise<AuthnSessionViewModel> =>
         issue === undefined
           ? authnSessionGet()
-          : issue<AuthnSessionViewModel>('/auth/session')
+          : issue<AuthnSessionViewModel>('/api/v1/auth/session')
       const readProfile = (): Promise<AuthnProfileProfile> =>
         issue === undefined
           ? authnProfileGet()
-          : issue<AuthnProfileProfile>('/auth/me')
+          : issue<AuthnProfileProfile>('/api/v1/auth/me')
       const readFeatures = (): Promise<FeatureBoardDocument> =>
         issue === undefined
           ? featureBoardList()
-          : issue<FeatureBoardDocument>('/features')
+          : issue<FeatureBoardDocument>('/api/v1/features')
       let view: AuthnSessionView
       try {
         view = parseSessionView(await readSession())

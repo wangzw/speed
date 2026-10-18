@@ -1,12 +1,12 @@
 /**
- * MfaSection behaviour: the factors read (GET /auth/factors), the remove
- * route (DELETE /auth/factors/{id}), the deployment's method discovery
- * (GET /auth/methods) and the `purpose: 'enroll'` flow
- * (POST /auth/flows/authenticated, POST /auth/flows/answer).
+ * MfaSection behaviour: the factors read (GET /api/v1/auth/factors), the remove
+ * route (DELETE /api/v1/auth/factors/{id}), the deployment's method discovery
+ * (GET /api/v1/auth/methods) and the `purpose: 'enroll'` flow
+ * (POST /api/v1/auth/flows/authenticated, POST /api/v1/auth/flows/answer).
  *
  * What this suite pins: the factors render with their kind, label and
  * status beside the enrollment entries the deployment reports -- only the
- * kinds GET /auth/methods' mfa.factors lists are offered, so a deployment
+ * kinds GET /api/v1/auth/methods' mfa.factors lists are offered, so a deployment
  * without a passkey relying party shows no passkey entry; a remove
  * DELETE-s the factor and refetches the list; a remove refused with 401
  * step_up_required opens the step-up dialog, and a won step-up re-runs
@@ -34,14 +34,14 @@ import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { MfaSection } from './MfaSection.js'
 
-const FACTORS_PATH = '/auth/factors'
-const METHODS_PATH = '/auth/methods'
-const FLOW_START = '/auth/flows/authenticated'
-const FLOW_ANSWER = '/auth/flows/answer'
+const FACTORS_PATH = '/api/v1/auth/factors'
+const METHODS_PATH = '/api/v1/auth/methods'
+const FLOW_START = '/api/v1/auth/flows/authenticated'
+const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
 const OTPAUTH_URI = 'otpauth://totp/speed:ada?issuer=speed'
 
-/** The GET /auth/methods discovery document, carrying the deployment's
+/** The GET /api/v1/auth/methods discovery document, carrying the deployment's
  * enrollable factor kinds. */
 function methodsDoc(factors: readonly string[]): Record<string, unknown> {
   return {
@@ -148,7 +148,7 @@ describe('MfaSection', () => {
           factors: removed ? [] : [factor({})],
         })
       }
-      if (call.method === 'DELETE' && call.path === '/auth/factors/factor-1') {
+      if (call.method === 'DELETE' && call.path === '/api/v1/auth/factors/factor-1') {
         removed = true
         return new Response(null, { status: 204 })
       }
@@ -174,7 +174,7 @@ describe('MfaSection', () => {
     )
     expect(
       rig.calls.filter(
-        (call) => call.method === 'DELETE' && call.path === '/auth/factors/factor-1',
+        (call) => call.method === 'DELETE' && call.path === '/api/v1/auth/factors/factor-1',
       ),
     ).toHaveLength(1)
   })
@@ -187,7 +187,7 @@ describe('MfaSection', () => {
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, { factors: [factor({})] })
       }
-      if (call.method === 'DELETE' && call.path === '/auth/factors/factor-1') {
+      if (call.method === 'DELETE' && call.path === '/api/v1/auth/factors/factor-1') {
         return errorResponse(409, 'authn.conflict')
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -224,7 +224,7 @@ describe('MfaSection', () => {
           factors: removed ? [] : [factor({})],
         })
       }
-      if (call.method === 'DELETE' && call.path === '/auth/factors/factor-1') {
+      if (call.method === 'DELETE' && call.path === '/api/v1/auth/factors/factor-1') {
         if (!elevated) {
           return errorResponse(401, 'authn.insufficient_user_authentication')
         }
@@ -288,7 +288,7 @@ describe('MfaSection', () => {
     expect(
       rig.calls.filter(
         (call) =>
-          call.method === 'DELETE' && call.path === '/auth/factors/factor-1',
+          call.method === 'DELETE' && call.path === '/api/v1/auth/factors/factor-1',
       ),
     ).toHaveLength(2)
     // The step-up shortfall's 401 is the expected refresh-failure diagnostic.

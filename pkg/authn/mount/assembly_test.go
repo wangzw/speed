@@ -50,8 +50,8 @@ func TestTheModuleIsDeliveredAndTheCapabilityResolvesToIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the drive failed: %v", err)
 	}
-	if got.Base() != "/auth" || got.Endpoint() != "main" || got.PublicURL() != "https://app.example.com" || got.CSRF() == nil {
-		t.Errorf("the capability reads base %q, endpoint %q, public URL %q, check %v; want /auth, main, "+
+	if got.Base() != "/api/v1/auth" || got.Endpoint() != "main" || got.PublicURL() != "https://app.example.com" || got.CSRF() == nil {
+		t.Errorf("the capability reads base %q, endpoint %q, public URL %q, check %v; want /api/v1/auth, main, "+
 			"https://app.example.com and a check", got.Base(), got.Endpoint(), got.PublicURL(), got.CSRF())
 	}
 }
@@ -112,22 +112,22 @@ func TestAGatewayTheHostSuppliedTakesTheModuleIn(t *testing.T) {
 		m.Callback([]string{"GET", "POST"}, "/sso/:provider/callback", handler)
 	}
 	wantRoutes := []routeCall{
-		{"main", "POST", "/auth/login"},
-		{"main", "GET", "/auth/session"},
-		{"main", "DELETE", "/auth/session"},
-		{"main", "POST", "/auth/impersonation/end"},
-		{"main", "GET", "/auth/me"},
-		{"main", "GET", "/auth/sso/:provider/callback"},
-		{"main", "POST", "/auth/sso/:provider/callback"},
+		{"main", "POST", "/api/v1/auth/login"},
+		{"main", "GET", "/api/v1/auth/session"},
+		{"main", "DELETE", "/api/v1/auth/session"},
+		{"main", "POST", "/api/v1/auth/impersonation/end"},
+		{"main", "GET", "/api/v1/auth/me"},
+		{"main", "GET", "/api/v1/auth/sso/:provider/callback"},
+		{"main", "POST", "/api/v1/auth/sso/:provider/callback"},
 	}
 	wantAccess := []accessCall{
-		{"Exempt", "main", "POST", "/auth/login"},
-		{"Optional", "main", "GET", "/auth/session"},
-		{"Impersonable", "main", "POST", "/auth/impersonation/end"},
-		{"Optional", "main", "GET", "/auth/me"},
-		{"Impersonable", "main", "GET", "/auth/me"},
-		{"Exempt", "main", "GET", "/auth/sso/:provider/callback"},
-		{"Exempt", "main", "POST", "/auth/sso/:provider/callback"},
+		{"Exempt", "main", "POST", "/api/v1/auth/login"},
+		{"Optional", "main", "GET", "/api/v1/auth/session"},
+		{"Impersonable", "main", "POST", "/api/v1/auth/impersonation/end"},
+		{"Optional", "main", "GET", "/api/v1/auth/me"},
+		{"Impersonable", "main", "GET", "/api/v1/auth/me"},
+		{"Exempt", "main", "GET", "/api/v1/auth/sso/:provider/callback"},
+		{"Exempt", "main", "POST", "/api/v1/auth/sso/:provider/callback"},
 	}
 	for _, c := range []struct {
 		name string
@@ -156,8 +156,8 @@ func TestAGatewayTheHostSuppliedTakesTheModuleIn(t *testing.T) {
 				t.Errorf("registrations written to the gateway:\n got %v\nwant %v", access, wantAccess)
 			}
 			if problems := pairingProblems(routes, access, []routeCall{
-				{"main", "DELETE", "/auth/session"},
-				{"main", "POST", "/auth/impersonation/end"},
+				{"main", "DELETE", "/api/v1/auth/session"},
+				{"main", "POST", "/api/v1/auth/impersonation/end"},
 			}); len(problems) != 0 {
 				t.Errorf("the registrations are not paired: %v", problems)
 			}
@@ -196,9 +196,9 @@ func pairingProblems(routes []routeCall, access []accessCall, guarded []routeCal
 // pairingProblems: it has to report a hand-written pair that went wrong, or the
 // case above that relies on it would pass for any registration.
 func TestThePairingCheckSeesAMissingAndAMistypedRegistration(t *testing.T) {
-	routes := []routeCall{{"main", "POST", "/auth/login"}, {"main", "GET", "/auth/me"}}
+	routes := []routeCall{{"main", "POST", "/api/v1/auth/login"}, {"main", "GET", "/api/v1/auth/me"}}
 	guarded := []routeCall{routes[1]}
-	if got := pairingProblems(routes, []accessCall{{"Exempt", "main", "POST", "/auth/login"}}, guarded); len(got) != 0 {
+	if got := pairingProblems(routes, []accessCall{{"Exempt", "main", "POST", "/api/v1/auth/login"}}, guarded); len(got) != 0 {
 		t.Fatalf("a correct pair was reported: %v", got)
 	}
 	for _, c := range []struct {
@@ -206,9 +206,9 @@ func TestThePairingCheckSeesAMissingAndAMistypedRegistration(t *testing.T) {
 		access []accessCall
 	}{
 		{"the exemption was left out", nil},
-		{"the exemption's path has a typo", []accessCall{{"Exempt", "main", "POST", "/auth/logn"}}},
-		{"the exemption's method is another", []accessCall{{"Exempt", "main", "GET", "/auth/login"}}},
-		{"the exemption names another endpoint", []accessCall{{"Exempt", "admin", "POST", "/auth/login"}}},
+		{"the exemption's path has a typo", []accessCall{{"Exempt", "main", "POST", "/api/v1/auth/logn"}}},
+		{"the exemption's method is another", []accessCall{{"Exempt", "main", "GET", "/api/v1/auth/login"}}},
+		{"the exemption names another endpoint", []accessCall{{"Exempt", "admin", "POST", "/api/v1/auth/login"}}},
 	} {
 		if got := pairingProblems(routes, c.access, guarded); len(got) == 0 {
 			t.Errorf("a registration where %s was not reported", c.name)
@@ -251,7 +251,7 @@ func TestAnInstanceTheHostSuppliedForTheModuleIsLeftAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the drive failed: %v", err)
 	}
-	if _, found := supplied.Registered("GET", "/auth/login"); !found {
+	if _, found := supplied.Registered("GET", "/api/v1/auth/login"); !found {
 		t.Error("the registrant's route did not reach the supplied instance")
 	}
 	if routes, access := l.snapshot(); len(routes) != 0 || len(access) != 0 {

@@ -1,6 +1,6 @@
 /**
- * PhoneSection behaviour: the two-step phone surface over POST /auth/phone
- * (send a code) and POST /auth/phone/verify (submit it).
+ * PhoneSection behaviour: the two-step phone surface over POST /api/v1/auth/phone
+ * (send a code) and POST /api/v1/auth/phone/verify (submit it).
  *
  * What this suite pins: the shared country/local control assembles the
  * number into E.164 and the send POSTs it under `phone`, advancing to the
@@ -38,10 +38,10 @@ const UI_KIT_ZH = uiKitResources['zh-CN'] as {
   readonly phoneNumber: { readonly incomplete: string }
 }
 
-const PHONE_PATH = '/auth/phone'
-const VERIFY_PATH = '/auth/phone/verify'
-const FLOW_START = '/auth/flows/authenticated'
-const FLOW_ANSWER = '/auth/flows/answer'
+const PHONE_PATH = '/api/v1/auth/phone'
+const VERIFY_PATH = '/api/v1/auth/phone/verify'
+const FLOW_START = '/api/v1/auth/flows/authenticated'
+const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
 function mount(respond: RealResponder) {
   const rig = makeRealClientRig(respond)
@@ -184,7 +184,7 @@ describe('PhoneSection', () => {
         }
         return jsonResponse(200, { expires_in: 300, resend_after: 60 })
       }
-      if (call.method === 'GET' && call.path === '/auth/factors') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
         return jsonResponse(200, {
           factors: [
             {

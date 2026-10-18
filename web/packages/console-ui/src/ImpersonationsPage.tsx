@@ -4,7 +4,7 @@
  *
  * It carries two impersonation surfaces that share one page:
  *
- *  - the caller's own impersonation session, over /auth/impersonation:
+ *  - the caller's own impersonation session, over /api/v1/auth/impersonation:
  *    the status read (GET) names the impersonation currently in force on
  *    the operator's own session (a bare 404 answers "not impersonating"),
  *    a start form (POST) begins one -- its request body is the endpoint's
@@ -20,7 +20,7 @@
  *    empty one) and the target account must be a member of it, so the
  *    form has no separate tenant input;
  *
- *  - the tenant's impersonation records, over /auth/admin/impersonations:
+ *  - the tenant's impersonation records, over /api/v1/auth/admin/impersonations:
  *    the record list (GET) and one record's termination (DELETE). The read
  *    names its tenant as a required query parameter, so the page opens that
  *    half with the same tenant selection the start form uses, fed by the
@@ -177,7 +177,7 @@ export function ImpersonationsPage() {
   // each reports to the same seam once its write settles.
   const identityChange = useConsoleImpersonationChange()
 
-  // The caller's own impersonation session, over /auth/impersonation. These
+  // The caller's own impersonation session, over /api/v1/auth/impersonation. These
   // are the generated caller-session operations (not the administration
   // bundle): the page reads the status, ends an in-force impersonation, and
   // offers the start form only while none is in force.
@@ -592,7 +592,7 @@ export function ImpersonationsPage() {
 
 /**
  * StartImpersonationForm: the control that begins an impersonation on the
- * operator's own session (POST /auth/impersonation). It renders the
+ * operator's own session (POST /api/v1/auth/impersonation). It renders the
  * endpoint's request-body fields -- a required target account, an optional
  * reason, an optional TTL in whole seconds, and the page's tenant selection
  * as the required target tenant -- and reports the write through the

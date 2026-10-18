@@ -1,14 +1,14 @@
 /**
  * fixtures.ts -- the wire-shaped test data the account suites share.
  *
- * The GET /auth/me body is read by several surfaces (preferences,
+ * The GET /api/v1/auth/me body is read by several surfaces (preferences,
  * profile, password, identifiers and the composed page), so its shape is
  * built once here rather than re-spelled per suite: `profileBody` returns
  * the full profile document with the fields a read carries, and an
  * override replaces exactly the fields a test cares about.
  */
 
-/** The GET /auth/me body, every documented field present; `overrides`
+/** The GET /api/v1/auth/me body, every documented field present; `overrides`
  * replaces the named fields (a bare profile is the default). */
 export function profileBody(
   overrides: Record<string, unknown> = {},

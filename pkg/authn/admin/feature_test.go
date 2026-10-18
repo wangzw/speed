@@ -185,12 +185,12 @@ func TestAGroupIsPresentExactlyWhenItIsNamedAndMounted(t *testing.T) {
 				method  string
 				path    string
 			}{
-				{featureSessions, tc.on.sessions, http.MethodGet, "/auth/admin/accounts/:id/sessions"},
-				{featureFactors, tc.on.factors, http.MethodGet, "/auth/admin/accounts/:id/factors"},
-				{featureServiceKeys, tc.on.secrets, http.MethodGet, "/auth/admin/accounts/:id/secrets"},
-				{featureSSO, tc.on.sso, http.MethodGet, "/auth/admin/tenants/:tenant/sso/providers"},
-				{featureSSOMetadata, tc.on.sso && tc.on.refresher, http.MethodPost, "/auth/admin/sso/providers/:id/metadata/refresh"},
-				{featureImpersonations, tc.on.impersonate, http.MethodGet, "/auth/admin/impersonations"},
+				{featureSessions, tc.on.sessions, http.MethodGet, "/api/v1/auth/admin/accounts/:id/sessions"},
+				{featureFactors, tc.on.factors, http.MethodGet, "/api/v1/auth/admin/accounts/:id/factors"},
+				{featureServiceKeys, tc.on.secrets, http.MethodGet, "/api/v1/auth/admin/accounts/:id/secrets"},
+				{featureSSO, tc.on.sso, http.MethodGet, "/api/v1/auth/admin/tenants/:tenant/sso/providers"},
+				{featureSSOMetadata, tc.on.sso && tc.on.refresher, http.MethodPost, "/api/v1/auth/admin/sso/providers/:id/metadata/refresh"},
+				{featureImpersonations, tc.on.impersonate, http.MethodGet, "/api/v1/auth/admin/impersonations"},
 			} {
 				_, mounted := mounter.Registered(g.method, g.path)
 				if got := slices.Contains(names, g.feature); got != g.on {
@@ -203,8 +203,8 @@ func TestAGroupIsPresentExactlyWhenItIsNamedAndMounted(t *testing.T) {
 
 			// The static name's groups are mounted in every combination.
 			for _, r := range []struct{ method, path string }{
-				{http.MethodGet, "/auth/admin/accounts"},
-				{http.MethodGet, "/auth/admin/tenants/:tenant/members"},
+				{http.MethodGet, "/api/v1/auth/admin/accounts"},
+				{http.MethodGet, "/api/v1/auth/admin/tenants/:tenant/members"},
 			} {
 				if _, ok := mounter.Registered(r.method, r.path); !ok {
 					t.Errorf("%s %s is not mounted, but the static group is always mounted", r.method, r.path)

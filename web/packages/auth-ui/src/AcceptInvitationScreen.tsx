@@ -63,9 +63,9 @@ export interface AcceptInvitationInput {
  * its own and references no api-sdk type on its public surface.
  */
 export interface InvitationOperations {
-  /** Reads the invitation a token points to (GET /auth/invitations/:token). */
+  /** Reads the invitation a token points to (GET /api/v1/auth/invitations/:token). */
   readonly readInvitation: (token: string) => Promise<InvitationSummary>
-  /** Redeems the invitation (POST /auth/invitations/:token). */
+  /** Redeems the invitation (POST /api/v1/auth/invitations/:token). */
   readonly acceptInvitation: (
     token: string,
     input: AcceptInvitationInput,

@@ -25,8 +25,8 @@
  * answer is retryable.
  *
  * An account with no active factor is read from the caller's own factor
- * list (GET /auth/factors), and what the refusal asked for is decided
- * from the caller's own session (GET /auth/session). The session read is
+ * list (GET /api/v1/auth/factors), and what the refusal asked for is decided
+ * from the caller's own session (GET /api/v1/auth/session). The session read is
  * forced when the dialog opens: the cached view may predate a sign-in
  * completed while the dialog was closed, so it is not allowed to answer.
  * The verdict is taken once per opening and stays fixed while the dialog

@@ -3,8 +3,8 @@
  * page.
  *
  * Two selects, both editing the account's own stored preferences through
- * the self-service profile route -- GET /auth/me for the stored values
- * and PATCH /auth/me for a write (pkg/authn/profile):
+ * the self-service profile route -- GET /api/v1/auth/me for the stored values
+ * and PATCH /api/v1/auth/me for a write (pkg/authn/profile):
  *
  *  - Language: the options are the i18n instance's OWN supported set
  *    (readSupportedLanguages), so a host whose instance speaks a wider or

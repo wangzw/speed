@@ -13,7 +13,7 @@ permission translation live under `pkg/authz/internal/`, which only this
 directory can import.
 
 The management surface's routes are this directory's third module,
-`authz.admin`: it mounts them under `/authz/admin/*`, delivers nothing of its
+`authz.admin`: it mounts them under `/api/v1/authz/admin/*`, delivers nothing of its
 own, and is not built here yet.
 
 The API is the package's godoc. Read the capability interfaces' comments

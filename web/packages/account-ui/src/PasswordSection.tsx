@@ -1,7 +1,7 @@
 /**
  * PasswordSection: the change-password surface of the account page.
  *
- * The write is PUT /auth/password (authn.login.changePassword, the
+ * The write is PUT /api/v1/auth/password (authn.login.changePassword, the
  * account self-service route of the login module). On success the server
  * rotates the current session's token and revokes the account's other
  * sessions, so the section refetches the session list after a change and
@@ -11,7 +11,7 @@
  * asked for: an account opened through a provider holds no password, so
  * the current-password field is shown only when the profile says one is
  * set, and a provider-only account changes to its first password with the
- * new-password fields alone. The profile read is the same GET /auth/me the
+ * new-password fields alone. The profile read is the same GET /api/v1/auth/me the
  * other account surfaces read.
  *
  * Two client-side guards run before the request -- a non-empty new

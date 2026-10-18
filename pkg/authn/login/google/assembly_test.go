@@ -161,7 +161,7 @@ func TestARealRegistryDeliversTheGoogleMethod(t *testing.T) {
 	if !ok {
 		t.Fatalf("the delivered method is %T, not this module's product", methods[0])
 	}
-	if p.config.clientID != testClientID || p.config.redirectURL != "https://app.example.com/auth/callback/google" {
+	if p.config.clientID != testClientID || p.config.redirectURL != "https://app.example.com/api/v1/auth/callback/google" {
 		t.Errorf("the product is wired to %+v, want the resolved configuration", p.config)
 	}
 }

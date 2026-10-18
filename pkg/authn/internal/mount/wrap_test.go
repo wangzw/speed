@@ -192,14 +192,14 @@ func TestTheCrossOriginVectors(t *testing.T) {
 // method, or on another instance of the check is refused.
 func TestACallbackBypassHoldsForTheRegisteredPatternAlone(t *testing.T) {
 	w := newWrapped(t)
-	AllowCallback(w.csrf, []string{http.MethodPost}, "/auth/callback/:provider")
+	AllowCallback(w.csrf, []string{http.MethodPost}, "/api/v1/auth/callback/:provider")
 	for _, route := range [][2]string{
-		{http.MethodPost, "/auth/callback/:provider"},
-		{http.MethodGet, "/auth/callback/:provider"},
-		{http.MethodPut, "/auth/callback/:provider"},
-		{http.MethodPost, "/auth/flows"},
-		{http.MethodPost, "/auth/callback/:provider/extra"},
-		{http.MethodPost, "/auth/callback"},
+		{http.MethodPost, "/api/v1/auth/callback/:provider"},
+		{http.MethodGet, "/api/v1/auth/callback/:provider"},
+		{http.MethodPut, "/api/v1/auth/callback/:provider"},
+		{http.MethodPost, "/api/v1/auth/flows"},
+		{http.MethodPost, "/api/v1/auth/callback/:provider/extra"},
+		{http.MethodPost, "/api/v1/auth/callback"},
 	} {
 		w.add(route[0], route[1])
 	}
@@ -210,13 +210,13 @@ func TestACallbackBypassHoldsForTheRegisteredPatternAlone(t *testing.T) {
 		method, path string
 		want         int
 	}{
-		{"the registered path with the registered method", http.MethodPost, "/auth/callback/google", 200},
-		{"the same with a different provider segment", http.MethodPost, "/auth/callback/0198f0aa-0000-7000-8000-000000000001", 200},
-		{"the registered path with a method that was not registered", http.MethodPut, "/auth/callback/google", 401},
-		{"another route of the same Mounter", http.MethodPost, "/auth/flows", 401},
-		{"a longer path under the pattern", http.MethodPost, "/auth/callback/google/extra", 401},
-		{"the parent of the pattern", http.MethodPost, "/auth/callback", 401},
-		{"a safe method needs no bypass", http.MethodGet, "/auth/callback/google", 200},
+		{"the registered path with the registered method", http.MethodPost, "/api/v1/auth/callback/google", 200},
+		{"the same with a different provider segment", http.MethodPost, "/api/v1/auth/callback/0198f0aa-0000-7000-8000-000000000001", 200},
+		{"the registered path with a method that was not registered", http.MethodPut, "/api/v1/auth/callback/google", 401},
+		{"another route of the same Mounter", http.MethodPost, "/api/v1/auth/flows", 401},
+		{"a longer path under the pattern", http.MethodPost, "/api/v1/auth/callback/google/extra", 401},
+		{"the parent of the pattern", http.MethodPost, "/api/v1/auth/callback", 401},
+		{"a safe method needs no bypass", http.MethodGet, "/api/v1/auth/callback/google", 200},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if rec := w.do(c.method, c.path, cross); rec.Code != c.want {
@@ -228,7 +228,7 @@ func TestACallbackBypassHoldsForTheRegisteredPatternAlone(t *testing.T) {
 	// A path that is not clean never reaches a route of the entry point, but the
 	// check itself must not take it for the pattern either: cleaned, it is another
 	// route.
-	for _, path := range []string{"/auth/callback/../flows", "/auth//callback/google/../../flows", "/auth/callback/google/.."} {
+	for _, path := range []string{"/api/v1/auth/callback/../flows", "/api/v1/auth//callback/google/../../flows", "/api/v1/auth/callback/google/.."} {
 		r := httptest.NewRequest(http.MethodPost, "/", nil)
 		r.URL.Path = path
 		r.Header.Set("Sec-Fetch-Site", "cross-site")
@@ -240,8 +240,8 @@ func TestACallbackBypassHoldsForTheRegisteredPatternAlone(t *testing.T) {
 	// The bypass lives on one instance: another check, such as the gateway's, is
 	// built from the same origins and has no bypass, and refuses the same request.
 	other := newWrapped(t)
-	other.add(http.MethodPost, "/auth/callback/:provider")
-	if rec := other.do(http.MethodPost, "/auth/callback/google", cross); rec.Code != http.StatusUnauthorized {
+	other.add(http.MethodPost, "/api/v1/auth/callback/:provider")
+	if rec := other.do(http.MethodPost, "/api/v1/auth/callback/google", cross); rec.Code != http.StatusUnauthorized {
 		t.Errorf("a second instance of the check let the callback through: status = %d, want 401", rec.Code)
 	}
 }
@@ -251,7 +251,7 @@ func TestACallbackBypassHoldsForTheRegisteredPatternAlone(t *testing.T) {
 // parameter and for a catch-all.
 func TestACallbackPatternReadsTheEntryPointsWildcards(t *testing.T) {
 	for _, c := range []struct{ in, want string }{
-		{"/auth/callback/:provider", "/auth/callback/{provider}"},
+		{"/api/v1/auth/callback/:provider", "/api/v1/auth/callback/{provider}"},
 		{"/a/:x/b/:y", "/a/{x}/b/{y}"},
 		{"/files/*rest", "/files/{rest...}"},
 		{"/plain", "/plain"},

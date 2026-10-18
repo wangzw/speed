@@ -11,7 +11,7 @@ conditional one; the publisher is the `board` module.
   it.
 - `pkg/feature/board` — the module `feature.board`, which validates every
   declaration, collects the conditional ones posted during Init, and answers
-  `GET /features` with the frozen set.
+  `GET /api/v1/features` with the frozen set.
 
 ## Boundaries
 

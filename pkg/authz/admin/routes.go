@@ -15,7 +15,7 @@ import (
 // is addressed by a natural key — a role, a permission, an account — so that no
 // opaque row identifier ever appears in a path.
 const (
-	basePath = "/authz/admin"
+	basePath = "/api/v1/authz/admin"
 
 	pathPermissions = basePath + "/permissions"
 

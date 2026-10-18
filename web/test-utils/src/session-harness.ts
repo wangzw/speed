@@ -11,7 +11,7 @@
  * (start, answer, current, abandon), the authenticated-purpose start
  * (link / step-up / enroll), the methods listing, logout, the token
  * endpoint a token refresh uses, the session read a restore makes, the
- * /me profile read a login completion makes and the /features read a
+ * /me profile read a login completion makes and the /api/v1/features read a
  * login commit or anonymous-start restore makes -- so a package's suite
  * scripts only the operations its surface drives. The feature document
  * has a default answer (ready, no names); script FEATURES_GET to give it
@@ -47,20 +47,20 @@ import type {
 
 // The generated operations pass their spec path verbatim to the bound
 // request function, so a constant is the url the operation declares.
-export const LOGIN_METHODS = 'GET /auth/methods'
-export const LOGIN_START = 'POST /auth/flows'
-export const LOGIN_START_AUTHENTICATED = 'POST /auth/flows/authenticated'
-export const LOGIN_ANSWER = 'POST /auth/flows/answer'
-export const LOGIN_CURRENT = 'GET /auth/flows/current'
-export const LOGIN_ABANDON = 'DELETE /auth/flows/current'
-export const SSO_DISCOVER = 'POST /auth/sso/discover'
-export const LOGOUT = 'POST /auth/logout'
-export const TOKEN_ISSUE = 'POST /auth/token'
-export const PROFILE_GET = 'GET /auth/me'
-export const SESSION_GET = 'GET /auth/session'
-export const FEATURES_GET = 'GET /features'
+export const LOGIN_METHODS = 'GET /api/v1/auth/methods'
+export const LOGIN_START = 'POST /api/v1/auth/flows'
+export const LOGIN_START_AUTHENTICATED = 'POST /api/v1/auth/flows/authenticated'
+export const LOGIN_ANSWER = 'POST /api/v1/auth/flows/answer'
+export const LOGIN_CURRENT = 'GET /api/v1/auth/flows/current'
+export const LOGIN_ABANDON = 'DELETE /api/v1/auth/flows/current'
+export const SSO_DISCOVER = 'POST /api/v1/auth/sso/discover'
+export const LOGOUT = 'POST /api/v1/auth/logout'
+export const TOKEN_ISSUE = 'POST /api/v1/auth/token'
+export const PROFILE_GET = 'GET /api/v1/auth/me'
+export const SESSION_GET = 'GET /api/v1/auth/session'
+export const FEATURES_GET = 'GET /api/v1/features'
 
-/** The GET /auth/me profile the session reads for the principal after a
+/** The GET /api/v1/auth/me profile the session reads for the principal after a
  * login completion. */
 export function principal(
   overrides: Partial<AuthnPrincipal> = {},
@@ -81,7 +81,7 @@ export function principal(
   }
 }
 
-/** One method in a GET /auth/methods body: the required `name` and `kind`
+/** One method in a GET /api/v1/auth/methods body: the required `name` and `kind`
  * plus the optional descriptor fields the wire may carry. */
 export interface MethodDescriptorBody {
   name: string
@@ -92,7 +92,7 @@ export interface MethodDescriptorBody {
   fields?: { name: string; kind: string; required?: boolean; secret?: boolean }[]
 }
 
-/** The GET /auth/methods body: the deployment's enabled method
+/** The GET /api/v1/auth/methods body: the deployment's enabled method
  * descriptors, whether a first login may open an account, and the second
  * factor kinds offered. A plain string is shorthand for a `form`
  * descriptor of that name. */
@@ -116,7 +116,7 @@ export function methodList(
   }
 }
 
-/** The POST /auth/sso/discover body: the enterprise sign-in entries an
+/** The POST /api/v1/auth/sso/discover body: the enterprise sign-in entries an
  * email's domain maps to, always the same shape (empty when nothing
  * matches). */
 export function ssoProviders(
@@ -189,7 +189,7 @@ export function sessionCompletion(
   }
 }
 
-/** The GET /auth/session body. Defaults to the anonymous answer (nobody
+/** The GET /api/v1/auth/session body. Defaults to the anonymous answer (nobody
  * signed in); pass `{authenticated: true, ...}` for a signed-in session. */
 export function sessionView(
   overrides: {
@@ -247,7 +247,7 @@ export function enrolledCompletion(): AuthnFlowState {
   return { state: 'enrolled' }
 }
 
-/** The POST /auth/token body a refresh gets: the RFC 6749 §5.1 shape,
+/** The POST /api/v1/auth/token body a refresh gets: the RFC 6749 §5.1 shape,
  * the refresh token rotated. */
 export function tokenResponse(
   overrides: {
@@ -284,7 +284,7 @@ interface ScriptedCall {
  * (tests throw ApiError to script HTTP failures). */
 type Script = Record<string, (call: ScriptedCall) => unknown>
 
-/** The GET /features answer every harness provides unless the test
+/** The GET /api/v1/features answer every harness provides unless the test
  * scripts its own: a ready state with no names. Every login commit and
  * every anonymous-start restore reads the document, so a real server
  * always answers it; a test that needs names (or a failed read) scripts

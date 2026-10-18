@@ -1,11 +1,11 @@
 /**
  * IdentifiersSection behaviour: the sign-in-identifiers list read off the
- * profile (GET /auth/me) and the removal write
- * (DELETE /auth/identifiers/{id}).
+ * profile (GET /api/v1/auth/me) and the removal write
+ * (DELETE /api/v1/auth/identifiers/{id}).
  *
  * What this suite pins: each identifier renders with its kind and value
  * and its verified/unverified state; a row's remove sends
- * DELETE /auth/identifiers/{id} behind the danger confirm and refetches
+ * DELETE /api/v1/auth/identifiers/{id} behind the danger confirm and refetches
  * the profile so the row drops off; a last-way-in refusal (409) renders
  * its code text; a removal refused with 401
  * authn.insufficient_user_authentication opens the step-up dialog, a won
@@ -33,9 +33,9 @@ import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { IdentifiersSection } from './IdentifiersSection.js'
 
-const PROFILE_PATH = '/auth/me'
-const FLOW_START = '/auth/flows/authenticated'
-const FLOW_ANSWER = '/auth/flows/answer'
+const PROFILE_PATH = '/api/v1/auth/me'
+const FLOW_START = '/api/v1/auth/flows/authenticated'
+const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
 function mount(respond: RealResponder) {
   const rig = makeRealClientRig(respond)
@@ -93,7 +93,7 @@ describe('IdentifiersSection', () => {
           }),
         )
       }
-      if (call.method === 'DELETE' && call.path === '/auth/identifiers/id-email') {
+      if (call.method === 'DELETE' && call.path === '/api/v1/auth/identifiers/id-email') {
         removed = true
         return new Response(null, { status: 204 })
       }
@@ -120,7 +120,7 @@ describe('IdentifiersSection', () => {
     expect(
       rig.calls.filter(
         (call) =>
-          call.method === 'DELETE' && call.path === '/auth/identifiers/id-email',
+          call.method === 'DELETE' && call.path === '/api/v1/auth/identifiers/id-email',
       ),
     ).toHaveLength(1)
   })
@@ -133,7 +133,7 @@ describe('IdentifiersSection', () => {
           profileBody({ identifiers: [identifier({ id: 'id-email' })] }),
         )
       }
-      if (call.method === 'DELETE' && call.path === '/auth/identifiers/id-email') {
+      if (call.method === 'DELETE' && call.path === '/api/v1/auth/identifiers/id-email') {
         return errorResponse(409, 'authn.conflict')
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -170,14 +170,14 @@ describe('IdentifiersSection', () => {
           }),
         )
       }
-      if (call.method === 'DELETE' && call.path === '/auth/identifiers/id-email') {
+      if (call.method === 'DELETE' && call.path === '/api/v1/auth/identifiers/id-email') {
         if (!elevated) {
           return errorResponse(401, 'authn.insufficient_user_authentication')
         }
         removed = true
         return new Response(null, { status: 204 })
       }
-      if (call.method === 'GET' && call.path === '/auth/factors') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
         return jsonResponse(200, {
           factors: [
             {
@@ -248,7 +248,7 @@ describe('IdentifiersSection', () => {
     expect(
       rig.calls.filter(
         (call) =>
-          call.method === 'DELETE' && call.path === '/auth/identifiers/id-email',
+          call.method === 'DELETE' && call.path === '/api/v1/auth/identifiers/id-email',
       ),
     ).toHaveLength(2)
     // The step-up shortfall's 401 is the expected refresh-failure diagnostic.
@@ -308,7 +308,7 @@ describe('IdentifiersSection', () => {
           }),
         )
       }
-      if (call.method === 'POST' && call.path === '/auth/identifiers') {
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
         added = true
         return jsonResponse(200, { state: 'added' })
       }
@@ -338,7 +338,7 @@ describe('IdentifiersSection', () => {
       expect(screen.getByText(zhCN.identifiers.add.added)).toBeTruthy(),
     )
     const posts = rig.calls.filter(
-      (call) => call.method === 'POST' && call.path === '/auth/identifiers',
+      (call) => call.method === 'POST' && call.path === '/api/v1/auth/identifiers',
     )
     expect(posts).toHaveLength(1)
     expect(posts[0]?.body).toEqual({ kind: 'username', value: 'ada2' })
@@ -350,7 +350,7 @@ describe('IdentifiersSection', () => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileBody({ identifiers: [] }))
       }
-      if (call.method === 'POST' && call.path === '/auth/identifiers') {
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
         // An existing username is the expected 409 of the one write the
         // setup page's add face exists for.
         return errorResponse(409, 'authn.conflict')
@@ -437,14 +437,14 @@ describe('IdentifiersSection', () => {
           }),
         )
       }
-      if (call.method === 'POST' && call.path === '/auth/identifiers') {
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
         return jsonResponse(200, {
           state: 'pending',
           expires_in: 600,
           resend_after: 60,
         })
       }
-      if (call.method === 'POST' && call.path === '/auth/identifiers/verify') {
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers/verify') {
         verified = true
         return jsonResponse(200, { state: 'added' })
       }
@@ -478,7 +478,7 @@ describe('IdentifiersSection', () => {
     )
     const verifies = rig.calls.filter(
       (call) =>
-        call.method === 'POST' && call.path === '/auth/identifiers/verify',
+        call.method === 'POST' && call.path === '/api/v1/auth/identifiers/verify',
     )
     expect(verifies).toHaveLength(1)
     expect(verifies[0]?.body).toEqual({ code: '123456' })
@@ -489,7 +489,7 @@ describe('IdentifiersSection', () => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileBody({ identifiers: [] }))
       }
-      if (call.method === 'POST' && call.path === '/auth/identifiers') {
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
         return errorResponse(503, 'authn.unavailable')
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -519,7 +519,7 @@ describe('IdentifiersSection', () => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileBody({ identifiers: [] }))
       }
-      if (call.method === 'POST' && call.path === '/auth/identifiers') {
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
         if (!elevated) {
           return errorResponse(401, 'authn.insufficient_user_authentication')
         }
@@ -529,7 +529,7 @@ describe('IdentifiersSection', () => {
           resend_after: 60,
         })
       }
-      if (call.method === 'GET' && call.path === '/auth/factors') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
         return jsonResponse(200, {
           factors: [
             {
@@ -596,7 +596,7 @@ describe('IdentifiersSection', () => {
     await screen.findByLabelText(zhCN.identifiers.add.code.label)
     expect(
       rig.calls.filter(
-        (call) => call.method === 'POST' && call.path === '/auth/identifiers',
+        (call) => call.method === 'POST' && call.path === '/api/v1/auth/identifiers',
       ),
     ).toHaveLength(2)
     // The step-up shortfall's 401 is the expected refresh-failure diagnostic.
@@ -623,16 +623,16 @@ describe('IdentifiersSection', () => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileBody({ identifiers: [] }))
       }
-      if (call.method === 'POST' && call.path === '/auth/identifiers') {
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
         if (!elevated) {
           return errorResponse(401, 'authn.insufficient_user_authentication')
         }
         return jsonResponse(200, { state: 'added' })
       }
-      if (call.method === 'GET' && call.path === '/auth/factors') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
         return jsonResponse(200, { factors: [] })
       }
-      if (call.method === 'GET' && call.path === '/auth/session') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/session') {
         return jsonResponse(200, {
           authenticated: true,
           session_id: 'session-1',
@@ -690,7 +690,7 @@ describe('IdentifiersSection', () => {
       expect(screen.getByText(zhCN.identifiers.add.added)).toBeTruthy(),
     )
     const posts = rig.calls.filter(
-      (call) => call.method === 'POST' && call.path === '/auth/identifiers',
+      (call) => call.method === 'POST' && call.path === '/api/v1/auth/identifiers',
     )
     // The refused add ran once more, with the same input.
     expect(posts).toHaveLength(2)
@@ -822,7 +822,7 @@ describe('IdentifiersSection', () => {
           profileBody({ identifiers: [identifier({ id: 'id-email' })] }),
         )
       }
-      if (call.method === 'POST' && call.path === '/auth/identifiers') {
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
         return errorResponse(503, 'authn.unavailable')
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)

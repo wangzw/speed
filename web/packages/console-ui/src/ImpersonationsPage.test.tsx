@@ -2,14 +2,14 @@
  * ImpersonationsPage: the impersonation administration page.
  *
  * The page carries two surfaces over one page: the operator's own
- * impersonation session on /auth/impersonation (the status read, the start
+ * impersonation session on /api/v1/auth/impersonation (the status read, the start
  * form and the end action -- the caller-session operations the page calls
- * directly), and the tenant's record list on /auth/admin/impersonations
+ * directly), and the tenant's record list on /api/v1/auth/admin/impersonations
  * (through the scripted operations bundle).
  *
  * The caller-session half is exercised over the api-sdk runtime seam: the
  * suite binds a scripted request function (bindRequestFn) that answers the
- * three /auth/impersonation calls, so the real generated hooks run against
+ * three /api/v1/auth/impersonation calls, so the real generated hooks run against
  * responses the test controls -- the "no impersonation" 404, a grant in
  * force, a started record. The administration half runs on the scripted
  * operations bundle, as the other console suites do.
@@ -87,7 +87,7 @@ interface GrantFixture {
 }
 
 /**
- * A scripted /auth/impersonation endpoint over the api-sdk runtime seam.
+ * A scripted /api/v1/auth/impersonation endpoint over the api-sdk runtime seam.
  * The status read answers a bare 404 ("no impersonation in force") until the
  * backend holds a grant; a start records its body and puts a grant in force;
  * an end clears it. The test drives the page and asserts the requests it made
@@ -100,7 +100,7 @@ function makeCallerSessionBackend() {
   let statusReads = 0
   const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
     const method = options?.method ?? 'GET'
-    if (path !== '/auth/impersonation') {
+    if (path !== '/api/v1/auth/impersonation') {
       return Promise.resolve(undefined as T)
     }
     if (method === 'GET') {
@@ -146,7 +146,7 @@ const idleCallerSession: RequestFn = <T,>(
   options?: RequestOptions,
 ) => {
   const method = options?.method ?? 'GET'
-  if (_path === '/auth/impersonation' && method === 'GET') {
+  if (_path === '/api/v1/auth/impersonation' && method === 'GET') {
     return Promise.reject({ status: 404, code: 'client.http.404' })
   }
   return Promise.resolve(undefined as T)
@@ -430,7 +430,7 @@ describe('ImpersonationsPage', () => {
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/auth/impersonation' && (options?.method ?? 'GET') === 'GET') {
+      if (path === '/api/v1/auth/impersonation' && (options?.method ?? 'GET') === 'GET') {
         statusReads += 1
         return Promise.reject<T>({ status: 404, code: 'client.http.404' })
       }
@@ -464,7 +464,7 @@ describe('ImpersonationsPage', () => {
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/auth/impersonation' && (options?.method ?? 'GET') === 'GET') {
+      if (path === '/api/v1/auth/impersonation' && (options?.method ?? 'GET') === 'GET') {
         statusReads += 1
         return Promise.reject<T>({ status: 404, code: 'client.http.404' })
       }
@@ -500,7 +500,7 @@ describe('ImpersonationsPage', () => {
       options?: RequestOptions,
     ) => {
       const method = options?.method ?? 'GET'
-      if (path === '/auth/impersonation') {
+      if (path === '/api/v1/auth/impersonation') {
         if (method === 'GET') {
           statusReads += 1
           return Promise.resolve({
@@ -611,7 +611,7 @@ describe('ImpersonationsPage', () => {
     await expectNoAxeViolations()
   })
 
-  // --- The caller's own impersonation session (/auth/impersonation) -------
+  // --- The caller's own impersonation session (/api/v1/auth/impersonation) -------
 
   it('shows the not-impersonating state and the start form when no impersonation is in force', async () => {
     renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
@@ -804,7 +804,7 @@ describe('ImpersonationsPage', () => {
       ends_at: '2026-10-15T13:00:00Z',
     }
     const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
-      if (path !== '/auth/impersonation') {
+      if (path !== '/api/v1/auth/impersonation') {
         return Promise.resolve(undefined as T)
       }
       const method = options?.method ?? 'GET'
@@ -881,7 +881,7 @@ describe('ImpersonationsPage', () => {
   it('treats the status read\'s bare 404 as a settled "not impersonating" answer', async () => {
     let reads = 0
     const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
-      if (path !== '/auth/impersonation') {
+      if (path !== '/api/v1/auth/impersonation') {
         return Promise.resolve(undefined as T)
       }
       if ((options?.method ?? 'GET') !== 'GET') {
@@ -935,7 +935,7 @@ describe('ImpersonationsPage', () => {
     let reads = 0
     let ended = 0
     const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
-      if (path !== '/auth/impersonation') {
+      if (path !== '/api/v1/auth/impersonation') {
         return Promise.resolve(undefined as T)
       }
       const method = options?.method ?? 'GET'
@@ -1025,7 +1025,7 @@ describe('ImpersonationsPage', () => {
     const posts: unknown[] = []
     const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
       const method = options?.method ?? 'GET'
-      if (path === '/auth/factors') {
+      if (path === '/api/v1/auth/factors') {
         return Promise.resolve({
           factors: [
             {
@@ -1038,10 +1038,10 @@ describe('ImpersonationsPage', () => {
           ],
         } as T)
       }
-      if (path === '/auth/impersonation' && method === 'GET') {
+      if (path === '/api/v1/auth/impersonation' && method === 'GET') {
         return Promise.reject({ status: 404, code: 'client.http.404' })
       }
-      if (path === '/auth/impersonation' && method === 'POST') {
+      if (path === '/api/v1/auth/impersonation' && method === 'POST') {
         posts.push(options?.body)
         // The first refusal is the strength shortfall the gate takes over;
         // the replayed write is answered with an ordinary refusal, which is
@@ -1093,10 +1093,10 @@ describe('ImpersonationsPage', () => {
     // side by side instead of naming the rarest cause.
     const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
       const method = options?.method ?? 'GET'
-      if (path === '/auth/impersonation' && method === 'GET') {
+      if (path === '/api/v1/auth/impersonation' && method === 'GET') {
         return Promise.reject({ status: 404, code: 'client.http.404' })
       }
-      if (path === '/auth/impersonation' && method === 'POST') {
+      if (path === '/api/v1/auth/impersonation' && method === 'POST') {
         return Promise.reject({
           status: 403,
           code: 'authn.impersonation_restricted',
@@ -1129,10 +1129,10 @@ describe('ImpersonationsPage', () => {
   it('states the same requirements in the English refusal', async () => {
     const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
       const method = options?.method ?? 'GET'
-      if (path === '/auth/impersonation' && method === 'GET') {
+      if (path === '/api/v1/auth/impersonation' && method === 'GET') {
         return Promise.reject({ status: 404, code: 'client.http.404' })
       }
-      if (path === '/auth/impersonation' && method === 'POST') {
+      if (path === '/api/v1/auth/impersonation' && method === 'POST') {
         return Promise.reject({
           status: 403,
           code: 'authn.impersonation_restricted',
@@ -1207,7 +1207,7 @@ describe('ImpersonationsPage', () => {
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/auth/impersonation' && (options?.method ?? 'GET') === 'GET') {
+      if (path === '/api/v1/auth/impersonation' && (options?.method ?? 'GET') === 'GET') {
         // Never settles: the status stays unknown for the whole test.
         return new Promise<T>(() => undefined)
       }
@@ -1231,7 +1231,7 @@ describe('ImpersonationsPage', () => {
 
   it('renders the record half when the status read fails with a non-404 answer', async () => {
     const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
-      if (path === '/auth/impersonation' && (options?.method ?? 'GET') === 'GET') {
+      if (path === '/api/v1/auth/impersonation' && (options?.method ?? 'GET') === 'GET') {
         return Promise.reject({ status: 500, code: 'client.http.500' })
       }
       return Promise.resolve(undefined as T)
@@ -1315,7 +1315,7 @@ describe('ImpersonationsPage', () => {
     // region and the dialog must not open.
     const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
       const method = options?.method ?? 'GET'
-      if (path === '/auth/factors') {
+      if (path === '/api/v1/auth/factors') {
         return Promise.resolve({
           factors: [
             {
@@ -1328,10 +1328,10 @@ describe('ImpersonationsPage', () => {
           ],
         } as T)
       }
-      if (path === '/auth/impersonation' && method === 'GET') {
+      if (path === '/api/v1/auth/impersonation' && method === 'GET') {
         return Promise.reject({ status: 404, code: 'client.http.404' })
       }
-      if (path === '/auth/impersonation' && method === 'POST') {
+      if (path === '/api/v1/auth/impersonation' && method === 'POST') {
         return Promise.reject({
           status: 403,
           code: 'authn.factor_not_seasoned',

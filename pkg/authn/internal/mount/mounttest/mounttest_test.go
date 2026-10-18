@@ -64,11 +64,11 @@ func TestTheRegistrationsAreRecordedWithTheirKindAndTheImpersonableMark(t *testi
 	m.Callback([]string{http.MethodGet, http.MethodPost}, "/callback/:provider", h)
 
 	want := []mounttest.Registration{
-		{Kind: mounttest.Public, Methods: []string{"GET"}, Path: "/auth/methods"},
-		{Kind: mounttest.Optional, Methods: []string{"GET"}, Path: "/auth/session", Impersonable: true},
-		{Kind: mounttest.Guarded, Methods: []string{"POST"}, Path: "/auth/logout", Impersonable: true},
-		{Kind: mounttest.Guarded, Methods: []string{"DELETE"}, Path: "/auth/sessions/:id"},
-		{Kind: mounttest.Callback, Methods: []string{"GET", "POST"}, Path: "/auth/callback/:provider"},
+		{Kind: mounttest.Public, Methods: []string{"GET"}, Path: "/api/v1/auth/methods"},
+		{Kind: mounttest.Optional, Methods: []string{"GET"}, Path: "/api/v1/auth/session", Impersonable: true},
+		{Kind: mounttest.Guarded, Methods: []string{"POST"}, Path: "/api/v1/auth/logout", Impersonable: true},
+		{Kind: mounttest.Guarded, Methods: []string{"DELETE"}, Path: "/api/v1/auth/sessions/:id"},
+		{Kind: mounttest.Callback, Methods: []string{"GET", "POST"}, Path: "/api/v1/auth/callback/:provider"},
 	}
 	got := m.Registrations()
 	if len(got) != len(want) {
@@ -81,13 +81,13 @@ func TestTheRegistrationsAreRecordedWithTheirKindAndTheImpersonableMark(t *testi
 		}
 	}
 
-	if r, ok := m.Registered(http.MethodPost, "/auth/callback/:provider"); !ok || r.Kind != mounttest.Callback {
+	if r, ok := m.Registered(http.MethodPost, "/api/v1/auth/callback/:provider"); !ok || r.Kind != mounttest.Callback {
 		t.Errorf("Registered(POST, callback) = %+v, %v", r, ok)
 	}
-	if _, ok := m.Registered(http.MethodPut, "/auth/callback/:provider"); ok {
+	if _, ok := m.Registered(http.MethodPut, "/api/v1/auth/callback/:provider"); ok {
 		t.Error("Registered finds a method the callback was not registered with")
 	}
-	if _, ok := m.Registered(http.MethodGet, "/auth/missing"); ok {
+	if _, ok := m.Registered(http.MethodGet, "/api/v1/auth/missing"); ok {
 		t.Error("Registered finds a route nobody registered")
 	}
 
@@ -116,7 +116,7 @@ func TestTheMounterReportsItsBaseOriginAndEndpoint(t *testing.T) {
 	if rec := get(c, "/identity/x"); rec.Code != http.StatusOK {
 		t.Errorf("a route under the configured base answered %d", rec.Code)
 	}
-	if rec := get(c, "/auth/x"); rec.Code != http.StatusNotFound {
+	if rec := get(c, "/api/v1/auth/x"); rec.Code != http.StatusNotFound {
 		t.Errorf("the default base still answers: %d", rec.Code)
 	}
 }
@@ -129,7 +129,7 @@ func TestAPublicRouteCarriesNoIdentityAndTheOpenLevel(t *testing.T) {
 	var s seen
 	m.Public(http.MethodGet, "/methods", record(&s))
 	m.As(authntest.WithAccount("alice"))
-	if rec := get(m, "/auth/methods"); rec.Code != http.StatusOK {
+	if rec := get(m, "/api/v1/auth/methods"); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
 	if s.has || s.access != authn.AccessOpen {
@@ -145,7 +145,7 @@ func TestAnOptionalRouteCarriesTheChosenIdentityOrNone(t *testing.T) {
 	var s seen
 	m.Optional(http.MethodGet, "/session", record(&s))
 
-	if rec := get(m, "/auth/session"); rec.Code != http.StatusOK {
+	if rec := get(m, "/api/v1/auth/session"); rec.Code != http.StatusOK {
 		t.Fatalf("anonymous status = %d", rec.Code)
 	}
 	if s.has || s.access != authn.AccessOptional {
@@ -153,13 +153,13 @@ func TestAnOptionalRouteCarriesTheChosenIdentityOrNone(t *testing.T) {
 	}
 
 	m.As(authntest.WithAccount("alice"), authntest.WithAssurance(authn.AssuranceMulti))
-	get(m, "/auth/session")
+	get(m, "/api/v1/auth/session")
 	if !s.has || s.account != "alice" || s.id.Assurance() != authn.AssuranceMulti || s.access != authn.AccessOptional {
 		t.Errorf("with an identity: has %v, account %q, assurance %d, access %d", s.has, s.account, s.id.Assurance(), s.access)
 	}
 
 	m.AsAnonymous()
-	get(m, "/auth/session")
+	get(m, "/api/v1/auth/session")
 	if s.has {
 		t.Error("AsAnonymous left the identity in place")
 	}
@@ -173,7 +173,7 @@ func TestAGuardedRouteNeedsTheIdentityTheTestChose(t *testing.T) {
 	var s seen
 	m.Guarded(http.MethodGet, "/sessions", record(&s))
 
-	rec := get(m, "/auth/sessions")
+	rec := get(m, "/api/v1/auth/sessions")
 	if rec.Code != http.StatusUnauthorized || s.calls != 0 {
 		t.Fatalf("no identity: status %d, handler ran %d times, want 401 and none", rec.Code, s.calls)
 	}
@@ -182,7 +182,7 @@ func TestAGuardedRouteNeedsTheIdentityTheTestChose(t *testing.T) {
 	}
 
 	m.As(authntest.WithAccount("alice"))
-	if rec := get(m, "/auth/sessions"); rec.Code != http.StatusOK {
+	if rec := get(m, "/api/v1/auth/sessions"); rec.Code != http.StatusOK {
 		t.Fatalf("with an identity: status = %d", rec.Code)
 	}
 	if !s.has || s.account != "alice" || s.access != authn.AccessRequired {
@@ -192,7 +192,7 @@ func TestAGuardedRouteNeedsTheIdentityTheTestChose(t *testing.T) {
 	// The identity is set per Mounter and read per request: changing it changes
 	// the next request and not the ones already served.
 	m.As(authntest.WithAccount("bob"))
-	get(m, "/auth/sessions")
+	get(m, "/api/v1/auth/sessions")
 	if s.account != "bob" {
 		t.Errorf("after As(bob) the handler read %q", s.account)
 	}
@@ -209,16 +209,16 @@ func TestAnImpersonatingIdentityReachesOnlyTheRoutesMarkedForIt(t *testing.T) {
 	m.Optional(http.MethodGet, "/me", record(&plain))
 	m.As(authntest.WithAccount("victim"), authntest.WithActor("admin"), authntest.WithSession("sess-1"), authntest.WithScope("acme"))
 
-	if rec := get(m, "/auth/sessions"); rec.Code != http.StatusUnauthorized {
+	if rec := get(m, "/api/v1/auth/sessions"); rec.Code != http.StatusUnauthorized {
 		t.Errorf("a guarded route that is not impersonable answered %d, want 401", rec.Code)
 	}
-	if rec := get(m, "/auth/me"); rec.Code != http.StatusUnauthorized {
+	if rec := get(m, "/api/v1/auth/me"); rec.Code != http.StatusUnauthorized {
 		t.Errorf("an optional route that is not impersonable answered %d, want 401", rec.Code)
 	}
 	if plain.calls != 0 {
 		t.Errorf("the handlers of the refused routes ran %d times", plain.calls)
 	}
-	if rec := get(m, "/auth/session"); rec.Code != http.StatusOK || !marked.id.Impersonating() {
+	if rec := get(m, "/api/v1/auth/session"); rec.Code != http.StatusOK || !marked.id.Impersonating() {
 		t.Errorf("the impersonable route answered %d, impersonating = %v", rec.Code, marked.id.Impersonating())
 	}
 	if marked.id.Account() != "victim" || marked.id.Actor() != "admin" {
@@ -238,22 +238,22 @@ func TestTheWrapperIsTheProductionOne(t *testing.T) {
 	m.As(authntest.WithAccount("alice"))
 
 	cross := []string{"Sec-Fetch-Site", "cross-site", "Origin", "https://evil.example"}
-	if rec := send(m, http.MethodPost, "/auth/flows", cross...); rec.Code != http.StatusUnauthorized || public.calls != 0 {
+	if rec := send(m, http.MethodPost, "/api/v1/auth/flows", cross...); rec.Code != http.StatusUnauthorized || public.calls != 0 {
 		t.Errorf("a cross-site POST to a public route: status %d, handler ran %d times", rec.Code, public.calls)
 	}
-	if rec := send(m, http.MethodPost, "/auth/logout", cross...); rec.Code != http.StatusUnauthorized || guarded.calls != 0 {
+	if rec := send(m, http.MethodPost, "/api/v1/auth/logout", cross...); rec.Code != http.StatusUnauthorized || guarded.calls != 0 {
 		t.Errorf("a cross-site POST to a guarded route: status %d, handler ran %d times", rec.Code, guarded.calls)
 	}
-	if rec := send(m, http.MethodPost, "/auth/callback/google", cross...); rec.Code != http.StatusOK || callback.calls != 1 {
+	if rec := send(m, http.MethodPost, "/api/v1/auth/callback/google", cross...); rec.Code != http.StatusOK || callback.calls != 1 {
 		t.Errorf("a cross-site POST to the callback: status %d, handler ran %d times", rec.Code, callback.calls)
 	}
-	same := send(m, http.MethodPost, "/auth/logout", "Sec-Fetch-Site", "same-origin")
+	same := send(m, http.MethodPost, "/api/v1/auth/logout", "Sec-Fetch-Site", "same-origin")
 	if same.Code != http.StatusOK || guarded.calls != 1 {
 		t.Errorf("a same-origin POST: status %d, handler ran %d times", same.Code, guarded.calls)
 	}
 	for name, rec := range map[string]*httptest.ResponseRecorder{
 		"a served response":  same,
-		"a refused response": send(m, http.MethodPost, "/auth/flows", cross...),
+		"a refused response": send(m, http.MethodPost, "/api/v1/auth/flows", cross...),
 	} {
 		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
 			t.Errorf("%s: Cache-Control = %q, want no-store", name, got)
@@ -276,7 +276,7 @@ func TestTheTrustedOriginsAreTheOptionsOwn(t *testing.T) {
 		{mounttest.DefaultPublicURL, 401},
 		{"https://evil.example", 401},
 	} {
-		rec := send(m, http.MethodPost, "/auth/flows", "Sec-Fetch-Site", "same-site", "Origin", c.origin)
+		rec := send(m, http.MethodPost, "/api/v1/auth/flows", "Sec-Fetch-Site", "same-site", "Origin", c.origin)
 		if rec.Code != c.want {
 			t.Errorf("a same-site POST from %s: status = %d, want %d", c.origin, rec.Code, c.want)
 		}
@@ -291,7 +291,7 @@ func TestTheTrustedOriginsAreTheOptionsOwn(t *testing.T) {
 func TestAHandlerThatPanicsEndsInA500(t *testing.T) {
 	m := mounttest.New(t)
 	m.Public(http.MethodGet, "/boom", func(*gin.Context) { panic("boom") })
-	if rec := get(m, "/auth/boom"); rec.Code != http.StatusInternalServerError {
+	if rec := get(m, "/api/v1/auth/boom"); rec.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", rec.Code)
 	}
 }
@@ -307,7 +307,7 @@ func TestARouteIsReachableOverTheLoopback(t *testing.T) {
 	})
 	srv := httptest.NewServer(m)
 	defer srv.Close()
-	resp, err := http.Get(srv.URL + "/auth/hello")
+	resp, err := http.Get(srv.URL + "/api/v1/auth/hello")
 	if err != nil {
 		t.Fatal(err)
 	}

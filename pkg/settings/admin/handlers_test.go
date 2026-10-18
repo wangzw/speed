@@ -26,10 +26,10 @@ func TestTheLayerChoosesTheDomainAndThePermission(t *testing.T) {
 		want   authz.Permission
 		domain authz.Domain
 	}{
-		{"read global", http.MethodGet, "/settings/admin/settings?layer=global", nil, authz.PermissionSettingsRead, authz.PlatformDomain},
-		{"read tenant", http.MethodGet, "/settings/admin/settings?layer=tenant&tenant=acme", nil, authz.PermissionSettingsRead, authz.Domain("acme")},
-		{"write global", http.MethodPut, "/settings/admin/settings/app/mode?layer=global", map[string]any{"value": "on"}, authz.PermissionSettingsWrite, authz.PlatformDomain},
-		{"write tenant", http.MethodPut, "/settings/admin/settings/app/mode?layer=tenant&tenant=acme", map[string]any{"value": "on"}, authz.PermissionSettingsWrite, authz.Domain("acme")},
+		{"read global", http.MethodGet, "/api/v1/settings/admin/settings?layer=global", nil, authz.PermissionSettingsRead, authz.PlatformDomain},
+		{"read tenant", http.MethodGet, "/api/v1/settings/admin/settings?layer=tenant&tenant=acme", nil, authz.PermissionSettingsRead, authz.Domain("acme")},
+		{"write global", http.MethodPut, "/api/v1/settings/admin/settings/app/mode?layer=global", map[string]any{"value": "on"}, authz.PermissionSettingsWrite, authz.PlatformDomain},
+		{"write tenant", http.MethodPut, "/api/v1/settings/admin/settings/app/mode?layer=tenant&tenant=acme", map[string]any{"value": "on"}, authz.PermissionSettingsWrite, authz.Domain("acme")},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -56,14 +56,14 @@ func TestTheLayerChoosesTheDomainAndThePermission(t *testing.T) {
 // cannot be put to the policy until the layer names a domain.
 func TestAnUnreadableLayerSelectionIsA400BeforeTheDecision(t *testing.T) {
 	targets := map[string]string{
-		"layer absent":            "/settings/admin/settings",
-		"layer out of the set":    "/settings/admin/settings?layer=bogus",
-		"tenant with global":      "/settings/admin/settings?layer=global&tenant=acme",
-		"tenant layer, no tenant": "/settings/admin/settings?layer=tenant",
-		"empty tenant":            "/settings/admin/settings?layer=tenant&tenant=",
-		"blank tenant":            "/settings/admin/settings?layer=tenant&tenant=a%20b",
-		"control tenant":          "/settings/admin/settings?layer=tenant&tenant=a%0Ab",
-		"tenant without layer":    "/settings/admin/settings?tenant=acme",
+		"layer absent":            "/api/v1/settings/admin/settings",
+		"layer out of the set":    "/api/v1/settings/admin/settings?layer=bogus",
+		"tenant with global":      "/api/v1/settings/admin/settings?layer=global&tenant=acme",
+		"tenant layer, no tenant": "/api/v1/settings/admin/settings?layer=tenant",
+		"empty tenant":            "/api/v1/settings/admin/settings?layer=tenant&tenant=",
+		"blank tenant":            "/api/v1/settings/admin/settings?layer=tenant&tenant=a%20b",
+		"control tenant":          "/api/v1/settings/admin/settings?layer=tenant&tenant=a%0Ab",
+		"tenant without layer":    "/api/v1/settings/admin/settings?tenant=acme",
 	}
 	for name, target := range targets {
 		t.Run(name, func(t *testing.T) {
@@ -90,7 +90,7 @@ func TestAnUnreadableLayerSelectionIsA400BeforeTheDecision(t *testing.T) {
 // settings surface.
 func TestNoIdentityIsA401WithTheRealmChallengeAndNoType(t *testing.T) {
 	r := newRig(t)
-	w := r.doAnonymous(http.MethodGet, "/settings/admin/settings?layer=global")
+	w := r.doAnonymous(http.MethodGet, "/api/v1/settings/admin/settings?layer=global")
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("the request ended with %d, want 401", w.Code)
 	}
@@ -111,7 +111,7 @@ func TestTheGuardWritesItsOwnRefusal(t *testing.T) {
 	t.Run("denied", func(t *testing.T) {
 		r := newRig(t)
 		r.guard.allow = false
-		w := r.do(http.MethodGet, "/settings/admin/settings?layer=global", nil)
+		w := r.do(http.MethodGet, "/api/v1/settings/admin/settings?layer=global", nil)
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("the request ended with %d, want 403", w.Code)
 		}
@@ -122,7 +122,7 @@ func TestTheGuardWritesItsOwnRefusal(t *testing.T) {
 	t.Run("outage", func(t *testing.T) {
 		r := newRig(t)
 		r.guard.err = errors.New("the policy engine is unreachable")
-		w := r.do(http.MethodGet, "/settings/admin/settings?layer=global", nil)
+		w := r.do(http.MethodGet, "/api/v1/settings/admin/settings?layer=global", nil)
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("the request ended with %d, want 503", w.Code)
 		}
@@ -146,7 +146,7 @@ func TestTheListShowsEveryDeclaredItemWithItsResolvedValue(t *testing.T) {
 	r.store.values["ratelimit.limit"] = 42
 	r.store.rows = []settings.Entry{{Key: "ratelimit.limit", Tenant: "", Value: "42"}}
 
-	w := r.do(http.MethodGet, "/settings/admin/settings?layer=global", nil)
+	w := r.do(http.MethodGet, "/api/v1/settings/admin/settings?layer=global", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("the request ended with %d: %s", w.Code, w.Body.String())
 	}
@@ -204,7 +204,7 @@ func TestAnEmptyTextRowIsReportedAsAHeldRow(t *testing.T) {
 	r.store.values["authn.sms.allowed-prefixes"] = ""
 	r.store.rows = []settings.Entry{{Key: "authn.sms.allowed-prefixes", Tenant: "", Value: ""}}
 
-	w := r.do(http.MethodGet, "/settings/admin/settings?layer=global", nil)
+	w := r.do(http.MethodGet, "/api/v1/settings/admin/settings?layer=global", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("the request ended with %d: %s", w.Code, w.Body.String())
 	}
@@ -243,7 +243,7 @@ func TestASensitiveItemStillReportsWhetherItsRowExists(t *testing.T) {
 			r.store.values["authn.sms.secret"] = "hunter2"
 			r.store.rows = tc.rows
 
-			w := r.do(http.MethodGet, "/settings/admin/settings?layer=global", nil)
+			w := r.do(http.MethodGet, "/api/v1/settings/admin/settings?layer=global", nil)
 			if w.Code != http.StatusOK {
 				t.Fatalf("the request ended with %d: %s", w.Code, w.Body.String())
 			}
@@ -274,7 +274,7 @@ func TestANamespaceGroupIsShownAndAnEmptyOneIsA404(t *testing.T) {
 	r.store.values["authn.session.idle-timeout"] = 60
 
 	t.Run("one module's group", func(t *testing.T) {
-		w := r.do(http.MethodGet, "/settings/admin/settings/ratelimit?layer=global", nil)
+		w := r.do(http.MethodGet, "/api/v1/settings/admin/settings/ratelimit?layer=global", nil)
 		if w.Code != http.StatusOK {
 			t.Fatalf("the request ended with %d: %s", w.Code, w.Body.String())
 		}
@@ -287,7 +287,7 @@ func TestANamespaceGroupIsShownAndAnEmptyOneIsA404(t *testing.T) {
 	t.Run("a namespace with a module name that carries a dot", func(t *testing.T) {
 		// The namespace is the module name, which may contain a dot: the route
 		// parameter matches it whole, and the key is the rest under it.
-		w := r.do(http.MethodGet, "/settings/admin/settings/authn.session?layer=global", nil)
+		w := r.do(http.MethodGet, "/api/v1/settings/admin/settings/authn.session?layer=global", nil)
 		if w.Code != http.StatusOK {
 			t.Fatalf("the request ended with %d: %s", w.Code, w.Body.String())
 		}
@@ -298,7 +298,7 @@ func TestANamespaceGroupIsShownAndAnEmptyOneIsA404(t *testing.T) {
 		}
 	})
 	t.Run("no declared item belongs to it", func(t *testing.T) {
-		w := r.do(http.MethodGet, "/settings/admin/settings/ghost?layer=global", nil)
+		w := r.do(http.MethodGet, "/api/v1/settings/admin/settings/ghost?layer=global", nil)
 		if w.Code != http.StatusNotFound {
 			t.Fatalf("the request ended with %d, want 404", w.Code)
 		}
@@ -319,8 +319,8 @@ func TestASensitiveItemsValueIsMasked(t *testing.T) {
 	r.store.rows = []settings.Entry{{Key: "authn.sms.secret", Tenant: "", Value: "hunter2"}}
 
 	for _, target := range []string{
-		"/settings/admin/settings?layer=global",
-		"/settings/admin/settings/authn.sms?layer=global",
+		"/api/v1/settings/admin/settings?layer=global",
+		"/api/v1/settings/admin/settings/authn.sms?layer=global",
 	} {
 		w := r.do(http.MethodGet, target, nil)
 		if w.Code != http.StatusOK {
@@ -355,7 +355,7 @@ func TestAWriteLands204AndPassesTheActionOn(t *testing.T) {
 	r.store.declared = []settings.DeclaredItem{
 		decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{}),
 	}
-	w := r.do(http.MethodPut, "/settings/admin/settings/app/mode?layer=tenant&tenant=acme",
+	w := r.do(http.MethodPut, "/api/v1/settings/admin/settings/app/mode?layer=tenant&tenant=acme",
 		map[string]any{"value": "manual"}, authntest.WithAccount(authn.AccountID("carol")))
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("the request ended with %d: %s", w.Code, w.Body.String())
@@ -426,7 +426,7 @@ func TestAnImpersonatedWriteIsAttributedToTheActor(t *testing.T) {
 	t.Run("set", func(t *testing.T) {
 		r := newRig(t)
 		r.store.declared = declared
-		w := r.do(http.MethodPut, "/settings/admin/settings/app/mode?layer=tenant&tenant=acme",
+		w := r.do(http.MethodPut, "/api/v1/settings/admin/settings/app/mode?layer=tenant&tenant=acme",
 			map[string]any{"value": "manual"}, impersonation...)
 		if w.Code != http.StatusNoContent {
 			t.Fatalf("the request ended with %d: %s", w.Code, w.Body.String())
@@ -446,7 +446,7 @@ func TestAnImpersonatedWriteIsAttributedToTheActor(t *testing.T) {
 	t.Run("delete", func(t *testing.T) {
 		r := newRig(t)
 		r.store.declared = declared
-		w := r.do(http.MethodDelete, "/settings/admin/settings/app/mode?layer=tenant&tenant=acme", nil,
+		w := r.do(http.MethodDelete, "/api/v1/settings/admin/settings/app/mode?layer=tenant&tenant=acme", nil,
 			impersonation...)
 		if w.Code != http.StatusNoContent {
 			t.Fatalf("the request ended with %d: %s", w.Code, w.Body.String())
@@ -471,7 +471,7 @@ func TestAWriteOfAnUndeclaredKeyIsA404(t *testing.T) {
 	r.store.declared = []settings.DeclaredItem{
 		decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{}),
 	}
-	w := r.do(http.MethodPut, "/settings/admin/settings/app/ghost?layer=global", map[string]any{"value": "on"})
+	w := r.do(http.MethodPut, "/api/v1/settings/admin/settings/app/ghost?layer=global", map[string]any{"value": "on"})
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("the request ended with %d, want 404", w.Code)
 	}
@@ -498,7 +498,7 @@ func TestARefusedValueIsA422WithAFailedAuditRow(t *testing.T) {
 				decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{}),
 			}
 			r.store.setErr = cause
-			w := r.do(http.MethodPut, "/settings/admin/settings/app/mode?layer=global", map[string]any{"value": 1})
+			w := r.do(http.MethodPut, "/api/v1/settings/admin/settings/app/mode?layer=global", map[string]any{"value": 1})
 			if w.Code != http.StatusUnprocessableEntity {
 				t.Fatalf("the request ended with %d, want 422", w.Code)
 			}
@@ -537,7 +537,7 @@ func TestAWriteRefusedByTheModuleMapsToItsAnswer(t *testing.T) {
 				decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{}),
 			}
 			r.store.setErr = tc.cause
-			w := r.do(http.MethodPut, "/settings/admin/settings/app/mode?layer=global", map[string]any{"value": "on"})
+			w := r.do(http.MethodPut, "/api/v1/settings/admin/settings/app/mode?layer=global", map[string]any{"value": "on"})
 			if w.Code != tc.status {
 				t.Fatalf("the request ended with %d, want %d", w.Code, tc.status)
 			}
@@ -562,7 +562,7 @@ func TestTheMandatoryAuditRowGatesTheAction(t *testing.T) {
 		decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{}),
 	}
 	r.audit.fail(errors.New("the audit table is unreachable"))
-	w := r.do(http.MethodPut, "/settings/admin/settings/app/mode?layer=global", map[string]any{"value": "on"})
+	w := r.do(http.MethodPut, "/api/v1/settings/admin/settings/app/mode?layer=global", map[string]any{"value": "on"})
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("the request ended with %d, want 503", w.Code)
 	}
@@ -580,7 +580,7 @@ func TestTheDeleteRoute(t *testing.T) {
 		r.store.declared = []settings.DeclaredItem{
 			decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{}),
 		}
-		w := r.do(http.MethodDelete, "/settings/admin/settings/app/mode?layer=global", nil)
+		w := r.do(http.MethodDelete, "/api/v1/settings/admin/settings/app/mode?layer=global", nil)
 		if w.Code != http.StatusNoContent {
 			t.Fatalf("the request ended with %d: %s", w.Code, w.Body.String())
 		}
@@ -594,7 +594,7 @@ func TestTheDeleteRoute(t *testing.T) {
 	})
 	t.Run("undeclared key", func(t *testing.T) {
 		r := newRig(t)
-		w := r.do(http.MethodDelete, "/settings/admin/settings/app/ghost?layer=global", nil)
+		w := r.do(http.MethodDelete, "/api/v1/settings/admin/settings/app/ghost?layer=global", nil)
 		if w.Code != http.StatusNotFound {
 			t.Fatalf("the request ended with %d, want 404", w.Code)
 		}
@@ -608,7 +608,7 @@ func TestTheDeleteRoute(t *testing.T) {
 			decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{}),
 		}
 		r.store.deleteErr = errors.New("the database is unreachable")
-		w := r.do(http.MethodDelete, "/settings/admin/settings/app/mode?layer=global", nil)
+		w := r.do(http.MethodDelete, "/api/v1/settings/admin/settings/app/mode?layer=global", nil)
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("the request ended with %d, want 503", w.Code)
 		}
@@ -621,7 +621,7 @@ func TestAnUnreadableBodyIsA400(t *testing.T) {
 	r.store.declared = []settings.DeclaredItem{
 		decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{}),
 	}
-	w := r.doRaw(http.MethodPut, "/settings/admin/settings/app/mode?layer=global", "{")
+	w := r.doRaw(http.MethodPut, "/api/v1/settings/admin/settings/app/mode?layer=global", "{")
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("the request ended with %d, want 400", w.Code)
 	}
@@ -639,7 +639,7 @@ func TestAListingFailureIsA503(t *testing.T) {
 			decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{}),
 		}
 		r.store.listErr = errors.New("the database is unreachable")
-		w := r.do(http.MethodGet, "/settings/admin/settings?layer=global", nil)
+		w := r.do(http.MethodGet, "/api/v1/settings/admin/settings?layer=global", nil)
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("the request ended with %d, want 503", w.Code)
 		}
@@ -650,7 +650,7 @@ func TestAListingFailureIsA503(t *testing.T) {
 			decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{}),
 		}
 		r.store.getErr = settings.ErrNotLoaded
-		w := r.do(http.MethodGet, "/settings/admin/settings?layer=global", nil)
+		w := r.do(http.MethodGet, "/api/v1/settings/admin/settings?layer=global", nil)
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("the request ended with %d, want 503", w.Code)
 		}

@@ -146,7 +146,7 @@ func assemble(t *testing.T, use func(h *harness)) {
 		"kv": map[string]any{"memory": map[string]any{"replicas": 1}},
 		"authn": map[string]any{
 			"gate": map[string]any{"mount": map[string]any{
-				"endpoint": "public", "base-path": "/auth",
+				"endpoint": "public", "base-path": "/api/v1/auth",
 				"public-url": "http://127.0.0.1", "allow-insecure": true,
 			}},
 		},
@@ -316,7 +316,7 @@ func (h *harness) selfStatus() bool {
 	var out struct {
 		Authenticated bool `json:"authenticated"`
 	}
-	r := h.get("/auth/session")
+	r := h.get("/api/v1/auth/session")
 	if r.status == http.StatusOK {
 		if err := json.Unmarshal([]byte(r.body), &out); err != nil {
 			h.t.Fatalf("decoding session status %q: %v", r.body, err)
@@ -330,7 +330,7 @@ func (h *harness) selfStatus() bool {
 // and returns the reply of the completion.
 func (h *harness) loginFlow(username, pw string) reply {
 	h.t.Helper()
-	start := h.post("/auth/flows", map[string]any{
+	start := h.post("/api/v1/auth/flows", map[string]any{
 		"method": "password",
 		"input":  map[string]string{"identifier": username, "password": pw},
 	})
@@ -338,7 +338,7 @@ func (h *harness) loginFlow(username, pw string) reply {
 		h.t.Fatalf("POST flows answered %d: %s", start.status, start.body)
 	}
 	seq := int(start.json(h.t)["seq"].(float64))
-	done := h.post("/auth/flows/answer", map[string]any{"seq": seq, "step": "complete"})
+	done := h.post("/api/v1/auth/flows/answer", map[string]any{"seq": seq, "step": "complete"})
 	return done
 }
 
@@ -346,7 +346,7 @@ func (h *harness) loginFlow(username, pw string) reply {
 // password flow begun and completed over the real routes makes a session, the
 // cookie authenticates a guarded route, the session route reports it, and a
 // logout refuses the same cookie afterwards. The guarded route the cookie
-// authenticates is this module's own POST /auth/flows/authenticated, which the
+// authenticates is this module's own POST /api/v1/auth/flows/authenticated, which the
 // gateway refuses without a credential before any handler runs.
 func TestPasswordLoginTwoStepsDeliversASessionCookie(t *testing.T) {
 	assemble(t, func(h *harness) {
@@ -369,28 +369,28 @@ func TestPasswordLoginTwoStepsDeliversASessionCookie(t *testing.T) {
 		}
 		sessionCookie := firstCookie(t, done.header.Get("Set-Cookie"))
 		if !h.selfStatus() {
-			t.Errorf("GET /auth/session did not report the new session as authenticated")
+			t.Errorf("GET /api/v1/auth/session did not report the new session as authenticated")
 		}
-		start := h.post("/auth/flows/authenticated", map[string]any{"purpose": "step-up", "method": "password"})
+		start := h.post("/api/v1/auth/flows/authenticated", map[string]any{"purpose": "step-up", "method": "password"})
 		if start.status != http.StatusOK {
-			t.Errorf("POST /auth/flows/authenticated with the session cookie answered %d: %s", start.status, start.body)
+			t.Errorf("POST /api/v1/auth/flows/authenticated with the session cookie answered %d: %s", start.status, start.body)
 		}
 
-		out := h.post("/auth/logout", nil)
+		out := h.post("/api/v1/auth/logout", nil)
 		if out.status != http.StatusNoContent && out.status != http.StatusOK {
-			t.Errorf("POST /auth/logout answered %d: %s", out.status, out.body)
+			t.Errorf("POST /api/v1/auth/logout answered %d: %s", out.status, out.body)
 		}
 		if got := out.header.Get("Set-Cookie"); !strings.Contains(got, "Max-Age=0") {
 			t.Errorf("logout did not clear the cookie: %q", got)
 		}
 		// The same cookie presented again is refused: the session was revoked,
 		// not merely forgotten by the client.
-		after := h.get("/auth/session", func(r *http.Request) {
+		after := h.get("/api/v1/auth/session", func(r *http.Request) {
 			r.Header.Set("Cookie", sessionCookie)
 			r.Header.Set("Sec-Fetch-Site", "same-origin")
 		})
 		if after.status != http.StatusUnauthorized {
-			t.Errorf("GET /auth/session with the revoked cookie answered %d, want 401: %s", after.status, after.body)
+			t.Errorf("GET /api/v1/auth/session with the revoked cookie answered %d, want 401: %s", after.status, after.body)
 		}
 	})
 }
@@ -452,10 +452,10 @@ func TestEnumerationAnswersAreIndistinguishable(t *testing.T) {
 		}
 
 		replies := []reply{
-			h.post("/auth/flows", map[string]any{"method": "password", "input": map[string]string{"identifier": "nobody", "password": "whatever"}}),
-			h.post("/auth/flows", map[string]any{"method": "password", "input": map[string]string{"identifier": "erin", "password": "wrong"}}),
-			h.post("/auth/flows", map[string]any{"method": "password", "input": map[string]string{"identifier": "frank", "password": "frank-password"}}),
-			h.post("/auth/flows", map[string]any{"method": "password", "input": map[string]string{"identifier": "grace", "password": "whatever"}}),
+			h.post("/api/v1/auth/flows", map[string]any{"method": "password", "input": map[string]string{"identifier": "nobody", "password": "whatever"}}),
+			h.post("/api/v1/auth/flows", map[string]any{"method": "password", "input": map[string]string{"identifier": "erin", "password": "wrong"}}),
+			h.post("/api/v1/auth/flows", map[string]any{"method": "password", "input": map[string]string{"identifier": "frank", "password": "frank-password"}}),
+			h.post("/api/v1/auth/flows", map[string]any{"method": "password", "input": map[string]string{"identifier": "grace", "password": "whatever"}}),
 		}
 		for i, got := range replies {
 			if got.status != http.StatusUnauthorized {
@@ -483,7 +483,7 @@ func TestEnumerationAnswersAreIndistinguishable(t *testing.T) {
 func TestTokenDeliveryIsRefusedWithoutATokenCapability(t *testing.T) {
 	assemble(t, func(h *harness) {
 		h.createAccount("heidi", "heidi-password")
-		rec := h.post("/auth/flows", map[string]any{
+		rec := h.post("/api/v1/auth/flows", map[string]any{
 			"method": "password", "delivery": "token",
 			"input": map[string]string{"identifier": "heidi", "password": "heidi-password"},
 		})
@@ -498,15 +498,15 @@ func TestTokenDeliveryIsRefusedWithoutATokenCapability(t *testing.T) {
 func TestAbandonedFlowRefusesANextAnswer(t *testing.T) {
 	assemble(t, func(h *harness) {
 		h.createAccount("ivan", "ivan-password")
-		start := h.post("/auth/flows", map[string]any{"method": "password"})
+		start := h.post("/api/v1/auth/flows", map[string]any{"method": "password"})
 		if start.status != http.StatusOK {
 			t.Fatalf("POST flows answered %d: %s", start.status, start.body)
 		}
 		seq := int(start.json(t)["seq"].(float64))
-		if del := h.do(http.MethodDelete, "/auth/flows/current", nil); del.status != http.StatusNoContent {
+		if del := h.do(http.MethodDelete, "/api/v1/auth/flows/current", nil); del.status != http.StatusNoContent {
 			t.Fatalf("DELETE flows/current answered %d: %s", del.status, del.body)
 		}
-		after := h.post("/auth/flows/answer", map[string]any{"seq": seq, "step": "answer", "input": map[string]string{}})
+		after := h.post("/api/v1/auth/flows/answer", map[string]any{"seq": seq, "step": "answer", "input": map[string]string{}})
 		if after.status != http.StatusUnauthorized {
 			t.Errorf("an answer to an abandoned flow answered %d, want 401: %s", after.status, after.body)
 		}
@@ -517,7 +517,7 @@ func TestAbandonedFlowRefusesANextAnswer(t *testing.T) {
 func TestAnOversizedBodyIsRefused(t *testing.T) {
 	assemble(t, func(h *harness) {
 		big := `{"method":"password","input":{"identifier":"` + strings.Repeat("a", 70_000) + `"}}`
-		rec := h.do(http.MethodPost, "/auth/flows", big)
+		rec := h.do(http.MethodPost, "/api/v1/auth/flows", big)
 		if rec.status != http.StatusBadRequest {
 			t.Errorf("an oversized body answered %d, want 400: %s", rec.status, rec.body)
 		}
@@ -533,7 +533,7 @@ func TestTheFirstFactorNeedsNoCookieAndAStaleOneDoesNotBlock(t *testing.T) {
 		stale := func(r *http.Request) {
 			r.AddCookie(&http.Cookie{Name: "authn-session", Value: "not-a-session"})
 		}
-		start := h.post("/auth/flows", map[string]any{
+		start := h.post("/api/v1/auth/flows", map[string]any{
 			"method": "password",
 			"input":  map[string]string{"identifier": "dave", "password": "dave-password"},
 		}, stale)

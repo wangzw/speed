@@ -15,7 +15,7 @@
  * never this file.
  *
  * The app owns one API today: the host's personal-tenant ensure
- * (`POST /workspace/personal`). It keeps this file as it is because it
+ * (`POST /api/v1/workspace/personal`). It keeps this file as it is because it
  * needs no mutator the platform package does not export.
  */
 

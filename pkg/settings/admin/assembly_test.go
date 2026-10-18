@@ -251,10 +251,10 @@ func TestARealRegistryMountsEveryRouteAndDeclaresThemOpen(t *testing.T) {
 	}
 
 	want := map[mountedRoute]bool{
-		{http.MethodGet, "/settings/admin/settings"}:                    true,
-		{http.MethodGet, "/settings/admin/settings/:namespace"}:         true,
-		{http.MethodPut, "/settings/admin/settings/:namespace/:key"}:    true,
-		{http.MethodDelete, "/settings/admin/settings/:namespace/:key"}: true,
+		{http.MethodGet, "/api/v1/settings/admin/settings"}:                    true,
+		{http.MethodGet, "/api/v1/settings/admin/settings/:namespace"}:         true,
+		{http.MethodPut, "/api/v1/settings/admin/settings/:namespace/:key"}:    true,
+		{http.MethodDelete, "/api/v1/settings/admin/settings/:namespace/:key"}: true,
 	}
 	got := router.endpoint("public").registered()
 	if len(got) != len(want) {

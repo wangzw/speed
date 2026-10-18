@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {"title": "settings.admin", "version": "1.0.0"},
   "paths": {
-    "/settings/admin/settings": {
+    "/api/v1/settings/admin/settings": {
       "get": {
         "operationId": "settings.admin.settings.list",
         "summary": "List every declared setting with its value on the selected layer",
@@ -22,7 +22,7 @@
         }
       }
     },
-    "/settings/admin/settings/{namespace}": {
+    "/api/v1/settings/admin/settings/{namespace}": {
       "get": {
         "operationId": "settings.admin.settings.listNamespace",
         "summary": "List the declared settings one namespace declares",
@@ -44,7 +44,7 @@
         }
       }
     },
-    "/settings/admin/settings/{namespace}/{key}": {
+    "/api/v1/settings/admin/settings/{namespace}/{key}": {
       "put": {
         "operationId": "settings.admin.settings.set",
         "summary": "Write one setting row on the selected layer",

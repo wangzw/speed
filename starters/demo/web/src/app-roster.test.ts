@@ -33,7 +33,7 @@ describe('the announced tenant, once the roster is read', () => {
     const request: RequestFn = async <T>(
       path: string,
     ): Promise<T> => {
-      if (path === '/tenant/admin/tenants') {
+      if (path === '/api/v1/tenant/admin/tenants') {
         return {
           tenants: [{ id: 'acme', alias: 'acme-inc', status: 'active' }],
         } as T
@@ -57,7 +57,7 @@ describe('the announced tenant, once the roster is read', () => {
     // sorts before most deployment tenants. It belongs to one account and
     // would refuse a staff viewer, so the default must skip it.
     const request: RequestFn = async <T>(path: string): Promise<T> => {
-      if (path === '/tenant/admin/tenants') {
+      if (path === '/api/v1/tenant/admin/tenants') {
         return {
           tenants: [
             { id: 'personal-abc', alias: 'personal-abc', status: 'active' },

@@ -51,10 +51,10 @@ import {
 } from '../../test-utils/real-client.js'
 import { ProductShell } from './ProductShell.js'
 
-const FLOWS_START = 'POST /auth/flows'
-const FLOWS_ANSWER = 'POST /auth/flows/answer'
-const PROFILE = 'GET /auth/me'
-const LOGOUT = 'POST /auth/logout'
+const FLOWS_START = 'POST /api/v1/auth/flows'
+const FLOWS_ANSWER = 'POST /api/v1/auth/flows/answer'
+const PROFILE = 'GET /api/v1/auth/me'
+const LOGOUT = 'POST /api/v1/auth/logout'
 
 /** The navItems fixture: host data in host order, with the selected
  * item pre-computed (AppShell never path-matches). */

@@ -53,7 +53,7 @@ export async function loadNotes(): Promise<Note[]> {
     accessTokenStore: createMemoryAccessTokenStore(),
     // Silent 401 refresh: @speed/auth-core supplies the real hook. A
     // cookie session wires the hook to session.restore (re-read
-    // GET /auth/session; a still-valid cookie keeps the request and it
+    // GET /api/v1/auth/session; a still-valid cookie keeps the request and it
     // retries once, a dead one ends the session); a token session wires
     // it to session.refresh. It fires for a refused request that
     // presented a credential -- a bearer token, or, with a cookie
@@ -61,8 +61,8 @@ export async function loadNotes(): Promise<Note[]> {
     // round-scoped request function: reads the round itself performs
     // go through it, so a refusal among them surfaces to the hook
     // instead of joining the round that is awaiting it (a
-    // restore-shaped hook reads GET /auth/session and then
-    // GET /auth/me). With no session at all the 401 rejects an ApiError
+    // restore-shaped hook reads GET /api/v1/auth/session and then
+    // GET /api/v1/auth/me). With no session at all the 401 rejects an ApiError
     // with auth: true and hosts route it to sign-in.
     refreshAccessToken: async () => false,
     // Abort requests slower than 10s. Transient retries follow
@@ -172,7 +172,7 @@ export async function loadNotes(): Promise<Note[]> {
   to the hook instead of joining (or starting) the shared round -- the
   round may be the very one awaiting the hook, which would leave the
   request awaiting itself forever. A restore-shaped hook reads
-  GET /auth/session and, after it answers authenticated, GET /auth/me;
+  GET /api/v1/auth/session and, after it answers authenticated, GET /api/v1/auth/me;
   the second read is issued long after the round's synchronous
   invocation, so it must go through the round-scoped function. A hook
   that ignores the argument keeps compiling and running, but one that

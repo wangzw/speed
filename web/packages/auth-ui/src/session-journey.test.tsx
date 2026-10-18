@@ -56,13 +56,13 @@ const SIGN_IN_AGAIN_ZH = zhCN.sessionEnded.signInAction
 const GOOGLE_LABEL_ZH = zhCN.social.provider.google
 const PENDING_ZH = zhCN.socialCallback.pending
 
-const START_FLOW = '/auth/flows'
-const ANSWER_FLOW = '/auth/flows/answer'
-const CURRENT_FLOW = '/auth/flows/current'
-const METHODS = '/auth/methods'
-const ME = '/auth/me'
-const FEATURES = '/features'
-const LOGOUT = '/auth/logout'
+const START_FLOW = '/api/v1/auth/flows'
+const ANSWER_FLOW = '/api/v1/auth/flows/answer'
+const CURRENT_FLOW = '/api/v1/auth/flows/current'
+const METHODS = '/api/v1/auth/methods'
+const ME = '/api/v1/auth/me'
+const FEATURES = '/api/v1/features'
+const LOGOUT = '/api/v1/auth/logout'
 
 /** The process's feature document: this journey's deployment serves an
  * empty vocabulary. Every login commit and anonymous-start restore reads
@@ -239,7 +239,7 @@ describe('session journeys over the composed sign-in family', () => {
   })
 
   it('completes a social sign-in from the authorize URL to the app', async () => {
-    const CALLBACK_ROUTE = '/auth/social/callback'
+    const CALLBACK_ROUTE = '/api/v1/auth/social/callback'
     const authorizeUrl =
       'https://accounts.google.com/o/oauth2/v2/auth' +
       '?response_type=code' +

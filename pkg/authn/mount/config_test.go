@@ -14,15 +14,15 @@ func gateBody(items string) string { return `{"authn":{"gate":{` + items + `}}}`
 
 // TestTheKeysAreReadFromTheGatewaysSectionWithItsDefaults holds what the module
 // reads and what it reads when nothing is written: the base path defaults to
-// /auth, and the other keys are empty or false.
+// /api/v1/auth, and the other keys are empty or false.
 func TestTheKeysAreReadFromTheGatewaysSectionWithItsDefaults(t *testing.T) {
 	got, err := readSettings(newReader(t, `{}`))
 	if err != nil {
 		t.Fatalf("reading the defaults: %v", err)
 	}
-	if got.Mount.BasePath != "/auth" || got.Mount.Endpoint != "" || got.Mount.PublicURL != "" ||
+	if got.Mount.BasePath != "/api/v1/auth" || got.Mount.Endpoint != "" || got.Mount.PublicURL != "" ||
 		got.Mount.AllowInsecure || len(got.TrustedOrigins) != 0 {
-		t.Errorf("the defaults read %+v, want /auth and nothing else", got)
+		t.Errorf("the defaults read %+v, want /api/v1/auth and nothing else", got)
 	}
 
 	got, err = readSettings(newReader(t, gateBody(`"mount":{"endpoint":"admin","base-path":"/identity",`+
@@ -47,7 +47,7 @@ func TestAConfigurationTheModuleCannotMountOnFailsTheStartWithTheKeyNamed(t *tes
 		named string
 	}{
 		{"a base path with no leading slash", `"mount":{"base-path":"auth"}`, authn.ErrInvalidConfig, "authn.gate.mount.base-path"},
-		{"a base path with a trailing slash", `"mount":{"base-path":"/auth/"}`, authn.ErrInvalidConfig, "authn.gate.mount.base-path"},
+		{"a base path with a trailing slash", `"mount":{"base-path":"/api/v1/auth/"}`, authn.ErrInvalidConfig, "authn.gate.mount.base-path"},
 		{"the root as the base path", `"mount":{"base-path":"/"}`, authn.ErrInvalidConfig, "authn.gate.mount.base-path"},
 		{"a base path with a parameter", `"mount":{"base-path":"/a/:b"}`, authn.ErrInvalidConfig, "authn.gate.mount.base-path"},
 		{"a base path with a wildcard", `"mount":{"base-path":"/a/*b"}`, authn.ErrInvalidConfig, "authn.gate.mount.base-path"},

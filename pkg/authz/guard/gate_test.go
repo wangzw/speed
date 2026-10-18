@@ -83,7 +83,7 @@ func TestGateVerifyHoldsPermissionsToTheCatalog(t *testing.T) {
 	t.Run("a declared permission the catalog holds passes", func(t *testing.T) {
 		g := newGate(authztest.NewCatalog(authz.PermissionAccountRead, authz.PermissionAuditRead))
 		g.Require("GET", "/accounts", authz.PermissionAccountRead)
-		g.Require("GET", "/audit", authz.PermissionAuditRead)
+		g.Require("GET", "/api/v1/audit", authz.PermissionAuditRead)
 		g.Open("GET", "/health")
 
 		if err := g.verify(); err != nil {

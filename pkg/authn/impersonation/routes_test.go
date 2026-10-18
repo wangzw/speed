@@ -24,7 +24,7 @@ func postBody() string {
 
 // startRequest builds the start route's request with the body and the JSON type.
 func startRequest(body string) *http.Request {
-	r := httptest.NewRequest(http.MethodPost, "/auth/impersonation", strings.NewReader(body))
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/auth/impersonation", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	return r
 }
@@ -39,9 +39,9 @@ func TestTheRoutesCarryTheRegisteredAccess(t *testing.T) {
 			method, path string
 			impersonable bool
 		}{
-			{http.MethodPost, "/auth/impersonation", false},
-			{http.MethodGet, "/auth/impersonation", true},
-			{http.MethodDelete, "/auth/impersonation", true},
+			{http.MethodPost, "/api/v1/auth/impersonation", false},
+			{http.MethodGet, "/api/v1/auth/impersonation", true},
+			{http.MethodDelete, "/api/v1/auth/impersonation", true},
 		} {
 			reg, ok := m.Registered(c.method, c.path)
 			if !ok {
@@ -197,7 +197,7 @@ func TestStatusReturnsTheRecordInForceAndNotFoundWithout(t *testing.T) {
 		}
 
 		r.mounter.As(impersonatingOpts(sessionBackend)...)
-		w := r.mounter.Do(httptest.NewRequest(http.MethodGet, "/auth/impersonation", nil))
+		w := r.mounter.Do(httptest.NewRequest(http.MethodGet, "/api/v1/auth/impersonation", nil))
 		if w.Code != http.StatusOK {
 			t.Fatalf("the status answered %d, want 200: %s", w.Code, w.Body.String())
 		}
@@ -213,7 +213,7 @@ func TestStatusReturnsTheRecordInForceAndNotFoundWithout(t *testing.T) {
 
 		// A session with no record answers 404.
 		r.mounter.As(adminOpts(authntest.WithSession("no-record-session"))...)
-		if w := r.mounter.Do(httptest.NewRequest(http.MethodGet, "/auth/impersonation", nil)); w.Code != http.StatusNotFound {
+		if w := r.mounter.Do(httptest.NewRequest(http.MethodGet, "/api/v1/auth/impersonation", nil)); w.Code != http.StatusNotFound {
 			t.Errorf("the status of a session with no record answered %d, want 404", w.Code)
 		}
 	})
@@ -233,7 +233,7 @@ func TestEndOverCookieClearsTheMarker(t *testing.T) {
 		r.sessions.cookie = false
 
 		r.mounter.As(impersonatingOpts(sessionBackend)...)
-		w := r.mounter.Do(httptest.NewRequest(http.MethodDelete, "/auth/impersonation", nil))
+		w := r.mounter.Do(httptest.NewRequest(http.MethodDelete, "/api/v1/auth/impersonation", nil))
 		if w.Code != http.StatusNoContent {
 			t.Fatalf("the delete answered %d, want 204: %s", w.Code, w.Body.String())
 		}
@@ -350,7 +350,7 @@ func TestStatusAnswersNotFoundForALapsedRecord(t *testing.T) {
 		// Past the record's end without ending it: the row is there, unended.
 		r.clock.advance(31 * time.Minute)
 		r.mounter.As(impersonatingOpts(sessionBackend)...)
-		w := r.mounter.Do(httptest.NewRequest(http.MethodGet, "/auth/impersonation", nil))
+		w := r.mounter.Do(httptest.NewRequest(http.MethodGet, "/api/v1/auth/impersonation", nil))
 		if w.Code != http.StatusNotFound {
 			t.Fatalf("the status of a lapsed record answered %d, want 404: %s", w.Code, w.Body.String())
 		}
@@ -438,7 +438,7 @@ func TestAnswerStartMapsEachErrorToItsStatusAndCode(t *testing.T) {
 			t.Run(c.name, func(t *testing.T) {
 				w := httptest.NewRecorder()
 				g, _ := gin.CreateTestContext(w)
-				g.Request = httptest.NewRequest(http.MethodPost, "/auth/impersonation", nil)
+				g.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/impersonation", nil)
 				r.p.answerStart(g, adminIdentity(t), c.err)
 				if w.Code != c.status {
 					t.Fatalf("answerStart answered %d, want %d", w.Code, c.status)

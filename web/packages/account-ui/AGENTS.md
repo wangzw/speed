@@ -3,18 +3,18 @@
 The account-management component family of a speed frontend, the
 signed-in half of the account story: a set of surfaces compose a host
 account page — the self-service write surfaces (`ProfileSection` over the
-profile's `PATCH /auth/me`, `PasswordSection` over `PUT /auth/password`,
-`PhoneSection` over the two-step `POST /auth/phone` and
-`/auth/phone/verify`, and `IdentifiersSection` over the profile's own
-identifiers, its add face's `POST /auth/identifiers` and
-`/auth/identifiers/verify`, and `DELETE /auth/identifiers/{id}`),
+profile's `PATCH /api/v1/auth/me`, `PasswordSection` over `PUT /api/v1/auth/password`,
+`PhoneSection` over the two-step `POST /api/v1/auth/phone` and
+`/api/v1/auth/phone/verify`, and `IdentifiersSection` over the profile's own
+identifiers, its add face's `POST /api/v1/auth/identifiers` and
+`/api/v1/auth/identifiers/verify`, and `DELETE /api/v1/auth/identifiers/{id}`),
 `PreferencesSection`
 (the language-and-timezone selects over the profile's own `PATCH
-/auth/me`), `SessionsSection` (the live-sessions list with per-session
+/api/v1/auth/me`), `SessionsSection` (the live-sessions list with per-session
 and bulk revocation), `SocialBindingsSection` plus
 `BindingCallbackHandler` (the social bindings surface and the callback
 route that completes a link flow), and `MfaSection` (the two-step
-verification surface: the factors read from `GET /auth/factors`, their
+verification surface: the factors read from `GET /api/v1/auth/factors`, their
 removal, and the enroll flow). The package sits one step above
 `@speed/auth-ui`'s tier: reads go through the react-query hooks generated
 into `@speed/api-sdk` over the host's QueryClient (the shared-QueryClient
@@ -58,7 +58,7 @@ session as a required prop; the read-only ones take no props.
   the stored `time_zone`, else the device zone, else UTC) — never Intl's
   implicit process-local default, which would render one account
   differently depending on which machine ran the code. The profile tier
-  reads `GET /auth/me`; the query is shared and deduped across the
+  reads `GET /api/v1/auth/me`; the query is shared and deduped across the
   sections by react-query, so adding another time-rendering surface costs
   no extra request. Every Intl construction in that helper is guarded.
 - **Every built-in string is bilingual and bundled.** All text renders
@@ -93,9 +93,9 @@ session as a required prop; the read-only ones take no props.
    renders exactly the operations that exist.** Registration is not a
    factor route — it is the login engine's enroll purpose — so
    `MfaSection` never declares an enable operation; the factors are read
-   from `GET /auth/factors` and removal is `DELETE /auth/factors/{id}`.
+   from `GET /api/v1/auth/factors` and removal is `DELETE /api/v1/auth/factors/{id}`.
    The enrollment entries are the deployment's own answer too: the section
-   reads `GET /auth/methods`' `mfa.factors` (through `session.listMethods`)
+   reads `GET /api/v1/auth/methods`' `mfa.factors` (through `session.listMethods`)
    and offers only those kinds, so it never offers a factor the assembly
    cannot complete. The spec ships no disable operation: the server answers
    it by listing only live sessions. Do not invent operations the spec
@@ -222,7 +222,7 @@ package ships no QR or clipboard integration, so the authenticator's
 `otpauth_uri` is manual-entry only (the passkey ceremony itself runs
 through the browser's WebAuthn API, driven by `src/internal/webauthn.ts`);
 the enrollment entries are the deployment's discovered factor kinds
-(`GET /auth/methods`' `mfa.factors`), so an assembly without a passkey
+(`GET /api/v1/auth/methods`' `mfa.factors`), so an assembly without a passkey
 relying party shows no passkey entry; the session list renders the
 server's list (only live sessions, the current one never revocable here);
 session state does not survive a page load, the refresh token is

@@ -52,9 +52,9 @@ func TestEachReadRouteIsWiredToItsOwnHandler(t *testing.T) {
 		want  string
 		avoid string
 	}{
-		"the roles list":    {"/authz/admin/tenants/t1/roles", "roles", "bindings"},
-		"the grants list":   {"/authz/admin/tenants/t1/roles/r1/grants", "grants", "roles"},
-		"the bindings list": {"/authz/admin/tenants/t1/bindings", "bindings", "roles"},
+		"the roles list":    {"/api/v1/authz/admin/tenants/t1/roles", "roles", "bindings"},
+		"the grants list":   {"/api/v1/authz/admin/tenants/t1/roles/r1/grants", "grants", "roles"},
+		"the bindings list": {"/api/v1/authz/admin/tenants/t1/bindings", "bindings", "roles"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -77,7 +77,7 @@ func TestEachReadRouteIsWiredToItsOwnHandler(t *testing.T) {
 func TestThePermissionsReadRouteIsWired(t *testing.T) {
 	r := newRig(t, authz.PermissionRoleRead)
 	e := r.engine()
-	w := r.send(e, http.MethodGet, "/authz/admin/permissions")
+	w := r.send(e, http.MethodGet, "/api/v1/authz/admin/permissions")
 	if w.Code != http.StatusOK {
 		t.Fatalf("the catalog route answered %d, want 200; body = %q", w.Code, w.Body.String())
 	}

@@ -1,5 +1,5 @@
 // Package admin is the SMS capability's management module: it mounts the
-// template-management routes under /sms/admin/* and delivers no capability of
+// template-management routes under /api/v1/sms/admin/* and delivers no capability of
 // its own.
 //
 // The module holds no data and no rule. Every route's action is a call on the

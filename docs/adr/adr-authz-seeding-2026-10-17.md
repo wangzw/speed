@@ -24,7 +24,7 @@
 
 采纳它意味着 `builtin` 从「整角色冻结」改为「冻结到一批已声明的授权」：角色行需要记录冻结集，`PutGrant` 对已冻结的授权拒绝删改、对新的授权放行。
 
-**否决**：管理面的 `PUT /authz/admin/tenants/:tenant/roles/:role/grants/:permission` 走的正是 `PutGrant`。放宽它等于让管理面可以直接给内置角色增补授权，与本决策要守住的第一条判据相反。此外冻结集要落进角色行，表结构与公开记录形状都要改，代价大于收益。
+**否决**：管理面的 `PUT /api/v1/authz/admin/tenants/:tenant/roles/:role/grants/:permission` 走的正是 `PutGrant`。放宽它等于让管理面可以直接给内置角色增补授权，与本决策要守住的第一条判据相反。此外冻结集要落进角色行，表结构与公开记录形状都要改，代价大于收益。
 
 ### 让种入绕过 `Manager`：直接写库，或经管理面 HTTP 路由
 
@@ -40,7 +40,7 @@
 
 采纳：种入写入口是独立于 `Manager` 的 `authz.Seeder` 能力，由 `authz.policy` 排他交付，与 `Manager` 并列。`Seeder` 只声明 `SeedGrants(ctx, tenant, role, grants)`：给一个已存在的角色添加它尚未持有的（资源，动作）对，返回本次实际写入的行数。它只增——不删除、不改写、不重写时间戳——且幂等：已持有的授予不写、不报错、不计数。
 
-`authz.admin` 只取用 `Manager`，不取用 `Seeder`，因此 `/authz/admin/*` 下的任何写路由在类型上都够不到种入路径。管理面对内置角色的写继续以 `ErrBuiltinRole` 拒绝，映射为 409。
+`authz.admin` 只取用 `Manager`，不取用 `Seeder`，因此 `/api/v1/authz/admin/*` 下的任何写路由在类型上都够不到种入路径。管理面对内置角色的写继续以 `ErrBuiltinRole` 拒绝，映射为 409。
 
 机制在设计文档 [design-authz](../design/modules/design-authz.md) 的「种入面」一节。
 

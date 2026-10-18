@@ -48,7 +48,7 @@ func TestLocaleOfPassesTheRequestLanguageThrough(t *testing.T) {
 func TestTheLanguageReachesTheFlowRecord(t *testing.T) {
 	m := &redirectMethod{}
 	r := newRigMethod(t, m)
-	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`, "Accept-Language", "ja-JP,en;q=0.9")
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`, "Accept-Language", "ja-JP,en;q=0.9")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("POST flows answered %d: %s", rec.Code, rec.Body.String())
 	}

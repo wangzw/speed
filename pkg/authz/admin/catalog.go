@@ -8,7 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// handlePermissionList answers GET /authz/admin/permissions: every permission
+// handlePermissionList answers GET /api/v1/authz/admin/permissions: every permission
 // the catalog declares, each as its own view. It is a read, so the action is
 // role.read.
 func (p *product) handlePermissionList(c *gin.Context) {

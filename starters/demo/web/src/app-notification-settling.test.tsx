@@ -27,8 +27,8 @@ import {
   readyFeatures,
 } from './test-utils/session.js'
 
-const ROSTER_PATH = '/tenant/admin/tenants'
-const ENSURE_PATH = '/workspace/personal'
+const ROSTER_PATH = '/api/v1/tenant/admin/tenants'
+const ENSURE_PATH = '/api/v1/workspace/personal'
 const UNREAD_PATH = '/api/v1/notifications/messages/unread-count'
 
 const PERSONAL_ID = 'personal-account-1'

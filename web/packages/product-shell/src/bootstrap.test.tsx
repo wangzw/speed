@@ -63,29 +63,29 @@ const TENANT_ID = 'tenant-1'
  * reads), a silent refresh's token endpoint, and logout. */
 const respond: RealResponder = (call) => {
   const key = `${call.method} ${call.path}`
-  if (key === 'POST /auth/flows') {
+  if (key === 'POST /api/v1/auth/flows') {
     return jsonResponse(200, openFlow())
   }
-  if (key === 'POST /auth/flows/answer') {
+  if (key === 'POST /api/v1/auth/flows/answer') {
     return jsonResponse(200, authenticatedCompletion())
   }
-  if (key === 'GET /auth/me') {
+  if (key === 'GET /api/v1/auth/me') {
     return jsonResponse(200, principal())
   }
-  if (key === 'GET /auth/session') {
+  if (key === 'GET /api/v1/auth/session') {
     // The boot restore's read. Nobody is signed in by default, so the
     // mounted view stays on the sign-in surface; a test that needs a
     // remembered session overrides this responder.
     return jsonResponse(200, { authenticated: false })
   }
-  if (key === 'GET /features') {
+  if (key === 'GET /api/v1/features') {
     // The boot restore's feature read, and every login commit's.
     return jsonResponse(200, { features: [] })
   }
-  if (key === 'POST /auth/token') {
+  if (key === 'POST /api/v1/auth/token') {
     return jsonResponse(200, tokenResponse())
   }
-  if (key === 'POST /auth/logout') {
+  if (key === 'POST /api/v1/auth/logout') {
     return new Response(null, { status: 204 })
   }
   throw new Error(`unexpected request: ${key}`)
@@ -121,7 +121,7 @@ function seedTenantCache(queryClient: QueryClient): void {
 /** The identity-domain shape: bare spec-path keys nothing
  * tenant-namespaced, which only a total eviction reaches. */
 function seedIdentityCache(queryClient: QueryClient): void {
-  queryClient.setQueryData(['/auth/sessions'], {
+  queryClient.setQueryData(['/api/v1/auth/sessions'], {
     sessions: [{ id: 'session-1' }],
   })
 }
@@ -280,9 +280,9 @@ describe('bootstrapSpeedApp', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     // A page load with a still-valid session cookie: the boot read says
-    // signed in, and the principal is re-read from /auth/me.
+    // signed in, and the principal is re-read from /api/v1/auth/me.
     activeResponder = (call) => {
-      if (call.path === '/auth/session') {
+      if (call.path === '/api/v1/auth/session') {
         return jsonResponse(200, { authenticated: true, session_id: 's-1' })
       }
       return respond(call)
@@ -299,9 +299,9 @@ describe('bootstrapSpeedApp', () => {
     expect(boot.session.getSnapshot().principal).not.toBeNull()
 
     // The boot read and its /me follow both rode the cookie mode.
-    const sessionRead = observed.find((call) => call.path === '/auth/session')
+    const sessionRead = observed.find((call) => call.path === '/api/v1/auth/session')
     expect(sessionRead?.credentials).toBe('same-origin')
-    const meRead = observed.find((call) => call.path === '/auth/me')
+    const meRead = observed.find((call) => call.path === '/api/v1/auth/me')
     expect(meRead?.credentials).toBe('same-origin')
 
     await act(async () => {
@@ -322,7 +322,7 @@ describe('bootstrapSpeedApp', () => {
     for (const call of observed) {
       expect(call.credentials).toBe('same-origin')
     }
-    expect(observed.some((call) => call.path === '/auth/flows')).toBe(true)
+    expect(observed.some((call) => call.path === '/api/v1/auth/flows')).toBe(true)
     await act(async () => {
       boot.root.unmount()
     })
@@ -332,7 +332,7 @@ describe('bootstrapSpeedApp', () => {
   it('settles a refused request even when the silent restore it triggers has its profile read refused', { timeout: 5000 }, async () => {
     // The wiring under test is the production one: the client's
     // refreshAccessToken hook is the session's own restore, reading
-    // GET /auth/session and then GET /auth/me. The first read runs
+    // GET /api/v1/auth/session and then GET /api/v1/auth/me. The first read runs
     // inside the hook's synchronous invocation; the profile read
     // follows an await, so only the round-scoped request function the
     // hook is handed keeps it from joining the round that is awaiting
@@ -343,7 +343,7 @@ describe('bootstrapSpeedApp', () => {
     let sessionReads = 0
     let profileReads = 0
     activeResponder = (call) => {
-      if (call.method === 'GET' && call.path === '/auth/session') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/session') {
         sessionReads += 1
         // The boot restore finds nobody signed in; the silent restore
         // that follows the refused request finds a still-valid cookie.
@@ -354,7 +354,7 @@ describe('bootstrapSpeedApp', () => {
             : { authenticated: true, session_id: 's-1' },
         )
       }
-      if (call.method === 'GET' && call.path === '/auth/me') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/me') {
         profileReads += 1
         return errorResponse(401, 'authn.session_expired', 'trace-me')
       }
@@ -572,7 +572,7 @@ describe('bootstrapSpeedApp', () => {
     await act(async () => {
       await signIn(boot.session)
     })
-    expect(observed.some((call) => call.path === '/auth/flows')).toBe(true)
+    expect(observed.some((call) => call.path === '/api/v1/auth/flows')).toBe(true)
 
     await act(async () => {
       boot.root.unmount()
@@ -700,7 +700,7 @@ describe('watchSessionEnd', () => {
     expect(
       queryClient.getQueryData(['tenant', TENANT_ID, '/notes', {}]),
     ).toBeUndefined()
-    expect(queryClient.getQueryData(['/auth/sessions'])).toBeUndefined()
+    expect(queryClient.getQueryData(['/api/v1/auth/sessions'])).toBeUndefined()
     expect(queryClient.getQueryData(['preferences'])).toBeUndefined()
   })
 
@@ -710,7 +710,7 @@ describe('watchSessionEnd', () => {
     // same authenticated -> anonymous transition a manual sign-out
     // produces, so the default must fire on this path too.
     const rig = makeRealClientRig((call) => {
-      if (call.method === 'POST' && call.path === '/auth/token') {
+      if (call.method === 'POST' && call.path === '/api/v1/auth/token') {
         // The token endpoint refuses an unusable grant the way RFC 6749
         // §5.2 does -- a 400. auth-core reads it as terminal and signs
         // the session out locally; a refusal authored as a 401 would
@@ -733,7 +733,7 @@ describe('watchSessionEnd', () => {
     expect(
       queryClient.getQueryData(['tenant', TENANT_ID, '/notes', {}]),
     ).toBeUndefined()
-    expect(queryClient.getQueryData(['/auth/sessions'])).toBeUndefined()
+    expect(queryClient.getQueryData(['/api/v1/auth/sessions'])).toBeUndefined()
   })
 
   it('does nothing while the session was never authenticated', async () => {
@@ -768,7 +768,7 @@ describe('watchSessionEnd', () => {
     expect(
       queryClient.getQueryData(['tenant', TENANT_ID, '/notes', {}]),
     ).toBeDefined()
-    expect(queryClient.getQueryData(['/auth/sessions'])).toBeDefined()
+    expect(queryClient.getQueryData(['/api/v1/auth/sessions'])).toBeDefined()
     expect(queryClient.getQueryData(['preferences'])).toBeDefined()
   })
 })

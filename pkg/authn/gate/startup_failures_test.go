@@ -136,7 +136,7 @@ func TestConfigBoundaries(t *testing.T) {
 	base := func(m mountConfig) moduleConfig {
 		c := configDefaults
 		c.Mount = m
-		c.Mount.BasePath = "/auth"
+		c.Mount.BasePath = "/api/v1/auth"
 		return c
 	}
 	withBase := func(p string) moduleConfig { c := configDefaults; c.Mount.BasePath = p; return c }

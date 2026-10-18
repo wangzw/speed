@@ -1,6 +1,6 @@
 /**
  * StepUpChallenge behaviour: the dialog driving one `purpose: 'step-up'`
- * flow (POST /auth/flows/authenticated, then POST /auth/flows/answer per
+ * flow (POST /api/v1/auth/flows/authenticated, then POST /api/v1/auth/flows/answer per
  * step).
  *
  * What this suite pins: opening the dialog starts the flow and renders
@@ -44,8 +44,8 @@ import { renderWithProviders } from '../../test-utils/render.js'
 import { captureRefreshWarning } from '../../test-utils/refresh-warning.js'
 import { StepUpChallenge } from './step-up-challenge.js'
 
-const FLOW_START = '/auth/flows/authenticated'
-const FLOW_ANSWER = '/auth/flows/answer'
+const FLOW_START = '/api/v1/auth/flows/authenticated'
+const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
 /** One active factor as the caller's own factor read answers it. */
 const ACTIVE_FACTOR = {
@@ -56,7 +56,7 @@ const ACTIVE_FACTOR = {
   created_at: '2026-01-01T00:00:00Z',
 }
 
-/** A GET /auth/session body as the caller's own session answers it. The
+/** A GET /api/v1/auth/session body as the caller's own session answers it. The
  * default is a password session authenticated just now; `ageMs` moves the
  * authentication time back past the five-minute window. */
 function sessionBody(
@@ -81,7 +81,7 @@ function sessionBody(
  * cases that hand the dialog a session directly and never touch the wire. */
 function bindFactors(factors: readonly unknown[]): void {
   bindRequestFn((async (path: string, options?: RequestOptions) => {
-    if ((options?.method ?? 'GET') === 'GET' && path === '/auth/factors') {
+    if ((options?.method ?? 'GET') === 'GET' && path === '/api/v1/auth/factors') {
       return { factors }
     }
     throw new Error(`unexpected ${options?.method ?? 'GET'} ${path}`)
@@ -95,7 +95,7 @@ function makeStepUpResponder(overrides: {
   readonly codeAnswer?: () => Response
 } = {}): RealResponder {
   return (call: RealCall) => {
-    if (call.method === 'GET' && call.path === '/auth/factors') {
+    if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
       return jsonResponse(200, { factors: [ACTIVE_FACTOR] })
     }
     if (call.method === 'POST' && call.path === FLOW_START) {
@@ -378,10 +378,10 @@ describe('StepUpChallenge', () => {
     // single-factor session would meet the same wall.
     const { rig } = mount(
       (call: RealCall) => {
-        if (call.method === 'GET' && call.path === '/auth/factors') {
+        if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
           return jsonResponse(200, { factors: [] })
         }
-        if (call.method === 'GET' && call.path === '/auth/session') {
+        if (call.method === 'GET' && call.path === '/api/v1/auth/session') {
           return jsonResponse(200, sessionBody())
         }
         throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -404,10 +404,10 @@ describe('StepUpChallenge', () => {
     // session -- sms -- whose answers travel under the flow's `answer`
     // step.
     const { rig, onSuccess } = mount((call: RealCall) => {
-      if (call.method === 'GET' && call.path === '/auth/factors') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
         return jsonResponse(200, { factors: [] })
       }
-      if (call.method === 'GET' && call.path === '/auth/session') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/session') {
         return jsonResponse(
           200,
           sessionBody({ methods: ['sms'], ageMs: 6 * 60 * 1000 }),
@@ -451,10 +451,10 @@ describe('StepUpChallenge', () => {
 
   it('names a password session password on the first-factor step-up', async () => {
     const { rig } = mount((call: RealCall) => {
-      if (call.method === 'GET' && call.path === '/auth/factors') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
         return jsonResponse(200, { factors: [] })
       }
-      if (call.method === 'GET' && call.path === '/auth/session') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/session') {
         return jsonResponse(
           200,
           sessionBody({ methods: ['pwd'], ageMs: 6 * 60 * 1000 }),
@@ -497,10 +497,10 @@ describe('StepUpChallenge', () => {
       unblockSession = resolve
     })
     const rig = makeRealClientRig(async (call: RealCall) => {
-      if (call.method === 'GET' && call.path === '/auth/factors') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
         return jsonResponse(200, { factors: [] })
       }
-      if (call.method === 'GET' && call.path === '/auth/session') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/session') {
         if (justAuthenticated) {
           await sessionHeld
         }
@@ -524,7 +524,7 @@ describe('StepUpChallenge', () => {
       }
       if (
         call.method === 'DELETE' &&
-        call.path === '/auth/flows/current'
+        call.path === '/api/v1/auth/flows/current'
       ) {
         return new Response(null, { status: 204 })
       }
@@ -550,7 +550,7 @@ describe('StepUpChallenge', () => {
       expect(
         rig.calls.some(
           (call) =>
-            call.method === 'DELETE' && call.path === '/auth/flows/current',
+            call.method === 'DELETE' && call.path === '/api/v1/auth/flows/current',
         ),
       ).toBe(true),
     )
@@ -578,15 +578,15 @@ describe('StepUpChallenge', () => {
     const clock = vi.spyOn(Date, 'now').mockReturnValue(openedAt)
     try {
       const rig = makeRealClientRig((call: RealCall) => {
-        if (call.method === 'GET' && call.path === '/auth/factors') {
+        if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
           return jsonResponse(200, { factors: [] })
         }
-        if (call.method === 'GET' && call.path === '/auth/session') {
+        if (call.method === 'GET' && call.path === '/api/v1/auth/session') {
           return jsonResponse(200, sessionBody())
         }
         if (
           call.method === 'DELETE' &&
-          call.path === '/auth/flows/current'
+          call.path === '/api/v1/auth/flows/current'
         ) {
           return new Response(null, { status: 204 })
         }
@@ -624,10 +624,10 @@ describe('StepUpChallenge', () => {
     // opening would dedupe to one either way; the warm-cache reopening is
     // the one that shows the second read.
     const rig = makeRealClientRig((call: RealCall) => {
-      if (call.method === 'GET' && call.path === '/auth/factors') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
         return jsonResponse(200, { factors: [] })
       }
-      if (call.method === 'GET' && call.path === '/auth/session') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/session') {
         return jsonResponse(200, sessionBody())
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -638,7 +638,7 @@ describe('StepUpChallenge', () => {
     const control = renderControlled(rig.session, { onSuccess, onCancel })
     const reads = () =>
       rig.calls.filter(
-        (call) => call.method === 'GET' && call.path === '/auth/session',
+        (call) => call.method === 'GET' && call.path === '/api/v1/auth/session',
       )
 
     // A cold-cache opening reads once.
@@ -657,16 +657,16 @@ describe('StepUpChallenge', () => {
     // channel this dialog cannot re-prove, so no step-up is started and
     // the only way out is a new sign-in.
     const { rig, onCancel } = mount((call: RealCall) => {
-      if (call.method === 'GET' && call.path === '/auth/factors') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
         return jsonResponse(200, { factors: [] })
       }
-      if (call.method === 'GET' && call.path === '/auth/session') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/session') {
         return jsonResponse(
           200,
           sessionBody({ methods: ['oauth'], ageMs: 6 * 60 * 1000 }),
         )
       }
-      if (call.method === 'POST' && call.path === '/auth/logout') {
+      if (call.method === 'POST' && call.path === '/api/v1/auth/logout') {
         return new Response(null, { status: 204 })
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -684,7 +684,7 @@ describe('StepUpChallenge', () => {
     await waitFor(() =>
       expect(
         rig.calls.some(
-          (call) => call.method === 'POST' && call.path === '/auth/logout',
+          (call) => call.method === 'POST' && call.path === '/api/v1/auth/logout',
         ),
       ).toBe(true),
     )

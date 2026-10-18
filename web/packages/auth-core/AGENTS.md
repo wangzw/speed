@@ -21,8 +21,8 @@ The session is delivered as a cookie by default. `startFlow` is always
 started as a cookie session (`delivery: 'session'`), so a completion
 answers `{state: 'authenticated', session: {id, expires_at}}`; the server
 sets its httpOnly cookie, the browser attaches it, and `restore()` reads
-`GET /auth/session` to re-establish the snapshot after a reload (reading
-`GET /auth/me` for the principal). A store-less session holds no
+`GET /api/v1/auth/session` to re-establish the snapshot after a reload (reading
+`GET /api/v1/auth/me` for the principal). A store-less session holds no
 credential at all. A host that passes an `AccessTokenStore` keeps the
 token path: a `delivery: 'token'` login completion (state
 'authenticated') writes the access token into it and holds the minted
@@ -159,7 +159,7 @@ it calls). Never import either of those from below this layer.
   survival rules and its own commit check.** The snapshot carries
   `FeatureState` (`none`, `pending`, `failed`, `ready` with the served
   names); the session never interprets a name. A login completion and an
-  anonymous-start restore read `GET /features` beside `GET /auth/me` and
+  anonymous-start restore read `GET /api/v1/features` beside `GET /api/v1/auth/me` and
   commit both; a failed feature read commits `failed` (with the error)
   rather than failing the login, because a failed read is neither every
   feature absent nor every feature present. A same-session refresh,
@@ -174,7 +174,7 @@ it calls). Never import either of those from below this layer.
   a listener re-entering on `pending` shares the read and a read that
   outlived its session is never handed to the next one.
 - **`impersonating` is a snapshot fact only `restore()` writes.** It
-  mirrors `GET /auth/session`'s same-named field; a missing field reads
+  mirrors `GET /api/v1/auth/session`'s same-named field; a missing field reads
   false and only a boolean value is accepted. Login completion, logout
   and every local clear set it false; a same-session refresh, step-up,
   `link`/`enroll` and `retryFeatures` keep it unchanged. The snapshot

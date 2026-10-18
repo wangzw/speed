@@ -1,7 +1,7 @@
 /**
  * PasswordSection behaviour: the change-password surface over the profile
- * read (GET /auth/me, for the account's `password_set`) and the change
- * write (PUT /auth/password).
+ * read (GET /api/v1/auth/me, for the account's `password_set`) and the change
+ * write (PUT /api/v1/auth/password).
  *
  * What this suite pins: the current-password field renders only when the
  * profile says a password is set, and an account without one gets the
@@ -32,10 +32,10 @@ import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { PasswordSection } from './PasswordSection.js'
 
-const PROFILE_PATH = '/auth/me'
-const PASSWORD_PATH = '/auth/password'
-const FLOW_START = '/auth/flows/authenticated'
-const FLOW_ANSWER = '/auth/flows/answer'
+const PROFILE_PATH = '/api/v1/auth/me'
+const PASSWORD_PATH = '/api/v1/auth/password'
+const FLOW_START = '/api/v1/auth/flows/authenticated'
+const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
 function mount(respond: RealResponder) {
   const rig = makeRealClientRig(respond)

@@ -27,7 +27,7 @@ import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
-const CALLBACK_URI = '/auth/social/callback'
+const CALLBACK_URI = '/api/v1/auth/social/callback'
 
 const PROVIDERS: readonly SocialProviderConfig[] = [
   { provider: 'google', redirectUri: CALLBACK_URI },
@@ -72,7 +72,7 @@ describe('SocialSignInSection', () => {
     expect(onAuthorizeUrl).toHaveBeenLastCalledWith('github', GITHUB_AUTH_URL)
     expect(harness.calls).toHaveLength(2)
     expect(harness.calls[0]?.method).toBe('POST')
-    expect(harness.calls[0]?.path).toBe('/auth/flows')
+    expect(harness.calls[0]?.path).toBe('/api/v1/auth/flows')
     // The provider is the flow's method; the host callback route is the
     // flow's return_to (the server builds the provider's own redirect_uri).
     expect(harness.calls[0]?.options?.body).toMatchObject({

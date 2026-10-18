@@ -31,8 +31,8 @@ interface RecordedCall {
 const calls: RecordedCall[] = []
 /** The payloads the endpoints would return, keyed by method + path. */
 const responses: Record<string, unknown> = {
-  'GET /auth/sessions': { sessions: [] },
-  'GET /auth/me': { account_id: 'user-1' },
+  'GET /api/v1/auth/sessions': { sessions: [] },
+  'GET /api/v1/auth/me': { account_id: 'user-1' },
 }
 const fakeRequestFn: RequestFn = (async <T>(
   path: string,
@@ -67,14 +67,14 @@ describe('useAuthnSessionList', () => {
     // the recorded options carry a live signal -- assert the wire
     // slice, not structural equality over the whole options object.
     expect(calls).toMatchObject([
-      { path: '/auth/sessions', options: { method: 'GET' } },
+      { path: '/api/v1/auth/sessions', options: { method: 'GET' } },
     ])
   })
 
   it('stamps the spec path as the query key, with no tenant prefix', () => {
     // Query-key tenant namespacing is a consumer-shell discipline; the
     // generated key is the bare spec path.
-    expect(getAuthnSessionListQueryKey()).toEqual(['/auth/sessions'])
+    expect(getAuthnSessionListQueryKey()).toEqual(['/api/v1/auth/sessions'])
   })
 })
 
@@ -86,12 +86,12 @@ describe('useAuthnProfileGet', () => {
     })
     expect(result.current.data).toEqual({ account_id: 'user-1' })
     expect(calls).toMatchObject([
-      { path: '/auth/me', options: { method: 'GET' } },
+      { path: '/api/v1/auth/me', options: { method: 'GET' } },
     ])
   })
 
   it('stamps the profile path as the query key', () => {
-    expect(getAuthnProfileGetQueryKey()).toEqual(['/auth/me'])
+    expect(getAuthnProfileGetQueryKey()).toEqual(['/api/v1/auth/me'])
   })
 })
 
@@ -106,7 +106,7 @@ describe('useAuthnLoginStart', () => {
     })
     expect(calls).toMatchObject([
       {
-        path: '/auth/flows',
+        path: '/api/v1/auth/flows',
         options: {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -126,7 +126,7 @@ describe('auditAdminRecordsList', () => {
     await auditAdminRecordsList({ action: ['login.create', 'login.failed'] })
     expect(calls).toMatchObject([
       {
-        path: '/audit/admin/records',
+        path: '/api/v1/audit/admin/records',
         options: {
           method: 'GET',
           query: { action: ['login.create', 'login.failed'] },

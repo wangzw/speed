@@ -6,7 +6,7 @@
  * login name, so the password section stays withheld behind an explanatory
  * line until a username (or a verified email) is present; once the account
  * has both a login name and a password the page states that setup is
- * complete. The tests script the one read the page makes (GET /auth/me) and
+ * complete. The tests script the one read the page makes (GET /api/v1/auth/me) and
  * read their expected copy from the shipped bundles.
  */
 
@@ -55,7 +55,7 @@ function profileOf(
  * disabled by the empty feature set below). */
 function bindProfile(profile: AuthnProfileProfile): void {
   const request: RequestFn = async <T,>(path: string): Promise<T> => {
-    if (path === '/auth/me') {
+    if (path === '/api/v1/auth/me') {
       return profile as T
     }
     throw new Error(`the suite binds only the profile read: ${path}`)

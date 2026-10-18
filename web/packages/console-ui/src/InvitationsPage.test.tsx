@@ -824,18 +824,18 @@ describe('InvitationsPage', () => {
     let memberRows = 0
     let writeFails = false
     const calls = bindConsoleRequest((call) => {
-      if (call.method === 'GET' && call.path === '/tenant/admin/tenants') {
+      if (call.method === 'GET' && call.path === '/api/v1/tenant/admin/tenants') {
         return { tenants: [TENANT] }
       }
       if (
         call.method === 'GET' &&
-        call.path === '/auth/admin/tenants/acme/invitations'
+        call.path === '/api/v1/auth/admin/tenants/acme/invitations'
       ) {
         return { invitations: [], next_cursor: '' }
       }
       if (
         call.method === 'GET' &&
-        call.path === '/auth/admin/tenants/acme/members'
+        call.path === '/api/v1/auth/admin/tenants/acme/members'
       ) {
         memberRows += 1
         return {
@@ -843,18 +843,18 @@ describe('InvitationsPage', () => {
           next_cursor: '',
         }
       }
-      if (call.method === 'GET' && call.path === '/auth/admin/accounts') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/admin/accounts') {
         return { accounts: [account()], next_cursor: '' }
       }
       if (
         call.method === 'GET' &&
-        call.path === '/auth/admin/accounts/acc-2'
+        call.path === '/api/v1/auth/admin/accounts/acc-2'
       ) {
         return { account: account() }
       }
       if (
         call.method === 'PUT' &&
-        call.path === '/auth/admin/tenants/acme/members/acc-2'
+        call.path === '/api/v1/auth/admin/tenants/acme/members/acc-2'
       ) {
         if (writeFails) {
           throw { status: 403, code: 'client.http.403' }
@@ -870,7 +870,7 @@ describe('InvitationsPage', () => {
       calls.filter(
         (entry) =>
           entry.method === 'GET' &&
-          entry.path === '/auth/admin/tenants/acme/members',
+          entry.path === '/api/v1/auth/admin/tenants/acme/members',
       ).length
 
     // A landed write re-runs the member read, so the row it created is on

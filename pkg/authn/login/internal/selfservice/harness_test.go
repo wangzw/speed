@@ -32,7 +32,7 @@ var (
 const (
 	account  authn.AccountID = "acct-1"
 	session  authn.SessionID = "sess-1"
-	basePath                 = "/auth"
+	basePath                 = "/api/v1/auth"
 )
 
 // harness is a Service on a mounttest Mounter with a fake for every dependency.

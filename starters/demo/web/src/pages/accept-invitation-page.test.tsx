@@ -63,10 +63,10 @@ function makeInvitationBackend() {
   const accepted: string[] = []
   const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
     const method = options?.method ?? 'GET'
-    if (path === `/auth/invitations/${TOKEN}` && method === 'GET') {
+    if (path === `/api/v1/auth/invitations/${TOKEN}` && method === 'GET') {
       return Promise.resolve(VIEW as T)
     }
-    if (path === `/auth/invitations/${TOKEN}` && method === 'POST') {
+    if (path === `/api/v1/auth/invitations/${TOKEN}` && method === 'POST') {
       accepted.push(TOKEN)
       return Promise.resolve({
         account: 'acc-1',
@@ -192,7 +192,7 @@ describe('the invitation landing', () => {
           ? authenticatedCompletion()
           : completeFlow(2),
       [PROFILE_GET]: () => principal(),
-      [`GET /auth/invitations/${TOKEN}`]: () => VIEW,
+      [`GET /api/v1/auth/invitations/${TOKEN}`]: () => VIEW,
     })
     const user = userEvent.setup()
     renderDemoApp({

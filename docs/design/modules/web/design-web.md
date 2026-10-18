@@ -144,14 +144,14 @@ interface SpeedAppDefinition {
 
 ### 不经特性门控的后端模块
 
-平台自身的装配（cookie 会话）不经特性门控、直接调用下表各后端模块的路由，服务前端的命令必须纳入它们，清单是穷举的。其余后端模块服务的面，前端按事实的归属门控：登录后才需要的存在性经特性文档门控，模块不在本进程运行时按特性缺席处理；登录前的事实经拥有它的模块的匿名发现面门控，例如企业提供方的发现（`authn.sso` 的 `POST /auth/sso/discover`）只在 `GET /auth/methods` 列出 `enterprise` 类方法时调用。宿主另传 `AccessTokenStore` 走令牌会话时，刷新另需令牌交付的路由，那是宿主自选的装配，不在此列。
+平台自身的装配（cookie 会话）不经特性门控、直接调用下表各后端模块的路由，服务前端的命令必须纳入它们，清单是穷举的。其余后端模块服务的面，前端按事实的归属门控：登录后才需要的存在性经特性文档门控，模块不在本进程运行时按特性缺席处理；登录前的事实经拥有它的模块的匿名发现面门控，例如企业提供方的发现（`authn.sso` 的 `POST /api/v1/auth/sso/discover`）只在 `GET /api/v1/auth/methods` 列出 `enterprise` 类方法时调用。宿主另传 `AccessTokenStore` 走令牌会话时，刷新另需令牌交付的路由，那是宿主自选的装配，不在此列。
 
 | 模块 | 前端依赖它的什么 |
 |---|---|
 | `authn.login` | 登录方法发现、登录流程与已登录身份上的自助服务；它的 `Requires` 带来 `authn.Passwords` |
-| `authn.session` | `GET /auth/session`、登出与会话管理 |
-| `authn.profile` | `GET /auth/me` 与资料、偏好的读写 |
-| `feature.board` | 特性文档 `GET /features`（[feature](../design-feature.md)） |
+| `authn.session` | `GET /api/v1/auth/session`、登出与会话管理 |
+| `authn.profile` | `GET /api/v1/auth/me` 与资料、偏好的读写 |
+| `feature.board` | 特性文档 `GET /api/v1/features`（[feature](../design-feature.md)） |
 
 ## UML 图
 

@@ -1110,7 +1110,7 @@ func TestThePersonalTenantUnblocksTheObjectRoutes(t *testing.T) {
 
 	// The conditional feature is posted while the route is mounted: it is what
 	// the frontend reads before it triggers the ensure.
-	features := send(t, client, http.MethodGet, base+"/features", nil, auth)
+	features := send(t, client, http.MethodGet, base+"/api/v1/features", nil, auth)
 	if features.status != http.StatusOK {
 		t.Fatalf("reading the feature document answered %d:\n%s", features.status, features.body)
 	}
@@ -1198,7 +1198,7 @@ func TestTheEnsureRefusesAnAccountOfAnotherTenant(t *testing.T) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	operatorToken := signIn(t, base, seedIdentifier, seedPassword)
 
-	profile := send(t, client, http.MethodGet, base+"/auth/me", nil,
+	profile := send(t, client, http.MethodGet, base+"/api/v1/auth/me", nil,
 		map[string]string{"Authorization": "Bearer " + memberToken})
 	if profile.status != http.StatusOK {
 		t.Fatalf("reading the member's profile answered %d:\n%s", profile.status, profile.body)
@@ -1211,7 +1211,7 @@ func TestTheEnsureRefusesAnAccountOfAnotherTenant(t *testing.T) {
 	}
 
 	added := send(t, client, http.MethodPut,
-		base+"/auth/admin/tenants/demo/members/"+who.AccountID,
+		base+"/api/v1/auth/admin/tenants/demo/members/"+who.AccountID,
 		map[string]any{"active": true},
 		map[string]string{"Authorization": "Bearer " + operatorToken})
 	if added.status != http.StatusNoContent {
@@ -1254,7 +1254,7 @@ func TestTheOwnerHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 	// The role's grants, read by the administrator through the policy surface,
 	// are the allowlist's two (object, action) pairs and nothing else.
 	grants := send(t, client, http.MethodGet,
-		base+"/authz/admin/tenants/"+personalID+"/roles/"+string(personalOwnerRole)+"/grants",
+		base+"/api/v1/authz/admin/tenants/"+personalID+"/roles/"+string(personalOwnerRole)+"/grants",
 		nil, operatorAuth)
 	if grants.status != http.StatusOK {
 		t.Fatalf("reading the owner role's grants answered %d:\n%s", grants.status, grants.body)
@@ -1284,7 +1284,7 @@ func TestTheOwnerHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 
 	// The administrator's account identifier, to attempt a membership write
 	// that a tenant administrator would be allowed.
-	profile := send(t, client, http.MethodGet, base+"/auth/me", nil, operatorAuth)
+	profile := send(t, client, http.MethodGet, base+"/api/v1/auth/me", nil, operatorAuth)
 	if profile.status != http.StatusOK {
 		t.Fatalf("reading the administrator's profile answered %d:\n%s", profile.status, profile.body)
 	}
@@ -1296,7 +1296,7 @@ func TestTheOwnerHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 	}
 
 	added := send(t, client, http.MethodPut,
-		base+"/auth/admin/tenants/"+personalID+"/members/"+who.AccountID,
+		base+"/api/v1/auth/admin/tenants/"+personalID+"/members/"+who.AccountID,
 		map[string]any{"active": true}, memberAuth)
 	if added.status != http.StatusForbidden {
 		t.Errorf("the personal tenant's owner wrote a membership and answered %d, want 403:\n%s",
@@ -1304,7 +1304,7 @@ func TestTheOwnerHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 	}
 
 	invited := send(t, client, http.MethodPost,
-		base+"/auth/admin/tenants/"+personalID+"/invitations",
+		base+"/api/v1/auth/admin/tenants/"+personalID+"/invitations",
 		map[string]any{"email": "someone@example.test"}, memberAuth)
 	if invited.status != http.StatusForbidden {
 		t.Errorf("the personal tenant's owner issued an invitation and answered %d, want 403:\n%s",
@@ -1325,7 +1325,7 @@ func TestThePersonalTenantRouteIsAbsentWithTheSwitchOff(t *testing.T) {
 	}
 
 	// The conditional feature is not posted while the route is not mounted.
-	features := send(t, client, http.MethodGet, base+"/features", nil,
+	features := send(t, client, http.MethodGet, base+"/api/v1/features", nil,
 		map[string]string{"Authorization": "Bearer " + token})
 	if features.status != http.StatusOK {
 		t.Fatalf("reading the feature document answered %d:\n%s", features.status, features.body)

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {"title": "sms.admin", "version": "1.0.0"},
   "paths": {
-    "/sms/admin/templates": {
+    "/api/v1/sms/admin/templates": {
       "get": {
         "operationId": "sms.admin.templates.list",
         "summary": "Page through the template set, configured templates included",
@@ -38,7 +38,7 @@
         }
       }
     },
-    "/sms/admin/templates/submissions": {
+    "/api/v1/sms/admin/templates/submissions": {
       "post": {
         "operationId": "sms.admin.templates.offer",
         "summary": "Hand a template to the vendor for review and take up the code it answers with",
@@ -56,7 +56,7 @@
         }
       }
     },
-    "/sms/admin/templates/{name}": {
+    "/api/v1/sms/admin/templates/{name}": {
       "delete": {
         "operationId": "sms.admin.templates.remove",
         "summary": "Drop a runtime template from this process, the vendor left alone",
@@ -71,7 +71,7 @@
         }
       }
     },
-    "/sms/admin/templates/{name}/enabled": {
+    "/api/v1/sms/admin/templates/{name}/enabled": {
       "post": {
         "operationId": "sms.admin.templates.setEnabled",
         "summary": "Turn a runtime template's ability to send on or off",

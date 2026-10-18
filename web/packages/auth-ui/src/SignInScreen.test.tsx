@@ -358,7 +358,7 @@ describe('SignInScreen', () => {
           { name: 'password', kind: 'form' },
           { name: 'oidc', kind: 'enterprise', protocol: 'oidc' },
         ])}
-        social={{ returnTo: '/auth/sso/callback', onAuthorizeUrl }}
+        social={{ returnTo: '/api/v1/auth/sso/callback', onAuthorizeUrl }}
       />,
     )
     const user = userEvent.setup()
@@ -372,11 +372,11 @@ describe('SignInScreen', () => {
     expect(onAuthorizeUrl).toHaveBeenCalledWith('oidc', 'https://idp.example/auth')
     // The flow started with the provider's protocol and id, returning to
     // the host's callback route.
-    const start = harness.calls.find((call) => call.path === '/auth/flows')
+    const start = harness.calls.find((call) => call.path === '/api/v1/auth/flows')
     expect(start?.options?.body).toMatchObject({
       method: 'oidc',
       input: { provider: 'idp-1' },
-      return_to: '/auth/sso/callback',
+      return_to: '/api/v1/auth/sso/callback',
     })
     // The entry names no token delivery of its own: auth-core forces the
     // cookie session (`delivery: 'session'`).
@@ -440,7 +440,7 @@ describe('SignInScreen', () => {
     // first-factor step, not a pasted free-text value.
     const answered = harness.calls.find(
       (call) =>
-        call.path === '/auth/flows/answer' &&
+        call.path === '/api/v1/auth/flows/answer' &&
         (call.options?.body as { step?: string }).step === 'answer',
     )
     expect(answered?.options?.body).toMatchObject({
@@ -491,7 +491,7 @@ describe('SignInScreen', () => {
     }
     // No answer travelled: the browser could not run the ceremony.
     expect(
-      harness.calls.find((call) => call.path === '/auth/flows/answer'),
+      harness.calls.find((call) => call.path === '/api/v1/auth/flows/answer'),
     ).toBeUndefined()
   })
 
@@ -585,7 +585,7 @@ describe('SignInScreen', () => {
     expect(get).toHaveBeenCalledTimes(2)
     // Neither the cancelled ceremony nor its retry answered the flow.
     expect(
-      harness.calls.find((call) => call.path === '/auth/flows/answer'),
+      harness.calls.find((call) => call.path === '/api/v1/auth/flows/answer'),
     ).toBeUndefined()
   })
 
@@ -619,7 +619,7 @@ describe('SignInScreen', () => {
       restore()
     }
     expect(
-      harness.calls.find((call) => call.path === '/auth/flows/answer'),
+      harness.calls.find((call) => call.path === '/api/v1/auth/flows/answer'),
     ).toBeUndefined()
   })
 
@@ -660,7 +660,7 @@ describe('SignInScreen', () => {
       // The late success answered nothing and completed nothing for the
       // screen the viewer already left.
       expect(
-        harness.calls.find((call) => call.path === '/auth/flows/answer'),
+        harness.calls.find((call) => call.path === '/api/v1/auth/flows/answer'),
       ).toBeUndefined()
       expect(onSignedIn).not.toHaveBeenCalled()
     } finally {

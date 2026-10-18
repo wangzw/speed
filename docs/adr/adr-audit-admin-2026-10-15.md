@@ -34,7 +34,7 @@
 
 ## 决策
 
-采纳：**审计的检索面由独立模块 `audit.admin` 承载。** 它挂在固定基路径 `/audit/admin` 下，把审计记录的检索暴露成路由（`GET /audit/admin/records` 与 `GET /audit/admin/records/:id`）；判定在 handler 内经 `authz.guard` 的 handler 内 API 就 `audit.read` 做出，跨租户的读落在平台域；读经审计实现子包（`pkg/audit/journal`）新增的读面完成，用的是租户模块认可的只读模型。
+采纳：**审计的检索面由独立模块 `audit.admin` 承载。** 它挂在固定基路径 `/api/v1/audit/admin` 下，把审计记录的检索暴露成路由（`GET /api/v1/audit/admin/records` 与 `GET /api/v1/audit/admin/records/:id`）；判定在 handler 内经 `authz.guard` 的 handler 内 API 就 `audit.read` 做出，跨租户的读落在平台域；读经审计实现子包（`pkg/audit/journal`）新增的读面完成，用的是租户模块认可的只读模型。
 
 审计模块仍不提供查询面：`pkg/audit` 与 `pkg/audit/journal` 不挂路由、不做判定；查询面落在一个独立的叶子里，`audit.read` 的判定与它同处一层。审计表仍只由审计模块写入，读面只发读语句。
 

@@ -4,13 +4,13 @@
  *
  * The ruling is that a username-and-password registration is three existing
  * capabilities in a row (ADR-authn-signup-2026-10-18): the SMS first login
- * opens the account with a verified phone, POST /auth/identifiers adds a
- * username, and PUT /auth/password sets a password. This page is the host
+ * opens the account with a verified phone, POST /api/v1/auth/identifiers adds a
+ * username, and PUT /api/v1/auth/password sets a password. This page is the host
  * half of the second and third steps -- account-ui's IdentifiersSection
  * (username only; the email add face lives on the account page) and its
  * PasswordSection under a page header.
  *
- * The account's own profile (GET /auth/me, the same query the sections read)
+ * The account's own profile (GET /api/v1/auth/me, the same query the sections read)
  * decides the state. A login name is a username or a verified email: the
  * password route refuses an account without one with 409
  * login_identifier_required, so the password section is withheld until the

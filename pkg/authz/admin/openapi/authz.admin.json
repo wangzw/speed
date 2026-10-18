@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {"title": "authz.admin", "version": "1.0.0"},
   "paths": {
-    "/authz/admin/permissions": {
+    "/api/v1/authz/admin/permissions": {
       "get": {
         "operationId": "authz.admin.permissions.list",
         "summary": "List every permission the catalog declares",
@@ -17,7 +17,7 @@
         }
       }
     },
-    "/authz/admin/tenants/{tenant}/roles": {
+    "/api/v1/authz/admin/tenants/{tenant}/roles": {
       "get": {
         "operationId": "authz.admin.roles.list",
         "summary": "List a tenant's roles",
@@ -33,7 +33,7 @@
         }
       }
     },
-    "/authz/admin/tenants/{tenant}/roles/{role}": {
+    "/api/v1/authz/admin/tenants/{tenant}/roles/{role}": {
       "put": {
         "operationId": "authz.admin.roles.put",
         "summary": "Create or rewrite a role",
@@ -69,7 +69,7 @@
         }
       }
     },
-    "/authz/admin/tenants/{tenant}/roles/{role}/grants": {
+    "/api/v1/authz/admin/tenants/{tenant}/roles/{role}/grants": {
       "get": {
         "operationId": "authz.admin.grants.list",
         "summary": "List every permission grant a role holds",
@@ -88,7 +88,7 @@
         }
       }
     },
-    "/authz/admin/tenants/{tenant}/roles/{role}/grants/{permission}": {
+    "/api/v1/authz/admin/tenants/{tenant}/roles/{role}/grants/{permission}": {
       "put": {
         "operationId": "authz.admin.grants.put",
         "summary": "Grant a permission to a role",
@@ -122,7 +122,7 @@
         }
       }
     },
-    "/authz/admin/tenants/{tenant}/bindings": {
+    "/api/v1/authz/admin/tenants/{tenant}/bindings": {
       "get": {
         "operationId": "authz.admin.bindings.list",
         "summary": "List every role binding of a tenant",
@@ -138,7 +138,7 @@
         }
       }
     },
-    "/authz/admin/tenants/{tenant}/bindings/{account}": {
+    "/api/v1/authz/admin/tenants/{tenant}/bindings/{account}": {
       "get": {
         "operationId": "authz.admin.bindings.of",
         "summary": "List every binding an account holds within a tenant",
@@ -157,7 +157,7 @@
         }
       }
     },
-    "/authz/admin/tenants/{tenant}/bindings/{account}/{role}": {
+    "/api/v1/authz/admin/tenants/{tenant}/bindings/{account}/{role}": {
       "put": {
         "operationId": "authz.admin.bindings.put",
         "summary": "Bind a role to an account within a tenant",

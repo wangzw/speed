@@ -2,7 +2,7 @@
 
 ## 职责
 
-`tenant.admin` 是租户名册的 HTTP 管理面，挂在固定基路径 `/tenant/admin` 下，不交付任何功能接口，只把名册的读写暴露成路由。每条路由的动作是经 `tenant.Catalog` 调名册——登记、读回、改别名、改状态——模块自己不持数据、不持规则：名册由名册模块拥有，本模块只决定谁可以问、答案长什么样。
+`tenant.admin` 是租户名册的 HTTP 管理面，挂在固定基路径 `/api/v1/tenant/admin` 下，不交付任何功能接口，只把名册的读写暴露成路由。每条路由的动作是经 `tenant.Catalog` 调名册——登记、读回、改别名、改状态——模块自己不持数据、不持规则：名册由名册模块拥有，本模块只决定谁可以问、答案长什么样。
 
 **本模块是框架为名册提供的那个提供者。** 租户能力本身不提供管理面：名册的写入是它唯一的运维面动作，而它交付的是接缝与实现，不是 HTTP 路由（[design-tenant](design-tenant.md)）。一个想要名册管理面的宿主把本模块写进命令树，不必自己手写同一组路由、同一套判定与同一条审计前置。它不改变租户能力的立场——`pkg/tenant` 仍不带管理面——只把这一面从「宿主自建」补成「框架提供一个可选用的提供者」（[ADR-console-tenant-2026-10-15](../../../adr/adr-console-tenant-2026-10-15.md)）。
 
@@ -27,15 +27,15 @@
 
 ### 路由
 
-基路径 `/tenant/admin`，下表是路由的全集（封闭集）：组、方法、路径与每条需要的权限。
+基路径 `/api/v1/tenant/admin`，下表是路由的全集（封闭集）：组、方法、路径与每条需要的权限。
 
 | 组 | 方法 路径 | 权限 |
 |---|---|---|
-| 租户 | `GET /tenant/admin/tenants` | `tenant.read` |
-| 租户 | `POST /tenant/admin/tenants` | `tenant.manage` |
-| 租户 | `GET /tenant/admin/tenants/:id` | `tenant.read` |
-| 租户 | `PATCH /tenant/admin/tenants/:id` | `tenant.manage` |
-| 租户 | `POST /tenant/admin/tenants/:id/status` | `tenant.manage` |
+| 租户 | `GET /api/v1/tenant/admin/tenants` | `tenant.read` |
+| 租户 | `POST /api/v1/tenant/admin/tenants` | `tenant.manage` |
+| 租户 | `GET /api/v1/tenant/admin/tenants/:id` | `tenant.read` |
+| 租户 | `PATCH /api/v1/tenant/admin/tenants/:id` | `tenant.manage` |
+| 租户 | `POST /api/v1/tenant/admin/tenants/:id/status` | `tenant.manage` |
 
 每条路由的动作是一次 `tenant.Catalog` 调用（方法集与各方法的语义见 [design-tenant](design-tenant.md)）：
 
@@ -75,7 +75,7 @@
 
 - **模块名**：`tenant.admin`。宿主的命令树点模块名纳入，配置命名空间取同一取值。
 - **配置命名空间与输入项**：`tenant.admin` 下的 `endpoints`（字符串列表，必填，无缺省，只收具体端名、不收 `*`，取主配置源）。
-- **管理端点**：`tenant.admin.endpoints` 列出的端，`/tenant/admin/*` 下的名册读写路由（路由见「路由」）。
+- **管理端点**：`tenant.admin.endpoints` 列出的端，`/api/v1/tenant/admin/*` 下的名册读写路由（路由见「路由」）。
 - **权限**：读路由询 `tenant.read`，写路由询 `tenant.manage`；本模块的权限经 `authz.PermissionSpec` 进入进程目录、经 `authz.TranslationSpec` 进入进程翻译（`tenant.read` 译成 `(tenant, read)`、`tenant.manage` 译成 `(tenant, manage)`）。
 - **问题应答**：`Problem.Type` 前缀 `urn:speed:tenant:`，其下的码 `bad-request`、`conflict`。
 

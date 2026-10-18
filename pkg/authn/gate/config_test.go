@@ -21,7 +21,7 @@ func sound() moduleConfig {
 		Endpoints:  []string{"public"},
 		CallBudget: time.Second,
 		InFlight:   8,
-		Mount:      mountConfig{BasePath: "/auth"},
+		Mount:      mountConfig{BasePath: "/api/v1/auth"},
 	}
 }
 
@@ -57,10 +57,10 @@ func TestAConfigurationThisGatewayCannotRunOnIsRefused(t *testing.T) {
 		{"a base path with no leading slash", func(m *moduleConfig) { m.Mount.BasePath = "auth" }, authn.ErrInvalidConfig, mountBasePathItem},
 		{"an empty base path", func(m *moduleConfig) { m.Mount.BasePath = "" }, authn.ErrInvalidConfig, mountBasePathItem},
 		{"a base path that is the root", func(m *moduleConfig) { m.Mount.BasePath = "/" }, authn.ErrInvalidConfig, mountBasePathItem},
-		{"a base path with a trailing slash", func(m *moduleConfig) { m.Mount.BasePath = "/auth/" }, authn.ErrInvalidConfig, mountBasePathItem},
-		{"a base path with a wildcard", func(m *moduleConfig) { m.Mount.BasePath = "/auth/*all" }, authn.ErrInvalidConfig, mountBasePathItem},
+		{"a base path with a trailing slash", func(m *moduleConfig) { m.Mount.BasePath = "/api/v1/auth/" }, authn.ErrInvalidConfig, mountBasePathItem},
+		{"a base path with a wildcard", func(m *moduleConfig) { m.Mount.BasePath = "/api/v1/auth/*all" }, authn.ErrInvalidConfig, mountBasePathItem},
 		{"a base path with a parameter", func(m *moduleConfig) { m.Mount.BasePath = "/:tenant/auth" }, authn.ErrInvalidConfig, mountBasePathItem},
-		{"a base path with a brace pattern", func(m *moduleConfig) { m.Mount.BasePath = "/auth/{tenant}" }, authn.ErrInvalidConfig, mountBasePathItem},
+		{"a base path with a brace pattern", func(m *moduleConfig) { m.Mount.BasePath = "/api/v1/auth/{tenant}" }, authn.ErrInvalidConfig, mountBasePathItem},
 		{"a base path with a query", func(m *moduleConfig) { m.Mount.BasePath = "/auth?x=1" }, authn.ErrInvalidConfig, mountBasePathItem},
 		{"a base path with a repeated slash", func(m *moduleConfig) { m.Mount.BasePath = "/a//b" }, authn.ErrInvalidConfig, mountBasePathItem},
 		{"a base path with a dot segment", func(m *moduleConfig) { m.Mount.BasePath = "/a/../b" }, authn.ErrInvalidConfig, mountBasePathItem},
@@ -180,7 +180,7 @@ func TestASoundConfigurationResolves(t *testing.T) {
 
 // TestTheDefaultsAreTheDesignsAndGuardEverything holds what a gateway is worth
 // with no configuration file at all: it guards every endpoint, with a five
-// second budget, a width of 64 and the base path /auth. The default is the side a
+// second budget, a width of 64 and the base path /api/v1/auth. The default is the side a
 // mistake falls on refusal.
 func TestTheDefaultsAreTheDesignsAndGuardEverything(t *testing.T) {
 	reader := authntest.ConfigReader(t, Module(), `{}`)
@@ -194,8 +194,8 @@ func TestTheDefaultsAreTheDesignsAndGuardEverything(t *testing.T) {
 	if set.budget != 5*time.Second || set.inFlight != 64 {
 		t.Errorf("the budget is %s and the width %d, want 5s and 64", set.budget, set.inFlight)
 	}
-	if set.mount.BasePath != "/auth" || set.mount.Endpoint != "" || set.mount.PublicURL != "" || set.mount.AllowInsecure {
-		t.Errorf("the mount section reads %+v by default, want /auth and nothing else", set.mount)
+	if set.mount.BasePath != "/api/v1/auth" || set.mount.Endpoint != "" || set.mount.PublicURL != "" || set.mount.AllowInsecure {
+		t.Errorf("the mount section reads %+v by default, want /api/v1/auth and nothing else", set.mount)
 	}
 	if len(set.trustedOrigins) != 0 {
 		t.Errorf("the gateway trusts %v by default, want no origin beyond the public URL's", set.trustedOrigins)

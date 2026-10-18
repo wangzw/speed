@@ -158,11 +158,11 @@ export function errorResponse(
 /**
  * The shared first leg of a signed-in journey, in the flow model: the
  * session starts a `purpose: 'login'` flow and answers its first step.
- * The responder must answer POST /auth/flows with an open flow whose
+ * The responder must answer POST /api/v1/auth/flows with an open flow whose
  * next step is a first-factor challenge (see
- * @speed/test-utils/session-harness's openFlow), POST /auth/flows/answer
+ * @speed/test-utils/session-harness's openFlow), POST /api/v1/auth/flows/answer
  * with a token-issuing completion (authenticatedCompletion), and GET
- * /auth/me with the profile the session reads for the principal. The
+ * /api/v1/auth/me with the profile the session reads for the principal. The
  * rig's session has no seed path by contract -- a reload starts
  * anonymous -- so a journey signs in through the real session operation,
  * which is also what plants the access token in the shared store.

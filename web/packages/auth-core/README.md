@@ -15,7 +15,7 @@ session: {id, expires_at}}` and the server sets its httpOnly cookie on
 the same response, which the browser attaches to every same-origin
 request by itself. A store-less session -- the platform's own
 composition -- therefore holds no credential at all; `restore()` reads
-`GET /auth/session` to re-establish the snapshot, which is what keeps a
+`GET /api/v1/auth/session` to re-establish the snapshot, which is what keeps a
 page reload logged in and what ends the local session when the cookie no
 longer holds. A host that passes an `AccessTokenStore` keeps the token
 path instead: a `delivery: 'token'` completion writes the access token
@@ -77,7 +77,7 @@ drives step by step. `startFlow` begins it and returns the first step;
 the view dispatches on `next.kind`; `answerFlow` advances it and returns
 the next step. When the flow reaches a completion that issued tokens
 (`state: 'authenticated'` for a login, `state: 'elevated'` for a
-step-up) the session commits -- writes the store, reads `GET /auth/me`
+step-up) the session commits -- writes the store, reads `GET /api/v1/auth/me`
 for a login's principal, and notifies subscribers. Every other step
 (live steps, `link`, `enroll`) changes nothing.
 
@@ -120,9 +120,9 @@ const enrollment = await session.startAuthenticatedFlow({ purpose: 'enroll' })
 ## Restoring the session across a page load
 
 The cookie outlives the page, so a reload is no longer a sign-out.
-`restore()` reads `GET /auth/session`: a cookie that still names a
+`restore()` reads `GET /api/v1/auth/session`: a cookie that still names a
 session re-establishes the authenticated snapshot (reading the principal
-from `GET /auth/me`) and resolves `true`; a cookie that names nobody
+from `GET /api/v1/auth/me`) and resolves `true`; a cookie that names nobody
 clears the local snapshot and resolves `false`. Call it once at
 bootstrap so a reload stays logged in. The same read carries the
 session's `impersonating` flag into the snapshot (false when the answer
@@ -220,7 +220,7 @@ under.
 ## Feature state
 
 The snapshot carries the feature document the process serves
-(`GET /features`) beside the principal and the permission sets, as a
+(`GET /api/v1/features`) beside the principal and the permission sets, as a
 closed `FeatureState`:
 
 ```ts
@@ -232,7 +232,7 @@ type FeatureState =
 ```
 
 A login completion and an anonymous-start restore read the document in
-parallel with `GET /auth/me` and commit it with the same rules as the
+parallel with `GET /api/v1/auth/me` and commit it with the same rules as the
 permission sets: a login replaces it with the freshly read document, a
 same-session refresh, step-up, `link` or `enroll` keeps it without a
 request, and an anonymous transition resets it to `none`. A failed
@@ -241,7 +241,7 @@ feature read never fails the login: the session commits with the state
 present".
 
 `retryFeatures()` is the explicit retry for a failed read. It only acts
-while authenticated: the state turns `pending`, `GET /features` is read,
+while authenticated: the state turns `pending`, `GET /api/v1/features` is read,
 and the answer lands as `ready` or `failed` only if the session the read
 started under is still the current one (same generation, still
 authenticated, same principal account). Concurrent calls of the same
@@ -320,7 +320,7 @@ parallel copy, and guards every body-carrying 2xx at runtime: the guard
 checks that the body is an object and that it carries the required
 fields, and refuses anything else as a `status: 200`, `code:
 client.protocol` ApiError. The same guard covers the feature document:
-`GET /features` must answer an object carrying a string array in
+`GET /api/v1/features` must answer an object carrying a string array in
 `features`; anything else is a protocol violation, never an empty
 document. A contract-violating 2xx is never a
 successful login, and the guard runs before any state change (and before
@@ -363,7 +363,7 @@ into the discriminated view a form renders.
   rethrows anything else.
 - A login or anonymous-start restore whose feature read fails still
   commits (or resolves) with the state `failed`, carrying the read's
-  error: a deployment that cannot answer `GET /features` must not be
+  error: a deployment that cannot answer `GET /api/v1/features` must not be
   read as one that serves no features. `retryFeatures()` resolves once
   its read settles; a result that lands after its session moved on
   (another commit or a local clear) is discarded, and a retry issued

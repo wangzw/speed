@@ -63,10 +63,10 @@ func TestThePerFlowSendBudgetHolds(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			r := sendBudgetRig(t, c.reports)
-			rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+			rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
 			cookie := flowCookie(t, rec)
 			for i, want := range c.want {
-				out := r.send(http.MethodPost, "/auth/flows/answer",
+				out := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
 					`{"seq":`+itoa(i+1)+`,"step":"answer","input":{}}`, "Cookie", cookie)
 				if out.Code != want {
 					t.Errorf("answer %d answered %d, want %d: %s", i+1, out.Code, want, out.Body.String())
@@ -81,12 +81,12 @@ func TestThePerFlowSendBudgetHolds(t *testing.T) {
 // answer is refused.
 func TestAnOverstatedSendReportLeavesATombstone(t *testing.T) {
 	r := sendBudgetRig(t, []int{9})
-	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
 	cookie := flowCookie(t, rec)
-	if out := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`, "Cookie", cookie); out.Code != http.StatusServiceUnavailable {
+	if out := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`, "Cookie", cookie); out.Code != http.StatusServiceUnavailable {
 		t.Fatalf("an overstated report answered %d, want 503: %s", out.Code, out.Body.String())
 	}
-	if after := r.send(http.MethodGet, "/auth/flows/current", "", "Cookie", cookie); after.Code != http.StatusUnauthorized {
+	if after := r.send(http.MethodGet, "/api/v1/auth/flows/current", "", "Cookie", cookie); after.Code != http.StatusUnauthorized {
 		t.Errorf("the flow after an overstated report answered %d, want 401: the record was not tombstoned", after.Code)
 	}
 }
@@ -107,14 +107,14 @@ func TestApplyEnrollForwardsTheClientInput(t *testing.T) {
 		return authn.StepEnrolled(authn.FactorRecord{ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive})
 	}
 
-	start := r.send(http.MethodPost, "/auth/flows/authenticated", `{"purpose":"enroll","input":{"kind":"totp"}}`)
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"enroll","input":{"kind":"totp"}}`)
 	if start.Code != http.StatusOK {
 		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
 	}
 	cookie := flowCookie(t, start)
 	seq := int(decode(t, start.Body.String())["seq"].(float64))
 
-	ans := r.send(http.MethodPost, "/auth/flows/answer",
+	ans := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
 		`{"seq":`+itoa(seq)+`,"step":"enroll","input":{"code":"123456"}}`, "Cookie", cookie)
 	if ans.Code != http.StatusOK {
 		t.Fatalf("the enroll answer answered %d: %s", ans.Code, ans.Body.String())
@@ -151,7 +151,7 @@ func TestAnAnswerCarriesAFieldLargerThanAStartField(t *testing.T) {
 		},
 	}
 	r := newRig(t, m)
-	start := r.send(http.MethodPost, "/auth/flows", `{"method":"passkey"}`)
+	start := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"passkey"}`)
 	if start.Code != http.StatusOK {
 		t.Fatalf("POST flows answered %d: %s", start.Code, start.Body.String())
 	}
@@ -159,7 +159,7 @@ func TestAnAnswerCarriesAFieldLargerThanAStartField(t *testing.T) {
 	seq := int(decode(t, start.Body.String())["seq"].(float64))
 	credential := strings.Repeat("A", 1100)
 	body := `{"seq":` + itoa(seq) + `,"step":"answer","input":{"credential":"` + credential + `"}}`
-	out := r.send(http.MethodPost, "/auth/flows/answer", body, "Cookie", cookie)
+	out := r.send(http.MethodPost, "/api/v1/auth/flows/answer", body, "Cookie", cookie)
 	if out.Code == http.StatusBadRequest {
 		t.Fatalf("an answer carrying a %d-byte credential was refused as a bad request: %s", len(credential), out.Body.String())
 	}
@@ -191,19 +191,19 @@ func TestASingleFactorEnrollmentCompletesAfterItsOwnFactorTurnsActive(t *testing
 		return authn.StepEnrolled(authn.FactorRecord{ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive})
 	}
 
-	start := r.send(http.MethodPost, "/auth/flows/authenticated", `{"purpose":"enroll","input":{"kind":"totp"}}`)
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"enroll","input":{"kind":"totp"}}`)
 	if start.Code != http.StatusOK {
 		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
 	}
 	cookie := flowCookie(t, start)
 	seq := int(decode(t, start.Body.String())["seq"].(float64))
-	ans := r.send(http.MethodPost, "/auth/flows/answer",
+	ans := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
 		`{"seq":`+itoa(seq)+`,"step":"enroll","input":{"code":"123456"}}`, "Cookie", cookie)
 	if ans.Code != http.StatusOK {
 		t.Fatalf("the enroll answer answered %d: %s", ans.Code, ans.Body.String())
 	}
 	nextSeq := int(decode(t, ans.Body.String())["seq"].(float64))
-	done := r.send(http.MethodPost, "/auth/flows/answer",
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
 		`{"seq":`+itoa(nextSeq)+`,"step":"complete"}`, "Cookie", cookie)
 	if done.Code != http.StatusOK {
 		t.Fatalf("the completion answered %d, want 200: %s", done.Code, done.Body.String())
@@ -226,7 +226,7 @@ func TestTheCompletionReviewRefusesAnotherAccountOrAnImpersonation(t *testing.T)
 			m := &fakeMethod{name: "password"}
 			r := newRig(t, m)
 			r.loginAsAuthenticated("acct1", "sid")
-			start := r.send(http.MethodPost, "/auth/flows/authenticated", `{"purpose":"enroll","input":{"kind":"totp"}}`)
+			start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"enroll","input":{"kind":"totp"}}`)
 			if start.Code != http.StatusOK {
 				t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
 			}
@@ -234,7 +234,7 @@ func TestTheCompletionReviewRefusesAnotherAccountOrAnImpersonation(t *testing.T)
 			seq := int(decode(t, start.Body.String())["seq"].(float64))
 			c.edit(r)
 
-			done := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
+			done := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
 			if done.Code != http.StatusUnauthorized {
 				t.Errorf("the completion answered %d, want 401: %s", done.Code, done.Body.String())
 			}
@@ -253,7 +253,7 @@ func TestTheEnrollNextStepCarriesTheKinds(t *testing.T) {
 	r.allow("acct1")
 	r.mfa.outcome = authn.MFAEnroll
 
-	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
 	next := decode(t, rec.Body.String())["next"].(map[string]any)
 	if next["kind"] != "enroll" {
 		t.Fatalf("a login the policy requires a factor of answered next %v, want enroll", next)
@@ -277,7 +277,7 @@ func TestLoginWithNoUsableFactorIsRefused(t *testing.T) {
 	r.mfa.outcome = authn.MFAFactor
 	r.mfa.offered = nil
 
-	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("a login with no usable factor answered %d, want 401: %s", rec.Code, rec.Body.String())
 	}
@@ -302,7 +302,7 @@ func TestStartAuthenticatedRefusesAGoneSession(t *testing.T) {
 			r := newRig(t, m)
 			r.loginAsAuthenticated("acct1", "sid")
 			r.sessions.statusErr = c.err
-			rec := r.send(http.MethodPost, "/auth/flows/authenticated", `{"purpose":"enroll","input":{"kind":"totp"}}`)
+			rec := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"enroll","input":{"kind":"totp"}}`)
 			if rec.Code != c.want {
 				t.Errorf("%s answered %d, want %d: %s", c.name, rec.Code, c.want, rec.Body.String())
 			}
@@ -319,7 +319,7 @@ func TestTheDeliveryModeSettingNarrowsWhatIsAllowed(t *testing.T) {
 	r.p.tokens = &fakeTokens{}
 	r.p.settings = readerWith(map[string]string{deliveryModesPath: `["session"]`})
 
-	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password","delivery":"token"}`)
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password","delivery":"token"}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("a delivery mode outside the setting answered %d, want 400: %s", rec.Code, rec.Body.String())
 	}
@@ -334,7 +334,7 @@ func TestAnActiveFactorRaisesTheLinkRequirement(t *testing.T) {
 	r.loginAsAuthenticated("acct1", "sid")
 	r.mfa.factors = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive}}
 
-	rec := r.send(http.MethodPost, "/auth/flows/authenticated", `{"purpose":"link","method":"password"}`)
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"link","method":"password"}`)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("a link on a single-factor session answered %d, want 401: %s", rec.Code, rec.Body.String())
 	}
@@ -350,11 +350,11 @@ func TestTheSourceAddressPreThrottleHolds(t *testing.T) {
 	r.p.settings = readerWith(map[string]string{ModuleName + "." + ipLimitKey: "2"})
 
 	for i := 1; i <= 2; i++ {
-		if rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`); rec.Code != http.StatusOK {
+		if rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`); rec.Code != http.StatusOK {
 			t.Fatalf("request %d answered %d, want 200: %s", i, rec.Code, rec.Body.String())
 		}
 	}
-	if rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`); rec.Code != http.StatusTooManyRequests {
+	if rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`); rec.Code != http.StatusTooManyRequests {
 		t.Errorf("the request past the limit answered %d, want 429: %s", rec.Code, rec.Body.String())
 	}
 }
@@ -371,12 +371,12 @@ func TestTokenDeliveryIssuesATokenPair(t *testing.T) {
 	r.allow("acct1")
 	r.p.tokens = &fakeTokens{}
 
-	start := r.send(http.MethodPost, "/auth/flows", `{"method":"password","delivery":"token"}`)
+	start := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password","delivery":"token"}`)
 	if start.Code != http.StatusOK {
 		t.Fatalf("POST flows answered %d: %s", start.Code, start.Body.String())
 	}
 	cookie := flowCookie(t, start)
-	done := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":0,"step":"complete"}`, "Cookie", cookie)
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":0,"step":"complete"}`, "Cookie", cookie)
 	if done.Code != http.StatusOK {
 		t.Fatalf("the token completion answered %d: %s", done.Code, done.Body.String())
 	}
@@ -414,12 +414,12 @@ func TestAnAutomaticMergeCleansUpBeforeTheNewSession(t *testing.T) {
 	r.sessions.rec = rec
 	r.p.passwords = &recordingPasswords{rec: rec}
 
-	start := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	start := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
 	if start.Code != http.StatusOK {
 		t.Fatalf("POST flows answered %d: %s", start.Code, start.Body.String())
 	}
 	cookie := flowCookie(t, start)
-	done := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":0,"step":"complete"}`, "Cookie", cookie)
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":0,"step":"complete"}`, "Cookie", cookie)
 	if done.Code != http.StatusOK {
 		t.Fatalf("the merged login answered %d: %s", done.Code, done.Body.String())
 	}
@@ -443,7 +443,7 @@ func TestMethodsAndCurrentBehave(t *testing.T) {
 	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
 	r := newRig(t, m)
 
-	listing := r.send(http.MethodGet, "/auth/methods", "")
+	listing := r.send(http.MethodGet, "/api/v1/auth/methods", "")
 	if body := decode(t, listing.Body.String())["methods"].([]any); len(body) != 1 ||
 		body[0].(map[string]any)["name"] != "password" {
 		t.Errorf("GET methods = %v, want one descriptor named password", listing.Body.String())
@@ -451,18 +451,18 @@ func TestMethodsAndCurrentBehave(t *testing.T) {
 
 	hidden := newRig(t, m)
 	hidden.p.settings = readerWithDisabled(t, "password")
-	got := hidden.send(http.MethodGet, "/auth/methods", "")
+	got := hidden.send(http.MethodGet, "/api/v1/auth/methods", "")
 	if body := decode(t, got.Body.String())["methods"].([]any); len(body) != 0 {
 		t.Errorf("GET methods with password disabled = %v, want an empty list", got.Body.String())
 	}
 
 	// A header-bound flow echoes its token in the flow reply and in a resume.
-	header := r.send(http.MethodPost, "/auth/flows", `{"method":"password","binding":"header"}`)
+	header := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password","binding":"header"}`)
 	tok, ok := decode(t, header.Body.String())["flow_token"].(string)
 	if !ok || tok == "" {
 		t.Fatalf("a header-bound start echoed no flow token: %s", header.Body.String())
 	}
-	current := r.send(http.MethodGet, "/auth/flows/current", "", "Authn-Flow", tok)
+	current := r.send(http.MethodGet, "/api/v1/auth/flows/current", "", "Authn-Flow", tok)
 	if got := decode(t, current.Body.String())["flow_token"]; got != tok {
 		t.Errorf("GET flows/current echoed flow_token %v, want %q", got, tok)
 	}
@@ -509,15 +509,15 @@ func TestASecondFactorMustBeOneTheFlowOffered(t *testing.T) {
 	r.mfa.outcome = authn.MFAFactor
 	r.mfa.offered = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorTOTP}}
 
-	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
 	cookie := flowCookie(t, rec)
 
-	notOffered := r.send(http.MethodPost, "/auth/flows/answer",
+	notOffered := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
 		`{"seq":0,"step":"factor","input":{"factor":"nope"}}`, "Cookie", cookie)
 	if notOffered.Code != http.StatusUnauthorized {
 		t.Errorf("a factor the flow did not offer answered %d, want 401: %s", notOffered.Code, notOffered.Body.String())
 	}
-	empty := r.send(http.MethodPost, "/auth/flows/answer",
+	empty := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
 		`{"seq":0,"step":"factor","input":{"factor":""}}`, "Cookie", cookie)
 	if empty.Code != http.StatusBadRequest {
 		t.Errorf("an empty factor answered %d, want 400: %s", empty.Code, empty.Body.String())
@@ -534,12 +534,12 @@ func TestTheAnswerRouteDistinguishesItsRefusals(t *testing.T) {
 	r := newRig(t, m)
 	cookie := startPassword(t, r)
 
-	bogus := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"bogus","input":{}}`, "Cookie", cookie)
+	bogus := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"bogus","input":{}}`, "Cookie", cookie)
 	if bogus.Code != http.StatusBadRequest {
 		t.Errorf("an unknown step answered %d, want 400: %s", bogus.Code, bogus.Body.String())
 	}
-	wrongSeq := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":99,"step":"answer","input":{}}`, "Cookie", cookie)
-	failed := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`, "Cookie", cookie)
+	wrongSeq := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":99,"step":"answer","input":{}}`, "Cookie", cookie)
+	failed := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`, "Cookie", cookie)
 	if wrongSeq.Code != http.StatusUnauthorized || failed.Code != http.StatusUnauthorized {
 		t.Fatalf("wrong-seq answered %d and login-failed %d, want both 401", wrongSeq.Code, failed.Code)
 	}
@@ -639,9 +639,9 @@ func TestTheLoginCompletionsInstrumentCarriesMethodAndOutcome(t *testing.T) {
 	if rs.p.meters, err = newMeters(mp); err != nil {
 		t.Fatalf("creating the instrument: %v", err)
 	}
-	rec := rs.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	rec := rs.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
 	cookie := flowCookie(t, rec)
-	rs.send(http.MethodPost, "/auth/flows/answer", `{"seq":0,"step":"complete"}`, "Cookie", cookie)
+	rs.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":0,"step":"complete"}`, "Cookie", cookie)
 
 	// A login whose first factor is refused counts failed.
 	refused := &fakeMethod{name: "password"}
@@ -650,7 +650,7 @@ func TestTheLoginCompletionsInstrumentCarriesMethodAndOutcome(t *testing.T) {
 	if rr.p.meters, err = newMeters(mp); err != nil {
 		t.Fatalf("creating the instrument: %v", err)
 	}
-	rr.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	rr.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
 
 	pairs := loginMetricPairs(t, reader)
 	if pairs["password/success"] != 1 {
@@ -690,7 +690,7 @@ func TestAMethodGivingOversizedPrivateStateIsAnOutage(t *testing.T) {
 	}
 	r := newRig(t, m)
 
-	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("a method giving oversized private state answered %d, want 503: %s", rec.Code, rec.Body.String())
 	}
@@ -709,7 +709,7 @@ func TestAResolverErrorFailsTheFlowClosed(t *testing.T) {
 	r.allow("acct1")
 	cookie := startRedirect(t, r, "")
 
-	out := r.send(http.MethodGet, "/auth/callback/password", "", "Cookie", cookie)
+	out := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
 	if out.Code == http.StatusSeeOther {
 		t.Fatalf("a resolver error made a session and redirected: %s", out.Body.String())
 	}

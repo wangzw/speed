@@ -12,7 +12,7 @@ package main
 // default, on in the review assembly), and no pkg/ package gains a surface for
 // it.
 //
-// The route is POST /workspace/personal on the account endpoint. That endpoint
+// The route is POST /api/v1/workspace/personal on the account endpoint. That endpoint
 // resolves no tenant, so the caller is served before any tenant context exists;
 // the gateway guards the endpoint, and this module registers the route as one an
 // impersonating identity may reach so the handler can answer it 403 itself
@@ -61,11 +61,11 @@ const personalFeature = personalModuleName
 const personalConfigItem = "enabled"
 
 // personalRoutePath is the route the ensure is served at. It hangs off the
-// account endpoint's /workspace claim; the prefix is written into every
+// account endpoint's /api/v1/workspace claim; the prefix is written into every
 // configuration and into the frontend's backend-prefix manifest, so it stays
 // claimed even when the switch is off (the claim is configuration, the mounting
 // is assembly: an off switch answers the prefix with 404).
-const personalRoutePath = "/workspace/personal"
+const personalRoutePath = "/api/v1/workspace/personal"
 
 // personalEndpoint is the listening endpoint the route is mounted on and the
 // endpoint the OpenAPI fragment describes. It is fixed: the route is deliberately
@@ -214,7 +214,7 @@ func personalModule() core.Module {
 // personalConfig is the module's configuration.
 type personalConfig struct {
 	// Enabled is the switch. Off, the route is not mounted and the feature is
-	// not in force; the claimed /workspace prefix then answers 404.
+	// not in force; the claimed /api/v1/workspace prefix then answers 404.
 	Enabled bool `config:"enabled"`
 }
 
@@ -229,7 +229,7 @@ func personalSchema() config.Schema {
 			personalConfigItem: {
 				Origins: config.OriginPrimary,
 				Description: "whether the host creates a personal tenant for an account with no " +
-					"membership; off, POST /workspace/personal is not mounted and /workspace answers 404",
+					"membership; off, POST /api/v1/workspace/personal is not mounted and /api/v1/workspace answers 404",
 			},
 		},
 	}
@@ -382,7 +382,7 @@ type personalResult struct {
 	Created bool
 }
 
-// handleEnsure serves POST /workspace/personal.
+// handleEnsure serves POST /api/v1/workspace/personal.
 //
 // The caller has to be authenticated; the gateway has usually settled that, and
 // the check here is what answers a run whose account endpoint is unguarded. An

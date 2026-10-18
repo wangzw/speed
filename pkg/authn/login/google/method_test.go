@@ -43,7 +43,7 @@ func TestTheHappyPathProvesAGoogleIdentity(t *testing.T) {
 	if got := aq.Get("client_id"); got != testClientID {
 		t.Errorf("client_id = %q, want %q", got, testClientID)
 	}
-	if got := aq.Get("redirect_uri"); got != r.idp.server.URL+"/auth/callback/google" {
+	if got := aq.Get("redirect_uri"); got != r.idp.server.URL+"/api/v1/auth/callback/google" {
 		t.Errorf("redirect_uri = %q, want the built callback", got)
 	}
 	if got := aq.Get("scope"); !strings.Contains(got, "openid") || !strings.Contains(got, "email") {

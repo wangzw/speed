@@ -2,7 +2,7 @@
  * SessionsSection: the sessions-and-devices surface of the account page.
  *
  * Renders every live session the authn module holds for the signed-in
- * account (GET /auth/sessions), the session the request's own token
+ * account (GET /api/v1/auth/sessions), the session the request's own token
  * belongs to marked as the current one, through the generated list hook.
  * The server's listing carries only live sessions -- a revoked or expired
  * one is gone from the answer, never a greyed row -- so a row is either
@@ -15,11 +15,11 @@
  * label; the client IP, the session kind, and the created/last-seen times.
  *
  * Actions: a row that is not the current one carries a row-end sign-out
- * button that revokes exactly that session (DELETE /auth/sessions/{id}),
+ * button that revokes exactly that session (DELETE /api/v1/auth/sessions/{id}),
  * without a second confirmation -- a signed-out session is low-loss (its
  * owner can simply sign in again) and the row itself is never the current
  * one. The section-top action, "sign out other devices", revokes every
- * other session at once (DELETE /auth/sessions) behind the ui-kit danger
+ * other session at once (DELETE /api/v1/auth/sessions) behind the ui-kit danger
  * ConfirmDialog; a single confirming click, not the heavier two-step arm,
  * because the action is recoverable -- a signed-out device signs in again.
  * The server itself skips the current session; the answer's revoked count

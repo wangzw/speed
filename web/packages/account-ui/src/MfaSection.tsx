@@ -2,14 +2,14 @@
  * MfaSection: the two-step-verification (TOTP authenticator + passkey)
  * surface of the account page.
  *
- * The authn factor surface lists and removes factors (GET /auth/factors,
- * DELETE /auth/factors/{id}); registration is not among its routes -- the
+ * The authn factor surface lists and removes factors (GET /api/v1/auth/factors,
+ * DELETE /api/v1/auth/factors/{id}); registration is not among its routes -- the
  * one entry for it is the login engine's `enroll` purpose. The section
  * therefore renders the factors it reads and offers the enrollment entries
  * THIS deployment carries, each of which opens a `purpose: 'enroll'` flow
  * (session.startAuthenticatedFlow) whose steps the wizard answers until the
  * flow settles `enrolled`. Which kinds the deployment carries is its own
- * answer (GET /auth/methods' `mfa.factors`, read once through
+ * answer (GET /api/v1/auth/methods' `mfa.factors`, read once through
  * session.listMethods), never a hard-coded set: a deployment whose assembly
  * has no passkey relying party does not offer the passkey entry, so the
  * surface never offers a factor it cannot complete. The read is a session
@@ -25,7 +25,7 @@
  *    WebAuthn dependency) beside one free-text field. The flow settles
  *    `enrolled` without changing this session's level; the factors list is
  *    then refetched.
- *  - Remove. A row's row-end action sends DELETE /auth/factors/{id}
+ *  - Remove. A row's row-end action sends DELETE /api/v1/auth/factors/{id}
  *    behind the ui-kit danger ConfirmDialog (removing a factor is
  *    irreversible). The route asks for a fresh multi-factor
  *    authentication; an unelevated caller is answered 401
@@ -85,7 +85,7 @@ const KNOWN_FACTOR_STATUSES = new Set<string>(['active', 'pending', 'disabled'])
 
 /** The enrollment entries this package can render, one bundle key each.
  * Each is offered only when the deployment reports its kind (see the
- * section header): the list is filtered against GET /auth/methods'
+ * section header): the list is filtered against GET /api/v1/auth/methods'
  * `mfa.factors`, so an entry the deployment cannot carry never renders. */
 const ENROLL_ENTRIES = [
   { kind: 'totp', labelKey: 'mfa.enroll.totp' },
@@ -134,7 +134,7 @@ export function MfaSection({ session }: MfaSectionProps) {
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
   // Every failure answer: code text above the current view.
   const [banner, setBanner] = useState<string | null>(null)
-  // The deployment's enrollable factor kinds (GET /auth/methods'
+  // The deployment's enrollable factor kinds (GET /api/v1/auth/methods'
   // mfa.factors). null is unresolved -- still reading, or the read failed:
   // the enroll entries are then withheld rather than guessed.
   const [enrollableKinds, setEnrollableKinds] = useState<

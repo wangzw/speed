@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {"title": "feature.board", "version": "1.0.0"},
   "paths": {
-    "/features": {
+    "/api/v1/features": {
       "get": {
         "operationId": "feature.board.list",
         "summary": "Read the feature document this process serves",

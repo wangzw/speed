@@ -27,7 +27,7 @@ func decode(t *testing.T, body string) map[string]any {
 // startPassword begins a password flow and returns the flow cookie.
 func startPassword(t *testing.T, r *rig) string {
 	t.Helper()
-	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("POST flows answered %d: %s", rec.Code, rec.Body.String())
 	}
@@ -62,7 +62,7 @@ func TestFirstFactorPromptRefuseAndProveWalksTheStateMachine(t *testing.T) {
 
 	cookie := startPassword(t, r)
 
-	refused := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`, "Cookie", cookie)
+	refused := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`, "Cookie", cookie)
 	if refused.Code != http.StatusUnauthorized || refused.Header().Get("WWW-Authenticate") == "" {
 		t.Fatalf("a refused answer answered %d with challenge %q, want 401 login-failed",
 			refused.Code, refused.Header().Get("WWW-Authenticate"))
@@ -72,7 +72,7 @@ func TestFirstFactorPromptRefuseAndProveWalksTheStateMachine(t *testing.T) {
 		t.Errorf("the 401 challenge carries Basic or no Bearer: %q", refused.Header().Get("WWW-Authenticate"))
 	}
 
-	proven := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":2,"step":"answer","input":{}}`, "Cookie", cookie)
+	proven := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":2,"step":"answer","input":{}}`, "Cookie", cookie)
 	if proven.Code != http.StatusOK {
 		t.Fatalf("a proven answer answered %d: %s", proven.Code, proven.Body.String())
 	}
@@ -108,7 +108,7 @@ func TestARefusalIsAnsweredByItsCause(t *testing.T) {
 			r.allow("acct1")
 			cookie := startPassword(t, r)
 
-			rec := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`, "Cookie", cookie)
+			rec := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`, "Cookie", cookie)
 			if rec.Code != tc.code {
 				t.Fatalf("a refusal caused by %v answered %d, want %d: %s", tc.cause, rec.Code, tc.code, rec.Body.String())
 			}
@@ -143,27 +143,27 @@ func TestNegativeVectorsAreRefusedBeforeTheMethodRuns(t *testing.T) {
 		want   int
 	}{
 		{
-			"wrong step number", http.MethodPost, "/auth/flows/answer", `{"seq":99,"step":"answer","input":{}}`,
+			"wrong step number", http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":99,"step":"answer","input":{}}`,
 			[]string{"Cookie", cookie},
 			http.StatusUnauthorized,
 		},
 		{
-			"step the state does not take", http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"complete","input":{}}`,
+			"step the state does not take", http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"complete","input":{}}`,
 			[]string{"Cookie", cookie},
 			http.StatusUnauthorized,
 		},
-		{"missing binding", http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`, nil, http.StatusUnauthorized},
+		{"missing binding", http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`, nil, http.StatusUnauthorized},
 		{
-			"mismatched binding", http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`,
+			"mismatched binding", http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`,
 			[]string{"Cookie", "authn-flow=not-the-token"},
 			http.StatusUnauthorized,
 		},
 		{
-			"unknown field", http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"answer","surprise":1}`,
+			"unknown field", http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"answer","surprise":1}`,
 			[]string{"Cookie", cookie},
 			http.StatusBadRequest,
 		},
-		{"unknown start field", http.MethodPost, "/auth/flows", `{"method":"password","surprise":1}`, nil, http.StatusBadRequest},
+		{"unknown start field", http.MethodPost, "/api/v1/auth/flows", `{"method":"password","surprise":1}`, nil, http.StatusBadRequest},
 	}
 	for _, c := range cases {
 		rec := r.send(c.method, c.path, c.body, c.hdr...)
@@ -181,7 +181,7 @@ func TestWrongContentTypeIsRefused(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
 	r := newRig(t, m)
-	rec := r.send(http.MethodPost, "/auth/flows", `<method></method>`, "Content-Type", "text/xml")
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `<method></method>`, "Content-Type", "text/xml")
 	if rec.Code != http.StatusUnsupportedMediaType {
 		t.Errorf("a text/xml body answered %d, want 415: %s", rec.Code, rec.Body.String())
 	}
@@ -196,13 +196,13 @@ func TestMethodDefectsAreAnsweredWithoutLeakingTheCause(t *testing.T) {
 		panic("the method panicked")
 	}
 	r := newRig(t, m)
-	if rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`); rec.Code != http.StatusServiceUnavailable {
+	if rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`); rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("a panicking method answered %d, want 503: %s", rec.Code, rec.Body.String())
 	}
 
 	none := &fakeMethod{name: "password", begin: func(authn.Start) (authn.Step, error) { return authn.Step{}, nil }}
 	r2 := newRig(t, none)
-	if rec := r2.send(http.MethodPost, "/auth/flows", `{"method":"password"}`); rec.Code != http.StatusInternalServerError {
+	if rec := r2.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`); rec.Code != http.StatusInternalServerError {
 		t.Errorf("a method that gave no answer answered %d, want 500: %s", rec.Code, rec.Body.String())
 	}
 }
@@ -214,7 +214,7 @@ func TestKVUnavailableIsRefused(t *testing.T) {
 	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
 	r := newRig(t, m)
 	r.kv.failing = true
-	if rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`); rec.Code != http.StatusServiceUnavailable {
+	if rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`); rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("a flow against an unavailable store answered %d, want 503: %s", rec.Code, rec.Body.String())
 	}
 }
@@ -232,7 +232,7 @@ func TestASecondFactorIsOfferedAndPassed(t *testing.T) {
 	r.mfa.offered = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorTOTP, Label: "Authenticator"}}
 	r.mfa.assurance = authn.MFAResult{Assurance: authn.AssuranceMulti}
 
-	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("POST flows answered %d: %s", rec.Code, rec.Body.String())
 	}
@@ -242,7 +242,7 @@ func TestASecondFactorIsOfferedAndPassed(t *testing.T) {
 		t.Fatalf("a login needing a factor answered next %v, want factor", next)
 	}
 
-	challenge := r.send(http.MethodPost, "/auth/flows/answer",
+	challenge := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
 		`{"seq":0,"step":"factor","input":{"factor":"f1"}}`, "Cookie", cookie)
 	if challenge.Code != http.StatusOK {
 		t.Fatalf("the factor selection answered %d: %s", challenge.Code, challenge.Body.String())
@@ -252,7 +252,7 @@ func TestASecondFactorIsOfferedAndPassed(t *testing.T) {
 	}
 
 	seq := int(decode(t, challenge.Body.String())["seq"].(float64))
-	passed := r.send(http.MethodPost, "/auth/flows/answer",
+	passed := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
 		`{"seq":`+itoa(seq)+`,"step":"factor","input":{"factor":"f1","code":"123456"}}`, "Cookie", cookie)
 	if passed.Code != http.StatusOK {
 		t.Fatalf("the factor pass answered %d: %s", passed.Code, passed.Body.String())
@@ -270,7 +270,7 @@ func TestEnrollFlowCompletes(t *testing.T) {
 	r := newRig(t, m)
 	r.loginAsAuthenticated("acct1", "sid")
 
-	start := r.send(http.MethodPost, "/auth/flows/authenticated",
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
 		`{"purpose":"enroll","input":{"kind":"totp"}}`)
 	if start.Code != http.StatusOK {
 		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
@@ -281,7 +281,7 @@ func TestEnrollFlowCompletes(t *testing.T) {
 	cookie := flowCookie(t, start)
 	seq := int(decode(t, start.Body.String())["seq"].(float64))
 
-	done := r.send(http.MethodPost, "/auth/flows/answer",
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
 		`{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
 	if done.Code != http.StatusOK {
 		t.Fatalf("the enrollment completion answered %d: %s", done.Code, done.Body.String())
@@ -301,7 +301,7 @@ func TestStepUpWithASecondFactorCompletes(t *testing.T) {
 	r.mfa.offered = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorTOTP, ActivatedAt: time.Now().Add(-time.Hour)}}
 	r.mfa.assurance = authn.MFAResult{Assurance: authn.AssuranceMulti}
 
-	start := r.send(http.MethodPost, "/auth/flows/authenticated", `{"purpose":"step-up"}`)
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"step-up"}`)
 	if start.Code != http.StatusOK {
 		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
 	}
@@ -310,18 +310,18 @@ func TestStepUpWithASecondFactorCompletes(t *testing.T) {
 	}
 	cookie := flowCookie(t, start)
 
-	challenge := r.send(http.MethodPost, "/auth/flows/answer",
+	challenge := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
 		`{"seq":0,"step":"factor","input":{"factor":"f1"}}`, "Cookie", cookie)
 	if challenge.Code != http.StatusOK {
 		t.Fatalf("the factor challenge answered %d: %s", challenge.Code, challenge.Body.String())
 	}
 	seq := int(decode(t, challenge.Body.String())["seq"].(float64))
-	passed := r.send(http.MethodPost, "/auth/flows/answer",
+	passed := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
 		`{"seq":`+itoa(seq)+`,"step":"factor","input":{"factor":"f1","code":"123456"}}`, "Cookie", cookie)
 	if passed.Code != http.StatusOK {
 		t.Fatalf("the factor pass answered %d: %s", passed.Code, passed.Body.String())
 	}
-	done := r.send(http.MethodPost, "/auth/flows/answer",
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
 		`{"seq":`+itoa(seq+1)+`,"step":"complete"}`, "Cookie", cookie)
 	if done.Code != http.StatusOK {
 		t.Fatalf("the step-up completion answered %d: %s", done.Code, done.Body.String())
@@ -345,7 +345,7 @@ func TestAStepUpWithNoUsableFactorIsRefused(t *testing.T) {
 	// strengthen it.
 	r.mfa.offered = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorTOTP, ActivatedAt: time.Now().Add(time.Minute)}}
 
-	start := r.send(http.MethodPost, "/auth/flows/authenticated", `{"purpose":"step-up"}`)
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"step-up"}`)
 	if start.Code != http.StatusUnauthorized {
 		t.Errorf("a step-up with no usable factor answered %d, want 401: %s", start.Code, start.Body.String())
 	}
@@ -361,11 +361,11 @@ func TestCompleteMakesASessionOnce(t *testing.T) {
 	}
 	r := newRig(t, m)
 	r.allow("acct1")
-	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
 	cookie := flowCookie(t, rec)
 	seq := int(decode(t, rec.Body.String())["seq"].(float64))
 
-	done := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
 	if done.Code != http.StatusOK {
 		t.Fatalf("complete answered %d: %s", done.Code, done.Body.String())
 	}
@@ -376,7 +376,7 @@ func TestCompleteMakesASessionOnce(t *testing.T) {
 		t.Errorf("the session is for %q, want acct1", got)
 	}
 
-	again := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":`+itoa(seq+1)+`,"step":"complete"}`, "Cookie", cookie)
+	again := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":`+itoa(seq+1)+`,"step":"complete"}`, "Cookie", cookie)
 	if again.Code != http.StatusUnauthorized {
 		t.Errorf("a second complete answered %d, want 401: %s", again.Code, again.Body.String())
 	}
@@ -404,10 +404,10 @@ func TestTheLoginAuditIsWrittenUnderADerivedIdentity(t *testing.T) {
 	// after the handler came from the engine writing it back.
 	r.watchCtx.Store(true)
 
-	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
 	cookie := flowCookie(t, rec)
 	seq := int(decode(t, rec.Body.String())["seq"].(float64))
-	done := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
 	if done.Code != http.StatusOK {
 		t.Fatalf("complete answered %d: %s", done.Code, done.Body.String())
 	}
@@ -437,10 +437,10 @@ func TestAMustChangeLoginRevokesTheAccountsOtherSessions(t *testing.T) {
 		}
 		r := newRig(t, m)
 		r.allow("acct1")
-		rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+		rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
 		cookie := flowCookie(t, rec)
 		seq := int(decode(t, rec.Body.String())["seq"].(float64))
-		done := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
+		done := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
 		if done.Code != http.StatusOK {
 			t.Fatalf("complete answered %d: %s", done.Code, done.Body.String())
 		}
@@ -470,15 +470,15 @@ func TestAnswersAreCappedAtEight(t *testing.T) {
 		return authn.StepPrompt("credentials", nil), nil
 	}
 	r := newRig(t, m)
-	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
 	cookie := flowCookie(t, rec)
 	for i := 1; i <= maxAnswers; i++ {
-		out := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":`+itoa(i)+`,"step":"answer","input":{}}`, "Cookie", cookie)
+		out := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":`+itoa(i)+`,"step":"answer","input":{}}`, "Cookie", cookie)
 		if out.Code != http.StatusOK {
 			t.Fatalf("answer %d answered %d: %s", i, out.Code, out.Body.String())
 		}
 	}
-	ninth := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":`+itoa(maxAnswers+1)+`,"step":"answer","input":{}}`, "Cookie", cookie)
+	ninth := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":`+itoa(maxAnswers+1)+`,"step":"answer","input":{}}`, "Cookie", cookie)
 	if ninth.Code != http.StatusUnauthorized {
 		t.Errorf("the answer past the limit answered %d, want 401: %s", ninth.Code, ninth.Body.String())
 	}
@@ -490,7 +490,7 @@ func TestCrossSiteStartIsRefusedByTheWrapper(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
 	r := newRig(t, m)
-	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`,
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`,
 		"Sec-Fetch-Site", "cross-site", "Origin", "https://evil.example.org")
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("a cross-site start answered %d, want the gateway's 401: %s", rec.Code, rec.Body.String())
@@ -507,7 +507,7 @@ func TestDisabledMethodIsRefusedWithAMethodDisabledCode(t *testing.T) {
 	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("phone", nil), nil }
 	r := newRig(t, m)
 	r.p.settings = readerWithDisabled(t, "sms")
-	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"sms"}`)
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"sms"}`)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("a disabled method answered %d, want 403: %s", rec.Code, rec.Body.String())
 	}

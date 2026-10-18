@@ -1,7 +1,7 @@
 /**
  * SsoPage: the SSO-provider administration page of the console.
  *
- * SSO providers belong to a tenant (/auth/admin/tenants/:tenant/sso/
+ * SSO providers belong to a tenant (/api/v1/auth/admin/tenants/:tenant/sso/
  * providers), so the page opens with a tenant selector and keeps its
  * reads disabled until a tenant is chosen. It lists a tenant's providers
  * (name, protocol, enabled state, version), creates and edits one

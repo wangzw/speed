@@ -67,7 +67,7 @@ func sameSitePost(target, origin string) *http.Request {
 
 func originSettings() settings {
 	var s settings
-	s.Mount.BasePath = "/auth"
+	s.Mount.BasePath = "/api/v1/auth"
 	s.Mount.PublicURL = originPublicURL
 	s.TrustedOrigins = originTrusted
 	return s
@@ -85,7 +85,7 @@ func TestTheTrustSetIsTheCanonicalFormOfThePublicURLAndTheTrustedOrigins(t *test
 	}
 	for _, v := range originVectors {
 		t.Run(v.name, func(t *testing.T) {
-			err := p.CSRF().Check(sameSitePost("https://app.example.com/auth/x", v.origin))
+			err := p.CSRF().Check(sameSitePost("https://app.example.com/api/v1/auth/x", v.origin))
 			if v.trusted && err != nil {
 				t.Errorf("a same-site request from %q was refused: %v", v.origin, err)
 			}
@@ -109,7 +109,7 @@ func TestThePublicURLIsHandedOutAsTheOriginABrowserSends(t *testing.T) {
 		{"", ""},
 	} {
 		var s settings
-		s.Mount.BasePath = "/auth"
+		s.Mount.BasePath = "/api/v1/auth"
 		s.Mount.PublicURL = c.configured
 		s.Mount.AllowInsecure = true
 		p, err := newProduct(s)
@@ -143,14 +143,14 @@ func TestACallbackBypassHoldsForTheRegisteredPatternAndNoOtherPost(t *testing.T)
 		r.Header.Set("Sec-Fetch-Site", "cross-site")
 		return p.CSRF().Check(r)
 	}
-	for _, path := range []string{"/auth/sso/google/callback", "/auth/sso/okta-2/callback", "/auth/files/a", "/auth/files/a/b/c"} {
+	for _, path := range []string{"/api/v1/auth/sso/google/callback", "/api/v1/auth/sso/okta-2/callback", "/api/v1/auth/files/a", "/api/v1/auth/files/a/b/c"} {
 		if err := crossSite(path); err != nil {
 			t.Errorf("a cross-site POST to the callback %s was refused: %v", path, err)
 		}
 	}
 	for _, path := range []string{
-		"/auth/login", "/auth/sso/google/start", "/auth/sso/google/callback/extra", "/auth/sso/callback",
-		"/auth/sso/google/okta/callback", "/other/sso/google/callback", "/auth/sso//callback", "/auth/file/a",
+		"/api/v1/auth/login", "/api/v1/auth/sso/google/start", "/api/v1/auth/sso/google/callback/extra", "/api/v1/auth/sso/callback",
+		"/api/v1/auth/sso/google/okta/callback", "/other/sso/google/callback", "/api/v1/auth/sso//callback", "/api/v1/auth/file/a",
 	} {
 		if err := crossSite(path); err == nil {
 			t.Errorf("a cross-site POST to %s was admitted by a bypass that was registered for other paths", path)

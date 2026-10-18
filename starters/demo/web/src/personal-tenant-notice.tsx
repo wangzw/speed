@@ -3,7 +3,7 @@
  *
  * The signal is the server's personal-tenant ensure answer: when it reports
  * `created: true` the account has just received its personal tenant, and
- * when the same session's GET /auth/me shows setup incomplete (no identifier
+ * when the same session's GET /api/v1/auth/me shows setup incomplete (no identifier
  * usable as a login name, or no password) the home page offers the way to
  * finish it. The sign-in screen's registration mode is not the trigger -- an
  * account opened implicitly by an ordinary SMS sign-in gets the same notice

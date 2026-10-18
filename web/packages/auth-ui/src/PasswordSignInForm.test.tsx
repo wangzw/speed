@@ -72,10 +72,10 @@ describe('PasswordSignInForm', () => {
     await fillAndSubmit('alice@example.com', 's3cret-pass', ZH_LABELS)
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     expect(harness.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
-      'POST /auth/flows',
-      'POST /auth/flows/answer',
-      'GET /auth/me',
-      'GET /features',
+      'POST /api/v1/auth/flows',
+      'POST /api/v1/auth/flows/answer',
+      'GET /api/v1/auth/me',
+      'GET /api/v1/features',
     ])
     expect(harness.calls[0]?.options?.body).toMatchObject({
       method: 'password',
@@ -224,7 +224,7 @@ describe('PasswordSignInForm', () => {
       .click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     const answerBodies = harness.calls
-      .filter((call) => call.path === '/auth/flows/answer')
+      .filter((call) => call.path === '/api/v1/auth/flows/answer')
       .map((call) => call.options?.body)
     expect(answerBodies[0]).toMatchObject({
       step: 'answer',
@@ -256,7 +256,7 @@ describe('PasswordSignInForm', () => {
     }, SUBMIT_EN)
     await waitFor(() =>
       expect(
-        harness.calls.filter((call) => call.path === '/auth/flows'),
+        harness.calls.filter((call) => call.path === '/api/v1/auth/flows'),
       ).toHaveLength(1),
     )
   })

@@ -5,7 +5,7 @@
  * The authn OpenAPI fragments now declare their 2xx response schemas, so
  * orval emits the response models and this package no longer owns them:
  * each name below is an alias to the generated type of the operation the
- * surface reads (GET /auth/me, GET /auth/sessions, GET /auth/factors).
+ * surface reads (GET /api/v1/auth/me, GET /api/v1/auth/sessions, GET /api/v1/auth/factors).
  *
  * The narrowing functions stay because they carry runtime behaviour the
  * generated surface cannot: a narrowing maps an absent body to an empty
@@ -30,27 +30,27 @@ import type {
 } from '@speed/api-sdk'
 
 /** One verified identifier of an account (email, phone): the generated
- * identifier row of GET /auth/me. */
+ * identifier row of GET /api/v1/auth/me. */
 export type AccountIdentifier = AuthnProfileIdentifier
 
 /** One external binding of an account (a social or enterprise provider):
- * the generated link row of GET /auth/me. */
+ * the generated link row of GET /api/v1/auth/me. */
 export type AccountLink = AuthnProfileLink
 
-/** The caller's own profile, the body of GET /auth/me. */
+/** The caller's own profile, the body of GET /api/v1/auth/me. */
 export type AccountProfile = AuthnProfileProfile
 
-/** One session in GET /auth/sessions. The listing carries only live
+/** One session in GET /api/v1/auth/sessions. The listing carries only live
  * sessions, so a row is never revoked or expired. */
 export type AccountSession = AuthnSessionItem
 
-/** The body of GET /auth/sessions. */
+/** The body of GET /api/v1/auth/sessions. */
 export type SessionList = AuthnSessionList
 
-/** One registered factor in GET /auth/factors. */
+/** One registered factor in GET /api/v1/auth/factors. */
 export type AccountFactor = AuthnMfaFactor
 
-/** The body of GET /auth/factors. */
+/** The body of GET /api/v1/auth/factors. */
 export type FactorList = AuthnMfaFactors200
 
 /** Narrows a profile read to its shape; an absent body reads as empty. */

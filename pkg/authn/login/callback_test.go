@@ -68,7 +68,7 @@ func (m *redirectMethod) Answer(_ context.Context, f authn.FlowState, in authn.S
 func startRedirect(t *testing.T, r *rig, extra string) string {
 	t.Helper()
 	body := `{"method":"` + r.p.methodNames[0] + `"` + extra + `}`
-	rec := r.send(http.MethodPost, "/auth/flows", body)
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", body)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("POST flows answered %d: %s", rec.Code, rec.Body.String())
 	}
@@ -86,7 +86,7 @@ func TestACallbackCompletesACookieLoginOnce(t *testing.T) {
 
 	cookie := startRedirect(t, r, "")
 
-	cb := r.send(http.MethodGet, "/auth/callback/password", "", "Cookie", cookie)
+	cb := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
 	if cb.Code != http.StatusSeeOther {
 		t.Fatalf("the callback answered %d, want 303: %s", cb.Code, cb.Body.String())
 	}
@@ -94,7 +94,7 @@ func TestACallbackCompletesACookieLoginOnce(t *testing.T) {
 		t.Fatalf("the callback made %d sessions, want one", len(r.sessions.created))
 	}
 
-	again := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"complete"}`, "Cookie", cookie)
+	again := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"complete"}`, "Cookie", cookie)
 	if again.Code != http.StatusUnauthorized {
 		t.Errorf("a complete against a callback-completed flow answered %d, want 401: %s", again.Code, again.Body.String())
 	}
@@ -121,9 +121,9 @@ func TestAConcurrentSecondCallbackIsRefused(t *testing.T) {
 	cookie := startRedirect(t, r, "")
 
 	first := make(chan *httptest.ResponseRecorder, 1)
-	go func() { first <- r.send(http.MethodGet, "/auth/callback/password", "", "Cookie", cookie) }()
+	go func() { first <- r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie) }()
 	<-started // the first callback is inside the method's answer
-	second := r.send(http.MethodGet, "/auth/callback/password", "", "Cookie", cookie)
+	second := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
 	close(release)
 	got := <-first
 
@@ -152,13 +152,13 @@ func TestACallbackOfAnyPurposeIsAccepted(t *testing.T) {
 	r.loginAsAuthenticated("acct1", "sid")
 	r.allow("acct1")
 
-	start := r.send(http.MethodPost, "/auth/flows/authenticated", `{"purpose":"link","method":"password"}`)
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"link","method":"password"}`)
 	if start.Code != http.StatusOK {
 		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
 	}
 	cookie := flowCookie(t, start)
 
-	cb := r.send(http.MethodGet, "/auth/callback/password", "", "Cookie", cookie)
+	cb := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
 	if cb.Code != http.StatusOK {
 		t.Fatalf("the link callback answered %d, want 200: %s", cb.Code, cb.Body.String())
 	}
@@ -187,16 +187,16 @@ func TestACompletedLinkWritesItsAuditRow(t *testing.T) {
 	sink := &relaxAudit{}
 	r.p.audit = sink
 
-	start := r.send(http.MethodPost, "/auth/flows/authenticated", `{"purpose":"link","method":"password"}`)
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"link","method":"password"}`)
 	if start.Code != http.StatusOK {
 		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
 	}
 	cookie := flowCookie(t, start)
-	cb := r.send(http.MethodGet, "/auth/callback/password", "", "Cookie", cookie)
+	cb := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
 	if cb.Code != http.StatusOK {
 		t.Fatalf("the link callback answered %d, want 200: %s", cb.Code, cb.Body.String())
 	}
-	done := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"complete"}`, "Cookie", cookie)
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"complete"}`, "Cookie", cookie)
 	if done.Code != http.StatusOK {
 		t.Fatalf("the completing answer answered %d, want 200: %s", done.Code, done.Body.String())
 	}
@@ -233,7 +233,7 @@ func TestACallbackNeedingASecondFactorRedirects(t *testing.T) {
 
 	cookie := startRedirect(t, r, `,"return_to":"https://app.example.org/after"`)
 
-	cb := r.send(http.MethodGet, "/auth/callback/password", "", "Cookie", cookie)
+	cb := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
 	if cb.Code != http.StatusSeeOther {
 		t.Fatalf("a callback needing a second factor answered %d, want 303: %s", cb.Code, cb.Body.String())
 	}
@@ -241,7 +241,7 @@ func TestACallbackNeedingASecondFactorRedirects(t *testing.T) {
 		t.Errorf("the redirect went to %q, want the flow's return_to", loc)
 	}
 	// The flow is still in the cookie: GET flows/current reports the second state.
-	current := r.send(http.MethodGet, "/auth/flows/current", "", "Cookie", cookie)
+	current := r.send(http.MethodGet, "/api/v1/auth/flows/current", "", "Cookie", cookie)
 	if current.Code != http.StatusOK {
 		t.Fatalf("GET flows/current after the callback answered %d: %s", current.Code, current.Body.String())
 	}
@@ -266,14 +266,14 @@ func TestCallbackIDPInitiatedIsGated(t *testing.T) {
 
 	t.Run("a GET with no cookie is refused", func(t *testing.T) {
 		r := body()
-		if rec := r.send(http.MethodGet, "/auth/callback/ent", ""); rec.Code != http.StatusUnauthorized {
+		if rec := r.send(http.MethodGet, "/api/v1/auth/callback/ent", ""); rec.Code != http.StatusUnauthorized {
 			t.Errorf("a GET IdP-initiated callback answered %d, want 401: %s", rec.Code, rec.Body.String())
 		}
 	})
 
 	t.Run("no provider register refuses", func(t *testing.T) {
 		r := body()
-		if rec := r.send(http.MethodPost, "/auth/callback/ent", ""); rec.Code != http.StatusUnauthorized {
+		if rec := r.send(http.MethodPost, "/api/v1/auth/callback/ent", ""); rec.Code != http.StatusUnauthorized {
 			t.Errorf("a POST with no provider register answered %d, want 401: %s", rec.Code, rec.Body.String())
 		}
 	})
@@ -281,7 +281,7 @@ func TestCallbackIDPInitiatedIsGated(t *testing.T) {
 	t.Run("a disabled provider refuses", func(t *testing.T) {
 		r := body()
 		r.p.sso = &fakeSSO{row: authn.SSOProvider{ID: "ent", Protocol: "password", Enabled: false, AllowIDPInitiated: true}}
-		if rec := r.send(http.MethodPost, "/auth/callback/ent", ""); rec.Code != http.StatusUnauthorized {
+		if rec := r.send(http.MethodPost, "/api/v1/auth/callback/ent", ""); rec.Code != http.StatusUnauthorized {
 			t.Errorf("a disabled provider answered %d, want 401: %s", rec.Code, rec.Body.String())
 		}
 	})
@@ -289,7 +289,7 @@ func TestCallbackIDPInitiatedIsGated(t *testing.T) {
 	t.Run("a provider that forbids IdP-initiated refuses", func(t *testing.T) {
 		r := body()
 		r.p.sso = &fakeSSO{row: authn.SSOProvider{ID: "ent", Protocol: "password", Enabled: true, AllowIDPInitiated: false}}
-		if rec := r.send(http.MethodPost, "/auth/callback/ent", ""); rec.Code != http.StatusUnauthorized {
+		if rec := r.send(http.MethodPost, "/api/v1/auth/callback/ent", ""); rec.Code != http.StatusUnauthorized {
 			t.Errorf("a provider that forbids IdP-initiated answered %d, want 401: %s", rec.Code, rec.Body.String())
 		}
 	})
@@ -297,7 +297,7 @@ func TestCallbackIDPInitiatedIsGated(t *testing.T) {
 	t.Run("a provider whose protocol is not a registered method refuses", func(t *testing.T) {
 		r := body()
 		r.p.sso = &fakeSSO{row: authn.SSOProvider{ID: "ent", Protocol: "oidc", Enabled: true, AllowIDPInitiated: true}}
-		if rec := r.send(http.MethodPost, "/auth/callback/ent", ""); rec.Code != http.StatusUnauthorized {
+		if rec := r.send(http.MethodPost, "/api/v1/auth/callback/ent", ""); rec.Code != http.StatusUnauthorized {
 			t.Errorf("a provider whose protocol is not a registered method answered %d, want 401: %s", rec.Code, rec.Body.String())
 		}
 	})
@@ -305,7 +305,7 @@ func TestCallbackIDPInitiatedIsGated(t *testing.T) {
 	t.Run("an enabled provider that allows it proceeds", func(t *testing.T) {
 		r := body()
 		r.p.sso = &fakeSSO{row: authn.SSOProvider{ID: "ent", Protocol: "password", Enabled: true, AllowIDPInitiated: true}}
-		rec := r.send(http.MethodPost, "/auth/callback/ent", "")
+		rec := r.send(http.MethodPost, "/api/v1/auth/callback/ent", "")
 		if rec.Code != http.StatusSeeOther {
 			t.Fatalf("an accepted IdP-initiated sign-in answered %d, want 303: %s", rec.Code, rec.Body.String())
 		}
@@ -333,7 +333,7 @@ func TestACallbackMustNameTheFlowsProvider(t *testing.T) {
 		r, m := newSocial()
 		r.allow("acct1")
 		cookie := startRedirect(t, r, "")
-		if rec := r.send(http.MethodGet, "/auth/callback/other", "", "Cookie", cookie); rec.Code != http.StatusUnauthorized {
+		if rec := r.send(http.MethodGet, "/api/v1/auth/callback/other", "", "Cookie", cookie); rec.Code != http.StatusUnauthorized {
 			t.Errorf("a social callback of another name answered %d, want 401: %s", rec.Code, rec.Body.String())
 		}
 		if n := m.calls.Load(); n != 0 {
@@ -350,7 +350,7 @@ func TestACallbackMustNameTheFlowsProvider(t *testing.T) {
 		if got := flowProviderOf(t, r, cookie); got != "password" {
 			t.Errorf("a social flow with input.provider recorded provider %q, want the method name", got)
 		}
-		if rec := r.send(http.MethodGet, "/auth/callback/ent", "", "Cookie", cookie); rec.Code != http.StatusUnauthorized {
+		if rec := r.send(http.MethodGet, "/api/v1/auth/callback/ent", "", "Cookie", cookie); rec.Code != http.StatusUnauthorized {
 			t.Errorf("a social callback aimed at the start input's provider answered %d, want 401: %s", rec.Code, rec.Body.String())
 		}
 		if n := m.calls.Load(); n != 0 {
@@ -363,7 +363,7 @@ func TestACallbackMustNameTheFlowsProvider(t *testing.T) {
 		r.allow("acct1")
 		// The flow records the input's provider identifier, not the method name.
 		cookie := startRedirect(t, r, `,"input":{"provider":"ent"}`)
-		if rec := r.send(http.MethodGet, "/auth/callback/other", "", "Cookie", cookie); rec.Code != http.StatusUnauthorized {
+		if rec := r.send(http.MethodGet, "/api/v1/auth/callback/other", "", "Cookie", cookie); rec.Code != http.StatusUnauthorized {
 			t.Errorf("an enterprise callback of another provider answered %d, want 401: %s", rec.Code, rec.Body.String())
 		}
 		if n := m.calls.Load(); n != 0 {
@@ -377,7 +377,7 @@ func TestACallbackMustNameTheFlowsProvider(t *testing.T) {
 		r, m := newEnterprise()
 		r.allow("acct1")
 		cookie := startRedirect(t, r, `,"input":{"provider":"entA"}`)
-		if rec := r.send(http.MethodGet, "/auth/callback/entB", "", "Cookie", cookie); rec.Code != http.StatusUnauthorized {
+		if rec := r.send(http.MethodGet, "/api/v1/auth/callback/entB", "", "Cookie", cookie); rec.Code != http.StatusUnauthorized {
 			t.Errorf("a callback naming a same-length different provider answered %d, want 401: %s", rec.Code, rec.Body.String())
 		}
 		if n := m.calls.Load(); n != 0 {
@@ -389,7 +389,7 @@ func TestACallbackMustNameTheFlowsProvider(t *testing.T) {
 		r, m := newEnterprise()
 		r.allow("acct1")
 		cookie := startRedirect(t, r, `,"input":{"provider":"ent"}`)
-		if rec := r.send(http.MethodGet, "/auth/callback/ENT", "", "Cookie", cookie); rec.Code != http.StatusUnauthorized {
+		if rec := r.send(http.MethodGet, "/api/v1/auth/callback/ENT", "", "Cookie", cookie); rec.Code != http.StatusUnauthorized {
 			t.Errorf("a callback naming a case variant answered %d, want 401: %s", rec.Code, rec.Body.String())
 		}
 		if n := m.calls.Load(); n != 0 {
@@ -401,7 +401,7 @@ func TestACallbackMustNameTheFlowsProvider(t *testing.T) {
 		r, m := newEnterprise()
 		r.allow("acct1")
 		cookie := startRedirect(t, r, `,"input":{"provider":"ent"}`)
-		if rec := r.send(http.MethodGet, "/auth/callback/ent", "", "Cookie", cookie); rec.Code != http.StatusSeeOther {
+		if rec := r.send(http.MethodGet, "/api/v1/auth/callback/ent", "", "Cookie", cookie); rec.Code != http.StatusSeeOther {
 			t.Errorf("an enterprise callback of the recorded provider answered %d, want 303: %s", rec.Code, rec.Body.String())
 		}
 		if n := m.calls.Load(); n != 1 {
@@ -419,7 +419,7 @@ func TestACrossSiteCallbackPostIsAllowed(t *testing.T) {
 	cookie := startRedirect(t, r, "")
 
 	cross := []string{"Sec-Fetch-Site", "cross-site", "Origin", "https://evil.example.org"}
-	cb := r.send(http.MethodPost, "/auth/callback/password", "", append([]string{"Cookie", cookie}, cross...)...)
+	cb := r.send(http.MethodPost, "/api/v1/auth/callback/password", "", append([]string{"Cookie", cookie}, cross...)...)
 	if cb.Code != http.StatusSeeOther {
 		t.Errorf("a cross-site callback POST answered %d, want 303: the callback must bypass the check", cb.Code)
 	}
@@ -482,7 +482,7 @@ func TestBeginProcessingLosingTheRecordIsRefused(t *testing.T) {
 	rt := &routes{product: r.p}
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/auth/callback/password", nil)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/callback/password", nil)
 	if rt.beginProcessing(c, token, rec, raw) {
 		t.Error("beginProcessing accepted a record that had moved")
 	}
@@ -513,7 +513,7 @@ func TestCallbackIDPInitiatedRecordsProviderAndResumableBinding(t *testing.T) {
 	r.mfa.offered = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorTOTP}}
 	r.p.sso = &fakeSSO{row: authn.SSOProvider{ID: "ent", Protocol: "password", Enabled: true, AllowIDPInitiated: true}}
 
-	out := r.send(http.MethodPost, "/auth/callback/ent", "")
+	out := r.send(http.MethodPost, "/api/v1/auth/callback/ent", "")
 	if out.Code != http.StatusSeeOther {
 		t.Fatalf("an IdP-initiated sign-in needing a second factor answered %d, want 303: %s", out.Code, out.Body.String())
 	}
@@ -521,7 +521,7 @@ func TestCallbackIDPInitiatedRecordsProviderAndResumableBinding(t *testing.T) {
 	if got := flowRecordOf(t, r, cookie).Provider; got != "ent" {
 		t.Errorf("the IdP-initiated record carries provider %q, want the path id", got)
 	}
-	current := r.send(http.MethodGet, "/auth/flows/current", "", "Cookie", cookie)
+	current := r.send(http.MethodGet, "/api/v1/auth/flows/current", "", "Cookie", cookie)
 	if current.Code != http.StatusOK {
 		t.Fatalf("resuming the IdP-initiated flow answered %d, want 200: %s", current.Code, current.Body.String())
 	}
@@ -541,7 +541,7 @@ func TestACallbackReadsOnlyTheCookie(t *testing.T) {
 	cookie := startRedirect(t, r, "")
 	_, token, _ := strings.Cut(cookie, "=")
 
-	out := r.send(http.MethodPost, "/auth/callback/password", "", flowHeader, token)
+	out := r.send(http.MethodPost, "/api/v1/auth/callback/password", "", flowHeader, token)
 	if out.Code != http.StatusUnauthorized {
 		t.Errorf("a callback carrying only the header answered %d, want 401: a callback reads only the cookie", out.Code)
 	}
@@ -571,7 +571,7 @@ func TestACallbackAnsweringRefusedOrUnavailableLeavesATombstone(t *testing.T) {
 			r.allow("acct1")
 			cookie := startRedirect(t, r, "")
 
-			out := r.send(http.MethodGet, "/auth/callback/password", "", "Cookie", cookie)
+			out := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
 			if out.Code != tc.want {
 				t.Fatalf("the callback answered %d, want %d: %s", out.Code, tc.want, out.Body.String())
 			}
@@ -595,7 +595,7 @@ func TestACallbackOfAnUnregisteredMethodIsRefused(t *testing.T) {
 	cookie := startRedirect(t, r, "")
 	editFlowRecord(t, r, cookie, func(rec *record) { rec.Method = "ghost" })
 
-	out := r.send(http.MethodGet, "/auth/callback/password", "", "Cookie", cookie)
+	out := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
 	if out.Code != http.StatusUnauthorized {
 		t.Errorf("a callback of an unregistered method answered %d, want 401: %s", out.Code, out.Body.String())
 	}
@@ -614,7 +614,7 @@ func TestACallbackBodyOverTheLimitIsRefused(t *testing.T) {
 
 	cookie := startRedirect(t, r, "")
 	over := "SAMLResponse=" + strings.Repeat("x", maxCallbackFormBytes+1024)
-	out := r.postForm("/auth/callback/password", over, cookie)
+	out := r.postForm("/api/v1/auth/callback/password", over, cookie)
 	if out.Code != http.StatusUnauthorized {
 		t.Errorf("a callback body over the limit answered %d, want 401: %s", out.Code, out.Body.String())
 	}
@@ -623,7 +623,7 @@ func TestACallbackBodyOverTheLimitIsRefused(t *testing.T) {
 	}
 
 	cookie = startRedirect(t, r, "")
-	within := r.postForm("/auth/callback/password", "SAMLResponse=ok", cookie)
+	within := r.postForm("/api/v1/auth/callback/password", "SAMLResponse=ok", cookie)
 	if within.Code != http.StatusSeeOther {
 		t.Errorf("a callback body within the limit answered %d, want 303: %s", within.Code, within.Body.String())
 	}

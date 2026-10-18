@@ -72,15 +72,15 @@ func serveWithout(list string) {
 // table is what testdata/ and the case's configuration claim, and the D2 case
 // holds the two together.
 var expectedOwners = map[string]string{
-	"/api":       "api",
-	"/auth":      "account",
-	"/features":  "account",
-	"/workspace": "account",
-	"/audit":     "admin",
-	"/authz":     "admin",
-	"/settings":  "admin",
-	"/sms":       "admin",
-	"/tenant":    "admin",
+	"/api":              "api",
+	"/api/v1/auth":      "account",
+	"/api/v1/features":  "account",
+	"/api/v1/workspace": "account",
+	"/api/v1/audit":     "admin",
+	"/api/v1/authz":     "admin",
+	"/api/v1/settings":  "admin",
+	"/api/v1/sms":       "admin",
+	"/api/v1/tenant":    "admin",
 }
 
 // expectedEndpoint answers which endpoint the table says answers a path on the
@@ -982,15 +982,15 @@ func runDifferential(t *testing.T, topo topology) {
 
 	// The comparator's own check: the same request twice is the same answer,
 	// and two answers that differ are reported as different.
-	first := getRaw(t, fmt.Sprintf("http://127.0.0.1:%d/tenant/admin/tenants", ports["backend"]))
-	second := getRaw(t, fmt.Sprintf("http://127.0.0.1:%d/tenant/admin/tenants", ports["backend"]))
+	first := getRaw(t, fmt.Sprintf("http://127.0.0.1:%d/api/v1/tenant/admin/tenants", ports["backend"]))
+	second := getRaw(t, fmt.Sprintf("http://127.0.0.1:%d/api/v1/tenant/admin/tenants", ports["backend"]))
 	if difference := firstDifference(first, second); difference != "" {
 		t.Errorf("the comparator reports two identical requests as different: %s", difference)
 	}
-	methods := getRaw(t, fmt.Sprintf("http://127.0.0.1:%d/auth/methods", ports["backend"]))
-	absent := getRaw(t, fmt.Sprintf("http://127.0.0.1:%d/auth/zz", ports["backend"]))
+	methods := getRaw(t, fmt.Sprintf("http://127.0.0.1:%d/api/v1/auth/methods", ports["backend"]))
+	absent := getRaw(t, fmt.Sprintf("http://127.0.0.1:%d/api/v1/auth/zz", ports["backend"]))
 	if firstDifference(methods, absent) == "" {
-		t.Errorf("the comparator reports GET /auth/methods and GET /auth/zz as identical")
+		t.Errorf("the comparator reports GET /api/v1/auth/methods and GET /api/v1/auth/zz as identical")
 	}
 
 	opsRoutes := opsSurface(t, document.body)

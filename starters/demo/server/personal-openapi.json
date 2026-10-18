@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {"title": "workspace personal", "version": "1.0.0"},
   "paths": {
-    "/workspace/personal": {
+    "/api/v1/workspace/personal": {
       "post": {
         "operationId": "workspace.personal.ensure",
         "summary": "Ensure the caller's personal tenant exists and is complete",

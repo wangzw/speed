@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {"title": "authn profile", "version": "1.0.0"},
   "paths": {
-    "/auth/me": {
+    "/api/v1/auth/me": {
       "get": {
         "operationId": "authn.profile.get",
         "summary": "The caller's own profile",

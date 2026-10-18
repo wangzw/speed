@@ -12,7 +12,7 @@
 
 **哪些限制由 authn 强制，取决于限制的性质。** 授权不在 authn 内，「谁有权冒充谁」经判定接缝 `Decider` 取得，缺席时全拒，可由宿主或授权模块实现（[ADR-authn-decision-seam-2026-10-10](adr-authn-decision-seam-2026-10-10.md)）。宿主写的判定可能过宽，而身份层面的事实不依赖角色：发起者是谁、认证有多新、目标在哪个租户、冒充持续多久、有没有留下审计。这些事实由 authn 知道，也只有 authn 能在不认识角色的前提下核对（[ADR-authn-scope-2026-10-10](adr-authn-scope-2026-10-10.md)）。
 
-**租户范围的执行点不在 authn 自己的处理器里。** 被冒充的身份要访问的是业务路由，不是 `/auth/*`。账户是全局的，授权按（账户，租户）绑定，冒充因此也要按租户收口。成员关系的事实归 `pkg/authn`，请求期的成员判定放在 tenant 目录的 `tenant.admission`，`pkg/authn` 的子包不 import `pkg/tenant`，两个目录只经根包的 `ScopeGuard` 与 `Memberships` 相接（[ADR-tenant-admission-2026-10-10](adr-tenant-admission-2026-10-10.md)）。哪些端有租户解析、哪些路由豁免了租户解析，是宿主在各端上的配置，认证层读不到（[ADR-authn-guarantees-2026-10-10](adr-authn-guarantees-2026-10-10.md)）。
+**租户范围的执行点不在 authn 自己的处理器里。** 被冒充的身份要访问的是业务路由，不是 `/api/v1/auth/*`。账户是全局的，授权按（账户，租户）绑定，冒充因此也要按租户收口。成员关系的事实归 `pkg/authn`，请求期的成员判定放在 tenant 目录的 `tenant.admission`，`pkg/authn` 的子包不 import `pkg/tenant`，两个目录只经根包的 `ScopeGuard` 与 `Memberships` 相接（[ADR-tenant-admission-2026-10-10](adr-tenant-admission-2026-10-10.md)）。哪些端有租户解析、哪些路由豁免了租户解析，是宿主在各端上的配置，认证层读不到（[ADR-authn-guarantees-2026-10-10](adr-authn-guarantees-2026-10-10.md)）。
 
 **审计的写入有自己的约束。** 审计的接缝级写入另占一条连接、不加入调用方的事务；在调用方事务开着时调用它，单写者的 SQLite 上等的是调用方自己占着的写锁，只开一条连接的库上等的是调用方占着的那条连接，等满界后以 `ErrWriteFailed` 失败（[ADR-audit-failure-2026-09-21](adr-audit-failure-2026-09-21.md)）。强制档审计放进开着的事务，永远写不成功。
 

@@ -119,7 +119,7 @@ const ACTIVE_FACTOR = {
  * defect of the case. */
 function bindFactors(factors: readonly unknown[]): ReturnType<typeof bindConsoleRequest> {
   return bindConsoleRequest((call) => {
-    if (call.method === 'GET' && call.path === '/auth/factors') {
+    if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
       return { factors }
     }
     throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -267,7 +267,7 @@ describe('StepUpChallenge', () => {
     // Nothing is left to verify, so the flow is never started.
     expect(startFlow).not.toHaveBeenCalled()
     expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
-      'GET /auth/factors',
+      'GET /api/v1/auth/factors',
     ])
 
     await user.click(screen.getByRole('button', { name: zhCN.common.cancel }))

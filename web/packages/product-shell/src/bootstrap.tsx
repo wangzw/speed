@@ -38,7 +38,7 @@
  *     attachSession. The credential is the server's httpOnly session
  *     cookie, which the client's credential mode carries; nothing is
  *     kept in memory here. The assembly calls restore() once at boot, so
- *     a page load re-reads GET /auth/session and a still-valid cookie
+ *     a page load re-reads GET /api/v1/auth/session and a still-valid cookie
  *     keeps the user signed in instead of dropping them back to the
  *     sign-in surface.
  *
@@ -330,11 +330,11 @@ export function bootstrapSpeedApp(
     // credentialed request engage the session hook below.
     credentials: 'same-origin',
     // The silent-401 leg: on a refused credentialed request, re-read the
-    // session (GET /auth/session). A cookie that still holds keeps the
+    // session (GET /api/v1/auth/session). A cookie that still holds keeps the
     // session and the request is retried once; one that does not ends the
     // local session, so the shells fall back to sign-in. The client hands
     // the hook its round-scoped request function; restore runs both of
-    // its reads through it, so the follow-up GET /auth/me cannot join
+    // its reads through it, so the follow-up GET /api/v1/auth/me cannot join
     // the round that is awaiting this very call.
     refreshAccessToken: (issue) => session.restore(issue),
     // The frontend negotiation chain's resolved value, transported: the

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {"title": "tenant.admin", "version": "1.0.0"},
   "paths": {
-    "/tenant/admin/tenants": {
+    "/api/v1/tenant/admin/tenants": {
       "get": {
         "operationId": "tenant.admin.tenants.list",
         "summary": "List every tenant the roster holds",
@@ -33,7 +33,7 @@
         }
       }
     },
-    "/tenant/admin/tenants/{id}": {
+    "/api/v1/tenant/admin/tenants/{id}": {
       "get": {
         "operationId": "tenant.admin.tenants.get",
         "summary": "Read one tenant the roster holds",
@@ -65,7 +65,7 @@
         }
       }
     },
-    "/tenant/admin/tenants/{id}/status": {
+    "/api/v1/tenant/admin/tenants/{id}/status": {
       "post": {
         "operationId": "tenant.admin.tenants.setStatus",
         "summary": "Change one tenant's state",

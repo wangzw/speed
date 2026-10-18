@@ -286,14 +286,14 @@ func TestTheDocumentIsReadOnlyByAnIdentityAndByAnImpersonatingOneToo(t *testing.
 	err := a.run(t, func(addresses map[string]string) {
 		address := addresses["public"]
 
-		if got := ask(t, address, "/features", ""); got.status != http.StatusUnauthorized {
-			t.Errorf("an anonymous GET /features answered %d, want 401; body %q", got.status, got.body)
+		if got := ask(t, address, "/api/v1/features", ""); got.status != http.StatusUnauthorized {
+			t.Errorf("an anonymous GET /api/v1/features answered %d, want 401; body %q", got.status, got.body)
 		}
-		if got := ask(t, address, "/features", "session"); got.status != http.StatusOK {
-			t.Errorf("a session's GET /features answered %d, want 200; body %q", got.status, got.body)
+		if got := ask(t, address, "/api/v1/features", "session"); got.status != http.StatusOK {
+			t.Errorf("a session's GET /api/v1/features answered %d, want 200; body %q", got.status, got.body)
 		}
-		if got := ask(t, address, "/features", "impersonate"); got.status != http.StatusOK {
-			t.Errorf("an impersonating GET /features answered %d, want 200; body %q", got.status, got.body)
+		if got := ask(t, address, "/api/v1/features", "impersonate"); got.status != http.StatusOK {
+			t.Errorf("an impersonating GET /api/v1/features answered %d, want 200; body %q", got.status, got.body)
 		}
 	})
 	if err != nil {
@@ -370,9 +370,9 @@ func TestTheRouteIsDeclaredOpenOnTheAuthorizationMiddleware(t *testing.T) {
 		endpoints:    []string{"public"},
 	}
 	err := a.run(t, func(addresses map[string]string) {
-		got := ask(t, addresses["public"], "/features", "session")
+		got := ask(t, addresses["public"], "/api/v1/features", "session")
 		if got.status != http.StatusOK {
-			t.Errorf("an authenticated GET /features on a guarded endpoint answered %d, want 200; "+
+			t.Errorf("an authenticated GET /api/v1/features on a guarded endpoint answered %d, want 200; "+
 				"body %q. A 403 here means the route was left undeclared while the endpoint refuses "+
 				"undeclared routes", got.status, got.body)
 		}

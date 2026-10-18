@@ -11,7 +11,7 @@ import (
 )
 
 // discoverFullPath is the discovery route as the mounter mounts it.
-const discoverFullPath = "/auth/sso/discover"
+const discoverFullPath = "/api/v1/auth/sso/discover"
 
 // routed builds a rig with the routes mounted.
 func routed(t *testing.T) *rig {

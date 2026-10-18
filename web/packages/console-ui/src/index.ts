@@ -3,12 +3,12 @@
  *
  * The platform-staff console component family -- the second shell. It
  * renders the platform's backend administration surfaces as one console
- * frame: the tenant roster (/tenant/admin), the account, session and
- * impersonation surfaces (/auth/admin), the authorization surface
- * (/authz/admin), the invitation and membership surface
- * (/auth/admin/tenants/:tenant/...), the SSO surface (/auth/admin/sso),
- * the settings read-write surface (/settings/admin), the SMS template
- * surface (/sms/admin) and the audit query (/audit/admin). The console
+ * frame: the tenant roster (/api/v1/tenant/admin), the account, session and
+ * impersonation surfaces (/api/v1/auth/admin), the authorization surface
+ * (/api/v1/authz/admin), the invitation and membership surface
+ * (/api/v1/auth/admin/tenants/:tenant/...), the SSO surface (/api/v1/auth/admin/sso),
+ * the settings read-write surface (/api/v1/settings/admin), the SMS template
+ * surface (/api/v1/sms/admin) and the audit query (/api/v1/audit/admin). The console
  * root renders a dashboard, and the tenant roster and the audit query each
  * link a row to that record's detail page. Those endpoints do not resolve a tenant, so the console
  * has no tenant switcher and no tenant-scoped query key: it is not, and
@@ -39,8 +39,8 @@
  * that bundle -- `consoleOperations`, bound to the generated @speed/api-sdk
  * surface -- so a host mounts it unchanged and no page builds a
  * QueryClient or writes a query key. The bundle is the seam through which
- * the /tenant/admin, /auth/admin, /authz/admin, /settings/admin,
- * /sms/admin and /audit/admin operations reach the pages; see
+ * the /api/v1/tenant/admin, /api/v1/auth/admin, /api/v1/authz/admin, /api/v1/settings/admin,
+ * /api/v1/sms/admin and /api/v1/audit/admin operations reach the pages; see
  * operations.tsx for its members and their generated bindings.
  *
  * Every built-in string renders from the bilingual console-ui namespace

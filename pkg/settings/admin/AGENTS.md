@@ -1,7 +1,7 @@
 # pkg/settings/admin
 
 The settings capability's management module. It mounts the setting read and write
-routes under `/settings/admin/*` and delivers no capability of its own: every
+routes under `/api/v1/settings/admin/*` and delivers no capability of its own: every
 route's action is a call on the settings surface, reached through the
 `settings.Store` capability, and the module holds no setting, no rule and no data
 of its own.
@@ -28,7 +28,7 @@ The API is the package's godoc, plus the `Store`, `Layer`, `Global`, `ForTenant`
 
 ## Routes and the permissions they are held to
 
-Every route is mounted under the base path `/settings/admin`, on the endpoints
+Every route is mounted under the base path `/api/v1/settings/admin`, on the endpoints
 the module's configuration lists. A route is addressed by a natural key — a
 setting item's namespace and the rest of the key — so no opaque row identifier
 ever appears in a path. The whole surface is one group, `settings`, and it is
@@ -37,10 +37,10 @@ This set is the module's whole route surface.
 
 | Group | Method and path | Permission |
 |---|---|---|
-| Settings | `GET /settings/admin/settings` | `settings.read` |
-| Settings | `GET /settings/admin/settings/:namespace` | `settings.read` |
-| Settings | `PUT /settings/admin/settings/:namespace/:key` | `settings.write` |
-| Settings | `DELETE /settings/admin/settings/:namespace/:key` | `settings.write` |
+| Settings | `GET /api/v1/settings/admin/settings` | `settings.read` |
+| Settings | `GET /api/v1/settings/admin/settings/:namespace` | `settings.read` |
+| Settings | `PUT /api/v1/settings/admin/settings/:namespace/:key` | `settings.write` |
+| Settings | `DELETE /api/v1/settings/admin/settings/:namespace/:key` | `settings.write` |
 
 A read answers 200 with a view; a write that lands answers 204 and no body.
 

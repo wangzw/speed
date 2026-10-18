@@ -3,7 +3,7 @@
  *
  * The roster's row-level rename and enable/disable controls live on the
  * roster page; this page is the tenant in full -- its identifier, alias
- * and status read from GET /tenant/admin/tenants/:id, with the same two
+ * and status read from GET /api/v1/tenant/admin/tenants/:id, with the same two
  * writes (rename by PATCH, enable/disable by the status route) gathered
  * into the main column. It is a detail page: a main column carrying the
  * subject and its controls, beside a fixed-width side column carrying the

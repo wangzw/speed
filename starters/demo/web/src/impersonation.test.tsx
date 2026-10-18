@@ -214,8 +214,9 @@ interface Backend {
   readonly unreadTenantIds: () => readonly (string | null)[]
   readonly objectsReads: () => number
   readonly deletes: () => number
-  /** Every tenant-area (`/api/v1/*`) read, whatever its path. */
-  readonly apiReads: () => number
+  /** A read of a tenant-scoped data surface (notifications, objects): what
+   * must not run under a tenant the frame has not settled on. */
+  readonly tenantReads: () => number
 }
 
 /** A promise-bounded gate: the suite decides when the gated read answers. */
@@ -273,7 +274,7 @@ function makeBackend(options: {
   const unreadTenantIds: (string | null)[] = []
   let objectsReads = 0
   let deletes = 0
-  let apiReads = 0
+  let tenantReads = 0
   const fn: RequestFn = <T,>(
     path: string,
     request?: RequestOptions,
@@ -282,17 +283,20 @@ function makeBackend(options: {
     if (method === 'GET') {
       reads += 1
     }
-    if (path.startsWith('/api/v1/')) {
-      apiReads += 1
+    if (
+      path.startsWith('/api/v1/notifications/') ||
+      path.startsWith('/api/v1/objects')
+    ) {
+      tenantReads += 1
     }
-    if (path === '/tenant/admin/tenants') {
+    if (path === '/api/v1/tenant/admin/tenants') {
       rosterReads += 1
       if (options.rosterGate !== undefined) {
         return options.rosterGate.then(() => ({ tenants: [TENANT] }) as T)
       }
       return Promise.resolve({ tenants: [TENANT] } as T)
     }
-    if (path === '/auth/impersonation') {
+    if (path === '/api/v1/auth/impersonation') {
       if (method === 'GET') {
         statusReads += 1
         if (
@@ -360,7 +364,7 @@ function makeBackend(options: {
         return Promise.resolve(undefined as T)
       }
     }
-    if (path.startsWith('/auth/admin/impersonations')) {
+    if (path.startsWith('/api/v1/auth/admin/impersonations')) {
       recordReads += 1
       recordSignal = request?.signal
       if (options.recordsGate !== undefined) {
@@ -405,7 +409,7 @@ function makeBackend(options: {
     unreadTenantIds: () => unreadTenantIds,
     objectsReads: () => objectsReads,
     deletes: () => deletes,
-    apiReads: () => apiReads,
+    tenantReads: () => tenantReads,
   }
 }
 
@@ -472,7 +476,7 @@ describe('the impersonation shell', () => {
       requestOptions?: RequestOptions,
     ) => {
       const answer = backend.fn<T>(path, requestOptions)
-      if (path === '/auth/impersonation' && requestOptions?.method === 'POST') {
+      if (path === '/api/v1/auth/impersonation' && requestOptions?.method === 'POST') {
         phase = 'target'
       }
       return answer
@@ -762,13 +766,13 @@ describe('the impersonation shell', () => {
     ) => {
       if (
         phase === 'second' &&
-        path === '/auth/impersonation' &&
+        path === '/api/v1/auth/impersonation' &&
         (options?.method ?? 'GET') === 'GET'
       ) {
         return Promise.resolve({ grant: second } as T)
       }
       const answer = backend.fn<T>(path, options)
-      if (path === '/auth/impersonation' && options?.method === 'DELETE') {
+      if (path === '/api/v1/auth/impersonation' && options?.method === 'DELETE') {
         phase = 'second'
       }
       return answer
@@ -826,12 +830,12 @@ describe('the impersonation shell', () => {
     ) => {
       if (
         phase === 'second' &&
-        path === '/auth/impersonation' &&
+        path === '/api/v1/auth/impersonation' &&
         (options?.method ?? 'GET') === 'GET'
       ) {
         return Promise.resolve({ grant: second } as T)
       }
-      if (path === '/auth/impersonation' && options?.method === 'DELETE') {
+      if (path === '/api/v1/auth/impersonation' && options?.method === 'DELETE') {
         deletes += 1
         return gate.promise.then(() => backend.fn<T>(path, options))
       }
@@ -895,7 +899,7 @@ describe('the impersonation shell', () => {
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/authz/admin/permissions') {
+      if (path === '/api/v1/authz/admin/permissions') {
         return Promise.resolve({
           permissions: [
             { permission: 'tenant.read' },
@@ -905,7 +909,7 @@ describe('the impersonation shell', () => {
       }
       if (
         holdStatus &&
-        path === '/auth/impersonation' &&
+        path === '/api/v1/auth/impersonation' &&
         (options?.method ?? 'GET') === 'GET'
       ) {
         return statusGate.promise.then(() => backend.fn<T>(path, options))
@@ -1278,7 +1282,7 @@ describe('the impersonation shell', () => {
       requestOptions?: RequestOptions,
     ) => {
       const answer = backend.fn<T>(path, requestOptions)
-      if (path === '/auth/impersonation' && requestOptions?.method === 'POST') {
+      if (path === '/api/v1/auth/impersonation' && requestOptions?.method === 'POST') {
         phase = 'target'
       }
       return answer
@@ -1689,7 +1693,7 @@ describe('the impersonation shell', () => {
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/authz/admin/permissions') {
+      if (path === '/api/v1/authz/admin/permissions') {
         return impersonating
           ? Promise.reject({ status: 403, code: 'rbac.permission_denied' })
           : Promise.resolve({
@@ -1697,7 +1701,7 @@ describe('the impersonation shell', () => {
             } as T)
       }
       const answer = backend.fn<T>(path, options)
-      if (path === '/auth/impersonation' && options?.method === 'DELETE') {
+      if (path === '/api/v1/auth/impersonation' && options?.method === 'DELETE') {
         impersonating = false
       }
       return answer
@@ -1767,7 +1771,7 @@ describe('the impersonation shell', () => {
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/authz/admin/permissions') {
+      if (path === '/api/v1/authz/admin/permissions') {
         return Promise.resolve({
           permissions: [
             { permission: 'tenant.read' },
@@ -1833,7 +1837,7 @@ describe('the impersonation shell', () => {
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/authz/admin/permissions') {
+      if (path === '/api/v1/authz/admin/permissions') {
         return Promise.resolve({
           permissions: [
             { permission: 'tenant.read' },
@@ -1902,7 +1906,7 @@ describe('the impersonation shell', () => {
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/authz/admin/permissions') {
+      if (path === '/api/v1/authz/admin/permissions') {
         return Promise.resolve({
           permissions: [
             { permission: 'tenant.read' },
@@ -1991,7 +1995,7 @@ describe('the impersonation shell', () => {
       options?: RequestOptions,
     ) => {
       const answer = backend.fn<T>(path, options)
-      if (path === '/auth/impersonation' && options?.method === 'POST') {
+      if (path === '/api/v1/auth/impersonation' && options?.method === 'POST') {
         phase = 'target'
       }
       return answer
@@ -2006,7 +2010,7 @@ describe('the impersonation shell', () => {
 
     await screen.findByText('You are not impersonating any account.')
     await user.type(screen.getByLabelText('Target account'), 'acc-1')
-    const apiBefore = backend.apiReads()
+    const tenantBefore = backend.tenantReads()
     const openedBefore = opened.length
     await user.click(screen.getByRole('button', { name: 'Start impersonation' }))
 
@@ -2018,7 +2022,7 @@ describe('the impersonation shell', () => {
       await new Promise((resolve) => setTimeout(resolve, 20))
     })
     expect(getCurrentTenantId()).toBeNull()
-    expect(backend.apiReads()).toBe(apiBefore)
+    expect(backend.tenantReads()).toBe(tenantBefore)
     expect(opened.length).toBe(openedBefore)
 
     // The status read settles the grant's tenant; reads and the stream now
@@ -2065,7 +2069,7 @@ describe('the impersonation shell', () => {
       requestOptions?: RequestOptions,
     ) => {
       const answer = backend.fn<T>(path, requestOptions)
-      if (path === '/auth/impersonation' && requestOptions?.method === 'POST') {
+      if (path === '/api/v1/auth/impersonation' && requestOptions?.method === 'POST') {
         phase = 'target'
       }
       return answer

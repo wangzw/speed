@@ -20,7 +20,7 @@ import (
 const (
 	testClientID     = "the-client-id"
 	testClientSecret = "the-client-secret"
-	testRedirectURI  = "https://app.example/auth/callback/github"
+	testRedirectURI  = "https://app.example/api/v1/auth/callback/github"
 	testToken        = "github-access-token"
 )
 

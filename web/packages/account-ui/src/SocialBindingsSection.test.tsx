@@ -1,8 +1,8 @@
 /**
  * SocialBindingsSection behaviour: the bound identities read from the
- * profile's `links` (GET /auth/me), the unlink route (DELETE
- * /auth/links/{id}) and the add area's `purpose: 'link'` flow start
- * (POST /auth/flows/authenticated).
+ * profile's `links` (GET /api/v1/auth/me), the unlink route (DELETE
+ * /api/v1/auth/links/{id}) and the add area's `purpose: 'link'` flow start
+ * (POST /api/v1/auth/flows/authenticated).
  *
  * What this suite pins: the links render with their provider label and
  * email and the add area offers only the configured providers that are
@@ -32,8 +32,8 @@ import {
   type SocialProviderConfig,
 } from './SocialBindingsSection.js'
 
-const PROFILE_PATH = '/auth/me'
-const LINK_FLOW_PATH = '/auth/flows/authenticated'
+const PROFILE_PATH = '/api/v1/auth/me'
+const LINK_FLOW_PATH = '/api/v1/auth/flows/authenticated'
 
 const GITHUB_REDIRECT_URI = 'https://app.example.test/callback/social/github'
 const WECHAT_REDIRECT_URI = 'https://app.example.test/callback/social/wechat'
@@ -133,7 +133,7 @@ describe('SocialBindingsSection', () => {
           ),
         )
       }
-      if (call.method === 'DELETE' && call.path === '/auth/links/github-1') {
+      if (call.method === 'DELETE' && call.path === '/api/v1/auth/links/github-1') {
         unlinked = true
         return new Response(null, { status: 204 })
       }
@@ -198,7 +198,7 @@ describe('SocialBindingsSection', () => {
           profile([{ id: 'github-1', provider: 'github' }]),
         )
       }
-      if (call.method === 'DELETE' && call.path === '/auth/links/github-1') {
+      if (call.method === 'DELETE' && call.path === '/api/v1/auth/links/github-1') {
         return errorResponse(409, 'authn.conflict')
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)

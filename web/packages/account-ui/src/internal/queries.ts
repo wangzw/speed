@@ -35,7 +35,7 @@ import {
 } from './models.js'
 import type { AccountProfile, FactorList, SessionList } from './models.js'
 
-/** The caller's own sessions (GET /auth/sessions). */
+/** The caller's own sessions (GET /api/v1/auth/sessions). */
 export function useSessionsQuery() {
   return useAuthnSessionList<SessionList>({
     query: {
@@ -45,7 +45,7 @@ export function useSessionsQuery() {
   })
 }
 
-/** The caller's own session (GET /auth/session): the methods that
+/** The caller's own session (GET /api/v1/auth/session): the methods that
  * established it, its assurance and its last interactive authentication
  * time. `enabled` holds the read back while the surface that needs it is
  * closed. */
@@ -58,7 +58,7 @@ export function useSessionViewQuery(enabled = true) {
   })
 }
 
-/** The caller's own registered factors (GET /auth/factors). `enabled` holds
+/** The caller's own registered factors (GET /api/v1/auth/factors). `enabled` holds
  * the read back while the surface that needs it is closed. */
 export function useFactorsQuery(enabled = true) {
   return useAuthnMfaFactors<FactorList>({
@@ -70,7 +70,7 @@ export function useFactorsQuery(enabled = true) {
   })
 }
 
-/** The caller's own profile, with its identifiers and links (GET /auth/me). */
+/** The caller's own profile, with its identifiers and links (GET /api/v1/auth/me). */
 export function useProfileQuery() {
   return useAuthnProfileGet<AccountProfile>({
     query: {

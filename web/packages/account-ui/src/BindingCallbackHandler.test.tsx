@@ -1,7 +1,7 @@
 /**
  * BindingCallbackHandler behaviour: the link flow read back from the
- * callback route (GET /auth/flows/current) and completed (POST
- * /auth/flows/answer).
+ * callback route (GET /api/v1/auth/flows/current) and completed (POST
+ * /api/v1/auth/flows/answer).
  *
  * What this suite pins: a ready flow is taken with `step: 'complete'`,
  * the `link` completion (state 'linked') fires onBound exactly once and
@@ -26,8 +26,8 @@ import { renderWithProviders } from '../test-utils/render.js'
 import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
 import { BindingCallbackHandler } from './BindingCallbackHandler.js'
 
-const FLOW_CURRENT = '/auth/flows/current'
-const FLOW_ANSWER = '/auth/flows/answer'
+const FLOW_CURRENT = '/api/v1/auth/flows/current'
+const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
 describe('BindingCallbackHandler', () => {
   it('takes a ready flow, commits the link and fires onBound once', async () => {
@@ -158,9 +158,9 @@ describe('BindingCallbackHandler', () => {
   })
 
   describe('the absent slot', () => {
-    const METHODS_PATH = '/auth/methods'
+    const METHODS_PATH = '/api/v1/auth/methods'
 
-    /** A GET /auth/methods document carrying the given method kinds. */
+    /** A GET /api/v1/auth/methods document carrying the given method kinds. */
     function methodsDoc(kinds: readonly string[]): Record<string, unknown> {
       return {
         methods: kinds.map((kind) => ({ name: kind, kind })),

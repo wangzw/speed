@@ -46,7 +46,7 @@ func noSession() []authntest.Option {
 // is called, and the answer carries the written value.
 func TestPatchWritesTheDisplayName(t *testing.T) {
 	r := newRig(t)
-	rec := r.do(http.MethodPatch, "/auth/me", map[string]any{"display_name": "张三"}, me()...)
+	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "张三"}, me()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
 	}
@@ -71,7 +71,7 @@ func TestPatchWritesTheDisplayName(t *testing.T) {
 // given attribute set is written as it stands, and only SetAttributes is called.
 func TestPatchGivenAttributesReplacesTheWholeSet(t *testing.T) {
 	r := newRig(t)
-	rec := r.do(http.MethodPatch, "/auth/me", map[string]any{"attributes": map[string]string{"team": "red"}}, me()...)
+	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"attributes": map[string]string{"team": "red"}}, me()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
 	}
@@ -100,7 +100,7 @@ func TestPatchGivenAttributesReplacesTheWholeSet(t *testing.T) {
 func TestPatchMergesLocaleAndTimeZoneIntoTheAttributeSet(t *testing.T) {
 	r := newRig(t)
 	body := map[string]any{"locale": "zh-CN", "time_zone": "Asia/Shanghai"}
-	rec := r.do(http.MethodPatch, "/auth/me", body, me()...)
+	rec := r.do(http.MethodPatch, "/api/v1/auth/me", body, me()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
 	}
@@ -125,7 +125,7 @@ func TestPatchEmptyLocaleClearsTheKey(t *testing.T) {
 		Kind: authn.KindUser, Status: authn.StatusActive,
 		Attributes: map[string]string{i18n.LocaleAttributeKey: "zh-CN", "dept": "eng"},
 	})
-	rec := r.do(http.MethodPatch, "/auth/me", map[string]any{"locale": ""}, me()...)
+	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"locale": ""}, me()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
 	}
@@ -142,7 +142,7 @@ func TestPatchEmptyLocaleClearsTheKey(t *testing.T) {
 // called and no audit row is written.
 func TestPatchEmptyBodyChangesNothing(t *testing.T) {
 	r := newRig(t)
-	rec := r.do(http.MethodPatch, "/auth/me", map[string]any{}, me()...)
+	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{}, me()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
 	}
@@ -162,7 +162,7 @@ func TestPatchEmptyBodyChangesNothing(t *testing.T) {
 // have is refused and no write is made.
 func TestPatchUnknownFieldIs400(t *testing.T) {
 	r := newRig(t)
-	rec := r.do(http.MethodPatch, "/auth/me", map[string]any{"status": "disabled"}, me()...)
+	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"status": "disabled"}, me()...)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
@@ -182,7 +182,7 @@ func TestPatchInvalidLocaleAndTimeZoneAre400(t *testing.T) {
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
 			r := newRig(t)
-			rec := r.do(http.MethodPatch, "/auth/me", body, me()...)
+			rec := r.do(http.MethodPatch, "/api/v1/auth/me", body, me()...)
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want 400", rec.Code)
 			}
@@ -199,10 +199,10 @@ func TestPatchInvalidLocaleAndTimeZoneAre400(t *testing.T) {
 // body or calling a write.
 func TestPatchIsNotReachableWhileImpersonating(t *testing.T) {
 	r := newRig(t)
-	if rec := r.do(http.MethodPatch, "/auth/me", map[string]any{"display_name": "X"}, impersonating()...); rec.Code != http.StatusUnauthorized {
+	if rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, impersonating()...); rec.Code != http.StatusUnauthorized {
 		t.Errorf("through the gateway: status = %d, want 401", rec.Code)
 	}
-	rec := r.invoke(r.p.handlePatchMe, http.MethodPatch, "/auth/me", map[string]any{"display_name": "X"}, impersonating()...)
+	rec := r.invoke(r.p.handlePatchMe, http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, impersonating()...)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("the handler while impersonating: status = %d, want 403", rec.Code)
 	}
@@ -214,7 +214,7 @@ func TestPatchIsNotReachableWhileImpersonating(t *testing.T) {
 // TestPatchWithoutASessionIs401 holds the session requirement.
 func TestPatchWithoutASessionIs401(t *testing.T) {
 	r := newRig(t)
-	if rec := r.do(http.MethodPatch, "/auth/me", map[string]any{"display_name": "X"}, noSession()...); rec.Code != http.StatusUnauthorized {
+	if rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, noSession()...); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
 	if r.admin.count("set-display-name") != 0 {
@@ -225,7 +225,7 @@ func TestPatchWithoutASessionIs401(t *testing.T) {
 // TestPatchWithoutAnIdentityIs401 holds the no-identity refusal at the handler.
 func TestPatchWithoutAnIdentityIs401(t *testing.T) {
 	r := newRig(t)
-	rec := r.invokeAnonymous(r.p.handlePatchMe, http.MethodPatch, "/auth/me", map[string]any{"display_name": "X"})
+	rec := r.invokeAnonymous(r.p.handlePatchMe, http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"})
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
@@ -236,7 +236,7 @@ func TestPatchWithoutAnIdentityIs401(t *testing.T) {
 // 401, before the body is read.
 func TestPatchStaleAuthenticationAsksForAStepUp(t *testing.T) {
 	r := newRig(t)
-	rec := r.do(http.MethodPatch, "/auth/me", map[string]any{"display_name": "X"}, stale()...)
+	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, stale()...)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
@@ -255,7 +255,7 @@ func TestPatchWithAnActiveFactorRequiresAMultiFactor(t *testing.T) {
 	r := newRig(t)
 	r.mfa.factors = []authn.FactorRecord{{Kind: authn.FactorTOTP, Status: authn.FactorActive}}
 
-	rec := r.do(http.MethodPatch, "/auth/me", map[string]any{"display_name": "X"}, me()...)
+	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, me()...)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("a single-factor write with an active factor: status = %d, want 401", rec.Code)
 	}
@@ -263,7 +263,7 @@ func TestPatchWithAnActiveFactorRequiresAMultiFactor(t *testing.T) {
 		t.Errorf("the challenge = %q, want the step-up", rec.Header().Get("WWW-Authenticate"))
 	}
 
-	if rec := r.do(http.MethodPatch, "/auth/me", map[string]any{"display_name": "X"}, multiFactor()...); rec.Code != http.StatusOK {
+	if rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, multiFactor()...); rec.Code != http.StatusOK {
 		t.Fatalf("a multi-factor write with an active factor: status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
 	}
 }
@@ -273,7 +273,7 @@ func TestPatchWithAnActiveFactorRequiresAMultiFactor(t *testing.T) {
 func TestPatchWhenTheFactorsCannotBeReadIs503(t *testing.T) {
 	r := newRig(t)
 	r.mfa.err = errors.New("boom")
-	if rec := r.do(http.MethodPatch, "/auth/me", map[string]any{"display_name": "X"}, me()...); rec.Code != http.StatusServiceUnavailable {
+	if rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, me()...); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
 	}
 	if r.admin.count("set-display-name") != 0 {
@@ -286,7 +286,7 @@ func TestPatchWhenTheFactorsCannotBeReadIs503(t *testing.T) {
 func TestPatchOfAGoneAccountIs401(t *testing.T) {
 	r := newRig(t)
 	r.accounts.getErr = authn.ErrAccountNotFound
-	if rec := r.do(http.MethodPatch, "/auth/me", map[string]any{"display_name": "X"}, me()...); rec.Code != http.StatusUnauthorized {
+	if rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, me()...); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
 }
@@ -303,7 +303,7 @@ func TestPatchInvalidArgumentIs400(t *testing.T) {
 			r := newRig(t)
 			arm(r)
 			body := map[string]any{"display_name": "X", "attributes": map[string]string{"a": "b"}}
-			if rec := r.do(http.MethodPatch, "/auth/me", body, me()...); rec.Code != http.StatusBadRequest {
+			if rec := r.do(http.MethodPatch, "/api/v1/auth/me", body, me()...); rec.Code != http.StatusBadRequest {
 				t.Errorf("status = %d, want 400", rec.Code)
 			}
 		})
@@ -315,7 +315,7 @@ func TestPatchInvalidArgumentIs400(t *testing.T) {
 func TestPatchOtherFailureIs503(t *testing.T) {
 	r := newRig(t)
 	r.admin.attrErr = errors.New("database is down")
-	rec := r.do(http.MethodPatch, "/auth/me", map[string]any{"attributes": map[string]string{"a": "b"}}, me()...)
+	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"attributes": map[string]string{"a": "b"}}, me()...)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
 	}
@@ -334,7 +334,7 @@ func TestPatchWritesAreNotOneAtomicChange(t *testing.T) {
 	r := newRig(t)
 	r.admin.attrErr = authn.ErrInvalidArgument
 	body := map[string]any{"display_name": "New", "attributes": map[string]string{"a": "b"}}
-	rec := r.do(http.MethodPatch, "/auth/me", body, me()...)
+	rec := r.do(http.MethodPatch, "/api/v1/auth/me", body, me()...)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
@@ -352,7 +352,7 @@ func TestPatchWritesAreNotOneAtomicChange(t *testing.T) {
 func TestPatchAuditFailureDoesNotChangeTheAnswer(t *testing.T) {
 	r := newRig(t)
 	r.audit.fails(errors.New("audit is down"))
-	if rec := r.do(http.MethodPatch, "/auth/me", map[string]any{"display_name": "X"}, me()...); rec.Code != http.StatusOK {
+	if rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, me()...); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	if !strings.Contains(r.logs.String(), "audit row could not be written") {
@@ -367,7 +367,7 @@ func TestPatchWithoutAnAuditCapabilityStillAnswers(t *testing.T) {
 	if r.p.audit != nil {
 		t.Fatal("the rig still holds an audit capability")
 	}
-	if rec := r.do(http.MethodPatch, "/auth/me", map[string]any{"display_name": "X"}, me()...); rec.Code != http.StatusOK {
+	if rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, me()...); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 }
@@ -376,7 +376,7 @@ func TestPatchWithoutAnAuditCapabilityStillAnswers(t *testing.T) {
 // the account as the object, and no field value a client sent.
 func TestPatchAuditRowIsTheCapabilitysOwn(t *testing.T) {
 	r := newRig(t)
-	rec := r.do(http.MethodPatch, "/auth/me", map[string]any{"display_name": "secret-name"}, me()...)
+	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "secret-name"}, me()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}

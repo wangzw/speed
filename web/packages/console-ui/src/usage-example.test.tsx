@@ -76,12 +76,12 @@ export function ConsoleApp(): ReactElement {
 describe('README quick start', () => {
   it('renders the console with its navigation and its first page', async () => {
     bindConsoleRequest((call) => {
-      if (call.path === '/tenant/admin/tenants') {
+      if (call.path === '/api/v1/tenant/admin/tenants') {
         return { tenants: [{ id: 'acme', alias: 'Acme', status: 'active' }] }
       }
       // The first page is the console dashboard, which also reads the
       // newest audit activity.
-      if (call.path === '/audit/admin/records') {
+      if (call.path === '/api/v1/audit/admin/records') {
         return { entries: [], next: '' }
       }
       throw new Error(`unexpected request: ${call.path}`)

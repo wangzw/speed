@@ -36,8 +36,8 @@ import {
 } from './test-utils/session.js'
 
 const PERSONAL_ID = 'personal-account-1'
-const ROSTER_PATH = '/tenant/admin/tenants'
-const ENSURE_PATH = '/workspace/personal'
+const ROSTER_PATH = '/api/v1/tenant/admin/tenants'
+const ENSURE_PATH = '/api/v1/workspace/personal'
 
 const PERSONAL_FEATURES = ['tenant.admin', 'workspace.personal'] as const
 
@@ -57,7 +57,7 @@ type RosterAnswer =
   | { readonly tenants: readonly unknown[] }
   | { readonly status: number }
 
-/** A profile the session's GET /auth/me answers: no login name and no
+/** A profile the session's GET /api/v1/auth/me answers: no login name and no
  * password -- the setup-incomplete state the notice is about. */
 const INCOMPLETE_PROFILE: AuthnProfileProfile = {
   account_id: 'account-1',
@@ -99,7 +99,7 @@ const COMPLETE_PROFILE: AuthnProfileProfile = {
 }
 
 /** A scripted request function: the roster read answers as the case asks,
- * the ensure does too, and GET /auth/me answers the profile when the case
+ * the ensure does too, and GET /api/v1/auth/me answers the profile when the case
  * scripts one (the home page reads it once the notice is eligible). Every
  * other call fails loudly. */
 function script(options: {
@@ -131,7 +131,7 @@ function script(options: {
       }
       return roster
     }
-    if ((call.method ?? 'GET') === 'GET' && path === '/auth/me') {
+    if ((call.method ?? 'GET') === 'GET' && path === '/api/v1/auth/me') {
       if (options.profile === undefined) {
         throw new Error('the case scripts no profile')
       }
@@ -333,7 +333,7 @@ describe('the tenant frame and the personal tenant', () => {
     const calls: string[] = []
     bindScript(async (path, call) => {
       calls.push(`${call.method ?? 'GET'} ${path}`)
-      if ((call.method ?? 'GET') === 'GET' && path === '/auth/impersonation') {
+      if ((call.method ?? 'GET') === 'GET' && path === '/api/v1/auth/impersonation') {
         return {
           grant: {
             id: 'grant-1',
@@ -358,7 +358,7 @@ describe('the tenant frame and the personal tenant', () => {
     })
 
     await waitFor(() =>
-      expect(calls).toContain('GET /auth/impersonation'),
+      expect(calls).toContain('GET /api/v1/auth/impersonation'),
     )
     expect(calls).not.toContain(`POST ${ENSURE_PATH}`)
   })
@@ -480,7 +480,7 @@ describe('the tenant frame and the personal tenant', () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
-    expect(calls).not.toContain('GET /auth/me')
+    expect(calls).not.toContain('GET /api/v1/auth/me')
     expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull()
   })
 

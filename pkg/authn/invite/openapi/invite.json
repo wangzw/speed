@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {"title": "authn invite", "version": "1.0.0"},
   "paths": {
-    "/auth/admin/tenants/{tenant}/invitations": {
+    "/api/v1/auth/admin/tenants/{tenant}/invitations": {
       "post": {
         "operationId": "authn.invite.issue",
         "summary": "Issue an invitation to an address in a tenant",
@@ -55,7 +55,7 @@
         }
       }
     },
-    "/auth/admin/tenants/{tenant}/invitations/{id}": {
+    "/api/v1/auth/admin/tenants/{tenant}/invitations/{id}": {
       "delete": {
         "operationId": "authn.invite.revoke",
         "summary": "Revoke a pending invitation",
@@ -74,7 +74,7 @@
         }
       }
     },
-    "/auth/invitations/{token}": {
+    "/api/v1/auth/invitations/{token}": {
       "get": {
         "operationId": "authn.invite.acceptView",
         "summary": "Read the invitation a token points to",

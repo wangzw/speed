@@ -4,7 +4,7 @@
  *
  * The host mounts this handler on the route its provider redirect sends
  * the browser back to. In the flow model the provider's callback is
- * handled server-side first (the authn module's own /auth/callback route
+ * handled server-side first (the authn module's own /api/v1/auth/callback route
  * advances the flow bound by its cookie and redirects the browser on),
  * so the handler holds no code or state of its own: it reads the
  * `purpose: 'link'` flow back with session.readFlow() and drives it to

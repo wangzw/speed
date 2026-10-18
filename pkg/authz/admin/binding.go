@@ -8,7 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// handleBindingList answers GET /authz/admin/tenants/:tenant/bindings: every
+// handleBindingList answers GET /api/v1/authz/admin/tenants/:tenant/bindings: every
 // role binding of the tenant. It is a read, so the action is role.read.
 func (p *product) handleBindingList(c *gin.Context) {
 	if _, ok := p.caller(c); !ok {
@@ -27,7 +27,7 @@ func (p *product) handleBindingList(c *gin.Context) {
 }
 
 // handleBindingOf answers GET
-// /authz/admin/tenants/:tenant/bindings/:account: every binding the account
+// /api/v1/authz/admin/tenants/:tenant/bindings/:account: every binding the account
 // holds within the tenant. It is a read, so the action is role.read.
 func (p *product) handleBindingOf(c *gin.Context) {
 	if _, ok := p.caller(c); !ok {
@@ -55,7 +55,7 @@ func (p *product) writeBindings(c *gin.Context, bindings []authz.Binding) {
 }
 
 // handleBindingPut answers PUT
-// /authz/admin/tenants/:tenant/bindings/:account/:role: it binds a role to an
+// /api/v1/authz/admin/tenants/:tenant/bindings/:account/:role: it binds a role to an
 // account within the tenant. It is a write, so the action is role.manage. The
 // mandatory audit row lands before the manager writes.
 //
@@ -95,7 +95,7 @@ func (p *product) handleBindingPut(c *gin.Context) {
 }
 
 // handleBindingDelete answers DELETE
-// /authz/admin/tenants/:tenant/bindings/:account/:role: it removes an account's
+// /api/v1/authz/admin/tenants/:tenant/bindings/:account/:role: it removes an account's
 // binding to a role within the tenant. It is a write, so the action is
 // role.manage. The mandatory audit row lands before the manager writes.
 //

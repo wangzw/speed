@@ -6,10 +6,10 @@
  * login opens the account with a verified phone, and setup adds the two
  * pieces password sign-in needs: a login name and a password. A login name
  * is a username or a verified email; a phone signs in but is not one. The
- * profile these predicates read is GET /auth/me.
+ * profile these predicates read is GET /api/v1/auth/me.
  */
 
-/** The part of GET /auth/me the readiness question needs. */
+/** The part of GET /api/v1/auth/me the readiness question needs. */
 export interface SetupProfile {
   readonly password_set: boolean
   readonly identifiers: readonly {

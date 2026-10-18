@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {"title": "authn impersonation", "version": "1.0.0"},
   "paths": {
-    "/auth/impersonation": {
+    "/api/v1/auth/impersonation": {
       "post": {
         "operationId": "authn.impersonation.start",
         "summary": "Start impersonating another account",

@@ -23,8 +23,9 @@ app talks to its own origin by default (the client base URL falls back to
 `window.location.origin`), and the dev server proxies the namespaces the
 backend endpoints claim onto the demo's backend listener: the api, account and
 admin endpoints all answer on one port. The claimed prefixes live in
-`backend-prefixes.json` beside this package (`/api`; `/auth`, `/features` and
-`/workspace`; `/audit`, `/authz`, `/settings`, `/sms` and `/tenant`), and
+`backend-prefixes.json` beside this package (`/api`; `/api/v1/auth`, `/api/v1/features` and
+`/api/v1/workspace`; `/api/v1/audit`, `/api/v1/authz`, `/api/v1/settings`, `/api/v1/sms` and
+`/api/v1/tenant`), and
 `vite.config.ts` generates one segment-anchored proxy key per prefix from that
 list. The target defaults to the `sqlite-memory` stack's backend listener
 (`127.0.0.1:8080`); override it with `DEMO_WEB_BACKEND_PROXY` when a run moves
@@ -181,7 +182,7 @@ belongs to (`backend-prefixes.json` lists them):
 - The demo's Go program ships no such gateway. Its `web` endpoint serves the
   built bundle alone, so loading the bundle straight from the Go program
   (`http://127.0.0.1:8084/`) renders for static browsing but cannot sign in:
-  `POST /auth/flows` goes back to the page's own origin, which mounts no authn
+  `POST /api/v1/auth/flows` goes back to the page's own origin, which mounts no authn
   route, and no single `apiOrigin` reaches the demo's three API ports at once.
 
 A deployment that serves the built bundle must place it behind the same gateway
@@ -231,7 +232,7 @@ The session is delivered as the server's httpOnly cookie: the login flow is
 started with `delivery: 'session'`, the server sets its cookie on the same
 response, and the client sends it with `credentials: 'same-origin'`. So **a
 page reload keeps the viewer signed in** -- the assembly re-reads
-`GET /auth/session` at boot and re-establishes the session from that cookie.
+`GET /api/v1/auth/session` at boot and re-establishes the session from that cookie.
 Both shells branch on the same session snapshot: a session that genuinely ends
 (a sign-out, or a cookie that no longer holds) turns the page to sign-in rather
 than a view that never settles. Nothing persists a credential to storage; the
@@ -249,7 +250,7 @@ access" state for a code the session is known to lack, so a member who reaches
 The entry's visibility turns on the caller's platform permission set, which the
 host attaches (`src/platform-permissions.tsx`, wired into the assembly in
 `src/main.tsx`). The platform carries no read of the caller's *held* permissions,
-so the app reads the declared-permission catalog (`GET /authz/admin/permissions`)
+so the app reads the declared-permission catalog (`GET /api/v1/authz/admin/permissions`)
 -- a platform-staff operation that answers only to a principal holding
 `authz.role.read` in the platform domain, and whose answer is every permission
 the process declares. The seed's platform administrator holds exactly that set,

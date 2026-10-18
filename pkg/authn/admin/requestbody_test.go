@@ -39,7 +39,7 @@ import (
 // fields where ten are needed.
 //
 // The pairing is by path suffix: the fragment writes the endpoint-prefixed path
-// ("/auth/admin/accounts") and the registrations write the module-relative one
+// ("/api/v1/auth/admin/accounts") and the registrations write the module-relative one
 // ("/admin/accounts"), and each module-relative path is a unique suffix of its
 // fragment path. A parameter is "{name}" in the fragment and ":name" in the
 // registration, so the fragment path is rewritten before the comparison.

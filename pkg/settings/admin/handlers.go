@@ -18,7 +18,7 @@ type writeBody struct {
 	Value any `json:"value"`
 }
 
-// handleList answers GET /settings/admin/settings: every declared setting item
+// handleList answers GET /api/v1/settings/admin/settings: every declared setting item
 // with the value each resolves to on the selected layer. It is a read, so it
 // asks for settings.read in the layer's domain.
 func (p *product) handleList(c *gin.Context) {
@@ -35,7 +35,7 @@ func (p *product) handleList(c *gin.Context) {
 	p.list(c, sel, "")
 }
 
-// handleListNamespace answers GET /settings/admin/settings/:namespace: the
+// handleListNamespace answers GET /api/v1/settings/admin/settings/:namespace: the
 // declared items that namespace declared, each as the all-items route shows it.
 // It is a read, so it asks for settings.read in the layer's domain. A namespace
 // that no declared item belongs to is a 404.
@@ -118,7 +118,7 @@ func (p *product) resolve(item settings.DeclaredItem, layer settings.Layer) (str
 	return renderValue(item.Type, target.Elem().Interface())
 }
 
-// handleSet answers PUT /settings/admin/settings/:namespace/:key: it writes one
+// handleSet answers PUT /api/v1/settings/admin/settings/:namespace/:key: it writes one
 // row on the selected layer. It is a write, so it asks for settings.write in the
 // layer's domain.
 //
@@ -170,7 +170,7 @@ func (p *product) handleSet(c *gin.Context) {
 	p.noContent(c)
 }
 
-// handleRemove answers DELETE /settings/admin/settings/:namespace/:key: it drops
+// handleRemove answers DELETE /api/v1/settings/admin/settings/:namespace/:key: it drops
 // the selected layer's explicit row for one key. It is a write, so it asks for
 // settings.write in the layer's domain.
 //

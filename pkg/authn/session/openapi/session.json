@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {"title": "authn session", "version": "1.0.0"},
   "paths": {
-    "/auth/session": {
+    "/api/v1/auth/session": {
       "get": {
         "operationId": "authn.session.get",
         "summary": "Who is signed in on this session",
@@ -15,7 +15,7 @@
         }
       }
     },
-    "/auth/logout": {
+    "/api/v1/auth/logout": {
       "post": {
         "operationId": "authn.session.logout",
         "summary": "Revoke the session the request came with and clear its cookie",
@@ -27,7 +27,7 @@
         }
       }
     },
-    "/auth/sessions": {
+    "/api/v1/auth/sessions": {
       "get": {
         "operationId": "authn.session.list",
         "summary": "List the caller's own live sessions",
@@ -55,7 +55,7 @@
         }
       }
     },
-    "/auth/sessions/{id}": {
+    "/api/v1/auth/sessions/{id}": {
       "delete": {
         "operationId": "authn.session.revokeOne",
         "summary": "Revoke one of the caller's own sessions",

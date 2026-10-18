@@ -193,7 +193,7 @@ bundle (`@speed/i18n/platform-errors`) named as the fallback namespace,
 so a backend error code no package namespace covers resolves to the
 module catalog's own words instead of the raw key; the cookie-delivered
 auth-core session over the generated authn operations, attached before
-render and restored from `GET /auth/session` once at boot so a reload
+render and restored from `GET /api/v1/auth/session` once at boot so a reload
 stays logged in; one `@speed/api-client` client
 over the environment's fetch with `credentials: 'same-origin'` (the
 session cookie on every request) and the session's `restore()` as its

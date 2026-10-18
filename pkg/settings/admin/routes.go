@@ -15,7 +15,7 @@ import (
 // addressed by a natural key — a setting key's namespace and the rest of the key
 // — so that no opaque row identifier ever appears in a path.
 const (
-	basePath = "/settings/admin"
+	basePath = "/api/v1/settings/admin"
 
 	pathSettings     = basePath + "/settings"
 	pathNamespace    = basePath + "/settings/:namespace"

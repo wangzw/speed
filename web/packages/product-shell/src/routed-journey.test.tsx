@@ -51,9 +51,9 @@ import {
 } from '../test-utils/real-client.js'
 import { ProductShell } from './components/ProductShell.js'
 
-const FLOWS_START = 'POST /auth/flows'
-const FLOWS_ANSWER = 'POST /auth/flows/answer'
-const PROFILE = 'GET /auth/me'
+const FLOWS_START = 'POST /api/v1/auth/flows'
+const FLOWS_ANSWER = 'POST /api/v1/auth/flows/answer'
+const PROFILE = 'GET /api/v1/auth/me'
 
 /** The host's page registry -- the one place its product is named.
  * `/notes` (the list) carries a label and so joins the nav; the note

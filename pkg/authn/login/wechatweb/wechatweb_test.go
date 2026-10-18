@@ -21,7 +21,7 @@ import (
 const (
 	testAppID     = "wx-web-app-001"
 	testAppSecret = "web-app-secret-4b9c"
-	testRedirect  = "https://app.example.com/auth/callback/wechat.web"
+	testRedirect  = "https://app.example.com/api/v1/auth/callback/wechat.web"
 )
 
 // tokenServer serves one token answer over TLS and reports the request URL it

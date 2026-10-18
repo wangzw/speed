@@ -329,7 +329,7 @@ describe('SmsPage', () => {
     const operations = createConsoleOperations(
       makeConsoleBackend({
         listSmsTemplates: () =>
-          api<ConsoleSmsTemplatePage>('/sms/admin/templates'),
+          api<ConsoleSmsTemplatePage>('/api/v1/sms/admin/templates'),
       }),
     )
     renderWithProviders(<SmsPage />, { operations })

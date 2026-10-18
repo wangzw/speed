@@ -124,7 +124,7 @@ type httpReply struct {
 	setCookies []string
 }
 
-// sessionView is the part of GET /auth/session these cases read.
+// sessionView is the part of GET /api/v1/auth/session these cases read.
 type sessionView struct {
 	Authenticated bool   `json:"authenticated"`
 	AccountID     string `json:"account_id"`
@@ -189,7 +189,7 @@ func assembleOverHTTP(t *testing.T, use func(h *httpHarness)) {
 			"endpoints": map[string]any{"public": map[string]any{"listener": "public"}},
 		},
 		"kv":       map[string]any{"memory": map[string]any{"replicas": 1}},
-		"authn":    map[string]any{"gate": map[string]any{"mount": map[string]any{"endpoint": "public", "base-path": "/auth", "public-url": "http://127.0.0.1", "allow-insecure": true}}},
+		"authn":    map[string]any{"gate": map[string]any{"mount": map[string]any{"endpoint": "public", "base-path": "/api/v1/auth", "public-url": "http://127.0.0.1", "allow-insecure": true}}},
 		"settings": map[string]any{},
 		"event":    map[string]any{},
 	}
@@ -336,12 +336,12 @@ func (h *httpHarness) do(client *http.Client, method, path string, body any, coo
 	}
 }
 
-// state reads GET /auth/session over the jar and decodes the answer.
+// state reads GET /api/v1/auth/session over the jar and decodes the answer.
 func (h *httpHarness) state() sessionView {
 	h.t.Helper()
-	r := h.do(h.client, http.MethodGet, "/auth/session", nil, "", "")
+	r := h.do(h.client, http.MethodGet, "/api/v1/auth/session", nil, "", "")
 	if r.status != http.StatusOK {
-		h.t.Fatalf("GET /auth/session over the jar answered %d: %s", r.status, r.body)
+		h.t.Fatalf("GET /api/v1/auth/session over the jar answered %d: %s", r.status, r.body)
 	}
 	var v sessionView
 	if err := json.Unmarshal([]byte(r.body), &v); err != nil {
@@ -354,14 +354,14 @@ func (h *httpHarness) state() sessionView {
 // when the route does not answer 200.
 func (h *httpHarness) startImpersonation() {
 	h.t.Helper()
-	r := h.do(h.client, http.MethodPost, "/auth/impersonation", map[string]any{
+	r := h.do(h.client, http.MethodPost, "/api/v1/auth/impersonation", map[string]any{
 		"account":     string(httpTargetID),
 		"tenant":      httpTenant,
 		"reason":      "a support case",
 		"ttl_seconds": 600,
 	}, "", "")
 	if r.status != http.StatusOK {
-		h.t.Fatalf("POST /auth/impersonation answered %d: %s", r.status, r.body)
+		h.t.Fatalf("POST /api/v1/auth/impersonation answered %d: %s", r.status, r.body)
 	}
 }
 
@@ -398,18 +398,18 @@ func TestEndingAnImpersonationKeepsTheSessionToken(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-begin
-			ended = h.do(h.client, http.MethodDelete, "/auth/impersonation", nil, "", "")
+			ended = h.do(h.client, http.MethodDelete, "/api/v1/auth/impersonation", nil, "", "")
 		}()
 		go func() {
 			defer wg.Done()
 			<-begin
-			read = h.do(h.bare, http.MethodGet, "/auth/session", nil, cookie, preEnd)
+			read = h.do(h.bare, http.MethodGet, "/api/v1/auth/session", nil, cookie, preEnd)
 		}()
 		close(begin)
 		wg.Wait()
 
 		if ended.status != http.StatusNoContent {
-			t.Fatalf("DELETE /auth/impersonation answered %d: %s", ended.status, ended.body)
+			t.Fatalf("DELETE /api/v1/auth/impersonation answered %d: %s", ended.status, ended.body)
 		}
 		if read.status != http.StatusOK {
 			t.Errorf("a read carrying the token in force when the end settled answered %d, want 200: %s",
@@ -430,7 +430,7 @@ func TestEndingAnImpersonationKeepsTheSessionToken(t *testing.T) {
 
 		// The token is usable for a plain read after the end, and it resolves to
 		// the initiator's own identity.
-		after := h.do(h.bare, http.MethodGet, "/auth/session", nil, cookie, preEnd)
+		after := h.do(h.bare, http.MethodGet, "/api/v1/auth/session", nil, cookie, preEnd)
 		if after.status != http.StatusOK {
 			t.Fatalf("a read carrying the token in force before the end answered %d after it, want 200: %s",
 				after.status, after.body)
@@ -462,32 +462,32 @@ func TestTheStartRotatesTheCookieAndTheEndLeavesIt(t *testing.T) {
 		h.memberships.set(httpTargetID, httpTenant, true)
 
 		h.createSession(httpActorID)
-		started := h.do(h.client, http.MethodPost, "/auth/impersonation", map[string]any{
+		started := h.do(h.client, http.MethodPost, "/api/v1/auth/impersonation", map[string]any{
 			"account":     string(httpTargetID),
 			"tenant":      httpTenant,
 			"reason":      "a support case",
 			"ttl_seconds": 600,
 		}, "", "")
 		if started.status != http.StatusOK {
-			t.Fatalf("POST /auth/impersonation answered %d: %s", started.status, started.body)
+			t.Fatalf("POST /api/v1/auth/impersonation answered %d: %s", started.status, started.body)
 		}
 		if len(started.setCookies) != 1 {
 			t.Errorf("the start write wrote %d Set-Cookie header(s), want exactly 1: %v",
 				len(started.setCookies), started.setCookies)
 		}
 
-		ended := h.do(h.client, http.MethodDelete, "/auth/impersonation", nil, "", "")
+		ended := h.do(h.client, http.MethodDelete, "/api/v1/auth/impersonation", nil, "", "")
 		if ended.status != http.StatusNoContent {
-			t.Fatalf("DELETE /auth/impersonation answered %d: %s", ended.status, ended.body)
+			t.Fatalf("DELETE /api/v1/auth/impersonation answered %d: %s", ended.status, ended.body)
 		}
 		if len(ended.setCookies) != 0 {
 			t.Errorf("the end write wrote %d Set-Cookie header(s), want none: %v",
 				len(ended.setCookies), ended.setCookies)
 		}
 
-		again := h.do(h.client, http.MethodDelete, "/auth/impersonation", nil, "", "")
+		again := h.do(h.client, http.MethodDelete, "/api/v1/auth/impersonation", nil, "", "")
 		if again.status != http.StatusNotFound {
-			t.Fatalf("a second DELETE /auth/impersonation answered %d, want 404: %s", again.status, again.body)
+			t.Fatalf("a second DELETE /api/v1/auth/impersonation answered %d, want 404: %s", again.status, again.body)
 		}
 		if len(again.setCookies) != 0 {
 			t.Errorf("the second end wrote %d Set-Cookie header(s), want none: %v",

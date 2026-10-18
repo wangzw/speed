@@ -1,6 +1,6 @@
 /**
  * PreferencesSection behaviour: the language and timezone selects over
- * the profile self-write surface, GET/PATCH /auth/me.
+ * the profile self-write surface, GET/PATCH /api/v1/auth/me.
  *
  * What this suite pins, per story: the stored profile values render into
  * the controls (including a stored timezone the engine's own list omits,
@@ -36,7 +36,7 @@ import { renderWithProviders } from '../test-utils/render.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { PreferencesSection } from './PreferencesSection.js'
 
-const PROFILE_PATH = '/auth/me'
+const PROFILE_PATH = '/api/v1/auth/me'
 
 /** The language label the component computes for `tag` under `ui`, using
  * the same Intl.DisplayNames call (with the same raw-tag fallback), so

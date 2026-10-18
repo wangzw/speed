@@ -17,7 +17,7 @@ import (
 )
 
 // TestServePublishesTheFeatureDocument seeds an administrator, serves the
-// baseline and reads GET /features: anonymous callers are refused by the
+// baseline and reads GET /api/v1/features: anonymous callers are refused by the
 // gateway, and an authenticated one reads exactly the set this process serves.
 //
 // The expected set is derived from the assembly, not copied: the declarations
@@ -49,19 +49,19 @@ func TestServePublishesTheFeatureDocument(t *testing.T) {
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 
 	// Anonymous: the gateway answers its own 401, before any route matters.
-	anonymous := getRaw(t, base+"/features")
+	anonymous := getRaw(t, base+"/api/v1/features")
 	if anonymous.status != http.StatusUnauthorized {
-		t.Fatalf("anonymous GET /features answered %d, want 401:\n%s",
+		t.Fatalf("anonymous GET /api/v1/features answered %d, want 401:\n%s",
 			anonymous.status, anonymous.body)
 	}
 
 	token := signIn(t, base, seedIdentifier, seedPassword)
-	authenticated := authenticatedGet(t, base+"/features", token)
+	authenticated := authenticatedGet(t, base+"/api/v1/features", token)
 	if authenticated.status != http.StatusOK {
-		t.Fatalf("GET /features answered %d, want 200:\n%s", authenticated.status, authenticated.body)
+		t.Fatalf("GET /api/v1/features answered %d, want 200:\n%s", authenticated.status, authenticated.body)
 	}
 	if got := authenticated.header.Get("Cache-Control"); got != "no-store" {
-		t.Errorf("GET /features answered Cache-Control %q, want no-store", got)
+		t.Errorf("GET /api/v1/features answered Cache-Control %q, want no-store", got)
 	}
 
 	var document struct {

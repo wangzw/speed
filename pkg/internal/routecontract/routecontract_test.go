@@ -13,7 +13,7 @@ func TestGinPathRewritesAnOpenAPIParameter(t *testing.T) {
 	for _, c := range []struct{ in, want string }{
 		{"/api/v1/objects", "/api/v1/objects"},
 		{"/api/v1/objects/{id}", "/api/v1/objects/:id"},
-		{"/auth/admin/accounts/{id}/secrets/{secret}", "/auth/admin/accounts/:id/secrets/:secret"},
+		{"/api/v1/auth/admin/accounts/{id}/secrets/{secret}", "/api/v1/auth/admin/accounts/:id/secrets/:secret"},
 		{"/a/{b}/c/{d}/e", "/a/:b/c/:d/e"},
 	} {
 		if got := ginPath(c.in); got != c.want {

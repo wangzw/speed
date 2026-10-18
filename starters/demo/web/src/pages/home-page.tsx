@@ -87,7 +87,7 @@ export function HomePage(): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
   const navigate = useNavigate()
   // The frame's ensure answer is the trigger: the account just received its
-  // personal tenant and its GET /auth/me shows setup incomplete
+  // personal tenant and its GET /api/v1/auth/me shows setup incomplete
   // (src/personal-tenant-notice.tsx). The sign-in screen's registration mode
   // is not -- an ordinary SMS sign-in with a new number opens the account
   // implicitly and gets the same notice. Dismissing it is remembered for the

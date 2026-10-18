@@ -162,7 +162,7 @@ describe('a served document narrows the tenant area', () => {
   })
 
   it('drives the gate from the server document read by the real session', async () => {
-    // The whole chain in one case: a scripted server answer for GET /features
+    // The whole chain in one case: a scripted server answer for GET /api/v1/features
     // goes through the generated featureBoardList into a real auth-core
     // session (signed in through the generated flow operations), and the host
     // hides the surfaces the document leaves out.
@@ -177,7 +177,7 @@ describe('a served document narrows the tenant area', () => {
 
     renderDemoApp({ session: harness.session })
 
-    expect(harness.calls.some((call) => call.path === '/features')).toBe(true)
+    expect(harness.calls.some((call) => call.path === '/api/v1/features')).toBe(true)
     expect(harness.session.getSnapshot().features).toEqual({
       state: 'ready',
       names: new Set(['objectstore.objects']),
@@ -364,7 +364,7 @@ describe('the live notification stream', () => {
     // context: this case serves the roster and answers it, the way a
     // deployment with notification.stream always can.
     bindRequestFn((async (path: string) => {
-      if (path === '/tenant/admin/tenants') {
+      if (path === '/api/v1/tenant/admin/tenants') {
         return { tenants: [{ id: 'acme', alias: 'acme', status: 'active' }] }
       }
       throw new Error(`the gating suite binds only the roster: ${path}`)

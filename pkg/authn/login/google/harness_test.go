@@ -277,7 +277,7 @@ func newRig(t *testing.T, cfg resolved) *rig {
 		cfg.clientSecret = testClientSecret
 	}
 	if cfg.redirectURL == "" {
-		cfg.redirectURL = d.server.URL + "/auth/callback/google"
+		cfg.redirectURL = d.server.URL + "/api/v1/auth/callback/google"
 	}
 	client := egress.New(egress.Options{AllowLoopback: true, RootCAs: d.pool})
 	m := &product{

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {"title": "authn login", "version": "1.0.0"},
   "paths": {
-    "/auth/methods": {
+    "/api/v1/auth/methods": {
       "get": {
         "operationId": "authn.login.methods",
         "summary": "List the login methods this deployment offers",
@@ -18,7 +18,7 @@
         }
       }
     },
-    "/auth/flows": {
+    "/api/v1/auth/flows": {
       "post": {
         "operationId": "authn.login.start",
         "summary": "Start a login flow for one method",
@@ -76,7 +76,7 @@
         }
       }
     },
-    "/auth/flows/authenticated": {
+    "/api/v1/auth/flows/authenticated": {
       "post": {
         "operationId": "authn.login.startAuthenticated",
         "summary": "Start a flow on the identity already signed in",
@@ -134,7 +134,7 @@
         }
       }
     },
-    "/auth/flows/answer": {
+    "/api/v1/auth/flows/answer": {
       "post": {
         "operationId": "authn.login.answer",
         "summary": "Answer the current step of the flow the request is bound to",
@@ -200,7 +200,7 @@
         }
       }
     },
-    "/auth/flows/current": {
+    "/api/v1/auth/flows/current": {
       "get": {
         "operationId": "authn.login.current",
         "summary": "The state of the flow the request is bound to",
@@ -243,7 +243,7 @@
         }
       }
     },
-    "/auth/callback/{provider}": {
+    "/api/v1/auth/callback/{provider}": {
       "get": {
         "operationId": "authn.login.callbackGet",
         "summary": "Handle a provider's callback as a browser navigation",
@@ -311,7 +311,7 @@
         }
       }
     },
-    "/auth/password": {
+    "/api/v1/auth/password": {
       "put": {
         "operationId": "authn.login.changePassword",
         "summary": "Change the caller's password",
@@ -362,7 +362,7 @@
         }
       }
     },
-    "/auth/phone": {
+    "/api/v1/auth/phone": {
       "post": {
         "operationId": "authn.login.startPhone",
         "summary": "Send a code to a phone number being added to the account",
@@ -416,7 +416,7 @@
         }
       }
     },
-    "/auth/phone/verify": {
+    "/api/v1/auth/phone/verify": {
       "post": {
         "operationId": "authn.login.verifyPhone",
         "summary": "Verify the code sent to a phone number",
@@ -466,7 +466,7 @@
         }
       }
     },
-    "/auth/identifiers/{id}": {
+    "/api/v1/auth/identifiers/{id}": {
       "delete": {
         "operationId": "authn.login.removeIdentifier",
         "summary": "Remove one of the caller's own identifiers",
@@ -502,7 +502,7 @@
         }
       }
     },
-    "/auth/identifiers": {
+    "/api/v1/auth/identifiers": {
       "post": {
         "operationId": "authn.login.addIdentifier",
         "summary": "Add one of the caller's own login identifiers",
@@ -557,7 +557,7 @@
         }
       }
     },
-    "/auth/identifiers/verify": {
+    "/api/v1/auth/identifiers/verify": {
       "post": {
         "operationId": "authn.login.verifyIdentifier",
         "summary": "Verify the code sent to an email address being added",
@@ -611,7 +611,7 @@
         }
       }
     },
-    "/auth/links/{id}": {
+    "/api/v1/auth/links/{id}": {
       "delete": {
         "operationId": "authn.login.unlink",
         "summary": "Unbind one of the caller's own external identities",

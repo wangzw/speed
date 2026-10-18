@@ -273,13 +273,13 @@ sequenceDiagram
 宿主给了 `absent` 时：
 
 1. **会话已是已认证（重入）**：先读 `session.listMethods()`。没有 redirect 类与 enterprise 类方法，渲染 `absent`；有，触发 `onSignedIn`；发现读取失败，触发 `onSignedIn`。
-2. **会话不是已认证**：先读在途流程。读到即照常续接，不读发现文档——在途流程本身表明本部署有流程回跳到这条路由。`session.readFlow()` 返回 `null`（它对任何 401 都返回 `null`）时读 `session.listMethods()`：没有 redirect 类与 enterprise 类方法，渲染 `absent`；有，渲染失败横幅与重试按钮；发现读取失败，渲染失败横幅与重试按钮。这一读不是安全门：匿名者本就能直接读 `GET /auth/methods`。
+2. **会话不是已认证**：先读在途流程。读到即照常续接，不读发现文档——在途流程本身表明本部署有流程回跳到这条路由。`session.readFlow()` 返回 `null`（它对任何 401 都返回 `null`）时读 `session.listMethods()`：没有 redirect 类与 enterprise 类方法，渲染 `absent`；有，渲染失败横幅与重试按钮；发现读取失败，渲染失败横幅与重试按钮。这一读不是安全门：匿名者本就能直接读 `GET /api/v1/auth/methods`。
 
 宿主没给 `absent` 时，处理器的行为与「社交登录与回调」所述逐项相同，不读发现文档。
 
 ### 企业登录
 
-企业入口先收一个邮箱，调 `session.discoverSso(email)` 得到该邮箱域映射的提供方（`POST /auth/sso/discover`，恒同形同长，无匹配时为空列表）。**提供方清单不进发现文档**：它按域发现，不泄露账户存在性（[authn-sso](../authn/design-authn-sso.md)），故企业入口单独读它。空列表渲染一条「无匹配」通知与一个「换一个邮箱」按钮；有提供方时按每个提供方的名字渲染一个按钮，点击以该提供方的协议为方法、其 id 为 `input.provider` 起一条流程，`redirect` 步经 `onAuthorizeUrl` 交给宿主导航。
+企业入口先收一个邮箱，调 `session.discoverSso(email)` 得到该邮箱域映射的提供方（`POST /api/v1/auth/sso/discover`，恒同形同长，无匹配时为空列表）。**提供方清单不进发现文档**：它按域发现，不泄露账户存在性（[authn-sso](../authn/design-authn-sso.md)），故企业入口单独读它。空列表渲染一条「无匹配」通知与一个「换一个邮箱」按钮；有提供方时按每个提供方的名字渲染一个按钮，点击以该提供方的协议为方法、其 id 为 `input.provider` 起一条流程，`redirect` 步经 `onAuthorizeUrl` 交给宿主导航。
 
 ### 通行密钥登录
 

@@ -4,8 +4,8 @@
  * It lists the sessions of one account -- chosen through the account
  * search picker, which hands the read the account's id, so choosing an
  * account issues the read -- and revokes a single session. The read is
- * GET /auth/admin/accounts/:id/sessions and the revoke is
- * DELETE /auth/admin/sessions/:id; both are operations on the console
+ * GET /api/v1/auth/admin/accounts/:id/sessions and the revoke is
+ * DELETE /api/v1/auth/admin/sessions/:id; both are operations on the console
  * operations bundle, so the page builds no client and writes no query
  * key. The list carries the account's live sessions only: the session
  * module's read excludes revoked, expired and idle-expired rows, so a

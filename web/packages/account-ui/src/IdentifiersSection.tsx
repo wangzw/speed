@@ -2,7 +2,7 @@
  * IdentifiersSection: the sign-in-identifiers surface of the account page.
  *
  * The identifiers are the account's own, read off the profile
- * (GET /auth/me, authn.profile.get): the spec ships no dedicated
+ * (GET /api/v1/auth/me, authn.profile.get): the spec ships no dedicated
  * identifier-list route, and the profile answer carries each identifier's
  * own id, kind, value and verification, so the section reads the same
  * profile query the other account surfaces read. Each row names the kind
@@ -13,12 +13,12 @@
  * A row whose identifier carries an id has a row-end remove action that
  * sits behind the ui-kit danger ConfirmDialog -- removing an identifier is
  * irreversible (it is re-established only by walking the route that
- * proves it again). The removal is DELETE /auth/identifiers/{id}
+ * proves it again). The removal is DELETE /api/v1/auth/identifiers/{id}
  * (authn.login.removeIdentifier). The account module refuses to remove the
  * account's last way to log in with a 409, whose code text renders above
  * the list; the section never computes that count client-side.
  *
- * Below the list is the add face: POST /auth/identifiers
+ * Below the list is the add face: POST /api/v1/auth/identifiers
  * (authn.login.addIdentifier) with a kind and a value. An account holds at
  * most one username, and the server answers a second one with the same 409
  * authn.conflict as a name someone else took -- copy cannot distinguish
@@ -30,7 +30,7 @@
  * rather than rendering the code's account-state sentence. An
  * email is a contact address, so the add sends a code to it (the answer is
  * state "pending") and the code is submitted through POST
- * /auth/identifiers/verify (authn.login.verifyIdentifier); only the
+ * /api/v1/auth/identifiers/verify (authn.login.verifyIdentifier); only the
  * matching code writes the address, with the proof. The email branch is
  * unavailable on a deployment with no email channel (a 503), and both
  * writes revoke the account's other sessions, so a success refetches the

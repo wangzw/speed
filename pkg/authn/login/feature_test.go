@@ -161,8 +161,8 @@ func TestThePhoneSurfaceAndItsFeatureShareOneJudgement(t *testing.T) {
 			if got := slices.Contains(names, "authn.identifiers.email"); got != tc.email {
 				t.Errorf("authn.identifiers.email present = %v, want %v; the set is %v", got, tc.email, names)
 			}
-			_, phone := mounter.Registered(http.MethodPost, "/auth/phone")
-			_, verify := mounter.Registered(http.MethodPost, "/auth/phone/verify")
+			_, phone := mounter.Registered(http.MethodPost, "/api/v1/auth/phone")
+			_, verify := mounter.Registered(http.MethodPost, "/api/v1/auth/phone/verify")
 			if phone != tc.sms || verify != tc.sms {
 				t.Errorf("phone routes registered = (%v, %v), want (%v, %v)", phone, verify, tc.sms, tc.sms)
 			}

@@ -132,12 +132,12 @@ func TestOneMethodRegistersTheRoutes(t *testing.T) {
 		t.Fatalf("the drive failed: %v", err)
 	}
 	want := map[string]bool{
-		"GET /auth/methods":              true,
-		"POST /auth/flows":               true,
-		"POST /auth/flows/answer":        true,
-		"POST /auth/flows/authenticated": true,
-		"GET /auth/flows/current":        true,
-		"DELETE /auth/flows/current":     true,
+		"GET /api/v1/auth/methods":              true,
+		"POST /api/v1/auth/flows":               true,
+		"POST /api/v1/auth/flows/answer":        true,
+		"POST /api/v1/auth/flows/authenticated": true,
+		"GET /api/v1/auth/flows/current":        true,
+		"DELETE /api/v1/auth/flows/current":     true,
 	}
 	got := map[string]bool{}
 	for _, reg := range m.Registrations() {

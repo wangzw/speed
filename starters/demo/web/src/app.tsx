@@ -325,7 +325,7 @@ function TenantFrame({
   const navigate = useNavigate()
   // The assembled client: its event-stream opener feeds the notification
   // surface's live subscription below. The session is read at the ensure
-  // answer, where its authenticated snapshot is the GET /auth/me read that
+  // answer, where its authenticated snapshot is the GET /api/v1/auth/me read that
   // says whether setup is still incomplete.
   const { api, session } = useAppServices()
   // The page the frame is rendering. The personal-tenant failure placeholder
@@ -612,7 +612,7 @@ function TenantFrame({
         setTenantSettled(true)
         // `created` says this call registered the tenant, so the account is
         // new to password sign-in until it adds a login name and a password.
-        // The profile is the GET /auth/me read the session committed with
+        // The profile is the GET /api/v1/auth/me read the session committed with
         // the login; it is what makes the home page offer the one-time
         // 「完成账户设置」 notice, whether the account came from the register
         // entry or from an ordinary SMS sign-in with a new number.

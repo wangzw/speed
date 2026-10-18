@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {"title": "audit.admin", "version": "1.0.0"},
   "paths": {
-    "/audit/admin/records": {
+    "/api/v1/audit/admin/records": {
       "get": {
         "operationId": "audit.admin.records.list",
         "summary": "Page through the audit records, newest first",
@@ -27,7 +27,7 @@
         }
       }
     },
-    "/audit/admin/records/{id}": {
+    "/api/v1/audit/admin/records/{id}": {
       "get": {
         "operationId": "audit.admin.records.get",
         "summary": "Read one audit record by its row identifier",

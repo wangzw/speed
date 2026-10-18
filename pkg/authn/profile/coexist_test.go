@@ -105,11 +105,11 @@ func TestTheLoginAndProfileRoutesShareOneEndpoint(t *testing.T) {
 		t.Fatalf("the two modules do not coexist on one endpoint: %v", err)
 	}
 	for _, want := range []struct{ method, path string }{
-		{http.MethodGet, "/auth/me"},
-		{http.MethodPatch, "/auth/me"},
-		{http.MethodGet, "/auth/flows/current"},
-		{http.MethodPost, "/auth/flows"},
-		{http.MethodPost, "/auth/flows/authenticated"},
+		{http.MethodGet, "/api/v1/auth/me"},
+		{http.MethodPatch, "/api/v1/auth/me"},
+		{http.MethodGet, "/api/v1/auth/flows/current"},
+		{http.MethodPost, "/api/v1/auth/flows"},
+		{http.MethodPost, "/api/v1/auth/flows/authenticated"},
 	} {
 		if _, ok := m.Registered(want.method, want.path); !ok {
 			t.Errorf("%s %s is not mounted, so a module of the pair stood down", want.method, want.path)

@@ -21,7 +21,7 @@ import (
 const (
 	testAppID     = "wx-mp-app-002"
 	testAppSecret = "mp-app-secret-71d0"
-	testRedirect  = "https://app.example.com/auth/callback/wechat.mp"
+	testRedirect  = "https://app.example.com/api/v1/auth/callback/wechat.mp"
 )
 
 // tokenServer serves one token answer over TLS and gives the method a client

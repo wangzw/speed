@@ -1,6 +1,6 @@
 /**
  * ProfileSection behaviour: the display-name surface over the profile
- * read (GET /auth/me) and the profile write (PATCH /auth/me).
+ * read (GET /api/v1/auth/me) and the profile write (PATCH /api/v1/auth/me).
  *
  * What this suite pins: the stored display name renders into the field; a
  * save PATCHes a one-field body under `display_name`, fills the success
@@ -28,9 +28,9 @@ import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { ProfileSection } from './ProfileSection.js'
 
-const PROFILE_PATH = '/auth/me'
-const FLOW_START = '/auth/flows/authenticated'
-const FLOW_ANSWER = '/auth/flows/answer'
+const PROFILE_PATH = '/api/v1/auth/me'
+const FLOW_START = '/api/v1/auth/flows/authenticated'
+const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
 function mount(respond: RealResponder) {
   const rig = makeRealClientRig(respond)
@@ -160,7 +160,7 @@ describe('ProfileSection', () => {
         stored = (call.body as { display_name: string }).display_name
         return jsonResponse(200, {})
       }
-      if (call.method === 'GET' && call.path === '/auth/factors') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
         return jsonResponse(200, {
           factors: [
             {

@@ -140,7 +140,7 @@ describe('list methods', () => {
       mfa: { factors: ['totp'] },
     })
     expect(harness.calls).toHaveLength(1)
-    expect(harness.calls[0]?.path).toBe('/auth/methods')
+    expect(harness.calls[0]?.path).toBe('/api/v1/auth/methods')
   })
 
   it('refuses a methods 2xx whose body is not the documented shape', async () => {
@@ -194,7 +194,7 @@ describe('discover sso', () => {
       { id: 'idp-1', name: 'Acme Okta', protocol: 'oidc' },
     ])
     expect(harness.calls).toHaveLength(1)
-    expect(harness.calls[0]?.path).toBe('/auth/sso/discover')
+    expect(harness.calls[0]?.path).toBe('/api/v1/auth/sso/discover')
   })
 
   it('resolves an empty list when nothing matches, never an error', async () => {
@@ -367,9 +367,9 @@ describe('answer flow', () => {
     })
     expect(seen.map((snapshot) => snapshot.state)).toEqual(['authenticated'])
     expect(harness.calls.map((call) => call.path)).toEqual([
-      '/auth/flows/answer',
-      '/auth/me',
-      '/features',
+      '/api/v1/auth/flows/answer',
+      '/api/v1/auth/me',
+      '/api/v1/features',
     ])
   })
 
@@ -416,7 +416,7 @@ describe('answer flow', () => {
     // The principal stands and no /me read followed the elevation.
     expect(harness.session.getSnapshot().principal).toBe(before.principal)
     expect(harness.calls).toHaveLength(callsBefore + 1)
-    expect(harness.calls.at(-1)?.path).toBe('/auth/flows/answer')
+    expect(harness.calls.at(-1)?.path).toBe('/api/v1/auth/flows/answer')
   })
 
   it('a linked completion changes no login state', async () => {
@@ -456,7 +456,7 @@ describe('answer flow', () => {
     )
     // Nothing was written: no /me read either.
     expect(harness.calls.map((call) => call.path)).toEqual([
-      '/auth/flows/answer',
+      '/api/v1/auth/flows/answer',
     ])
   })
 
@@ -751,14 +751,14 @@ describe('refresh', () => {
     const first = harness.session.refresh()
     const second = harness.session.refresh()
     expect(
-      harness.calls.filter((call) => call.path === '/auth/token'),
+      harness.calls.filter((call) => call.path === '/api/v1/auth/token'),
     ).toHaveLength(1)
     releaseRefresh()
     await expect(first).resolves.toBe(true)
     await expect(second).resolves.toBe(true)
     expect(harness.store.get()).toBe('access-2')
     expect(
-      harness.calls.filter((call) => call.path === '/auth/token'),
+      harness.calls.filter((call) => call.path === '/api/v1/auth/token'),
     ).toHaveLength(1)
   })
 
@@ -1294,10 +1294,10 @@ describe('cookie session (store-less)', () => {
     expect(harness.store.get()).toBeNull()
     expect(seen.map((snapshot) => snapshot.state)).toEqual(['authenticated'])
     expect(harness.calls.map((call) => call.path)).toEqual([
-      '/auth/flows',
-      '/auth/flows/answer',
-      '/auth/me',
-      '/features',
+      '/api/v1/auth/flows',
+      '/api/v1/auth/flows/answer',
+      '/api/v1/auth/me',
+      '/api/v1/features',
     ])
   })
 
@@ -1317,7 +1317,7 @@ describe('cookie session (store-less)', () => {
   it('keeps a reload logged in: a fresh session restores from the cookie', async () => {
     // The bug this session model fixes: a page reload once signed the
     // user out, because the browser path held its credential in memory.
-    // A fresh session (a reload) reads GET /auth/session and, with the
+    // A fresh session (a reload) reads GET /api/v1/auth/session and, with the
     // cookie still valid, re-establishes the authenticated snapshot.
     const harness = makeCookieHarness({
       [SESSION_GET]: () => sessionView({ authenticated: true }),
@@ -1337,9 +1337,9 @@ describe('cookie session (store-less)', () => {
       features: { state: 'ready', names: new Set() },
     })
     expect(harness.calls.map((call) => call.path)).toEqual([
-      '/auth/session',
-      '/auth/me',
-      '/features',
+      '/api/v1/auth/session',
+      '/api/v1/auth/me',
+      '/api/v1/features',
     ])
   })
 
@@ -1352,7 +1352,7 @@ describe('cookie session (store-less)', () => {
     await expect(harness.session.restore()).resolves.toBe(true)
     expect(harness.session.getSnapshot().impersonating).toBe(true)
     // The snapshot carries no initiator identity: the principal is the
-    // impersonated account, as GET /auth/me answered it.
+    // impersonated account, as GET /api/v1/auth/me answered it.
     expect(harness.session.getSnapshot().principal).toEqual(principal())
   })
 
@@ -1417,7 +1417,7 @@ describe('cookie session (store-less)', () => {
     await expect(harness.session.restore()).resolves.toBe(false)
     expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
     // No /me read follows an anonymous session, and no transition fired.
-    expect(harness.calls.map((call) => call.path)).toEqual(['/auth/session'])
+    expect(harness.calls.map((call) => call.path)).toEqual(['/api/v1/auth/session'])
     expect(seen).toHaveLength(0)
   })
 
@@ -1673,15 +1673,15 @@ describe('with the real api-client', () => {
       const method = init?.method ?? 'GET'
       const authorization = new Headers(init?.headers).get('authorization')
       fetchCalls.push({ path: url.pathname, method, authorization })
-      if (url.pathname === '/auth/flows') {
+      if (url.pathname === '/api/v1/auth/flows') {
         return jsonResponse(200, completeFlow())
       }
-      if (url.pathname === '/auth/flows/answer') {
+      if (url.pathname === '/api/v1/auth/flows/answer') {
         return jsonResponse(200, authenticatedCompletion())
       }
-      if (url.pathname === '/auth/me') {
+      if (url.pathname === '/api/v1/auth/me') {
         meAttempts += 1
-        // The first /auth/me is the login completion's own principal
+        // The first /api/v1/auth/me is the login completion's own principal
         // read; the second is the request under test, which carries the
         // stale token and is refused; the third is its retry with the
         // fresh one.
@@ -1693,7 +1693,7 @@ describe('with the real api-client', () => {
         }
         return jsonResponse(200, principal())
       }
-      if (url.pathname === '/auth/token') {
+      if (url.pathname === '/api/v1/auth/token') {
         return jsonResponse(
           200,
           tokenResponse({ access_token: 'access-2', refresh_token: 'refresh-2' }),
@@ -1720,7 +1720,7 @@ describe('with the real api-client', () => {
     expect(store.get()).toBe('access-2')
     expect(session.getSnapshot().state).toBe('authenticated')
 
-    const meCalls = fetchCalls.filter((call) => call.path === '/auth/me')
+    const meCalls = fetchCalls.filter((call) => call.path === '/api/v1/auth/me')
     expect(meCalls).toHaveLength(3)
     expect(meCalls[0]?.authorization).toBe('Bearer access-1')
     expect(meCalls[1]?.authorization).toBe('Bearer access-1')
@@ -1736,7 +1736,7 @@ describe('with the real api-client', () => {
     // artifact was last regenerated. This suite therefore pins the call
     // and the retry, not the omission, until the artifact is regenerated
     // from the corrected config; see the notes in AGENTS.md.
-    expect(fetchCalls.filter((call) => call.path === '/auth/token')).toHaveLength(
+    expect(fetchCalls.filter((call) => call.path === '/api/v1/auth/token')).toHaveLength(
       1,
     )
   })

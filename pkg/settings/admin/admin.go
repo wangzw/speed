@@ -1,5 +1,5 @@
 // Package admin is the settings capability's management module: it mounts the
-// setting read and write routes under /settings/admin/* and delivers no
+// setting read and write routes under /api/v1/settings/admin/* and delivers no
 // capability of its own.
 //
 // The module holds no data and no rule. Every route's action is a call on the

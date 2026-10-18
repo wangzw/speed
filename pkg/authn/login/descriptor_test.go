@@ -27,7 +27,7 @@ func TestTheMethodsListingPublishesMethodDescriptors(t *testing.T) {
 	r.p.signup = true
 	r.mfa.kinds = []authn.FactorKind{authn.FactorSMS, authn.FactorTOTP, authn.FactorWebAuthn}
 
-	rec := r.send(http.MethodGet, "/auth/methods", "")
+	rec := r.send(http.MethodGet, "/api/v1/auth/methods", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET methods answered %d: %s", rec.Code, rec.Body.String())
 	}
@@ -77,7 +77,7 @@ func TestTheMethodsListingHidesADisabledMethod(t *testing.T) {
 	r := newRigMethods(t, &fakeMethod{name: "password"}, &fakeMethod{name: "google"})
 	r.p.settings = readerWithDisabled(t, "password")
 
-	body := decode(t, r.send(http.MethodGet, "/auth/methods", "").Body.String())
+	body := decode(t, r.send(http.MethodGet, "/api/v1/auth/methods", "").Body.String())
 	methods := body["methods"].([]any)
 	if len(methods) != 1 || methods[0].(map[string]any)["name"] != "google" {
 		t.Errorf("methods with password disabled = %v, want only google", methods)
@@ -90,7 +90,7 @@ func TestTheMethodsListingHidesADisabledMethod(t *testing.T) {
 func TestTheMethodsListingFollowsTheAssembly(t *testing.T) {
 	r := newRig(t, &fakeMethod{name: "password"})
 
-	closed := decode(t, r.send(http.MethodGet, "/auth/methods", "").Body.String())
+	closed := decode(t, r.send(http.MethodGet, "/api/v1/auth/methods", "").Body.String())
 	if got := closed["signup"].(map[string]any)["enabled"]; got != false {
 		t.Errorf("signup.enabled with registration closed = %v, want false", got)
 	}
@@ -100,7 +100,7 @@ func TestTheMethodsListingFollowsTheAssembly(t *testing.T) {
 
 	r.p.signup = true
 	r.mfa.kinds = []authn.FactorKind{authn.FactorTOTP, authn.FactorWebAuthn}
-	open := decode(t, r.send(http.MethodGet, "/auth/methods", "").Body.String())
+	open := decode(t, r.send(http.MethodGet, "/api/v1/auth/methods", "").Body.String())
 	if got := open["signup"].(map[string]any)["enabled"]; got != true {
 		t.Errorf("signup.enabled with registration open = %v, want true", got)
 	}

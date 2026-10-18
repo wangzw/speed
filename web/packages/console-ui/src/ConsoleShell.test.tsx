@@ -183,7 +183,7 @@ describe('ConsoleShell', () => {
     // settings page; the shell is the one place the host supplies that
     // destination, so the dialog rendered inside it must receive it.
     bindConsoleRequest((call) => {
-      if (call.method === 'GET' && call.path === '/auth/factors') {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
         return { factors: [] }
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)

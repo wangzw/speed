@@ -63,7 +63,7 @@ func problemCode(t *testing.T, body string) string {
 func TestTheStrongRoutesNeedASeasonedAdministratorWithANonSMSSecond(t *testing.T) {
 	// A TOTP administrator passes both strong routes.
 	r := newRig(t)
-	rec := r.do(http.MethodPost, "/auth/admin/accounts/"+string(userID)+"/mfa-reset", nil, fresh()...)
+	rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts/"+string(userID)+"/mfa-reset", nil, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("mfa-reset: status = %d, want 200; body %s", rec.Code, rec.Body.String())
 	}
@@ -72,7 +72,7 @@ func TestTheStrongRoutesNeedASeasonedAdministratorWithANonSMSSecond(t *testing.T
 	}
 
 	r = newRig(t)
-	rec = r.do(http.MethodPost, "/auth/admin/accounts/"+string(userID)+"/password",
+	rec = r.do(http.MethodPost, "/api/v1/auth/admin/accounts/"+string(userID)+"/password",
 		map[string]any{"password": "a-long-temporary-one"}, fresh()...)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("password reset: status = %d, want 204; body %s", rec.Code, rec.Body.String())
@@ -85,7 +85,7 @@ func TestTheStrongRoutesNeedASeasonedAdministratorWithANonSMSSecond(t *testing.T
 	// passes too.
 	r = newRig(t)
 	webauthn := fresh(authntest.WithMethods(authn.MethodPassword, authn.MethodWebAuthn))
-	rec = r.do(http.MethodPost, "/auth/admin/accounts/"+string(userID)+"/mfa-reset", nil, webauthn...)
+	rec = r.do(http.MethodPost, "/api/v1/auth/admin/accounts/"+string(userID)+"/mfa-reset", nil, webauthn...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("WebAuthn mfa-reset: status = %d, want 200; body %s", rec.Code, rec.Body.String())
 	}
@@ -97,7 +97,7 @@ func TestTheStrongRoutesNeedASeasonedAdministratorWithANonSMSSecond(t *testing.T
 	// clears it, so both routes answer the 403 rather than the step-up 401.
 	r = newRig(t)
 	r.mfa.seasoned = false
-	rec = r.do(http.MethodPost, "/auth/admin/accounts/"+string(userID)+"/mfa-reset", nil, fresh()...)
+	rec = r.do(http.MethodPost, "/api/v1/auth/admin/accounts/"+string(userID)+"/mfa-reset", nil, fresh()...)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("unseasoned mfa-reset: status = %d, want 403; body %s", rec.Code, rec.Body.String())
 	}
@@ -107,7 +107,7 @@ func TestTheStrongRoutesNeedASeasonedAdministratorWithANonSMSSecond(t *testing.T
 	if r.mfa.resets != 0 {
 		t.Error("Reset ran though the actor had no seasoned factor")
 	}
-	rec = r.do(http.MethodPost, "/auth/admin/accounts/"+string(userID)+"/password",
+	rec = r.do(http.MethodPost, "/api/v1/auth/admin/accounts/"+string(userID)+"/password",
 		map[string]any{"password": "a-long-temporary-one"}, fresh()...)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("unseasoned password reset: status = %d, want 403; body %s", rec.Code, rec.Body.String())
@@ -135,13 +135,13 @@ func TestTheStrongRoutesNeedASeasonedAdministratorWithANonSMSSecond(t *testing.T
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRig(t)
 			tc.setup(r)
-			if rec := r.do(http.MethodPost, "/auth/admin/accounts/"+string(userID)+"/mfa-reset", nil, tc.opts()...); rec.Code != http.StatusUnauthorized {
+			if rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts/"+string(userID)+"/mfa-reset", nil, tc.opts()...); rec.Code != http.StatusUnauthorized {
 				t.Errorf("mfa-reset: status = %d, want 401", rec.Code)
 			}
 			if r.mfa.resets != 0 {
 				t.Error("Reset ran though the actor was not strong enough")
 			}
-			if rec := r.do(http.MethodPost, "/auth/admin/accounts/"+string(userID)+"/password",
+			if rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts/"+string(userID)+"/password",
 				map[string]any{"password": "a-long-temporary-one"}, tc.opts()...); rec.Code != http.StatusUnauthorized {
 				t.Errorf("password reset: status = %d, want 401", rec.Code)
 			}
@@ -165,13 +165,13 @@ func TestARefusalStopsEveryReadRoute(t *testing.T) {
 		path string
 		read func() int
 	}{
-		{"account list", "/auth/admin/accounts", func() int { return r.accounts.listCalls }},
-		{"member list", "/auth/admin/tenants/" + tenantA + "/members", func() int { return r.members.listCalls }},
-		{"session list", "/auth/admin/accounts/acct-t2/sessions", func() int { return r.sessions.listCalls }},
-		{"factor list", "/auth/admin/accounts/acct-t2/factors", func() int { return r.mfa.factorCalls }},
-		{"secret list", "/auth/admin/accounts/acct-t2/secrets", func() int { return r.accounts.secretCalls }},
-		{"provider list", "/auth/admin/tenants/" + tenantA + "/sso/providers", func() int { return r.providers.listCalls }},
-		{"impersonation list", "/auth/admin/impersonations?tenant=" + tenantA, func() int { return r.records.listCalls }},
+		{"account list", "/api/v1/auth/admin/accounts", func() int { return r.accounts.listCalls }},
+		{"member list", "/api/v1/auth/admin/tenants/" + tenantA + "/members", func() int { return r.members.listCalls }},
+		{"session list", "/api/v1/auth/admin/accounts/acct-t2/sessions", func() int { return r.sessions.listCalls }},
+		{"factor list", "/api/v1/auth/admin/accounts/acct-t2/factors", func() int { return r.mfa.factorCalls }},
+		{"secret list", "/api/v1/auth/admin/accounts/acct-t2/secrets", func() int { return r.accounts.secretCalls }},
+		{"provider list", "/api/v1/auth/admin/tenants/" + tenantA + "/sso/providers", func() int { return r.providers.listCalls }},
+		{"impersonation list", "/api/v1/auth/admin/impersonations?tenant=" + tenantA, func() int { return r.records.listCalls }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -191,7 +191,7 @@ func TestARefusalStopsEveryReadRoute(t *testing.T) {
 // before the Decider is asked.
 func TestTheSSOExemptRoute(t *testing.T) {
 	r := newRig(t)
-	rec := r.do(http.MethodPut, "/auth/admin/tenants/"+tenantA+"/members/"+string(userID)+"/sso-exempt",
+	rec := r.do(http.MethodPut, "/api/v1/auth/admin/tenants/"+tenantA+"/members/"+string(userID)+"/sso-exempt",
 		map[string]any{"sso_exempt": true}, fresh()...)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204; body %s", rec.Code, rec.Body.String())
@@ -205,7 +205,7 @@ func TestTheSSOExemptRoute(t *testing.T) {
 
 	// A missing membership is a 404 and the Decider is never asked.
 	missing := newRig(t)
-	rec = missing.do(http.MethodPut, "/auth/admin/tenants/"+tenantA+"/members/absent/sso-exempt",
+	rec = missing.do(http.MethodPut, "/api/v1/auth/admin/tenants/"+tenantA+"/members/absent/sso-exempt",
 		map[string]any{"sso_exempt": true}, fresh()...)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("missing membership: status = %d, want 404", rec.Code)
@@ -227,13 +227,13 @@ func TestProviderWarnings(t *testing.T) {
 
 	want := []string{"idp-initiated", "merge", "SHA-1"}
 
-	rec := r.do(http.MethodGet, "/auth/admin/sso/providers/"+idpA, nil, fresh()...)
+	rec := r.do(http.MethodGet, "/api/v1/auth/admin/sso/providers/"+idpA, nil, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("get: status = %d, want 200; body %s", rec.Code, rec.Body.String())
 	}
 	assertWarnings(t, providerWarningsFrom(t, rec.Body.String()), want)
 
-	rec = r.do(http.MethodGet, "/auth/admin/tenants/"+tenantA+"/sso/providers", nil, fresh()...)
+	rec = r.do(http.MethodGet, "/api/v1/auth/admin/tenants/"+tenantA+"/sso/providers", nil, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("list: status = %d, want 200; body %s", rec.Code, rec.Body.String())
 	}
@@ -253,7 +253,7 @@ func TestProviderWarnings(t *testing.T) {
 	// A provider that sets none carries no warning.
 	def := newRig(t)
 	def.providers.put(authn.SSOProvider{ID: idpA, Tenant: tenantA, Protocol: authn.SSOProtocolSAML, Provisioning: authn.ProvisioningJIT})
-	rec = def.do(http.MethodGet, "/auth/admin/sso/providers/"+idpA, nil, fresh()...)
+	rec = def.do(http.MethodGet, "/api/v1/auth/admin/sso/providers/"+idpA, nil, fresh()...)
 	if got := providerWarningsFrom(t, rec.Body.String()); len(got) != 0 {
 		t.Errorf("a default provider carries warnings %v, want none", got)
 	}
@@ -302,7 +302,7 @@ func TestTheStatusRouteMapsAndRefusesDeleted(t *testing.T) {
 		{"active", authn.StatusActive},
 		{"disabled", authn.StatusDisabled},
 	} {
-		rec := r.do(http.MethodPost, "/auth/admin/accounts/"+string(userID)+"/status",
+		rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts/"+string(userID)+"/status",
 			map[string]any{"status": tc.body}, fresh()...)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status %q: status = %d, want 200; body %s", tc.body, rec.Code, rec.Body.String())
@@ -313,7 +313,7 @@ func TestTheStatusRouteMapsAndRefusesDeleted(t *testing.T) {
 	}
 
 	before := r.accountAdm.count("set-status")
-	rec := r.do(http.MethodPost, "/auth/admin/accounts/"+string(userID)+"/status",
+	rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts/"+string(userID)+"/status",
 		map[string]any{"status": "deleted"}, fresh()...)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status %q: status = %d, want 400", "deleted", rec.Code)
@@ -322,7 +322,7 @@ func TestTheStatusRouteMapsAndRefusesDeleted(t *testing.T) {
 		t.Error("SetStatus ran for a delete through the status route")
 	}
 
-	rec = r.do(http.MethodPost, "/auth/admin/accounts/"+string(userID)+"/status",
+	rec = r.do(http.MethodPost, "/api/v1/auth/admin/accounts/"+string(userID)+"/status",
 		map[string]any{"status": "bogus"}, fresh()...)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status %q: status = %d, want 400", "bogus", rec.Code)
@@ -335,7 +335,7 @@ func TestTheStatusRouteMapsAndRefusesDeleted(t *testing.T) {
 // refused and the capability is not called.
 func TestIdentifierAddAssertsOnlyAsAnAdministrator(t *testing.T) {
 	r := newRig(t)
-	base := "/auth/admin/accounts/" + string(userID) + "/identifiers"
+	base := "/api/v1/auth/admin/accounts/" + string(userID) + "/identifiers"
 
 	// A phone number changes only through an SMS code.
 	rec := r.do(http.MethodPost, base, map[string]any{"kind": "phone", "value": "+8613800000000"}, fresh()...)
@@ -370,7 +370,7 @@ func TestAccountCreateRefusesAProofVia(t *testing.T) {
 		{"kind": "user", "username": "a", "email": "a@example.com", "email_verified_via": "sms-code"},
 		{"kind": "user", "username": "a", "phone": "+8613800000000", "phone_verified_via": "idp:some-idp"},
 	} {
-		rec := r.do(http.MethodPost, "/auth/admin/accounts", body, fresh()...)
+		rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts", body, fresh()...)
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("%+v: status = %d, want 400", body, rec.Code)
 		}
@@ -380,7 +380,7 @@ func TestAccountCreateRefusesAProofVia(t *testing.T) {
 	}
 
 	// An administrator's assertion is accepted.
-	rec := r.do(http.MethodPost, "/auth/admin/accounts",
+	rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts",
 		map[string]any{"kind": "user", "username": "a", "email": "a@example.com", "email_verified_via": "admin"}, fresh()...)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body %s", rec.Code, rec.Body.String())
@@ -403,7 +403,7 @@ func TestAccountCreateRefusesAUserAccountWithNoIdentifier(t *testing.T) {
 		{"kind": "user", "display_name": "Nobody"},
 		{"kind": "user", "attributes": map[string]string{"team": "core"}},
 	} {
-		rec := r.do(http.MethodPost, "/auth/admin/accounts", body, fresh()...)
+		rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts", body, fresh()...)
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("%v: status = %d, want 400; body %s", body, rec.Code, rec.Body.String())
 			continue
@@ -417,14 +417,14 @@ func TestAccountCreateRefusesAUserAccountWithNoIdentifier(t *testing.T) {
 	}
 
 	// One identifier satisfies the route.
-	rec := r.do(http.MethodPost, "/auth/admin/accounts",
+	rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts",
 		map[string]any{"kind": "user", "display_name": "Grace", "username": "grace"}, fresh()...)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("a user account with a username: status = %d, want 201; body %s", rec.Code, rec.Body.String())
 	}
 
 	// A service account signs in with a service secret, so it needs none.
-	rec = r.do(http.MethodPost, "/auth/admin/accounts",
+	rec = r.do(http.MethodPost, "/api/v1/auth/admin/accounts",
 		map[string]any{"kind": "service", "display_name": "Nightly"}, fresh()...)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("a service account with no identifier: status = %d, want 201; body %s", rec.Code, rec.Body.String())
@@ -441,9 +441,9 @@ func TestTheAnswerMapsEverySentinel(t *testing.T) {
 		method string
 		path   string
 	}{
-		{"account", http.MethodGet, "/auth/admin/accounts/absent"},
-		{"session", http.MethodDelete, "/auth/admin/sessions/0190a6f2-3b6c-7c2e-8a4d-5e6f7a8b9c99"},
-		{"provider", http.MethodGet, "/auth/admin/sso/providers/absent"},
+		{"account", http.MethodGet, "/api/v1/auth/admin/accounts/absent"},
+		{"session", http.MethodDelete, "/api/v1/auth/admin/sessions/0190a6f2-3b6c-7c2e-8a4d-5e6f7a8b9c99"},
+		{"provider", http.MethodGet, "/api/v1/auth/admin/sso/providers/absent"},
 	} {
 		t.Run("404 "+tc.name, func(t *testing.T) {
 			r := newRig(t)
@@ -477,7 +477,7 @@ func TestTheAnswerMapsEverySentinel(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRig(t)
 			r.accountAdm.err = tc.err
-			rec := r.do(http.MethodPost, "/auth/admin/accounts",
+			rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts",
 				map[string]any{"kind": "user", "username": "a"}, fresh()...)
 			if rec.Code != tc.status {
 				t.Fatalf("status = %d, want %d; body %s", rec.Code, tc.status, rec.Body.String())
@@ -494,14 +494,14 @@ func TestTheAnswerMapsEverySentinel(t *testing.T) {
 func TestTheAccountListQueryPairsPrefixAndKind(t *testing.T) {
 	r := newRig(t)
 	for _, q := range []string{"?identifier_prefix=abc", "?identifier_kind=email"} {
-		if rec := r.do(http.MethodGet, "/auth/admin/accounts"+q, nil, fresh()...); rec.Code != http.StatusBadRequest {
+		if rec := r.do(http.MethodGet, "/api/v1/auth/admin/accounts"+q, nil, fresh()...); rec.Code != http.StatusBadRequest {
 			t.Errorf("%s: status = %d, want 400", q, rec.Code)
 		}
 	}
-	if rec := r.do(http.MethodGet, "/auth/admin/accounts?identifier_prefix=abc&identifier_kind=email", nil, fresh()...); rec.Code != http.StatusOK {
+	if rec := r.do(http.MethodGet, "/api/v1/auth/admin/accounts?identifier_prefix=abc&identifier_kind=email", nil, fresh()...); rec.Code != http.StatusOK {
 		t.Errorf("a paired prefix and kind: status = %d, want 200", rec.Code)
 	}
-	if rec := r.do(http.MethodGet, "/auth/admin/accounts?identifier_prefix=abc&identifier_kind=bogus", nil, fresh()...); rec.Code != http.StatusBadRequest {
+	if rec := r.do(http.MethodGet, "/api/v1/auth/admin/accounts?identifier_prefix=abc&identifier_kind=bogus", nil, fresh()...); rec.Code != http.StatusBadRequest {
 		t.Errorf("an unknown kind: status = %d, want 400", rec.Code)
 	}
 }
@@ -511,7 +511,7 @@ func TestTheAccountListQueryPairsPrefixAndKind(t *testing.T) {
 // status and kind the list already narrows by.
 func TestTheAccountListParsesTheDisplayNamePrefix(t *testing.T) {
 	r := newRig(t)
-	rec := r.do(http.MethodGet, "/auth/admin/accounts?display_name_prefix=Ali&status=active&kind=user", nil, fresh()...)
+	rec := r.do(http.MethodGet, "/api/v1/auth/admin/accounts?display_name_prefix=Ali&status=active&kind=user", nil, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
@@ -531,7 +531,7 @@ func TestTheAccountListParsesTheDisplayNamePrefix(t *testing.T) {
 func TestTheAccountListRefusesANonUTF8DisplayNamePrefix(t *testing.T) {
 	r := newRig(t)
 	for _, q := range []string{"?display_name_prefix=%BF", "?display_name_prefix=caf%C3", "?display_name_prefix=%FF%FE"} {
-		rec := r.do(http.MethodGet, "/auth/admin/accounts"+q, nil, fresh()...)
+		rec := r.do(http.MethodGet, "/api/v1/auth/admin/accounts"+q, nil, fresh()...)
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("%s: status = %d, want 400", q, rec.Code)
 		}
@@ -541,7 +541,7 @@ func TestTheAccountListRefusesANonUTF8DisplayNamePrefix(t *testing.T) {
 	}
 
 	// A prefix that is valid UTF-8 text reaches the read as written.
-	rec := r.do(http.MethodGet, "/auth/admin/accounts?display_name_prefix=Ali", nil, fresh()...)
+	rec := r.do(http.MethodGet, "/api/v1/auth/admin/accounts?display_name_prefix=Ali", nil, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("a valid prefix: status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
@@ -557,7 +557,7 @@ func TestTheAccountListRefusesANonUTF8DisplayNamePrefix(t *testing.T) {
 func TestTheAccountListRefusesAQueryParameterItDoesNotAccept(t *testing.T) {
 	r := newRig(t)
 	for _, q := range []string{"?nope=1", "?displayname_prefix=Ali", "?statuss=active", "?user=alice"} {
-		rec := r.do(http.MethodGet, "/auth/admin/accounts"+q, nil, fresh()...)
+		rec := r.do(http.MethodGet, "/api/v1/auth/admin/accounts"+q, nil, fresh()...)
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("%s: status = %d, want 400", q, rec.Code)
 		}
@@ -572,7 +572,7 @@ func TestTheAccountListRefusesAQueryParameterItDoesNotAccept(t *testing.T) {
 // still runs, with nothing narrowed by it.
 func TestTheAccountListReadsAnEmptyFilterAsNoFilter(t *testing.T) {
 	r := newRig(t)
-	rec := r.do(http.MethodGet, "/auth/admin/accounts?display_name_prefix=&status=&after=", nil, fresh()...)
+	rec := r.do(http.MethodGet, "/api/v1/auth/admin/accounts?display_name_prefix=&status=&after=", nil, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
@@ -595,9 +595,9 @@ func TestPagedRoutesRefuseANegativeLimit(t *testing.T) {
 		name string
 		path string
 	}{
-		{"account list", "/auth/admin/accounts"},
-		{"member list", "/auth/admin/tenants/" + tenantA + "/members"},
-		{"impersonation list", "/auth/admin/impersonations?tenant=" + tenantA + "&"},
+		{"account list", "/api/v1/auth/admin/accounts"},
+		{"member list", "/api/v1/auth/admin/tenants/" + tenantA + "/members"},
+		{"impersonation list", "/api/v1/auth/admin/impersonations?tenant=" + tenantA + "&"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sep := "?"
@@ -617,7 +617,7 @@ func TestPagedRoutesRefuseANegativeLimit(t *testing.T) {
 // TestAccountCreateRefusesAnUnknownKind holds the create's kind check.
 func TestAccountCreateRefusesAnUnknownKind(t *testing.T) {
 	r := newRig(t)
-	rec := r.do(http.MethodPost, "/auth/admin/accounts", map[string]any{"kind": "bogus"}, fresh()...)
+	rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts", map[string]any{"kind": "bogus"}, fresh()...)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", rec.Code)
 	}
@@ -630,7 +630,7 @@ func TestAccountCreateRefusesAnUnknownKind(t *testing.T) {
 // a non-empty value, the default way of admin, and a refusal of any other way.
 func TestIdentifierAddShape(t *testing.T) {
 	r := newRig(t)
-	base := "/auth/admin/accounts/" + string(userID) + "/identifiers"
+	base := "/api/v1/auth/admin/accounts/" + string(userID) + "/identifiers"
 
 	if rec := r.do(http.MethodPost, base, map[string]any{"kind": "email", "value": ""}, fresh()...); rec.Code != http.StatusBadRequest {
 		t.Errorf("an empty value: status = %d, want 400", rec.Code)
@@ -665,7 +665,7 @@ func TestProviderWriteInheritsAndOverridesTheFlags(t *testing.T) {
 		ID: idpA, Tenant: tenantA, Protocol: authn.SSOProtocolSAML, Name: "n", Provisioning: authn.ProvisioningJIT,
 		Enabled: true, TrustIDPMFA: true, AllowIDPInitiated: true, AllowSHA1: true, MergeExisting: true,
 	})
-	rec := r.do(http.MethodPut, "/auth/admin/sso/providers/"+idpA,
+	rec := r.do(http.MethodPut, "/api/v1/auth/admin/sso/providers/"+idpA,
 		map[string]any{"protocol": "saml", "name": "n", "provisioning": "jit"}, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("update: status = %d, want 200; body %s", rec.Code, rec.Body.String())
@@ -677,7 +677,7 @@ func TestProviderWriteInheritsAndOverridesTheFlags(t *testing.T) {
 
 	// An explicit enabled:false on a create is obeyed.
 	created := newRig(t)
-	rec = created.do(http.MethodPost, "/auth/admin/tenants/"+tenantA+"/sso/providers",
+	rec = created.do(http.MethodPost, "/api/v1/auth/admin/tenants/"+tenantA+"/sso/providers",
 		map[string]any{"protocol": "saml", "name": "n", "provisioning": "jit", "enabled": false, "trust_idp_mfa": true}, fresh()...)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create: status = %d, want 201; body %s", rec.Code, rec.Body.String())
@@ -704,7 +704,7 @@ func TestProviderCreateRequiresItsFields(t *testing.T) {
 				body[k] = v
 			}
 			body[drop] = ""
-			rec := r.do(http.MethodPost, "/auth/admin/tenants/"+tenantA+"/sso/providers", body, fresh()...)
+			rec := r.do(http.MethodPost, "/api/v1/auth/admin/tenants/"+tenantA+"/sso/providers", body, fresh()...)
 			if rec.Code != http.StatusBadRequest {
 				t.Errorf("status = %d, want 400", rec.Code)
 			}
@@ -720,7 +720,7 @@ func TestProviderCreateRequiresItsFields(t *testing.T) {
 func TestTheMetadataRefreshRouteDispatches(t *testing.T) {
 	r := newRig(t)
 	r.providers.put(authn.SSOProvider{ID: idpA, Tenant: tenantA, Protocol: authn.SSOProtocolSAML, Provisioning: authn.ProvisioningJIT})
-	rec := r.do(http.MethodPost, "/auth/admin/sso/providers/"+idpA+"/metadata/refresh", nil, fresh()...)
+	rec := r.do(http.MethodPost, "/api/v1/auth/admin/sso/providers/"+idpA+"/metadata/refresh", nil, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("SAML refresh: status = %d, want 200; body %s", rec.Code, rec.Body.String())
 	}
@@ -730,7 +730,7 @@ func TestTheMetadataRefreshRouteDispatches(t *testing.T) {
 
 	// A protocol with no refresher in this assembly is a 400.
 	r.providers.put(authn.SSOProvider{ID: "oidc-1", Tenant: tenantA, Protocol: authn.SSOProtocolOIDC, Provisioning: authn.ProvisioningJIT})
-	rec = r.do(http.MethodPost, "/auth/admin/sso/providers/oidc-1/metadata/refresh", nil, fresh()...)
+	rec = r.do(http.MethodPost, "/api/v1/auth/admin/sso/providers/oidc-1/metadata/refresh", nil, fresh()...)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("refresh with no refresher: status = %d, want 400", rec.Code)
 	}
@@ -744,10 +744,10 @@ func TestTheDomainRoutesRefuseAMissingProvider(t *testing.T) {
 		path   string
 		body   any
 	}{
-		{http.MethodPost, "/auth/admin/sso/providers/absent/domains", map[string]any{"domain": "d.example"}},
-		{http.MethodDelete, "/auth/admin/sso/providers/absent/domains/d.example", nil},
-		{http.MethodPost, "/auth/admin/sso/providers/absent/domains/d.example/verify", nil},
-		{http.MethodPost, "/auth/admin/sso/providers/absent/reverify-domains", nil},
+		{http.MethodPost, "/api/v1/auth/admin/sso/providers/absent/domains", map[string]any{"domain": "d.example"}},
+		{http.MethodDelete, "/api/v1/auth/admin/sso/providers/absent/domains/d.example", nil},
+		{http.MethodPost, "/api/v1/auth/admin/sso/providers/absent/domains/d.example/verify", nil},
+		{http.MethodPost, "/api/v1/auth/admin/sso/providers/absent/reverify-domains", nil},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			r := newRig(t)
@@ -769,7 +769,7 @@ func TestTheAuditRowsCarryTheContract(t *testing.T) {
 	// A successful create writes one success row with the action, the object and
 	// the detail the contract names.
 	r := newRig(t)
-	rec := r.do(http.MethodPost, "/auth/admin/accounts", map[string]any{"kind": "user", "username": "a"}, fresh()...)
+	rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts", map[string]any{"kind": "user", "username": "a"}, fresh()...)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create: status = %d, want 201; body %s", rec.Code, rec.Body.String())
 	}
@@ -791,7 +791,7 @@ func TestTheAuditRowsCarryTheContract(t *testing.T) {
 	// A write that fails is closed with a failed row linked by the action id.
 	failed := newRig(t)
 	failed.accountAdm.err = authn.ErrAccountExists
-	rec = failed.do(http.MethodPost, "/auth/admin/accounts", map[string]any{"kind": "user", "username": "a"}, fresh()...)
+	rec = failed.do(http.MethodPost, "/api/v1/auth/admin/accounts", map[string]any{"kind": "user", "username": "a"}, fresh()...)
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("failed create: status = %d, want 409", rec.Code)
 	}
@@ -812,13 +812,13 @@ func TestTheAuditRowsCarryTheContract(t *testing.T) {
 
 	// The membership write and the session revocation carry their names.
 	mem := newRig(t)
-	mem.do(http.MethodPut, "/auth/admin/tenants/"+tenantA+"/members/"+string(userID), map[string]any{"active": true}, fresh()...)
+	mem.do(http.MethodPut, "/api/v1/auth/admin/tenants/"+tenantA+"/members/"+string(userID), map[string]any{"active": true}, fresh()...)
 	if !auditHas(t, mem, actionMembershipSet, outcomeSuccess) {
 		t.Error("the membership write wrote no row named authn.membership.set")
 	}
 	sess := newRig(t)
 	sess.sessions.put(authn.SessionInfo{ID: sessionA, Account: userID, Kind: authn.SessionBrowser})
-	sess.do(http.MethodPost, "/auth/admin/accounts/"+string(userID)+"/revoke-sessions", nil, fresh()...)
+	sess.do(http.MethodPost, "/api/v1/auth/admin/accounts/"+string(userID)+"/revoke-sessions", nil, fresh()...)
 	if !auditHas(t, sess, actionSessionRevoke, outcomeSuccess) {
 		t.Error("the session revocation wrote no row named authn.session.revoke")
 	}
@@ -838,7 +838,7 @@ func TestABulkRevocationNamesEverySessionItRevokes(t *testing.T) {
 	const (
 		revokeAction = "authn.session.revoke"
 		actionIDKey  = "action_id"
-		path         = "/auth/admin/accounts/" + string(userID) + "/revoke-sessions"
+		path         = "/api/v1/auth/admin/accounts/" + string(userID) + "/revoke-sessions"
 	)
 	second := authn.SessionID("0190a6f2-3b6c-7c2e-8a4d-5e6f7a8b9c0e")
 	seed := func(r *rig, sessions ...authn.SessionID) {
@@ -954,7 +954,7 @@ func TestTheViewsCarryTheFields(t *testing.T) {
 	// The account view carries mfa_required.
 	r := newRig(t)
 	r.accounts.put(userID, authn.Account{Kind: authn.KindUser, Status: authn.StatusActive, MFARequired: true})
-	rec := r.do(http.MethodGet, "/auth/admin/accounts/"+string(userID), nil, fresh()...)
+	rec := r.do(http.MethodGet, "/api/v1/auth/admin/accounts/"+string(userID), nil, fresh()...)
 	var account struct {
 		Account struct {
 			ID          string `json:"id"`
@@ -971,7 +971,7 @@ func TestTheViewsCarryTheFields(t *testing.T) {
 	// The session view carries impersonation_id, id and the ended flag.
 	s := newRig(t)
 	s.sessions.put(authn.SessionInfo{ID: sessionA, Account: userID, Kind: authn.SessionBrowser, ImpersonationID: "gr-1"})
-	rec = s.do(http.MethodGet, "/auth/admin/accounts/"+string(userID)+"/sessions", nil, fresh()...)
+	rec = s.do(http.MethodGet, "/api/v1/auth/admin/accounts/"+string(userID)+"/sessions", nil, fresh()...)
 	var sessions struct {
 		Sessions []struct {
 			ID              string `json:"id"`
@@ -991,7 +991,7 @@ func TestTheViewsCarryTheFields(t *testing.T) {
 	sec.accounts.secrets = map[authn.AccountID][]authn.ServiceSecretInfo{
 		userID: {{ID: "sec-1", Label: "ci", RevokedAt: time.Now()}},
 	}
-	rec = sec.do(http.MethodGet, "/auth/admin/accounts/"+string(userID)+"/secrets", nil, fresh()...)
+	rec = sec.do(http.MethodGet, "/api/v1/auth/admin/accounts/"+string(userID)+"/secrets", nil, fresh()...)
 	var secrets struct {
 		Secrets []struct {
 			ID      string `json:"id"`
@@ -1009,7 +1009,7 @@ func TestTheViewsCarryTheFields(t *testing.T) {
 	// The provider view carries the version.
 	p := newRig(t)
 	p.providers.put(authn.SSOProvider{ID: idpA, Tenant: tenantA, Protocol: authn.SSOProtocolSAML, Provisioning: authn.ProvisioningJIT, Version: 5})
-	rec = p.do(http.MethodGet, "/auth/admin/sso/providers/"+idpA, nil, fresh()...)
+	rec = p.do(http.MethodGet, "/api/v1/auth/admin/sso/providers/"+idpA, nil, fresh()...)
 	var provider struct {
 		Provider struct {
 			ID      string `json:"id"`
@@ -1034,7 +1034,7 @@ func TestTheViewsCarryTheFields(t *testing.T) {
 		ID: "live", Actor: adminID, Target: "acct-t2", Tenant: tenantB,
 		StartedAt: ended.Add(-time.Hour), EndsAt: ended.Add(time.Hour),
 	})
-	rec = imp.do(http.MethodGet, "/auth/admin/impersonations?tenant="+tenantB, nil, fresh()...)
+	rec = imp.do(http.MethodGet, "/api/v1/auth/admin/impersonations?tenant="+tenantB, nil, fresh()...)
 	var grants struct {
 		Impersonations []struct {
 			ID        string `json:"id"`
@@ -1122,7 +1122,7 @@ func TestTheDeciderIsAskedBeforeTheStrengthCheck(t *testing.T) {
 	r := newRig(t)
 	r.decider.allow = false
 	stale := append(fresh(), authntest.WithAuthTime(time.Now().Add(-time.Hour)))
-	rec := r.do(http.MethodDelete, "/auth/admin/accounts/"+string(userID), nil, stale...)
+	rec := r.do(http.MethodDelete, "/api/v1/auth/admin/accounts/"+string(userID), nil, stale...)
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want 403: the Decider is asked before the strength check", rec.Code)
 	}
@@ -1135,7 +1135,7 @@ func TestTheDeciderIsAskedBeforeTheStrengthCheck(t *testing.T) {
 // metadata-refresh sub-route exists when a refresher is present.
 func TestTheMetadataRefreshRouteIsMountedWithARefresher(t *testing.T) {
 	r := newRig(t)
-	if _, ok := r.mounter.Registered(http.MethodPost, "/auth/admin/sso/providers/:id/metadata/refresh"); !ok {
+	if _, ok := r.mounter.Registered(http.MethodPost, "/api/v1/auth/admin/sso/providers/:id/metadata/refresh"); !ok {
 		t.Error("the metadata-refresh route is not mounted though a refresher is present")
 	}
 }
@@ -1144,7 +1144,7 @@ func TestTheMetadataRefreshRouteIsMountedWithARefresher(t *testing.T) {
 // source is stored as an administrator's.
 func TestMemberPutDefaultsTheSource(t *testing.T) {
 	r := newRig(t)
-	rec := r.do(http.MethodPut, "/auth/admin/tenants/"+tenantA+"/members/"+string(userID), map[string]any{"active": true}, fresh()...)
+	rec := r.do(http.MethodPut, "/api/v1/auth/admin/tenants/"+tenantA+"/members/"+string(userID), map[string]any{"active": true}, fresh()...)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204; body %s", rec.Code, rec.Body.String())
 	}
@@ -1162,7 +1162,7 @@ func TestMemberPutDefaultsTheSource(t *testing.T) {
 // the module says so.
 func TestPasswordResetWithoutASessionStore(t *testing.T) {
 	r := newRig(t, noSessions)
-	rec := r.do(http.MethodPost, "/auth/admin/accounts/"+string(userID)+"/password",
+	rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts/"+string(userID)+"/password",
 		map[string]any{"password": "a-long-temporary-one"}, fresh()...)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204; body %s", rec.Code, rec.Body.String())

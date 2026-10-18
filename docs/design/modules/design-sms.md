@@ -158,7 +158,7 @@ type Resolved struct {
 
 ### 管理面模块 sms.admin
 
-`sms.admin` 是挂在固定基路径 `/sms/admin` 下的管理面模块，不交付任何功能接口，只把模板集的读写暴露成 HTTP 路由；每条路由的动作是经 `sms.Registry` 调注册表，模块自己不持数据、不持规则——注册表拥有「一条模板是什么、哪些在力、厂商答了什么」，本模块只决定谁可以问、答案长什么样。路由挂在配置 `sms.admin.endpoints` 列出的端上，基路径不做可配置。每条路由按自然键——模板名——寻址，路径里不出现任何不透明的行标识。
+`sms.admin` 是挂在固定基路径 `/api/v1/sms/admin` 下的管理面模块，不交付任何功能接口，只把模板集的读写暴露成 HTTP 路由；每条路由的动作是经 `sms.Registry` 调注册表，模块自己不持数据、不持规则——注册表拥有「一条模板是什么、哪些在力、厂商答了什么」，本模块只决定谁可以问、答案长什么样。路由挂在配置 `sms.admin.endpoints` 列出的端上，基路径不做可配置。每条路由按自然键——模板名——寻址，路径里不出现任何不透明的行标识。
 
 **访问控制由本模块在 handler 内做出，不经请求中间件的声明判定。** 管理面路由在中间件的声明表里全部登记为开放，好让中间件把请求放行到 handler；handler 先读调用方的身份，再经 `authz.guard` 的 handler 内判定 API 就这条路由的权限问一句，不足即回绝。模块不给自己授予任何权限。
 
@@ -172,11 +172,11 @@ type Resolved struct {
 
 | 组 | 方法 路径 | 权限 |
 |---|---|---|
-| 模板 | `GET /sms/admin/templates` | `sms.template.read` |
-| 模板 | `POST /sms/admin/templates` | `sms.template.manage` |
-| 模板 | `POST /sms/admin/templates/submissions` | `sms.template.manage` |
-| 模板 | `POST /sms/admin/templates/:name/enabled` | `sms.template.manage` |
-| 模板 | `DELETE /sms/admin/templates/:name` | `sms.template.manage` |
+| 模板 | `GET /api/v1/sms/admin/templates` | `sms.template.read` |
+| 模板 | `POST /api/v1/sms/admin/templates` | `sms.template.manage` |
+| 模板 | `POST /api/v1/sms/admin/templates/submissions` | `sms.template.manage` |
+| 模板 | `POST /api/v1/sms/admin/templates/:name/enabled` | `sms.template.manage` |
+| 模板 | `DELETE /api/v1/sms/admin/templates/:name` | `sms.template.manage` |
 
 **读的应答是 200 加一份视图，新建写的应答是 201 加一条记录视图，其余落地的写是 204 无正文。** 视图逐字段从根包的 `sms.Record` 构造，从不把值原样交给客户端，记录日后新增一个字段不会因为它在就等于出现在应答里。模板视图的字段：`name`、`source`、`params`、`locales`、`approvals`（按语言）、`enabled`、`version`、`created_at`、`updated_at`，时间按 UTC 写出；它不带厂商编号——编号是注册表自己的记账，运维读「哪些模板在力」要知道的是在力与否，不是厂商把它编成几号。列表分页按模板名，游标是上一页的最后一个名字。
 
@@ -190,7 +190,7 @@ type Resolved struct {
 
 - **模块名**：`sms.registry`、`sms.admin`（另加既有的 `sms.aliyun`、`sms.tencent`）。宿主的命令树点模块名纳入，配置命名空间取同一取值。
 - **配置命名空间与输入项**：`sms.registry` 下的 `templates`（容器叶子，`map[string]sms.TemplateSpec`，取主配置源）与 `poll-interval`（时长，缺省 `1m`，取主配置源与环境变量）；`sms.admin` 下的 `endpoints`（字符串列表，必填，无缺省，只收具体端名、不收 `*`，取主配置源）。
-- **管理端点**：`sms.admin.endpoints` 列出的端，`/sms/admin/*` 下的模板读写路由（路由见「管理面模块」一节）。
+- **管理端点**：`sms.admin.endpoints` 列出的端，`/api/v1/sms/admin/*` 下的模板读写路由（路由见「管理面模块」一节）。
 
 `templates` 的形状是嵌套的：键是逻辑模板名，值是有序参数名表加语言到编号的映射。命名空间按 `.` 分段在配置数据里嵌套，所以 `sms.registry.templates` 写成：
 

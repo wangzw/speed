@@ -3,7 +3,7 @@
  * features.test.ts -- the feature state's observable behaviour and the
  * compile-time name check.
  *
- * The session reads GET /features on a login commit and on an
+ * The session reads GET /api/v1/features on a login commit and on an
  * anonymous-start restore, keeps it on the same-session paths, and resets
  * it on logout. The hooks read it fail-closed: only a `ready` set that
  * contains the name answers true. The `@ts-expect-error` assertion pins
@@ -87,7 +87,7 @@ describe('the feature state over a session', () => {
     expect(absent.current).toBe(false)
     // The feature read went out alongside the profile read.
     const featureReads = harness.calls.filter(
-      (call) => call.path === '/features',
+      (call) => call.path === '/api/v1/features',
     )
     expect(featureReads).toHaveLength(1)
   })
@@ -395,8 +395,8 @@ describe('the feature state over a session', () => {
     await expect(harness.session.restore()).resolves.toBe(true)
     // The same session continues: no second feature read.
     expect(harness.calls.slice(callsAfterFirst).map((call) => call.path)).toEqual([
-      '/auth/session',
-      '/auth/me',
+      '/api/v1/auth/session',
+      '/api/v1/auth/me',
     ])
   })
 

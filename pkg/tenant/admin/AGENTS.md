@@ -1,7 +1,7 @@
 # pkg/tenant/admin
 
 The tenant capability's management module. It mounts the roster-management routes
-under `/tenant/admin/*` and delivers no capability of its own: every route's
+under `/api/v1/tenant/admin/*` and delivers no capability of its own: every route's
 action is a call on the roster, reached through the `tenant.Catalog` capability,
 and the module holds no tenant, no rule and no data of its own. It builds no
 table, caches nothing and migrates nothing.
@@ -24,7 +24,7 @@ types and the sentinels in `pkg/tenant`.
 
 ## Routes and the permissions they are held to
 
-Every route is mounted under the base path `/tenant/admin`, on the endpoints the
+Every route is mounted under the base path `/api/v1/tenant/admin`, on the endpoints the
 module's configuration lists. A route is addressed by a natural key — a tenant
 identifier, the same key the roster keys a row by — so no opaque row identifier
 ever appears in a path. The whole surface is one group, `tenants`, and it is
@@ -33,11 +33,11 @@ the module's whole route surface.
 
 | Group | Method and path | Permission |
 |---|---|---|
-| Tenants | `GET /tenant/admin/tenants` | `tenant.read` |
-| Tenants | `POST /tenant/admin/tenants` | `tenant.manage` |
-| Tenants | `GET /tenant/admin/tenants/:id` | `tenant.read` |
-| Tenants | `PATCH /tenant/admin/tenants/:id` | `tenant.manage` |
-| Tenants | `POST /tenant/admin/tenants/:id/status` | `tenant.manage` |
+| Tenants | `GET /api/v1/tenant/admin/tenants` | `tenant.read` |
+| Tenants | `POST /api/v1/tenant/admin/tenants` | `tenant.manage` |
+| Tenants | `GET /api/v1/tenant/admin/tenants/:id` | `tenant.read` |
+| Tenants | `PATCH /api/v1/tenant/admin/tenants/:id` | `tenant.manage` |
+| Tenants | `POST /api/v1/tenant/admin/tenants/:id/status` | `tenant.manage` |
 
 A read route is held to `tenant.read` and a write route to `tenant.manage`. Each
 route's action is one `tenant.Catalog` call:

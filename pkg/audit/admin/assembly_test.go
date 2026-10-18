@@ -269,8 +269,8 @@ func TestARealRegistryMountsEveryRouteAndDeclaresThemOpen(t *testing.T) {
 	}
 
 	want := map[mountedRoute]bool{
-		{http.MethodGet, "/audit/admin/records"}:     true,
-		{http.MethodGet, "/audit/admin/records/:id"}: true,
+		{http.MethodGet, "/api/v1/audit/admin/records"}:     true,
+		{http.MethodGet, "/api/v1/audit/admin/records/:id"}: true,
 	}
 	got := router.endpoint("public").registered()
 	if len(got) != len(want) {

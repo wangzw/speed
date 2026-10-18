@@ -375,7 +375,7 @@ func newRig(t *testing.T, mocks ...*mockIDP) *rig {
 	reader := sdkmetric.NewManualReader()
 	settings := newReader(nil, slog.Default())
 	p := &product{
-		redirect: redirectBase{publicURL: "https://app.example.com", basePath: "/auth"},
+		redirect: redirectBase{publicURL: "https://app.example.com", basePath: "/api/v1/auth"},
 		client:   client,
 		cache:    newProviderCache(client, settings),
 		sso:      providers,

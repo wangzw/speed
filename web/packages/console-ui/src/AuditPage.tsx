@@ -9,7 +9,7 @@
  * permission and another module's to carry, so this page only lists.
  *
  * The read is an operation on the console operations bundle -- the host
- * binds the generated /audit/admin operation to it -- so the page builds
+ * binds the generated /api/v1/audit/admin operation to it -- so the page builds
  * no client and writes no query key. The query is narrowed server-side by
  * the filters the toolbar carries: a `since` and `until` bound (two
  * temporal bounds the single free-text filter box cannot express) and
@@ -24,7 +24,7 @@
  * identifier: the account identity unit resolves the account's display
  * name through the same bound surface and falls back to the recorded value
  * when the actor names no account (a system or import actor). That
- * resolution is a second read (GET /auth/admin/accounts/:id), gated on
+ * resolution is a second read (GET /api/v1/auth/admin/accounts/:id), gated on
  * authn.account.read, which this page's audit.read does not imply: a viewer
  * holding audit.read without account.read is refused it and the cell marks
  * the value as unresolved rather than passing it off as a name. The

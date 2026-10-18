@@ -57,7 +57,7 @@ and `src/` must keep passing it on every regeneration.
   fragment carries a `tenant_id` -- the identity surface's login, SMS and
   social-callback bodies and the profile response alike. Where `tenant`
   does appear it is an ordinary path parameter on the admin- and
-  authorization-scoped routes (`/auth/admin/tenants/{tenant}/...`),
+  authorization-scoped routes (`/api/v1/auth/admin/tenants/{tenant}/...`),
   naming the route's subject, never a data scope. Tenant query-key
   namespacing is a consumer-shell discipline, recorded in
   `web/orval.config.ts` and the README.

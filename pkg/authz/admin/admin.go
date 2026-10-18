@@ -1,5 +1,5 @@
 // Package admin is the authorization capability's management module: it mounts
-// the permission catalog, role, grant and binding routes under /authz/admin/*
+// the permission catalog, role, grant and binding routes under /api/v1/authz/admin/*
 // and delivers no capability of its own.
 //
 // The module grants itself no permission; it carries only the vocabulary the

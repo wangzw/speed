@@ -24,11 +24,11 @@ import (
 func TestTheSelfServiceRoutesAreMountedWithTheirAccessLevels(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	want := []mounttest.Registration{
-		{Kind: mounttest.Optional, Methods: []string{"GET"}, Path: "/auth/session", Impersonable: true},
-		{Kind: mounttest.Guarded, Methods: []string{"POST"}, Path: "/auth/logout", Impersonable: true},
-		{Kind: mounttest.Guarded, Methods: []string{"GET"}, Path: "/auth/sessions"},
-		{Kind: mounttest.Guarded, Methods: []string{"DELETE"}, Path: "/auth/sessions"},
-		{Kind: mounttest.Guarded, Methods: []string{"DELETE"}, Path: "/auth/sessions/:id"},
+		{Kind: mounttest.Optional, Methods: []string{"GET"}, Path: "/api/v1/auth/session", Impersonable: true},
+		{Kind: mounttest.Guarded, Methods: []string{"POST"}, Path: "/api/v1/auth/logout", Impersonable: true},
+		{Kind: mounttest.Guarded, Methods: []string{"GET"}, Path: "/api/v1/auth/sessions"},
+		{Kind: mounttest.Guarded, Methods: []string{"DELETE"}, Path: "/api/v1/auth/sessions"},
+		{Kind: mounttest.Guarded, Methods: []string{"DELETE"}, Path: "/api/v1/auth/sessions/:id"},
 	}
 	got := f.mounter.Registrations()
 	if len(got) != len(want) {
@@ -46,7 +46,7 @@ func TestTheSelfServiceRoutesAreMountedWithTheirAccessLevels(t *testing.T) {
 // read, not a 401: a front end can ask on startup.
 func TestAnAnonymousSessionReadSaysNobodyIsLoggedIn(t *testing.T) {
 	f := newFixture(t, dialects[0])
-	rec := get(t, f, "/auth/session")
+	rec := get(t, f, "/api/v1/auth/session")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
@@ -69,15 +69,15 @@ func TestAnImpersonatingIdentityIsRefusedOnTheSessionManagementRoutes(t *testing
 		authntest.WithScope("acme"),
 	)
 
-	if rec := get(t, f, "/auth/session"); rec.Code != http.StatusOK {
+	if rec := get(t, f, "/api/v1/auth/session"); rec.Code != http.StatusOK {
 		t.Errorf("the impersonable session read answered %d, want 200", rec.Code)
 	}
 	for _, c := range []struct {
 		method, path string
 	}{
-		{http.MethodGet, "/auth/sessions"},
-		{http.MethodDelete, "/auth/sessions"},
-		{http.MethodDelete, "/auth/sessions/" + string(issued.ID)},
+		{http.MethodGet, "/api/v1/auth/sessions"},
+		{http.MethodDelete, "/api/v1/auth/sessions"},
+		{http.MethodDelete, "/api/v1/auth/sessions/" + string(issued.ID)},
 	} {
 		if rec := send(t, f, c.method, c.path); rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s answered %d, want 401 for an impersonating identity", c.method, c.path, rec.Code)
@@ -93,7 +93,7 @@ func TestTheListingShowsTheCallersSessions(t *testing.T) {
 	other := f.create(newBrowser(alice))
 	f.mounter.As(authntest.WithAccount(alice), authntest.WithSession(current.ID))
 
-	rec := get(t, f, "/auth/sessions")
+	rec := get(t, f, "/api/v1/auth/sessions")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
@@ -113,7 +113,7 @@ func TestLogoutRevokesTheCallersSession(t *testing.T) {
 	issued := f.create(newBrowser(alice))
 	f.mounter.As(authntest.WithAccount(alice), authntest.WithSession(issued.ID))
 
-	rec := send(t, f, http.MethodPost, "/auth/logout")
+	rec := send(t, f, http.MethodPost, "/api/v1/auth/logout")
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", rec.Code)
 	}
@@ -142,7 +142,7 @@ func TestTheSelfServiceRevocationRoutesWriteTheirAuditRows(t *testing.T) {
 		{
 			name:    "logout",
 			method:  http.MethodPost,
-			path:    func(authn.SessionID, authn.SessionID, authn.SessionID) string { return "/auth/logout" },
+			path:    func(authn.SessionID, authn.SessionID, authn.SessionID) string { return "/api/v1/auth/logout" },
 			action:  "authn.logout",
 			objects: func(current, _, _ authn.SessionID) []string { return []string{string(current)} },
 		},
@@ -152,7 +152,7 @@ func TestTheSelfServiceRevocationRoutesWriteTheirAuditRows(t *testing.T) {
 			// the route keeps.
 			name:   "revoking the other sessions",
 			method: http.MethodDelete,
-			path:   func(authn.SessionID, authn.SessionID, authn.SessionID) string { return "/auth/sessions" },
+			path:   func(authn.SessionID, authn.SessionID, authn.SessionID) string { return "/api/v1/auth/sessions" },
 			action: "authn.session.revoke",
 			objects: func(_, first, second authn.SessionID) []string {
 				return []string{string(first), string(second)}
@@ -161,7 +161,7 @@ func TestTheSelfServiceRevocationRoutesWriteTheirAuditRows(t *testing.T) {
 		{
 			name:    "revoking one session by identifier",
 			method:  http.MethodDelete,
-			path:    func(_, first, _ authn.SessionID) string { return "/auth/sessions/" + string(first) },
+			path:    func(_, first, _ authn.SessionID) string { return "/api/v1/auth/sessions/" + string(first) },
 			action:  "authn.session.revoke",
 			objects: func(_, first, _ authn.SessionID) []string { return []string{string(first)} },
 		},
@@ -212,7 +212,7 @@ func TestRevokingTheOtherSessionsWithNoneToNameRevokesNothing(t *testing.T) {
 	f.mounter.As(authntest.WithAccount(alice), authntest.WithSession(current.ID))
 	sink := f.withAudit()
 
-	rec := send(t, f, http.MethodDelete, "/auth/sessions")
+	rec := send(t, f, http.MethodDelete, "/api/v1/auth/sessions")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
@@ -276,9 +276,9 @@ func TestAnImpersonatingIdentityIsRefusedByTheHandlersThemselves(t *testing.T) {
 		return w
 	}
 
-	check("GET /sessions", call(http.MethodGet, "/auth/sessions", nil, f.p.handleSessions))
-	check("DELETE /sessions", call(http.MethodDelete, "/auth/sessions", nil, f.p.handleRevokeOthers))
-	check("DELETE /sessions/:id", call(http.MethodDelete, "/auth/sessions/"+string(issued.ID),
+	check("GET /sessions", call(http.MethodGet, "/api/v1/auth/sessions", nil, f.p.handleSessions))
+	check("DELETE /sessions", call(http.MethodDelete, "/api/v1/auth/sessions", nil, f.p.handleRevokeOthers))
+	check("DELETE /sessions/:id", call(http.MethodDelete, "/api/v1/auth/sessions/"+string(issued.ID),
 		gin.Params{{Key: "id", Value: string(issued.ID)}}, f.p.handleRevokeOne))
 
 	if f.row(issued.ID).RevokedAt.Valid {
@@ -296,7 +296,7 @@ func TestRevokingAnotherOfTheCallersSessionsKeepsTheCookie(t *testing.T) {
 	other := f.create(newBrowser(alice))
 	f.mounter.As(authntest.WithAccount(alice), authntest.WithSession(current.ID))
 
-	rec := send(t, f, http.MethodDelete, "/auth/sessions/"+string(other.ID))
+	rec := send(t, f, http.MethodDelete, "/api/v1/auth/sessions/"+string(other.ID))
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", rec.Code)
 	}
@@ -321,7 +321,7 @@ func TestAServiceSessionCannotBeRevokedByIDThroughTheRoute(t *testing.T) {
 	noErr(t, err)
 	f.mounter.As(authntest.WithAccount(alice), authntest.WithSession(current.ID))
 
-	rec := send(t, f, http.MethodDelete, "/auth/sessions/"+string(svc))
+	rec := send(t, f, http.MethodDelete, "/api/v1/auth/sessions/"+string(svc))
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", rec.Code)
 	}

@@ -141,25 +141,25 @@ func drive(t *testing.T, run func(m *mounttest.Mounter), omit ...leaveOut) error
 // module mounts GET /me as impersonable and PATCH /me as not, both guarded.
 func TestARealRegistryMountsTheProfileRoutes(t *testing.T) {
 	err := drive(t, func(m *mounttest.Mounter) {
-		get, ok := m.Registered(http.MethodGet, "/auth/me")
+		get, ok := m.Registered(http.MethodGet, "/api/v1/auth/me")
 		if !ok {
-			t.Fatal("GET /auth/me is not mounted")
+			t.Fatal("GET /api/v1/auth/me is not mounted")
 		}
 		if get.Kind != mounttest.Guarded {
-			t.Errorf("GET /auth/me kind = %q, want guarded", get.Kind)
+			t.Errorf("GET /api/v1/auth/me kind = %q, want guarded", get.Kind)
 		}
 		if !get.Impersonable {
-			t.Error("GET /auth/me is not registered impersonable")
+			t.Error("GET /api/v1/auth/me is not registered impersonable")
 		}
-		patch, ok := m.Registered(http.MethodPatch, "/auth/me")
+		patch, ok := m.Registered(http.MethodPatch, "/api/v1/auth/me")
 		if !ok {
-			t.Fatal("PATCH /auth/me is not mounted")
+			t.Fatal("PATCH /api/v1/auth/me is not mounted")
 		}
 		if patch.Kind != mounttest.Guarded {
-			t.Errorf("PATCH /auth/me kind = %q, want guarded", patch.Kind)
+			t.Errorf("PATCH /api/v1/auth/me kind = %q, want guarded", patch.Kind)
 		}
 		if patch.Impersonable {
-			t.Error("PATCH /auth/me is registered impersonable, and a write of the profile is not impersonable")
+			t.Error("PATCH /api/v1/auth/me is registered impersonable, and a write of the profile is not impersonable")
 		}
 	})
 	if err != nil {

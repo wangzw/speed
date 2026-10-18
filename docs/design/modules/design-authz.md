@@ -11,7 +11,7 @@
 - **根包 `pkg/authz`** 定义接口、数据类型、权限常量、Casbin 模型文本与哨兵；**自身不登记模块**。根包被每一个使用方 import，把第三方库留在根包里会把它带进每一个使用方的闭包，所以根包只依赖标准库。
 - **`pkg/authz/policy`（模块 `authz.policy`）** 交付策略表与迁移、薄 adapter、Casbin 引擎、权限目录、`Manager` 与账户生命周期清理。它取用 `pkg/db`，因此把库依赖限制在需要策略存储的装配里。
 - **`pkg/authz/guard`（模块 `authz.guard`）** 交付中间件、路由声明登记面、handler 内判定 API，并**实现 `authn.Decider`**。中间件与 `Decider` 共用同一份声明表与同一处租户读取，拆成两个模块要为它们另立接口。
-- **`pkg/authz/admin`（模块 `authz.admin`）** 挂 `/authz/admin/*` 下的管理面路由，不交付功能；它取用 `policy` 的 `Manager`，把管理面的依赖与业务判定的依赖分开。
+- **`pkg/authz/admin`（模块 `authz.admin`）** 挂 `/api/v1/authz/admin/*` 下的管理面路由，不交付功能；它取用 `policy` 的 `Manager`，把管理面的依赖与业务判定的依赖分开。
 - **`pkg/authz/internal/persist`、`pkg/authz/internal/policy` 与 `pkg/authz/authztest`** 不登记模块：两个 `internal` 包是库包，`authztest` 是测试构造夹具。
 
 本模块承接设计中划归授权的各权限点（[ADR-authn-decision-seam-2026-10-10](../../adr/adr-authn-decision-seam-2026-10-10.md)）：审计的检索与导出、设置的写入面、口令表主体（`static.*`）的角色、以及谁有权冒充谁。它们各自的形状见[承接的权限点](#承接的权限点)。
@@ -286,11 +286,11 @@ const (
 - **策略数据由宿主写入。** 迁移只建表，不种角色、不种权限授予、不种绑定；平台域 `system` 的运营角色、口令表主体的绑定、各租户的角色与绑定都经 `Manager` 或管理面路由写入。一个已置 `builtin` 的角色，其授权只经 `Seeder.SeedGrants` 增补：`Manager` 与 `authz.admin` 的写路由都拒绝它。
 - **名册里不得有名为 `system` 的租户。** 平台域的保留值与本模块的判定绑定；`authz.policy` 在启动时经 `tenant.Catalog` 读名册，有同名租户即以 `ErrPlatformDomainTaken` 终止启动。没有租户模块的装配里没有名册，这条核对不执行。
 - **想让权限随撤销尽快生效的装配里要提供事件总线。** 没有 `event.Bus` 时，策略变更靠 `refresh-interval` 兜底，撤销的生效延迟以它为界。
-- **想挂管理面的命令点名 `authz.admin` 并配 `authz.admin.endpoints`。** 不点名时没有 `/authz/admin/*` 下的任何路由；点名而清单为空、为空名或含 `*` 是 `authn.ErrInvalidConfig`。
+- **想挂管理面的命令点名 `authz.admin` 并配 `authz.admin.endpoints`。** 不点名时没有 `/api/v1/authz/admin/*` 下的任何路由；点名而清单为空、为空名或含 `*` 是 `authn.ErrInvalidConfig`。
 
 ### 管理面
 
-`authz.admin` 是挂在固定基路径 `/authz/admin` 下的管理面模块，不交付任何功能接口，只把权限目录、角色、权限授予与角色绑定的读写暴露成 HTTP 路由；每条路由的动作是 `policy` 的 `Manager` 的一次表操作。路由挂在配置 `authz.admin.endpoints` 列出的端上，基路径不做可配置。路由不暴露任何不透明的行标识：每条路由按自然键——租户、角色、权限、账户——寻址。
+`authz.admin` 是挂在固定基路径 `/api/v1/authz/admin` 下的管理面模块，不交付任何功能接口，只把权限目录、角色、权限授予与角色绑定的读写暴露成 HTTP 路由；每条路由的动作是 `policy` 的 `Manager` 的一次表操作。路由挂在配置 `authz.admin.endpoints` 列出的端上，基路径不做可配置。路由不暴露任何不透明的行标识：每条路由按自然键——租户、角色、权限、账户——寻址。
 
 **访问控制由本模块在 handler 内做出，不经 `Decider`。** 管理面路由在中间件的声明表里全部登记为开放，好让中间件把请求放行到 handler；handler 先读调用方的身份，再经 `authz.guard` 的 handler 内判定 API 就这条路由的权限问一句，不足即回绝。模块不给自己授予任何权限，只提供目录已经声明的词表。
 
@@ -304,17 +304,17 @@ const (
 
 | 组 | 方法 路径 | 权限 |
 |---|---|---|
-| 目录 | `GET /authz/admin/permissions` | `authz.role.read` |
-| 角色 | `GET /authz/admin/tenants/:tenant/roles` | `authz.role.read` |
-| 角色 | `PUT /authz/admin/tenants/:tenant/roles/:role` | `authz.role.manage` |
-| 角色 | `DELETE /authz/admin/tenants/:tenant/roles/:role` | `authz.role.manage` |
-| 授予 | `GET /authz/admin/tenants/:tenant/roles/:role/grants` | `authz.role.read` |
-| 授予 | `PUT /authz/admin/tenants/:tenant/roles/:role/grants/:permission` | `authz.role.manage` |
-| 授予 | `DELETE /authz/admin/tenants/:tenant/roles/:role/grants/:permission` | `authz.role.manage` |
-| 绑定 | `GET /authz/admin/tenants/:tenant/bindings` | `authz.role.read` |
-| 绑定 | `GET /authz/admin/tenants/:tenant/bindings/:account` | `authz.role.read` |
-| 绑定 | `PUT /authz/admin/tenants/:tenant/bindings/:account/:role` | `authz.role.manage` |
-| 绑定 | `DELETE /authz/admin/tenants/:tenant/bindings/:account/:role` | `authz.role.manage` |
+| 目录 | `GET /api/v1/authz/admin/permissions` | `authz.role.read` |
+| 角色 | `GET /api/v1/authz/admin/tenants/:tenant/roles` | `authz.role.read` |
+| 角色 | `PUT /api/v1/authz/admin/tenants/:tenant/roles/:role` | `authz.role.manage` |
+| 角色 | `DELETE /api/v1/authz/admin/tenants/:tenant/roles/:role` | `authz.role.manage` |
+| 授予 | `GET /api/v1/authz/admin/tenants/:tenant/roles/:role/grants` | `authz.role.read` |
+| 授予 | `PUT /api/v1/authz/admin/tenants/:tenant/roles/:role/grants/:permission` | `authz.role.manage` |
+| 授予 | `DELETE /api/v1/authz/admin/tenants/:tenant/roles/:role/grants/:permission` | `authz.role.manage` |
+| 绑定 | `GET /api/v1/authz/admin/tenants/:tenant/bindings` | `authz.role.read` |
+| 绑定 | `GET /api/v1/authz/admin/tenants/:tenant/bindings/:account` | `authz.role.read` |
+| 绑定 | `PUT /api/v1/authz/admin/tenants/:tenant/bindings/:account/:role` | `authz.role.manage` |
+| 绑定 | `DELETE /api/v1/authz/admin/tenants/:tenant/bindings/:account/:role` | `authz.role.manage` |
 
 **读的应答是 200 加一份视图，落地写的应答是 204 无正文。** 视图逐字段从根包的值构造，从不把值原样交给客户端，记录日后新增一个字段不会因为它在就等于出现在应答里。各视图的字段：目录是 `permission`；角色是 `tenant`、`role`、`builtin`、`description_key`、`created_at`；授予是 `tenant`、`role`、`resource`、`action`、`created_at`；绑定是 `tenant`、`account`、`role`、`granted_at`。时间字段按 UTC 写出。
 
@@ -348,7 +348,7 @@ const (
 |---|---|---|---|---|---|---|
 | `authz/policy` | `authz.policy` | `Enforcer`、`Catalog`、`Manager`、`Seeder`；`authn.AccountLifecycle` | `Enforcer`、`Catalog`、`Manager`、`Seeder` 各自是 | `db.Database` | `tenant.Catalog` ○、`event.Bus` ○、`settings.Store` ○、`log.Logger` ○ | `authz_roles`、`authz_grants`、`authz_bindings` |
 | `authz/guard` | `authz.guard` | `Guard`、`Gate`；`authn.Decider` | 各自是 | `Enforcer`、`Catalog` | `http.Router`、`tenant` 的上下文读取、`log.Logger` ○、`observability.MeterProvider` ○ | 无 |
-| `authz/admin` | `authz.admin` | 无（只挂 `/authz/admin/*` 下的路由） | — | `Manager`、`Catalog`、`guard.Guard`、`audit.Audit` | `http.Router`、`authz.Gate` ○、`log.Logger` ○ | 无 |
+| `authz/admin` | `authz.admin` | 无（只挂 `/api/v1/authz/admin/*` 下的路由） | — | `Manager`、`Catalog`、`guard.Guard`、`audit.Audit` | `http.Router`、`authz.Gate` ○、`log.Logger` ○ | 无 |
 
 `authz/guard` 以 `Enforcer` 与 `Catalog` 为必需依赖（前者排他），缺任一个即 `core.ErrMissingProvider`，早于迁移：没有引擎的中间件只能把所有受守路由答成 503，没有目录的路由声明面核对不了登记的权限。`Catalog` 是随中间件落地的路由声明面所读的那一项——decider 本期不读它，但它与 `Enforcer` 同为必需依赖：一个必需能力没有提供方，无论哪个回调读它，启动都失败。`authn.Decider` 由 `authz.guard` 交付——它是排他功能，取用方（`authn.admin`、`authn.impersonation`、`tenant.admission`）在 `Init` 里以 `Optional` 取用，`authz.guard` 在场即提供了它。`authz.policy` 取 `tenant.Catalog` 只为启动期核对平台域与名册不冲突：它是可选取用，没有租户模块的装配里没有名册可核对，这条检查不执行，也不因此启动失败。`authz.admin` 以 `Manager`、`Catalog`、`guard.Guard`、`audit.Audit` 为必需依赖：`Manager` 是它的写面、`Catalog` 是授予的核对面、`guard.Guard` 是它在 handler 内判定所用的 handler 内 API、`audit.Audit` 是强制档审计的落点——审计缺席在任何实例构造之前以 `core.ErrMissingProvider` 失败，而不是留到第一次写才发现。入口模块的路由功能 `http.Router` 在 `Init` 里必需，挂管理面路由而没有入口模块是 `ErrNoRouter`；路由声明面 `authz.Gate` 与 `log.Logger` 在 `Init` 里可选取用，没有声明面的装配里管理面路由不带声明、受守的端把它们按未声明处置。
 
@@ -658,7 +658,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 **`Seeder` 是独立于 `Manager` 的种入能力，由 `authz.policy` 排他交付**（[ADR-authz-seeding-2026-10-17](../../adr/adr-authz-seeding-2026-10-17.md)）。它只有 `SeedGrants(ctx, tenant, role, grants) (int, error)` 一个方法：给一个已存在的角色（`builtin` 与否都可以）添加它尚未持有的（资源，动作）对，返回本次实际写入的行数。
 
-**它是独立接口而不是 `Manager` 上的一个方法，因为管理面只取用 `Manager`。** `authz.admin` 的模块声明里没有 `Seeder`，它的 handler 也不持有它，因此 `/authz/admin/*` 下的任何写路由都触不到这条路径——这不是 handler 里的分支约定，而是该模块拿到的类型所决定（[管理面](#管理面)）。
+**它是独立接口而不是 `Manager` 上的一个方法，因为管理面只取用 `Manager`。** `authz.admin` 的模块声明里没有 `Seeder`，它的 handler 也不持有它，因此 `/api/v1/authz/admin/*` 下的任何写路由都触不到这条路径——这不是 handler 里的分支约定，而是该模块拿到的类型所决定（[管理面](#管理面)）。
 
 **种入是幂等且只增的。** 已持有的授予不写、不报错、不计数，所以同一份声明重复种入返回零、不写行、不重载快照、不发 `authz.policy.changed`。它不删除、不改写、不重写时间戳；`builtin` 角色既有的授权因此在所有路径上都固定，要撤销一条只能给账户换一个角色。
 
@@ -743,7 +743,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 - **策略数据是数据，不是代码。** 宿主经 `Manager` 或 `authz.admin` 的管理面路由写角色、权限授予与绑定；本模块不在迁移里种任何策略行。这是模型 DSL 固定在代码里的另一面：可插拔的 model.conf 不开放，宿主只提供数据（[ADR-authz-engine-2026-10-12](../../adr/adr-authz-engine-2026-10-12.md)）。
 - **路由声明的登记面（`Gate`）。** 任何模块在 `Init` 里经 `Gate.Require`/`Gate.Open` 为一条（方法，路径）声明访问级别；`authz.guard` 用它同时服务请求期中间件与 `Decider`。一个模块也可以在自己的 handler 里经 `Guard` 问一句；判定域不是请求解析出的那个时，用它的显式域形式 `RequirePermissionIn` 点名域，`authz.admin` 就经它在平台域判定（见[管理面](#管理面)）。
-- **`Gate` 的登记不带端名。** 声明表以（方法，路径）为键，一条登记对本模块所守的每个端同样成立，在不受守的端上不改变任何判定。路由挂在哪个端由部署方配置的模块因此可以无条件登记：`feature.board` 取得到 `Gate` 时以 `Open(GET, "/features")` 登记特性文档的读面，部署方把它挂到受授权守卫的端上、`authz.guard.undeclared` 为 `closed` 时，这条路由也不被答 403（[feature](design-feature.md)）。
+- **`Gate` 的登记不带端名。** 声明表以（方法，路径）为键，一条登记对本模块所守的每个端同样成立，在不受守的端上不改变任何判定。路由挂在哪个端由部署方配置的模块因此可以无条件登记：`feature.board` 取得到 `Gate` 时以 `Open(GET, "/api/v1/features")` 登记特性文档的读面，部署方把它挂到受授权守卫的端上、`authz.guard.undeclared` 为 `closed` 时，这条路由也不被答 403（[feature](design-feature.md)）。
 - **`authn.Decider` 由本模块交付。** 宿主若换上自己的实现，`authz.guard` 不再交付它；本模块的中间件与 handler API 不受影响，只有认证侧的管理面与冒充改走宿主的判定。
 - **`Catalog` 是权限目录的读取面。** 需要枚举已登记权限的消费方（例如生成管理面的权限选择器）经它取用。新增一个权限常量即进入目录，登记它的路由随即可引用；未登记的权限引用在启动期以 `ErrUnknownPermission` 终止。
 - **模块声明的权限与它们的翻译行（`PermissionSpec`、`TranslationSpec`）。** 一个模块若拥有本能力未声明的业务权限，以自己的 `PermissionSpec` 声明清单、以自己的 `TranslationSpec` 声明每个权限的（资源，动作）行；两者随该模块的资源登记进注册表，`authz.policy` 把清单并入目录，行则并入进程的翻译。声明了权限而不声明其翻译行的模块，会让引用该权限的路由在启动期以 `ErrUnknownPermission` 终止——一条翻译不出的权限没有路由能命名。缺文案目录不是启动失败：i18n 引擎对没有条目的键回落到键本身，那条权限以键的形态显示出来。

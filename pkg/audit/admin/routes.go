@@ -14,7 +14,7 @@ import (
 // own base path and not under a configurable one, and each is addressed by a
 // natural key — a row identifier — so no opaque cursor ever appears in a path.
 const (
-	basePath = "/audit/admin"
+	basePath = "/api/v1/audit/admin"
 
 	pathRecords = basePath + "/records"
 	pathRecord  = basePath + "/records/:id"

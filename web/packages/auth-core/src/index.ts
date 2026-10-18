@@ -13,7 +13,7 @@
  * server sets its httpOnly cookie on the same response, which the
  * browser attaches to every same-origin request by itself. A store-less
  * session (the platform's own composition) therefore holds no credential
- * at all; restore() reads GET /auth/session to re-establish the snapshot
+ * at all; restore() reads GET /api/v1/auth/session to re-establish the snapshot
  * from that cookie (what keeps a refresh logged in, and what ends the
  * local session when the cookie no longer holds). A host that passes an
  * AccessTokenStore keeps the token path: a `delivery: 'token'`
@@ -43,7 +43,7 @@
  * snapshot and usePermission a fail-closed set lookup over the
  * host-attached per-domain permission lists (a UX affordance, never a
  * security boundary). The snapshot also carries the feature state the
- * session read from the process's GET /features document; useFeature is
+ * session read from the process's GET /api/v1/features document; useFeature is
  * a fail-closed membership lookup over it, useFeatureState hands the
  * state itself, and featurePresence maps it onto the route layer's
  * presence shape. The tenant is not the session's -- the server

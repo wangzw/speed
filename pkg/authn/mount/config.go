@@ -84,7 +84,7 @@ func checkBasePath(p string) error {
 	switch {
 	case !strings.HasPrefix(p, "/") || strings.HasSuffix(p, "/"):
 		return fmt.Errorf("%w: %s is %q, which has to begin with a slash and not end with one, "+
-			"such as /auth", authn.ErrInvalidConfig, key(basePathItem), clip(p))
+			"such as /api/v1/auth", authn.ErrInvalidConfig, key(basePathItem), clip(p))
 	case strings.ContainsAny(p, "*:?#{}"):
 		return fmt.Errorf("%w: %s is %q, which carries a wildcard, a parameter, a query or a "+
 			"fragment, and routes are mounted under a literal path", authn.ErrInvalidConfig,

@@ -54,10 +54,10 @@ describe('SocialCallbackHandler', () => {
     expect(screen.getByText(zhCN.socialCallback.pending)).toBeInTheDocument()
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     expect(harness.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
-      'GET /auth/flows/current',
-      'POST /auth/flows/answer',
-      'GET /auth/me',
-      'GET /features',
+      'GET /api/v1/auth/flows/current',
+      'POST /api/v1/auth/flows/answer',
+      'GET /api/v1/auth/me',
+      'GET /api/v1/features',
     ])
     expect(harness.calls[1]?.options?.body).toMatchObject({ step: 'complete' })
     expect(harness.store.get()).toBe('access-1')
@@ -77,7 +77,7 @@ describe('SocialCallbackHandler', () => {
     )
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     expect(
-      harness.calls.filter((call) => call.path === '/auth/flows/current'),
+      harness.calls.filter((call) => call.path === '/api/v1/auth/flows/current'),
     ).toHaveLength(1)
     expect(harness.store.get()).toBe('access-1')
   })
@@ -128,7 +128,7 @@ describe('SocialCallbackHandler', () => {
     )
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     expect(
-      harness.calls.filter((call) => call.path === '/auth/flows/current'),
+      harness.calls.filter((call) => call.path === '/api/v1/auth/flows/current'),
     ).toHaveLength(2)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(harness.store.get()).toBe('access-1')
@@ -234,7 +234,7 @@ describe('SocialCallbackHandler', () => {
     )
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     expect(
-      harness.calls.filter((call) => call.path === '/auth/flows/current'),
+      harness.calls.filter((call) => call.path === '/api/v1/auth/flows/current'),
     ).toHaveLength(1)
     expect(harness.store.get()).toBe('access-1')
 
@@ -248,7 +248,7 @@ describe('SocialCallbackHandler', () => {
     )
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(2))
     expect(
-      harness.calls.filter((call) => call.path === '/auth/flows/current'),
+      harness.calls.filter((call) => call.path === '/api/v1/auth/flows/current'),
     ).toHaveLength(1)
     expect(harness.store.get()).toBe('access-1')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
@@ -321,7 +321,7 @@ describe('SocialCallbackHandler', () => {
     ).not.toBeInTheDocument()
     expect(screen.getByText(zhCN.socialCallback.pending)).toBeInTheDocument()
     expect(
-      harness.calls.filter((call) => call.path === '/auth/flows/current'),
+      harness.calls.filter((call) => call.path === '/api/v1/auth/flows/current'),
     ).toHaveLength(1)
   })
 
@@ -345,7 +345,7 @@ describe('SocialCallbackHandler', () => {
     expect(await screen.findByText('No such page')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(
-      harness.calls.some((call) => call.path === '/auth/methods'),
+      harness.calls.some((call) => call.path === '/api/v1/auth/methods'),
     ).toBe(true)
   })
 
@@ -442,7 +442,7 @@ describe('SocialCallbackHandler', () => {
     // Behaviour is unchanged for a host without an absent slot: the handler
     // never reads the discovery document.
     expect(
-      harness.calls.some((call) => call.path === '/auth/methods'),
+      harness.calls.some((call) => call.path === '/api/v1/auth/methods'),
     ).toBe(false)
   })
 
@@ -476,7 +476,7 @@ describe('SocialCallbackHandler', () => {
     // The completion is in flight (the gate holds its answer).
     await waitFor(() =>
       expect(
-        harness.calls.filter((call) => call.path === '/auth/flows/answer'),
+        harness.calls.filter((call) => call.path === '/api/v1/auth/flows/answer'),
       ).toHaveLength(1),
     )
     // The winning login commits while the completion is in flight.

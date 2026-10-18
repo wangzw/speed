@@ -154,7 +154,7 @@ describe('isConsolePath', () => {
  * The dev server's proxy matcher, mirrored from vite: a key that begins with
  * `^` is a regular expression matched against the request URL (query string
  * included), and every other key is a `startsWith` test. Asserting through
- * this mirror is what makes a plain-string `/auth` key fail here: under
+ * this mirror is what makes a plain-string `/api/v1/auth` key fail here: under
  * `startsWith` it swallows `/authx`, and under the anchored form it does not.
  */
 function proxyMatches(key: string, url: string): boolean {
@@ -197,10 +197,10 @@ describe('the backend prefix manifest', () => {
   })
 
   it('matches a claimed prefix at a segment boundary, not inside a segment', () => {
-    expect(fallsUnderPrefix('/auth', '/auth')).toBe(true)
-    expect(fallsUnderPrefix('/auth/methods', '/auth')).toBe(true)
-    expect(fallsUnderPrefix('/authz', '/auth')).toBe(false)
-    expect(fallsUnderPrefix('/authz/roles', '/auth')).toBe(false)
+    expect(fallsUnderPrefix('/api/v1/auth', '/api/v1/auth')).toBe(true)
+    expect(fallsUnderPrefix('/api/v1/auth/methods', '/api/v1/auth')).toBe(true)
+    expect(fallsUnderPrefix('/api/v1/authz', '/api/v1/auth')).toBe(false)
+    expect(fallsUnderPrefix('/api/v1/authz/roles', '/api/v1/auth')).toBe(false)
   })
 
   it('generates one segment-anchored proxy key per claimed prefix', () => {
@@ -242,12 +242,12 @@ describe('the backend prefix manifest', () => {
     }
   })
 
-  it('forwards both /auth and /authz without one swallowing the other', () => {
+  it('forwards both /api/v1/auth and /api/v1/authz without one swallowing the other', () => {
     const keys = Object.keys(backendProxyRules('http://backend.test'))
     const forwards = (url: string): boolean =>
       keys.some((key) => proxyMatches(key, url))
-    expect(forwards('/auth/methods')).toBe(true)
-    expect(forwards('/authz/admin/permissions')).toBe(true)
+    expect(forwards('/api/v1/auth/methods')).toBe(true)
+    expect(forwards('/api/v1/authz/admin/permissions')).toBe(true)
     expect(forwards('/authx')).toBe(false)
   })
 })

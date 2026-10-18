@@ -1,6 +1,6 @@
 /**
  * SessionsSection behaviour over the authn session routes: GET
- * /auth/sessions, DELETE /auth/sessions/{id} and DELETE /auth/sessions.
+ * /api/v1/auth/sessions, DELETE /api/v1/auth/sessions/{id} and DELETE /api/v1/auth/sessions.
  *
  * What this suite pins, per story: the live sessions the server lists
  * render, the current one marked and carrying no revoke affordance, a
@@ -31,8 +31,8 @@ import { renderWithProviders } from '../test-utils/render.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { SessionsSection } from './SessionsSection.js'
 
-const SESSIONS_PATH = '/auth/sessions'
-const PROFILE_PATH = '/auth/me'
+const SESSIONS_PATH = '/api/v1/auth/sessions'
+const PROFILE_PATH = '/api/v1/auth/me'
 
 /** The profile read the timezone chain issues beside the list. */
 const PROFILE = jsonResponse(200, { time_zone: '' })
@@ -360,7 +360,7 @@ describe('SessionsSection', () => {
     // "no sessions" claim.
     mode = 'omitted'
     await act(async () => {
-      await queryClient.invalidateQueries({ queryKey: ['/auth/sessions'] })
+      await queryClient.invalidateQueries({ queryKey: ['/api/v1/auth/sessions'] })
     })
     expect(await screen.findByText(zhCN.sessions.error.title)).toBeTruthy()
 

@@ -301,8 +301,8 @@ the choice. `server/testdata/` declares the table:
 | Endpoint | Claims |
 |---|---|
 | `api` | `/api` |
-| `account` | `/auth`, `/features`, `/workspace` |
-| `admin` | `/audit`, `/authz`, `/settings`, `/sms`, `/tenant` |
+| `account` | `/api/v1/auth`, `/api/v1/features`, `/api/v1/workspace` |
+| `admin` | `/api/v1/audit`, `/api/v1/authz`, `/api/v1/settings`, `/api/v1/sms`, `/api/v1/tenant` |
 | `ops` | `/` (omitted: it is alone on its listener) |
 | `web` | `/` |
 
@@ -310,7 +310,7 @@ The table is the product's fixed namespace map, not a description of the
 current run: a capability dropped from `baselineServe`, or removed from the
 imports altogether, keeps its namespace claimed. `sms.admin` is the example —
 the binary imports it for the contract and no command runs it, so `admin`
-claims `/sms` even though no route answers there. A path under a claim reaches
+claims `/api/v1/sms` even though no route answers there. A path under a claim reaches
 that endpoint's chain even when no route matches: with no credentials the
 gateway refuses it 401, and an admitted caller gets the endpoint's own 404. A
 frontend page path must stay outside every non-root claim, or a page navigation
@@ -347,12 +347,12 @@ under `server/testdata/` names them:
 - The gateway (`authn.gate`) guards `api`, `account` and `admin`. Its own
   routes — login, session, registration, profile, the account-management routes,
   invitations, impersonation and the enterprise provider register — mount on the
-  `account` endpoint under `authn.gate.mount.base-path` (`/auth` by default).
+  `account` endpoint under `authn.gate.mount.base-path` (`/api/v1/auth` by default).
   The login flow is delivered as a session cookie: the frontend's login flow
   requests `delivery: 'session'` (and `@speed/auth-core` forces it), so a
   completed login answers `{state: 'authenticated', session: {id, expires_at}}`
   with a `Set-Cookie` and no token pair, and a page reload stays signed in by
-  re-reading `GET /auth/session`. The delivery set is a runtime setting
+  re-reading `GET /api/v1/auth/session`. The delivery set is a runtime setting
   (`authn.login.delivery-modes`, default `["session","token"]`), not a
   configuration item, so it is narrowed through the settings surface rather
   than `testdata/`; this host's frontend already requests session for every
@@ -369,10 +369,10 @@ under `server/testdata/` names them:
 - The platform's management surfaces mount on `admin`: the roster
   (`tenant.admin`), the authorization catalog (`authz.admin`), the settings
   surface (`settings.admin`) and the journal's query routes (`audit.admin`).
-- The feature document (`feature.board`) mounts `GET /features` on the endpoint
+- The feature document (`feature.board`) mounts `GET /api/v1/features` on the endpoint
   `feature.board.endpoint` names — `account` in every `testdata/` file, which
   the gateway guards, which resolves no tenant, and whose listener claims
-  `/features`. It publishes only to authenticated callers: a process with no
+  `/api/v1/features`. It publishes only to authenticated callers: a process with no
   authentication gateway fails to start rather than expose the document, and an
   anonymous request receives the gateway's own 401. The document names what this
   process serves, so `sms.admin` — imported for the contract, run by no
@@ -395,10 +395,10 @@ under `server/testdata/` names them:
   (`workspace.personal`, `server/personal.go`, named in `baselineServe`). Its
   switch is `workspace.personal.enabled`, off in every `testdata/` file and on
   in the review assembly (`server/review/sqlite.yaml`). With it on, the module
-  mounts `POST /workspace/personal` on the `account` endpoint — no tenant
+  mounts `POST /api/v1/workspace/personal` on the `account` endpoint — no tenant
   resolution — and posts the conditional feature `workspace.personal`; with it
   off, no route is mounted, the feature is absent from the document, and the
-  claimed `/workspace` prefix answers the account endpoint's 404. The route
+  claimed `/api/v1/workspace` prefix answers the account endpoint's 404. The route
   requires an authenticated caller, refuses an impersonating one 403 (it is
   registered `Impersonable` so the handler, not the gateway's default 401,
   answers), refuses a service account or a static-credential principal 403,

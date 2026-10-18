@@ -111,9 +111,9 @@ export default defineConfig({
     // Every namespace the app's generated calls address answers on the same
     // backend listener, so every claimed prefix proxies to the same origin.
     // The keys are segment-anchored regular expressions (`^/auth(?:[/?]|$)`
-    // rather than `/auth`), because vite matches a key that begins with `^`
+    // rather than `/api/v1/auth`), because vite matches a key that begins with `^`
     // as a regular expression and anything else with `startsWith`: a plain
-    // `/auth` key would also forward `/authz`.
+    // `/api/v1/auth` key would also forward `/api/v1/authz`.
     proxy: backendProxyRules(backendProxy),
   },
 })

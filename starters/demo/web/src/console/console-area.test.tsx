@@ -218,13 +218,13 @@ describe('ConsoleArea', () => {
   it("turns an issued invitation's token into this app's landing link", async () => {
     const requestFn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
       const method = options?.method ?? 'GET'
-      if (path === '/tenant/admin/tenants' && method === 'GET') {
+      if (path === '/api/v1/tenant/admin/tenants' && method === 'GET') {
         return Promise.resolve({
           tenants: [{ id: 'acme', alias: 'Acme', status: 'active' }],
         } as T)
       }
       if (
-        path === '/auth/admin/tenants/acme/invitations' &&
+        path === '/api/v1/auth/admin/tenants/acme/invitations' &&
         method === 'POST'
       ) {
         return Promise.resolve({
@@ -244,12 +244,12 @@ describe('ConsoleArea', () => {
       // The page's list reads: answered so react-query never receives an
       // undefined document (it logs "Query data cannot be undefined").
       if (
-        path === '/auth/admin/tenants/acme/invitations' &&
+        path === '/api/v1/auth/admin/tenants/acme/invitations' &&
         method === 'GET'
       ) {
         return Promise.resolve({ invitations: [], next_cursor: '' } as T)
       }
-      if (path === '/auth/admin/tenants/acme/members' && method === 'GET') {
+      if (path === '/api/v1/auth/admin/tenants/acme/members' && method === 'GET') {
         return Promise.resolve({ members: [], next_cursor: '' } as T)
       }
       // A path this suite has not scripted is a hole, not an empty answer:

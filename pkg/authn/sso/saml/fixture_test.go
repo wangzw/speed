@@ -29,7 +29,7 @@ const (
 	testProviderID = "idp-1"
 	testTenant     = "acme"
 	testPublicURL  = "https://sp.example.com"
-	testBasePath   = "/auth"
+	testBasePath   = "/api/v1/auth"
 	testIssuer     = "https://idp.example.com/entity"
 	testSSOURL     = "https://idp.example.com/sso"
 )

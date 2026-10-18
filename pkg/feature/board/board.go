@@ -1,5 +1,5 @@
 // Package board is the module that publishes the feature document: the set of
-// feature names this process serves, answered on GET /features to authenticated
+// feature names this process serves, answered on GET /api/v1/features to authenticated
 // callers alone.
 //
 // It declares no feature of its own. Modules that serve a user-facing surface
@@ -62,9 +62,10 @@ const (
 	endpointKey  = ConfigNamespace + "." + endpointItem
 )
 
-// pathFeatures is the route the document is answered on. It is a single static
-// segment, so the endpoint it is mounted on claims the /features prefix.
-const pathFeatures = "/features"
+// pathFeatures is the route the document is answered on. It is a static path
+// under the API namespace, so the endpoint it is mounted on claims the
+// /api/v1/features prefix.
+const pathFeatures = "/api/v1/features"
 
 // fragmentEndpoint is the endpoint name this module's OpenAPI fragment is
 // declared against. The resource is a static declaration fixed before

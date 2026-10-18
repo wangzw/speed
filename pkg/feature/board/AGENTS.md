@@ -1,7 +1,7 @@
 # pkg/feature/board
 
 The module `feature.board`: it publishes the feature document — the feature names
-this process serves — on `GET /features`, to authenticated callers alone.
+this process serves — on `GET /api/v1/features`, to authenticated callers alone.
 
 It declares no feature of its own. Modules that serve a user-facing surface put a
 `feature.Spec` in their own resources; this module checks every declaration in
@@ -42,7 +42,7 @@ path.
   `feature.ErrDuplicate`.
 - **Migrate** opens the posting window. The window closes in Start and contains
   the whole Init stage. `Post` outside it panics.
-- **Init** mounts `GET /features`, registers it as impersonable on the
+- **Init** mounts `GET /api/v1/features`, registers it as impersonable on the
   authentication gateway (`feature.ErrNoGate` if there is none, and the startup
   fails), and declares it open on the authorization middleware when one is
   present.

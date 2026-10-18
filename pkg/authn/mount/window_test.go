@@ -35,10 +35,10 @@ func TestARegistrationOutsideTheWindowPanicsAndNamesTheRoute(t *testing.T) {
 			call func(m mount.Mounter)
 			want []string
 		}{
-			{"Public", func(m mount.Mounter) { m.Public("POST", "/late", handler) }, []string{"POST", "/auth/late"}},
-			{"Optional", func(m mount.Mounter) { m.Optional("GET", "/late-opt", handler) }, []string{"GET", "/auth/late-opt"}},
-			{"Guarded", func(m mount.Mounter) { m.Guarded("PUT", "/late-guard", handler) }, []string{"PUT", "/auth/late-guard"}},
-			{"Callback", func(m mount.Mounter) { m.Callback([]string{"GET"}, "/late/:p/cb", handler) }, []string{"GET", "/auth/late/:p/cb"}},
+			{"Public", func(m mount.Mounter) { m.Public("POST", "/late", handler) }, []string{"POST", "/api/v1/auth/late"}},
+			{"Optional", func(m mount.Mounter) { m.Optional("GET", "/late-opt", handler) }, []string{"GET", "/api/v1/auth/late-opt"}},
+			{"Guarded", func(m mount.Mounter) { m.Guarded("PUT", "/late-guard", handler) }, []string{"PUT", "/api/v1/auth/late-guard"}},
+			{"Callback", func(m mount.Mounter) { m.Callback([]string{"GET"}, "/late/:p/cb", handler) }, []string{"GET", "/api/v1/auth/late/:p/cb"}},
 		} {
 			text, panicked := panicText(func() { c.call(l.mounter) })
 			if !panicked {
@@ -60,7 +60,7 @@ func TestARegistrationOutsideTheWindowPanicsAndNamesTheRoute(t *testing.T) {
 // what to do, instead of dropping the registration.
 func TestARegistrationBeforeTheModuleHasInitialisedPanicsAndNamesTheRoute(t *testing.T) {
 	var s settings
-	s.Mount.BasePath = "/auth"
+	s.Mount.BasePath = "/api/v1/auth"
 	p, err := newProduct(s)
 	if err != nil {
 		t.Fatalf("building the product: %v", err)
@@ -158,7 +158,7 @@ func TestARefusalFromTheGatewayNamesTheRouteToo(t *testing.T) {
 	if !panicked {
 		t.Fatal("a refusal of the gateway's surface did not panic")
 	}
-	for _, w := range []string{"Public", "POST", "/auth/login", "the registration gate is shut"} {
+	for _, w := range []string{"Public", "POST", "/api/v1/auth/login", "the registration gate is shut"} {
 		if !strings.Contains(text, w) {
 			t.Errorf("the panic %q does not name %q", text, w)
 		}

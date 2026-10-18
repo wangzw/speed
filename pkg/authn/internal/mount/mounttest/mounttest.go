@@ -58,7 +58,7 @@ type Registration struct {
 
 // Defaults of a Mounter that no option changed.
 const (
-	DefaultBase      = "/auth"
+	DefaultBase      = "/api/v1/auth"
 	DefaultPublicURL = "https://app.example.com"
 	DefaultEndpoint  = "main"
 )

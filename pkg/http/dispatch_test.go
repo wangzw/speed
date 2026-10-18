@@ -801,6 +801,34 @@ func TestARouteTakenByALongerClaimIsUnclaimed(t *testing.T) {
 	mustContain(t, runErr.Error(), "/api/internal/x", "the route")
 }
 
+// TestTheUnclaimedRouteSuggestionCoversTheRoutes pins the suggested claim a
+// startup failure offers. The suggestion has to be one the failing endpoint can
+// adopt, so it takes the depth of the routes themselves: the top-level segment
+// /api already belongs to another endpoint, and proposing it would send the
+// reader to a configuration the claim check refuses.
+func TestTheUnclaimedRouteSuggestionCoversTheRoutes(t *testing.T) {
+	probe := &stageProbe{
+		name:     "probe.registers-unclaimed-routes-under-the-api-namespace",
+		requires: requiresRouter(),
+		onInit: inOrder(
+			routeOn("account", nethttp.MethodGet, "/api/v1/auth/me", filler),
+			routeOn("account", nethttp.MethodGet, "/api/v1/auth/session", filler),
+		),
+	}
+	a := startAssembly(t,
+		claimedConfig(map[string][]string{"account": {"/api/v1/features"}, "api": {"/api"}}),
+		Module(), probe.module())
+
+	runErr := a.stop(t)
+	if !errors.Is(runErr, ErrUnclaimedRoute) {
+		t.Fatalf("routes under an unclaimed namespace started up with %v, want ErrUnclaimedRoute", runErr)
+	}
+	mustContain(t, runErr.Error(), `for example "/api/v1/auth"`, "the claim covering the routes")
+	if strings.Contains(runErr.Error(), `for example "/api"`) {
+		t.Errorf("the suggestion names a prefix another endpoint already claims: %v", runErr)
+	}
+}
+
 // TestPartialShadowingStarts pins that nested claims may partition a subtree: an
 // endpoint claiming /api registers /api/:id and another claims /api/internal.
 // /api/:id's literal leading path is /api, which selects the first endpoint, and

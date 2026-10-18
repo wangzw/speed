@@ -2,7 +2,7 @@
 
 ## 职责
 
-`audit.admin` 是审计记录的 HTTP 查询面，挂在固定基路径 `/audit/admin` 下，不交付任何功能接口，只把审计记录的检索暴露成路由。每条路由的动作是经审计实现子包的读面读审计表一次；模块自己不持数据、不持规则——审计表、它的模型与它的写入归审计模块，本模块只决定谁可以问、答案长什么样。
+`audit.admin` 是审计记录的 HTTP 查询面，挂在固定基路径 `/api/v1/audit/admin` 下，不交付任何功能接口，只把审计记录的检索暴露成路由。每条路由的动作是经审计实现子包的读面读审计表一次；模块自己不持数据、不持规则——审计表、它的模型与它的写入归审计模块，本模块只决定谁可以问、答案长什么样。
 
 **本模块是框架为审计查询面提供的那个提供者。** 审计能力本身不提供查询面，[design-audit](design-audit.md) 的两处原文是：
 
@@ -73,21 +73,21 @@ type Row struct {
 
 ### 路由
 
-基路径 `/audit/admin`，下表是路由的全集（封闭集）：方法、路径与每条需要的权限。
+基路径 `/api/v1/audit/admin`，下表是路由的全集（封闭集）：方法、路径与每条需要的权限。
 
 | 方法 路径 | 权限 |
 |---|---|
-| `GET /audit/admin/records` | `audit.read` |
-| `GET /audit/admin/records/:id` | `audit.read` |
+| `GET /api/v1/audit/admin/records` | `audit.read` |
+| `GET /api/v1/audit/admin/records/:id` | `audit.read` |
 
 每条路由的动作是一次 `journal.Reader` 调用：
 
 | 路由 | 读面动作 |
 |---|---|
-| `GET /audit/admin/records` | `Query`，读一页审计记录 |
-| `GET /audit/admin/records/:id` | `Query`，以行标识为条件取一行（页大小为 1） |
+| `GET /api/v1/audit/admin/records` | `Query`，读一页审计记录 |
+| `GET /api/v1/audit/admin/records/:id` | `Query`，以行标识为条件取一行（页大小为 1） |
 
-**检索读的是审计表，跨租户。** 审计表持有每个租户的行与没有租户的行。本模块的读是平台运营的读，handler 在一个跨租户标记下调用读面，读面因此把租户条件留空，读到的是全部租户的行与没有租户的行。行标识在整张表里唯一，`GET /audit/admin/records/:id` 因而不需要租户，取到的是那一行，或者什么也没有。
+**检索读的是审计表，跨租户。** 审计表持有每个租户的行与没有租户的行。本模块的读是平台运营的读，handler 在一个跨租户标记下调用读面，读面因此把租户条件留空，读到的是全部租户的行与没有租户的行。行标识在整张表里唯一，`GET /api/v1/audit/admin/records/:id` 因而不需要租户，取到的是那一行，或者什么也没有。
 
 ### 访问控制
 
@@ -129,7 +129,7 @@ type Row struct {
 
 - **模块名**：`audit.admin`。宿主的命令树点模块名纳入，配置命名空间取同一取值。
 - **配置命名空间与输入项**：`audit.admin` 下的 `endpoints`（字符串列表，必填，无缺省，只收具体端名、不收 `*`，取主配置源）。
-- **管理端点**：`audit.admin.endpoints` 列出的端，`/audit/admin/records` 与 `/audit/admin/records/:id`（路由见「路由」）。
+- **管理端点**：`audit.admin.endpoints` 列出的端，`/api/v1/audit/admin/records` 与 `/api/v1/audit/admin/records/:id`（路由见「路由」）。
 - **权限**：路由询 `audit.read`；本模块不声明自己的权限，`audit.read` 由授权能力携带。
 - **问题应答**：`Problem.Type` 前缀 `urn:speed:audit:`，其下的码 `bad-request`。
 
@@ -231,7 +231,7 @@ sequenceDiagram
 | 情形 | 表现 |
 |---|---|
 | 请求在形状上不可读（路径的 `id` 不是数字、时间边界不是 RFC 3339、`limit` 越界、动作、结果或操作者取空值、出现本路由不接受的查询参数） | 400（`Problem.Type` 为 `urn:speed:audit:bad-request`），在读面之前 |
-| `GET /audit/admin/records/:id` 点名一行审计表不持有 | 404，不带 `Problem.Type` |
+| `GET /api/v1/audit/admin/records/:id` 点名一行审计表不持有 | 404，不带 `Problem.Type` |
 | 读面读表失败 | 503，不带 `Problem.Type`，成因只进日志 |
 | guard 的拒答与故障 | 403 / 503，由 guard 写出 |
 | 请求没有身份 | 401，只有状态、无 `Problem.Type`，带 realm 质询 |

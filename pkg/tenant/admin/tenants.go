@@ -8,7 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// handleTenantList answers GET /tenant/admin/tenants: every tenant the roster
+// handleTenantList answers GET /api/v1/tenant/admin/tenants: every tenant the roster
 // holds, in the roster's own order — by identifier. It is a read, so the action
 // is tenant.read. The roster is the set of tenants one deployment serves, and it
 // is not paged.
@@ -36,7 +36,7 @@ func (p *product) handleTenantList(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"tenants": views})
 }
 
-// handleTenantGet answers GET /tenant/admin/tenants/:id: one tenant the roster
+// handleTenantGet answers GET /api/v1/tenant/admin/tenants/:id: one tenant the roster
 // holds. It is a read, so the action is tenant.read.
 //
 // A read goes straight to the roster, with no shape check of its own: whether an
@@ -70,7 +70,7 @@ type createBody struct {
 	Alias string `json:"alias"`
 }
 
-// handleTenantCreate answers POST /tenant/admin/tenants: it registers a tenant
+// handleTenantCreate answers POST /api/v1/tenant/admin/tenants: it registers a tenant
 // whose identifier the roster does not hold yet. It is a write, so the action is
 // tenant.manage.
 //
@@ -118,7 +118,7 @@ type aliasBody struct {
 	Alias string `json:"alias"`
 }
 
-// handleTenantSetAlias answers PATCH /tenant/admin/tenants/:id: it changes one
+// handleTenantSetAlias answers PATCH /api/v1/tenant/admin/tenants/:id: it changes one
 // tenant's alias and nothing else. It is a write, so the action is tenant.manage.
 //
 // The write goes through Catalog.SetAlias, which writes the alias column alone.
@@ -175,7 +175,7 @@ type statusBody struct {
 	Status string `json:"status"`
 }
 
-// handleTenantSetStatus answers POST /tenant/admin/tenants/:id/status: it changes
+// handleTenantSetStatus answers POST /api/v1/tenant/admin/tenants/:id/status: it changes
 // one tenant's state. It is a write, so the action is tenant.manage.
 //
 // The state is a closed set: active or disabled, anything else a 400 before the

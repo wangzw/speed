@@ -170,7 +170,7 @@ func TestARealRegistryDeliversTheOIDCMethod(t *testing.T) {
 	if !ok {
 		t.Fatalf("the delivered method is %T, not this module's product", methods[0])
 	}
-	if p.redirect.callback("idp-1") != "https://app.example.com/auth/callback/idp-1" {
+	if p.redirect.callback("idp-1") != "https://app.example.com/api/v1/auth/callback/idp-1" {
 		t.Errorf("redirect = %q, want the resolved public address and callback path", p.redirect.callback("idp-1"))
 	}
 }

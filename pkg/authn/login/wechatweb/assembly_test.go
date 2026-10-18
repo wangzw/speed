@@ -214,7 +214,7 @@ func TestARealRegistryDeliversTheMethodAndBuildsTheCallbackAddress(t *testing.T)
 	if err != nil {
 		t.Fatalf("the authorize address does not parse: %v", err)
 	}
-	if have := to.Query().Get("redirect_uri"); have != "https://app.example.com/auth/callback/wechat.web" {
+	if have := to.Query().Get("redirect_uri"); have != "https://app.example.com/api/v1/auth/callback/wechat.web" {
 		t.Errorf("redirect_uri = %q, want the address built from the public URL and the base path", have)
 	}
 	if have := to.Query().Get("appid"); have != testAppID {

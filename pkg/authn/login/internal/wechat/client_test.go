@@ -228,7 +228,7 @@ func TestNoErrorPathCarriesTheSecret(t *testing.T) {
 
 func TestAuthorizeURLNamesTheApplicationAndEndsWithTheFragment(t *testing.T) {
 	c := New(Options{AppID: testAppID, AppSecret: testAppSecret})
-	got := c.AuthorizeURL(AuthorizeQRConnect, "snsapi_login", "https://app.example/auth/callback/wechat.web", "the-state")
+	got := c.AuthorizeURL(AuthorizeQRConnect, "snsapi_login", "https://app.example/api/v1/auth/callback/wechat.web", "the-state")
 
 	u, err := url.Parse(got)
 	if err != nil {
@@ -246,7 +246,7 @@ func TestAuthorizeURLNamesTheApplicationAndEndsWithTheFragment(t *testing.T) {
 		"scope":         "snsapi_login",
 		"response_type": "code",
 		"state":         "the-state",
-		"redirect_uri":  "https://app.example/auth/callback/wechat.web",
+		"redirect_uri":  "https://app.example/api/v1/auth/callback/wechat.web",
 	}
 	for key, value := range want {
 		if have := q.Get(key); have != value {

@@ -15,7 +15,7 @@ import (
 
 // listRoute and getRoute are the two routes as the cases address them.
 const (
-	listRoute = "/audit/admin/records"
+	listRoute = "/api/v1/audit/admin/records"
 	getRoute  = listRoute + "/"
 )
 
@@ -303,7 +303,7 @@ func TestEveryReadLeavesADiagnosticLine(t *testing.T) {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
 	line := r.logs.String()
-	for _, want := range []string{"/audit/admin/records", "hits"} {
+	for _, want := range []string{"/api/v1/audit/admin/records", "hits"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("the diagnostic line %q does not carry %q", line, want)
 		}

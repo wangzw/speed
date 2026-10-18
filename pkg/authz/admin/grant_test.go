@@ -20,7 +20,7 @@ import (
 func TestGrantingAPermissionOutsideTheCatalogIsRefused(t *testing.T) {
 	r := newRig(t) // the catalog declares no permission
 	w := r.serve(r.p.handleGrantPut, http.MethodPut,
-		"/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
+		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("granting a permission outside the catalog answered %d, want 400", w.Code)
@@ -43,7 +43,7 @@ func TestGrantingAPermissionOutsideTheCatalogIsRefused(t *testing.T) {
 func TestGrantingATranslatedPermissionCallsPutGrantWithThePair(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	w := r.serve(r.p.handleGrantPut, http.MethodPut,
-		"/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
+		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("granting a declared permission answered %d, want 204", w.Code)
@@ -74,7 +74,7 @@ func TestAGrantOnABuiltinPositionIsRefused(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	r.manager.fail(authz.ErrBuiltinRole)
 	w := r.serve(r.p.handleGrantPut, http.MethodPut,
-		"/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
+		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("a grant on a builtin role answered %d, want 409", w.Code)
@@ -94,7 +94,7 @@ func TestAGrantOnABuiltinPositionIsRefused(t *testing.T) {
 func TestDeletingAnAbsentGrantIsIdempotent(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	w := r.serve(r.p.handleGrantDelete, http.MethodDelete,
-		"/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
+		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("deleting an absent grant answered %d, want 204", w.Code)
@@ -122,7 +122,7 @@ func TestAWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByActionID(
 	r := newRig(t, authz.PermissionAccountRead)
 	r.manager.fail(errors.New("the store is down"))
 	w := r.serve(r.p.handleGrantPut, http.MethodPut,
-		"/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
+		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("a write whose action failed answered %d, want 503", w.Code)
@@ -154,7 +154,7 @@ func TestAnUnauthorisedWriteReachesNoManagerAndWritesNoAudit(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	r.guard.allow = false
 	w := r.serve(r.p.handleGrantPut, http.MethodPut,
-		"/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
+		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("an unauthorised write answered %d, want 403", w.Code)
@@ -176,7 +176,7 @@ func TestListingGrantsAnswersTheRowsAsViews(t *testing.T) {
 	r := newRig(t, authz.PermissionRoleRead)
 	r.manager.grants = []authz.GrantRecord{{Tenant: "t1", Role: "r1", Resource: "account", Action: "read"}}
 	w := r.serve(r.p.handleGrantList, http.MethodGet,
-		"/authz/admin/tenants/t1/roles/r1/grants",
+		"/api/v1/authz/admin/tenants/t1/roles/r1/grants",
 		params("tenant", "t1", "role", "r1"), nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("listing the grants answered %d, want 200", w.Code)

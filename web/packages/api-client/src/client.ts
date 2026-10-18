@@ -270,8 +270,8 @@ export interface ClientOptions {
    * 401 among them surfaces (the hook reads it as the session's own
    * answer) instead of joining the shared round -- which may be the
    * very round awaiting the hook, making the request await itself. A
-   * restore-shaped hook that reads GET /auth/session and then GET
-   * /auth/me is the case that needs it: the second read is issued
+   * restore-shaped hook that reads GET /api/v1/auth/session and then GET
+   * /api/v1/auth/me is the case that needs it: the second read is issued
    * after an await, long past the round's synchronous invocation. A
    * hook that ignores the argument still compiles and runs; one that
    * issues its round's reads through the client's ordinary request
@@ -1183,7 +1183,7 @@ export function createClient(options: ClientOptions): SpeedClient {
   // request born later in the round's pending window is an
   // independent request and must still be able to join the flight.
   // The round's own reads issued after an await (a restore-shaped hook
-  // reading GET /auth/session and then GET /auth/me) cannot be caught
+  // reading GET /api/v1/auth/session and then GET /api/v1/auth/me) cannot be caught
   // by this marker; the hook reaches them through the round-scoped
   // request function instead, whose requests carry `roundOwned`.
   let inRefreshHookCall = false

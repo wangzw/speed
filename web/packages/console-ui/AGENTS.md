@@ -4,12 +4,12 @@
 
 The platform-staff console — the second shell. It renders the platform's
 backend administration surfaces as one console frame: the tenant roster
-(`/tenant/admin`), the account, session and impersonation surfaces
-(`/auth/admin`), the authorization surface (`/authz/admin`), the
-invitation and membership surface (`/auth/admin/tenants/:tenant/...`),
-the SSO surface (`/auth/admin/sso`), the settings read-write surface
-(`/settings/admin`), the SMS template surface (`/sms/admin`) and the
-audit query (`/audit/admin`). The console root renders a dashboard, and
+(`/api/v1/tenant/admin`), the account, session and impersonation surfaces
+(`/api/v1/auth/admin`), the authorization surface (`/api/v1/authz/admin`), the
+invitation and membership surface (`/api/v1/auth/admin/tenants/:tenant/...`),
+the SSO surface (`/api/v1/auth/admin/sso`), the settings read-write surface
+(`/api/v1/settings/admin`), the SMS template surface (`/api/v1/sms/admin`) and the
+audit query (`/api/v1/audit/admin`). The console root renders a dashboard, and
 the tenant roster and the audit query each link a row to that record's
 detail page.
 
@@ -139,7 +139,7 @@ Two caller-session surfaces sit outside the bundle. The impersonation
 page's own-session half calls the generated caller-session operations
 directly (`useAuthnImpersonationStatus`, `useAuthnImpersonationStart`,
 `useAuthnImpersonationEnd`), and the step-up dialog reads the caller's own
-factors through `GET /auth/factors`. Neither is an administration surface
+factors through `GET /api/v1/auth/factors`. Neither is an administration surface
 the bundle substitutes: they act on the operator's own session, so they
 run the generated hooks on the host's query client and are not
 replaceable through the bundle.
@@ -160,15 +160,15 @@ What the pages reach through the bundle, grouped by surface:
 
 | Members | Routes |
 |---|---|
-| `useTenants`, `useTenant`, `useCreateTenant`, `useSetTenantAlias`, `useSetTenantStatus` | `/tenant/admin/tenants[/:id]` (list / get / create / alias / status) |
-| `usePermissions`, `useRoles`, `useWriteRole`, `useRemoveRole`, `useGrants`, `useGrantPermission`, `useRevokePermission`, `useBindings`, `useAccountBindings`, `useBindRole`, `useUnbindRole` | `/authz/admin/permissions`, `/authz/admin/tenants/:tenant/roles[/:role[/grants[/:permission]]]`, `/authz/admin/tenants/:tenant/bindings[/:account[/:role]]` |
-| `useAccounts`, `useAccount`, `useAccountFactors`, `useAccountSecrets`, `useAccountSessions`, `useCreateAccount`, `usePatchAccount`, `useSetAccountStatus`, `useSetMFARequired`, `useResetPassword`, `useAddIdentifier`, `useCreateSecret`, `useDeleteAccount`, `useRemoveIdentifier`, `useResetMFA`, `useRevokeAccountSessions`, `useRevokeSecret`, `useRevokeSession` | `/auth/admin/accounts[/:id[/factors|/secrets[/:secret]|/sessions|/identifiers/:identifier|/mfa-reset|/revoke-sessions|/status|/mfa-required|/password|/identifiers]]`, `/auth/admin/sessions/:id` |
-| `useImpersonations`, `useRevokeImpersonation` | `/auth/admin/impersonations[/:id]` |
-| `useInvitations`, `useIssueInvitation`, `useRevokeInvitation`, `useMembers`, `useWriteMember`, `useSetMemberSsoExempt`, `useRemoveMember` | `/auth/admin/tenants/:tenant/invitations[/:id]`, `/auth/admin/tenants/:tenant/members[/:account[/sso-exempt]]` |
-| `useSsoProviders`, `useSsoProvider`, `useCreateSsoProvider`, `useUpdateSsoProvider`, `useClaimSsoDomain`, `useDeleteSsoProvider`, `useRemoveSsoDomain`, `useVerifySsoDomain`, `useRefreshSsoMetadata`, `useReverifySsoDomains` | `/auth/admin/tenants/:tenant/sso/providers`, `/auth/admin/sso/providers/:id[/domains[/:domain[/verify]]|/metadata/refresh|/reverify-domains]` |
-| `useSettings`, `useSetSetting`, `useRemoveSetting` | `/settings/admin/settings[/:namespace[/:key]]` |
-| `useSmsTemplates`, `useRegisterSmsTemplate`, `useOfferSmsTemplate`, `useSetSmsTemplateEnabled`, `useRemoveSmsTemplate` | `/sms/admin/templates[/submissions|/:name[/enabled]]` |
-| `useAuditRecords`, `useAuditRecord` | `/audit/admin/records[/:id]` |
+| `useTenants`, `useTenant`, `useCreateTenant`, `useSetTenantAlias`, `useSetTenantStatus` | `/api/v1/tenant/admin/tenants[/:id]` (list / get / create / alias / status) |
+| `usePermissions`, `useRoles`, `useWriteRole`, `useRemoveRole`, `useGrants`, `useGrantPermission`, `useRevokePermission`, `useBindings`, `useAccountBindings`, `useBindRole`, `useUnbindRole` | `/api/v1/authz/admin/permissions`, `/api/v1/authz/admin/tenants/:tenant/roles[/:role[/grants[/:permission]]]`, `/api/v1/authz/admin/tenants/:tenant/bindings[/:account[/:role]]` |
+| `useAccounts`, `useAccount`, `useAccountFactors`, `useAccountSecrets`, `useAccountSessions`, `useCreateAccount`, `usePatchAccount`, `useSetAccountStatus`, `useSetMFARequired`, `useResetPassword`, `useAddIdentifier`, `useCreateSecret`, `useDeleteAccount`, `useRemoveIdentifier`, `useResetMFA`, `useRevokeAccountSessions`, `useRevokeSecret`, `useRevokeSession` | `/api/v1/auth/admin/accounts[/:id[/factors|/secrets[/:secret]|/sessions|/identifiers/:identifier|/mfa-reset|/revoke-sessions|/status|/mfa-required|/password|/identifiers]]`, `/api/v1/auth/admin/sessions/:id` |
+| `useImpersonations`, `useRevokeImpersonation` | `/api/v1/auth/admin/impersonations[/:id]` |
+| `useInvitations`, `useIssueInvitation`, `useRevokeInvitation`, `useMembers`, `useWriteMember`, `useSetMemberSsoExempt`, `useRemoveMember` | `/api/v1/auth/admin/tenants/:tenant/invitations[/:id]`, `/api/v1/auth/admin/tenants/:tenant/members[/:account[/sso-exempt]]` |
+| `useSsoProviders`, `useSsoProvider`, `useCreateSsoProvider`, `useUpdateSsoProvider`, `useClaimSsoDomain`, `useDeleteSsoProvider`, `useRemoveSsoDomain`, `useVerifySsoDomain`, `useRefreshSsoMetadata`, `useReverifySsoDomains` | `/api/v1/auth/admin/tenants/:tenant/sso/providers`, `/api/v1/auth/admin/sso/providers/:id[/domains[/:domain[/verify]]|/metadata/refresh|/reverify-domains]` |
+| `useSettings`, `useSetSetting`, `useRemoveSetting` | `/api/v1/settings/admin/settings[/:namespace[/:key]]` |
+| `useSmsTemplates`, `useRegisterSmsTemplate`, `useOfferSmsTemplate`, `useSetSmsTemplateEnabled`, `useRemoveSmsTemplate` | `/api/v1/sms/admin/templates[/submissions|/:name[/enabled]]` |
+| `useAuditRecords`, `useAuditRecord` | `/api/v1/audit/admin/records[/:id]` |
 
 The view types are the generated response rows of each module's admin
 surface, named for the console's own pages; only the write inputs stay
@@ -330,7 +330,7 @@ composition, with the operations bundle substituted from test-utils).
   audit record's actor, an impersonation record's actor and target, an
   invitation's inviter, a membership's account, an authorization binding's
   account) resolves each distinct account id through
-  `GET /auth/admin/accounts/:id`
+  `GET /api/v1/auth/admin/accounts/:id`
   (react-query caches by id, so rows sharing an account share one read and a
   re-render reuses it), but a page of distinct accounts fires one read per
   account: no batch account-read surface exists. Resolving a page in one

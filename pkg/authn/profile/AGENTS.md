@@ -2,7 +2,7 @@
 
 The authentication capability's user-profile self-service module. It mounts
 `GET B/me` and `PATCH B/me` under the base path `B` — the path the `authn.mount`
-module joins its routes to, `/auth` unless configured otherwise — and delivers no
+module joins its routes to, `/api/v1/auth` unless configured otherwise — and delivers no
 capability of its own.
 
 It holds no data, no rule and no store. Every route's action is a call on the
@@ -32,7 +32,7 @@ route surface.
 | `PATCH B/me` | Required | write the caller's own profile, within the closed writable set |
 
 `B` is the base path the module joins its routes to; with the default
-configuration that is `/auth`, so the two routes are `/auth/me`.
+configuration that is `/api/v1/auth`, so the two routes are `/api/v1/auth/me`.
 
 ## Boundaries
 

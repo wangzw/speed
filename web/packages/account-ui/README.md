@@ -122,8 +122,8 @@ interface IdentifiersSectionProps {
 ### ProfileSection
 
 Edits the account's display name through the profile write
-`PATCH /auth/me` (the same route the preferences section writes its
-language and time zone through). It reads `GET /auth/me` for the stored
+`PATCH /api/v1/auth/me` (the same route the preferences section writes its
+language and time zone through). It reads `GET /api/v1/auth/me` for the stored
 name, lets the field track that value until the user edits it, and
 PATCHes a one-field body from the save button, which is disabled while
 the field still holds the account's own name (a save with nothing changed
@@ -132,7 +132,7 @@ and refetches the profile.
 
 ### PasswordSection
 
-Changes the password through `PUT /auth/password`. The current-password
+Changes the password through `PUT /api/v1/auth/password`. The current-password
 field renders only when the profile says a password is set (an account
 opened through a provider holds none); a provider-only account changes to
 its first password with the new-password fields alone, and that form's
@@ -150,7 +150,7 @@ therefore also names the other devices signed out.
 ### PhoneSection
 
 Adds or replaces the account's phone number in two steps:
-`POST /auth/phone` sends a code to the number and `POST /auth/phone/verify`
+`POST /api/v1/auth/phone` sends a code to the number and `POST /api/v1/auth/phone/verify`
 submits it. The number is entered through the shared `PhoneNumberField`
 (country/region selector plus local number, `@speed/ui-kit`), assembled
 into E.164 for the send and validated per country before any request --
@@ -163,21 +163,21 @@ route revokes the account's other sessions) and reports the addition.
 ### IdentifiersSection
 
 Lists the account's sign-in identifiers -- read off the profile's
-`identifiers` field (`GET /auth/me`), because the spec ships no dedicated
+`identifiers` field (`GET /api/v1/auth/me`), because the spec ships no dedicated
 list route -- each with its kind (email, phone or username) and its
 verified or unverified state. A row's remove action sits behind the
-ui-kit danger confirm and sends `DELETE /auth/identifiers/{id}`; a refusal
+ui-kit danger confirm and sends `DELETE /api/v1/auth/identifiers/{id}`; a refusal
 (the account's last way in is the 409 `conflict`) renders its code text.
 
 Below the list an add face adds one identifier the caller chooses, its kind
 `username` or `email` (a phone is added through its own two-step surface).
 A username is a login name with no ownership to prove, so
-`POST /auth/identifiers` writes it in one step and the answer reports the
+`POST /api/v1/auth/identifiers` writes it in one step and the answer reports the
 addition; a username already in use is answered 409 `conflict` and
 rendered as the taken-name sentence (the same code on a removal keeps its
 generic text). An email is a contact address, so the add sends a code to it (the
 answer is state `pending`) and the code is submitted through
-`POST /auth/identifiers/verify`; only the matching code writes the address.
+`POST /api/v1/auth/identifiers/verify`; only the matching code writes the address.
 The email branch is unavailable on a deployment with no email channel (a
 503 `unavailable`). Every write -- add, verify and remove -- asks for fresh
 authentication: a 401 `authn.insufficient_user_authentication` opens the
@@ -190,8 +190,8 @@ other sessions.
 ## PreferencesSection
 
 The language and time zone selects, editing the account's own stored
-values through the profile self-write route: it reads `GET /auth/me` for
-the stored `locale` and `time_zone` and writes `PATCH /auth/me` with a
+values through the profile self-write route: it reads `GET /api/v1/auth/me` for
+the stored `locale` and `time_zone` and writes `PATCH /api/v1/auth/me` with a
 one-field body.
 
 - Language options are the i18n instance's own supported set
@@ -212,12 +212,12 @@ plus the resolved code text). The section takes no props.
 
 ## SessionsSection
 
-The sessions-and-devices list, read from `GET /auth/sessions` -- the
+The sessions-and-devices list, read from `GET /api/v1/auth/sessions` -- the
 server lists only live sessions, so a row is never revoked or expired.
 The current session (the request's own) carries a badge and no revoke
 affordance; every other row has a row-end sign-out button
-(`DELETE /auth/sessions/{id}`). The section-top "sign out other devices"
-action (`DELETE /auth/sessions`) revokes every other session at once and
+(`DELETE /api/v1/auth/sessions/{id}`). The section-top "sign out other devices"
+action (`DELETE /api/v1/auth/sessions`) revokes every other session at once and
 sits behind the ui-kit danger confirm -- a single confirming click, not
 the heavier two-step arm, because the action is recoverable (a signed-out
 device signs in again); its answer's revoked count is surfaced in a
@@ -228,9 +228,9 @@ takes no props.
 ## SocialBindingsSection
 
 The social-account bindings surface. The bound identities are the
-profile's `links` field (`GET /auth/me`); each row names the provider and
+profile's `links` field (`GET /api/v1/auth/me`); each row names the provider and
 its email. A row with an id has an unlink action
-(`DELETE /auth/links/{id}`) behind the ui-kit danger confirm; a landed
+(`DELETE /api/v1/auth/links/{id}`) behind the ui-kit danger confirm; a landed
 unbind is confirmed in a `role="status"` notice above the list, and a
 refused one renders its code text there.
 
@@ -283,12 +283,12 @@ interface BindingCallbackHandlerProps {
 ## MfaSection
 
 The two-step-verification surface. The authn factor routes list and
-remove factors (`GET /auth/factors`, `DELETE /auth/factors/{id}`);
+remove factors (`GET /api/v1/auth/factors`, `DELETE /api/v1/auth/factors/{id}`);
 registration is not among them -- the one entry is the login engine's
 `enroll` purpose -- so the section renders the factors it reads and
 offers the enrollment entries THIS deployment carries, each driving a
 `purpose: 'enroll'` flow. Which kinds those are is the deployment's own
-answer: the section reads `GET /auth/methods`' `mfa.factors` once through
+answer: the section reads `GET /api/v1/auth/methods`' `mfa.factors` once through
 `session.listMethods` and offers only the kinds it lists, so a deployment
 whose assembly has no passkey relying party shows no passkey entry.
 
@@ -299,7 +299,7 @@ whose assembly has no passkey relying party shows no passkey entry.
   dependency) beside a code field, and a passkey's creation options are
   driven through the browser's WebAuthn API by `src/internal/webauthn.ts`.
   The settled `enrolled` refetches the factors.
-- Remove. A row's action sends `DELETE /auth/factors/{id}` behind the
+- Remove. A row's action sends `DELETE /api/v1/auth/factors/{id}` behind the
   danger confirm. The route asks for a fresh multi-factor
   authentication: an unelevated caller is answered 401
   `authn.insufficient_user_authentication`, which opens the step-up
@@ -391,7 +391,7 @@ is `test-utils/real-client.ts`, the render harness
   factor) renders its challenge fields and is answerable, but the
   package's own callers only reach the factor step.
 - The enrollment entries are the deployment's own answer: the surface
-  reads `GET /auth/methods`' `mfa.factors` through `session.listMethods`
+  reads `GET /api/v1/auth/methods`' `mfa.factors` through `session.listMethods`
   and offers only the kinds it lists (an authenticator app, a passkey, and
   whatever else an assembly records).
 

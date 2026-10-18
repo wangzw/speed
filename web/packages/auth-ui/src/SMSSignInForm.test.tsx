@@ -113,7 +113,7 @@ describe('SMSSignInForm', () => {
     )
     expect(harness.calls).toHaveLength(1)
     expect(harness.calls[0]?.method).toBe('POST')
-    expect(harness.calls[0]?.path).toBe('/auth/flows')
+    expect(harness.calls[0]?.path).toBe('/api/v1/auth/flows')
     expect(harness.calls[0]?.options?.body).toMatchObject({
       method: 'sms',
       delivery: 'session',
@@ -163,7 +163,7 @@ describe('SMSSignInForm', () => {
     await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.submit }))
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     const answerBodies = harness.calls
-      .filter((call) => call.path === '/auth/flows/answer')
+      .filter((call) => call.path === '/api/v1/auth/flows/answer')
       .map((call) => call.options?.body)
     expect(answerBodies[0]).toMatchObject({
       step: 'answer',
@@ -600,7 +600,7 @@ describe('SMSSignInForm', () => {
     await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.submit }))
     await waitFor(() =>
       expect(
-        harness.calls.filter((call) => call.path === '/auth/flows/answer'),
+        harness.calls.filter((call) => call.path === '/api/v1/auth/flows/answer'),
       ).toHaveLength(1),
     )
     // The winning sign-in commits while this answer is in flight.

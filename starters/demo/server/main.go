@@ -329,10 +329,10 @@ var (
 
 		// The feature document. The frontend reads it to find out which of the
 		// surfaces it carries code for this process serves, so a run that serves
-		// the frontend names this module. It mounts GET /features on the endpoint
+		// the frontend names this module. It mounts GET /api/v1/features on the endpoint
 		// feature.board.endpoint names — the configuration under testdata/ names
 		// the account endpoint, which the gateway guards and the listener claims
-		// for /features. The module also needs the authentication gateway: it
+		// for /api/v1/features. The module also needs the authentication gateway: it
 		// fails the start rather than publish the document to anonymous callers.
 		featureboard.ModuleName,
 
@@ -364,7 +364,7 @@ var (
 
 		// The host's own personal-tenant policy: off by configuration in the
 		// baseline, on in the review assembly. When on it mounts
-		// POST /workspace/personal on the account endpoint and declares the
+		// POST /api/v1/workspace/personal on the account endpoint and declares the
 		// conditional feature workspace.personal. See personal.go.
 		personalModuleName,
 

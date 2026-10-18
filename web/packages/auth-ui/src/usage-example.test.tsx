@@ -77,12 +77,12 @@ const SIGN_IN_AGAIN_ZH = zhCN.sessionEnded.signInAction
 const IDENTIFIER_LABEL_EN = enUS.passwordSignIn.identifierLabel
 const SUBMIT_EN = enUS.passwordSignIn.submit
 
-const START_FLOW = '/auth/flows'
-const ANSWER_FLOW = '/auth/flows/answer'
-const METHODS = '/auth/methods'
-const ME = '/auth/me'
-const FEATURES = '/features'
-const TOKEN = '/auth/token'
+const START_FLOW = '/api/v1/auth/flows'
+const ANSWER_FLOW = '/api/v1/auth/flows/answer'
+const METHODS = '/api/v1/auth/methods'
+const ME = '/api/v1/auth/me'
+const FEATURES = '/api/v1/features'
+const TOKEN = '/api/v1/auth/token'
 
 /** The deployment's method document: both form channels, so the surface
  * renders the tab strip. The sign-in surface reads it on mount. */

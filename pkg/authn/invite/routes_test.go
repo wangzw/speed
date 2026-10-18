@@ -14,7 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-const pathAdmin = "/auth/admin/tenants/tenant-a/invitations"
+const pathAdmin = "/api/v1/auth/admin/tenants/tenant-a/invitations"
 
 // request sends one request through the Mounter with the body given. The caller
 // sets the identity first with Mounter.As or Mounter.AsAnonymous.
@@ -162,7 +162,7 @@ func TestListAndRevokeRoutes(t *testing.T) {
 		t.Errorf("a read wrote %d audit rows, want none", len(h.audit.entries()))
 	}
 
-	w = h.request(http.MethodDelete, "/auth/admin/tenants/tenant-a/invitations/"+issued.Invitation.ID, nil)
+	w = h.request(http.MethodDelete, "/api/v1/auth/admin/tenants/tenant-a/invitations/"+issued.Invitation.ID, nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("revoke status = %d, want 204: %s", w.Code, w.Body.String())
 	}
@@ -178,7 +178,7 @@ func TestRevokingAnAcceptedRouteAnswers409(t *testing.T) {
 		t.Fatalf("accepting: %v", err)
 	}
 	h.asAdmin()
-	w := h.request(http.MethodDelete, "/auth/admin/tenants/tenant-a/invitations/"+issued.Invitation.ID, nil)
+	w := h.request(http.MethodDelete, "/api/v1/auth/admin/tenants/tenant-a/invitations/"+issued.Invitation.ID, nil)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409 revoking an accepted invitation", w.Code)
 	}
@@ -191,13 +191,13 @@ func TestAcceptFaceIsPublicAndTokenAddressed(t *testing.T) {
 
 	// The GET carries no identity: the route is public.
 	h.mounter.AsAnonymous()
-	w := h.request(http.MethodGet, "/auth/invitations/"+issued.Token, nil)
+	w := h.request(http.MethodGet, "/api/v1/auth/invitations/"+issued.Token, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("accept view status = %d, want 200: %s", w.Code, w.Body.String())
 	}
 
 	// The POST redeems with no identity too.
-	w = h.request(http.MethodPost, "/auth/invitations/"+issued.Token, map[string]string{"display_name": "Alice"})
+	w = h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{"display_name": "Alice"})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("accept status = %d, want 201: %s", w.Code, w.Body.String())
 	}
@@ -205,7 +205,7 @@ func TestAcceptFaceIsPublicAndTokenAddressed(t *testing.T) {
 		t.Errorf("memberships written = %d, want one", h.members.count)
 	}
 	// A second acceptance of the same token is refused.
-	w = h.request(http.MethodPost, "/auth/invitations/"+issued.Token, map[string]string{"display_name": "Alice"})
+	w = h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{"display_name": "Alice"})
 	if w.Code != http.StatusConflict {
 		t.Fatalf("second accept status = %d, want 409", w.Code)
 	}

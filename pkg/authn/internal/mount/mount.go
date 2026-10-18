@@ -38,7 +38,7 @@ import (
 // mount.base-path and the module that mounts routes reads it back the same way;
 // it is written once here so a host-supplied gateway and the module cannot come
 // to disagree on where the routes are.
-const DefaultBasePath = "/auth"
+const DefaultBasePath = "/api/v1/auth"
 
 // Mounter registers routes under the capability's base path together with the
 // access level the gateway is to apply to each.

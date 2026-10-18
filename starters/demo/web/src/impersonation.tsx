@@ -30,7 +30,7 @@
  *
  * The status read is enabled only while the snapshot says an impersonation
  * is in force, so a visitor who is not impersonating issues no
- * GET /auth/impersonation at all. While it is enabled, a bare 404 is the
+ * GET /api/v1/auth/impersonation at all. While it is enabled, a bare 404 is the
  * settled "no impersonation any more" (ended, expired, or terminated
  * elsewhere) and runs the ended path once for that impersonation interval:
  * keying the guard on the error object would let the payload of the next

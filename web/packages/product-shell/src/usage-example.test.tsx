@@ -71,12 +71,12 @@ import {
 } from '../test-utils/real-client.js'
 import { ProductShell } from './components/ProductShell.js'
 
-const FLOWS_START = 'POST /auth/flows'
-const FLOWS_ANSWER = 'POST /auth/flows/answer'
-const METHODS = 'GET /auth/methods'
-const PROFILE = 'GET /auth/me'
-const FEATURES = 'GET /features'
-const LOGOUT = 'POST /auth/logout'
+const FLOWS_START = 'POST /api/v1/auth/flows'
+const FLOWS_ANSWER = 'POST /api/v1/auth/flows/answer'
+const METHODS = 'GET /api/v1/auth/methods'
+const PROFILE = 'GET /api/v1/auth/me'
+const FEATURES = 'GET /api/v1/features'
+const LOGOUT = 'POST /api/v1/auth/logout'
 const IDENTIFIER = 'alice@example.com'
 const PASSWORD = 'password-1'
 

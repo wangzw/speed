@@ -98,7 +98,7 @@ func TestTheSubmissionRouteAnswersCreatedAndPassesTheSubmissionOn(t *testing.T) 
 
 func TestTheEnableRouteAnswersNoContentAndPassesTheTargetOn(t *testing.T) {
 	r := newRig(t)
-	w := r.do(http.MethodPost, "/sms/admin/templates/login-code/enabled", enabledBody{Enabled: ptr(true)})
+	w := r.do(http.MethodPost, "/api/v1/sms/admin/templates/login-code/enabled", enabledBody{Enabled: ptr(true)})
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204 (body %s)", w.Code, w.Body.String())
 	}
@@ -110,7 +110,7 @@ func TestTheEnableRouteAnswersNoContentAndPassesTheTargetOn(t *testing.T) {
 
 func TestTheRemoveRouteAnswersNoContentAndPassesTheNameOn(t *testing.T) {
 	r := newRig(t)
-	w := r.do(http.MethodDelete, "/sms/admin/templates/login-code", nil)
+	w := r.do(http.MethodDelete, "/api/v1/sms/admin/templates/login-code", nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204 (body %s)", w.Code, w.Body.String())
 	}
@@ -133,8 +133,8 @@ func TestTheDecisionIsAskedPerMethodInThePlatformDomain(t *testing.T) {
 		"list":       {http.MethodGet, pathTemplates, nil, PermissionTemplateRead},
 		"register":   {http.MethodPost, pathTemplates, registerBody{Name: "t", Params: []string{"p"}, Codes: map[string]string{"l": "c"}}, PermissionTemplateManage},
 		"submission": {http.MethodPost, pathSubmissions, offerBody{Name: "t"}, PermissionTemplateManage},
-		"enable":     {http.MethodPost, "/sms/admin/templates/t/enabled", enabledBody{Enabled: ptr(false)}, PermissionTemplateManage},
-		"remove":     {http.MethodDelete, "/sms/admin/templates/t", nil, PermissionTemplateManage},
+		"enable":     {http.MethodPost, "/api/v1/sms/admin/templates/t/enabled", enabledBody{Enabled: ptr(false)}, PermissionTemplateManage},
+		"remove":     {http.MethodDelete, "/api/v1/sms/admin/templates/t", nil, PermissionTemplateManage},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -164,8 +164,8 @@ func TestARequestWithNoIdentityIsA401(t *testing.T) {
 		"list":       {http.MethodGet, pathTemplates, nil},
 		"register":   {http.MethodPost, pathTemplates, registerBody{Name: "t"}},
 		"submission": {http.MethodPost, pathSubmissions, offerBody{Name: "t"}},
-		"enable":     {http.MethodPost, "/sms/admin/templates/t/enabled", enabledBody{Enabled: ptr(true)}},
-		"remove":     {http.MethodDelete, "/sms/admin/templates/t", nil},
+		"enable":     {http.MethodPost, "/api/v1/sms/admin/templates/t/enabled", enabledBody{Enabled: ptr(true)}},
+		"remove":     {http.MethodDelete, "/api/v1/sms/admin/templates/t", nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := newRig(t)
@@ -227,8 +227,8 @@ func TestTheMandatoryAuditLandingIsRequired(t *testing.T) {
 	}{
 		"register": {http.MethodPost, pathTemplates, registerBody{Name: "t", Params: []string{"p"}, Codes: map[string]string{"l": "c"}}},
 		"offer":    {http.MethodPost, pathSubmissions, offerBody{Name: "t"}},
-		"enable":   {http.MethodPost, "/sms/admin/templates/t/enabled", enabledBody{Enabled: ptr(true)}},
-		"remove":   {http.MethodDelete, "/sms/admin/templates/t", nil},
+		"enable":   {http.MethodPost, "/api/v1/sms/admin/templates/t/enabled", enabledBody{Enabled: ptr(true)}},
+		"remove":   {http.MethodDelete, "/api/v1/sms/admin/templates/t", nil},
 	}
 	for name, tc := range writes {
 		t.Run(name, func(t *testing.T) {
@@ -285,8 +285,8 @@ func TestTheFailureMappingIsClosed(t *testing.T) {
 	writes := map[string]writeCase{
 		"register": {http.MethodPost, pathTemplates, registerBody{Name: "t", Params: []string{"p"}, Codes: map[string]string{"l": "c"}}},
 		"offer":    {http.MethodPost, pathSubmissions, offerBody{Name: "t"}},
-		"enable":   {http.MethodPost, "/sms/admin/templates/t/enabled", enabledBody{Enabled: ptr(true)}},
-		"remove":   {http.MethodDelete, "/sms/admin/templates/t", nil},
+		"enable":   {http.MethodPost, "/api/v1/sms/admin/templates/t/enabled", enabledBody{Enabled: ptr(true)}},
+		"remove":   {http.MethodDelete, "/api/v1/sms/admin/templates/t", nil},
 	}
 
 	cases := []struct {
@@ -347,7 +347,7 @@ func TestTheFailureMappingIsClosed(t *testing.T) {
 func TestTheConfigSourcedRefusalNamesItsSource(t *testing.T) {
 	r := newRig(t)
 	r.registry.fail(sms.ErrImmutable)
-	w := r.do(http.MethodDelete, "/sms/admin/templates/from-config", nil)
+	w := r.do(http.MethodDelete, "/api/v1/sms/admin/templates/from-config", nil)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", w.Code)
 	}
@@ -375,7 +375,7 @@ func TestAShapeRefusalReachesNeitherTheRegistryNorTheAudit(t *testing.T) {
 		"register with no name":               {http.MethodPost, pathTemplates, registerBody{Params: []string{"p"}, Codes: map[string]string{"l": "c"}}},
 		"register with a body it cannot read": {http.MethodPost, pathTemplates, "not-an-object"},
 		"submission with no name":             {http.MethodPost, pathSubmissions, offerBody{}},
-		"enable with no target":               {http.MethodPost, "/sms/admin/templates/t/enabled", enabledBody{}},
+		"enable with no target":               {http.MethodPost, "/api/v1/sms/admin/templates/t/enabled", enabledBody{}},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

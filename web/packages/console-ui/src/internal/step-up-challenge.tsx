@@ -18,7 +18,7 @@
  * and the hook fires `onSuccess`.
  *
  * Why a step-up cannot come is read before the flow starts, from the
- * caller's own factor list (GET /auth/factors). An account with no active
+ * caller's own factor list (GET /api/v1/auth/factors). An account with no active
  * factor can never raise a single-factor session, so the dialog names the
  * missing two-step verification and starts no flow at all -- a sign-in
  * cannot add a factor. The host supplies its account settings destination
@@ -98,7 +98,7 @@ export function StepUpChallenge({
   // package holds no host path, so the no-factor state is text-only when
   // the host supplies none.
   const accountHref = useConsoleAccountHref()
-  // The caller's own registered factors (GET /auth/factors), read while the
+  // The caller's own registered factors (GET /api/v1/auth/factors), read while the
   // dialog is open. An account with no active factor cannot raise its
   // session, so the dialog answers the enrollment instead of starting a flow
   // that cannot come. No factor read, or a failed one, falls back to the

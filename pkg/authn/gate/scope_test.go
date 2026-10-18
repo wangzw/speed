@@ -305,14 +305,14 @@ func TestAnImpersonatingRequestThroughTheRealEntryPoint(t *testing.T) {
 		scope:     fakeScope{"tenanted": true},
 		backends:  []authn.Verifier{impersonatingBackend()},
 		routes: []liveRoute{
-			{endpoint: "public", method: "POST", path: "/auth/impersonation/end"},
+			{endpoint: "public", method: "POST", path: "/api/v1/auth/impersonation/end"},
 			{endpoint: "public", method: "GET", path: "/orders"},
 			{endpoint: "admin", method: "GET", path: "/orders"},
 			{endpoint: "tenanted", method: "GET", path: "/orders"},
 		},
-		impersonable: []liveRoute{{endpoint: "public", method: "POST", path: "/auth/impersonation/end"}},
+		impersonable: []liveRoute{{endpoint: "public", method: "POST", path: "/api/v1/auth/impersonation/end"}},
 	}.serve(t, func(l *live) {
-		ended = l.send("public", "POST", "/auth/impersonation/end", asBearer("t"))
+		ended = l.send("public", "POST", "/api/v1/auth/impersonation/end", asBearer("t"))
 		publicOrders = l.send("public", "GET", "/orders", asBearer("t"))
 		adminOrders = l.send("admin", "GET", "/orders", asBearer("t"))
 		orders = l.send("tenanted", "GET", "/orders", asBearer("t"))

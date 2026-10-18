@@ -56,9 +56,9 @@ func TestTheCrossOriginCheckHoldsEveryUnsafeMethodAndNoSafeOne(t *testing.T) {
 			path string
 			edit func(*nethttp.Request)
 		}{
-			{"/auth/pub", nil},
-			{"/auth/opt", bearer(goodToken)},
-			{"/auth/guard", bearer(goodToken)},
+			{"/api/v1/auth/pub", nil},
+			{"/api/v1/auth/opt", bearer(goodToken)},
+			{"/api/v1/auth/guard", bearer(goodToken)},
 		} {
 			for _, method := range []string{"POST", "PUT", "PATCH", "DELETE"} {
 				for _, v := range vectors {
@@ -120,7 +120,7 @@ func TestACallbackIsReachedFromAnotherSiteAndNothingElseUnderTheBaseIs(t *testin
 		cross := headers("Sec-Fetch-Site", "cross-site", "Origin", "https://idp.example.org")
 		for _, provider := range []string{"google", "okta-2"} {
 			for _, method := range []string{"GET", "POST"} {
-				got := l.send("main", method, "/auth/sso/"+provider+"/callback", cross)
+				got := l.send("main", method, "/api/v1/auth/sso/"+provider+"/callback", cross)
 				requireStatus(t, method+" callback for "+provider, got, 200)
 				requireNoStore(t, method+" callback for "+provider, got)
 				if got.body != "nobody [open]" {
@@ -131,7 +131,7 @@ func TestACallbackIsReachedFromAnotherSiteAndNothingElseUnderTheBaseIs(t *testin
 		if callback.Load() != 4 {
 			t.Errorf("the callback handler ran %d times, want 4", callback.Load())
 		}
-		for _, path := range []string{"/auth/sso/google/begin", "/auth/other", "/auth/me"} {
+		for _, path := range []string{"/api/v1/auth/sso/google/begin", "/api/v1/auth/other", "/api/v1/auth/me"} {
 			got := l.send("main", "POST", path, cross, bearer(goodToken))
 			requireStatus(t, "a cross-site POST to "+path, got, 401)
 		}
@@ -171,7 +171,7 @@ func TestTheTrustSetAgreesWithTheGatewaysForEverySpellingOfAnOrigin(t *testing.T
 			if v.origin != "" {
 				headersOf = append(headersOf, "Origin", v.origin)
 			}
-			ours := l.send("main", "POST", "/auth/pub", headers(headersOf...))
+			ours := l.send("main", "POST", "/api/v1/auth/pub", headers(headersOf...))
 			before := cookieRoute.Load()
 			theirs := l.send("main", "POST", "/hand/session", headers(headersOf...), withCookie)
 			gatewayAdmitted := cookieRoute.Load() == before+1
@@ -224,23 +224,23 @@ func TestEveryResponseOnAMountedRouteCarriesNoStore(t *testing.T) {
 			edits              []func(*nethttp.Request)
 			status             int
 		}{
-			{"a 200", "GET", "/auth/ok", nil, 200},
-			{"an error the handler writes", "GET", "/auth/bad", nil, 400},
-			{"a 204", "GET", "/auth/gone", nil, 204},
-			{"an optional route", "GET", "/auth/opt", nil, 200},
-			{"a guarded route with a credential", "GET", "/auth/guard", []func(*nethttp.Request){bearer(goodToken)}, 200},
+			{"a 200", "GET", "/api/v1/auth/ok", nil, 200},
+			{"an error the handler writes", "GET", "/api/v1/auth/bad", nil, 400},
+			{"a 204", "GET", "/api/v1/auth/gone", nil, 204},
+			{"an optional route", "GET", "/api/v1/auth/opt", nil, 200},
+			{"a guarded route with a credential", "GET", "/api/v1/auth/guard", []func(*nethttp.Request){bearer(goodToken)}, 200},
 			{
-				"the refusal of the cross-origin check", "POST", "/auth/post",
+				"the refusal of the cross-origin check", "POST", "/api/v1/auth/post",
 				[]func(*nethttp.Request){headers("Sec-Fetch-Site", "cross-site")},
 				401,
 			},
-			{"a callback", "GET", "/auth/cb/x", nil, 200},
+			{"a callback", "GET", "/api/v1/auth/cb/x", nil, 200},
 		} {
 			got := l.send("main", c.method, c.path, c.edits...)
 			requireStatus(t, c.name, got, c.status)
 			requireNoStore(t, c.name, got)
 		}
-		got := l.send("main", "GET", "/auth/own")
+		got := l.send("main", "GET", "/api/v1/auth/own")
 		if v := got.header.Get("Cache-Control"); v != "private, max-age=60" {
 			t.Errorf("a handler that set its own Cache-Control got %q, want its value to stand", v)
 		}

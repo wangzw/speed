@@ -73,7 +73,7 @@ func (d *dispatch) verifyRoutes(listener string, endpoints []*endpoint) error {
 	var failures []string
 	for _, e := range endpoints {
 		var missed []string
-		var suggestions []string
+		var leadings []string
 		for _, r := range e.routes {
 			leading := literalLeadingPath(r.path)
 			selected, prefix := d.owner(leading)
@@ -93,8 +93,8 @@ func (d *dispatch) verifyRoutes(listener string, endpoints []*endpoint) error {
 			}
 			missed = append(missed, fmt.Sprintf("%q (literal leading path %q, and %s)",
 				r.String(), leading, answer))
-			if top := topLevelSegment(leading); top != "" {
-				suggestions = append(suggestions, top)
+			if leading != "" {
+				leadings = append(leadings, leading)
 			}
 		}
 		if len(missed) == 0 {
@@ -102,12 +102,12 @@ func (d *dispatch) verifyRoutes(listener string, endpoints []*endpoint) error {
 		}
 		suggestion := "A route whose literal leading path is empty can only sit on the endpoint " +
 			"that claims \"/\""
-		if len(suggestions) > 0 {
-			slices.Sort(suggestions)
-			suggestions = slices.Compact(suggestions)
-			suggestion = fmt.Sprintf("Give endpoint %q a claim covering them (for example %s), "+
+		// The example has to be a claim the endpoint can actually adopt, so a
+		// prefix another endpoint on the listener already claims is not offered.
+		if example := coveringClaim(leadings); example != "" && !claimedByOther(example, e, endpoints) {
+			suggestion = fmt.Sprintf("Give endpoint %q a claim covering them (for example %q), "+
 				"or register them on the endpoint that selects them",
-				e.settings.name, quotedList(suggestions))
+				e.settings.name, example)
 		}
 		failures = append(failures, fmt.Sprintf(
 			"endpoint %q claims %s but registers %d route(s) those claims never select: %s. %s",
@@ -210,17 +210,49 @@ func literalLeadingPath(path string) string {
 	return "/" + strings.Join(segments[:cut], "/")
 }
 
-// topLevelSegment returns the top-level segment of a literal path, or "" when
-// the path has none. It is the coarsest claim that would cover the path, which
-// is what a startup failure over an unclaimed route suggests: claims are written
-// per top-level namespace unless a subtree is deliberately given to another
-// endpoint.
-func topLevelSegment(path string) string {
-	segments := pathSegments(path)
-	if len(segments) == 0 {
+// coveringClaim returns the segment-aligned common prefix of the literal
+// leading paths, or "" when they share none. It is the claim a startup failure
+// over an unclaimed route suggests: it covers every route reported with it, and
+// it keeps the depth the routes themselves have, which is the capability
+// namespace rather than a top-level segment when the API lives under one.
+func coveringClaim(leadings []string) string {
+	if len(leadings) == 0 {
 		return ""
 	}
-	return "/" + segments[0]
+	common := pathSegments(leadings[0])
+	for _, leading := range leadings[1:] {
+		other := pathSegments(leading)
+		n := len(common)
+		if len(other) < n {
+			n = len(other)
+		}
+		i := 0
+		for i < n && common[i] == other[i] {
+			i++
+		}
+		common = common[:i]
+		if len(common) == 0 {
+			return ""
+		}
+	}
+	return "/" + strings.Join(common, "/")
+}
+
+// claimedByOther reports whether another endpoint on the listener already
+// claims the prefix, in which case it is not a claim the failing endpoint could
+// adopt.
+func claimedByOther(prefix string, self *endpoint, endpoints []*endpoint) bool {
+	for _, other := range endpoints {
+		if other == self {
+			continue
+		}
+		for _, claimed := range other.settings.prefixes {
+			if claimed == prefix {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // claimList renders an endpoint's claims for a message, for example ["/api",

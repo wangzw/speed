@@ -42,7 +42,7 @@ const idleCallerSession: RequestFn = <T,>(
   options?: RequestOptions,
 ) => {
   const method = options?.method ?? 'GET'
-  if (path === '/auth/impersonation' && method === 'GET') {
+  if (path === '/api/v1/auth/impersonation' && method === 'GET') {
     return Promise.reject({ status: 404, code: 'client.http.404' })
   }
   return Promise.resolve(undefined as T)

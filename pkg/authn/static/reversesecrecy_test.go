@@ -135,7 +135,7 @@ func registry(t *testing.T, body string) (*core.Registry, *registeredRules) {
 	reg.Supply(noPasswords{}, passwordsName)
 	reg.Supply(noThrottle{}, throttleName)
 	reg.Supply(dbtest.SQLite(t, filepath.Join(t.TempDir(), "reverse.db")+"?_pragma=busy_timeout(5000)", nil), databaseName)
-	reg.Supply(mounttest.New(t, mounttest.WithPublicURL("https://auth.example.com"), mounttest.WithBase("/auth")), mounterName)
+	reg.Supply(mounttest.New(t, mounttest.WithPublicURL("https://auth.example.com"), mounttest.WithBase("/api/v1/auth")), mounterName)
 	reg.Supply(captureLogger{rules: rules}, logName)
 	return reg, rules
 }

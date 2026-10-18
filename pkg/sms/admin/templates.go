@@ -20,7 +20,7 @@ const (
 	maxPageSize     = 200
 )
 
-// handleTemplateList answers GET /sms/admin/templates: one page of the template
+// handleTemplateList answers GET /api/v1/sms/admin/templates: one page of the template
 // set, configured templates included. It is a read, so the action is
 // template.read. The page is ordered by template name and the cursor is the last
 // name on it, so a caller continues from where the previous page ended.
@@ -108,7 +108,7 @@ type registerBody struct {
 	Codes  map[string]string `json:"codes"`
 }
 
-// handleTemplateRegister answers POST /sms/admin/templates: it takes up a
+// handleTemplateRegister answers POST /api/v1/sms/admin/templates: it takes up a
 // template whose vendor code the operator already has. It is a write, so the
 // action is template.manage. The mandatory audit row lands before the registry
 // is called; a name the registry already holds is a 409, and a template set the
@@ -160,7 +160,7 @@ type offerBody struct {
 	Remark  string   `json:"remark"`
 }
 
-// handleTemplateOffer answers POST /sms/admin/templates/submissions: it hands a
+// handleTemplateOffer answers POST /api/v1/sms/admin/templates/submissions: it hands a
 // template to the vendor for review and takes up the code the vendor answers
 // with. It is a write, so the action is template.manage. The mandatory audit row
 // lands before the registry is called; a submission the vendor or the registry
@@ -215,7 +215,7 @@ type enabledBody struct {
 	Enabled *bool `json:"enabled"`
 }
 
-// handleTemplateSetEnabled answers POST /sms/admin/templates/:name/enabled: it
+// handleTemplateSetEnabled answers POST /api/v1/sms/admin/templates/:name/enabled: it
 // turns a message's ability to go out under a runtime template on or off. It is
 // a write, so the action is template.manage. The mandatory audit row lands before
 // the registry is called; a template that came from the configuration is a 409
@@ -252,7 +252,7 @@ func (p *product) handleTemplateSetEnabled(c *gin.Context) {
 	p.noContent(c)
 }
 
-// handleTemplateRemove answers DELETE /sms/admin/templates/:name: it drops a
+// handleTemplateRemove answers DELETE /api/v1/sms/admin/templates/:name: it drops a
 // runtime template from this process, at the vendor left alone. It is a write, so
 // the action is template.manage. The mandatory audit row lands before the
 // registry is called; a template that came from the configuration is a 409 naming

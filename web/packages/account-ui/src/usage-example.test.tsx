@@ -46,10 +46,10 @@ import { SocialBindingsSection } from './SocialBindingsSection.js'
 import type { SocialProviderConfig } from './SocialBindingsSection.js'
 import { MfaSection } from './MfaSection.js'
 
-const PROFILE_PATH = '/auth/me'
-const SESSIONS_PATH = '/auth/sessions'
-const FACTORS_PATH = '/auth/factors'
-const METHODS_PATH = '/auth/methods'
+const PROFILE_PATH = '/api/v1/auth/me'
+const SESSIONS_PATH = '/api/v1/auth/sessions'
+const FACTORS_PATH = '/api/v1/auth/factors'
+const METHODS_PATH = '/api/v1/auth/methods'
 
 const PROVIDERS: readonly SocialProviderConfig[] = [
   { provider: 'github', redirectUri: 'https://app.example.test/cb/github' },

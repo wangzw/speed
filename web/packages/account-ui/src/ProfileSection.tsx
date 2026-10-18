@@ -1,7 +1,7 @@
 /**
  * ProfileSection: the display-name surface of the account page.
  *
- * The profile write is PATCH /auth/me (authn.profile.patch, the self-service
+ * The profile write is PATCH /api/v1/auth/me (authn.profile.patch, the self-service
  * profile module pkg/authn/profile), the same route the preferences section
  * writes through for its locale and time zone. This section edits the one
  * remaining self-writable scalar the preferences section does not own --
@@ -9,7 +9,7 @@
  * profile's writable set: the display name here, the language and time zone
  * in the preferences section.
  *
- * The section reads GET /auth/me for the stored name, seeds the field from
+ * The section reads GET /api/v1/auth/me for the stored name, seeds the field from
  * it and PATCHes a one-field body on save. The write is not fired on every
  * keystroke: it goes out from the save button, so a half-typed name never
  * lands on the account, and the button is disabled while the field still

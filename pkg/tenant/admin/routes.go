@@ -16,7 +16,7 @@ import (
 // identifier ever appears in a path, and the only key a path carries is the one
 // the roster itself names a tenant by.
 const (
-	basePath = "/tenant/admin"
+	basePath = "/api/v1/tenant/admin"
 
 	pathTenants      = basePath + "/tenants"
 	pathTenant       = basePath + "/tenants/:id"

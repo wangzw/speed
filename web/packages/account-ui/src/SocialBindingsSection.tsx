@@ -4,7 +4,7 @@
  *
  * Lists every external identity the authn module holds bound to the
  * signed-in account. The bound identities are the profile's `links`
- * (GET /auth/me), which carries each binding's own identifier -- there is
+ * (GET /api/v1/auth/me), which carries each binding's own identifier -- there is
  * no separate list endpoint, so the section reads the same profile query
  * the preferences and sessions surfaces read. Each row names the provider
  * (mapped through bindings.provider.<provider> for the five social

@@ -15,7 +15,7 @@ import (
 // addressed by a natural key — a template name — so that no opaque row
 // identifier ever appears in a path.
 const (
-	basePath = "/sms/admin"
+	basePath = "/api/v1/sms/admin"
 
 	pathTemplates       = basePath + "/templates"
 	pathSubmissions     = basePath + "/templates/submissions"

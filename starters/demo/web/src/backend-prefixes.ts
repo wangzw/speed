@@ -28,7 +28,7 @@ export const BACKEND_PREFIXES: readonly string[] =
 /**
  * Whether a path falls under a claimed prefix at a segment boundary: the path
  * is the prefix itself, or continues past it with `/`. This is what keeps a
- * page at `/authz` clear of the `/auth` namespace.
+ * page at `/api/v1/authz` clear of the `/api/v1/auth` namespace.
  */
 export function fallsUnderPrefix(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`)
@@ -38,8 +38,8 @@ export function fallsUnderPrefix(pathname: string, prefix: string): boolean {
  * The dev server's proxy-table key for one prefix. Vite matches a key that
  * begins with `^` as a regular expression against the request URL, query
  * string included, and every other key with `startsWith`. The anchored form
- * makes the match end at a segment boundary, which a plain `/auth` key does
- * not: that one would swallow `/authz` as well.
+ * makes the match end at a segment boundary, which a plain `/api/v1/auth` key does
+ * not: that one would swallow `/api/v1/authz` as well.
  */
 export function proxyKeyFor(prefix: string): string {
   return `^${escapeRegExp(prefix)}(?:[/?]|$)`

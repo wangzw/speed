@@ -50,7 +50,7 @@ func TestGetReturnsTheCallersOwnProfile(t *testing.T) {
 		CreatedAt: created,
 	}}
 
-	rec := r.do(http.MethodGet, "/auth/me", nil, me()...)
+	rec := r.do(http.MethodGet, "/api/v1/auth/me", nil, me()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
 	}
@@ -85,7 +85,7 @@ func TestGetCarriesNoSubjectInALink(t *testing.T) {
 	r.accounts.links[meAccount] = []authn.ExternalBinding{{
 		ID: "link-1", Provider: "idp-1", Subject: "the-subject-secret",
 	}}
-	rec := r.do(http.MethodGet, "/auth/me", nil, me()...)
+	rec := r.do(http.MethodGet, "/api/v1/auth/me", nil, me()...)
 	if body := rec.Body.String(); strings.Contains(body, "the-subject-secret") {
 		t.Errorf("the answer carries the binding's subject: %s", body)
 	}
@@ -95,7 +95,7 @@ func TestGetCarriesNoSubjectInALink(t *testing.T) {
 // the empty string.
 func TestGetZeroCreatedAtIsEmpty(t *testing.T) {
 	r := newRig(t)
-	rec := r.do(http.MethodGet, "/auth/me", nil, me()...)
+	rec := r.do(http.MethodGet, "/api/v1/auth/me", nil, me()...)
 	got := decodeProfile(t, rec)
 	if got.CreatedAt != "" {
 		t.Errorf("created_at = %q, want the empty string for a zero time", got.CreatedAt)
@@ -106,7 +106,7 @@ func TestGetZeroCreatedAtIsEmpty(t *testing.T) {
 // identity may reach: it reads the impersonated account.
 func TestGetIsReachableWhileImpersonating(t *testing.T) {
 	r := newRig(t)
-	rec := r.do(http.MethodGet, "/auth/me", nil, impersonating()...)
+	rec := r.do(http.MethodGet, "/api/v1/auth/me", nil, impersonating()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
 	}
@@ -120,10 +120,10 @@ func TestGetIsReachableWhileImpersonating(t *testing.T) {
 // reaches the handler with no identity is the gateway's own 401.
 func TestGetWithoutAnIdentityIs401(t *testing.T) {
 	r := newRig(t)
-	if rec := r.doAnonymous(http.MethodGet, "/auth/me", nil); rec.Code != http.StatusUnauthorized {
+	if rec := r.doAnonymous(http.MethodGet, "/api/v1/auth/me", nil); rec.Code != http.StatusUnauthorized {
 		t.Errorf("through the gateway: status = %d, want 401", rec.Code)
 	}
-	if rec := r.invokeAnonymous(r.p.handleGetMe, http.MethodGet, "/auth/me", nil); rec.Code != http.StatusUnauthorized {
+	if rec := r.invokeAnonymous(r.p.handleGetMe, http.MethodGet, "/api/v1/auth/me", nil); rec.Code != http.StatusUnauthorized {
 		t.Errorf("the handler with no identity: status = %d, want 401", rec.Code)
 	}
 }
@@ -133,7 +133,7 @@ func TestGetWithoutAnIdentityIs401(t *testing.T) {
 func TestGetOfAGoneAccountIs401(t *testing.T) {
 	r := newRig(t)
 	r.accounts.getErr = authn.ErrAccountNotFound
-	if rec := r.do(http.MethodGet, "/auth/me", nil, me()...); rec.Code != http.StatusUnauthorized {
+	if rec := r.do(http.MethodGet, "/api/v1/auth/me", nil, me()...); rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", rec.Code)
 	}
 }
@@ -150,7 +150,7 @@ func TestGetDependencyFailureIs503(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			r := newRig(t)
 			arm(r)
-			if rec := r.do(http.MethodGet, "/auth/me", nil, me()...); rec.Code != http.StatusServiceUnavailable {
+			if rec := r.do(http.MethodGet, "/api/v1/auth/me", nil, me()...); rec.Code != http.StatusServiceUnavailable {
 				t.Errorf("status = %d, want 503", rec.Code)
 			}
 		})

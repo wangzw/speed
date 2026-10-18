@@ -3,10 +3,10 @@
  * steps that add or replace the account's number.
  *
  * The write is the login module's account self-service pair:
- * POST /auth/phone (authn.login.startPhone) sends a code to the number and
+ * POST /api/v1/auth/phone (authn.login.startPhone) sends a code to the number and
  * answers how long it lives and how soon another may be asked for without
  * saying whether the number belongs to another account; POST
- * /auth/phone/verify (authn.login.verifyPhone) submits the code, binds the
+ * /api/v1/auth/phone/verify (authn.login.verifyPhone) submits the code, binds the
  * number to the account as a verified identifier (replacing any phone it
  * already held) and revokes the account's other sessions. The number is
  * taken from the first step's record, keyed to the session, so the second

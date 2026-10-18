@@ -153,7 +153,7 @@ func TestTrustedOriginsRefusesAPublicURLThatHasNoOrigin(t *testing.T) {
 // crossSite is a state-changing request a browser sent from another site, with
 // the headers it would have put on it.
 func crossSite(origin string) *http.Request {
-	r := httptest.NewRequest(http.MethodPost, "https://app.example.com/auth/x", nil)
+	r := httptest.NewRequest(http.MethodPost, "https://app.example.com/api/v1/auth/x", nil)
 	r.Header.Set("Sec-Fetch-Site", "cross-site")
 	r.Header.Set("Origin", origin)
 	return r
@@ -260,7 +260,7 @@ func TestEachCrossOriginCheckIsItsOwn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CrossOrigin failed: %v", err)
 	}
-	mounter.AddInsecureBypassPattern("POST /auth/x")
+	mounter.AddInsecureBypassPattern("POST /api/v1/auth/x")
 	if err := mounter.Check(crossSite("https://evil.example")); err != nil {
 		t.Fatalf("the check that holds the pattern refused the request it bypasses: %v", err)
 	}

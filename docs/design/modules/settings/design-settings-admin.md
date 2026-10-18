@@ -2,7 +2,7 @@
 
 ## 职责
 
-`settings.admin` 是运行期设置的管理面，挂在固定基路径 `/settings/admin` 下，不交付任何功能接口，只把设置的读写暴露成路由。每条路由的动作是经 `settings.Store` 调设置模块——列出声明项、读一层的值、写一层的一行、删一层的一行——模块自己不持数据、不持规则：声明项、类型、取值域与三级回落归设置模块，本模块只决定谁可以问、答案长什么样。
+`settings.admin` 是运行期设置的管理面，挂在固定基路径 `/api/v1/settings/admin` 下，不交付任何功能接口，只把设置的读写暴露成路由。每条路由的动作是经 `settings.Store` 调设置模块——列出声明项、读一层的值、写一层的一行、删一层的一行——模块自己不持数据、不持规则：声明项、类型、取值域与三级回落归设置模块，本模块只决定谁可以问、答案长什么样。
 
 **本模块是设置能力不为它提供的那个管理面。** 设置能力交付的是接缝与实现，不是 HTTP 路由；它的立场是写面的调用点是宿主自己的代码或它写出的管理命令，写入面的访问控制由宿主负责（[design-settings](design-settings.md)）。一个想要管理面的宿主把本模块写进命令树，不必自己手写同一组路由、同一套按层判定与同一条审计前置。本模块正是那个「管理命令」的模块化形态，不改变设置能力的立场——`pkg/settings` 仍不做授权判定，判定归授权（[ADR-console-settings-2026-10-15](../../../adr/adr-console-settings-2026-10-15.md)、[ADR-settings-scope-2026-09-21](../../../adr/adr-settings-scope-2026-09-21.md)）。
 
@@ -27,14 +27,14 @@
 
 ### 路由
 
-基路径 `/settings/admin`，下表是路由的全集（封闭集）：组、方法、路径与每条需要的权限。权限的域随层变，见「访问控制」。
+基路径 `/api/v1/settings/admin`，下表是路由的全集（封闭集）：组、方法、路径与每条需要的权限。权限的域随层变，见「访问控制」。
 
 | 组 | 方法 路径 | 权限 |
 |---|---|---|
-| 设置 | `GET /settings/admin/settings` | `settings.read` |
-| 设置 | `GET /settings/admin/settings/:namespace` | `settings.read` |
-| 设置 | `PUT /settings/admin/settings/:namespace/:key` | `settings.write` |
-| 设置 | `DELETE /settings/admin/settings/:namespace/:key` | `settings.write` |
+| 设置 | `GET /api/v1/settings/admin/settings` | `settings.read` |
+| 设置 | `GET /api/v1/settings/admin/settings/:namespace` | `settings.read` |
+| 设置 | `PUT /api/v1/settings/admin/settings/:namespace/:key` | `settings.write` |
+| 设置 | `DELETE /api/v1/settings/admin/settings/:namespace/:key` | `settings.write` |
 
 查询串点名作用在哪一层：
 
@@ -45,14 +45,14 @@
 
 | 路由 | 层选与动作 |
 |---|---|
-| `GET /settings` | `Declared()` 取声明项，`List(layer)` 取该层写下的行，`Get(layer, key, target)` 取每项解析到的值（回落按层选起点） |
-| `GET /settings/:namespace` | 同上，取到的声明项限于 `:namespace` 那一组 |
-| `PUT /settings/:namespace/:key` | `Set(ctx, settings.Write{Layer, Key, Value, Actor})`，键为拼出的全键，值取正文的 `value` |
-| `DELETE /settings/:namespace/:key` | `Delete(ctx, layer, key, actor)`，键为拼出的全键 |
+| `GET /api/v1/settings/admin/settings` | `Declared()` 取声明项，`List(layer)` 取该层写下的行，`Get(layer, key, target)` 取每项解析到的值（回落按层选起点） |
+| `GET /api/v1/settings/admin/settings/:namespace` | 同上，取到的声明项限于 `:namespace` 那一组 |
+| `PUT /api/v1/settings/admin/settings/:namespace/:key` | `Set(ctx, settings.Write{Layer, Key, Value, Actor})`，键为拼出的全键，值取正文的 `value` |
+| `DELETE /api/v1/settings/admin/settings/:namespace/:key` | `Delete(ctx, layer, key, actor)`，键为拼出的全键 |
 
 **`:namespace` 与 `:key` 拼成全键 `<namespace>.<key>`，全键必须已声明。** `:namespace` 点名声明该项的命名空间——`Declared` 报出的 `Module`，也就是键的前缀段（如 `deals`、`authn.session`）；`:key` 点名该命名空间下的键的其余部分（可以带点）。一次写或删拼出的全键不在 `Declared()` 里即 404。列表路由取 `:namespace` 那一组：键的前缀段等于 `:namespace` 的声明项。
 
-**列表路由把层选作用到整份声明集上。** `GET /settings` 列出 `Declared()` 的全部声明项，`GET /settings/:namespace` 列出其中落在 `:namespace` 的那一组；列表交出的是该层解析到的值，`GET /settings/:namespace` 不匹配任何声明项即 404。
+**列表路由把层选作用到整份声明集上。** `GET /api/v1/settings/admin/settings` 列出 `Declared()` 的全部声明项，`GET /api/v1/settings/admin/settings/:namespace` 列出其中落在 `:namespace` 的那一组；列表交出的是该层解析到的值，`GET /api/v1/settings/admin/settings/:namespace` 不匹配任何声明项即 404。
 
 **列表不按本进程的装配收窄。** `Declared()` 的声明集取可用集（[design-settings](design-settings.md)），本进程未运行的模块声明的键照常列出、照常可写：一个键可以由同一部署里的另一个进程读取。特性 `settings.admin` 只回答这面管理面在不在，不回答某个键所属的模块在不在本进程运行。
 
@@ -80,7 +80,7 @@
 
 - **模块名**：`settings.admin`。宿主的命令树点模块名纳入，配置命名空间取同一取值。
 - **配置命名空间与输入项**：`settings.admin` 下的 `endpoints`（字符串列表，必填，无缺省，只收具体端名、不收 `*`，取主配置源）。
-- **管理端点**：`settings.admin.endpoints` 列出的端，`/settings/admin/*` 下的设置读写路由（路由见「路由」）。
+- **管理端点**：`settings.admin.endpoints` 列出的端，`/api/v1/settings/admin/*` 下的设置读写路由（路由见「路由」）。
 - **权限**：读路由询 `settings.read`，写路由询 `settings.write`，由授权能力承载（`settings.read` 译成 `(settings, read)`、`settings.write` 译成 `(settings, write)`）；域随层选在平台域与租户域之间取。
 - **问题应答**：`Problem.Type` 前缀 `urn:speed:settings:`，其下的码 `bad-request`、`invalid-value`。
 
@@ -158,7 +158,7 @@ sequenceDiagram
 | 概念 | 形状 | 说明 |
 |---|---|---|
 | 设置项视图 | `{key, namespace, type, description, domain, sensitive, default, written, has_row, value}` | 声明部分逐字段取自 `settings.DeclaredItem`；值部分取自该层的行与 `Get` 的解析结果；敏感项的值遮蔽，`has_row` 不遮蔽 |
-| 写正文 | `{value}` | `PUT /settings/:namespace/:key` 的正文；值按设置模块的声明类型编码 |
+| 写正文 | `{value}` | `PUT /api/v1/settings/admin/settings/:namespace/:key` 的正文；值按设置模块的声明类型编码 |
 | 层选 | `settings.Layer` | 由查询串定出：`layer=global` 给 `settings.Global()`，`layer=tenant` 给 `settings.ForTenant(tenant)` |
 | 域 | `authz.Domain` | 由层选定出：全局层给 `authz.PlatformDomain`，租户层给 `authz.Domain(tenant)` |
 

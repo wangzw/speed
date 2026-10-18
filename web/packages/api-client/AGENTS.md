@@ -92,8 +92,8 @@ this one may issue HTTP requests itself.
   surfaces to the hook instead of joining or starting the shared round
   -- the round may be the very one awaiting the hook, so a joining
   request would await itself forever. This is what a restore-shaped
-  hook needs: it reads GET /auth/session and then, after that answers
-  authenticated, GET /auth/me, which is issued after an await and is
+  hook needs: it reads GET /api/v1/auth/session and then, after that answers
+  authenticated, GET /api/v1/auth/me, which is issued after an await and is
   therefore beyond the synchronous-invocation marker the 401 guard also
   honours. A hook that ignores the argument still runs; one that issues
   its round's reads through the client's ordinary request function can

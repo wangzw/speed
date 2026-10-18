@@ -217,36 +217,36 @@ describe('the platform surface ownership split', () => {
 describe('the leak matcher', () => {
   const marked: MergedDocument = {
     paths: {
-      '/workspace/things/{id}': {
+      '/api/v1/workspace/things/{id}': {
         get: { operationId: 'workspace.things.get', tags: [APPLICATION_TAG] },
       },
     },
   }
 
   it('finds an operation whose path has parameters', () => {
-    const source = "speedRequest({url: `/workspace/things/${id}`, method: 'GET', signal})"
-    expect(leaked(marked, source)).toEqual(['GET /workspace/things/{id}'])
+    const source = "speedRequest({url: `/api/v1/workspace/things/${id}`, method: 'GET', signal})"
+    expect(leaked(marked, source)).toEqual(['GET /api/v1/workspace/things/{id}'])
   })
 
   it('finds a snake_case document parameter under the camelCase name orval writes', () => {
     const document: MergedDocument = {
       paths: {
-        '/workspace/things/{type_key}': {
+        '/api/v1/workspace/things/{type_key}': {
           get: { operationId: 'workspace.things.get', tags: [APPLICATION_TAG] },
         },
       },
     }
-    const source = "speedRequest({url: `/workspace/things/${typeKey}`, method: 'GET', signal})"
-    expect(leaked(document, source)).toEqual(['GET /workspace/things/{typeKey}'])
+    const source = "speedRequest({url: `/api/v1/workspace/things/${typeKey}`, method: 'GET', signal})"
+    expect(leaked(document, source)).toEqual(['GET /api/v1/workspace/things/{typeKey}'])
   })
 
   it('finds an operation by its generated function name', () => {
     const source = 'export const workspaceThingsGet = (\n  id: string,\n) => {'
-    expect(leaked(marked, source)).toEqual(['GET /workspace/things/{id}'])
+    expect(leaked(marked, source)).toEqual(['GET /api/v1/workspace/things/{id}'])
   })
 
   it('does not confuse two methods on one path', () => {
-    const source = "speedRequest({url: `/workspace/things/${id}`, method: 'DELETE', signal})"
+    const source = "speedRequest({url: `/api/v1/workspace/things/${id}`, method: 'DELETE', signal})"
     expect(leaked(marked, source)).toEqual([])
   })
 })

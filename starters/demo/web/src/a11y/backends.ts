@@ -26,7 +26,7 @@
  * permissions catalog, the settings and SMS surfaces) and the tenant area's
  * (the profile, sessions and factors the account page mounts, the object list,
  * the notification centre). The impersonations page also fires a caller-session
- * read on mount -- GET /auth/impersonation, the operator's own impersonation
+ * read on mount -- GET /api/v1/auth/impersonation, the operator's own impersonation
  * status -- which is scripted here too, in data mode as a grant in force and in
  * empty mode as the bare 404 the page reads as "not impersonating". Tenant-scoped
  * pages whose read waits on a tenant selector the sweep does not drive
@@ -73,7 +73,7 @@ export type BackendMode = 'data' | 'empty' | 'error'
 /**
  * A scripted refusal: the endpoint answers a bare 404 rather than a body. Some
  * reads' real "empty" state IS a refusal, not an empty envelope -- the
- * impersonation status read (GET /auth/impersonation) answers 404 when the
+ * impersonation status read (GET /api/v1/auth/impersonation) answers 404 when the
  * caller has no impersonation in force, which the page reads as "not
  * impersonating". Scripted as a resolved body it would instead surface a
  * query error, so the endpoint's empty slot names this sentinel and the
@@ -199,7 +199,7 @@ const PROFILE: AuthnProfileProfile = {
 
 /**
  * The caller's own impersonation grant, in force: the body the status read
- * (GET /auth/impersonation) answers when one is active. The page renders it as
+ * (GET /api/v1/auth/impersonation) answers when one is active. The page renders it as
  * the "current impersonation" surface (target, tenant, end instant, end
  * action) and hides the start form while it holds.
  */
@@ -245,43 +245,43 @@ function answer(data: unknown, empty: unknown): RouteAnswer {
 
 /** The path-only endpoint answers (no path parameter). */
 const EXACT: Readonly<Record<string, RouteAnswer>> = {
-  '/tenant/admin/tenants': answer(
+  '/api/v1/tenant/admin/tenants': answer(
     { tenants: [TENANT] } satisfies TenantAdminTenantsList200,
     { tenants: [] } satisfies TenantAdminTenantsList200,
   ),
-  '/settings/admin/settings': answer(
+  '/api/v1/settings/admin/settings': answer(
     [SETTING] satisfies SettingsAdminSetting[],
     [] satisfies SettingsAdminSetting[],
   ),
-  '/audit/admin/records': answer(
+  '/api/v1/audit/admin/records': answer(
     { entries: [AUDIT_RECORD], next: '' } satisfies AuditAdminRecordPage,
     { entries: [], next: '' } satisfies AuditAdminRecordPage,
   ),
-  '/authz/admin/permissions': answer(
+  '/api/v1/authz/admin/permissions': answer(
     { permissions: [{ permission: 'example.read' }] } satisfies {
       permissions: AuthzAdminPermissionView[]
     },
     { permissions: [] } satisfies { permissions: AuthzAdminPermissionView[] },
   ),
-  '/auth/admin/accounts': answer(
+  '/api/v1/auth/admin/accounts': answer(
     { accounts: [ACCOUNT], next_cursor: '' } satisfies AuthnAdminAccountList,
     { accounts: [], next_cursor: '' } satisfies AuthnAdminAccountList,
   ),
-  '/auth/admin/impersonations': answer(
+  '/api/v1/auth/admin/impersonations': answer(
     { impersonations: [IMPERSONATION_RECORD], next_cursor: '' } satisfies AuthnAdminImpersonationList,
     { impersonations: [], next_cursor: '' } satisfies AuthnAdminImpersonationList,
   ),
-  '/auth/impersonation': answer(IMPERSONATION_GRANT, NOT_FOUND),
-  '/sms/admin/templates': answer(
+  '/api/v1/auth/impersonation': answer(IMPERSONATION_GRANT, NOT_FOUND),
+  '/api/v1/sms/admin/templates': answer(
     { templates: [SMS_TEMPLATE], next_cursor: '' } satisfies SmsAdminTemplatesList200,
     { templates: [], next_cursor: '' } satisfies SmsAdminTemplatesList200,
   ),
-  '/auth/me': answer(PROFILE, {
+  '/api/v1/auth/me': answer(PROFILE, {
     ...PROFILE,
     identifiers: [],
     links: [],
   } satisfies AuthnProfileProfile),
-  '/auth/sessions': answer(
+  '/api/v1/auth/sessions': answer(
     {
       sessions: [
         {
@@ -298,7 +298,7 @@ const EXACT: Readonly<Record<string, RouteAnswer>> = {
     } satisfies AuthnSessionList,
     { sessions: [] } satisfies AuthnSessionList,
   ),
-  '/auth/factors': answer(
+  '/api/v1/auth/factors': answer(
     {
       factors: [
         { id: 'factor-1', kind: 'totp', label: 'Authenticator', status: 'active', created_at: INSTANT },

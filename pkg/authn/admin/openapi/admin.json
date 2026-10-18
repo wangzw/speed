@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {"title": "authn admin", "version": "1.0.0"},
   "paths": {
-    "/auth/admin/accounts": {
+    "/api/v1/auth/admin/accounts": {
       "get": {
         "operationId": "authn.admin.accounts.list",
         "summary": "List accounts, one page at a time",
@@ -43,7 +43,7 @@
         }
       }
     },
-    "/auth/admin/accounts/{id}": {
+    "/api/v1/auth/admin/accounts/{id}": {
       "get": {
         "operationId": "authn.admin.accounts.get",
         "summary": "Read one account",
@@ -97,7 +97,7 @@
         }
       }
     },
-    "/auth/admin/accounts/{id}/status": {
+    "/api/v1/auth/admin/accounts/{id}/status": {
       "post": {
         "operationId": "authn.admin.accounts.status",
         "summary": "Change an account's status",
@@ -118,7 +118,7 @@
         }
       }
     },
-    "/auth/admin/accounts/{id}/identifiers": {
+    "/api/v1/auth/admin/accounts/{id}/identifiers": {
       "post": {
         "operationId": "authn.admin.accounts.addIdentifier",
         "summary": "Add an identifier to an account",
@@ -137,7 +137,7 @@
         }
       }
     },
-    "/auth/admin/accounts/{id}/identifiers/{identifier}": {
+    "/api/v1/auth/admin/accounts/{id}/identifiers/{identifier}": {
       "delete": {
         "operationId": "authn.admin.accounts.removeIdentifier",
         "summary": "Remove an identifier from an account",
@@ -154,7 +154,7 @@
         }
       }
     },
-    "/auth/admin/accounts/{id}/password": {
+    "/api/v1/auth/admin/accounts/{id}/password": {
       "post": {
         "operationId": "authn.admin.accounts.resetPassword",
         "summary": "Reset an account's password",
@@ -172,7 +172,7 @@
         }
       }
     },
-    "/auth/admin/accounts/{id}/factors": {
+    "/api/v1/auth/admin/accounts/{id}/factors": {
       "get": {
         "operationId": "authn.admin.accounts.factors",
         "summary": "List an account's registered factors",
@@ -191,7 +191,7 @@
         }
       }
     },
-    "/auth/admin/accounts/{id}/mfa-required": {
+    "/api/v1/auth/admin/accounts/{id}/mfa-required": {
       "post": {
         "operationId": "authn.admin.accounts.setMFARequired",
         "summary": "Set whether an account must register a factor",
@@ -209,7 +209,7 @@
         }
       }
     },
-    "/auth/admin/accounts/{id}/mfa-reset": {
+    "/api/v1/auth/admin/accounts/{id}/mfa-reset": {
       "post": {
         "operationId": "authn.admin.accounts.resetMFA",
         "summary": "Remove an account's registered factors",
@@ -228,7 +228,7 @@
         }
       }
     },
-    "/auth/admin/accounts/{id}/sessions": {
+    "/api/v1/auth/admin/accounts/{id}/sessions": {
       "get": {
         "operationId": "authn.admin.accounts.sessions",
         "summary": "List an account's sessions",
@@ -247,7 +247,7 @@
         }
       }
     },
-    "/auth/admin/accounts/{id}/revoke-sessions": {
+    "/api/v1/auth/admin/accounts/{id}/revoke-sessions": {
       "post": {
         "operationId": "authn.admin.accounts.revokeSessions",
         "summary": "Revoke every session of an account",
@@ -266,7 +266,7 @@
         }
       }
     },
-    "/auth/admin/sessions/{id}": {
+    "/api/v1/auth/admin/sessions/{id}": {
       "delete": {
         "operationId": "authn.admin.sessions.revoke",
         "summary": "Revoke one session by its identifier",
@@ -282,7 +282,7 @@
         }
       }
     },
-    "/auth/admin/accounts/{id}/secrets": {
+    "/api/v1/auth/admin/accounts/{id}/secrets": {
       "get": {
         "operationId": "authn.admin.accounts.secrets.list",
         "summary": "List an account's service secrets",
@@ -320,7 +320,7 @@
         }
       }
     },
-    "/auth/admin/accounts/{id}/secrets/{secret}": {
+    "/api/v1/auth/admin/accounts/{id}/secrets/{secret}": {
       "delete": {
         "operationId": "authn.admin.accounts.secrets.revoke",
         "summary": "Revoke a service secret",
@@ -337,7 +337,7 @@
         }
       }
     },
-    "/auth/admin/tenants/{tenant}/members": {
+    "/api/v1/auth/admin/tenants/{tenant}/members": {
       "get": {
         "operationId": "authn.admin.members.list",
         "summary": "List a tenant's members",
@@ -358,7 +358,7 @@
         }
       }
     },
-    "/auth/admin/tenants/{tenant}/members/{account}": {
+    "/api/v1/auth/admin/tenants/{tenant}/members/{account}": {
       "put": {
         "operationId": "authn.admin.members.put",
         "summary": "Write an account's membership in a tenant",
@@ -392,7 +392,7 @@
         }
       }
     },
-    "/auth/admin/tenants/{tenant}/members/{account}/sso-exempt": {
+    "/api/v1/auth/admin/tenants/{tenant}/members/{account}/sso-exempt": {
       "put": {
         "operationId": "authn.admin.members.ssoExempt",
         "summary": "Set an account's exemption from a tenant's SSO requirement",
@@ -411,7 +411,7 @@
         }
       }
     },
-    "/auth/admin/tenants/{tenant}/sso/providers": {
+    "/api/v1/auth/admin/tenants/{tenant}/sso/providers": {
       "get": {
         "operationId": "authn.admin.sso.providers.list",
         "summary": "List a tenant's SSO providers",
@@ -448,7 +448,7 @@
         }
       }
     },
-    "/auth/admin/sso/providers/{id}": {
+    "/api/v1/auth/admin/sso/providers/{id}": {
       "get": {
         "operationId": "authn.admin.sso.providers.get",
         "summary": "Read one SSO provider",
@@ -501,7 +501,7 @@
         }
       }
     },
-    "/auth/admin/sso/providers/{id}/domains": {
+    "/api/v1/auth/admin/sso/providers/{id}/domains": {
       "post": {
         "operationId": "authn.admin.sso.providers.claimDomain",
         "summary": "Claim a domain for an SSO provider",
@@ -523,7 +523,7 @@
         }
       }
     },
-    "/auth/admin/sso/providers/{id}/domains/{domain}": {
+    "/api/v1/auth/admin/sso/providers/{id}/domains/{domain}": {
       "delete": {
         "operationId": "authn.admin.sso.providers.removeDomain",
         "summary": "Remove a domain from an SSO provider",
@@ -540,7 +540,7 @@
         }
       }
     },
-    "/auth/admin/sso/providers/{id}/domains/{domain}/verify": {
+    "/api/v1/auth/admin/sso/providers/{id}/domains/{domain}/verify": {
       "post": {
         "operationId": "authn.admin.sso.providers.verifyDomain",
         "summary": "Verify a claimed domain of an SSO provider",
@@ -557,7 +557,7 @@
         }
       }
     },
-    "/auth/admin/sso/providers/{id}/reverify-domains": {
+    "/api/v1/auth/admin/sso/providers/{id}/reverify-domains": {
       "post": {
         "operationId": "authn.admin.sso.providers.reverifyDomains",
         "summary": "Re-verify every claimed domain of an SSO provider",
@@ -573,7 +573,7 @@
         }
       }
     },
-    "/auth/admin/sso/providers/{id}/metadata/refresh": {
+    "/api/v1/auth/admin/sso/providers/{id}/metadata/refresh": {
       "post": {
         "operationId": "authn.admin.sso.providers.refreshMetadata",
         "summary": "Refresh an SSO provider's metadata",
@@ -593,7 +593,7 @@
         }
       }
     },
-    "/auth/admin/impersonations": {
+    "/api/v1/auth/admin/impersonations": {
       "get": {
         "operationId": "authn.admin.impersonations.list",
         "summary": "List impersonation records, one page at a time",
@@ -614,7 +614,7 @@
         }
       }
     },
-    "/auth/admin/impersonations/{id}": {
+    "/api/v1/auth/admin/impersonations/{id}": {
       "delete": {
         "operationId": "authn.admin.impersonations.revoke",
         "summary": "Revoke an impersonation record",

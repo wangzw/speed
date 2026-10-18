@@ -405,20 +405,20 @@ func TestEachAccessLevelHoldsOnTheRealGatewayForTheRoutesTheModuleMounted(t *tes
 			status int
 			body   string
 		}{
-			{"public, no credential", "/auth/pub", nil, 200, "nobody [open]"},
-			{"public, a credential that does not hold", "/auth/pub", bearer("bad"), 200, "nobody [open]"},
-			{"public, a good credential", "/auth/pub", bearer(goodToken), 200, "nobody [open]"},
-			{"optional, no credential", "/auth/opt", nil, 200, "nobody [optional]"},
-			{"optional, a credential that does not hold", "/auth/opt", bearer("bad"), 401, ""},
-			{"optional, a good credential", "/auth/opt", bearer(goodToken), 200, "user-1 [optional]"},
-			{"guarded, no credential", "/auth/guard", nil, 401, ""},
-			{"guarded, a credential that does not hold", "/auth/guard", bearer("bad"), 401, ""},
-			{"guarded, a good credential", "/auth/guard", bearer(goodToken), 200, "user-1 [required]"},
-			{"guarded, an impersonating identity", "/auth/guard", bearer(imperToken), 401, ""},
-			{"guarded and impersonable, an impersonating identity", "/auth/imp", bearer(imperToken), 200, "user-1 via admin-9 [required]"},
-			{"guarded and impersonable, no credential", "/auth/imp", nil, 401, ""},
-			{"optional and impersonable, an impersonating identity", "/auth/opt-imp", bearer(imperToken), 200, "user-1 via admin-9 [optional]"},
-			{"optional and impersonable, no credential", "/auth/opt-imp", nil, 200, "nobody [optional]"},
+			{"public, no credential", "/api/v1/auth/pub", nil, 200, "nobody [open]"},
+			{"public, a credential that does not hold", "/api/v1/auth/pub", bearer("bad"), 200, "nobody [open]"},
+			{"public, a good credential", "/api/v1/auth/pub", bearer(goodToken), 200, "nobody [open]"},
+			{"optional, no credential", "/api/v1/auth/opt", nil, 200, "nobody [optional]"},
+			{"optional, a credential that does not hold", "/api/v1/auth/opt", bearer("bad"), 401, ""},
+			{"optional, a good credential", "/api/v1/auth/opt", bearer(goodToken), 200, "user-1 [optional]"},
+			{"guarded, no credential", "/api/v1/auth/guard", nil, 401, ""},
+			{"guarded, a credential that does not hold", "/api/v1/auth/guard", bearer("bad"), 401, ""},
+			{"guarded, a good credential", "/api/v1/auth/guard", bearer(goodToken), 200, "user-1 [required]"},
+			{"guarded, an impersonating identity", "/api/v1/auth/guard", bearer(imperToken), 401, ""},
+			{"guarded and impersonable, an impersonating identity", "/api/v1/auth/imp", bearer(imperToken), 200, "user-1 via admin-9 [required]"},
+			{"guarded and impersonable, no credential", "/api/v1/auth/imp", nil, 401, ""},
+			{"optional and impersonable, an impersonating identity", "/api/v1/auth/opt-imp", bearer(imperToken), 200, "user-1 via admin-9 [optional]"},
+			{"optional and impersonable, no credential", "/api/v1/auth/opt-imp", nil, 200, "nobody [optional]"},
 		} {
 			var edits []func(*nethttp.Request)
 			if c.edit != nil {
@@ -444,9 +444,9 @@ func TestARouteIsMountedOnTheMountEndpointAndNotOnTheOthers(t *testing.T) {
 		if l.mounter.Endpoint() != "public" {
 			t.Errorf("the capability reports endpoint %q, want public", l.mounter.Endpoint())
 		}
-		requireStatus(t, "the route on the mount endpoint", l.send("public", "GET", "/auth/pub"), 200)
+		requireStatus(t, "the route on the mount endpoint", l.send("public", "GET", "/api/v1/auth/pub"), 200)
 		requireStatus(t, "the same path on the other endpoint, with a credential",
-			l.send("admin", "GET", "/auth/pub", bearer(goodToken)), 404)
+			l.send("admin", "GET", "/api/v1/auth/pub", bearer(goodToken)), 404)
 	})
 }
 
@@ -469,7 +469,7 @@ func TestAHandWrittenPairWithATypoIsTheFailureTheModuleExcludes(t *testing.T) {
 		},
 	}.serve(t, func(l *live) {
 		requireStatus(t, "the hand-written route with a mistyped exemption", l.send("main", "GET", "/hand/status"), 401)
-		requireStatus(t, "the same route mounted through the capability", l.send("main", "GET", "/auth/status"), 200)
+		requireStatus(t, "the same route mounted through the capability", l.send("main", "GET", "/api/v1/auth/status"), 200)
 	})
 }
 
@@ -545,6 +545,6 @@ func TestTheEndpointTheModuleDefaultsToIsJudgedByTheGatewayAgainstTheAdmissionLa
 	liveStack{endpoints: []string{"main", "other"}, mountEndpoint: "main", scope: fakeScope{"other": true}, register: register}.
 		serve(t, func(l *live) {
 			requireStatus(t, "a route on an endpoint the admission layer does not cover",
-				l.send("main", "GET", "/auth/me", bearer(goodToken)), 200)
+				l.send("main", "GET", "/api/v1/auth/me", bearer(goodToken)), 200)
 		})
 }

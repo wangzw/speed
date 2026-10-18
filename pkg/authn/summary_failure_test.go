@@ -312,7 +312,7 @@ func runSummary(t *testing.T, use func(h *summaryHost)) {
 		"event":    map[string]any{},
 		"authn": map[string]any{
 			"gate": map[string]any{"mount": map[string]any{
-				"endpoint": "public", "base-path": "/auth",
+				"endpoint": "public", "base-path": "/api/v1/auth",
 				"public-url": "http://127.0.0.1", "allow-insecure": true,
 			}},
 			"token": map[string]any{
@@ -528,7 +528,7 @@ func (h *summaryHost) createAccount(username, pw string) authn.AccountID {
 // over the jar-carrying client and returns the completion's reply.
 func (h *summaryHost) loginFlow(username, pw string) summaryReply {
 	h.t.Helper()
-	start := h.postJSON("/auth/flows", map[string]any{
+	start := h.postJSON("/api/v1/auth/flows", map[string]any{
 		"method": "password",
 		"input":  map[string]string{"identifier": username, "password": pw},
 	})
@@ -536,7 +536,7 @@ func (h *summaryHost) loginFlow(username, pw string) summaryReply {
 		h.t.Fatalf("POST flows answered %d: %s", start.status, start.body)
 	}
 	seq := int(start.json(h.t)["seq"].(float64))
-	done := h.postJSON("/auth/flows/answer", map[string]any{"seq": seq, "step": "complete"})
+	done := h.postJSON("/api/v1/auth/flows/answer", map[string]any{"seq": seq, "step": "complete"})
 	if done.status != http.StatusOK {
 		h.t.Fatalf("complete answered %d: %s", done.status, done.body)
 	}
@@ -558,12 +558,12 @@ func sessionCookieName(t *testing.T, header string) string {
 	return strings.TrimSpace(name)
 }
 
-// authenticated reports whether GET /auth/session answered that somebody is
+// authenticated reports whether GET /api/v1/auth/session answered that somebody is
 // logged in.
 func (h *summaryHost) authenticated(reply summaryReply) bool {
 	h.t.Helper()
 	if reply.status != http.StatusOK {
-		h.t.Fatalf("GET /auth/session answered %d: %s", reply.status, reply.body)
+		h.t.Fatalf("GET /api/v1/auth/session answered %d: %s", reply.status, reply.body)
 	}
 	return reply.json(h.t)["authenticated"] == true
 }
@@ -713,24 +713,24 @@ func TestADatabaseFaultAnswers503Never200Or401(t *testing.T) {
 		// Baseline: with the database answering, the protected route refuses the
 		// unknown cookie as a 401 and the token endpoint refuses the bogus grant
 		// with its own failure code, never a 503.
-		if got := h.getWithCookie("/auth/sessions", bogus); got.status != http.StatusUnauthorized {
-			t.Fatalf("GET /auth/sessions with an unknown cookie answered %d, want 401: %s", got.status, got.body)
+		if got := h.getWithCookie("/api/v1/auth/sessions", bogus); got.status != http.StatusUnauthorized {
+			t.Fatalf("GET /api/v1/auth/sessions with an unknown cookie answered %d, want 401: %s", got.status, got.body)
 		}
 		if got := h.tokenRefresh("spd_rt_summary_bogus"); got.status != http.StatusBadRequest {
-			t.Fatalf("POST /auth/token with a bogus grant answered %d, want 400: %s", got.status, got.body)
+			t.Fatalf("POST /api/v1/auth/token with a bogus grant answered %d, want 400: %s", got.status, got.body)
 		}
 
 		h.closeDatabase()
 
-		guarded := h.getWithCookie("/auth/sessions", bogus)
+		guarded := h.getWithCookie("/api/v1/auth/sessions", bogus)
 		if guarded.status != http.StatusServiceUnavailable {
-			t.Errorf("GET /auth/sessions under a database fault answered %d, want 503: %s", guarded.status, guarded.body)
+			t.Errorf("GET /api/v1/auth/sessions under a database fault answered %d, want 503: %s", guarded.status, guarded.body)
 		}
 		assertNoDependencyName(t, guarded.body)
 
 		tok := h.tokenRefresh("spd_rt_summary_bogus")
 		if tok.status != http.StatusServiceUnavailable {
-			t.Errorf("POST /auth/token under a database fault answered %d, want 503: %s", tok.status, tok.body)
+			t.Errorf("POST /api/v1/auth/token under a database fault answered %d, want 503: %s", tok.status, tok.body)
 		}
 		if !strings.Contains(tok.body, "temporarily_unavailable") {
 			t.Errorf("the token endpoint's 503 body is %q, want the temporarily_unavailable code", tok.body)
@@ -751,7 +751,7 @@ func TestADatabaseFaultRelaxesOnlyTheSessionCheckCacheInBound(t *testing.T) {
 		cookieName := sessionCookieName(t, done.header.Get("Set-Cookie"))
 
 		// Warm the check cache for this cookie while the database answers.
-		if !h.authenticated(h.get("/auth/session")) {
+		if !h.authenticated(h.get("/api/v1/auth/session")) {
 			t.Fatal("the freshly delivered session did not authenticate")
 		}
 
@@ -759,19 +759,19 @@ func TestADatabaseFaultRelaxesOnlyTheSessionCheckCacheInBound(t *testing.T) {
 
 		// The cached answer inside check-ttl is the listed leniency: the same
 		// cookie still authenticates though the database is gone.
-		if !h.authenticated(h.get("/auth/session")) {
+		if !h.authenticated(h.get("/api/v1/auth/session")) {
 			t.Errorf("a cached session stopped authenticating on a database fault, so the bounded leniency is not in force")
 		}
 
 		// An uncached cookie has no leniency: it is refused with a 503, not
 		// admitted as anonymous and not denied with a 401.
-		uncached := h.getWithCookie("/auth/session", cookieName+"="+unknownSessionToken)
+		uncached := h.getWithCookie("/api/v1/auth/session", cookieName+"="+unknownSessionToken)
 		if uncached.status != http.StatusServiceUnavailable {
 			t.Errorf("an uncached cookie under a database fault answered %d, want 503: %s", uncached.status, uncached.body)
 		}
 
 		// The login path is not on the leniency list: it is refused.
-		start := h.postJSON("/auth/flows", map[string]any{
+		start := h.postJSON("/api/v1/auth/flows", map[string]any{
 			"method": "password",
 			"input":  map[string]string{"identifier": "frank", "password": "frank-password"},
 		})
@@ -794,12 +794,12 @@ func TestAKeyValueFaultRefusesFlowsButLeavesTheSessionAlone(t *testing.T) {
 		h.kv.breakIt()
 
 		// The session survives: it is a database row, not a key-value entry.
-		if !h.authenticated(h.get("/auth/session")) {
+		if !h.authenticated(h.get("/api/v1/auth/session")) {
 			t.Error("an established session stopped authenticating on a key-value fault, so the session depends on the flow store")
 		}
 
 		// Beginning a login flow needs the store and is refused.
-		start := h.postJSON("/auth/flows", map[string]any{
+		start := h.postJSON("/api/v1/auth/flows", map[string]any{
 			"method": "password",
 			"input":  map[string]string{"identifier": "grace", "password": "grace-password"},
 		})
@@ -820,7 +820,7 @@ func (h *summaryHost) loginFlowAccount(username, pw string) summaryReply {
 // tokenRefresh posts a refresh_token grant to the token endpoint with the
 // standard client, which reads no cookie.
 func (h *summaryHost) tokenRefresh(refresh string) summaryReply {
-	return h.postForm("/auth/token", url.Values{
+	return h.postForm("/api/v1/auth/token", url.Values{
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {refresh},
 	})

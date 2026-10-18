@@ -158,10 +158,10 @@ const demoConfig = `http:
       prefixes: ["/api"]
     account:
       listener: backend
-      prefixes: ["/auth", "/features", "/workspace"]
+      prefixes: ["/api/v1/auth", "/api/v1/features", "/api/v1/workspace"]
     admin:
       listener: backend
-      prefixes: ["/audit", "/authz", "/settings", "/sms", "/tenant"]
+      prefixes: ["/api/v1/audit", "/api/v1/authz", "/api/v1/settings", "/api/v1/sms", "/api/v1/tenant"]
     ops:
       listener: ops
     web:
@@ -620,10 +620,10 @@ func signIn(t *testing.T, accountBase, identifier, password string) string {
 		"binding":  "cookie",
 		"input":    map[string]string{"identifier": identifier, "password": password},
 	}
-	if res := send(t, client, http.MethodPost, accountBase+"/auth/flows", credentials, nil); res.status != http.StatusOK {
+	if res := send(t, client, http.MethodPost, accountBase+"/api/v1/auth/flows", credentials, nil); res.status != http.StatusOK {
 		t.Fatalf("starting the login flow answered %d: %s", res.status, res.body)
 	}
-	answer := send(t, client, http.MethodPost, accountBase+"/auth/flows/answer",
+	answer := send(t, client, http.MethodPost, accountBase+"/api/v1/auth/flows/answer",
 		map[string]string{"step": "complete"}, nil)
 	if answer.status != http.StatusOK {
 		t.Fatalf("completing the login flow answered %d: %s", answer.status, answer.body)
@@ -713,7 +713,7 @@ func TestServeAnswersTheProbes(t *testing.T) {
 	// leaves the path undeclared, which the gateway refuses with 401 rather than
 	// 200, so each status distinguishes "assembled" from "not".
 	accountBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	for _, path := range []string{"/auth/methods", "/auth/jwks.json"} {
+	for _, path := range []string{"/api/v1/auth/methods", "/api/v1/auth/jwks.json"} {
 		res := get(t, accountBase+path)
 		if res.status != http.StatusOK {
 			t.Errorf("GET %s on the account endpoint answered %d, want 200:\n%s", path, res.status, res.body)
@@ -729,16 +729,16 @@ func TestServeAnswersTheProbes(t *testing.T) {
 	// the gateway refuses each before any route matters — same status, same
 	// headers but Date, same body, and a challenge for the admin realm. Before
 	// the claims existed the selection was derived from the assembly, and
-	// /sms/admin/templates answered with the frontend bundle while
-	// /tenant/admin/tenants answered 401.
-	templates := getRaw(t, accountBase+"/sms/admin/templates")
-	tenants := getRaw(t, accountBase+"/tenant/admin/tenants")
+	// /api/v1/sms/admin/templates answered with the frontend bundle while
+	// /api/v1/tenant/admin/tenants answered 401.
+	templates := getRaw(t, accountBase+"/api/v1/sms/admin/templates")
+	tenants := getRaw(t, accountBase+"/api/v1/tenant/admin/tenants")
 	for _, answer := range []struct {
 		path string
 		got  rawResponse
 	}{
-		{"/sms/admin/templates", templates},
-		{"/tenant/admin/tenants", tenants},
+		{"/api/v1/sms/admin/templates", templates},
+		{"/api/v1/tenant/admin/tenants", tenants},
 	} {
 		if answer.got.status != http.StatusUnauthorized {
 			t.Errorf("GET %s on the admin endpoint answered %d, want 401:\n%s",
@@ -749,7 +749,7 @@ func TestServeAnswersTheProbes(t *testing.T) {
 				answer.path, challenge)
 		}
 	}
-	sameExceptDate(t, "GET /sms/admin/templates and GET /tenant/admin/tenants", templates, tenants)
+	sameExceptDate(t, "GET /api/v1/sms/admin/templates and GET /api/v1/tenant/admin/tenants", templates, tenants)
 
 	// Every operation of the platform's API surface falls under a prefix its
 	// own endpoint claims. The check reads the served document — the available
@@ -765,14 +765,14 @@ func TestServeAnswersTheProbes(t *testing.T) {
 	// listing the login engine mounts publishes the kinds the assembly takes
 	// in, so it is where "a second kind is here" is read: the signing-in copy
 	// carries TOTP and WebAuthn, and both are listed.
-	discovery := get(t, accountBase+"/auth/methods")
+	discovery := get(t, accountBase+"/api/v1/auth/methods")
 	var listed struct {
 		MFA struct {
 			Factors []string `json:"factors"`
 		} `json:"mfa"`
 	}
 	if err := json.Unmarshal(discovery.body, &listed); err != nil {
-		t.Fatalf("GET /auth/methods is not JSON: %v\n%s", err, discovery.body)
+		t.Fatalf("GET /api/v1/auth/methods is not JSON: %v\n%s", err, discovery.body)
 	}
 	if !slices.Contains(listed.MFA.Factors, "totp") || !slices.Contains(listed.MFA.Factors, "webauthn") {
 		t.Errorf("the deployment lists factor kinds %v, want both totp and webauthn: a step-up needs a "+
@@ -816,8 +816,8 @@ func TestTheGuardsOfferNoBasicChallenge(t *testing.T) {
 	// endpoint and the api endpoint, whose chain also carries tenant resolution
 	// and the authorization guard.
 	for _, path := range []string{
-		"/auth/me",
-		"/tenant/admin/tenants",
+		"/api/v1/auth/me",
+		"/api/v1/tenant/admin/tenants",
 		"/api/v1/notifications/messages",
 	} {
 		req, err := http.NewRequest(http.MethodGet, base+path, nil)
@@ -925,11 +925,11 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 				}
 			}
 		}
-		if applicationOwned, declared := expected["POST /workspace/personal"]; !declared || !applicationOwned {
+		if applicationOwned, declared := expected["POST /api/v1/workspace/personal"]; !declared || !applicationOwned {
 			// The named anchor: the host's own route, declared by a module in
 			// this package, is the leg that proves registration and marking
 			// agree.
-			t.Errorf("the host's route POST /workspace/personal is not among the application-owned operations")
+			t.Errorf("the host's route POST /api/v1/workspace/personal is not among the application-owned operations")
 		}
 		present := map[string]bool{}
 		for path, methods := range doc.Paths {
@@ -1205,7 +1205,7 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 
 	// The account the seed marks is an administrator: the platform roster
 	// answers, and it holds the tenant the seed registered.
-	allowed := adminGet(t, seedIdentifier, "/tenant/admin/tenants")
+	allowed := adminGet(t, seedIdentifier, "/api/v1/tenant/admin/tenants")
 	if allowed.status != http.StatusOK {
 		t.Fatalf("the seeded administrator was refused the tenant roster with %d: %s",
 			allowed.status, allowed.body)
@@ -1227,7 +1227,7 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 	// offers to delete, and deleting the role that holds every declared
 	// permission locks the operator out of the console.
 	for _, domain := range []string{string(authz.PlatformDomain), demoTenant} {
-		got := adminGet(t, seedIdentifier, "/authz/admin/tenants/"+domain+"/roles")
+		got := adminGet(t, seedIdentifier, "/api/v1/authz/admin/tenants/"+domain+"/roles")
 		if got.status != http.StatusOK {
 			t.Fatalf("reading the roles of %s answered %d: %s", domain, got.status, got.body)
 		}
@@ -1261,9 +1261,9 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 	// these reads answered 403 before that, which is what this case holds
 	// against.
 	for _, path := range []string{
-		"/auth/admin/tenants/" + demoTenant + "/members",
-		"/auth/admin/tenants/" + demoTenant + "/invitations",
-		"/auth/admin/tenants/" + demoTenant + "/sso/providers",
+		"/api/v1/auth/admin/tenants/" + demoTenant + "/members",
+		"/api/v1/auth/admin/tenants/" + demoTenant + "/invitations",
+		"/api/v1/auth/admin/tenants/" + demoTenant + "/sso/providers",
 	} {
 		got := adminGet(t, seedIdentifier, path)
 		if got.status != http.StatusOK {
@@ -1275,7 +1275,7 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 	// The account the seed marks nothing for signs in — which is what an entry
 	// given as a hash rather than as a plaintext has to produce — and reaches
 	// nothing that asks for a permission.
-	if refused := adminGet(t, hashIdentifier, "/tenant/admin/tenants"); refused.status != http.StatusForbidden {
+	if refused := adminGet(t, hashIdentifier, "/api/v1/tenant/admin/tenants"); refused.status != http.StatusForbidden {
 		t.Errorf("the account holding no role reached the roster with %d, want %d: %s",
 			refused.status, http.StatusForbidden, refused.body)
 	}
@@ -1320,7 +1320,7 @@ func TestSeedBindsTheAdministratorInEveryServedTenant(t *testing.T) {
 			"/sso/providers",
 		} {
 			got := send(t, client, http.MethodGet,
-				adminBase+"/auth/admin/tenants/"+tenant+path, nil,
+				adminBase+"/api/v1/auth/admin/tenants/"+tenant+path, nil,
 				map[string]string{"Authorization": "Bearer " + token})
 			if got.status != http.StatusOK {
 				t.Errorf("the seeded administrator was refused the %s page of tenant %q with %d: %s",
@@ -1430,8 +1430,8 @@ func TestTheRequestSampleRecordsTheOperatorsWrites(t *testing.T) {
 
 	// The frontend reads the caller's profile after every load. The sample
 	// names no read, so this one leaves the journal untouched.
-	if res := send(t, client, http.MethodGet, base+"/auth/me", nil, headers); res.status != http.StatusOK {
-		t.Fatalf("GET /auth/me answered %d, want 200:\n%s", res.status, res.body)
+	if res := send(t, client, http.MethodGet, base+"/api/v1/auth/me", nil, headers); res.status != http.StatusOK {
+		t.Fatalf("GET /api/v1/auth/me answered %d, want 200:\n%s", res.status, res.body)
 	}
 
 	declared := send(t, client, http.MethodPost, base+"/api/v1/objects", map[string]any{
@@ -1459,7 +1459,7 @@ func TestTheRequestSampleRecordsTheOperatorsWrites(t *testing.T) {
 	// The account-management actions are recorded at the seam. The sample does
 	// not name the create route, so one call leaves one row and no request row
 	// beside it.
-	created := send(t, client, http.MethodPost, base+"/auth/admin/accounts", map[string]any{
+	created := send(t, client, http.MethodPost, base+"/api/v1/auth/admin/accounts", map[string]any{
 		"kind":               "user",
 		"email":              "sample-admin-write@demo.test",
 		"email_verified_via": "admin",
@@ -1481,7 +1481,7 @@ func TestTheRequestSampleRecordsTheOperatorsWrites(t *testing.T) {
 		Entries []record `json:"entries"`
 	}
 	readJournal := func() []record {
-		res := send(t, client, http.MethodGet, base+"/audit/admin/records?limit=200", nil, headers)
+		res := send(t, client, http.MethodGet, base+"/api/v1/audit/admin/records?limit=200", nil, headers)
 		if res.status != http.StatusOK {
 			t.Fatalf("reading the journal answered %d, want 200:\n%s", res.status, res.body)
 		}
@@ -1528,11 +1528,11 @@ func TestTheRequestSampleRecordsTheOperatorsWrites(t *testing.T) {
 				n, write[0], write[1], readable)
 		}
 	}
-	if n := count(entries, "request", http.MethodGet, "/auth/me"); n != 0 {
-		t.Errorf("the journal holds %d request row(s) for GET /auth/me, want none:\n%s", n, readable)
+	if n := count(entries, "request", http.MethodGet, "/api/v1/auth/me"); n != 0 {
+		t.Errorf("the journal holds %d request row(s) for GET /api/v1/auth/me, want none:\n%s", n, readable)
 	}
-	if n := count(entries, "request", http.MethodPost, "/auth/admin/accounts"); n != 0 {
-		t.Errorf("the journal holds %d request row(s) for POST /auth/admin/accounts, "+
+	if n := count(entries, "request", http.MethodPost, "/api/v1/auth/admin/accounts"); n != 0 {
+		t.Errorf("the journal holds %d request row(s) for POST /api/v1/auth/admin/accounts, "+
 			"which the seam already records:\n%s", n, readable)
 	}
 	if n := count(entries, "seam", "authn.account.create", ""); n != 1 {

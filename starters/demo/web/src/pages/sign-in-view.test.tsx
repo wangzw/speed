@@ -375,7 +375,7 @@ describe('the sign-in surface', () => {
     // No register entry is clicked: this is the ordinary sign-in form. The
     // deployment's SMS method opens an account for a number it does not know,
     // so the completion creates the account implicitly. The ensure answer is
-    // what says the personal tenant was just created, and GET /auth/me shows
+    // what says the personal tenant was just created, and GET /api/v1/auth/me shows
     // no login name and no password -- the two facts the notice is made of.
     const harness = makeHarness({
       [FEATURES_GET]: () => ({
@@ -416,12 +416,12 @@ describe('the sign-in surface', () => {
         }),
       // An ordinary member cannot read the tenant roster; the frame's failed
       // read leaves no current tenant, which is what lets the ensure run.
-      'GET /tenant/admin/tenants': () => {
+      'GET /api/v1/tenant/admin/tenants': () => {
         throw Object.assign(new Error('the roster read was refused'), {
           status: 403,
         })
       },
-      'POST /workspace/personal': () => ({
+      'POST /api/v1/workspace/personal': () => ({
         tenant: {
           id: 'personal-account-1',
           alias: 'personal-account-1',

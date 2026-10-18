@@ -63,12 +63,12 @@ describe('session.isStepUpShortfall', () => {
   })
 })
 
-/** The abandon requests (`DELETE /auth/flows/current`) a harness recorded. */
+/** The abandon requests (`DELETE /api/v1/auth/flows/current`) a harness recorded. */
 function abandons(
   calls: readonly { readonly method: string; readonly path: string }[],
 ) {
   return calls.filter(
-    (call) => call.method === 'DELETE' && call.path === '/auth/flows/current',
+    (call) => call.method === 'DELETE' && call.path === '/api/v1/auth/flows/current',
   )
 }
 
@@ -307,7 +307,7 @@ describe('useStepUp', () => {
 
     // The start named the step-up purpose alone (no method): the flow
     // enters at the factor step for an account that has one.
-    const start = calls.find((c) => c.path === '/auth/flows/authenticated')
+    const start = calls.find((c) => c.path === '/api/v1/auth/flows/authenticated')
     expect(start?.options?.body).toEqual({ purpose: 'step-up' })
   })
 
@@ -347,7 +347,7 @@ describe('useStepUp', () => {
     })
     expect(onElevated).toHaveBeenCalledTimes(1)
 
-    const start = calls.find((c) => c.path === '/auth/flows/authenticated')
+    const start = calls.find((c) => c.path === '/api/v1/auth/flows/authenticated')
     expect(start?.options?.body).toEqual({ purpose: 'step-up', method: 'sms' })
   })
 

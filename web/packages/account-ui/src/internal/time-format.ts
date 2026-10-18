@@ -2,7 +2,7 @@
  * Display-timezone resolution for the account surfaces.
  *
  * The chain, highest tier first: the account's stored timezone preference
- * (the profile's `time_zone`, read from GET /auth/me -- empty means "not
+ * (the profile's `time_zone`, read from GET /api/v1/auth/me -- empty means "not
  * chosen"), the device's own timezone, then UTC as the terminal fallback.
  * This is the same shape every locale chain in the stack observes: a stored
  * choice outranks the environment's guess, and a platform default closes the

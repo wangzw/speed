@@ -111,7 +111,7 @@ describe('SignOutButton', () => {
     await waitFor(() => expect(harness.store.get()).toBeNull())
     expect(harness.calls).toHaveLength(4)
     expect(harness.calls[3]?.method).toBe('POST')
-    expect(harness.calls[3]?.path).toBe('/auth/logout')
+    expect(harness.calls[3]?.path).toBe('/api/v1/auth/logout')
     expect(harness.calls[3]?.options?.body).toBeUndefined()
     // Success is the host's to observe; the button itself returns to
     // its idle label, ready for the next (idempotent) click.
@@ -178,7 +178,7 @@ describe('SignOutButton', () => {
     await user.click(screen.getByRole('button', { name: LABEL_ZH }))
     await waitFor(() =>
       expect(
-        harness.calls.filter((call) => call.path === '/auth/logout'),
+        harness.calls.filter((call) => call.path === '/api/v1/auth/logout'),
       ).toHaveLength(2),
     )
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()

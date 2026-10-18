@@ -290,7 +290,7 @@ describe('request shape', () => {
       fetch: standin.fetch,
       accessTokenStore: store,
     })
-    await api<{ ok: boolean }>('/auth/token', {
+    await api<{ ok: boolean }>('/api/v1/auth/token', {
       method: 'POST',
       omitAccessToken: true,
     })
@@ -864,7 +864,7 @@ describe('401 and the refresh hook', () => {
       },
     })
     const error = await expectApiError(
-      api<{ ok: boolean }>('/auth/token', { omitAccessToken: true }),
+      api<{ ok: boolean }>('/api/v1/auth/token', { omitAccessToken: true }),
     )
     expect(error.status).toBe(401)
     expect(hookCalls).toBe(0)
@@ -1161,7 +1161,7 @@ describe('401 and the refresh hook', () => {
         // the refresh token rides in the body, never in an
         // Authorization header, and the store is never cleared for it.
         try {
-          await api('/auth/token', {
+          await api('/api/v1/auth/token', {
             method: 'POST',
             body: { refresh_token: 'stale' },
             omitAccessToken: true,
@@ -1221,7 +1221,7 @@ describe('401 and the refresh hook', () => {
       refreshAccessToken: async () => {
         refreshCalls += 1
         try {
-          await api('/auth/token', {
+          await api('/api/v1/auth/token', {
             method: 'POST',
             body: { refresh_token: 'stale' },
             // omitAccessToken deliberately omitted: the host bug.
@@ -1270,8 +1270,8 @@ describe('401 and the refresh hook', () => {
 
   it('ends a restore-shaped recovery hook within a bounded time when its profile read is refused', { timeout: 5000 }, async () => {
     // The cookie session wires the recovery hook to a restore() that
-    // reads GET /auth/session (the cookie still names a session) and
-    // then GET /auth/me. When that second read is refused while this
+    // reads GET /api/v1/auth/session (the cookie still names a session) and
+    // then GET /api/v1/auth/me. When that second read is refused while this
     // hook is the round already in flight, a request that joined the
     // round would await the hook, and the hook awaits the request -- a
     // request awaiting itself, which never settles. The client hands
@@ -1292,12 +1292,12 @@ describe('401 and the refresh hook', () => {
     // supplies no issuer, the fallback reproduces the self-await.
     const restore = async (issueSession?: RequestFn): Promise<boolean> => {
       const call = issueSession ?? api
-      const view = await call<{ authenticated: boolean }>('/auth/session')
+      const view = await call<{ authenticated: boolean }>('/api/v1/auth/session')
       if (!view.authenticated) {
         return false
       }
       try {
-        await call('/auth/me')
+        await call('/api/v1/auth/me')
         return true
       } catch (error) {
         if (isApiError(error) && error.status === 401) {
@@ -1341,8 +1341,8 @@ describe('401 and the refresh hook', () => {
     // Three exchanges: the refused request and the hook's two reads. The
     // profile refusal was neither retried nor sent a second time.
     expect(standin.calls).toHaveLength(3)
-    expect(recorded(standin, 1).url).toBe(`${BASE_URL}/auth/session`)
-    expect(recorded(standin, 2).url).toBe(`${BASE_URL}/auth/me`)
+    expect(recorded(standin, 1).url).toBe(`${BASE_URL}/api/v1/auth/session`)
+    expect(recorded(standin, 2).url).toBe(`${BASE_URL}/api/v1/auth/me`)
   })
 
   it('keeps a declared credential-less 401 terminal even while the store holds a token', async () => {
@@ -1367,7 +1367,7 @@ describe('401 and the refresh hook', () => {
       },
     })
     const error = await expectApiError(
-      api<{ ok: boolean }>('/auth/token', {
+      api<{ ok: boolean }>('/api/v1/auth/token', {
         method: 'POST',
         body: { refresh_token: 'stale' },
         omitAccessToken: true,

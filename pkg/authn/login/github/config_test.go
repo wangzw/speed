@@ -26,7 +26,7 @@ type gateDefaults struct {
 // may configure them without pulling the whole gateway in.
 func gateStandIn() core.Module {
 	d := &gateDefaults{}
-	d.Mount.BasePath = "/auth"
+	d.Mount.BasePath = "/api/v1/auth"
 	return core.Module{
 		Name:      "standin.gate",
 		Resources: []any{config.Schema{Namespace: gateNamespace, Mounts: []config.Mount{{Value: d}}}},
@@ -81,7 +81,7 @@ func TestTheReaderServesACompleteSection(t *testing.T) {
 	if got.clientID != "the-id" || got.clientSecret != "the-secret" {
 		t.Errorf("resolved credentials = %q/%q, want the configured ones", got.clientID, got.clientSecret)
 	}
-	if got.redirectURI != "https://app.example/auth/callback/github" {
+	if got.redirectURI != "https://app.example/api/v1/auth/callback/github" {
 		t.Errorf("redirectURI = %q, want the public base, the default mount path and the callback route",
 			got.redirectURI)
 	}

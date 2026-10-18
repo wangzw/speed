@@ -27,8 +27,8 @@ func TestTheResetsDeclareTheUnseasonedRefusal(t *testing.T) {
 		t.Fatalf("the fragment is not JSON: %v", err)
 	}
 	for _, path := range []string{
-		"/auth/admin/accounts/{id}/password",
-		"/auth/admin/accounts/{id}/mfa-reset",
+		"/api/v1/auth/admin/accounts/{id}/password",
+		"/api/v1/auth/admin/accounts/{id}/mfa-reset",
 	} {
 		op, ok := doc.Paths[path]["post"]
 		if !ok {
@@ -78,9 +78,9 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 		Stubs:  stubs,
 		Config: config,
 		QueryParams: map[routecontract.Route]map[string]bool{
-			{Method: "GET", Path: "/auth/admin/accounts"}:                accountListParams,
-			{Method: "GET", Path: "/auth/admin/tenants/:tenant/members"}: {"limit": true, "after": true},
-			{Method: "GET", Path: "/auth/admin/impersonations"}:          {"tenant": true, "limit": true, "after": true},
+			{Method: "GET", Path: "/api/v1/auth/admin/accounts"}:                accountListParams,
+			{Method: "GET", Path: "/api/v1/auth/admin/tenants/:tenant/members"}: {"limit": true, "after": true},
+			{Method: "GET", Path: "/api/v1/auth/admin/impersonations"}:          {"tenant": true, "limit": true, "after": true},
 		},
 	})
 }

@@ -23,7 +23,7 @@ import (
 const (
 	providerUUID = "0192f5a0-7b1c-7d3a-9e11-3c2d4e5f6a7b"
 	sessionUUID  = "0192f5a0-7b1c-7d3a-9e11-3c2d4e5f6a7c"
-	listPath     = "/auth/factors"
+	listPath     = "/api/v1/auth/factors"
 	problemType  = "urn:speed:authn:"
 )
 
@@ -73,8 +73,8 @@ func TestTheRoutesAreTheTwoTheDesignNamesAndBothAreGuarded(t *testing.T) {
 		t.Fatalf("%d routes registered, want 2: %+v", len(got), got)
 	}
 	want := []mounttest.Registration{
-		{Kind: mounttest.Guarded, Methods: []string{http.MethodGet}, Path: "/auth/factors"},
-		{Kind: mounttest.Guarded, Methods: []string{http.MethodDelete}, Path: "/auth/factors/:id"},
+		{Kind: mounttest.Guarded, Methods: []string{http.MethodGet}, Path: "/api/v1/auth/factors"},
+		{Kind: mounttest.Guarded, Methods: []string{http.MethodDelete}, Path: "/api/v1/auth/factors/:id"},
 	}
 	for i := range want {
 		if got[i].Kind != want[i].Kind || !slices.Equal(got[i].Methods, want[i].Methods) || got[i].Path != want[i].Path || got[i].Impersonable {

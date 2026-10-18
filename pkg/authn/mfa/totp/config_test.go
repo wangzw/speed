@@ -11,7 +11,7 @@ import (
 // empty issuer is the host name of the gateway's public address, without a
 // scheme, a port or a path.
 func TestResolveDefaultsTheIssuerToThePublicHost(t *testing.T) {
-	got, err := moduleConfig{}.resolve(gateMount{PublicURL: "https://id.example.com:8443/auth"})
+	got, err := moduleConfig{}.resolve(gateMount{PublicURL: "https://id.example.com:8443/api/v1/auth"})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -44,10 +44,10 @@ func TestResolveRefusesWhenThereIsNoIssuerAndNoPublicHost(t *testing.T) {
 // TestHostOfIsTheHostAlone holds the host extraction the default goes through.
 func TestHostOfIsTheHostAlone(t *testing.T) {
 	cases := map[string]string{
-		"https://id.example.com":           "id.example.com",
-		"https://id.example.com:8443/auth": "id.example.com",
-		"http://localhost:8080":            "localhost",
-		"":                                 "",
+		"https://id.example.com":                  "id.example.com",
+		"https://id.example.com:8443/api/v1/auth": "id.example.com",
+		"http://localhost:8080":                   "localhost",
+		"":                                        "",
 	}
 	for in, want := range cases {
 		got, err := hostOf(in)
