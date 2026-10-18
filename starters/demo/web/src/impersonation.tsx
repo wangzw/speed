@@ -712,6 +712,19 @@ export function useImpersonationNoticeState(
         ? principal.display_name
         : principal.account_id
 
+  // A standing end confirmation or failure belongs to the impersonation
+  // that produced it. A new impersonation (or a different impersonated
+  // identity) starts with an empty attempt slot, so the previous
+  // interval's text cannot cover the new "acting as" announcement. The
+  // withheld window is exempt: the end just settled and its confirmation
+  // is what the live region must keep showing.
+  const resetFeedback = feedback.reset
+  useEffect(() => {
+    if (impersonating && !withheld) {
+      resetFeedback()
+    }
+  }, [impersonating, withheld, subject, resetFeedback])
+
   const outcome = feedback.outcome
 
   return {

@@ -796,6 +796,16 @@ describe('the impersonation shell', () => {
         authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
       ),
     ).toBeInTheDocument()
+    // The finished interval's confirmation does not cover the new
+    // interval's announcement in the permanent live region.
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
+      ),
+    )
+    expect(screen.getByRole('status')).not.toHaveTextContent(
+      authUiEnUS.impersonation.ended,
+    )
   })
 
   it('shows the banner for a new impersonation after a snapshot flip races the end write', async () => {
