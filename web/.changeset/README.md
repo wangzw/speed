@@ -21,7 +21,7 @@ committed and verified.
 
 ## The fixed group and why it is the only mode
 
-`docs/internal/02-repo-and-release.md` fixes all npm packages to **one
+The repository's release conventions fix all npm packages to **one
 version number**, shared with the Go half — lockstep versioning. In
 changesets terms that means every package must live in a single fixed
 group: a fixed group is exactly the mechanism that guarantees packages

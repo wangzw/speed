@@ -14,7 +14,7 @@ globs:
 
 Follows [Conventional Commits](https://www.conventionalcommits.org/); the convention is enforced in review — there is no commitlint config or commit-msg hook in this repository.
 
-**Language**: commit messages are written in **English**, consistent with the repository-wide language rule — everything except `docs/internal/` is English, because this code is delivered to business projects and read by tooling and non-Chinese-speaking collaborators.
+**Language**: commit messages are written in **English**, consistent with the repository-wide language rule — everything except the design authority (`docs/design/`, `docs/adr/`, `docs/glossary.md`) is English, because this code is delivered to business projects and read by tooling and non-Chinese-speaking collaborators.
 
 ## Format
 
@@ -39,7 +39,7 @@ Follows [Conventional Commits](https://www.conventionalcommits.org/); the conven
 |---|---|
 | `feat` | New functionality |
 | `fix` | Bug fix |
-| `docs` | Documentation only (including `docs/internal/**`, ADRs, module `AGENTS.md`) |
+| `docs` | Documentation only (including ADRs and module `AGENTS.md`) |
 | `style` | Formatting only, no logic change |
 | `refactor` | Restructuring that is neither a feature nor a fix |
 | `perf` | Performance improvement |
@@ -63,7 +63,6 @@ Same rule: the scope is the package directory name under `web/packages/`, and `w
 `deps`, `ci`, `starters`, `adr`
 
 Repository-level:
-- `internal` — design documents under `docs/internal/`, belonging to the earlier implementation
 - `repo` — repository-level configuration, guidance and standards (`CLAUDE.md`, `.claude/skills/`, `.gitignore`, the Makefile)
 - `site` — the documentation site under `docs/site/`, generated from the earlier implementation
 

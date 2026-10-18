@@ -5,7 +5,7 @@
  * frontend may only reach the backend through the api-client request
  * function (createClient), which wires the injectable fetch, the
  * timeout, the retry policy and the silent 401 refresh in one place
- * (CLAUDE.md's API contract section, docs/internal/21-api-contract.md).
+ * (CLAUDE.md's API contract section).
  * A fetch, axios or XHR call anywhere else is hand-written API calling
  * that skips that layer. The rule catches the direct forms:
  *

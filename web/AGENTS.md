@@ -110,13 +110,9 @@ half-enable: the `react-hooks` plugin is not adopted, keeping
 `eslint.config.mjs` free of plugin dependencies (see that file's own
 header).
 
-## CJK scanner exemption
+## Bilingual fixtures
 
-The repo's `tools/scan_cjk.py` full-text-scans everything outside
-`docs/internal/`, except directory names in
-{`locales`, `locale`, `i18n`, `translations`} and files in
-{`.git`, `.idea`, `.vscode`, `node_modules`, `vendor`}. Concretely for this
-workspace: bilingual test fixtures live under
+Bilingual test fixtures live under
 `packages/<name>/test-utils/locales/<namespace>/<lang>.json` -- or,
 when the fixtures ARE the shipped resources, under the package's
 `src/locales/` (ui-kit's zh-CN/en-US bundles); `.ts` and `.md` files

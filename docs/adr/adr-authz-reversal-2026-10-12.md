@@ -4,6 +4,8 @@
 
 已接受
 
+**后续（2026-10-18）：** 旧树的代码与内部文档已删除（`go/`、`docs/internal/`）。本记录中凡说「旧树仍在仓库里」「指引落在旧文档」的表述，其落点自此只剩站点 rbac 页；取代关系由本记录与站点页上的指引行共同承载。
+
 ## 背景
 
 早先的实现与其文档成文否决了 Casbin，否决给出的理由落在存储、适配器与引擎上。存储一侧：官方 `casbin_rule` 表没有 `tenant_id` 列，租户藏在策略串（domain）里，于是全产品最安全敏感的一张表会同时退出租户隔离——GORM 插件注入不到过滤条件、用不了 `Repository[T]`、Postgres 行级安全策略以 `tenant_id` 列为准而无从下手，`tenancytest.AssertIsolated` 对它跑不起来。适配器一侧：官方 `gorm-adapter` 自己持有 `*gorm.DB` 并自行发查询，正是本仓库数据规则禁止的裸访问形态，且默认 `AutoMigrate`。引擎一侧的价值判断：Casbin 的可插拔 `model.conf`、ABAC、RESTful matcher 在那个设计里用不上，判定链就是 `subject → bindings → role → permissions` 加一次物化路径前缀判断。
@@ -39,7 +41,7 @@
 采纳：反转旧树「不用 Casbin」的结论。被否的是 Casbin 的默认存储，不是引擎。
 
 - **默认存储被替换，引擎被采纳。** 官方 `casbin_rule` 表与官方 `gorm-adapter` 由自写薄适配器加带真实 `tenant_id` 列的表替代（[ADR-authz-store-2026-10-12](adr-authz-store-2026-10-12.md)）——租户列这条理由由真实列消掉，官方适配器自持连接与默认 `AutoMigrate` 两条因不使用官方适配器而不适用。引擎本身被采纳（[ADR-authz-engine-2026-10-12](adr-authz-engine-2026-10-12.md)）。
-- **旧树的结论已被取代，指引只落在点名的旧文档。** `docs/internal/05-identity-and-access.md` 与站点 rbac 页在「不用 Casbin」处加一行指向本记录的指引，正文不被改写；`go/rbac` 的源码与其 `AGENTS.md` 保留原文、不加指引；取代关系只由这些指引行承载。
+- **旧树的结论已被取代，指引只落在点名的旧文档。** 站点 rbac 页在「不用 Casbin」处加一行指向本记录的指引，正文不被改写；旧树源码与其 `AGENTS.md` 保留原文、不加指引（2026-10-18：`go/rbac` 与 `docs/internal/05-identity-and-access.md` 已随早期实现删除，取代关系此后只由本记录承载）。
 - **模型文本固定在代码里。** 桥接固定的模型文本属于设计对外接口面（[ADR-authz-engine-2026-10-12](adr-authz-engine-2026-10-12.md)）：判定语言不开放给宿主改写，宿主写的只是策略数据。
 
 ## 后果

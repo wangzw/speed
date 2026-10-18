@@ -100,7 +100,6 @@ class InScopeTests(unittest.TestCase):
         self.assertFalse(m._in_scope("docs/adr/0001-something.md", ROSTER))
         self.assertFalse(m._in_scope("docs/design/modules/design-core.md", ROSTER))
         self.assertFalse(m._in_scope("docs/site/AGENTS.md", ROSTER))
-        self.assertFalse(m._in_scope("docs/internal/07-platform-services.md", ROSTER))
 
     def test_other_markdown_in_a_module_is_out_of_scope(self):
         self.assertFalse(m._in_scope("pkg/core/CHANGELOG.md", ROSTER))

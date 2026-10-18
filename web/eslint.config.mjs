@@ -88,8 +88,7 @@ export default tseslint.config(
     // The single whitelist: api-client is the one package where
     // hand-written HTTP happens, by design (its createClient wires the
     // injectable fetch, timeout, retry and silent refresh). Extending
-    // this whitelist is an architecture change -- see the rule file
-    // and docs/internal/21-api-contract.md.
+    // this whitelist is an architecture change -- see the rule file.
     ignores: [...PACKAGE_RUNTIME_SRC.ignores, 'packages/api-client/**'],
     rules: {
       'speed/no-direct-http': 'error',
