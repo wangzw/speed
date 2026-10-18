@@ -163,6 +163,20 @@ describe('the account setup page', () => {
     expect(
       await screen.findByText(demoEnUS.accountSetup.complete),
     ).toBeInTheDocument()
+    // The header reflects the same state: the page never tells an account
+    // that already has a username and a password to add them.
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: demoEnUS.accountSetup.completeTitle,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(demoEnUS.accountSetup.title),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(demoEnUS.accountSetup.description),
+    ).not.toBeInTheDocument()
     // The completion point offers the way home instead of deferring.
     expect(
       screen.getByRole('link', { name: demoEnUS.accountSetup.home }),

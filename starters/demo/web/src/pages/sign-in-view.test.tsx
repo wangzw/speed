@@ -74,6 +74,7 @@ function redirectSession(): { session: AuthSession; startFlow: ReturnType<typeof
  */
 const authEn = authUiResources['en-US'] as unknown as {
   readonly mode: { readonly registerEntry: string }
+  readonly passwordSignIn: { readonly identifierLabel: string }
   readonly smsSignIn: {
     readonly phoneLabel: string
     readonly sendCode: string
@@ -92,7 +93,7 @@ describe('the sign-in surface', () => {
     const { container } = renderDemoApp()
 
     expect(
-      await screen.findByLabelText('Email, phone, or username'),
+      await screen.findByLabelText(authEn.passwordSignIn.identifierLabel),
     ).toBeInTheDocument()
     // The end-user surface states nothing about how the deployment is
     // operated: no seeding instruction, no repository-document pointer.

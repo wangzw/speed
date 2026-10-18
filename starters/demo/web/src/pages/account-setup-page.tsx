@@ -59,9 +59,18 @@ export function AccountSetupPage(): ReactElement {
   const complete = hasLoginName && passwordSet
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 640 }}>
+      {/* The header reflects the state the profile reports: an account that
+          already holds a login name and a password is not asked to add them,
+          which is the state a returning viewer meets because signing in
+          again with the same phone in register mode is an ordinary sign-in
+          that lands here. */}
       <PageHeader
-        title={t('accountSetup.title')}
-        description={t('accountSetup.description')}
+        title={
+          complete
+            ? t('accountSetup.completeTitle')
+            : t('accountSetup.title')
+        }
+        description={complete ? undefined : t('accountSetup.description')}
       />
       {complete ? (
         <Box

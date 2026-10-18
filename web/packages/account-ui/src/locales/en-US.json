@@ -267,7 +267,7 @@
         "labelEmail": "Email address",
         "labelUsername": "Username",
         "helperEmail": "A code will be sent to this address to prove it is yours.",
-        "helperUsername": "3 to 64 characters: letters, digits, dot, dash or underscore."
+        "helperUsername": "3 to 64 characters: letters, digits, dot, dash or underscore. The first character must be a letter or a digit."
       },
       "submitEmail": "Send code",
       "submitUsername": "Add",

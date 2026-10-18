@@ -17,6 +17,7 @@
 import { describe, expect, it } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import enUS from './locales/en-US.json' with { type: 'json' }
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import { identifier, profileBody } from '../test-utils/fixtures.js'
 import {
@@ -342,6 +343,42 @@ describe('IdentifiersSection', () => {
     expect(posts).toHaveLength(1)
     expect(posts[0]?.body).toEqual({ kind: 'username', value: 'ada2' })
     await waitFor(() => expect(screen.getByText('ada2')).toBeTruthy())
+  })
+
+  it('states the username first-character rule in the add helper', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    fireEvent.mouseDown(
+      screen.getByRole('combobox', { name: zhCN.identifiers.add.kind.label }),
+    )
+    await user.click(
+      screen.getByRole('option', { name: zhCN.identifiers.add.kind.username }),
+    )
+
+    // The server's username shape begins with a letter or a digit
+    // (^[a-z0-9][a-z0-9._-]{2,63}$); a leading dot, dash or underscore is
+    // refused with the generic bad-request text. The helper is the setup
+    // page's only guidance for the username it exists to add, so it has to
+    // state that rule, in both languages.
+    expect(
+      await screen.findByText(zhCN.identifiers.add.value.helperUsername),
+    ).toBeTruthy()
+    expect(zhCN.identifiers.add.value.helperUsername).toMatch(
+      /首字符必须是字母或数字/,
+    )
+    expect(enUS.identifiers.add.value.helperUsername).toMatch(
+      /first character must be a letter or a digit/i,
+    )
   })
 
   it('adds an email through the code step', async () => {
