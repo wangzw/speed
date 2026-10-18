@@ -119,8 +119,9 @@ func provide(name string, instance any, token core.Token) core.Module {
 
 // httpReply is what a client got back.
 type httpReply struct {
-	status int
-	body   string
+	status     int
+	body       string
+	setCookies []string
 }
 
 // sessionView is the part of GET /auth/session these cases read.
@@ -328,7 +329,11 @@ func (h *httpHarness) do(client *http.Client, method, path string, body any, coo
 	if err != nil {
 		h.t.Errorf("reading the body of %s %s: %v", method, path, err)
 	}
-	return httpReply{status: resp.StatusCode, body: string(raw)}
+	return httpReply{
+		status:     resp.StatusCode,
+		body:       string(raw),
+		setCookies: resp.Header.Values("Set-Cookie"),
+	}
 }
 
 // state reads GET /auth/session over the jar and decodes the answer.
@@ -445,64 +450,48 @@ func TestEndingAnImpersonationKeepsTheSessionToken(t *testing.T) {
 	})
 }
 
-// TestAnEndOnASlowNetworkKeepsInFlightReadsAuthenticated holds the shape a slow
-// network produces: reads already in flight carry the token from before the end,
-// and the browser is still presenting it while the end request is on its way.
-// Ending leaves the token in place, so those reads stay authenticated, and the
-// jar authenticates as the initiator afterwards as well. The session on the
-// server is never in question: a refusal of a request already sent is not the
-// end of the session.
-func TestAnEndOnASlowNetworkKeepsInFlightReadsAuthenticated(t *testing.T) {
+// TestTheStartRotatesTheCookieAndTheEndLeavesIt pins the carrier shape at the
+// HTTP boundary: the start write hands the browser exactly one new session
+// cookie, and the end write hands it none -- it clears the marker on the
+// session already in force, so the token the browser holds keeps working. A
+// second end finds nothing to end and writes no cookie either.
+func TestTheStartRotatesTheCookieAndTheEndLeavesIt(t *testing.T) {
 	assembleOverHTTP(t, func(h *httpHarness) {
 		h.accounts.put(httpActorID, authn.Account{Kind: authn.KindUser, Status: authn.StatusActive})
 		h.accounts.put(httpTargetID, authn.Account{Kind: authn.KindUser, Status: authn.StatusActive})
 		h.memberships.set(httpTargetID, httpTenant, true)
 
-		cookie := h.createSession(httpActorID)
-		h.startImpersonation()
-		preEnd := h.jarToken(cookie)
-
-		// The end leaves over the jar, as a browser sends it, and three reads
-		// already carry the token the jar holds at this instant. They all stay
-		// authenticated: the end clears the marker and leaves the token alone.
-		var (
-			ended  httpReply
-			inRead [3]httpReply
-			wg     sync.WaitGroup
-		)
-		begin := make(chan struct{})
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-begin
-			ended = h.do(h.client, http.MethodDelete, "/auth/impersonation", nil, "", "")
-		}()
-		for i := range inRead {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				<-begin
-				inRead[i] = h.do(h.bare, http.MethodGet, "/auth/session", nil, cookie, preEnd)
-			}()
+		h.createSession(httpActorID)
+		started := h.do(h.client, http.MethodPost, "/auth/impersonation", map[string]any{
+			"account":     string(httpTargetID),
+			"tenant":      httpTenant,
+			"reason":      "a support case",
+			"ttl_seconds": 600,
+		}, "", "")
+		if started.status != http.StatusOK {
+			t.Fatalf("POST /auth/impersonation answered %d: %s", started.status, started.body)
 		}
-		close(begin)
-		wg.Wait()
+		if len(started.setCookies) != 1 {
+			t.Errorf("the start write wrote %d Set-Cookie header(s), want exactly 1: %v",
+				len(started.setCookies), started.setCookies)
+		}
 
+		ended := h.do(h.client, http.MethodDelete, "/auth/impersonation", nil, "", "")
 		if ended.status != http.StatusNoContent {
 			t.Fatalf("DELETE /auth/impersonation answered %d: %s", ended.status, ended.body)
 		}
-		for i, r := range inRead {
-			if r.status != http.StatusOK {
-				t.Errorf("in-flight read %d answered %d, want 200: %s", i, r.status, r.body)
-			}
+		if len(ended.setCookies) != 0 {
+			t.Errorf("the end write wrote %d Set-Cookie header(s), want none: %v",
+				len(ended.setCookies), ended.setCookies)
 		}
 
-		// The session on the server is intact: the jar's cookie authenticates as
-		// the initiator after the end, whatever the end answered. A client that
-		// ends up anonymous did so on its own reading of the requests it had
-		// already sent, not because the session ended.
-		if v := h.state(); !v.Authenticated || v.Impersonating || v.AccountID != string(httpActorID) {
-			t.Errorf("the jar's session after the end reads %+v, want the actor and not impersonating", v)
+		again := h.do(h.client, http.MethodDelete, "/auth/impersonation", nil, "", "")
+		if again.status != http.StatusNotFound {
+			t.Fatalf("a second DELETE /auth/impersonation answered %d, want 404: %s", again.status, again.body)
+		}
+		if len(again.setCookies) != 0 {
+			t.Errorf("the second end wrote %d Set-Cookie header(s), want none: %v",
+				len(again.setCookies), again.setCookies)
 		}
 	})
 }
