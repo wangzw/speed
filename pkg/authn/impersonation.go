@@ -27,8 +27,17 @@ type Impersonation interface {
 	// the audit row only.
 	End(ctx context.Context, actor Identity, reason string) error
 	// Revoke ends record id by force, with the reason revoked; by is who revoked.
-	// It is idempotent: a record that has ended is a no-op. It asks no Decider,
-	// because the administration handler has already authorized the call.
+	// Before it writes revoked it judges the record by the validity conditions and
+	// writes a lapse back, so a record that has expired, lost its bound session,
+	// lost its actor or target, or lost its membership ends with its own reason and
+	// the revoke is a no-op: no revoke audit row and no revoke event is written.
+	// Only a record that is still valid after the judgement is written revoked.
+	// It is idempotent: a record that has ended is a no-op, and a record that is
+	// not there is ErrNotImpersonating. It asks no Decider, because the
+	// administration handler has already authorized the call. The judgement reads
+	// the bound session from the store and not through the check-ttl cache. A
+	// dependency read that cannot answer is ErrUnavailable, and the record stays
+	// unended.
 	Revoke(ctx context.Context, id string, by Identity, reason string) error
 	// Active says whether record id is valid now. A record that is not there, has
 	// ended or has lapsed is false in the second result, and a lapse read from a
@@ -37,7 +46,13 @@ type Impersonation interface {
 	Active(ctx context.Context, id string) (ImpersonationGrant, bool, error)
 	// List returns one page of the records the query selects, keyed by cursor: the
 	// second result is the cursor of the next page, empty when there is none.
-	// Records are never deleted, so a query by target is the complete answer to
-	// who impersonated whom.
+	// Before it returns, it judges every unended record on the page by the validity
+	// conditions and writes a lapse back, and the page it returns is the page as
+	// persisted. It therefore has write side effects, and each lapse it writes
+	// counts an end and may publish an ended event. The judgement reads the
+	// dependency state from the store and not through the check-ttl cache. A
+	// dependency read that cannot answer fails the whole page with ErrUnavailable;
+	// no partial page is returned. Records are never deleted, so a query by target
+	// is the complete answer to who impersonated whom.
 	List(ctx context.Context, q GrantQuery) ([]ImpersonationGrant, string, error)
 }
