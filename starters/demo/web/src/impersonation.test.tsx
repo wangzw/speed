@@ -1544,10 +1544,11 @@ describe('the impersonation shell', () => {
       expect(restores).toBe(1)
       expect(backend.statusReads()).toBe(1)
 
-      // A window refocus re-reads the status read under the new judgement:
-      // the bare 404 is handled once, and the bounded re-read starts.
+      // The tab becoming visible again re-reads the status read under the
+      // new judgement: the bare 404 is handled once, and the bounded re-read
+      // starts.
       await act(async () => {
-        window.dispatchEvent(new Event('focus'))
+        window.dispatchEvent(new Event('visibilitychange'))
         await Promise.resolve()
       })
       await act(async () => {

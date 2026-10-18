@@ -12,7 +12,7 @@
  * reloading the page.
  */
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -26,6 +26,7 @@ import {
   consoleUiResources,
 } from '@speed/console-ui'
 import { LAYOUT_KIT_NAMESPACE, layoutKitResources } from '@speed/layout-kit'
+import { createQueryClient } from '@speed/product-shell/bootstrap'
 import type { SpeedAppServices } from '@speed/product-shell/bootstrap'
 import { RouteProvider } from '@speed/route-kit'
 import { AppThemeProvider, UI_KIT_NAMESPACE, uiKitResources } from '@speed/ui-kit'
@@ -97,9 +98,7 @@ function renderConsoleArea(children: ReactNode = <p>console page</p>) {
   const services: SpeedAppServices = {
     session: createTestSession(),
     api: createHarnessClient(),
-    queryClient: new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    }),
+    queryClient: createQueryClient(),
   }
 
   // The area reads the router (route-kit's navigate) to route its navigation

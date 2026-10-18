@@ -9,6 +9,9 @@
  * over the environment's own (stubbed) fetch, the session-end strategy
  * is wired (default and override), and unmount tears the page down.
  *
+ * createQueryClient -- the exported query policy: the read defaults are
+ * written out on the client rather than inherited from the library.
+ *
  * watchSessionEnd -- the session-ended default's transition matrix over
  * a real AuthSession (createAuthSession driven through the real-client
  * rig's scripted responder), a real QueryClient and no DOM tree: the
@@ -33,7 +36,11 @@ import { LAYOUT_KIT_NAMESPACE } from '@speed/layout-kit'
 import { UI_KIT_NAMESPACE } from '@speed/ui-kit'
 import { PRODUCT_SHELL_NAMESPACE } from './resources.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
-import { bootstrapSpeedApp, watchSessionEnd } from './bootstrap.js'
+import {
+  bootstrapSpeedApp,
+  createQueryClient,
+  watchSessionEnd,
+} from './bootstrap.js'
 import type { SpeedAppBootstrap, SpeedAppProvider } from './bootstrap.js'
 import type { SpeedAppDefinition, SpeedAppServices } from './bootstrap.js'
 import {
@@ -648,6 +655,25 @@ describe('bootstrapSpeedApp', () => {
       boot.root.unmount()
     })
     container.remove()
+  })
+})
+
+describe('createQueryClient', () => {
+  it('writes the read policy out explicitly instead of leaving it to the library', () => {
+    const { queries, mutations } = createQueryClient().getDefaultOptions()
+
+    // getDefaultOptions returns the options as constructed, without
+    // merging the library's own defaults, so an exact equality pins the
+    // keys the assembly wrote: an omitted trigger fails here even though
+    // the library would have supplied the same value.
+    expect(queries).toEqual({
+      retry: false,
+      staleTime: 0,
+      refetchOnMount: true,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+    })
+    expect(mutations).toEqual({ retry: false })
   })
 })
 

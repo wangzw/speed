@@ -582,9 +582,9 @@ describe('DashboardPage', () => {
     const status = within(header).getByRole('status')
     expect(status.textContent).toBe('')
 
-    // The tab regaining focus is an automatic re-read moment: the page moves
-    // the health window and the query client re-reads on focus, and neither
-    // announces.
+    // The tab becoming visible again is an automatic re-read moment: the
+    // page moves the health window and the query client re-reads on the
+    // visibility change, and neither announces.
     act(() => {
       focusManager.setFocused(false)
     })

@@ -110,5 +110,6 @@ viewer never opens the authenticated stream.
   the server writes JSON `null` for an unread message; the surfaces treat
   `null`, `undefined` and `""` alike as unread.
 - A deployment without the stream simply mounts no opener (or `enabled`
-  false): the surfaces still read their data on mount and on focus, and
-  real-time is an enhancement, never a prerequisite.
+  false): the surfaces still read their data on mount and when the tab
+  becomes visible again, and real-time is an enhancement, never a
+  prerequisite.

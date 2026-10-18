@@ -23,8 +23,8 @@
  *
  * When the host mounts no opener (a deployment without the stream, or a
  * read-only surface), no connection is opened and the surfaces still
- * read their data on mount and on focus -- real-time is an enhancement,
- * never a prerequisite.
+ * read their data on mount and when the tab becomes visible again --
+ * real-time is an enhancement, never a prerequisite.
  */
 
 import { createContext, useContext, useEffect } from 'react'

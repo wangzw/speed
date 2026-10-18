@@ -49,8 +49,9 @@
  * timer therefore runs the full identity change at the expiry instant and,
  * while the session still answers impersonating, re-reads it on a fixed
  * short interval for at most the check-ttl upper bound; it then stops and
- * leaves the banner and its end control in place, and a refocus re-reads
- * through the query client's staleTime 0. A settled 404 runs the same
+ * leaves the banner and its end control in place, and the tab becoming
+ * visible again re-reads through the query client's staleTime 0. A settled
+ * 404 runs the same
  * bounded re-read from the moment it handled the 404, because that path has
  * no recorded expiry to bound it by.
  *
@@ -408,8 +409,8 @@ export function useImpersonationStatus(
       try {
         await session.restore()
       } catch {
-        // A failed re-read leaves the banner usable; the next interval or a
-        // refocus tries again.
+        // A failed re-read leaves the banner usable; the next interval or
+        // the tab becoming visible again tries again.
       }
       if (!session.getSnapshot().impersonating) {
         // Judged before the cancellation check: the flip itself disables
@@ -480,8 +481,8 @@ export function useImpersonationStatus(
       try {
         await session.restore()
       } catch {
-        // A failed re-read leaves the banner usable; the next interval or a
-        // refocus tries again.
+        // A failed re-read leaves the banner usable; the next interval or
+        // the tab becoming visible again tries again.
       }
       if (!session.getSnapshot().impersonating) {
         // The server has settled back to the operator: run the full

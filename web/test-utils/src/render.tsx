@@ -15,7 +15,11 @@
  * - createTestQueryClient: a fresh client that retries nothing, so an
  *   operation a test scripts to fail surfaces its error on the first
  *   attempt, not after react-query default retries, and a mutation
- *   never outlives its test.
+ *   never outlives its test. It also writes the production read defaults
+ *   explicitly -- staleTime 0 and every automatic re-read trigger on --
+ *   so a suite's re-read timing matches the assembled app's. This
+ *   package sits below product-shell and imports none of it, so the
+ *   values are stated here rather than shared through that export.
  * - RenderWithProvidersOptions / RenderWithProvidersResult: the option
  *   and result shapes the harnesses extend (the shared options are the
  *   language and a caller-owned instance; the shared result carries the
@@ -59,11 +63,18 @@ export function createTestI18n(language: string = 'zh-CN'): I18nInstance {
   })
 }
 
-/** Fresh client that never retries: see the header. */
+/** Fresh client that never retries, with the production read defaults
+ * written out: see the header. */
 export function createTestQueryClient(): QueryClient {
   return new QueryClient({
     defaultOptions: {
-      queries: { retry: false },
+      queries: {
+        retry: false,
+        staleTime: 0,
+        refetchOnMount: true,
+        refetchOnWindowFocus: true,
+        refetchOnReconnect: true,
+      },
       mutations: { retry: false },
     },
   })

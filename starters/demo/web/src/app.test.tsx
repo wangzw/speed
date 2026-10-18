@@ -47,6 +47,29 @@ beforeEach(() => {
   setCurrentTenantId(DEFAULT_TENANT_ID)
 })
 
+describe('the render harness', () => {
+  it("renders under the assembly's query client, read policy included", () => {
+    const { queryClient, unmount } = renderDemoApp()
+
+    // The harness delegates to createQueryClient instead of building a
+    // client of its own, so a view suite's re-read timing matches the
+    // assembled app's: every read is stale (so a remount, the tab
+    // becoming visible again or a reconnect re-reads) and nothing is
+    // retried at this layer.
+    expect(queryClient.getDefaultOptions().queries).toEqual({
+      retry: false,
+      staleTime: 0,
+      refetchOnMount: true,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+    })
+    expect(queryClient.getDefaultOptions().mutations).toEqual({
+      retry: false,
+    })
+    unmount()
+  })
+})
+
 describe('the app at the root path', () => {
   it('shows the host sign-in surface to a visitor without a session', async () => {
     renderDemoApp()

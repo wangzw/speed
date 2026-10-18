@@ -1,11 +1,12 @@
 /**
  * Test configuration for the workspace's shared test-support package.
  *
- * Node environment: the package's own suite drives the session harness,
- * which touches no DOM. The helpers that do need a DOM (axe.ts,
- * render.tsx, matchMedia.ts) are exercised by the consuming packages'
- * suites, which run under their own jsdom configs -- this package
- * carries no second, duplicative suite for them.
+ * Node environment: the package's own suite drives the session harness
+ * and the test client's defaults, neither of which touches a DOM. The
+ * helpers that do need one (axe.ts, render.tsx's provider trees,
+ * matchMedia.ts) are exercised by the consuming packages' suites, which
+ * run under their own jsdom configs -- this package carries no second,
+ * duplicative suite for them.
  *
  * The aliases come from the workspace's single package map
  * (web/scripts/speed-aliases.mjs), the same derivation every consuming

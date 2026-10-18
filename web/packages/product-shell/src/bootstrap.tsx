@@ -270,9 +270,12 @@ export function watchSessionEnd(
  *    whose answer timed out server-side may already have committed, and
  *    a retry would duplicate it.
  *
- * Recovery is not lost: every query is staleTime 0, so a remount or a
- * window refocus re-reads under the current token, and the transport's
- * own retries cover momentary outages.
+ * Recovery is not lost: the read defaults are written out explicitly
+ * rather than left to the library -- staleTime 0, with refetchOnMount,
+ * refetchOnWindowFocus and refetchOnReconnect each true -- so a remount,
+ * the tab becoming visible again and a reconnect each re-read under the
+ * current token, and the transport's own retries cover momentary
+ * outages.
  *
  * Exported because the policy is the assembly's, not a bootstrap
  * internal: a host or suite that renders the app's views under the
@@ -283,7 +286,16 @@ export function watchSessionEnd(
 export function createQueryClient(): QueryClient {
   return new QueryClient({
     defaultOptions: {
-      queries: { retry: false },
+      queries: {
+        retry: false,
+        // Explicit: every read is always stale, and no automatic re-read
+        // trigger is off. The library's own defaults currently agree, but
+        // the assembly states the policy instead of inheriting it.
+        staleTime: 0,
+        refetchOnMount: true,
+        refetchOnWindowFocus: true,
+        refetchOnReconnect: true,
+      },
       mutations: { retry: false },
     },
   })
