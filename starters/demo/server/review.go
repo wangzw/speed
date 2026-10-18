@@ -7,6 +7,10 @@ package main
 // gives the SMS login method a sender that writes the verification code to the
 // log instead of calling a carrier.
 //
+// Because those log lines and the seeded credentials are for one machine only,
+// the assembly also carries a guard: a run whose HTTP listener is not loopback
+// fails at startup instead of serving the codes to a network.
+//
 // The baseline admits only capabilities that start without a credential, an
 // external account or a service outside the deployment stack (see main.go). A
 // review of the login surface needs the other kinds on screen, so this build
@@ -30,8 +34,11 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"strings"
 
+	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/sms"
@@ -51,6 +58,15 @@ import (
 // no item and therefore appears in no configuration file.
 const reviewCarrierModuleName = "sms.review"
 
+// reviewGuardModuleName is the module name of the startup guard. It mounts
+// nothing: its one work is refusing a run whose listening addresses are not
+// loopback.
+const reviewGuardModuleName = "review.guard"
+
+// reviewHTTPConfigNamespace is where the HTTP module's input items are mounted:
+// its own fixed namespace, which the guard reads the listener addresses from.
+const reviewHTTPConfigNamespace = "http"
+
 // reviewCarrierName is what the sender answers Name with: the carrier this
 // sender is, in the sense the real carriers use.
 const reviewCarrierName = "review"
@@ -59,7 +75,8 @@ const reviewCarrierName = "review"
 // social methods deliver a LoginMethod each and read their credentials from the
 // review configuration; the SMS three are the code state machine, its template
 // registry and the login method over them, with the review sender supplying the
-// carrier.
+// carrier; the guard refuses a run that would expose the review credentials
+// beyond the machine.
 var reviewModules = []string{
 	googlelogin.ModuleName,
 	githublogin.ModuleName,
@@ -69,6 +86,7 @@ var reviewModules = []string{
 	smsregistry.ModuleName,
 	smslogin.ModuleName,
 	reviewCarrierModuleName,
+	reviewGuardModuleName,
 }
 
 // reviewSenderConfig is the review sender's configuration. It declares no item:
@@ -76,9 +94,9 @@ var reviewModules = []string{
 // process log.
 type reviewSenderConfig struct{}
 
-// init registers the review sender as a carrier module. Importing this file is
-// what puts it in the available set, and the serve roster below names it for a
-// run.
+// init registers the review sender as a carrier module and the review guard
+// beside it. Importing this file is what puts both in the available set, and
+// the serve roster below names them for a run.
 func init() {
 	core.ProcessRegistry.Register(sms.NewModule(sms.Spec[reviewSenderConfig]{
 		ModuleName:      reviewCarrierModuleName,
@@ -91,6 +109,78 @@ func init() {
 			return reviewSender{}, nil
 		},
 	}))
+	core.ProcessRegistry.Register(reviewGuardModule())
+}
+
+// reviewGuardModule refuses a run whose listening addresses are not loopback.
+//
+// The review build writes every verification code to the process log and seeds
+// the administrator credential the repository publishes, so a process anyone on
+// the network can reach gives both away. The guard reads the HTTP module's
+// listener addresses in Prepare, before any socket is bound: a non-loopback
+// address fails the startup, and the run never serves.
+func reviewGuardModule() core.Module {
+	return core.Module{
+		Name:     reviewGuardModuleName,
+		Requires: []core.Requirement{{Token: (*config.Reader)(nil)}},
+		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
+			reader, err := core.Resolve[config.Reader](reg)
+			if err != nil {
+				return core.Enablement{}, fmt.Errorf("%s: taking up the configuration reader: %w",
+					reviewGuardModuleName, err)
+			}
+			if err := checkReviewListeners(reader); err != nil {
+				return core.Enablement{}, err
+			}
+			return core.Enablement{State: core.StateEnabled}, nil
+		},
+	}
+}
+
+// reviewHTTPConfig is the part of the HTTP module's configuration the guard
+// reads: the address of each configured listener. The listener entries carry
+// more, which is the HTTP module's business.
+type reviewHTTPConfig struct {
+	Listeners map[string]reviewListenerConfig `config:"listeners"`
+}
+
+// reviewListenerConfig is one listener entry's address.
+type reviewListenerConfig struct {
+	Address string `config:"address"`
+}
+
+// checkReviewListeners refuses any listener the review build configured on a
+// non-loopback address.
+func checkReviewListeners(reader config.Reader) error {
+	var cfg reviewHTTPConfig
+	if err := reader.Decode(reviewHTTPConfigNamespace, &cfg); err != nil {
+		return fmt.Errorf("%s: reading the listener addresses: %w", reviewGuardModuleName, err)
+	}
+	for name, listener := range cfg.Listeners {
+		if loopbackAddress(listener.Address) {
+			continue
+		}
+		return fmt.Errorf("%s: listener %q is bound to %q, which is not a loopback address. "+
+			"The review build writes verification codes to the process log and seeds a published "+
+			"administrator credential, so it serves loopback addresses only",
+			reviewGuardModuleName, name, listener.Address)
+	}
+	return nil
+}
+
+// loopbackAddress reports whether address, in net.Listen's form, names a
+// loopback host. An empty host is every interface and is refused; "localhost"
+// is accepted as the conventional loopback name.
+func loopbackAddress(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // reviewSender is the carrier the review build sends through. It reaches no
