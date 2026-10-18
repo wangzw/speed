@@ -96,6 +96,15 @@ describe('runWebauthn', () => {
     expect(get).toHaveBeenCalledTimes(1)
   })
 
+  it('hands the caller an abort signal it can give up the ceremony with', () => {
+    const get = vi.fn().mockReturnValue(new Promise(() => {}))
+    stubCredentials({ get, create: vi.fn() })
+    const controller = new AbortController()
+    void runWebauthn({ challenge: 'Y2hhbGxlbmdl' }, controller.signal)
+    const call = get.mock.calls[0]?.[0] as { signal?: AbortSignal }
+    expect(call.signal).toBe(controller.signal)
+  })
+
   it('reports a browser without the credential API as unsupported', async () => {
     delete (window.navigator as { credentials?: unknown }).credentials
     await expect(runWebauthn({ challenge: 'x' })).rejects.toMatchObject({

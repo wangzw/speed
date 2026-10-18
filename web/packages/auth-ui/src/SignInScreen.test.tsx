@@ -553,23 +553,31 @@ describe('SignInScreen', () => {
       await user.click(
         screen.getByRole('button', { name: zhCN.signInFlow.passkeyCancel }),
       )
-      // Cancel is an explicit failure, not a return to the idle step.
+      // The failure renders with the click, not when the ceremony settles:
+      // the stubbed ceremony never settles, and the assertions below are
+      // read synchronously.
       expect(
-        await screen.findByText(zhCN.signInFlow.passkeyCancelled),
+        screen.getByText(zhCN.signInFlow.passkeyCancelled),
       ).toBeInTheDocument()
       expect(
         screen.queryByText(zhCN.signInFlow.passkeyWaiting),
       ).not.toBeInTheDocument()
+      // The abandoned call was handed an abort signal, so a browser that
+      // honours it closes its own prompt instead of leaving it behind.
+      const first = get.mock.calls[0]?.[0] as { signal?: AbortSignal }
+      expect(first.signal?.aborted).toBe(true)
       await user.click(
         screen.getByRole('button', { name: zhCN.signInFlow.passkeyRetry }),
       )
-      // Retry re-issues the same step's ceremony.
+      // Retry re-issues the same step's ceremony under its own signal.
       expect(
         await screen.findByText(zhCN.signInFlow.passkeyWaiting),
       ).toBeInTheDocument()
       expect(
         screen.queryByText(zhCN.signInFlow.passkeyCancelled),
       ).not.toBeInTheDocument()
+      const second = get.mock.calls[1]?.[0] as { signal?: AbortSignal }
+      expect(second.signal?.aborted).toBe(false)
     } finally {
       restore()
     }

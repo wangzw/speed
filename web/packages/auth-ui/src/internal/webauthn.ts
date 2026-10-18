@@ -56,8 +56,16 @@ export function webauthnStepOf(options: unknown): WebauthnStep {
 /** Drive the passkey ceremony a step's options describe and return the
  * credential as the JSON the answer field carries. Throws a
  * WebauthnError for a step that is not a passkey step, a browser without
- * WebAuthn, a user who dismissed the prompt, or a ceremony that failed. */
-export async function runWebauthn(options: unknown): Promise<string> {
+ * WebAuthn, a user who dismissed the prompt, or a ceremony that failed.
+ * `signal` lets the caller give up on the ceremony (a cancel control); a
+ * browser that honours it dismisses its own prompt and rejects with
+ * AbortError. It is best effort: the credential API does not require the
+ * honour, and a caller that abandons the call must still ignore its late
+ * result. */
+export async function runWebauthn(
+  options: unknown,
+  signal?: AbortSignal,
+): Promise<string> {
   const step = webauthnStepOf(options)
   if (step === 'totp') {
     throw new WebauthnError('failed', 'the step is a TOTP enrollment, not a passkey ceremony')
@@ -68,11 +76,18 @@ export async function runWebauthn(options: unknown): Promise<string> {
   if (credentials === undefined || typeof credentials.create !== 'function') {
     throw new WebauthnError('unsupported', 'WebAuthn is unavailable in this browser')
   }
+  const abortable = signal === undefined ? {} : { signal }
   try {
     const credential =
       step === 'register'
-        ? await credentials.create({ publicKey: decodeCreation(options) })
-        : await credentials.get({ publicKey: decodeRequest(options) })
+        ? await credentials.create({
+            ...abortable,
+            publicKey: decodeCreation(options),
+          })
+        : await credentials.get({
+            ...abortable,
+            publicKey: decodeRequest(options),
+          })
     if (credential === null) {
       throw new WebauthnError('cancelled', 'no credential was produced')
     }

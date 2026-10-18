@@ -207,13 +207,14 @@ function TotpFields({
  * device (a page with no authenticator at all keeps it pending until it is
  * dismissed), so a click moves the step into an explicit waiting state: the
  * waiting message and a cancel control replace the button instead of
- * leaving a disabled button as the only signal. The credential API offers
- * no portable way to abort a running ceremony, so cancel stops this step
- * from waiting on it -- the call is left to settle on its own and its late
- * answer, success or failure, is discarded. A browser without WebAuthn, a
- * cancelled or dismissed ceremony and a failed ceremony each render their
- * own message, and the retry action runs the ceremony again against the
- * same step. */
+ * leaving a disabled button as the only signal. Cancel is its own state
+ * transition, taken at once: it shows the failure and retry without waiting
+ * for the ceremony to settle, and only best-effort asks the browser to give
+ * up the ceremony (the credential API does not guarantee it honours an
+ * abort). A late answer from an abandoned ceremony is discarded by attempt.
+ * A browser without WebAuthn, a cancelled or dismissed ceremony and a
+ * failed ceremony each render their own message, and the retry action runs
+ * the ceremony again against the same step. */
 function PasskeyFields({
   options,
   busy,
@@ -228,26 +229,33 @@ function PasskeyFields({
   const { t } = useAuthUiTranslation()
   const [working, setWorking] = useState(false)
   const [errorKey, setErrorKey] = useState<string | null>(null)
-  // The ceremony the view is currently waiting on. Cancel flips the token
-  // so the promise's late settlement (and a retry's own token) stay apart.
-  const pendingRef = useRef<{ cancelled: boolean } | null>(null)
+  // The ceremony currently being waited on. Cancel clears it before the
+  // failure renders, so the ceremony's late settlement and a retry's own
+  // attempt stay apart from this one.
+  const pendingRef = useRef<{
+    attempt: number
+    controller: AbortController
+  } | null>(null)
+  const attemptRef = useRef(0)
 
   async function run(): Promise<void> {
-    const token = { cancelled: false }
-    pendingRef.current = token
+    const attempt = attemptRef.current + 1
+    attemptRef.current = attempt
+    const controller = new AbortController()
+    pendingRef.current = { attempt, controller }
     setWorking(true)
     setErrorKey(null)
     try {
-      const credential = await runWebauthn(options)
-      if (!token.cancelled) {
+      const credential = await runWebauthn(options, controller.signal)
+      if (pendingRef.current?.attempt === attempt) {
         onAnswer({ credential })
       }
     } catch (failure) {
-      if (!token.cancelled) {
+      if (pendingRef.current?.attempt === attempt) {
         setErrorKey(webauthnErrorKey(failure))
       }
     } finally {
-      if (pendingRef.current === token) {
+      if (pendingRef.current?.attempt === attempt) {
         pendingRef.current = null
         setWorking(false)
       }
@@ -256,10 +264,11 @@ function PasskeyFields({
 
   function cancel(): void {
     const pending = pendingRef.current
-    if (pending !== null) {
-      pending.cancelled = true
-      pendingRef.current = null
-    }
+    pendingRef.current = null
+    pending?.controller.abort()
+    // Fail now. The ceremony's own rejection (if the abort reaches it) and
+    // its eventual settlement are both ignored: its attempt no longer
+    // matches pendingRef.
     setWorking(false)
     setErrorKey('signInFlow.passkeyCancelled')
   }
