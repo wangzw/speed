@@ -9,8 +9,9 @@ use (
 // chain, predates module graph pruning and drags google.golang.org/genproto
 // v0.0.0-20190819201941 back into the workspace build list, where its
 // googleapis/api and googleapis/rpc packages shadow the split
-// google.golang.org/genproto/googleapis/* modules. Pin the monolith to a
-// version whose googleapis/api and googleapis/rpc trees are separate modules,
-// so only the split modules provide those packages.
-replace google.golang.org/genproto => google.golang.org/genproto v0.0.0-20260819154853-08b0e4226688
+// google.golang.org/genproto/googleapis/* modules. Pointing that one version
+// at a post-split release makes its go.mod lift the selected version past the
+// pre-split one, so only the split modules provide those packages. Naming the
+// version keeps a later monolith release from being pinned to this one.
+replace google.golang.org/genproto v0.0.0-20190819201941-24fa4b261c55 => google.golang.org/genproto v0.0.0-20260819154853-08b0e4226688
 
