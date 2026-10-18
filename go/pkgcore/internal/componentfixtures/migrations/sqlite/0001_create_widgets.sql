@@ -1,1 +1,0 @@
-CREATE TABLE widgets (id TEXT PRIMARY KEY);
