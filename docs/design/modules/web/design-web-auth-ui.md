@@ -42,10 +42,16 @@ interface SignInScreenProps {
   readonly session: AuthSession
   readonly discovery?: AuthnMethodList      // 宿主注入预算好的文档（SSR、测试）；省略时屏幕自己读
   readonly mode?: 'sign-in' | 'register'    // 纯呈现开关，起同一条流程
-  readonly onSignedIn?: () => void
+  readonly onSignedIn?: (context: SignInContext) => void // 屏内渠道登录成功时报出上下文
   readonly social?: SocialSignInOptions
   readonly channels?: readonly SignInChannel[] // 已弃用：仍窄化 form 标签页条，一个 major 内生效
   readonly defaultChannel?: SignInChannel      // 已弃用
+}
+
+// 登录成功时屏幕所处的模式与走通的渠道。
+interface SignInContext {
+  readonly mode: 'sign-in' | 'register'
+  readonly channel: string                  // 走通的方法名：password、sms、通行密钥或描述符表单的方法名
 }
 
 interface SocialSignInOptions {
@@ -147,7 +153,7 @@ interface ImpersonationEndMenuItemProps {
 }
 ```
 
-`SignInScreen` 的 `discovery` 缺省时经 `session.listMethods()` 读一次部署的发现文档（`useSignInDiscovery`）；给出时以注入的文档为准，不发起读取（SSR、测试）。`mode` 是纯呈现开关：注册入口的可见性由 `discovery.signup.enabled` 与至少一个可见方法带 `opens_account` 决定，起的是同一条登录流程。未知 `kind` 不渲染也不崩；描述符给出的 `label` 优先作为方法显示名，缺失时按方法名查 `auth-ui` 命名空间，再退回方法名本身。
+`SignInScreen` 的 `discovery` 缺省时经 `session.listMethods()` 读一次部署的发现文档（`useSignInDiscovery`）；给出时以注入的文档为准，不发起读取（SSR、测试）。`mode` 是纯呈现开关：注册入口的可见性由 `discovery.signup.enabled` 与至少一个可见方法带 `opens_account` 决定，起的是同一条登录流程。`onSignedIn` 带一个 `context`：登录成功时屏幕所处的模式与走通的渠道，宿主据此区分一次注册与一次登录，例如注册模式下经短信渠道登录之后把页面带到完成设置页（[starters](../design-starters.md)，[ADR-authn-signup-2026-10-18](../../../adr/adr-authn-signup-2026-10-18.md)）。屏幕自己驱动到完成的渠道（口令、短信、通行密钥与描述符表单）报出方法名；重定向类与企业类渠道经回调路由完成，不经本屏，也就不带上下文；单个渠道表单与回调处理器的 `onSignedIn` 形状不变。未知 `kind` 不渲染也不崩；描述符给出的 `label` 优先作为方法显示名，缺失时按方法名查 `auth-ui` 命名空间，再退回方法名本身。
 
 `SocialSignInSection` 的回调是 `onAuthorizeUrl?`，把某个渠道开始流程后得到的授权地址报给宿主，由宿主决定它是一次跳转、一个弹窗还是一个新标签。`SocialCallbackHandler` 在回调路由上读回流程，登录落地（会话已由服务端建于回跳应答）后触发一次 `onSignedIn`。它的可选属性 `absent` 是本部署不提供回调落点时宿主要渲染的内容；只在宿主给了 `absent` 时，处理器才读发现文档，规则见[本部署不提供回调落点时](#本部署不提供回调落点时)。
 
@@ -359,6 +365,7 @@ sequenceDiagram
 | 邀请受理面 | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen` |
 | 冒充横幅 `ImpersonationBanner` | 已实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerProps`、`ImpersonationBannerState` |
 | 横幅的隐藏控件、顶部栏的 `ImpersonationIndicator`、与账户菜单项共用结束尝试 | 已实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerProps`、`ImpersonationBannerState`；`web/packages/auth-ui/src/ImpersonationNotice.tsx` `ImpersonationNoticeProvider`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`useImpersonationNotice` |
+| 登录屏的 `onSignedIn` 带模式与渠道上下文 | 未实现 | — |
 | 横幅文字行内流动（1280 宽单行、800 宽至多两行） | 已实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerState` |
 | 渠道组件的反馈作用域，答复一步清掉失败横幅，仪式失败与服务端失败横幅互斥 | 未实现 | — |
 | 社交回跳路由上的步骤失败原地保留，没有停着步骤时的重试 | 未实现 | — |
