@@ -2,8 +2,8 @@
  * PasswordSignInForm: the password channel of the sign-in family.
  *
  * A controlled react-hook-form form over the session's login flow: the
- * identifier (email or phone -- the backend decides which) and the
- * password are sent as the flow's first step (`session.startFlow`, method
+ * identifier (email, phone, or username -- the backend decides which) and
+ * the password are sent as the flow's first step (`session.startFlow`, method
  * `password`), rendered through ui-kit's FormLayout and FormField
  * skeleton. The skeleton owns the <form>, the validation-error rendering
  * and the actions row; this component owns the submission, the busy state

@@ -1,7 +1,7 @@
 {
   "passwordSignIn": {
     "title": "Password",
-    "identifierLabel": "Email or phone number",
+    "identifierLabel": "Email, phone, or username",
     "passwordLabel": "Password",
     "newPasswordLabel": "New password",
     "submit": "Sign in"

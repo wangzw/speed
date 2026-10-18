@@ -1,7 +1,7 @@
 {
   "passwordSignIn": {
     "title": "密码登录",
-    "identifierLabel": "邮箱或手机号",
+    "identifierLabel": "邮箱、手机号或用户名",
     "passwordLabel": "密码",
     "newPasswordLabel": "新密码",
     "submit": "登录"

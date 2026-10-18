@@ -286,8 +286,9 @@ navigates. None of them reads the session snapshot or renders a title.
 
 ### PasswordSignInForm
 
-One identifier field -- email or phone, the backend decides which -- and a
-password field, sent as a `method: 'password'` flow's first step. A
+One identifier field -- email, phone, or username, the backend decides
+which -- and a password field, sent as a `method: 'password'` flow's first
+step. A
 forced password change or a second factor the flow then parks on is
 rendered by the shared step renderer in place of these fields.
 
