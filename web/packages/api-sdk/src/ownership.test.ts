@@ -15,8 +15,10 @@
  * from the committed surface while every check stayed green.
  *
  * Operations are matched by method and path, with the document's `{name}`
- * parameters compared against the generated url's `${name}` spelling, and by
- * the function name orval derives from the operationId. A literal path lookup
+ * parameters and the generated url's `${name}` spelling brought into one form
+ * first. orval 8.17.0 camelCases path parameters as it writes the url
+ * (`{type_key}` in the document becomes `${typeKey}`), so the document side is
+ * normalized the same way before the two are compared. A literal path lookup
  * misses every operation with a parameter and cannot tell two methods on one
  * path apart.
  *
@@ -53,7 +55,7 @@ interface MergedDocument {
 interface Operation {
   /** Upper-case HTTP method. */
   readonly method: string
-  /** The contract's path, with parameters spelled `{name}`. */
+  /** The contract's path, with parameters in orval's spelling. */
   readonly path: string
   readonly operationId: string
   readonly applicationOwned: boolean
@@ -64,13 +66,35 @@ function label(operation: { method: string; path: string }): string {
   return `${operation.method} ${operation.path}`
 }
 
+/**
+ * The spelling orval 8.17.0 gives a path parameter, mirrored from its
+ * `getRoutePath` (`@orval/core`, src/getters/route.ts). `camel` lowercases an
+ * all-caps name, splits it on every run of non-alphanumerics, capitalises each
+ * word and decapitalises the first, so `type_key` becomes `typeKey` and an
+ * already-camel name stays itself. `sanitize` then prefixes an ES5 keyword with
+ * `_`; no path parameter in the document is one, so this mirror leaves that
+ * step out.
+ */
+function orvalParameterName(name: string): string {
+  const lower = /^[^a-z]+$/.test(name) ? name.toLowerCase() : name
+  const words = lower.match(/[a-zA-Z0-9\u00c0-\u017f]+/g) ?? []
+  const pascal = words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join('')
+  const camel = pascal.charAt(0).toLowerCase() + pascal.slice(1)
+  return name.startsWith('_') ? `_${camel}` : camel
+}
+
+/** The contract path with its parameter names in the spelling orval writes. */
+function toGeneratedPath(path: string): string {
+  return path.replace(/\{([^}]+)\}/g, (_, name: string) => `{${orvalParameterName(name)}}`)
+}
+
 function documentOperations(document: MergedDocument): Operation[] {
   const operations: Operation[] = []
   for (const [path, methods] of Object.entries(document.paths)) {
     for (const [method, operation] of Object.entries(methods)) {
       operations.push({
         method: method.toUpperCase(),
-        path,
+        path: toGeneratedPath(path),
         operationId: operation.operationId ?? '',
         applicationOwned: operation.tags?.includes(APPLICATION_TAG) === true,
       })
@@ -80,9 +104,9 @@ function documentOperations(document: MergedDocument): Operation[] {
 }
 
 /**
- * The request url a generated call emits, brought back to the contract's
+ * The request url a generated call emits, brought back to the document's
  * spelling: orval writes a path parameter as `${name}`, the document as
- * `{name}`.
+ * `{name}`. The name is already in orval's spelling on both sides by then.
  */
 function toContractPath(url: string): string {
   return url.replace(/\$\{([^}]+)\}/g, '{$1}')
@@ -204,6 +228,18 @@ describe('the leak matcher', () => {
     expect(leaked(marked, source)).toEqual(['GET /workspace/things/{id}'])
   })
 
+  it('finds a snake_case document parameter under the camelCase name orval writes', () => {
+    const document: MergedDocument = {
+      paths: {
+        '/workspace/things/{type_key}': {
+          get: { operationId: 'workspace.things.get', tags: [APPLICATION_TAG] },
+        },
+      },
+    }
+    const source = "speedRequest({url: `/workspace/things/${typeKey}`, method: 'GET', signal})"
+    expect(leaked(document, source)).toEqual(['GET /workspace/things/{typeKey}'])
+  })
+
   it('finds an operation by its generated function name', () => {
     const source = 'export const workspaceThingsGet = (\n  id: string,\n) => {'
     expect(leaked(marked, source)).toEqual(['GET /workspace/things/{id}'])
@@ -212,6 +248,14 @@ describe('the leak matcher', () => {
   it('does not confuse two methods on one path', () => {
     const source = "speedRequest({url: `/workspace/things/${id}`, method: 'DELETE', signal})"
     expect(leaked(marked, source)).toEqual([])
+  })
+})
+
+describe('the path-parameter spelling', () => {
+  it('derives the name orval derives', () => {
+    expect(orvalParameterName('type_key')).toBe('typeKey')
+    expect(orvalParameterName('typeKey')).toBe('typeKey')
+    expect(orvalParameterName('id')).toBe('id')
   })
 })
 
@@ -225,5 +269,13 @@ describe('the surface comparison', () => {
       missing: ['GET /api/v1/things/{id}'],
       extra: ['GET /api/v1/other'],
     })
+  })
+
+  it('holds a snake_case path parameter and the camelCase call orval emits to the same operation', () => {
+    const document: MergedDocument = {
+      paths: { '/api/v1/things/{type_key}': { get: { operationId: 'things.get' } } },
+    }
+    const source = "speedRequest({url: `/api/v1/things/${typeKey}`, method: 'GET', signal})"
+    expect(surfaceDrift(document, source)).toEqual({ missing: [], extra: [] })
   })
 })
