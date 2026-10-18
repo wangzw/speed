@@ -235,6 +235,10 @@ graph TD
 
 一个业务模块导出它的路由声明（路径、视图、导航标签、所需权限、所需特性）。收集方把各模块的声明收齐，按路径匹配渲染对应视图，并按标签构造导航。带 `requires` 的声明只在宿主给出的特性在场判定就绪、且其中特性全部在场时渲染视图并进入导航；特性缺席时与未登记的路径同走回退视图，判定读取中或读取失败时渲染宿主给出的对应视图（[route-kit](design-web-route-kit.md)、[ADR-web-route-seam-2026-10-17](../../../adr/adr-web-route-seam-2026-10-17.md)）。路径与权限之间的关系不在这里建立，授权仍是宿主在内容区里的组合，排在存在性之后（[ADR-web-route-seam-2026-10-15](../../../adr/adr-web-route-seam-2026-10-15.md)）。
 
+### 浏览器层
+
+jsdom 不求值媒体查询与容器查询，不做布局，也不判定可聚焦性，所以版面与可聚焦性的不变量由独立的浏览器层在真实 Chromium 里断言（[ADR-web-browser-tier-2026-10-18](../../../adr/adr-web-browser-tier-2026-10-18.md)）。浏览器用例写在与被测组件相邻的 `*.browser.test.tsx` 里，不进各包默认的 `test`，由根 `Makefile` 的 `web-browser` 入口运行，定时的 CI 任务调用同一个入口；它不进 `make check`。
+
 ## 错误与失败语义
 
 | 情形 | 表现 |
@@ -262,6 +266,7 @@ graph TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
+| 浏览器层的版面与可聚焦性用例 | 未实现 | — |
 | 设计令牌 | 已实现 | `web/packages/tokens/src/index.ts` `defaultTokens`、`deepMerge` |
 | 平台 i18n 层 | 已实现 | `web/packages/i18n/src/index.ts` `createI18n`、`registerNamespace` |
 | 组件族与主题适配 | 部分实现 | `web/packages/ui-kit/src/index.ts` `createAppTheme`、`AppThemeProvider` |
