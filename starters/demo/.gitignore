@@ -16,5 +16,7 @@
 
 # The compiled server binary: a `go build` (or `go run`'s cached build) run in
 # server/ leaves it beside the module, named for the package. It is a build
-# artifact, not source.
+# artifact, not source. The review assembly builds the same program under the
+# `demo-review` name beside it.
 /server/demo
+/server/demo-review
