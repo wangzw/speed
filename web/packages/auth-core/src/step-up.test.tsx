@@ -98,6 +98,46 @@ describe('useStepUp', () => {
     expect(start?.options?.body).toEqual({ purpose: 'step-up' })
   })
 
+  it('names the first-factor method on the start when one is given', async () => {
+    // An account with no factor cannot be raised through a second factor;
+    // its route asks for a fresh first factor, and the server accepts a
+    // step-up that re-proves the method the session was established with.
+    // The hook forwards that method on the start and parks on the method's
+    // own first step.
+    const { session, calls } = makeCookieHarness({
+      [LOGIN_START_AUTHENTICATED]: () =>
+        openFlow({
+          state: 'first',
+          next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
+        }),
+      [LOGIN_ANSWER]: () => sessionCompletion(),
+      [LOGIN_ABANDON]: () => ({}),
+    })
+    const onElevated = vi.fn()
+    const { result, rerender } = renderHook(
+      ({ active }: { active: boolean }) =>
+        useStepUp(session, active, onElevated, 'sms'),
+      { initialProps: { active: false } },
+    )
+
+    rerender({ active: true })
+    await waitFor(() => {
+      expect(result.current.phase).toBe('step')
+    })
+    expect(result.current.step?.kind).toBe('challenge')
+
+    act(() => {
+      result.current.answer({ step: 'answer', input: { code: '123456' } })
+    })
+    await waitFor(() => {
+      expect(result.current.phase).toBe('elevated')
+    })
+    expect(onElevated).toHaveBeenCalledTimes(1)
+
+    const start = calls.find((c) => c.path === '/auth/flows/authenticated')
+    expect(start?.options?.body).toEqual({ purpose: 'step-up', method: 'sms' })
+  })
+
   it('surfaces a failed start as a resolved code', async () => {
     const { session } = makeCookieHarness({
       [LOGIN_START_AUTHENTICATED]: () => {

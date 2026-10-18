@@ -34,10 +34,16 @@
  * an account with no factor is recognised by reading its factors, and a
  * caller that knows that renders the enrollment it needs.
  *
- * The step-up flow is named with no method: an account that has a usable
- * factor enters at the factor step, which is the case a step-up-gated
- * privilege action meets (the account's factors are what the route's
- * requirement asks about). The hook never signs in and never navigates.
+ * By default the step-up flow is named with no method: an account that has
+ * a usable factor enters at the factor step, which is the case a step-up-
+ * gated privilege action meets (the account's factors are what the route's
+ * requirement asks about). A caller may instead name the `method` that
+ * established the session's first factor (`sms` for an SMS session,
+ * `password` for a password one): an account with no enabled factor is
+ * held to a fresh first factor, and the server accepts a step-up that
+ * re-proves that factor and refreshes the authentication time. The flow
+ * then parks on that method's first step, whose answers travel under the
+ * flow's `answer` step. The hook never signs in and never navigates.
  *
  * A running start is not cancelled on a re-render: the flow is keyed to
  * the `active` transition (one run per opening), and a resolving start or
@@ -107,11 +113,16 @@ function startUnavailable(session: AuthSession, error: unknown): boolean {
  * Drives the step-up flow the `active` flag opens. `session` is the
  * session the challenge elevates; `onElevated` fires once when the flow
  * settles the elevation, so the caller re-runs the action it remembered.
+ * `method` names the login method that established the session's first
+ * factor, for an account that has no factor to raise the session with; it
+ * is omitted when the account has a factor, and when it is omitted the
+ * flow enters at the factor step.
  */
 export function useStepUp(
   session: AuthSession,
   active: boolean,
   onElevated: () => void,
+  method?: string,
 ): StepUpState {
   const [phase, setPhase] = useState<StepUpPhase>('idle')
   const [step, setStep] = useState<AuthnStep | null>(null)
@@ -150,9 +161,11 @@ export function useStepUp(
     setSubmitting(false)
     void (async () => {
       try {
-        const state = await session.startAuthenticatedFlow({
-          purpose: 'step-up',
-        })
+        const state = await session.startAuthenticatedFlow(
+          method === undefined
+            ? { purpose: 'step-up' }
+            : { purpose: 'step-up', method },
+        )
         if (run !== runRef.current) {
           return
         }
@@ -171,7 +184,7 @@ export function useStepUp(
         }
       }
     })()
-  }, [active, session])
+  }, [active, session, method])
 
   function settle(state: AuthnFlowState): void {
     if ('next' in state) {

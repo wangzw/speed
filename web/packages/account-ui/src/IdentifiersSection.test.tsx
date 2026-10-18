@@ -569,6 +569,94 @@ describe('IdentifiersSection', () => {
     expect(warn).toHaveBeenCalledTimes(1)
   })
 
+  it('re-proves an SMS first factor past the window and re-runs the username add', async () => {
+    // The registration journey: an account opened by SMS sign-up has no
+    // factor and no username. Past the five-minute window its identifier
+    // write is refused for a fresh first factor -- which enrolling a
+    // factor cannot satisfy either, so the dialog re-proves the SMS first
+    // factor itself and the refused add runs again.
+    let elevated = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      if (call.method === 'POST' && call.path === '/auth/identifiers') {
+        if (!elevated) {
+          return errorResponse(401, 'authn.insufficient_user_authentication')
+        }
+        return jsonResponse(200, { state: 'added' })
+      }
+      if (call.method === 'GET' && call.path === '/auth/factors') {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'GET' && call.path === '/auth/session') {
+        return jsonResponse(200, {
+          authenticated: true,
+          session_id: 'session-1',
+          account_id: 'account-1',
+          methods: ['sms'],
+          assurance: 'single',
+          auth_time: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'first',
+          next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        elevated = true
+        return jsonResponse(200, {
+          state: 'elevated',
+          token_type: 'Bearer',
+          access_token: 'access-2',
+          expires_in: 3600,
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    fireEvent.mouseDown(
+      screen.getByRole('combobox', { name: zhCN.identifiers.add.kind.label }),
+    )
+    await user.click(
+      screen.getByRole('option', { name: zhCN.identifiers.add.kind.username }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelUsername),
+      'ada2',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitUsername }),
+    )
+
+    // The refusal opens the dialog on the SMS method's first step.
+    await user.type(await screen.findByLabelText('code'), '123456')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    await waitFor(() =>
+      expect(screen.getByText(zhCN.identifiers.add.added)).toBeTruthy(),
+    )
+    const posts = rig.calls.filter(
+      (call) => call.method === 'POST' && call.path === '/auth/identifiers',
+    )
+    // The refused add ran once more, with the same input.
+    expect(posts).toHaveLength(2)
+    expect(posts[0]?.body).toEqual({ kind: 'username', value: 'ada2' })
+    expect(posts[1]?.body).toEqual({ kind: 'username', value: 'ada2' })
+    const start = rig.calls.find((call) => call.path === FLOW_START)
+    expect(start?.body).toEqual({ purpose: 'step-up', method: 'sms' })
+  })
+
   it('offers the email kind by default when the host does not gate identifiers', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {

@@ -24,13 +24,33 @@
  * whitelist and renders as one banner; the flow stays open and a fresh
  * answer is retryable.
  *
- * Why a step-up cannot come is read before the flow starts, from the
- * caller's own factor list (GET /auth/factors). An account with no active
- * factor can never raise a single-factor session, so the dialog names the
- * missing two-step verification and starts no flow at all -- a sign-in
- * cannot add a factor. The sections ARE the account settings surface, so
- * the dialog renders that text only: it never renders a link, and nothing
- * in this package navigates.
+ * An account with no active factor is read from the caller's own factor
+ * list (GET /auth/factors), and what the refusal asked for is decided
+ * from the caller's own session (GET /auth/session). Both requirements
+ * the self-service writes can carry are told apart by whether the session
+ * already proves a fresh first factor:
+ *
+ *  - When it does (assurance of at least one factor, the last interactive
+ *    authentication within the five minutes the requirement fixes), a
+ *    write asking for a fresh first factor would have been allowed, so
+ *    the refusal asks for a multi-factor authentication instead. No
+ *    step-up can reach that without a factor: the dialog names the
+ *    missing two-step verification and starts no flow.
+ *  - When it does not, the refusal asks for a fresh first factor -- the
+ *    case an account opened by SMS sign-up meets on adding a username or
+ *    setting a password past the five-minute window. The dialog starts a
+ *    step-up named with the method that established the session
+ *    (`password` for the `pwd` amr, `sms` for `sms`): the server re-proves
+ *    that factor and refreshes the authentication time, and the caller
+ *    re-runs the refused write. A session established through a channel
+ *    this dialog cannot re-prove (social or enterprise sign-in) gets a
+ *    re-login exit instead.
+ *
+ * A failed session read is not read as a known method: the dialog offers
+ * the re-login exit, which is the way out when the method cannot be
+ * named. The sections ARE the account settings surface, so the dialog
+ * renders text only in both no-factor branches: it never renders a link,
+ * and nothing in this package navigates.
  *
  * A refusal of the start itself, with factors registered, is the
  * deployment declining to raise this session at all, which no step can
@@ -47,7 +67,7 @@
  * session shows its code text and the host's session gate converges.
  */
 
-import { useId, useRef } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -55,12 +75,17 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Typography from '@mui/material/Typography'
+import type { AuthnSessionView } from '@speed/api-sdk'
 import type { AuthSession, AuthnFlowAnswer } from '@speed/auth-core'
 import { useStepUp } from '@speed/auth-core'
 import { InlineError } from './inline-error.js'
 import { FlowStep } from './flow-step.js'
-import { useFactorsQuery } from './queries.js'
+import { useFactorsQuery, useSessionViewQuery } from './queries.js'
 import { useAccountUiTranslation } from './translation.js'
+
+/** How recent a first factor must be for the self-service writes: the
+ * server's fixed FreshFirstFactor window, not a setting. */
+const FIRST_FACTOR_WINDOW_MS = 5 * 60 * 1000
 
 export interface StepUpChallengeProps {
   /** Whether the dialog is showing. Opening resets its per-attempt state. */
@@ -81,25 +106,53 @@ export function StepUpChallenge({
 }: StepUpChallengeProps) {
   const { t } = useAccountUiTranslation()
   const titleId = useId()
-  // The caller's own registered factors, read while the dialog is open. An
-  // account with no active factor cannot raise its session, so the dialog
-  // answers the enrollment instead of starting a flow that cannot come. No
+  // The caller's own registered factors, read while the dialog is open. No
   // factor read, or a failed one, falls back to the flow's own refusal.
   const factors = useFactorsQuery(open)
   const checking = open && factors.isPending
   const noFactor =
     open && factors.isSuccess && activeFactorCount(factors.data) === 0
+  // Only an account with no factor needs its session read: with a factor
+  // the flow enters at the factor step and names no method.
+  const sessionView = useSessionViewQuery(open && noFactor)
+  const readingSession = open && noFactor && sessionView.isPending
+  // The session already proves a fresh first factor, so the refusal cannot
+  // be about freshness: it asks for multi-factor.
+  const freshFirst =
+    open && noFactor && sessionView.isSuccess && freshFirstFactor(sessionView.data)
+  const reproofMethod =
+    open && noFactor && sessionView.isSuccess && !freshFirst
+      ? firstFactorMethod(sessionView.data)
+      : undefined
+  const reproveFirst = reproofMethod !== undefined
+  // The method is unknown (social or enterprise sign-in, or a failed
+  // session read): the only way out is a new sign-in.
+  const reloginOnly =
+    open && noFactor && !readingSession && !freshFirst && !reproveFirst
+  const startFlow =
+    open && !checking && !readingSession && (!noFactor || reproveFirst)
   const { phase, step, seq, errorCode, answer } = useStepUp(
     session,
-    open && !checking && !noFactor,
+    startFlow,
     onSuccess,
+    reproveFirst ? reproofMethod : undefined,
   )
   // The second factor the operator chose. The verification step that
   // follows it (the code challenge) is answered under the `factor` step
   // and must re-name the same factor alongside the field it asks for --
   // a challenge reply carries only that field, and the server re-reads the
-  // factor from the answer.
+  // factor from the answer. A first-factor re-proof starts with no chosen
+  // factor, whose steps travel under `answer` instead.
   const chosenFactor = useRef<string | null>(null)
+  // A fresh opening starts with no factor chosen: the ref outlives the
+  // closed dialog, and a stale choice would misname the next flow's steps.
+  const wasOpen = useRef(false)
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      chosenFactor.current = null
+    }
+    wasOpen.current = open
+  }, [open])
 
   function handleAnswer(value: AuthnFlowAnswer): void {
     if (!open) {
@@ -125,17 +178,20 @@ export function StepUpChallenge({
     return null
   }
 
-  const starting = phase === 'starting' || checking
+  const starting = phase === 'starting' || checking || readingSession
   // This deployment cannot raise the session at all (factors exist, none
   // that may strengthen it): no step will come, so the dialog says so and
   // offers a re-login rather than a verification that cannot succeed.
   const unavailable = phase === 'unavailable'
+  const answerStep =
+    chosenFactor.current !== null || !reproveFirst ? 'factor' : 'answer'
 
-  // The unavailable phase's one action: end the session -- forgetting the
-  // refused action, as a cancel does -- so the host's session gate
-  // converges on its sign-in surface, where the operator signs in again
-  // for a stronger verification. The session clears its local state even
-  // if the revoke is refused, so a failure here needs no retry.
+  // The unavailable phase's and the unknown-method state's one action:
+  // end the session -- forgetting the refused action, as a cancel does --
+  // so the host's session gate converges on its sign-in surface, where the
+  // operator signs in again for a stronger verification. The session
+  // clears its local state even if the revoke is refused, so a failure
+  // here needs no retry.
   function handleRelogin(): void {
     onCancel()
     void session.logout().catch(() => undefined)
@@ -151,9 +207,13 @@ export function StepUpChallenge({
     >
       <DialogTitle id={titleId}>{t('mfa.stepUp.title')}</DialogTitle>
       <DialogContent>
-        {noFactor ? (
+        {freshFirst ? (
           <Typography variant="body2" color="text.secondary">
             {t('mfa.stepUp.noFactor')}
+          </Typography>
+        ) : reloginOnly ? (
+          <Typography variant="body2" color="text.secondary">
+            {t('mfa.stepUp.firstFactorRelogin')}
           </Typography>
         ) : unavailable ? (
           <Typography variant="body2" color="text.secondary">
@@ -178,7 +238,7 @@ export function StepUpChallenge({
                     key={`${seq ?? 0}-${step.kind}`}
                     step={step}
                     busy={false}
-                    answerStep="factor"
+                    answerStep={answerStep}
                     submitLabel={t('mfa.stepUp.confirmLabel')}
                     onSubmit={handleAnswer}
                   />
@@ -190,7 +250,7 @@ export function StepUpChallenge({
       </DialogContent>
       <DialogActions>
         <Button onClick={onCancel}>{t('mfa.stepUp.cancelLabel')}</Button>
-        {unavailable ? (
+        {unavailable || reloginOnly ? (
           <Button variant="contained" onClick={handleRelogin}>
             {t('mfa.stepUp.relogin')}
           </Button>
@@ -212,4 +272,51 @@ function activeFactorCount(
     return 0
   }
   return page.factors.filter((factor) => factor.status === 'active').length
+}
+
+/** Whether the session already proves a first factor recent enough for the
+ * FreshFirstFactor requirement (assurance of at least one factor, the
+ * authentication no older than the fixed window). When it does, a write
+ * that asks for that requirement would have been allowed, so a 401 from one
+ * of the gated writes asks for multi-factor instead (the challenge's
+ * acr_values 2, where the fresh-first refusal is acr_values 1). The 401's
+ * challenge parameters are not surfaced by the request layer, so the
+ * session's own state answers the same question. A timestamp ahead of this
+ * clock is never read as fresh: an uncertain read re-proves, and only a
+ * provably fresh session keeps the multi-factor hint. */
+function freshFirstFactor(view: AuthnSessionView | undefined): boolean {
+  if (view === undefined || view.authenticated !== true) {
+    return false
+  }
+  if (view.assurance !== 'single' && view.assurance !== 'multi') {
+    return false
+  }
+  if (view.auth_time === undefined) {
+    return false
+  }
+  const authenticatedAt = Date.parse(view.auth_time)
+  if (Number.isNaN(authenticatedAt)) {
+    return false
+  }
+  const now = Date.now()
+  return (
+    authenticatedAt <= now && now - authenticatedAt <= FIRST_FACTOR_WINDOW_MS
+  )
+}
+
+/** The login method that established the session's first factor, from the
+ * amr set the session view publishes: `password` for `pwd`, `sms` for
+ * `sms`. A social or enterprise sign-in names no method this dialog can
+ * re-prove. */
+function firstFactorMethod(
+  view: AuthnSessionView | undefined,
+): string | undefined {
+  const methods = view?.methods ?? []
+  if (methods.includes('pwd')) {
+    return 'password'
+  }
+  if (methods.includes('sms')) {
+    return 'sms'
+  }
+  return undefined
 }

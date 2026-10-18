@@ -14,8 +14,11 @@
  * flow at all; a 401 start refusal on an established
  * session (factors exist, none may strengthen it) offers a re-login; a
  * 400 or any other start failure renders as its code, never as either of
- * those explanations; and cancel fires onCancel without running the gated
- * action.
+ * those explanations; an account with no factor re-proves the first factor
+ * with the method that established its session when the session is past
+ * the fresh-first-factor window, answers under the flow's `answer` step,
+ * and re-logins instead when that method cannot be named; and cancel fires
+ * onCancel without running the gated action.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -47,6 +50,26 @@ const ACTIVE_FACTOR = {
   label: 'Authenticator app',
   status: 'active',
   created_at: '2026-01-01T00:00:00Z',
+}
+
+/** A GET /auth/session body as the caller's own session answers it. The
+ * default is a password session authenticated just now; `ageMs` moves the
+ * authentication time back past the five-minute window. */
+function sessionBody(
+  options: {
+    readonly methods?: readonly string[]
+    readonly assurance?: 'none' | 'single' | 'multi'
+    readonly ageMs?: number
+  } = {},
+): Record<string, unknown> {
+  return {
+    authenticated: true,
+    session_id: 'session-1',
+    account_id: 'account-1',
+    methods: options.methods ?? ['pwd'],
+    assurance: options.assurance ?? 'single',
+    auth_time: new Date(Date.now() - (options.ageMs ?? 0)).toISOString(),
+  }
 }
 
 /** Binds a scripted request function that answers the caller's own factor
@@ -284,16 +307,22 @@ describe('StepUpChallenge', () => {
     expect(onSuccess).not.toHaveBeenCalled()
   })
 
-  it('names the missing second factor instead of starting a flow that cannot come', async () => {
-    // The caller's own factor read says the account has no active factor,
-    // so no step-up can ever raise a single-factor session: the dialog
-    // names that and renders no link at all -- these sections are the
-    // account settings surface, so nothing here navigates -- and no flow
-    // start is sent at all.
+  it('names the missing second factor for a refused multi-factor requirement', async () => {
+    // The account has no active factor (the caller's own factor read says
+    // so) and its session already proves a fresh first factor, so a write
+    // asking for a fresh first factor would have been allowed: the refused
+    // requirement is multi-factor, which no step-up can reach without a
+    // factor. The dialog names the missing two-step verification, renders
+    // no link (these sections are the account settings surface, so nothing
+    // here navigates), starts no flow, and offers no re-login -- a new
+    // single-factor session would meet the same wall.
     const { rig } = mount(
       (call: RealCall) => {
         if (call.method === 'GET' && call.path === '/auth/factors') {
           return jsonResponse(200, { factors: [] })
+        }
+        if (call.method === 'GET' && call.path === '/auth/session') {
+          return jsonResponse(200, sessionBody())
         }
         throw new Error(`unexpected ${call.method} ${call.path}`)
       },
@@ -305,6 +334,129 @@ describe('StepUpChallenge', () => {
       screen.queryByRole('button', { name: zhCN.mfa.stepUp.relogin }),
     ).toBeNull()
     expect(rig.calls.some((call) => call.path === FLOW_START)).toBe(false)
+  })
+
+  it('re-proves the first factor with the session method when the window is past', async () => {
+    // An account opened by SMS sign-up has no factor, and its writes ask
+    // for a first factor proved within five minutes. Past the window the
+    // session view says so (auth_time older than the window), and the
+    // dialog starts a step-up named with the method that established the
+    // session -- sms -- whose answers travel under the flow's `answer`
+    // step.
+    const { rig, onSuccess } = mount((call: RealCall) => {
+      if (call.method === 'GET' && call.path === '/auth/factors') {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'GET' && call.path === '/auth/session') {
+        return jsonResponse(
+          200,
+          sessionBody({ methods: ['sms'], ageMs: 6 * 60 * 1000 }),
+        )
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'first',
+          next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        return jsonResponse(200, {
+          state: 'elevated',
+          token_type: 'Bearer',
+          access_token: 'access-2',
+          expires_in: 3600,
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    })
+    const user = userEvent.setup()
+
+    await user.type(await screen.findByLabelText('code'), '123456')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+
+    const start = rig.calls.find((call) => call.path === FLOW_START)
+    expect(start?.body).toEqual({ purpose: 'step-up', method: 'sms' })
+    const answers = rig.calls.filter((call) => call.path === FLOW_ANSWER)
+    // A first-factor flow's answer is the `answer` step, not `factor`.
+    expect(answers[0]?.body).toEqual({
+      seq: 1,
+      step: 'answer',
+      input: { code: '123456' },
+    })
+  })
+
+  it('names a password session password on the first-factor step-up', async () => {
+    const { rig } = mount((call: RealCall) => {
+      if (call.method === 'GET' && call.path === '/auth/factors') {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'GET' && call.path === '/auth/session') {
+        return jsonResponse(
+          200,
+          sessionBody({ methods: ['pwd'], ageMs: 6 * 60 * 1000 }),
+        )
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [
+              { name: 'identifier', kind: 'text' },
+              { name: 'password', kind: 'password', secret: true },
+            ],
+          },
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    })
+
+    await screen.findByLabelText('identifier')
+    const start = rig.calls.find((call) => call.path === FLOW_START)
+    expect(start?.body).toEqual({ purpose: 'step-up', method: 'password' })
+  })
+
+  it('offers a re-login when the session names no first-factor method', async () => {
+    // A social or enterprise sign-in establishes the session through a
+    // channel this dialog cannot re-prove, so no step-up is started and
+    // the only way out is a new sign-in.
+    const { rig, onCancel } = mount((call: RealCall) => {
+      if (call.method === 'GET' && call.path === '/auth/factors') {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'GET' && call.path === '/auth/session') {
+        return jsonResponse(
+          200,
+          sessionBody({ methods: ['oauth'], ageMs: 6 * 60 * 1000 }),
+        )
+      }
+      if (call.method === 'POST' && call.path === '/auth/logout') {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    })
+    const user = userEvent.setup()
+
+    expect(
+      await screen.findByText(zhCN.mfa.stepUp.firstFactorRelogin),
+    ).toBeTruthy()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.relogin }),
+    )
+    expect(onCancel).toHaveBeenCalledTimes(1)
+    expect(rig.calls.some((call) => call.path === FLOW_START)).toBe(false)
+    await waitFor(() =>
+      expect(
+        rig.calls.some(
+          (call) => call.method === 'POST' && call.path === '/auth/logout',
+        ),
+      ).toBe(true),
+    )
   })
 
   it('renders a 400 start refusal as an ordinary error when a factor is registered', async () => {

@@ -20,11 +20,14 @@
 import {
   getAuthnMfaFactorsQueryKey,
   getAuthnProfileGetQueryKey,
+  getAuthnSessionGetQueryKey,
   getAuthnSessionListQueryKey,
   useAuthnMfaFactors,
   useAuthnProfileGet,
+  useAuthnSessionGet,
   useAuthnSessionList,
 } from '@speed/api-sdk'
+import type { AuthnSessionView } from '@speed/api-sdk'
 import {
   asFactorList,
   asProfile,
@@ -38,6 +41,19 @@ export function useSessionsQuery() {
     query: {
       queryKey: getAuthnSessionListQueryKey(),
       select: asSessionList,
+    },
+  })
+}
+
+/** The caller's own session (GET /auth/session): the methods that
+ * established it, its assurance and its last interactive authentication
+ * time. `enabled` holds the read back while the surface that needs it is
+ * closed. */
+export function useSessionViewQuery(enabled = true) {
+  return useAuthnSessionGet<AuthnSessionView>({
+    query: {
+      queryKey: getAuthnSessionGetQueryKey(),
+      enabled,
     },
   })
 }

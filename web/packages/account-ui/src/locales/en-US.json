@@ -133,6 +133,7 @@
       "cancelLabel": "Cancel",
       "cannotElevate": "This deployment cannot complete this step-up. Sign in again for a stronger verification.",
       "relogin": "Sign in again",
+      "firstFactorRelogin": "This action needs a recent sign-in, and this session cannot re-prove its first factor here. Sign in again, then try the action again.",
       "noFactor": "This account has no two-step verification set up. Add a verification method in the account settings first."
     },
     "error": {
