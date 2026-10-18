@@ -70,11 +70,15 @@ It runs four legs in order:
    reach and writes the merged document to `contracts/api.json` at the
    repository root, and with `--features` writes the feature vocabulary to
    `contracts/features.json` beside it (`starters/demo/server/main.go`'s
-   `genDocument`).
+   `genDocument`). Every feature entry and every operation carries an owner
+   (`platform` or `application`) that `gen` derives from the declaring
+   module's Go package; this app's own route and feature are application-owned.
 2. `node ../../../web/scripts/feature-names.mjs ../../../contracts/features.json
-   ../../../web/packages/api-sdk/src/features.ts` generates the platform
-   feature-name type and `FEATURE_NAMES` from that vocabulary into the published
-   package.
+   ../../../web/packages/api-sdk/src/features.ts src/app-api/features.ts`
+   generates the platform feature-name type and `FEATURE_NAMES` into the
+   published package from the platform-owned entries, and this app's module
+   augmentation of the same registry into `src/app-api/features.ts` from the
+   application-owned ones.
 3. `pnpm dlx orval@8.17.0 --config orval.config.ts` generates this app's own
    surface from that document into `src/app-api/index.ts`.
 4. `node ../../../web/scripts/orval-nodenext-fixup.mjs src/app-api/index.ts
@@ -86,8 +90,8 @@ version on demand and it stays out of `web/pnpm-lock.yaml`.
 
 | Level | Configuration | Input | Output |
 |---|---|---|---|
-| platform | `web/orval.config.ts` | `contracts/api.json` | the published `@speed/api-sdk`, in `web/packages/api-sdk/src/index.ts` |
-| app | `orval.config.ts` (this directory) | `contracts/api.json` | `src/app-api/index.ts` |
+| platform | `web/orval.config.ts` | `contracts/api.json`, excluding the application-owner tag | the published `@speed/api-sdk`, in `web/packages/api-sdk/src/index.ts` |
+| app | `orval.config.ts` (this directory) | `contracts/api.json`, unfiltered | `src/app-api/index.ts` |
 
 The platform level belongs to the package library and produces the package the
 shell packages import; the app level belongs to the app and produces a surface
