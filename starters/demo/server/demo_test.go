@@ -1237,9 +1237,10 @@ func TestTheNotificationSurfaceIsReachable(t *testing.T) {
 // TestTheRequestSampleRecordsTheOperatorsWrites holds the request-level audit
 // sample to what it demonstrates. The sample names the object store's
 // declaration and delete, both writes an operator initiates, and the case
-// performs one of each and reads the journal back: the sample is held to the
-// routes the engine registered, and a path written another way matches nothing
-// and fails nothing. The profile read the frontend polls on its own is
+// performs one of each and reads the journal back. It runs the rendered
+// template, so a path written another way matches nothing and fails nothing
+// here; claims_test.go holds the template and the six shipped samples to the
+// same two entries. The profile read the frontend polls on its own is
 // performed too and must leave no request row, and an account creation is held
 // to the seam row it already has, with no second request row beside it.
 func TestTheRequestSampleRecordsTheOperatorsWrites(t *testing.T) {

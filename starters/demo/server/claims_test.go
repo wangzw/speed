@@ -371,12 +371,103 @@ type namedClaims struct {
 	claims map[string]endpointClaim
 }
 
+// auditSampleRequests is the request-level audit sample every configuration
+// ships: the object store's two operator writes. The sample names no read --
+// the frontend's own polls would land a row per poll -- and a path written
+// another way matches no registered route, so a case that only runs a server
+// would stay green with every sample wrong.
+var auditSampleRequests = []string{
+	"POST /api/v1/objects",
+	"DELETE /api/v1/objects/:id",
+}
+
+// auditDocument is the part of a configuration the audit sample case reads.
+type auditDocument struct {
+	Audit struct {
+		Journal struct {
+			Requests []string `yaml:"requests"`
+		} `yaml:"journal"`
+	} `yaml:"audit"`
+}
+
+// requestsBlock answers the audit journal's requests block as written: the
+// "requests:" line and its list entries, indentation included, so two files
+// that spell the same list differently are distinguishable.
+func requestsBlock(t *testing.T, name string, doc []byte) string {
+	t.Helper()
+	lines := strings.Split(string(doc), "\n")
+	start := -1
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "requests:") {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("%s carries no audit journal requests block", name)
+	}
+	end := start + 1
+	for end < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[end]), "- ") {
+		end++
+	}
+	return strings.Join(lines[start:end], "\n") + "\n"
+}
+
+// checkAuditSamples holds every sample configuration's request-level audit
+// sample to the two operator writes, and the rendered template -- the
+// configuration the HTTP cases run -- to sqlite-memory.yaml's copy of the
+// block byte for byte. The hit case alone cannot do this: it runs the
+// rendered template, so a sample whose entries all name the wrong route
+// stays green there.
+func checkAuditSamples(t *testing.T) {
+	t.Helper()
+	var reference string
+	for _, sample := range testdataFiles {
+		path := filepath.Join("testdata", sample)
+		doc, err := os.ReadFile(filepath.Clean(path))
+		if err != nil {
+			t.Fatalf("reading %s: %v", path, err)
+		}
+		var parsed auditDocument
+		if err := yaml.Unmarshal(doc, &parsed); err != nil {
+			t.Fatalf("%s is not YAML: %v", sample, err)
+		}
+		requests := parsed.Audit.Journal.Requests
+		if len(requests) != len(auditSampleRequests) {
+			t.Fatalf("%s names %d audit requests, want %d: %v",
+				sample, len(requests), len(auditSampleRequests), requests)
+		}
+		for i, want := range auditSampleRequests {
+			if requests[i] != want {
+				t.Errorf("%s names audit request %q at position %d, want %q",
+					sample, requests[i], i, want)
+			}
+		}
+		block := requestsBlock(t, sample, doc)
+		if sample == testdataFiles[0] {
+			reference = block
+			continue
+		}
+		if block != reference {
+			t.Errorf("%s's requests block differs from %s's:\n%s\nwant:\n%s",
+				sample, testdataFiles[0], block, reference)
+		}
+	}
+	rendered := requestsBlock(t, "the rendered template",
+		[]byte(configBody(t, []int{8080, 8083}, ":memory:")))
+	if rendered != reference {
+		t.Errorf("the rendered template's requests block differs from %s's:\n%s\nwant:\n%s",
+			testdataFiles[0], rendered, reference)
+	}
+}
+
 // checkPlatformClaims reads the two documents and holds every configuration to
 // them: the one the case is running, and the six samples a copy starts from.
 // Each configuration is also held to the ownership table itself, in both
-// directions.
+// directions, and its audit sample to the object store's two writes.
 func checkPlatformClaims(t *testing.T, locator string, served []byte) {
 	t.Helper()
+	checkAuditSamples(t)
 	contract, err := os.ReadFile(filepath.Clean(platformContractPath))
 	if err != nil {
 		t.Fatalf("reading the committed platform contract: %v", err)
