@@ -31,6 +31,10 @@ import type {
 import { renderWithProviders } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { bindConsoleRequest } from '../test-utils/request-rig.js'
+import {
+  columnVisibility,
+  containerMaxWidthOf,
+} from '../test-utils/container-visibility.js'
 import { createStepUpSession } from '../test-utils/session.js'
 import {
   accountFixture,
@@ -1011,12 +1015,13 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
     const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
-    await within(panel).findByText('sess-current')
+    await within(panel).findByText('sess-cur')
 
-    // The marker sits on the current row only.
+    // The marker sits on the current row only. The cell shows the id
+    // prefix; the complete id stays on the title and copy control.
     const marker = within(panel).getByText('当前会话')
-    expect(marker.closest('tr')).toHaveTextContent('sess-current')
-    expect(marker.closest('tr')).not.toHaveTextContent('sess-other')
+    expect(marker.closest('tr')).toHaveTextContent('sess-cur')
+    expect(marker.closest('tr')).not.toHaveTextContent('sess-oth')
 
     // Revoking everything says the caller is signed out too.
     await user.click(
@@ -2138,6 +2143,142 @@ describe('AccountsPage', () => {
     )
 
     await waitFor(() => expect(trigger).toHaveFocus())
+  })
+
+  it('declares the designed column priorities and caps the primary identity', async () => {
+    const user = userEvent.setup()
+    const id = 'acc-0123456789abcdef'
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccounts: () =>
+          Promise.resolve({
+            accounts: [accountFixture({ id, display_name: 'Ada Lovelace' })],
+            next_cursor: '',
+          }),
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    await screen.findByText('Ada Lovelace')
+
+    const header = (label: string): Element =>
+      screen.getByRole('columnheader', { name: label })
+    // Identifier columns are low and shed first; the display name (the
+    // primary identity) and the row actions never hide.
+    expect(columnVisibility(header('标识'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 1200,
+    })
+    expect(columnVisibility(header('类型'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 900,
+    })
+    expect(columnVisibility(header('显示名'))).toBeNull()
+    expect(columnVisibility(header('状态'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 600,
+    })
+    expect(columnVisibility(header('强制 MFA'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 1200,
+    })
+    expect(columnVisibility(header('操作'))).toBeNull()
+
+    // The identifier cell shows the 8-character prefix; the complete id
+    // rides the cell title and the copy control.
+    const prefix = screen.getByText(id.slice(0, 8))
+    const idCell = prefix.closest('td')
+    expect(idCell).not.toBeNull()
+    expect(within(idCell as HTMLElement).queryByText(id)).toBeNull()
+    expect(idCell).toHaveAttribute('title', id)
+    expect(
+      within(idCell as HTMLElement).getByRole('button', {
+        name: `复制 ${id}`,
+      }),
+    ).toBeInTheDocument()
+
+    // The shared cap: 160px below `md`, 200px from `md` up.
+    expect(containerMaxWidthOf(screen.getByText('Ada Lovelace'))).toEqual(
+      new Map([
+        [0, 160],
+        [900, 200],
+      ]),
+    )
+  })
+
+  it("applies the designed priorities and caps to the panel's three tables", async () => {
+    const user = userEvent.setup()
+    const sessionId = 'sess-0123456789abcdef'
+    const operations = withAccounts({
+      listAccountFactors: () =>
+        Promise.resolve([
+          { kind: 'totp', label: 'Authenticator', status: 'active' },
+        ]),
+      listAccountSecrets: () => Promise.resolve([SECRET_ROW]),
+      listAccountSessions: () =>
+        Promise.resolve([{ ...SESSION_ROW, id: sessionId }]),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+
+    const tableOf = async (rowText: string): Promise<HTMLElement> => {
+      const row = await within(panel).findByText(rowText)
+      const table = row.closest('table')
+      expect(table).not.toBeNull()
+      return table as HTMLElement
+    }
+
+    // Service secrets: the label is the primary identity, state high,
+    // expiry low.
+    const secrets = await tableOf('ci')
+    expect(
+      columnVisibility(within(secrets).getByRole('columnheader', { name: '标签' })),
+    ).toBeNull()
+    expect(
+      columnVisibility(within(secrets).getByRole('columnheader', { name: '状态' })),
+    ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
+    expect(
+      columnVisibility(
+        within(secrets).getByRole('columnheader', { name: '过期时间' }),
+      ),
+    ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
+    expect(
+      containerMaxWidthOf(within(secrets).getByText('ci')),
+    ).toEqual(new Map([[0, 160], [900, 200]]))
+
+    // Sessions: created time is the primary identity, state high and the
+    // identifier low with its prefix as the visible text.
+    const sessions = await tableOf(sessionId.slice(0, 8))
+    expect(
+      columnVisibility(within(sessions).getByRole('columnheader', { name: '标识' })),
+    ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
+    expect(
+      columnVisibility(
+        within(sessions).getByRole('columnheader', { name: '创建时间' }),
+      ),
+    ).toBeNull()
+    expect(
+      columnVisibility(
+        within(sessions).getByRole('columnheader', { name: '状态' }),
+      ),
+    ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
+    const sessionIdCell = within(sessions)
+      .getByText(sessionId.slice(0, 8))
+      .closest('td')
+    expect(sessionIdCell).toHaveAttribute('title', sessionId)
+
+    // Factors: the label is the primary identity, status high, kind medium.
+    const factors = await tableOf('Authenticator')
+    expect(
+      columnVisibility(within(factors).getByRole('columnheader', { name: '标签' })),
+    ).toBeNull()
+    expect(
+      columnVisibility(within(factors).getByRole('columnheader', { name: '状态' })),
+    ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
+    expect(
+      columnVisibility(within(factors).getByRole('columnheader', { name: '类型' })),
+    ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
   })
 
   it('has no axe violations', async () => {

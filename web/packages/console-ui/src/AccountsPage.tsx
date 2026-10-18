@@ -89,12 +89,14 @@ import {
   ListSkeleton,
   PageHeader,
   SidePanel,
+  primaryColumnMaxWidthSx,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
+import { identifierPrefix } from './internal/identifier-prefix.js'
 import { useConsoleStepUp } from './internal/step-up-gate.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
@@ -433,9 +435,12 @@ export function AccountsPage() {
     {
       id: 'id',
       header: t('accounts.column.id'),
+      priority: 'low',
       cellWrap: 'nowrap',
       cellFullValue: (row) => row.id,
-      cell: (row) => <Typography variant="body2">{row.id}</Typography>,
+      cell: (row) => (
+        <Typography variant="body2">{identifierPrefix(row.id)}</Typography>
+      ),
     },
     {
       id: 'kind',
@@ -448,11 +453,24 @@ export function AccountsPage() {
       id: 'displayName',
       header: t('accounts.column.displayName'),
       cellWrap: 'nowrap',
-      cell: (row) => row.display_name,
+      cell: (row) => (
+        // The page's primary identity: it never hides, and the shared
+        // primary-column cap keeps it from pushing the actions off screen
+        // in a narrow container. The detail panel carries the full value.
+        <Typography
+          variant="body2"
+          noWrap
+          sx={primaryColumnMaxWidthSx}
+          title={row.display_name}
+        >
+          {row.display_name}
+        </Typography>
+      ),
     },
     {
       id: 'status',
       header: t('accounts.column.status'),
+      priority: 'high',
       cellWrap: 'nowrap',
       cell: (row) => statusLabel(row.status, t),
     },
@@ -518,7 +536,16 @@ export function AccountsPage() {
       id: 'label',
       header: t('accounts.secrets.column.label'),
       cellWrap: 'nowrap',
-      cell: (row) => row.label,
+      cell: (row) => (
+        <Typography
+          variant="body2"
+          noWrap
+          sx={primaryColumnMaxWidthSx}
+          title={row.label}
+        >
+          {row.label}
+        </Typography>
+      ),
     },
     {
       id: 'expires',
@@ -530,6 +557,7 @@ export function AccountsPage() {
     {
       id: 'state',
       header: t('accounts.secrets.column.state'),
+      priority: 'high',
       cellWrap: 'nowrap',
       cell: (row) =>
         row.revoked ? t('accounts.secrets.revoked') : t('accounts.secrets.active'),
@@ -566,11 +594,12 @@ export function AccountsPage() {
     {
       id: 'id',
       header: t('accounts.sessions.column.id'),
+      priority: 'low',
       cellWrap: 'nowrap',
       cellFullValue: (row) => row.id,
       cell: (row) => (
         <Box sx={{ display: 'flex', alignItems: 'center', columnGap: 1 }}>
-          <Typography variant="body2">{row.id}</Typography>
+          <Typography variant="body2">{identifierPrefix(row.id)}</Typography>
           {row.current === true && (
             <Chip
               size="small"
@@ -586,12 +615,24 @@ export function AccountsPage() {
       id: 'created',
       header: t('accounts.sessions.column.created'),
       cellWrap: 'nowrap',
-      cell: (row) => formatUtc(row.created_at, i18n.language),
+      cell: (row) => {
+        const formatted = formatUtc(row.created_at, i18n.language)
+        return (
+          <Typography
+            variant="body2"
+            noWrap
+            sx={primaryColumnMaxWidthSx}
+            title={formatted ?? undefined}
+          >
+            {formatted}
+          </Typography>
+        )
+      },
     },
     {
       id: 'state',
       header: t('accounts.sessions.column.state'),
-      priority: 'medium',
+      priority: 'high',
       cellWrap: 'nowrap',
       cell: (row) =>
         row.revoked ? t('accounts.sessions.revoked') : t('accounts.sessions.active'),
@@ -633,6 +674,7 @@ export function AccountsPage() {
     {
       id: 'kind',
       header: t('accounts.factors.column.kind'),
+      priority: 'medium',
       cellWrap: 'nowrap',
       cell: (row) => row.kind,
     },
@@ -640,11 +682,21 @@ export function AccountsPage() {
       id: 'label',
       header: t('accounts.factors.column.label'),
       cellWrap: 'nowrap',
-      cell: (row) => row.label,
+      cell: (row) => (
+        <Typography
+          variant="body2"
+          noWrap
+          sx={primaryColumnMaxWidthSx}
+          title={row.label}
+        >
+          {row.label}
+        </Typography>
+      ),
     },
     {
       id: 'status',
       header: t('accounts.factors.column.status'),
+      priority: 'high',
       cellWrap: 'nowrap',
       cell: (row) => row.status,
     },
