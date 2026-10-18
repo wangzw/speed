@@ -266,6 +266,14 @@ flowchart TD
 - **`/sign-in/callback`**：回调页给 auth-ui 的 `SocialCallbackHandler` 传 `absent`，取值是 `TenantFrame` 包住的 `NotFoundPage`。何时渲染它由回调处理器判定（[auth-ui](web/design-web-auth-ui.md)）：匿名者看到 `ProductShell` 的登录面或会话结束页，已认证者看到租户框架内的 404，都与一条不存在的路径相同。
 - **`/account/callback`**：只有已认证者能到达，渲染在租户框架里。账户绑定回调页给 account-ui 的 `BindingCallbackHandler` 传 `absent`，取值是 `NotFoundPage`（[account-ui](web/design-web-account-ui.md)）。账户页给 `SocialBindingsSection` 传 `returnTo`，取值是 `/account/callback`，绑定流程据此回到这条声明。
 
+### 账户没有成员关系时的租户区
+
+首登开户的账户没有任何成员关系（[authn-account](authn/design-authn-account.md) 的「首登开户」），任何还没被加进租户的账户同样如此。客户端没有读取本人成员关系的接口；租户是请求的路由事实，由宿主的路由得出；准入层对不可进入的租户一律答不区分原因的 404（[tenant 准入](tenant/design-tenant-admission.md)）。示范因此不假装知道账户有没有成员关系：
+
+- 租户区里取租户数据的面（对象页、通知面）把这类裸 404 渲染为「无法访问当前组织」，说明它可能不存在、或账户还不是该组织的成员，并指引联系管理员发送邀请；不渲染成服务没有应答，也不给重试（[objectstore-ui](web/design-web-objectstore-ui.md)、[notification-ui](web/design-web-notification-ui.md)）。
+- 账户级的页面（账户设置、注册后的完成设置页）不取租户数据，照常可用。
+- 进入租户的途径是邀请链接与管理员授予的成员关系；示范不提供租户的自助创建，也不提供读取本人成员关系的接口。
+
 ### 冒充期间的壳
 
 决策见 [ADR-web-impersonation-shell-2026-10-18](../../adr/adr-web-impersonation-shell-2026-10-18.md)。冒充开始后会话的主体是被冒充账户，网关只把冒充身份放进准入层所守的端与登记为可冒充的路由，平台管理面一律被拒（[design-authn-impersonation](authn/design-authn-impersonation.md)）。示范在租户框架里给出下列几部分。
@@ -369,3 +377,4 @@ flowchart TD
 | 前缀清单、差分测试的前缀归属与配置认领的一致性测试 | 未实现 | — |
 | 页面路径不落在认领之下、代理键按段边界匹配的前端测试 | 已实现 | `starters/demo/web/src/routes.test.ts` |
 | 去掉路由模块前后未认证应答的差分测试 | 已实现 | `starters/demo/server/differential_test.go` `TestAnonymousAnswersDoNotDependOnTheAssembly`、`runDifferential`、`serveWithout` |
+| 租户区对准入层裸 404 的呈现（对象页、通知面） | 未实现 | — |
