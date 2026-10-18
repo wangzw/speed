@@ -154,7 +154,7 @@ export function featurePresence(state: FeatureState):
   | { readonly state: 'pending' }
   | { readonly state: 'failed' }
   | { readonly state: 'ready'; readonly has: (name: string) => boolean }
-export function useStepUp(session: AuthSession, active: boolean, onElevated: () => void): StepUpState
+export function useStepUp(session: AuthSession, active: boolean, onElevated: () => void, method?: string): StepUpState
 ```
 
 `FeatureName` 取自 `@speed/api-sdk/features`（[api-sdk](design-web-api-sdk.md)）。
