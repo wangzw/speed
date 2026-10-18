@@ -18,6 +18,10 @@ import type {
   ConsoleWriteSsoProviderInput,
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import {
+  columnVisibility,
+  containerMaxWidthOf,
+} from '../test-utils/container-visibility.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   createConsoleOperations,
@@ -86,6 +90,46 @@ describe('SsoPage', () => {
     await pickTenant(user)
     expect(await screen.findByText('Acme IdP')).toBeInTheDocument()
     expect(screen.getByText('oidc')).toBeInTheDocument()
+  })
+
+  it('declares the designed column priorities and caps the primary identity', async () => {
+    const user = userEvent.setup()
+    const name = 'A-very-long-enterprise-provider-name-for-acme'
+    const operations = withProviders({
+      listSsoProviders: () => Promise.resolve([providerFixture({ name })]),
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText(name)
+
+    const header = (label: string): Element =>
+      screen.getByRole('columnheader', { name: label })
+    // The provider name is the primary identity: no priority, shared cap.
+    // Protocol and enabled stay to `md`, version is the first to go, and
+    // the row actions never hide.
+    expect(columnVisibility(header('名称'))).toBeNull()
+    expect(columnVisibility(header('协议'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 900,
+    })
+    expect(columnVisibility(header('已启用'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 900,
+    })
+    expect(columnVisibility(header('版本'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 1200,
+    })
+    expect(columnVisibility(header('操作'))).toBeNull()
+
+    const nameText = screen.getByText(name)
+    expect(nameText.closest('td')).toHaveAttribute('title', name)
+    expect(containerMaxWidthOf(nameText)).toEqual(
+      new Map([
+        [0, 160],
+        [900, 200],
+      ]),
+    )
   })
 
   it('shows no error banner while no write has failed', async () => {

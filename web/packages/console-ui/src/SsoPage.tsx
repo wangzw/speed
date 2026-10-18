@@ -48,6 +48,7 @@ import {
   EmptyState,
   ListSkeleton,
   PageHeader,
+  primaryColumnMaxWidthSx,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
@@ -280,11 +281,23 @@ export function SsoPage() {
       header: t('sso.column.name'),
       cellWrap: 'nowrap',
       cellFullValue: (provider) => provider.name,
-      cell: (provider) => <Typography variant="body2">{provider.name}</Typography>,
+      cell: (provider) => (
+        // The provider's primary identity: never hidden, and the shared
+        // cap keeps it from widening the table past its container. The
+        // complete name stays on the cell title and copy control.
+        <Typography
+          variant="body2"
+          noWrap
+          sx={primaryColumnMaxWidthSx}
+        >
+          {provider.name}
+        </Typography>
+      ),
     },
     {
       id: 'protocol',
       header: t('sso.column.protocol'),
+      priority: 'medium',
       cellWrap: 'nowrap',
       cell: (provider) => provider.protocol,
     },
