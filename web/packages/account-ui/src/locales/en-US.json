@@ -201,7 +201,9 @@
       "label": "Confirm new password"
     },
     "submit": "Change password",
+    "submitFirst": "Set password",
     "changed": "Your password has been changed. Other devices have been signed out.",
+    "changedFirst": "Your password has been set.",
     "missingNew": "Enter a new password.",
     "mismatch": "The two passwords do not match.",
     "error": {

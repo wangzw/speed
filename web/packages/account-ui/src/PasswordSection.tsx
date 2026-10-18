@@ -86,6 +86,11 @@ export function PasswordSection({ session }: PasswordSectionProps) {
   >(null)
   const [failureCode, setFailureCode] = useState<string | null>(null)
   const [changed, setChanged] = useState(false)
+  // Whether the completed change set the account's first password. It is read
+  // before the write: the profile refetch that follows reports the password as
+  // set, and the success text must still be the first-password one -- no other
+  // device was signed out by setting a password that did not exist.
+  const [firstPassword, setFirstPassword] = useState(false)
 
   const gate = useStepUpGate<ChangeAction>((action) => {
     void change(action)
@@ -108,6 +113,7 @@ export function PasswordSection({ session }: PasswordSectionProps) {
     setFailureCode(null)
     setChanged(false)
     setFieldError(null)
+    const settingFirst = !passwordSet
     try {
       await changePassword.mutateAsync({
         data: {
@@ -116,6 +122,7 @@ export function PasswordSection({ session }: PasswordSectionProps) {
         },
       })
       clearFields()
+      setFirstPassword(settingFirst)
       setChanged(true)
       // A change rotates this session's token and revokes the others; the
       // account's password_set may also have flipped, so refetch both.
@@ -190,7 +197,13 @@ export function PasswordSection({ session }: PasswordSectionProps) {
               role="status"
               sx={changed ? { width: '100%' } : visuallyHiddenSx}
             >
-              {changed ? t('password.changed') : ''}
+              {/* A first password is set, not changed, and no other device
+                  was signed out by a change's rotation. */}
+              {/* A first password is set, not changed, and no other device
+                  was signed out by a change's rotation. */}
+              {changed
+                ? t(firstPassword ? 'password.changedFirst' : 'password.changed')
+                : ''}
             </Alert>
 
             <InlineError code={failureCode} />
@@ -248,7 +261,7 @@ export function PasswordSection({ session }: PasswordSectionProps) {
               variant="contained"
               disabled={changePassword.isPending}
             >
-              {t('password.submit')}
+              {t(passwordSet ? 'password.submit' : 'password.submitFirst')}
             </Button>
           </Box>
         )}

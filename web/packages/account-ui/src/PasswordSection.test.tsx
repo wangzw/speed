@@ -78,10 +78,49 @@ describe('PasswordSection', () => {
     expect(screen.getByLabelText(zhCN.password.confirm.label)).toBeTruthy()
     expect(screen.queryByLabelText(zhCN.password.current.label)).toBeNull()
     expect(
-      screen.getByRole('button', { name: zhCN.password.submit }),
+      screen.getByRole('button', { name: zhCN.password.submitFirst }),
     ).toBeTruthy()
 
     await expectNoAxeViolations()
+  })
+
+  it('reports a first password as set, without the other-devices clause', async () => {
+    let passwordSet = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ password_set: passwordSet }))
+      }
+      if (call.method === 'PUT' && call.path === PASSWORD_PATH) {
+        passwordSet = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.password.new.label),
+      'first-pass',
+    )
+    await user.type(screen.getByLabelText(zhCN.password.confirm.label), 'first-pass')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.password.submitFirst }),
+    )
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        zhCN.password.changedFirst,
+      ),
+    )
+    // The profile's refetch reports the password as set, but the text this
+    // write produced is the first-password one: no other device was signed
+    // out by setting a password that did not exist.
+    const put = rig.calls.find((call) => call.method === 'PUT')
+    expect(put?.body).toEqual({ new_password: 'first-pass' })
+    expect(screen.getByRole('status')).not.toHaveTextContent(
+      zhCN.password.changed,
+    )
   })
 
   it('refuses an empty or mismatched new password without a request', async () => {

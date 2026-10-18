@@ -201,7 +201,9 @@
       "label": "确认新密码"
     },
     "submit": "修改密码",
+    "submitFirst": "设置密码",
     "changed": "密码已修改，其他设备已被退出登录。",
+    "changedFirst": "密码已设置。",
     "missingNew": "请输入新密码。",
     "mismatch": "两次输入的密码不一致。",
     "error": {
