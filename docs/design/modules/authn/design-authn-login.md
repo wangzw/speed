@@ -693,7 +693,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 邮箱与用户名此前只由管理员或 IdP 断言成为标识；自助添加见上表的 `POST B/identifiers` 与 `POST B/identifiers/verify`，`verified_via` 的归属与验证回路见 [ADR-authn-selfservice-identifier-2026-10-16](../../../adr/adr-authn-selfservice-identifier-2026-10-16.md)。规则的判据归 [authn-account](design-authn-account.md)。
 
-**用户名加口令的注册由三步已有能力组成**（[ADR-authn-signup-2026-10-18](../../../adr/adr-authn-signup-2026-10-18.md)）：短信首登开户（`authn.account.signup` 为 `open`，账户只带经 `sms-code` 验证的手机）；`POST B/identifiers` 添加用户名，账户这时才有可作登录名的标识；`PUT B/password` 设口令，没有登录名时答 409 `login-identifier-required`，所以用户名先于口令。三步都是已认证身份上的既有路由，本模块不为注册新增路由、流程目的或开户路径，也不创建没有验证渠道的账户。第一步之后的任何一步放弃，账户都是合法账户，只能以短信登录，下次登录后可以继续。`authn.account.signup` 为 `closed`，或 `SMSCodes` 缺席，`GET B/methods` 就没有开户类方法或 `signup.enabled` 为假，客户端不呈现注册入口。
+**用户名加口令的注册由已有能力依次组成**（[ADR-authn-signup-2026-10-18](../../../adr/adr-authn-signup-2026-10-18.md)）：短信首登开户（`authn.account.signup` 为 `open`，账户只带经 `sms-code` 验证的手机）；`POST B/identifiers` 添加用户名，账户这时才有可作登录名的标识；`PUT B/password` 设口令，没有登录名时答 409 `login-identifier-required`，所以用户名先于口令。三步都是已认证身份上的既有路由，本模块不为注册新增路由、流程目的或开户路径，也不创建没有验证渠道的账户。第一步之后的任何一步放弃，账户都是合法账户，只能以短信登录，下次登录后可以继续。`authn.account.signup` 为 `closed`，或 `SMSCodes` 缺席，`GET B/methods` 就没有开户类方法或 `signup.enabled` 为假，客户端不呈现注册入口。
 
 自助路由上的新鲜认证从设置 `authn.mfa.recent-window` 取 `MaxAge`，手机路由从 `authn.sms.code-ttl` 与 `authn.sms.resend-interval` 取记录的期限与应答里的 `resend_after`，邮箱路由从本模块声明的 `authn.login.email-code-ttl` 与 `authn.login.email-resend-interval` 取码的期限与重发间隔。手机的两个键由 [authn-mfa](design-authn-mfa.md) 与 [authn-sms](design-authn-sms.md) 声明，邮箱的两个键由本模块声明；读它们的是使用方——本模块的自助路由处理器、登录流程与准入层——各经设置存储从全局层读同一个键，读取出错或取值越出取值域时取声明的缺省。
 
