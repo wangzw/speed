@@ -10317,7 +10317,7 @@ export const useTenantAdminTenantsSetStatus = <TError = Problem,
     }
 
 /**
- * Creates the caller's personal tenant on first call and completes its membership, owner role, grants and binding on every call. The tenant identifier and alias are derived from the account identifier; the answer names the tenant and whether this call created it.
+ * Creates the caller's personal tenant on first call and reads it back afterwards, completing its owner role and binding and converging the role's grants to the host's allowlist on every call. A membership row that exists is left as it stands, and a tenant that is not enabled is refused without a write. The tenant identifier and alias are derived from the account identifier; the answer names the tenant and whether this call created it.
  * @summary Ensure the caller's personal tenant exists and is complete
  */
 export const workspacePersonalEnsure = (
