@@ -1187,6 +1187,11 @@ same rationale documented here.
 
 ## Deferrals and recorded decisions
 
+- **No browser test runner**: the suite is jsdom plus axe. Rendered
+  geometry -- including the whole-cell cap (`contentMaxWidth`) counting
+  the copy control at 600/900/1200px containers -- is measured in
+  Chromium ad hoc, not by a committed gate; a CI browser leg would need a
+  runner dependency and a shared harness.
 - **DataTable column-hiding / priority-reflow for narrow containers**:
   shipped (see the DataTable section's Column priority subsection) --
   an opt-in `priority` field on `DataTableColumn` hides lower-priority
