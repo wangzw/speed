@@ -264,6 +264,79 @@ describe('ObjectsPage', () => {
     ).toBeInTheDocument()
   })
 
+  it('renders the tenant state on the admission layer bare 404, without a retry', async () => {
+    // A bare 404 carries no problem object: the admission layer's tenant
+    // refusal. It is rendered as the tenant state, never as the object
+    // store not answering.
+    makeObjectStoreRig(() => new Response(null, { status: 404 }))
+    renderWithProviders(<ObjectsPage />, { language: 'en-US' })
+    expect(
+      await screen.findByText("Cannot access the current organization's content"),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/To join, ask an administrator to send you an invitation/i),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('The objects could not be loaded')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the retryable error for a typed objectstore not-found 404', async () => {
+    makeObjectStoreRig(() =>
+      problemResponse(404, 'urn:speed:objectstore:not-found'),
+    )
+    renderWithProviders(<ObjectsPage />, { language: 'en-US' })
+    expect(
+      await screen.findByText('The objects could not be loaded'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+    expect(
+      screen.queryByText("Cannot access the current organization's content"),
+    ).not.toBeInTheDocument()
+  })
+
+  it('hides the pager when a refresh is refused by the admission layer', async () => {
+    const user = userEvent.setup()
+    let refused = false
+    makeObjectStoreRig(() =>
+      refused
+        ? new Response(null, { status: 404 })
+        : jsonResponse(200, { objects: [OBJECT_A], next_cursor: 'CURSOR-1' }),
+    )
+    renderWithProviders(<ObjectsPage pageSize={1} />, { language: 'en-US' })
+    await screen.findByText('o-aaa')
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeInTheDocument()
+
+    refused = true
+    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+    // The refusal replaces the stale list and withdraws the pager: the
+    // tenant the pager would page through is no longer accessible.
+    expect(
+      await screen.findByText("Cannot access the current organization's content"),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('o-aaa')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next page' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Previous page' })).not.toBeInTheDocument()
+  })
+
+  it('renders the tenant sentence when a download is refused by the admission layer', async () => {
+    const user = userEvent.setup()
+    makeObjectStoreRig((call) => {
+      if (call.method === 'GET' && call.path === `${LIST_PATH}/o-aaa/content`) {
+        return new Response(null, { status: 404 })
+      }
+      return jsonResponse(200, { objects: [OBJECT_A], next_cursor: '' })
+    })
+    renderWithProviders(<ObjectsPage />, { language: 'en-US' })
+    await screen.findByText('o-aaa')
+
+    await user.click(screen.getByRole('button', { name: 'Download object o-aaa' }))
+    expect(
+      await screen.findByText(
+        "Cannot access the current organization's content: it may not exist, or you may not be a member of it yet. To join, ask an administrator to send you an invitation.",
+      ),
+    ).toBeInTheDocument()
+  })
+
   it('pages through the cursor', async () => {
     const user = userEvent.setup()
     makeObjectStoreRig((call) => {

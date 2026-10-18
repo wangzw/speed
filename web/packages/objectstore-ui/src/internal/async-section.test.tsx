@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import { renderWithProviders } from '../../test-utils/render.js'
-import { ObjectAsyncSection, isForbidden } from './async-section.js'
+import {
+  ObjectAsyncSection,
+  isForbidden,
+  isTenantRefusal,
+} from './async-section.js'
 import type { AsyncSectionErrorState } from '@speed/ui-kit'
 
 const errorState: AsyncSectionErrorState = {
@@ -24,7 +28,68 @@ describe('isForbidden', () => {
   })
 })
 
+describe('isTenantRefusal', () => {
+  it('treats the bare client.http.404 code as the admission refusal', () => {
+    expect(isTenantRefusal({ status: 404, code: 'client.http.404' })).toBe(true)
+    expect(isTenantRefusal({ code: 'client.http.404' })).toBe(true)
+  })
+  it('does not treat a typed 404 or another failure as the admission refusal', () => {
+    // The objectstore module's own missing-object refusal is a typed 404:
+    // its status alone must not branch into the tenant state.
+    expect(
+      isTenantRefusal({ status: 404, code: 'objectstore.not_found' }),
+    ).toBe(false)
+    expect(isTenantRefusal({ status: 404 })).toBe(false)
+    expect(isTenantRefusal({ status: 503, code: 'client.http.503' })).toBe(false)
+    expect(isTenantRefusal(undefined)).toBe(false)
+    expect(isTenantRefusal('boom')).toBe(false)
+  })
+})
+
 describe('ObjectAsyncSection', () => {
+  it('renders the tenant state on a bare 404, without a retry', () => {
+    renderWithProviders(
+      <ObjectAsyncSection<unknown>
+        pending={false}
+        payload={undefined}
+        error={{ status: 404, code: 'client.http.404' }}
+        empty={false}
+        loading={<p>loading</p>}
+        errorState={errorState}
+      >
+        {() => <p>content</p>}
+      </ObjectAsyncSection>,
+      { language: 'en-US' },
+    )
+    expect(
+      screen.getByText("Cannot access the current organization's content"),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/may not exist, or you may not be a member/i)).toBeInTheDocument()
+    expect(screen.queryByText('Load failed')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the retryable error for a typed object not-found 404', () => {
+    renderWithProviders(
+      <ObjectAsyncSection<unknown>
+        pending={false}
+        payload={undefined}
+        error={{ status: 404, code: 'objectstore.not_found' }}
+        empty={false}
+        loading={<p>loading</p>}
+        errorState={errorState}
+      >
+        {() => <p>content</p>}
+      </ObjectAsyncSection>,
+      { language: 'en-US' },
+    )
+    expect(screen.getByText('Load failed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    expect(
+      screen.queryByText("Cannot access the current organization's content"),
+    ).not.toBeInTheDocument()
+  })
+
   it('renders the no-permission state on a permission refusal', () => {
     renderWithProviders(
       <ObjectAsyncSection<unknown>

@@ -13,8 +13,13 @@
     "authz": {
       "forbidden": "You do not have permission to do that."
     },
+    "tenantUnavailable": "Cannot access the current organization's content: it may not exist, or you may not be a member of it yet. To join, ask an administrator to send you an invitation.",
     "http": "The request could not be completed (status {{status}}). Please try again.",
     "unknown": "Something went wrong. Please try again later."
+  },
+  "tenantUnavailable": {
+    "title": "Cannot access the current organization's content",
+    "description": "It may not exist, or you may not be a member of it yet. To join, ask an administrator to send you an invitation."
   },
   "page": {
     "title": "Objects",

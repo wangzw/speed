@@ -45,6 +45,19 @@ describe('useObjectstoreUiErrorText', () => {
     expect(textFor('client.http.503')).toContain('503')
   })
 
+  it('resolves the bare 404 to the tenant sentence', () => {
+    // The admission layer's refusal is the only bare 404 this page can
+    // receive: a refused write names the same two causes, and points to an
+    // invitation, rather than reporting a status code.
+    renderWithProviders(<Probe codes={['client.http.404']} />, {
+      language: 'en-US',
+    })
+    expect(textFor('client.http.404')).toContain(
+      'Cannot access the current organization',
+    )
+    expect(textFor('client.http.404')).toContain('invitation')
+  })
+
   it('resolves the objectstore module refusals to their own text', () => {
     // The module's refusals arrive as the code derived from their problem
     // type urn:speed:objectstore:<code>, i.e. objectstore.not_found and

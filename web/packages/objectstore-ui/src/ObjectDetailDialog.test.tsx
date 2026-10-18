@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import { renderWithProviders } from '../test-utils/render.js'
-import { jsonResponse, makeObjectStoreRig } from '../test-utils/real-client.js'
+import {
+  jsonResponse,
+  makeObjectStoreRig,
+  problemResponse,
+} from '../test-utils/real-client.js'
 import { ObjectDetailDialog } from './ObjectDetailDialog.js'
 
 const OBJECT = {
@@ -41,6 +45,44 @@ describe('ObjectDetailDialog', () => {
     })
     const dialog = await screen.findByRole('dialog')
     expect(await within(dialog).findByText('Unnamed')).toBeInTheDocument()
+  })
+
+  it('renders the tenant state on the admission layer bare 404, without a retry', async () => {
+    makeObjectStoreRig(() => new Response(null, { status: 404 }))
+    renderWithProviders(<ObjectDetailDialog id="o-1" onClose={() => undefined} />, {
+      language: 'en-US',
+    })
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      await within(dialog).findByText(
+        "Cannot access the current organization's content",
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(dialog).queryByRole('button', { name: 'Try again' }),
+    ).not.toBeInTheDocument()
+    expect(
+      within(dialog).queryByText('The object could not be loaded'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps the retryable detail error for a typed objectstore not-found 404', async () => {
+    makeObjectStoreRig(() =>
+      problemResponse(404, 'urn:speed:objectstore:not-found'),
+    )
+    renderWithProviders(<ObjectDetailDialog id="o-1" onClose={() => undefined} />, {
+      language: 'en-US',
+    })
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      await within(dialog).findByText('The object could not be loaded'),
+    ).toBeInTheDocument()
+    expect(
+      within(dialog).getByRole('button', { name: 'Try again' }),
+    ).toBeInTheDocument()
+    expect(
+      within(dialog).queryByText("Cannot access the current organization's content"),
+    ).not.toBeInTheDocument()
   })
 
   it('reads nothing while closed (id null)', async () => {

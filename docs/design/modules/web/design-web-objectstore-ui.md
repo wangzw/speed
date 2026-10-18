@@ -174,4 +174,4 @@ sequenceDiagram
 | 对象列表的列优先级与对象标识的短显示 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage` |
 | 错误白名单组合会话生命周期码族及其双语文案 | 未实现 | — |
 | 上传行的失败文本取自错误码 | 未实现 | — |
-| 准入层的裸 404 渲染为「无法访问当前组织」，不渲染成对象存储没有应答 | 未实现 | — |
+| 准入层的裸 404 渲染为「无法访问当前组织」，不渲染成对象存储没有应答 | 已实现 | `web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection`、`isTenantRefusal`；`web/packages/objectstore-ui/src/internal/error-text.ts` `useObjectstoreUiErrorText` |

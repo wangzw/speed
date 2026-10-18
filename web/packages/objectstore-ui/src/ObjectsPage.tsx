@@ -52,7 +52,7 @@ import {
 import type { DataTableColumn } from '@speed/ui-kit'
 import { useObjectstoreUiTranslation } from './internal/translation.js'
 import { useObjectUploads } from './internal/uploads.js'
-import { ObjectAsyncSection } from './internal/async-section.js'
+import { ObjectAsyncSection, isTenantRefusal } from './internal/async-section.js'
 import { ObjectDetailDialog } from './ObjectDetailDialog.js'
 import { InlineError } from './internal/inline-error.js'
 import { downloadFilename, formatByteNumber, formatUtc } from './internal/format.js'
@@ -339,7 +339,9 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
             />
           )}
         </ObjectAsyncSection>
-        {query.data !== undefined && (hasPrevious || hasNext) ? (
+        {query.data !== undefined &&
+        !isTenantRefusal(query.error) &&
+        (hasPrevious || hasNext) ? (
           <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
             <Button
               type="button"

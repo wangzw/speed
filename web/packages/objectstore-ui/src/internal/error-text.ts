@@ -22,6 +22,14 @@
  * resolver's (see @speed/i18n's error-text module). The bare-HTTP family
  * is parameterized rather than fixed (the status varies), so a status
  * carries through instead of collapsing into the single unknown line.
+ *
+ * A bare 404 is the one status with dedicated text: on this page it is the
+ * tenant admission layer's refusal, which does not say whether the tenant
+ * does not exist, is disabled or has no membership for the caller. A write
+ * refused that way renders the same sentence as the read's tenant state,
+ * so the two surfaces never describe the same refusal differently. The
+ * objectstore module's own missing-object 404 arrives as the typed
+ * `objectstore.not_found` and keeps its own leaf.
  */
 
 import { CLIENT_TRANSPORT_ERROR_CODES, createErrorTextResolver } from '@speed/i18n'
@@ -35,6 +43,13 @@ import { useObjectstoreUiTranslation } from './translation.js'
  * instead of the fixed whitelist below.
  */
 const HTTP_ERROR_CODE = /^client\.http\.(\d{3})$/
+
+/**
+ * The bare 404: the admission layer's tenant refusal. It resolves to the
+ * page's tenant sentence rather than the parameterized status line, so a
+ * refused write names the same two causes the read's tenant state does.
+ */
+const TENANT_REFUSAL_CODE = 'client.http.404'
 
 /**
  * Every code with a dedicated errors-section text: the objectstore
@@ -67,6 +82,9 @@ export function useObjectstoreUiErrorText(): (code: string) => string {
   const { t } = useObjectstoreUiTranslation()
   const resolveKnown = createErrorTextResolver(t, KNOWN_CODES)
   return (code) => {
+    if (code === TENANT_REFUSAL_CODE) {
+      return t('errors.tenantUnavailable')
+    }
     const http = HTTP_ERROR_CODE.exec(code)
     if (http !== null) {
       return t('errors.http', { status: http[1] })
