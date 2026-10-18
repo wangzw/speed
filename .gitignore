@@ -17,7 +17,7 @@ Thumbs.db
 *.test
 *.out
 # Workspace-mode dependency checksums; go.work lists only in-repo modules.
-go.work.sum
+go.work*.sum
 
 # Python (the checkers under tools/ and the skills' own scripts)
 __pycache__/
