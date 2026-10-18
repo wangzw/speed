@@ -52,8 +52,25 @@ this file adds what is specific to the npm side.
   never the shared root. The workspace guard
   (`web/scripts/workspace-test-config.test.mjs`) fails a package whose
   config stops spreading the preset.
+- Browser cases are named `*.browser.test.tsx` and live beside the
+  component under test. They run only through the root `make web-browser`
+  (Vitest browser mode, Playwright provider, Chromium --
+  `web/vitest.browser.config.ts`); the shared preset excludes them from
+  every package's `test` leg, and the eslint config and base tsconfig keep
+  them out of the default lint and typecheck legs. Install Chromium once
+  with `pnpm -C web exec playwright install chromium`.
+- Browser cases assert invariants -- geometry, focus order, focusability
+  -- never pixels, and they wait on events rather than fixed sleeps.
+  Interface text in an assertion comes from the package's shipped
+  resources (`src/locales/en-US.json` or `resources.ts`), never from a
+  literal; test comments stay English. The cases render in en-US and the
+  tier's setup pins the document's family to Arial / Liberation Sans, so
+  the measured text keeps the same metrics on macOS and on the CI image.
 - CI runs `pnpm install --frozen-lockfile` from `web/`, then
   lint/typecheck/test/build per package with the root-provided toolchain.
+  The browser tier is a separate scheduled job
+  (`.github/workflows/browser.yml`) because Chromium is not part of the
+  `.mise.toml` toolchain.
 
 ## The strict typecheck
 

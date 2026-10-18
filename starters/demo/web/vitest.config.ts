@@ -25,6 +25,6 @@ export default defineConfig({
     // accessibility sweep) is excluded here and run by its own config
     // (vitest.a11y.config.ts) as a separate frontend-gate leg, so the two
     // never scan the same routes twice.
-    exclude: ['**/node_modules/**', '**/dist/**', 'src/a11y/**'],
+    exclude: ['**/node_modules/**', '**/dist/**', 'src/a11y/**', '**/*.browser.test.tsx'],
   },
 })

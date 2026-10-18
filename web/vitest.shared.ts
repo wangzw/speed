@@ -15,6 +15,7 @@
  * the aliases from the workspace's single package map
  * (web/scripts/speed-aliases.mjs), and any coverage exclusion.
  */
+import { configDefaults } from 'vitest/config'
 import type { ViteUserConfig } from 'vitest/config'
 
 /** A Vitest `test` block. */
@@ -54,6 +55,14 @@ export function sharedTestOptions(
   overrides: TestOptions = {},
 ): TestOptions {
   return {
+    // Vitest's own defaults are restated because naming `exclude`
+    // replaces them rather than extending them. The browser cases
+    // (`*.browser.test.tsx`) are measured in real Chromium by the
+    // browser tier, which owns its own config (web/vitest.browser.config.ts)
+    // and its own entry point (`make web-browser`); a package's unit
+    // leg under jsdom must not pick them up, and without this line
+    // Vitest's default include would.
+    exclude: [...configDefaults.exclude, '**/*.browser.test.tsx'],
     ...overrides,
     testTimeout: 20_000,
     coverage: { ...sharedCoverage, ...overrides.coverage },

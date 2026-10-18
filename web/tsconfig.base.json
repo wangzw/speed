@@ -13,5 +13,6 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "noEmit": true
-  }
+  },
+  "exclude": ["**/*.browser.test.tsx"]
 }

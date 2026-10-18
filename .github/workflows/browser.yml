@@ -1,0 +1,35 @@
+# The frontend's browser tier, on a schedule.
+#
+# The cases assert real geometry, focus order and focusability in
+# Chromium -- properties jsdom cannot answer (see
+# docs/adr/adr-web-browser-tier-2026-10-18.md). Chromium is not part of
+# the .mise.toml toolchain, so this job installs it and then calls the
+# repository's own entry point; the command list stays in the Makefile
+# (`make web-browser`), exactly as ci.yml and integration.yml keep
+# theirs.
+#
+# The tier is not part of `make check`: it is slower by an order of
+# magnitude and depends on the machine's fonts. This is the periodic leg
+# that covers it.
+#
+# The cron is off the hour on purpose, like integration.yml's.
+
+name: browser
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: jdx/mise-action@v4.3.0
+      - run: pnpm -C web install --frozen-lockfile
+      - run: pnpm -C web exec playwright install --with-deps chromium
+      - run: make web-browser

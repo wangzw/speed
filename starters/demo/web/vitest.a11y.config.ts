@@ -25,7 +25,7 @@ export default defineConfig({
     include: ['src/a11y/**/*.test.tsx'],
     // Vitest's own defaults are restated because naming `exclude` replaces
     // them rather than extending them.
-    exclude: ['**/node_modules/**', '**/dist/**'],
+    exclude: ['**/node_modules/**', '**/dist/**', '**/*.browser.test.tsx'],
     // The verbose reporter is deliberate: the default reporter emits a test's
     // console output (the gate's advisory warnings and its closing report)
     // only when that test failed, so a green run would hide the registered

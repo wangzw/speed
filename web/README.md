@@ -122,13 +122,17 @@ web/
 ```
 
 Root `package.json` holds only what every package shares (typescript,
-vitest, eslint, typescript-eslint) plus the workspace scripts; a package's
-own `package.json` holds its dependencies, peers and its `exports` map.
-There is deliberately **no React, no MUI, no DOM/component test framework**
-at the root — vitest itself is shared (every package unit-tests with it),
-but nothing DOM-shaped such as jsdom or Testing Library, and no component
-rendering, lives there; each package declares what it actually uses, so
-`pnpm -r` never installs a framework a package does not need.
+vitest, eslint, typescript-eslint) plus the browser tier's runner
+(`@vitest/browser`, `@vitest/browser-playwright`, `playwright`) and the
+workspace scripts; a package's own `package.json` holds its dependencies,
+peers and its `exports` map. There is deliberately **no React, no MUI, no
+DOM/component test framework** at the root — vitest itself is shared
+(every package unit-tests with it), but nothing DOM-shaped such as jsdom or
+Testing Library, and no component rendering, lives there; each package
+declares what it actually uses, so `pnpm -r` never installs a framework a
+package does not need. The browser runner is the one exception, and it
+carries no DOM-testing layer of its own: the cases reuse the packages'
+existing Testing Library, theme and i18n fixtures.
 
 The `api-sdk/` entry is different by design: it ships **generated**
 source. `src/index.ts` is orval output from the merged platform document —
@@ -156,6 +160,46 @@ pnpm -r build                    # emit dist/ (ESM .js + .d.ts) per package
 
 Single-package runs work from the package directory (`pnpm test`, `pnpm
 build`, ...) or with `pnpm --filter @speed/<name> <script>` from `web/`.
+
+## Browser tier
+
+The cases whose subject is real layout or real focusability live beside
+the component under test as `*.browser.test.tsx` and run in Chromium
+through Vitest's browser mode (`web/vitest.browser.config.ts`, the
+Playwright provider). They are excluded from each package's default
+`test`, `typecheck` and `lint` legs, and they are not part of
+`make check`: the root `make web-browser` entry runs only them, and the
+scheduled `.github/workflows/browser.yml` job calls that same entry.
+
+Chromium is not part of the `.mise.toml` toolchain; install it once:
+
+```
+pnpm -C web exec playwright install chromium
+```
+
+Then, from the repository root:
+
+```
+make web-browser
+```
+
+What the tier asserts is invariants, never pixels: geometry (each spacer
+equals the fixed head's height, a point below the head hits content
+itself, a table container does not overflow its own width), focus order
+(the skip link is the first Tab stop) and focusability (axe's
+`scrollable-region-focusable` rule finds nothing). Its first batch covers
+the shell's offset and spacer across three viewport classes and three
+banner heights, the skip link, the impersonation banner's live region,
+the data table's per-column content cap, and every console list page's
+horizontal containment at the sm/md/lg floor widths with fixed data.
+
+It does not cover color contrast, screenshot or pixel regression, or
+anything a jsdom unit test can already assert. Geometry assertions keep a
+one-pixel tolerance for subpixel rounding. The cases render in en-US and
+the setup pins the document's family to Arial / Liberation Sans, so the
+measured text uses metric-compatible fonts on macOS and on the CI image;
+measurements still belong to the machine's layout engine, which is one
+reason the tier runs on a schedule rather than in the commit gate.
 
 ## Package shape (all packages follow it)
 

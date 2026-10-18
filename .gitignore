@@ -29,6 +29,10 @@ dist/
 # Vitest's coverage output, written beside each package's config by a run
 # that asks for it (`pnpm -C web -r test --coverage`).
 coverage/
+# The browser tier's failure artifacts: Vitest writes screenshots beside
+# the failing case and attachments under the workspace root.
+**/__screenshots__/
+.vitest-attachments/
 .turbo/
 *.tsbuildinfo
 

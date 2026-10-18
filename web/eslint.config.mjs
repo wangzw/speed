@@ -63,7 +63,11 @@ const PACKAGE_RUNTIME_SRC = {
 
 export default tseslint.config(
   {
-    ignores: ['**/node_modules/**', '**/dist/**'],
+    // The browser cases (`*.browser.test.tsx`) are measured by the
+    // separate browser tier (web/vitest.browser.config.ts, `make
+    // web-browser`) and deliberately stay out of the unit packages'
+    // lint, typecheck and test legs.
+    ignores: ['**/node_modules/**', '**/dist/**', '**/*.browser.test.tsx'],
   },
   ...tseslint.configs.recommended,
   localPlugin,

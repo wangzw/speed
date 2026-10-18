@@ -10,6 +10,11 @@
  * preset, must not pin its own `testTimeout`, and its exported config
  * must carry the preset's timeout and coverage options.
  *
+ * The preset also owns the boundary between the unit tier and the
+ * browser tier: `*.browser.test.tsx` cases run only through the root
+ * `make web-browser` entry, so the preset must keep excluding them from
+ * every package's `test` leg. The last case pins that exclusion.
+ *
  * The demo host (starters/demo/web) is out of scope: it is a copyable
  * application whose repository-internal test wiring is dropped on copy
  * out, and it carries its own setup instead of consuming web/'s.
@@ -18,7 +23,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { sharedCoverage } from '../vitest.shared'
+import { sharedCoverage, sharedTestOptions } from '../vitest.shared'
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -50,6 +55,15 @@ function stripComments(source) {
 describe('workspace test configuration', () => {
   it('finds the packages that run tests', () => {
     expect(testPackages.length).toBeGreaterThan(0)
+  })
+
+  it('excludes the browser-tier cases from the unit preset', () => {
+    const options = sharedTestOptions()
+    expect(options.exclude).toContain('**/*.browser.test.tsx')
+    // Naming `exclude` replaces Vitest's defaults, so the preset must
+    // keep them too -- which it derives from configDefaults rather than
+    // restates.
+    expect(options.exclude).toContain('**/node_modules/**')
   })
 
   for (const pkg of testPackages) {
