@@ -1515,6 +1515,149 @@ describe('cookie session (store-less)', () => {
   })
 })
 
+describe('impersonating write rules', () => {
+  // Every rule below starts from an authenticated snapshot the server
+  // answered with `impersonating: true`: an anonymous pre-state cannot
+  // tell a write of false from leaving the old value alone.
+  const impersonatingRestore = {
+    [SESSION_GET]: () =>
+      sessionView({ authenticated: true, impersonating: true }),
+    [PROFILE_GET]: () => principal(),
+  }
+
+  async function restoredWhileImpersonating(
+    harness: Harness,
+  ): Promise<void> {
+    await expect(harness.session.restore()).resolves.toBe(true)
+    expect(harness.session.getSnapshot().impersonating).toBe(true)
+  }
+
+  it('a token login completion clears impersonating', async () => {
+    const harness = makeHarness({
+      ...impersonatingRestore,
+      [LOGIN_START]: () => completeFlow(),
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+    })
+    await restoredWhileImpersonating(harness)
+    await harness.session.startFlow({ method: 'password' })
+    await harness.session.answerFlow({ seq: 2, step: 'complete' })
+    expect(harness.session.getSnapshot().impersonating).toBe(false)
+  })
+
+  it('a cookie login completion clears impersonating', async () => {
+    const harness = makeCookieHarness({
+      ...impersonatingRestore,
+      [LOGIN_START]: () => completeFlow(),
+      [LOGIN_ANSWER]: () => sessionCompletion(),
+    })
+    await restoredWhileImpersonating(harness)
+    await harness.session.startFlow({ method: 'password' })
+    await harness.session.answerFlow({ seq: 2, step: 'complete' })
+    expect(harness.session.getSnapshot().impersonating).toBe(false)
+  })
+
+  it('logout clears impersonating', async () => {
+    const harness = makeCookieHarness({
+      ...impersonatingRestore,
+      [LOGOUT]: () => undefined,
+    })
+    await restoredWhileImpersonating(harness)
+    await harness.session.logout()
+    expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
+  })
+
+  it('a restore that reads nobody signed in clears impersonating', async () => {
+    let signedIn = true
+    const harness = makeCookieHarness({
+      [SESSION_GET]: () =>
+        signedIn
+          ? sessionView({ authenticated: true, impersonating: true })
+          : sessionView({ authenticated: false }),
+      [PROFILE_GET]: () => principal(),
+    })
+    await restoredWhileImpersonating(harness)
+    signedIn = false
+    await expect(harness.session.restore()).resolves.toBe(false)
+    expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
+  })
+
+  it('a refused refresh clears impersonating', async () => {
+    const harness = makeHarness({
+      ...impersonatingRestore,
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+      [TOKEN_ISSUE]: () => {
+        throw apiError(400, 'authn.invalid_grant')
+      },
+    })
+    // The token login is what puts a refresh token in the session's hand.
+    await harness.session.answerFlow({ seq: 2, step: 'complete' })
+    await restoredWhileImpersonating(harness)
+    await expect(harness.session.refresh()).resolves.toBe(false)
+    expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
+  })
+
+  it('reads impersonating only as a boolean', async () => {
+    for (const value of ['false', 1]) {
+      const harness = makeCookieHarness({
+        [SESSION_GET]: () => ({
+          ...sessionView({ authenticated: true }),
+          impersonating: value,
+        }),
+        [PROFILE_GET]: () => principal(),
+      })
+      await expect(harness.session.restore()).resolves.toBe(true)
+      expect(harness.session.getSnapshot().impersonating).toBe(false)
+    }
+  })
+
+  it('attaching a permission set keeps impersonating', async () => {
+    const harness = makeCookieHarness(impersonatingRestore)
+    await restoredWhileImpersonating(harness)
+    harness.session.setPermissionSet('system', ['tenant.read'])
+    expect(harness.session.getSnapshot().impersonating).toBe(true)
+    expect(harness.session.getSnapshot().permissionSets.system).toEqual([
+      'tenant.read',
+    ])
+  })
+
+  it('a token refresh keeps impersonating', async () => {
+    const harness = makeHarness({
+      ...impersonatingRestore,
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+      [TOKEN_ISSUE]: () => tokenResponse(),
+    })
+    await harness.session.answerFlow({ seq: 2, step: 'complete' })
+    await restoredWhileImpersonating(harness)
+    await expect(harness.session.refresh()).resolves.toBe(true)
+    expect(harness.session.getSnapshot().impersonating).toBe(true)
+  })
+
+  it('a token step-up keeps impersonating', async () => {
+    let answerCall = 0
+    const harness = makeHarness({
+      ...impersonatingRestore,
+      [LOGIN_START_AUTHENTICATED]: () => completeFlow(),
+      [LOGIN_ANSWER]: () => {
+        answerCall += 1
+        return answerCall === 1 ? authenticatedCompletion() : elevatedCompletion()
+      },
+    })
+    await harness.session.answerFlow({ seq: 2, step: 'complete' })
+    await restoredWhileImpersonating(harness)
+    await harness.session.startAuthenticatedFlow({ purpose: 'step-up' })
+    await harness.session.answerFlow({ seq: 3, step: 'complete' })
+    expect(harness.session.getSnapshot().impersonating).toBe(true)
+  })
+
+  it('a settled feature retry keeps impersonating', async () => {
+    const harness = makeCookieHarness(impersonatingRestore)
+    await restoredWhileImpersonating(harness)
+    await harness.session.retryFeatures()
+    expect(harness.session.getSnapshot().features.state).toBe('ready')
+    expect(harness.session.getSnapshot().impersonating).toBe(true)
+  })
+})
+
 describe('with the real api-client', () => {
   it('retries a refused request with the freshly refreshed token', async () => {
     const store = createMemoryAccessTokenStore()
