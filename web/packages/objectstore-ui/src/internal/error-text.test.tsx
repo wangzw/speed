@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
-import { switchLanguage } from '@speed/i18n'
+import { SESSION_LIFECYCLE_ERROR_CODES, switchLanguage } from '@speed/i18n'
 import { renderWithProviders } from '../../test-utils/render.js'
-import { useObjectstoreUiErrorText } from './error-text.js'
+import { ERROR_TEXT_CODES, useObjectstoreUiErrorText } from './error-text.js'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
+import enUS from '../locales/en-US.json' with { type: 'json' }
 
 /** A probe that renders the resolver's text for each code, one per line. */
 function Probe({ codes }: { readonly codes: readonly string[] }) {
@@ -84,6 +85,30 @@ describe('useObjectstoreUiErrorText', () => {
       language: 'en-US',
     })
     expect(textFor('authz.forbidden')).toMatch(/permission/i)
+  })
+
+  it('resolves the session-lifecycle codes to their bilingual copy', async () => {
+    // A session that dies mid-flight reaches a protected surface as one of
+    // these codes; each is whitelisted and has a leaf in both bundles, so
+    // it renders its own sentence rather than the unknown fallback.
+    const codes = [...SESSION_LIFECYCLE_ERROR_CODES]
+    const { i18n } = renderWithProviders(<Probe codes={codes} />, {
+      language: 'en-US',
+    })
+    type AuthnLeaves = typeof enUS.errors.authn
+    const tail = (code: string): keyof AuthnLeaves =>
+      code.slice(code.indexOf('.') + 1) as keyof AuthnLeaves
+    for (const code of codes) {
+      expect(ERROR_TEXT_CODES).toContain(code)
+      expect(textFor(code)).toBe(enUS.errors.authn[tail(code)])
+    }
+
+    await switchLanguage(i18n, 'zh-CN')
+    await waitFor(() => {
+      for (const code of codes) {
+        expect(textFor(code)).toBe(zhCN.errors.authn[tail(code)])
+      }
+    })
   })
 
   it('falls back to the unknown text for an unlisted code', () => {

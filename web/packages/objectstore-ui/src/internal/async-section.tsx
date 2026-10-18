@@ -14,9 +14,17 @@
  * A tenant-scoped read is answered 403 when the caller lacks the
  * objectstore permission the route is held to; that refusal likewise
  * renders the no-permission EmptyState with the forbidden copy and no
- * action. Every other failure falls through to AsyncSection's retryable
- * error placeholder unchanged. The pending, empty and content branches are
- * AsyncSection's own -- only the failure branch differs.
+ * action. A refusal makes the older data meaningless, so it replaces the
+ * content even when a cached payload is still on screen, and it never
+ * becomes a stale marker. Every other failure over an already settled
+ * payload is a failed refresh: the content stays with an alert above it
+ * saying it may be out of date, and its retry. The caller passes
+ * `refreshing` while the retry is in flight, withdrawing the marker; a
+ * retry that fails again re-supplies it, so the alert mounts anew and
+ * announces again. Without a settled payload the same non-refusal failure
+ * falls through to AsyncSection's retryable error placeholder unchanged.
+ * The pending, empty and content branches are AsyncSection's own -- only
+ * the failure branch differs.
  *
  * A typed 404 is not the admission refusal: the objectstore module answers
  * an object that does not exist with a problem object whose type derives
@@ -129,6 +137,13 @@ export interface ObjectAsyncSectionProps<Payload> {
    * by a caller whose read cannot answer that code (the list).
    */
   readonly notFoundState?: AsyncSectionEmptyState
+  /**
+   * Whether a read is in flight over content already on screen (a
+   * refetch). A failed refresh keeps the content and marks it stale; the
+   * marker is withdrawn while the retry is in flight, so every caller
+   * passes its read's fetching state here.
+   */
+  readonly refreshing: boolean
   /** The heading element the placeholders' titles render as; defaults to 'h2'. */
   readonly headingLevel?: EmptyStateHeadingLevel
   /** The settled content, built from the narrowed payload. */
@@ -141,9 +156,22 @@ export function ObjectAsyncSection<Payload>({
   errorState,
   notFoundState,
   headingLevel = 'h2',
+  refreshing,
   ...rest
 }: ObjectAsyncSectionProps<Payload>) {
   const { t } = useObjectstoreUiTranslation()
+  // A refusal makes the older data meaningless: it replaces the content
+  // whatever the payload is, is never marked stale and offers no retry.
+  if (!rest.pending && isForbidden(error)) {
+    return (
+      <EmptyState
+        variant="noPermission"
+        title={t('list.forbidden.title')}
+        description={t('list.forbidden.description')}
+        headingLevel={headingLevel}
+      />
+    )
+  }
   // The tenant refusal replaces the content even when a cached payload is
   // still on screen: once admission refuses the tenant, the older data
   // describes a tenant the caller can no longer enter.
@@ -153,16 +181,6 @@ export function ObjectAsyncSection<Payload>({
         variant="noPermission"
         title={t('tenantUnavailable.title')}
         description={t('tenantUnavailable.description')}
-        headingLevel={headingLevel}
-      />
-    )
-  }
-  if (!rest.pending && rest.payload === undefined && isForbidden(error)) {
-    return (
-      <EmptyState
-        variant="noPermission"
-        title={t('list.forbidden.title')}
-        description={t('list.forbidden.description')}
         headingLevel={headingLevel}
       />
     )
@@ -179,7 +197,27 @@ export function ObjectAsyncSection<Payload>({
       />
     )
   }
+  // Every other failure over an already settled payload is a failed
+  // refresh: the content stays with the stale marker above it.
+  // `refreshing` withdraws the marker while the retry runs; a retry that
+  // fails again re-supplies it, and the remounted alert announces again.
+  const staleState =
+    !refreshing &&
+    rest.payload !== undefined &&
+    error !== undefined &&
+    error !== null
+      ? {
+          description: t('stale.description'),
+          retryLabel: errorState.retryLabel,
+          onRetry: errorState.onRetry,
+        }
+      : undefined
   return (
-    <AsyncSection errorState={errorState} headingLevel={headingLevel} {...rest} />
+    <AsyncSection
+      errorState={errorState}
+      headingLevel={headingLevel}
+      staleState={staleState}
+      {...rest}
+    />
   )
 }

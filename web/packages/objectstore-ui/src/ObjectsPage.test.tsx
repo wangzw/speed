@@ -38,6 +38,7 @@ import {
 } from '../test-utils/real-client.js'
 import { ObjectsPage } from './ObjectsPage.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
+import enUS from './locales/en-US.json' with { type: 'json' }
 
 // The download side effect is stubbed: the suite asserts the bytes and
 // filename handed to it, without jsdom attempting a navigation.
@@ -76,6 +77,39 @@ function containerDisplayOf(element: Element): Map<number, string> {
     if (display?.[1] !== undefined) displays.set(width, display[1])
   }
   return displays
+}
+
+/** A promise the test resolves or leaves hanging to hold a request open. */
+function deferred(): { readonly promise: Promise<void>; readonly resolve: () => void } {
+  let release!: () => void
+  const promise = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  return { promise, resolve: release }
+}
+
+/**
+ * Runs a double-guarded delete confirmation through to the confirming
+ * click: the first click arms it and the second confirms after the
+ * lockout. The dialog closes on the confirming click, so the caller does
+ * not wait for the write here.
+ */
+async function confirmDeleteInDialog(
+  user: ReturnType<typeof userEvent.setup>,
+  dialog: HTMLElement,
+): Promise<void> {
+  const confirmAgain = (
+    uiKitResources['en-US'] as unknown as {
+      readonly confirmDialog: { readonly confirmAgainLabel: string }
+    }
+  ).confirmDialog.confirmAgainLabel
+  await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+  await act(async () => {
+    await new Promise((resolve) =>
+      setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
+    )
+  })
+  await user.click(within(dialog).getByRole('button', { name: confirmAgain }))
 }
 
 /**
@@ -372,10 +406,13 @@ describe('ObjectsPage', () => {
     renderWithProviders(<ObjectsPage />, { language: 'en-US', tenantId: null })
 
     // The read is disabled, so the loading announcement stands and no
-    // request was made.
+    // request was made. The refresh is natively disabled too: a re-read
+    // ignores the read's enablement gate, so an enabled control would
+    // issue a tenant-less request.
     expect(
       screen.getByRole('status', { name: 'Loading objects' }),
     ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeDisabled()
     await Promise.resolve()
     expect(rig.calls).toHaveLength(0)
   })
@@ -605,8 +642,10 @@ describe('ObjectsPage', () => {
     const input = container.querySelector('input[type="file"]')
     await user.upload(input as HTMLInputElement, new File(['hello'], 'retry-me.txt', { type: 'text/plain' }))
 
-    // The first attempt fails; the row offers a retry.
-    expect(await screen.findByText('Upload failed')).toBeInTheDocument()
+    // The first attempt fails; the row offers a retry. The 503's code is
+    // outside the whitelist, so the row renders the unknown fallback
+    // rather than a fixed "upload failed" line.
+    expect(await screen.findByText(enUS.errors.unknown)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Retry' }))
     await waitFor(() => {
       expect(screen.getByText('Uploaded')).toBeInTheDocument()
@@ -617,6 +656,256 @@ describe('ObjectsPage', () => {
     await waitFor(() => {
       expect(screen.queryByText('retry-me.txt')).not.toBeInTheDocument()
     })
+  })
+
+  it('shares one feedback slot between download and delete, naming the downloaded object', async () => {
+    const user = userEvent.setup()
+    vi.mocked(saveBlob).mockClear()
+    let deleted = false
+    makeObjectStoreRig((call) => {
+      if (call.method === 'GET' && call.path === `${LIST_PATH}/o-aaa/content`) {
+        return blobResponse('the-bytes', 'text/plain')
+      }
+      if (call.method === 'DELETE' && call.path === `${LIST_PATH}/o-aaa`) {
+        deleted = true
+        return noContentResponse()
+      }
+      return jsonResponse(200, {
+        objects: deleted ? [] : [OBJECT_A],
+        next_cursor: '',
+      })
+    })
+    renderWithProviders(<ObjectsPage />, { language: 'en-US' })
+    await screen.findByText('o-aaa')
+
+    await user.click(screen.getByRole('button', { name: 'Download object o-aaa' }))
+    const downloaded = enUS.download.saved.replace('{{name}}', OBJECT_A.name)
+    expect(await screen.findByText(downloaded)).toBeInTheDocument()
+
+    // The delete settles into the same slot: the earlier confirmation
+    // cannot stand beside it.
+    await user.click(screen.getByRole('button', { name: 'Delete object o-aaa' }))
+    const dialog = await screen.findByRole('dialog')
+    await confirmDeleteInDialog(user, dialog)
+    expect(await screen.findByText(enUS.delete.deleted)).toBeInTheDocument()
+    expect(screen.queryByText(downloaded)).not.toBeInTheDocument()
+  })
+
+  it('resets the feedback slot when the page or the refresh changes the context', async () => {
+    const user = userEvent.setup()
+    vi.mocked(saveBlob).mockClear()
+    makeObjectStoreRig((call) => {
+      if (call.method === 'GET' && call.path.endsWith('/content')) {
+        return blobResponse('the-bytes', 'text/plain')
+      }
+      if (call.query.includes('cursor=')) {
+        return jsonResponse(200, { objects: [OBJECT_B], next_cursor: '' })
+      }
+      return jsonResponse(200, { objects: [OBJECT_A], next_cursor: 'CURSOR-1' })
+    })
+    renderWithProviders(<ObjectsPage pageSize={1} />, { language: 'en-US' })
+    await screen.findByText('o-aaa')
+    const downloaded = enUS.download.saved.replace('{{name}}', OBJECT_A.name)
+
+    await user.click(screen.getByRole('button', { name: 'Download object o-aaa' }))
+    expect(await screen.findByText(downloaded)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Next page' }))
+    expect(await screen.findByText('o-bbb')).toBeInTheDocument()
+    expect(screen.queryByText(downloaded)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Download object o-bbb' }))
+    const downloadedB = enUS.download.saved.replace('{{name}}', OBJECT_B.name)
+    expect(await screen.findByText(downloadedB)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => {
+      expect(screen.queryByText(downloadedB)).not.toBeInTheDocument()
+    })
+  })
+
+  it('disables the pager and the refresh while a page write is in flight', async () => {
+    const user = userEvent.setup()
+    const gate = deferred()
+    makeObjectStoreRig(async (call) => {
+      if (call.method === 'GET' && call.path === `${LIST_PATH}/o-aaa/content`) {
+        await gate.promise
+        return blobResponse('the-bytes', 'text/plain')
+      }
+      return jsonResponse(200, { objects: [OBJECT_A], next_cursor: 'CURSOR-1' })
+    })
+    renderWithProviders(<ObjectsPage pageSize={1} />, { language: 'en-US' })
+    await screen.findByText('o-aaa')
+
+    await user.click(screen.getByRole('button', { name: 'Download object o-aaa' }))
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Refresh' })).toBeDisabled()
+    })
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
+
+    gate.resolve()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Refresh' })).not.toBeDisabled()
+    })
+    expect(screen.getByRole('button', { name: 'Next page' })).not.toBeDisabled()
+  })
+
+  it('disables and marks busy every delete control while a delete is in flight', async () => {
+    const user = userEvent.setup()
+    const gate = deferred()
+    makeObjectStoreRig(async (call) => {
+      if (call.method === 'DELETE') {
+        await gate.promise
+        return noContentResponse()
+      }
+      return jsonResponse(200, {
+        objects: [OBJECT_A, OBJECT_B],
+        next_cursor: '',
+      })
+    })
+    renderWithProviders(<ObjectsPage />, { language: 'en-US' })
+    await screen.findByText('o-aaa')
+
+    await user.click(screen.getByRole('button', { name: 'Delete object o-aaa' }))
+    const dialog = await screen.findByRole('dialog')
+    await confirmDeleteInDialog(user, dialog)
+
+    await waitFor(() => {
+      const deletes = screen.getAllByRole('button', { name: /^Delete object / })
+      expect(deletes).toHaveLength(2)
+      for (const control of deletes) {
+        expect(control).toBeDisabled()
+        expect(within(control).getByRole('progressbar')).toBeInTheDocument()
+      }
+    })
+
+    gate.resolve()
+    expect(await screen.findByText(enUS.delete.deleted)).toBeInTheDocument()
+  })
+
+  it('reports the read as aria-busy on the refresh, keeping it focusable, and issues no second read', async () => {
+    const user = userEvent.setup()
+    const gate = deferred()
+    let listReads = 0
+    makeObjectStoreRig(async () => {
+      listReads += 1
+      if (listReads > 1) {
+        await gate.promise
+      }
+      return jsonResponse(200, { objects: [OBJECT_A], next_cursor: '' })
+    })
+    renderWithProviders(<ObjectsPage />, { language: 'en-US' })
+    await screen.findByText('o-aaa')
+
+    const refresh = screen.getByRole('button', { name: 'Refresh' })
+    await user.click(refresh)
+    await waitFor(() => {
+      expect(refresh).toHaveAttribute('aria-busy', 'true')
+    })
+    // A busy read never turns the control natively disabled: a focused
+    // control losing its native disabled state drops the focus.
+    expect(refresh).not.toBeDisabled()
+
+    const readsBefore = listReads
+    refresh.focus()
+    await user.click(refresh)
+    expect(listReads).toBe(readsBefore)
+    expect(refresh).toHaveFocus()
+
+    gate.resolve()
+    await waitFor(() => {
+      expect(refresh).not.toHaveAttribute('aria-busy')
+    })
+  })
+
+  it('keeps the list and marks it stale when a refresh fails over existing data', async () => {
+    const user = userEvent.setup()
+    let fail = false
+    makeObjectStoreRig(() =>
+      fail
+        ? problemResponse(503, 'urn:speed:objectstore:unavailable')
+        : jsonResponse(200, { objects: [OBJECT_A], next_cursor: '' }),
+    )
+    renderWithProviders(<ObjectsPage />, { language: 'en-US' })
+    await screen.findByText('o-aaa')
+
+    fail = true
+    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+    expect(await screen.findByText(enUS.stale.description)).toBeInTheDocument()
+    // The earlier list stays on screen under the marker, with its retry.
+    expect(screen.getByText('o-aaa')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+  })
+
+  it('replaces the list with the no-permission state on a refresh answered 403 and hides the pager', async () => {
+    const user = userEvent.setup()
+    let refuse = false
+    makeObjectStoreRig(() =>
+      refuse
+        ? problemResponse(403, 'urn:speed:objectstore:forbidden')
+        : jsonResponse(200, { objects: [OBJECT_A], next_cursor: 'CURSOR-1' }),
+    )
+    renderWithProviders(<ObjectsPage pageSize={1} />, { language: 'en-US' })
+    await screen.findByText('o-aaa')
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeInTheDocument()
+
+    refuse = true
+    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+    expect(await screen.findByText(enUS.list.forbidden.title)).toBeInTheDocument()
+    expect(screen.queryByText('o-aaa')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next page' })).not.toBeInTheDocument()
+    expect(screen.queryByText(enUS.stale.description)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
+  })
+
+  it('re-reads the tenant subtree after a failed delete', async () => {
+    const user = userEvent.setup()
+    const rig = makeObjectStoreRig((call) => {
+      if (call.method === 'DELETE') {
+        return problemResponse(409, 'urn:speed:objectstore:conflict')
+      }
+      return jsonResponse(200, { objects: [OBJECT_A], next_cursor: '' })
+    })
+    renderWithProviders(<ObjectsPage />, { language: 'en-US' })
+    await screen.findByText('o-aaa')
+    const listReads = (): number =>
+      rig.calls.filter((call) => call.method === 'GET' && call.path === LIST_PATH)
+        .length
+    const before = listReads()
+
+    await user.click(screen.getByRole('button', { name: 'Delete object o-aaa' }))
+    const dialog = await screen.findByRole('dialog')
+    await confirmDeleteInDialog(user, dialog)
+
+    expect(
+      await screen.findByText(enUS.errors.objectstore.conflict),
+    ).toBeInTheDocument()
+    await waitFor(() => {
+      expect(listReads()).toBeGreaterThan(before)
+    })
+  })
+
+  it("renders an upload row's failure text from the failure's code", async () => {
+    const user = userEvent.setup()
+    makeObjectStoreRig((call) => {
+      if (call.method === 'POST' && call.path === LIST_PATH) {
+        return problemResponse(400, 'urn:speed:objectstore:bad-request')
+      }
+      return jsonResponse(200, { objects: [], next_cursor: '' })
+    })
+    const { container } = renderWithProviders(<ObjectsPage />, {
+      language: 'en-US',
+    })
+    await screen.findByText('No objects yet')
+
+    const input = container.querySelector('input[type="file"]')
+    await user.upload(
+      input as HTMLInputElement,
+      new File(['hello'], 'broken.txt', { type: 'text/plain' }),
+    )
+
+    expect(
+      await screen.findByText(enUS.errors.objectstore.bad_request),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(enUS.errors.unknown)).not.toBeInTheDocument()
   })
 
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {

@@ -2,8 +2,10 @@
  * Error-code text resolution for the objectstore-ui namespace.
  *
  * Every reachable answer of the object page maps, one leaf per code,
- * under the errors section: the objectstore module's own refusal codes
- * (`objectstore.bad_request` / `objectstore.not_found` /
+ * under the errors section: the session-lifecycle codes a session that
+ * dies mid-flight surfaces as through the refresh leg
+ * (SESSION_LIFECYCLE_ERROR_CODES); the objectstore module's own refusal
+ * codes (`objectstore.bad_request` / `objectstore.not_found` /
  * `objectstore.conflict`) and the platform authorization guard's
  * permission refusal (`authz.forbidden`); the transport-level codes of
  * the @speed/api-client contract (client.network / client.timeout /
@@ -32,7 +34,11 @@
  * `objectstore.not_found` and keeps its own leaf.
  */
 
-import { CLIENT_TRANSPORT_ERROR_CODES, createErrorTextResolver } from '@speed/i18n'
+import {
+  CLIENT_TRANSPORT_ERROR_CODES,
+  SESSION_LIFECYCLE_ERROR_CODES,
+  createErrorTextResolver,
+} from '@speed/i18n'
 import { useObjectstoreUiTranslation } from './translation.js'
 
 /**
@@ -52,12 +58,18 @@ const HTTP_ERROR_CODE = /^client\.http\.(\d{3})$/
 const TENANT_REFUSAL_CODE = 'client.http.404'
 
 /**
- * Every code with a dedicated errors-section text: the objectstore
- * module's own refusals, the authorization guard's permission refusal,
- * and the transport-level failures of the api-client contract. Exported
- * so the suite can pin the whitelist-to-bundle pairing in both languages.
+ * Every code with a dedicated errors-section text: the session-lifecycle
+ * answers any protected surface can receive through the refresh leg, the
+ * objectstore module's own refusals, the authorization guard's permission
+ * refusal, and the transport-level failures of the api-client contract.
+ * Exported so the suite can pin the whitelist-to-bundle pairing in both
+ * languages.
  */
 export const ERROR_TEXT_CODES = [
+  // A session that dies mid-flight surfaces as one of these through the
+  // refresh leg; each renders its own text instead of the generic
+  // fallback.
+  ...SESSION_LIFECYCLE_ERROR_CODES,
   ...CLIENT_TRANSPORT_ERROR_CODES,
   // pkg/objectstore/metadata's refusals: the problem types
   // urn:speed:objectstore:{bad-request,not-found,conflict}, derived by the

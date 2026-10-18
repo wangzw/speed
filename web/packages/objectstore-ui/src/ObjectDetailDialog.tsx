@@ -88,6 +88,7 @@ export function ObjectDetailDialog({ id, onClose }: ObjectDetailDialogProps) {
           payload={object}
           error={query.error}
           empty={false}
+          refreshing={query.isFetching}
           loading={
             <ListSkeleton
               label={t('detail.loading')}

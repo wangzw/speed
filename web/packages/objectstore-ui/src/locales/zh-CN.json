@@ -1,5 +1,12 @@
 {
   "errors": {
+    "authn": {
+      "session_not_found": "会话不存在，请重新登录。",
+      "session_revoked": "会话已被撤销，请重新登录。",
+      "token_expired": "登录已过期，请重新登录。",
+      "refresh_token_invalid": "登录状态已失效，请重新登录。",
+      "refresh_token_reused": "检测到异常活动，请重新登录。"
+    },
     "client": {
       "network": "网络连接不可用，请检查网络后重试。",
       "timeout": "请求超时，请稍后再试。",
@@ -25,6 +32,9 @@
     "title": "对象存储",
     "description": "上传文件到当前租户的对象存储，查看列表、下载取回或删除。",
     "refresh": "刷新"
+  },
+  "stale": {
+    "description": "所示内容可能已过期，请重试刷新。"
   },
   "list": {
     "heading": "已存对象",
@@ -72,10 +82,12 @@
     "delete": "删除",
     "deleteAria": "删除对象 {{id}}"
   },
+  "download": {
+    "saved": "已下载 {{name}}"
+  },
   "upload": {
     "heading": "上传",
-    "description": "每个文件依次经历声明、上传、完成三步。文件存放在你当前所处的租户下。",
-    "rowError": "上传失败。"
+    "description": "每个文件依次经历声明、上传、完成三步。文件存放在你当前所处的租户下。"
   },
   "delete": {
     "title": "删除这个对象？",

@@ -11,10 +11,11 @@
  * (POST /objects) -> upload the bytes (PUT /objects/{id}/content) ->
  * complete (POST /objects/{id}/complete). A landed transfer flips the row
  * to succeeded and re-reads the tenant's object list; a failure at any
- * step flips it to failed with a host-written message and leaves the
- * earlier step's declaration in place (the module's own semantics: a
- * declared object whose upload failed stays pending until its window
- * closes).
+ * step flips it to failed with that failure's code resolved through the
+ * namespace's error text (a non-ApiError throw collapses to the unknown
+ * fallback) and leaves the earlier step's declaration in place (the
+ * module's own semantics: a declared object whose upload failed stays
+ * pending until its window closes).
  *
  * The upload's byte leg is the generated content operation with the File
  * as its body -- a Blob, which the api-client transport sends verbatim
@@ -24,6 +25,7 @@
  */
 
 import { useRef, useState } from 'react'
+import { errorCodeOf } from '@speed/ui-kit'
 import type { FileUploaderRow } from '@speed/ui-kit'
 import {
   declarationForFile,
@@ -32,7 +34,7 @@ import {
   useInvalidateObjects,
   useUploadObjectContent,
 } from './queries.js'
-import { useObjectstoreUiTranslation } from './translation.js'
+import { useObjectstoreUiErrorText } from './error-text.js'
 
 /** The upload surface's controlled state and its callbacks. */
 export interface ObjectUploads {
@@ -48,7 +50,7 @@ export interface ObjectUploads {
 
 /** Owns the upload queue and drives each file's three-step transfer. */
 export function useObjectUploads(): ObjectUploads {
-  const { t } = useObjectstoreUiTranslation()
+  const resolveErrorText = useObjectstoreUiErrorText()
   const create = useCreateObject()
   const upload = useUploadObjectContent()
   const complete = useCompleteObject()
@@ -75,8 +77,11 @@ export function useObjectUploads(): ObjectUploads {
       await complete.mutateAsync({ id })
       settle(rowId, { status: 'succeeded' })
       invalidate()
-    } catch {
-      settle(rowId, { status: 'failed', error: t('upload.rowError') })
+    } catch (error) {
+      settle(rowId, {
+        status: 'failed',
+        error: resolveErrorText(errorCodeOf(error)),
+      })
     }
   }
 

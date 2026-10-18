@@ -8,6 +8,7 @@ import {
   isTenantRefusal,
 } from './async-section.js'
 import type { AsyncSectionErrorState } from '@speed/ui-kit'
+import enUS from '../locales/en-US.json' with { type: 'json' }
 
 const errorState: AsyncSectionErrorState = {
   title: 'Load failed',
@@ -72,6 +73,7 @@ describe('ObjectAsyncSection', () => {
         empty={false}
         loading={<p>loading</p>}
         errorState={errorState}
+        refreshing={false}
       >
         {() => <p>content</p>}
       </ObjectAsyncSection>,
@@ -94,6 +96,7 @@ describe('ObjectAsyncSection', () => {
         empty={false}
         loading={<p>loading</p>}
         errorState={errorState}
+        refreshing={false}
       >
         {() => <p>content</p>}
       </ObjectAsyncSection>,
@@ -115,6 +118,7 @@ describe('ObjectAsyncSection', () => {
         empty={false}
         loading={<p>loading</p>}
         errorState={errorState}
+        refreshing={false}
         notFoundState={{ title: 'Gone', description: 'It was deleted' }}
       >
         {() => <p>content</p>}
@@ -139,6 +143,7 @@ describe('ObjectAsyncSection', () => {
         empty={false}
         loading={<p>loading</p>}
         errorState={errorState}
+        refreshing={false}
         notFoundState={{ title: 'Gone', description: 'It was deleted' }}
       >
         {(value) => <p>content: {value}</p>}
@@ -160,6 +165,7 @@ describe('ObjectAsyncSection', () => {
         empty={false}
         loading={<p>loading</p>}
         errorState={errorState}
+        refreshing={false}
         notFoundState={{ title: 'Gone', description: 'It was deleted' }}
       >
         {() => <p>content</p>}
@@ -179,6 +185,7 @@ describe('ObjectAsyncSection', () => {
         empty={false}
         loading={<p>loading</p>}
         errorState={errorState}
+        refreshing={false}
       >
         {() => <p>content</p>}
       </ObjectAsyncSection>,
@@ -199,6 +206,7 @@ describe('ObjectAsyncSection', () => {
         empty={false}
         loading={<p>loading</p>}
         errorState={errorState}
+        refreshing={false}
       >
         {() => <p>content</p>}
       </ObjectAsyncSection>,
@@ -216,6 +224,7 @@ describe('ObjectAsyncSection', () => {
         empty={false}
         loading={<p>loading now</p>}
         errorState={errorState}
+        refreshing={false}
       >
         {() => <p>content</p>}
       </ObjectAsyncSection>,
@@ -233,11 +242,74 @@ describe('ObjectAsyncSection', () => {
         empty={false}
         loading={<p>loading</p>}
         errorState={errorState}
+        refreshing={false}
       >
         {(value) => <p>content: {value}</p>}
       </ObjectAsyncSection>,
       { language: 'en-US' },
     )
     expect(screen.getByText('content: ready')).toBeInTheDocument()
+  })
+
+  it('replaces a cached payload with the no-permission state on a 403', () => {
+    // A refusal makes the older data meaningless: it must not survive as a
+    // stale list beside a permission notice.
+    renderWithProviders(
+      <ObjectAsyncSection<string>
+        pending={false}
+        payload="cached rows"
+        error={{ status: 403 }}
+        empty={false}
+        loading={<p>loading</p>}
+        errorState={errorState}
+        refreshing={false}
+      >
+        {(value) => <p>content: {value}</p>}
+      </ObjectAsyncSection>,
+      { language: 'en-US' },
+    )
+    expect(screen.getByText(/No access to the object store/i)).toBeInTheDocument()
+    expect(screen.queryByText('content: cached rows')).not.toBeInTheDocument()
+    expect(screen.queryByText(enUS.stale.description)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  })
+
+  it('keeps a cached payload and marks it stale after a failed refresh', () => {
+    renderWithProviders(
+      <ObjectAsyncSection<string>
+        pending={false}
+        payload="cached rows"
+        error={{ status: 503, code: 'client.http.503' }}
+        empty={false}
+        loading={<p>loading</p>}
+        errorState={errorState}
+        refreshing={false}
+      >
+        {(value) => <p>content: {value}</p>}
+      </ObjectAsyncSection>,
+      { language: 'en-US' },
+    )
+    expect(screen.getByText('content: cached rows')).toBeInTheDocument()
+    expect(screen.getByText(enUS.stale.description)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
+
+  it('withdraws the stale marker while the retry is in flight', () => {
+    renderWithProviders(
+      <ObjectAsyncSection<string>
+        pending={false}
+        payload="cached rows"
+        error={{ status: 503, code: 'client.http.503' }}
+        empty={false}
+        loading={<p>loading</p>}
+        errorState={errorState}
+        refreshing
+      >
+        {(value) => <p>content: {value}</p>}
+      </ObjectAsyncSection>,
+      { language: 'en-US' },
+    )
+    expect(screen.getByText('content: cached rows')).toBeInTheDocument()
+    expect(screen.queryByText(enUS.stale.description)).not.toBeInTheDocument()
   })
 })
