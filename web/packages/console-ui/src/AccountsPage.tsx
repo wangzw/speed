@@ -102,6 +102,10 @@ import { RefreshButton } from './internal/refresh-button.js'
 import { useConsoleStepUp } from './internal/step-up-gate.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
+import {
+  pageRefreshRead,
+  usePageRefresh,
+} from './internal/use-page-refresh.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { useConsoleOperations } from './operations.js'
 import type {
@@ -251,6 +255,14 @@ export function AccountsPage() {
   const revokeSecret = operations.useRevokeSecret()
   const revokeSession = operations.useRevokeSession()
   const removeIdentifier = operations.useRemoveIdentifier()
+
+  // The refresh action re-reads the list -- the one read describing the
+  // page body; the detail panel's reads live in the modal and re-read when
+  // it opens again -- and resets the list's feedback scope first.
+  const pageRefresh = usePageRefresh(
+    [pageRefreshRead('accounts', accounts)],
+    () => listWrite.reset(),
+  )
 
   // The write controls a detail section starts are disabled and marked busy
   // from the scope's own in-flight count, never from one mutation observer's
@@ -727,12 +739,12 @@ export function AccountsPage() {
           <Box sx={{ display: 'flex', gap: 1 }}>
             <RefreshButton
               // Refreshing changes the list scope's context: while one of
-              // its writes is in flight it is disabled, so a late result
-              // cannot land against a list it no longer describes. While
-              // the read itself is in flight it is marked busy.
-              busy={accounts.isFetching}
-              disabled={listWrite.pending}
-              onClick={() => void accounts.refetch()}
+              // its writes is in flight it is natively disabled, so a late
+              // result cannot land against a list it no longer describes.
+              // While the list read is in flight it is marked busy.
+              busy={pageRefresh.busy}
+              writePending={listWrite.pending}
+              onClick={pageRefresh.refresh}
             />
             <Button
               type="button"

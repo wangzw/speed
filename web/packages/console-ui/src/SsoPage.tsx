@@ -59,6 +59,10 @@ import { RefreshButton } from './internal/refresh-button.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
+  pageRefreshRead,
+  usePageRefresh,
+} from './internal/use-page-refresh.js'
+import {
   failureTextOf,
   useFailureScroll,
   WriteFeedbackRegion,
@@ -136,6 +140,21 @@ export function SsoPage() {
   const anyPending =
     listFeedback.pending || formFeedback.pending || domainsFeedback.pending
 
+  // The refresh action re-reads the provider list -- the one body read; the
+  // form's provider read belongs to the selected edit target and re-reads
+  // with its key -- and resets the three scopes and the row marker first.
+  // The provider selections and the one-time token panel stay.
+  const resetPageFeedback = () => {
+    listFeedback.reset()
+    formFeedback.reset()
+    domainsFeedback.reset()
+    setFailedProvider(null)
+  }
+  const pageRefresh = usePageRefresh(
+    [pageRefreshRead('sso-providers', providers)],
+    resetPageFeedback,
+  )
+
   // The tenant is an argument of every write here: a change clears all
   // three slots and every row marker, and drops the provider selections
   // whose ids no longer name this tenant's providers. The one-time token
@@ -143,10 +162,7 @@ export function SsoPage() {
   // it was claimed under.
   const changeTenant = (next: string) => {
     setTenant(next)
-    listFeedback.reset()
-    formFeedback.reset()
-    domainsFeedback.reset()
-    setFailedProvider(null)
+    resetPageFeedback()
     setBusyProvider(null)
     setBusyDomainAction(null)
     setEditProvider('')
@@ -410,12 +426,12 @@ export function SsoPage() {
           disabled={anyPending}
           trailing={
             <RefreshButton
-              busy={providers.isFetching}
+              busy={pageRefresh.busy}
               disabled={tenant === ''}
               writePending={anyPending}
               describedBy={TENANT_HINT_ID}
               disabledReason={t('sso.needTenant.description')}
-              onClick={() => void providers.refetch()}
+              onClick={pageRefresh.refresh}
             />
           }
         />

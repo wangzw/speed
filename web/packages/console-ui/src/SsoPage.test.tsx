@@ -30,6 +30,7 @@ import {
   type ConsoleBackend,
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
 
@@ -828,6 +829,25 @@ describe('SsoPage', () => {
     })
     expect(refresh).not.toBeDisabled()
     expect(refresh).toBe(document.activeElement)
+  })
+
+  it('re-reads the provider list on refresh', async () => {
+    const user = userEvent.setup()
+    const listSsoProviders = vi.fn(() =>
+      Promise.resolve([providerFixture({ name: 'Acme IdP' })]),
+    )
+    const operations = withProviders({ listSsoProviders })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+
+    const before = listSsoProviders.mock.calls.length
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+    await vi.waitFor(() =>
+      expect(listSsoProviders.mock.calls.length).toBe(before + 1),
+    )
   })
 
   it('has no axe violations', async () => {

@@ -25,6 +25,7 @@ import {
   type ConsoleBackend,
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 function session(overrides: Partial<ConsoleAccountSession> = {}): ConsoleAccountSession {
   return {
@@ -494,6 +495,23 @@ describe('SessionsPage', () => {
         [0, 160],
         [900, 200],
       ]),
+    )
+  })
+
+  it('re-reads the chosen account sessions on refresh', async () => {
+    const user = userEvent.setup()
+    const listAccountSessions = vi.fn(() => Promise.resolve([session()]))
+    const operations = withSessions({ listAccountSessions })
+    renderWithProviders(<SessionsPage />, { operations })
+    await loadAccount(user)
+    await screen.findByText('sess-1')
+
+    const before = listAccountSessions.mock.calls.length
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+    await vi.waitFor(() =>
+      expect(listAccountSessions.mock.calls.length).toBe(before + 1),
     )
   })
 

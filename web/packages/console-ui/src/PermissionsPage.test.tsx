@@ -9,7 +9,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, screen, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
 import { mockMatchMedia } from '@speed/test-utils/matchMedia'
@@ -32,6 +32,17 @@ import {
   type ConsoleBackend,
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import zhCN from './locales/zh-CN.json' with { type: 'json' }
+
+/** Fills a locale template's `{{name}}` placeholders. */
+function text(
+  template: string,
+  values: Record<string, string>,
+): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
+    values[key] ?? match,
+  )
+}
 
 const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
 
@@ -1065,6 +1076,225 @@ describe('PermissionsPage', () => {
     await chooseAccount(user, '账户', 'Operator', 'Operator (acc-1)')
     expect(
       screen.queryByText('已将角色「viewer」绑定到账户「Ada」'),
+    ).toBeNull()
+  })
+
+  it('re-reads every enabled body read once on refresh and skips the disabled ones', async () => {
+    const user = userEvent.setup()
+    const listRoles = vi.fn(() => Promise.resolve([role()]))
+    const listPermissions = vi.fn(() =>
+      Promise.resolve([permission('crm.deal.read')]),
+    )
+    const listBindings = vi.fn(() => Promise.resolve([binding()]))
+    const listGrants = vi.fn(() => Promise.resolve([grant()]))
+    const listAccountBindings = vi.fn(() => Promise.resolve([binding()]))
+    const operations = withAuthz({
+      listRoles,
+      listPermissions,
+      listBindings,
+      listGrants,
+      listAccountBindings,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    // The bindings table also spells the role it binds, so the roles table
+    // is the one the role row is read from.
+    await within(section(zhCN.permissions.roles.title)).findByText('editor')
+    await screen.findByText('crm.deal.read')
+
+    // No role selected and no account applied: the grants read and the
+    // account-binding read are disabled, so the refresh must not issue
+    // them (they would run without their argument).
+    expect(listGrants).not.toHaveBeenCalled()
+    expect(listAccountBindings).not.toHaveBeenCalled()
+    const rolesBefore = listRoles.mock.calls.length
+    const catalogBefore = listPermissions.mock.calls.length
+    const bindingsBefore = listBindings.mock.calls.length
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+
+    await waitFor(() =>
+      expect(listRoles.mock.calls.length).toBe(rolesBefore + 1),
+    )
+    await waitFor(() =>
+      expect(listPermissions.mock.calls.length).toBe(catalogBefore + 1),
+    )
+    await waitFor(() =>
+      expect(listBindings.mock.calls.length).toBe(bindingsBefore + 1),
+    )
+    expect(listRoles.mock.calls.length).toBe(rolesBefore + 1)
+    expect(listPermissions.mock.calls.length).toBe(catalogBefore + 1)
+    expect(listBindings.mock.calls.length).toBe(bindingsBefore + 1)
+    expect(listGrants).not.toHaveBeenCalled()
+    expect(listAccountBindings).not.toHaveBeenCalled()
+  })
+
+  it('re-reads the selected role grants and the applied account bindings on refresh', async () => {
+    const user = userEvent.setup()
+    const listGrants = vi.fn(() => Promise.resolve([grant()]))
+    const listAccountBindings = vi.fn(() => Promise.resolve([binding()]))
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+      listGrants,
+      listAccountBindings,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('editor')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }),
+      }),
+    )
+    await screen.findByText(
+      text(zhCN.permissions.grants.forRole, { role: 'editor' }),
+    )
+    await chooseAccount(
+      user,
+      zhCN.permissions.lookup.accountLabel,
+      'Ada',
+      'Ada (acc-2)',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.permissions.lookup.apply }),
+    )
+    await waitFor(() =>
+      expect(listAccountBindings).toHaveBeenCalledTimes(1),
+    )
+    const grantsBefore = listGrants.mock.calls.length
+    const lookupBefore = listAccountBindings.mock.calls.length
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+
+    await waitFor(() =>
+      expect(listGrants.mock.calls.length).toBe(grantsBefore + 1),
+    )
+    await waitFor(() =>
+      expect(listAccountBindings.mock.calls.length).toBe(lookupBefore + 1),
+    )
+  })
+
+  it('resets the page scopes and row markers before re-reading on refresh', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('editor')
+
+    await user.type(
+      screen.getByLabelText(zhCN.permissions.roles.create.roleLabel),
+      'auditor',
+    )
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.permissions.roles.create.submit,
+      }),
+    )
+    const saved = text(zhCN.permissions.roles.saved, { role: 'auditor' })
+    expect(await screen.findByText(saved)).toBeInTheDocument()
+
+    // The refresh is a context change: the confirmation written under the
+    // old table does not describe the re-read one.
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+    await waitFor(() => {
+      expect(screen.queryByText(saved)).toBeNull()
+    })
+  })
+
+  it('clears a selected role the refresh no longer lists and announces it', async () => {
+    const user = userEvent.setup()
+    let listed: ConsoleRole[] = [role()]
+    const listRoles = vi.fn(() => Promise.resolve(listed))
+    const operations = withAuthz({ listRoles })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('editor')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }),
+      }),
+    )
+    expect(
+      await screen.findByText(
+        text(zhCN.permissions.grants.forRole, { role: 'editor' }),
+      ),
+    ).toBeInTheDocument()
+
+    // The role disappears elsewhere; the refresh's roles read answers
+    // without it.
+    listed = []
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+
+    const announcement = await screen.findByText(
+      zhCN.permissions.roles.selectionCleared,
+    )
+    expect(announcement).toHaveAttribute('role', 'status')
+    expect(
+      screen.getByText(zhCN.permissions.grants.pickRole),
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByText(zhCN.permissions.roles.empty.title),
+    ).toBeInTheDocument()
+
+    // The next refresh clears the standing announcement.
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+    await waitFor(() => {
+      expect(
+        screen.queryByText(zhCN.permissions.roles.selectionCleared),
+      ).toBeNull()
+    })
+  })
+
+  it('keeps the selected role when the refresh roles read fails', async () => {
+    const user = userEvent.setup()
+    let fail = false
+    const listRoles = vi.fn(() =>
+      fail
+        ? Promise.reject({ status: 500, code: 'client.http.500' })
+        : Promise.resolve([role()]),
+    )
+    const operations = withAuthz({ listRoles })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('editor')
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }),
+      }),
+    )
+    await screen.findByText(
+      text(zhCN.permissions.grants.forRole, { role: 'editor' }),
+    )
+
+    fail = true
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+
+    // A failed roles read keeps the selection; the stale marker reports
+    // the failure and the disappearance announcement stays silent.
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+    })
+    expect(
+      screen.getByText(text(zhCN.permissions.grants.forRole, { role: 'editor' })),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(zhCN.permissions.roles.selectionCleared),
     ).toBeNull()
   })
 

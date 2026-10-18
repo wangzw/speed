@@ -43,6 +43,7 @@ import {
   type ConsoleBackend,
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 function withAccounts(
   overrides: Partial<ConsoleBackend> = {},
@@ -2304,6 +2305,27 @@ describe('AccountsPage', () => {
     expect(
       columnVisibility(within(factors).getByRole('columnheader', { name: '类型' })),
     ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
+  })
+
+  it('re-reads the account list on refresh', async () => {
+    const user = userEvent.setup()
+    const listAccounts = vi.fn(() =>
+      Promise.resolve({
+        accounts: [accountFixture({ display_name: 'Ada Lovelace' })],
+        next_cursor: '',
+      }),
+    )
+    const operations = withAccounts({ listAccounts })
+    renderWithProviders(<AccountsPage />, { operations })
+    await screen.findByText('Ada Lovelace')
+
+    const before = listAccounts.mock.calls.length
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+    await waitFor(() =>
+      expect(listAccounts.mock.calls.length).toBe(before + 1),
+    )
   })
 
   it('has no axe violations', async () => {

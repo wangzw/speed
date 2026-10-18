@@ -38,12 +38,15 @@
  * heading, a breadcrumb trail from the console to this page, and a
  * refresh action that re-reads the roster. The refresh action is disabled
  * while a write in any of the page's scopes -- the create form or any
- * row's rename/status slot -- is in flight. The async section's
+ * row's rename/status slot -- is in flight. It first resets the create
+ * form's scope and bumps a refresh generation the rows watch, so every row
+ * clears its own scope and inline marker without being remounted and
+ * without losing an unsubmitted rename draft. The async section's
  * placeholders render at the next level down, so the heading order never
  * skips.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
@@ -64,6 +67,10 @@ import { ConsoleLink } from './internal/navigation.js'
 import { isRejectedIdentifier } from './internal/identifier.js'
 import { RefreshButton } from './internal/refresh-button.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
+import {
+  pageRefreshRead,
+  usePageRefresh,
+} from './internal/use-page-refresh.js'
 import {
   failureTextOf,
   useFailureScroll,
@@ -108,9 +115,12 @@ function statusLabel(
  */
 function TenantRowActions({
   tenant,
+  refreshGeneration,
   onWritePendingChange,
 }: {
   readonly tenant: ConsoleTenant
+  /** The page's refresh counter; a change resets this row's scope. */
+  readonly refreshGeneration: number
   readonly onWritePendingChange: (id: string, pending: boolean) => void
 }) {
   const { t } = useConsoleUiTranslation()
@@ -129,6 +139,21 @@ function TenantRowActions({
   const resolveErrorText = useConsoleUiErrorText()
   const failureText = failureTextOf(feedback.outcome, resolveErrorText)
   const statusErrorId = `tenant-status-error-${encodeURIComponent(tenant.id)}`
+
+  // The page's refresh action re-reads the roster and bumps the generation:
+  // this row then clears its scope and its inline marker, because a result
+  // written before the re-read would describe the page as it stood then.
+  // The row is not remounted -- a rename draft the operator has not
+  // submitted stays in the field -- so the change is observed here.
+  const generationRef = useRef(refreshGeneration)
+  useEffect(() => {
+    if (generationRef.current === refreshGeneration) {
+      return
+    }
+    generationRef.current = refreshGeneration
+    feedback.reset()
+    setFailedAction(null)
+  }, [refreshGeneration, feedback.reset])
 
   // The page's refresh action disables while any scope in the page is
   // writing, but this row's scope lives here; the row reports its slot up
@@ -283,6 +308,19 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
     })
   }, [])
 
+  // The refresh action resets the create form's scope and bumps the refresh
+  // generation the rows watch; both happen before the roster is re-read.
+  // Every row scope is reset by its own row, not remounted, and an
+  // unsubmitted rename draft survives.
+  const [refreshGeneration, setRefreshGeneration] = useState(0)
+  const pageRefresh = usePageRefresh(
+    [pageRefreshRead('tenants', tenants)],
+    () => {
+      createFeedback.reset()
+      setRefreshGeneration((generation) => generation + 1)
+    },
+  )
+
   const idRejected = newId !== '' && isRejectedIdentifier(newId)
   const aliasRejected = newAlias !== '' && isRejectedIdentifier(newAlias)
 
@@ -360,6 +398,7 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
       cell: (tenant) => (
         <TenantRowActions
           tenant={tenant}
+          refreshGeneration={refreshGeneration}
           onWritePendingChange={reportRowWritePending}
         />
       ),
@@ -382,12 +421,12 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
         ]}
         actions={
           <RefreshButton
-            busy={tenants.isFetching}
+            busy={pageRefresh.busy}
             // A re-read mid-write would race the write: the control is
             // disabled while any scope on the page -- the create form's or
             // any row's rename/status slot -- has a write in flight.
             writePending={createFeedback.pending || pendingRowWrites.size > 0}
-            onClick={() => void tenants.refetch()}
+            onClick={pageRefresh.refresh}
           />
         }
         sx={{ mb: 2 }}

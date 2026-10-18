@@ -65,6 +65,10 @@ import { RefreshButton } from './internal/refresh-button.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
+  pageRefreshRead,
+  usePageRefresh,
+} from './internal/use-page-refresh.js'
+import {
   failureTextOf,
   useFailureScroll,
   WriteFeedbackRegion,
@@ -158,13 +162,27 @@ export function InvitationsPage() {
   // The tenant is an argument of every write here: a change clears both
   // slots and every row marker, since the old result would read as
   // describing the tenant left behind.
-  const changeTenant = (next: string) => {
-    setTenant(next)
+  const resetPageFeedback = () => {
     invitationFeedback.reset()
     membersFeedback.reset()
     setFailedInvitation(null)
     setFailedMember(null)
   }
+  const changeTenant = (next: string) => {
+    setTenant(next)
+    resetPageFeedback()
+  }
+
+  // The refresh action re-reads both body reads -- the invitation list and
+  // the member list -- and resets both scopes and row markers first. The
+  // one-time acceptance panel belongs to the page, not a slot, and stays.
+  const pageRefresh = usePageRefresh(
+    [
+      pageRefreshRead('invitations', invitations),
+      pageRefreshRead('members', members),
+    ],
+    resetPageFeedback,
+  )
 
   const issue = () => {
     const address = email
@@ -421,17 +439,14 @@ export function InvitationsPage() {
           disabled={invitationFeedback.pending || membersFeedback.pending}
           trailing={
             <RefreshButton
-              busy={invitations.isFetching || members.isFetching}
+              busy={pageRefresh.busy}
               disabled={tenant === ''}
               writePending={
                 invitationFeedback.pending || membersFeedback.pending
               }
               describedBy={TENANT_HINT_ID}
               disabledReason={t('invitations.needTenant.description')}
-              onClick={() => {
-                void invitations.refetch()
-                void members.refetch()
-              }}
+              onClick={pageRefresh.refresh}
             />
           }
         />

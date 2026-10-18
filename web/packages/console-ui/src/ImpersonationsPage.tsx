@@ -70,7 +70,7 @@
  * Intl. The page opens with ui-kit's PageHeader.
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -110,6 +110,10 @@ import type { ConsoleStepUp } from './internal/step-up-gate.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
+import {
+  pageRefreshRead,
+  usePageRefresh,
+} from './internal/use-page-refresh.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleImpersonation } from './operations.js'
@@ -209,6 +213,24 @@ export function ImpersonationsPage() {
   )
   const revokeImpersonation = operations.useRevokeImpersonation()
 
+  // Both sections' scopes clear on a context change: another tenant, or the
+  // refresh action, which re-reads the status read and -- when the record
+  // surface renders -- the record read.
+  const resetPageFeedback = useCallback(() => {
+    currentFeedback.reset()
+    recordsFeedback.reset()
+  }, [currentFeedback.reset, recordsFeedback.reset])
+
+  const pageRefresh = usePageRefresh(
+    [
+      pageRefreshRead('impersonation-status', status),
+      pageRefreshRead('impersonations', impersonations, {
+        enabled: recordsEnabled && impersonations.isEnabled,
+      }),
+    ],
+    resetPageFeedback,
+  )
+
   const endImpersonation = useAuthnImpersonationEnd({
     mutation: {
       onSuccess: () => {
@@ -232,9 +254,8 @@ export function ImpersonationsPage() {
   // clears their results: the old outcome would read as describing the new
   // tenant.
   useEffect(() => {
-    currentFeedback.reset()
-    recordsFeedback.reset()
-  }, [tenant, currentFeedback.reset, recordsFeedback.reset])
+    resetPageFeedback()
+  }, [tenant, resetPageFeedback])
 
   const endAttempt = (): Promise<void> =>
     currentFeedback.run(async () => {
@@ -386,17 +407,11 @@ export function ImpersonationsPage() {
         ]}
         actions={
           <RefreshButton
-            busy={status.isFetching || impersonations.isFetching}
+            busy={pageRefresh.busy}
             writePending={
               currentFeedback.pending || recordsFeedback.pending
             }
-            onClick={() => {
-              void status.refetch()
-              // The record read is refused while impersonating and waits for
-              // the status read to settle; once it does, enabling the read
-              // fetches it.
-              if (recordsEnabled) void impersonations.refetch()
-            }}
+            onClick={pageRefresh.refresh}
           />
         }
         sx={{ mb: 2 }}

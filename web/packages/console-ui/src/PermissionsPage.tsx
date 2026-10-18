@@ -45,7 +45,11 @@
  * binding scope. The role deletion is confirmed through the shared
  * pending-confirmation dialog: it closes on the confirming click, and the
  * write's outcome lands in the role scope once the modal no longer hides
- * it. The page opens with ui-kit's PageHeader.
+ * it. The page's refresh action re-reads every enabled read describing the
+ * body, resets every scope and row marker first, and -- when a successful
+ * roles read no longer lists the selected role -- clears the selection and
+ * announces it in a standing status region. The page opens with ui-kit's
+ * PageHeader.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -63,6 +67,7 @@ import {
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   useWriteFeedback,
+  visuallyHiddenSx,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import {
@@ -76,6 +81,10 @@ import { useConsoleUiErrorText } from './internal/error-text.js'
 import { RefreshButton } from './internal/refresh-button.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
+import {
+  pageRefreshRead,
+  usePageRefresh,
+} from './internal/use-page-refresh.js'
 import {
   failureTextOf,
   useFailureScroll,
@@ -216,6 +225,10 @@ export function PermissionsPage() {
   const [failedLookupBinding, setFailedLookupBinding] = useState<string | null>(
     null,
   )
+  // Whether the last refresh's roles read dropped the selected role. The
+  // page announces it in one standing status region; choosing a role,
+  // changing the tenant or refreshing again clears it.
+  const [roleGone, setRoleGone] = useState(false)
 
   // The one resolver the regions bind: a row's inline marker resolves the
   // same failure code through it, so the two can never carry different
@@ -257,11 +270,11 @@ export function PermissionsPage() {
     bindingsFeedback.pending ||
     lookupFeedback.pending
 
-  // The tenant is an argument of every write on the page, so a change
-  // clears every slot and every row marker: the old result would read as
-  // describing the new tenant.
-  const changeTenant = (next: string) => {
-    setTenant(next)
+  // The one function the page-level context changes share -- the tenant
+  // change and the refresh action: it clears every slot and every row
+  // marker, so a cleared slot never leaves a control carrying
+  // `aria-invalid` and a description that no longer renders.
+  const resetPageFeedback = () => {
     roleFeedback.reset()
     grantsFeedback.reset()
     bindingsFeedback.reset()
@@ -270,12 +283,60 @@ export function PermissionsPage() {
     setFailedGrant(null)
     setFailedBinding(null)
     setFailedLookupBinding(null)
+    setRoleGone(false)
+  }
+
+  // The refresh action re-reads every read describing the page body that is
+  // enabled at that moment: the roles, the permission catalog, the bindings,
+  // the selected role's grants (only with a role chosen) and the applied
+  // account's bindings (only with an account applied). The roster the
+  // selector is addressed by is not a body read and stays out.
+  const pageRefresh = usePageRefresh(
+    [
+      pageRefreshRead('roles', roles, {
+        // A successful roles read that no longer lists the selected role
+        // clears the selection and announces it; a failed read keeps the
+        // selection, its stale marker tells the story.
+        onSettled: (settled) => {
+          if (settled.status !== 'success' || settled.data === undefined) {
+            return
+          }
+          const selected = selectedRoleRef.current
+          if (
+            selected === '' ||
+            settled.data.some((role) => role.role === selected)
+          ) {
+            return
+          }
+          setSelectedRole('')
+          grantsFeedback.reset()
+          setFailedGrant(null)
+          setRoleGone(true)
+        },
+      }),
+      pageRefreshRead('permissions', catalog, {
+        enabled: tenant !== '' && catalog.isEnabled,
+      }),
+      pageRefreshRead('grants', grants),
+      pageRefreshRead('bindings', bindings),
+      pageRefreshRead('account-bindings', accountBindings),
+    ],
+    resetPageFeedback,
+  )
+
+  // The tenant is an argument of every write on the page, so a change
+  // clears every slot and every row marker: the old result would read as
+  // describing the new tenant.
+  const changeTenant = (next: string) => {
+    setTenant(next)
+    resetPageFeedback()
   }
 
   // The selected role drives the grants scope: another role's result would
   // be read as this role's, so choosing one clears the slot.
   const selectRole = (role: string) => {
     setSelectedRole(role)
+    setRoleGone(false)
     grantsFeedback.reset()
     setFailedGrant(null)
   }
@@ -729,6 +790,12 @@ export function PermissionsPage() {
         sx={{ mb: 2 }}
       />
 
+      {/* The standing role-disappeared announcement: mounted with the page,
+          filled only when a refresh's roles read drops the selection. */}
+      <Box component="p" role="status" sx={visuallyHiddenSx}>
+        {roleGone ? t('permissions.roles.selectionCleared') : ''}
+      </Box>
+
       <Box component="section" sx={{ mb: 3 }}>
         <TenantScope
           value={tenant}
@@ -736,12 +803,12 @@ export function PermissionsPage() {
           disabled={anyPending}
           trailing={
             <RefreshButton
-              busy={roles.isFetching}
+              busy={pageRefresh.busy}
               disabled={tenant === ''}
               writePending={anyPending}
               describedBy={TENANT_HINT_ID}
               disabledReason={t('permissions.needTenant.description')}
-              onClick={() => void roles.refetch()}
+              onClick={pageRefresh.refresh}
             />
           }
         />

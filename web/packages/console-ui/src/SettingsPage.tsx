@@ -60,8 +60,12 @@
  * domain reads the invalid-value text), never a raw key. A refused read
  * settles into the permission placeholder (403, which replaces any content
  * on screen) or the retryable error placeholder (a first failure); a failed
- * refresh that kept its content shows the stale marker. The page opens with
- * ui-kit's PageHeader, so the heading order never skips.
+ * refresh that kept its content shows the stale marker. The page's refresh
+ * action resets the scope and the failed row's marker and re-reads the
+ * selected namespace and the namespace navigation -- one request when the
+ * "all namespaces" entry makes the two reads one key -- without touching
+ * unsaved drafts or the table's page. The page opens with ui-kit's
+ * PageHeader, so the heading order never skips.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -88,6 +92,10 @@ import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { useConsoleUiErrorText } from './internal/error-text.js'
 import { RefreshButton } from './internal/refresh-button.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
+import {
+  pageRefreshRead,
+  usePageRefresh,
+} from './internal/use-page-refresh.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { settingKeyRest, useConsoleOperations } from './operations.js'
 import type { ConsoleSetting } from './operations.js'
@@ -158,6 +166,24 @@ export function SettingsPage() {
   const setSetting = operations.useSetSetting()
   const removeSetting = operations.useRemoveSetting()
   const confirm = usePendingConfirm()
+
+  // The refresh action resets the scope and the failed row's marker and
+  // re-reads both body reads; it keeps every unsaved draft and the table's
+  // page. With "all namespaces" chosen the selected read and the navigation
+  // read are one query, and pass one key so the re-read goes out once.
+  const pageRefresh = usePageRefresh(
+    [
+      pageRefreshRead(
+        selected === ALL ? 'settings:all' : `settings:${selected}`,
+        settings,
+      ),
+      pageRefreshRead('settings:all', allSettings),
+    ],
+    () => {
+      setFailedKey(null)
+      feedback.reset()
+    },
+  )
 
   // A namespace change starts a fresh form: no draft belongs to a
   // namespace the operator has left, the list starts on its first page,
@@ -397,12 +423,12 @@ export function SettingsPage() {
         breadcrumbs={[{ label: t('shell.title') }, { label: t('settings.title') }]}
         actions={
           <RefreshButton
-            // A refresh changes the set the batch is settling against,
-            // so it is disabled while the scope is pending; while the read
-            // itself is in flight it is marked busy.
-            busy={settings.isFetching}
-            disabled={feedback.pending}
-            onClick={() => void settings.refetch()}
+            // A refresh changes the set the batch is settling against, so it
+            // is natively disabled while the scope has a write in flight;
+            // while either body read is in flight it is marked busy.
+            busy={pageRefresh.busy}
+            writePending={feedback.pending}
+            onClick={pageRefresh.refresh}
           />
         }
         sx={{ mb: 2 }}

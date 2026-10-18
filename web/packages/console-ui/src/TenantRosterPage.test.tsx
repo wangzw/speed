@@ -25,6 +25,17 @@ import {
   makeConsoleBackend,
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import zhCN from './locales/zh-CN.json' with { type: 'json' }
+
+/** Fills a locale template's `{{name}}` placeholders. */
+function text(
+  template: string,
+  values: Record<string, string>,
+): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
+    values[key] ?? match,
+  )
+}
 
 /** jsdom implements no layout; a scroll observer installs this stub. */
 function stubScrollIntoView(): ReturnType<typeof vi.fn> {
@@ -762,6 +773,72 @@ describe('TenantRosterPage', () => {
     ).toBeInTheDocument()
     // The registration's confirmation lives in the other scope.
     expect(screen.getByText('租户「globex」已登记')).toBeInTheDocument()
+  })
+
+  it('resets every row scope and inline marker on refresh without losing a rename draft', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () =>
+          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+        setTenantAlias: () =>
+          Promise.reject({ status: 400, code: 'client.http.400' }),
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+    const alias = screen.getByLabelText(
+      text(zhCN.tenants.rename.ariaWithId, { id: 'acme' }),
+    )
+    await user.type(alias, 'Acme-Inc')
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }),
+      }),
+    )
+
+    // The refusal marks the row's own control and region.
+    await waitFor(() => expect(alias).toHaveAttribute('aria-invalid', 'true'))
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+
+    // The refresh bumps the generation every row watches: the row resets
+    // its own scope and marker without being remounted, so the draft the
+    // operator had typed is still there.
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+    await waitFor(() =>
+      expect(alias).toHaveAttribute('aria-invalid', 'false'),
+    )
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(alias).toHaveValue('Acme-Inc')
+  })
+
+  it('clears a landed row confirmation on refresh', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () =>
+          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+        setTenantStatus: () => Promise.resolve(),
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.tenants.disableAria, { id: 'acme' }),
+      }),
+    )
+    const confirmation = text(zhCN.tenants.disabledToast, { id: 'acme' })
+    expect(await screen.findByText(confirmation)).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+    await waitFor(() => {
+      expect(screen.queryByText(confirmation)).toBeNull()
+    })
   })
 
   it('has no axe violations', async () => {

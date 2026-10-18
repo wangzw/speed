@@ -19,6 +19,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { zhCN as muiZhCN } from '@mui/material/locale'
 import { SettingsPage } from './SettingsPage.js'
 import type { ConsoleSetting } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -33,6 +34,13 @@ import {
   makeConsoleBackend,
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import zhCN from './locales/zh-CN.json' with { type: 'json' }
+
+/** The pagination action labels MUI's zh-CN locale gives its own controls. */
+const NEXT_PAGE_LABEL =
+  muiZhCN.components?.MuiTablePagination?.defaultProps.getItemAriaLabel?.(
+    'next',
+  ) ?? ''
 
 const item: ConsoleSetting = {
   key: 'mail.retry',
@@ -829,6 +837,93 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, { operations })
     expect(await screen.findByText('权限不足')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+  })
+
+  it('re-reads the two namespace reads once when both name all namespaces', async () => {
+    const user = userEvent.setup()
+    const seen: (string | undefined)[] = []
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSettings: (namespace) => {
+          seen.push(namespace)
+          return Promise.resolve([item])
+        },
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    await screen.findByDisplayValue('5')
+
+    // The selected read and the navigation read resolve to one query key
+    // with "all namespaces" chosen, so the mount issues one request.
+    expect(seen).toEqual([undefined])
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+    await waitFor(() => expect(seen).toHaveLength(2))
+    expect(seen).toEqual([undefined, undefined])
+  })
+
+  it('re-reads the selected namespace and the navigation read on refresh', async () => {
+    const user = userEvent.setup()
+    const seen: (string | undefined)[] = []
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSettings: (namespace) => {
+          seen.push(namespace)
+          return Promise.resolve([item])
+        },
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    await screen.findByDisplayValue('5')
+    const nav = screen.getByRole('navigation', {
+      name: zhCN.settings.nav.label,
+    })
+    await user.click(within(nav).getByText('mail'))
+    await waitFor(() => expect(seen).toContain('mail'))
+
+    const before = seen.length
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+    await waitFor(() => expect(seen.length).toBe(before + 2))
+    // The selected namespace's read and the navigation's whole-set read are
+    // distinct keys, so both go out.
+    expect(seen.slice(before)).toEqual(['mail', undefined])
+  })
+
+  it('keeps unsaved drafts and the current page across a refresh', async () => {
+    const user = userEvent.setup()
+    const many: ConsoleSetting[] = Array.from({ length: 12 }, (_, index) => ({
+      ...item,
+      key: `mail.key-${index}`,
+      value: `${index}`,
+      written: `${index}`,
+    }))
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listSettings: () => Promise.resolve(many) }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    await screen.findByDisplayValue('0')
+
+    await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
+    const field = await screen.findByRole('textbox', { name: 'mail.key-10' })
+    await user.clear(field)
+    await user.type(field, '99')
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+
+    // The refresh re-reads the settings but does not start a fresh form:
+    // the draft and the page the operator was reading stay.
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: 'mail.key-10' })).toHaveValue(
+        '99',
+      )
+    })
+    expect(screen.queryByDisplayValue('0')).toBeNull()
   })
 
   it('has no axe violations', async () => {

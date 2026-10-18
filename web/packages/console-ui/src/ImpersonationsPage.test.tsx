@@ -521,6 +521,29 @@ describe('ImpersonationsPage', () => {
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
   })
 
+  it('re-reads the session status and the record list on refresh', async () => {
+    const user = userEvent.setup()
+    const backend = makeCallerSessionBackend()
+    bindRequestFn(backend.fn)
+    const listImpersonations = vi.fn(() => Promise.resolve([record()]))
+    const operations = withPage({ listImpersonations })
+    renderWithProviders(<ImpersonationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Staff One')
+
+    const statusBefore = backend.statusReads()
+    const recordsBefore = listImpersonations.mock.calls.length
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+    await vi.waitFor(() =>
+      expect(backend.statusReads()).toBe(statusBefore + 1),
+    )
+    await vi.waitFor(() =>
+      expect(listImpersonations.mock.calls.length).toBe(recordsBefore + 1),
+    )
+  })
+
   it('has no axe violations', async () => {
     const user = userEvent.setup()
     const operations = withPage({

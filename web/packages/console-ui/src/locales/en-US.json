@@ -377,7 +377,8 @@
       "removeMessage": "Deleting role \"{{role}}\" revokes all of its grants and bindings.",
       "removeConfirm": "Delete",
       "saved": "Role \"{{role}}\" saved",
-      "removed": "Role \"{{role}}\" deleted"
+      "removed": "Role \"{{role}}\" deleted",
+      "selectionCleared": "The selected role no longer exists; the selection has been cleared."
     },
     "grants": {
       "title": "Grants",

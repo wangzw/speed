@@ -43,6 +43,10 @@ import { InlineError } from './internal/inline-error.js'
 import { RefreshButton } from './internal/refresh-button.js'
 import { SelectorRow } from './internal/selector-row.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
+import {
+  pageRefreshRead,
+  usePageRefresh,
+} from './internal/use-page-refresh.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleAccount, ConsoleAccountSession } from './operations.js'
 
@@ -77,6 +81,17 @@ export function SessionsPage() {
     id: account === '' ? undefined : account,
   })
   const revokeSession = operations.useRevokeSession()
+
+  // The refresh action re-reads the one body read and clears the page's
+  // write result first: the revoke notice and failure belong to the list as
+  // it stood before the re-read.
+  const pageRefresh = usePageRefresh(
+    [pageRefreshRead('sessions', sessions)],
+    () => {
+      setSuccess(null)
+      revokeSession.reset()
+    },
+  )
 
   const columns: DataTableColumn<ConsoleAccountSession>[] = [
     {
@@ -222,12 +237,12 @@ export function SessionsPage() {
           selectorMaxWidth={260}
           trailing={
             <RefreshButton
-              busy={sessions.isFetching}
+              busy={pageRefresh.busy}
               disabled={account === ''}
               writePending={revokeSession.isPending}
               describedBy={ACCOUNT_HINT_ID}
               disabledReason={t('sessions.needAccount.description')}
-              onClick={() => void sessions.refetch()}
+              onClick={pageRefresh.refresh}
             />
           }
         >

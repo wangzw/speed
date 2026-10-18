@@ -37,6 +37,7 @@ import {
 } from '../test-utils/operations.js'
 import { ConsoleInvitationLinkProvider } from './internal/invitation-link.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
 
@@ -1071,6 +1072,30 @@ describe('InvitationsPage', () => {
     await user.click(await screen.findByRole('option', { name: 'Globex' }))
     expect(screen.queryByText('已向「ada@example.com」发出邀请')).toBeNull()
     expect(screen.queryByText('已为成员「Operator」设置 SSO 豁免')).toBeNull()
+  })
+
+  it('re-reads the invitation and member lists on refresh', async () => {
+    const user = userEvent.setup()
+    const listInvitations = vi.fn(() =>
+      Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
+    )
+    const listMembers = vi.fn(() => Promise.resolve([member()]))
+    const operations = withTenant({ listInvitations, listMembers })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('ada@example.com')
+
+    const invitationBefore = listInvitations.mock.calls.length
+    const memberBefore = listMembers.mock.calls.length
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+    await vi.waitFor(() =>
+      expect(listInvitations.mock.calls.length).toBe(invitationBefore + 1),
+    )
+    await vi.waitFor(() =>
+      expect(listMembers.mock.calls.length).toBe(memberBefore + 1),
+    )
   })
 
   it('has no axe violations', async () => {
