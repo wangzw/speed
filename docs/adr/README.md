@@ -79,6 +79,7 @@
 | [监听按端点在配置里认领的前缀为请求选端，已登记的路由只用于核对归属](adr-http-dispatch-2026-10-17.md) | 2026-10-17 | 已接受 |
 | [全部 HTTP API 路径收进 `/api/v1` 命名空间](adr-http-api-prefix-2026-10-18.md) | 2026-10-18 | 已接受 |
 | [OpenAPI 片段以相对路径声明，端点前缀与版本段由 Spec 承载](adr-http-spec-path-2026-10-18.md) | 2026-10-18 | 已接受 |
+| [OpenAPI 片段由 Go 中的 operation 声明生成](adr-http-openapi-generation-2026-10-18.md) | 2026-10-18 | 已接受 |
 | [Stop 关闭监听器并等在途请求排空结束](adr-http-shutdown-2026-09-14.md) | 2026-09-14 | 已接受 |
 | [请求路径的 panic 兜底由入口模块内建，每端唯一](adr-http-recovery-2026-09-22.md) | 2026-09-22 | 已接受 |
 | [入口模块定义默认的错误响应形状，并经可选接缝接受定制](adr-http-errors-2026-10-10.md) | 2026-10-10 | 已接受 |

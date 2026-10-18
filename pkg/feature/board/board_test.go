@@ -497,24 +497,24 @@ func TestTheAnswerCarriesNoStoreAndAnOrderedUniqueSet(t *testing.T) {
 		t.Fatalf("the drive failed: %v", err)
 	}
 
-	handlers := router.handlers(http.MethodGet, pathFeatures)
+	handlers := router.handlers(http.MethodGet, routePath)
 	if len(handlers) == 0 {
-		t.Fatalf("no GET %s handler was registered", pathFeatures)
+		t.Fatalf("no GET %s handler was registered", routePath)
 	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	engine.GET(pathFeatures, handlers...)
+	engine.GET(routePath, handlers...)
 	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, pathFeatures, nil))
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, routePath, nil))
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET %s answered %d, want 200", pathFeatures, rec.Code)
+		t.Fatalf("GET %s answered %d, want 200", routePath, rec.Code)
 	}
 	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
-		t.Errorf("GET %s carries Cache-Control %q, want no-store", pathFeatures, got)
+		t.Errorf("GET %s carries Cache-Control %q, want no-store", routePath, got)
 	}
 	if got := rec.Header().Get("Content-Type"); got != "application/json" {
-		t.Errorf("GET %s carries Content-Type %q, want application/json", pathFeatures, got)
+		t.Errorf("GET %s carries Content-Type %q, want application/json", routePath, got)
 	}
 	got := decodeBody(t, rec.Body.Bytes())
 	if want := []string{"f.one", "f.two"}; !slices.Equal(got, want) {

@@ -121,7 +121,7 @@ core.Module{
 
 **配置。** `feature.board.endpoint`：单个端名，只从主配置源取值，必填，无缺省。缺席即 `Prepare` 以 `config.ErrMissingRequired` 失败，错误以完整路径点名这一项。
 
-**片段。** `Resources` 里的 `Spec` 以 `openapi/board.json` 为文档，operation 是 `feature.board.list`。资源是 `init` 期的静态声明，写不进配置点名的端，片段因而按约定的端名 `account` 声明；挂载用配置点名的端，两者各自维护，与 [http](http/design-http.md) 对 `Spec` 的口径相同。
+**片段。** `Resources` 里的 `Operations` 声明唯一一条 operation `feature.board.list`，`Spec` 以 `openapi/board.json` 为它的文档；片段由声明生成，不是手写文件（[ADR-http-openapi-generation-2026-10-18](../../adr/adr-http-openapi-generation-2026-10-18.md)）。资源是 `init` 期的静态声明，写不进配置点名的端，片段因而按约定的端名 `account` 声明；挂载用配置点名的端，两者各自维护，与 [http](http/design-http.md) 对 `Spec` 的口径相同。
 
 **路由。** 本模块在 `feature.board.endpoint` 点名的端上挂 `GET /api/v1/features`，并在 `Init` 登记：
 
@@ -378,6 +378,7 @@ authn 的登录前事实不按租户取值：登录不认识租户（[authn-logi
 | 贴出窗口与封板 | 已实现 | `pkg/feature/board/board.go` `board.Post`、`board.open`、`board.seal` |
 | 按启用集与 `AllResources` 覆盖算出特性集 | 已实现 | `pkg/feature/board/board.go` `board.collect` |
 | `GET /api/v1/features`：网关可冒充登记、授权开放登记、`no-store` 应答 | 已实现 | `pkg/feature/board/board.go` `board.wire`；`pkg/feature/board/handler.go` `board.serve` |
+| operation 声明与片段生成 | 已实现 | `pkg/feature/board/operations.go` `operations`、`FeatureBoardDocument`；`pkg/feature/board/openapi_generated_test.go` |
 | `Start` 的集合摘要日志 | 已实现 | `pkg/feature/board/board.go` `board.seal`；`pkg/feature/board/handler.go` `digestOf` |
 | `/api/v1/features` 落在点名的端的认领之内的启动期核对 | 已实现 | `pkg/http/dispatch.go` `buildDispatch`、`(*dispatch).verifyRoutes` |
 | 本模块不运行时 `/api/v1/features` 由所在端的链作答 | 已实现 | `pkg/http/dispatch.go` `(*dispatch).handler` |

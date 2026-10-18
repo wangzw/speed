@@ -17,10 +17,23 @@ failure path.
 - `Provides`: `feature.Board`, exclusively. A dependency closure never pulls the
   module in; a host names `feature.board` on the command of every process that
   serves a frontend.
-- `Resources`: the configuration schema and a `speedhttp.Spec` whose fragment is
-  `openapi/board.json`, declared against the conventional endpoint name
-  `account`. The mounting uses the endpoint configuration names; the fragment's
-  endpoint name and the configured one are separately maintained facts.
+- `Resources`: the configuration schema, a `speedhttp.Spec` and an
+  `http.Operations` declaration. `operations.go` declares the one operation —
+  method, relative path, summary, description and responses — and
+  `openapi/board.json` is **generated** from it by `pkg/internal/openapigen`,
+  never written by hand. The `Spec` gives the fragment's API root (`api` /
+  `v1`) and the conventional endpoint name `account`; the mounting resolves
+  the same declaration's path against that root, so route and document are one
+  source. The fragment's endpoint name and the configured one are separately
+  maintained facts.
+
+  Regenerate the fragment after changing the declaration:
+
+  ```
+  UPDATE_FRAGMENTS=1 go -C pkg test ./feature/board -run TestTheFragmentIsGeneratedFromTheDeclarations
+  ```
+
+  Without the variable the same test is the drift gate; `make check` runs it.
 - `authn.Gate` and `authz.Gate` are not in `Requires`; both claim what they
   deliver exclusively. Init resolves them.
 

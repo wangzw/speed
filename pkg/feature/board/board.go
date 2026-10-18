@@ -62,10 +62,10 @@ const (
 	endpointKey  = ConfigNamespace + "." + endpointItem
 )
 
-// pathFeatures is the route the document is answered on. It is a static path
-// under the API namespace, so the endpoint it is mounted on claims the
-// /api/v1/features prefix.
-const pathFeatures = "/api/v1/features"
+// pathFeatures is the route the document is answered on, relative to the API
+// root the fragment declares. The mounting resolves it against that root, so
+// the path is written once.
+const pathFeatures = "/features"
 
 // fragmentEndpoint is the endpoint name this module's OpenAPI fragment is
 // declared against. The resource is a static declaration fixed before
@@ -76,10 +76,23 @@ const pathFeatures = "/api/v1/features"
 // maintained facts (pkg/http's Spec).
 const fragmentEndpoint = "account"
 
-// openAPIFragment is this module's OpenAPI fragment, read at build time.
+// openAPIFragment is this module's OpenAPI fragment, read at build time. It is
+// generated from operations, not written by hand.
 //
 //go:embed openapi/board.json
 var openAPIFragment []byte
+
+// boardSpec is the API root this module's fragment and routes hang off.
+var boardSpec = speedhttp.Spec{
+	Endpoint: fragmentEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: openAPIFragment,
+}
+
+// routePath is the absolute path the read route is mounted on: the declared
+// path resolved against the API root.
+var routePath = boardSpec.ResolvePath(pathFeatures)
 
 // init registers this module with the process registry. Registration travels
 // with the import, which is what makes "does this command publish the feature
@@ -111,7 +124,8 @@ func Module() core.Module {
 		Provides: []core.Provision{{Token: (*feature.Board)(nil), Exclusive: true}},
 		Resources: []any{
 			schema(),
-			speedhttp.Spec{Endpoint: fragmentEndpoint, Prefix: "api", Version: "v1", Document: openAPIFragment},
+			boardSpec,
+			operations,
 		},
 
 		// Prepare reads the configuration and checks every declaration in the
@@ -338,8 +352,8 @@ func (b *board) wire(reg *core.Registry) error {
 		return fmt.Errorf("%s: taking up the authentication gateway: %w", ModuleName, err)
 	}
 
-	endpoint.Route(http.MethodGet, pathFeatures, b.serve)
-	gate.Impersonable(b.endpoint, http.MethodGet, pathFeatures)
+	endpoint.Route(http.MethodGet, routePath, b.serve)
+	gate.Impersonable(b.endpoint, http.MethodGet, routePath)
 
 	// An impersonating identity reads the document like any other: the set is
 	// process-wide, so impersonation changes neither it nor who may read it.
@@ -351,7 +365,7 @@ func (b *board) wire(reg *core.Registry) error {
 	if declarer, found, err := optional[authz.Gate](reg, "the route-declaration surface"); err != nil {
 		return err
 	} else if found {
-		declarer.Open(http.MethodGet, pathFeatures)
+		declarer.Open(http.MethodGet, routePath)
 	}
 	return nil
 }

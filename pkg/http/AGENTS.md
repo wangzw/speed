@@ -1,9 +1,10 @@
 # pkg/http
 
 The HTTP entry point module, a wrapper of gin: the registration surface modules
-bind routes and middleware through, the `Spec` resource type they declare
-OpenAPI fragments as, and the error response every layer and handler writes
-through (`Problem`, `Fail`, the optional `ErrorResponder`). A middleware layer
+bind routes and middleware through, the `Spec` and `Operations` resource types
+they declare their API as, and the error response every layer and handler writes
+through (`Problem`, `ProblemDocument`, `Fail`, the optional
+`ErrorResponder`). A middleware layer
 declares the stage it belongs to, which is where the chain's cross-category
 order comes from, and the capability tokens it stands for, which is what another
 layer's constraints point at. The root package registers the module, named
@@ -33,6 +34,15 @@ declares a second `Spec` carrying that version. `Spec.APIRoot` and
 `Spec.ResolvePath` are the composition; the shape check refuses a `Prefix` with
 a leading or trailing slash, a `Version` that is not one literal segment, and a
 path that already carries the composed root.
+
+**A module may declare its operations instead of writing a fragment.** An
+`Operations` resource carries one `Operation` per route — method, path, summary,
+description, an `Input` struct of parameters, an optional request body and the
+responses — and `pkg/internal/openapigen` generates the fragment from it. The
+declaration types are plain structs and `reflect.Type` values, so this package
+still imports only the standard library. `ProblemDocument` is the declared JSON
+shape of the problem response, the counterpart of `Problem` (the value a handler
+fills in).
 
 The API is the package's godoc, plus the runnable examples in `example_test.go`.
 Read `Middleware`'s field comments before adding a seat to a layer.

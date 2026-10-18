@@ -186,6 +186,8 @@ type Spec struct {
 
 **片段的 paths 是相对写法。** 一条路由的完整路径由读取方拼出：`Prefix` 与 `Version` 非空的部分以 `/` 连成 API 根（`api` 加 `v1` 是 `/api/v1`），再接片段里的 path（`/auth/me`），得 `/api/v1/auth/me`。斜杠由读取方插入，声明里不写前导或尾随斜杠。**版本段由模块自己声明**：同一个模块开始服务第二版时，它为那一版再声明一个 `Spec`，两版的片段各带自己的 `Version`。**`Prefix` 是端点属性，同样由模块声明**：它是这个端点服务 API 的路径，与宿主配置里的认领前缀是两份各自维护的事实，本模块不解释、也不核对它们一致。
 
+**片段可以由 operation 声明生成。** 模块在 `Resources` 里再声明一份 `http.Operations`：每条 operation 带方法、相对路径、参数、请求与响应 DTO 及其描述，字段说明写在结构体 tag 上。`pkg/internal/openapigen` 把这些声明生成为片段，桥接 `swaggest/openapi-go` 做 JSON Schema 反射与 OpenAPI 3.1 组装；片段因此是构建产物，不是手写文件，生成结果与提交的片段不一致即生成测试失败。迁移按模块进行，尚未迁移的模块继续手写片段。`Spec` 给片段的文档与 API 根，`Operations` 给文档的内容；两者都在 `Resources` 里静态声明，都不参与路由（[ADR-http-openapi-generation-2026-10-18](../../../adr/adr-http-openapi-generation-2026-10-18.md)）。
+
 `Spec` 不参与路由。它供文档合并、网关配置与权限清单这些发生在装配之外的用途读取，与实际登记是两份各自维护的事实（[ADR-http-routing-2026-09-14](../../../adr/adr-http-routing-2026-09-14.md)）。读取方用 `core.Resources[http.Spec](reg)` 取得全部片段，每一份都带着声明它的模块名，合并冲突因而能点到来源。**本模块交付的片段由运行面 [ops](../design-ops.md) 合并并发布，它取可用集、不做减法**（见 [ops](../design-ops.md) 的取材域与 [ADR-ops-spec-reader-2026-10-15](../../../adr/adr-ops-spec-reader-2026-10-15.md)）。
 
 **取材域**（架构不变量 15）。本模块自己的形状校验取**可用集**：它只校验声明而不让声明生效，而畸形与否是静态事实，让一条声明因为本次没被纳入而漏检，会使同一个二进制在两条命令下给出不同的启动结论。它跑在 `Prepare` 里，此时启用结果尚未消解出来，只有启用集不可取（声明集与参与集在这之前就已确定，见 [core](../design-core.md)）。**这个消费点不做减法**：形状校验只读声明、不让它生效，一个本次不运行的模块，其 `Spec` 的畸形仍是这个二进制的一份静态事实。**读取方的取材域由读取方自己裁定**：问"这个二进制提供哪些 API"取可用集，问"此刻这个进程在服务哪些 API"取启用集。本模块交出全部片段，不替读取方过滤——那是它对读取方的承诺，不是对取材域的规定。
@@ -705,4 +707,5 @@ gin 的 `*gin.Context` 只在它所属那次请求的处理期间有效：handle
 | 拒绝文本的本地化渲染与本模块的消息目录 | 已实现 | `pkg/http/messages.go` `localesFS`、`messageCatalog`、`refusalKey`、`refusalTitle`，`pkg/http/locales/*.json`；`pkg/http/module.go` `localizerFor` |
 | 错误响应的形状与写出入口 | 已实现 | `pkg/http/problem.go` `Problem`、`ErrorResponder`、`Fail`、`respondProblem`，`pkg/http/module.go` `errorResponder` |
 | `Spec` 资源、形状校验与查询 | 已实现 | `pkg/http/surface.go` `Spec`、`pkg/http/spec.go` `validateSpecs`、`validateSpec` |
+| operation 声明资源与 OpenAPI 片段生成 | 已实现 | `pkg/http/operation.go` `Operations`、`Operation`、`ProblemDocument`；`pkg/internal/openapigen` `Generate` |
 | 排空信号 | 已实现 | `pkg/http/draining.go` `Draining`、`pkg/http/listener.go` `(*listener).start`、`(*listener).stop` |
