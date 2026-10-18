@@ -29,7 +29,6 @@ import {
   principal,
 } from '@speed/test-utils/session-harness'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
-import demoZhCN from '../locales/zh-CN.json' with { type: 'json' }
 import { ACCOUNT_SETUP_PATH } from '../paths.js'
 import { renderDemoApp } from '../test-utils/render.js'
 import { createTestSession } from '../test-utils/session.js'
