@@ -266,7 +266,7 @@ jsdom 不求值媒体查询与容器查询，不做布局，也不判定可聚�
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 浏览器层的版面与可聚焦性用例 | 未实现 | — |
+| 浏览器层的版面与可聚焦性用例 | 已实现 | `web/vitest.browser.config.ts`；`web/test-utils/src/browser-setup.ts`；`web/packages/layout-kit/src/components/AppShell.browser.test.tsx`；`web/packages/ui-kit/src/components/DataTable.browser.test.tsx`；`web/packages/console-ui/src/*.browser.test.tsx`；`./Makefile` `web-browser`；`.github/workflows/browser.yml` |
 | 设计令牌 | 已实现 | `web/packages/tokens/src/index.ts` `defaultTokens`、`deepMerge` |
 | 平台 i18n 层 | 已实现 | `web/packages/i18n/src/index.ts` `createI18n`、`registerNamespace` |
 | 组件族与主题适配 | 部分实现 | `web/packages/ui-kit/src/index.ts` `createAppTheme`、`AppThemeProvider` |
