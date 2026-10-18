@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -844,21 +843,6 @@ func TestTheGuardsOfferNoBasicChallenge(t *testing.T) {
 	}
 }
 
-// starterModulePath is the import path of the module this starter is: the main
-// module the test binary was built from. A module whose descriptor lives under
-// it is the starter's own, and its operations carry the application-owner tag;
-// everything else is platform-owned. Reading it from the build rather than
-// writing it down keeps the case right when the starter is copied to another
-// import path.
-func starterModulePath(t *testing.T) string {
-	t.Helper()
-	info, ok := debug.ReadBuildInfo()
-	if !ok || info.Main.Path == "" {
-		t.Fatalf("the test binary carries no main module path")
-	}
-	return info.Main.Path
-}
-
 // TestGenWritesTheMergedDocument runs gen and reads what it wrote: a document a
 // JSON parser accepts, carrying the operations the modules declared and the
 // fragments they came from. It is run twice, once writing a file and once
@@ -904,12 +888,14 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 		// The operations of this starter's own modules carry the
 		// application-owner tag orval's platform generation filters on; no
 		// platform operation carries it. Which operations those are is read
-		// from each fragment's declaring module, judged by the module path its
-		// descriptor lives under, not from a written-down path: a second
-		// business module is marked by gen the same way the first one is, and
-		// the case has to agree with it rather than call the correct mark an
-		// error.
-		starter := starterModulePath(t)
+		// from each fragment's declaring module, judged by gen's own criterion
+		// — the platform module path, read from the core package rather than
+		// written down — so the case and gen agree on the direction: code
+		// under the platform module path is platform-owned, every other
+		// module path is application-owned. A second business module is marked
+		// by gen the same way the first one is, and the case has to agree with
+		// it rather than call the correct mark an error.
+		platform := platformModulePath()
 		expected := map[string]bool{}
 		declaring := map[string]string{}
 		for _, spec := range core.Resources[speedhttp.Spec](core.ProcessRegistry) {
@@ -921,7 +907,7 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 			if !ok {
 				t.Fatalf("module %q carries no lifecycle callback, so the package it is declared in cannot be read", spec.Module)
 			}
-			owned := owner == starter || strings.HasPrefix(owner, starter+"/")
+			applicationOwned := owner != platform && !strings.HasPrefix(owner, platform+"/")
 			var fragment struct {
 				Paths map[string]map[string]json.RawMessage `json:"paths"`
 			}
@@ -934,12 +920,12 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 					if _, duplicate := expected[key]; duplicate {
 						t.Fatalf("%s is declared by more than one fragment", key)
 					}
-					expected[key] = owned
+					expected[key] = applicationOwned
 					declaring[key] = spec.Module
 				}
 			}
 		}
-		if owned, declared := expected["POST /workspace/personal"]; !declared || !owned {
+		if applicationOwned, declared := expected["POST /workspace/personal"]; !declared || !applicationOwned {
 			// The named anchor: the host's own route, declared by a module in
 			// this package, is the leg that proves registration and marking
 			// agree.
@@ -962,11 +948,11 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 				case !declared:
 					t.Errorf("%s is in the document but no fragment declares it", key)
 				case want && !carries:
-					t.Errorf("%s is declared by %q, one of the starter's own modules, but carries tags %v, want %q among them",
-						key, declaring[key], operation.Tags, applicationOperationTag)
+					t.Errorf("%s is declared by %q, an application module outside the platform module %s, but carries tags %v, want %q among them",
+						key, declaring[key], platform, operation.Tags, applicationOperationTag)
 				case !want && carries:
-					t.Errorf("%s is declared by %q, whose code lives outside the starter's module %s, yet carries %q",
-						key, declaring[key], starter, applicationOperationTag)
+					t.Errorf("%s is declared by %q, whose code lives under the platform module %s, yet carries %q",
+						key, declaring[key], platform, applicationOperationTag)
 				}
 			}
 		}
@@ -1046,6 +1032,72 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 		}
 		check(t, []byte(res.stdout))
 	})
+}
+
+// committedMergedDocumentPath is the merged document artifact the repository
+// commits, beside the feature vocabulary. It is relative to this module's
+// directory, which is where `go test` runs the package.
+const committedMergedDocumentPath = "../../../contracts/api.json"
+
+// committedMergedDocumentTitle is the info.title the committed artifact is
+// written with: the title in the regeneration command web/orval.config.ts
+// documents. The version is the program's own, which gen uses when the command
+// line names none.
+const committedMergedDocumentTitle = "speed"
+
+// TestCommittedMergedDocument holds the committed merged document to what this
+// binary's gen command writes, byte for byte, the application-owner marking
+// included. The frontend's SDK is generated from the committed artifact, and a
+// Go route added or changed without regenerating alters what gen writes while
+// leaving the artifact — and every case that reads only the artifact — green.
+// Running the command rather than rebuilding its output in this process is
+// what keeps the case honest: it compares the artifact with the command's
+// current result, not with a second copy of the same code.
+func TestCommittedMergedDocument(t *testing.T) {
+	config := writeConfig(t, freePorts(t, listenerCount))
+	out := filepath.Join(t.TempDir(), "api.json")
+	res := runCommand(t, config, "sqlite-memory", genCommand,
+		"--title", committedMergedDocumentTitle, "-o", out)
+	if res.err != nil {
+		t.Fatalf("gen failed: %v\n%s", res.err, res.combined())
+	}
+	generated, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("reading what gen wrote: %v", err)
+	}
+	committed, err := os.ReadFile(committedMergedDocumentPath)
+	if err != nil {
+		t.Fatalf("reading %s: %v (regenerate it with the gen command web/orval.config.ts documents)",
+			committedMergedDocumentPath, err)
+	}
+	if !bytes.Equal(generated, committed) {
+		t.Errorf("the committed merged document is out of step with what gen writes: %s\n"+
+			"regenerate %s with the gen command web/orval.config.ts documents",
+			firstByteDifference(generated, committed), committedMergedDocumentPath)
+	}
+}
+
+// firstByteDifference names the first byte two documents disagree on, with a
+// short excerpt of each, so a stale artifact reports the operation that changed
+// rather than dumping both documents into the failure.
+func firstByteDifference(generated, committed []byte) string {
+	common := min(len(generated), len(committed))
+	for index := range common {
+		if generated[index] != committed[index] {
+			return fmt.Sprintf("byte %d differs: gen wrote %q, the committed document has %q",
+				index, excerpt(generated, index), excerpt(committed, index))
+		}
+	}
+	return fmt.Sprintf("gen wrote %d bytes, the committed document has %d; the first %d are equal",
+		len(generated), len(committed), common)
+}
+
+// excerpt is the bytes around index, as a string, at most about eighty long.
+func excerpt(document []byte, index int) string {
+	const context = 40
+	start := max(index-context, 0)
+	end := min(index+context, len(document))
+	return string(document[start:end])
 }
 
 // TestMarkOperationsWithNoOwnedOperationIsIdentity pins the byte-level
