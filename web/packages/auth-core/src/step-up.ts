@@ -13,8 +13,11 @@
  * renders whatever step comes back, and this hook forwards each answer.
  *
  * The challenge is controlled by `active`: while it is false the hook
- * does nothing -- a flow left open by a closing challenge is abandoned on
- * the way out, so a stale binding never lingers; when it turns true the
+ * does nothing -- a flow this mount opened and left open is abandoned on
+ * the way out, so a stale binding never lingers. A mount that opened no
+ * flow (its `active` never turned true) sends no abandon request at all,
+ * because there is no binding to release; nor does a flow that already
+ * settled, which the server has consumed. When `active` turns true the
  * hook starts one `purpose: 'step-up'` flow on the session and parks on
  * its first step. Each `answer` forwards one step's input; a reply that
  * settles the elevation -- `state: 'elevated'` for a token-delivered
@@ -139,18 +142,28 @@ export function useStepUp(
   // while its token is still current, so a stale reply never lands on a
   // reopened challenge.
   const runRef = useRef(0)
+  // Whether this mount holds an open flow of its own to release: set when
+  // the opening's start request is issued, cleared when that flow settles
+  // (the server consumed it) or is abandoned. Abandoning on every close
+  // would send a request for a binding that never existed -- a mount that
+  // stays closed opened no flow.
+  const openRef = useRef(false)
 
   useEffect(() => {
     if (!active) {
       // Close: bump the token so a start still in flight is dropped, and
-      // abandon the binding so no stale flow lingers on the server.
+      // abandon the binding this mount opened, so no stale flow lingers
+      // on the server. Nothing was opened, nothing is sent.
       runRef.current += 1
       setPhase('idle')
       setStep(null)
       setSeq(null)
       setErrorCode(null)
       setSubmitting(false)
-      void session.abandonFlow().catch(() => undefined)
+      if (openRef.current) {
+        openRef.current = false
+        void session.abandonFlow().catch(() => undefined)
+      }
       return
     }
     const run = ++runRef.current
@@ -161,6 +174,7 @@ export function useStepUp(
     setSubmitting(false)
     void (async () => {
       try {
+        openRef.current = true
         const state = await session.startAuthenticatedFlow(
           method === undefined
             ? { purpose: 'step-up' }
@@ -172,6 +186,8 @@ export function useStepUp(
         settle(state)
       } catch (error) {
         if (run === runRef.current) {
+          // The start created no flow to release.
+          openRef.current = false
           if (startUnavailable(session, error)) {
             // The deployment declined to raise this session: no factor may
             // strengthen it. No step can be rendered and no answer retried
@@ -193,6 +209,9 @@ export function useStepUp(
       setSeq(state.seq)
       return
     }
+    // The flow settled on the server, which consumed it: no binding is
+    // left for a later close to abandon.
+    openRef.current = false
     if (state.state === 'elevated' || state.state === 'authenticated') {
       setPhase('elevated')
       setStep(null)

@@ -61,7 +61,78 @@ describe('session.isStepUpShortfall', () => {
   })
 })
 
+/** The abandon requests (`DELETE /auth/flows/current`) a harness recorded. */
+function abandons(
+  calls: readonly { readonly method: string; readonly path: string }[],
+) {
+  return calls.filter(
+    (call) => call.method === 'DELETE' && call.path === '/auth/flows/current',
+  )
+}
+
 describe('useStepUp', () => {
+  it('issues no abandon request when it mounts closed', () => {
+    // A surface may render the challenge closed and never open it (the
+    // account sections do). The mount started no flow, so there is no
+    // binding to release: closing must not invent one.
+    const { session, calls } = makeCookieHarness({})
+    renderHook(() => useStepUp(session, false, () => undefined))
+    expect(calls).toEqual([])
+  })
+
+  it('abandons exactly once when a flow it started turns inactive', async () => {
+    const { session, calls } = makeCookieHarness({
+      [LOGIN_START_AUTHENTICATED]: () =>
+        openFlow({
+          next: { kind: 'factor', factors: [{ id: 'f1', kind: 'totp' }] },
+        }),
+      [LOGIN_ABANDON]: () => ({}),
+    })
+    const { result, rerender } = renderHook(
+      ({ active }: { active: boolean }) => useStepUp(session, active, () => undefined),
+      { initialProps: { active: false } },
+    )
+    expect(abandons(calls)).toHaveLength(0)
+
+    rerender({ active: true })
+    await waitFor(() => {
+      expect(result.current.phase).toBe('step')
+    })
+
+    rerender({ active: false })
+    expect(abandons(calls)).toHaveLength(1)
+  })
+
+  it('sends no abandon when a settled flow closes', async () => {
+    // A completed flow is consumed by the server; closing the challenge
+    // afterwards has no binding to release.
+    const { session, calls } = makeCookieHarness({
+      [LOGIN_START_AUTHENTICATED]: () =>
+        openFlow({
+          next: { kind: 'factor', factors: [{ id: 'f1', kind: 'totp' }] },
+        }),
+      [LOGIN_ANSWER]: () => sessionCompletion(),
+      [LOGIN_ABANDON]: () => ({}),
+    })
+    const { result, rerender } = renderHook(
+      ({ active }: { active: boolean }) => useStepUp(session, active, () => undefined),
+      { initialProps: { active: false } },
+    )
+    rerender({ active: true })
+    await waitFor(() => {
+      expect(result.current.phase).toBe('step')
+    })
+    act(() => {
+      result.current.answer({ step: 'factor', input: { factor: 'f1' } })
+    })
+    await waitFor(() => {
+      expect(result.current.phase).toBe('elevated')
+    })
+
+    rerender({ active: false })
+    expect(abandons(calls)).toHaveLength(0)
+  })
+
   it('starts on opening, parks on the step, and reports the elevation once', async () => {
     const { session, calls } = makeCookieHarness({
       [LOGIN_START_AUTHENTICATED]: () =>
