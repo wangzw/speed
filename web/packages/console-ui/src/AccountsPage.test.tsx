@@ -1017,11 +1017,19 @@ describe('AccountsPage', () => {
     const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
     await within(panel).findByText('sess-cur')
 
-    // The marker sits on the current row only. The cell shows the id
-    // prefix; the complete id stays on the title and copy control.
+    // The marker sits on the current row only, in the primary identity
+    // (created time) rather than the low-priority id column, so it stays
+    // visible when that column hides. The id cell shows the prefix; the
+    // complete id stays on the title and copy control.
     const marker = within(panel).getByText('当前会话')
-    expect(marker.closest('tr')).toHaveTextContent('sess-cur')
-    expect(marker.closest('tr')).not.toHaveTextContent('sess-oth')
+    const currentRow = marker.closest('tr') as HTMLElement
+    expect(currentRow).toHaveTextContent('sess-cur')
+    expect(currentRow).not.toHaveTextContent('sess-oth')
+    const currentCells = currentRow.querySelectorAll('td')
+    expect(currentCells[0]).not.toHaveTextContent('当前会话')
+    expect(currentCells[1]).toHaveTextContent('当前会话')
+    const otherRow = within(panel).getByText('sess-oth').closest('tr')
+    expect(within(otherRow as HTMLElement).queryByText('当前会话')).toBeNull()
 
     // Revoking everything says the caller is signed out too.
     await user.click(
@@ -2276,6 +2284,12 @@ describe('AccountsPage', () => {
       .getByText(sessionId.slice(0, 8))
       .closest('td')
     expect(sessionIdCell).toHaveAttribute('title', sessionId)
+    expect(containerMaxWidthOf(sessionIdCell!.firstElementChild!)).toEqual(
+      new Map([
+        [0, 160],
+        [900, 200],
+      ]),
+    )
 
     // Factors: the label is the primary identity, status high, kind medium.
     const factors = await tableOf('Authenticator')

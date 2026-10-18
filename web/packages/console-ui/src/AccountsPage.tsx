@@ -601,18 +601,9 @@ export function AccountsPage() {
       priority: 'low',
       cellWrap: 'nowrap',
       cellFullValue: (row) => row.id,
+      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
       cell: (row) => (
-        <Box sx={{ display: 'flex', alignItems: 'center', columnGap: 1 }}>
-          <Typography variant="body2">{identifierPrefix(row.id)}</Typography>
-          {row.current === true && (
-            <Chip
-              size="small"
-              variant="outlined"
-              color="info"
-              label={t('accounts.sessions.current')}
-            />
-          )}
-        </Box>
+        <Typography variant="body2">{identifierPrefix(row.id)}</Typography>
       ),
     },
     {
@@ -620,16 +611,30 @@ export function AccountsPage() {
       header: t('accounts.sessions.column.created'),
       cellWrap: 'nowrap',
       cell: (row) => {
+        // The primary identity also carries the current-session mark:
+        // this column never hides, so the safety hint survives every
+        // tier instead of disappearing with the low-priority id column.
         const formatted = formatUtc(row.created_at, i18n.language)
         return (
-          <Typography
-            variant="body2"
-            noWrap
-            sx={primaryColumnMaxWidthSx}
-            title={formatted ?? undefined}
-          >
-            {formatted}
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', columnGap: 1 }}>
+            <Typography
+              variant="body2"
+              noWrap
+              sx={primaryColumnMaxWidthSx}
+              title={formatted ?? undefined}
+            >
+              {formatted}
+            </Typography>
+            {row.current === true && (
+              <Chip
+                size="small"
+                variant="outlined"
+                color="info"
+                label={t('accounts.sessions.current')}
+                sx={{ flexShrink: 0 }}
+              />
+            )}
+          </Box>
         )
       },
     },

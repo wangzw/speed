@@ -29,6 +29,7 @@ import {
   InlineSuccess,
   ListSkeleton,
   PageHeader,
+  PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
   errorCodeOf,
   primaryColumnMaxWidthSx,
 } from '@speed/ui-kit'
@@ -76,20 +77,13 @@ export function SessionsPage() {
       priority: 'low',
       cellWrap: 'nowrap',
       cellFullValue: (session) => session.id,
+      // The prefix is short, but the cap counts the copy control beside
+      // it, so the whole identifier cell stays inside the shared budget.
+      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
       cell: (session) => (
-        <Box sx={{ display: 'flex', alignItems: 'center', columnGap: 1 }}>
-          <Typography variant="body2">
-            {identifierPrefix(session.id)}
-          </Typography>
-          {session.current === true && (
-            <Chip
-              size="small"
-              variant="outlined"
-              color="info"
-              label={t('sessions.current')}
-            />
-          )}
-        </Box>
+        <Typography variant="body2">
+          {identifierPrefix(session.id)}
+        </Typography>
       ),
     },
     {
@@ -114,17 +108,30 @@ export function SessionsPage() {
         // The page's primary identity: a session id identifies nothing to
         // a human, so the created time is what the table anchors on. It
         // never hides, and the shared cap keeps it from crowding the
-        // actions out of a narrow container.
+        // actions out of a narrow container. The current-session mark
+        // rides here rather than in the low-priority id column, so the
+        // revoke-your-own-session warning is visible at every tier.
         const formatted = formatUtc(session.created_at, i18n.language)
         return (
-          <Typography
-            variant="body2"
-            noWrap
-            sx={primaryColumnMaxWidthSx}
-            title={formatted ?? undefined}
-          >
-            {formatted}
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', columnGap: 1 }}>
+            <Typography
+              variant="body2"
+              noWrap
+              sx={primaryColumnMaxWidthSx}
+              title={formatted ?? undefined}
+            >
+              {formatted}
+            </Typography>
+            {session.current === true && (
+              <Chip
+                size="small"
+                variant="outlined"
+                color="info"
+                label={t('sessions.current')}
+                sx={{ flexShrink: 0 }}
+              />
+            )}
+          </Box>
         )
       },
     },

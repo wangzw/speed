@@ -298,10 +298,6 @@ describe('SessionsPage', () => {
     })
     expect(columnVisibility(header('操作'))).toBeNull()
 
-    // The current-session marker rides the same row and column as the id;
-    // the whole cell keeps the shared width budget in the real layout.
-    expect(screen.getByText('当前会话')).toBeInTheDocument()
-
     // The identifier cell shows the 8-character prefix; the complete id
     // rides the cell title and the copy control.
     const prefix = screen.getByText(id.slice(0, 8))
@@ -315,8 +311,6 @@ describe('SessionsPage', () => {
       }),
     ).toBeInTheDocument()
 
-    // The shared cap on the created-time cell: 160px below `md`, 200px
-    // from `md` up.
     const headerLabels = screen
       .getAllByRole('columnheader')
       .map((cell) => cell.textContent)
@@ -328,7 +322,19 @@ describe('SessionsPage', () => {
       createdIndex
     ]
     expect(createdCell).toBeDefined()
-    const createdText = createdCell?.firstElementChild
+
+    // The current-session mark rides the primary identity (created time),
+    // which declares no priority and therefore stays visible at every
+    // tier; the id column it left hides below `lg`. The mark is therefore
+    // reachable at all three tiers even where the id cell is not.
+    expect(
+      within(createdCell as HTMLElement).getByText('当前会话'),
+    ).toBeInTheDocument()
+    expect(within(idCell as HTMLElement).queryByText('当前会话')).toBeNull()
+
+    // The shared cap on the created-time text: 160px below `md`, 200px
+    // from `md` up. The mark sits beside it, outside that text cap.
+    const createdText = createdCell?.querySelector('p')
     expect(createdText).not.toBeNull()
     expect(containerMaxWidthOf(createdText as Element)).toEqual(
       new Map([
