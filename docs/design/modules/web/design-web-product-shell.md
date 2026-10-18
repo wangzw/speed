@@ -230,5 +230,5 @@ stateDiagram-v2
 | `ProductShell` 三支视图机 | 已实现 | `web/packages/product-shell/src/components/ProductShell.tsx` `ProductShell`、`ProductShellProps` |
 | `banner` 槽的透传 | 已实现 | `web/packages/product-shell/src/components/ProductShell.tsx` `ProductShell`、`ProductShellProps` |
 | 应用入口装配 `bootstrapSpeedApp` 与定义类型 | 已实现 | `web/packages/product-shell/src/bootstrap.tsx` `bootstrapSpeedApp`、`SpeedAppDefinition`、`SpeedAppServices`、`watchSessionEnd`、`createQueryClient` |
-| 查询缺省显式写出 `staleTime` 与三类自动重读的触发，视图级测试台复用 `createQueryClient` | 未实现 | — |
+| 查询缺省显式写出 `staleTime` 与三类自动重读的触发，视图级测试台复用 `createQueryClient` | 已实现 | `web/packages/product-shell/src/bootstrap.tsx` `createQueryClient`；`web/test-utils/src/render.tsx` `createTestQueryClient`；`starters/demo/web/src/test-utils/render.tsx` |
 | 双语命名空间资源 | 已实现 | `web/packages/product-shell/src/resources.ts` `PRODUCT_SHELL_NAMESPACE`、`productShellResources` |
