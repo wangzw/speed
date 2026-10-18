@@ -318,6 +318,32 @@ function flip(direction: DataTableSortDirection): DataTableSortDirection {
 }
 
 /**
+ * The width cap the layout design gives a primary-identity column, shared
+ * by every table page and by the long-text columns the design caps the
+ * same way. The value answers to the table's own container: 160px below
+ * `md`, 200px from `md` up. Pages spread this into the cell content's sx
+ * instead of naming their own numbers, so the cap has one definition.
+ */
+export const PRIMARY_COLUMN_MAX_WIDTH = {
+  belowMd: 160,
+  fromMd: 200,
+} as const
+
+/**
+ * `PRIMARY_COLUMN_MAX_WIDTH` as a container-query sx value: the
+ * `@` baseline applies below the container's `md` (900px), `@md` from it
+ * up. Spread it into the content inside a capped cell -- the cell itself
+ * keeps `cellWrap: 'nowrap'`, and `Typography noWrap` plus this max width
+ * truncates with an ellipsis.
+ */
+export const primaryColumnMaxWidthSx = {
+  maxWidth: {
+    '@': PRIMARY_COLUMN_MAX_WIDTH.belowMd,
+    '@md': PRIMARY_COLUMN_MAX_WIDTH.fromMd,
+  },
+}
+
+/**
  * The container width each priority tier stays visible from, on the
  * shared scale (@speed/tokens' breakpoints.values: sm:600/md:900/lg:1200).
  * 'low' clears the highest bar (visible only from `lg` up) so it is the

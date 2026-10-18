@@ -28,7 +28,11 @@ import {
   emittedStyleText,
   hasCoarsePointerTouchTarget,
 } from '@speed/test-utils/emitted-css'
-import { DataTable } from './DataTable.js'
+import {
+  DataTable,
+  PRIMARY_COLUMN_MAX_WIDTH,
+  primaryColumnMaxWidthSx,
+} from './DataTable.js'
 import type { DataTableColumn, DataTableProps } from './DataTable.js'
 
 interface Member {
@@ -97,6 +101,13 @@ function renderTemplate(
 }
 
 describe('DataTable', () => {
+  it('defines the shared primary-column cap: one width below md, another from md up', () => {
+    expect(PRIMARY_COLUMN_MAX_WIDTH).toEqual({ belowMd: 160, fromMd: 200 })
+    expect(primaryColumnMaxWidthSx).toEqual({
+      maxWidth: { '@': 160, '@md': 200 },
+    })
+  })
+
   it('renders every column header and cell', () => {
     const utils = renderTable()
     expect(
