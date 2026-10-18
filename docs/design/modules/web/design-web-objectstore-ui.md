@@ -140,7 +140,8 @@ sequenceDiagram
 | 下载失败 | 列表之下的反馈区域渲染错误码文本 |
 | 删除失败 | 列表之下的反馈区域渲染错误码文本，租户子树失效重读以收敛 |
 | 无租户在场 | 读被禁用，列表停在加载占位，不发请求（fail-closed） |
-| 详情读失败 | 对话框内的可重试错误占位 |
+| 详情读失败（5xx、传输失败） | 对话框内的可重试错误占位 |
+| 详情读答带 `objectstore.not_found` 的 404（对象不存在、已删除、属于其他租户，三者同形） | 对话框内的「已不存在」占位，不给重试；缓存里的旧详情不再显示，因为对象已被服务端确认不存在 |
 
 ## 并发与事务边界
 
@@ -170,8 +171,10 @@ sequenceDiagram
 | 读忙态下刷新控件带 `aria-busy` 而不置原生 `disabled`、已有数据的刷新失败的陈旧提示、403 时替换旧列表并隐藏分页 | 未实现 | — |
 | 无租户在场时刷新控件禁用 | 未实现 | — |
 | 删除失败后的失效重读 | 未实现 | — |
+| 详情读答 `objectstore.not_found` 时渲染「已不存在」占位且不给重试 | 已实现 | `web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection`、`isObjectNotFound` |
+| 详情已有缓存时，`objectstore.not_found` 同样替换旧详情 | 未实现 | — |
 | 对象名称的列表列、详情字段与下载文件名 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage`；`web/packages/objectstore-ui/src/ObjectDetailDialog.tsx` `ObjectDetailDialog`；`web/packages/objectstore-ui/src/internal/format.ts` `downloadFilename` |
 | 对象列表的列优先级与对象标识的短显示 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage` |
 | 错误白名单组合会话生命周期码族及其双语文案 | 未实现 | — |
 | 上传行的失败文本取自错误码 | 未实现 | — |
-| 准入层的裸 404 渲染为「无法访问当前组织」，不渲染成对象存储没有应答 | 已实现 | `web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection`、`isTenantRefusal`；`web/packages/objectstore-ui/src/internal/error-text.ts` `useObjectstoreUiErrorText` |
+| 准入层的裸 404 渲染为「无法访问当前组织」，不渲染成对象存储的失败占位 | 已实现 | `web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection`、`isTenantRefusal`；`web/packages/objectstore-ui/src/internal/error-text.ts` `useObjectstoreUiErrorText` |

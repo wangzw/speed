@@ -20,7 +20,7 @@
 ### 非职责
 
 - **不做通用属性集的编辑。** 自助档案面（`PATCH /auth/me`）的自写字段集是显示名、通用属性集、语言与时区（[ADR-authn-selfservice-profile-2026-10-15](../../../adr/adr-authn-selfservice-profile-2026-10-15.md)）；本包交付显示名（`ProfileSection`）与语言、时区（`PreferencesSection`），不交付自由键值对的通用属性集编辑——那需要一个不属于账户页固定字段的通用编辑器，属宿主内容。
-- **自助添加标识的 `kind` 是封闭集，限于用户名与邮箱。** 手机走它自己的两步面（`PhoneSection`，`POST /auth/phone`）；`IdentifiersSection` 的添加面只给用户名与邮箱两种（[authn 登录](../authn/design-authn-login.md)）。
+- **自助添加标识的 `kind` 是封闭集，限于用户名与邮箱。** 手机走它自己的两步面（`PhoneSection`，`POST /auth/phone`）；`IdentifiersSection` 的添加面只给用户名与邮箱两种（[authn 登录](../authn/design-authn-login.md)）；档案已列出用户名时，添加面不再提供用户名：一个账户至多一个用户名，服务端对第二个用户名与对已被他人占用的用户名答同一个 409 `authn.conflict`，文案无法区分二者，客户端因此不发出第二个用户名。
 - **不交付登录历史节。** 登录历史没有自助端点，只有管理员面（[authn-admin](../authn/design-authn-admin.md) 的审计读）；普通账户看不到自己的登录历史，故本包不交付这一节。
 - **不交付恢复码。** 认证的因素面不提供恢复码（[authn-mfa](../authn/design-authn-mfa.md)），故本包不交付恢复码的显示或重生成。
 - **不拥有查询客户端。** 每次读经 `@speed/api-sdk` 的生成 react-query 钩子，跑在宿主拥有的 QueryClient 上；本包从不自造 QueryClient，也不手写查询键，失效一律用导出的查询键构造器。
@@ -174,6 +174,8 @@ sequenceDiagram
 |---|---|
 | 一次写被拒（`authn.bad_request`、`authn.throttled`、`authn.unavailable`、`client.*`） | 一条横幅渲染错误码文本，相关查询在选择处失效 |
 | 自助写被答 401 `authn.insufficient_user_authentication` | 打开提权对话框，成功后重跑那次被拒的写一次 |
+| 口令写被拒为 400 `authn.bad_request` | 一条横幅渲染口令策略句，覆盖长度不合适（过短或过长）、与账户的用户名、邮箱、手机号相同、与当前口令相同（修改时）；句子不写数字，长度下限是部署的设置 |
+| 加用户名被拒为 409 `authn.conflict` | 一条横幅渲染「用户名已被使用」；添加面在账户已有用户名时不提供用户名，该码在此只意味着被他人占用 |
 | 改口令的当前口令不匹配（401 `authn.login_failed`） | 一条横幅渲染该码文本；与提权 401 同状态码，靠问题码区分，不误开门控 |
 | 加手机时号码已属另一账户（409 `authn.conflict`） | 一条横幅渲染该码文本 |
 | 删标识会抽掉最后一个登录方式（409 `authn.conflict`） | 一条横幅渲染该码文本，服务端按自己的登录方式计数判定 |

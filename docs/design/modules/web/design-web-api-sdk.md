@@ -8,7 +8,7 @@
 - **唯一的源码接手点。** `src/runtime.ts` 是本包唯一的手写源码文件，作为 `./runtime` 子路径导出。它存在，是因为生成的代码不能知道宿主如何接上 HTTP 传输。
 - **生成面与传输无关。** 生成的调用把一个 axios 形状的选项对象交给一个 mutator；mutator 把它适配成 [`api-client`](design-web-api-client.md) 的请求函数形状并转发。生成的代码里没有 `fetch`、没有 `axios`、没有租户头，也没有租户查询键。
 - **生成面与租户无关。** 生成的查询键是裸的 spec 路径，不带租户维度；租户由服务端在请求期按端解析，生成面既不传也不收租户（[ADR-web-tenant-query-key-2026-10-15](../../../adr/adr-web-tenant-query-key-2026-10-15.md)）。
-- **契约从模块片段流入。** orval 的输入是各平台模块 HTTP 片段经示范宿主的 `gen` 命令合并出的一份文档（落 `contracts/api.json`）；一个有 HTTP 片段的平台模块即合并文档的成员，因而进入本包的生成面。合并文档的成员带所有者：平台模块的片段为平台所有，示范宿主自己的模块的片段为应用所有；应用所有的操作带应用所有的标记（标记的形态须能被 orval 的过滤读取），本包的生成过滤掉它们，应用级生成（[starters](../design-starters.md) 的第二级契约）取全部，本包的生成面因此始终只含平台操作。一条测试断言本包的生成面不含任何带应用标记的操作。每个片段的端点路径与操作经 [api-client](design-web-api-client.md) 发出。
+- **契约从模块片段流入。** orval 的输入是各平台模块 HTTP 片段经示范宿主的 `gen` 命令合并出的一份文档（落 `contracts/api.json`）；一个有 HTTP 片段的平台模块即合并文档的成员，因而进入本包的生成面。合并文档的成员带所有者：平台模块的片段为平台所有，示范宿主自己的模块的片段为应用所有；应用所有的操作带应用所有的标记（标记的形态须能被 orval 的过滤读取），本包的生成过滤掉它们，应用级生成（[starters](../design-starters.md) 的第二级契约）取全部，本包的生成面因此始终只含平台操作。测试从两个方向约束本包的生成面：生成面不含任何带应用标记的操作，合并文档里的每个平台操作都在生成面。每个片段的端点路径与操作经 [api-client](design-web-api-client.md) 发出。
 - **特性名从模块声明流入。** 后端模块以资源 `feature.Spec` 声明它服务的[特性](../../../glossary.md)（[feature](../design-feature.md)）；示范宿主的 `gen` 命令以 `--features` 写出 `contracts/features.json`：可用集里的全部特性声明，每项带名字、声明模块与是否条件特性，按名字排序。它与 `contracts/api.json` 同源，出自同一个二进制的 import 闭包，是同一份契约的另一半（[starters](../design-starters.md)、[ADR-feature-vocabulary-2026-10-17](../../../adr/adr-feature-vocabulary-2026-10-17.md)）。
 
 ### 非职责

@@ -98,7 +98,7 @@ starters/demo/
 
 `gen` 把二进制里各模块声明的 OpenAPI 片段合并成一份文档并写出。它调 [ops](design-ops.md) 的导出包 `pkg/ops/openapi` 里的 `Merge`——**一个纯函数**，模块在 `Init` 里合并、`/openapi.json` 交出的是它的结果，`gen` 写出制品的也是它。**不驱动生命周期、不绑端口、不构造任何模块**：合并读的是各模块的静态声明，不需要把任何模块跑起来，也不需要入口模块的登记面。这与 `ops` 模块在 `Init` 里合并、在运行面经 `/openapi.json` 交出是同一份合并逻辑的两种消费——运行面服务于一个活着的进程，`gen` 服务于构建与发布，把这份文档写进制品，供前端据它生成自己的 API 面。
 
-**`gen` 同时写出特性声明的清单。** 输入项 `--features` 点名一个路径，`gen` 把可用集里的全部 `feature.Spec` 声明写到那里，每项带名字、声明模块、所有者与是否条件特性，按名字排序。所有者按声明所在的包判定：取描述符第一个非空生命周期回调所在的包，在平台的模块路径之下为平台所有，其余为应用所有，经平台导出的工厂构造的宿主模块（审查装配里的短信载体）因此按平台所有；没有生命周期回调的模块使 `gen` 报错而不是猜测。合并文档里应用所有的操作带标签 `speed.application`，`gen` 写出的文档因此与运行面的 `/openapi.json` 只在这个标签上不同。它与合并文档同源：两者读的都是同一个二进制里已登记模块的静态声明，同样不构造模块、不推进生命周期。示范把它写成 `contracts/features.json`，与 `contracts/api.json` 并列，示范前端的 `api:gen` 写出 `contracts/api.json` 时一并写出它；`@speed/api-sdk/features` 的特性名类型由它生成（[api-sdk](web/design-web-api-sdk.md)）。`starters/demo/server` 的 `TestCommittedFeatureVocabulary` 比对已提交的 `contracts/features.json` 与本二进制的声明，两者不一致即失败（[ADR-feature-vocabulary-2026-10-17](../../adr/adr-feature-vocabulary-2026-10-17.md)）。
+**`gen` 同时写出特性声明的清单。** 输入项 `--features` 点名一个路径，`gen` 把可用集里的全部 `feature.Spec` 声明写到那里，每项带名字、声明模块、所有者与是否条件特性，按名字排序。所有者按声明所在的包判定：取描述符第一个非空生命周期回调所在的包，在平台的模块路径之下为平台所有，其余为应用所有，经平台导出的工厂构造的宿主模块（审查装配里的短信载体）因此按平台所有；没有生命周期回调的模块使 `gen` 报错而不是猜测。合并文档里应用所有的操作带标签 `speed.application`，`gen` 写出的文档因此与运行面的 `/openapi.json` 只在这个标签上不同。它与合并文档同源：两者读的都是同一个二进制里已登记模块的静态声明，同样不构造模块、不推进生命周期。示范把它写成 `contracts/features.json`，与 `contracts/api.json` 并列，示范前端的 `api:gen` 写出 `contracts/api.json` 时一并写出它；`@speed/api-sdk/features` 的特性名类型由它生成（[api-sdk](web/design-web-api-sdk.md)）。`starters/demo/server` 的 `TestCommittedFeatureVocabulary` 比对已提交的 `contracts/features.json` 与本二进制的声明，两者不一致即失败（[ADR-feature-vocabulary-2026-10-17](../../adr/adr-feature-vocabulary-2026-10-17.md)）。`contracts/api.json` 同样受一条测试约束：测试比对已提交的 `contracts/api.json` 与本二进制 `gen` 当前写出的合并文档，不一致即失败，使 Go 侧新增或改动一个平台路由而没有重新生成时，门禁变红，而不依赖前端生成面的某条测试恰好读到被改动的一端。
 
 ### 端点集合
 
@@ -386,6 +386,7 @@ flowchart TD
 | 通知面的宿主侧授权 | 已实现 | `starters/demo/server/notification.go` `notificationModule`、`notificationRoutes`；纳入见 `starters/demo/server/main.go` `baselineServe` |
 | `seed` 命令 | 已实现 | `starters/demo/server/seed.go` `seedModule`、`seedSchema`、`seedDatabase`、`seedTenant`、`seedAdministration`、`seedBinding`、`seedSettings`；命令见 `starters/demo/server/main.go` `addStack` |
 | `gen` 命令 | 已实现 | `starters/demo/server/main.go` `genModule`、`genDocument`、`featureVocabulary` |
+| 已提交的 `contracts/api.json` 与本二进制合并文档的一致性测试 | 未实现 | — |
 | 已提交的 `contracts/features.json` 的新鲜度测试 | 已实现 | `starters/demo/server/feature_test.go` `TestCommittedFeatureVocabulary` |
 | 基线 `serve` 的特性文档端到端（逐项等于基线集合、匿名 401） | 已实现 | `starters/demo/server/feature_test.go` `TestServePublishesTheFeatureDocument` |
 | 前端产物的内嵌与托管（合一拓扑的 Go 侧） | 已实现 | `starters/demo/server/main.go` `webBundle`（`//go:embed dist`）、`webuiModuleName` |
