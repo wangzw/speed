@@ -133,6 +133,57 @@ describe('useStepUp', () => {
     expect(abandons(calls)).toHaveLength(0)
   })
 
+  it('sends no abandon when a refused start closes', async () => {
+    // The start was refused, so the server created no flow: closing the
+    // dialog has no binding to release.
+    const { session, calls } = makeCookieHarness({
+      [LOGIN_START_AUTHENTICATED]: () => {
+        throw apiError(400, 'authn.bad_request')
+      },
+      [LOGIN_ABANDON]: () => ({}),
+    })
+    const { result, rerender } = renderHook(
+      ({ active }: { active: boolean }) => useStepUp(session, active, () => undefined),
+      { initialProps: { active: false } },
+    )
+
+    rerender({ active: true })
+    await waitFor(() => {
+      expect(result.current.phase).toBe('failed')
+    })
+
+    rerender({ active: false })
+    expect(abandons(calls)).toHaveLength(0)
+  })
+
+  it('sends no abandon when an unavailable start closes', async () => {
+    // The unraisable-session refusal (401 while the session stays
+    // established) is also a refused start -- no flow was created -- and
+    // the dialog it leaves on screen offers a re-login, which cancels it.
+    // Closing must not release a binding that never existed.
+    const { session, calls } = makeCookieHarness({
+      [SESSION_GET]: () => sessionView({ authenticated: true }),
+      [PROFILE_GET]: () => principal(),
+      [LOGIN_START_AUTHENTICATED]: () => {
+        throw apiError(401, 'authn.insufficient_user_authentication')
+      },
+      [LOGIN_ABANDON]: () => ({}),
+    })
+    await session.restore()
+    const { result, rerender } = renderHook(
+      ({ active }: { active: boolean }) => useStepUp(session, active, () => undefined),
+      { initialProps: { active: false } },
+    )
+
+    rerender({ active: true })
+    await waitFor(() => {
+      expect(result.current.phase).toBe('unavailable')
+    })
+
+    rerender({ active: false })
+    expect(abandons(calls)).toHaveLength(0)
+  })
+
   it('starts on opening, parks on the step, and reports the elevation once', async () => {
     const { session, calls } = makeCookieHarness({
       [LOGIN_START_AUTHENTICATED]: () =>
