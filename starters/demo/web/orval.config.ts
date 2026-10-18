@@ -22,10 +22,9 @@
  *
  * Input is the merged document the host's `gen` command writes,
  * contracts/api.json at the repository root -- the platform fragments
- * plus the app's own, should it declare any. The starter declares no
- * API of its own, so today the document carries the platform fragments
- * alone and this surface is the platform's own; an app's first fragment
- * enters both the document and this generated surface, and never the
+ * plus the app's own. The app's own fragment is the host's personal-tenant
+ * route (`server/personal-openapi.json`, served on the account endpoint);
+ * it enters both the document and this generated surface, and never the
  * published package's (which stays platform-only by design).
  *
  * Config paths are relative to this file's directory

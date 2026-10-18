@@ -14,11 +14,9 @@
  * src/runtime.ts has. Regeneration covers src/app-api/index.ts only,
  * never this file.
  *
- * Nothing here is app-specific yet: the demo declares no API of its own,
- * so its merged contract is the platform fragments alone and the
- * generated surface adds no operation. An app that adds a fragment of
- * its own keeps this file as it is unless it needs a mutator the
- * platform package does not export.
+ * The app owns one API today: the host's personal-tenant ensure
+ * (`POST /workspace/personal`). It keeps this file as it is because it
+ * needs no mutator the platform package does not export.
  */
 
 export {

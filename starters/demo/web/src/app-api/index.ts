@@ -1076,6 +1076,31 @@ export interface TenantAdminTenantRegistration {
   alias: string;
 }
 
+/**
+ * The tenant kind; the frontend renders the personal label from it
+ */
+export type WorkspacePersonalTenantKind = typeof WorkspacePersonalTenantKind[keyof typeof WorkspacePersonalTenantKind];
+
+
+export const WorkspacePersonalTenantKind = {
+  personal: 'personal',
+} as const;
+
+export interface WorkspacePersonalTenant {
+  /** The tenant identifier */
+  id: string;
+  /** The request-surface name, equal to the identifier for a personal tenant */
+  alias: string;
+  /** The tenant kind; the frontend renders the personal label from it */
+  kind: WorkspacePersonalTenantKind;
+}
+
+export interface WorkspacePersonalReply {
+  tenant: WorkspacePersonalTenant;
+  /** Whether this call registered the tenant */
+  created: boolean;
+}
+
 export type SettingsAdminLayerParameter = typeof SettingsAdminLayerParameter[keyof typeof SettingsAdminLayerParameter];
 
 
@@ -10289,4 +10314,67 @@ export const useTenantAdminTenantsSetStatus = <TError = Problem,
         TContext
       > => {
       return useMutation(getTenantAdminTenantsSetStatusMutationOptions(options), queryClient);
+    }
+
+/**
+ * Creates the caller's personal tenant on first call and completes its membership, owner role, grants and binding on every call. The tenant identifier and alias are derived from the account identifier; the answer names the tenant and whether this call created it.
+ * @summary Ensure the caller's personal tenant exists and is complete
+ */
+export const workspacePersonalEnsure = (
+
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<WorkspacePersonalReply>(
+      {url: `/workspace/personal`, method: 'POST', signal
+    },
+      );
+    }
+
+
+
+export const getWorkspacePersonalEnsureMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof workspacePersonalEnsure>>, TError,void, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof workspacePersonalEnsure>>, TError,void, TContext> => {
+
+const mutationKey = ['workspacePersonalEnsure'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof workspacePersonalEnsure>>, void> = () => {
+
+
+          return  workspacePersonalEnsure()
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type WorkspacePersonalEnsureMutationResult = NonNullable<Awaited<ReturnType<typeof workspacePersonalEnsure>>>
+
+    export type WorkspacePersonalEnsureMutationError = Problem
+
+    /**
+ * @summary Ensure the caller's personal tenant exists and is complete
+ */
+export const useWorkspacePersonalEnsure = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof workspacePersonalEnsure>>, TError,void, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof workspacePersonalEnsure>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getWorkspacePersonalEnsureMutationOptions(options), queryClient);
     }

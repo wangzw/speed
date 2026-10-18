@@ -83,7 +83,9 @@ merging the OpenAPI fragments the platform modules declare -- each
 module's `http.Spec` resource, through `pkg/ops/openapi.Merge` -- every
 platform module with an HTTP fragment is a merge member; a consuming
 app's own fragments are NOT members, by design: the app's own API is
-generated into the app's own SDK through the app-owned flow), the
+generated into the app's own SDK through the app-owned flow -- the
+starter's personal-tenant ensure is the app fragment that exercises
+that leg), the
 runtime binding, the regeneration
 tooling (config + fixup script) and the CI wiring that regenerates and
 diffs the artifact. `@speed/auth-core` compile-consumes the authn
