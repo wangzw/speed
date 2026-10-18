@@ -173,6 +173,14 @@ it calls). Never import either of those from below this layer.
   generation/account and is registered before `pending` is published, so
   a listener re-entering on `pending` shares the read and a read that
   outlived its session is never handed to the next one.
+- **`impersonating` is a snapshot fact only `restore()` writes.** It
+  mirrors `GET /auth/session`'s same-named field; a missing field reads
+  false and only a boolean value is accepted. Login completion, logout
+  and every local clear set it false; a same-session refresh, step-up,
+  `link`/`enroll` and `retryFeatures` keep it unchanged. The snapshot
+  carries no initiator identity -- the host acts as the account in front
+  of it -- and a host that changes identity calls `restore()` itself once
+  its write settles.
 - **The hooks read the attached session and never drive it.** A
   component that must sign in calls `session.startFlow` /
   `session.answerFlow` from an event handler; hooks never mutate state,
