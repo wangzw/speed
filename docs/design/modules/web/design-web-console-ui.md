@@ -481,11 +481,11 @@ graph TD
 | 页内控件按特性在场渲染（仪表盘、审计页操作者解析、账户详情、SSO 元数据刷新、成员 SSO 豁免） | 未实现 | — |
 | 刷新动作的放置（选择器寻址的页在选择器行内，其余在页头）、读忙态带 `aria-busy` 而不置原生 `disabled` 且再次激活不发第二次请求 | 已实现 | `web/packages/console-ui/src/internal/refresh-button.tsx` `RefreshButton`；`web/packages/console-ui/src/internal/selector-row.tsx` `SelectorRow`；`web/packages/console-ui/src/internal/tenant-scope.tsx` `TenantScope`；`web/packages/console-ui/src/internal/account-selector.tsx` `AccountSelector` |
 | 页面寻址取值为空时刷新动作原生禁用并以 `aria-describedby` 指向选择提示（会话页、权限页、邀请页、SSO 页）；冒充页在租户为空时刷新动作保持可用 | 已实现 | `web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage` |
-| 刷新动作重读该页描述页面主体且此刻启用的每一个读，同键的读只重读一次（权限页、设置页、仪表盘） | 未实现 | — |
-| 刷新动作先 `reset` 本页描述页面主体的反馈作用域与页面标记，作用域写入在途时原生禁用（含租户名册行作用域的刷新世代） | 未实现 | — |
-| 会话页与租户详情页的写入反馈迁入反馈作用域，租户详情的重命名与启停落成功确认 | 未实现 | — |
-| 权限页刷新后所选角色已不存在时清空选择并提示 | 未实现 | — |
-| 仪表盘健康度窗口起点随刷新动作、标签页重新可见与重新联网前移，旧数值保持到新值落定 | 未实现 | — |
-| SSO 页刷新动作与行内元数据刷新的可区分文字 | 未实现 | — |
-| 审计查询页与仪表盘的更新时间与刷新完成播报 | 未实现 | — |
-| 写入成功后失效它改变的每一个屏上可见的读 | 未实现 | — |
+| 刷新动作重读该页描述页面主体且此刻启用的每一个读，同键的读只重读一次（权限页、设置页、仪表盘） | 已实现 | `web/packages/console-ui/src/internal/use-page-refresh.ts` `usePageRefresh`、`pageRefreshRead` |
+| 刷新动作先 `reset` 本页描述页面主体的反馈作用域与页面标记，作用域写入在途时原生禁用（含租户名册行作用域的刷新世代） | 已实现 | `web/packages/console-ui/src/internal/use-page-refresh.ts` `usePageRefresh`；`web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage` |
+| 会话页与租户详情页的写入反馈迁入反馈作用域，租户详情的重命名与启停落成功确认 | 已实现 | `web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
+| 权限页刷新后所选角色已不存在时清空选择并提示 | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage` |
+| 仪表盘健康度窗口起点随刷新动作、标签页重新可见与重新联网前移，旧数值保持到新值落定 | 已实现 | `web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage` |
+| SSO 页刷新动作与行内元数据刷新的可区分文字 | 已实现 | `web/packages/console-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/console-ui/src/internal/refresh-button.tsx` `RefreshButton` |
+| 审计查询页与仪表盘的更新时间与刷新完成播报 | 已实现 | `web/packages/console-ui/src/internal/refresh-status.tsx` `RefreshStatus`；`web/packages/console-ui/src/internal/use-page-refresh.ts` `usePageRefresh` |
+| 写入成功后失效它改变的每一个屏上可见的读 | 已实现 | `web/packages/console-ui/src/operations.tsx` `consoleOperations` |
