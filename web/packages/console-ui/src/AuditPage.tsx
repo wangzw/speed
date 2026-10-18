@@ -60,7 +60,12 @@ import { AccountIdentity } from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { ConsoleLink } from './internal/navigation.js'
 import { RefreshButton } from './internal/refresh-button.js'
+import { RefreshStatus } from './internal/refresh-status.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
+import {
+  pageRefreshRead,
+  usePageRefresh,
+} from './internal/use-page-refresh.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleAuditRecord } from './operations.js'
 
@@ -142,6 +147,13 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
 
   const records = operations.useAuditRecords(params)
   const pageData = records.data
+
+  // The journal read is the page's whole body: the refresh action re-reads
+  // it, and the action group shows when it last settled.
+  const pageRefresh = usePageRefresh(
+    [pageRefreshRead('audit-records', records)],
+    () => undefined,
+  )
 
   // Record the next page's cursor the read answered with, so the footer
   // can advance to it. The cursor for page i+1 is only known once page i
@@ -280,10 +292,16 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
           { label: t('audit.title') },
         ]}
         actions={
-          <RefreshButton
-            busy={records.isFetching}
-            onClick={() => void records.refetch()}
-          />
+          <>
+            <RefreshStatus
+              updatedAt={pageRefresh.updatedAt}
+              announcements={pageRefresh.announcements}
+            />
+            <RefreshButton
+              busy={pageRefresh.busy}
+              onClick={pageRefresh.refresh}
+            />
+          </>
         }
         sx={{ mb: 2 }}
       />

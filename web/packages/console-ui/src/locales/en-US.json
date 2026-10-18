@@ -63,6 +63,8 @@
   },
   "common": {
     "refresh": "Refresh",
+    "updatedAt": "Updated {{time}}",
+    "refreshed": "Data refreshed",
     "cancel": "Cancel",
     "confirm": "Confirm",
     "tenant": "Tenant",

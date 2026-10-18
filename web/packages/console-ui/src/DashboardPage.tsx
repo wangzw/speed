@@ -48,7 +48,12 @@ import { AccountIdentity } from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { formatUtc } from './internal/datetime.js'
 import { RefreshButton } from './internal/refresh-button.js'
+import { RefreshStatus } from './internal/refresh-status.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
+import {
+  pageRefreshRead,
+  usePageRefresh,
+} from './internal/use-page-refresh.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleAuditRecord, ConsoleTenant } from './operations.js'
 
@@ -192,6 +197,24 @@ export function DashboardPage() {
     HEALTH_READ_OPTIONS,
   )
 
+  // Every read that describes the page's body is part of the refresh. The
+  // health reads re-read by moving their key with the window, so the
+  // mechanism counts them but issues no refetch of the old key; the roster
+  // and the recent-activity list re-read in place.
+  const pageRefresh = usePageRefresh(
+    [
+      pageRefreshRead('dashboard:tenants', tenants),
+      pageRefreshRead('dashboard:recent', records),
+      pageRefreshRead('dashboard:health-activity', healthActivity, {
+        keyDriven: true,
+      }),
+      pageRefreshRead('dashboard:health-logins', healthLogins, {
+        keyDriven: true,
+      }),
+    ],
+    () => undefined,
+  )
+
   const kpi = (settled: readonly ConsoleTenant[]) => {
     const active = settled.filter((tenant) => tenant.status === 'active').length
     const disabled = settled.filter((tenant) => tenant.status === 'disabled').length
@@ -267,11 +290,6 @@ export function DashboardPage() {
 
   const activityEntries = healthActivity.data?.entries
   const loginEntries = healthLogins.data?.entries
-  const refreshing =
-    tenants.isFetching ||
-    healthActivity.isFetching ||
-    healthLogins.isFetching ||
-    records.isFetching
   const healthPending =
     (healthActivity.isPending && activityEntries === undefined) ||
     (healthLogins.isPending && loginEntries === undefined)
@@ -296,17 +314,22 @@ export function DashboardPage() {
         title={t('dashboard.title')}
         breadcrumbs={[{ label: t('shell.title') }, { label: t('dashboard.title') }]}
         actions={
-          <RefreshButton
-            busy={refreshing}
-            onClick={() => {
-              // Moving the window changes the health reads' key, which is
-              // what re-reads them; the roster and the recent-activity list
-              // re-read in place.
-              healthWindow.advance()
-              void tenants.refetch()
-              void records.refetch()
-            }}
-          />
+          <>
+            <RefreshStatus
+              updatedAt={pageRefresh.updatedAt}
+              announcements={pageRefresh.announcements}
+            />
+            <RefreshButton
+              busy={pageRefresh.busy}
+              onClick={() => {
+                // Moving the window changes the health reads' key, which is
+                // what re-reads them; the roster and the recent-activity
+                // list re-read in place.
+                healthWindow.advance()
+                pageRefresh.refresh()
+              }}
+            />
+          </>
         }
         sx={{ mb: 2 }}
       />

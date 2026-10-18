@@ -63,6 +63,8 @@
   },
   "common": {
     "refresh": "刷新",
+    "updatedAt": "更新于 {{time}}",
+    "refreshed": "数据已刷新",
     "cancel": "取消",
     "confirm": "确认",
     "tenant": "租户",

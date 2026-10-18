@@ -8,9 +8,10 @@
  * without a retry and any other failure the retryable error placeholder.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { focusManager } from '@tanstack/react-query'
 import { DashboardPage } from './DashboardPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
@@ -26,6 +27,12 @@ import {
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
+
+const COPY = zhCN.common as {
+  readonly updatedAt: string
+  readonly refreshed: string
+  readonly refresh: string
+}
 
 const TENANTS = [
   { id: 'acme', alias: 'Acme', status: 'active' as const },
@@ -508,6 +515,86 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('概览加载失败')).toBeInTheDocument()
     expect(screen.getByText('数据面未能完成这次请求。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+  })
+
+  it('shows the oldest settle time in the refresh action group', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () => Promise.resolve(TENANTS),
+        listRecords: () =>
+          Promise.resolve({
+            entries: [recordFixture({ id: 'rec-9', action: 'tenant.read' })],
+            next: '',
+          }),
+      }),
+    )
+    const { queryClient } = renderWithProviders(<DashboardPage />, { operations })
+    await screen.findByText('tenant.read')
+
+    // The page's body reads: the roster and the three audit reads (the
+    // recent list and the two health windows). The account identity read
+    // inside the actor cell is not a body read and does not count.
+    const bodyReads = () =>
+      queryClient.getQueryCache().getAll().filter((query) => {
+        const key = query.queryKey
+        return (
+          Array.isArray(key) &&
+          key[0] === 'console-test' &&
+          (key[1] === 'tenants' || key[1] === 'audit')
+        )
+      })
+    await waitFor(() => {
+      const states = bodyReads()
+      expect(states).toHaveLength(4)
+      expect(states.every((state) => state.state.dataUpdatedAt > 0)).toBe(true)
+    })
+    const oldest = Math.min(
+      ...bodyReads().map((state) => state.state.dataUpdatedAt),
+    )
+    const expected = COPY.updatedAt.replace(
+      '{{time}}',
+      new Intl.DateTimeFormat('zh-CN', {
+        dateStyle: 'medium',
+        timeStyle: 'long',
+        timeZone: 'UTC',
+      }).format(new Date(oldest)),
+    )
+    const header = screen.getByRole('banner')
+    const label = await within(header).findByText(expected)
+    const refresh = within(header).getByRole('button', { name: COPY.refresh })
+    expect(
+      label.compareDocumentPosition(refresh) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('does not announce an automatic re-read', async () => {
+    const listRecords = vi.fn(() => Promise.resolve({ entries: [], next: '' }))
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () => Promise.resolve(TENANTS),
+        listRecords,
+      }),
+    )
+    renderWithProviders(<DashboardPage />, { operations })
+    await waitFor(() => expect(listRecords).toHaveBeenCalledTimes(3))
+
+    const header = screen.getByRole('banner')
+    const status = within(header).getByRole('status')
+    expect(status.textContent).toBe('')
+
+    // The tab regaining focus is an automatic re-read moment: the page moves
+    // the health window and the query client re-reads on focus, and neither
+    // announces.
+    act(() => {
+      focusManager.setFocused(false)
+    })
+    act(() => {
+      focusManager.setFocused(true)
+    })
+    await waitFor(() =>
+      expect(listRecords.mock.calls.length).toBeGreaterThan(3),
+    )
+    expect(status.textContent).toBe('')
   })
 
   it('has no axe violations', async () => {

@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AuditPage } from './AuditPage.js'
 import type { ConsoleAuditRecord } from './operations.js'
@@ -27,6 +27,9 @@ import {
   makeConsoleBackend,
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import zhCN from './locales/zh-CN.json' with { type: 'json' }
+
+const COPY = zhCN.common as { readonly updatedAt: string; readonly refreshed: string; readonly refresh: string }
 
 const record: ConsoleAuditRecord = {
   id: '42',
@@ -371,6 +374,125 @@ describe('AuditPage', () => {
     renderWithProviders(<AuditPage />, { operations })
     expect(await screen.findByText('权限不足')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+  })
+
+  it('shows the update time in the action group only once a read has settled', async () => {
+    let resolveRead!: (value: ReturnType<typeof page>) => void
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listRecords: () =>
+          new Promise<ReturnType<typeof page>>((resolve) => {
+            resolveRead = resolve
+          }),
+      }),
+    )
+    const { queryClient } = renderWithProviders(<AuditPage />, { operations })
+    const header = await screen.findByRole('banner')
+    const prefix = COPY.updatedAt.split('{{time}}')[0] ?? COPY.updatedAt
+    expect(
+      within(header).queryByText((content) => content.startsWith(prefix)),
+    ).toBeNull()
+    // The completion region is mounted empty before anything is refreshed.
+    expect(within(header).getByRole('status').textContent).toBe('')
+
+    await act(async () => {
+      resolveRead(page([record]))
+      await Promise.resolve()
+    })
+    await screen.findByText('tenant.create')
+
+    const state = queryClient
+      .getQueryCache()
+      .getAll()
+      .find(
+        (query) =>
+          Array.isArray(query.queryKey) &&
+          query.queryKey[0] === 'console-test' &&
+          query.queryKey[1] === 'audit',
+      )
+    const expected = COPY.updatedAt.replace(
+      '{{time}}',
+      new Intl.DateTimeFormat('zh-CN', {
+        dateStyle: 'medium',
+        timeStyle: 'long',
+        timeZone: 'UTC',
+      }).format(new Date(state!.state.dataUpdatedAt)),
+    )
+    const label = await within(header).findByText(expected)
+    // The label sits in the refresh action's group, before the control.
+    const refresh = within(header).getByRole('button', { name: COPY.refresh })
+    expect(
+      label.compareDocumentPosition(refresh) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('announces every completed refresh, clearing the region on each click', async () => {
+    const pending: ((value: ReturnType<typeof page>) => void)[] = []
+    let calls = 0
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listRecords: () => {
+          calls += 1
+          return calls === 1
+            ? Promise.resolve(page([record]))
+            : new Promise<ReturnType<typeof page>>((resolve) => {
+                pending.push(resolve)
+              })
+        },
+      }),
+    )
+    renderWithProviders(<AuditPage />, { operations })
+    await screen.findByText('tenant.create')
+
+    const header = screen.getByRole('banner')
+    const refresh = within(header).getByRole('button', { name: COPY.refresh })
+    const status = within(header).getByRole('status')
+    const user = userEvent.setup()
+
+    await user.click(refresh)
+    expect(status.textContent).toBe('')
+    await act(async () => {
+      pending.shift()!(page([record]))
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(status.textContent).toBe(COPY.refreshed))
+
+    await user.click(refresh)
+    // Cleared at the click, so the identical text is filled in again and
+    // announced a second time.
+    expect(status.textContent).toBe('')
+    await act(async () => {
+      pending.shift()!(page([record]))
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(status.textContent).toBe(COPY.refreshed))
+  })
+
+  it('does not announce a refresh whose read fails', async () => {
+    let calls = 0
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listRecords: () => {
+          calls += 1
+          return calls === 1
+            ? Promise.resolve(page([record]))
+            : Promise.reject(new Error('boom'))
+        },
+      }),
+    )
+    renderWithProviders(<AuditPage />, { operations })
+    await screen.findByText('tenant.create')
+
+    const header = screen.getByRole('banner')
+    const user = userEvent.setup()
+    await user.click(within(header).getByRole('button', { name: COPY.refresh }))
+    await waitFor(() =>
+      expect(
+        within(header).getByRole('button', { name: COPY.refresh }),
+      ).not.toHaveAttribute('aria-busy'),
+    )
+    // The failure is carried by the stale hint, not by an announcement.
+    expect(within(header).getByRole('status').textContent).toBe('')
   })
 
   it('has no axe violations', async () => {

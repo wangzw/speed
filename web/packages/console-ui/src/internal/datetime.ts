@@ -15,6 +15,7 @@
  */
 
 const formatters = new Map<string, Intl.DateTimeFormat>()
+const longFormatters = new Map<string, Intl.DateTimeFormat>()
 
 function formatterFor(language: string): Intl.DateTimeFormat {
   const cached = formatters.get(language)
@@ -28,6 +29,29 @@ function formatterFor(language: string): Intl.DateTimeFormat {
   })
   formatters.set(language, formatter)
   return formatter
+}
+
+/**
+ * A millisecond instant as localized UTC text with seconds and the zone
+ * name. The refresh label uses this form: seconds make two consecutive
+ * refreshes distinguishable, and the date keeps a page that sat open
+ * overnight readable. It is deliberately not the short `formatUtc` form,
+ * which carries neither seconds nor the zone name.
+ */
+export function formatUtcLong(
+  instant: number,
+  language: string,
+): string {
+  let formatter = longFormatters.get(language)
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat(language, {
+      dateStyle: 'medium',
+      timeStyle: 'long',
+      timeZone: 'UTC',
+    })
+    longFormatters.set(language, formatter)
+  }
+  return formatter.format(new Date(instant))
 }
 
 /**
