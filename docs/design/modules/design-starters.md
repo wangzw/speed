@@ -138,6 +138,7 @@ starters/demo/
 |---|---|---|
 | `/` | 无 | 示范 |
 | `/account` | 无 | 示范 |
+| `/account/setup` | 无 | 示范 |
 | `/objects` | `objectstore.objects` | 示范 |
 | `/notifications` | `notification.inbox` | notification-ui 的 `notificationRoutes`（[notification-ui](web/design-web-notification-ui.md)） |
 | `/invitations/:token` | `authn.invitations` | 示范 |
@@ -277,6 +278,15 @@ flowchart TD
 - **身份变更窗口里的中间态。** 通则：由写入的结果直接得出的陈述跟随写入，依赖重读到的事实的陈述跟随重读。冒充的结束落定（含裸 404）之后、快照翻转之前，宿主把横幅的 `impersonation` 置为 `null`，不等快照：用户点了结束并成功，横幅就不该再说「正在冒充」。组件不变，`null` 时它只留 live region，「冒充已结束」在这里立即可闻，结束控件随横幅一起撤下，应用栏的身份指示与账户菜单里的结束项在同一时刻撤下，都不会再被点出一次无谓的 404。置空持续到重读读到 `impersonating` 为假，或有界重读用尽而快照仍为真；重读与「到期」同一间隔与上界，因为各副本对记录有效性的缓存使显式结束之后的重读同样可能晚一个 `check-ttl`。后一种情形放开置空，横幅回到由快照驱动，它的结束控件把裸 404 当成兑现并再次触发身份变更，由此收敛。开始冒充没有对应的置空：横幅需要重读之后的主体与状态读，开始落定到重读落定之间宿主保持原样。当前租户、平台权限集与主体这些依赖重读的事实在窗口内按未知渲染，不另造过渡态。
 - **开始冒充时暂停宿主的读。** 开始冒充是唯一轮换会话令牌的身份变更，写入落定时仍在途的、带旧令牌的请求会被拒绝。开始的写入发出时，宿主取消全部在途查询，并暂停新查询的发出（查询客户端的在线管理器）；开始的写入自身豁免，身份变更动作落定后放行，写入被拒时立即放行，宿主卸载时也放行，真实离线的客户端放行后仍保持离线。范围只含经查询客户端发出的读，不含 effect 里的直接读、会话自己的读与实时订阅的重连。这是对开始轮换窗口的缓解，不替代传输层对旧令牌 401 的处理；结束冒充不轮换令牌，不暂停读。
 
+### 注册与完成设置
+
+决策见 [ADR-authn-signup-2026-10-18](../../adr/adr-authn-signup-2026-10-18.md)。登录页是 auth-ui 的 `SignInScreen`，注册入口由它按发现文档给出：`signup.enabled` 为真且有可见的开户类方法时显示（[auth-ui](web/design-web-auth-ui.md)）；示范不自造注册入口，也不在文案里断言注册可用。
+
+- **注册模式下经短信渠道登录成功后，示范把页面带到 `/account/setup`。** `SignInView` 的 `onSignedIn` 收到登录上下文，`mode` 为 `register` 且 `channel` 为 `sms` 时导航到完成设置页，其余情形（口令、通行密钥、重定向类与企业类登录，以及登录模式下的短信登录）照常进入应用。注册模式下用已登记的手机号登录得到的是一次普通登录，完成设置页此时反映账户当前状态。
+- **完成设置页由 account-ui 的两个节组成，用户名先于口令。** `IdentifiersSection` 添加用户名；`PasswordSection` 只在账户已有可作登录名的标识（用户名或已验证邮箱）之后可用，在此之前渲染说明：口令登录要有登录名，请先添加用户名。账户已经有登录名与口令时，页面陈述账户设置已完成并给出回到首页的链接。页面带一个回到首页的「稍后设置」链接；跳过不撤销已建的账户，账户仍可经短信登录。
+- **注册建立账户，不建立成员关系。** 开户不建任何成员关系（[authn-account](authn/design-authn-account.md) 的「首登开户」），新账户进入租户区后访问任何租户资源得 404，成员关系仍由管理员或邀请授予；示范不提供租户的自助创建。
+- **注册的可用性随装配。** 它需要 `authn.sms` 在场并配了可用的短信载体，且 `authn.account.signup` 为 `open`；基线配置里两者都不具备，示范的登录页因此没有注册入口，装配了它们的部署才有。
+
 ### 宿主侧的特性读取
 
 前端里只有宿主读特性态：示范经 auth-core 的 `useFeature`、`useFeatureState`、`featurePresence` 与 route-kit 的 `useHasRoute`、`presentDeclarations` 读取，再经属性或上下文组件交给能力 UI 包，能力 UI 包不调用 auth-core 的钩子（[ADR-web-feature-state-2026-10-17](../../adr/adr-web-feature-state-2026-10-17.md)）。特性缺席的控件隐藏；特性在场而调用者无权限的写入控件照常渲染，授权由服务端判定（[架构](../architecture.md#特性与前端定制)）。下表列出示范宿主按特性门控的全部位置：
@@ -350,6 +360,7 @@ flowchart TD
 | 冒充期间不挂租户选择器 | 已实现 | `starters/demo/web/src/app.tsx` `TenantFrame` |
 | 横幅在应用栏之下、横幅的隐藏与复位、应用栏的身份指示、账户菜单的结束项 | 已实现 | `starters/demo/web/src/impersonation.tsx` `useImpersonationNoticeState`、`ImpersonationBannerSlot`、`ImpersonationChip`；`starters/demo/web/src/app.tsx` `TenantFrame`；`starters/demo/web/src/chrome.tsx` `UserMenu` |
 | 冒充期间的壳（横幅挂载、身份变更动作、当前租户、实时订阅重建、到期的有界重读、开始冒充时的读暂停、控制台区在冒充中的重定向） | 已实现 | `starters/demo/web/src/impersonation.tsx` `IdentityChangeProvider`、`useImpersonationStatus`、`ImpersonationBannerSlot`；`starters/demo/web/src/app.tsx` `TenantFrame`、`ConsoleImpersonationGate`、`ConsoleEntry`；`starters/demo/web/src/console-routes.ts` `useConsoleTarget`；`starters/demo/web/src/platform-permissions.tsx` `usePlatformPermissions` |
+| 注册模式下短信登录之后的完成设置页（用户名、口令） | 未实现 | — |
 | 登录页文案不断言装配 | 已实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
 | `backend` 监听上各端的认领前缀（`testdata/` 的每份配置与示范测试的配置） | 已实现 | `starters/demo/server/testdata/` 六份配置的 `http.endpoints.*.prefixes`；`starters/demo/server/demo_test.go` `demoConfig` |
 | 后端前缀清单 `backend-prefixes.json` 与由它生成的开发代理 | 已实现 | `starters/demo/web/backend-prefixes.json`；`starters/demo/web/src/backend-prefixes.ts` `backendProxyRules`；`starters/demo/web/vite.config.ts` |
