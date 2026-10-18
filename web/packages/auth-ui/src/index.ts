@@ -82,3 +82,12 @@ export {
   type ImpersonationBannerProps,
   type ImpersonationBannerState,
 } from './ImpersonationBanner.js'
+export {
+  ImpersonationEndMenuItem,
+  ImpersonationIndicator,
+  ImpersonationNoticeProvider,
+  useImpersonationNotice,
+  type ImpersonationEndMenuItemProps,
+  type ImpersonationNotice,
+  type ImpersonationNoticeProviderProps,
+} from './ImpersonationNotice.js'

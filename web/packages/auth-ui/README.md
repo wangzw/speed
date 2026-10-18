@@ -448,36 +448,59 @@ continues the page's order.
 | `onSignIn` | `() => void` (required) | fired when the viewer asks to sign in again; the host navigates |
 | `headingLevel` | `EmptyStateProps['headingLevel']` | the real heading element the title renders as; defaults to `'h1'` |
 
-## ImpersonationBanner
+## Impersonation notice
 
-The banner a host mounts for the whole app frame while its session is
-impersonating, and the one control that ends the impersonation. It is
-pure presentation: no session, no hook, no request. The host says whether
-an impersonation is current (`impersonation`, or `null`) and binds the
-end operation (`onEnd`).
+Four pieces over one host-owned state: the visible banner, the provider
+that holds its dismissal, the header chip that toggles it, and the
+account-menu item that ends the impersonation. All of them are pure
+presentation: no session, no hook, no request. The host says whether an
+impersonation is current (`impersonation`, or `null`), starts its one
+end write attempt (`onEnd`), and reports that attempt's state
+(`pending`, `failureCode`, `successMessage`). The banner, the chip and
+the menu item are the same attempt's entry points: while `pending`, the
+banner's control and the menu item are disabled and labelled busy.
 
-One polite live region is mounted for the component's whole life, never
+One polite live region is mounted for the banner's whole life, never
 conditionally: empty while idle, filled with the "acting as" announcement
-when the impersonation appears, and with the end confirmation once
-`onEnd` resolves -- so the confirmation outlives the banner itself when
-the host clears `impersonation` after re-reading the session. While an
-impersonation is current the component renders a named `region` landmark
-stating who the operator is acting as, the tenant and expiry when the
-host read them, and that management features are unavailable. The banner
-adds no live region of its own, so the failure alert inside it is
-announced once.
+when the impersonation appears, and with the end confirmation once the
+attempt settles -- so the confirmation outlives the visible banner when
+the host clears `impersonation` after re-reading the session. A visible
+impersonation renders a named `region` landmark stating who the operator
+is acting as, the tenant and expiry when the host read them, and that
+management features are unavailable. The banner adds no live region of
+its own, so the failure alert inside it is announced once.
 
-The end control does not depend on `tenant` or `expiresAt`: a click is
-one write attempt (the control is disabled and busy while in flight), a
-resolved `onEnd` confirms, and a rejection renders the answer's code text
-inside the banner with the control retryable. A bare 404 meaning "there
-is no impersonation to end" is the host's concern -- its `onEnd` treats
-that as settled -- and the component itself inspects no HTTP status.
+`dismissed` unmounts the visible region but not the live region: the
+host holds the dismissal, and `onDismiss` (the close control, named
+"Hide impersonation notice") reports the click. `ImpersonationIndicator`
+is the compact chip the host mounts in the header's user-menu slot: it
+renders for the whole impersonation, exposes `aria-expanded` and
+`aria-controls`, and toggles the banner; the host moves focus to it when
+the banner is dismissed. `ImpersonationEndMenuItem` is the account menu's
+end entry, reading the same provider state.
+
+The visible notice does not depend on `tenant` or `expiresAt`: those are
+optional, and the end control renders and works without them. A bare 404
+meaning "there is no impersonation to end" is the host's concern -- its
+attempt treats that as settled -- and these components inspect no HTTP
+status.
 
 | Prop | Type | Notes |
 |---|---|---|
-| `impersonation` | `ImpersonationBannerState \| null` (required) | `{ subject, tenant?, expiresAt? }`; `subject` is the impersonated account's display name, the other two come from the host's status read |
-| `onEnd` | `() => Promise<void>` (required) | ends the impersonation; resolve to confirm, reject for a failure whose code text renders in the banner |
+| `impersonation` | `ImpersonationBannerState \| null` (required) | `{ subject, tenant?, expiresAt?, grantId? }`; `subject` is the impersonated account's display name, the rest come from the host's status read. A new `grantId` is a new impersonation, which resets a dismissal |
+| `onEnd` | `() => void` (required) | starts the host's one end-impersonation write attempt; its result arrives through the three props below |
+| `pending` | `boolean` | whether the shared attempt is in flight; the end control is disabled and marked busy |
+| `failureCode` | `string \| null` | the attempt's failure code, rendered inside the banner |
+| `successMessage` | `string \| null` | the attempt's success message, announced in the permanent live region |
+| `dismissed` | `boolean` | unmounts the visible region; the live region stays mounted and keeps announcing |
+| `onDismiss` | `() => void` | renders the close control and reports its activation |
+| `regionId` | `string` | the visible region's id, named by the indicator's `aria-controls` |
+
+| Provider / consumer | Props | Notes |
+|---|---|---|
+| `ImpersonationNoticeProvider` | `impersonation`, `identityKey?`, `onEnd`, `pending?`, `failureCode?`, `successMessage?`, `children` | holds the dismissal and the region id; a new grant id between two known values, an identity change, an end or a failed attempt resets the dismissal |
+| `ImpersonationIndicator` | `impersonation`, `expanded`, `controls?`, `onToggle`, `ref?` | the header chip; its visible "Impersonating" text is its accessible name (the tooltip is a description) |
+| `ImpersonationEndMenuItem` | `onActivate?`, `divider?` | the account menu's end entry; renders nothing outside an impersonation or the provider |
 
 ## Text and i18n
 
@@ -499,7 +522,7 @@ enforced by registration):
 | `signOut.*` | the sign-out button: label and busy state |
 | `sessionEnded.*` | the session-ended screen: title, description, sign-in-again action |
 | `acceptInvitation.*` | the invitation landing: title, loading notice, tenant/email/expiry facts, the accept action, the retry action, and the accepted and not-found states |
-| `impersonation.*` | the impersonation banner: the region name, the acting-as / tenant / expiry statements, the management-unavailable notice, and the end action with its ending and ended messages |
+| `impersonation.*` | the impersonation notice: the region name, the acting-as / tenant / expiry statements, the management-unavailable notice, the end action with its ending and ended messages, the hide control's name, and the header chip's visible text with its hide/show hints |
 | `errors.*` | code-to-text answers (see below) |
 
 Hosts reword the kit by registering their own identical-key bundle pair

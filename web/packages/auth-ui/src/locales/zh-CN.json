@@ -112,7 +112,11 @@
     "managementUnavailable": "冒充期间管理功能不可用。",
     "end": "结束冒充",
     "ending": "正在结束冒充…",
-    "ended": "冒充已结束。"
+    "ended": "冒充已结束。",
+    "hide": "隐藏冒充提示",
+    "impersonating": "冒充中",
+    "hideHint": "隐藏冒充提示",
+    "showHint": "显示冒充提示"
   },
   "errors": {
     "authn": {

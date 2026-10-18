@@ -1,55 +1,69 @@
 /**
- * ImpersonationBanner: the persistent banner a host mounts in its app
- * frame while the session is impersonating, and the one control that
- * ends the impersonation.
+ * ImpersonationBanner: the notice a host mounts in its app frame while the
+ * session is impersonating.
  *
  * The component is purely presentational. It holds no session, issues no
  * request and reads no auth-core hook: the host tells it whether an
- * impersonation is current (`impersonation`) and binds the end operation
- * (`onEnd`). The host mounts it for the whole shell, so the banner can
- * appear and disappear on any page without a remount of the component
- * itself.
+ * impersonation is current (`impersonation`), whether the one shared end
+ * attempt is in flight (`pending`), that attempt's failure code
+ * (`failureCode`) and success message (`successMessage`), and binds the
+ * attempt itself (`onEnd`). The host mounts it for the whole shell, so the
+ * banner can appear and disappear on any page without a remount of the
+ * component itself.
  *
  * One polite live region is mounted for the component's lifetime, never
  * conditionally: empty while nothing is happening, filled with the
- * "acting as" announcement when an impersonation appears, and filled
- * with the end confirmation once `onEnd` resolves. The announcement is
- * filled on the tick after the region is in the tree, so a first mount
- * that already has an impersonation -- the frame mounting after a start,
- * or a whole-page reload while impersonating -- is announced too. The confirmation
- * therefore survives the banner's own unmount (the host clears
- * `impersonation` after re-reading the session) and stands until the
- * next attempt or a page reload replaces it. The banner that renders
- * while impersonating is a named `region` landmark; it adds no live
- * region of its own, so the failure alert inside it is not announced
- * twice.
+ * "acting as" announcement when an impersonation appears, and filled with
+ * the end confirmation once the host's attempt settles (either its own
+ * `successMessage`, or the "impersonation ended" text the component
+ * announces when the impersonation it was displaying disappears -- the
+ * latter covers an end made from another entry point, such as the account
+ * menu). The announcement is filled on the tick after the region is in
+ * the tree, so a first mount that already has an impersonation -- the
+ * frame mounting after a start, or a whole-page reload while
+ * impersonating -- is announced too. The confirmation therefore survives
+ * the banner's own disappearance (the host clears `impersonation` after
+ * re-reading the session) and stands until the next attempt or a page
+ * reload replaces it.
+ *
+ * The visible notice is a named `region` landmark. Closing it
+ * (`onDismiss`) unmounts that visible region while the live region above
+ * stays mounted and keeps announcing; the host holds the dismissal and
+ * moves focus to the header indicator. This component only renders the
+ * result.
  *
  * The end control does not depend on `tenant` or `expiresAt`: those are
  * the host's status read, both are optional, and the control renders and
- * works even when neither arrived. A click is one write attempt through
- * the write-feedback scope -- the control is disabled and marked busy
- * while it is in flight, a resolved `onEnd` confirms with the success
- * message in the live region, and a rejection renders the answer's code
- * text inside the banner while leaving the control retryable. A bare 404
- * answering "there is no impersonation to end" is the host's concern:
- * its `onEnd` treats that as settled, and this component never inspects
- * an HTTP status -- a rejection that reaches it is a failure with a code
- * like any other.
+ * works even when neither arrived. The control starts the host's one
+ * attempt: while `pending` it is disabled and busy, and a failure renders
+ * the answer's code text inside the banner while leaving the control
+ * retryable. A bare 404 answering "there is no impersonation to end" is
+ * the host's concern: its attempt treats that as settled, and this
+ * component never inspects an HTTP status -- a failure code that reaches
+ * it is rendered like any other.
  *
  * The component never counts down and never acts at `expiresAt`; the
  * host re-reads the session when the impersonation expires.
+ *
+ * Layout: the notice states the four facts on one wrapping line at every
+ * width, with the end and close controls at its end. The tenant
+ * identifier is capped and ellipsized (its full value carried as the
+ * element's title), so a long identifier cannot push the controls out of
+ * the bar.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { ReactElement } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
-import { InlineSuccess, useWriteFeedback, visuallyHiddenSx } from '@speed/ui-kit'
+import { InlineSuccess, visuallyHiddenSx } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
 
-/** What the host knows about the current impersonation. Both optional
- * fields come from the host's status read; when it could not read them
+/** What the host knows about the current impersonation. The tenant and
+ * expiry come from the host's status read; when it could not read them
  * the banner and the end control still render. */
 export interface ImpersonationBannerState {
   /** The impersonated account's display name, already resolved to text. */
@@ -58,18 +72,41 @@ export interface ImpersonationBannerState {
   readonly tenant?: string
   /** When the impersonation ends, when known. */
   readonly expiresAt?: Date
+  /** The impersonation grant's stable identity. A new grant is a new
+   * impersonation, which is what a dismissal resets on -- not the subject,
+   * whose text may change without the grant changing. */
+  readonly grantId?: string
 }
 
 export interface ImpersonationBannerProps {
   /** The current impersonation, or null when none is active. */
   readonly impersonation: ImpersonationBannerState | null
-  /** Ends the impersonation. A resolved promise confirms; a rejection is
-   * a failure whose code text renders inside the banner. */
-  readonly onEnd: () => Promise<void>
+  /** Starts the host's one end-impersonation write attempt. */
+  readonly onEnd: () => void
+  /** Whether that shared attempt is in flight. The end control is
+   * disabled and marked busy while it is, and the account menu's own end
+   * item is disabled beside it. */
+  readonly pending?: boolean
+  /** The attempt's failure code, rendered inside the banner. */
+  readonly failureCode?: string | null
+  /** The attempt's success message, announced in the permanent live
+   * region (and shown while the banner is still mounted). */
+  readonly successMessage?: string | null
+  /** Whether the viewer has hidden the visible notice. The live region
+   * stays mounted and keeps announcing; the visible region is unmounted. */
+  readonly dismissed?: boolean
+  /** Hides the visible notice. The close control renders only when it is
+   * supplied. */
+  readonly onDismiss?: () => void
+  /** The visible region's id, named by the header indicator's
+   * `aria-controls`. */
+  readonly regionId?: string
 }
 
-/** The theme's warning surface, the banner's own visual language: the
- * dark warning role pairs with the palette's own contrast text. */
+/** The notice's one wrapping row: the facts, then the controls. The
+ * 40px floor is the design's single-line target (40 to 48px); the caption
+ * line and the small controls settle a little under it at 38px, and the
+ * floor holds the bar at the target without changing its padding. */
 const bannerSx = {
   display: 'flex',
   flexWrap: 'wrap',
@@ -77,10 +114,75 @@ const bannerSx = {
   columnGap: 2,
   rowGap: 1,
   px: 2,
-  py: 1,
+  py: 0.5,
+  minHeight: 40,
   backgroundColor: 'warning.dark',
   color: 'warning.contrastText',
 } as const
+
+/** The facts block: inline sentences that wrap naturally at any width. */
+const detailsSx = {
+  flexGrow: 1,
+  minWidth: 0,
+  overflow: 'hidden',
+} as const
+
+/** A long tenant identifier stays one line and ellipsizes; the full value
+ * rides on the element's title. */
+const tenantSx = {
+  display: 'inline-block',
+  maxWidth: 'min(24ch, 100%)',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  verticalAlign: 'bottom',
+} as const
+
+/** The controls sit at the end of the row and never shrink. */
+const controlsSx = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 1,
+  marginLeft: 'auto',
+  flexShrink: 0,
+} as const
+
+/** The separator between facts, decorative. */
+function FactSeparator(): ReactElement {
+  return (
+    <Box
+      component="span"
+      aria-hidden="true"
+      // Painted through CSS, not a text node: it is punctuation between
+      // the facts, not user-facing copy the host could translate.
+      sx={{
+        mx: 0.75,
+        opacity: 0.75,
+        '&::before': { content: '"·"' },
+      }}
+    />
+  )
+}
+
+/** The close glyph, decorative: the IconButton carries the accessible
+ * name. */
+function HideIcon(): ReactElement {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+    >
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  )
+}
 
 /** Formats the expiry in the active language; a malformed date renders
  * nothing rather than throwing out of Intl. */
@@ -97,10 +199,14 @@ function formatExpiry(expiresAt: Date, language: string): string | null {
 export function ImpersonationBanner({
   impersonation,
   onEnd,
+  pending = false,
+  failureCode = null,
+  successMessage = null,
+  dismissed = false,
+  onDismiss,
+  regionId,
 }: ImpersonationBannerProps) {
   const { t, i18n } = useAuthUiTranslation()
-  const feedback = useWriteFeedback()
-  const resetFeedback = feedback.reset
 
   // The announcement is committed one tick after the impersonation
   // appears. The live region is therefore already in the tree and empty
@@ -109,36 +215,30 @@ export function ImpersonationBanner({
   // the frame, or a reload while impersonating -- which would otherwise
   // be silent. A new impersonation also replaces the previous one's
   // confirmation: a standing "impersonation ended" would describe a
-  // context that is gone.
+  // context that is gone. The transition from a displayed impersonation
+  // to none is a settlement by whatever entry point ended it, so the
+  // ended text is announced for that edge too.
   const subject = impersonation?.subject ?? null
   const [announcedSubject, setAnnouncedSubject] = useState<string | null>(null)
+  const [ended, setEnded] = useState(false)
+  const previousSubject = useRef<string | null>(subject)
   useEffect(() => {
+    const previous = previousSubject.current
+    previousSubject.current = subject
     setAnnouncedSubject(subject)
     if (subject !== null) {
-      resetFeedback()
+      setEnded(false)
+    } else if (previous !== null) {
+      setEnded(true)
     }
-  }, [subject, resetFeedback])
-
-  const successMessage =
-    feedback.outcome !== null && feedback.outcome.kind === 'success'
-      ? feedback.outcome.message
-      : null
-  const failureCode =
-    feedback.outcome !== null && feedback.outcome.kind === 'failure'
-      ? feedback.outcome.code
-      : null
+  }, [subject])
 
   const announcement =
     announcedSubject === null
       ? null
       : t('impersonation.actingAs', { subject: announcedSubject })
-
-  const end = (): void => {
-    void feedback.run(async () => {
-      await onEnd()
-      return t('impersonation.ended')
-    })
-  }
+  const settlement = successMessage ?? (ended ? t('impersonation.ended') : null)
+  const liveText = settlement ?? announcement
 
   const expiry =
     impersonation?.expiresAt == null
@@ -150,15 +250,15 @@ export function ImpersonationBanner({
       {/* The component's one live region, mounted for its whole life:
           empty while idle, the start announcement while impersonating,
           and the end confirmation afterwards. Its confirmation stays
-          here after the banner below unmounts. MUI's message slot
-          carries `overflow: auto`; squeezed to the 1px clipped width it
-          would overflow into a scroll container, which Chromium treats
-          as a keyboard focus stop. The hidden branch keeps the slot
-          non-scrollable, so the first Tab in the banner reaches the end
-          control. */}
+          here after the visible banner below is hidden or unmounted.
+          MUI's message slot carries `overflow: auto`; squeezed to the
+          1px clipped width it would overflow into a scroll container,
+          which Chromium treats as a keyboard focus stop. The hidden
+          branch keeps the slot non-scrollable, so the first Tab in the
+          banner reaches the end control. */}
       <Box
         sx={
-          successMessage !== null
+          settlement !== null
             ? { width: '100%' }
             : {
                 ...visuallyHiddenSx,
@@ -166,58 +266,82 @@ export function ImpersonationBanner({
               }
         }
       >
-        <InlineSuccess message={successMessage ?? announcement} />
+        <InlineSuccess message={liveText} />
       </Box>
-      {impersonation !== null && (
+      {impersonation !== null && !dismissed && (
         <Box
           component="section"
+          id={regionId}
           aria-label={t('impersonation.regionLabel')}
           sx={bannerSx}
         >
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 0.5,
-              flexGrow: 1,
-              minWidth: 0,
-            }}
-          >
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+          <Box sx={detailsSx}>
+            <Typography
+              component="span"
+              variant="caption"
+              sx={{ fontWeight: 600 }}
+            >
               {t('impersonation.actingAs', {
                 subject: impersonation.subject,
               })}
             </Typography>
             {impersonation.tenant !== undefined && (
-              <Typography variant="body2">
-                {t('impersonation.tenant', { tenant: impersonation.tenant })}
-              </Typography>
+              <>
+                <FactSeparator />
+                <Typography
+                  component="span"
+                  variant="caption"
+                  title={impersonation.tenant}
+                  sx={tenantSx}
+                >
+                  {t('impersonation.tenant', {
+                    tenant: impersonation.tenant,
+                  })}
+                </Typography>
+              </>
             )}
             {expiry !== null && (
-              <Typography variant="body2">
-                {t('impersonation.expiresAt', { expiresAt: expiry })}
-              </Typography>
+              <>
+                <FactSeparator />
+                <Typography component="span" variant="caption">
+                  {t('impersonation.expiresAt', { expiresAt: expiry })}
+                </Typography>
+              </>
             )}
-            <Typography variant="body2">
+            <FactSeparator />
+            <Typography component="span" variant="caption">
               {t('impersonation.managementUnavailable')}
             </Typography>
           </Box>
-          <Button
-            type="button"
-            variant="outlined"
-            color="inherit"
-            loading={feedback.pending}
-            onClick={end}
-          >
-            {t(
-              feedback.pending
-                ? 'impersonation.ending'
-                : 'impersonation.end',
+          <Box sx={controlsSx}>
+            <Button
+              type="button"
+              size="small"
+              variant="outlined"
+              color="inherit"
+              loading={pending}
+              onClick={onEnd}
+            >
+              {t(
+                pending
+                  ? 'impersonation.ending'
+                  : 'impersonation.end',
+              )}
+            </Button>
+            {onDismiss !== undefined && (
+              <IconButton
+                size="small"
+                color="inherit"
+                aria-label={t('impersonation.hide')}
+                onClick={onDismiss}
+              >
+                <HideIcon />
+              </IconButton>
             )}
-          </Button>
+          </Box>
           {failureCode !== null && (
             // The failure belongs to the banner's own width, below the
-            // text and the control, not beside them.
+            // facts and the controls, not beside them.
             <Box sx={{ flexBasis: '100%' }}>
               <InlineError code={failureCode} />
             </Box>

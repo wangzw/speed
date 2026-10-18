@@ -112,7 +112,11 @@
     "managementUnavailable": "Management features are unavailable while you are impersonating.",
     "end": "End impersonation",
     "ending": "Ending impersonation…",
-    "ended": "Impersonation ended."
+    "ended": "Impersonation ended.",
+    "hide": "Hide impersonation notice",
+    "impersonating": "Impersonating",
+    "hideHint": "Hide the impersonation notice",
+    "showHint": "Show the impersonation notice"
   },
   "errors": {
     "authn": {
