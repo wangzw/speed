@@ -53,8 +53,10 @@ TypeScript accepts under bundler resolution but rejects under nodenext
 `web/scripts/orval-nodenext-fixup.mjs` deterministically rewrites every
 such import to the explicit `'./runtime.js'` form after each
 regeneration and exits non-zero when orval's emission changes or drops
-them, so generator drift fails CI instead of shipping an unbuildable
-package. Config paths in `orval.config.ts` are relative to the config
+them; the package's nodenext build then rejects any committed import the
+script did not rewrite. Regeneration and the fixup are manual steps -- no
+CI job reruns them -- so run the pair above whenever `contracts/api.json`
+changes. Config paths in `orval.config.ts` are relative to the config
 file's directory (`web/`).
 
 ## How generated code calls HTTP

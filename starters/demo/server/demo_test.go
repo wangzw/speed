@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
+	"github.com/vislake/speed/pkg/ops/openapi"
 )
 
 // The cases run the program as a real child process and reach it over sockets:
@@ -842,6 +844,21 @@ func TestTheGuardsOfferNoBasicChallenge(t *testing.T) {
 	}
 }
 
+// starterModulePath is the import path of the module this starter is: the main
+// module the test binary was built from. A module whose descriptor lives under
+// it is the starter's own, and its operations carry the application-owner tag;
+// everything else is platform-owned. Reading it from the build rather than
+// writing it down keeps the case right when the starter is copied to another
+// import path.
+func starterModulePath(t *testing.T) string {
+	t.Helper()
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info.Main.Path == "" {
+		t.Fatalf("the test binary carries no main module path")
+	}
+	return info.Main.Path
+}
+
 // TestGenWritesTheMergedDocument runs gen and reads what it wrote: a document a
 // JSON parser accepts, carrying the operations the modules declared and the
 // fragments they came from. It is run twice, once writing a file and once
@@ -884,39 +901,78 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 				t.Errorf("the document has no GET %s", path)
 			}
 		}
-		// The host's own route is a member of the document and carries the
+		// The operations of this starter's own modules carry the
 		// application-owner tag orval's platform generation filters on; no
-		// platform operation carries it. The tag is read from the document, not
-		// assumed: the fragment declares no tags of its own.
-		post, ok := doc.Paths["/workspace/personal"]["post"]
-		if !ok {
-			t.Fatalf("the document has no POST /workspace/personal, the host's own fragment")
+		// platform operation carries it. Which operations those are is read
+		// from each fragment's declaring module, judged by the module path its
+		// descriptor lives under, not from a written-down path: a second
+		// business module is marked by gen the same way the first one is, and
+		// the case has to agree with it rather than call the correct mark an
+		// error.
+		starter := starterModulePath(t)
+		expected := map[string]bool{}
+		declaring := map[string]string{}
+		for _, spec := range core.Resources[speedhttp.Spec](core.ProcessRegistry) {
+			descriptor, found := core.ProcessRegistry.Lookup(spec.Module)
+			if !found {
+				t.Fatalf("module %q declares a fragment but is not registered", spec.Module)
+			}
+			owner, ok := modulePackage(descriptor)
+			if !ok {
+				t.Fatalf("module %q carries no lifecycle callback, so the package it is declared in cannot be read", spec.Module)
+			}
+			owned := owner == starter || strings.HasPrefix(owner, starter+"/")
+			var fragment struct {
+				Paths map[string]map[string]json.RawMessage `json:"paths"`
+			}
+			if err := json.Unmarshal(spec.Value.Document, &fragment); err != nil {
+				t.Fatalf("reading the fragment module %q declares: %v", spec.Module, err)
+			}
+			for path, methods := range fragment.Paths {
+				for method := range methods {
+					key := strings.ToUpper(method) + " " + path
+					if _, duplicate := expected[key]; duplicate {
+						t.Fatalf("%s is declared by more than one fragment", key)
+					}
+					expected[key] = owned
+					declaring[key] = spec.Module
+				}
+			}
 		}
-		var personal struct {
-			Tags []string `json:"tags"`
+		if owned, declared := expected["POST /workspace/personal"]; !declared || !owned {
+			// The named anchor: the host's own route, declared by a module in
+			// this package, is the leg that proves registration and marking
+			// agree.
+			t.Errorf("the host's route POST /workspace/personal is not among the application-owned operations")
 		}
-		if err := json.Unmarshal(post, &personal); err != nil {
-			t.Fatalf("reading POST /workspace/personal: %v", err)
-		}
-		if !slices.Contains(personal.Tags, applicationOperationTag) {
-			t.Errorf("POST /workspace/personal carries tags %v, want %q among them",
-				personal.Tags, applicationOperationTag)
-		}
+		present := map[string]bool{}
 		for path, methods := range doc.Paths {
 			for method, raw := range methods {
-				if path == "/workspace/personal" && method == "post" {
-					continue
-				}
+				key := strings.ToUpper(method) + " " + path
+				present[key] = true
 				var operation struct {
 					Tags []string `json:"tags"`
 				}
 				if err := json.Unmarshal(raw, &operation); err != nil {
 					t.Fatalf("reading %s %s: %v", strings.ToUpper(method), path, err)
 				}
-				if slices.Contains(operation.Tags, applicationOperationTag) {
-					t.Errorf("%s %s carries %q, but it is not an application-owned operation",
-						strings.ToUpper(method), path, applicationOperationTag)
+				carries := slices.Contains(operation.Tags, applicationOperationTag)
+				want, declared := expected[key]
+				switch {
+				case !declared:
+					t.Errorf("%s is in the document but no fragment declares it", key)
+				case want && !carries:
+					t.Errorf("%s is declared by %q, one of the starter's own modules, but carries tags %v, want %q among them",
+						key, declaring[key], operation.Tags, applicationOperationTag)
+				case !want && carries:
+					t.Errorf("%s is declared by %q, whose code lives outside the starter's module %s, yet carries %q",
+						key, declaring[key], starter, applicationOperationTag)
 				}
+			}
+		}
+		for key := range expected {
+			if !present[key] {
+				t.Errorf("the document has no %s, which module %q declares", key, declaring[key])
 			}
 		}
 		named := false
@@ -990,6 +1046,26 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 		}
 		check(t, []byte(res.stdout))
 	})
+}
+
+// TestMarkOperationsWithNoOwnedOperationIsIdentity pins the byte-level
+// property gen relies on: with no application-owned operation, the document
+// markOperations writes is the document Merge wrote. markOperations mirrors
+// pkg/ops/openapi's document shape by hand, so a top-level field Merge starts
+// writing would otherwise be dropped from the contract silently.
+func TestMarkOperationsWithNoOwnedOperationIsIdentity(t *testing.T) {
+	specs := core.Resources[speedhttp.Spec](core.ProcessRegistry)
+	merged, err := openapi.Merge(specs, openapi.Options{Title: "demo-api", Version: "9.9.9"})
+	if err != nil {
+		t.Fatalf("merging the declared fragments: %v", err)
+	}
+	unmarked, err := markOperations(merged, map[string]bool{})
+	if err != nil {
+		t.Fatalf("marking no operation: %v", err)
+	}
+	if !bytes.Equal(unmarked, merged) {
+		t.Errorf("marking no operation changed the document: %d bytes in, %d bytes out", len(merged), len(unmarked))
+	}
 }
 
 // The credentials the seed writes and this case signs in with.

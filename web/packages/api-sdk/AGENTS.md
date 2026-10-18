@@ -89,9 +89,13 @@ surface stays platform-only: the app's own API is generated into the
 app's own SDK through the app-owned flow -- the starter's personal-tenant
 ensure is the app fragment that exercises that leg), the
 runtime binding, the regeneration
-tooling (config + fixup script) and the CI wiring that regenerates and
-diffs the artifact. `@speed/auth-core` compile-consumes the authn
-surface in-workspace: its unit suite binds a scripted request function
+tooling (config + fixup script), and a unit case that holds the committed
+surface to the committed document's platform operations in both directions:
+an operation added to or removed from that half without regenerating fails
+the package's tests. Regeneration itself is a manual step -- the command in
+README.md, run from `web/` -- so a change that alters only shapes is caught
+by rerunning it, not by that case. `@speed/auth-core` compile-consumes the
+authn surface in-workspace: its unit suite binds a scripted request function
 through `bindRequestFn` -- the same binding a host's real client binds --
 so a spec change whose regenerated surface outgrows auth-core's calls
 fails that package's typecheck.

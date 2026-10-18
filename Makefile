@@ -31,7 +31,8 @@ each = for it in $(1); do echo "==> $(2) $$it"; $(3) || failed="$${failed:+$$fai
 each-end = if [ -n "$$failed" ]; then echo "failed: $$failed" >&2; exit 1; fi
 
 .PHONY: help modules deps-up deps-down build test test-race test-integration test-integration-race \
-        vet-integration fmt lint tidy tidy-check repo-check tools-test check python-version modules-present web-check web-a11y
+        vet-integration vet-review fmt lint tidy tidy-check repo-check tools-test check python-version \
+        modules-present web-check web-a11y
 
 help: ## List the entry points
 	@awk 'BEGIN{FS=":.*## "} /^[a-z][a-z-]*:.*## /{printf "  %-21s %s\n", $$1, $$2}' $(MAKEFILE_LIST)

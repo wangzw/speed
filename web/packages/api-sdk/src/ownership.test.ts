@@ -1,19 +1,28 @@
 /**
- * ownership.test.ts -- the platform package's generated surface carries
- * only platform-owned operations.
+ * ownership.test.ts -- the platform package's generated surface is exactly the
+ * platform half of the merged document.
  *
  * The merged document holds both halves: platform fragments plus the
  * host's own. Application-owned operations carry the tag the host's
  * `gen` command writes from the declaring module's provenance, and
  * `web/orval.config.ts` excludes that tag through orval 8.17.0's
- * `input.filters`. This case reads the committed merged document, finds
- * the marked operations, and asserts no generated call reaches any of
- * their paths. Without the filter, a platform regeneration from the
- * merged document would publish the starter's own route.
+ * `input.filters`. These cases read the committed merged document and the
+ * committed generated surface, and hold one against the other in both
+ * directions: no application-marked operation reaches the surface, and every
+ * platform operation reaches it. Without the filter, a platform regeneration
+ * from the merged document would publish the starter's own route; without the
+ * second direction, a platform route added to the document would stay absent
+ * from the committed surface while every check stayed green.
  *
- * The case also asserts the merged document has at least one marked
- * operation, so a vocabulary that silently stopped marking cannot make
- * the check vacuous.
+ * Operations are matched by method and path, with the document's `{name}`
+ * parameters compared against the generated url's `${name}` spelling, and by
+ * the function name orval derives from the operationId. A literal path lookup
+ * misses every operation with a parameter and cannot tell two methods on one
+ * path apart.
+ *
+ * The first case also asserts the document has at least one marked
+ * operation, so a vocabulary that silently stopped marking cannot make the
+ * check vacuous.
  */
 
 import { readFileSync } from 'node:fs'
@@ -26,45 +35,195 @@ const packageDir = dirname(sourceDir)
 const repoRoot = resolve(packageDir, '../../..')
 const contractPath = join(repoRoot, 'contracts/api.json')
 const generatedPath = join(sourceDir, 'index.ts')
+const orvalConfigPath = join(repoRoot, 'web/orval.config.ts')
 
 /** The tag `gen` writes on an operation an application module declares. */
 const APPLICATION_TAG = 'speed.application'
 
 interface MergedOperation {
   readonly tags?: readonly string[]
+  readonly operationId?: string
+}
+
+interface MergedDocument {
+  readonly paths: Record<string, Record<string, MergedOperation>>
+}
+
+/** One operation of the merged document, reduced to what the cases compare. */
+interface Operation {
+  /** Upper-case HTTP method. */
+  readonly method: string
+  /** The contract's path, with parameters spelled `{name}`. */
+  readonly path: string
+  readonly operationId: string
+  readonly applicationOwned: boolean
+}
+
+/** `METHOD path`, the form both sides are indexed by. */
+function label(operation: { method: string; path: string }): string {
+  return `${operation.method} ${operation.path}`
+}
+
+function documentOperations(document: MergedDocument): Operation[] {
+  const operations: Operation[] = []
+  for (const [path, methods] of Object.entries(document.paths)) {
+    for (const [method, operation] of Object.entries(methods)) {
+      operations.push({
+        method: method.toUpperCase(),
+        path,
+        operationId: operation.operationId ?? '',
+        applicationOwned: operation.tags?.includes(APPLICATION_TAG) === true,
+      })
+    }
+  }
+  return operations
 }
 
 /**
- * The paths of the operations the merged document marks as
- * application-owned. The path is what the generated code carries as the
- * request url; the platform surface contains none of them.
+ * The request url a generated call emits, brought back to the contract's
+ * spelling: orval writes a path parameter as `${name}`, the document as
+ * `{name}`.
  */
-function applicationPaths(): string[] {
-  const document = JSON.parse(readFileSync(contractPath, 'utf8')) as {
-    paths: Record<string, Record<string, MergedOperation>>
-  }
-  const paths: string[] = []
-  for (const [path, methods] of Object.entries(document.paths)) {
-    for (const operation of Object.values(methods)) {
-      if (operation.tags?.includes(APPLICATION_TAG) === true) {
-        paths.push(path)
-        break
-      }
+function toContractPath(url: string): string {
+  return url.replace(/\$\{([^}]+)\}/g, '{$1}')
+}
+
+/**
+ * The `METHOD path` pairs the generated surface calls, read from the
+ * `{url: `...`, method: '...'}` shape every generated call emits. orval emits
+ * the url and the method adjacent, so a wrapped line still matches.
+ */
+function generatedCalls(source: string): Set<string> {
+  const calls = new Set<string>()
+  for (const match of source.matchAll(/\{url:\s*`([^`]+)`,\s*method:\s*'([A-Z]+)'/g)) {
+    const url = match[1]
+    const method = match[2]
+    if (url !== undefined && method !== undefined) {
+      calls.add(`${method} ${toContractPath(url)}`)
     }
   }
-  return paths
+  return calls
+}
+
+/**
+ * The function name orval derives from an operationId: the dot-separated
+ * segments joined, each after the first capitalised. A contract operation with
+ * no operationId has no derived name.
+ */
+function generatedFunctionName(operationId: string): string | undefined {
+  if (operationId === '') return undefined
+  const segments = operationId.split('.')
+  if (segments.some((segment) => segment === '')) return undefined
+  return segments
+    .map((segment, index) => (index === 0 ? segment : segment.charAt(0).toUpperCase() + segment.slice(1)))
+    .join('')
+}
+
+/**
+ * The application-marked operations of a document that the generated source
+ * carries, by either of the two matchers. An empty result is the property the
+ * package needs; the fixtures below prove the matcher actually discriminates.
+ */
+function leaked(document: MergedDocument, source: string): string[] {
+  const calls = generatedCalls(source)
+  const found: string[] = []
+  for (const operation of documentOperations(document)) {
+    if (!operation.applicationOwned) continue
+    const name = generatedFunctionName(operation.operationId)
+    if (
+      calls.has(label(operation)) ||
+      (name !== undefined && source.includes(`export const ${name} =`))
+    ) {
+      found.push(label(operation))
+    }
+  }
+  return found
+}
+
+/**
+ * The platform operations the generated source does not call, and the calls it
+ * makes to operations the document does not carry as platform operations. Both
+ * are empty for a committed pair generated from the same document.
+ */
+function surfaceDrift(document: MergedDocument, source: string): { missing: string[]; extra: string[] } {
+  const platform = documentOperations(document)
+    .filter((operation) => !operation.applicationOwned)
+    .map(label)
+  const calls = generatedCalls(source)
+  return {
+    missing: platform.filter((operation) => !calls.has(operation)),
+    extra: [...calls].filter((operation) => !platform.includes(operation)).sort(),
+  }
+}
+
+function readContract(): MergedDocument {
+  return JSON.parse(readFileSync(contractPath, 'utf8')) as MergedDocument
 }
 
 describe('the platform surface ownership split', () => {
   it('contains no application-marked operation', () => {
-    const marked = applicationPaths()
+    const document = readContract()
+    const marked = documentOperations(document).filter((operation) => operation.applicationOwned)
     expect(marked.length).toBeGreaterThan(0)
-    const generated = readFileSync(generatedPath, 'utf8')
-    for (const path of marked) {
-      expect(
-        generated.includes(`\`${path}\``),
-        `${generatedPath} carries the application-owned operation ${path}; regenerate it with the platform filter in web/orval.config.ts`,
-      ).toBe(false)
+    expect(
+      leaked(document, readFileSync(generatedPath, 'utf8')),
+      `${generatedPath} carries application-owned operations; regenerate it with the platform filter in web/orval.config.ts`,
+    ).toEqual([])
+  })
+
+  it('carries every platform operation and no other call', () => {
+    const drift = surfaceDrift(readContract(), readFileSync(generatedPath, 'utf8'))
+    expect(
+      drift.missing,
+      `${generatedPath} is missing platform operations of contracts/api.json; regenerate it with the command in web/packages/api-sdk/README.md`,
+    ).toEqual([])
+    expect(
+      drift.extra,
+      `${generatedPath} calls operations contracts/api.json does not carry as platform operations; regenerate the document and the surface together`,
+    ).toEqual([])
+  })
+
+  it('excludes the application tag in the platform generation', () => {
+    const config = readFileSync(orvalConfigPath, 'utf8')
+    expect(config).toMatch(/mode:\s*'exclude'/)
+    expect(config).toMatch(new RegExp(`tags:\\s*\\[\\s*'${APPLICATION_TAG}'\\s*\\]`))
+  })
+})
+
+describe('the leak matcher', () => {
+  const marked: MergedDocument = {
+    paths: {
+      '/workspace/things/{id}': {
+        get: { operationId: 'workspace.things.get', tags: [APPLICATION_TAG] },
+      },
+    },
+  }
+
+  it('finds an operation whose path has parameters', () => {
+    const source = "speedRequest({url: `/workspace/things/${id}`, method: 'GET', signal})"
+    expect(leaked(marked, source)).toEqual(['GET /workspace/things/{id}'])
+  })
+
+  it('finds an operation by its generated function name', () => {
+    const source = 'export const workspaceThingsGet = (\n  id: string,\n) => {'
+    expect(leaked(marked, source)).toEqual(['GET /workspace/things/{id}'])
+  })
+
+  it('does not confuse two methods on one path', () => {
+    const source = "speedRequest({url: `/workspace/things/${id}`, method: 'DELETE', signal})"
+    expect(leaked(marked, source)).toEqual([])
+  })
+})
+
+describe('the surface comparison', () => {
+  it('reports a platform operation the generated surface does not carry, and a call the document does not', () => {
+    const document: MergedDocument = {
+      paths: { '/api/v1/things/{id}': { get: { operationId: 'things.get' } } },
     }
+    const source = "speedRequest({url: `/api/v1/other`, method: 'GET', signal})"
+    expect(surfaceDrift(document, source)).toEqual({
+      missing: ['GET /api/v1/things/{id}'],
+      extra: ['GET /api/v1/other'],
+    })
   })
 })
