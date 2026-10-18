@@ -433,7 +433,7 @@ graph TD
 | 详情面板内写入在途时 `busy` 与服务密钥的关闭守卫 | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`（`detailBusy`、`requestDetailClose`）、`OneTimeSecretNotice` |
 | 账户身份单元区分已删除或非账户行动者与无权限 | 已实现 | `web/packages/console-ui/src/internal/account-identity.tsx` `AccountIdentity`、`useAccountIdentity` |
 | 权限页账户绑定查询的加载、失败与空占位 | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`、`bindingColumns` |
-| 各列表页的列优先级与宽度上限（账户、会话、邀请与成员、SSO、审计及账户详情面板里的表） | 未实现 | — |
+| 各列表页的列优先级与宽度上限（账户、会话、邀请与成员、SSO、审计及账户详情面板里的表） | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `PRIMARY_COLUMN_MAX_WIDTH`、`primaryColumnMaxWidthSx`；`web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`；`web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/console-ui/src/AuditPage.tsx` `AuditPage`；`web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage`；`web/packages/console-ui/src/internal/account-identity.tsx` `CappedAccountIdentity`；`web/packages/console-ui/src/internal/identifier-prefix.ts` `identifierPrefix` |
 | 会话页标记调用方自己的当前会话并在确认文案里说明 | 已实现 | `web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | 会话页（按账户列出与撤销） | 已实现 | `web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/routes.tsx` `sessionsAdminRoutes` |
 | 冒充页（记录列出与终止；本会话冒充的状态、发起与结束） | 已实现 | `web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`、`StartImpersonationForm`；`web/packages/console-ui/src/routes.tsx` `impersonationsAdminRoutes` |
