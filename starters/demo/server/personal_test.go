@@ -335,7 +335,7 @@ func unitProduct() (*personalProduct, *fakeRoster, *fakeMemberships, *fakeManage
 // TestEnsureIsIdempotent holds a second call to completing nothing and changing
 // nothing: one tenant row, one role, one binding, and the same tenant back.
 func TestEnsureIsIdempotent(t *testing.T) {
-	product, roster, _, manager, seeder := unitProduct()
+	product, roster, memberships, manager, seeder := unitProduct()
 	ctx := context.Background()
 
 	first, err := product.ensure(ctx, unitAccount)
@@ -348,6 +348,19 @@ func TestEnsureIsIdempotent(t *testing.T) {
 	wantID := tenant.ID(personalIDPrefix + string(unitAccount))
 	if first.Tenant.ID != wantID || first.Tenant.Alias != string(wantID) {
 		t.Errorf("the tenant is %q/%q, want both %q", first.Tenant.ID, first.Tenant.Alias, wantID)
+	}
+	// The membership this call writes is the account's whole tie to the tenant:
+	// active, in the derived tenant, and carrying the source value the account
+	// module publishes to its consumers. The literal is pinned rather than the
+	// constant the code writes, so a change to either the row or the constant
+	// fails here.
+	held := memberships.rows[unitAccount]
+	if len(held) != 1 {
+		t.Fatalf("the account holds %d membership(s), want one", len(held))
+	}
+	if held[0].Tenant != string(wantID) || !held[0].Active || held[0].Source != "personal" {
+		t.Errorf("the membership is %+v, want tenant %q, active, source %q",
+			held[0], wantID, "personal")
 	}
 
 	second, err := product.ensure(ctx, unitAccount)
@@ -598,6 +611,34 @@ func TestEnsureWritesNothingForADisabledTenant(t *testing.T) {
 	if memberships.puts != 0 || manager.putRole != 0 || manager.putBinding != 0 || seeder.seed != 0 {
 		t.Errorf("the ensure wrote %d membership(s), %d role(s), %d binding(s), %d seeding(s), want none",
 			memberships.puts, manager.putRole, manager.putBinding, seeder.seed)
+	}
+	if roster.rows[id].Status != tenant.StatusDisabled {
+		t.Errorf("the ensure changed the tenant's status to %v", roster.rows[id].Status)
+	}
+}
+
+// TestEnsureWritesNothingForADisabledTenantWithAMembership holds the same
+// withdrawal on the typical scene: the account already holds its personal
+// membership row, so a page reload reads the tenant back instead of taking the
+// create branch. The refusal and the empty write set are the same.
+func TestEnsureWritesNothingForADisabledTenantWithAMembership(t *testing.T) {
+	product, roster, memberships, manager, seeder := unitProduct()
+	id := personalTenantID(unitAccount)
+	roster.rows[id] = tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusDisabled}
+	memberships.rows[unitAccount] = []authn.Membership{
+		{Account: unitAccount, Tenant: string(id), Active: true, Source: "admin"},
+	}
+
+	_, err := product.ensure(context.Background(), unitAccount)
+	if !errors.Is(err, errTenantUnavailable) {
+		t.Fatalf("the ensure over a disabled tenant with a membership gave %v, want errTenantUnavailable", err)
+	}
+	if memberships.puts != 0 || manager.putRole != 0 || manager.putBinding != 0 || seeder.seed != 0 {
+		t.Errorf("the ensure wrote %d membership(s), %d role(s), %d binding(s), %d seeding(s), want none",
+			memberships.puts, manager.putRole, manager.putBinding, seeder.seed)
+	}
+	if roster.creates != 0 {
+		t.Errorf("the ensure registered a tenant over the disabled row")
 	}
 	if roster.rows[id].Status != tenant.StatusDisabled {
 		t.Errorf("the ensure changed the tenant's status to %v", roster.rows[id].Status)
@@ -922,6 +963,28 @@ func TestTheEnsureAnswersAnotherMembership409(t *testing.T) {
 	}
 	if problem.Type != personalProblemPrefix+alreadyMemberCode {
 		t.Errorf("the 409 carries type %q, want %q", problem.Type, personalProblemPrefix+alreadyMemberCode)
+	}
+}
+
+// TestTheEnsureAnswersADisabledTenant409 holds the handler's mapping of the
+// withdrawal refusal. The frontend tells the three 409s apart by the type
+// field, so the code it keys on is written out here rather than taken from the
+// constant the handler also uses: a changed constant is a changed contract.
+func TestTheEnsureAnswersADisabledTenant409(t *testing.T) {
+	product, roster, memberships, manager, seeder := unitProduct()
+	id := personalTenantID(unitAccount)
+	roster.rows[id] = tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusDisabled}
+	memberships.rows[unitAccount] = []authn.Membership{
+		{Account: unitAccount, Tenant: string(id), Active: true, Source: "admin"},
+	}
+
+	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
+	c, recorder := ginContext(ctx)
+	product.handleEnsure(c)
+	assertPersonalType(t, recorder, http.StatusConflict, "tenant-unavailable")
+	if memberships.puts != 0 || manager.putRole != 0 || manager.putBinding != 0 || seeder.seed != 0 {
+		t.Errorf("the refused ensure wrote %d membership(s), %d role(s), %d binding(s), %d seeding(s), want none",
+			memberships.puts, manager.putRole, manager.putBinding, seeder.seed)
 	}
 }
 
