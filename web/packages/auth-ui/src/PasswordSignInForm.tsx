@@ -28,9 +28,19 @@
  * the lost race it is -- no failure banner and no onSignedIn (the winning
  * call fires its own exactly once), and the session being authenticated
  * now is the host's own snapshot to observe through its auth-core hooks.
+ *
+ * A refused submit (`authn.login_failed`) is this channel's own text and is
+ * attached to the password field: the server collapses an unknown
+ * identifier, a wrong password and a wrong code into that one code, so the
+ * wording names the password without saying which half did not match, and
+ * it never mentions a code this surface has no field for. The message is the
+ * field's helper text -- associated through aria-describedby and marking the
+ * field aria-invalid -- and focus moves to the password field once the
+ * refusal lands, so the focused field carries the message to a screen
+ * reader. Every other code renders through the whole-attempt banner.
  */
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import TextField from '@mui/material/TextField'
 import Button from '@mui/material/Button'
 import { useForm } from 'react-hook-form'
@@ -54,6 +64,10 @@ interface PasswordFields {
   password: string
 }
 
+/** The server's collapsed credential refusal: an unknown identifier, a wrong
+ * password and a wrong code all answer under this one code. */
+const LOGIN_FAILED = 'authn.login_failed'
+
 export function PasswordSignInForm({
   session,
   onSignedIn,
@@ -63,9 +77,32 @@ export function PasswordSignInForm({
     defaultValues: { identifier: '', password: '' },
   })
   const [errorCode, setErrorCode] = useState<string | null>(null)
+  // Whether this form's own fields are the mounted surface: a refusal of a
+  // later step (a second factor) has no password field to attach to and
+  // renders through the banner instead.
+  const credentialsMounted = useRef(true)
+  // The password input node itself: RHF's setFocus would target the control
+  // the Controller's ref is attached to, which MUI's TextField forwards to
+  // its form-control wrapper rather than the input.
+  const passwordInput = useRef<HTMLInputElement>(null)
 
   const driver = useFlowDriver(session, {
-    onFailure: setErrorCode,
+    onFailure: (code) => {
+      if (code === LOGIN_FAILED && credentialsMounted.current) {
+        // The password field carries the refusal: the same helper-text
+        // channel its validation errors use, which MUI associates with the
+        // input (aria-describedby) and marks invalid. Focus moves there so
+        // the message is announced with the field it belongs to.
+        form.setError('password', {
+          type: 'server',
+          message: t('passwordSignIn.loginFailed'),
+        })
+        passwordInput.current?.focus()
+        setErrorCode(null)
+        return
+      }
+      setErrorCode(code)
+    },
     onSettled: () => {
       try {
         onSignedIn?.()
@@ -77,11 +114,14 @@ export function PasswordSignInForm({
     },
   })
 
+  credentialsMounted.current = driver.step === null
+
   const onSubmit: SubmitHandler<PasswordFields> = async ({
     identifier,
     password,
   }) => {
     setErrorCode(null)
+    form.clearErrors('password')
     await driver.start({
       method: 'password',
       binding: 'cookie',
@@ -139,6 +179,7 @@ export function PasswordSignInForm({
         render={({ field, invalid, errorText }) => (
           <TextField
             {...field}
+            inputRef={passwordInput}
             label={t('passwordSignIn.passwordLabel')}
             type="password"
             autoComplete="current-password"

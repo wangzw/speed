@@ -119,8 +119,11 @@ authn:
 # The SMS sending family. sms.registry holds the templates the SMS module sends
 # its codes under; the three names and the parameter pair are the contract the
 # module checks at startup. The codes are the carrier's identifiers, which for
-# the review sender are labels it writes to the log. The review sender declares
-# no configuration item, so this file carries no section for it.
+# the review sender are labels it writes to the log. Each template declares
+# both interface languages: a flow carries the language the browser announced,
+# and the module resolves it against what the template declares, so a zh-CN
+# interface sends under the zh-CN code. The review sender declares no
+# configuration item, so this file carries no section for it.
 sms:
   registry:
     templates:
@@ -128,14 +131,17 @@ sms:
         params: ["code", "ttl_minutes"]
         codes:
           en-US: "review-login"
+          zh-CN: "review-login-zh"
       authn.code.mfa:
         params: ["code", "ttl_minutes"]
         codes:
           en-US: "review-mfa"
+          zh-CN: "review-mfa-zh"
       authn.code.enroll:
         params: ["code", "ttl_minutes"]
         codes:
           en-US: "review-enroll"
+          zh-CN: "review-enroll-zh"
 
 tenant:
   resolve:

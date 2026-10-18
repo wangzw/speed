@@ -300,7 +300,7 @@ flowchart TD
 
 ### 注册与完成设置
 
-决策见 [ADR-authn-signup-2026-10-18](../../adr/adr-authn-signup-2026-10-18.md)。登录页是 auth-ui 的 `SignInScreen`，注册入口由它按发现文档给出：`signup.enabled` 为真且有可见的开户类方法时显示（[auth-ui](web/design-web-auth-ui.md)）；示范不自造注册入口，也不在文案里断言注册可用。
+决策见 [ADR-authn-signup-2026-10-18](../../adr/adr-authn-signup-2026-10-18.md)。登录页是 auth-ui 的 `SignInScreen`，注册入口由它按发现文档给出：`signup.enabled` 为真且有可见的开户类方法时显示（[auth-ui](web/design-web-auth-ui.md)）；示范不自造注册入口，也不在文案里断言注册可用。重定向类与企业类方法的授权地址由登录页在当前窗口导航，流程的 `return_to` 是 `/sign-in/callback`，提供方的一次往返因此落回示范自己的回调页。
 
 - **注册模式下经短信渠道登录成功后，示范按个人租户是否启用决定落点。** `SignInView` 的 `onSignedIn` 收到登录上下文，`mode` 为 `register` 且 `channel` 为 `sms` 时，个人租户启用则去租户区首页并带一次完成设置的提示，未启用则导航到完成设置页（见「个人租户」）；其余情形（口令、通行密钥、重定向类与企业类登录，以及登录模式下的短信登录）照常进入应用。注册模式下用已登记的手机号登录得到的是一次普通登录，完成设置页此时反映账户当前状态。
 - **完成设置页由 account-ui 的两个节组成，用户名先于口令。** `IdentifiersSection` 添加用户名；`PasswordSection` 只在账户已有可作登录名的标识（用户名或已验证邮箱）之后可用，在此之前渲染说明：口令登录要有登录名，请先添加用户名。账户已经有登录名与口令时，页面陈述账户设置已完成并给出回到首页的链接。页面带一个回到首页的「稍后设置」链接；跳过不撤销已建的账户，账户仍可经短信登录。
@@ -386,7 +386,7 @@ flowchart TD
 | 登录页文案不断言装配 | 已实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
 | `backend` 监听上各端的认领前缀（`testdata/` 的每份配置与示范测试的配置） | 已实现 | `starters/demo/server/testdata/` 六份配置的 `http.endpoints.*.prefixes`；`starters/demo/server/demo_test.go` `demoConfig` |
 | 后端前缀清单 `backend-prefixes.json` 与由它生成的开发代理 | 已实现 | `starters/demo/web/backend-prefixes.json`；`starters/demo/web/src/backend-prefixes.ts` `backendProxyRules`；`starters/demo/web/vite.config.ts` |
-| 回调页的路径 `/sign-in/callback` | 已实现 | `starters/demo/web/src/routes.tsx` `AUTH_CALLBACK_PATH` |
+| 回调页的路径 `/sign-in/callback` | 已实现 | `starters/demo/web/src/paths.ts` `AUTH_CALLBACK_PATH` |
 | 认领覆盖平台命名空间的测试 | 已实现 | `starters/demo/server/claims_test.go` `checkPlatformClaims`、`checkClaimsCover`、`selectClaimedEndpoint` |
 | 前缀清单、差分测试的前缀归属与配置认领的一致性测试 | 未实现 | — |
 | 页面路径不落在认领之下、代理键按段边界匹配的前端测试 | 已实现 | `starters/demo/web/src/routes.test.ts` |

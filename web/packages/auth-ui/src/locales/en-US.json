@@ -4,11 +4,14 @@
     "identifierLabel": "Email, phone, or username",
     "passwordLabel": "Password",
     "newPasswordLabel": "New password",
-    "submit": "Sign in"
+    "submit": "Sign in",
+    "loginFailed": "The email, phone, or username and password are incorrect."
   },
   "smsSignIn": {
     "title": "SMS code",
     "phoneLabel": "Phone number",
+    "phoneHint": "Enter the number in international format with its country code, e.g. +8613800000001.",
+    "phoneFormat": "Enter the number in international format: a leading + and the country code.",
     "sendCode": "Send code",
     "sentNotice": "Code sent to {{phone}}",
     "codeLabel": "Verification code",
@@ -60,6 +63,8 @@
       "google": "Google",
       "github": "GitHub",
       "wechat": "WeChat",
+      "wechatOfficialAccount": "WeChat (Official Account)",
+      "wechatWeb": "WeChat (Web)",
       "dingtalk": "DingTalk",
       "feishu": "Feishu"
     }

@@ -248,6 +248,41 @@ describe('SignInScreen', () => {
     )
   })
 
+  it('give the two WeChat methods distinct visible and accessible names', () => {
+    // One brand reaches the deployment through two sign-in modes, and both
+    // descriptors carry the same brand label. Each button renders the
+    // mode's own wording, which is also its accessible name.
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([
+          { name: 'password', kind: 'form' },
+          {
+            name: 'wechat.mp',
+            kind: 'redirect',
+            protocol: 'oauth2',
+            label: 'WeChat',
+          },
+          {
+            name: 'wechat.web',
+            kind: 'redirect',
+            protocol: 'oauth2',
+            label: 'WeChat',
+          },
+        ])}
+      />,
+    )
+    const officialAccount = screen.getByRole('button', {
+      name: zhCN.social.provider.wechatOfficialAccount,
+    })
+    const web = screen.getByRole('button', {
+      name: zhCN.social.provider.wechatWeb,
+    })
+    expect(officialAccount).not.toBe(web)
+    expect(screen.queryByRole('button', { name: 'WeChat' })).toBeNull()
+  })
+
   it('render the enterprise email-first entry that discovers the providers', async () => {
     const harness = makeHarness({
       [SSO_DISCOVER]: (call) => {

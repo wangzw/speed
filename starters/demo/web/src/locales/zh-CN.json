@@ -19,11 +19,7 @@
   },
   "signIn": {
     "heading": "登录",
-    "subtitle": "使用你的账户继续。",
-    "firstAccount": {
-      "title": "还没有账号？",
-      "body": "本骨架把注册折进登录流程，且不含短信与社交登录，因此全新部署没有可登录的账号。先用服务端的 seed 命令写入第一个账号，再回到这里登录（见 starters/demo/AGENTS.md）。"
-    }
+    "subtitle": "使用你的账户继续。"
   },
   "home": {
     "heading": "开始使用",

@@ -4,7 +4,8 @@
  * result and fires onSignedIn (scripted through the bindRequestFn harness,
  * asserted on the request bodies and the store token), a busy submit
  * disables the button for the flight's duration, a login-failed answer
- * renders the code's own text in one alert and changes nothing, an empty
+ * attaches the password channel's own text to the password field (invalid,
+ * described by the message, focused) and changes nothing, an empty
  * submit never reaches the network, a forced password change renders the
  * shared step renderer's new-password field and completes the flow, the
  * en-US bundle renders on an English-starting instance, and the tree
@@ -133,7 +134,7 @@ describe('PasswordSignInForm', () => {
     await waitFor(() => expect(submit).toBeEnabled())
   })
 
-  it('render the code text of a login-failed answer and change nothing', async () => {
+  it('attach a login-failed refusal to the password field and focus it', async () => {
     const harness = makeHarness({
       [LOGIN_START]: () => {
         throw apiError(401, 'authn.login_failed')
@@ -141,11 +142,20 @@ describe('PasswordSignInForm', () => {
     })
     renderWithProviders(<PasswordSignInForm session={harness.session} />)
     await fillAndSubmit('alice@example.com', 'wrong-password', ZH_LABELS)
-    await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        zhCN.errors.authn.login_failed,
-      ),
-    )
+
+    const message = zhCN.passwordSignIn.loginFailed
+    // This surface has no code field, so its refusal never names one.
+    expect(message).not.toMatch(/验证码/)
+    const password = screen.getByLabelText(zhCN.passwordSignIn.passwordLabel)
+    await waitFor(() => expect(password).toHaveAttribute('aria-invalid', 'true'))
+    // The message is the field's description, and the field holds focus, so
+    // the refusal is announced with the field it is about.
+    const description = screen.getByText(message)
+    expect(description.id).not.toBe('')
+    expect(password.getAttribute('aria-describedby')).toContain(description.id)
+    expect(password).toHaveFocus()
+    // The refusal is the field's, not a second whole-attempt banner.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(harness.store.get()).toBeNull()
     expect(harness.calls).toHaveLength(1)
   })

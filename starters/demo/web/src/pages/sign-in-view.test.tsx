@@ -1,20 +1,21 @@
 /**
  * The host's sign-in surface.
  *
- * Beyond framing auth-ui's screen, it answers the skeleton's one dead end: a
- * fresh deployment is born with no account and no registration path, so the
- * surface says where the first account comes from. The suite renders an
- * anonymous viewer and reads that guidance.
+ * The suite renders an anonymous viewer: the surface shows the deployment's
+ * methods and carries no deployment-operation guidance. A redirect method's
+ * flow hands the host an authorization URL, and the host navigates the
+ * current window to it, returning to the app's callback route.
  *
  * It also carries the host half of registration: a registration that
  * completes through SMS lands on the account setup page, because the account
  * exists but has no login name or password yet.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { authUiResources } from '@speed/auth-ui'
+import type { AuthnFlowState, AuthnMethodList, AuthSession } from '@speed/auth-core'
 import {
   LOGIN_ANSWER,
   LOGIN_METHODS,
@@ -31,6 +32,40 @@ import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import demoZhCN from '../locales/zh-CN.json' with { type: 'json' }
 import { ACCOUNT_SETUP_PATH } from '../paths.js'
 import { renderDemoApp } from '../test-utils/render.js'
+import { createTestSession } from '../test-utils/session.js'
+import { navigateToAuthorizationUrl } from '../sign-in-navigation.js'
+
+vi.mock('../sign-in-navigation.js', () => ({
+  navigateToAuthorizationUrl: vi.fn(),
+}))
+
+const AUTHORIZE_URL = 'https://github.com/login/oauth/authorize?client_id=review'
+
+const METHODS: AuthnMethodList = {
+  methods: [
+    { name: 'password', kind: 'form' },
+    { name: 'github', kind: 'redirect', protocol: 'oauth2', label: 'GitHub' },
+  ],
+  signup: { enabled: false },
+  mfa: { factors: [] },
+}
+
+/** A session whose discovery names a redirect method and whose flow start
+ * answers that method's authorization URL. */
+function redirectSession(): { session: AuthSession; startFlow: ReturnType<typeof vi.fn> } {
+  const startFlow = vi.fn(
+    async (): Promise<AuthnFlowState> => ({
+      seq: 1,
+      state: 'first',
+      next: { kind: 'redirect', url: AUTHORIZE_URL, method: 'GET' },
+    }),
+  )
+  const session: AuthSession = Object.assign(createTestSession(), {
+    listMethods: () => Promise.resolve(METHODS),
+    startFlow,
+  })
+  return { session, startFlow }
+}
 
 /**
  * The auth-ui bundle the screen renders from, read as test data: the register
@@ -49,28 +84,37 @@ const authEn = authUiResources['en-US'] as unknown as {
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
+  vi.mocked(navigateToAuthorizationUrl).mockClear()
 })
 
 describe('the sign-in surface', () => {
-  it('guides a fresh deployment to its first account', async () => {
-    renderDemoApp()
+  it('renders the sign-in channels without deployment-operation guidance', async () => {
+    const { container } = renderDemoApp()
 
-    // The guidance sits under the form, naming the way a fresh deployment
-    // gets its first account (the server's seed command).
     expect(
-      await screen.findByText(demoEnUS.signIn.firstAccount.title),
+      await screen.findByLabelText('Email, phone, or username'),
     ).toBeInTheDocument()
-    expect(
-      screen.getByText(demoEnUS.signIn.firstAccount.body),
-    ).toBeInTheDocument()
+    // The end-user surface states nothing about how the deployment is
+    // operated: no seeding instruction, no repository-document pointer.
+    expect(container.textContent).not.toMatch(/seed|AGENTS\.md/)
   })
 
-  it('renders the guidance in the active language', () => {
-    renderDemoApp({ language: 'zh-CN' })
+  it('navigates the current window to a redirect method authorization URL', async () => {
+    const { session, startFlow } = redirectSession()
+    renderDemoApp({ session })
 
-    expect(
-      screen.getByText(demoZhCN.signIn.firstAccount.title),
-    ).toBeInTheDocument()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'GitHub' }))
+
+    await waitFor(() =>
+      expect(navigateToAuthorizationUrl).toHaveBeenCalledWith(AUTHORIZE_URL),
+    )
+    // The provider's round trip returns to the app's callback route.
+    expect(startFlow).toHaveBeenCalledWith({
+      method: 'github',
+      binding: 'cookie',
+      return_to: '/sign-in/callback',
+    })
   })
 
   it('lands a registration completed through SMS on the account setup page', async () => {

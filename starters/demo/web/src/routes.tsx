@@ -41,6 +41,7 @@ import {
   ACCOUNT_CALLBACK_PATH,
   ACCOUNT_PATH,
   ACCOUNT_SETUP_PATH,
+  AUTH_CALLBACK_PATH,
   INVITATION_PREFIX,
   OBJECTS_PATH,
 } from './paths.js'
@@ -51,6 +52,7 @@ import {
 export {
   ACCOUNT_CALLBACK_PATH,
   ACCOUNT_PATH,
+  AUTH_CALLBACK_PATH,
   CONSOLE_PREFIX,
   NOTIFICATIONS_PATH,
   OBJECTS_PATH,
@@ -80,15 +82,6 @@ export const INVITATION_ROUTE_PATH = `${INVITATION_PREFIX}/:token`
 type HostRouteDeclaration = RouteDeclaration & {
   readonly requires?: readonly FeatureName[]
 }
-
-/** The route a social or enterprise provider's round trip lands on. The
- * app renders its page outside the tenant shell (src/app.tsx).
- *
- * The path sits outside every prefix the backend endpoints claim
- * (backend-prefixes.json). A page path under a claimed prefix is answered by
- * that endpoint -- an anonymous navigation gets its 401 -- instead of being
- * served the entry document. */
-export const AUTH_CALLBACK_PATH = '/sign-in/callback'
 
 /** The business slot: the skeleton's placeholder page, its account page,
  * and the notification center (@speed/notification-ui's declaration, whose

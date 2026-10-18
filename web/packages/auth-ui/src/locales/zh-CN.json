@@ -4,11 +4,14 @@
     "identifierLabel": "邮箱、手机号或用户名",
     "passwordLabel": "密码",
     "newPasswordLabel": "新密码",
-    "submit": "登录"
+    "submit": "登录",
+    "loginFailed": "邮箱、手机号或用户名与密码不正确。"
   },
   "smsSignIn": {
     "title": "短信登录",
     "phoneLabel": "手机号",
+    "phoneHint": "请输入含国家/地区代码的国际格式手机号，例如 +8613800000001。",
+    "phoneFormat": "手机号需为国际格式：以 + 开头并含国家/地区代码。",
     "sendCode": "发送验证码",
     "sentNotice": "验证码已发送至 {{phone}}",
     "codeLabel": "验证码",
@@ -60,6 +63,8 @@
       "google": "Google",
       "github": "GitHub",
       "wechat": "微信",
+      "wechatOfficialAccount": "微信（公众号）",
+      "wechatWeb": "微信（网页扫码）",
       "dingtalk": "钉钉",
       "feishu": "飞书"
     }

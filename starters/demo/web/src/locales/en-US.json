@@ -19,11 +19,7 @@
   },
   "signIn": {
     "heading": "Sign in",
-    "subtitle": "Use your account to continue.",
-    "firstAccount": {
-      "title": "No account yet?",
-      "body": "This skeleton folds registration into the sign-in flow and ships neither SMS nor social sign-in, so a fresh deployment has no account to sign in with. Write the first one with the server's seed command, then sign in here (see starters/demo/AGENTS.md)."
-    }
+    "subtitle": "Use your account to continue."
   },
   "home": {
     "heading": "Get started",

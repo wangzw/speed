@@ -280,13 +280,13 @@ capabilities as a card grid -- the account settings, the platform console, the
 object store and the notification centre -- each a real route the app already
 serves. A product replaces the cards with its own surfaces.
 
-Because the skeleton folds registration into the sign-in flow and ships
-neither SMS nor social sign-in, a fresh deployment is born with no account and
-no way to make one from the surface. The sign-in surface
-(`src/pages/sign-in-view.tsx`) therefore carries a note under the form saying
-where the first account comes from -- the server's `seed` command
-(`starters/demo/AGENTS.md`). A product that grows its own registration
-replaces the note with it.
+The sign-in surface (`src/pages/sign-in-view.tsx`) frames auth-ui's
+`SignInScreen` with the app's brand and heading; the methods it offers are the
+deployment's discovery document's. A redirect method's authorization URL is
+navigated in the current window, and its round trip returns to the app's
+`/sign-in/callback` route. The surface carries no deployment-operation copy:
+which methods are enabled, and whether registration is offered, are the
+deployment's facts, not text the page asserts.
 
 ## What to change when you copy this out
 

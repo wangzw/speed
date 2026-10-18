@@ -281,8 +281,10 @@ row; the component owns the submission, the busy state and the
 whole-attempt failure banner). Fields carry channel-appropriate
 `autoComplete` values. A failed submit renders one `role="alert"` banner
 resolving the answer's error code to current-language text (see Text and
-i18n below); a successful one fires `onSignedIn` once and the host
-navigates. None of them reads the session snapshot or renders a title.
+i18n below), except the password channel's collapsed credential refusal,
+which is the password field's own message (see PasswordSignInForm); a
+successful submit fires `onSignedIn` once and the host navigates. None of
+them reads the session snapshot or renders a title.
 
 ### PasswordSignInForm
 
@@ -291,6 +293,15 @@ which -- and a password field, sent as a `method: 'password'` flow's first
 step. A
 forced password change or a second factor the flow then parks on is
 rendered by the shared step renderer in place of these fields.
+
+A refused credential submit (`authn.login_failed`) is rendered as the
+password field's own message (`passwordSignIn.loginFailed`): the server
+collapses an unknown identifier and a wrong password into that one code, so
+the text names the password without saying which half did not match, and
+this surface never mentions a code field it does not have. The message is
+the field's helper text -- `aria-invalid` on the input, `aria-describedby`
+pointing at the message -- and focus moves to the password field when the
+refusal lands. Every other code renders through the whole-attempt banner.
 
 | Prop | Type | Notes |
 |---|---|---|
@@ -312,6 +323,13 @@ along to a new code session. A wrong or expired code is refused as
 `authn.login_failed` (a spent login code reads exactly like a wrong one,
 deliberately).
 
+The phone field takes an E.164 number only -- a leading `+`, a country code
+and at most fifteen digits in all -- and states that requirement under the
+field before any submit. A number in another form never reaches the
+server: the field refuses it with its own message. The server's refusal
+copy still renders for the failures only it can judge (an unsupported
+region, a send-policy refusal).
+
 A code answer whose login lost a concurrent race answers
 `OperationSupersededError`; the code it verified is single-use
 server-side, so the losing submit spent it. The form renders the used-code
@@ -332,7 +350,11 @@ Only a fresh code (a resend, or a request for a changed phone) can sign in.
 One outlined button per configured provider, each answering the method's
 brand label where the discovery document gives one (a provider's own name,
 not translated), otherwise the bundle's name for it
-(`social.provider.<provider>`). The provider set is the deployment's;
+(`social.provider.<provider>`). A brand whose deployment reaches it through
+several sign-in modes carries the same label on each descriptor; the
+bundle's name-keyed wording then wins over the label, so those buttons stay
+distinguishable and each one's text is its accessible name. The provider
+set is the deployment's;
 `SignInScreen` derives it from the discovery document's redirect methods,
 and a host may still drive this section directly with any method names.
 Clicking a provider begins
@@ -510,14 +532,14 @@ enforced by registration):
 
 | Section | Purpose |
 |---|---|
-| `passwordSignIn.*` | the password channel: title, field labels (identifier, password, new password), submit |
-| `smsSignIn.*` | the SMS channel: title, phone/code labels, send/resubmit/change-phone actions, the sent notice, the used-code notice |
+| `passwordSignIn.*` | the password channel: title, field labels (identifier, password, new password), submit, the credential refusal |
+| `smsSignIn.*` | the SMS channel: title, phone/code labels, the phone format hint and refusal, send/resubmit/change-phone actions, the sent notice, the used-code notice |
 | `signInFlow.*` | the step renderer: the continue action, the factor/enroll titles, the factor-kind names (a guarded closed set plus an "other" label), the passkey prompt and its unsupported/cancelled/failed messages, the unavailable-step notice |
 | `discovery.*` | the sign-in surface: the loading notice and the retry action |
 | `mode.*` | the sign-in surface: the register / sign-in entries and the register hint |
 | `enterprise.*` | the enterprise entry: the email label, the continue action, the provider-picker title and the no-match notice |
 | `passkey.*` | the passkey entry: the divider title |
-| `social.*` | the social section: the divider title and one name per provider (`social.provider.<provider>`) |
+| `social.*` | the social section: the divider title and one name per provider (`social.provider.<provider>`), including the per-mode names for a brand with several sign-in modes |
 | `socialCallback.*` | the callback handler: the pending notice, the retry action |
 | `signOut.*` | the sign-out button: label and busy state |
 | `sessionEnded.*` | the session-ended screen: title, description, sign-in-again action |

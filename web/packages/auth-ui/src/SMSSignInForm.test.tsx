@@ -6,8 +6,9 @@
  * on the store token), a wrong code renders its text in one alert and
  * keeps the code step, resend repeats the send against the same number and
  * clears the code field, changing the phone returns to the first step, a
- * superseded code answer renders the used-code notice and refuses a
- * re-submission of that exact code locally, the en-US bundle renders on an
+ * national-format number is refused locally with the E.164 requirement
+ * stated, a superseded code answer renders the used-code notice and refuses
+ * a re-submission of that exact code locally, the en-US bundle renders on an
  * English-starting instance, and the tree passes axe. Text expectations
  * read the bundle values, never inline language.
  */
@@ -220,6 +221,31 @@ describe('SMSSignInForm', () => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument(),
     )
     expect(harness.calls).toHaveLength(0)
+  })
+
+  it('refuse a national-format number locally and state the E.164 requirement', async () => {
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(),
+    })
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    // The requirement is on screen before a submit.
+    expect(
+      screen.getByText(zhCN.smsSignIn.phoneHint),
+    ).toBeInTheDocument()
+
+    const user = userEvent.setup()
+    const phone = screen.getByLabelText(zhCN.smsSignIn.phoneLabel)
+    await user.type(phone, '13800000001')
+    await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }))
+
+    await waitFor(() =>
+      expect(screen.getByText(zhCN.smsSignIn.phoneFormat)).toBeInTheDocument(),
+    )
+    expect(phone).toHaveAttribute('aria-invalid', 'true')
+    // The invalid number never reaches the server, so its generic refusal
+    // copy is not what the viewer meets.
+    expect(harness.calls).toHaveLength(0)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('resend against the same number and clear the typed code', async () => {
