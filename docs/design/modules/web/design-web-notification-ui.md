@@ -165,10 +165,11 @@ graph TD
 | 情形 | 表现 |
 |---|---|
 | 读失败（列表、偏好），屏上没有数据 | 该面的四态分支落到可重试的错误占位 |
+| 列表或偏好读被准入层拒绝：没有问题对象的裸 404，不区分租户不存在、已停用与非成员（[tenant 准入](../tenant/design-tenant-admission.md)） | 该面渲染「无法访问当前组织」空态，说明它可能不存在、或你还不是该组织的成员，并指引联系管理员发送邀请；不给重试，与读失败的可重试占位分开 |
 | 已有列表或偏好数据时刷新失败 | 旧内容保留，其上渲染陈旧提示与重试 |
 | 未读数读失败 | 铃铛保持最后一次读到的值（从未读到过则为零），不渲染错误与重试 |
 | 类型分类法读失败 | 按未知处理，偏好矩阵保持可勾，不渲染错误占位 |
-| 写失败（标记已读、全部已读、写偏好） | 该面的内联错误横幅渲染应答的码文本（白名单外落 `errors.unknown`） |
+| 写失败（标记已读、全部已读、写偏好） | 该面的内联错误横幅渲染应答的码文本（白名单外落 `errors.unknown`）；被准入层拒绝的裸 404 渲染同一句「无法访问当前组织」 |
 | 无租户（无路由或未挂 provider） | 读以 `enabled: false` 不取，失败关闭而非造一个租户 |
 | 后端消息视图的 `read_at` 为 JSON `null` | 读成未读（`null`、`undefined`、空串等同） |
 | 未挂开启器或 `enabled` 为 false | 订阅惰性，面仍按挂载与标签页重新可见各自读一次 |
@@ -203,3 +204,4 @@ graph TD
 | 偏好矩阵的渠道列取 `in_app` 与特性在场的可选渠道 | 未实现 | — |
 | 通知面在特性 `notification.preferences` 缺席时不渲染偏好矩阵、不发其读取 | 未实现 | — |
 | `notificationRoutes` 的 `requires` | 已实现 | `web/packages/notification-ui/src/routes.tsx` `notificationRoutes`；`web/packages/notification-ui/src/route.ts` `NotificationRoute` |
+| 准入层的裸 404 渲染为「无法访问当前组织」，不渲染成可重试的失败 | 未实现 | — |
