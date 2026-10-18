@@ -40,5 +40,12 @@ describe('notification-ui resources', () => {
     // The fallback every unlisted code resolves to is present too.
     expect(zhLeaves.has('errors.unknown')).toBe(true)
     expect(enLeaves.has('errors.unknown')).toBe(true)
+    // The bare-404 tenant refusal resolves to its own leaves on both the
+    // write banner and the read state, in both languages.
+    for (const leaves of [zhLeaves, enLeaves]) {
+      expect(leaves.has('errors.tenantUnavailable')).toBe(true)
+      expect(leaves.has('tenantUnavailable.title')).toBe(true)
+      expect(leaves.has('tenantUnavailable.description')).toBe(true)
+    }
   })
 })

@@ -175,4 +175,70 @@ describe('NotificationPreferences', () => {
     mount([])
     expect(await screen.findByText(zhCN.preferences.empty.title)).toBeInTheDocument()
   })
+
+  it('renders the tenant state on the admission layer bare 404, without a retry', async () => {
+    const rig = makeRealClientRigWithoutSession(
+      () => new Response(null, { status: 404 }),
+    )
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationPreferences />)
+    expect(
+      await screen.findByText(zhCN.tenantUnavailable.title),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(zhCN.tenantUnavailable.description),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(zhCN.preferences.error.title),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.preferences.retry }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('renders the tenant sentence in the write banner when the refusal is a bare 404', async () => {
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.path === TYPES_PATH && call.method === 'GET') {
+        return jsonResponse(200, {
+          types: [
+            {
+              key: 'demo.thing.happened',
+              group: 'demo',
+              default_channels: ['in_app'],
+              unsubscribable: true,
+              recipient_visible_params: [],
+            },
+          ],
+        })
+      }
+      if (call.path === PREFERENCES_PATH && call.method === 'GET') {
+        return jsonResponse(200, {
+          preferences: [
+            {
+              type_key: 'demo.thing.happened',
+              group: 'demo',
+              channels: ['in_app'],
+              explicit: true,
+            },
+          ],
+        })
+      }
+      if (call.method === 'PUT') {
+        return new Response(null, { status: 404 })
+      }
+      return jsonResponse(200, {})
+    })
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationPreferences />)
+    await screen.findByText('demo.thing.happened')
+
+    await userEvent.click(
+      within(rowFor('demo.thing.happened')).getByRole('checkbox', {
+        name: zhCN.preferences.channelToggleAria
+          .replace('{{type}}', 'demo.thing.happened')
+          .replace('{{channel}}', zhCN.preferences.channel.email),
+      }),
+    )
+    expect(await screen.findByText(zhCN.errors.tenantUnavailable)).toBeInTheDocument()
+  })
 })

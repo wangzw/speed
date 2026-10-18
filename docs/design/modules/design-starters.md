@@ -391,4 +391,4 @@ flowchart TD
 | 前缀清单、差分测试的前缀归属与配置认领的一致性测试 | 未实现 | — |
 | 页面路径不落在认领之下、代理键按段边界匹配的前端测试 | 已实现 | `starters/demo/web/src/routes.test.ts` |
 | 去掉路由模块前后未认证应答的差分测试 | 已实现 | `starters/demo/server/differential_test.go` `TestAnonymousAnswersDoNotDependOnTheAssembly`、`runDifferential`、`serveWithout` |
-| 租户区对准入层裸 404 的呈现（对象页、通知面） | 未实现 | — |
+| 租户区对准入层裸 404 的呈现（对象页、通知面） | 已实现 | `web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection`；`web/packages/notification-ui/src/internal/tenant-section.tsx` `TenantAsyncSection` |

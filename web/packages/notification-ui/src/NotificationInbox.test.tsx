@@ -191,4 +191,64 @@ describe('NotificationInbox', () => {
     expect(await screen.findByText(zhCN.inbox.error.title)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: zhCN.inbox.retry })).toBeInTheDocument()
   })
+
+  it('renders the tenant state on the admission layer bare 404, without a retry', async () => {
+    const rig = makeRealClientRigWithoutSession(
+      () => new Response(null, { status: 404 }),
+    )
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationInbox />)
+    expect(
+      await screen.findByText(zhCN.tenantUnavailable.title),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(zhCN.tenantUnavailable.description),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(zhCN.inbox.error.title)).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.inbox.retry }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps the retryable placeholder for a 503', async () => {
+    const rig = makeRealClientRigWithoutSession(() => jsonResponse(503, {}))
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationInbox />)
+    expect(await screen.findByText(zhCN.inbox.error.title)).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: zhCN.inbox.retry }),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the tenant sentence in the write banner when the refusal is a bare 404', async () => {
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.method === 'GET' && call.path === MESSAGES_PATH) {
+        return jsonResponse(200, {
+          messages: [
+            message({
+              id: 'm1',
+              title: 'Build finished',
+              body: '',
+              read: false,
+            }),
+          ],
+          total: 1,
+        })
+      }
+      if (call.method === 'POST' && call.path === `${MESSAGES_PATH}/m1/read`) {
+        return new Response(null, { status: 404 })
+      }
+      return jsonResponse(200, {})
+    })
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationInbox />)
+    await screen.findByText('Build finished')
+
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: zhCN.inbox.markReadAria.replace('{{title}}', 'Build finished'),
+      }),
+    )
+    expect(await screen.findByText(zhCN.errors.tenantUnavailable)).toBeInTheDocument()
+  })
 })

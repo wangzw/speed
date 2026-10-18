@@ -17,8 +17,10 @@
  * yet, the type is treated as unsubscribable-unknown and left enabled,
  * because the server stays the authority.
  *
- * The read is one of the four settled states (ui-kit's AsyncSection); the
- * section opens with its own h2 so it nests under any page heading.
+ * The read is one of the four settled states (ui-kit's AsyncSection), with
+ * the admission layer's bare 404 split out as the tenant refusal state and
+ * no retry; the section opens with its own h2 so it nests under any page
+ * heading.
  */
 
 import { useState } from 'react'
@@ -32,8 +34,9 @@ import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Typography from '@mui/material/Typography'
 import type { NotificationPreference } from '@speed/api-sdk'
-import { AsyncSection, errorCodeOf } from '@speed/ui-kit'
+import { errorCodeOf } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
+import { TenantAsyncSection } from './internal/tenant-section.js'
 import {
   useNotificationPreferences,
   useNotificationTypes,
@@ -87,9 +90,10 @@ export function NotificationPreferences() {
 
       <InlineError code={failureCode} />
 
-      <AsyncSection<readonly NotificationPreference[]>
+      <TenantAsyncSection<readonly NotificationPreference[]>
         pending={pending}
         payload={pending ? undefined : rows}
+        error={preferences.error}
         empty={rows.length === 0}
         headingLevel="h3"
         loading={
@@ -161,7 +165,7 @@ export function NotificationPreferences() {
             </TableBody>
           </Table>
         )}
-      </AsyncSection>
+      </TenantAsyncSection>
     </Box>
   )
 }

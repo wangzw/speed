@@ -17,7 +17,12 @@
       "timeout": "The request timed out. Try again in a moment.",
       "protocol": "The service returned an unexpected response. Try again in a moment."
     },
+    "tenantUnavailable": "Cannot access the current organization's content: it may not exist, or you may not be a member of it yet. To join, ask an administrator to send you an invitation.",
     "unknown": "Something went wrong. Try again in a moment."
+  },
+  "tenantUnavailable": {
+    "title": "Cannot access the current organization's content",
+    "description": "It may not exist, or you may not be a member of it yet. To join, ask an administrator to send you an invitation."
   },
   "bell": {
     "label": "Notifications",

@@ -11,10 +11,12 @@
  * answer by invalidating the acting tenant's reads (see internal/queries),
  * so the list and the header bell's unread count move together.
  *
- * The read is one of the four settled states (ui-kit's AsyncSection):
- * a labelled loading placeholder, a retryable error placeholder, an empty
- * placeholder, or the list. The page opens with ui-kit's PageHeader, so
- * the heading order never skips.
+ * The read is one of the four settled states (ui-kit's AsyncSection): a
+ * labelled loading placeholder, a retryable error placeholder, an empty
+ * placeholder, or the list. The admission layer's bare 404 is split out
+ * of the failure branch as the tenant refusal state, which offers no
+ * retry. The page opens with ui-kit's PageHeader, so the heading order
+ * never skips.
  */
 
 import { useState } from 'react'
@@ -28,7 +30,6 @@ import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import type { NotificationMessage } from '@speed/api-sdk'
 import {
-  AsyncSection,
   InlineSuccess,
   ListSkeleton,
   PageHeader,
@@ -36,6 +37,7 @@ import {
 } from '@speed/ui-kit'
 import { formatDateTime } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
+import { TenantAsyncSection } from './internal/tenant-section.js'
 import {
   type NotificationInbox as NotificationInboxPage,
   useMarkAllNotificationsRead,
@@ -121,9 +123,10 @@ export function NotificationInbox() {
           notifications") would re-enter the outline as a redundant chapter,
           so the placeholder renders headerless as one role="status" region
           (emptyHeadingLevel="none"). */}
-      <AsyncSection<NotificationInboxPage>
+      <TenantAsyncSection<NotificationInboxPage>
         pending={pending}
         payload={pending ? undefined : page}
+        error={messages.error}
         empty={list.length === 0}
         headingLevel="h2"
         emptyHeadingLevel="none"
@@ -161,7 +164,7 @@ export function NotificationInbox() {
             ))}
           </List>
         )}
-      </AsyncSection>
+      </TenantAsyncSection>
     </Box>
   )
 }

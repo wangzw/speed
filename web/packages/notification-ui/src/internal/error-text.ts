@@ -14,6 +14,12 @@
  * codes of the @speed/api-client contract. Codes outside the whitelist --
  * a client.http.<status> answer, a non-ApiError throw -- resolve to
  * 'errors.unknown', so the bundle can never render a raw key.
+ *
+ * A bare 404 is the one status with dedicated text: on these surfaces it
+ * is the tenant admission layer's refusal, which does not say whether the
+ * tenant does not exist, is disabled or has no membership for the caller.
+ * A write refused that way renders the same sentence as the read's tenant
+ * state, so the two surfaces never describe the same refusal differently.
  */
 
 import {
@@ -45,10 +51,21 @@ export const ERROR_TEXT_CODES = [
 const KNOWN_CODES = new Set<string>(ERROR_TEXT_CODES)
 
 /**
+ * The bare 404: the admission layer's tenant refusal. It resolves to the
+ * surface's tenant sentence rather than the unknown fallback, so a refused
+ * write names the same two causes the read's tenant state does.
+ */
+const TENANT_REFUSAL_CODE = 'client.http.404'
+
+/**
  * The code-to-text resolver hook: call with an ApiError code and get the
  * current-language text ('errors.unknown' for anything unlisted).
  */
 export function useNotificationUiErrorText(): (code: string) => string {
   const { t } = useNotificationUiTranslation()
-  return createErrorTextResolver(t, KNOWN_CODES)
+  const resolveKnown = createErrorTextResolver(t, KNOWN_CODES)
+  return (code) =>
+    code === TENANT_REFUSAL_CODE
+      ? t('errors.tenantUnavailable')
+      : resolveKnown(code)
 }
