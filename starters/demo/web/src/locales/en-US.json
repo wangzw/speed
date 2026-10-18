@@ -54,6 +54,17 @@
       "title": "Linking your account"
     }
   },
+  "accountSetup": {
+    "title": "Finish setting up your account",
+    "description": "Add a username and a password so you can sign in without a text message next time.",
+    "complete": "Your account setup is complete. You can sign in with your username and password.",
+    "home": "Go to the home page",
+    "later": "Set up later",
+    "password": {
+      "title": "Password",
+      "loginNameRequired": "Password sign-in needs a login name. Add a username first."
+    }
+  },
   "userMenu": {
     "accountMenu": "Account menu",
     "profile": "Profile",

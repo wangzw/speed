@@ -101,6 +101,7 @@ const ROUTE_PATHS = [...new Set(routes.map((route) => concretize(route.path)))]
 const EXPECTED_ROUTE_PATHS = [
   '/',
   '/account',
+  '/account/setup',
   '/account/callback',
   '/objects',
   '/notifications',

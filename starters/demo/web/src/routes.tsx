@@ -32,6 +32,7 @@ import {
   AccountBindingCallbackPage,
   AccountSettingsPage,
 } from './pages/account-page.js'
+import { AccountSetupPage } from './pages/account-setup-page.js'
 import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
 import { HomePage } from './pages/home-page.js'
@@ -39,6 +40,7 @@ import { ObjectStoreHostPage } from './pages/objects-page.js'
 import {
   ACCOUNT_CALLBACK_PATH,
   ACCOUNT_PATH,
+  ACCOUNT_SETUP_PATH,
   INVITATION_PREFIX,
   OBJECTS_PATH,
 } from './paths.js'
@@ -101,6 +103,12 @@ export const businessRoutes: RouteTable = [
     path: ACCOUNT_PATH,
     view: () => <AccountSettingsPage />,
     label: <DemoNavLabel labelKey="nav.account" />,
+  },
+  // Unlabelled: a registration's completion point, not a destination in the
+  // navigation (reached from the sign-in surface's completion, or by URL).
+  {
+    path: ACCOUNT_SETUP_PATH,
+    view: () => <AccountSetupPage />,
   },
   {
     path: OBJECTS_PATH,

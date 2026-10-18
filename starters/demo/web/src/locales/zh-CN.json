@@ -54,6 +54,17 @@
       "title": "正在关联账号"
     }
   },
+  "accountSetup": {
+    "title": "完成账户设置",
+    "description": "添加用户名和密码，下次登录就不必再接收短信验证码。",
+    "complete": "账户设置已完成，你可以用用户名和密码登录。",
+    "home": "回到首页",
+    "later": "稍后设置",
+    "password": {
+      "title": "密码",
+      "loginNameRequired": "密码登录需要登录名，请先添加用户名。"
+    }
+  },
   "userMenu": {
     "accountMenu": "账户菜单",
     "profile": "个人资料",

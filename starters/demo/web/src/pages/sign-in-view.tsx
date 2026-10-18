@@ -14,6 +14,13 @@
  * It reads the session through AppServices, so it is mounted only under the
  * app-services provider (src/app-services.tsx).
  *
+ * Registration folds into the sign-in flow, so a completed registration is
+ * not a page of its own: the screen reports the mode and channel it
+ * completed on, and a registration that went through SMS (the only channel
+ * that opens an account here) lands on the account setup page to add a
+ * username and then a password. Every other outcome leaves the viewer in
+ * the app the session flip already opened.
+ *
  * A note below the form answers the one dead end this skeleton has: it folds
  * registration into the sign-in flow and ships neither SMS nor social
  * sign-in, so a fresh deployment is born with no account and no way to make
@@ -28,14 +35,27 @@ import Divider from '@mui/material/Divider'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import { SignInScreen } from '@speed/auth-ui'
+import type { SignInContext } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
+import { useNavigate } from '@speed/route-kit'
 import type { ReactElement } from 'react'
 import { useAppServices } from '../app-services.js'
+import { ACCOUNT_SETUP_PATH } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 
 export function SignInView(): ReactElement {
   const { session } = useAppServices()
   const { t } = useTranslation(DEMO_NAMESPACE)
+  const navigate = useNavigate()
+  // A registration completed through SMS: the account exists but has no
+  // login name or password yet, so the setup page finishes it. Everything
+  // else -- an ordinary sign-in, any other channel -- enters the app as the
+  // session flip already does.
+  const onSignedIn = (context: SignInContext): void => {
+    if (context.mode === 'register' && context.channel === 'sms') {
+      navigate(ACCOUNT_SETUP_PATH)
+    }
+  }
   return (
     <Box
       component="main"
@@ -64,7 +84,7 @@ export function SignInView(): ReactElement {
             {t('signIn.subtitle')}
           </Typography>
         </Box>
-        <SignInScreen session={session} />
+        <SignInScreen session={session} onSignedIn={onSignedIn} />
         <Divider sx={{ mt: 3, mb: 2 }} />
         <Typography
           component="h2"

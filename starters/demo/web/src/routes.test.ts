@@ -27,13 +27,14 @@ import {
   NOTIFICATIONS_PATH,
   routes,
 } from './routes.js'
-import { INVITATION_PREFIX } from './paths.js'
+import { ACCOUNT_SETUP_PATH, INVITATION_PREFIX } from './paths.js'
 
 describe('the route table', () => {
-  it('names the business slot, the account page, the object page and the notification center, all labelled, beside the unlabelled callback', () => {
+  it('names the business slot, the account page and its setup page, the object page and the notification center, all labelled but for the completion points beside the unlabelled callback', () => {
     expect(businessRoutes.map((route) => route.path)).toEqual([
       '/',
       ACCOUNT_PATH,
+      ACCOUNT_SETUP_PATH,
       OBJECTS_PATH,
       NOTIFICATIONS_PATH,
       ACCOUNT_CALLBACK_PATH,
@@ -47,7 +48,9 @@ describe('the route table', () => {
     expect(labelled.has(ACCOUNT_PATH)).toBe(true)
     expect(labelled.has(OBJECTS_PATH)).toBe(true)
     expect(labelled.has(NOTIFICATIONS_PATH)).toBe(true)
-    // The callback is a completion point, not a navigation destination.
+    // The setup page and the callback are completion points, not
+    // navigation destinations.
+    expect(labelled.has(ACCOUNT_SETUP_PATH)).toBe(false)
     expect(labelled.has(ACCOUNT_CALLBACK_PATH)).toBe(false)
   })
 

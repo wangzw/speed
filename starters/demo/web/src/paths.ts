@@ -19,6 +19,13 @@ export const CONSOLE_PREFIX = '/console'
 /** The tenant area's account page: the account-management surfaces. */
 export const ACCOUNT_PATH = '/account'
 
+/**
+ * The account setup page: where a registration completed through the
+ * sign-in surface continues, adding a username and then a password. It is
+ * a completion point, not a navigation destination.
+ */
+export const ACCOUNT_SETUP_PATH = '/account/setup'
+
 /** The tenant area's object storage page: the objectstore capability's face. */
 export const OBJECTS_PATH = '/objects'
 
