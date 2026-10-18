@@ -36,12 +36,14 @@
  *
  * The page opens with ui-kit's PageHeader: the page title as the level-one
  * heading, a breadcrumb trail from the console to this page, and a
- * refresh action that re-reads the roster. The async section's
+ * refresh action that re-reads the roster. The refresh action is disabled
+ * while a write in any of the page's scopes -- the create form or any
+ * row's rename/status slot -- is in flight. The async section's
  * placeholders render at the next level down, so the heading order never
  * skips.
  */
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
@@ -51,6 +53,8 @@ import {
   DataTable,
   ListSkeleton,
   PageHeader,
+  PRIMARY_COLUMN_MAX_WIDTH,
+  primaryColumnMaxWidthSx,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
@@ -102,7 +106,13 @@ function statusLabel(
  * enable/disable toggle) -- a screen-reader user hears "rename tenant
  * acme", never a bare "rename" indistinguishable from the row above.
  */
-function TenantRowActions({ tenant }: { readonly tenant: ConsoleTenant }) {
+function TenantRowActions({
+  tenant,
+  onWritePendingChange,
+}: {
+  readonly tenant: ConsoleTenant
+  readonly onWritePendingChange: (id: string, pending: boolean) => void
+}) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const renameTenant = operations.useSetTenantAlias()
@@ -119,6 +129,14 @@ function TenantRowActions({ tenant }: { readonly tenant: ConsoleTenant }) {
   const resolveErrorText = useConsoleUiErrorText()
   const failureText = failureTextOf(feedback.outcome, resolveErrorText)
   const statusErrorId = `tenant-status-error-${encodeURIComponent(tenant.id)}`
+
+  // The page's refresh action disables while any scope in the page is
+  // writing, but this row's scope lives here; the row reports its slot up
+  // and withdraws it when it unmounts.
+  useEffect(() => {
+    onWritePendingChange(tenant.id, feedback.pending)
+    return () => onWritePendingChange(tenant.id, false)
+  }, [feedback.pending, onWritePendingChange, tenant.id])
 
   const disabled = tenant.status === 'disabled'
   // An empty draft is not-yet-an-error; a non-empty one the domain would
@@ -244,6 +262,26 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
   // The create form is one scope; its region sits directly under it.
   const createFeedback = useWriteFeedback()
   const createRegionRef = useFailureScroll(createFeedback.outcome)
+  // The ids whose row scope has a write in flight. Each row reports its
+  // own slot up (see TenantRowActions), so the refresh action can disable
+  // for the union of the page's scopes and every row's.
+  const [pendingRowWrites, setPendingRowWrites] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  )
+  const reportRowWritePending = useCallback((id: string, pending: boolean) => {
+    setPendingRowWrites((current) => {
+      if (current.has(id) === pending) {
+        return current
+      }
+      const next = new Set(current)
+      if (pending) {
+        next.add(id)
+      } else {
+        next.delete(id)
+      }
+      return next
+    })
+  }, [])
 
   const idRejected = newId !== '' && isRejectedIdentifier(newId)
   const aliasRejected = newAlias !== '' && isRejectedIdentifier(newAlias)
@@ -272,6 +310,11 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
       header: t('tenants.column.id'),
       cellWrap: 'nowrap',
       cellFullValue: (tenant) => tenant.id,
+      // The identifier is host-supplied and has no length bound; the
+      // shared cap bounds the cell content and its copy control together,
+      // and the complete value stays reachable through the title and the
+      // control.
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (tenant) =>
         basePath === undefined ? (
           <Typography variant="body2">{tenant.id}</Typography>
@@ -286,7 +329,16 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
       header: t('tenants.column.alias'),
       cellWrap: 'nowrap',
       cell: (tenant) => (
-        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+        // The page's primary identity: it never hides, and the shared
+        // primary-column cap keeps a long alias from pushing the row's
+        // controls out of a narrow container. The full value rides the
+        // cell's title.
+        <Typography
+          variant="body2"
+          noWrap
+          sx={{ ...primaryColumnMaxWidthSx, fontWeight: 500 }}
+          title={tenant.alias}
+        >
           {tenant.alias}
         </Typography>
       ),
@@ -305,7 +357,12 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
     {
       id: 'actions',
       header: t('tenants.column.actions'),
-      cell: (tenant) => <TenantRowActions tenant={tenant} />,
+      cell: (tenant) => (
+        <TenantRowActions
+          tenant={tenant}
+          onWritePendingChange={reportRowWritePending}
+        />
+      ),
     },
   ]
 
@@ -326,6 +383,10 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
         actions={
           <RefreshButton
             busy={tenants.isFetching}
+            // A re-read mid-write would race the write: the control is
+            // disabled while any scope on the page -- the create form's or
+            // any row's rename/status slot -- has a write in flight.
+            writePending={createFeedback.pending || pendingRowWrites.size > 0}
             onClick={() => void tenants.refetch()}
           />
         }

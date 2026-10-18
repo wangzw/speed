@@ -20,7 +20,11 @@ import type {
   ConsoleSmsTemplatePage,
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
-import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
+import {
+  containerDeclarationsOf,
+  containerMaxWidthOf,
+  hasCoarsePointerTouchTarget,
+} from '@speed/test-utils/emitted-css'
 import {
   createConsoleOperations,
   makeConsoleBackend,
@@ -67,6 +71,17 @@ function section(name: string): HTMLElement {
   return element as HTMLElement
 }
 
+/** A promise the test settles by hand, for observing an in-flight write. */
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((settle, fail) => {
+    resolve = settle
+    reject = fail
+  })
+  return { promise, resolve, reject }
+}
+
 /** jsdom implements no layout; a scroll observer installs this stub. */
 function stubScrollIntoView(): ReturnType<typeof vi.fn> {
   const spy = vi.fn()
@@ -95,6 +110,91 @@ describe('SmsPage', () => {
     expect(await screen.findByText('login-code')).toBeInTheDocument()
     expect(screen.getByText('zh-CN: approved')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '停用模板 login-code' })).toBeInTheDocument()
+  })
+
+  it('caps the primary name column at the shared primary-column width', async () => {
+    const operations = withTemplates()
+    renderWithProviders(<SmsPage />, { operations })
+    const cell = (await screen.findByText('login-code')).closest(
+      'td',
+    ) as HTMLElement
+    // The cap counts the copy control beside the name: 160px below the
+    // table container's md, 200px from it up.
+    expect(containerMaxWidthOf(cell.firstElementChild as Element)).toEqual(
+      new Map([
+        [0, 160],
+        [900, 200],
+      ]),
+    )
+  })
+
+  it('keeps the status column visible from the sm container tier', async () => {
+    const operations = withTemplates()
+    renderWithProviders(<SmsPage />, { operations })
+    const row = (
+      await screen.findByRole('button', { name: '停用模板 login-code' })
+    ).closest('tr') as HTMLElement
+    const enabled = within(row).getByText('是').closest('td') as HTMLElement
+    const declarations = containerDeclarationsOf(enabled)
+    expect(declarations.get(0)).toContain('display:none')
+    expect(declarations.get(600)).toContain('display:table-cell')
+  })
+
+  it('disables the refresh while the register scope is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const operations = withTemplates({
+      registerSmsTemplate: () => pending.promise,
+    })
+    renderWithProviders(<SmsPage />, { operations })
+    await screen.findByText('login-code')
+    const refresh = screen.getByRole('button', { name: '刷新' })
+    expect(refresh).not.toBeDisabled()
+
+    await user.type(screen.getAllByLabelText('名称')[0]!, 'welcome')
+    await user.click(screen.getAllByRole('button', { name: '登记' })[0]!)
+    expect(refresh).toBeDisabled()
+
+    pending.resolve()
+    await vi.waitFor(() => expect(refresh).not.toBeDisabled())
+  })
+
+  it('disables the refresh while the offer scope is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const operations = withTemplates({
+      offerSmsTemplate: () => pending.promise,
+    })
+    renderWithProviders(<SmsPage />, { operations })
+    await screen.findByText('login-code')
+    const refresh = screen.getByRole('button', { name: '刷新' })
+
+    await user.type(screen.getByLabelText('内容'), 'your code is {code}')
+    await user.type(screen.getAllByLabelText('名称')[1]!, 'welcome')
+    await user.click(screen.getByRole('button', { name: '提交' }))
+    expect(refresh).toBeDisabled()
+
+    pending.resolve()
+    await vi.waitFor(() => expect(refresh).not.toBeDisabled())
+  })
+
+  it('disables the refresh while a table scope write is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const operations = withTemplates({
+      setSmsTemplateEnabled: () => pending.promise,
+    })
+    renderWithProviders(<SmsPage />, { operations })
+    const toggle = await screen.findByRole('button', {
+      name: '停用模板 login-code',
+    })
+    const refresh = screen.getByRole('button', { name: '刷新' })
+
+    await user.click(toggle)
+    expect(refresh).toBeDisabled()
+
+    pending.resolve()
+    await vi.waitFor(() => expect(refresh).not.toBeDisabled())
   })
 
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {

@@ -91,7 +91,9 @@ import {
   DataTable,
   EmptyState,
   ListSkeleton,
+  LONG_TEXT_COLUMN_MAX_WIDTH,
   PageHeader,
+  PRIMARY_COLUMN_MAX_WIDTH,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
@@ -289,8 +291,13 @@ export function ImpersonationsPage() {
     {
       id: 'actor',
       header: t('impersonations.column.actor'),
+      priority: 'medium',
       cellWrap: 'nowrap',
       cellFullValue: (record) => record.actor,
+      // A long-text identity beside the record's primary one: the flat
+      // long-text cap bounds it at every tier, and the complete value
+      // stays on the cell title and the copy control.
+      contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (record) => <AccountIdentity account={record.actor} />,
     },
     {
@@ -298,14 +305,23 @@ export function ImpersonationsPage() {
       header: t('impersonations.column.target'),
       cellWrap: 'nowrap',
       cellFullValue: (record) => record.target,
+      // The record's primary identity: it never hides, and the shared
+      // whole-cell cap -- which counts the copy control -- keeps the
+      // terminate action on screen at every tier.
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (record) => <AccountIdentity account={record.target} />,
     },
     {
       id: 'tenant',
       header: t('impersonations.column.tenant'),
-      priority: 'medium',
+      // The page is addressed by one tenant, so every row repeats the
+      // selector above it: the tenant is the first column shed. Its
+      // identifier has no length bound, so the long-text cap keeps the
+      // `lg` tier's total within its floor.
+      priority: 'low',
       cellWrap: 'nowrap',
       cellFullValue: (record) => record.tenant,
+      contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (record) => record.tenant,
     },
     {

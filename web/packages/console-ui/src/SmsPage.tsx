@@ -44,6 +44,7 @@ import {
   DataTable,
   ListSkeleton,
   PageHeader,
+  PRIMARY_COLUMN_MAX_WIDTH,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -234,6 +235,7 @@ export function SmsPage() {
       header: t('sms.column.name'),
       cellWrap: 'nowrap',
       cellFullValue: (template) => template.name,
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (template) => <Typography variant="body2">{template.name}</Typography>,
     },
     {
@@ -263,6 +265,7 @@ export function SmsPage() {
     {
       id: 'enabled',
       header: t('sms.column.enabled'),
+      priority: 'high',
       cellWrap: 'nowrap',
       cell: (template) =>
         template.enabled ? t('sms.enabledYes') : t('sms.enabledNo'),
@@ -346,7 +349,15 @@ export function SmsPage() {
         breadcrumbs={[{ label: t('shell.title') }, { label: t('sms.title') }]}
         actions={
           <RefreshButton
+            // A refresh changes the context the page's writes settle
+            // against, so the control stays inert while any of the page's
+            // scopes has a write in flight; only the read marks it busy.
             busy={templates.isFetching}
+            writePending={
+              registerFeedback.pending ||
+              offerFeedback.pending ||
+              tableFeedback.pending
+            }
             onClick={() => void templates.refetch()}
           />
         }

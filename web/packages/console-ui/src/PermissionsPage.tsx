@@ -59,7 +59,9 @@ import {
   DataTable,
   EmptyState,
   ListSkeleton,
+  LONG_TEXT_COLUMN_MAX_WIDTH,
   PageHeader,
+  PRIMARY_COLUMN_MAX_WIDTH,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
@@ -664,6 +666,10 @@ export function PermissionsPage() {
         header: t('permissions.bindings.column.account'),
         cellWrap: 'nowrap',
         cellFullValue: (binding) => binding.account,
+        // The account is the row's identity: the shared primary cap keeps
+        // the recorded identifier -- which the refused lookup renders in
+        // full -- inside the sm floor alongside the row actions.
+        contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
         cell: (binding) => <AccountIdentity account={binding.account} />,
       },
       {
@@ -671,6 +677,7 @@ export function PermissionsPage() {
         header: t('permissions.bindings.column.role'),
         cellWrap: 'nowrap',
         cellFullValue: (binding) => binding.role,
+        contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
         cell: (binding) => binding.role,
       },
       {

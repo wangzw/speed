@@ -217,7 +217,15 @@ describe('ImpersonationBanner', () => {
       </I18nextProvider>,
     )
     expect(markup).toContain('role="status"')
-    expect(markup.split(ACTING_AS_ZH)).toHaveLength(2)
+    // The banner body states the acting-as line once -- the subject is its
+    // own element, so the line's text is split around it -- and the live
+    // region stays empty on the first commit.
+    const [before = '', after = ''] = zhCN.impersonation.actingAs.split(
+      '{{subject}}',
+    )
+    expect(markup.split(before)).toHaveLength(2)
+    expect(markup.split(after)).toHaveLength(2)
+    expect(markup.split(`>${SUBJECT}<`)).toHaveLength(2)
   })
 
   it('announces an impersonation that is already current on first mount', () => {
@@ -549,6 +557,56 @@ describe('ImpersonationBanner', () => {
     })
   })
 
+  it('caps the acting-as subject so a display name cannot grow the bar', () => {
+    // The design's target is one text line at 1280 and at most two at 800.
+    // The fixed sentences leave room for only a short subject at 1280, so
+    // an unbounded display name wraps the paragraph and misses that. The
+    // subject is bounded like the tenant identifier; the row's own gaps
+    // and padding are held tight for the same width budget.
+    const longSubject = 'Alexandria Konstantinopoulos'
+    renderWithProviders(
+      <ImpersonationBanner
+        impersonation={{
+          subject: longSubject,
+          tenant: TENANT,
+          expiresAt: EXPIRES_AT,
+        }}
+        onEnd={() => {}}
+        onDismiss={() => {}}
+      />,
+    )
+    // The sentence still reads whole in the rendered text...
+    expect(
+      screen.getByRole('region', { name: zhCN.impersonation.regionLabel }),
+    ).toHaveTextContent(
+      zhCN.impersonation.actingAs.replace('{{subject}}', longSubject),
+    )
+    // ...with the subject alone the bounded, ellipsized segment, its full
+    // value carried as a title, exactly like the tenant identifier.
+    const subject = screen.getByText(longSubject)
+    expect(subject).toHaveAttribute('title', longSubject)
+    expect(getComputedStyle(subject)).toMatchObject({
+      display: 'inline-block',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+      verticalAlign: 'bottom',
+    })
+    // jsdom does not resolve `min()`, so the cap is read off the emitted
+    // rule.
+    expect(emittedStyleText()).toMatch(/max-width:\s*min\(16ch,\s*100%\)/)
+
+    // The width the row reserves for itself: everything outside the text
+    // is width the single line cannot use at 1280. jsdom renders no
+    // layout, so the line count itself is measured in the browser
+    // verification pass; these values are the ones it is measured against.
+    const notice = screen.getByRole('region', {
+      name: zhCN.impersonation.regionLabel,
+    })
+    expect(getComputedStyle(notice).paddingLeft).toBe('8px')
+    expect(getComputedStyle(notice).columnGap).toBe('4px')
+  })
+
   it('flows the facts as one inline paragraph, the controls at the row end', () => {
     renderWithProviders(
       <ImpersonationBanner
@@ -582,7 +640,6 @@ describe('ImpersonationBanner', () => {
     expect(getComputedStyle(facts as HTMLElement).flexBasis).toBe('0px')
     const statements = within(facts as HTMLElement)
     const statementTexts = [
-      ACTING_AS_ZH,
       TENANT_ZH,
       EXPIRY_ZH,
       zhCN.impersonation.managementUnavailable,
@@ -591,7 +648,15 @@ describe('ImpersonationBanner', () => {
       const node = statements.getByText(text)
       expect(getComputedStyle(node).display).not.toBe('block')
     }
-    // The tenant identifier is the one inline block, so it can ellipsize.
+    // The acting-as line keeps the subject in its own bounded element so
+    // an arbitrary display name cannot grow the bar; the line itself stays
+    // inline beside the other facts.
+    const subject = statements.getByText(SUBJECT)
+    expect(getComputedStyle(subject).display).toBe('inline-block')
+    expect(
+      getComputedStyle(subject.parentElement as HTMLElement).display,
+    ).not.toBe('block')
+    // The tenant identifier is an inline block, so it can ellipsize.
     expect(getComputedStyle(statements.getByText(TENANT_ZH)).display).toBe(
       'inline-block',
     )

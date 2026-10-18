@@ -44,7 +44,6 @@ import {
   FileUploader,
   InlineSuccess,
   ListSkeleton,
-  LONG_TEXT_COLUMN_MAX_WIDTH,
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   errorCodeOf,
@@ -76,6 +75,14 @@ const DEFAULT_PAGE_SIZE = 20
  * field, both reachable without widening the table.
  */
 const ID_PREFIX_LENGTH = 8
+
+/**
+ * The content type's cap. It is narrower than the shared long-text cap:
+ * with the identifier, size and created columns and the row controls on
+ * screen, the shared value puts the list past the lg floor. The complete
+ * type stays on the cell's title and in the detail dialog.
+ */
+const MIME_COLUMN_MAX_WIDTH = 128
 
 export interface ObjectsPageProps {
   /**
@@ -200,16 +207,12 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
       header: t('list.column.mime'),
       priority: 'low',
       cellWrap: 'nowrap',
+      contentMaxWidth: MIME_COLUMN_MAX_WIDTH,
       cell: (object) => (
         // A registered MIME type can run past 60 characters; the cell
         // truncates instead of widening the table, and the hover title
         // carries the complete value (the details dialog shows it too).
-        <Typography
-          variant="body2"
-          noWrap
-          title={object.mime}
-          sx={{ maxWidth: LONG_TEXT_COLUMN_MAX_WIDTH }}
-        >
+        <Typography variant="body2" noWrap title={object.mime}>
           {object.mime}
         </Typography>
       ),

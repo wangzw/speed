@@ -22,7 +22,11 @@ import userEvent from '@testing-library/user-event'
 import { SettingsPage } from './SettingsPage.js'
 import type { ConsoleSetting } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
-import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
+import {
+  containerMaxWidthOf,
+  emittedStyleText,
+  hasCoarsePointerTouchTarget,
+} from '@speed/test-utils/emitted-css'
 import { mockMatchMedia } from '@speed/test-utils/matchMedia'
 import {
   createConsoleOperations,
@@ -71,6 +75,38 @@ function stubScrollIntoView(): ReturnType<typeof vi.fn> {
 afterEach(() => {
   delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
 })
+
+/** Escapes an emotion class name for use inside a regular expression. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * The `align-items` `element` declares inside its
+ * `@media (min-width:<minWidth>px)` block (`0` for the `xs` branch, which
+ * MUI emits under `@media (min-width:0px)`). jsdom renders no layout and
+ * evaluates no media query, so a viewport-keyed `sx` value is only
+ * observable in the generated stylesheet; scoping to this element's own
+ * emotion class keeps the assertion a proof for this box.
+ */
+function alignItemsAt(
+  css: string,
+  element: Element,
+  minWidth: number,
+): string | undefined {
+  const emotionClass = Array.from(element.classList).find((name) =>
+    name.startsWith('css-'),
+  )
+  if (emotionClass === undefined) {
+    return undefined
+  }
+  const rule = new RegExp(
+    `@media \\(min-width:${minWidth}px\\)\\{\\.${escapeRegExp(emotionClass)}\\{([^}]*)\\}\\}`,
+  ).exec(css)?.[1]
+  return rule === undefined
+    ? undefined
+    : /(?:^|;)align-items:([^;]+)/.exec(rule)?.[1]
+}
 
 describe('SettingsPage', () => {
   it('renders the settled empty state when no item is declared', async () => {
@@ -152,6 +188,58 @@ describe('SettingsPage', () => {
       expect(cell).not.toBeNull()
       expect(cell).toHaveStyle({ whiteSpace: 'nowrap' })
     }
+  })
+
+  it('stretches the content column across the cross axis below md', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listSettings: () => Promise.resolve([item]) }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    const nav = await screen.findByRole('navigation', {
+      name: '命名空间导航',
+    })
+    const container = nav.parentElement
+    expect(container).not.toBeNull()
+
+    // Below md the skeleton is a column, so the content area takes its
+    // cross size from the container's alignment: `flex-start` would size it
+    // to its min-content width and leave the table scrolling inside a
+    // sliver. jsdom lays nothing out, so the proof is the generated
+    // cross-axis alignment -- stretch at the base width, flex-start from md
+    // up where the row layout starts; the pixel-level measurement belongs
+    // to the browser pass.
+    const css = emittedStyleText()
+    expect(alignItemsAt(css, container as Element, 0)).toBe('stretch')
+    expect(alignItemsAt(css, container as Element, 900)).toBe('flex-start')
+  })
+
+  it('caps the key column with the shared primary-column width', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listSettings: () => Promise.resolve([item]) }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    const key = await screen.findByText('mail.retry')
+    const cell = key.closest('td')
+    expect(cell).not.toBeNull()
+
+    // The cap bounds the whole cell -- the key and its copy control -- at
+    // the shared primary-identity widths: 160 below md, 200 from md up.
+    const wrapper = cell?.firstElementChild
+    expect(wrapper).not.toBeNull()
+    expect(containerMaxWidthOf(wrapper as Element)).toEqual(
+      new Map([
+        [0, 160],
+        [900, 200],
+      ]),
+    )
+
+    // The key truncates inside the cap instead of widening the cell; the
+    // complete value stays on the copy control.
+    expect(key).toHaveStyle({
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+    })
   })
 
   it('marks a row written as the empty string as an override', async () => {

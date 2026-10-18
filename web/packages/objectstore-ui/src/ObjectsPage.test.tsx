@@ -176,7 +176,7 @@ describe('ObjectsPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('caps the name at the primary cap and the content type at the flat one', async () => {
+  it('caps the name at the primary cap and the content type at the list cap', async () => {
     const mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     const name = 'quarterly-financial-report-2026-q3-consolidated.xlsx'
     makeObjectStoreRig(() =>
@@ -196,11 +196,14 @@ describe('ObjectsPage', () => {
     expect(nameDeclarations.get(0)).toContain('max-width:160px')
     expect(nameDeclarations.get(900)).toContain('max-width:200px')
 
-    // The content type is a long-text column that is not the primary
-    // identity: a flat cap that does not grow with the container.
+    // The content type is a long-text column, but this list's cap is
+    // narrower than the shared long-text value: the identifier, size and
+    // row actions are on screen at the lg floor too. The complete value
+    // stays on the hover title (the details dialog shows it as well), and
+    // the cap sits on the whole-cell wrapper.
     const mimeText = screen.getByText(mime)
     expect(mimeText).toHaveAttribute('title', mime)
-    expect(mimeText).toHaveStyle({ maxWidth: '160px' })
+    expect(mimeText.parentElement).toHaveStyle({ maxWidth: '128px' })
   })
 
   it('renders the unnamed copy when an object has no name', async () => {

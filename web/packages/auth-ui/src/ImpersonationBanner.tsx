@@ -49,9 +49,11 @@
  * paragraph whose sentences run together and break by word (or
  * character) wherever the line ends, never one sentence per line. The end
  * and close controls share the row with that text, flush right; only
- * below `xs` do they take their own line. The tenant identifier is capped
- * and ellipsized (its full value carried as the element's title), so a
- * long identifier cannot push the controls out of the bar.
+ * below `xs` do they take their own line. The subject and the tenant
+ * identifier are capped and ellipsized -- the full value riding on the
+ * element's title -- so neither an arbitrary display name nor a long
+ * identifier can grow the bar past its single-line target or push the
+ * controls out of it.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -108,15 +110,19 @@ export interface ImpersonationBannerProps {
 
 /** The notice's one wrapping row: the facts, then the controls. The 40px
  * floor is the design's single-line target (40 to 48px): one caption line
- * beside the small controls settles at exactly that with the 4px vertical
- * padding, and each further text line grows the bar by a caption line. */
+ * beside the small controls settles inside that range with the 4px
+ * vertical padding, and each further text line grows the bar by a caption
+ * line. The horizontal room is held as tight as the target allows: the
+ * fixed sentences plus a normal display name fill the line at 1280, so
+ * every pixel of padding and gap around them is width the text cannot
+ * use. */
 const bannerSx = {
   display: 'flex',
   flexWrap: 'wrap',
   alignItems: 'center',
-  columnGap: 2,
+  columnGap: 0.5,
   rowGap: 1,
-  px: 2,
+  px: 1,
   py: 0.5,
   minHeight: 40,
   backgroundColor: 'warning.dark',
@@ -136,6 +142,20 @@ const detailsSx = {
   margin: 0,
 } as const
 
+/** The acting-as subject stays one line and ellipsizes, the full value on
+ * the element's title. Its cap is the width the other three facts leave
+ * at 1280, so a display name of any length keeps the paragraph inside the
+ * design's single-line target; a normal name renders untruncated. Bottom
+ * alignment keeps the inline block's text on the sentence's baseline. */
+const subjectSx = {
+  display: 'inline-block',
+  maxWidth: 'min(16ch, 100%)',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  verticalAlign: 'bottom',
+} as const
+
 /** A long tenant identifier stays one line and ellipsizes; the full value
  * rides on the element's title. It is an inline block inside the facts
  * paragraph, so it keeps the surrounding text's baseline. */
@@ -153,7 +173,7 @@ const tenantSx = {
 const controlsSx = (theme: Theme) => ({
   display: 'flex',
   alignItems: 'center',
-  gap: 1,
+  gap: 0.25,
   marginLeft: 'auto',
   flexShrink: 0,
   [theme.breakpoints.down('sm')]: {
@@ -162,6 +182,34 @@ const controlsSx = (theme: Theme) => ({
     justifyContent: 'flex-end',
   },
 })
+
+/** Stands in for the subject while the acting-as template is split, so
+ * the subject alone can carry the bounded style. A private-use character,
+ * outside anything a bundle would contain. */
+const SUBJECT_SLOT = '\uE000'
+
+/** The acting-as sentence with its subject interpolated into its own
+ * bounded element. A bundle that does not carry the placeholder exactly
+ * once falls back to the plain interpolated sentence. */
+function ActingAs({ subject }: { readonly subject: string }): ReactElement {
+  const { t } = useAuthUiTranslation()
+  const parts = t('impersonation.actingAs', {
+    subject: SUBJECT_SLOT,
+  }).split(SUBJECT_SLOT)
+  if (parts.length !== 2) {
+    return <>{t('impersonation.actingAs', { subject })}</>
+  }
+  const [before, after] = parts as [string, string]
+  return (
+    <>
+      {before}
+      <Box component="span" title={subject} sx={subjectSx}>
+        {subject}
+      </Box>
+      {after}
+    </>
+  )
+}
 
 /** The separator between facts, decorative. */
 function FactSeparator(): ReactElement {
@@ -172,7 +220,7 @@ function FactSeparator(): ReactElement {
       // Painted through CSS, not a text node: it is punctuation between
       // the facts, not user-facing copy the host could translate.
       sx={{
-        mx: 0.75,
+        mx: 0.25,
         opacity: 0.75,
         '&::before': { content: '"·"' },
       }}
@@ -296,9 +344,7 @@ export function ImpersonationBanner({
               sentences. */}
           <Typography component="p" variant="caption" sx={detailsSx}>
             <Box component="span" sx={{ fontWeight: 600 }}>
-              {t('impersonation.actingAs', {
-                subject: impersonation.subject,
-              })}
+              <ActingAs subject={impersonation.subject} />
             </Box>
             {impersonation.tenant !== undefined && (
               <>
@@ -335,6 +381,7 @@ export function ImpersonationBanner({
               color="inherit"
               loading={pending}
               onClick={onEnd}
+              sx={{ px: 0.75 }}
             >
               {t(
                 pending

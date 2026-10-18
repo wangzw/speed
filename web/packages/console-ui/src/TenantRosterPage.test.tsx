@@ -19,6 +19,7 @@ import { TenantRosterPage } from './TenantRosterPage.js'
 import type { ConsoleTenant } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
+import { containerMaxWidthOf } from '../test-utils/container-visibility.js'
 import {
   createConsoleOperations,
   makeConsoleBackend,
@@ -34,6 +35,15 @@ function stubScrollIntoView(): ReturnType<typeof vi.fn> {
     value: spy,
   })
   return spy
+}
+
+/** A promise the test settles by hand, for observing an in-flight write. */
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
 }
 
 afterEach(() => {
@@ -255,6 +265,92 @@ describe('TenantRosterPage', () => {
     })
   })
 
+  it('disables the refresh while a row write is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const reads: string[] = []
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () => {
+          reads.push('read')
+          return Promise.resolve([
+            { id: 'acme', alias: 'Acme', status: 'active' },
+          ])
+        },
+        setTenantAlias: () => pending.promise,
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+    expect(reads).toHaveLength(1)
+
+    await user.type(screen.getByLabelText('租户 acme 的新别名'), 'Acme-Inc')
+    await user.click(screen.getByRole('button', { name: '为租户 acme 改名' }))
+
+    // The row's scope is in flight, so the page-level refresh is
+    // natively disabled. The scope is chosen, so the disabled control
+    // carries no "choose a scope first" description.
+    const refresh = screen.getByRole('button', { name: '刷新' })
+    await vi.waitFor(() => {
+      expect(refresh).toBeDisabled()
+    })
+    expect(refresh).not.toHaveAttribute('aria-describedby')
+    // A forced activation issues no read while the write it would race
+    // is in flight.
+    fireEvent.click(refresh)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(reads).toHaveLength(1)
+
+    await act(async () => {
+      pending.resolve()
+    })
+    await vi.waitFor(() => {
+      expect(refresh).not.toBeDisabled()
+    })
+  })
+
+  it('disables the refresh while a registration is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<ConsoleTenant>()
+    const reads: string[] = []
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () => {
+          reads.push('read')
+          return Promise.resolve([])
+        },
+        createTenant: () => pending.promise,
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('暂无租户')
+    expect(reads).toHaveLength(1)
+
+    await user.type(screen.getByLabelText('标识'), 'acme')
+    await user.type(screen.getByLabelText('别名'), 'Acme')
+    await user.click(screen.getByRole('button', { name: '登记' }))
+
+    const refresh = screen.getByRole('button', { name: '刷新' })
+    await vi.waitFor(() => {
+      expect(refresh).toBeDisabled()
+    })
+    expect(refresh).not.toHaveAttribute('aria-describedby')
+    fireEvent.click(refresh)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(reads).toHaveLength(1)
+
+    await act(async () => {
+      pending.resolve({ id: 'acme', alias: 'Acme', status: 'active' })
+    })
+    await vi.waitFor(() => {
+      expect(refresh).not.toBeDisabled()
+    })
+  })
+
   it('renders the roster as a table with column headers', async () => {
     const operations = createConsoleOperations(
       makeConsoleBackend({
@@ -269,6 +365,44 @@ describe('TenantRosterPage', () => {
         screen.getByRole('columnheader', { name }),
       ).toBeInTheDocument()
     }
+  })
+
+  it('caps the long alias and identifier at the shared primary width', async () => {
+    const id = 'tenant-emea-production-000123'
+    const alias = 'AcmeCorporationInternationalHoldingsEMEA'
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () => Promise.resolve([{ id, alias, status: 'active' }]),
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText(alias)
+
+    // The alias is the page's primary identity: it never hides, and the
+    // shared cap (160px below `md`, 200px from `md` up) keeps a long
+    // value from pushing the row's controls out of the table's container.
+    // The complete value rides the cell's title.
+    const aliasText = screen.getByText(alias)
+    expect(aliasText).toHaveAttribute('title', alias)
+    expect(containerMaxWidthOf(aliasText)).toEqual(
+      new Map([
+        [0, 160],
+        [900, 200],
+      ]),
+    )
+
+    // The identifier is host-supplied and unbounded; the cap counts the
+    // copy control beside it, so the whole cell stays inside the same
+    // budget while the title and the control keep the full value.
+    const idCell = screen.getByText(id).closest('td')
+    expect(idCell).not.toBeNull()
+    expect(idCell).toHaveAttribute('title', id)
+    expect(containerMaxWidthOf(idCell!.firstElementChild!)).toEqual(
+      new Map([
+        [0, 160],
+        [900, 200],
+      ]),
+    )
   })
 
   it('clears the create inputs once a registration lands', async () => {

@@ -26,6 +26,10 @@ import type { ConsoleImpersonation } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
+  columnVisibility,
+  containerMaxWidthOf,
+} from '../test-utils/container-visibility.js'
+import {
   accountFixture,
   createConsoleOperations,
   makeConsoleBackend,
@@ -277,6 +281,61 @@ describe('ImpersonationsPage', () => {
     expect(await screen.findByText('Staff One')).toBeInTheDocument()
     expect(screen.getByText('Target One')).toBeInTheDocument()
     expect(screen.getByText('生效中')).toBeInTheDocument()
+  })
+
+  it('declares the designed column priorities and caps the account identities', async () => {
+    const user = userEvent.setup()
+    const operations = withPage({
+      listImpersonations: () => Promise.resolve([record()]),
+    })
+    renderWithProviders(<ImpersonationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Target One')
+
+    const header = (label: string): Element =>
+      screen.getByRole('columnheader', { name: label })
+    // The target is the record's primary identity: no priority, shared cap.
+    // The page is tenant-scoped, so the tenant is the first column shed;
+    // the actor joins at md; the ends column and the tenant at lg; the
+    // row actions never hide.
+    expect(columnVisibility(header('操作者'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 900,
+    })
+    expect(columnVisibility(header('被冒充账户'))).toBeNull()
+    expect(columnVisibility(header('租户'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 1200,
+    })
+    expect(columnVisibility(header('开始时间'))).toBeNull()
+    expect(columnVisibility(header('结束时间'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 1200,
+    })
+    expect(columnVisibility(header('状态'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 900,
+    })
+    expect(columnVisibility(header('操作'))).toBeNull()
+
+    // The primary identity carries the shared whole-cell cap (160px below
+    // `md`, 200px from `md` up); the long-text actor carries the flat
+    // 160px one. Both count the copy control, so the complete recorded id
+    // stays reachable while the cell stays inside the tier budget.
+    const targetCell = screen.getByText('Target One').closest('td')
+    expect(targetCell).not.toBeNull()
+    expect(containerMaxWidthOf(targetCell!.firstElementChild as Element)).toEqual(
+      new Map([
+        [0, 160],
+        [900, 200],
+      ]),
+    )
+    const actorCell = screen.getByText('Staff One').closest('td')
+    expect(actorCell).not.toBeNull()
+    expect(actorCell!.firstElementChild).toHaveStyle({ maxWidth: '160px' })
+    expect(
+      within(actorCell as HTMLElement).getByRole('button', { name: '复制 staff-1' }),
+    ).toBeInTheDocument()
   })
 
   it('keeps the recorded ids marked unresolved when the account read is refused', async () => {

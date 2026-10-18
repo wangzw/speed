@@ -169,6 +169,61 @@ describe('TenantDetailPage', () => {
     expect(getTenant.mock.calls.length).toBeGreaterThan(1)
   })
 
+  it('disables the refresh while the status write is in flight', async () => {
+    const user = userEvent.setup()
+    let settle: (() => void) | undefined
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        getTenant: () => Promise.resolve(tenantFixture({ id: 'acme', status: 'active' })),
+        setTenantStatus: () =>
+          new Promise<void>((resolve) => {
+            settle = resolve
+          }),
+      }),
+    )
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    await screen.findByText('已启用')
+
+    const refresh = () => screen.getByRole('button', { name: '刷新' })
+    expect(refresh()).toBeEnabled()
+
+    await user.click(screen.getByRole('button', { name: '停用' }))
+    expect(refresh()).toBeDisabled()
+    // A write-pending disable carries no "choose a scope first" description.
+    expect(refresh()).not.toHaveAttribute('aria-describedby')
+
+    await act(async () => {
+      settle?.()
+    })
+    expect(await screen.findByRole('button', { name: '刷新' })).toBeEnabled()
+  })
+
+  it('disables the refresh while the rename write is in flight', async () => {
+    const user = userEvent.setup()
+    let settle: (() => void) | undefined
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        getTenant: () => Promise.resolve(tenantFixture({ id: 'acme', alias: 'Acme' })),
+        setTenantAlias: () =>
+          new Promise<void>((resolve) => {
+            settle = resolve
+          }),
+      }),
+    )
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    await screen.findByText('Acme')
+
+    await user.type(screen.getByLabelText('新别名'), 'Acme-Inc')
+    await user.click(screen.getByRole('button', { name: '改名' }))
+    const refresh = screen.getByRole('button', { name: '刷新' })
+    expect(refresh).toBeDisabled()
+    expect(refresh).not.toHaveAttribute('aria-describedby')
+
+    await act(async () => {
+      settle?.()
+    })
+  })
+
   it('links back to the roster when given the roster path', async () => {
     const operations = createConsoleOperations(makeConsoleBackend())
     renderWithProviders(

@@ -385,6 +385,7 @@ describe('InvitationsPage', () => {
   it('declares the designed priorities and caps for invitations and members', async () => {
     const user = userEvent.setup()
     const email = 'very-long-address-for-a-person@example.com'
+    const invitedByName = 'A veritable paragon of administrative nomenclature'
     const operations = withTenant({
       listInvitations: () =>
         Promise.resolve({
@@ -392,6 +393,14 @@ describe('InvitationsPage', () => {
           next_cursor: '',
         }),
       listMembers: () => Promise.resolve([member()]),
+      getAccount: (query) =>
+        Promise.resolve(
+          accountFixture({
+            id: query.id,
+            display_name:
+              query.id === 'staff-1' ? invitedByName : 'Operator',
+          }),
+        ),
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
@@ -426,6 +435,19 @@ describe('InvitationsPage', () => {
         [900, 200],
       ]),
     )
+    // The inviter is a long-text column, not the primary identity: the
+    // flat 160 cap bounds the whole cell (name and copy control), so a
+    // long display name cannot push the table past the md floor.
+    expect(
+      await within(inviteSection).findByText(invitedByName),
+    ).toBeInTheDocument()
+    const invitedByCell = within(inviteSection)
+      .getByRole('button', { name: '复制 staff-1' })
+      .closest('td')
+    expect(invitedByCell).not.toBeNull()
+    const invitedByWrapper = invitedByCell!.firstElementChild as HTMLElement
+    expect(invitedByWrapper).toHaveStyle({ maxWidth: '160px' })
+    expect(containerMaxWidthOf(invitedByWrapper)).toEqual(new Map())
 
     // The members table has the same shape: account primary, active high,
     // source medium, SSO exemption low.

@@ -48,6 +48,7 @@ import {
   DataTable,
   EmptyState,
   ListSkeleton,
+  LONG_TEXT_COLUMN_MAX_WIDTH,
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   useWriteFeedback,
@@ -283,6 +284,7 @@ export function InvitationsPage() {
       priority: 'medium',
       cellWrap: 'nowrap',
       cellFullValue: (invitation) => invitation.invited_by,
+      contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (invitation) => (
         <AccountIdentity account={invitation.invited_by} />
       ),

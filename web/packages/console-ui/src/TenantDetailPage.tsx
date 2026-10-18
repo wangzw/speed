@@ -24,7 +24,8 @@
  * the `tenant` query parameter those pages seed their tenant selection
  * from -- so the detail page is not a dead end and the link does not drop
  * the tenant context. The page opens with ui-kit's PageHeader, so the
- * heading order never skips.
+ * heading order never skips; its refresh action re-reads the tenant and
+ * is natively disabled while either of the two writes is in flight.
  */
 
 import { useState } from 'react'
@@ -236,6 +237,7 @@ export function TenantDetailPage({ id, parentHref, rootHref }: TenantDetailPageP
         actions={
           <RefreshButton
             busy={tenant.isFetching}
+            writePending={renameTenant.isPending || setStatus.isPending}
             onClick={() => void tenant.refetch()}
           />
         }

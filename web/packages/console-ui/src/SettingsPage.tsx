@@ -78,6 +78,7 @@ import Typography from '@mui/material/Typography'
 import {
   DataTable,
   ListSkeleton,
+  PRIMARY_COLUMN_MAX_WIDTH,
   PageHeader,
   useWriteFeedback,
 } from '@speed/ui-kit'
@@ -293,13 +294,19 @@ export function SettingsPage() {
       header: t('settings.column.key'),
       cellWrap: 'nowrap',
       cellFullValue: (setting) => setting.key,
+      // The page's primary identity: it never hides, and the shared cap
+      // keeps a long key from pushing the other columns out of a narrow
+      // container. The complete value stays on the copy control.
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (setting) => (
         <Box
           sx={{ display: 'flex', alignItems: 'baseline', columnGap: 1, minWidth: 0 }}
         >
-          <Typography variant="body2">{setting.key}</Typography>
+          <Typography variant="body2" noWrap>
+            {setting.key}
+          </Typography>
           {setting.sensitive && (
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
               {t('settings.field.sensitive')}
             </Typography>
           )}
@@ -406,7 +413,11 @@ export function SettingsPage() {
           display: 'flex',
           flexDirection: { xs: 'column', md: 'row' },
           gap: 3,
-          alignItems: 'flex-start',
+          // Below md the box is a column: the content area must stretch
+          // across the cross axis, or it collapses to its min-content
+          // width and the table scrolls inside a sliver. From md up the
+          // row layout keeps both columns at their own width.
+          alignItems: { xs: 'stretch', md: 'flex-start' },
         }}
       >
         <Box

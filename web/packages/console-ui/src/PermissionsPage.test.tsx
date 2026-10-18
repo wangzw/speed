@@ -23,6 +23,7 @@ import type {
   ConsoleWriteRoleInput,
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { containerMaxWidthOf } from '../test-utils/container-visibility.js'
 import { chooseAccount } from '../test-utils/account-selector.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
@@ -634,6 +635,36 @@ describe('PermissionsPage', () => {
     expect(
       screen.getByRole('button', { name: '解绑账户 acc-1 的角色 viewer' }),
     ).toBeInTheDocument()
+  })
+
+  it('caps the binding cells that the refused identity lookup widens', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listBindings: () => Promise.resolve([binding({ role: 'viewer' })]),
+      getAccount: () => Promise.reject(new Error('forbidden')),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+
+    const bindings = section('绑定')
+    // The refused lookup renders the recorded identifier in full, which
+    // otherwise sets the account column's width from its content. The
+    // account is the row's identity, so it takes the shared primary cap,
+    // which grows at md and counts the copy control in the budget.
+    const accountMarker = await within(bindings).findByLabelText(/身份未解析/)
+    const accountCell = accountMarker.closest('td')
+    expect(containerMaxWidthOf(accountCell!.firstElementChild!)).toEqual(
+      new Map([
+        [0, 160],
+        [900, 200],
+      ]),
+    )
+
+    // The role is a long-text column that is not the primary identity: a
+    // flat cap that does not grow with the container.
+    const roleCell = within(bindings).getByText('viewer').closest('td')
+    expect(roleCell!.firstElementChild).toHaveStyle({ maxWidth: '160px' })
+    expect(containerMaxWidthOf(roleCell!.firstElementChild!)).toEqual(new Map())
   })
 
   it('looks up the bindings of the chosen account by its id', async () => {
