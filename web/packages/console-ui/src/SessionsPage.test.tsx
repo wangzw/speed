@@ -37,6 +37,13 @@ function session(overrides: Partial<ConsoleAccountSession> = {}): ConsoleAccount
   }
 }
 
+/** A row an older server answered with: the current flag is absent. */
+function sessionWithoutCurrent(): ConsoleAccountSession {
+  const legacy: Partial<ConsoleAccountSession> = session()
+  delete legacy.current
+  return legacy as ConsoleAccountSession
+}
+
 /** The account the picker finds: named "Ada", identified by an opaque id. */
 function account(overrides: Partial<ConsoleAccount> = {}): ConsoleAccount {
   return {
@@ -69,7 +76,6 @@ async function loadAccount(
   user: ReturnType<typeof userEvent.setup>,
 ): Promise<void> {
   await chooseAccount(user, '账户', 'Ada', 'Ada (acc-9)')
-  await user.click(screen.getByRole('button', { name: '加载' }))
 }
 
 describe('SessionsPage', () => {
@@ -79,7 +85,7 @@ describe('SessionsPage', () => {
     expect(screen.getByText('请指定账户')).toBeInTheDocument()
   })
 
-  it('keeps loading disabled until an account is chosen, then reads its id', async () => {
+  it('reads an account\'s sessions as soon as it is chosen', async () => {
     const user = userEvent.setup()
     const queried: string[] = []
     const operations = withSessions({
@@ -89,16 +95,66 @@ describe('SessionsPage', () => {
       },
     })
     renderWithProviders(<SessionsPage />, { operations })
-    // No account chosen: the picker holds no id, so loading is not offered.
-    expect(screen.getByRole('button', { name: '加载' })).toBeDisabled()
-    // A display name finds the account; choosing it enables the load...
+    // Choosing the account is the whole gesture: no further control stands
+    // between the picker and the read.
     await chooseAccount(user, '账户', 'Ada', 'Ada (acc-9)')
-    expect(screen.getByRole('button', { name: '加载' })).toBeEnabled()
-    await user.click(screen.getByRole('button', { name: '加载' }))
-    // ...and the read is addressed by the account id, not the typed name.
     await vi.waitFor(() => {
       expect(queried).toEqual(['acc-9'])
     })
+    expect(await screen.findByText('sess-1')).toBeInTheDocument()
+  })
+
+  it('marks the caller\'s current session and says its revoke signs them out', async () => {
+    const user = userEvent.setup()
+    const operations = withSessions({
+      listAccountSessions: () =>
+        Promise.resolve([
+          session({ id: 'sess-current', current: true }),
+          session({ id: 'sess-other', current: false }),
+        ]),
+    })
+    renderWithProviders(<SessionsPage />, { operations })
+    await loadAccount(user)
+    await screen.findByText('sess-current')
+    // The marker sits on the current row only.
+    const marker = screen.getByText('当前会话')
+    expect(marker.closest('tr')).toHaveTextContent('sess-current')
+    expect(marker.closest('tr')).not.toHaveTextContent('sess-other')
+    // The current row's revocation says the caller is signed out too.
+    await user.click(
+      screen.getByRole('button', { name: '撤销会话 sess-current' }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      within(dialog).getByText(
+        '撤销会话「sess-current」。这是你当前的会话，撤销后你也会退出登录。',
+      ),
+    ).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: '取消' }))
+    // A row the server does not mark keeps the plain confirmation.
+    await user.click(
+      await screen.findByRole('button', { name: '撤销会话 sess-other' }),
+    )
+    const other = await screen.findByRole('dialog')
+    expect(
+      within(other).getByText('撤销会话「sess-other」。'),
+    ).toBeInTheDocument()
+  })
+
+  it('treats an answer without current as not the caller\'s session', async () => {
+    const user = userEvent.setup()
+    const operations = withSessions({
+      listAccountSessions: () => Promise.resolve([sessionWithoutCurrent()]),
+    })
+    renderWithProviders(<SessionsPage />, { operations })
+    await loadAccount(user)
+    await screen.findByText('sess-1')
+    expect(screen.queryByText('当前会话')).toBeNull()
+    await user.click(screen.getByRole('button', { name: '撤销会话 sess-1' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      within(dialog).getByText('撤销会话「sess-1」。'),
+    ).toBeInTheDocument()
   })
 
   it('lists the sessions of the chosen account', async () => {

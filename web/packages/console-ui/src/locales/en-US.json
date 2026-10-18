@@ -607,6 +607,7 @@
     "revokeSessions": "Revoke all sessions",
     "revokeSessionsTitle": "Revoke all sessions",
     "revokeSessionsMessage": "Revoke every session this account currently has.",
+    "revokeSessionsMessageCurrent": "Revoke every session this account currently has. This includes your current session, so revoking them signs you out too.",
     "factors": {
       "title": "Registered factors",
       "loading": "Loading factors",
@@ -673,7 +674,9 @@
       "revoke": "Revoke",
       "revokeAria": "Revoke session {{id}}",
       "revokeTitle": "Revoke session",
-      "revokeMessage": "Revoke the session \"{{id}}\"."
+      "revokeMessage": "Revoke the session \"{{id}}\".",
+      "revokeMessageCurrent": "Revoke the session \"{{id}}\". It is your current session, so revoking it signs you out too.",
+      "current": "Current session"
     },
     "removeIdentifier": {
       "label": "Remove login identifier",
@@ -685,10 +688,9 @@
   "sessions": {
     "title": "Sessions",
     "accountLabel": "Account",
-    "load": "Load",
     "needAccount": {
       "title": "Name an account",
-      "description": "Sessions are listed per account. Search for an account and load it."
+      "description": "Sessions are listed per account. Search for and choose the account to list."
     },
     "loading": "Loading sessions",
     "empty": {
@@ -721,6 +723,8 @@
     "revokeAriaWithId": "Revoke session {{id}}",
     "revokeTitle": "Revoke session",
     "revokeMessage": "Revoke the session \"{{id}}\".",
+    "revokeMessageCurrent": "Revoke the session \"{{id}}\". It is your current session, so revoking it signs you out too.",
+    "current": "Current session",
     "revokedNotice": "Session revoked"
   },
   "impersonations": {

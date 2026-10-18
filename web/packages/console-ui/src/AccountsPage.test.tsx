@@ -999,6 +999,61 @@ describe('AccountsPage', () => {
     })
   })
 
+  it('marks the caller\'s own session and names the sign-out in both confirmations', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      listAccountSessions: () =>
+        Promise.resolve([
+          { ...SESSION_ROW, id: 'sess-current', current: true },
+          { ...SESSION_ROW, id: 'sess-other' },
+        ]),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    await within(panel).findByText('sess-current')
+
+    // The marker sits on the current row only.
+    const marker = within(panel).getByText('当前会话')
+    expect(marker.closest('tr')).toHaveTextContent('sess-current')
+    expect(marker.closest('tr')).not.toHaveTextContent('sess-other')
+
+    // Revoking everything says the caller is signed out too.
+    await user.click(
+      within(panel).getByRole('button', { name: '撤销全部会话' }),
+    )
+    const bulk = await screen.findByRole('dialog', { name: '撤销全部会话' })
+    expect(
+      within(bulk).getByText(/其中包括你当前的会话/),
+    ).toBeInTheDocument()
+    await user.click(within(bulk).getByRole('button', { name: '取消' }))
+
+    // The current row's own revocation says the same.
+    await user.click(
+      await within(panel).findByRole('button', {
+        name: '撤销会话 sess-current',
+      }),
+    )
+    const own = await screen.findByRole('dialog', { name: '撤销会话' })
+    expect(
+      within(own).getByText(
+        '撤销会话「sess-current」。这是你当前的会话，撤销后你也会退出登录。',
+      ),
+    ).toBeInTheDocument()
+    await user.click(within(own).getByRole('button', { name: '取消' }))
+
+    // A row the server does not mark keeps the plain confirmation.
+    await user.click(
+      await within(panel).findByRole('button', {
+        name: '撤销会话 sess-other',
+      }),
+    )
+    const other = await screen.findByRole('dialog', { name: '撤销会话' })
+    expect(
+      within(other).getByText('撤销会话「sess-other」。'),
+    ).toBeInTheDocument()
+  })
+
   it('confirms before revoking a secret and a session', async () => {
     const user = userEvent.setup()
     const secret: string[] = []

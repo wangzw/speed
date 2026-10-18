@@ -607,6 +607,7 @@
     "revokeSessions": "撤销全部会话",
     "revokeSessionsTitle": "撤销全部会话",
     "revokeSessionsMessage": "撤销该账户当前的全部会话。",
+    "revokeSessionsMessageCurrent": "撤销该账户当前的全部会话。其中包括你当前的会话，撤销后你也会退出登录。",
     "factors": {
       "title": "已注册因子",
       "loading": "正在加载因子",
@@ -673,7 +674,9 @@
       "revoke": "撤销",
       "revokeAria": "撤销会话 {{id}}",
       "revokeTitle": "撤销会话",
-      "revokeMessage": "撤销会话「{{id}}」。"
+      "revokeMessage": "撤销会话「{{id}}」。",
+      "revokeMessageCurrent": "撤销会话「{{id}}」。这是你当前的会话，撤销后你也会退出登录。",
+      "current": "当前会话"
     },
     "removeIdentifier": {
       "label": "移除登录标识",
@@ -685,10 +688,9 @@
   "sessions": {
     "title": "会话",
     "accountLabel": "账户",
-    "load": "加载",
     "needAccount": {
       "title": "请指定账户",
-      "description": "会话按账户列出，请搜索并选择一个账户后加载。"
+      "description": "会话按账户列出，请搜索并选择要列出的账户。"
     },
     "loading": "正在加载会话",
     "empty": {
@@ -721,6 +723,8 @@
     "revokeAriaWithId": "撤销会话 {{id}}",
     "revokeTitle": "撤销会话",
     "revokeMessage": "撤销会话「{{id}}」。",
+    "revokeMessageCurrent": "撤销会话「{{id}}」。这是你当前的会话，撤销后你也会退出登录。",
+    "current": "当前会话",
     "revokedNotice": "会话已撤销"
   },
   "impersonations": {

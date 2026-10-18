@@ -2,20 +2,25 @@
  * SessionsPage: the account-session administration page of the console.
  *
  * It lists the sessions of one account -- chosen through the account
- * search picker, which hands the read the account's id -- and revokes a
- * single session. The read is
+ * search picker, which hands the read the account's id, so choosing an
+ * account issues the read -- and revokes a single session. The read is
  * GET /auth/admin/accounts/:id/sessions and the revoke is
  * DELETE /auth/admin/sessions/:id; both are operations on the console
  * operations bundle, so the page builds no client and writes no query
- * key. The session's own answer is a snapshot: the assurance level is the
- * view's integer (0 none, 1 single, 2 multi), rendered as a label, and
- * the timestamps render in UTC through Intl. A revoked session still
- * lists. The page opens with ui-kit's PageHeader.
+ * key. The list carries the account's live sessions only: the session
+ * module's read excludes revoked, expired and idle-expired rows, so a
+ * revoked session does not list. The session's own answer is a snapshot:
+ * the assurance level is the view's integer (0 none, 1 single, 2 multi),
+ * rendered as a label, and the timestamps render in UTC through Intl. A
+ * row the server marks current is the caller's own session; it carries a
+ * marker and its confirmation says the revoke signs the caller out too.
+ * The page opens with ui-kit's PageHeader.
  */
 
 import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import {
@@ -48,12 +53,11 @@ export function SessionsPage() {
   const { t, i18n } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
 
-  // The account the operator picked, and the id the loads use: loading is
-  // a separate step, so browsing the picker alone issues no session read.
+  // The account the operator picked: choosing one issues its session read.
   const [selectedAccount, setSelectedAccount] = useState<ConsoleAccount | null>(
     null,
   )
-  const [account, setAccount] = useState('')
+  const account = selectedAccount?.id ?? ''
   const confirm = usePendingConfirm()
   // The confirmation a landed revoke fills into the page's success notice.
   const [success, setSuccess] = useState<string | null>(null)
@@ -69,7 +73,19 @@ export function SessionsPage() {
       header: t('sessions.column.id'),
       cellWrap: 'nowrap',
       cellFullValue: (session) => session.id,
-      cell: (session) => <Typography variant="body2">{session.id}</Typography>,
+      cell: (session) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', columnGap: 1 }}>
+          <Typography variant="body2">{session.id}</Typography>
+          {session.current === true && (
+            <Chip
+              size="small"
+              variant="outlined"
+              color="info"
+              label={t('sessions.current')}
+            />
+          )}
+        </Box>
+      ),
     },
     {
       id: 'kind',
@@ -128,7 +144,12 @@ export function SessionsPage() {
           onClick={() =>
             confirm.ask({
               title: t('sessions.revokeTitle'),
-              message: t('sessions.revokeMessage', { id: session.id }),
+              message: t(
+                session.current === true
+                  ? 'sessions.revokeMessageCurrent'
+                  : 'sessions.revokeMessage',
+                { id: session.id },
+              ),
               confirmLabel: t('common.confirm'),
               run: () => {
                 setSuccess(null)
@@ -188,14 +209,6 @@ export function SessionsPage() {
           value={selectedAccount}
           onChange={setSelectedAccount}
         />
-        <Button
-          type="button"
-          variant="contained"
-          disabled={selectedAccount === null}
-          onClick={() => setAccount(selectedAccount?.id ?? '')}
-        >
-          {t('sessions.load')}
-        </Button>
       </Box>
 
       {account === '' ? (

@@ -72,6 +72,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
+import Chip from '@mui/material/Chip'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Skeleton from '@mui/material/Skeleton'
@@ -235,6 +236,10 @@ export function AccountsPage() {
   const sessions = operations.useAccountSessions({
     id: selectedId === '' ? undefined : selectedId,
   })
+  // Whether the listed sessions include the caller's own, so the bulk revoke's
+  // confirmation can say the caller is signed out too.
+  const sessionsIncludeCurrent =
+    sessions.data?.some((row) => row.current === true) ?? false
 
   const deleteAccount = operations.useDeleteAccount()
   const resetMFA = operations.useResetMFA()
@@ -563,7 +568,19 @@ export function AccountsPage() {
       header: t('accounts.sessions.column.id'),
       cellWrap: 'nowrap',
       cellFullValue: (row) => row.id,
-      cell: (row) => <Typography variant="body2">{row.id}</Typography>,
+      cell: (row) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', columnGap: 1 }}>
+          <Typography variant="body2">{row.id}</Typography>
+          {row.current === true && (
+            <Chip
+              size="small"
+              variant="outlined"
+              color="info"
+              label={t('accounts.sessions.current')}
+            />
+          )}
+        </Box>
+      ),
     },
     {
       id: 'created',
@@ -595,7 +612,12 @@ export function AccountsPage() {
           onClick={() =>
             confirm.ask({
               title: t('accounts.sessions.revokeTitle'),
-              message: t('accounts.sessions.revokeMessage', { id: row.id }),
+              message: t(
+                row.current === true
+                  ? 'accounts.sessions.revokeMessageCurrent'
+                  : 'accounts.sessions.revokeMessage',
+                { id: row.id },
+              ),
               confirmLabel: t('common.confirm'),
               run: () => void revokeOneSession(row),
             })
@@ -886,7 +908,11 @@ export function AccountsPage() {
                 onClick={() =>
                   confirm.ask({
                     title: t('accounts.revokeSessionsTitle'),
-                    message: t('accounts.revokeSessionsMessage'),
+                    message: t(
+                      sessionsIncludeCurrent
+                        ? 'accounts.revokeSessionsMessageCurrent'
+                        : 'accounts.revokeSessionsMessage',
+                    ),
                     confirmLabel: t('common.confirm'),
                     run: () => void revokeAllSessions(),
                   })
