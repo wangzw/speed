@@ -35,7 +35,7 @@
     },
     "error": {
       "title": "The objects could not be loaded",
-      "description": "The object store did not answer. Try again in a moment."
+      "description": "The object store could not complete this request. Try again in a moment."
     },
     "retry": "Try again",
     "forbidden": {
@@ -89,7 +89,11 @@
     "loading": "Loading object details",
     "error": {
       "title": "The object could not be loaded",
-      "description": "The object store did not answer. Try again in a moment."
+      "description": "The object store could not complete this request. Try again in a moment."
+    },
+    "notFound": {
+      "title": "This object is no longer available",
+      "description": "It may have been deleted or have expired. Close this dialog and refresh the list."
     },
     "retry": "Try again",
     "field": {

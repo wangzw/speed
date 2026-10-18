@@ -4,6 +4,7 @@ import { renderWithProviders } from '../../test-utils/render.js'
 import {
   ObjectAsyncSection,
   isForbidden,
+  isObjectNotFound,
   isTenantRefusal,
 } from './async-section.js'
 import type { AsyncSectionErrorState } from '@speed/ui-kit'
@@ -46,6 +47,21 @@ describe('isTenantRefusal', () => {
   })
 })
 
+describe('isObjectNotFound', () => {
+  it('treats the typed objectstore.not_found code as a gone object', () => {
+    expect(
+      isObjectNotFound({ status: 404, code: 'objectstore.not_found' }),
+    ).toBe(true)
+    expect(isObjectNotFound({ code: 'objectstore.not_found' })).toBe(true)
+  })
+  it('does not treat the admission refusal or another failure as a gone object', () => {
+    expect(isObjectNotFound({ status: 404, code: 'client.http.404' })).toBe(false)
+    expect(isObjectNotFound({ status: 503, code: 'client.http.503' })).toBe(false)
+    expect(isObjectNotFound(undefined)).toBe(false)
+    expect(isObjectNotFound('boom')).toBe(false)
+  })
+})
+
 describe('ObjectAsyncSection', () => {
   it('renders the tenant state on a bare 404, without a retry', () => {
     renderWithProviders(
@@ -69,7 +85,7 @@ describe('ObjectAsyncSection', () => {
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
   })
 
-  it('keeps the retryable error for a typed object not-found 404', () => {
+  it('keeps the retryable error for a typed object not-found 404 when no not-found state is given', () => {
     renderWithProviders(
       <ObjectAsyncSection<unknown>
         pending={false}
@@ -88,6 +104,46 @@ describe('ObjectAsyncSection', () => {
     expect(
       screen.queryByText("Cannot access the current organization's content"),
     ).not.toBeInTheDocument()
+  })
+
+  it('renders the not-found placeholder for a typed 404, without a retry', () => {
+    renderWithProviders(
+      <ObjectAsyncSection<unknown>
+        pending={false}
+        payload={undefined}
+        error={{ status: 404, code: 'objectstore.not_found' }}
+        empty={false}
+        loading={<p>loading</p>}
+        errorState={errorState}
+        notFoundState={{ title: 'Gone', description: 'It was deleted' }}
+      >
+        {() => <p>content</p>}
+      </ObjectAsyncSection>,
+      { language: 'en-US' },
+    )
+    expect(screen.getByText('Gone')).toBeInTheDocument()
+    expect(screen.getByText('It was deleted')).toBeInTheDocument()
+    expect(screen.queryByText('Load failed')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the retryable error for a 5xx even when a not-found state is given', () => {
+    renderWithProviders(
+      <ObjectAsyncSection<unknown>
+        pending={false}
+        payload={undefined}
+        error={{ status: 503, code: 'client.http.503' }}
+        empty={false}
+        loading={<p>loading</p>}
+        errorState={errorState}
+        notFoundState={{ title: 'Gone', description: 'It was deleted' }}
+      >
+        {() => <p>content</p>}
+      </ObjectAsyncSection>,
+      { language: 'en-US' },
+    )
+    expect(screen.getByText('Load failed')).toBeInTheDocument()
+    expect(screen.queryByText('Gone')).not.toBeInTheDocument()
   })
 
   it('renders the no-permission state on a permission refusal', () => {

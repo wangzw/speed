@@ -256,6 +256,12 @@ describe('ObjectsPage', () => {
     expect(
       await screen.findByText('The objects could not be loaded'),
     ).toBeInTheDocument()
+    // A 503 is an answer, not silence: the generic copy must not claim the
+    // store did not answer.
+    expect(
+      screen.getByText(/could not complete this request/i),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/did not answer/i)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
   })
 

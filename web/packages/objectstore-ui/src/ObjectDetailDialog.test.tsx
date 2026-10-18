@@ -66,9 +66,41 @@ describe('ObjectDetailDialog', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('keeps the retryable detail error for a typed objectstore not-found 404', async () => {
+  it('names a typed objectstore not-found 404 as gone, without a retry', async () => {
     makeObjectStoreRig(() =>
       problemResponse(404, 'urn:speed:objectstore:not-found'),
+    )
+    renderWithProviders(<ObjectDetailDialog id="o-1" onClose={() => undefined} />, {
+      language: 'en-US',
+    })
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      await within(dialog).findByText('This object is no longer available'),
+    ).toBeInTheDocument()
+    expect(
+      within(dialog).getByText(
+        /may have been deleted or have expired/i,
+      ),
+    ).toBeInTheDocument()
+    // The server answered and said the object is gone: a retry cannot
+    // bring it back, and the failure is not the store being unreachable.
+    expect(
+      within(dialog).queryByRole('button', { name: 'Try again' }),
+    ).not.toBeInTheDocument()
+    expect(
+      within(dialog).queryByText('The object could not be loaded'),
+    ).not.toBeInTheDocument()
+    expect(
+      within(dialog).queryByText(/did not answer/i),
+    ).not.toBeInTheDocument()
+    expect(
+      within(dialog).queryByText("Cannot access the current organization's content"),
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps the retryable detail error when the read fails with a 5xx', async () => {
+    makeObjectStoreRig(() =>
+      problemResponse(503, 'urn:speed:objectstore:unavailable'),
     )
     renderWithProviders(<ObjectDetailDialog id="o-1" onClose={() => undefined} />, {
       language: 'en-US',
@@ -78,10 +110,15 @@ describe('ObjectDetailDialog', () => {
       await within(dialog).findByText('The object could not be loaded'),
     ).toBeInTheDocument()
     expect(
+      within(dialog).getByText(
+        /could not complete this request/i,
+      ),
+    ).toBeInTheDocument()
+    expect(
       within(dialog).getByRole('button', { name: 'Try again' }),
     ).toBeInTheDocument()
     expect(
-      within(dialog).queryByText("Cannot access the current organization's content"),
+      within(dialog).queryByText('This object is no longer available'),
     ).not.toBeInTheDocument()
   })
 

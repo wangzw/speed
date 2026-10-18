@@ -35,7 +35,7 @@
     },
     "error": {
       "title": "对象列表加载失败",
-      "description": "对象存储没有应答，请稍后重试。"
+      "description": "对象存储未能完成这次请求，请稍后重试。"
     },
     "retry": "重试",
     "forbidden": {
@@ -89,7 +89,11 @@
     "loading": "正在加载对象详情",
     "error": {
       "title": "对象详情加载失败",
-      "description": "对象存储没有应答，请稍后重试。"
+      "description": "对象存储未能完成这次请求，请稍后重试。"
+    },
+    "notFound": {
+      "title": "该对象已不存在",
+      "description": "它可能已被删除或已过期。请关闭此对话框后刷新列表。"
     },
     "retry": "重试",
     "field": {

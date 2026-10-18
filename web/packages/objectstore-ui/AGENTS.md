@@ -47,9 +47,11 @@ reading the current tenant from `@speed/auth-core`'s tenant context.
   namespace's error text.
 - **It composes ui-kit, it does not re-implement it.** The list is
   `DataTable`, the async states are `AsyncSection` (with a permission-refusal
-  branch), the queue is `FileUploader`, the delete is `ConfirmDialog`, the
-  failures are `InlineError`. The page never lays out its own spinner,
-  empty block or alert.
+  branch and, in the details dialog, an object-gone branch for a typed
+  `objectstore.not_found` 404, with no retry), the queue is
+  `FileUploader`, the delete is `ConfirmDialog`, the failures are
+  `InlineError`. The page never lays out its own spinner, empty block or
+  alert.
 
 ## What it is not
 

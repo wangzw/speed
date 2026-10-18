@@ -14,7 +14,11 @@
  *
  * The async state is the shared four-state branch (loading, error,
  * empty/content), so the dialog never re-invents a spinner or an error
- * block. The failure branch splits a permission refusal like the list's.
+ * block. The failure branch splits a permission refusal like the list's,
+ * and names an object the server says is gone (a typed
+ * `objectstore.not_found` 404) instead of rendering it as a retryable
+ * failure: the answer arrived, and retrying a deleted object cannot
+ * succeed.
  */
 
 import { useId } from 'react'
@@ -99,6 +103,10 @@ export function ObjectDetailDialog({ id, onClose }: ObjectDetailDialogProps) {
             description: t('detail.error.description'),
             retryLabel: t('detail.retry'),
             onRetry: () => void query.refetch(),
+          }}
+          notFoundState={{
+            title: t('detail.notFound.title'),
+            description: t('detail.notFound.description'),
           }}
         >
           {(settled) => (

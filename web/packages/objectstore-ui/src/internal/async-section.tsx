@@ -22,7 +22,11 @@
  * A typed 404 is not the admission refusal: the objectstore module answers
  * an object that does not exist with a problem object whose type derives
  * `objectstore.not_found`, and that code keeps its own leaf rather than
- * rendering the tenant state.
+ * rendering the tenant state. A caller that renders one object passes
+ * `notFoundState`, and that code then renders the object-gone placeholder
+ * with no retry: the server answered, and retrying cannot bring a deleted
+ * object back. A caller that does not pass it -- the list, which the module
+ * never answers with that code -- keeps the retryable placeholder.
  *
  * The refusals are detected from the answer, not a route-level permission
  * read: the server writes the status, and the page renders the answer. The
@@ -55,6 +59,13 @@ const FORBIDDEN_CODE = 'client.http.403'
 const TENANT_REFUSAL_CODE = 'client.http.404'
 
 /**
+ * The code the api-client derives from the objectstore module's
+ * `urn:speed:objectstore:not-found` problem type: the object the read
+ * named does not exist (any more).
+ */
+const OBJECT_NOT_FOUND_CODE = 'objectstore.not_found'
+
+/**
  * Whether a read's failure is a permission refusal: the answer carried
  * HTTP 403, or a bare 403 surfaced as the client.http.403 code. Any other
  * value is not a refusal, so the caller renders the retryable error.
@@ -82,6 +93,19 @@ export function isTenantRefusal(error: unknown): boolean {
   return candidate.code === TENANT_REFUSAL_CODE
 }
 
+/**
+ * Whether a read's failure says the object does not exist: the typed
+ * `objectstore.not_found` 404. A bare 404 stays the admission refusal, so
+ * the check reads the code rather than the status.
+ */
+export function isObjectNotFound(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false
+  }
+  const candidate = error as { readonly code?: unknown }
+  return candidate.code === OBJECT_NOT_FOUND_CODE
+}
+
 export interface ObjectAsyncSectionProps<Payload> {
   /** No answer yet: renders `loading`. */
   readonly pending: boolean
@@ -97,6 +121,12 @@ export interface ObjectAsyncSectionProps<Payload> {
   readonly errorState: AsyncSectionErrorState
   /** The empty placeholder. */
   readonly emptyState?: AsyncSectionEmptyState
+  /**
+   * The object-gone placeholder, rendered for a typed
+   * `objectstore.not_found` 404 instead of the retryable failure. Omitted
+   * by a caller whose read cannot answer that code (the list).
+   */
+  readonly notFoundState?: AsyncSectionEmptyState
   /** The heading element the placeholders' titles render as; defaults to 'h2'. */
   readonly headingLevel?: EmptyStateHeadingLevel
   /** The settled content, built from the narrowed payload. */
@@ -107,6 +137,7 @@ export interface ObjectAsyncSectionProps<Payload> {
 export function ObjectAsyncSection<Payload>({
   error,
   errorState,
+  notFoundState,
   headingLevel = 'h2',
   ...rest
 }: ObjectAsyncSectionProps<Payload>) {
@@ -130,6 +161,20 @@ export function ObjectAsyncSection<Payload>({
         variant="noPermission"
         title={t('list.forbidden.title')}
         description={t('list.forbidden.description')}
+        headingLevel={headingLevel}
+      />
+    )
+  }
+  if (
+    !rest.pending &&
+    rest.payload === undefined &&
+    notFoundState !== undefined &&
+    isObjectNotFound(error)
+  ) {
+    return (
+      <EmptyState
+        title={notFoundState.title}
+        description={notFoundState.description}
         headingLevel={headingLevel}
       />
     )

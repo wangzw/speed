@@ -61,6 +61,11 @@ default and upper bound).
   `objectstore.conflict`, and `authz.forbidden` for a refused write. The
   namespace's error text resolves each to its own bilingual leaf (plus
   the transport codes).
+- A details read answered with the typed `objectstore.not_found` 404
+  renders a "no longer available" placeholder without a retry: the server
+  answered and the object is gone. The generic load-failure copy names the
+  store failing to complete the request rather than silence, so a 429 or
+  5xx reads as a retryable answer instead of no answer at all.
 - Everything the page renders is bilingual (`zh-CN` + `en-US`) through the
   `objectstore-ui` namespace; override wording by registering your own
   bundle under the same namespace.
