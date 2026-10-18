@@ -11,6 +11,7 @@
  * host-side binding.
  */
 
+import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -637,5 +638,240 @@ describe('consoleOperations administration surfaces', () => {
       expect(calls).toContainEqual({ method: 'POST', path: '/sms/admin/templates/n/enabled' })
       expect(calls).toContainEqual({ method: 'DELETE', path: '/sms/admin/templates/n' })
     })
+  })
+})
+
+/**
+ * The write contract: a successful write invalidates every read its result
+ * changes, including reads outside the section that started it. Each probe
+ * mounts the reads a write leaves stale and counts the request legs the
+ * invalidation adds. A refetch is the observable proof that the generated
+ * key matched; a spy on invalidateQueries would not prove the predicate
+ * matched the cached key.
+ */
+describe('consoleOperations write invalidation', () => {
+  it('re-reads every account-binding query under the tenant after a role removal', async () => {
+    const user = userEvent.setup()
+    const calls = bindConsoleRequest(answer)
+    function Probe() {
+      const roles = consoleOperations.useRoles('acme')
+      const grants = consoleOperations.useGrants('acme', 'editor')
+      const bindings = consoleOperations.useBindings('acme')
+      const own = consoleOperations.useAccountBindings({
+        tenant: 'acme',
+        account: 'acc-1',
+      })
+      const foreign = consoleOperations.useAccountBindings({
+        tenant: 'other',
+        account: 'acc-1',
+      })
+      const removeRole = consoleOperations.useRemoveRole()
+      const settled = [roles, grants, bindings, own, foreign].every(
+        (query) => query.isSuccess,
+      )
+      return (
+        <>
+          <p>{settled ? 'ready' : 'loading'}</p>
+          <button
+            type="button"
+            onClick={() =>
+              removeRole.mutate({ tenant: 'acme', role: 'editor' })
+            }
+          >
+            removeRole
+          </button>
+        </>
+      )
+    }
+    renderWithProviders(<Probe />, { operations: consoleOperations })
+    await screen.findByText('ready')
+    const reads = (path: string): number =>
+      calls.filter((call) => call.method === 'GET' && call.path === path).length
+    const paths = {
+      roles: '/authz/admin/tenants/acme/roles',
+      grants: '/authz/admin/tenants/acme/roles/editor/grants',
+      bindings: '/authz/admin/tenants/acme/bindings',
+      accountBindings: '/authz/admin/tenants/acme/bindings/acc-1',
+      otherTenant: '/authz/admin/tenants/other/bindings/acc-1',
+    }
+    for (const path of Object.values(paths)) {
+      expect(reads(path)).toBe(1)
+    }
+    await user.click(screen.getByRole('button', { name: 'removeRole' }))
+    await waitFor(() => {
+      for (const path of [
+        paths.roles,
+        paths.grants,
+        paths.bindings,
+        paths.accountBindings,
+      ]) {
+        expect(reads(path)).toBeGreaterThan(1)
+      }
+    })
+    // The removal names no account, so it invalidates by tenant; that
+    // bound is what leaves another tenant's account-binding read alone.
+    expect(reads(paths.otherTenant)).toBe(1)
+  })
+
+  it('re-reads the search page after an identifier removal, symmetric with adding one', async () => {
+    const user = userEvent.setup()
+    const calls = bindConsoleRequest(answer)
+    function Probe() {
+      const accounts = consoleOperations.useAccounts({
+        identifier_prefix: 'ada',
+        identifier_kind: 'email',
+      })
+      const account = consoleOperations.useAccount({ id: 'acc-1' })
+      const removeIdentifier = consoleOperations.useRemoveIdentifier()
+      const settled = accounts.isSuccess && account.isSuccess
+      return (
+        <>
+          <p>{settled ? 'ready' : 'loading'}</p>
+          <button
+            type="button"
+            onClick={() =>
+              removeIdentifier.mutate({
+                id: 'acc-1',
+                identifier: 'ada@example.com',
+              })
+            }
+          >
+            removeIdentifier
+          </button>
+        </>
+      )
+    }
+    renderWithProviders(<Probe />, { operations: consoleOperations })
+    await screen.findByText('ready')
+    const reads = (path: string): number =>
+      calls.filter((call) => call.method === 'GET' && call.path === path).length
+    expect(reads('/auth/admin/accounts')).toBe(1)
+    expect(reads('/auth/admin/accounts/acc-1')).toBe(1)
+    await user.click(screen.getByRole('button', { name: 'removeIdentifier' }))
+    await waitFor(() => {
+      expect(reads('/auth/admin/accounts')).toBeGreaterThan(1)
+      expect(reads('/auth/admin/accounts/acc-1')).toBeGreaterThan(1)
+    })
+  })
+
+  it('re-reads the account sessions when a status write disables it', async () => {
+    const user = userEvent.setup()
+    const calls = bindConsoleRequest(answer)
+    function Probe() {
+      const sessions = consoleOperations.useAccountSessions({ id: 'acc-1' })
+      const otherSessions = consoleOperations.useAccountSessions({
+        id: 'acc-2',
+      })
+      const setStatus = consoleOperations.useSetAccountStatus()
+      const settled = sessions.isSuccess && otherSessions.isSuccess
+      return (
+        <>
+          <p>{settled ? 'ready' : 'loading'}</p>
+          <button
+            type="button"
+            onClick={() =>
+              setStatus.mutate({ id: 'acc-1', status: 'disabled' })
+            }
+          >
+            disable
+          </button>
+        </>
+      )
+    }
+    renderWithProviders(<Probe />, { operations: consoleOperations })
+    await screen.findByText('ready')
+    const reads = (path: string): number =>
+      calls.filter((call) => call.method === 'GET' && call.path === path).length
+    expect(reads('/auth/admin/accounts/acc-1/sessions')).toBe(1)
+    expect(reads('/auth/admin/accounts/acc-2/sessions')).toBe(1)
+    await user.click(screen.getByRole('button', { name: 'disable' }))
+    await waitFor(() => {
+      expect(reads('/auth/admin/accounts/acc-1/sessions')).toBeGreaterThan(1)
+    })
+    // The write is scoped to the account it disables.
+    expect(reads('/auth/admin/accounts/acc-2/sessions')).toBe(1)
+  })
+
+  it('leaves the sessions read alone when a status write re-enables the account', async () => {
+    const user = userEvent.setup()
+    const calls = bindConsoleRequest(answer)
+    function Probe() {
+      const [settled, setSettled] = useState(false)
+      const sessions = consoleOperations.useAccountSessions({ id: 'acc-1' })
+      const setStatus = consoleOperations.useSetAccountStatus()
+      return (
+        <>
+          <p>{sessions.isSuccess ? (settled ? 'settled' : 'ready') : 'loading'}</p>
+          <button
+            type="button"
+            onClick={() =>
+              setStatus.mutate(
+                { id: 'acc-1', status: 'active' },
+                { onSuccess: () => setSettled(true) },
+              )
+            }
+          >
+            enable
+          </button>
+        </>
+      )
+    }
+    renderWithProviders(<Probe />, { operations: consoleOperations })
+    await screen.findByText('ready')
+    const reads = (): number =>
+      calls.filter(
+        (call) =>
+          call.method === 'GET' &&
+          call.path === '/auth/admin/accounts/acc-1/sessions',
+      ).length
+    expect(reads()).toBe(1)
+    await user.click(screen.getByRole('button', { name: 'enable' }))
+    await screen.findByText('settled')
+    // The per-call onSuccess runs after the hook's, so by now an
+    // invalidation would have started its refetch.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(reads()).toBe(1)
+  })
+
+  it('re-reads the account sessions after an MFA reset, which revokes them', async () => {
+    const user = userEvent.setup()
+    const calls = bindConsoleRequest(answer)
+    function Probe() {
+      const factors = consoleOperations.useAccountFactors({ id: 'acc-1' })
+      const sessions = consoleOperations.useAccountSessions({ id: 'acc-1' })
+      const otherSessions = consoleOperations.useAccountSessions({
+        id: 'acc-2',
+      })
+      const resetMFA = consoleOperations.useResetMFA()
+      const settled =
+        factors.isSuccess && sessions.isSuccess && otherSessions.isSuccess
+      return (
+        <>
+          <p>{settled ? 'ready' : 'loading'}</p>
+          <button
+            type="button"
+            onClick={() => resetMFA.mutate({ id: 'acc-1' })}
+          >
+            resetMFA
+          </button>
+        </>
+      )
+    }
+    renderWithProviders(<Probe />, { operations: consoleOperations })
+    await screen.findByText('ready')
+    const reads = (path: string): number =>
+      calls.filter((call) => call.method === 'GET' && call.path === path).length
+    expect(reads('/auth/admin/accounts/acc-1/factors')).toBe(1)
+    expect(reads('/auth/admin/accounts/acc-1/sessions')).toBe(1)
+    expect(reads('/auth/admin/accounts/acc-2/sessions')).toBe(1)
+    await user.click(screen.getByRole('button', { name: 'resetMFA' }))
+    await waitFor(() => {
+      expect(reads('/auth/admin/accounts/acc-1/factors')).toBeGreaterThan(1)
+      expect(reads('/auth/admin/accounts/acc-1/sessions')).toBeGreaterThan(1)
+    })
+    // The reset is scoped to the account it resets.
+    expect(reads('/auth/admin/accounts/acc-2/sessions')).toBe(1)
   })
 })

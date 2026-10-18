@@ -1097,7 +1097,10 @@ export const consoleOperations: ConsoleOperations = {
         authzAdminRolesDelete(input.tenant, input.role),
       onSuccess: (_answer, input) => {
         // Removing a role revokes its grants and bindings with it (the
-        // generated route deletes all three), so both readers are stale.
+        // generated route deletes all three), so the role list, the
+        // tenant's binding list and the role's grants are stale. The
+        // removal names no account, so every account-binding read under
+        // the tenant is stale too: the page may be querying any account.
         void queryClient.invalidateQueries({
           queryKey: getAuthzAdminRolesListQueryKey(input.tenant),
         })
@@ -1107,6 +1110,7 @@ export const consoleOperations: ConsoleOperations = {
         void queryClient.invalidateQueries({
           queryKey: getAuthzAdminGrantsListQueryKey(input.tenant, input.role),
         })
+        invalidateTenantAccountBindings(queryClient, input.tenant)
       },
     })
   },
@@ -1237,9 +1241,14 @@ export const consoleOperations: ConsoleOperations = {
       mutationFn: (input: ConsoleRemoveIdentifierInput) =>
         authnAdminAccountsRemoveIdentifier(input.id, input.identifier),
       onSuccess: (_answer, input) => {
+        // The identifier is not a column of the account rows, but it is
+        // what a login-identifier search matches on: removing one can drop
+        // the account out of the page the list is showing, symmetric with
+        // adding one.
         void queryClient.invalidateQueries({
           queryKey: getAuthnAdminAccountsGetQueryKey(input.id),
         })
+        invalidateAccountLists(queryClient)
       },
     })
   },
@@ -1250,11 +1259,16 @@ export const consoleOperations: ConsoleOperations = {
       mutationFn: (input: ConsoleAccountRef) =>
         authnAdminAccountsResetMFA(input.id).then(() => undefined),
       onSuccess: (_answer, input) => {
+        // A reset drops every factor and revokes the account's sessions
+        // with them, so the factor and session reads are both stale.
         void queryClient.invalidateQueries({
           queryKey: getAuthnAdminAccountsFactorsQueryKey(input.id),
         })
         void queryClient.invalidateQueries({
           queryKey: getAuthnAdminAccountsGetQueryKey(input.id),
+        })
+        void queryClient.invalidateQueries({
+          queryKey: getAuthnAdminAccountsSessionsQueryKey(input.id),
         })
       },
     })
@@ -1342,6 +1356,14 @@ export const consoleOperations: ConsoleOperations = {
         void queryClient.invalidateQueries({
           queryKey: getAuthnAdminAccountsGetQueryKey(input.id),
         })
+        if (input.status === 'disabled') {
+          // Disabling an account clears its browser and token sessions, so
+          // the account's session read no longer matches the server.
+          // Enabling it revives no rows, so it leaves that read alone.
+          void queryClient.invalidateQueries({
+            queryKey: getAuthnAdminAccountsSessionsQueryKey(input.id),
+          })
+        }
       },
     })
   },
@@ -1732,6 +1754,21 @@ function invalidateBindings(
   })
   void queryClient.invalidateQueries({
     queryKey: getAuthzAdminBindingsOfQueryKey(tenant, account),
+  })
+}
+
+/** Invalidates every account-binding read under a tenant. A role removal
+ * revokes bindings without naming the account a page queries, so the reads
+ * are matched by the tenant's generated path rather than by account. */
+function invalidateTenantAccountBindings(
+  queryClient: ReturnType<typeof useQueryClient>,
+  tenant: string,
+): void {
+  const accountBindings = getAuthzAdminBindingsOfQueryKey(tenant, '')[0]
+  void queryClient.invalidateQueries({
+    predicate: (query) =>
+      typeof query.queryKey[0] === 'string' &&
+      query.queryKey[0].startsWith(accountBindings),
   })
 }
 
