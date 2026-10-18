@@ -89,8 +89,20 @@ describe('console-ui resources', () => {
     for (const [key, text] of en) {
       expect(text, key).toMatch(/could not complete this request\.$/)
     }
+    // The zh bundle is its own authority for zh wording, so the zh side
+    // pins the property the wording carries: every surface states the same
+    // closing sentence. One surface drifting to "the server did not answer"
+    // shortens the shared suffix to a bare full stop.
+    const sharedSuffix = zh.reduce((suffix, [, text]) => {
+      let next = suffix
+      while (!text.endsWith(next)) {
+        next = next.slice(1)
+      }
+      return next
+    }, zh[0]?.[1] ?? '')
     for (const [key, text] of zh) {
-      expect(text, key).toMatch(/未能完成这次请求。$/)
+      expect(text.endsWith(sharedSuffix), key).toBe(true)
     }
+    expect(sharedSuffix.length).toBeGreaterThan(1)
   })
 })

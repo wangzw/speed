@@ -34,6 +34,9 @@ const COPY = zhCN.common as {
   readonly refresh: string
 }
 
+/** The marker a refused account read leaves on the recent-activity actor. */
+const UNRESOLVED_ACTOR = `acc-1 (${zhCN.common.accountUnresolved})`
+
 const TENANTS = [
   { id: 'acme', alias: 'Acme', status: 'active' as const },
   { id: 'beta', alias: 'Beta', status: 'active' as const },
@@ -46,7 +49,7 @@ describe('DashboardPage', () => {
       makeConsoleBackend({ listTenants: () => Promise.resolve(TENANTS) }),
     )
     renderWithProviders(<DashboardPage />, { operations })
-    const refresh = await screen.findByRole('button', { name: '刷新' })
+    const refresh = await screen.findByRole('button', { name: zhCN.common.refresh })
     expect(hasCoarsePointerTouchTarget(refresh)).toBe(true)
   })
 
@@ -56,7 +59,7 @@ describe('DashboardPage', () => {
     )
     renderWithProviders(<DashboardPage />, { operations })
 
-    expect(await screen.findByText('租户总数')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.dashboard.kpi.tenants)).toBeInTheDocument()
     // total / active / disabled, derived from the whole roster read.
     expect(screen.getByText('3')).toBeInTheDocument()
     expect(screen.getByText('2')).toBeInTheDocument()
@@ -74,7 +77,7 @@ describe('DashboardPage', () => {
       }),
     )
     renderWithProviders(<DashboardPage />, { operations })
-    const recent = await screen.findByRole('heading', { level: 2, name: '最近活动' })
+    const recent = await screen.findByRole('heading', { level: 2, name: zhCN.dashboard.recent.title })
     expect(recent).toBeInTheDocument()
     expect(await screen.findByText('tenant.read')).toBeInTheDocument()
   })
@@ -110,9 +113,9 @@ describe('DashboardPage', () => {
     renderWithProviders(<DashboardPage />, { operations })
     // The cell keeps the recorded id but labels it unresolved rather than
     // passing it off as a resolved (or system) actor.
-    const cell = await screen.findByLabelText(/身份未解析/)
+    const cell = await screen.findByLabelText(UNRESOLVED_ACTOR)
     expect(cell).toHaveTextContent('acc-1')
-    expect(cell).toHaveAttribute('title', '身份未解析（需账户读取权限）')
+    expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
   })
 
   it('renders recent activity with the audit page columns and priorities', async () => {
@@ -131,7 +134,7 @@ describe('DashboardPage', () => {
     // object identify the record, so the object column outranks the actor
     // and the outcome, which share the md tier so a failure stays visible.
     expect(
-      columnVisibility(screen.getByRole('columnheader', { name: '对象' })),
+      columnVisibility(screen.getByRole('columnheader', { name: zhCN.dashboard.recent.column.object })),
     ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
     // The body cell carries its own copy of the rule; assert it too so a
     // header/body divergence cannot pass with only the header checked.
@@ -139,16 +142,16 @@ describe('DashboardPage', () => {
       columnVisibility(screen.getByText('acme').closest('td')!),
     ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
     expect(
-      columnVisibility(screen.getByRole('columnheader', { name: '操作者' })),
+      columnVisibility(screen.getByRole('columnheader', { name: zhCN.dashboard.recent.column.actor })),
     ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
     expect(
-      columnVisibility(screen.getByRole('columnheader', { name: '结果' })),
+      columnVisibility(screen.getByRole('columnheader', { name: zhCN.dashboard.recent.column.outcome })),
     ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
     expect(
-      columnVisibility(screen.getByRole('columnheader', { name: '时间' })),
+      columnVisibility(screen.getByRole('columnheader', { name: zhCN.dashboard.recent.column.time })),
     ).toBeNull()
     expect(
-      columnVisibility(screen.getByRole('columnheader', { name: '动作' })),
+      columnVisibility(screen.getByRole('columnheader', { name: zhCN.dashboard.recent.column.action })),
     ).toBeNull()
   })
 
@@ -219,14 +222,14 @@ describe('DashboardPage', () => {
     renderWithProviders(<DashboardPage />, { operations })
     const health = await screen.findByRole('heading', {
       level: 2,
-      name: '平台健康度',
+      name: zhCN.dashboard.health.title,
     })
     const section = health.closest('section') as HTMLElement
     expect(
-      await within(section).findByText('近 24 小时登录（成功）'),
+      await within(section).findByText(zhCN.dashboard.health.logins),
     ).toBeInTheDocument()
     expect(within(section).getByText('2')).toBeInTheDocument()
-    expect(within(section).getByText('近 24 小时审计活动')).toBeInTheDocument()
+    expect(within(section).getByText(zhCN.dashboard.health.activity)).toBeInTheDocument()
     expect(within(section).getByText('1')).toBeInTheDocument()
   })
 
@@ -245,7 +248,7 @@ describe('DashboardPage', () => {
     renderWithProviders(<DashboardPage />, { operations })
     const health = await screen.findByRole('heading', {
       level: 2,
-      name: '平台健康度',
+      name: zhCN.dashboard.health.title,
     })
     const section = health.closest('section') as HTMLElement
     // A page that carries a next cursor is a lower bound, shown with a "+".
@@ -489,9 +492,9 @@ describe('DashboardPage', () => {
       }),
     )
     renderWithProviders(<DashboardPage />, { operations })
-    expect(await screen.findByText('平台健康度加载失败')).toBeInTheDocument()
-    expect(screen.getByText('审计面未能完成这次请求。')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.dashboard.health.error.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.dashboard.health.error.description)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: zhCN.dashboard.retry })).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when the roster read is refused with 403', async () => {
@@ -501,8 +504,8 @@ describe('DashboardPage', () => {
       }),
     )
     renderWithProviders(<DashboardPage />, { operations })
-    expect(await screen.findByText('权限不足')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: zhCN.dashboard.retry })).toBeNull()
   })
 
   it('renders the retryable error placeholder when the roster read fails otherwise', async () => {
@@ -512,9 +515,9 @@ describe('DashboardPage', () => {
       }),
     )
     renderWithProviders(<DashboardPage />, { operations })
-    expect(await screen.findByText('概览加载失败')).toBeInTheDocument()
-    expect(screen.getByText('数据面未能完成这次请求。')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.dashboard.error.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.dashboard.error.description)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: zhCN.dashboard.retry })).toBeInTheDocument()
   })
 
   it('shows the oldest settle time in the refresh action group', async () => {
@@ -602,7 +605,7 @@ describe('DashboardPage', () => {
       makeConsoleBackend({ listTenants: () => Promise.resolve(TENANTS) }),
     )
     renderWithProviders(<DashboardPage />, { operations })
-    await screen.findByText('租户总数')
+    await screen.findByText(zhCN.dashboard.kpi.tenants)
     await expectNoAxeViolations()
   })
 })

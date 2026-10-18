@@ -23,6 +23,7 @@ import {
   containerMaxWidthOf,
 } from '../test-utils/container-visibility.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
+import { uiKitResources } from '@speed/ui-kit'
 import {
   createConsoleOperations,
   makeConsoleBackend,
@@ -35,8 +36,22 @@ import enUS from './locales/en-US.json' with { type: 'json' }
 
 const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
 
+/** Fills a locale template's `{{name}}` placeholders. */
+function text(template: string, values: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
+    values[key] ?? match,
+  )
+}
+
+/** The zh-CN confirm label ui-kit's confirm dialog shows. */
+const CONFIRM_LABEL = (
+  uiKitResources['zh-CN'] as unknown as {
+    readonly confirmDialog: { readonly confirmLabel: string }
+  }
+).confirmDialog.confirmLabel
+
 async function pickTenant(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  await user.click(screen.getByLabelText('租户'))
+  await user.click(screen.getByLabelText(zhCN.common.tenant))
   await user.click(await screen.findByRole('option', { name: 'Acme' }))
 }
 
@@ -54,7 +69,7 @@ function withProviders(
 }
 
 async function pickProvider(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  await user.click(screen.getByLabelText('提供方'))
+  await user.click(screen.getByLabelText(zhCN.sso.domains.providerLabel))
   await user.click(await screen.findByRole('option', { name: 'Acme IdP' }))
 }
 
@@ -147,7 +162,7 @@ describe('SsoPage', () => {
   it('prompts for a tenant before listing', () => {
     const operations = withProviders()
     renderWithProviders(<SsoPage />, { operations })
-    expect(screen.getByText('请选择租户')).toBeInTheDocument()
+    expect(screen.getByText(zhCN.sso.needTenant.title)).toBeInTheDocument()
   })
 
   it('does not read an empty tenant scope on refresh', async () => {
@@ -164,7 +179,7 @@ describe('SsoPage', () => {
     const describedBy = refresh.getAttribute('aria-describedby')
     expect(describedBy).not.toBeNull()
     expect(document.getElementById(describedBy as string)).toHaveTextContent(
-      'SSO 提供方按租户存储，请先选择一个租户。',
+      zhCN.sso.needTenant.description,
     )
     // A programmatic click, because user-event refuses a disabled target:
     // the control must stay inert even when reached from a script.
@@ -191,7 +206,7 @@ describe('SsoPage', () => {
     const reads = listSsoProviders.mock.calls.length
 
     await user.click(
-      screen.getByRole('button', { name: '刷新元数据（Acme IdP）' }),
+      screen.getByRole('button', { name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }) }),
     )
     await expectRefreshInert(listSsoProviders, reads)
 
@@ -216,10 +231,10 @@ describe('SsoPage', () => {
     await screen.findByText('Acme IdP')
     const reads = listSsoProviders.mock.calls.length
 
-    await user.type(screen.getByLabelText('协议'), 'oidc')
-    await user.type(screen.getByLabelText('名称'), 'New IdP')
-    await user.type(screen.getByLabelText('开通方式'), 'manual')
-    await user.click(screen.getByRole('button', { name: '新建提供方' }))
+    await user.type(screen.getByLabelText(zhCN.sso.provider.protocolLabel), 'oidc')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'manual')
+    await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
     await expectRefreshInert(listSsoProviders, reads)
 
     await act(async () => {
@@ -244,8 +259,8 @@ describe('SsoPage', () => {
     const reads = listSsoProviders.mock.calls.length
 
     await pickProvider(user)
-    await user.type(screen.getByLabelText('域名'), 'acme.com')
-    await user.click(screen.getByRole('button', { name: '认领' }))
+    await user.type(screen.getByLabelText(zhCN.sso.domains.domainLabel), 'acme.com')
+    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.claim }))
     await expectRefreshInert(listSsoProviders, reads)
 
     await act(async () => {
@@ -265,8 +280,8 @@ describe('SsoPage', () => {
       // made: the providers read runs for it and the selector shows its
       // alias.
       expect(await screen.findByText('Acme IdP')).toBeInTheDocument()
-      expect(screen.queryByText('请选择租户')).toBeNull()
-      expect(screen.getByLabelText('租户')).toHaveTextContent('Acme')
+      expect(screen.queryByText(zhCN.sso.needTenant.title)).toBeNull()
+      expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent('Acme')
       expect(listSsoProviders).toHaveBeenCalledWith('acme')
     } finally {
       window.history.replaceState({}, '', '/')
@@ -297,20 +312,20 @@ describe('SsoPage', () => {
     // The provider name is the primary identity: no priority, shared cap.
     // Protocol and enabled stay to `md`, version is the first to go, and
     // the row actions never hide.
-    expect(columnVisibility(header('名称'))).toBeNull()
-    expect(columnVisibility(header('协议'))).toEqual({
+    expect(columnVisibility(header(zhCN.sso.column.name))).toBeNull()
+    expect(columnVisibility(header(zhCN.sso.column.protocol))).toEqual({
       hiddenAt: 0,
       visibleFrom: 900,
     })
-    expect(columnVisibility(header('已启用'))).toEqual({
+    expect(columnVisibility(header(zhCN.sso.column.enabled))).toEqual({
       hiddenAt: 0,
       visibleFrom: 900,
     })
-    expect(columnVisibility(header('版本'))).toEqual({
+    expect(columnVisibility(header(zhCN.sso.column.version))).toEqual({
       hiddenAt: 0,
       visibleFrom: 1200,
     })
-    expect(columnVisibility(header('操作'))).toBeNull()
+    expect(columnVisibility(header(zhCN.sso.column.actions))).toBeNull()
 
     const nameCell = screen.getByText(name).closest('td')
     expect(nameCell).toHaveAttribute('title', name)
@@ -344,9 +359,9 @@ describe('SsoPage', () => {
     await screen.findByText('Acme IdP')
     const gated = [
       screen.getByRole('button', { name: zhCN.sso.refreshProviderListAria }),
-      screen.getByRole('button', { name: '刷新元数据（Acme IdP）' }),
-      screen.getByRole('button', { name: '重新验证域名（Acme IdP）' }),
-      screen.getByRole('button', { name: '删除提供方 Acme IdP' }),
+      screen.getByRole('button', { name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }) }),
+      screen.getByRole('button', { name: text(zhCN.sso.reverifyDomainsAria, { name: 'Acme IdP' }) }),
+      screen.getByRole('button', { name: text(zhCN.sso.deleteAria, { name: 'Acme IdP' }) }),
     ]
     for (const control of gated) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
@@ -365,9 +380,9 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.click(screen.getByRole('button', { name: '删除提供方 Acme IdP' }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.sso.deleteAria, { name: 'Acme IdP' }) }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
     await vi.waitFor(() => {
       expect(deleted).toEqual(['idp-1'])
     })
@@ -390,8 +405,8 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.click(screen.getByRole('button', { name: '刷新元数据（Acme IdP）' }))
-    await user.click(screen.getByRole('button', { name: '重新验证域名（Acme IdP）' }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }) }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.sso.reverifyDomainsAria, { name: 'Acme IdP' }) }))
     await vi.waitFor(() => {
       expect(refreshed).toEqual(['idp-1'])
       expect(reverified).toEqual(['idp-1'])
@@ -416,11 +431,11 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
     await pickProvider(user)
-    await user.type(screen.getByLabelText('域名'), 'acme.com')
-    await user.click(screen.getByRole('button', { name: '验证' }))
-    await user.click(screen.getByRole('button', { name: '移除' }))
+    await user.type(screen.getByLabelText(zhCN.sso.domains.domainLabel), 'acme.com')
+    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.verify }))
+    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.remove }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
     await vi.waitFor(() => {
       expect(verified).toEqual(['acme.com'])
       expect(removed).toEqual(['acme.com'])
@@ -439,10 +454,10 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.type(screen.getByLabelText('协议'), 'oidc')
-    await user.type(screen.getByLabelText('名称'), 'New IdP')
-    await user.type(screen.getByLabelText('开通方式'), 'manual')
-    await user.click(screen.getByRole('button', { name: '新建提供方' }))
+    await user.type(screen.getByLabelText(zhCN.sso.provider.protocolLabel), 'oidc')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'manual')
+    await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
     await vi.waitFor(() => {
       expect(created).toEqual([
         { tenant: 'acme', protocol: 'oidc', name: 'New IdP', provisioning: 'manual' },
@@ -458,27 +473,27 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.type(screen.getByLabelText('协议'), 'oidc')
-    await user.type(screen.getByLabelText('名称'), 'New IdP')
-    await user.type(screen.getByLabelText('开通方式'), 'manual')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.protocolLabel), 'oidc')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'manual')
     await user.type(
-      screen.getByLabelText('配置（JSON）'),
+      screen.getByLabelText(zhCN.sso.provider.configLabel),
       '{{"issuer":"https://idp"}',
     )
-    await user.type(screen.getByLabelText('客户端密钥'), 'top-secret')
-    await user.click(screen.getByRole('button', { name: '新建提供方' }))
+    await user.type(screen.getByLabelText(zhCN.sso.provider.clientSecretLabel), 'top-secret')
+    await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
 
     // A landed create returns the form to its initial state: every input is
     // empty, the three-state selects read "unchanged", and the write-only
     // client secret is cleared with the rest.
     await vi.waitFor(() => {
-      expect(screen.getByLabelText('协议')).toHaveValue('')
-      expect(screen.getByLabelText('名称')).toHaveValue('')
-      expect(screen.getByLabelText('开通方式')).toHaveValue('')
-      expect(screen.getByLabelText('配置（JSON）')).toHaveValue('')
-      expect(screen.getByLabelText('客户端密钥')).toHaveValue('')
+      expect(screen.getByLabelText(zhCN.sso.provider.protocolLabel)).toHaveValue('')
+      expect(screen.getByLabelText(zhCN.sso.provider.nameLabel)).toHaveValue('')
+      expect(screen.getByLabelText(zhCN.sso.provider.provisioningLabel)).toHaveValue('')
+      expect(screen.getByLabelText(zhCN.sso.provider.configLabel)).toHaveValue('')
+      expect(screen.getByLabelText(zhCN.sso.provider.clientSecretLabel)).toHaveValue('')
     })
-    expect(screen.getByLabelText('已启用')).toHaveTextContent('保持不变')
+    expect(screen.getByLabelText(zhCN.sso.provider.enabledLabel)).toHaveTextContent(zhCN.sso.provider.tri.unchanged)
   })
 
   it('keeps the create form content when the create is refused', async () => {
@@ -495,18 +510,18 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.type(screen.getByLabelText('协议'), 'oidc')
-    await user.type(screen.getByLabelText('名称'), 'New IdP')
-    await user.type(screen.getByLabelText('开通方式'), 'manual')
-    await user.type(screen.getByLabelText('客户端密钥'), 'top-secret')
-    await user.click(screen.getByRole('button', { name: '新建提供方' }))
+    await user.type(screen.getByLabelText(zhCN.sso.provider.protocolLabel), 'oidc')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'manual')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.clientSecretLabel), 'top-secret')
+    await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
 
-    expect(await screen.findByText('你没有执行此操作的权限。')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.errors.authn.forbidden)).toBeInTheDocument()
     // The refused create keeps every field for correction.
-    expect(screen.getByLabelText('协议')).toHaveValue('oidc')
-    expect(screen.getByLabelText('名称')).toHaveValue('New IdP')
-    expect(screen.getByLabelText('开通方式')).toHaveValue('manual')
-    expect(screen.getByLabelText('客户端密钥')).toHaveValue('top-secret')
+    expect(screen.getByLabelText(zhCN.sso.provider.protocolLabel)).toHaveValue('oidc')
+    expect(screen.getByLabelText(zhCN.sso.provider.nameLabel)).toHaveValue('New IdP')
+    expect(screen.getByLabelText(zhCN.sso.provider.provisioningLabel)).toHaveValue('manual')
+    expect(screen.getByLabelText(zhCN.sso.provider.clientSecretLabel)).toHaveValue('top-secret')
   })
 
   it('updates a provider through the bundle', async () => {
@@ -525,12 +540,12 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.click(screen.getByLabelText('选择提供方'))
+    await user.click(screen.getByLabelText(zhCN.sso.provider.editLabel))
     await user.click(await screen.findByRole('option', { name: 'Acme IdP' }))
-    const nameField = screen.getByLabelText('名称')
+    const nameField = screen.getByLabelText(zhCN.sso.provider.nameLabel)
     await user.clear(nameField)
     await user.type(nameField, 'Acme IdP 2')
-    await user.click(screen.getByRole('button', { name: '保存提供方' }))
+    await user.click(screen.getByRole('button', { name: zhCN.sso.provider.updateSubmit }))
     await vi.waitFor(() => {
       expect(updates).toEqual([
         {
@@ -557,13 +572,13 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
     await pickProvider(user)
-    await user.type(screen.getByLabelText('域名'), 'acme.com')
-    await user.click(screen.getByRole('button', { name: '认领' }))
+    await user.type(screen.getByLabelText(zhCN.sso.domains.domainLabel), 'acme.com')
+    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.claim }))
     await vi.waitFor(() => {
       expect(claims).toEqual([{ id: 'idp-1', tenant: 'acme', domain: 'acme.com' }])
     })
     expect(
-      await screen.findByText('请在 DNS 中发布该令牌：tok-1'),
+      await screen.findByText(text(zhCN.sso.domains.claimToken, { token: 'tok-1' })),
     ).toBeInTheDocument()
   })
 
@@ -574,8 +589,8 @@ describe('SsoPage', () => {
     })
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
-    expect(await screen.findByText('提供方加载失败')).toBeInTheDocument()
-    expect(screen.getByText('SSO 面未能完成这次请求。')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.sso.error.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.sso.error.description)).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when the read is refused with 403', async () => {
@@ -586,8 +601,8 @@ describe('SsoPage', () => {
     })
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
-    expect(await screen.findByText('权限不足')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: zhCN.sso.retry })).toBeNull()
   })
 
   it('reports a provider action refusal in the list region and marks the row', async () => {
@@ -599,20 +614,20 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.click(screen.getByRole('button', { name: '刷新元数据（Acme IdP）' }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }) }))
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('你没有执行此操作的权限。')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.forbidden)
     // The result lands under the provider list, not under the write form or
     // the domain bar.
     expect(alert.closest('section')).toContainElement(screen.getByRole('table'))
     // The refused row control carries the same resolved text the region shows.
-    const button = screen.getByRole('button', { name: '刷新元数据（Acme IdP）' })
+    const button = screen.getByRole('button', { name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }) })
     expect(button).toHaveAttribute('aria-invalid', 'true')
     const describedBy = button.getAttribute('aria-describedby')
     expect(describedBy).not.toBeNull()
     expect(document.getElementById(describedBy ?? '')).toHaveTextContent(
-      '你没有执行此操作的权限。',
+      zhCN.errors.authn.forbidden,
     )
   })
 
@@ -627,20 +642,20 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
 
-    await user.click(screen.getByRole('button', { name: '刷新元数据（Acme IdP）' }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }) }))
     expect(
-      await screen.findByText('已刷新提供方「Acme IdP」的元数据'),
+      await screen.findByText(text(zhCN.sso.refreshMetadataSaved, { name: 'Acme IdP' })),
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '重新验证域名（Acme IdP）' }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.sso.reverifyDomainsAria, { name: 'Acme IdP' }) }))
     expect(
-      await screen.findByText('已重新验证提供方「Acme IdP」的域名'),
+      await screen.findByText(text(zhCN.sso.reverifyDomainsSaved, { name: 'Acme IdP' })),
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '删除提供方 Acme IdP' }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.sso.deleteAria, { name: 'Acme IdP' }) }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
-    expect(await screen.findByText('已删除提供方「Acme IdP」')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
+    expect(await screen.findByText(text(zhCN.sso.deleted, { name: 'Acme IdP' }))).toBeInTheDocument()
   })
 
   it('renders a write refused with a bare 403 as the permission copy, not a status line', async () => {
@@ -652,9 +667,9 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.click(screen.getByRole('button', { name: '刷新元数据（Acme IdP）' }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }) }))
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('你没有执行此操作的权限。')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.forbidden)
     expect(alert).not.toHaveTextContent('HTTP 403')
   })
 
@@ -672,20 +687,20 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.type(screen.getByLabelText('协议'), 'oidc')
-    await user.type(screen.getByLabelText('名称'), 'New IdP')
-    await user.type(screen.getByLabelText('开通方式'), 'manual')
-    await user.click(screen.getByRole('button', { name: '新建提供方' }))
+    await user.type(screen.getByLabelText(zhCN.sso.provider.protocolLabel), 'oidc')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'manual')
+    await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('你没有执行此操作的权限。')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.forbidden)
     // The form's own scope: the region sits with the fields, not with the
     // provider list or the domain bar.
-    expect(alert.closest('section')).toContainElement(screen.getByLabelText('名称'))
-    expect(screen.getByLabelText('名称')).toHaveValue('New IdP')
+    expect(alert.closest('section')).toContainElement(screen.getByLabelText(zhCN.sso.provider.nameLabel))
+    expect(screen.getByLabelText(zhCN.sso.provider.nameLabel)).toHaveValue('New IdP')
 
-    await user.click(screen.getByRole('button', { name: '新建提供方' }))
-    expect(await screen.findByText('已创建提供方「New IdP」')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
+    expect(await screen.findByText(text(zhCN.sso.provider.created, { name: 'New IdP' }))).toBeInTheDocument()
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
@@ -700,14 +715,14 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.click(screen.getByLabelText('选择提供方'))
+    await user.click(screen.getByLabelText(zhCN.sso.provider.editLabel))
     await user.click(await screen.findByRole('option', { name: 'Acme IdP' }))
-    const nameField = screen.getByLabelText('名称')
+    const nameField = screen.getByLabelText(zhCN.sso.provider.nameLabel)
     await user.clear(nameField)
     await user.type(nameField, 'Acme IdP 2')
-    await user.click(screen.getByRole('button', { name: '保存提供方' }))
+    await user.click(screen.getByRole('button', { name: zhCN.sso.provider.updateSubmit }))
     expect(
-      await screen.findByText('已保存提供方「Acme IdP 2」'),
+      await screen.findByText(text(zhCN.sso.provider.updated, { name: 'Acme IdP 2' })),
     ).toBeInTheDocument()
   })
 
@@ -722,23 +737,23 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
     await pickProvider(user)
-    await user.type(screen.getByLabelText('域名'), 'acme.com')
+    await user.type(screen.getByLabelText(zhCN.sso.domains.domainLabel), 'acme.com')
 
-    await user.click(screen.getByRole('button', { name: '验证' }))
+    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.verify }))
     expect(
-      await screen.findByText('已验证提供方「Acme IdP」的域名「acme.com」'),
+      await screen.findByText(text(zhCN.sso.domains.verified, { name: 'Acme IdP', domain: 'acme.com' })),
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '认领' }))
+    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.claim }))
     expect(
-      await screen.findByText('已为提供方「Acme IdP」认领域名「acme.com」'),
+      await screen.findByText(text(zhCN.sso.domains.claimed, { name: 'Acme IdP', domain: 'acme.com' })),
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '移除' }))
+    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.remove }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
     expect(
-      await screen.findByText('已从提供方「Acme IdP」移除域名「acme.com」'),
+      await screen.findByText(text(zhCN.sso.domains.removed, { name: 'Acme IdP', domain: 'acme.com' })),
     ).toBeInTheDocument()
   })
 
@@ -752,13 +767,13 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
     await pickProvider(user)
-    await user.type(screen.getByLabelText('域名'), 'acme.com')
-    await user.click(screen.getByRole('button', { name: '验证' }))
+    await user.type(screen.getByLabelText(zhCN.sso.domains.domainLabel), 'acme.com')
+    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.verify }))
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('你没有执行此操作的权限。')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.forbidden)
     expect(alert.closest('section')).toContainElement(
-      screen.getByLabelText('域名'),
+      screen.getByLabelText(zhCN.sso.domains.domainLabel),
     )
   })
 
@@ -773,28 +788,28 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
     await pickProvider(user)
-    await user.type(screen.getByLabelText('域名'), 'acme.com')
-    await user.click(screen.getByRole('button', { name: '认领' }))
+    await user.type(screen.getByLabelText(zhCN.sso.domains.domainLabel), 'acme.com')
+    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.claim }))
 
-    const token = await screen.findByText('请在 DNS 中发布该令牌：tok-1')
+    const token = await screen.findByText(text(zhCN.sso.domains.claimToken, { token: 'tok-1' }))
     expect(token.closest('[role="status"]')).not.toBeNull()
     await expectNoAxeViolations()
 
     // A second attempt in the domain scope resets its slot and settles as a
     // failure; the token is page state, not slot state, and stays.
-    await user.click(screen.getByRole('button', { name: '验证' }))
+    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.verify }))
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      '你没有执行此操作的权限。',
+      zhCN.errors.authn.forbidden,
     )
-    expect(screen.getByText('请在 DNS 中发布该令牌：tok-1')).toBeInTheDocument()
+    expect(screen.getByText(text(zhCN.sso.domains.claimToken, { token: 'tok-1' }))).toBeInTheDocument()
 
     // The explicit close control names the tenant, provider and domain, and
     // is the only way the value goes away.
     const close = screen.getByRole('button', {
-      name: '关闭租户「acme」中提供方「Acme IdP」域名「acme.com」的认领令牌',
+      name: text(zhCN.sso.domains.claimTokenCloseAria, { tenant: 'acme', name: 'Acme IdP', domain: 'acme.com' }),
     })
     await user.click(close)
-    expect(screen.queryByText('请在 DNS 中发布该令牌：tok-1')).toBeNull()
+    expect(screen.queryByText(text(zhCN.sso.domains.claimToken, { token: 'tok-1' }))).toBeNull()
   })
 
   it('disables the tenant and the driving provider selectors while the form write is pending', async () => {
@@ -809,24 +824,24 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.type(screen.getByLabelText('协议'), 'oidc')
-    await user.type(screen.getByLabelText('名称'), 'New IdP')
-    await user.type(screen.getByLabelText('开通方式'), 'manual')
-    await user.click(screen.getByRole('button', { name: '新建提供方' }))
+    await user.type(screen.getByLabelText(zhCN.sso.provider.protocolLabel), 'oidc')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'manual')
+    await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
 
     await vi.waitFor(() => {
-      expect(screen.getByLabelText('租户')).toHaveAttribute(
+      expect(screen.getByLabelText(zhCN.common.tenant)).toHaveAttribute(
         'aria-disabled',
         'true',
       )
     })
     // The form's own selector follows its scope; the domain bar's selector is
     // a sibling scope and stays operable.
-    expect(screen.getByLabelText('选择提供方')).toHaveAttribute(
+    expect(screen.getByLabelText(zhCN.sso.provider.editLabel)).toHaveAttribute(
       'aria-disabled',
       'true',
     )
-    expect(screen.getByLabelText('提供方')).not.toHaveAttribute(
+    expect(screen.getByLabelText(zhCN.sso.domains.providerLabel)).not.toHaveAttribute(
       'aria-disabled',
       'true',
     )
@@ -835,12 +850,12 @@ describe('SsoPage', () => {
       finish(providerFixture({ name: 'New IdP' }))
     })
     await vi.waitFor(() => {
-      expect(screen.getByLabelText('租户')).not.toHaveAttribute(
+      expect(screen.getByLabelText(zhCN.common.tenant)).not.toHaveAttribute(
         'aria-disabled',
         'true',
       )
     })
-    expect(screen.getByLabelText('选择提供方')).not.toHaveAttribute(
+    expect(screen.getByLabelText(zhCN.sso.provider.editLabel)).not.toHaveAttribute(
       'aria-disabled',
       'true',
     )

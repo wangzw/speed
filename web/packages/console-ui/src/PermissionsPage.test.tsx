@@ -44,6 +44,11 @@ function text(
   )
 }
 
+/** A matcher for a label that carries a locale string inside other text. */
+function contains(value: string): RegExp {
+  return new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+}
+
 const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
 
 /** The zh-CN label the confirm button shows once the two-step guard arms. */
@@ -105,7 +110,7 @@ function binding(overrides: Partial<ConsoleBinding> = {}): ConsoleBinding {
 }
 
 async function pickTenant(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  await user.click(screen.getByLabelText('租户'))
+  await user.click(screen.getByLabelText(zhCN.common.tenant))
   await user.click(await screen.findByRole('option', { name: 'Acme' }))
 }
 
@@ -145,7 +150,7 @@ async function expectRefreshInert(
   listRoles: ReturnType<typeof vi.fn>,
   readsBefore: number,
 ): Promise<void> {
-  const refresh = screen.getByRole('button', { name: '刷新' })
+  const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
   await vi.waitFor(() => {
     expect(refresh).toBeDisabled()
   })
@@ -200,7 +205,7 @@ describe('PermissionsPage', () => {
   it('prompts for a tenant before listing', () => {
     const operations = withAuthz()
     renderWithProviders(<PermissionsPage />, { operations })
-    expect(screen.getByText('请选择租户')).toBeInTheDocument()
+    expect(screen.getByText(zhCN.permissions.needTenant.title)).toBeInTheDocument()
   })
 
   it('does not read an empty tenant scope on refresh', async () => {
@@ -210,14 +215,14 @@ describe('PermissionsPage', () => {
 
     // The roles read is disabled while no tenant is chosen; the refresh
     // control follows it instead of issuing the read with an empty tenant.
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     expect(refresh).toBeDisabled()
     // The disabled control is described by the page's own "choose a tenant
     // first" text.
     const describedBy = refresh.getAttribute('aria-describedby')
     expect(describedBy).not.toBeNull()
     expect(document.getElementById(describedBy as string)).toHaveTextContent(
-      '权限面的角色、授权与绑定都按租户存储，请先选择一个租户。',
+      zhCN.permissions.needTenant.description,
     )
     // A programmatic click, because user-event refuses a disabled target:
     // the control must stay inert even when reached from a script.
@@ -241,15 +246,15 @@ describe('PermissionsPage', () => {
     await screen.findByText('editor')
     const reads = listRoles.mock.calls.length
 
-    await user.type(screen.getByLabelText('角色名'), 'auditor')
-    await user.click(screen.getByRole('button', { name: '保存角色' }))
+    await user.type(screen.getByLabelText(zhCN.permissions.roles.create.roleLabel), 'auditor')
+    await user.click(screen.getByRole('button', { name: zhCN.permissions.roles.create.submit }))
     await expectRefreshInert(listRoles, reads)
 
     await act(async () => {
       pending.resolve()
     })
     await vi.waitFor(() => {
-      expect(screen.getByRole('button', { name: '刷新' })).not.toBeDisabled()
+      expect(screen.getByRole('button', { name: zhCN.common.refresh })).not.toBeDisabled()
     })
   })
 
@@ -267,11 +272,11 @@ describe('PermissionsPage', () => {
     const reads = listRoles.mock.calls.length
 
     await user.click(
-      screen.getByRole('button', { name: '管理授权（角色 editor）' }),
+      screen.getByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }) }),
     )
-    await user.click(screen.getByLabelText('权限'))
+    await user.click(screen.getByLabelText(zhCN.permissions.grants.permissionLabel))
     await user.click(await screen.findByRole('option', { name: 'crm.deal.write' }))
-    await user.click(screen.getByRole('button', { name: '授予' }))
+    await user.click(screen.getByRole('button', { name: zhCN.permissions.grants.add }))
     await expectRefreshInert(listRoles, reads)
 
     await act(async () => {
@@ -292,9 +297,9 @@ describe('PermissionsPage', () => {
     await screen.findByText('editor')
     const reads = listRoles.mock.calls.length
 
-    await user.type(screen.getByLabelText('角色'), 'viewer')
-    await chooseAccount(user, '账户', 'Ada', 'Ada (acc-2)')
-    await user.click(screen.getByRole('button', { name: '绑定' }))
+    await user.type(screen.getByLabelText(zhCN.permissions.bindings.roleLabel), 'viewer')
+    await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: zhCN.permissions.bindings.bind }))
     await expectRefreshInert(listRoles, reads)
 
     await act(async () => {
@@ -316,11 +321,11 @@ describe('PermissionsPage', () => {
     await screen.findByText('editor')
     const reads = listRoles.mock.calls.length
 
-    await chooseAccount(user, '账户标识', 'Ada', 'Ada (acc-2)')
-    await user.click(screen.getByRole('button', { name: '查询' }))
+    await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: zhCN.permissions.lookup.apply }))
     await user.click(
       await screen.findByRole('button', {
-        name: '解绑账户 Operator 的角色 editor',
+        name: text(zhCN.permissions.bindings.unbindAria, { account: 'Operator', role: 'editor' }),
       }),
     )
     await expectRefreshInert(listRoles, reads)
@@ -339,8 +344,8 @@ describe('PermissionsPage', () => {
       // The link that carried the tenant arrives with a selection already
       // made: the roles read runs for it and the selector shows its alias.
       expect(await screen.findByText('editor')).toBeInTheDocument()
-      expect(screen.queryByText('请选择租户')).toBeNull()
-      expect(screen.getByLabelText('租户')).toHaveTextContent('Acme')
+      expect(screen.queryByText(zhCN.permissions.needTenant.title)).toBeNull()
+      expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent('Acme')
       expect(listRoles).toHaveBeenCalledWith('acme')
     } finally {
       window.history.replaceState({}, '', '/')
@@ -382,22 +387,22 @@ describe('PermissionsPage', () => {
     // order, so a tooltip or aria-describedby that depends on focus or hover is
     // unreachable to keyboard-only users. The control is still in the
     // accessibility tree; visible text sits in every reader's order.
-    expect(screen.getByText('内建角色不可修改或删除')).toBeInTheDocument()
+    expect(screen.getByText(zhCN.permissions.roles.builtinLocked)).toBeInTheDocument()
     // The server refuses writes on a builtin role, not reads: the row keeps
     // an entry that opens the grants it holds.
     expect(
-      screen.getByRole('button', { name: '查看授权（角色 platform-admin）' }),
+      screen.getByRole('button', { name: text(zhCN.permissions.roles.viewGrantsAria, { role: 'platform-admin' }) }),
     ).toBeEnabled()
     expect(
-      screen.queryByRole('button', { name: '管理授权（角色 platform-admin）' }),
+      screen.queryByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'platform-admin' }) }),
     ).toBeNull()
     expect(
-      screen.queryByRole('button', { name: '删除角色 platform-admin' }),
+      screen.queryByRole('button', { name: text(zhCN.permissions.roles.removeAria, { role: 'platform-admin' }) }),
     ).toBeNull()
     expect(
-      screen.getByRole('button', { name: '管理授权（角色 editor）' }),
+      screen.getByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }) }),
     ).toBeEnabled()
-    expect(screen.getByRole('button', { name: '删除角色 editor' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: text(zhCN.permissions.roles.removeAria, { role: 'editor' }) })).toBeEnabled()
   })
 
   it('opens a builtin role grants read-only, with no grant or revoke control', async () => {
@@ -418,23 +423,23 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     await user.click(
       await screen.findByRole('button', {
-        name: '查看授权（角色 platform-admin）',
+        name: text(zhCN.permissions.roles.viewGrantsAria, { role: 'platform-admin' }),
       }),
     )
     // The held grant is visible, spelled as the catalog spells it (the
     // catalog lists the same text, so the section scopes the assertion).
     const grantsSection = screen
-      .getByRole('heading', { name: '授权' })
+      .getByRole('heading', { name: zhCN.permissions.grants.title })
       .closest('section') as HTMLElement
     expect(await within(grantsSection).findByText('crm.deal.read')).toBeInTheDocument()
     expect(
-      screen.getByText('该角色为内建角色，授权为只读：不能授予，也不能撤销。'),
+      screen.getByText(zhCN.permissions.grants.builtinReadOnly),
     ).toBeInTheDocument()
     // ...and neither the grant form nor the revoke action is offered.
-    expect(screen.queryByLabelText('权限')).toBeNull()
-    expect(screen.queryByRole('button', { name: '授予' })).toBeNull()
+    expect(screen.queryByLabelText(zhCN.permissions.grants.permissionLabel)).toBeNull()
+    expect(screen.queryByRole('button', { name: zhCN.permissions.grants.add })).toBeNull()
     expect(
-      screen.queryByRole('button', { name: '撤销授权 crm.deal.read' }),
+      screen.queryByRole('button', { name: text(zhCN.permissions.grants.revokeAria, { permission: 'crm.deal.read' }) }),
     ).toBeNull()
   })
 
@@ -447,9 +452,9 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     await screen.findByText('editor')
-    await user.click(screen.getByRole('button', { name: '管理授权（角色 editor）' }))
-    const grantsSection = screen.getByRole('heading', { name: '授权' }).closest('section')
-    const catalogSection = screen.getByRole('heading', { name: '权限目录' }).closest('section')
+    await user.click(screen.getByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }) }))
+    const grantsSection = screen.getByRole('heading', { name: zhCN.permissions.grants.title }).closest('section')
+    const catalogSection = screen.getByRole('heading', { name: zhCN.permissions.catalog.title }).closest('section')
     expect(grantsSection).not.toBeNull()
     expect(catalogSection).not.toBeNull()
     // The grant row shows the catalog's permission code verbatim, so "what is
@@ -474,18 +479,18 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     const manage = await screen.findByRole('button', {
-      name: '管理授权（角色 editor）',
+      name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }),
     })
-    const removeRole = screen.getByRole('button', { name: '删除角色 editor' })
+    const removeRole = screen.getByRole('button', { name: text(zhCN.permissions.roles.removeAria, { role: 'editor' }) })
     const unbind = screen.getByRole('button', {
-      name: '解绑账户 Operator 的角色 viewer',
+      name: text(zhCN.permissions.bindings.unbindAria, { account: 'Operator', role: 'viewer' }),
     })
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     // The grant revoke belongs to the selected role's grant list, which
     // opens with the manage action.
     await user.click(manage)
     const revoke = await screen.findByRole('button', {
-      name: '撤销授权 crm.deal.read',
+      name: text(zhCN.permissions.grants.revokeAria, { permission: 'crm.deal.read' }),
     })
     for (const control of [manage, removeRole, unbind, refresh, revoke]) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
@@ -505,9 +510,9 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     // The form offers no builtin control: the mark freezes a role for good and
     // is the host's to set when it seeds the role, not the console's.
-    expect(screen.queryByRole('checkbox', { name: '内建角色' })).toBeNull()
-    await user.type(screen.getByLabelText('角色名'), 'auditor')
-    await user.click(screen.getByRole('button', { name: '保存角色' }))
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    await user.type(screen.getByLabelText(zhCN.permissions.roles.create.roleLabel), 'auditor')
+    await user.click(screen.getByRole('button', { name: zhCN.permissions.roles.create.submit }))
     await vi.waitFor(() => {
       expect(written).toEqual([
         { tenant: 'acme', role: 'auditor', descriptionKey: '' },
@@ -515,7 +520,7 @@ describe('PermissionsPage', () => {
     })
     // The landed create fills the role scope's success region, naming the
     // role it wrote.
-    expect(await screen.findByText('角色「auditor」已保存')).toBeInTheDocument()
+    expect(await screen.findByText(text(zhCN.permissions.roles.saved, { role: 'auditor' }))).toBeInTheDocument()
   })
 
   it('grants and revokes a permission on the selected role', async () => {
@@ -537,15 +542,15 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     await screen.findByText('editor')
-    await user.click(screen.getByRole('button', { name: '管理授权（角色 editor）' }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }) }))
     const grantsSection = screen
-      .getByRole('heading', { name: '授权' })
+      .getByRole('heading', { name: zhCN.permissions.grants.title })
       .closest('section') as HTMLElement
     await within(grantsSection).findByText('crm.deal.read')
-    await user.click(screen.getByLabelText('权限'))
+    await user.click(screen.getByLabelText(zhCN.permissions.grants.permissionLabel))
     await user.click(await screen.findByRole('option', { name: 'crm.deal.write' }))
-    await user.click(screen.getByRole('button', { name: '授予' }))
-    await user.click(screen.getByRole('button', { name: '撤销授权 crm.deal.read' }))
+    await user.click(screen.getByRole('button', { name: zhCN.permissions.grants.add }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.permissions.grants.revokeAria, { permission: 'crm.deal.read' }) }))
     await vi.waitFor(() => {
       // Grant and revoke name the permission by its CODE, symmetrically:
       // the granted code is sent back on revoke through the catalog map.
@@ -555,7 +560,7 @@ describe('PermissionsPage', () => {
     // The landed revoke fills the grants scope's success region, naming the
     // permission and the role it was revoked from.
     expect(
-      await screen.findByText('已从角色「editor」撤销权限 crm.deal.read'),
+      await screen.findByText(text(zhCN.permissions.grants.revoked, { role: 'editor', permission: 'crm.deal.read' })),
     ).toBeInTheDocument()
   })
 
@@ -580,12 +585,12 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     await screen.findByText('editor')
-    await user.click(screen.getByRole('button', { name: '管理授权（角色 editor）' }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }) }))
     const grantsSection = screen
-      .getByRole('heading', { name: '授权' })
+      .getByRole('heading', { name: zhCN.permissions.grants.title })
       .closest('section') as HTMLElement
     await within(grantsSection).findByText('authn.mfa.reset')
-    await user.click(screen.getByRole('button', { name: '撤销授权 authn.mfa.reset' }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.permissions.grants.revokeAria, { permission: 'authn.mfa.reset' }) }))
     await vi.waitFor(() => {
       expect(revoked).toEqual(['authn.mfa.reset'])
     })
@@ -611,13 +616,13 @@ describe('PermissionsPage', () => {
     await screen.findByText('Operator')
     // A role alone is not a binding: the account must be chosen, and the
     // picker holds no id until then.
-    await user.type(screen.getByLabelText('角色'), 'viewer')
-    expect(screen.getByRole('button', { name: '绑定' })).toBeDisabled()
+    await user.type(screen.getByLabelText(zhCN.permissions.bindings.roleLabel), 'viewer')
+    expect(screen.getByRole('button', { name: zhCN.permissions.bindings.bind })).toBeDisabled()
     // A display name finds the account; the write carries its id ("acc-2"),
     // never the typed name.
-    await chooseAccount(user, '账户', 'Ada', 'Ada (acc-2)')
-    await user.click(screen.getByRole('button', { name: '绑定' }))
-    await user.click(screen.getByRole('button', { name: '解绑账户 Operator 的角色 editor' }))
+    await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: zhCN.permissions.bindings.bind }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.permissions.bindings.unbindAria, { account: 'Operator', role: 'editor' }) }))
     await vi.waitFor(() => {
       expect(bound).toEqual(['acc-2:viewer'])
       expect(unbound).toEqual(['editor'])
@@ -625,7 +630,7 @@ describe('PermissionsPage', () => {
     // The landed unbind fills the bindings scope's success region, naming
     // the account and the role it took away.
     expect(
-      await screen.findByText('已解除账户「acc-1」的角色「editor」绑定'),
+      await screen.findByText(text(zhCN.permissions.bindings.unbound, { account: 'acc-1', role: 'editor' })),
     ).toBeInTheDocument()
   })
 
@@ -639,12 +644,12 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     // The cell keeps the recorded id, labelled unresolved rather than
     // passed off as a resolved identity.
-    const cell = await screen.findByLabelText(/身份未解析/)
+    const cell = await screen.findByLabelText(contains(zhCN.common.accountUnresolved))
     expect(cell).toHaveTextContent('acc-1')
     // The unbind control names the account by the recorded id when no
     // readable name was resolved.
     expect(
-      screen.getByRole('button', { name: '解绑账户 acc-1 的角色 viewer' }),
+      screen.getByRole('button', { name: text(zhCN.permissions.bindings.unbindAria, { account: 'acc-1', role: 'viewer' }) }),
     ).toBeInTheDocument()
   })
 
@@ -657,12 +662,12 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
 
-    const bindings = section('绑定')
+    const bindings = section(zhCN.permissions.bindings.title)
     // The refused lookup renders the recorded identifier in full, which
     // otherwise sets the account column's width from its content. The
     // account is the row's identity, so it takes the shared primary cap,
     // which grows at md and counts the copy control in the budget.
-    const accountMarker = await within(bindings).findByLabelText(/身份未解析/)
+    const accountMarker = await within(bindings).findByLabelText(contains(zhCN.common.accountUnresolved))
     const accountCell = accountMarker.closest('td')
     expect(containerMaxWidthOf(accountCell!.firstElementChild!)).toEqual(
       new Map([
@@ -690,9 +695,9 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     // No account chosen yet, so the lookup is not offered.
-    expect(screen.getByRole('button', { name: '查询' })).toBeDisabled()
-    await chooseAccount(user, '账户标识', 'Ada', 'Ada (acc-2)')
-    await user.click(screen.getByRole('button', { name: '查询' }))
+    expect(screen.getByRole('button', { name: zhCN.permissions.lookup.apply })).toBeDisabled()
+    await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: zhCN.permissions.lookup.apply }))
     // The read is addressed by the account id, not the typed name.
     await vi.waitFor(() => {
       expect(looked).toEqual(['acc-2'])
@@ -708,13 +713,13 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    await chooseAccount(user, '账户标识', 'Ada', 'Ada (acc-2)')
-    await user.click(screen.getByRole('button', { name: '查询' }))
+    await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: zhCN.permissions.lookup.apply }))
 
-    const lookup = section('查询账户的绑定')
+    const lookup = section(zhCN.permissions.lookup.title)
     expect(
       within(lookup).getByRole('status', {
-        name: '正在加载该账户的绑定',
+        name: zhCN.permissions.lookup.loading,
       }),
     ).toBeInTheDocument()
 
@@ -722,7 +727,7 @@ describe('PermissionsPage', () => {
       pending.resolve([])
       await pending.promise
     })
-    expect(await within(lookup).findByText('暂无绑定')).toBeInTheDocument()
+    expect(await within(lookup).findByText(zhCN.permissions.lookup.empty.title)).toBeInTheDocument()
   })
 
   it('gives the lookup read a retryable failure and re-reads on retry', async () => {
@@ -738,22 +743,22 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    await chooseAccount(user, '账户标识', 'Ada', 'Ada (acc-2)')
-    await user.click(screen.getByRole('button', { name: '查询' }))
+    await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: zhCN.permissions.lookup.apply }))
 
-    const lookup = section('查询账户的绑定')
+    const lookup = section(zhCN.permissions.lookup.title)
     expect(
-      await within(lookup).findByText('该账户的绑定加载失败'),
+      await within(lookup).findByText(zhCN.permissions.lookup.error.title),
     ).toBeInTheDocument()
     expect(
-      within(lookup).getByText('授权面未能完成这次请求。'),
+      within(lookup).getByText(zhCN.permissions.lookup.error.description),
     ).toBeInTheDocument()
-    await user.click(within(lookup).getByRole('button', { name: '重试' }))
-    expect(await within(lookup).findByText('暂无绑定')).toBeInTheDocument()
+    await user.click(within(lookup).getByRole('button', { name: zhCN.permissions.lookup.retry }))
+    expect(await within(lookup).findByText(zhCN.permissions.lookup.empty.title)).toBeInTheDocument()
     expect(reads).toBe(2)
     // The retry's pending state withdraws the failure placeholder.
     expect(
-      within(lookup).queryByText('该账户的绑定加载失败'),
+      within(lookup).queryByText(zhCN.permissions.lookup.error.title),
     ).toBeNull()
   })
 
@@ -770,11 +775,11 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     await screen.findByText('editor')
-    await user.click(screen.getByRole('button', { name: '删除角色 editor' }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.permissions.roles.removeAria, { role: 'editor' }) }))
     // Deleting a role revokes its grants and bindings with it and cannot be
     // undone: the heavier two-step guard -- the first click only arms.
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '删除' }))
+    await user.click(within(dialog).getByRole('button', { name: zhCN.permissions.roles.removeConfirm }))
     expect(removed).toEqual([])
     await act(async () => {
       await new Promise((resolve) =>
@@ -790,7 +795,7 @@ describe('PermissionsPage', () => {
     // The dialog closes on the confirming click, and the landed delete
     // fills the role scope's success region after it closes.
     await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(await screen.findByText('角色「editor」已删除')).toBeInTheDocument()
+    expect(await screen.findByText(text(zhCN.permissions.roles.removed, { role: 'editor' }))).toBeInTheDocument()
   })
 
   it('judges the deleted role against the selection current when the removal settles', async () => {
@@ -803,16 +808,16 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    await screen.findByRole('button', { name: '删除角色 beta' })
+    await screen.findByRole('button', { name: text(zhCN.permissions.roles.removeAria, { role: 'beta' }) })
 
     // The removal is confirmed while beta is the selected role.
     await user.click(
-      screen.getByRole('button', { name: '管理授权（角色 beta）' }),
+      screen.getByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'beta' }) }),
     )
-    expect(await screen.findByText('角色「beta」的授权')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '删除角色 beta' }))
+    expect(await screen.findByText(text(zhCN.permissions.grants.forRole, { role: 'beta' }))).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: text(zhCN.permissions.roles.removeAria, { role: 'beta' }) }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '删除' }))
+    await user.click(within(dialog).getByRole('button', { name: zhCN.permissions.roles.removeConfirm }))
     await act(async () => {
       await new Promise((resolve) =>
         setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
@@ -826,17 +831,17 @@ describe('PermissionsPage', () => {
     // While the deletion is in flight the operator moves to alpha. The
     // settlement must clear a selection only if it still names beta.
     await user.click(
-      screen.getByRole('button', { name: '管理授权（角色 alpha）' }),
+      screen.getByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'alpha' }) }),
     )
-    expect(await screen.findByText('角色「alpha」的授权')).toBeInTheDocument()
+    expect(await screen.findByText(text(zhCN.permissions.grants.forRole, { role: 'alpha' }))).toBeInTheDocument()
 
     await act(async () => {
       removal.resolve()
     })
     await vi.waitFor(() =>
-      expect(screen.queryByText('角色「beta」已删除')).toBeInTheDocument(),
+      expect(screen.queryByText(text(zhCN.permissions.roles.removed, { role: 'beta' }))).toBeInTheDocument(),
     )
-    expect(screen.getByText('角色「alpha」的授权')).toBeInTheDocument()
+    expect(screen.getByText(text(zhCN.permissions.grants.forRole, { role: 'alpha' }))).toBeInTheDocument()
   })
 
   it('closes the delete dialog on confirm and reports a refusal in the page region', async () => {
@@ -848,9 +853,9 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     await screen.findByText('editor')
-    await user.click(screen.getByRole('button', { name: '删除角色 editor' }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.permissions.roles.removeAria, { role: 'editor' }) }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '删除' }))
+    await user.click(within(dialog).getByRole('button', { name: zhCN.permissions.roles.removeConfirm }))
     await act(async () => {
       await new Promise((resolve) =>
         setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
@@ -866,7 +871,7 @@ describe('PermissionsPage', () => {
     // the failed row inline, so the region is addressed by its role.
     await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      '你没有执行此操作的权限。',
+      zhCN.errors.authz.forbidden,
     )
   })
 
@@ -877,8 +882,8 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    expect(await screen.findByText('角色加载失败')).toBeInTheDocument()
-    expect(screen.getByText('授权面未能完成这次请求。')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.permissions.roles.error.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.permissions.roles.error.description)).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when the roles read is refused with 403', async () => {
@@ -888,8 +893,8 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    expect(await screen.findByText('权限不足')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: zhCN.permissions.roles.retry })).toBeNull()
     // A read's refusal never settles into a write scope's slot.
     expect(screen.queryByRole('alert')).toBeNull()
   })
@@ -906,35 +911,35 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
 
     // The role catalog refuses the create.
-    await user.type(screen.getByLabelText('角色名'), 'auditor')
-    await user.click(screen.getByRole('button', { name: '保存角色' }))
-    expect(await within(section('角色')).findByRole('alert')).toHaveTextContent(
-      '服务端无法读取该请求，请检查表单后重试。',
+    await user.type(screen.getByLabelText(zhCN.permissions.roles.create.roleLabel), 'auditor')
+    await user.click(screen.getByRole('button', { name: zhCN.permissions.roles.create.submit }))
+    expect(await within(section(zhCN.permissions.roles.title)).findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authz.bad_request,
     )
 
     // The grants group refuses the grant.
     await user.click(
-      screen.getByRole('button', { name: '管理授权（角色 editor）' }),
+      screen.getByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }) }),
     )
-    await within(section('授权')).findByText('crm.deal.read')
-    await user.click(screen.getByLabelText('权限'))
+    await within(section(zhCN.permissions.grants.title)).findByText('crm.deal.read')
+    await user.click(screen.getByLabelText(zhCN.permissions.grants.permissionLabel))
     await user.click(await screen.findByRole('option', { name: 'crm.deal.write' }))
-    await user.click(screen.getByRole('button', { name: '授予' }))
-    expect(await within(section('授权')).findByRole('alert')).toHaveTextContent(
-      '该改动与现有角色或绑定冲突。',
+    await user.click(screen.getByRole('button', { name: zhCN.permissions.grants.add }))
+    expect(await within(section(zhCN.permissions.grants.title)).findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authz.conflict,
     )
 
     // Neither section carries the other's text, and no page-level banner
     // aggregates them: the two regions are the only alerts.
-    expect(within(section('角色')).getByRole('alert')).toHaveTextContent(
-      '服务端无法读取该请求，请检查表单后重试。',
+    expect(within(section(zhCN.permissions.roles.title)).getByRole('alert')).toHaveTextContent(
+      zhCN.errors.authz.bad_request,
     )
     expect(
-      within(section('角色')).queryByText('该改动与现有角色或绑定冲突。'),
+      within(section(zhCN.permissions.roles.title)).queryByText(zhCN.errors.authz.conflict),
     ).toBeNull()
     expect(
-      within(section('授权')).queryByText(
-        '服务端无法读取该请求，请检查表单后重试。',
+      within(section(zhCN.permissions.grants.title)).queryByText(
+        zhCN.errors.authz.bad_request,
       ),
     ).toBeNull()
     expect(screen.getAllByRole('alert')).toHaveLength(2)
@@ -956,20 +961,20 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     await user.click(
-      await screen.findByRole('button', { name: '管理授权（角色 editor）' }),
+      await screen.findByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }) }),
     )
-    const grants = section('授权')
+    const grants = section(zhCN.permissions.grants.title)
     const failed = await within(grants).findByRole('button', {
-      name: '撤销授权 crm.deal.read',
+      name: text(zhCN.permissions.grants.revokeAria, { permission: 'crm.deal.read' }),
     })
     const other = within(grants).getByRole('button', {
-      name: '撤销授权 crm.deal.write',
+      name: text(zhCN.permissions.grants.revokeAria, { permission: 'crm.deal.write' }),
     })
     await user.click(failed)
 
     // The failing row carries the marker; the row beside it does not.
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      '你没有执行此操作的权限。',
+      zhCN.errors.authz.forbidden,
     )
     expect(failed).toHaveAttribute('aria-invalid', 'true')
     expect(other).toHaveAttribute('aria-invalid', 'false')
@@ -994,12 +999,12 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    await chooseAccount(user, '账户标识', 'Ada', 'Ada (acc-2)')
-    await user.click(screen.getByRole('button', { name: '查询' }))
+    await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: zhCN.permissions.lookup.apply }))
 
-    const lookup = section('查询账户的绑定')
-    expect(await within(lookup).findByText('权限不足')).toBeInTheDocument()
-    expect(within(lookup).queryByRole('button', { name: '重试' })).toBeNull()
+    const lookup = section(zhCN.permissions.lookup.title)
+    expect(await within(lookup).findByText(zhCN.forbidden.title)).toBeInTheDocument()
+    expect(within(lookup).queryByRole('button', { name: zhCN.permissions.lookup.retry })).toBeNull()
     // A read's refusal never settles into a write scope's slot.
     expect(screen.queryByRole('alert')).toBeNull()
   })
@@ -1015,18 +1020,18 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     await user.click(
-      await screen.findByRole('button', { name: '管理授权（角色 editor）' }),
+      await screen.findByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }) }),
     )
-    await user.click(screen.getByLabelText('权限'))
+    await user.click(screen.getByLabelText(zhCN.permissions.grants.permissionLabel))
     await user.click(await screen.findByRole('option', { name: 'crm.deal.write' }))
-    await user.click(screen.getByRole('button', { name: '授予' }))
+    await user.click(screen.getByRole('button', { name: zhCN.permissions.grants.add }))
 
     // The selected role drives the grants scope, and the tenant drives
     // every scope: both are out of reach while the grant is in flight.
     expect(
-      screen.getByRole('button', { name: '管理授权（角色 viewer）' }),
+      screen.getByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'viewer' }) }),
     ).toBeDisabled()
-    expect(screen.getByLabelText('租户')).toHaveAttribute(
+    expect(screen.getByLabelText(zhCN.common.tenant)).toHaveAttribute(
       'aria-disabled',
       'true',
     )
@@ -1036,15 +1041,15 @@ describe('PermissionsPage', () => {
       await pending.promise
     })
     expect(
-      await screen.findByText('已向角色「editor」授予权限 crm.deal.write'),
+      await screen.findByText(text(zhCN.permissions.grants.granted, { role: 'editor', permission: 'crm.deal.write' })),
     ).toBeInTheDocument()
 
     // Another role means another context: the old confirmation goes.
     await user.click(
-      screen.getByRole('button', { name: '管理授权（角色 viewer）' }),
+      screen.getByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'viewer' }) }),
     )
     expect(
-      screen.queryByText('已向角色「editor」授予权限 crm.deal.write'),
+      screen.queryByText(text(zhCN.permissions.grants.granted, { role: 'editor', permission: 'crm.deal.write' })),
     ).toBeNull()
   })
 
@@ -1056,26 +1061,26 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    await user.type(screen.getByLabelText('角色'), 'viewer')
-    await chooseAccount(user, '账户', 'Ada', 'Ada (acc-2)')
-    await user.click(screen.getByRole('button', { name: '绑定' }))
+    await user.type(screen.getByLabelText(zhCN.permissions.bindings.roleLabel), 'viewer')
+    await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: zhCN.permissions.bindings.bind }))
 
     // The chosen account drives the bindings scope: it is disabled while
     // the write it drives is in flight.
-    expect(screen.getByLabelText('账户')).toBeDisabled()
+    expect(screen.getByLabelText(zhCN.permissions.bindings.accountLabel)).toBeDisabled()
 
     await act(async () => {
       pending.resolve()
       await pending.promise
     })
     expect(
-      await screen.findByText('已将角色「viewer」绑定到账户「Ada」'),
+      await screen.findByText(text(zhCN.permissions.bindings.bound, { role: 'viewer', account: 'Ada' })),
     ).toBeInTheDocument()
 
     // Choosing another account is another context: the confirmation goes.
-    await chooseAccount(user, '账户', 'Operator', 'Operator (acc-1)')
+    await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Operator', 'Operator (acc-1)')
     expect(
-      screen.queryByText('已将角色「viewer」绑定到账户「Ada」'),
+      screen.queryByText(text(zhCN.permissions.bindings.bound, { role: 'viewer', account: 'Ada' })),
     ).toBeNull()
   })
 

@@ -58,9 +58,9 @@ describe('AuditPage', () => {
     )
     renderWithProviders(<AuditPage />, { operations })
     const gated = [
-      await screen.findByRole('button', { name: '刷新' }),
-      screen.getByRole('button', { name: '上一页' }),
-      screen.getByRole('button', { name: '下一页' }),
+      await screen.findByRole('button', { name: COPY.refresh }),
+      screen.getByRole('button', { name: zhCN.audit.prevPage }),
+      screen.getByRole('button', { name: zhCN.audit.nextPage }),
     ]
     for (const control of gated) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
@@ -70,7 +70,7 @@ describe('AuditPage', () => {
   it('renders the settled empty state when no record matches', async () => {
     const operations = createConsoleOperations(makeConsoleBackend())
     renderWithProviders(<AuditPage />, { operations })
-    expect(await screen.findByText('暂无审计记录')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.audit.empty.title)).toBeInTheDocument()
   })
 
   it('lists records', async () => {
@@ -89,7 +89,13 @@ describe('AuditPage', () => {
     )
     renderWithProviders(<AuditPage />, { operations })
     await screen.findByText('tenant.create')
-    for (const name of ['时间', '动作', '结果', '操作者', '对象']) {
+    for (const name of [
+      zhCN.audit.column.time,
+      zhCN.audit.column.action,
+      zhCN.audit.column.outcome,
+      zhCN.audit.column.actor,
+      zhCN.audit.column.object,
+    ]) {
       expect(screen.getByRole('columnheader', { name })).toBeInTheDocument()
     }
   })
@@ -107,7 +113,9 @@ describe('AuditPage', () => {
     // again below sm -- the restore is the low end of its tier, not an
     // always-on column.
     expect(
-      columnVisibility(screen.getByRole('columnheader', { name: '对象' })),
+      columnVisibility(
+        screen.getByRole('columnheader', { name: zhCN.audit.column.object }),
+      ),
     ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
     // The header and the body each apply the column's visibility rule on
     // their own, so assert the body cells too: a divergence between the two
@@ -116,20 +124,28 @@ describe('AuditPage', () => {
       columnVisibility(screen.getByText('tenant/acme').closest('td')!),
     ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
     expect(
-      columnVisibility(screen.getByRole('columnheader', { name: '操作者' })),
+      columnVisibility(
+        screen.getByRole('columnheader', { name: zhCN.audit.column.actor }),
+      ),
     ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
     expect(
-      columnVisibility(screen.getByRole('columnheader', { name: '结果' })),
+      columnVisibility(
+        screen.getByRole('columnheader', { name: zhCN.audit.column.outcome }),
+      ),
     ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
     expect(
       columnVisibility(screen.getByText('ok').closest('td')!),
     ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
     // The anchors never hide.
     expect(
-      columnVisibility(screen.getByRole('columnheader', { name: '时间' })),
+      columnVisibility(
+        screen.getByRole('columnheader', { name: zhCN.audit.column.time }),
+      ),
     ).toBeNull()
     expect(
-      columnVisibility(screen.getByRole('columnheader', { name: '动作' })),
+      columnVisibility(
+        screen.getByRole('columnheader', { name: zhCN.audit.column.action }),
+      ),
     ).toBeNull()
   })
 
@@ -239,9 +255,11 @@ describe('AuditPage', () => {
     renderWithProviders(<AuditPage />, { operations })
     // The cell shows the recorded id, but labelled as unresolved rather
     // than passed off as a resolved (or system) name.
-    const cell = await screen.findByLabelText(/身份未解析/)
+    const cell = await screen.findByLabelText(zhCN.common.accountUnresolved, {
+      exact: false,
+    })
     expect(cell).toHaveTextContent('acc-1')
-    expect(cell).toHaveAttribute('title', '身份未解析（需账户读取权限）')
+    expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
   })
 
   it('applies the action filter server-side on submit', async () => {
@@ -258,10 +276,10 @@ describe('AuditPage', () => {
     renderWithProviders(<AuditPage />, { operations })
     await screen.findByText('tenant.create')
     await user.type(
-      screen.getByLabelText('动作筛选'),
+      screen.getByLabelText(zhCN.audit.filters.action),
       'tenant.create, account.delete',
     )
-    await user.click(screen.getByRole('button', { name: '应用' }))
+    await user.click(screen.getByRole('button', { name: zhCN.audit.filters.apply }))
     await vi.waitFor(() => {
       expect(seen.action).toEqual(['tenant.create', 'account.delete'])
     })
@@ -281,9 +299,9 @@ describe('AuditPage', () => {
     )
     renderWithProviders(<AuditPage />, { operations })
     await screen.findByText('tenant.create')
-    await user.type(screen.getByLabelText('结果筛选'), 'ok, denied')
-    await user.type(screen.getByLabelText('操作者筛选'), 'acc-1')
-    await user.click(screen.getByRole('button', { name: '应用' }))
+    await user.type(screen.getByLabelText(zhCN.audit.filters.outcome), 'ok, denied')
+    await user.type(screen.getByLabelText(zhCN.audit.filters.actor), 'acc-1')
+    await user.click(screen.getByRole('button', { name: zhCN.audit.filters.apply }))
     await vi.waitFor(() => {
       expect(seen.outcome).toEqual(['ok', 'denied'])
       expect(seen.actor).toEqual(['acc-1'])
@@ -311,10 +329,10 @@ describe('AuditPage', () => {
     )
     renderWithProviders(<AuditPage />, { operations })
     await screen.findByText('tenant.create')
-    await user.type(screen.getByLabelText('动作筛选'), 'tenant.create')
-    await user.type(screen.getByLabelText('结果筛选'), 'ok')
-    await user.type(screen.getByLabelText('操作者筛选'), 'acc-1')
-    await user.click(screen.getByRole('button', { name: '应用' }))
+    await user.type(screen.getByLabelText(zhCN.audit.filters.action), 'tenant.create')
+    await user.type(screen.getByLabelText(zhCN.audit.filters.outcome), 'ok')
+    await user.type(screen.getByLabelText(zhCN.audit.filters.actor), 'acc-1')
+    await user.click(screen.getByRole('button', { name: zhCN.audit.filters.apply }))
     await vi.waitFor(() => {
       expect(
         requests.some(
@@ -325,7 +343,7 @@ describe('AuditPage', () => {
         ),
       ).toBe(true)
     })
-    await user.click(screen.getByRole('button', { name: '重置' }))
+    await user.click(screen.getByRole('button', { name: zhCN.audit.filters.reset }))
     await vi.waitFor(() => {
       const last = requests.at(-1)
       expect(last?.action ?? []).toEqual([])
@@ -348,9 +366,11 @@ describe('AuditPage', () => {
     )
     renderWithProviders(<AuditPage />, { operations })
     await screen.findByText('tenant.create')
-    await user.click(screen.getByRole('button', { name: '下一页' }))
+    await user.click(screen.getByRole('button', { name: zhCN.audit.nextPage }))
     expect(await screen.findByText('tenant.disable')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '上一页' })).toBeEnabled()
+    expect(
+      screen.getByRole('button', { name: zhCN.audit.prevPage }),
+    ).toBeEnabled()
   })
 
   it('renders the retryable error placeholder when the read fails', async () => {
@@ -360,9 +380,11 @@ describe('AuditPage', () => {
       }),
     )
     renderWithProviders(<AuditPage />, { operations })
-    expect(await screen.findByText('审计记录加载失败')).toBeInTheDocument()
-    expect(screen.getByText('审计面未能完成这次请求。')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.audit.error.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.audit.error.description)).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: zhCN.audit.retry }),
+    ).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when the read is refused with 403', async () => {
@@ -372,8 +394,10 @@ describe('AuditPage', () => {
       }),
     )
     renderWithProviders(<AuditPage />, { operations })
-    expect(await screen.findByText('权限不足')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.audit.retry }),
+    ).toBeNull()
   })
 
   it('shows the update time in the action group only once a read has settled', async () => {

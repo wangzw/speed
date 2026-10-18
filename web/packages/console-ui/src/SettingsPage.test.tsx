@@ -41,6 +41,20 @@ const NEXT_PAGE_LABEL =
   muiZhCN.components?.MuiTablePagination?.defaultProps.getItemAriaLabel?.(
     'next',
   ) ?? ''
+const PREVIOUS_PAGE_LABEL =
+  muiZhCN.components?.MuiTablePagination?.defaultProps.getItemAriaLabel?.(
+    'previous',
+  ) ?? ''
+
+/** Fills a locale template's `{{name}}` placeholders. */
+function text(
+  template: string,
+  values: Record<string, string>,
+): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
+    values[key] ?? match,
+  )
+}
 
 const item: ConsoleSetting = {
   key: 'mail.retry',
@@ -120,7 +134,7 @@ describe('SettingsPage', () => {
   it('renders the settled empty state when no item is declared', async () => {
     const operations = createConsoleOperations(makeConsoleBackend())
     renderWithProviders(<SettingsPage />, { operations })
-    expect(await screen.findByText('暂无设置')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.settings.empty.title)).toBeInTheDocument()
   })
 
   it('raises its secondary navigation and compact actions to the floor', async () => {
@@ -128,12 +142,12 @@ describe('SettingsPage', () => {
       makeConsoleBackend({ listSettings: () => Promise.resolve([item]) }),
     )
     renderWithProviders(<SettingsPage />, { operations })
-    const all = await screen.findByRole('button', { name: '全部命名空间' })
+    const all = await screen.findByRole('button', { name: zhCN.settings.nav.all })
     const namespace = await screen.findByRole('button', { name: 'mail' })
     const remove = screen.getByRole('button', {
-      name: '移除设置项 mail.retry',
+      name: text(zhCN.settings.removeAria, { key: 'mail.retry' }),
     })
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     // The namespace navigation and the row/toolbar actions are the same
     // class of compact target; each gates up to the 44x44 floor on a
     // coarse pointer.
@@ -162,16 +176,16 @@ describe('SettingsPage', () => {
     // The default row resolves to its declared value and says so in words;
     // the overridden row is marked as such.
     expect(await screen.findByDisplayValue('3')).toBeInTheDocument()
-    expect(screen.getByText('默认')).toBeInTheDocument()
-    expect(screen.getByText('已覆盖')).toBeInTheDocument()
+    expect(screen.getByText(zhCN.settings.state.default)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.settings.state.overridden)).toBeInTheDocument()
 
     // Only the override has something to take back, so only its row carries
     // a remove control; a default row renders none rather than a no-op.
     expect(
-      screen.getByRole('button', { name: '移除设置项 mail.retry' }),
+      screen.getByRole('button', { name: text(zhCN.settings.removeAria, { key: 'mail.retry' }) }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('button', { name: '移除设置项 mail.limit' }),
+      screen.queryByRole('button', { name: text(zhCN.settings.removeAria, { key: 'mail.limit' }) }),
     ).toBeNull()
 
     // Both rows stay editable: writing a value over a default is the way a
@@ -186,13 +200,16 @@ describe('SettingsPage', () => {
       }),
     )
     renderWithProviders(<SettingsPage />, { operations })
-    await screen.findByText('默认')
+    await screen.findByText(zhCN.settings.state.default)
 
     // A short state label must not split across two rows when the table is
     // squeezed. jsdom does no layout, so the proof is the declared
     // `white-space: nowrap` on the rendered cells.
-    for (const text of ['默认', '已覆盖']) {
-      const cell = screen.getByText(text).closest('td')
+    for (const label of [
+      zhCN.settings.state.default,
+      zhCN.settings.state.overridden,
+    ]) {
+      const cell = screen.getByText(label).closest('td')
       expect(cell).not.toBeNull()
       expect(cell).toHaveStyle({ whiteSpace: 'nowrap' })
     }
@@ -204,7 +221,7 @@ describe('SettingsPage', () => {
     )
     renderWithProviders(<SettingsPage />, { operations })
     const nav = await screen.findByRole('navigation', {
-      name: '命名空间导航',
+      name: zhCN.settings.nav.label,
     })
     const container = nav.parentElement
     expect(container).not.toBeNull()
@@ -270,10 +287,10 @@ describe('SettingsPage', () => {
     )
     renderWithProviders(<SettingsPage />, { operations })
 
-    expect(await screen.findByText('已覆盖')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.settings.state.overridden)).toBeInTheDocument()
     expect(
       screen.getByRole('button', {
-        name: '移除设置项 authn.sms.allowed-prefixes',
+        name: text(zhCN.settings.removeAria, { key: 'authn.sms.allowed-prefixes' }),
       }),
     ).toBeInTheDocument()
   })
@@ -318,16 +335,16 @@ describe('SettingsPage', () => {
 
     // The server masks the text but reports the row: the page states the
     // row is overridden and keeps its remove control.
-    expect(screen.getByText('已覆盖')).toBeInTheDocument()
+    expect(screen.getByText(zhCN.settings.state.overridden)).toBeInTheDocument()
     await user.click(
-      screen.getByRole('button', { name: '移除设置项 mail.password' }),
+      screen.getByRole('button', { name: text(zhCN.settings.removeAria, { key: 'mail.password' }) }),
     )
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
 
     // The success confirmation names the setting that was removed.
     expect(
-      await screen.findByText('设置项「mail.password」已移除'),
+      await screen.findByText(text(zhCN.settings.removed, { key: 'mail.password' })),
     ).toBeInTheDocument()
   })
 
@@ -347,9 +364,9 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, { operations })
 
     expect(await screen.findByDisplayValue('********')).toBeInTheDocument()
-    expect(screen.getByText('默认')).toBeInTheDocument()
+    expect(screen.getByText(zhCN.settings.state.default)).toBeInTheDocument()
     expect(
-      screen.queryByRole('button', { name: '移除设置项 mail.password' }),
+      screen.queryByRole('button', { name: text(zhCN.settings.removeAria, { key: 'mail.password' }) }),
     ).toBeNull()
   })
 
@@ -369,8 +386,8 @@ describe('SettingsPage', () => {
 
     // The navigation offers the "all namespaces" entry plus each declared
     // namespace (derived from the whole-set read).
-    const nav = screen.getByRole('navigation', { name: '命名空间导航' })
-    expect(within(nav).getByText('全部命名空间')).toBeInTheDocument()
+    const nav = screen.getByRole('navigation', { name: zhCN.settings.nav.label })
+    expect(within(nav).getByText(zhCN.settings.nav.all)).toBeInTheDocument()
     await user.click(within(nav).getByText('mail'))
 
     await waitFor(() => expect(seen).toContain('mail'))
@@ -392,7 +409,7 @@ describe('SettingsPage', () => {
     const input = await screen.findByDisplayValue('5')
 
     // Nothing changed yet, so the save bar's action is inert.
-    const save = screen.getByRole('button', { name: '保存改动' })
+    const save = screen.getByRole('button', { name: zhCN.settings.saveBar.save })
     expect(save).toBeDisabled()
 
     await user.clear(input)
@@ -401,7 +418,7 @@ describe('SettingsPage', () => {
     // The route addresses the item by the namespace and the key rest.
     expect(writes).toContain('set:mail.retry=9')
     // The landed save confirms itself in the page's standing status region.
-    expect(await screen.findByText('设置已保存')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.settings.saved)).toBeInTheDocument()
   })
 
   it('saves a whole batch and confirms once that the settings landed', async () => {
@@ -429,7 +446,7 @@ describe('SettingsPage', () => {
     await user.type(retry, '9')
     await user.clear(limit)
     await user.type(limit, '7')
-    await user.click(screen.getByRole('button', { name: '保存改动' }))
+    await user.click(screen.getByRole('button', { name: zhCN.settings.saveBar.save }))
 
     // One attempt for the whole batch: both PUTs are issued, and one
     // confirmation names the kind of object that was saved -- never a
@@ -437,8 +454,8 @@ describe('SettingsPage', () => {
     await vi.waitFor(() => {
       expect(writes).toEqual(['retry=9', 'limit=7'])
     })
-    expect(await screen.findByText('设置已保存')).toBeInTheDocument()
-    expect(screen.getAllByText('设置已保存')).toHaveLength(1)
+    expect(await screen.findByText(zhCN.settings.saved)).toBeInTheDocument()
+    expect(screen.getAllByText(zhCN.settings.saved)).toHaveLength(1)
   })
 
   it('reports only the first batch failure, keeps its drafts and pages to it', async () => {
@@ -470,7 +487,7 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, { operations })
 
     // Edit the two later rows on the second page...
-    await user.click(await screen.findByRole('button', { name: '下一页' }))
+    await user.click(await screen.findByRole('button', { name: NEXT_PAGE_LABEL }))
     const eleventh = await screen.findByRole('textbox', { name: 'mail.key-11' })
     await user.clear(eleventh)
     await user.type(eleventh, 'x11')
@@ -478,24 +495,24 @@ describe('SettingsPage', () => {
     await user.clear(twelfth)
     await user.type(twelfth, 'x12')
     // ...and the first row back on the first page, then save from there.
-    await user.click(screen.getByRole('button', { name: '上一页' }))
+    await user.click(screen.getByRole('button', { name: PREVIOUS_PAGE_LABEL }))
     const first = await screen.findByRole('textbox', { name: 'mail.key-0' })
     await user.clear(first)
     await user.type(first, 'x0')
-    await user.click(screen.getByRole('button', { name: '保存改动' }))
+    await user.click(screen.getByRole('button', { name: zhCN.settings.saveBar.save }))
 
     // The first failure in submission order is the one reported; the
     // later failure's text stays out of the banner. The same text also
     // stands in the failing row's helper, so the banner is addressed by
     // its role rather than by text.
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      '该值不在该设置项声明的取值范围内。',
+      zhCN.errors.settings.invalid_value,
     )
     expect(
-      screen.queryByText('服务端无法读取该请求，请检查表单后重试。'),
+      screen.queryByText(zhCN.errors.settings.bad_request),
     ).toBeNull()
     // A partial landing is not a success.
-    expect(screen.queryByText('设置已保存')).toBeNull()
+    expect(screen.queryByText(zhCN.settings.saved)).toBeNull()
 
     // The table moved to the page holding the first failed item, where
     // both failed drafts are still on screen; the landed item's draft was
@@ -507,7 +524,7 @@ describe('SettingsPage', () => {
       screen.getByRole('textbox', { name: 'mail.key-12' }),
     ).toHaveValue('x12')
     expect(screen.queryByRole('textbox', { name: 'mail.key-0' })).toBeNull()
-    expect(screen.getByText('2 项待保存')).toBeInTheDocument()
+    expect(screen.getByText(text(zhCN.settings.saveBar.pending, { count: '2' }))).toBeInTheDocument()
 
     // Only the first failed row carries the marker, and its described-by
     // target is the resolved reason -- the same text the region shows.
@@ -516,7 +533,7 @@ describe('SettingsPage', () => {
     const hintId = firstFailed.getAttribute('aria-describedby')
     expect(hintId).not.toBeNull()
     const hint = document.getElementById(hintId as string)
-    expect(hint).toHaveTextContent('该值不在该设置项声明的取值范围内。')
+    expect(hint).toHaveTextContent(zhCN.errors.settings.invalid_value)
     expect(hint?.textContent).toBe(
       screen.getByRole('alert').textContent,
     )
@@ -552,15 +569,15 @@ describe('SettingsPage', () => {
     )
     renderWithProviders(<SettingsPage />, { operations })
 
-    await user.click(await screen.findByRole('button', { name: '下一页' }))
-    await user.click(await screen.findByRole('button', { name: '下一页' }))
+    await user.click(await screen.findByRole('button', { name: NEXT_PAGE_LABEL }))
+    await user.click(await screen.findByRole('button', { name: NEXT_PAGE_LABEL }))
     const failed = await screen.findByRole('textbox', { name: 'mail.key-24' })
     const valid = screen.getByRole('textbox', { name: 'mail.key-25' })
     await user.clear(failed)
     await user.type(failed, 'bad')
     await user.clear(valid)
     await user.type(valid, 'ok')
-    await user.click(screen.getByRole('button', { name: '保存改动' }))
+    await user.click(screen.getByRole('button', { name: zhCN.settings.saveBar.save }))
 
     // The row marker: the failing field is invalid and describes itself
     // with the resolved message (never the raw code).
@@ -569,17 +586,17 @@ describe('SettingsPage', () => {
     expect(describedBy).not.toBeNull()
     const hint = document.getElementById(describedBy as string)
     expect(hint).not.toBeNull()
-    expect(hint).toHaveTextContent('该值不在该设置项声明的取值范围内。')
+    expect(hint).toHaveTextContent(zhCN.errors.settings.invalid_value)
 
     // The region carries that same text -- one resolved source, two places.
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('该值不在该设置项声明的取值范围内。')
+    expect(alert).toHaveTextContent(zhCN.errors.settings.invalid_value)
     expect(hint?.textContent).toBe(alert.textContent)
 
     // The valid row in the same batch is not marked, and a partial landing
     // is never a success.
     expect(valid).toHaveAttribute('aria-invalid', 'false')
-    expect(screen.queryByText('设置已保存')).toBeNull()
+    expect(screen.queryByText(zhCN.settings.saved)).toBeNull()
 
     // The region was scrolled into view, clear of the sticky save bar.
     expect(scrollIntoView).toHaveBeenCalledWith({
@@ -611,7 +628,7 @@ describe('SettingsPage', () => {
     const input = await screen.findByDisplayValue('5')
     await user.clear(input)
     await user.type(input, 'x')
-    await user.click(screen.getByRole('button', { name: '保存改动' }))
+    await user.click(screen.getByRole('button', { name: zhCN.settings.saveBar.save }))
 
     await screen.findByRole('alert')
     expect(scrollIntoView).toHaveBeenCalledWith({
@@ -633,9 +650,9 @@ describe('SettingsPage', () => {
     const input = await screen.findByDisplayValue('5')
     await user.clear(input)
     await user.type(input, '9')
-    await user.click(screen.getByRole('button', { name: '保存改动' }))
+    await user.click(screen.getByRole('button', { name: zhCN.settings.saveBar.save }))
 
-    expect(await screen.findByText('设置已保存')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.settings.saved)).toBeInTheDocument()
     expect(scrollIntoView).not.toHaveBeenCalled()
   })
 
@@ -657,7 +674,7 @@ describe('SettingsPage', () => {
     const input = await screen.findByDisplayValue('5')
     await user.clear(input)
     await user.type(input, 'x')
-    await user.click(screen.getByRole('button', { name: '保存改动' }))
+    await user.click(screen.getByRole('button', { name: zhCN.settings.saveBar.save }))
     await screen.findByRole('alert')
     expect(input).toHaveAttribute('aria-invalid', 'true')
 
@@ -666,8 +683,8 @@ describe('SettingsPage', () => {
     // banner behind.
     await user.clear(input)
     await user.type(input, '6')
-    await user.click(screen.getByRole('button', { name: '保存改动' }))
-    expect(await screen.findByText('设置已保存')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: zhCN.settings.saveBar.save }))
+    expect(await screen.findByText(zhCN.settings.saved)).toBeInTheDocument()
     expect(input).toHaveAttribute('aria-invalid', 'false')
     expect(screen.queryByRole('alert')).toBeNull()
   })
@@ -695,13 +712,13 @@ describe('SettingsPage', () => {
     const first = await screen.findByRole('textbox', { name: 'mail.key-0' })
     await user.clear(first)
     await user.type(first, 'x')
-    await user.click(screen.getByRole('button', { name: '保存改动' }))
+    await user.click(screen.getByRole('button', { name: zhCN.settings.saveBar.save }))
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: '刷新' })).toBeDisabled(),
+      expect(screen.getByRole('button', { name: zhCN.common.refresh })).toBeDisabled(),
     )
 
     // Paging is part of the save's context: the next page does not open.
-    await user.click(screen.getByRole('button', { name: '下一页' }))
+    await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
     expect(
       screen.getByRole('textbox', { name: 'mail.key-0' }),
     ).toBeInTheDocument()
@@ -741,7 +758,7 @@ describe('SettingsPage', () => {
     await user.type(failed, 'bad')
     await user.clear(other)
     await user.type(other, 'ok')
-    await user.click(screen.getByRole('button', { name: '保存改动' }))
+    await user.click(screen.getByRole('button', { name: zhCN.settings.saveBar.save }))
     await waitFor(() =>
       expect(screen.getByRole('textbox', { name: 'mail.a' })).toHaveAttribute(
         'aria-invalid',
@@ -753,12 +770,12 @@ describe('SettingsPage', () => {
     // result the marker describes, so the old marker must go with it
     // rather than leave a red row with no reason.
     await user.click(
-      screen.getByRole('button', { name: '移除设置项 mail.b' }),
+      screen.getByRole('button', { name: text(zhCN.settings.removeAria, { key: 'mail.b' }) }),
     )
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     expect(
-      await screen.findByText('设置项「mail.b」已移除'),
+      await screen.findByText(text(zhCN.settings.removed, { key: 'mail.b' })),
     ).toBeInTheDocument()
     // The page behind the confirmation is reachable again only once the
     // dialog has left; the role query waits for that.
@@ -784,13 +801,13 @@ describe('SettingsPage', () => {
     await screen.findByDisplayValue('5')
 
     // The row's remove control names its own setting key.
-    await user.click(screen.getByRole('button', { name: '移除设置项 mail.retry' }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.settings.removeAria, { key: 'mail.retry' }) }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     expect(writes).toContain('remove:mail.retry')
     // The landed remove fills the page's status region and names the row.
     expect(
-      await screen.findByText('设置项「mail.retry」已移除'),
+      await screen.findByText(text(zhCN.settings.removed, { key: 'mail.retry' })),
     ).toBeInTheDocument()
   })
 
@@ -807,10 +824,10 @@ describe('SettingsPage', () => {
 
     await user.clear(input)
     await user.type(input, 'x')
-    await user.click(screen.getByRole('button', { name: '保存改动' }))
+    await user.click(screen.getByRole('button', { name: zhCN.settings.saveBar.save }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      '该值不在该设置项声明的取值范围内。',
+      zhCN.errors.settings.invalid_value,
     )
     // A refused save keeps the draft for a retry.
     expect(input).toHaveValue('x')
@@ -823,9 +840,9 @@ describe('SettingsPage', () => {
       }),
     )
     renderWithProviders(<SettingsPage />, { operations })
-    expect(await screen.findByText('设置加载失败')).toBeInTheDocument()
-    expect(screen.getByText('设置面未能完成这次请求。')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.settings.error.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.settings.error.description)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: zhCN.settings.retry })).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when the read is refused with 403', async () => {
@@ -835,8 +852,8 @@ describe('SettingsPage', () => {
       }),
     )
     renderWithProviders(<SettingsPage />, { operations })
-    expect(await screen.findByText('权限不足')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: zhCN.settings.retry })).toBeNull()
   })
 
   it('re-reads the two namespace reads once when both name all namespaces', async () => {

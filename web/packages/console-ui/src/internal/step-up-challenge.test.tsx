@@ -165,7 +165,7 @@ describe('StepUpChallenge', () => {
     // The flow offers the factor; choosing it starts the code challenge.
     await user.click(await screen.findByRole('button', { name: 'totp' }))
     await user.type(await screen.findByLabelText(/code/), '123456')
-    await user.click(screen.getByRole('button', { name: '验证' }))
+    await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
     await vi.waitFor(() => {
       expect(onSuccess).toHaveBeenCalledTimes(1)
     })
@@ -226,7 +226,7 @@ describe('StepUpChallenge', () => {
       )
       // The passkey step drives the ceremony; its answer travels under the
       // second factor's step (`factor`), not the enrollment one.
-      await user.click(await screen.findByRole('button', { name: '验证' }))
+      await user.click(await screen.findByRole('button', { name: zhCN.stepUp.submit }))
       await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
     } finally {
       if (original === undefined) {
@@ -259,10 +259,10 @@ describe('StepUpChallenge', () => {
     // the dialog names that, rather than offering a re-login that can only
     // produce the same single-factor session. With no accountHref from the
     // host it renders no link at all -- the package holds no host path.
-    expect(await screen.findByText(/尚未配置两步验证/)).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.stepUp.noFactor)).toBeInTheDocument()
     expect(screen.queryAllByRole('link')).toHaveLength(0)
     expect(
-      screen.queryByRole('button', { name: '重新登录' }),
+      screen.queryByRole('button', { name: zhCN.stepUp.relogin }),
     ).toBeNull()
     // Nothing is left to verify, so the flow is never started.
     expect(startFlow).not.toHaveBeenCalled()
@@ -270,7 +270,7 @@ describe('StepUpChallenge', () => {
       'GET /auth/factors',
     ])
 
-    await user.click(screen.getByRole('button', { name: '取消' }))
+    await user.click(screen.getByRole('button', { name: zhCN.common.cancel }))
     expect(onCancel).toHaveBeenCalledTimes(1)
   })
 
@@ -290,7 +290,7 @@ describe('StepUpChallenge', () => {
     // The destination is the host's, carried through the shell's context;
     // the dialog only renders it.
     expect(
-      await screen.findByRole('link', { name: '前往账户设置' }),
+      await screen.findByRole('link', { name: zhCN.stepUp.goToAccount }),
     ).toHaveAttribute('href', '/host/security')
   })
 
@@ -315,11 +315,11 @@ describe('StepUpChallenge', () => {
     // two explanations that would excuse the failure.
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
-    expect(screen.queryByText(/本部署无法完成此次升级/)).toBeNull()
-    expect(screen.queryByText(/尚未配置两步验证/)).toBeNull()
+    expect(screen.queryByText(zhCN.stepUp.cannotElevate)).toBeNull()
+    expect(screen.queryByText(zhCN.stepUp.noFactor)).toBeNull()
     // A 400 answered to a still-established session is the start request
     // itself being unusable; a restart would repeat it, so none is offered.
-    expect(screen.queryByRole('button', { name: '重新开始验证' })).toBeNull()
+    expect(screen.queryByRole('button', { name: zhCN.stepUp.restart })).toBeNull()
   })
 
   it('does not replay a cancelled write when its start lands after the close', async () => {
@@ -353,7 +353,7 @@ describe('StepUpChallenge', () => {
     // The start is in flight when the operator cancels: the dialog closes
     // and its driver unmounts.
     await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1))
-    await user.click(screen.getByRole('button', { name: '取消' }))
+    await user.click(screen.getByRole('button', { name: zhCN.common.cancel }))
     await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
     // The start then settles elevated. The host must not replay the write
@@ -397,7 +397,7 @@ describe('StepUpChallenge', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.bad_request,
     )
-    await user.click(screen.getByRole('button', { name: '取消' }))
+    await user.click(screen.getByRole('button', { name: zhCN.common.cancel }))
     await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await act(async () => {
       await Promise.resolve()
@@ -430,7 +430,7 @@ describe('StepUpChallenge', () => {
     // does after a won challenge.
     await user.click(await screen.findByRole('button', { name: 'totp' }))
     await user.type(await screen.findByLabelText(/code/), '123456')
-    await user.click(screen.getByRole('button', { name: '验证' }))
+    await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
     await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
 
     // The server consumed the settled flow: the closed dialog has no
@@ -475,7 +475,7 @@ describe('StepUpChallenge', () => {
     // the binding is live, so it is released exactly once -- not once per
     // layer that happens to unmount.
     await screen.findByLabelText(/code/)
-    await user.click(screen.getByRole('button', { name: '取消' }))
+    await user.click(screen.getByRole('button', { name: zhCN.common.cancel }))
     await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await act(async () => {
       await Promise.resolve()
@@ -522,9 +522,9 @@ describe('StepUpChallenge', () => {
     // driver left its flow open (an answer refusal is not a settlement),
     // so remounting releases it -- exactly once, while the new flow lives.
     await user.type(await screen.findByLabelText(/code/), '123456')
-    await user.click(screen.getByRole('button', { name: '验证' }))
-    await screen.findByRole('button', { name: '重新开始验证' })
-    await user.click(screen.getByRole('button', { name: '重新开始验证' }))
+    await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
+    await screen.findByRole('button', { name: zhCN.stepUp.restart })
+    await user.click(screen.getByRole('button', { name: zhCN.stepUp.restart }))
     await act(async () => {
       await Promise.resolve()
     })
@@ -563,18 +563,18 @@ describe('StepUpChallenge', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.unavailable)
     expect(screen.queryByText(zhCN.stepUp.description)).toBeNull()
-    expect(screen.queryByRole('button', { name: '验证' })).toBeNull()
+    expect(screen.queryByRole('button', { name: zhCN.stepUp.submit })).toBeNull()
     expect(
-      screen.getByRole('button', { name: '重新开始验证' }),
+      screen.getByRole('button', { name: zhCN.stepUp.restart }),
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '重新开始验证' }))
+    await user.click(screen.getByRole('button', { name: zhCN.stepUp.restart }))
     // The restart drives a fresh flow locally; the second start settles
     // the elevation and the refused write is replayed.
     await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
     expect(start).toHaveBeenCalledTimes(2)
 
-    await user.click(screen.getByRole('button', { name: '取消' }))
+    await user.click(screen.getByRole('button', { name: zhCN.common.cancel }))
     expect(onCancel).toHaveBeenCalledTimes(1)
   })
 
@@ -615,7 +615,7 @@ describe('StepUpChallenge', () => {
     )
 
     await user.type(await screen.findByLabelText(/code/), '123456')
-    await user.click(screen.getByRole('button', { name: '验证' }))
+    await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
 
     // The flow is gone (expired, consumed, nothing left to answer): the
     // step form is replaced by the code's banner and a restart, because
@@ -625,11 +625,11 @@ describe('StepUpChallenge', () => {
     expect(screen.queryByText(zhCN.stepUp.description)).toBeNull()
     expect(screen.queryByLabelText('code')).toBeNull()
     expect(
-      screen.getByRole('button', { name: '重新开始验证' }),
+      screen.getByRole('button', { name: zhCN.stepUp.restart }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '取消' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: zhCN.common.cancel })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '重新开始验证' }))
+    await user.click(screen.getByRole('button', { name: zhCN.stepUp.restart }))
     await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
     expect(start).toHaveBeenCalledTimes(2)
   })
@@ -693,14 +693,14 @@ describe('StepUpChallenge', () => {
 
       // The ceremony produces a credential and the server refuses it: the
       // server banner stands alone.
-      await user.click(await screen.findByRole('button', { name: '验证' }))
+      await user.click(await screen.findByRole('button', { name: zhCN.stepUp.submit }))
       const serverAlert = await screen.findByRole('alert')
       expect(serverAlert).toHaveTextContent(zhCN.errors.authn.login_failed)
       expect(screen.queryByText(zhCN.stepUp.passkeyCancelled)).toBeNull()
 
       // The next ceremony is dismissed: the newer failure replaces the
       // server banner, so the two are never on screen together.
-      await user.click(screen.getByRole('button', { name: '验证' }))
+      await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
       await vi.waitFor(() => {
         expect(screen.getAllByRole('alert')).toHaveLength(1)
       })
@@ -768,10 +768,10 @@ describe('StepUpChallenge', () => {
     // deployment declines the step-up, and a fresh sign-in is the way to a
     // session whose authentication time lets those factors count.
     expect(
-      await screen.findByText(/本部署无法完成此次升级/),
+      await screen.findByText(zhCN.stepUp.cannotElevate),
     ).toBeInTheDocument()
-    expect(screen.queryByText(/尚未配置两步验证/)).toBeNull()
-    await user.click(screen.getByRole('button', { name: '重新登录' }))
+    expect(screen.queryByText(zhCN.stepUp.noFactor)).toBeNull()
+    await user.click(screen.getByRole('button', { name: zhCN.stepUp.relogin }))
     expect(logout).toHaveBeenCalledTimes(1)
     expect(onCancel).toHaveBeenCalledTimes(1)
   })

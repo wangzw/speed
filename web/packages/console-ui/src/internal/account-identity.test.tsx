@@ -16,6 +16,12 @@ import {
   createConsoleOperations,
   makeConsoleBackend,
 } from '../../test-utils/operations.js'
+import zhCN from '../locales/zh-CN.json' with { type: 'json' }
+
+const ACCOUNT = 'acc-9'
+/** The two distinct markers an unresolved account read renders. */
+const MISSING_LABEL = `${ACCOUNT} (${zhCN.common.accountMissing})`
+const UNRESOLVED_LABEL = `${ACCOUNT} (${zhCN.common.accountUnresolved})`
 
 describe('AccountIdentity', () => {
   it('shows the resolved display name when the account read answers', async () => {
@@ -31,11 +37,9 @@ describe('AccountIdentity', () => {
           Promise.reject({ status: 404, code: 'client.http.404' }),
       }),
     )
-    renderWithProviders(<AccountIdentity account="acc-9" />, { operations })
-    expect(
-      await screen.findByLabelText('acc-9 (非账户或已删除)'),
-    ).toBeInTheDocument()
-    expect(screen.queryByLabelText(/身份未解析/)).toBeNull()
+    renderWithProviders(<AccountIdentity account={ACCOUNT} />, { operations })
+    expect(await screen.findByLabelText(MISSING_LABEL)).toBeInTheDocument()
+    expect(screen.queryByLabelText(UNRESOLVED_LABEL)).toBeNull()
   })
 
   it('marks a refused read as unresolved, not as a missing account', async () => {
@@ -45,13 +49,9 @@ describe('AccountIdentity', () => {
           Promise.reject({ status: 403, code: 'authn.forbidden' }),
       }),
     )
-    renderWithProviders(<AccountIdentity account="acc-9" />, { operations })
-    expect(
-      await screen.findByLabelText(
-        'acc-9 (身份未解析（需账户读取权限）)',
-      ),
-    ).toBeInTheDocument()
-    expect(screen.queryByLabelText(/非账户或已删除/)).toBeNull()
+    renderWithProviders(<AccountIdentity account={ACCOUNT} />, { operations })
+    expect(await screen.findByLabelText(UNRESOLVED_LABEL)).toBeInTheDocument()
+    expect(screen.queryByLabelText(MISSING_LABEL)).toBeNull()
   })
 
   it('uses two distinct markers for the two failures', async () => {
@@ -67,17 +67,15 @@ describe('AccountIdentity', () => {
           Promise.reject({ status: 403, code: 'client.http.403' }),
       }),
     )
-    const first = renderWithProviders(<AccountIdentity account="acc-9" />, {
+    const first = renderWithProviders(<AccountIdentity account={ACCOUNT} />, {
       operations: missing,
     })
-    const missingMarker = await screen.findByLabelText('acc-9 (非账户或已删除)')
+    const missingMarker = await screen.findByLabelText(MISSING_LABEL)
     first.unmount()
-    renderWithProviders(<AccountIdentity account="acc-9" />, {
+    renderWithProviders(<AccountIdentity account={ACCOUNT} />, {
       operations: refused,
     })
-    const refusedMarker = await screen.findByLabelText(
-      'acc-9 (身份未解析（需账户读取权限）)',
-    )
+    const refusedMarker = await screen.findByLabelText(UNRESOLVED_LABEL)
     expect(missingMarker.getAttribute('title')).not.toBe(
       refusedMarker.getAttribute('title'),
     )

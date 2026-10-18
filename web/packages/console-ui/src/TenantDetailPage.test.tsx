@@ -38,10 +38,13 @@ describe('TenantDetailPage', () => {
     // Every link lands on the page's own path with the tenant in the query
     // parameter those pages read their selection from.
     const expected = [
-      ['权限与角色', '/console/permissions?tenant=acme'],
-      ['邀请与成员', '/console/invitations?tenant=acme'],
-      ['SSO 提供方', '/console/sso?tenant=acme'],
-      ['冒充记录', '/console/impersonations?tenant=acme'],
+      [zhCN.tenantDetail.related.permissions, '/console/permissions?tenant=acme'],
+      [zhCN.tenantDetail.related.invitations, '/console/invitations?tenant=acme'],
+      [zhCN.tenantDetail.related.sso, '/console/sso?tenant=acme'],
+      [
+        zhCN.tenantDetail.related.impersonations,
+        '/console/impersonations?tenant=acme',
+      ],
     ] as const
     for (const [name, href] of expected) {
       expect(screen.getByRole('link', { name })).toHaveAttribute('href', href)
@@ -53,14 +56,19 @@ describe('TenantDetailPage', () => {
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
     await screen.findByText('Acme')
     expect(
-      screen.queryByRole('heading', { level: 2, name: '相关页面' }),
+      screen.queryByRole('heading', {
+        level: 2,
+        name: zhCN.tenantDetail.related.title,
+      }),
     ).toBeNull()
   })
 
   it('raises its refresh action to the 44px floor under a coarse pointer', async () => {
     const operations = createConsoleOperations(makeConsoleBackend())
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
-    const refresh = await screen.findByRole('button', { name: '刷新' })
+    const refresh = await screen.findByRole('button', {
+      name: zhCN.common.refresh,
+    })
     expect(hasCoarsePointerTouchTarget(refresh)).toBe(true)
   })
 
@@ -72,7 +80,7 @@ describe('TenantDetailPage', () => {
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
 
     expect(await screen.findByText('Acme')).toBeInTheDocument()
-    expect(screen.getByText('已启用')).toBeInTheDocument()
+    expect(screen.getByText(zhCN.tenants.status.active)).toBeInTheDocument()
     expect(getTenant).toHaveBeenCalledWith({ id: 'acme' })
   })
 
@@ -91,8 +99,13 @@ describe('TenantDetailPage', () => {
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
     await screen.findByText('Acme')
 
-    await user.type(screen.getByLabelText('新别名'), 'Acme-Inc')
-    await user.click(screen.getByRole('button', { name: '改名' }))
+    await user.type(
+      screen.getByLabelText(zhCN.tenantDetail.actions.renameLabel),
+      'Acme-Inc',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.tenantDetail.actions.renameSubmit }),
+    )
     expect(calls).toEqual(['acme:Acme-Inc'])
   })
 
@@ -111,9 +124,11 @@ describe('TenantDetailPage', () => {
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
     await screen.findByText('Acme')
 
-    const input = screen.getByLabelText('新别名')
+    const input = screen.getByLabelText(zhCN.tenantDetail.actions.renameLabel)
     await user.type(input, 'Acme Inc')
-    const submit = screen.getByRole('button', { name: '改名' })
+    const submit = screen.getByRole('button', {
+      name: zhCN.tenantDetail.actions.renameSubmit,
+    })
     expect(input).toHaveAttribute('aria-invalid', 'true')
     expect(submit).toBeDisabled()
     fireEvent.click(submit)
@@ -139,9 +154,11 @@ describe('TenantDetailPage', () => {
       }),
     )
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
-    await screen.findByText('已启用')
+    await screen.findByText(zhCN.tenants.status.active)
 
-    await user.click(screen.getByRole('button', { name: '停用' }))
+    await user.click(
+      screen.getByRole('button', { name: zhCN.tenantDetail.actions.disable }),
+    )
     expect(calls).toEqual(['acme:disabled'])
   })
 
@@ -161,12 +178,18 @@ describe('TenantDetailPage', () => {
       }),
     )
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
-    await screen.findByText('已启用')
+    await screen.findByText(zhCN.tenants.status.active)
 
-    await user.click(screen.getByRole('button', { name: '停用' }))
+    await user.click(
+      screen.getByRole('button', { name: zhCN.tenantDetail.actions.disable }),
+    )
     // The write invalidates the detail read, so it refetches and the
-    // control re-labels from the settled status (停用 -> 启用).
-    expect(await screen.findByRole('button', { name: '启用' })).toBeInTheDocument()
+    // control relabels from the settled status (disable -> enable).
+    expect(
+      await screen.findByRole('button', {
+        name: zhCN.tenantDetail.actions.enable,
+      }),
+    ).toBeInTheDocument()
     expect(getTenant.mock.calls.length).toBeGreaterThan(1)
   })
 
@@ -303,12 +326,12 @@ describe('TenantDetailPage', () => {
       }),
     )
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
-    await screen.findByText('已启用')
+    await screen.findByText(zhCN.tenants.status.active)
 
-    const refresh = () => screen.getByRole('button', { name: '刷新' })
+    const refresh = () => screen.getByRole('button', { name: zhCN.common.refresh })
     expect(refresh()).toBeEnabled()
 
-    await user.click(screen.getByRole('button', { name: '停用' }))
+    await user.click(screen.getByRole('button', { name: zhCN.tenantDetail.actions.disable }))
     expect(refresh()).toBeDisabled()
     // A write-pending disable carries no "choose a scope first" description.
     expect(refresh()).not.toHaveAttribute('aria-describedby')
@@ -316,7 +339,7 @@ describe('TenantDetailPage', () => {
     await act(async () => {
       settle?.()
     })
-    expect(await screen.findByRole('button', { name: '刷新' })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: zhCN.common.refresh })).toBeEnabled()
   })
 
   it('disables the refresh while the rename write is in flight', async () => {
@@ -334,9 +357,14 @@ describe('TenantDetailPage', () => {
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
     await screen.findByText('Acme')
 
-    await user.type(screen.getByLabelText('新别名'), 'Acme-Inc')
-    await user.click(screen.getByRole('button', { name: '改名' }))
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    await user.type(
+      screen.getByLabelText(zhCN.tenantDetail.actions.renameLabel),
+      'Acme-Inc',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.tenantDetail.actions.renameSubmit }),
+    )
+    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     expect(refresh).toBeDisabled()
     expect(refresh).not.toHaveAttribute('aria-describedby')
 
@@ -352,7 +380,9 @@ describe('TenantDetailPage', () => {
       { operations },
     )
     await screen.findByText('Acme')
-    expect(screen.getByRole('link', { name: '返回名册' })).toHaveAttribute(
+    expect(
+      screen.getByRole('link', { name: zhCN.tenantDetail.back }),
+    ).toHaveAttribute(
       'href',
       '/console/tenants',
     )
@@ -365,8 +395,8 @@ describe('TenantDetailPage', () => {
       }),
     )
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
-    expect(await screen.findByText('权限不足')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: zhCN.tenantDetail.retry })).toBeNull()
   })
 
   it('renders the unavailable placeholder with a retry that re-reads a 404', async () => {
@@ -385,8 +415,10 @@ describe('TenantDetailPage', () => {
 
     // A bare 404 keeps the wording undecided about deletion ("not found or
     // unavailable") and still offers the retry that checks again.
-    expect(await screen.findByText('记录不存在或暂不可用')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '重试' }))
+    expect(
+      await screen.findByText(zhCN.detail.notFound.title),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: zhCN.tenantDetail.retry }))
     expect(await screen.findByText('Acme')).toBeInTheDocument()
     expect(getTenant).toHaveBeenCalledTimes(2)
   })
@@ -406,10 +438,12 @@ describe('TenantDetailPage', () => {
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
     await screen.findByText('Acme')
 
-    await user.click(screen.getByRole('button', { name: '刷新' }))
+    await user.click(screen.getByRole('button', { name: zhCN.common.refresh }))
     // The 404 makes the older content meaningless: it is replaced, not
     // marked stale.
-    expect(await screen.findByText('记录不存在或暂不可用')).toBeInTheDocument()
+    expect(
+      await screen.findByText(zhCN.detail.notFound.title),
+    ).toBeInTheDocument()
     expect(screen.queryByText('Acme')).toBeNull()
   })
 
@@ -420,9 +454,11 @@ describe('TenantDetailPage', () => {
       }),
     )
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
-    expect(await screen.findByText('租户加载失败')).toBeInTheDocument()
-    expect(screen.getByText('名册未能完成这次请求。')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.tenantDetail.error.title)).toBeInTheDocument()
+    expect(
+      screen.getByText(zhCN.tenantDetail.error.description),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: zhCN.tenantDetail.retry })).toBeInTheDocument()
   })
 
   it('has no axe violations', async () => {

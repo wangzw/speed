@@ -200,7 +200,7 @@ describe('ConsoleShell', () => {
       { operations },
     )
     expect(
-      await screen.findByRole('link', { name: '前往账户设置' }),
+      await screen.findByRole('link', { name: consoleUiZhCN.stepUp.goToAccount }),
     ).toHaveAttribute('href', '/host/security')
   })
 
@@ -514,7 +514,7 @@ describe('ConsoleShell', () => {
         within(nav)
           .getAllByRole('button')
           .map((button) => button.textContent),
-      ).toEqual(['身份与访问'])
+      ).toEqual([consoleUiZhCN.nav.groups.identity])
       // The lone entries stand where their groups would have, in the group
       // table's order, with identity & access's six items between them.
       expect(
@@ -522,16 +522,16 @@ describe('ConsoleShell', () => {
           .getAllByRole('link')
           .map((link) => link.textContent),
       ).toEqual([
-        '概览',
-        '账户',
-        '会话',
-        '冒充',
-        '权限',
-        '邀请与成员',
-        'SSO 提供方',
-        '租户',
-        '设置',
-        '审计记录',
+        consoleUiZhCN.dashboard.title,
+        consoleUiZhCN.accounts.title,
+        consoleUiZhCN.sessions.title,
+        consoleUiZhCN.impersonations.title,
+        consoleUiZhCN.permissions.title,
+        consoleUiZhCN.invitations.title,
+        consoleUiZhCN.sso.title,
+        consoleUiZhCN.tenants.title,
+        consoleUiZhCN.settings.title,
+        consoleUiZhCN.audit.title,
       ])
     })
 
@@ -556,27 +556,32 @@ describe('ConsoleShell', () => {
         within(nav)
           .getAllByRole('button')
           .map((button) => button.textContent),
-      ).toEqual(['身份与访问', '平台配置'])
+      ).toEqual([
+        consoleUiZhCN.nav.groups.identity,
+        consoleUiZhCN.nav.groups.platform,
+      ])
       expect(
         within(nav)
           .getAllByRole('link')
           .map((link) => link.textContent),
       ).toEqual([
-        '概览',
-        '账户',
-        '会话',
-        '冒充',
-        '权限',
-        '邀请与成员',
-        'SSO 提供方',
-        '租户',
-        '设置',
-        '短信模板',
-        '审计记录',
+        consoleUiZhCN.dashboard.title,
+        consoleUiZhCN.accounts.title,
+        consoleUiZhCN.sessions.title,
+        consoleUiZhCN.impersonations.title,
+        consoleUiZhCN.permissions.title,
+        consoleUiZhCN.invitations.title,
+        consoleUiZhCN.sso.title,
+        consoleUiZhCN.tenants.title,
+        consoleUiZhCN.settings.title,
+        consoleUiZhCN.sms.title,
+        consoleUiZhCN.audit.title,
       ])
       // Both platform pages sit inside the heading's controlled content,
       // not beside it as lone top-level items.
-      const heading = within(nav).getByRole('button', { name: '平台配置' })
+      const heading = within(nav).getByRole('button', {
+        name: consoleUiZhCN.nav.groups.platform,
+      })
       const contentId = heading.getAttribute('aria-controls')
       expect(contentId).not.toBeNull()
       const content = document.getElementById(contentId as string)
@@ -585,7 +590,7 @@ describe('ConsoleShell', () => {
         within(content as HTMLElement)
           .getAllByRole('link')
           .map((link) => link.textContent),
-      ).toEqual(['设置', '短信模板'])
+      ).toEqual([consoleUiZhCN.settings.title, consoleUiZhCN.sms.title])
     })
   })
 

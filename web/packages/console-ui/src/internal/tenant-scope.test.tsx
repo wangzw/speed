@@ -19,8 +19,10 @@ import {
   makeConsoleBackend,
 } from '../../test-utils/operations.js'
 import type { ConsoleTenant } from '../operations.js'
+import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 
 const TENANT: ConsoleTenant = { id: 'acme', alias: 'Acme', status: 'active' }
+const TENANT_LABEL = zhCN.common.tenant
 
 /** A host holding the selection, as the pages do. */
 function Scope({ initial = '' }: { readonly initial?: string }) {
@@ -38,8 +40,8 @@ describe('TenantScope', () => {
     renderWithProviders(<Scope />, { operations })
     // MUI marks the select's combobox aria-disabled rather than natively
     // disabling a form control.
-    expect(screen.getByLabelText('租户')).toHaveAttribute('aria-disabled', 'true')
-    expect(screen.getByText('正在加载租户…')).toBeInTheDocument()
+    expect(screen.getByLabelText(TENANT_LABEL)).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByText(zhCN.common.tenantLoading)).toBeInTheDocument()
   })
 
   it('lists the roster once it settles', async () => {
@@ -49,13 +51,13 @@ describe('TenantScope', () => {
     )
     renderWithProviders(<Scope />, { operations })
     await vi.waitFor(() => {
-      expect(screen.queryByText('正在加载租户…')).toBeNull()
+      expect(screen.queryByText(zhCN.common.tenantLoading)).toBeNull()
     })
-    expect(screen.getByLabelText('租户')).not.toHaveAttribute(
+    expect(screen.getByLabelText(TENANT_LABEL)).not.toHaveAttribute(
       'aria-disabled',
       'true',
     )
-    await user.click(screen.getByLabelText('租户'))
+    await user.click(screen.getByLabelText(TENANT_LABEL))
     expect(await screen.findByRole('option', { name: 'Acme' })).toBeInTheDocument()
   })
 
@@ -68,9 +70,9 @@ describe('TenantScope', () => {
     )
     renderWithProviders(<Scope />, { operations })
     expect(
-      await screen.findByText('你没有列出租户的权限。'),
+      await screen.findByText(zhCN.common.tenantForbidden),
     ).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(screen.queryByRole('button', { name: zhCN.common.tenantRetry })).toBeNull()
     expect(listTenants).toHaveBeenCalledTimes(1)
   })
 
@@ -87,12 +89,12 @@ describe('TenantScope', () => {
       makeConsoleBackend({ listTenants }),
     )
     renderWithProviders(<Scope />, { operations })
-    expect(await screen.findByText('租户名册加载失败。')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '重试' }))
+    expect(await screen.findByText(zhCN.common.tenantLoadFailed)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: zhCN.common.tenantRetry }))
     await vi.waitFor(() => {
-      expect(screen.queryByText('租户名册加载失败。')).toBeNull()
+      expect(screen.queryByText(zhCN.common.tenantLoadFailed)).toBeNull()
     })
-    await user.click(screen.getByLabelText('租户'))
+    await user.click(screen.getByLabelText(TENANT_LABEL))
     expect(await screen.findByRole('option', { name: 'Acme' })).toBeInTheDocument()
     expect(listTenants).toHaveBeenCalledTimes(2)
   })
@@ -102,7 +104,7 @@ describe('TenantScope', () => {
       makeConsoleBackend({ listTenants: () => Promise.resolve([]) }),
     )
     renderWithProviders(<Scope />, { operations })
-    expect(await screen.findByText('尚未登记任何租户。')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.common.tenantEmpty)).toBeInTheDocument()
   })
 
   it('keeps a tenant seeded from the URL shown, even when the roster fails', async () => {
@@ -112,8 +114,8 @@ describe('TenantScope', () => {
       }),
     )
     renderWithProviders(<Scope initial="acme" />, { operations })
-    expect(await screen.findByText('租户名册加载失败。')).toBeInTheDocument()
-    expect(screen.getByLabelText('租户')).toHaveTextContent('acme')
+    expect(await screen.findByText(zhCN.common.tenantLoadFailed)).toBeInTheDocument()
+    expect(screen.getByLabelText(TENANT_LABEL)).toHaveTextContent('acme')
   })
 
   it('keeps a seeded tenant shown before the roster settles and when it is empty', async () => {
@@ -127,9 +129,9 @@ describe('TenantScope', () => {
       }),
     )
     renderWithProviders(<Scope initial="acme" />, { operations })
-    expect(screen.getByLabelText('租户')).toHaveTextContent('acme')
+    expect(screen.getByLabelText(TENANT_LABEL)).toHaveTextContent('acme')
     finish([])
-    expect(await screen.findByText('尚未登记任何租户。')).toBeInTheDocument()
-    expect(screen.getByLabelText('租户')).toHaveTextContent('acme')
+    expect(await screen.findByText(zhCN.common.tenantEmpty)).toBeInTheDocument()
+    expect(screen.getByLabelText(TENANT_LABEL)).toHaveTextContent('acme')
   })
 })

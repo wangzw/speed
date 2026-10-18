@@ -30,6 +30,7 @@ import {
   createConsoleOperations,
   makeConsoleBackend,
 } from '../test-utils/operations.js'
+import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 const operations = createConsoleOperations(makeConsoleBackend())
 
@@ -104,8 +105,12 @@ describe('console page declarations', () => {
       expect(icon).toHaveAttribute('aria-hidden', 'true')
       expect(icon).toHaveAttribute('focusable', 'false')
     }
-    expect(within(nav).getByRole('link', { name: '概览' })).toBeInTheDocument()
-    expect(within(nav).getByRole('link', { name: '审计记录' })).toBeInTheDocument()
+    expect(
+      within(nav).getByRole('link', { name: zhCN.dashboard.title }),
+    ).toBeInTheDocument()
+    expect(
+      within(nav).getByRole('link', { name: zhCN.audit.title }),
+    ).toBeInTheDocument()
   })
 
   it('combines every page in navigation order, the detail routes unlabelled', () => {
@@ -143,17 +148,17 @@ describe('console page declarations', () => {
         .getAllByRole('link')
         .map((link) => link.textContent),
     ).toEqual([
-      '概览',
-      '租户',
-      '账户',
-      '会话',
-      '冒充',
-      '权限',
-      '邀请与成员',
-      'SSO 提供方',
-      '设置',
-      '短信模板',
-      '审计记录',
+      zhCN.dashboard.title,
+      zhCN.tenants.title,
+      zhCN.accounts.title,
+      zhCN.sessions.title,
+      zhCN.impersonations.title,
+      zhCN.permissions.title,
+      zhCN.invitations.title,
+      zhCN.sso.title,
+      zhCN.settings.title,
+      zhCN.sms.title,
+      zhCN.audit.title,
     ])
   })
 })

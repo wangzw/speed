@@ -45,6 +45,89 @@ import {
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
+/** Fills an i18n template's `{{name}}` slots with the given values. */
+function fill(
+  template: string,
+  values: Readonly<Record<string, string>>,
+): string {
+  return Object.entries(values).reduce(
+    (text, [name, value]) => text.replaceAll(`{{${name}}}`, value),
+    template,
+  )
+}
+
+/** The fixture account the suite administers. */
+const ACCOUNT_ID = 'acc-1'
+
+/** The detail panel's accessible name for the fixture account. */
+const DETAIL_PANEL_NAME = fill(zhCN.accounts.detail.title, { id: ACCOUNT_ID })
+
+/** The row control that opens the fixture account's detail panel. */
+const MANAGE_ACCOUNT_NAME = fill(zhCN.accounts.manageAria, { id: ACCOUNT_ID })
+
+/** The row control that deletes the fixture account. */
+const DELETE_ACCOUNT_NAME = fill(zhCN.accounts.deleteAria, { id: ACCOUNT_ID })
+
+/** A secret's own revoke control, named by its label. */
+const REVOKE_SECRET_CI_NAME = fill(zhCN.accounts.secrets.revokeAria, {
+  label: 'ci',
+})
+
+/** A session's own revoke control, named by its id. */
+const REVOKE_SESSION_SESS_1_NAME = fill(zhCN.accounts.sessions.revokeAria, {
+  id: 'sess-1',
+})
+
+/** The succeeded-create notice for the fixture display name. */
+const CREATED_GRACE = fill(zhCN.accounts.created, { name: 'Grace' })
+
+/** The succeeded-delete notice for the fixture account. */
+const DELETED_ACC_1 = fill(zhCN.accounts.deleted, { id: ACCOUNT_ID })
+
+/** A revoked secret's confirmation, named by label. */
+const SECRET_REVOKED_CI = fill(zhCN.accounts.secretRevoked, {
+  id: ACCOUNT_ID,
+  label: 'ci',
+})
+
+/** A created secret's confirmation, named by label. */
+const SECRET_CREATED_CI = fill(zhCN.accounts.secretCreated, {
+  id: ACCOUNT_ID,
+  label: 'ci',
+})
+
+/** The bulk revocation's confirmation. */
+const SESSIONS_REVOKED = fill(zhCN.accounts.sessionsRevoked, {
+  id: ACCOUNT_ID,
+})
+
+/** The MFA requirement's saved confirmation. */
+const MFA_SAVED = fill(zhCN.accounts.mfaSaved, { id: ACCOUNT_ID })
+
+/** The status write's saved confirmation. */
+const STATUS_SAVED = fill(zhCN.accounts.statusSaved, { id: ACCOUNT_ID })
+
+/** The one-time secret display for the fixture label and secret value. */
+const HANDED_OVER_CI = fill(zhCN.accounts.createSecret.handedOver, {
+  label: 'ci',
+  secret: 'one-time-value',
+})
+
+/** The detail's display-name line for the fixture account. */
+const DISPLAY_NAME_OPERATOR = fill(zhCN.accounts.detail.displayNameLine, {
+  value: 'Operator',
+})
+
+/** The create-secret panel's discard confirmation title. */
+const DISCARD_SECRET_TITLE = zhCN.accounts.createSecret.discardTitle
+
+/** The ui-kit data table's zh-CN copy-control label template. */
+const COPY_VALUE_TEMPLATE = (
+  uiKitResources['zh-CN'] as unknown as {
+    readonly dataTable: { readonly copyValue: string }
+  }
+).dataTable.copyValue
+
 function withAccounts(
   overrides: Partial<ConsoleBackend> = {},
 ): ReturnType<typeof createConsoleOperations> {
@@ -64,14 +147,14 @@ async function search(
   user: ReturnType<typeof userEvent.setup>,
   value = 'ada',
 ): Promise<void> {
-  await user.type(screen.getByLabelText('登录标识'), value)
-  await user.click(screen.getByRole('button', { name: '查询' }))
+  await user.type(screen.getByLabelText(zhCN.accounts.identifierLabel), value)
+  await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
 }
 
 async function openDetail(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   await search(user)
   await screen.findByText('Ada Lovelace')
-  await user.click(screen.getByRole('button', { name: '管理账户 acc-1' }))
+  await user.click(screen.getByRole('button', { name: MANAGE_ACCOUNT_NAME }))
 }
 
 /** The zh-CN label the confirm button shows once the two-step guard arms. */
@@ -88,11 +171,22 @@ const PANEL_CLOSE_LABEL = (
   }
 ).sidePanel.closeLabel
 
+/** The page's confirm label on a write's confirmation dialog. */
+const CONFIRM_LABEL = zhCN.common.confirm
+
 /** The create panel's heading, which is also its accessible name. */
-const CREATE_PANEL_NAME = '新建账户'
+const CREATE_PANEL_NAME = zhCN.accounts.create.title
 
 /** The discard confirmation's heading. */
-const DISCARD_DIALOG_NAME = '放弃未保存的更改'
+const DISCARD_DIALOG_NAME = zhCN.accounts.create.discardTitle
+
+/**
+ * The accessible name an in-page collapse control would carry on the fixture
+ * account. The detail moved into a modal side panel and the control's own
+ * key went with it, so this guard rebuilds the words the removed key held
+ * from the shipped resources rather than dropping the check.
+ */
+const COLLAPSE_ACCOUNT_NAME = `${zhCN.accountSelector.close}${zhCN.accounts.title} ${ACCOUNT_ID}`
 
 /** Opens the create panel from the page header and returns its dialog. */
 async function openCreate(
@@ -160,9 +254,9 @@ function elementDeclarations(css: string, element: Element): string {
   return Array.from(matches, (match) => match[1] ?? '').join('\n')
 }
 
-/** Confirms the open danger dialog (the confirm button labelled 确认), then
- * waits for it to leave the tree so the next interaction is not blocked by
- * the modal's aria-hidden background. */
+/** Confirms the open danger dialog (the confirm button carrying the common
+ * confirm label), then waits for it to leave the tree so the next interaction
+ * is not blocked by the modal's aria-hidden background. */
 async function confirmDialog(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   // The page may carry an open side panel (itself a dialog), so the
   // confirmation is picked out by its own confirm button rather than by
@@ -172,15 +266,15 @@ async function confirmDialog(user: ReturnType<typeof userEvent.setup>): Promise<
       .getAllByRole('dialog')
       .find(
         (entry) =>
-          within(entry).queryByRole('button', { name: '确认' }) !== null,
+          within(entry).queryByRole('button', { name: CONFIRM_LABEL }) !== null,
       )
     expect(candidate).toBeDefined()
     return candidate as HTMLElement
   })
-  await user.click(within(dialog).getByRole('button', { name: '确认' }))
+  await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
   await waitFor(() => {
     expect(
-      screen.queryByRole('button', { name: '确认' }),
+      screen.queryByRole('button', { name: CONFIRM_LABEL }),
     ).not.toBeInTheDocument()
   })
 }
@@ -205,7 +299,7 @@ const FORBIDDEN = {
   message: 'forbidden',
 }
 
-const FORBIDDEN_TEXT = '你没有执行此操作的权限。'
+const FORBIDDEN_TEXT = zhCN.errors.authn.forbidden
 
 const SECRET_ROW = {
   id: 'sec-1',
@@ -250,45 +344,54 @@ const DETAIL_WRITES: readonly {
 }[] = [
   {
     label: 'reset all MFA factors',
-    success: '账户「acc-1」的认证因子已重置',
+    success: fill(zhCN.accounts.mfaReset, { id: ACCOUNT_ID }),
     operations: (fail) => ({
       resetMFA: () => (fail ? Promise.reject(FORBIDDEN) : Promise.resolve()),
     }),
     drive: async (user, panel) => {
-      await user.click(within(panel).getByRole('button', { name: '重置 MFA' }))
+      await user.click(
+        within(panel).getByRole('button', { name: zhCN.accounts.resetMFA }),
+      )
       await confirmDialog(user)
     },
   },
   {
     label: 'revoke all sessions',
-    success: '账户「acc-1」的会话已全部撤销',
+    success: SESSIONS_REVOKED,
     operations: (fail) => ({
       revokeAccountSessions: () =>
         fail ? Promise.reject(FORBIDDEN) : Promise.resolve(),
     }),
     drive: async (user, panel) => {
       await user.click(
-        within(panel).getByRole('button', { name: '撤销全部会话' }),
+        within(panel).getByRole('button', {
+          name: zhCN.accounts.revokeSessions,
+        }),
       )
       await confirmDialog(user)
     },
   },
   {
     label: 'revoke one service secret',
-    success: '账户「acc-1」的服务密钥「ci」已撤销',
+    success: SECRET_REVOKED_CI,
     operations: (fail) => ({
       listAccountSecrets: () => Promise.resolve([SECRET_ROW]),
       revokeSecret: () => (fail ? Promise.reject(FORBIDDEN) : Promise.resolve()),
     }),
     drive: async (user, panel) => {
       await within(panel).findByText('ci')
-      await user.click(within(panel).getByRole('button', { name: '撤销密钥 ci' }))
+      await user.click(
+        within(panel).getByRole('button', { name: REVOKE_SECRET_CI_NAME }),
+      )
       await confirmDialog(user)
     },
   },
   {
     label: 'revoke one session',
-    success: '账户「acc-1」的会话「sess-1」已撤销',
+    success: fill(zhCN.accounts.sessionRevoked, {
+      id: ACCOUNT_ID,
+      session: 'sess-1',
+    }),
     operations: (fail) => ({
       listAccountSessions: () => Promise.resolve([SESSION_ROW]),
       revokeSession: () => (fail ? Promise.reject(FORBIDDEN) : Promise.resolve()),
@@ -296,24 +399,33 @@ const DETAIL_WRITES: readonly {
     drive: async (user, panel) => {
       await within(panel).findByText('sess-1')
       await user.click(
-        within(panel).getByRole('button', { name: '撤销会话 sess-1' }),
+        within(panel).getByRole('button', {
+          name: REVOKE_SESSION_SESS_1_NAME,
+        }),
       )
       await confirmDialog(user)
     },
   },
   {
     label: 'remove one login identifier by name',
-    success: '账户「acc-1」的登录标识「ada@example.com」已移除',
+    success: fill(zhCN.accounts.identifierRemoved, {
+      id: ACCOUNT_ID,
+      identifier: 'ada@example.com',
+    }),
     operations: (fail) => ({
       removeIdentifier: () =>
         fail ? Promise.reject(FORBIDDEN) : Promise.resolve(),
     }),
     drive: async (user, panel) => {
       await user.type(
-        within(panel).getByLabelText('移除登录标识'),
+        within(panel).getByLabelText(zhCN.accounts.removeIdentifier.label),
         'ada@example.com',
       )
-      await user.click(within(panel).getByRole('button', { name: '移除' }))
+      await user.click(
+        within(panel).getByRole('button', {
+          name: zhCN.accounts.removeIdentifier.submit,
+        }),
+      )
       await confirmDialog(user)
     },
   },
@@ -330,71 +442,106 @@ const FIELD_WRITES: readonly {
 }[] = [
   {
     label: 'change the account status',
-    success: '账户「acc-1」的状态已保存',
+    success: STATUS_SAVED,
     operations: (fail) => ({
       setAccountStatus: () =>
         fail ? Promise.reject(FORBIDDEN) : Promise.resolve(accountFixture()),
     }),
     drive: async (user, panel) => {
-      await user.click(within(panel).getByLabelText('状态'))
-      await user.click(await screen.findByRole('option', { name: '已停用' }))
-      await user.click(within(panel).getByRole('button', { name: '保存状态' }))
+      await user.click(within(panel).getByLabelText(zhCN.accounts.status.label))
+      await user.click(
+        await screen.findByRole('option', {
+          name: zhCN.accounts.status.disabled,
+        }),
+      )
+      await user.click(
+        within(panel).getByRole('button', {
+          name: zhCN.accounts.status.submit,
+        }),
+      )
     },
   },
   {
     label: 'change the MFA requirement',
-    success: '账户「acc-1」的 MFA 要求已保存',
+    success: MFA_SAVED,
     operations: (fail) => ({
       setMFARequired: () =>
         fail ? Promise.reject(FORBIDDEN) : Promise.resolve(),
     }),
     drive: async (user, panel) => {
-      await user.click(within(panel).getByLabelText('MFA 要求'))
-      await user.click(await screen.findByRole('option', { name: '必须' }))
-      await user.click(within(panel).getByRole('button', { name: '保存要求' }))
+      await user.click(within(panel).getByLabelText(zhCN.accounts.mfa.label))
+      await user.click(
+        await screen.findByRole('option', { name: zhCN.accounts.mfa.required }),
+      )
+      await user.click(
+        within(panel).getByRole('button', { name: zhCN.accounts.mfa.submit }),
+      )
     },
   },
   {
     label: 'patch the account',
-    success: '账户「acc-1」的资料已保存',
+    success: fill(zhCN.accounts.patchSaved, { id: ACCOUNT_ID }),
     operations: (fail) => ({
       patchAccount: () =>
         fail ? Promise.reject(FORBIDDEN) : Promise.resolve(accountFixture()),
     }),
     drive: async (user, panel) => {
-      const name = within(panel).getByLabelText('新显示名')
+      const name = within(panel).getByLabelText(
+        zhCN.accounts.patch.displayNameLabel,
+      )
       await user.clear(name)
       await user.type(name, 'Ada II')
-      await user.click(within(panel).getByRole('button', { name: '保存改动' }))
+      await user.click(
+        within(panel).getByRole('button', {
+          name: zhCN.accounts.patch.submit,
+        }),
+      )
     },
   },
   {
     label: 'reset the password',
-    success: '账户「acc-1」的口令已重置',
+    success: fill(zhCN.accounts.passwordReset, { id: ACCOUNT_ID }),
     operations: (fail) => ({
       resetPassword: () =>
         fail ? Promise.reject(FORBIDDEN) : Promise.resolve(),
     }),
     drive: async (user, panel) => {
-      await user.type(within(panel).getByLabelText('临时口令'), 'secret123')
-      await user.click(within(panel).getByRole('button', { name: '重置口令' }))
+      await user.type(
+        within(panel).getByLabelText(zhCN.accounts.password.label),
+        'secret123',
+      )
+      await user.click(
+        within(panel).getByRole('button', {
+          name: zhCN.accounts.password.submit,
+        }),
+      )
     },
   },
   {
     label: 'add a login identifier',
-    success: '账户「acc-1」已添加登录标识「ada@example.com」',
+    success: fill(zhCN.accounts.identifierAdded, {
+      id: ACCOUNT_ID,
+      identifier: 'ada@example.com',
+    }),
     operations: (fail) => ({
       addIdentifier: () =>
         fail ? Promise.reject(FORBIDDEN) : Promise.resolve(),
     }),
     drive: async (user, panel) => {
-      await user.type(within(panel).getByLabelText('取值'), 'ada@example.com')
-      await user.click(within(panel).getByRole('button', { name: '新增标识' }))
+      await user.type(
+        within(panel).getByLabelText(zhCN.accounts.addIdentifier.valueLabel),
+        'ada@example.com',
+      )
+      await user.click(
+        within(panel).getByRole('button', {
+          name: zhCN.accounts.addIdentifier.submit,
+        }),
+      )
     },
   },
   {
     label: 'create a service secret',
-    success: '账户「acc-1」已创建服务密钥「ci」',
+    success: SECRET_CREATED_CI,
     operations: (fail) => ({
       createSecret: () =>
         fail
@@ -407,8 +554,15 @@ const FIELD_WRITES: readonly {
             }),
     }),
     drive: async (user, panel) => {
-      await user.type(within(panel).getByLabelText('标签'), 'ci')
-      await user.click(within(panel).getByRole('button', { name: '新建密钥' }))
+      await user.type(
+        within(panel).getByLabelText(zhCN.accounts.createSecret.labelLabel),
+        'ci',
+      )
+      await user.click(
+        within(panel).getByRole('button', {
+          name: zhCN.accounts.createSecret.submit,
+        }),
+      )
     },
   },
 ]
@@ -449,7 +603,7 @@ describe('AccountsPage', () => {
     // controls join them once it is open.
     expect(
       hasCoarsePointerTouchTarget(
-        screen.getByRole('button', { name: '刷新' }),
+        screen.getByRole('button', { name: zhCN.common.refresh }),
       ),
     ).toBe(true)
     expect(
@@ -461,20 +615,20 @@ describe('AccountsPage', () => {
     await screen.findByText('Ada Lovelace')
     expect(
       hasCoarsePointerTouchTarget(
-        screen.getByRole('button', { name: '管理账户 acc-1' }),
+        screen.getByRole('button', { name: MANAGE_ACCOUNT_NAME }),
       ),
     ).toBe(true)
     expect(
       hasCoarsePointerTouchTarget(
-        screen.getByRole('button', { name: '删除账户 acc-1' }),
+        screen.getByRole('button', { name: DELETE_ACCOUNT_NAME }),
       ),
     ).toBe(true)
-    await user.click(screen.getByRole('button', { name: '管理账户 acc-1' }))
+    await user.click(screen.getByRole('button', { name: MANAGE_ACCOUNT_NAME }))
     await screen.findByText('ci')
     const gated = [
       screen.getByRole('button', { name: PANEL_CLOSE_LABEL }),
-      screen.getByRole('button', { name: '撤销密钥 ci' }),
-      screen.getByRole('button', { name: '撤销会话 sess-1' }),
+      screen.getByRole('button', { name: REVOKE_SECRET_CI_NAME }),
+      screen.getByRole('button', { name: REVOKE_SESSION_SESS_1_NAME }),
     ]
     for (const control of gated) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
@@ -490,26 +644,26 @@ describe('AccountsPage', () => {
 
     // Nothing detail-shaped is inline before the panel opens.
     expect(
-      screen.queryByRole('heading', { level: 2, name: '账户「acc-1」' }),
+      screen.queryByRole('heading', { level: 2, name: DETAIL_PANEL_NAME }),
     ).toBeNull()
-    const manage = screen.getByRole('button', { name: '管理账户 acc-1' })
+    const manage = screen.getByRole('button', { name: MANAGE_ACCOUNT_NAME })
     expect(manage).toHaveAttribute('aria-haspopup', 'dialog')
 
     await user.click(manage)
-    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
     // Both panels take the `wide` tier: 52rem from the viewport's `sm` up.
     expect(elementWidthAt(emittedStyleText(), panel, 600)).toBe('52rem')
     // The title names the account, and the detail's sections live inside the
     // dialog -- not in the page flow below the table.
     expect(
-      within(panel).getByRole('heading', { level: 2, name: '账户「acc-1」' }),
+      within(panel).getByRole('heading', { level: 2, name: DETAIL_PANEL_NAME }),
     ).toBeInTheDocument()
     expect(
-      within(panel).getByRole('heading', { name: '账户写入' }),
+      within(panel).getByRole('heading', { name: zhCN.accounts.writes.title }),
     ).toBeInTheDocument()
     // The row control only opens: no in-page collapse control exists.
     expect(
-      screen.queryByRole('button', { name: '收起账户 acc-1' }),
+      screen.queryByRole('button', { name: COLLAPSE_ACCOUNT_NAME }),
     ).not.toBeInTheDocument()
   })
 
@@ -518,19 +672,19 @@ describe('AccountsPage', () => {
     const operations = withAccounts()
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
 
     // Request the close. The panel is still sliding out, and during the
     // transition it must still render the account: clearing the selection
     // on the close request would leave a blank panel.
     fireEvent.click(within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }))
-    const exiting = screen.getByRole('dialog', { name: '账户「acc-1」' })
-    expect(within(exiting).getByText('显示名：Operator')).toBeInTheDocument()
+    const exiting = screen.getByRole('dialog', { name: DETAIL_PANEL_NAME })
+    expect(within(exiting).getByText(DISPLAY_NAME_OPERATOR)).toBeInTheDocument()
 
     // Only the exit transition's end removes the panel (and the account).
     await waitFor(() => {
       expect(
-        screen.queryByRole('dialog', { name: '账户「acc-1」' }),
+        screen.queryByRole('dialog', { name: DETAIL_PANEL_NAME }),
       ).not.toBeInTheDocument()
     })
   })
@@ -559,7 +713,7 @@ describe('AccountsPage', () => {
     )
     // The submit sits in FormLayout's actions row, which spans both tracks
     // instead of taking a field cell.
-    const submit = within(panel).getByRole('button', { name: '新建' })
+    const submit = within(panel).getByRole('button', { name: zhCN.accounts.create.submit })
     const actions = submit.parentElement as HTMLElement
     expect(actions).toHaveStyle({ justifyContent: 'flex-end' })
     expect(elementDeclarations(css, actions)).toContain('grid-column:1/-1')
@@ -587,21 +741,21 @@ describe('AccountsPage', () => {
     // Modified: the close request asks first. Cancelling keeps the panel
     // and the typed values.
     panel = await openCreate(user)
-    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
     await user.click(
       within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
     )
     const confirm = await screen.findByRole('dialog', {
       name: DISCARD_DIALOG_NAME,
     })
-    await user.click(within(confirm).getByRole('button', { name: '取消' }))
+    await user.click(within(confirm).getByRole('button', { name: zhCN.common.cancel }))
     await waitFor(() => {
       expect(
         screen.queryByRole('dialog', { name: DISCARD_DIALOG_NAME }),
       ).not.toBeInTheDocument()
     })
     panel = screen.getByRole('dialog', { name: CREATE_PANEL_NAME })
-    expect(within(panel).getByLabelText('显示名')).toHaveValue('Grace')
+    expect(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel)).toHaveValue('Grace')
 
     // Confirming discards and closes.
     await user.click(
@@ -610,7 +764,11 @@ describe('AccountsPage', () => {
     const again = await screen.findByRole('dialog', {
       name: DISCARD_DIALOG_NAME,
     })
-    await user.click(within(again).getByRole('button', { name: '放弃' }))
+    await user.click(
+      within(again).getByRole('button', {
+        name: zhCN.accounts.create.discardConfirm,
+      }),
+    )
     await waitFor(() => {
       expect(
         screen.queryByRole('dialog', { name: CREATE_PANEL_NAME }),
@@ -629,9 +787,9 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     const panel = await openCreate(user)
-    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
-    await user.type(within(panel).getByLabelText('用户名'), 'grace')
-    await user.click(within(panel).getByRole('button', { name: '新建' }))
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
 
     // In flight: the panel is busy, so the close control is disabled and
     // Escape reports no close request at all.
@@ -658,15 +816,19 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
 
     const panel = await openCreate(user)
-    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
-    await user.type(within(panel).getByLabelText('用户名'), 'grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
     await user.click(
       within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
     )
     const confirm = await screen.findByRole('dialog', {
       name: DISCARD_DIALOG_NAME,
     })
-    await user.click(within(confirm).getByRole('button', { name: '放弃' }))
+    await user.click(
+      within(confirm).getByRole('button', {
+        name: zhCN.accounts.create.discardConfirm,
+      }),
+    )
     // Both the confirmation and the panel must finish exiting before the
     // page behind is reachable again.
     await waitFor(() => {
@@ -680,8 +842,8 @@ describe('AccountsPage', () => {
 
     // The re-opened panel shows the initial values, not the discarded draft.
     const reopened = await openCreate(user)
-    expect(within(reopened).getByLabelText('显示名')).toHaveValue('')
-    expect(within(reopened).getByLabelText('用户名')).toHaveValue('')
+    expect(within(reopened).getByLabelText(zhCN.accounts.create.displayNameLabel)).toHaveValue('')
+    expect(within(reopened).getByLabelText(zhCN.accounts.create.usernameLabel)).toHaveValue('')
   })
 
   it('returns focus into the panel when the nested confirmation dialog closes', async () => {
@@ -689,12 +851,14 @@ describe('AccountsPage', () => {
     const operations = withAccounts()
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
-    const reset = within(panel).getByRole('button', { name: '重置 MFA' })
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    const reset = within(panel).getByRole('button', { name: zhCN.accounts.resetMFA })
 
     await user.click(reset)
-    const confirm = await screen.findByRole('dialog', { name: '重置 MFA' })
-    await user.click(within(confirm).getByRole('button', { name: '取消' }))
+    const confirm = await screen.findByRole('dialog', {
+      name: zhCN.accounts.resetMFATitle,
+    })
+    await user.click(within(confirm).getByRole('button', { name: zhCN.common.cancel }))
     await waitFor(() => expect(reset).toHaveFocus())
   })
 
@@ -706,14 +870,14 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations, session })
     await openDetail(user)
-    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
-    await user.click(within(panel).getByLabelText('状态'))
-    await user.click(await screen.findByRole('option', { name: '已停用' }))
-    const save = within(panel).getByRole('button', { name: '保存状态' })
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    await user.click(within(panel).getByLabelText(zhCN.accounts.status.label))
+    await user.click(await screen.findByRole('option', { name: zhCN.accounts.status.disabled }))
+    const save = within(panel).getByRole('button', { name: zhCN.accounts.status.submit })
 
     await user.click(save)
     const challenge = await screen.findByRole('dialog', {
-      name: '需要重新验证',
+      name: zhCN.stepUp.title,
     })
     // The refusal handed to the gate settles null: the status group's slot
     // stays empty, so no failure banner stands beside the step-up dialog.
@@ -730,7 +894,7 @@ describe('AccountsPage', () => {
     // assertion reads the panel's DOM directly: a wrongly settled failure
     // still renders its alert there and must show up here.
     expect(panel.querySelectorAll('[role="alert"]')).toHaveLength(0)
-    await user.click(within(challenge).getByRole('button', { name: '取消' }))
+    await user.click(within(challenge).getByRole('button', { name: zhCN.common.cancel }))
     await waitFor(() => expect(save).toHaveFocus())
   })
 
@@ -741,13 +905,13 @@ describe('AccountsPage', () => {
       operations,
     })
     await openDetail(user)
-    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
 
     // The modal hides the page behind from assistive technology; the panel
     // is the part that stays in the accessibility tree.
     expect(container).toHaveAttribute('aria-hidden', 'true')
     expect(
-      within(panel).getByRole('heading', { name: '已注册因子' }),
+      within(panel).getByRole('heading', { name: zhCN.accounts.factors.title }),
     ).toBeInTheDocument()
   })
 
@@ -756,7 +920,7 @@ describe('AccountsPage', () => {
     const operations = withAccounts()
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
     await expectNoAxeViolations()
   })
 
@@ -765,11 +929,14 @@ describe('AccountsPage', () => {
     const operations = withAccounts()
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
-    await user.type(within(panel).getByLabelText('标签'), 'ci')
-    await user.click(within(panel).getByRole('button', { name: '新建密钥' }))
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    await user.type(within(panel).getByLabelText(zhCN.accounts.createSecret.labelLabel), 'ci')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.createSecret.submit }))
     await within(panel).findByText(
-      '服务密钥「label」（仅显示这一次）：one-time',
+      fill(zhCN.accounts.createSecret.handedOver, {
+        label: 'label',
+        secret: 'one-time',
+      }),
     )
     await expectNoAxeViolations()
   })
@@ -779,7 +946,7 @@ describe('AccountsPage', () => {
       listAccounts: () => Promise.resolve({ accounts: [], next_cursor: '' }),
     })
     renderWithProviders(<AccountsPage />, { operations })
-    expect(await screen.findByText('暂无账户')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.accounts.empty.title)).toBeInTheDocument()
   })
 
   it('lists accounts and shows their status', async () => {
@@ -788,11 +955,11 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await search(user)
     expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
-    expect(screen.getByText('已启用')).toBeInTheDocument()
+    expect(screen.getByText(zhCN.accounts.status.active)).toBeInTheDocument()
   })
 
   it('keeps its short-value and identifier columns on one line and the identifier reachable in full', async () => {
-    // The status cell must not split '已启用' across two lines, a
+    // The status cell must not split the active-status label across two lines, a
     // display name with a space must not break at it, and an identifier
     // must not break mid-token. jsdom does no layout, so the proof is
     // the declared `white-space: nowrap` on the rendered cells; the
@@ -804,7 +971,7 @@ describe('AccountsPage', () => {
     const operations = withAccounts()
     renderWithProviders(<AccountsPage />, { operations })
     await search(user)
-    const statusCell = (await screen.findByText('已启用')).closest('td')
+    const statusCell = (await screen.findByText(zhCN.accounts.status.active)).closest('td')
     const nameCell = screen.getByText('Ada Lovelace').closest('td')
     const idCell = screen.getByText('acc-1').closest('td')
     for (const cell of [statusCell, nameCell, idCell]) {
@@ -826,10 +993,10 @@ describe('AccountsPage', () => {
       throw new Error(`unexpected request: ${call.path}`)
     })
     renderWithProviders(<AccountsPage />, { operations: consoleOperations })
-    await user.click(screen.getByLabelText('标识类型'))
-    await user.click(await screen.findByRole('option', { name: '邮箱' }))
-    await user.type(screen.getByLabelText('登录标识'), 'ada')
-    await user.click(screen.getByRole('button', { name: '查询' }))
+    await user.click(screen.getByLabelText(zhCN.accounts.identifierKindLabel))
+    await user.click(await screen.findByRole('option', { name: zhCN.accounts.identifierKind.email }))
+    await user.type(screen.getByLabelText(zhCN.accounts.identifierLabel), 'ada')
+    await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
     await vi.waitFor(() => {
       expect(calls).toContainEqual({
         method: 'GET',
@@ -848,11 +1015,11 @@ describe('AccountsPage', () => {
       throw new Error(`unexpected request: ${call.path}`)
     })
     renderWithProviders(<AccountsPage />, { operations: consoleOperations })
-    await user.click(screen.getByLabelText('状态筛选'))
-    await user.click(await screen.findByRole('option', { name: '已停用' }))
-    await user.click(screen.getByLabelText('类型筛选'))
-    await user.click(await screen.findByRole('option', { name: '服务' }))
-    await user.click(screen.getByRole('button', { name: '查询' }))
+    await user.click(screen.getByLabelText(zhCN.accounts.filter.status))
+    await user.click(await screen.findByRole('option', { name: zhCN.accounts.status.disabled }))
+    await user.click(screen.getByLabelText(zhCN.accounts.filter.kind))
+    await user.click(await screen.findByRole('option', { name: zhCN.accounts.create.kind.service }))
+    await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
     await vi.waitFor(() => {
       expect(calls).toContainEqual({
         method: 'GET',
@@ -871,8 +1038,8 @@ describe('AccountsPage', () => {
       throw new Error(`unexpected request: ${call.path}`)
     })
     renderWithProviders(<AccountsPage />, { operations: consoleOperations })
-    await user.type(screen.getByLabelText('显示名前缀'), 'Ada')
-    await user.click(screen.getByRole('button', { name: '查询' }))
+    await user.type(screen.getByLabelText(zhCN.accounts.displayNamePrefixLabel), 'Ada')
+    await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
     await vi.waitFor(() => {
       expect(calls).toContainEqual({
         method: 'GET',
@@ -891,7 +1058,7 @@ describe('AccountsPage', () => {
       throw new Error(`unexpected request: ${call.path}`)
     })
     renderWithProviders(<AccountsPage />, { operations: consoleOperations })
-    await user.click(screen.getByRole('button', { name: '查询' }))
+    await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
     await vi.waitFor(() => {
       const call = calls.find((entry) => entry.path === '/auth/admin/accounts')
       expect(call).toBeDefined()
@@ -938,8 +1105,10 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    expect(await screen.findByText('因子加载失败')).toBeInTheDocument()
-    expect(screen.getByText('账户面未能完成这次请求。')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.accounts.factors.error.title)).toBeInTheDocument()
+    expect(
+      screen.getByText(zhCN.accounts.factors.error.description),
+    ).toBeInTheDocument()
   })
 
   it('confirms before deleting an account, then deletes it through the bundle', async () => {
@@ -954,14 +1123,14 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await search(user)
     await screen.findByText('Ada Lovelace')
-    await user.click(screen.getByRole('button', { name: '删除账户 acc-1' }))
+    await user.click(screen.getByRole('button', { name: DELETE_ACCOUNT_NAME }))
     // The dialog gates the write: nothing fires until it is confirmed.
     expect(deleted).toEqual([])
     // Deleting an account is irreversible and takes dependent records with
     // it, so its confirmation carries the heavier two-step guard: the first
     // click only arms, the deliberate second fires.
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
     expect(deleted).toEqual([])
     expect(
       within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
@@ -995,9 +1164,9 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    await user.click(await screen.findByRole('button', { name: '重置 MFA' }))
+    await user.click(await screen.findByRole('button', { name: zhCN.accounts.resetMFA }))
     await confirmDialog(user)
-    await user.click(screen.getByRole('button', { name: '撤销全部会话' }))
+    await user.click(screen.getByRole('button', { name: zhCN.accounts.revokeSessions }))
     await confirmDialog(user)
     await vi.waitFor(() => {
       expect(reset).toEqual(['acc-1'])
@@ -1016,56 +1185,64 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
     await within(panel).findByText('sess-cur')
 
     // The marker sits on the current row only, in the primary identity
     // (created time) rather than the low-priority id column, so it stays
     // visible when that column hides. The id cell shows the prefix; the
     // complete id stays on the title and copy control.
-    const marker = within(panel).getByText('当前会话')
+    const marker = within(panel).getByText(zhCN.accounts.sessions.current)
     const currentRow = marker.closest('tr') as HTMLElement
     expect(currentRow).toHaveTextContent('sess-cur')
     expect(currentRow).not.toHaveTextContent('sess-oth')
     const currentCells = currentRow.querySelectorAll('td')
-    expect(currentCells[0]).not.toHaveTextContent('当前会话')
-    expect(currentCells[1]).toHaveTextContent('当前会话')
+    expect(currentCells[0]).not.toHaveTextContent(zhCN.accounts.sessions.current)
+    expect(currentCells[1]).toHaveTextContent(zhCN.accounts.sessions.current)
     const otherRow = within(panel).getByText('sess-oth').closest('tr')
-    expect(within(otherRow as HTMLElement).queryByText('当前会话')).toBeNull()
+    expect(within(otherRow as HTMLElement).queryByText(zhCN.accounts.sessions.current)).toBeNull()
 
     // Revoking everything says the caller is signed out too.
     await user.click(
-      within(panel).getByRole('button', { name: '撤销全部会话' }),
+      within(panel).getByRole('button', { name: zhCN.accounts.revokeSessions }),
     )
-    const bulk = await screen.findByRole('dialog', { name: '撤销全部会话' })
+    const bulk = await screen.findByRole('dialog', {
+      name: zhCN.accounts.revokeSessionsTitle,
+    })
     expect(
-      within(bulk).getByText(/其中包括你当前的会话/),
+      within(bulk).getByText(zhCN.accounts.revokeSessionsMessageCurrent),
     ).toBeInTheDocument()
-    await user.click(within(bulk).getByRole('button', { name: '取消' }))
+    await user.click(within(bulk).getByRole('button', { name: zhCN.common.cancel }))
 
     // The current row's own revocation says the same.
     await user.click(
       await within(panel).findByRole('button', {
-        name: '撤销会话 sess-current',
+        name: fill(zhCN.accounts.sessions.revokeAria, {
+          id: 'sess-current',
+        }),
       }),
     )
-    const own = await screen.findByRole('dialog', { name: '撤销会话' })
+    const own = await screen.findByRole('dialog', { name: zhCN.accounts.sessions.revokeTitle })
     expect(
       within(own).getByText(
-        '撤销会话「sess-current」。这是你当前的会话，撤销后你也会退出登录。',
+        fill(zhCN.accounts.sessions.revokeMessageCurrent, {
+          id: 'sess-current',
+        }),
       ),
     ).toBeInTheDocument()
-    await user.click(within(own).getByRole('button', { name: '取消' }))
+    await user.click(within(own).getByRole('button', { name: zhCN.common.cancel }))
 
     // A row the server does not mark keeps the plain confirmation.
     await user.click(
       await within(panel).findByRole('button', {
-        name: '撤销会话 sess-other',
+        name: fill(zhCN.accounts.sessions.revokeAria, { id: 'sess-other' }),
       }),
     )
-    const other = await screen.findByRole('dialog', { name: '撤销会话' })
+    const other = await screen.findByRole('dialog', { name: zhCN.accounts.sessions.revokeTitle })
     expect(
-      within(other).getByText('撤销会话「sess-other」。'),
+      within(other).getByText(
+        fill(zhCN.accounts.sessions.revokeMessage, { id: 'sess-other' }),
+      ),
     ).toBeInTheDocument()
   })
 
@@ -1106,12 +1283,12 @@ describe('AccountsPage', () => {
     await screen.findByText('ci')
     // Each revoke control names its own row (the secret's label, the
     // session's id), so the two are picked apart by object, not by order.
-    await user.click(screen.getByRole('button', { name: '撤销密钥 ci' }))
+    await user.click(screen.getByRole('button', { name: REVOKE_SECRET_CI_NAME }))
     await confirmDialog(user)
     await vi.waitFor(() => {
       expect(secret).toEqual(['sec-1'])
     })
-    await user.click(screen.getByRole('button', { name: '撤销会话 sess-1' }))
+    await user.click(screen.getByRole('button', { name: REVOKE_SESSION_SESS_1_NAME }))
     await confirmDialog(user)
     await vi.waitFor(() => {
       expect(session).toEqual(['sess-1'])
@@ -1130,10 +1307,10 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
     await user.type(
-      await screen.findByLabelText('移除登录标识'),
+      await screen.findByLabelText(zhCN.accounts.removeIdentifier.label),
       'ada@example.com',
     )
-    await user.click(screen.getByRole('button', { name: '移除' }))
+    await user.click(screen.getByRole('button', { name: zhCN.accounts.removeIdentifier.submit }))
     await confirmDialog(user)
     await vi.waitFor(() => {
       expect(removed).toEqual(['ada@example.com'])
@@ -1147,7 +1324,7 @@ describe('AccountsPage', () => {
       const backend = withAccounts(operations(true))
       renderWithProviders(<AccountsPage />, { operations: backend })
       await openDetail(user)
-      const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+      const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
 
       await drive(user, panel)
 
@@ -1168,7 +1345,7 @@ describe('AccountsPage', () => {
       const backend = withAccounts(operations(false))
       renderWithProviders(<AccountsPage />, { operations: backend })
       await openDetail(user)
-      const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+      const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
 
       await drive(user, panel)
 
@@ -1193,9 +1370,9 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
-    await user.type(within(panel).getByLabelText('临时口令'), 'secret123')
-    await user.click(within(panel).getByRole('button', { name: '重置口令' }))
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    await user.type(within(panel).getByLabelText(zhCN.accounts.password.label), 'secret123')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.password.submit }))
 
     // A write in one section makes the whole panel busy: the close control
     // is disabled and Escape reports no close request at all.
@@ -1206,7 +1383,7 @@ describe('AccountsPage', () => {
     )
     fireEvent.keyDown(panel, { key: 'Escape' })
     expect(
-      screen.getByRole('dialog', { name: '账户「acc-1」' }),
+      screen.getByRole('dialog', { name: DETAIL_PANEL_NAME }),
     ).toBeInTheDocument()
 
     await act(async () => {
@@ -1220,7 +1397,7 @@ describe('AccountsPage', () => {
     fireEvent.click(within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }))
     await waitFor(() => {
       expect(
-        screen.queryByRole('dialog', { name: '账户「acc-1」' }),
+        screen.queryByRole('dialog', { name: DETAIL_PANEL_NAME }),
       ).not.toBeInTheDocument()
     })
   })
@@ -1233,21 +1410,21 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
 
     // The status write fails in its own region.
-    await user.click(within(panel).getByLabelText('状态'))
-    await user.click(await screen.findByRole('option', { name: '已停用' }))
-    await user.click(within(panel).getByRole('button', { name: '保存状态' }))
+    await user.click(within(panel).getByLabelText(zhCN.accounts.status.label))
+    await user.click(await screen.findByRole('option', { name: zhCN.accounts.status.disabled }))
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.status.submit }))
     expect(await within(panel).findByRole('alert')).toHaveTextContent(FORBIDDEN_TEXT)
 
     // The MFA write lands in its own region; the status failure stands
     // because the two groups do not share a slot (nothing is aggregated).
-    await user.click(within(panel).getByLabelText('MFA 要求'))
-    await user.click(await screen.findByRole('option', { name: '必须' }))
-    await user.click(within(panel).getByRole('button', { name: '保存要求' }))
+    await user.click(within(panel).getByLabelText(zhCN.accounts.mfa.label))
+    await user.click(await screen.findByRole('option', { name: zhCN.accounts.mfa.required }))
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.mfa.submit }))
     expect(
-      await within(panel).findByText('账户「acc-1」的 MFA 要求已保存'),
+      await within(panel).findByText(MFA_SAVED),
     ).toBeInTheDocument()
     expect(within(panel).getByRole('alert')).toHaveTextContent(FORBIDDEN_TEXT)
   })
@@ -1259,9 +1436,9 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     const panel = await openCreate(user)
-    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
-    await user.type(within(panel).getByLabelText('用户名'), 'grace')
-    await user.click(within(panel).getByRole('button', { name: '新建' }))
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
 
     const alert = await within(panel).findByRole('alert')
     expect(alert).toHaveTextContent(FORBIDDEN_TEXT)
@@ -1269,7 +1446,7 @@ describe('AccountsPage', () => {
     // the page behind it carries none.
     expect(outsideOf(panel, '[role="alert"]')).toEqual([])
     // The fields stay for correction and the panel stays open.
-    expect(within(panel).getByLabelText('显示名')).toHaveValue('Grace')
+    expect(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel)).toHaveValue('Grace')
     expect(screen.getByRole('dialog', { name: CREATE_PANEL_NAME })).toBe(panel)
   })
 
@@ -1286,9 +1463,9 @@ describe('AccountsPage', () => {
     await search(user)
     await screen.findByText('Ada Lovelace')
     const panel = await openCreate(user)
-    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
-    await user.type(within(panel).getByLabelText('用户名'), 'grace')
-    await user.click(within(panel).getByRole('button', { name: '新建' }))
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
 
     await act(async () => {
       finishCreate?.(accountFixture({ display_name: 'Grace' }))
@@ -1299,7 +1476,7 @@ describe('AccountsPage', () => {
     expect(
       screen.getByRole('dialog', { name: CREATE_PANEL_NAME }),
     ).toBeInTheDocument()
-    expect(screen.queryByText('账户「Grace」已创建')).toBeNull()
+    expect(screen.queryByText(CREATED_GRACE)).toBeNull()
 
     // Only after the exit does it land, in the page's list region.
     await waitFor(() => {
@@ -1307,7 +1484,7 @@ describe('AccountsPage', () => {
         screen.queryByRole('dialog', { name: CREATE_PANEL_NAME }),
       ).not.toBeInTheDocument()
     })
-    const notice = await screen.findByText('账户「Grace」已创建')
+    const notice = await screen.findByText(CREATED_GRACE)
     expect(notice.closest('[role="dialog"]')).toBeNull()
     expect(notice.closest('[role="status"]')).not.toBeNull()
   })
@@ -1332,9 +1509,9 @@ describe('AccountsPage', () => {
 
     // Start the row delete and confirm it through the two-step guard; it
     // stays in flight (one attempt in the list scope).
-    await user.click(screen.getByRole('button', { name: '删除账户 acc-1' }))
+    await user.click(screen.getByRole('button', { name: DELETE_ACCOUNT_NAME }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
     await act(async () => {
       await new Promise((resolve) =>
         setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
@@ -1350,9 +1527,9 @@ describe('AccountsPage', () => {
     // While that write is in flight, a create lands in the same scope via
     // the create panel's exit.
     const panel = await openCreate(user)
-    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
-    await user.type(within(panel).getByLabelText('用户名'), 'grace')
-    await user.click(within(panel).getByRole('button', { name: '新建' }))
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
     await act(async () => {
       finishCreate?.(accountFixture({ display_name: 'Grace' }))
     })
@@ -1361,15 +1538,15 @@ describe('AccountsPage', () => {
         screen.queryByRole('dialog', { name: CREATE_PANEL_NAME }),
       ).not.toBeInTheDocument()
     })
-    expect(await screen.findByText('账户「Grace」已创建')).toBeInTheDocument()
+    expect(await screen.findByText(CREATED_GRACE)).toBeInTheDocument()
 
     // The delete settles last and replaces the create's confirmation: one
     // slot, the last result wins.
     await act(async () => {
       finishDelete?.()
     })
-    expect(await screen.findByText('账户「acc-1」已删除')).toBeInTheDocument()
-    expect(screen.queryByText('账户「Grace」已创建')).toBeNull()
+    expect(await screen.findByText(DELETED_ACC_1)).toBeInTheDocument()
+    expect(screen.queryByText(CREATED_GRACE)).toBeNull()
   })
 
   it('shows a one-time secret under the create-secret group with a named close control', async () => {
@@ -1385,28 +1562,32 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
-    await user.type(within(panel).getByLabelText('标签'), 'ci')
-    await user.click(within(panel).getByRole('button', { name: '新建密钥' }))
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    await user.type(within(panel).getByLabelText(zhCN.accounts.createSecret.labelLabel), 'ci')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.createSecret.submit }))
 
     const display = await within(panel).findByText(
-      '服务密钥「ci」（仅显示这一次）：one-time-value',
+      HANDED_OVER_CI,
     )
     expect(display.closest('[role="status"]')).not.toBeNull()
     // The explicit close control names the account it belongs to.
     const close = within(panel).getByRole('button', {
-      name: '关闭账户「Operator」（acc-1）的服务密钥「ci」显示',
+      name: fill(zhCN.accounts.createSecret.closeAria, {
+        name: 'Operator',
+        id: 'acc-1',
+        label: 'ci',
+      }),
     })
     expect(close).toBeInTheDocument()
     // The slot's success confirmation stands beside the display, not in it;
     // closing the display leaves the confirmation in place.
     expect(
-      within(panel).getByText('账户「acc-1」已创建服务密钥「ci」'),
+      within(panel).getByText(SECRET_CREATED_CI),
     ).toBeInTheDocument()
     await user.click(close)
-    expect(within(panel).queryByText(/仅显示这一次/)).toBeNull()
+    expect(within(panel).queryByText(HANDED_OVER_CI)).toBeNull()
     expect(
-      within(panel).getByText('账户「acc-1」已创建服务密钥「ci」'),
+      within(panel).getByText(SECRET_CREATED_CI),
     ).toBeInTheDocument()
   })
 
@@ -1428,23 +1609,23 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
-    await user.type(within(panel).getByLabelText('标签'), 'ci')
-    await user.click(within(panel).getByRole('button', { name: '新建密钥' }))
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    await user.type(within(panel).getByLabelText(zhCN.accounts.createSecret.labelLabel), 'ci')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.createSecret.submit }))
     await within(panel).findByText(
-      '服务密钥「ci」（仅显示这一次）：one-time-value',
+      HANDED_OVER_CI,
     )
 
     // A second attempt resets the creating scope and settles as a failure.
     // The display is page state, not slot state: it survives both.
-    await user.type(within(panel).getByLabelText('标签'), 'ci')
-    await user.click(within(panel).getByRole('button', { name: '新建密钥' }))
+    await user.type(within(panel).getByLabelText(zhCN.accounts.createSecret.labelLabel), 'ci')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.createSecret.submit }))
     expect(await within(panel).findByRole('alert')).toHaveTextContent(FORBIDDEN_TEXT)
     expect(
-      within(panel).getByText('服务密钥「ci」（仅显示这一次）：one-time-value'),
+      within(panel).getByText(HANDED_OVER_CI),
     ).toBeInTheDocument()
     expect(
-      within(panel).queryByText('账户「acc-1」已创建服务密钥「ci」'),
+      within(panel).queryByText(SECRET_CREATED_CI),
     ).toBeNull()
   })
 
@@ -1461,11 +1642,11 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    let panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
-    await user.type(within(panel).getByLabelText('标签'), 'ci')
-    await user.click(within(panel).getByRole('button', { name: '新建密钥' }))
+    let panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    await user.type(within(panel).getByLabelText(zhCN.accounts.createSecret.labelLabel), 'ci')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.createSecret.submit }))
     await within(panel).findByText(
-      '服务密钥「ci」（仅显示这一次）：one-time-value',
+      HANDED_OVER_CI,
     )
 
     // Cancelling the discard keeps the panel and the unclosed secret.
@@ -1473,17 +1654,17 @@ describe('AccountsPage', () => {
       within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
     )
     let discard = await screen.findByRole('dialog', {
-      name: '放弃未关闭的服务密钥',
+      name: DISCARD_SECRET_TITLE,
     })
-    await user.click(within(discard).getByRole('button', { name: '取消' }))
+    await user.click(within(discard).getByRole('button', { name: zhCN.common.cancel }))
     await waitFor(() => {
       expect(
-        screen.queryByRole('dialog', { name: '放弃未关闭的服务密钥' }),
+        screen.queryByRole('dialog', { name: DISCARD_SECRET_TITLE }),
       ).not.toBeInTheDocument()
     })
-    panel = screen.getByRole('dialog', { name: '账户「acc-1」' })
+    panel = screen.getByRole('dialog', { name: DETAIL_PANEL_NAME })
     expect(
-      within(panel).getByText('服务密钥「ci」（仅显示这一次）：one-time-value'),
+      within(panel).getByText(HANDED_OVER_CI),
     ).toBeInTheDocument()
 
     // Confirming closes the panel and discards; reopening starts without it.
@@ -1491,22 +1672,26 @@ describe('AccountsPage', () => {
       within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
     )
     discard = await screen.findByRole('dialog', {
-      name: '放弃未关闭的服务密钥',
+      name: DISCARD_SECRET_TITLE,
     })
-    await user.click(within(discard).getByRole('button', { name: '放弃' }))
+    await user.click(
+      within(discard).getByRole('button', {
+        name: zhCN.accounts.createSecret.discardConfirm,
+      }),
+    )
     // Both the confirmation and the panel must finish exiting before the
     // page behind the modal is reachable again.
     await waitFor(() => {
       expect(
-        screen.queryByRole('dialog', { name: '放弃未关闭的服务密钥' }),
+        screen.queryByRole('dialog', { name: DISCARD_SECRET_TITLE }),
       ).not.toBeInTheDocument()
       expect(
-        screen.queryByRole('dialog', { name: '账户「acc-1」' }),
+        screen.queryByRole('dialog', { name: DETAIL_PANEL_NAME }),
       ).not.toBeInTheDocument()
     })
-    await user.click(screen.getByRole('button', { name: '管理账户 acc-1' }))
-    panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
-    expect(within(panel).queryByText(/仅显示这一次/)).toBeNull()
+    await user.click(screen.getByRole('button', { name: MANAGE_ACCOUNT_NAME }))
+    panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    expect(within(panel).queryByText(HANDED_OVER_CI)).toBeNull()
   })
 
   it('does not warn about a Fragment in the create form\'s select options', async () => {
@@ -1529,8 +1714,8 @@ describe('AccountsPage', () => {
       // opens -- before the option list below, whose absence is the same
       // defect's user-visible half but a slower, less precise signal.
       expect(fragmentWarnings).toEqual([])
-      await user.click(within(panel).getByLabelText('邮箱验证方式'))
-      await screen.findByRole('option', { name: '管理员断言' })
+      await user.click(within(panel).getByLabelText(zhCN.accounts.create.emailViaLabel))
+      await screen.findByRole('option', { name: zhCN.accounts.create.via.admin })
     } finally {
       spy.mockRestore()
     }
@@ -1543,8 +1728,8 @@ describe('AccountsPage', () => {
     })
     const { container } = renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
-    await user.click(within(panel).getByRole('button', { name: '撤销全部会话' }))
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.revokeSessions }))
     await confirmDialog(user)
 
     // MUI marks the page behind an open modal aria-hidden: the page-level
@@ -1556,7 +1741,7 @@ describe('AccountsPage', () => {
     const region = await waitFor(() => {
       const found = within(panel)
         .getAllByRole('status')
-        .find((entry) => entry.textContent === '账户「acc-1」的会话已全部撤销')
+        .find((entry) => entry.textContent === SESSIONS_REVOKED)
       expect(found).toBeDefined()
       return found as HTMLElement
     })
@@ -1571,26 +1756,26 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    let panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    let panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
     await within(panel).findByText('ci')
-    await user.click(within(panel).getByRole('button', { name: '撤销密钥 ci' }))
+    await user.click(within(panel).getByRole('button', { name: REVOKE_SECRET_CI_NAME }))
     await confirmDialog(user)
     expect(
-      await within(panel).findByText('账户「acc-1」的服务密钥「ci」已撤销'),
+      await within(panel).findByText(SECRET_REVOKED_CI),
     ).toBeInTheDocument()
 
     fireEvent.click(within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }))
     await waitFor(() => {
       expect(
-        screen.queryByRole('dialog', { name: '账户「acc-1」' }),
+        screen.queryByRole('dialog', { name: DETAIL_PANEL_NAME }),
       ).not.toBeInTheDocument()
     })
 
     // The exit cleared the panel's feedback: reopening shows no stale
     // message from the previous visit.
-    await user.click(screen.getByRole('button', { name: '管理账户 acc-1' }))
-    panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
-    expect(within(panel).queryByText('账户「acc-1」的服务密钥「ci」已撤销')).toBeNull()
+    await user.click(screen.getByRole('button', { name: MANAGE_ACCOUNT_NAME }))
+    panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    expect(within(panel).queryByText(SECRET_REVOKED_CI)).toBeNull()
   })
 
   it('creates an account through the bundle', async () => {
@@ -1604,9 +1789,9 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     const panel = await openCreate(user)
-    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
-    await user.type(within(panel).getByLabelText('用户名'), 'grace')
-    await user.click(within(panel).getByRole('button', { name: '新建' }))
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
     await vi.waitFor(() => {
       expect(created).toEqual([
         { kind: 'user', display_name: 'Grace', username: 'grace' },
@@ -1635,10 +1820,10 @@ describe('AccountsPage', () => {
     // The guard trims before judging, so a padded value passes it; the
     // request must carry the same trimmed values the guard judged rather
     // than the raw input the server then refuses.
-    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
-    await user.type(within(panel).getByLabelText('用户名'), '  grace  ')
-    await user.type(within(panel).getByLabelText('手机号'), '  +8613800000000  ')
-    await user.click(within(panel).getByRole('button', { name: '新建' }))
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), '  grace  ')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.phoneLabel), '  +8613800000000  ')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
     await vi.waitFor(() => {
       expect(created).toEqual([
         {
@@ -1662,7 +1847,7 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     const panel = await openCreate(user)
-    const submit = within(panel).getByRole('button', { name: '新建' })
+    const submit = within(panel).getByRole('button', { name: zhCN.accounts.create.submit })
     const form = panel.querySelector('form') as HTMLFormElement
 
     // An empty form names nothing an account can sign in with: the submit
@@ -1673,20 +1858,20 @@ describe('AccountsPage', () => {
     expect(created).toEqual([])
 
     // A display name alone is not an account either.
-    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
     expect(submit).toBeDisabled()
     fireEvent.submit(form)
     expect(created).toEqual([])
 
     // Nor is an identifier alone.
-    await user.clear(within(panel).getByLabelText('显示名'))
-    await user.type(within(panel).getByLabelText('用户名'), 'grace')
+    await user.clear(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel))
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
     expect(submit).toBeDisabled()
     fireEvent.submit(form)
     expect(created).toEqual([])
 
     // Both together make the account creatable.
-    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
     await vi.waitFor(() => expect(submit).toBeEnabled())
     await user.click(submit)
     await vi.waitFor(() => expect(created).toHaveLength(1))
@@ -1703,14 +1888,14 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     const panel = await openCreate(user)
-    const submit = within(panel).getByRole('button', { name: '新建' })
+    const submit = within(panel).getByRole('button', { name: zhCN.accounts.create.submit })
 
     // A service account signs in with a service secret, so the server
     // exempts it from the login-identifier requirement, and the submit must
     // be enabled on a display name alone before any identifier is given.
-    await user.click(within(panel).getByLabelText('账户类型'))
-    await user.click(await screen.findByRole('option', { name: '服务' }))
-    await user.type(within(panel).getByLabelText('显示名'), 'Nightly')
+    await user.click(within(panel).getByLabelText(zhCN.accounts.create.kindLabel))
+    await user.click(await screen.findByRole('option', { name: zhCN.accounts.create.kind.service }))
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Nightly')
     await vi.waitFor(() => expect(submit).toBeEnabled())
     await user.click(submit)
     await vi.waitFor(() => {
@@ -1732,10 +1917,10 @@ describe('AccountsPage', () => {
     // The status control is seeded from the account (active), so the save
     // is disabled until the operator picks a different status: a stray
     // click can never disable an account the operator did not mean to.
-    const save = await screen.findByRole('button', { name: '保存状态' })
+    const save = await screen.findByRole('button', { name: zhCN.accounts.status.submit })
     expect(save).toBeDisabled()
-    await user.click(screen.getByLabelText('状态'))
-    await user.click(await screen.findByRole('option', { name: '已停用' }))
+    await user.click(screen.getByLabelText(zhCN.accounts.status.label))
+    await user.click(await screen.findByRole('option', { name: zhCN.accounts.status.disabled }))
     await user.click(save)
     await vi.waitFor(() => {
       expect(calls).toEqual([{ id: 'acc-1', status: 'disabled' }])
@@ -1749,12 +1934,12 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    await user.click(screen.getByLabelText('状态'))
-    await user.click(await screen.findByRole('option', { name: '已停用' }))
-    await user.click(screen.getByRole('button', { name: '保存状态' }))
+    await user.click(screen.getByLabelText(zhCN.accounts.status.label))
+    await user.click(await screen.findByRole('option', { name: zhCN.accounts.status.disabled }))
+    await user.click(screen.getByRole('button', { name: zhCN.accounts.status.submit }))
     // The landed write fills the page's standing status region, so a
     // successful save is confirmed rather than silent.
-    expect(await screen.findByText('账户「acc-1」的状态已保存')).toBeInTheDocument()
+    expect(await screen.findByText(STATUS_SAVED)).toBeInTheDocument()
   })
 
   it('names each account row control with its own account', async () => {
@@ -1776,10 +1961,12 @@ describe('AccountsPage', () => {
     // The two rows' manage/delete controls carry the account id in their
     // accessible name -- no two identical "Delete" buttons.
     expect(
-      screen.getByRole('button', { name: '管理账户 acc-1' }),
+      screen.getByRole('button', { name: MANAGE_ACCOUNT_NAME }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: '删除账户 acc-2' }),
+      screen.getByRole('button', {
+        name: fill(zhCN.accounts.deleteAria, { id: 'acc-2' }),
+      }),
     ).toBeInTheDocument()
   })
 
@@ -1801,9 +1988,9 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations, session })
     await openDetail(user)
-    const save = await screen.findByRole('button', { name: '保存状态' })
-    await user.click(screen.getByLabelText('状态'))
-    await user.click(await screen.findByRole('option', { name: '已停用' }))
+    const save = await screen.findByRole('button', { name: zhCN.accounts.status.submit })
+    await user.click(screen.getByLabelText(zhCN.accounts.status.label))
+    await user.click(await screen.findByRole('option', { name: zhCN.accounts.status.disabled }))
     await user.click(save)
     // The refusal opens the re-auth dialog rather than a plain error, and
     // the write is replayed exactly once.
@@ -1834,9 +2021,9 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations, session })
     await openDetail(user)
-    const save = await screen.findByRole('button', { name: '保存状态' })
-    await user.click(screen.getByLabelText('状态'))
-    await user.click(await screen.findByRole('option', { name: '已停用' }))
+    const save = await screen.findByRole('button', { name: zhCN.accounts.status.submit })
+    await user.click(screen.getByLabelText(zhCN.accounts.status.label))
+    await user.click(await screen.findByRole('option', { name: zhCN.accounts.status.disabled }))
     await user.click(save)
     // A 401 on a session that already ended is not a strength shortfall:
     // the write fires once, no re-auth dialog opens, and no replay happens.
@@ -1845,7 +2032,7 @@ describe('AccountsPage', () => {
     })
     expect(startFlow).not.toHaveBeenCalled()
     expect(
-      screen.queryByRole('dialog', { name: '需要重新验证' }),
+      screen.queryByRole('dialog', { name: zhCN.stepUp.title }),
     ).not.toBeInTheDocument()
   })
 
@@ -1862,10 +2049,10 @@ describe('AccountsPage', () => {
     await openDetail(user)
     // The control is seeded from the account (not required), so the save is
     // disabled until the requirement changes.
-    const save = await screen.findByRole('button', { name: '保存要求' })
+    const save = await screen.findByRole('button', { name: zhCN.accounts.mfa.submit })
     expect(save).toBeDisabled()
-    await user.click(screen.getByLabelText('MFA 要求'))
-    await user.click(await screen.findByRole('option', { name: '必须' }))
+    await user.click(screen.getByLabelText(zhCN.accounts.mfa.label))
+    await user.click(await screen.findByRole('option', { name: zhCN.accounts.mfa.required }))
     await user.click(save)
     await vi.waitFor(() => {
       expect(calls).toEqual([{ id: 'acc-1', required: true }])
@@ -1885,12 +2072,12 @@ describe('AccountsPage', () => {
     await openDetail(user)
     // The display-name field is seeded from the account, and the save is
     // disabled until it changes.
-    const name = await screen.findByLabelText('新显示名')
+    const name = await screen.findByLabelText(zhCN.accounts.patch.displayNameLabel)
     expect(name).toHaveValue('Operator')
-    expect(screen.getByRole('button', { name: '保存改动' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: zhCN.accounts.patch.submit })).toBeDisabled()
     await user.clear(name)
     await user.type(name, 'Ada II')
-    await user.click(screen.getByRole('button', { name: '保存改动' }))
+    await user.click(screen.getByRole('button', { name: zhCN.accounts.patch.submit }))
     await vi.waitFor(() => {
       expect(calls).toEqual([{ id: 'acc-1', display_name: 'Ada II' }])
     })
@@ -1900,7 +2087,7 @@ describe('AccountsPage', () => {
     const user = userEvent.setup()
     const calls: ConsolePatchAccountInput[] = []
     const operations = withAccounts({
-      // A protected account: selecting the 「保持不变」 sentinel must not
+      // A protected account: selecting the unchanged sentinel must not
       // write the opposite (protected:false), which would silently drop the
       // account's impersonation guard.
       getAccount: () => Promise.resolve(accountFixture({ protected: true })),
@@ -1913,12 +2100,12 @@ describe('AccountsPage', () => {
     await openDetail(user)
     // Move the display name so the save fires; leave the protected control at
     // its sentinel.
-    const name = await screen.findByLabelText('新显示名')
+    const name = await screen.findByLabelText(zhCN.accounts.patch.displayNameLabel)
     await user.clear(name)
     await user.type(name, 'Ada II')
-    await user.click(screen.getByLabelText('受保护'))
-    await user.click(await screen.findByRole('option', { name: '保持不变' }))
-    await user.click(screen.getByRole('button', { name: '保存改动' }))
+    await user.click(screen.getByLabelText(zhCN.accounts.patch.protectedLabel))
+    await user.click(await screen.findByRole('option', { name: zhCN.accounts.patch.protected.unchanged }))
+    await user.click(screen.getByRole('button', { name: zhCN.accounts.patch.submit }))
     await vi.waitFor(() => {
       expect(calls).toEqual([{ id: 'acc-1', display_name: 'Ada II' }])
     })
@@ -1935,8 +2122,8 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    await user.type(await screen.findByLabelText('临时口令'), 'secret123')
-    await user.click(screen.getByRole('button', { name: '重置口令' }))
+    await user.type(await screen.findByLabelText(zhCN.accounts.password.label), 'secret123')
+    await user.click(screen.getByRole('button', { name: zhCN.accounts.password.submit }))
     await vi.waitFor(() => {
       expect(calls).toEqual([{ id: 'acc-1', password: 'secret123' }])
     })
@@ -1953,8 +2140,8 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    await user.type(await screen.findByLabelText('取值'), 'ada@example.com')
-    await user.click(screen.getByRole('button', { name: '新增标识' }))
+    await user.type(await screen.findByLabelText(zhCN.accounts.addIdentifier.valueLabel), 'ada@example.com')
+    await user.click(screen.getByRole('button', { name: zhCN.accounts.addIdentifier.submit }))
     await vi.waitFor(() => {
       expect(calls).toEqual([
         { id: 'acc-1', kind: 'username', value: 'ada@example.com' },
@@ -1978,13 +2165,13 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    await user.type(await screen.findByLabelText('标签'), 'ci')
-    await user.click(screen.getByRole('button', { name: '新建密钥' }))
+    await user.type(await screen.findByLabelText(zhCN.accounts.createSecret.labelLabel), 'ci')
+    await user.click(screen.getByRole('button', { name: zhCN.accounts.createSecret.submit }))
     await vi.waitFor(() => {
       expect(calls).toEqual([{ id: 'acc-1', label: 'ci' }])
     })
     expect(
-      await screen.findByText('服务密钥「ci」（仅显示这一次）：one-time-value'),
+      await screen.findByText(HANDED_OVER_CI),
     ).toBeInTheDocument()
   })
 
@@ -1995,8 +2182,12 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await search(user)
-    expect(await screen.findByText('账户加载失败')).toBeInTheDocument()
-    expect(screen.getByText('账户面未能完成这次请求。')).toBeInTheDocument()
+    expect(
+      await screen.findByText(zhCN.accounts.error.title),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(zhCN.accounts.error.description),
+    ).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when the list read is refused with 403', async () => {
@@ -2006,8 +2197,10 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await search(user)
-    expect(await screen.findByText('权限不足')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.accounts.retry }),
+    ).toBeNull()
   })
 
   it('renders the unavailable placeholder with a retry when the detail read answers 404', async () => {
@@ -2022,16 +2215,22 @@ describe('AccountsPage', () => {
     const operations = withAccounts({ getAccount })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
 
     // A by-id 404 replaces the panel's content with the "not found or
     // unavailable" placeholder and keeps the retry that re-reads.
     expect(
-      await within(panel).findByText('记录不存在或暂不可用'),
+      await within(panel).findByText(zhCN.detail.notFound.title),
     ).toBeInTheDocument()
-    await user.click(within(panel).getByRole('button', { name: '重试' }))
+    await user.click(
+      within(panel).getByRole('button', { name: zhCN.accounts.detail.retry }),
+    )
     expect(
-      await within(panel).findByText('显示名：Ada Lovelace'),
+      await within(panel).findByText(
+        fill(zhCN.accounts.detail.displayNameLine, {
+          value: 'Ada Lovelace',
+        }),
+      ),
     ).toBeInTheDocument()
     expect(calls).toBe(2)
   })
@@ -2075,13 +2274,15 @@ describe('AccountsPage', () => {
     await screen.findByText('Ada Lovelace')
 
     // A failed refresh keeps the settled list and marks it stale.
-    await user.click(screen.getByRole('button', { name: '刷新' }))
+    await user.click(screen.getByRole('button', { name: zhCN.common.refresh }))
     const stale = await screen.findByRole('alert')
-    expect(stale).toHaveTextContent('所示内容可能已过期，请重试刷新。')
+    expect(stale).toHaveTextContent(zhCN.stale.description)
 
     // The retry is in flight: the marker goes away rather than staying
     // beside content the page is already re-reading.
-    await user.click(within(stale).getByRole('button', { name: '重试' }))
+    await user.click(
+      within(stale).getByRole('button', { name: zhCN.accounts.retry }),
+    )
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
 
@@ -2096,7 +2297,7 @@ describe('AccountsPage', () => {
     const trigger = screen.getByRole('button', { name: CREATE_PANEL_NAME })
     await user.click(trigger)
     const panel = await screen.findByRole('dialog', { name: CREATE_PANEL_NAME })
-    await user.type(within(panel).getByLabelText('显示名'), 'Grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
 
     await user.click(
       within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
@@ -2104,7 +2305,11 @@ describe('AccountsPage', () => {
     const discard = await screen.findByRole('dialog', {
       name: DISCARD_DIALOG_NAME,
     })
-    await user.click(within(discard).getByRole('button', { name: '放弃' }))
+    await user.click(
+      within(discard).getByRole('button', {
+        name: zhCN.accounts.create.discardConfirm,
+      }),
+    )
     await waitFor(() =>
       expect(
         screen.queryByRole('dialog', { name: CREATE_PANEL_NAME }),
@@ -2131,25 +2336,29 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await search(user)
     await screen.findByText('Ada Lovelace')
-    const trigger = screen.getByRole('button', { name: '管理账户 acc-1' })
+    const trigger = screen.getByRole('button', { name: MANAGE_ACCOUNT_NAME })
     await user.click(trigger)
-    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
-    await user.type(within(panel).getByLabelText('标签'), 'ci')
-    await user.click(within(panel).getByRole('button', { name: '新建密钥' }))
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    await user.type(within(panel).getByLabelText(zhCN.accounts.createSecret.labelLabel), 'ci')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.createSecret.submit }))
     await within(panel).findByText(
-      '服务密钥「ci」（仅显示这一次）：one-time-value',
+      HANDED_OVER_CI,
     )
 
     await user.click(
       within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
     )
     const discard = await screen.findByRole('dialog', {
-      name: '放弃未关闭的服务密钥',
+      name: DISCARD_SECRET_TITLE,
     })
-    await user.click(within(discard).getByRole('button', { name: '放弃' }))
+    await user.click(
+      within(discard).getByRole('button', {
+        name: zhCN.accounts.createSecret.discardConfirm,
+      }),
+    )
     await waitFor(() =>
       expect(
-        screen.queryByRole('dialog', { name: '账户「acc-1」' }),
+        screen.queryByRole('dialog', { name: DETAIL_PANEL_NAME }),
       ).not.toBeInTheDocument(),
     )
 
@@ -2176,24 +2385,24 @@ describe('AccountsPage', () => {
       screen.getByRole('columnheader', { name: label })
     // Identifier columns are low and shed first; the display name (the
     // primary identity) and the row actions never hide.
-    expect(columnVisibility(header('标识'))).toEqual({
+    expect(columnVisibility(header(zhCN.accounts.column.id))).toEqual({
       hiddenAt: 0,
       visibleFrom: 1200,
     })
-    expect(columnVisibility(header('类型'))).toEqual({
+    expect(columnVisibility(header(zhCN.accounts.column.kind))).toEqual({
       hiddenAt: 0,
       visibleFrom: 900,
     })
-    expect(columnVisibility(header('显示名'))).toBeNull()
-    expect(columnVisibility(header('状态'))).toEqual({
+    expect(columnVisibility(header(zhCN.accounts.column.displayName))).toBeNull()
+    expect(columnVisibility(header(zhCN.accounts.column.status))).toEqual({
       hiddenAt: 0,
       visibleFrom: 600,
     })
-    expect(columnVisibility(header('强制 MFA'))).toEqual({
+    expect(columnVisibility(header(zhCN.accounts.column.mfa))).toEqual({
       hiddenAt: 0,
       visibleFrom: 1200,
     })
-    expect(columnVisibility(header('操作'))).toBeNull()
+    expect(columnVisibility(header(zhCN.accounts.column.actions))).toBeNull()
 
     // The identifier cell shows the 8-character prefix; the complete id
     // rides the cell title and the copy control.
@@ -2204,7 +2413,7 @@ describe('AccountsPage', () => {
     expect(idCell).toHaveAttribute('title', id)
     expect(
       within(idCell as HTMLElement).getByRole('button', {
-        name: `复制 ${id}`,
+        name: fill(COPY_VALUE_TEMPLATE, { value: id }),
       }),
     ).toBeInTheDocument()
     // The identifier column's cap counts that copy control: the whole
@@ -2240,7 +2449,7 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    const panel = await screen.findByRole('dialog', { name: '账户「acc-1」' })
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
 
     const tableOf = async (rowText: string): Promise<HTMLElement> => {
       const row = await within(panel).findByText(rowText)
@@ -2253,14 +2462,24 @@ describe('AccountsPage', () => {
     // expiry low.
     const secrets = await tableOf('ci')
     expect(
-      columnVisibility(within(secrets).getByRole('columnheader', { name: '标签' })),
+      columnVisibility(
+        within(secrets).getByRole('columnheader', {
+          name: zhCN.accounts.secrets.column.label,
+        }),
+      ),
     ).toBeNull()
     expect(
-      columnVisibility(within(secrets).getByRole('columnheader', { name: '状态' })),
+      columnVisibility(
+        within(secrets).getByRole('columnheader', {
+          name: zhCN.accounts.secrets.column.state,
+        }),
+      ),
     ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
     expect(
       columnVisibility(
-        within(secrets).getByRole('columnheader', { name: '过期时间' }),
+        within(secrets).getByRole('columnheader', {
+          name: zhCN.accounts.secrets.column.expires,
+        }),
       ),
     ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
     expect(
@@ -2271,16 +2490,24 @@ describe('AccountsPage', () => {
     // identifier low with its prefix as the visible text.
     const sessions = await tableOf(sessionId.slice(0, 8))
     expect(
-      columnVisibility(within(sessions).getByRole('columnheader', { name: '标识' })),
+      columnVisibility(
+        within(sessions).getByRole('columnheader', {
+          name: zhCN.accounts.sessions.column.id,
+        }),
+      ),
     ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
     expect(
       columnVisibility(
-        within(sessions).getByRole('columnheader', { name: '创建时间' }),
+        within(sessions).getByRole('columnheader', {
+          name: zhCN.accounts.sessions.column.created,
+        }),
       ),
     ).toBeNull()
     expect(
       columnVisibility(
-        within(sessions).getByRole('columnheader', { name: '状态' }),
+        within(sessions).getByRole('columnheader', {
+          name: zhCN.accounts.sessions.column.state,
+        }),
       ),
     ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
     const sessionIdCell = within(sessions)
@@ -2297,13 +2524,25 @@ describe('AccountsPage', () => {
     // Factors: the label is the primary identity, status high, kind medium.
     const factors = await tableOf('Authenticator')
     expect(
-      columnVisibility(within(factors).getByRole('columnheader', { name: '标签' })),
+      columnVisibility(
+        within(factors).getByRole('columnheader', {
+          name: zhCN.accounts.factors.column.label,
+        }),
+      ),
     ).toBeNull()
     expect(
-      columnVisibility(within(factors).getByRole('columnheader', { name: '状态' })),
+      columnVisibility(
+        within(factors).getByRole('columnheader', {
+          name: zhCN.accounts.factors.column.status,
+        }),
+      ),
     ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
     expect(
-      columnVisibility(within(factors).getByRole('columnheader', { name: '类型' })),
+      columnVisibility(
+        within(factors).getByRole('columnheader', {
+          name: zhCN.accounts.factors.column.kind,
+        }),
+      ),
     ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
   })
 

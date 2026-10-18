@@ -100,19 +100,21 @@ describe('README quick start', () => {
         .getAllByRole('link')
         .map((link) => link.textContent),
     ).toEqual([
-      '概览',
-      '租户',
-      '账户',
-      '会话',
-      '冒充',
-      '权限',
-      '邀请与成员',
-      'SSO 提供方',
-      '设置',
-      '短信模板',
-      '审计记录',
+      consoleUiZhCN.dashboard.title,
+      consoleUiZhCN.tenants.title,
+      consoleUiZhCN.accounts.title,
+      consoleUiZhCN.sessions.title,
+      consoleUiZhCN.impersonations.title,
+      consoleUiZhCN.permissions.title,
+      consoleUiZhCN.invitations.title,
+      consoleUiZhCN.sso.title,
+      consoleUiZhCN.settings.title,
+      consoleUiZhCN.sms.title,
+      consoleUiZhCN.audit.title,
     ])
     // The first page is the console dashboard; its tenant KPI renders.
-    expect(await screen.findByText('租户总数')).toBeInTheDocument()
+    expect(
+      await screen.findByText(consoleUiZhCN.dashboard.kpi.tenants),
+    ).toBeInTheDocument()
   })
 })

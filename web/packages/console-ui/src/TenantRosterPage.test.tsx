@@ -65,7 +65,7 @@ describe('TenantRosterPage', () => {
   it('renders the settled empty state when the roster answers no tenants', async () => {
     const operations = createConsoleOperations(makeConsoleBackend())
     renderWithProviders(<TenantRosterPage />, { operations })
-    expect(await screen.findByText('暂无租户')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.tenants.empty.title)).toBeInTheDocument()
   })
 
   it('lists tenants with the roster status spelling', async () => {
@@ -78,8 +78,8 @@ describe('TenantRosterPage', () => {
     )
     renderWithProviders(<TenantRosterPage />, { operations })
     expect(await screen.findByText('Acme')).toBeInTheDocument()
-    expect(screen.getByText('已启用')).toBeInTheDocument()
-    expect(screen.getByText('已停用')).toBeInTheDocument()
+    expect(screen.getByText(zhCN.tenants.status.active)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.tenants.status.disabled)).toBeInTheDocument()
   })
 
 
@@ -94,10 +94,10 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
     const gated = [
-      screen.getByRole('button', { name: '刷新' }),
-      screen.getByRole('button', { name: '为租户 acme 改名' }),
-      screen.getByRole('button', { name: '停用租户 acme' }),
-      screen.getByRole('button', { name: '启用租户 old' }),
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+      screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }),
+      screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) }),
+      screen.getByRole('button', { name: text(zhCN.tenants.enableAria, { id: 'old' }) }),
     ]
     for (const control of gated) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
@@ -122,11 +122,11 @@ describe('TenantRosterPage', () => {
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText('暂无租户')
+    await screen.findByText(zhCN.tenants.empty.title)
 
-    await user.type(screen.getByLabelText('标识'), 'acme')
-    await user.type(screen.getByLabelText('别名'), 'Acme-Inc')
-    await user.click(screen.getByRole('button', { name: '登记' }))
+    await user.type(screen.getByLabelText(zhCN.tenants.create.idLabel), 'acme')
+    await user.type(screen.getByLabelText(zhCN.tenants.create.aliasLabel), 'Acme-Inc')
+    await user.click(screen.getByRole('button', { name: zhCN.tenants.create.submit }))
 
     expect(await screen.findByText('Acme-Inc')).toBeInTheDocument()
   })
@@ -139,14 +139,14 @@ describe('TenantRosterPage', () => {
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText('暂无租户')
+    await screen.findByText(zhCN.tenants.empty.title)
 
-    await user.type(screen.getByLabelText('标识'), 'acme')
-    await user.type(screen.getByLabelText('别名'), 'Acme')
-    await user.click(screen.getByRole('button', { name: '登记' }))
+    await user.type(screen.getByLabelText(zhCN.tenants.create.idLabel), 'acme')
+    await user.type(screen.getByLabelText(zhCN.tenants.create.aliasLabel), 'Acme')
+    await user.click(screen.getByRole('button', { name: zhCN.tenants.create.submit }))
 
     expect(
-      await screen.findByText('该标识或别名已被其他租户占用。'),
+      await screen.findByText(zhCN.errors.tenant.conflict),
     ).toBeInTheDocument()
   })
 
@@ -170,7 +170,7 @@ describe('TenantRosterPage', () => {
     // The row's enable/disable control names its own tenant, so it is not
     // confusable with another row's toggle.
     await user.click(
-      screen.getByRole('button', { name: '停用租户 acme' }),
+      screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) }),
     )
     expect(calls).toEqual(['acme:disabled'])
   })
@@ -190,18 +190,18 @@ describe('TenantRosterPage', () => {
     // id baked into each accessible name -- never two identical "Rename"
     // buttons.
     expect(
-      screen.getByRole('button', { name: '为租户 acme 改名' }),
+      screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: '为租户 globex 改名' }),
+      screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'globex' }) }),
     ).toBeInTheDocument()
-    expect(screen.getByLabelText('租户 acme 的新别名')).toBeInTheDocument()
-    expect(screen.getByLabelText('租户 globex 的新别名')).toBeInTheDocument()
+    expect(screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' }))).toBeInTheDocument()
+    expect(screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'globex' }))).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: '停用租户 acme' }),
+      screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: '停用租户 globex' }),
+      screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'globex' }) }),
     ).toBeInTheDocument()
   })
 
@@ -221,10 +221,10 @@ describe('TenantRosterPage', () => {
 
     // The success notice is a standing status region: mounted clipped until a
     // write lands, then filled with the confirmation. The rename's lands here.
-    await user.type(screen.getByLabelText('租户 acme 的新别名'), 'Acme-Inc')
-    await user.click(screen.getByRole('button', { name: '为租户 acme 改名' }))
+    await user.type(screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' })), 'Acme-Inc')
+    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }))
     expect(
-      await screen.findByText('租户「acme」的别名已更新'),
+      await screen.findByText(text(zhCN.tenants.renamed, { id: 'acme' })),
     ).toBeInTheDocument()
   })
 
@@ -245,8 +245,8 @@ describe('TenantRosterPage', () => {
     )
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
-    await user.type(screen.getByLabelText('租户 acme 的新别名'), 'Acme-Inc')
-    await user.click(screen.getByRole('button', { name: '为租户 acme 改名' }))
+    await user.type(screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' })), 'Acme-Inc')
+    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }))
     expect(calls).toEqual(['acme:Acme-Inc'])
   })
 
@@ -261,16 +261,16 @@ describe('TenantRosterPage', () => {
 
     // The page title is the level-one heading.
     expect(
-      screen.getByRole('heading', { level: 1, name: '租户' }),
+      screen.getByRole('heading', { level: 1, name: zhCN.tenants.title }),
     ).toBeInTheDocument()
     // The breadcrumb trail is its own navigation landmark, running from
     // the console to this page.
     const breadcrumbs = screen.getByRole('navigation')
-    expect(within(breadcrumbs).getByText('控制台')).toBeInTheDocument()
+    expect(within(breadcrumbs).getByText(zhCN.shell.title)).toBeInTheDocument()
     // The refresh action re-reads the roster.
     const user = userEvent.setup()
     const before = listTenants.mock.calls.length
-    await user.click(screen.getByRole('button', { name: '刷新' }))
+    await user.click(screen.getByRole('button', { name: zhCN.common.refresh }))
     await waitFor(() => {
       expect(listTenants.mock.calls.length).toBeGreaterThan(before)
     })
@@ -295,13 +295,13 @@ describe('TenantRosterPage', () => {
     await screen.findByText('Acme')
     expect(reads).toHaveLength(1)
 
-    await user.type(screen.getByLabelText('租户 acme 的新别名'), 'Acme-Inc')
-    await user.click(screen.getByRole('button', { name: '为租户 acme 改名' }))
+    await user.type(screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' })), 'Acme-Inc')
+    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }))
 
     // The row's scope is in flight, so the page-level refresh is
     // natively disabled. The scope is chosen, so the disabled control
     // carries no "choose a scope first" description.
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     await vi.waitFor(() => {
       expect(refresh).toBeDisabled()
     })
@@ -336,14 +336,14 @@ describe('TenantRosterPage', () => {
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText('暂无租户')
+    await screen.findByText(zhCN.tenants.empty.title)
     expect(reads).toHaveLength(1)
 
-    await user.type(screen.getByLabelText('标识'), 'acme')
-    await user.type(screen.getByLabelText('别名'), 'Acme')
-    await user.click(screen.getByRole('button', { name: '登记' }))
+    await user.type(screen.getByLabelText(zhCN.tenants.create.idLabel), 'acme')
+    await user.type(screen.getByLabelText(zhCN.tenants.create.aliasLabel), 'Acme')
+    await user.click(screen.getByRole('button', { name: zhCN.tenants.create.submit }))
 
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     await vi.waitFor(() => {
       expect(refresh).toBeDisabled()
     })
@@ -371,7 +371,12 @@ describe('TenantRosterPage', () => {
     )
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
-    for (const name of ['标识', '别名', '状态', '操作']) {
+    for (const name of [
+      zhCN.tenants.column.id,
+      zhCN.tenants.column.alias,
+      zhCN.tenants.column.status,
+      zhCN.tenants.column.actions,
+    ]) {
       expect(
         screen.getByRole('columnheader', { name }),
       ).toBeInTheDocument()
@@ -420,15 +425,15 @@ describe('TenantRosterPage', () => {
     const user = userEvent.setup()
     const operations = createConsoleOperations(makeConsoleBackend())
     renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText('暂无租户')
+    await screen.findByText(zhCN.tenants.empty.title)
 
-    await user.type(screen.getByLabelText('标识'), 'acme')
-    await user.type(screen.getByLabelText('别名'), 'Acme-Inc')
-    await user.click(screen.getByRole('button', { name: '登记' }))
+    await user.type(screen.getByLabelText(zhCN.tenants.create.idLabel), 'acme')
+    await user.type(screen.getByLabelText(zhCN.tenants.create.aliasLabel), 'Acme-Inc')
+    await user.click(screen.getByRole('button', { name: zhCN.tenants.create.submit }))
 
     await waitFor(() => {
-      expect(screen.getByLabelText('标识')).toHaveValue('')
-      expect(screen.getByLabelText('别名')).toHaveValue('')
+      expect(screen.getByLabelText(zhCN.tenants.create.idLabel)).toHaveValue('')
+      expect(screen.getByLabelText(zhCN.tenants.create.aliasLabel)).toHaveValue('')
     })
   })
 
@@ -440,15 +445,15 @@ describe('TenantRosterPage', () => {
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText('暂无租户')
+    await screen.findByText(zhCN.tenants.empty.title)
 
-    await user.type(screen.getByLabelText('标识'), 'acme')
-    await user.type(screen.getByLabelText('别名'), 'Acme')
-    await user.click(screen.getByRole('button', { name: '登记' }))
+    await user.type(screen.getByLabelText(zhCN.tenants.create.idLabel), 'acme')
+    await user.type(screen.getByLabelText(zhCN.tenants.create.aliasLabel), 'Acme')
+    await user.click(screen.getByRole('button', { name: zhCN.tenants.create.submit }))
 
-    await screen.findByText('该标识或别名已被其他租户占用。')
-    expect(screen.getByLabelText('标识')).toHaveValue('acme')
-    expect(screen.getByLabelText('别名')).toHaveValue('Acme')
+    await screen.findByText(zhCN.errors.tenant.conflict)
+    expect(screen.getByLabelText(zhCN.tenants.create.idLabel)).toHaveValue('acme')
+    expect(screen.getByLabelText(zhCN.tenants.create.aliasLabel)).toHaveValue('Acme')
   })
 
   it('clears the rename input once a rename lands', async () => {
@@ -463,9 +468,9 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
-    const input = screen.getByLabelText('租户 acme 的新别名')
+    const input = screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' }))
     await user.type(input, 'Acme-Inc')
-    await user.click(screen.getByRole('button', { name: '为租户 acme 改名' }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }))
 
     await waitFor(() => expect(input).toHaveValue(''))
   })
@@ -474,10 +479,10 @@ describe('TenantRosterPage', () => {
     const user = userEvent.setup()
     const operations = createConsoleOperations(makeConsoleBackend())
     renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText('暂无租户')
+    await screen.findByText(zhCN.tenants.empty.title)
 
-    const input = screen.getByLabelText('标识')
-    await user.type(input, 'Acme 公司')
+    const input = screen.getByLabelText(zhCN.tenants.create.idLabel)
+    await user.type(input, 'Acme Corp')
     expect(input).toHaveAttribute('aria-invalid', 'true')
 
     await user.clear(input)
@@ -501,11 +506,11 @@ describe('TenantRosterPage', () => {
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText('暂无租户')
+    await screen.findByText(zhCN.tenants.empty.title)
 
-    const id = screen.getByLabelText('标识')
-    const alias = screen.getByLabelText('别名')
-    const submit = screen.getByRole('button', { name: '登记' })
+    const id = screen.getByLabelText(zhCN.tenants.create.idLabel)
+    const alias = screen.getByLabelText(zhCN.tenants.create.aliasLabel)
+    const submit = screen.getByRole('button', { name: zhCN.tenants.create.submit })
 
     // A blank in either field is the identifier domain's refusal. The
     // client rule is the gate: the input says why, the submit is inert,
@@ -553,9 +558,9 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
-    const input = screen.getByLabelText('租户 acme 的新别名')
+    const input = screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' }))
     await user.type(input, 'Acme Inc')
-    const submit = screen.getByRole('button', { name: '为租户 acme 改名' })
+    const submit = screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) })
     expect(input).toHaveAttribute('aria-invalid', 'true')
     expect(submit).toBeDisabled()
     fireEvent.click(submit)
@@ -575,9 +580,11 @@ describe('TenantRosterPage', () => {
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
-    expect(await screen.findByText('租户加载失败')).toBeInTheDocument()
-    expect(screen.getByText('名册未能完成这次请求。')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.tenants.error.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.tenants.error.description)).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: zhCN.tenants.retry }),
+    ).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when the read is refused with 403', async () => {
@@ -587,8 +594,10 @@ describe('TenantRosterPage', () => {
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
-    expect(await screen.findByText('权限不足')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.tenants.retry }),
+    ).toBeNull()
     // A read's refusal never settles into a write scope's slot.
     expect(screen.queryByRole('alert')).toBeNull()
   })
@@ -632,32 +641,32 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
-    const acmeAlias = screen.getByLabelText('租户 acme 的新别名')
+    const acmeAlias = screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' }))
     await user.type(acmeAlias, 'Acme-Inc')
     await user.click(
-      screen.getByRole('button', { name: '为租户 acme 改名' }),
+      screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }),
     )
     // The same resolved text stands in the row marker and in the region.
     expect(
-      await screen.findAllByText('该标识或别名已被其他租户占用。'),
+      await screen.findAllByText(zhCN.errors.tenant.conflict),
     ).toHaveLength(2)
 
     const globexToggle = screen.getByRole('button', {
-      name: '停用租户 globex',
+      name: text(zhCN.tenants.disableAria, { id: 'globex' }),
     })
     await user.click(globexToggle)
     expect(
-      await screen.findAllByText('服务端无法读取该请求，请检查表单后重试。'),
+      await screen.findAllByText(zhCN.errors.tenant.bad_request),
     ).toHaveLength(2)
 
     // Each row marks its own failure; the other row is untouched.
     expect(acmeAlias).toHaveAttribute('aria-invalid', 'true')
-    expect(screen.getByLabelText('租户 globex 的新别名')).toHaveAttribute(
+    expect(screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'globex' }))).toHaveAttribute(
       'aria-invalid',
       'false',
     )
     expect(globexToggle).toHaveAttribute('aria-invalid', 'true')
-    expect(screen.getByRole('button', { name: '停用租户 acme' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) })).toHaveAttribute(
       'aria-invalid',
       'false',
     )
@@ -665,8 +674,8 @@ describe('TenantRosterPage', () => {
     expect(
       screen.getAllByRole('alert').map((alert) => alert.textContent),
     ).toEqual([
-      '该标识或别名已被其他租户占用。',
-      '服务端无法读取该请求，请检查表单后重试。',
+      zhCN.errors.tenant.conflict,
+      zhCN.errors.tenant.bad_request,
     ])
   })
 
@@ -684,14 +693,14 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
-    const input = screen.getByLabelText('租户 acme 的新别名')
+    const input = screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' }))
     await user.type(input, 'Acme-Inc')
     await user.click(
-      screen.getByRole('button', { name: '为租户 acme 改名' }),
+      screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }),
     )
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('该标识或别名已被其他租户占用。')
+    expect(alert).toHaveTextContent(zhCN.errors.tenant.conflict)
     expect(input).toHaveAttribute('aria-invalid', 'true')
     const hintId = input.getAttribute('aria-describedby')
     expect(hintId).not.toBeNull()
@@ -719,12 +728,12 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
-    const toggle = screen.getByRole('button', { name: '停用租户 acme' })
+    const toggle = screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) })
     await user.click(toggle)
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(
-      '服务端无法读取该请求，请检查表单后重试。',
+      zhCN.errors.tenant.bad_request,
     )
     expect(toggle).toHaveAttribute('aria-invalid', 'true')
     const hintId = toggle.getAttribute('aria-describedby')
@@ -750,29 +759,29 @@ describe('TenantRosterPage', () => {
     await screen.findByText('Acme')
 
     // The registration names the tenant it created.
-    await user.type(screen.getByLabelText('标识'), 'globex')
-    await user.type(screen.getByLabelText('别名'), 'Globex')
-    await user.click(screen.getByRole('button', { name: '登记' }))
+    await user.type(screen.getByLabelText(zhCN.tenants.create.idLabel), 'globex')
+    await user.type(screen.getByLabelText(zhCN.tenants.create.aliasLabel), 'Globex')
+    await user.click(screen.getByRole('button', { name: zhCN.tenants.create.submit }))
     expect(
-      await screen.findByText('租户「globex」已登记'),
+      await screen.findByText(text(zhCN.tenants.created, { id: 'globex' })),
     ).toBeInTheDocument()
 
     // The row's rename names its tenant.
-    await user.type(screen.getByLabelText('租户 acme 的新别名'), 'Acme-Inc')
+    await user.type(screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' })), 'Acme-Inc')
     await user.click(
-      screen.getByRole('button', { name: '为租户 acme 改名' }),
+      screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }),
     )
     expect(
-      await screen.findByText('租户「acme」的别名已更新'),
+      await screen.findByText(text(zhCN.tenants.renamed, { id: 'acme' })),
     ).toBeInTheDocument()
 
     // The row's status change names its tenant and the new state.
-    await user.click(screen.getByRole('button', { name: '停用租户 acme' }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) }))
     expect(
-      await screen.findByText('租户「acme」已停用'),
+      await screen.findByText(text(zhCN.tenants.disabledToast, { id: 'acme' })),
     ).toBeInTheDocument()
     // The registration's confirmation lives in the other scope.
-    expect(screen.getByText('租户「globex」已登记')).toBeInTheDocument()
+    expect(screen.getByText(text(zhCN.tenants.created, { id: 'globex' }))).toBeInTheDocument()
   })
 
   it('resets every row scope and inline marker on refresh without losing a rename draft', async () => {

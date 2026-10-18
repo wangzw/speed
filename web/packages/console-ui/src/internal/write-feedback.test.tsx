@@ -15,6 +15,10 @@ import userEvent from '@testing-library/user-event'
 import { useWriteFeedback } from '@speed/ui-kit'
 import { WriteFeedbackRegion } from './write-feedback.js'
 import { renderWithProviders } from '../../test-utils/render.js'
+import zhCN from '../locales/zh-CN.json' with { type: 'json' }
+
+/** The success message the scripted attempt settles; the caller owns this copy. */
+const SUCCESS = 'Saved'
 
 /** A probe that settles the scope's slot with a scripted attempt. */
 function Probe({ fail }: { readonly fail: () => Promise<void> }) {
@@ -26,7 +30,7 @@ function Probe({ fail }: { readonly fail: () => Promise<void> }) {
         onClick={() => {
           void feedback.run(async () => {
             await fail()
-            return '写入成功'
+            return SUCCESS
           })
         }}
       >
@@ -67,7 +71,7 @@ describe('WriteFeedbackRegion', () => {
     )
     await user.click(screen.getByRole('button', { name: 'write' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      '你没有执行此操作的权限。',
+      zhCN.errors.authz.forbidden,
     )
   })
 
@@ -76,7 +80,7 @@ describe('WriteFeedbackRegion', () => {
     renderWithProviders(<Probe fail={() => Promise.reject(new Error('boom'))} />)
     await user.click(screen.getByRole('button', { name: 'write' }))
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('出了点问题，请稍后重试。')
+    expect(alert).toHaveTextContent(zhCN.errors.unknown)
     // `errorCodeOf` collapses the throw to client.unknown; the resolver
     // carries no leaf for it, so the fallback stands in -- the raw code
     // must never reach the banner.
@@ -87,7 +91,7 @@ describe('WriteFeedbackRegion', () => {
     const user = userEvent.setup()
     renderWithProviders(<Probe fail={() => Promise.resolve()} />)
     await user.click(screen.getByRole('button', { name: 'write' }))
-    expect(await screen.findByText('写入成功')).toBeInTheDocument()
+    expect(await screen.findByText(SUCCESS)).toBeInTheDocument()
     expect(screen.queryByRole('alert')).toBeNull()
   })
 

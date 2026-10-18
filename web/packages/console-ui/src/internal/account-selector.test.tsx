@@ -20,6 +20,10 @@ import {
   createConsoleOperations,
   makeConsoleBackend,
 } from '../../test-utils/operations.js'
+import zhCN from '../locales/zh-CN.json' with { type: 'json' }
+
+/** A caller-supplied field label fixture; the page owns this copy. */
+const ACCOUNT_LABEL = 'Account'
 
 function account(overrides: Partial<ConsoleAccount> = {}): ConsoleAccount {
   return {
@@ -44,7 +48,7 @@ function Harness({
   const [value, setValue] = useState<ConsoleAccount | null>(null)
   return (
     <AccountSelector
-      label="账户"
+      label={ACCOUNT_LABEL}
       value={value}
       onChange={(next) => {
         setValue(next)
@@ -63,7 +67,7 @@ describe('AccountSelector', () => {
       makeConsoleBackend({ listAccounts }),
     )
     renderWithProviders(<Harness onChoose={() => {}} />, { operations })
-    expect(screen.getByLabelText('账户')).toBeInTheDocument()
+    expect(screen.getByLabelText(ACCOUNT_LABEL)).toBeInTheDocument()
     expect(listAccounts).not.toHaveBeenCalled()
   })
 
@@ -76,7 +80,7 @@ describe('AccountSelector', () => {
       makeConsoleBackend({ listAccounts }),
     )
     renderWithProviders(<Harness onChoose={() => {}} />, { operations })
-    await user.type(screen.getByLabelText('账户'), 'Ada')
+    await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ada')
     await vi.waitFor(() => {
       expect(listAccounts).toHaveBeenCalledWith({
         limit: 20,
@@ -107,7 +111,7 @@ describe('AccountSelector', () => {
       makeConsoleBackend({ listAccounts }),
     )
     renderWithProviders(<Harness onChoose={() => {}} />, { operations })
-    await user.type(screen.getByLabelText('账户'), 'Ab')
+    await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ab')
     await vi.waitFor(() => {
       expect(listAccounts).toHaveBeenCalledWith({
         limit: 20,
@@ -138,17 +142,17 @@ describe('AccountSelector', () => {
       makeConsoleBackend({ listAccounts }),
     )
     renderWithProviders(<Harness onChoose={() => {}} />, { operations })
-    await user.type(screen.getByLabelText('账户'), 'Ada Lovelace')
+    await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ada Lovelace')
     // The display-name read is the only one issued; wait for it to settle
     // before reading the popup, so the empty state is the settled one.
     await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledTimes(1))
     await waitFor(() => {
-      expect(screen.getByText('没有匹配的账户')).toBeInTheDocument()
+      expect(screen.getByText(zhCN.accountSelector.empty)).toBeInTheDocument()
     })
-    expect(screen.queryByText('账户搜索失败')).toBeNull()
+    expect(screen.queryByText(zhCN.accountSelector.failed)).toBeNull()
     // Nothing was paged out either, so no narrowing hint is due.
     expect(
-      screen.queryByText('匹配的账户较多，输入更多字符以缩小搜索范围'),
+      screen.queryByText(zhCN.accountSelector.narrow),
     ).toBeNull()
   })
 
@@ -169,15 +173,15 @@ describe('AccountSelector', () => {
       makeConsoleBackend({ listAccounts }),
     )
     renderWithProviders(<Harness onChoose={() => {}} />, { operations })
-    await user.type(screen.getByLabelText('账户'), 'Ada')
+    await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ada')
     // The name read plus the two applicable identifier reads.
     await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledTimes(3))
     // Re-query rather than hold the element: the popup re-renders as the
     // reads settle and a held node can be replaced between find and assert.
     await waitFor(() => {
-      expect(screen.getByText('没有匹配的账户')).toBeInTheDocument()
+      expect(screen.getByText(zhCN.accountSelector.empty)).toBeInTheDocument()
     })
-    expect(screen.queryByText('账户搜索失败')).toBeNull()
+    expect(screen.queryByText(zhCN.accountSelector.failed)).toBeNull()
   })
 
   it('hands the chosen account over when picked with the keyboard', async () => {
@@ -192,7 +196,7 @@ describe('AccountSelector', () => {
     renderWithProviders(<Harness onChoose={(next) => chosen.push(next)} />, {
       operations,
     })
-    await user.type(screen.getByLabelText('账户'), 'Ada')
+    await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ada')
     await screen.findByRole('option', { name: 'Ada (acc-2)' })
     // The combobox is operable without a pointer: arrow keys move through
     // the options and Enter selects.
@@ -208,8 +212,8 @@ describe('AccountSelector', () => {
       }),
     )
     renderWithProviders(<Harness onChoose={() => {}} />, { operations })
-    await user.type(screen.getByLabelText('账户'), 'Ada')
-    expect(await screen.findByText('账户搜索失败')).toBeInTheDocument()
+    await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ada')
+    expect(await screen.findByText(zhCN.accountSelector.failed)).toBeInTheDocument()
   })
 
   it('asks the operator to narrow the search when a read leaves a next page', async () => {
@@ -223,9 +227,9 @@ describe('AccountSelector', () => {
       }),
     )
     renderWithProviders(<Harness onChoose={() => {}} />, { operations })
-    await user.type(screen.getByLabelText('账户'), 'Ada')
+    await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ada')
     expect(
-      await screen.findByText('匹配的账户较多，输入更多字符以缩小搜索范围'),
+      await screen.findByText(zhCN.accountSelector.narrow),
     ).toBeInTheDocument()
   })
 
@@ -240,14 +244,14 @@ describe('AccountSelector', () => {
     )
     renderWithProviders(
       <>
-        <h1>权限</h1>
+        <h1>Permissions</h1>
         <Harness onChoose={() => {}} />
       </>,
       { operations },
     )
-    await user.type(screen.getByLabelText('账户'), 'Ada')
+    await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ada')
     const progress = await screen.findByRole('progressbar', {
-      name: '正在搜索账户',
+      name: zhCN.accountSelector.searching,
     })
     expect(progress).toBeInTheDocument()
     await expectNoAxeViolations()

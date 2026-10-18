@@ -20,6 +20,10 @@ import {
   recordFixture,
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import zhCN from './locales/zh-CN.json' with { type: 'json' }
+
+const ACTOR = 'acc-9'
+const UNRESOLVED_LABEL = `${ACTOR} (${zhCN.common.accountUnresolved})`
 
 describe('AuditDetailPage', () => {
   it('renders the record fields read by id', async () => {
@@ -74,9 +78,9 @@ describe('AuditDetailPage', () => {
     })
     // The row keeps the recorded id but labels it unresolved rather than
     // passing it off as a resolved name.
-    const cell = await screen.findByLabelText(/身份未解析/)
+    const cell = await screen.findByLabelText(UNRESOLVED_LABEL)
     expect(cell).toHaveTextContent('acc-9')
-    expect(cell).toHaveAttribute('title', '身份未解析（需账户读取权限）')
+    expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
   })
 
   it('shows the empty-value placeholder for fields the record carries empty', async () => {
@@ -91,17 +95,23 @@ describe('AuditDetailPage', () => {
     renderWithProviders(<AuditDetailPage id="rec-1" />, { operations })
 
     await screen.findByText('tenant.read')
-    for (const label of ['用途', '租户', 'note']) {
+    for (const label of [
+      zhCN.auditDetail.field.purpose,
+      zhCN.auditDetail.field.tenant,
+      'note',
+    ]) {
       const row = screen.getByText(label).parentElement as HTMLElement
-      expect(within(row).getByText('—')).toBeInTheDocument()
+      expect(within(row).getByText(zhCN.common.emptyValue)).toBeInTheDocument()
     }
-    expect(screen.getAllByText('—')).toHaveLength(3)
+    expect(screen.getAllByText(zhCN.common.emptyValue)).toHaveLength(3)
   })
 
   it('raises its refresh action to the 44px floor under a coarse pointer', async () => {
     const operations = createConsoleOperations(makeConsoleBackend())
     renderWithProviders(<AuditDetailPage id="rec-1" />, { operations })
-    const refresh = await screen.findByRole('button', { name: '刷新' })
+    const refresh = await screen.findByRole('button', {
+      name: zhCN.common.refresh,
+    })
     expect(hasCoarsePointerTouchTarget(refresh)).toBe(true)
   })
 
@@ -111,11 +121,13 @@ describe('AuditDetailPage', () => {
       <AuditDetailPage id="rec-1" parentHref="/console/audit" />,
       { operations },
     )
-    await screen.findByRole('heading', { level: 1, name: '审计记录' })
-    expect(screen.getByRole('link', { name: '返回审计查询' })).toHaveAttribute(
-      'href',
-      '/console/audit',
-    )
+    await screen.findByRole('heading', {
+      level: 1,
+      name: zhCN.auditDetail.title,
+    })
+    expect(
+      screen.getByRole('link', { name: zhCN.auditDetail.back }),
+    ).toHaveAttribute('href', '/console/audit')
   })
 
   it('names the record in the breadcrumb rather than repeating the query page', async () => {
@@ -124,18 +136,22 @@ describe('AuditDetailPage', () => {
       <AuditDetailPage id="rec-1" parentHref="/console/audit" />,
       { operations },
     )
-    await screen.findByRole('heading', { level: 1, name: '审计记录' })
+    await screen.findByRole('heading', {
+      level: 1,
+      name: zhCN.auditDetail.title,
+    })
     const breadcrumb = screen.getByRole('navigation')
     // The parent step keeps the query page's name and links back to it...
     expect(
-      within(breadcrumb).getByRole('link', { name: '审计记录' }),
+      within(breadcrumb).getByRole('link', { name: zhCN.audit.title }),
     ).toHaveAttribute('href', '/console/audit')
     // ...while the current step names the record itself, so the trail does
-    // not read "控制台 / 审计记录 / 审计记录".
-    expect(within(breadcrumb).getByText('记录「rec-1」')).toHaveAttribute(
-      'aria-current',
-      'page',
-    )
+    // not read "Console / Audit / Audit".
+    expect(
+      within(breadcrumb).getByText(
+        zhCN.auditDetail.crumb.replace('{{id}}', 'rec-1'),
+      ),
+    ).toHaveAttribute('aria-current', 'page')
   })
 
   it('renders the permission placeholder with no retry when the read is refused with 403', async () => {
@@ -145,8 +161,8 @@ describe('AuditDetailPage', () => {
       }),
     )
     renderWithProviders(<AuditDetailPage id="rec-1" />, { operations })
-    expect(await screen.findByText('权限不足')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: zhCN.auditDetail.retry })).toBeNull()
   })
 
   it('renders the unavailable placeholder with a retry that re-reads a 404', async () => {
@@ -161,8 +177,8 @@ describe('AuditDetailPage', () => {
     const operations = createConsoleOperations(makeConsoleBackend({ getRecord }))
     renderWithProviders(<AuditDetailPage id="rec-1" />, { operations })
 
-    expect(await screen.findByText('记录不存在或暂不可用')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '重试' }))
+    expect(await screen.findByText(zhCN.detail.notFound.title)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: zhCN.auditDetail.retry }))
     expect(await screen.findByText('tenant.read')).toBeInTheDocument()
     expect(getRecord).toHaveBeenCalledTimes(2)
   })
@@ -180,7 +196,7 @@ describe('AuditDetailPage', () => {
       <AuditDetailPage id="does-not-exist" />,
       { operations: malformed },
     )
-    expect(await screen.findByText('记录不存在或暂不可用')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.detail.notFound.title)).toBeInTheDocument()
     first.unmount()
 
     // A 404 still renders the same placeholder.
@@ -192,7 +208,7 @@ describe('AuditDetailPage', () => {
     const second = renderWithProviders(<AuditDetailPage id="999999999" />, {
       operations: missing,
     })
-    expect(await screen.findByText('记录不存在或暂不可用')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.detail.notFound.title)).toBeInTheDocument()
     second.unmount()
 
     // Any other failure keeps the retryable error placeholder.
@@ -202,9 +218,9 @@ describe('AuditDetailPage', () => {
       }),
     )
     renderWithProviders(<AuditDetailPage id="rec-1" />, { operations: failed })
-    expect(await screen.findByText('审计记录加载失败')).toBeInTheDocument()
-    expect(screen.getByText('审计面未能完成这次请求。')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.auditDetail.error.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.auditDetail.error.description)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: zhCN.auditDetail.retry })).toBeInTheDocument()
   })
 
   it('renders the retryable error placeholder when the read fails otherwise', async () => {
@@ -214,15 +230,15 @@ describe('AuditDetailPage', () => {
       }),
     )
     renderWithProviders(<AuditDetailPage id="rec-1" />, { operations })
-    expect(await screen.findByText('审计记录加载失败')).toBeInTheDocument()
-    expect(screen.getByText('审计面未能完成这次请求。')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.auditDetail.error.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.auditDetail.error.description)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: zhCN.auditDetail.retry })).toBeInTheDocument()
   })
 
   it('has no axe violations', async () => {
     const operations = createConsoleOperations(makeConsoleBackend())
     renderWithProviders(<AuditDetailPage id="rec-1" />, { operations })
-    await screen.findByRole('heading', { level: 1, name: '审计记录' })
+    await screen.findByRole('heading', { level: 1, name: zhCN.auditDetail.title })
     await expectNoAxeViolations()
   })
 })

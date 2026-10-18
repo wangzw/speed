@@ -38,8 +38,35 @@ import {
 import { ConsoleInvitationLinkProvider } from './internal/invitation-link.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
+import { uiKitResources } from '@speed/ui-kit'
 
 const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
+
+/** Fills a locale template's placeholders with the values under test. */
+function fill(
+  template: string,
+  values: Readonly<Record<string, string>>,
+): string {
+  return Object.entries(values).reduce(
+    (text, [name, value]) => text.replace(`{{${name}}}`, value),
+    template,
+  )
+}
+
+/** The ui-kit copy control's accessible name, from its zh-CN template. */
+function copyLabel(value: string): string {
+  const template = (
+    uiKitResources['zh-CN'] as unknown as {
+      readonly dataTable: { readonly copyValue: string }
+    }
+  ).dataTable.copyValue
+  return template.replace('{{value}}', value)
+}
+
+/** Matches the account cell labelled with the unresolved-identity note. */
+function unresolvedAccountLabel(content: string): boolean {
+  return content.includes(zhCN.common.accountUnresolved)
+}
 
 function invitation(overrides: Partial<ConsoleInvitation> = {}): ConsoleInvitation {
   return {
@@ -82,7 +109,7 @@ function account(overrides: Partial<ConsoleAccount> = {}): ConsoleAccount {
 }
 
 async function pickTenant(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  await user.click(screen.getByLabelText('租户'))
+  await user.click(screen.getByLabelText(zhCN.common.tenant))
   await user.click(await screen.findByRole('option', { name: 'Acme' }))
 }
 
@@ -139,7 +166,7 @@ async function expectRefreshInert(
   invitationReads: number,
   memberReads: number,
 ): Promise<void> {
-  const refresh = screen.getByRole('button', { name: '刷新' })
+  const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
   await vi.waitFor(() => {
     expect(refresh).toBeDisabled()
   })
@@ -161,7 +188,7 @@ describe('InvitationsPage', () => {
   it('prompts for a tenant before listing', () => {
     const operations = withTenant()
     renderWithProviders(<InvitationsPage />, { operations })
-    expect(screen.getByText('请选择租户')).toBeInTheDocument()
+    expect(screen.getByText(zhCN.invitations.needTenant.title)).toBeInTheDocument()
   })
 
   it('does not read an empty tenant scope on refresh', async () => {
@@ -174,14 +201,14 @@ describe('InvitationsPage', () => {
 
     // Both reads are disabled while no tenant is chosen; the refresh
     // control follows them instead of refetching with an empty tenant.
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     expect(refresh).toBeDisabled()
     // The disabled control is described by the page's own "choose a tenant
     // first" text.
     const describedBy = refresh.getAttribute('aria-describedby')
     expect(describedBy).not.toBeNull()
     expect(document.getElementById(describedBy as string)).toHaveTextContent(
-      '邀请与成员都按租户存储，请先选择一个租户。',
+      zhCN.invitations.needTenant.description,
     )
     // A programmatic click, because user-event refuses a disabled target:
     // the control must stay inert even when reached from a script.
@@ -212,8 +239,8 @@ describe('InvitationsPage', () => {
     const invitationReads = listInvitations.mock.calls.length
     const memberReads = listMembers.mock.calls.length
 
-    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
-    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
     await expectRefreshInert(
       listInvitations,
       listMembers,
@@ -250,7 +277,7 @@ describe('InvitationsPage', () => {
     const invitationReads = listInvitations.mock.calls.length
     const memberReads = listMembers.mock.calls.length
 
-    await user.click(screen.getByRole('button', { name: '豁免 SSO' }))
+    await user.click(screen.getByRole('button', { name: zhCN.members.ssoExemptSet }))
     await expectRefreshInert(
       listInvitations,
       listMembers,
@@ -275,8 +302,8 @@ describe('InvitationsPage', () => {
       // The link that carried the tenant arrives with a selection already
       // made: both reads run for it and the selector shows its alias.
       expect(await screen.findByText('ada@example.com')).toBeInTheDocument()
-      expect(screen.queryByText('请选择租户')).toBeNull()
-      expect(screen.getByLabelText('租户')).toHaveTextContent('Acme')
+      expect(screen.queryByText(zhCN.invitations.needTenant.title)).toBeNull()
+      expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent('Acme')
       expect(listInvitations).toHaveBeenCalledWith('acme')
       expect(listMembers).toHaveBeenCalledWith('acme')
     } finally {
@@ -301,7 +328,7 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
     expect(await screen.findByText('ada@example.com')).toBeInTheDocument()
-    expect(screen.getByText('待接受')).toBeInTheDocument()
+    expect(screen.getByText(zhCN.invitations.status.pending)).toBeInTheDocument()
     expect(screen.getByText('Staff One')).toBeInTheDocument()
     expect(screen.getByText('Member One')).toBeInTheDocument()
   })
@@ -330,9 +357,9 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
     // The cell keeps the recorded id but labels it unresolved rather than
     // passing it off as a resolved name.
-    const cell = await screen.findByLabelText(/身份未解析/)
+    const cell = await screen.findByLabelText(unresolvedAccountLabel)
     expect(cell).toHaveTextContent('staff-1')
-    expect(cell).toHaveAttribute('title', '身份未解析（需账户读取权限）')
+    expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
   })
 
   it("shows the member's display name, or the recorded id marked unresolved when the lookup is refused", async () => {
@@ -355,9 +382,9 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations: refused })
     await pickTenant(user)
-    const cell = await screen.findByLabelText(/身份未解析/)
+    const cell = await screen.findByLabelText(unresolvedAccountLabel)
     expect(cell).toHaveTextContent('acc-1')
-    expect(cell).toHaveAttribute('title', '身份未解析（需账户读取权限）')
+    expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
   })
 
   it('reads a repeated account once across rows', async () => {
@@ -413,21 +440,21 @@ describe('InvitationsPage', () => {
     // The invitation table: the email is the primary identity with the
     // shared cap, status stays to `sm`, the inviter to `md`, expiry the
     // first to go, and the row actions never hide.
-    const inviteSection = section('邀请')
-    expect(columnVisibility(header(inviteSection, '邮箱'))).toBeNull()
-    expect(columnVisibility(header(inviteSection, '状态'))).toEqual({
+    const inviteSection = section(zhCN.invitations.section.title)
+    expect(columnVisibility(header(inviteSection, zhCN.invitations.column.email))).toBeNull()
+    expect(columnVisibility(header(inviteSection, zhCN.invitations.column.status))).toEqual({
       hiddenAt: 0,
       visibleFrom: 600,
     })
-    expect(columnVisibility(header(inviteSection, '邀请人'))).toEqual({
+    expect(columnVisibility(header(inviteSection, zhCN.invitations.column.invitedBy))).toEqual({
       hiddenAt: 0,
       visibleFrom: 900,
     })
-    expect(columnVisibility(header(inviteSection, '过期时间'))).toEqual({
+    expect(columnVisibility(header(inviteSection, zhCN.invitations.column.expires))).toEqual({
       hiddenAt: 0,
       visibleFrom: 1200,
     })
-    expect(columnVisibility(header(inviteSection, '操作'))).toBeNull()
+    expect(columnVisibility(header(inviteSection, zhCN.invitations.column.actions))).toBeNull()
     const emailCell = screen.getByText(email).closest('td')
     expect(emailCell).toHaveAttribute('title', email)
     expect(containerMaxWidthOf(emailCell!.firstElementChild!)).toEqual(
@@ -443,7 +470,7 @@ describe('InvitationsPage', () => {
       await within(inviteSection).findByText(invitedByName),
     ).toBeInTheDocument()
     const invitedByCell = within(inviteSection)
-      .getByRole('button', { name: '复制 staff-1' })
+      .getByRole('button', { name: copyLabel('staff-1') })
       .closest('td')
     expect(invitedByCell).not.toBeNull()
     const invitedByWrapper = invitedByCell!.firstElementChild as HTMLElement
@@ -452,21 +479,21 @@ describe('InvitationsPage', () => {
 
     // The members table has the same shape: account primary, active high,
     // source medium, SSO exemption low.
-    const memberSection = section('成员')
-    expect(columnVisibility(header(memberSection, '账户'))).toBeNull()
-    expect(columnVisibility(header(memberSection, '在册'))).toEqual({
+    const memberSection = section(zhCN.members.title)
+    expect(columnVisibility(header(memberSection, zhCN.members.column.account))).toBeNull()
+    expect(columnVisibility(header(memberSection, zhCN.members.column.active))).toEqual({
       hiddenAt: 0,
       visibleFrom: 600,
     })
-    expect(columnVisibility(header(memberSection, '来源'))).toEqual({
+    expect(columnVisibility(header(memberSection, zhCN.members.column.source))).toEqual({
       hiddenAt: 0,
       visibleFrom: 900,
     })
-    expect(columnVisibility(header(memberSection, 'SSO 豁免'))).toEqual({
+    expect(columnVisibility(header(memberSection, zhCN.members.column.ssoExempt))).toEqual({
       hiddenAt: 0,
       visibleFrom: 1200,
     })
-    expect(columnVisibility(header(memberSection, '操作'))).toBeNull()
+    expect(columnVisibility(header(memberSection, zhCN.members.column.actions))).toBeNull()
     const memberIdentity = await within(memberSection).findByText('Operator')
     expect(containerMaxWidthOf(memberIdentity.closest('td')!.firstElementChild!)).toEqual(
       new Map([
@@ -487,10 +514,10 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
     await screen.findByText('ada@example.com')
     const gated = [
-      screen.getByRole('button', { name: '刷新' }),
-      screen.getByRole('button', { name: '撤销' }),
-      screen.getByRole('button', { name: '豁免 SSO' }),
-      screen.getByRole('button', { name: '移除' }),
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+      screen.getByRole('button', { name: zhCN.invitations.revoke }),
+      screen.getByRole('button', { name: zhCN.members.ssoExemptSet }),
+      screen.getByRole('button', { name: zhCN.members.remove }),
     ]
     for (const control of gated) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
@@ -508,8 +535,8 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
-    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
     await vi.waitFor(() => {
       expect(issued).toEqual(['new@example.com'])
     })
@@ -527,11 +554,11 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
     // The expiry is a date-time control, not a free-text box.
-    const expires = screen.getByLabelText('过期时间')
+    const expires = screen.getByLabelText(zhCN.invitations.issue.expiresLabel)
     expect(expires).toHaveAttribute('type', 'datetime-local')
     fireEvent.change(expires, { target: { value: '2026-11-01T12:00' } })
-    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
-    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
     await vi.waitFor(() => {
       expect(expiresSent).toEqual([
         new Date('2026-11-01T12:00').toISOString(),
@@ -561,11 +588,13 @@ describe('InvitationsPage', () => {
       { operations },
     )
     await pickTenant(user)
-    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
-    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
     // The one-time token is turned into the host's acceptance link, not dropped.
     expect(
-      await screen.findByText('把这条接受链接交给「new@example.com」：'),
+      await screen.findByText(
+        fill(zhCN.invitations.issued.link, { email: 'new@example.com' }),
+      ),
     ).toBeInTheDocument()
     expect(
       screen.getByText(
@@ -603,11 +632,11 @@ describe('InvitationsPage', () => {
       { operations },
     )
     await pickTenant(user)
-    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
-    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
     const link = `${window.location.origin}/invitations/spd_inv_test_token`
     await screen.findByText(link)
-    await user.click(screen.getByRole('button', { name: '复制接受链接' }))
+    await user.click(screen.getByRole('button', { name: zhCN.invitations.issued.copyLink }))
     await vi.waitFor(() => {
       expect(writeText).toHaveBeenCalledWith(link)
     })
@@ -617,11 +646,11 @@ describe('InvitationsPage', () => {
     const operations = withTenant()
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
-    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
     // With no builder the token is still surfaced, never silently dropped.
     expect(
-      await screen.findByText('「ada@example.com」的接受令牌（链接由宿主构造）：'),
+      await screen.findByText(fill(zhCN.invitations.issued.token, { email: 'ada@example.com' })),
     ).toBeInTheDocument()
     expect(screen.getByText('spd_inv_test_token')).toBeInTheDocument()
   })
@@ -631,22 +660,25 @@ describe('InvitationsPage', () => {
     const operations = withTenant()
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
-    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
 
     const display = await screen.findByText(
-      '「ada@example.com」的接受令牌（链接由宿主构造）：',
+      fill(zhCN.invitations.issued.token, { email: 'ada@example.com' }),
     )
     expect(display.closest('[role="status"]')).not.toBeNull()
     // The close control names the tenant and the invitee it belongs to.
     const close = screen.getByRole('button', {
-      name: '关闭租户「acme」发给「ada@example.com」的接受链接',
+      name: fill(zhCN.invitations.issued.closeAria, {
+        tenant: 'acme',
+        email: 'ada@example.com',
+      }),
     })
     await user.click(close)
     expect(screen.queryByText('spd_inv_test_token')).toBeNull()
     // The scope's success confirmation stands beside the display and is not
     // the display: closing the display leaves it in place.
-    expect(screen.getByText('已向「ada@example.com」发出邀请')).toBeInTheDocument()
+    expect(screen.getByText(fill(zhCN.invitations.issued.confirm, { email: 'ada@example.com' }))).toBeInTheDocument()
   })
 
   it('keeps the acceptance value through a reset of the creating scope', async () => {
@@ -662,19 +694,19 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
-    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
     await screen.findByText('spd_inv_test_token')
 
     // A second attempt resets the creating scope and settles as a failure.
     // The display is page state, not slot state: it survives both.
-    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
-    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      '你没有执行此操作的权限。',
+      zhCN.errors.authn.forbidden,
     )
     expect(screen.getByText('spd_inv_test_token')).toBeInTheDocument()
-    expect(screen.queryByText('已向「ada@example.com」发出邀请')).toBeNull()
+    expect(screen.queryByText(fill(zhCN.invitations.issued.confirm, { email: 'ada@example.com' }))).toBeNull()
   })
 
   it('revokes a pending invitation through the bundle', async () => {
@@ -691,9 +723,9 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
     await screen.findByText('ada@example.com')
-    await user.click(screen.getByRole('button', { name: '撤销' }))
+    await user.click(screen.getByRole('button', { name: zhCN.invitations.revoke }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     await vi.waitFor(() => {
       expect(revoked).toEqual(['inv-1'])
     })
@@ -714,9 +746,9 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Member One')
-    await user.click(screen.getByRole('button', { name: '移除' }))
+    await user.click(screen.getByRole('button', { name: zhCN.members.remove }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     await vi.waitFor(() => {
       expect(removed).toEqual(['acc-1'])
     })
@@ -734,11 +766,11 @@ describe('InvitationsPage', () => {
     })
     await pickTenant(user)
     await screen.findByText('Member One')
-    await user.click(screen.getByRole('button', { name: '移除' }))
+    await user.click(screen.getByRole('button', { name: zhCN.members.remove }))
     let dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     expect(
-      await screen.findByText('已移除成员「Member One」'),
+      await screen.findByText(fill(zhCN.members.removed, { account: 'Member One' })),
     ).toBeInTheDocument()
     first.unmount()
 
@@ -750,12 +782,12 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations: refused })
     await pickTenant(user)
-    await screen.findByLabelText(/身份未解析/)
-    await user.click(screen.getByRole('button', { name: '移除' }))
+    await screen.findByLabelText(unresolvedAccountLabel)
+    await user.click(screen.getByRole('button', { name: zhCN.members.remove }))
     dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     expect(
-      await screen.findByText('已移除成员「acc-1」'),
+      await screen.findByText(fill(zhCN.members.removed, { account: 'acc-1' })),
     ).toBeInTheDocument()
   })
 
@@ -772,19 +804,19 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
     // No account chosen: the picker holds no id yet.
     expect(
-      screen.getByRole('button', { name: '写入成员关系' }),
+      screen.getByRole('button', { name: zhCN.members.write.submit }),
     ).toBeDisabled()
     // A display name finds the account; the write carries its id ("acc-2"),
     // never the typed name.
-    await chooseAccount(user, '账户', 'Ada', 'Ada (acc-2)')
-    await user.click(screen.getByRole('button', { name: '写入成员关系' }))
+    await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
     await vi.waitFor(() => {
       expect(written).toEqual([
         { tenant: 'acme', account: 'acc-2', active: true, sso_exempt: false },
       ])
     })
     // The landed write clears both the selection and the box that named it.
-    expect(screen.getByLabelText('账户')).toHaveValue('')
+    expect(screen.getByLabelText(zhCN.members.write.accountLabel)).toHaveValue('')
   })
 
   it('re-reads the member list after a landed write and leaves it alone after a refusal', async () => {
@@ -833,7 +865,7 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations: consoleOperations })
     await pickTenant(user)
-    expect(await screen.findByText('暂无成员')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.members.empty.title)).toBeInTheDocument()
     const listReads = (): number =>
       calls.filter(
         (entry) =>
@@ -843,19 +875,19 @@ describe('InvitationsPage', () => {
 
     // A landed write re-runs the member read, so the row it created is on
     // screen without the operator pressing refresh.
-    await chooseAccount(user, '账户', 'Ada', 'Ada (acc-2)')
-    await user.click(screen.getByRole('button', { name: '写入成员关系' }))
+    await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
     expect(
-      await screen.findByText('账户「Ada」的成员关系已保存'),
+      await screen.findByText(fill(zhCN.members.write.saved, { account: 'Ada' })),
     ).toBeInTheDocument()
     expect(await screen.findByText('Ada')).toBeInTheDocument()
     expect(listReads()).toBe(2)
 
     // A refused write leaves the list as it was: no read follows it.
     writeFails = true
-    await chooseAccount(user, '账户', 'Ada', 'Ada (acc-2)')
-    await user.click(screen.getByRole('button', { name: '写入成员关系' }))
-    expect(await within(section('成员')).findByRole('alert')).toBeInTheDocument()
+    await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
+    expect(await within(section(zhCN.members.title)).findByRole('alert')).toBeInTheDocument()
     expect(listReads()).toBe(2)
   })
 
@@ -874,7 +906,7 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Member One')
-    await user.click(screen.getByRole('button', { name: '豁免 SSO' }))
+    await user.click(screen.getByRole('button', { name: zhCN.members.ssoExemptSet }))
     await vi.waitFor(() => {
       expect(toggled).toEqual([
         { tenant: 'acme', account: 'acc-1', sso_exempt: true },
@@ -889,8 +921,8 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    expect(await screen.findByText('邀请加载失败')).toBeInTheDocument()
-    expect(screen.getByText('邀请面未能完成这次请求。')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.invitations.error.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.invitations.error.description)).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when a read is refused with 403', async () => {
@@ -903,8 +935,8 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
     // The refusal is a permission denial, not a load failure: the
     // permission text, and no retry (a retry would only be refused again).
-    expect(await screen.findByText('权限不足')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: zhCN.invitations.retry })).toBeNull()
     // A read's refusal never settles into a write scope's slot.
     expect(screen.queryByRole('alert')).toBeNull()
   })
@@ -922,31 +954,31 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
 
     // The invitation section refuses the issue.
-    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
-    await user.click(screen.getByRole('button', { name: '发出邀请' }))
-    expect(await within(section('邀请')).findByRole('alert')).toHaveTextContent(
-      '该改动与账户的当前状态冲突。',
+    await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
+    expect(await within(section(zhCN.invitations.section.title)).findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.conflict,
     )
 
     // The member section refuses the removal.
     await screen.findAllByText('Operator')
-    await user.click(screen.getByRole('button', { name: '移除' }))
+    await user.click(screen.getByRole('button', { name: zhCN.members.remove }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     // The modal hides the page from assistive technology until its exit
     // transition ends; the region is readable after that.
     await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(await within(section('成员')).findByRole('alert')).toHaveTextContent(
-      '你没有执行此操作的权限。',
+    expect(await within(section(zhCN.members.title)).findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.forbidden,
     )
 
     // Neither section carries the other's text, and no page-level banner
     // aggregates them.
     expect(
-      within(section('邀请')).queryByText('你没有执行此操作的权限。'),
+      within(section(zhCN.invitations.section.title)).queryByText(zhCN.errors.authn.forbidden),
     ).toBeNull()
     expect(
-      within(section('成员')).queryByText('该改动与账户的当前状态冲突。'),
+      within(section(zhCN.members.title)).queryByText(zhCN.errors.authn.conflict),
     ).toBeNull()
     expect(screen.getAllByRole('alert')).toHaveLength(2)
   })
@@ -962,15 +994,15 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    const revoke = await screen.findByRole('button', { name: '撤销' })
+    const revoke = await screen.findByRole('button', { name: zhCN.invitations.revoke })
     await user.click(revoke)
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
 
     // The failing row carries the marker and the resolved reason; the
     // region carries the same text.
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      '你没有执行此操作的权限。',
+      zhCN.errors.authn.forbidden,
     )
     expect(revoke).toHaveAttribute('aria-invalid', 'true')
     const hintId = revoke.getAttribute('aria-describedby')
@@ -996,32 +1028,32 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
 
     // Issue names the invitee.
-    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
-    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
     expect(
-      await screen.findByText('已向「ada@example.com」发出邀请'),
+      await screen.findByText(fill(zhCN.invitations.issued.confirm, { email: 'ada@example.com' })),
     ).toBeInTheDocument()
 
     // The membership write names the chosen account.
-    await chooseAccount(user, '账户', 'Ada', 'Ada (acc-2)')
-    await user.click(screen.getByRole('button', { name: '写入成员关系' }))
+    await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
     expect(
-      await screen.findByText('账户「Ada」的成员关系已保存'),
+      await screen.findByText(fill(zhCN.members.write.saved, { account: 'Ada' })),
     ).toBeInTheDocument()
 
     // The SSO exemption names the member by its readable identity.
     await screen.findAllByText('Operator')
-    await user.click(screen.getByRole('button', { name: '豁免 SSO' }))
+    await user.click(screen.getByRole('button', { name: zhCN.members.ssoExemptSet }))
     expect(
-      await screen.findByText('已为成员「Operator」设置 SSO 豁免'),
+      await screen.findByText(fill(zhCN.members.ssoExemptSaved, { account: 'Operator' })),
     ).toBeInTheDocument()
 
     // The removal names the removed member by the same identity.
-    await user.click(screen.getByRole('button', { name: '移除' }))
+    await user.click(screen.getByRole('button', { name: zhCN.members.remove }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     expect(
-      await screen.findByText('已移除成员「Operator」'),
+      await screen.findByText(fill(zhCN.members.removed, { account: 'Operator' })),
     ).toBeInTheDocument()
   })
 
@@ -1042,12 +1074,12 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
-    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
 
     // The tenant feeds every scope on the page: it is out of reach while
     // the issue is in flight.
-    expect(screen.getByLabelText('租户')).toHaveAttribute(
+    expect(screen.getByLabelText(zhCN.common.tenant)).toHaveAttribute(
       'aria-disabled',
       'true',
     )
@@ -1057,21 +1089,21 @@ describe('InvitationsPage', () => {
       await pending.promise
     })
     expect(
-      await screen.findByText('已向「ada@example.com」发出邀请'),
+      await screen.findByText(fill(zhCN.invitations.issued.confirm, { email: 'ada@example.com' })),
     ).toBeInTheDocument()
 
     // A member write lands in the other scope, so both carry a result.
     await screen.findAllByText('Operator')
-    await user.click(screen.getByRole('button', { name: '豁免 SSO' }))
+    await user.click(screen.getByRole('button', { name: zhCN.members.ssoExemptSet }))
     expect(
-      await screen.findByText('已为成员「Operator」设置 SSO 豁免'),
+      await screen.findByText(fill(zhCN.members.ssoExemptSaved, { account: 'Operator' })),
     ).toBeInTheDocument()
 
     // Another tenant makes both results describe a tenant left behind.
-    await user.click(screen.getByLabelText('租户'))
+    await user.click(screen.getByLabelText(zhCN.common.tenant))
     await user.click(await screen.findByRole('option', { name: 'Globex' }))
-    expect(screen.queryByText('已向「ada@example.com」发出邀请')).toBeNull()
-    expect(screen.queryByText('已为成员「Operator」设置 SSO 豁免')).toBeNull()
+    expect(screen.queryByText(fill(zhCN.invitations.issued.confirm, { email: 'ada@example.com' }))).toBeNull()
+    expect(screen.queryByText(fill(zhCN.members.ssoExemptSaved, { account: 'Operator' }))).toBeNull()
   })
 
   it('re-reads the invitation and member lists on refresh', async () => {

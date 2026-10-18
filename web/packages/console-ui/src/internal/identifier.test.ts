@@ -10,7 +10,7 @@ import { isRejectedIdentifier } from './identifier.js'
 
 describe('isRejectedIdentifier', () => {
   it('admits a non-empty value with no blank or control character', () => {
-    for (const value of ['acme', 'Acme-Inc', 'acme.company', 'Acme_Inc', '租户1']) {
+    for (const value of ['acme', 'Acme-Inc', 'acme.company', 'Acme_Inc', 'Acme-Café']) {
       expect(isRejectedIdentifier(value)).toBe(false)
     }
   })
@@ -20,7 +20,7 @@ describe('isRejectedIdentifier', () => {
   })
 
   it('refuses a value carrying a blank anywhere', () => {
-    for (const value of ['Acme 公司', 'Acme\tCo', 'Acme\nCo', ' Acme', 'Acme ', 'Acme Co']) {
+    for (const value of ['Acme Corp', 'Acme\tCo', 'Acme\nCo', ' Acme', 'Acme ', 'Acme Co']) {
       expect(isRejectedIdentifier(value)).toBe(true)
     }
   })

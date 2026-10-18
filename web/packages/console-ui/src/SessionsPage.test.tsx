@@ -10,6 +10,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { uiKitResources } from '@speed/ui-kit'
 import { SessionsPage } from './SessionsPage.js'
 import type { ConsoleAccount, ConsoleAccountSession } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -26,6 +27,13 @@ import {
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
+
+/** The zh-CN template the table's copy control names itself with. */
+const COPY_VALUE = (
+  uiKitResources['zh-CN'] as unknown as {
+    readonly dataTable: { readonly copyValue: string }
+  }
+).dataTable.copyValue
 
 function session(overrides: Partial<ConsoleAccountSession> = {}): ConsoleAccountSession {
   return {
@@ -80,7 +88,7 @@ function withSessions(
 async function loadAccount(
   user: ReturnType<typeof userEvent.setup>,
 ): Promise<void> {
-  await chooseAccount(user, '账户', 'Ada', 'Ada (acc-9)')
+  await chooseAccount(user, zhCN.sessions.accountLabel, 'Ada', 'Ada (acc-9)')
 }
 
 /** A promise the test settles by hand, for observing an in-flight write. */
@@ -96,7 +104,7 @@ describe('SessionsPage', () => {
   it('prompts for an account before listing', () => {
     const operations = withSessions()
     renderWithProviders(<SessionsPage />, { operations })
-    expect(screen.getByText('请指定账户')).toBeInTheDocument()
+    expect(screen.getByText(zhCN.sessions.needAccount.title)).toBeInTheDocument()
   })
 
   it('does not read an empty account scope on refresh', () => {
@@ -111,14 +119,14 @@ describe('SessionsPage', () => {
 
     // The read is disabled while no account is chosen; the refresh control
     // follows it instead of issuing the read with an empty id.
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     expect(refresh).toBeDisabled()
     // The disabled control is described by the page's own "choose an
     // account first" text, not by a second copy of it.
     const describedBy = refresh.getAttribute('aria-describedby')
     expect(describedBy).not.toBeNull()
     expect(document.getElementById(describedBy as string)).toHaveTextContent(
-      '会话按账户列出，请搜索并选择要列出的账户。',
+      zhCN.sessions.needAccount.description,
     )
     // MUI's Tooltip listens on its child element; a native disabled button
     // receives no pointer events, so the control gets a span wrapper.
@@ -135,20 +143,20 @@ describe('SessionsPage', () => {
       listAccountSessions: () => Promise.resolve([session()]),
     })
     renderWithProviders(<SessionsPage />, { operations })
-    const disabled = screen.getByRole('button', { name: '刷新' })
+    const disabled = screen.getByRole('button', { name: zhCN.common.refresh })
     expect(disabled).toBeDisabled()
 
     // The tooltip names the same text the page already renders.
     await user.hover(disabled.parentElement as HTMLElement)
     expect(await screen.findByRole('tooltip')).toHaveTextContent(
-      '会话按账户列出，请搜索并选择要列出的账户。',
+      zhCN.sessions.needAccount.description,
     )
 
     await loadAccount(user)
     await vi.waitFor(() => {
-      expect(screen.getByRole('button', { name: '刷新' })).not.toBeDisabled()
+      expect(screen.getByRole('button', { name: zhCN.common.refresh })).not.toBeDisabled()
     })
-    const enabled = screen.getByRole('button', { name: '刷新' })
+    const enabled = screen.getByRole('button', { name: zhCN.common.refresh })
     expect(enabled).not.toHaveAttribute('aria-describedby')
     expect(enabled.parentElement?.tagName).not.toBe('SPAN')
   })
@@ -172,8 +180,8 @@ describe('SessionsPage', () => {
     await loadAccount(user)
     await screen.findByText('sess-1')
 
-    await user.click(screen.getByRole('button', { name: '刷新' }))
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    await user.click(screen.getByRole('button', { name: zhCN.common.refresh }))
+    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     await vi.waitFor(() => {
       expect(refresh).toHaveAttribute('aria-busy', 'true')
     })
@@ -212,16 +220,22 @@ describe('SessionsPage', () => {
     await screen.findByText('sess-1')
     expect(reads).toEqual(['acc-9'])
 
-    await user.click(screen.getByRole('button', { name: '撤销会话 sess-1' }))
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.sessions.revokeAriaWithId.replace('{{id}}', 'sess-1'),
+      }),
+    )
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+    )
     // While the dialog's exit transition runs the page behind it is
     // hidden from the accessibility tree; the revoke is already in flight.
     await vi.waitFor(() => {
       expect(screen.queryByRole('dialog')).toBeNull()
     })
 
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     await vi.waitFor(() => {
       expect(refresh).toBeDisabled()
     })
@@ -254,7 +268,7 @@ describe('SessionsPage', () => {
     renderWithProviders(<SessionsPage />, { operations })
     // Choosing the account is the whole gesture: no further control stands
     // between the picker and the read.
-    await chooseAccount(user, '账户', 'Ada', 'Ada (acc-9)')
+    await chooseAccount(user, zhCN.sessions.accountLabel, 'Ada', 'Ada (acc-9)')
     await vi.waitFor(() => {
       expect(queried).toEqual(['acc-9'])
     })
@@ -275,27 +289,35 @@ describe('SessionsPage', () => {
     await screen.findByText('sess-cur')
     // The marker sits on the current row only. The cell shows the id
     // prefix; the complete id stays on the title and copy control.
-    const marker = screen.getByText('当前会话')
+    const marker = screen.getByText(zhCN.sessions.current)
     expect(marker.closest('tr')).toHaveTextContent('sess-cur')
     expect(marker.closest('tr')).not.toHaveTextContent('sess-oth')
     // The current row's revocation says the caller is signed out too.
     await user.click(
-      screen.getByRole('button', { name: '撤销会话 sess-current' }),
+      screen.getByRole('button', {
+        name: zhCN.sessions.revokeAriaWithId.replace('{{id}}', 'sess-current'),
+      }),
     )
     const dialog = await screen.findByRole('dialog')
     expect(
       within(dialog).getByText(
-        '撤销会话「sess-current」。这是你当前的会话，撤销后你也会退出登录。',
+        zhCN.sessions.revokeMessageCurrent.replace('{{id}}', 'sess-current'),
       ),
     ).toBeInTheDocument()
-    await user.click(within(dialog).getByRole('button', { name: '取消' }))
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.cancel }),
+    )
     // A row the server does not mark keeps the plain confirmation.
     await user.click(
-      await screen.findByRole('button', { name: '撤销会话 sess-other' }),
+      await screen.findByRole('button', {
+        name: zhCN.sessions.revokeAriaWithId.replace('{{id}}', 'sess-other'),
+      }),
     )
     const other = await screen.findByRole('dialog')
     expect(
-      within(other).getByText('撤销会话「sess-other」。'),
+      within(other).getByText(
+        zhCN.sessions.revokeMessage.replace('{{id}}', 'sess-other'),
+      ),
     ).toBeInTheDocument()
   })
 
@@ -307,11 +329,17 @@ describe('SessionsPage', () => {
     renderWithProviders(<SessionsPage />, { operations })
     await loadAccount(user)
     await screen.findByText('sess-1')
-    expect(screen.queryByText('当前会话')).toBeNull()
-    await user.click(screen.getByRole('button', { name: '撤销会话 sess-1' }))
+    expect(screen.queryByText(zhCN.sessions.current)).toBeNull()
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.sessions.revokeAriaWithId.replace('{{id}}', 'sess-1'),
+      }),
+    )
     const dialog = await screen.findByRole('dialog')
     expect(
-      within(dialog).getByText('撤销会话「sess-1」。'),
+      within(dialog).getByText(
+        zhCN.sessions.revokeMessage.replace('{{id}}', 'sess-1'),
+      ),
     ).toBeInTheDocument()
   })
 
@@ -323,7 +351,7 @@ describe('SessionsPage', () => {
     renderWithProviders(<SessionsPage />, { operations })
     await loadAccount(user)
     expect(await screen.findByText('sess-1')).toBeInTheDocument()
-    expect(screen.getByText('多因子')).toBeInTheDocument()
+    expect(screen.getByText(zhCN.sessions.assurance.multi)).toBeInTheDocument()
   })
 
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
@@ -334,12 +362,12 @@ describe('SessionsPage', () => {
     renderWithProviders(<SessionsPage />, { operations })
     await loadAccount(user)
     const revoke = await screen.findByRole('button', {
-      name: '撤销会话 sess-1',
+      name: zhCN.sessions.revokeAriaWithId.replace('{{id}}', 'sess-1'),
     })
     expect(hasCoarsePointerTouchTarget(revoke)).toBe(true)
     expect(
       hasCoarsePointerTouchTarget(
-        screen.getByRole('button', { name: '刷新' }),
+        screen.getByRole('button', { name: zhCN.common.refresh }),
       ),
     ).toBe(true)
   })
@@ -356,9 +384,9 @@ describe('SessionsPage', () => {
     })
     renderWithProviders(<SessionsPage />, { operations })
     await loadAccount(user)
-    expect(await screen.findByText('无')).toBeInTheDocument()
-    expect(screen.getByText('单因子')).toBeInTheDocument()
-    expect(screen.getByText('多因子')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.sessions.assurance.none)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.sessions.assurance.single)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.sessions.assurance.multi)).toBeInTheDocument()
   })
 
   it('revokes a session through the bundle', async () => {
@@ -376,14 +404,22 @@ describe('SessionsPage', () => {
     await screen.findByText('sess-1')
     // The revoke control names its own session id, so two rows' buttons are
     // distinguishable.
-    await user.click(screen.getByRole('button', { name: '撤销会话 sess-1' }))
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.sessions.revokeAriaWithId.replace('{{id}}', 'sess-1'),
+      }),
+    )
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+    )
     await vi.waitFor(() => {
       expect(revoked).toEqual(['sess-1'])
     })
     // The landed revoke fills the page's standing status region.
-    expect(await screen.findByText('会话已撤销')).toBeInTheDocument()
+    expect(
+      await screen.findByText(zhCN.sessions.revokedNotice),
+    ).toBeInTheDocument()
   })
 
   it('clears a landed revoke confirmation on the page refresh', async () => {
@@ -514,8 +550,10 @@ describe('SessionsPage', () => {
     })
     renderWithProviders(<SessionsPage />, { operations })
     await loadAccount(user)
-    expect(await screen.findByText('会话加载失败')).toBeInTheDocument()
-    expect(screen.getByText('会话面未能完成这次请求。')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.sessions.error.title)).toBeInTheDocument()
+    expect(
+      screen.getByText(zhCN.sessions.error.description),
+    ).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when the read is refused with 403', async () => {
@@ -526,8 +564,10 @@ describe('SessionsPage', () => {
     })
     renderWithProviders(<SessionsPage />, { operations })
     await loadAccount(user)
-    expect(await screen.findByText('权限不足')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.sessions.retry }),
+    ).toBeNull()
   })
 
   it('declares the designed column priorities and caps the primary identity', async () => {
@@ -546,32 +586,32 @@ describe('SessionsPage', () => {
     // The created time is the primary identity: no priority, shared cap.
     // The identifier and the descriptive columns shed first; state stays
     // to `sm`; the row actions never hide.
-    expect(columnVisibility(header('标识'))).toEqual({
+    expect(columnVisibility(header(zhCN.sessions.column.id))).toEqual({
       hiddenAt: 0,
       visibleFrom: 1200,
     })
-    expect(columnVisibility(header('类型'))).toEqual({
+    expect(columnVisibility(header(zhCN.sessions.column.kind))).toEqual({
       hiddenAt: 0,
       visibleFrom: 1200,
     })
-    expect(columnVisibility(header('保证级别'))).toEqual({
+    expect(columnVisibility(header(zhCN.sessions.column.assurance))).toEqual({
       hiddenAt: 0,
       visibleFrom: 900,
     })
-    expect(columnVisibility(header('创建时间'))).toBeNull()
-    expect(columnVisibility(header('最近活动'))).toEqual({
+    expect(columnVisibility(header(zhCN.sessions.column.created))).toBeNull()
+    expect(columnVisibility(header(zhCN.sessions.column.lastSeen))).toEqual({
       hiddenAt: 0,
       visibleFrom: 1200,
     })
-    expect(columnVisibility(header('过期时间'))).toEqual({
+    expect(columnVisibility(header(zhCN.sessions.column.expires))).toEqual({
       hiddenAt: 0,
       visibleFrom: 1200,
     })
-    expect(columnVisibility(header('状态'))).toEqual({
+    expect(columnVisibility(header(zhCN.sessions.column.state))).toEqual({
       hiddenAt: 0,
       visibleFrom: 600,
     })
-    expect(columnVisibility(header('操作'))).toBeNull()
+    expect(columnVisibility(header(zhCN.sessions.column.actions))).toBeNull()
 
     // The identifier cell shows the 8-character prefix; the complete id
     // rides the cell title and the copy control.
@@ -582,14 +622,14 @@ describe('SessionsPage', () => {
     expect(idCell).toHaveAttribute('title', id)
     expect(
       within(idCell as HTMLElement).getByRole('button', {
-        name: `复制 ${id}`,
+        name: COPY_VALUE.replace('{{value}}', id),
       }),
     ).toBeInTheDocument()
 
     const headerLabels = screen
       .getAllByRole('columnheader')
       .map((cell) => cell.textContent)
-    const createdIndex = headerLabels.indexOf('创建时间')
+    const createdIndex = headerLabels.indexOf(zhCN.sessions.column.created)
     expect(createdIndex).toBeGreaterThanOrEqual(0)
     const row = screen.getByText(id.slice(0, 8)).closest('tr')
     expect(row).not.toBeNull()
@@ -603,9 +643,11 @@ describe('SessionsPage', () => {
     // tier; the id column it left hides below `lg`. The mark is therefore
     // reachable at all three tiers even where the id cell is not.
     expect(
-      within(createdCell as HTMLElement).getByText('当前会话'),
+      within(createdCell as HTMLElement).getByText(zhCN.sessions.current),
     ).toBeInTheDocument()
-    expect(within(idCell as HTMLElement).queryByText('当前会话')).toBeNull()
+    expect(
+      within(idCell as HTMLElement).queryByText(zhCN.sessions.current),
+    ).toBeNull()
 
     // The shared cap on the created-time text: 160px below `md`, 200px
     // from `md` up. The mark sits beside it, outside that text cap.

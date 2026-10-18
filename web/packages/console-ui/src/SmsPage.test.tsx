@@ -31,6 +31,17 @@ import {
   type ConsoleBackend,
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import zhCN from './locales/zh-CN.json' with { type: 'json' }
+
+/** Fills a locale template's `{{name}}` placeholders. */
+function text(
+  template: string,
+  values: Record<string, string>,
+): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
+    values[key] ?? match,
+  )
+}
 
 function template(overrides: Partial<ConsoleSmsTemplate> = {}): ConsoleSmsTemplate {
   return {
@@ -101,7 +112,7 @@ describe('SmsPage', () => {
   it('renders the empty state when no template exists', async () => {
     const operations = createConsoleOperations(makeConsoleBackend())
     renderWithProviders(<SmsPage />, { operations })
-    expect(await screen.findByText('暂无模板')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.sms.empty.title)).toBeInTheDocument()
   })
 
   it('lists templates with their approval state and enablement', async () => {
@@ -109,7 +120,7 @@ describe('SmsPage', () => {
     renderWithProviders(<SmsPage />, { operations })
     expect(await screen.findByText('login-code')).toBeInTheDocument()
     expect(screen.getByText('zh-CN: approved')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '停用模板 login-code' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) })).toBeInTheDocument()
   })
 
   it('caps the primary name column at the shared primary-column width', async () => {
@@ -132,9 +143,9 @@ describe('SmsPage', () => {
     const operations = withTemplates()
     renderWithProviders(<SmsPage />, { operations })
     const row = (
-      await screen.findByRole('button', { name: '停用模板 login-code' })
+      await screen.findByRole('button', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) })
     ).closest('tr') as HTMLElement
-    const enabled = within(row).getByText('是').closest('td') as HTMLElement
+    const enabled = within(row).getByText(zhCN.sms.enabledYes).closest('td') as HTMLElement
     const declarations = containerDeclarationsOf(enabled)
     expect(declarations.get(0)).toContain('display:none')
     expect(declarations.get(600)).toContain('display:table-cell')
@@ -148,11 +159,11 @@ describe('SmsPage', () => {
     })
     renderWithProviders(<SmsPage />, { operations })
     await screen.findByText('login-code')
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     expect(refresh).not.toBeDisabled()
 
-    await user.type(screen.getAllByLabelText('名称')[0]!, 'welcome')
-    await user.click(screen.getAllByRole('button', { name: '登记' })[0]!)
+    await user.type(screen.getAllByLabelText(zhCN.sms.register.nameLabel)[0]!, 'welcome')
+    await user.click(screen.getAllByRole('button', { name: zhCN.sms.register.submit })[0]!)
     expect(refresh).toBeDisabled()
 
     pending.resolve()
@@ -167,11 +178,11 @@ describe('SmsPage', () => {
     })
     renderWithProviders(<SmsPage />, { operations })
     await screen.findByText('login-code')
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
 
-    await user.type(screen.getByLabelText('内容'), 'your code is {code}')
-    await user.type(screen.getAllByLabelText('名称')[1]!, 'welcome')
-    await user.click(screen.getByRole('button', { name: '提交' }))
+    await user.type(screen.getByLabelText(zhCN.sms.offer.contentLabel), 'your code is {code}')
+    await user.type(screen.getAllByLabelText(zhCN.sms.offer.nameLabel)[1]!, 'welcome')
+    await user.click(screen.getByRole('button', { name: zhCN.sms.offer.submit }))
     expect(refresh).toBeDisabled()
 
     pending.resolve()
@@ -186,9 +197,9 @@ describe('SmsPage', () => {
     })
     renderWithProviders(<SmsPage />, { operations })
     const toggle = await screen.findByRole('button', {
-      name: '停用模板 login-code',
+      name: text(zhCN.sms.disableAria, { name: 'login-code' }),
     })
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
 
     await user.click(toggle)
     expect(refresh).toBeDisabled()
@@ -201,12 +212,12 @@ describe('SmsPage', () => {
     const operations = withTemplates()
     renderWithProviders(<SmsPage />, { operations })
     const toggle = await screen.findByRole('button', {
-      name: '停用模板 login-code',
+      name: text(zhCN.sms.disableAria, { name: 'login-code' }),
     })
     const remove = screen.getByRole('button', {
-      name: '移除模板 login-code',
+      name: text(zhCN.sms.removeAria, { name: 'login-code' }),
     })
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     for (const control of [toggle, remove, refresh]) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
     }
@@ -225,10 +236,10 @@ describe('SmsPage', () => {
     )
     renderWithProviders(<SmsPage />, { operations })
     // Two name fields exist (register + offer); the register one is first.
-    await user.type(screen.getAllByLabelText('名称')[0]!, 'welcome')
-    await user.type(screen.getAllByLabelText('参数')[0]!, 'code, name')
-    await user.type(screen.getByLabelText('厂商编码'), 'zh-CN:1001')
-    await user.click(screen.getAllByRole('button', { name: '登记' })[0]!)
+    await user.type(screen.getAllByLabelText(zhCN.sms.register.nameLabel)[0]!, 'welcome')
+    await user.type(screen.getAllByLabelText(zhCN.sms.register.paramsLabel)[0]!, 'code, name')
+    await user.type(screen.getByLabelText(zhCN.sms.register.codesLabel), 'zh-CN:1001')
+    await user.click(screen.getAllByRole('button', { name: zhCN.sms.register.submit })[0]!)
     await vi.waitFor(() => {
       expect(registered).toEqual(['welcome'])
     })
@@ -246,10 +257,10 @@ describe('SmsPage', () => {
       }),
     )
     renderWithProviders(<SmsPage />, { operations })
-    await user.type(screen.getByLabelText('内容'), 'your code is {code}')
+    await user.type(screen.getByLabelText(zhCN.sms.offer.contentLabel), 'your code is {code}')
     // Two name fields exist (register + offer); the offer one is second.
-    await user.type(screen.getAllByLabelText('名称')[1]!, 'welcome')
-    await user.click(screen.getByRole('button', { name: '提交' }))
+    await user.type(screen.getAllByLabelText(zhCN.sms.offer.nameLabel)[1]!, 'welcome')
+    await user.click(screen.getByRole('button', { name: zhCN.sms.offer.submit }))
     await vi.waitFor(() => {
       expect(offered).toEqual(['welcome'])
     })
@@ -271,10 +282,10 @@ describe('SmsPage', () => {
     })
     renderWithProviders(<SmsPage />, { operations })
     await screen.findByText('login-code')
-    await user.click(screen.getByRole('button', { name: '停用模板 login-code' }))
-    await user.click(screen.getByRole('button', { name: '移除模板 login-code' }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.sms.removeAria, { name: 'login-code' }) }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     await vi.waitFor(() => {
       expect(toggles).toEqual([false])
       expect(removed).toEqual(['login-code'])
@@ -293,12 +304,12 @@ describe('SmsPage', () => {
     // The surface has no route on this process: the page says so and keeps
     // the retry, and neither form is in the document -- every submission
     // would reach the same missing route.
-    expect(await screen.findByText('短信管理面未装载')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
-    expect(screen.queryByText('登记模板')).toBeNull()
-    expect(screen.queryByText('提交审核')).toBeNull()
-    expect(screen.queryByRole('button', { name: '登记' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '提交' })).toBeNull()
+    expect(await screen.findByText(zhCN.sms.unmounted.title)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: zhCN.sms.retry })).toBeInTheDocument()
+    expect(screen.queryByText(zhCN.sms.register.title)).toBeNull()
+    expect(screen.queryByText(zhCN.sms.offer.title)).toBeNull()
+    expect(screen.queryByRole('button', { name: zhCN.sms.register.submit })).toBeNull()
+    expect(screen.queryByRole('button', { name: zhCN.sms.offer.submit })).toBeNull()
   })
 
   it('collapses both write forms when the entry document answers the read', async () => {
@@ -325,10 +336,10 @@ describe('SmsPage', () => {
 
     // The surface is absent here too: the page says so and keeps the retry,
     // and neither form is rendered.
-    expect(await screen.findByText('短信管理面未装载')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
-    expect(screen.queryByText('登记模板')).toBeNull()
-    expect(screen.queryByText('提交审核')).toBeNull()
+    expect(await screen.findByText(zhCN.sms.unmounted.title)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: zhCN.sms.retry })).toBeInTheDocument()
+    expect(screen.queryByText(zhCN.sms.register.title)).toBeNull()
+    expect(screen.queryByText(zhCN.sms.offer.title)).toBeNull()
   })
 
   it('keeps both write forms when a mounted surface fails temporarily', async () => {
@@ -342,12 +353,12 @@ describe('SmsPage', () => {
 
     // A 503 is the mounted surface failing, not its absence: the forms stay
     // available because a write may still land once the read recovers.
-    expect(await screen.findByText('短信模板加载失败')).toBeInTheDocument()
-    expect(screen.getByText('短信面未能完成这次请求。')).toBeInTheDocument()
-    expect(screen.getByText('登记模板')).toBeInTheDocument()
-    expect(screen.getByText('提交审核')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '登记' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: '提交' })).toBeEnabled()
+    expect(await screen.findByText(zhCN.sms.error.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.sms.error.description)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.sms.register.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.sms.offer.title)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: zhCN.sms.register.submit })).toBeEnabled()
+    expect(screen.getByRole('button', { name: zhCN.sms.offer.submit })).toBeEnabled()
   })
 
   it('renders the retryable error placeholder when the read fails', async () => {
@@ -357,8 +368,8 @@ describe('SmsPage', () => {
       }),
     )
     renderWithProviders(<SmsPage />, { operations })
-    expect(await screen.findByText('短信模板加载失败')).toBeInTheDocument()
-    expect(screen.getByText('短信面未能完成这次请求。')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.sms.error.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.sms.error.description)).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when the read is refused with 403', async () => {
@@ -369,8 +380,8 @@ describe('SmsPage', () => {
       }),
     )
     renderWithProviders(<SmsPage />, { operations })
-    expect(await screen.findByText('权限不足')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: zhCN.sms.retry })).toBeNull()
     // A read's refusal never settles into a write scope's slot.
     expect(screen.queryByRole('alert')).toBeNull()
   })
@@ -385,29 +396,29 @@ describe('SmsPage', () => {
     await screen.findByText('login-code')
 
     // The register form's scope carries its own failure.
-    await user.type(screen.getAllByLabelText('名称')[0]!, 'welcome')
-    await user.click(screen.getAllByRole('button', { name: '登记' })[0]!)
+    await user.type(screen.getAllByLabelText(zhCN.sms.register.nameLabel)[0]!, 'welcome')
+    await user.click(screen.getAllByRole('button', { name: zhCN.sms.register.submit })[0]!)
     expect(
-      await within(section('登记模板')).findByRole('alert'),
-    ).toHaveTextContent('服务端无法读取该请求，请检查表单后重试。')
+      await within(section(zhCN.sms.register.title)).findByRole('alert'),
+    ).toHaveTextContent(zhCN.errors.sms.bad_request)
 
     // The table's row action lands in the table's scope, not the form's
     // and not the offer form's.
     await user.click(
-      screen.getByRole('button', { name: '停用模板 login-code' }),
+      screen.getByRole('button', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) }),
     )
     // The table's own region carries the refusal, and its row marker
     // repeats the one message.
     const alerts = await screen.findAllByRole('alert')
     expect(alerts.map((alert) => alert.textContent)).toEqual([
-      '服务端无法读取该请求，请检查表单后重试。',
-      '同名模板已存在。',
+      zhCN.errors.sms.bad_request,
+      zhCN.errors.sms.conflict,
     ])
     expect(
-      within(section('登记模板')).queryByText('同名模板已存在。'),
+      within(section(zhCN.sms.register.title)).queryByText(zhCN.errors.sms.conflict),
     ).toBeNull()
     expect(
-      within(section('提交审核')).queryByText('同名模板已存在。'),
+      within(section(zhCN.sms.offer.title)).queryByText(zhCN.errors.sms.conflict),
     ).toBeNull()
   })
 
@@ -421,13 +432,13 @@ describe('SmsPage', () => {
     })
     renderWithProviders(<SmsPage />, { operations })
     const toggle = await screen.findByRole('button', {
-      name: '停用模板 login-code',
+      name: text(zhCN.sms.disableAria, { name: 'login-code' }),
     })
-    const remove = screen.getByRole('button', { name: '移除模板 login-code' })
+    const remove = screen.getByRole('button', { name: text(zhCN.sms.removeAria, { name: 'login-code' }) })
     await user.click(toggle)
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      '同名模板已存在。',
+      zhCN.errors.sms.conflict,
     )
     expect(toggle).toHaveAttribute('aria-invalid', 'true')
     expect(remove).toHaveAttribute('aria-invalid', 'false')
@@ -450,34 +461,34 @@ describe('SmsPage', () => {
     await screen.findByText('login-code')
 
     // Register names the template.
-    await user.type(screen.getAllByLabelText('名称')[0]!, 'welcome')
-    await user.click(screen.getAllByRole('button', { name: '登记' })[0]!)
+    await user.type(screen.getAllByLabelText(zhCN.sms.register.nameLabel)[0]!, 'welcome')
+    await user.click(screen.getAllByRole('button', { name: zhCN.sms.register.submit })[0]!)
     expect(
-      await screen.findByText('模板「welcome」已登记'),
+      await screen.findByText(text(zhCN.sms.registered, { name: 'welcome' })),
     ).toBeInTheDocument()
 
     // Offer names the template it hands to the vendor.
-    await user.type(screen.getByLabelText('内容'), 'your code is {code}')
-    await user.type(screen.getAllByLabelText('名称')[1]!, 'welcome')
-    await user.click(screen.getByRole('button', { name: '提交' }))
+    await user.type(screen.getByLabelText(zhCN.sms.offer.contentLabel), 'your code is {code}')
+    await user.type(screen.getAllByLabelText(zhCN.sms.offer.nameLabel)[1]!, 'welcome')
+    await user.click(screen.getByRole('button', { name: zhCN.sms.offer.submit }))
     expect(
-      await screen.findByText('模板「welcome」已提交审核'),
+      await screen.findByText(text(zhCN.sms.offered, { name: 'welcome' })),
     ).toBeInTheDocument()
 
     // The toggle names the template and the state it now has.
     await user.click(
-      screen.getByRole('button', { name: '停用模板 login-code' }),
+      screen.getByRole('button', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) }),
     )
     expect(
-      await screen.findByText('模板「login-code」已停用发送'),
+      await screen.findByText(text(zhCN.sms.disabledToast, { name: 'login-code' })),
     ).toBeInTheDocument()
 
     // The removal names the template it dropped.
-    await user.click(screen.getByRole('button', { name: '移除模板 login-code' }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.sms.removeAria, { name: 'login-code' }) }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     expect(
-      await screen.findByText('模板「login-code」已移除'),
+      await screen.findByText(text(zhCN.sms.removed, { name: 'login-code' })),
     ).toBeInTheDocument()
   })
 

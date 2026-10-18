@@ -13,14 +13,17 @@ import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { RefreshButton } from './refresh-button.js'
 import { renderWithProviders } from '../../test-utils/render.js'
+import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 
-const HINT = '请先选择一个租户。'
+const REFRESH = zhCN.common.refresh
+/** A caller-supplied empty-scope hint; the page owns this copy, not the control. */
+const HINT = 'Choose a tenant first.'
 
 describe('RefreshButton', () => {
   it('marks a read in flight busy, keeps the control focusable, and drops a second activation', () => {
     const onClick = vi.fn()
     renderWithProviders(<RefreshButton busy onClick={onClick} />)
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: REFRESH })
 
     expect(refresh).toHaveAttribute('aria-busy', 'true')
     expect(refresh).not.toBeDisabled()
@@ -47,7 +50,7 @@ describe('RefreshButton', () => {
         />
       </>,
     )
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: REFRESH })
 
     expect(refresh).toBeDisabled()
     expect(refresh).toHaveAttribute('aria-describedby', 'scope-hint')
@@ -66,7 +69,7 @@ describe('RefreshButton', () => {
         onClick={() => undefined}
       />,
     )
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: REFRESH })
 
     expect(refresh).not.toBeDisabled()
     expect(refresh).not.toHaveAttribute('aria-describedby')
@@ -84,7 +87,7 @@ describe('RefreshButton', () => {
         onClick={onClick}
       />,
     )
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: REFRESH })
 
     expect(refresh).toBeDisabled()
     expect(refresh).not.toHaveAttribute('aria-describedby')

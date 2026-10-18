@@ -18,6 +18,10 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ConsoleAsyncSection, isForbidden } from './async-section.js'
 import { renderWithProviders } from '../../test-utils/render.js'
+import zhCN from '../locales/zh-CN.json' with { type: 'json' }
+
+/** A caller-supplied retry label fixture; the section renders what it is given. */
+const RETRY = 'Retry'
 
 describe('isForbidden', () => {
   it('reads a module refusal carried by the HTTP status alone', () => {
@@ -65,13 +69,13 @@ function Probe({
       errorState={{
         title: 'error-title',
         description: 'error-description',
-        retryLabel: '重试',
+        retryLabel: RETRY,
         onRetry: () => {},
       }}
       notFoundState={{
         title: 'not-found-title',
         description: 'not-found-description',
-        retryLabel: '重试',
+        retryLabel: RETRY,
         onRetry: () => {},
       }}
       notFoundStatuses={notFoundStatuses}
@@ -86,8 +90,8 @@ describe('ConsoleAsyncSection', () => {
     renderWithProviders(
       <Probe error={{ status: 403, code: 'authz.forbidden' }} />,
     )
-    expect(screen.getByText('权限不足')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(screen.getByText(zhCN.forbidden.title)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: RETRY })).toBeNull()
   })
 
   it('renders the retryable placeholder for a 5xx failure', () => {
@@ -95,14 +99,14 @@ describe('ConsoleAsyncSection', () => {
       <Probe error={{ status: 500, code: 'client.http.500' }} />,
     )
     expect(screen.getByText('error-title')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: RETRY })).toBeInTheDocument()
   })
 
   it('renders the retryable placeholder for a transport failure', () => {
     renderWithProviders(
       <Probe error={{ status: 0, code: 'client.network' }} />,
     )
-    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: RETRY })).toBeInTheDocument()
   })
 
   it('renders the not-found placeholder for a status the page names as the same answer', () => {
@@ -152,7 +156,7 @@ function SettledProbe({
       errorState={{
         title: 'error-title',
         description: 'error-description',
-        retryLabel: '重试',
+        retryLabel: RETRY,
         onRetry,
       }}
     >
@@ -183,7 +187,7 @@ function FlakyRefreshHost() {
         errorState={{
           title: 'error-title',
           description: 'error-description',
-          retryLabel: '重试',
+          retryLabel: RETRY,
           onRetry: () => setRefreshing(true),
         }}
       >
@@ -203,10 +207,10 @@ describe('ConsoleAsyncSection refresh state', () => {
     )
     // A refusal makes the older data meaningless: the placeholder takes
     // the content's place, with no retry and no stale marker.
-    expect(screen.getByText('权限不足')).toBeInTheDocument()
+    expect(screen.getByText(zhCN.forbidden.title)).toBeInTheDocument()
     expect(screen.queryByText('content alpha')).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(screen.queryByRole('button', { name: RETRY })).toBeNull()
   })
 
   it('marks a failed refresh with data on screen as stale above the content', async () => {
@@ -219,13 +223,13 @@ describe('ConsoleAsyncSection refresh state', () => {
       />,
     )
     const alert = screen.getByRole('alert')
-    expect(alert).toHaveTextContent('所示内容可能已过期，请重试刷新。')
+    expect(alert).toHaveTextContent(zhCN.stale.description)
     const content = screen.getByText('content alpha')
     expect(
       alert.compareDocumentPosition(content) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
-    await userEvent.click(screen.getByRole('button', { name: '重试' }))
+    await userEvent.click(screen.getByRole('button', { name: RETRY }))
     expect(onRetry).toHaveBeenCalledTimes(1)
   })
 
@@ -244,11 +248,11 @@ describe('ConsoleAsyncSection refresh state', () => {
   it('withdraws the stale marker on retry and remounts it when the retry fails', async () => {
     const view = renderWithProviders(<FlakyRefreshHost />)
     const firstAlert = screen.getByRole('alert')
-    expect(firstAlert).toHaveTextContent('所示内容可能已过期，请重试刷新。')
+    expect(firstAlert).toHaveTextContent(zhCN.stale.description)
 
     // The retry is issued: the read is in flight and the marker unmounts
     // while the content stays on screen.
-    await userEvent.click(screen.getByRole('button', { name: '重试' }))
+    await userEvent.click(screen.getByRole('button', { name: RETRY }))
     expect(screen.queryByRole('alert')).toBeNull()
     expect(view.getByText('content alpha')).toBeInTheDocument()
 
@@ -256,7 +260,7 @@ describe('ConsoleAsyncSection refresh state', () => {
     // announcement fires again.
     await userEvent.click(screen.getByRole('button', { name: 'retry failed' }))
     const secondAlert = screen.getByRole('alert')
-    expect(secondAlert).toHaveTextContent('所示内容可能已过期，请重试刷新。')
+    expect(secondAlert).toHaveTextContent(zhCN.stale.description)
     expect(secondAlert).not.toBe(firstAlert)
     expect(view.getByText('content alpha')).toBeInTheDocument()
   })

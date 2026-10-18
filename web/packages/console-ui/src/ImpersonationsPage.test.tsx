@@ -38,13 +38,44 @@ import {
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { createStepUpSession } from '../test-utils/session.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
+import { uiKitResources } from '@speed/ui-kit'
 
 const ZERO = '0001-01-01T00:00:00Z'
 const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
 
+/** Fills a locale template's placeholders with the values under test. */
+function fill(
+  template: string,
+  values: Readonly<Record<string, string>>,
+): string {
+  return Object.entries(values).reduce(
+    (text, [name, value]) => text.replace(`{{${name}}}`, value),
+    template,
+  )
+}
+
+/** The ui-kit copy control's accessible name, from its zh-CN template. */
+function copyLabel(value: string): string {
+  const template = (
+    uiKitResources['zh-CN'] as unknown as {
+      readonly dataTable: { readonly copyValue: string }
+    }
+  ).dataTable.copyValue
+  return template.replace('{{value}}', value)
+}
+
+/** Matches the account cell labelled with the unresolved-identity note. */
+function unresolvedAccountLabel(content: string): boolean {
+  return content.includes(zhCN.common.accountUnresolved)
+}
+
+/** The in-force panel's target line: its prefixed label beside the name. */
+function targetLine(name: string): string {
+  return `${zhCN.impersonations.current.target}${name}`
+}
+
 /** The line that replaces the record half while an impersonation is in force. */
-const RECORDS_UNAVAILABLE =
-  '冒充期间不能读取或终止冒充记录；结束冒充后可在此查看。'
+const RECORDS_UNAVAILABLE = zhCN.impersonations.recordsUnavailable
 
 /** The caller-session grant the status read answers with when one is in force. */
 interface GrantFixture {
@@ -136,7 +167,7 @@ function record(overrides: Partial<ConsoleImpersonation> = {}): ConsoleImpersona
 }
 
 async function pickTenant(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  await user.click(screen.getByLabelText('租户'))
+  await user.click(screen.getByLabelText(zhCN.common.tenant))
   await user.click(await screen.findByRole('option', { name: 'Acme' }))
 }
 
@@ -158,7 +189,7 @@ async function expectRefreshInert(
   countReads: () => readonly [number, number],
   readsBefore: readonly [number, number],
 ): Promise<void> {
-  const refresh = screen.getByRole('button', { name: '刷新' })
+  const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
   await vi.waitFor(() => {
     expect(refresh).toBeDisabled()
   })
@@ -220,9 +251,9 @@ describe('ImpersonationsPage', () => {
         }),
       },
     )
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     await pickTenant(user)
-    const terminate = await screen.findByRole('button', { name: '终止' })
+    const terminate = await screen.findByRole('button', { name: zhCN.impersonations.terminate })
     expect(hasCoarsePointerTouchTarget(refresh)).toBe(true)
     expect(hasCoarsePointerTouchTarget(terminate)).toBe(true)
     idle.unmount()
@@ -237,14 +268,14 @@ describe('ImpersonationsPage', () => {
     })
     bindRequestFn(backend.fn)
     renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
-    const end = await screen.findByRole('button', { name: '结束冒充' })
+    const end = await screen.findByRole('button', { name: zhCN.impersonations.current.end })
     expect(hasCoarsePointerTouchTarget(end)).toBe(true)
   })
 
   it('prompts for a tenant before listing', () => {
     const operations = withPage()
     renderWithProviders(<ImpersonationsPage />, { operations })
-    expect(screen.getByText('请选择租户')).toBeInTheDocument()
+    expect(screen.getByText(zhCN.impersonations.needTenant.title)).toBeInTheDocument()
   })
 
   it('opens on the tenant named by the query string', async () => {
@@ -254,8 +285,8 @@ describe('ImpersonationsPage', () => {
       renderWithProviders(<ImpersonationsPage />, { operations })
       // The link that carried the tenant arrives with a selection already
       // made: no "choose a tenant" prompt, and the list read runs for it.
-      expect(await screen.findByText('暂无冒充记录')).toBeInTheDocument()
-      expect(screen.queryByText('请选择租户')).toBeNull()
+      expect(await screen.findByText(zhCN.impersonations.empty.title)).toBeInTheDocument()
+      expect(screen.queryByText(zhCN.impersonations.needTenant.title)).toBeNull()
     } finally {
       window.history.replaceState({}, '', '/')
     }
@@ -266,7 +297,7 @@ describe('ImpersonationsPage', () => {
     const operations = withPage()
     renderWithProviders(<ImpersonationsPage />, { operations })
     await pickTenant(user)
-    expect(await screen.findByText('暂无冒充记录')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.impersonations.empty.title)).toBeInTheDocument()
   })
 
   it('lists records and marks an in-force one', async () => {
@@ -280,7 +311,7 @@ describe('ImpersonationsPage', () => {
     // recorded ids.
     expect(await screen.findByText('Staff One')).toBeInTheDocument()
     expect(screen.getByText('Target One')).toBeInTheDocument()
-    expect(screen.getByText('生效中')).toBeInTheDocument()
+    expect(screen.getByText(zhCN.impersonations.inForce)).toBeInTheDocument()
   })
 
   it('declares the designed column priorities and caps the account identities', async () => {
@@ -298,25 +329,25 @@ describe('ImpersonationsPage', () => {
     // The page is tenant-scoped, so the tenant is the first column shed;
     // the actor joins at md; the ends column and the tenant at lg; the
     // row actions never hide.
-    expect(columnVisibility(header('操作者'))).toEqual({
+    expect(columnVisibility(header(zhCN.impersonations.column.actor))).toEqual({
       hiddenAt: 0,
       visibleFrom: 900,
     })
-    expect(columnVisibility(header('被冒充账户'))).toBeNull()
-    expect(columnVisibility(header('租户'))).toEqual({
+    expect(columnVisibility(header(zhCN.impersonations.column.target))).toBeNull()
+    expect(columnVisibility(header(zhCN.impersonations.column.tenant))).toEqual({
       hiddenAt: 0,
       visibleFrom: 1200,
     })
-    expect(columnVisibility(header('开始时间'))).toBeNull()
-    expect(columnVisibility(header('结束时间'))).toEqual({
+    expect(columnVisibility(header(zhCN.impersonations.column.started))).toBeNull()
+    expect(columnVisibility(header(zhCN.impersonations.column.ends))).toEqual({
       hiddenAt: 0,
       visibleFrom: 1200,
     })
-    expect(columnVisibility(header('状态'))).toEqual({
+    expect(columnVisibility(header(zhCN.impersonations.column.state))).toEqual({
       hiddenAt: 0,
       visibleFrom: 900,
     })
-    expect(columnVisibility(header('操作'))).toBeNull()
+    expect(columnVisibility(header(zhCN.impersonations.column.actions))).toBeNull()
 
     // The primary identity carries the shared whole-cell cap (160px below
     // `md`, 200px from `md` up); the long-text actor carries the flat
@@ -334,7 +365,7 @@ describe('ImpersonationsPage', () => {
     expect(actorCell).not.toBeNull()
     expect(actorCell!.firstElementChild).toHaveStyle({ maxWidth: '160px' })
     expect(
-      within(actorCell as HTMLElement).getByRole('button', { name: '复制 staff-1' }),
+      within(actorCell as HTMLElement).getByRole('button', { name: copyLabel('staff-1') }),
     ).toBeInTheDocument()
   })
 
@@ -351,7 +382,7 @@ describe('ImpersonationsPage', () => {
       }),
     })
     await pickTenant(user)
-    const recordIds = await screen.findAllByLabelText(/身份未解析/)
+    const recordIds = await screen.findAllByLabelText(unresolvedAccountLabel)
     expect(recordIds.map((cell) => cell.textContent)).toEqual(
       expect.arrayContaining(['staff-1', 'acc-1']),
     )
@@ -369,7 +400,7 @@ describe('ImpersonationsPage', () => {
     renderWithProviders(<ImpersonationsPage />, {
       operations: withPage({ getAccount: () => Promise.reject(new Error('forbidden')) }),
     })
-    const grantIds = await screen.findAllByLabelText(/身份未解析/)
+    const grantIds = await screen.findAllByLabelText(unresolvedAccountLabel)
     expect(grantIds.map((cell) => cell.textContent)).toEqual(['acc-7'])
   })
 
@@ -383,8 +414,12 @@ describe('ImpersonationsPage', () => {
     })
     renderWithProviders(<ImpersonationsPage />, { operations })
     await pickTenant(user)
-    expect(await screen.findByText('已结束（revoked）')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '终止' })).toBeDisabled()
+    expect(
+      await screen.findByText(
+        fill(zhCN.impersonations.ended, { reason: 'revoked' }),
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: zhCN.impersonations.terminate })).toBeDisabled()
   })
 
   it('terminates an in-force impersonation and re-reads the session status', async () => {
@@ -412,7 +447,7 @@ describe('ImpersonationsPage', () => {
     renderWithProviders(<ImpersonationsPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Staff One')
-    await user.click(screen.getByRole('button', { name: '终止' }))
+    await user.click(screen.getByRole('button', { name: zhCN.impersonations.terminate }))
     await vi.waitFor(() => {
       expect(ended).toEqual(['imp-1'])
     })
@@ -448,7 +483,7 @@ describe('ImpersonationsPage', () => {
       [statusReads, listImpersonations.mock.calls.length] as const
     const readsBefore = readCounts()
 
-    await user.click(screen.getByRole('button', { name: '终止' }))
+    await user.click(screen.getByRole('button', { name: zhCN.impersonations.terminate }))
     await expectRefreshInert(readCounts, readsBefore)
 
     await act(async () => {
@@ -486,7 +521,7 @@ describe('ImpersonationsPage', () => {
     }
     bindRequestFn(ending)
     renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
-    const end = await screen.findByRole('button', { name: '结束冒充' })
+    const end = await screen.findByRole('button', { name: zhCN.impersonations.current.end })
     const readCounts = () => [statusReads, 0] as const
     const readsBefore = readCounts()
 
@@ -505,8 +540,12 @@ describe('ImpersonationsPage', () => {
     })
     renderWithProviders(<ImpersonationsPage />, { operations })
     await pickTenant(user)
-    expect(await screen.findByText('冒充记录加载失败')).toBeInTheDocument()
-    expect(screen.getByText('冒充面未能完成这次请求。')).toBeInTheDocument()
+    expect(
+      await screen.findByText(zhCN.impersonations.error.title),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(zhCN.impersonations.error.description),
+    ).toBeInTheDocument()
   })
 
   it('renders the permission placeholder with no retry when the read is refused with 403', async () => {
@@ -517,8 +556,10 @@ describe('ImpersonationsPage', () => {
     })
     renderWithProviders(<ImpersonationsPage />, { operations })
     await pickTenant(user)
-    expect(await screen.findByText('权限不足')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.impersonations.retry }),
+    ).toBeNull()
   })
 
   it('re-reads the session status and the record list on refresh', async () => {
@@ -566,7 +607,7 @@ describe('ImpersonationsPage', () => {
     })
     bindRequestFn(backend.fn)
     renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
-    await screen.findByText('被冒充账户：Target Seven')
+    await screen.findByText(targetLine('Target Seven'))
     await expectNoAxeViolations()
   })
 
@@ -575,27 +616,25 @@ describe('ImpersonationsPage', () => {
   it('shows the not-impersonating state and the start form when no impersonation is in force', async () => {
     renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
     expect(
-      await screen.findByText('当前未冒充任何账户。'),
+      await screen.findByText(zhCN.impersonations.current.none),
     ).toBeInTheDocument()
-    expect(screen.getByLabelText('目标账户')).toBeInTheDocument()
+    expect(screen.getByLabelText(zhCN.impersonations.start.accountLabel)).toBeInTheDocument()
     // The start form states its precondition beside the controls: the
     // The server's refusal cannot tell an unmet factor-age requirement from a
     // weak session, so the page states the requirement instead of naming a
     // cause; only this text warns that signing in again will not help.
     expect(
-      screen.getByText(
-        '发起冒充需要你本人的账户有已启用满 authn.mfa.sensitive-min-age（缺省 24 小时，以本部署设置为准）的非短信因素；刚登记的因素不算，重新登录也不能缩短这段等待。',
-      ),
+      screen.getByText(zhCN.impersonations.start.precondition),
     ).toBeInTheDocument()
     // The start form takes its target tenant from the page's one tenant
     // selector; it carries no second, free-text tenant input of its own.
-    expect(screen.getByLabelText('租户')).toBeInTheDocument()
-    expect(screen.queryByLabelText('租户标识')).toBeNull()
+    expect(screen.getByLabelText(zhCN.common.tenant)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Tenant identifier')).toBeNull()
     expect(
-      screen.getByText('请先选择一个租户；被冒充账户必须属于该租户。'),
+      screen.getByText(zhCN.impersonations.start.tenantHint),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: '发起冒充' }),
+      screen.getByRole('button', { name: zhCN.impersonations.start.submit }),
     ).toBeDisabled()
   })
 
@@ -605,9 +644,9 @@ describe('ImpersonationsPage', () => {
     const user = userEvent.setup()
     renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
 
-    await screen.findByText('当前未冒充任何账户。')
-    await user.type(screen.getByLabelText('目标账户'), 'acc-9')
-    const submit = screen.getByRole('button', { name: '发起冒充' })
+    await screen.findByText(zhCN.impersonations.current.none)
+    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    const submit = screen.getByRole('button', { name: zhCN.impersonations.start.submit })
     expect(submit).toBeDisabled()
     fireEvent.click(submit)
     // A disabled control dispatches nothing; flush the queue so an
@@ -627,12 +666,15 @@ describe('ImpersonationsPage', () => {
     const user = userEvent.setup()
     renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
 
-    await screen.findByText('当前未冒充任何账户。')
+    await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText('目标账户'), 'acc-9')
-    await user.type(screen.getByLabelText('理由'), 'investigate ticket')
-    await user.type(screen.getByLabelText('有效期（秒）'), '3600')
-    await user.click(screen.getByRole('button', { name: '发起冒充' }))
+    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    await user.type(screen.getByLabelText(zhCN.impersonations.start.reasonLabel), 'investigate ticket')
+    await user.type(
+      screen.getByLabelText(zhCN.impersonations.start.ttlLabel),
+      '3600',
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     await vi.waitFor(() => {
       expect(backend.started).toEqual([
@@ -646,9 +688,9 @@ describe('ImpersonationsPage', () => {
     })
     // The landed start invalidates the status read, so the page converges on
     // the record the server just wrote: the in-force panel replaces the form.
-    expect(await screen.findByText('被冒充账户：Target One')).toBeInTheDocument()
+    expect(await screen.findByText(targetLine('Target One'))).toBeInTheDocument()
     expect(
-      screen.queryByLabelText('目标账户'),
+      screen.queryByLabelText(zhCN.impersonations.start.accountLabel),
     ).not.toBeInTheDocument()
   })
 
@@ -658,10 +700,10 @@ describe('ImpersonationsPage', () => {
     const user = userEvent.setup()
     renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
 
-    await screen.findByText('当前未冒充任何账户。')
+    await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText('目标账户'), 'acc-9')
-    await user.click(screen.getByRole('button', { name: '发起冒充' }))
+    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     await vi.waitFor(() => {
       expect(backend.started).toEqual([{ account: 'acc-9', tenant: 'acme' }])
@@ -681,16 +723,16 @@ describe('ImpersonationsPage', () => {
       { operations: withPage() },
     )
 
-    await screen.findByText('当前未冒充任何账户。')
+    await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText('目标账户'), 'acc-1')
-    await user.click(screen.getByRole('button', { name: '发起冒充' }))
+    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-1')
+    await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith('started'))
     expect(onChange).toHaveBeenCalledTimes(1)
     // The success copy rendered while the host action is still pending.
     expect(
-      await screen.findByText('已开始冒充账户 acc-1。'),
+      await screen.findByText(fill(zhCN.impersonations.current.started, { account: 'acc-1' })),
     ).toBeInTheDocument()
   })
 
@@ -706,16 +748,16 @@ describe('ImpersonationsPage', () => {
       { operations: withPage() },
     )
 
-    await screen.findByText('当前未冒充任何账户。')
+    await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText('目标账户'), 'acc-1')
-    await user.click(screen.getByRole('button', { name: '发起冒充' }))
+    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-1')
+    await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith('started'))
     // No failure rendering: the start landed, and the host's own failure is
     // not the page's to report.
     expect(
-      await screen.findByText('已开始冒充账户 acc-1。'),
+      await screen.findByText(fill(zhCN.impersonations.current.started, { account: 'acc-1' })),
     ).toBeInTheDocument()
     expect(screen.queryByText('host action failed')).toBeNull()
   })
@@ -740,14 +782,14 @@ describe('ImpersonationsPage', () => {
     )
 
     expect(
-      await screen.findByText('被冒充账户：Target Seven'),
+      await screen.findByText(targetLine('Target Seven')),
     ).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '结束冒充' }))
+    await user.click(screen.getByRole('button', { name: zhCN.impersonations.current.end }))
 
     await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith('ended'))
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(
-      await screen.findByText('已结束冒充账户 acc-7。'),
+      await screen.findByText(fill(zhCN.impersonations.current.ended, { account: 'acc-7' })),
     ).toBeInTheDocument()
   })
 
@@ -791,19 +833,19 @@ describe('ImpersonationsPage', () => {
     )
 
     expect(
-      await screen.findByText('被冒充账户：Target Seven'),
+      await screen.findByText(targetLine('Target Seven')),
     ).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '结束冒充' }))
+    await user.click(screen.getByRole('button', { name: zhCN.impersonations.current.end }))
 
     await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith('ended'))
     expect(deletes).toBe(1)
     // The same closing path a successful end takes: the success copy, no
     // failure banner, and the section lands on "not impersonating".
     expect(
-      await screen.findByText('已结束冒充账户 acc-7。'),
+      await screen.findByText(fill(zhCN.impersonations.current.ended, { account: 'acc-7' })),
     ).toBeInTheDocument()
     expect(
-      await screen.findByText('当前未冒充任何账户。'),
+      await screen.findByText(zhCN.impersonations.current.none),
     ).toBeInTheDocument()
     expect(screen.queryByRole('alert')).toBeNull()
   })
@@ -821,12 +863,16 @@ describe('ImpersonationsPage', () => {
     const user = userEvent.setup()
     renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
 
-    expect(await screen.findByText('被冒充账户：Target Seven')).toBeInTheDocument()
-    expect(screen.getByText('租户：acme')).toBeInTheDocument()
+    expect(await screen.findByText(targetLine('Target Seven'))).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        fill(zhCN.impersonations.current.tenant, { tenant: 'acme' }),
+      ),
+    ).toBeInTheDocument()
     // The start form is offered only while none is in force.
-    expect(screen.queryByLabelText('目标账户')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(zhCN.impersonations.start.accountLabel)).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '结束冒充' }))
+    await user.click(screen.getByRole('button', { name: zhCN.impersonations.current.end }))
     await vi.waitFor(() => {
       expect(backend.ended).toHaveLength(1)
     })
@@ -860,13 +906,13 @@ describe('ImpersonationsPage', () => {
     const user = userEvent.setup()
     renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
 
-    expect(await screen.findByText('被冒充账户：Target One')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '刷新' }))
+    expect(await screen.findByText(targetLine('Target One'))).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: zhCN.common.refresh }))
 
     // The 404 is the settled answer "not impersonating": the cached grant
     // is discarded, and nothing renders as a failure or a stale marker.
-    expect(await screen.findByText('当前未冒充任何账户。')).toBeInTheDocument()
-    expect(screen.queryByText('被冒充账户：Target One')).toBeNull()
+    expect(await screen.findByText(zhCN.impersonations.current.none)).toBeInTheDocument()
+    expect(screen.queryByText(targetLine('Target One'))).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
@@ -913,31 +959,31 @@ describe('ImpersonationsPage', () => {
     const user = userEvent.setup()
     renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
 
-    expect(await screen.findByText('被冒充账户：Target Seven')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '结束冒充' }))
+    expect(await screen.findByText(targetLine('Target Seven'))).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: zhCN.impersonations.current.end }))
     await vi.waitFor(() => expect(ended).toBe(1))
 
     // The end resets the status cache and re-reads it: the retired grant is
     // gone from the screen while the new read is still in flight (an
     // invalidate would keep it there until the refetch settled).
     await vi.waitFor(() => {
-      expect(screen.queryByText('被冒充账户：Target Seven')).toBeNull()
+      expect(screen.queryByText(targetLine('Target Seven'))).toBeNull()
     })
     expect(reads).toBeGreaterThan(1)
 
     releaseRead()
     // The re-read answers the bare 404: the settled "not impersonating"
     // state, not an error.
-    expect(await screen.findByText('当前未冒充任何账户。')).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.impersonations.current.none)).toBeInTheDocument()
 
     // The confirmation names the account the end changed, and it lives in
     // the current-impersonation section.
     const section = screen
-      .getByRole('heading', { name: '当前冒充' })
+      .getByRole('heading', { name: zhCN.impersonations.current.title })
       .closest('section')
     expect(section).not.toBeNull()
     expect(
-      within(section as HTMLElement).getByText('已结束冒充账户 acc-7。'),
+      within(section as HTMLElement).getByText(fill(zhCN.impersonations.current.ended, { account: 'acc-7' })),
     ).toBeInTheDocument()
   })
 
@@ -950,10 +996,10 @@ describe('ImpersonationsPage', () => {
       operations: withPage({ listImpersonations }),
     })
 
-    await screen.findByText('当前未冒充任何账户。')
+    await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText('目标账户'), 'acc-9')
-    await user.click(screen.getByRole('button', { name: '发起冒充' }))
+    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
     // A start writes a record into the tenant's list as well, so the list
     // is re-read (the read ran once when the tenant was selected).
     await vi.waitFor(() =>
@@ -963,15 +1009,15 @@ describe('ImpersonationsPage', () => {
     // The landed start replaces the form with the in-force panel; the
     // confirmation is not unmounted with the form that produced it.
     expect(
-      await screen.findByText('已开始冒充账户 acc-1。'),
+      await screen.findByText(fill(zhCN.impersonations.current.started, { account: 'acc-1' })),
     ).toBeInTheDocument()
-    expect(screen.queryByLabelText('目标账户')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(zhCN.impersonations.start.accountLabel)).not.toBeInTheDocument()
     const section = screen
-      .getByRole('heading', { name: '当前冒充' })
+      .getByRole('heading', { name: zhCN.impersonations.current.title })
       .closest('section')
     expect(section).not.toBeNull()
     expect(
-      within(section as HTMLElement).getByText('已开始冒充账户 acc-1。'),
+      within(section as HTMLElement).getByText(fill(zhCN.impersonations.current.started, { account: 'acc-1' })),
     ).toBeInTheDocument()
   })
 
@@ -1023,10 +1069,10 @@ describe('ImpersonationsPage', () => {
       session: createStepUpSession(),
     })
 
-    await screen.findByText('当前未冒充任何账户。')
+    await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText('目标账户'), 'acc-9')
-    await user.click(screen.getByRole('button', { name: '发起冒充' }))
+    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     // The first refusal settled without touching the slot (no banner for
     // it), the dialog elevated, and the replay re-fired the same body as a
@@ -1064,21 +1110,18 @@ describe('ImpersonationsPage', () => {
     const user = userEvent.setup()
     renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
 
-    await screen.findByText('当前未冒充任何账户。')
+    await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText('目标账户'), 'acc-9')
-    await user.click(screen.getByRole('button', { name: '发起冒充' }))
+    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     const alert = await screen.findByRole('alert')
     const rendered = alert.textContent ?? ''
-    // Every requirement is named as a peer; none is picked out as the
-    // cause, and the "during an impersonation" reading of the old text is
-    // gone in both languages.
-    expect(rendered).toContain('成员')
-    expect(rendered).toContain('已启用')
-    expect(rendered).toContain('未受保护')
-    expect(rendered).toContain('没有进行中的冒充')
-    expect(rendered).not.toContain('模拟登录期间')
+    // The refusal is the restricted-impersonation message itself: it names
+    // every requirement as a peer instead of picking one out as the cause.
+    // The "during an impersonation" reading of the old text is gone in both
+    // languages.
+    expect(rendered).toContain(zhCN.errors.authn.impersonation_restricted)
     expect(rendered).not.toContain('during an impersonation')
     expect(rendered).not.toContain('while impersonating')
   })
@@ -1144,13 +1187,13 @@ describe('ImpersonationsPage', () => {
       })
 
       expect(
-        await screen.findByText('被冒充账户：Target One'),
+        await screen.findByText(targetLine('Target One')),
       ).toBeInTheDocument()
       // The one line replaces the selector, the list and its controls.
       expect(screen.getByText(RECORDS_UNAVAILABLE)).toBeInTheDocument()
-      expect(screen.queryByLabelText('租户')).toBeNull()
-      expect(screen.queryByText('暂无冒充记录')).toBeNull()
-      expect(screen.queryByRole('button', { name: '终止' })).toBeNull()
+      expect(screen.queryByLabelText(zhCN.common.tenant)).toBeNull()
+      expect(screen.queryByText(zhCN.impersonations.empty.title)).toBeNull()
+      expect(screen.queryByRole('button', { name: zhCN.impersonations.terminate })).toBeNull()
       // The reads would be refused through the impersonated identity, so
       // they are not issued at all.
       expect(listImpersonations).not.toHaveBeenCalled()
@@ -1176,9 +1219,9 @@ describe('ImpersonationsPage', () => {
       renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
       // "Status unknown" is not "impersonating": the record surface renders
       // as it always has.
-      expect(screen.getByLabelText('租户')).toBeInTheDocument()
+      expect(screen.getByLabelText(zhCN.common.tenant)).toBeInTheDocument()
       expect(
-        screen.getByRole('status', { name: '正在加载冒充记录' }),
+        screen.getByRole('status', { name: zhCN.impersonations.loading }),
       ).toBeInTheDocument()
       expect(screen.queryByText(RECORDS_UNAVAILABLE)).toBeNull()
     } finally {
@@ -1200,8 +1243,10 @@ describe('ImpersonationsPage', () => {
       operations: withPage({ listImpersonations }),
     })
 
-    expect(await screen.findByText('冒充状态读取失败')).toBeInTheDocument()
-    expect(screen.getByLabelText('租户')).toBeInTheDocument()
+    expect(
+      await screen.findByText(zhCN.impersonations.current.error.title),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText(zhCN.common.tenant)).toBeInTheDocument()
     await pickTenant(user)
     expect(await screen.findByText('Staff One')).toBeInTheDocument()
     expect(listImpersonations).toHaveBeenCalled()
@@ -1235,12 +1280,12 @@ describe('ImpersonationsPage', () => {
       // The list is read before any impersonation starts.
       expect(await screen.findByText('Staff One')).toBeInTheDocument()
 
-      await user.type(screen.getByLabelText('目标账户'), 'acc-9')
-      await user.click(screen.getByRole('button', { name: '发起冒充' }))
+      await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+      await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
       // Once the status read lands on the grant, the record half is closed.
       expect(await screen.findByText(RECORDS_UNAVAILABLE)).toBeInTheDocument()
 
-      await user.click(screen.getByRole('button', { name: '结束冒充' }))
+      await user.click(screen.getByRole('button', { name: zhCN.impersonations.current.end }))
       await vi.waitFor(() => expect(backend.ended).toHaveLength(1))
 
       // The surface returns without a refresh and issues a new read. The
@@ -1248,10 +1293,10 @@ describe('ImpersonationsPage', () => {
       // it describes a state the end just changed.
       await vi.waitFor(() => expect(reads).toBe(3))
       expect(screen.queryByText(RECORDS_UNAVAILABLE)).toBeNull()
-      expect(screen.getByLabelText('租户')).toBeInTheDocument()
+      expect(screen.getByLabelText(zhCN.common.tenant)).toBeInTheDocument()
       expect(screen.queryByText('Staff One')).toBeNull()
       expect(
-        screen.getByRole('status', { name: '正在加载冒充记录' }),
+        screen.getByRole('status', { name: zhCN.impersonations.loading }),
       ).toBeInTheDocument()
 
       release()
@@ -1303,10 +1348,10 @@ describe('ImpersonationsPage', () => {
       session: createStepUpSession(),
     })
 
-    await screen.findByText('当前未冒充任何账户。')
+    await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText('目标账户'), 'acc-9')
-    await user.click(screen.getByRole('button', { name: '发起冒充' }))
+    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     expect(
       await screen.findByText(zhCN.errors.authn.factor_not_seasoned),
@@ -1314,7 +1359,7 @@ describe('ImpersonationsPage', () => {
     // The refusal stays in the current-impersonation section's region: the
     // section that owns the start form, not the record table's.
     const section = screen
-      .getByRole('heading', { name: '当前冒充' })
+      .getByRole('heading', { name: zhCN.impersonations.current.title })
       .closest('section')
     expect(section).not.toBeNull()
     expect(
