@@ -124,6 +124,27 @@ afterEach(() => {
   delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
 })
 
+/**
+ * Asserts the header refresh is inert while a write is in flight: disabled
+ * without the empty-scope explanation, and a forced activation issues no
+ * roles read.
+ */
+async function expectRefreshInert(
+  listRoles: ReturnType<typeof vi.fn>,
+  readsBefore: number,
+): Promise<void> {
+  const refresh = screen.getByRole('button', { name: '刷新' })
+  await vi.waitFor(() => {
+    expect(refresh).toBeDisabled()
+  })
+  expect(refresh).not.toHaveAttribute('aria-describedby')
+  fireEvent.click(refresh)
+  await act(async () => {
+    await Promise.resolve()
+  })
+  expect(listRoles).toHaveBeenCalledTimes(readsBefore)
+}
+
 /** A promise the test settles by hand, for observing an in-flight write. */
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -193,6 +214,108 @@ describe('PermissionsPage', () => {
       await Promise.resolve()
     })
     expect(listRoles).not.toHaveBeenCalled()
+  })
+
+  it('disables the refresh while the role scope is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const listRoles = vi.fn(() => Promise.resolve([role()]))
+    const operations = withAuthz({
+      listRoles,
+      writeRole: () => pending.promise,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('editor')
+    const reads = listRoles.mock.calls.length
+
+    await user.type(screen.getByLabelText('角色名'), 'auditor')
+    await user.click(screen.getByRole('button', { name: '保存角色' }))
+    await expectRefreshInert(listRoles, reads)
+
+    await act(async () => {
+      pending.resolve()
+    })
+    await vi.waitFor(() => {
+      expect(screen.getByRole('button', { name: '刷新' })).not.toBeDisabled()
+    })
+  })
+
+  it('disables the refresh while the grants scope is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const listRoles = vi.fn(() => Promise.resolve([role()]))
+    const operations = withAuthz({
+      listRoles,
+      grantPermission: () => pending.promise,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('editor')
+    const reads = listRoles.mock.calls.length
+
+    await user.click(
+      screen.getByRole('button', { name: '管理授权（角色 editor）' }),
+    )
+    await user.click(screen.getByLabelText('权限'))
+    await user.click(await screen.findByRole('option', { name: 'crm.deal.write' }))
+    await user.click(screen.getByRole('button', { name: '授予' }))
+    await expectRefreshInert(listRoles, reads)
+
+    await act(async () => {
+      pending.resolve()
+    })
+  })
+
+  it('disables the refresh while the bindings scope is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const listRoles = vi.fn(() => Promise.resolve([role()]))
+    const operations = withAuthz({
+      listRoles,
+      bindRole: () => pending.promise,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('editor')
+    const reads = listRoles.mock.calls.length
+
+    await user.type(screen.getByLabelText('角色'), 'viewer')
+    await chooseAccount(user, '账户', 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: '绑定' }))
+    await expectRefreshInert(listRoles, reads)
+
+    await act(async () => {
+      pending.resolve()
+    })
+  })
+
+  it('disables the refresh while the lookup scope is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const listRoles = vi.fn(() => Promise.resolve([role()]))
+    const operations = withAuthz({
+      listRoles,
+      listAccountBindings: () => Promise.resolve([binding()]),
+      unbindRole: () => pending.promise,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('editor')
+    const reads = listRoles.mock.calls.length
+
+    await chooseAccount(user, '账户标识', 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: '查询' }))
+    await user.click(
+      await screen.findByRole('button', {
+        name: '解绑账户 Operator 的角色 editor',
+      }),
+    )
+    await expectRefreshInert(listRoles, reads)
+
+    await act(async () => {
+      pending.resolve()
+    })
   })
 
   it('opens on the tenant named by the query string', async () => {

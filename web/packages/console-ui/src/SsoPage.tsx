@@ -412,6 +412,7 @@ export function SsoPage() {
             <RefreshButton
               busy={providers.isFetching}
               disabled={tenant === ''}
+              writePending={anyPending}
               describedBy={TENANT_HINT_ID}
               disabledReason={t('sso.needTenant.description')}
               onClick={() => void providers.refetch()}

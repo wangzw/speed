@@ -56,6 +56,36 @@ async function pickProvider(user: ReturnType<typeof userEvent.setup>): Promise<v
   await user.click(await screen.findByRole('option', { name: 'Acme IdP' }))
 }
 
+/** A promise the test settles by hand, for observing an in-flight write. */
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
+/**
+ * Asserts the header refresh is inert while a write is in flight: disabled
+ * without the empty-scope explanation, and a forced activation issues no
+ * provider read.
+ */
+async function expectRefreshInert(
+  listSsoProviders: ReturnType<typeof vi.fn>,
+  readsBefore: number,
+): Promise<void> {
+  const refresh = screen.getByRole('button', { name: '刷新' })
+  await vi.waitFor(() => {
+    expect(refresh).toBeDisabled()
+  })
+  expect(refresh).not.toHaveAttribute('aria-describedby')
+  fireEvent.click(refresh)
+  await act(async () => {
+    await Promise.resolve()
+  })
+  expect(listSsoProviders).toHaveBeenCalledTimes(readsBefore)
+}
+
 describe('SsoPage', () => {
   it('prompts for a tenant before listing', () => {
     const operations = withProviders()
@@ -86,6 +116,84 @@ describe('SsoPage', () => {
       await Promise.resolve()
     })
     expect(listSsoProviders).not.toHaveBeenCalled()
+  })
+
+  it('disables the refresh while the list scope is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const listSsoProviders = vi.fn(() =>
+      Promise.resolve([providerFixture({ name: 'Acme IdP' })]),
+    )
+    const operations = withProviders({
+      listSsoProviders,
+      refreshSsoMetadata: () => pending.promise,
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    const reads = listSsoProviders.mock.calls.length
+
+    await user.click(
+      screen.getByRole('button', { name: '刷新元数据（Acme IdP）' }),
+    )
+    await expectRefreshInert(listSsoProviders, reads)
+
+    await act(async () => {
+      pending.resolve()
+    })
+  })
+
+  it('disables the refresh while the provider form scope is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const listSsoProviders = vi.fn(() =>
+      Promise.resolve([providerFixture({ name: 'Acme IdP' })]),
+    )
+    const operations = withProviders({
+      listSsoProviders,
+      createSsoProvider: () =>
+        pending.promise.then(() => providerFixture({ name: 'New IdP' })),
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    const reads = listSsoProviders.mock.calls.length
+
+    await user.type(screen.getByLabelText('协议'), 'oidc')
+    await user.type(screen.getByLabelText('名称'), 'New IdP')
+    await user.type(screen.getByLabelText('开通方式'), 'manual')
+    await user.click(screen.getByRole('button', { name: '新建提供方' }))
+    await expectRefreshInert(listSsoProviders, reads)
+
+    await act(async () => {
+      pending.resolve()
+    })
+  })
+
+  it('disables the refresh while the domain scope is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const listSsoProviders = vi.fn(() =>
+      Promise.resolve([providerFixture({ name: 'Acme IdP' })]),
+    )
+    const operations = withProviders({
+      listSsoProviders,
+      claimSsoDomain: () =>
+        pending.promise.then(() => ({ verify_token: 'tok-1' })),
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    const reads = listSsoProviders.mock.calls.length
+
+    await pickProvider(user)
+    await user.type(screen.getByLabelText('域名'), 'acme.com')
+    await user.click(screen.getByRole('button', { name: '认领' }))
+    await expectRefreshInert(listSsoProviders, reads)
+
+    await act(async () => {
+      pending.resolve()
+    })
   })
 
   it('opens on the tenant named by the query string', async () => {

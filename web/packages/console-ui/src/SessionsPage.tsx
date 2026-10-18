@@ -224,6 +224,7 @@ export function SessionsPage() {
             <RefreshButton
               busy={sessions.isFetching}
               disabled={account === ''}
+              writePending={revokeSession.isPending}
               describedBy={ACCOUNT_HINT_ID}
               disabledReason={t('sessions.needAccount.description')}
               onClick={() => void sessions.refetch()}

@@ -279,13 +279,15 @@ request body.
   tenant): there it sits in the selector's own row, immediately to the
   selector's right. The sections and `AsyncSection` placeholders continue
   from that `h1` (`headingLevel="h2"`), so the heading order never skips.
-- **The refresh control is the same everywhere.** It is disabled only
-  while the scope it re-reads is empty; a disabled one points
-  `aria-describedby` at the page's existing "choose a scope first" text
-  (and shows that text as its tooltip), and an enabled one carries
-  neither. While its read is in flight it stays enabled and reports
-  `aria-busy` with a spinner, so an operator who pressed Enter keeps
-  keyboard focus on it.
+- **The refresh control is the same everywhere.** It is disabled while the
+  scope it re-reads is empty and while a write in the page's scopes is in
+  flight. The empty-scope state points `aria-describedby` at the page's
+  existing "choose a scope first" text (and shows that text as its
+  tooltip); the write-in-flight state carries neither, because the scope is
+  chosen and a re-read would race the write. While its own read is in
+  flight it stays enabled and focusable and reports `aria-busy` with a
+  spinner, and a second activation issues no second request -- so an
+  operator who pressed Enter keeps keyboard focus on it through the read.
 
 ## Testing
 

@@ -136,6 +136,36 @@ async function pickTenant(user: ReturnType<typeof userEvent.setup>): Promise<voi
   await user.click(await screen.findByRole('option', { name: 'Acme' }))
 }
 
+/** A promise the test settles by hand, for observing an in-flight write. */
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
+/**
+ * Asserts the header refresh is inert while a write is in flight: disabled
+ * without the empty-scope explanation, and a forced activation issues no
+ * read (the status read and the record read are counted together).
+ */
+async function expectRefreshInert(
+  countReads: () => readonly [number, number],
+  readsBefore: readonly [number, number],
+): Promise<void> {
+  const refresh = screen.getByRole('button', { name: '刷新' })
+  await vi.waitFor(() => {
+    expect(refresh).toBeDisabled()
+  })
+  expect(refresh).not.toHaveAttribute('aria-describedby')
+  fireEvent.click(refresh)
+  await act(async () => {
+    await Promise.resolve()
+  })
+  expect(countReads()).toEqual(readsBefore)
+}
+
 /**
  * The display name the account read answers for the identifiers the page
  * records, so a test can tell a resolved identity from the raw id.
@@ -330,6 +360,83 @@ describe('ImpersonationsPage', () => {
     // A termination can change what the operator's own status read names,
     // so it is re-read alongside the record list the bundle invalidates.
     await vi.waitFor(() => expect(statusReads).toBeGreaterThan(1))
+  })
+
+  it('disables the refresh while a record termination is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    let statusReads = 0
+    const countingIdle: RequestFn = <T,>(
+      path: string,
+      options?: RequestOptions,
+    ) => {
+      if (path === '/auth/impersonation' && (options?.method ?? 'GET') === 'GET') {
+        statusReads += 1
+        return Promise.reject<T>({ status: 404, code: 'client.http.404' })
+      }
+      return Promise.resolve(undefined as T)
+    }
+    bindRequestFn(countingIdle)
+    const listImpersonations = vi.fn(() => Promise.resolve([record()]))
+    const operations = withPage({
+      listImpersonations,
+      revokeImpersonation: () => pending.promise,
+    })
+    renderWithProviders(<ImpersonationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Staff One')
+    const readCounts = () =>
+      [statusReads, listImpersonations.mock.calls.length] as const
+    const readsBefore = readCounts()
+
+    await user.click(screen.getByRole('button', { name: '终止' }))
+    await expectRefreshInert(readCounts, readsBefore)
+
+    await act(async () => {
+      pending.resolve()
+    })
+  })
+
+  it('disables the refresh while an end attempt is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    let statusReads = 0
+    const ending: RequestFn = <T,>(
+      path: string,
+      options?: RequestOptions,
+    ) => {
+      const method = options?.method ?? 'GET'
+      if (path === '/auth/impersonation') {
+        if (method === 'GET') {
+          statusReads += 1
+          return Promise.resolve({
+            grant: {
+              id: 'imp-1',
+              target: 'acc-1',
+              tenant: 'acme',
+              starts_at: '2026-10-15T12:00:00Z',
+              ends_at: '2026-10-15T13:00:00Z',
+            },
+          } as T)
+        }
+        if (method === 'DELETE') {
+          return pending.promise.then(() => undefined as T)
+        }
+      }
+      return Promise.resolve(undefined as T)
+    }
+    bindRequestFn(ending)
+    renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
+    const end = await screen.findByRole('button', { name: '结束冒充' })
+    const readCounts = () => [statusReads, 0] as const
+    const readsBefore = readCounts()
+
+    await user.click(end)
+    await expectRefreshInert(readCounts, readsBefore)
+
+    await act(async () => {
+      pending.resolve()
+    })
   })
 
   it('renders the retryable error placeholder when the read fails', async () => {

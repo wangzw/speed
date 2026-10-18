@@ -127,6 +127,30 @@ function withTenant(
   )
 }
 
+/**
+ * Asserts the header refresh is inert while a write is in flight: disabled
+ * without the empty-scope explanation, and a forced activation issues no
+ * invitation or member read.
+ */
+async function expectRefreshInert(
+  listInvitations: ReturnType<typeof vi.fn>,
+  listMembers: ReturnType<typeof vi.fn>,
+  invitationReads: number,
+  memberReads: number,
+): Promise<void> {
+  const refresh = screen.getByRole('button', { name: '刷新' })
+  await vi.waitFor(() => {
+    expect(refresh).toBeDisabled()
+  })
+  expect(refresh).not.toHaveAttribute('aria-describedby')
+  fireEvent.click(refresh)
+  await act(async () => {
+    await Promise.resolve()
+  })
+  expect(listInvitations).toHaveBeenCalledTimes(invitationReads)
+  expect(listMembers).toHaveBeenCalledTimes(memberReads)
+}
+
 describe('InvitationsPage', () => {
   afterEach(() => {
     Reflect.deleteProperty(navigator, 'clipboard')
@@ -166,6 +190,76 @@ describe('InvitationsPage', () => {
     })
     expect(listInvitations).not.toHaveBeenCalled()
     expect(listMembers).not.toHaveBeenCalled()
+  })
+
+  it('disables the refresh while the invitation scope is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const listInvitations = vi.fn(() =>
+      Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
+    )
+    const listMembers = vi.fn(() => Promise.resolve([member()]))
+    const operations = withTenant({
+      listInvitations,
+      listMembers,
+      issueInvitation: () =>
+        pending.promise.then(() => issuedInvitationFixture()),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('ada@example.com')
+    const invitationReads = listInvitations.mock.calls.length
+    const memberReads = listMembers.mock.calls.length
+
+    await user.type(screen.getByLabelText('邮箱地址'), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: '发出邀请' }))
+    await expectRefreshInert(
+      listInvitations,
+      listMembers,
+      invitationReads,
+      memberReads,
+    )
+
+    await act(async () => {
+      pending.resolve()
+    })
+  })
+
+  it('disables the refresh while the member scope is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const listInvitations = vi.fn(() =>
+      Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
+    )
+    const listMembers = vi.fn(() =>
+      Promise.resolve([member({ sso_exempt: false })]),
+    )
+    const operations = withTenant({
+      listInvitations,
+      listMembers,
+      getAccount: () =>
+        Promise.resolve(accountFixture({ display_name: 'Member One' })),
+      setMemberSsoExempt: () => pending.promise,
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    // The same display name resolves for the invitation's inviter and the
+    // member row; both reads have settled when it appears.
+    await screen.findAllByText('Member One')
+    const invitationReads = listInvitations.mock.calls.length
+    const memberReads = listMembers.mock.calls.length
+
+    await user.click(screen.getByRole('button', { name: '豁免 SSO' }))
+    await expectRefreshInert(
+      listInvitations,
+      listMembers,
+      invitationReads,
+      memberReads,
+    )
+
+    await act(async () => {
+      pending.resolve()
+    })
   })
 
   it('opens on the tenant named by the query string', async () => {

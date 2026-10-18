@@ -371,6 +371,9 @@ export function ImpersonationsPage() {
         actions={
           <RefreshButton
             busy={status.isFetching || impersonations.isFetching}
+            writePending={
+              currentFeedback.pending || recordsFeedback.pending
+            }
             onClick={() => {
               void status.refetch()
               // The record read is refused while impersonating and waits for

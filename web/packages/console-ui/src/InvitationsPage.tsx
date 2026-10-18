@@ -421,6 +421,9 @@ export function InvitationsPage() {
             <RefreshButton
               busy={invitations.isFetching || members.isFetching}
               disabled={tenant === ''}
+              writePending={
+                invitationFeedback.pending || membersFeedback.pending
+              }
               describedBy={TENANT_HINT_ID}
               disabledReason={t('invitations.needTenant.description')}
               onClick={() => {

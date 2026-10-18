@@ -7,21 +7,30 @@
  * selector renders it beside that selector, every other page keeps it in
  * the page header.
  *
- * It is disabled only while it cannot do its job (a scope the page is
- * addressed by is still empty). While the read is in flight it stays
- * enabled and focusable and reports `aria-busy`, with the spinner in
- * place of an icon: MUI's `loading` would make the button native
- * disabled, and a disabled button drops keyboard focus to the document
- * body -- an operator who pressed Enter would lose their place until the
- * read settles, and the read would not put it back.
+ * It is disabled while it cannot do its job: the scope the page is
+ * addressed by is still empty, or a write in the page's scopes is in
+ * flight. The two disabling reasons are kept apart, because they explain
+ * different things. An empty scope explains itself: the tooltip repeats
+ * the page's existing "choose a tenant/account first" text (the caller
+ * passes that same translation), and `aria-describedby` points at the one
+ * copy the page already renders. A write in flight does not: the operator
+ * already chose the scope, and a control claiming otherwise would be
+ * wrong. Only `disabled` applies the description and the tooltip;
+ * `writePending` renders the control natively disabled without either.
  *
- * A disabled refresh explains itself: the tooltip repeats the page's
- * existing "choose a tenant/account first" text (the caller passes that
- * same translation), and `aria-describedby` points at the one copy the
- * page already renders. MUI's Tooltip listens on the child element, and
- * a native disabled button receives no pointer events, so the disabled
- * face is wrapped in an inline span. An enabled control carries neither
- * the tooltip nor the description.
+ * While the read itself is in flight the control stays enabled and
+ * focusable and reports `aria-busy`, with the spinner in place of an icon:
+ * MUI's `loading` would make the button native disabled, and a disabled
+ * button drops keyboard focus to the document body -- an operator who
+ * pressed Enter would lose their place until the read settles, and the
+ * read would not put it back. The click handler is guarded, so a second
+ * activation while the read is in flight issues no second request and
+ * queues none.
+ *
+ * MUI's Tooltip listens on the child element, and a native disabled
+ * button receives no pointer events, so the empty-scope face is wrapped in
+ * an inline span. An enabled control carries neither the tooltip nor the
+ * description.
  */
 
 import { useId } from 'react'
@@ -35,10 +44,16 @@ export interface RefreshButtonProps {
   /** Whether the read it re-reads is in flight. */
   readonly busy: boolean
   /**
-   * Whether the control cannot act: the scope the page is addressed by is
-   * still empty. This is the only state that disables it.
+   * Whether the scope the page is addressed by is still empty. This state
+   * carries the "choose a scope first" description and tooltip.
    */
   readonly disabled?: boolean
+  /**
+   * Whether a write in the page's scopes is in flight. It renders the
+   * control natively disabled, without the empty-scope description: the
+   * scope is chosen, and re-reading mid-write would race the write.
+   */
+  readonly writePending?: boolean
   /** Starts the read. Not called while busy. */
   readonly onClick: () => void
   /** The id of the page's "choose a scope first" text; applied when disabled. */
@@ -51,6 +66,7 @@ export interface RefreshButtonProps {
 export function RefreshButton({
   busy,
   disabled = false,
+  writePending = false,
   onClick,
   describedBy,
   disabledReason,
@@ -66,7 +82,7 @@ export function RefreshButton({
       variant="outlined"
       size="small"
       id={busy ? loadingId : undefined}
-      disabled={disabled}
+      disabled={disabled || writePending}
       aria-busy={busy || undefined}
       aria-describedby={disabled ? describedBy : undefined}
       startIcon={

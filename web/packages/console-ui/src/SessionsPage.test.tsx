@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, within } from '@testing-library/react'
+import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SessionsPage } from './SessionsPage.js'
 import type { ConsoleAccount, ConsoleAccountSession } from './operations.js'
@@ -82,6 +82,15 @@ async function loadAccount(
   await chooseAccount(user, '账户', 'Ada', 'Ada (acc-9)')
 }
 
+/** A promise the test settles by hand, for observing an in-flight write. */
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
 describe('SessionsPage', () => {
   it('prompts for an account before listing', () => {
     const operations = withSessions()
@@ -141,6 +150,95 @@ describe('SessionsPage', () => {
     const enabled = screen.getByRole('button', { name: '刷新' })
     expect(enabled).not.toHaveAttribute('aria-describedby')
     expect(enabled.parentElement?.tagName).not.toBe('SPAN')
+  })
+
+  it('keeps a refresh in flight focusable and drops a second activation', async () => {
+    const user = userEvent.setup()
+    let reads = 0
+    let finishRefresh!: (sessions: readonly ConsoleAccountSession[]) => void
+    const operations = withSessions({
+      listAccountSessions: () => {
+        reads += 1
+        if (reads === 1) {
+          return Promise.resolve([session()])
+        }
+        return new Promise<readonly ConsoleAccountSession[]>((resolve) => {
+          finishRefresh = resolve
+        })
+      },
+    })
+    renderWithProviders(<SessionsPage />, { operations })
+    await loadAccount(user)
+    await screen.findByText('sess-1')
+
+    await user.click(screen.getByRole('button', { name: '刷新' }))
+    const refresh = screen.getByRole('button', { name: '刷新' })
+    await vi.waitFor(() => {
+      expect(refresh).toHaveAttribute('aria-busy', 'true')
+    })
+    // A busy read keeps the control enabled and focused: the read itself
+    // must not take the operator's place away.
+    expect(refresh).not.toBeDisabled()
+    expect(refresh).toBe(document.activeElement)
+    // A forced activation while the read is in flight issues no second
+    // request and queues none.
+    fireEvent.click(refresh)
+    expect(reads).toBe(2)
+
+    await act(async () => {
+      finishRefresh([session()])
+    })
+    await vi.waitFor(() => {
+      expect(refresh).not.toHaveAttribute('aria-busy')
+    })
+    expect(reads).toBe(2)
+    expect(refresh).toBe(document.activeElement)
+  })
+
+  it('disables the refresh while a revoke is in flight and issues no read from it', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const reads: string[] = []
+    const operations = withSessions({
+      listAccountSessions: (query) => {
+        reads.push(query.id ?? '')
+        return Promise.resolve([session()])
+      },
+      revokeSession: () => pending.promise,
+    })
+    renderWithProviders(<SessionsPage />, { operations })
+    await loadAccount(user)
+    await screen.findByText('sess-1')
+    expect(reads).toEqual(['acc-9'])
+
+    await user.click(screen.getByRole('button', { name: '撤销会话 sess-1' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '确认' }))
+    // While the dialog's exit transition runs the page behind it is
+    // hidden from the accessibility tree; the revoke is already in flight.
+    await vi.waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+
+    const refresh = screen.getByRole('button', { name: '刷新' })
+    await vi.waitFor(() => {
+      expect(refresh).toBeDisabled()
+    })
+    // The scope is chosen, so the disabled control does not claim it is
+    // empty; it is disabled because the revoke it would race is in flight.
+    expect(refresh).not.toHaveAttribute('aria-describedby')
+    fireEvent.click(refresh)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(reads).toEqual(['acc-9'])
+
+    await act(async () => {
+      pending.resolve()
+    })
+    await vi.waitFor(() => {
+      expect(refresh).not.toBeDisabled()
+    })
   })
 
   it('reads an account\'s sessions as soon as it is chosen', async () => {

@@ -731,6 +731,7 @@ export function PermissionsPage() {
             <RefreshButton
               busy={roles.isFetching}
               disabled={tenant === ''}
+              writePending={anyPending}
               describedBy={TENANT_HINT_ID}
               disabledReason={t('permissions.needTenant.description')}
               onClick={() => void roles.refetch()}
