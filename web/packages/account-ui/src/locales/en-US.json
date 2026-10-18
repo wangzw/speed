@@ -214,9 +214,12 @@
   },
   "phone": {
     "title": "Phone number",
+    "country": {
+      "label": "Country/region"
+    },
     "phone": {
       "label": "Phone number",
-      "helper": "Include the country code, for example +14155550123."
+      "helper": "Choose your country/region, then enter your local number."
     },
     "send": "Send code",
     "sent": "A verification code was sent to {{phone}}.",

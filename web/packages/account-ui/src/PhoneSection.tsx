@@ -13,9 +13,14 @@
  * step carries the code alone -- the client never chooses which number is
  * verified.
  *
- * The section is the two steps in sequence: a number field and a send
- * action, then -- once a code has been sent -- a code field and a verify
- * action, with a way back to a different number. Each step's request can
+ * The section is the two steps in sequence: the shared two-part phone
+ * control (country/region selector plus local number, assembled into the
+ * E.164 string the request takes) and a send action, then -- once a code
+ * has been sent -- a code field and a verify action, with a way back to a
+ * different number. The selector starts on the browser locale's own
+ * region and validates the number per country before anything is sent, so
+ * a number too short for its country is refused locally with the calling
+ * code named. Each step's request can
  * answer 401 authn.insufficient_user_authentication (the route asks for a
  * fresh authentication); the section opens the step-up dialog with that
  * step's inputs remembered and a won challenge re-runs exactly that step.
@@ -44,7 +49,13 @@ import {
   useAuthnLoginVerifyPhone,
 } from '@speed/api-sdk'
 import type { AuthSession } from '@speed/auth-core'
-import { errorCodeOf, visuallyHiddenSx } from '@speed/ui-kit'
+import {
+  PhoneNumberField,
+  defaultPhoneCountry,
+  errorCodeOf,
+  toE164,
+  visuallyHiddenSx,
+} from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 import { useStepUpGate } from './internal/step-up-gate.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
@@ -68,7 +79,11 @@ export function PhoneSection({ session }: PhoneSectionProps) {
   const startPhone = useAuthnLoginStartPhone()
   const verifyPhone = useAuthnLoginVerifyPhone()
 
-  const [phone, setPhone] = useState('')
+  const [country, setCountry] = useState(() => defaultPhoneCountry())
+  const [nationalNumber, setNationalNumber] = useState('')
+  // Set by a submit that could not assemble a number, so the control
+  // shows its per-country message only when the viewer asked to send.
+  const [phoneAttempted, setPhoneAttempted] = useState(false)
   const [code, setCode] = useState('')
   // The number a code was sent to, or null while the number is being
   // entered -- the phase's own state (entering a number vs. entering a
@@ -110,7 +125,8 @@ export function PhoneSection({ session }: PhoneSectionProps) {
     try {
       await verifyPhone.mutateAsync({ data: { code: nextCode } })
       setSentTo(null)
-      setPhone('')
+      setNationalNumber('')
+      setPhoneAttempted(false)
       setCode('')
       setAdded(true)
       // The verified number joins the profile's identifiers, and the
@@ -147,6 +163,12 @@ export function PhoneSection({ session }: PhoneSectionProps) {
         onSubmit={(event) => {
           event.preventDefault()
           if (sentTo === null) {
+            const phone = toE164(country, nationalNumber)
+            if (phone === null) {
+              setPhoneAttempted(true)
+              return
+            }
+            setPhoneAttempted(false)
             void sendCode(phone)
           } else {
             void verifyCode(code)
@@ -172,20 +194,22 @@ export function PhoneSection({ session }: PhoneSectionProps) {
 
         {sentTo === null ? (
           <>
-            <TextField
-              fullWidth
-              type="tel"
-              autoComplete="tel"
-              label={t('phone.phone.label')}
-              helperText={t('phone.phone.helper')}
-              value={phone}
+            <PhoneNumberField
+              country={country}
+              nationalNumber={nationalNumber}
+              onCountryChange={setCountry}
+              onNationalNumberChange={setNationalNumber}
+              countryLabel={t('phone.country.label')}
+              numberLabel={t('phone.phone.label')}
+              numberHelperText={t('phone.phone.helper')}
+              showValidationError={phoneAttempted}
               disabled={busy}
-              onChange={(event) => setPhone(event.target.value)}
+              autoComplete="tel"
             />
             <Button
               type="submit"
               variant="contained"
-              disabled={busy || phone.trim() === ''}
+              disabled={busy || nationalNumber === ''}
             >
               {t('phone.send')}
             </Button>

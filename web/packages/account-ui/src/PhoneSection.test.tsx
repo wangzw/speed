@@ -2,19 +2,23 @@
  * PhoneSection behaviour: the two-step phone surface over POST /auth/phone
  * (send a code) and POST /auth/phone/verify (submit it).
  *
- * What this suite pins: a number send POSTs the phone under `phone` and
- * advances to the code step, whose sent notice names the number; an empty
- * number disables the send action; the verify POSTs the code alone (the
- * number is the server's own record); a verified number fills the success
- * live region; a refused send and a wrong code each render their code
- * text; the way back to a different number returns to the number step;
- * and each step refused with 401 authn.insufficient_user_authentication
- * opens the step-up dialog, a won step-up re-running that step once.
+ * What this suite pins: the shared country/local control assembles the
+ * number into E.164 and the send POSTs it under `phone`, advancing to the
+ * code step whose sent notice names the assembled number; an empty number
+ * disables the send action; a number too short for its country is refused
+ * locally with the calling code named and sends nothing; the verify POSTs
+ * the code alone (the number is the server's own record); a verified
+ * number fills the success live region; a refused send and a wrong code
+ * each render their code text; the way back to a different number returns
+ * to the number step; and each step refused with 401
+ * authn.insufficient_user_authentication opens the step-up dialog, a won
+ * step-up re-running that step once.
  */
 
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { uiKitResources } from '@speed/ui-kit'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
   errorResponse,
@@ -27,6 +31,12 @@ import { renderWithProviders } from '../test-utils/render.js'
 import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { PhoneSection } from './PhoneSection.js'
+
+const US_NATIONAL = '4155552671'
+const US_E164 = '+14155552671'
+const UI_KIT_ZH = uiKitResources['zh-CN'] as {
+  readonly phoneNumber: { readonly incomplete: string }
+}
 
 const PHONE_PATH = '/auth/phone'
 const VERIFY_PATH = '/auth/phone/verify'
@@ -62,19 +72,19 @@ describe('PhoneSection', () => {
 
     await user.type(
       screen.getByLabelText(zhCN.phone.phone.label),
-      '+14155550123',
+      US_NATIONAL,
     )
     await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
 
     // The sent notice names the number and the code field appears.
     expect(
       await screen.findByText(
-        zhCN.phone.sent.replace('{{phone}}', '+14155550123'),
+        zhCN.phone.sent.replace('{{phone}}', US_E164),
       ),
     ).toBeTruthy()
     expect(screen.getByLabelText(zhCN.phone.code.label)).toBeTruthy()
     expect(rig.calls.find((call) => call.path === PHONE_PATH)?.body).toEqual({
-      phone: '+14155550123',
+      phone: US_E164,
     })
 
     await expectNoAxeViolations()
@@ -102,6 +112,26 @@ describe('PhoneSection', () => {
     expect(send).toBeDisabled()
   })
 
+  it('refuses a too-short number locally, naming the calling code, and sends nothing', async () => {
+    const respond: RealResponder = () => {
+      throw new Error('no request expected')
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    const phone = await screen.findByLabelText(zhCN.phone.phone.label)
+    await user.type(phone, '415555')
+    await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+
+    expect(
+      await screen.findByText(
+        UI_KIT_ZH.phoneNumber.incomplete.replace('{{code}}', '1'),
+      ),
+    ).toBeTruthy()
+    expect(phone).toHaveAttribute('aria-invalid', 'true')
+    expect(rig.calls.filter((call) => call.path === PHONE_PATH)).toHaveLength(0)
+  })
+
   it('returns to the number step on cancel', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'POST' && call.path === PHONE_PATH) {
@@ -114,7 +144,7 @@ describe('PhoneSection', () => {
 
     await user.type(
       await screen.findByLabelText(zhCN.phone.phone.label),
-      '+14155550123',
+      US_NATIONAL,
     )
     await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
     await screen.findByLabelText(zhCN.phone.code.label)
@@ -136,7 +166,7 @@ describe('PhoneSection', () => {
 
     await user.type(
       await screen.findByLabelText(zhCN.phone.phone.label),
-      '+14155550123',
+      US_NATIONAL,
     )
     await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
 
@@ -201,7 +231,7 @@ describe('PhoneSection', () => {
 
     await user.type(
       await screen.findByLabelText(zhCN.phone.phone.label),
-      '+14155550123',
+      US_NATIONAL,
     )
     await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
 
@@ -214,7 +244,7 @@ describe('PhoneSection', () => {
 
     expect(
       await screen.findByText(
-        zhCN.phone.sent.replace('{{phone}}', '+14155550123'),
+        zhCN.phone.sent.replace('{{phone}}', US_E164),
       ),
     ).toBeTruthy()
     expect(

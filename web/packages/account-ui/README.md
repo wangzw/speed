@@ -147,7 +147,11 @@ others) and reports the change.
 
 Adds or replaces the account's phone number in two steps:
 `POST /auth/phone` sends a code to the number and `POST /auth/phone/verify`
-submits it. The sent notice names the number; the verify carries the code
+submits it. The number is entered through the shared `PhoneNumberField`
+(country/region selector plus local number, `@speed/ui-kit`), assembled
+into E.164 for the send and validated per country before any request --
+the same control and rules the SMS sign-in form uses, so the two cannot
+drift. The sent notice names the assembled number; the verify carries the code
 alone, because the number is the server's own record keyed to the session.
 A verified number refetches the profile (and the session list, since the
 route revokes the account's other sessions) and reports the addition.
