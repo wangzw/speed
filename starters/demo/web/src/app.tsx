@@ -325,20 +325,22 @@ function TenantFrame({
     setTenantIdState(id)
   }, [])
   // The identity-change gap. Ending an impersonation re-decides the current
-  // tenant from the roster, but the change first sets it unknown: it evicts
-  // the status read that held the ended grant's tenant (and attaches the
-  // reset permission set, a commit), and the roster's answer is still in
-  // flight. That unknown is a transition, not the switcher's
-  // no-current-tenant state (a host that settles no tenant at all), so the
-  // switcher stays out of the bar until the roster lands -- rendering it
-  // there would put the no-current-tenant text against a shell that is only
-  // still reading. The edge is detected during render, not in an effect:
-  // React re-renders this component before committing, so the very first
-  // commit after the snapshot flips already withholds the switcher. The
-  // tenant effect below closes the gap when the roster outcome lands. A
-  // mount that does not follow an impersonation is untouched, so a viewer
-  // who settles no tenant for another reason (no roster-read access) keeps
-  // the switcher and its documented no-current-tenant state.
+  // tenant from the roster, but until that roster read lands the current
+  // tenant keeps the ended grant's value (when the status read answered a
+  // bare 404 it is already unknown, because the grant is gone); only the
+  // roster's outcome re-decides it. In that gap the roster list has no row
+  // matching the current tenant, so the switcher would render its
+  // no-current-tenant text -- a state a host that settles no tenant at all
+  // also renders, for a different reason. The switcher therefore stays out
+  // of the bar until the roster lands, rather than putting that text
+  // against a shell that is only still reading. The edge is detected during
+  // render, not in an effect: React re-renders this component before
+  // committing, so the very first commit after the snapshot flips already
+  // withholds the switcher. The tenant effect below closes the gap when the
+  // roster outcome lands. A mount that does not follow an impersonation is
+  // untouched, so a viewer who settles no tenant for another reason (no
+  // roster-read access) keeps the switcher and its documented
+  // no-current-tenant state.
   const [identitySettling, setIdentitySettling] = useState(false)
   const [previousImpersonating, setPreviousImpersonating] =
     useState(impersonating)
