@@ -356,7 +356,7 @@
       "column": {
         "role": "角色",
         "builtin": "内建",
-        "description": "描述键",
+        "description": "描述（文案键）",
         "actions": "操作"
       },
       "builtinYes": "是",

@@ -356,7 +356,7 @@
       "column": {
         "role": "Role",
         "builtin": "Built-in",
-        "description": "Description key",
+        "description": "Description (message key)",
         "actions": "Actions"
       },
       "builtinYes": "Yes",
