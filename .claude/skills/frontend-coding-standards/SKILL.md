@@ -233,7 +233,7 @@ The form family is react-hook-form — the host owns the `useForm` instance, `Fo
 
 ## 11. Write Feedback and Refresh State
 
-The design is `docs/design/modules/web/design-web-ui-kit.md` ("写入的反馈", "异步读的状态分支"); this section holds the coding rules it implies.
+The design is `docs/design/modules/web/design-web-ui-kit.md` ("写入的反馈", "异步读的状态分支") and, for a page's refresh action, `docs/design/modules/web/design-web-console-ui.md` ("页的刷新动作"); this section holds the coding rules they imply.
 
 **Required:**
 - Report the result of every operator-initiated write through a feedback scope: one `useWriteFeedback` instance and one `WriteFeedbackRegion` per control group — the controls that share one result location, usually a titled section with its forms and its table row actions — with the region directly under them. Success is rendered only by the region; never render `InlineSuccess` beside it.
@@ -245,6 +245,7 @@ The design is `docs/design/modules/web/design-web-ui-kit.md` ("写入的反馈",
 - Bind the package's own error-code resolver once, in the package's `internal/` wrapper around `WriteFeedbackRegion`; call sites pass the slot and nothing else.
 - Close a `ConfirmDialog` no later than the moment its write settles and report the failure in the region after it closes. A modal that stays open (the step-up dialog, a side panel) renders its failure inside itself.
 - Give `AsyncSection` a `staleState` exactly while a refetch has failed with data on screen and no read is in flight, and `undefined` otherwise. A refused read (403) replaces the content with the no-permission placeholder instead.
+- Disable a page's refresh action while the page's addressing value (the tenant or account that keys its reads) is empty and the page has nothing to re-read, and point it at the page's existing selection prompt with `aria-describedby`. The action calls `refetch`, which ignores a read's `enabled` flag, so an enabled control issues a request with a missing argument; for the same reason re-read only the reads that are currently enabled. While a read is in flight keep the action focusable with `aria-busy` and ignore further activation instead of setting native `disabled`: a focused control that becomes disabled drops focus to the document.
 - Give a queue of independent per-item transfers (the `FileUploader` rows) one result per row, not one slot.
 - Leave the other scopes of the page alone when a write starts or settles: a scope's slot is replaced only by that scope's own attempts, so one scope's success can stand beside another scope's failure.
 
