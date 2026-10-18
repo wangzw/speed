@@ -14,7 +14,10 @@
  * rendered as a label, and the timestamps render in UTC through Intl. A
  * row the server marks current is the caller's own session; it carries a
  * marker and its confirmation says the revoke signs the caller out too.
- * The page opens with ui-kit's PageHeader.
+ * The revoke reports through the list's one feedback scope, whose region
+ * renders directly under the table; choosing another account and the page's
+ * refresh action both reset it, so a result never describes a context the
+ * page has left. The page opens with ui-kit's PageHeader.
  */
 
 import { useState } from 'react'
@@ -26,12 +29,11 @@ import Typography from '@mui/material/Typography'
 import {
   DataTable,
   EmptyState,
-  InlineSuccess,
   ListSkeleton,
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
-  errorCodeOf,
   primaryColumnMaxWidthSx,
+  useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { AccountSelector } from './internal/account-selector.js'
@@ -39,7 +41,6 @@ import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { formatUtc } from './internal/datetime.js'
 import { identifierPrefix } from './internal/identifier-prefix.js'
-import { InlineError } from './internal/inline-error.js'
 import { RefreshButton } from './internal/refresh-button.js'
 import { SelectorRow } from './internal/selector-row.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
@@ -47,6 +48,10 @@ import {
   pageRefreshRead,
   usePageRefresh,
 } from './internal/use-page-refresh.js'
+import {
+  useFailureScroll,
+  WriteFeedbackRegion,
+} from './internal/write-feedback.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleAccount, ConsoleAccountSession } from './operations.js'
 
@@ -74,23 +79,32 @@ export function SessionsPage() {
   )
   const account = selectedAccount?.id ?? ''
   const confirm = usePendingConfirm()
-  // The confirmation a landed revoke fills into the page's success notice.
-  const [success, setSuccess] = useState<string | null>(null)
+  // The list's one write scope: the revoke row action reports here, and the
+  // region renders directly under the table. The confirmation names the
+  // session lifecycle, and a refusal resolves through the console
+  // whitelist like every other scope on the page.
+  const feedback = useWriteFeedback()
+  const regionRef = useFailureScroll(feedback.outcome)
 
   const sessions = operations.useAccountSessions({
     id: account === '' ? undefined : account,
   })
   const revokeSession = operations.useRevokeSession()
 
-  // The refresh action re-reads the one body read and clears the page's
-  // write result first: the revoke notice and failure belong to the list as
-  // it stood before the re-read.
+  // The account is an argument of the revoke: choosing another one clears
+  // the slot, because a result from the previous account would read as
+  // this list's.
+  const changeAccount = (next: ConsoleAccount | null) => {
+    setSelectedAccount(next)
+    feedback.reset()
+  }
+
+  // The refresh action re-reads the one body read and resets the list's
+  // scope first: the revoke notice and failure belong to the list as it
+  // stood before the re-read.
   const pageRefresh = usePageRefresh(
     [pageRefreshRead('sessions', sessions)],
-    () => {
-      setSuccess(null)
-      revokeSession.reset()
-    },
+    feedback.reset,
   )
 
   const columns: DataTableColumn<ConsoleAccountSession>[] = [
@@ -191,7 +205,8 @@ export function SessionsPage() {
           variant="outlined"
           color="error"
           aria-label={t('sessions.revokeAriaWithId', { id: session.id })}
-          disabled={session.revoked || revokeSession.isPending}
+          disabled={session.revoked || feedback.pending}
+          loading={feedback.pending}
           onClick={() =>
             confirm.ask({
               title: t('sessions.revokeTitle'),
@@ -203,11 +218,13 @@ export function SessionsPage() {
               ),
               confirmLabel: t('common.confirm'),
               run: () => {
-                setSuccess(null)
-                revokeSession.mutate(
-                  { accountId: account, sessionId: session.id },
-                  { onSuccess: () => setSuccess(t('sessions.revokedNotice')) },
-                )
+                void feedback.run(async () => {
+                  await revokeSession.mutateAsync({
+                    accountId: account,
+                    sessionId: session.id,
+                  })
+                  return t('sessions.revokedNotice')
+                })
               },
             })
           }
@@ -239,7 +256,7 @@ export function SessionsPage() {
             <RefreshButton
               busy={pageRefresh.busy}
               disabled={account === ''}
-              writePending={revokeSession.isPending}
+              writePending={feedback.pending}
               describedBy={ACCOUNT_HINT_ID}
               disabledReason={t('sessions.needAccount.description')}
               onClick={pageRefresh.refresh}
@@ -249,7 +266,7 @@ export function SessionsPage() {
           <AccountSelector
             label={t('sessions.accountLabel')}
             value={selectedAccount}
-            onChange={setSelectedAccount}
+            onChange={changeAccount}
             fullWidth
           />
         </SelectorRow>
@@ -266,49 +283,49 @@ export function SessionsPage() {
           }
         />
       ) : (
-        <ConsoleAsyncSection
-          pending={pending}
-          payload={rows}
-          error={sessions.error}
-          refreshing={sessions.isFetching}
-          empty={rows !== undefined && rows.length === 0}
-          headingLevel="h2"
-          loading={
-            <ListSkeleton
-              label={t('sessions.loading')}
-              rows={[
-                <Skeleton key="a" variant="text" width="58%" />,
-                <Skeleton key="b" variant="text" width="46%" />,
-              ]}
-            />
-          }
-          errorState={{
-            title: t('sessions.error.title'),
-            description: t('sessions.error.description'),
-            retryLabel: t('sessions.retry'),
-            onRetry: () => void sessions.refetch(),
-          }}
-          emptyState={{
-            title: t('sessions.empty.title'),
-            description: t('sessions.empty.description'),
-          }}
-        >
-          {(settled) => (
-            <DataTable
-              rows={settled}
-              columns={columns}
-              rowKey={(session) => session.id}
-            />
-          )}
-        </ConsoleAsyncSection>
+        <>
+          <ConsoleAsyncSection
+            pending={pending}
+            payload={rows}
+            error={sessions.error}
+            refreshing={sessions.isFetching}
+            empty={rows !== undefined && rows.length === 0}
+            headingLevel="h2"
+            loading={
+              <ListSkeleton
+                label={t('sessions.loading')}
+                rows={[
+                  <Skeleton key="a" variant="text" width="58%" />,
+                  <Skeleton key="b" variant="text" width="46%" />,
+                ]}
+              />
+            }
+            errorState={{
+              title: t('sessions.error.title'),
+              description: t('sessions.error.description'),
+              retryLabel: t('sessions.retry'),
+              onRetry: () => void sessions.refetch(),
+            }}
+            emptyState={{
+              title: t('sessions.empty.title'),
+              description: t('sessions.empty.description'),
+            }}
+          >
+            {(settled) => (
+              <DataTable
+                rows={settled}
+                columns={columns}
+                rowKey={(session) => session.id}
+              />
+            )}
+          </ConsoleAsyncSection>
+          {/* The revoke scope's region sits directly under the table whose
+              row actions write into it. */}
+          <Box ref={regionRef}>
+            <WriteFeedbackRegion outcome={feedback.outcome} />
+          </Box>
+        </>
       )}
-
-      <Box sx={{ mt: 2 }}>
-        <InlineError
-          code={revokeSession.isError ? errorCodeOf(revokeSession.error) : null}
-        />
-        <InlineSuccess message={success} />
-      </Box>
 
       <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
     </Box>

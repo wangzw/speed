@@ -386,6 +386,127 @@ describe('SessionsPage', () => {
     expect(await screen.findByText('会话已撤销')).toBeInTheDocument()
   })
 
+  it('clears a landed revoke confirmation on the page refresh', async () => {
+    const user = userEvent.setup()
+    const operations = withSessions({
+      listAccountSessions: () => Promise.resolve([session()]),
+      revokeSession: () => Promise.resolve(),
+    })
+    renderWithProviders(<SessionsPage />, { operations })
+    await loadAccount(user)
+    await screen.findByText('sess-1')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.sessions.revokeAriaWithId.replace('{{id}}', 'sess-1'),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+    )
+
+    // The landed revoke fills the list's scope, which sits under the table
+    // as one polite live region.
+    expect(
+      await screen.findByText(zhCN.sessions.revokedNotice),
+    ).toBeInTheDocument()
+    // While the dialog's exit transition runs the page behind it is hidden
+    // from the accessibility tree; wait for the dialog to leave before
+    // reaching for the page's controls.
+    await vi.waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+    // The refresh resets the scope before re-reading: the confirmation
+    // described the list as it stood before the re-read.
+    await vi.waitFor(() => {
+      expect(screen.queryByText(zhCN.sessions.revokedNotice)).toBeNull()
+    })
+  })
+
+  it('clears a refused revoke through the page refresh', async () => {
+    const user = userEvent.setup()
+    const operations = withSessions({
+      listAccountSessions: () => Promise.resolve([session()]),
+      revokeSession: () => Promise.reject({ code: 'authn.conflict' }),
+    })
+    renderWithProviders(<SessionsPage />, { operations })
+    await loadAccount(user)
+    await screen.findByText('sess-1')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.sessions.revokeAriaWithId.replace('{{id}}', 'sess-1'),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+    )
+
+    // The refusal resolves through the console whitelist into the region's
+    // failure alert.
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.conflict)
+    await vi.waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+    await vi.waitFor(() => {
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+  })
+
+  it('clears the revoke result when another account is chosen', async () => {
+    const user = userEvent.setup()
+    const operations = withSessions({
+      listAccounts: () =>
+        Promise.resolve({
+          accounts: [
+            account(),
+            account({ id: 'acc-10', display_name: 'Bob' }),
+          ],
+          next_cursor: '',
+        }),
+      listAccountSessions: () => Promise.resolve([session()]),
+      revokeSession: () => Promise.resolve(),
+    })
+    renderWithProviders(<SessionsPage />, { operations })
+    await chooseAccount(user, zhCN.sessions.accountLabel, 'Ada', 'Ada (acc-9)')
+    await screen.findByText('sess-1')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.sessions.revokeAriaWithId.replace('{{id}}', 'sess-1'),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+    )
+    expect(
+      await screen.findByText(zhCN.sessions.revokedNotice),
+    ).toBeInTheDocument()
+    await vi.waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+
+    // The account is an argument of the revoke, so choosing another one is
+    // a context change: the previous account's confirmation must not stand
+    // beside the new list the picker is about to read.
+    await chooseAccount(user, zhCN.sessions.accountLabel, 'Bob', 'Bob (acc-10)')
+    await vi.waitFor(() => {
+      expect(screen.queryByText(zhCN.sessions.revokedNotice)).toBeNull()
+    })
+  })
+
   it('renders the retryable error placeholder when the read fails', async () => {
     const user = userEvent.setup()
     const operations = withSessions({

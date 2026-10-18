@@ -20,6 +20,7 @@ import {
   tenantFixture,
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 describe('TenantDetailPage', () => {
   it('links to the tenant-addressed pages carrying this tenant', async () => {
@@ -167,6 +168,126 @@ describe('TenantDetailPage', () => {
     // control re-labels from the settled status (停用 -> 启用).
     expect(await screen.findByRole('button', { name: '启用' })).toBeInTheDocument()
     expect(getTenant.mock.calls.length).toBeGreaterThan(1)
+  })
+
+  it('confirms a landed rename and clears the confirmation on refresh', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        getTenant: () =>
+          Promise.resolve(tenantFixture({ id: 'acme', alias: 'Acme' })),
+        setTenantAlias: () => Promise.resolve(),
+      }),
+    )
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    await screen.findByText('Acme')
+
+    await user.type(
+      screen.getByLabelText(zhCN.tenantDetail.actions.renameLabel),
+      'Acme-Inc',
+    )
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantDetail.actions.renameSubmit,
+      }),
+    )
+    const confirmation = zhCN.tenantDetail.actions.renamed.replace(
+      '{{id}}',
+      'acme',
+    )
+    expect(await screen.findByText(confirmation)).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+    // The refresh resets the actions scope before the re-read: the
+    // confirmation described the tenant as it stood at write time.
+    await vi.waitFor(() => {
+      expect(screen.queryByText(confirmation)).toBeNull()
+    })
+  })
+
+  it('confirms a landed status change and clears the confirmation on refresh', async () => {
+    const user = userEvent.setup()
+    let status: ConsoleTenant['status'] = 'active'
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        getTenant: () => Promise.resolve(tenantFixture({ id: 'acme', status })),
+        setTenantStatus: (input) => {
+          status = input.status
+          return Promise.resolve()
+        },
+      }),
+    )
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    await screen.findByText(zhCN.tenants.status.active)
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantDetail.actions.disable,
+      }),
+    )
+    const confirmation = zhCN.tenantDetail.actions.disabled.replace(
+      '{{id}}',
+      'acme',
+    )
+    expect(await screen.findByText(confirmation)).toBeInTheDocument()
+    // The write invalidates the detail read and it re-settles with the new
+    // status; the confirmation stays until the refresh.
+    expect(
+      await screen.findByRole('button', {
+        name: zhCN.tenantDetail.actions.enable,
+      }),
+    ).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+    await vi.waitFor(() => {
+      expect(screen.queryByText(confirmation)).toBeNull()
+    })
+  })
+
+  it('clears a refused write through the page refresh', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        getTenant: () =>
+          Promise.resolve(tenantFixture({ id: 'acme', alias: 'Acme' })),
+        setTenantAlias: () => Promise.reject({ code: 'tenant.conflict' }),
+      }),
+    )
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    await screen.findByText('Acme')
+
+    await user.type(
+      screen.getByLabelText(zhCN.tenantDetail.actions.renameLabel),
+      'Acme-Inc',
+    )
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantDetail.actions.renameSubmit,
+      }),
+    )
+
+    // The refusal resolves through the console whitelist into the scope's
+    // failure alert, and the draft stays so it can be corrected.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.tenant.conflict,
+    )
+    const draft = screen.getByLabelText(zhCN.tenantDetail.actions.renameLabel)
+    expect(draft).toHaveValue('Acme-Inc')
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.refresh }),
+    )
+    await vi.waitFor(() => {
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+    // The refresh clears the slot but leaves the unsubmitted draft alone.
+    expect(
+      screen.getByLabelText(zhCN.tenantDetail.actions.renameLabel),
+    ).toHaveValue('Acme-Inc')
   })
 
   it('disables the refresh while the status write is in flight', async () => {

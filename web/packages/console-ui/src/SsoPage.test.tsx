@@ -31,6 +31,7 @@ import {
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
+import enUS from './locales/en-US.json' with { type: 'json' }
 
 const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
 
@@ -57,6 +58,61 @@ async function pickProvider(user: ReturnType<typeof userEvent.setup>): Promise<v
   await user.click(await screen.findByRole('option', { name: 'Acme IdP' }))
 }
 
+/** The copy the refresh-distinguishability test reads from either bundle. */
+interface RefreshLocaleBundle {
+  readonly common: { readonly tenant: string; readonly refresh: string }
+  readonly sso: {
+    readonly refreshProviderListAria: string
+    readonly refreshMetadata: string
+    readonly refreshMetadataAria: string
+  }
+}
+
+/**
+ * Asserts the page's refresh action and a row's metadata refresh differ in
+ * both their visible text and their accessible name, in the given
+ * language, and that each accessible name begins with its own visible
+ * text. The tenant is selected through bundle copy, so the steps hold in
+ * either language.
+ */
+async function expectDistinguishableRefreshControls(
+  language: string,
+  bundle: RefreshLocaleBundle,
+): Promise<void> {
+  const user = userEvent.setup()
+  const operations = withProviders()
+  renderWithProviders(<SsoPage />, { operations, language })
+  await user.click(screen.getByLabelText(bundle.common.tenant))
+  await user.click(await screen.findByRole('option', { name: 'Acme' }))
+  await screen.findByText('Acme IdP')
+
+  const rowProviderName = 'Acme IdP'
+  const rowAria = bundle.sso.refreshMetadataAria.replace(
+    '{{name}}',
+    rowProviderName,
+  )
+  const pageRefresh = screen.getByRole('button', {
+    name: bundle.sso.refreshProviderListAria,
+  })
+  const rowRefresh = screen.getByRole('button', { name: rowAria })
+
+  // The two visible texts differ: the row action is never the bare word
+  // the page action shows.
+  expect(pageRefresh).toHaveTextContent(bundle.common.refresh)
+  expect(rowRefresh).toHaveTextContent(bundle.sso.refreshMetadata)
+  expect(bundle.sso.refreshMetadata).not.toBe(bundle.common.refresh)
+
+  // Each accessible name begins with its own visible text.
+  expect(pageRefresh).toHaveAccessibleName(bundle.sso.refreshProviderListAria)
+  expect(rowRefresh).toHaveAccessibleName(rowAria)
+  expect(
+    bundle.sso.refreshProviderListAria.startsWith(bundle.common.refresh),
+  ).toBe(true)
+  expect(
+    bundle.sso.refreshMetadataAria.startsWith(bundle.sso.refreshMetadata),
+  ).toBe(true)
+}
+
 /** A promise the test settles by hand, for observing an in-flight write. */
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -75,7 +131,7 @@ async function expectRefreshInert(
   listSsoProviders: ReturnType<typeof vi.fn>,
   readsBefore: number,
 ): Promise<void> {
-  const refresh = screen.getByRole('button', { name: '刷新' })
+  const refresh = screen.getByRole('button', { name: zhCN.sso.refreshProviderListAria })
   await vi.waitFor(() => {
     expect(refresh).toBeDisabled()
   })
@@ -101,7 +157,7 @@ describe('SsoPage', () => {
 
     // The providers read is disabled while no tenant is chosen; the refresh
     // control follows it instead of issuing the read with an empty tenant.
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    const refresh = screen.getByRole('button', { name: zhCN.sso.refreshProviderListAria })
     expect(refresh).toBeDisabled()
     // The disabled control is described by the page's own "choose a tenant
     // first" text.
@@ -287,7 +343,7 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
     const gated = [
-      screen.getByRole('button', { name: '刷新' }),
+      screen.getByRole('button', { name: zhCN.sso.refreshProviderListAria }),
       screen.getByRole('button', { name: '刷新元数据（Acme IdP）' }),
       screen.getByRole('button', { name: '重新验证域名（Acme IdP）' }),
       screen.getByRole('button', { name: '删除提供方 Acme IdP' }),
@@ -809,8 +865,8 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
 
-    await user.click(screen.getByRole('button', { name: '刷新' }))
-    const refresh = screen.getByRole('button', { name: '刷新' })
+    await user.click(screen.getByRole('button', { name: zhCN.sso.refreshProviderListAria }))
+    const refresh = screen.getByRole('button', { name: zhCN.sso.refreshProviderListAria })
     await vi.waitFor(() => {
       expect(refresh).toHaveAttribute('aria-busy', 'true')
     })
@@ -843,11 +899,19 @@ describe('SsoPage', () => {
 
     const before = listSsoProviders.mock.calls.length
     await user.click(
-      screen.getByRole('button', { name: zhCN.common.refresh }),
+      screen.getByRole('button', { name: zhCN.sso.refreshProviderListAria }),
     )
     await vi.waitFor(() =>
       expect(listSsoProviders.mock.calls.length).toBe(before + 1),
     )
+  })
+
+  it('keeps the two refresh controls distinguishable in zh-CN', async () => {
+    await expectDistinguishableRefreshControls('zh-CN', zhCN)
+  })
+
+  it('keeps the two refresh controls distinguishable in en-US', async () => {
+    await expectDistinguishableRefreshControls('en-US', enUS)
   })
 
   it('has no axe violations', async () => {

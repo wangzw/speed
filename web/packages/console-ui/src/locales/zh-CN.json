@@ -216,7 +216,10 @@
       "renameLabel": "新别名",
       "renameSubmit": "改名",
       "enable": "启用",
-      "disable": "停用"
+      "disable": "停用",
+      "renamed": "租户「{{id}}」的别名已更新",
+      "enabled": "租户「{{id}}」已启用",
+      "disabled": "租户「{{id}}」已停用"
     },
     "related": {
       "title": "相关页面",
@@ -902,7 +905,8 @@
     },
     "enabledYes": "是",
     "enabledNo": "否",
-    "refreshMetadata": "刷新",
+    "refreshProviderListAria": "刷新提供方列表",
+    "refreshMetadata": "刷新元数据",
     "refreshMetadataAria": "刷新元数据（{{name}}）",
     "reverifyDomains": "重新验证",
     "reverifyDomainsAria": "重新验证域名（{{name}}）",

@@ -216,7 +216,10 @@
       "renameLabel": "New alias",
       "renameSubmit": "Rename",
       "enable": "Enable",
-      "disable": "Disable"
+      "disable": "Disable",
+      "renamed": "Alias of tenant \"{{id}}\" updated",
+      "enabled": "Tenant \"{{id}}\" enabled",
+      "disabled": "Tenant \"{{id}}\" disabled"
     },
     "related": {
       "title": "Related pages",
@@ -902,7 +905,8 @@
     },
     "enabledYes": "Yes",
     "enabledNo": "No",
-    "refreshMetadata": "Refresh",
+    "refreshProviderListAria": "Refresh the provider list",
+    "refreshMetadata": "Refresh metadata",
     "refreshMetadataAria": "Refresh metadata ({{name}})",
     "reverifyDomains": "Re-verify",
     "reverifyDomainsAria": "Re-verify domains ({{name}})",

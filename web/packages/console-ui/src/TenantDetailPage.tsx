@@ -14,8 +14,11 @@
  * roster's own closed spelling (active / disabled); a value outside it
  * renders the generic label, never a raw value. A refused read settles
  * into a permission placeholder (403) or the retryable error placeholder
- * (any other failure); a refused write renders the answer's code text in
- * one banner, resolved from the console-ui whitelist. The rename input
+ * (any other failure). The rename and the enable/disable are one control
+ * group, so they report through one feedback scope whose region sits
+ * directly under their controls: each landed write confirms and names this
+ * tenant, and a refusal resolves the answer's code through the console-ui
+ * whitelist. The rename input
  * marks itself invalid while the alias breaks the identifier domain and
  * holds its submit disabled then, so an inadmissible alias is never sent.
  * When given the console's root path, the page also links to the
@@ -24,8 +27,9 @@
  * the `tenant` query parameter those pages seed their tenant selection
  * from -- so the detail page is not a dead end and the link does not drop
  * the tenant context. The page opens with ui-kit's PageHeader, so the
- * heading order never skips; its refresh action re-reads the tenant and
- * is natively disabled while either of the two writes is in flight.
+ * heading order never skips; its refresh action resets the actions scope
+ * and re-reads the tenant, and is natively disabled while either of the
+ * two writes is in flight.
  */
 
 import { useState } from 'react'
@@ -38,16 +42,23 @@ import Typography from '@mui/material/Typography'
 import {
   ListSkeleton,
   PageHeader,
-  errorCodeOf,
+  useWriteFeedback,
 } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
-import { InlineError } from './internal/inline-error.js'
 import { ConsoleLink } from './internal/navigation.js'
 import { DefinitionRow, DetailLayout } from './internal/layout.js'
 import { isRejectedIdentifier } from './internal/identifier.js'
 import { RefreshButton } from './internal/refresh-button.js'
 import { TENANT_QUERY_PARAM } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
+import {
+  pageRefreshRead,
+  usePageRefresh,
+} from './internal/use-page-refresh.js'
+import {
+  useFailureScroll,
+  WriteFeedbackRegion,
+} from './internal/write-feedback.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleTenant } from './operations.js'
 
@@ -80,6 +91,21 @@ export function TenantDetailPage({ id, parentHref, rootHref }: TenantDetailPageP
   const renameTenant = operations.useSetTenantAlias()
   const setStatus = operations.useSetTenantStatus()
   const [alias, setAlias] = useState('')
+  // The actions section is one control group, so its rename and its
+  // enable/disable share one scope and one region under the controls. Each
+  // landed write confirms and names this tenant; a refusal resolves through
+  // the console whitelist.
+  const feedback = useWriteFeedback()
+  const regionRef = useFailureScroll(feedback.outcome)
+
+  // The refresh action re-reads the tenant -- the page's one body read --
+  // and resets the actions scope first: a result written before the re-read
+  // would describe the page as it stood then. The typed alias draft is the
+  // operator's and stays.
+  const pageRefresh = usePageRefresh(
+    [pageRefreshRead('tenant-detail', tenant)],
+    feedback.reset,
+  )
 
   const aliasRejected = alias !== '' && isRejectedIdentifier(alias)
 
@@ -159,12 +185,16 @@ export function TenantDetailPage({ id, parentHref, rootHref }: TenantDetailPageP
             <Button
               type="button"
               variant="contained"
-              disabled={renameTenant.isPending || aliasRejected}
+              disabled={feedback.pending || aliasRejected}
+              loading={feedback.pending}
               onClick={() => {
-                renameTenant.mutate(
-                  { id: settled.id, alias },
-                  { onSuccess: () => setAlias('') },
-                )
+                void feedback.run(async () => {
+                  await renameTenant.mutateAsync({ id: settled.id, alias })
+                  // A landed rename clears the draft; a refused one keeps
+                  // it so the alias can be corrected.
+                  setAlias('')
+                  return t('tenantDetail.actions.renamed', { id: settled.id })
+                })
               }}
             >
               {t('tenantDetail.actions.renameSubmit')}
@@ -172,11 +202,20 @@ export function TenantDetailPage({ id, parentHref, rootHref }: TenantDetailPageP
             <Button
               type="button"
               variant="outlined"
-              disabled={setStatus.isPending}
+              disabled={feedback.pending}
+              loading={feedback.pending}
               onClick={() => {
-                setStatus.mutate({
-                  id: settled.id,
-                  status: disabled ? 'active' : 'disabled',
+                void feedback.run(async () => {
+                  await setStatus.mutateAsync({
+                    id: settled.id,
+                    status: disabled ? 'active' : 'disabled',
+                  })
+                  return t(
+                    disabled
+                      ? 'tenantDetail.actions.enabled'
+                      : 'tenantDetail.actions.disabled',
+                    { id: settled.id },
+                  )
                 })
               }}
             >
@@ -184,17 +223,11 @@ export function TenantDetailPage({ id, parentHref, rootHref }: TenantDetailPageP
                 ? t('tenantDetail.actions.enable')
                 : t('tenantDetail.actions.disable')}
             </Button>
-            <Box sx={{ flexBasis: '100%' }}>
-              <InlineError
-                code={
-                  renameTenant.isError
-                    ? errorCodeOf(renameTenant.error)
-                    : setStatus.isError
-                      ? errorCodeOf(setStatus.error)
-                      : null
-                }
-              />
-            </Box>
+          </Box>
+          {/* The actions section's one region, directly under the controls
+              whose writes report through it. */}
+          <Box ref={regionRef}>
+            <WriteFeedbackRegion outcome={feedback.outcome} />
           </Box>
         </Paper>
 
@@ -236,9 +269,9 @@ export function TenantDetailPage({ id, parentHref, rootHref }: TenantDetailPageP
         breadcrumbs={crumbs}
         actions={
           <RefreshButton
-            busy={tenant.isFetching}
-            writePending={renameTenant.isPending || setStatus.isPending}
-            onClick={() => void tenant.refetch()}
+            busy={pageRefresh.busy}
+            writePending={feedback.pending}
+            onClick={pageRefresh.refresh}
           />
         }
         sx={{ mb: 2 }}

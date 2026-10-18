@@ -31,6 +31,12 @@
  * button receives no pointer events, so the empty-scope face is wrapped in
  * an inline span. An enabled control carries neither the tooltip nor the
  * description.
+ *
+ * A page whose refresh re-reads a named object passes `ariaLabel`: the
+ * visible text stays the shared "Refresh", while the accessible name names
+ * what is re-read. The caller's label must begin with that visible text, so
+ * a speech-input user can still say what is on screen; callers that re-read
+ * nothing more specific than the page omit it.
  */
 
 import { useId } from 'react'
@@ -60,6 +66,11 @@ export interface RefreshButtonProps {
   readonly describedBy?: string
   /** That same text, shown in the disabled control's tooltip. */
   readonly disabledReason?: string
+  /**
+   * The accessible name, when the re-read object is more specific than the
+   * page. Must begin with the visible text.
+   */
+  readonly ariaLabel?: string
 }
 
 /** The console's single refresh control (see the file header). */
@@ -70,6 +81,7 @@ export function RefreshButton({
   onClick,
   describedBy,
   disabledReason,
+  ariaLabel,
 }: RefreshButtonProps) {
   const { t } = useConsoleUiTranslation()
   // The spinner is named by the button's own text: the button carries the
@@ -82,6 +94,7 @@ export function RefreshButton({
       variant="outlined"
       size="small"
       id={busy ? loadingId : undefined}
+      aria-label={ariaLabel}
       disabled={disabled || writePending}
       aria-busy={busy || undefined}
       aria-describedby={disabled ? describedBy : undefined}

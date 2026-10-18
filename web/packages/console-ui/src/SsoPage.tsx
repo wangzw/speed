@@ -31,6 +31,12 @@
  * and outside that scope's slot, so a reset, a later failure or a context
  * change never drops the only copy; it stays until the operator closes it.
  *
+ * The page's refresh action re-reads the provider list, so its accessible
+ * name says so ("Refresh the provider list"); the row's metadata refresh
+ * is a write to that provider and carries its own visible text ("Refresh
+ * metadata") and name, keeping the two controls distinguishable even
+ * though they sit in one view.
+ *
  * Every read and write is an operation on the console operations bundle,
  * so the page builds no client and writes no query key. The page opens
  * with ui-kit's PageHeader.
@@ -427,6 +433,7 @@ export function SsoPage() {
           trailing={
             <RefreshButton
               busy={pageRefresh.busy}
+              ariaLabel={t('sso.refreshProviderListAria')}
               disabled={tenant === ''}
               writePending={anyPending}
               describedBy={TENANT_HINT_ID}
