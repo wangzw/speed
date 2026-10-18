@@ -20,6 +20,10 @@ import type {
   ConsoleWriteMemberInput,
 } from './operations.js'
 import { bindConsoleRequest } from '../test-utils/request-rig.js'
+import {
+  columnVisibility,
+  containerMaxWidthOf,
+} from '../test-utils/container-visibility.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { chooseAccount } from '../test-utils/account-selector.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
@@ -253,6 +257,77 @@ describe('InvitationsPage', () => {
     expect(await screen.findAllByText('Staff One')).toHaveLength(2)
     expect(getAccount).toHaveBeenCalledTimes(1)
     expect(getAccount).toHaveBeenCalledWith({ id: 'staff-9' })
+  })
+
+  it('declares the designed priorities and caps for invitations and members', async () => {
+    const user = userEvent.setup()
+    const email = 'very-long-address-for-a-person@example.com'
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({
+          invitations: [invitation({ email })],
+          next_cursor: '',
+        }),
+      listMembers: () => Promise.resolve([member()]),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText(email)
+
+    const header = (scope: HTMLElement, label: string): Element =>
+      within(scope).getByRole('columnheader', { name: label })
+
+    // The invitation table: the email is the primary identity with the
+    // shared cap, status stays to `sm`, the inviter to `md`, expiry the
+    // first to go, and the row actions never hide.
+    const inviteSection = section('邀请')
+    expect(columnVisibility(header(inviteSection, '邮箱'))).toBeNull()
+    expect(columnVisibility(header(inviteSection, '状态'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 600,
+    })
+    expect(columnVisibility(header(inviteSection, '邀请人'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 900,
+    })
+    expect(columnVisibility(header(inviteSection, '过期时间'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 1200,
+    })
+    expect(columnVisibility(header(inviteSection, '操作'))).toBeNull()
+    const emailText = screen.getByText(email)
+    expect(emailText.closest('td')).toHaveAttribute('title', email)
+    expect(containerMaxWidthOf(emailText)).toEqual(
+      new Map([
+        [0, 160],
+        [900, 200],
+      ]),
+    )
+
+    // The members table has the same shape: account primary, active high,
+    // source medium, SSO exemption low.
+    const memberSection = section('成员')
+    expect(columnVisibility(header(memberSection, '账户'))).toBeNull()
+    expect(columnVisibility(header(memberSection, '在册'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 600,
+    })
+    expect(columnVisibility(header(memberSection, '来源'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 900,
+    })
+    expect(columnVisibility(header(memberSection, 'SSO 豁免'))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 1200,
+    })
+    expect(columnVisibility(header(memberSection, '操作'))).toBeNull()
+    const memberIdentity = await within(memberSection).findByText('Operator')
+    expect(containerMaxWidthOf(memberIdentity)).toEqual(
+      new Map([
+        [0, 160],
+        [900, 200],
+      ]),
+    )
   })
 
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {

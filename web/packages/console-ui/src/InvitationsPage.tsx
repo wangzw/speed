@@ -49,11 +49,13 @@ import {
   EmptyState,
   ListSkeleton,
   PageHeader,
+  primaryColumnMaxWidthSx,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
 import {
   AccountIdentity,
+  CappedAccountIdentity,
   useAccountIdentity,
 } from './internal/account-identity.js'
 import { AccountSelector } from './internal/account-selector.js'
@@ -255,11 +257,22 @@ export function InvitationsPage() {
       header: t('invitations.column.email'),
       cellWrap: 'nowrap',
       cellFullValue: (invitation) => invitation.email,
-      cell: (invitation) => invitation.email,
+      cell: (invitation) => (
+        // The invitation's primary identity: never hidden, capped by the
+        // shared primary-column width so the row actions stay on screen.
+        <Typography
+          variant="body2"
+          noWrap
+          sx={primaryColumnMaxWidthSx}
+        >
+          {invitation.email}
+        </Typography>
+      ),
     },
     {
       id: 'status',
       header: t('invitations.column.status'),
+      priority: 'high',
       cellWrap: 'nowrap',
       cell: (invitation) => statusLabel(invitation.status, t),
     },
@@ -326,11 +339,12 @@ export function InvitationsPage() {
       header: t('members.column.account'),
       cellWrap: 'nowrap',
       cellFullValue: (member) => member.account,
-      cell: (member) => <AccountIdentity account={member.account} />,
+      cell: (member) => <CappedAccountIdentity account={member.account} />,
     },
     {
       id: 'active',
       header: t('members.column.active'),
+      priority: 'high',
       cellWrap: 'nowrap',
       cell: (member) =>
         member.active ? t('members.activeYes') : t('members.activeNo'),
