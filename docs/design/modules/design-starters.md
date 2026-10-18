@@ -90,7 +90,9 @@ starters/demo/
 
 **验证码由短信模块生成，不写死。** `sms.review` 经 `sms.NewModule` 提供载体的发送与模板两条接缝，不读任何配置项；短信模块把消息的 `code` 参数交给它，它把这一行写进进程日志的 `verification_code` 字段。该字段不叫 `code`，因为 `code` 是进程已登记的敏感键名，日志层会把值打码。号码仍经过真实的预算、挑战行与校验，流程跑的是产品自己的状态机。
 
-**构建与运行**：从仓库根执行 `go -C starters/demo/server build -tags review -o demo-review .`，产物是 `starters/demo/server/demo-review`（由 `.gitignore` 挡在树外）；随后在 `starters/demo/server` 下以 `./demo-review --config file:review/sqlite.yaml sqlite seed` 与 `... sqlite serve` 先种入一次、再启动。`seed` 幂等。根 `Makefile` 的 `vet-review` 腿在每次提交以 `go vet -tags=review ./...` 编译这个变体、不运行它，与 `vet-integration` 同理，也是 `check_test_tiers.py` 对树中每个构建标签要求的腿；`make check` 包含它。
+**审查装配只在回环地址上监听。** `server/review.go` 的 `reviewGuardModule` 在 `Prepare` 里、任何套接字绑定之前，读 `http.listeners` 每一项的地址，主机不是回环就拒绝启动：`localhost` 与 IP 回环地址算回环；空主机（所有网卡）、`0.0.0.0`、`::` 与其它不能判定为回环的写法都拒绝，误拒落在安全一侧。监听地址只能来自主配置文件，环境变量与命令行不能设置它，守卫与 http 模块读同一份配置，没有第二条通道绕过它。理由是审查装配带着公开的种子管理员口令与开放注册，能被网络访问的进程把这两样交给任何人。守卫只限定监听地址，不限定日志的去向：验证码写进进程日志，日志被收集或导出到别处时，验证码随之出机。
+
+**构建与运行**：从仓库根执行 `go -C starters/demo/server build -tags review -o demo-review .`，产物是 `starters/demo/server/demo-review`（由 `.gitignore` 挡在树外）；随后在 `starters/demo/server` 下以 `./demo-review --config file:review/sqlite.yaml sqlite seed` 与 `... sqlite serve` 先种入一次、再启动。`seed` 幂等。根 `Makefile` 的 `vet-review` 腿在每次提交以 `go vet -tags=review ./...` 编译这个变体、不运行它，与 `vet-integration` 同理，也是 `check_test_tiers.py` 对树中每个构建标签要求的腿；`make check` 包含它。只在 `review` 标签下编译的用例（回环守卫的用例）不能只被编译：它们在提交门禁里被执行，守卫被删或改坏时门禁变红。
 
 ### `gen` 命令
 
@@ -292,7 +294,7 @@ flowchart TD
 - **服务端是一个宿主模块，不进 `pkg/` 的公共面。** 它在 `account` 端挂一条没有租户解析的路由 `POST /workspace/personal`，并声明特性 `workspace.personal`；开关关闭时路由不挂、特性不在场。`/workspace` 作为 `account` 端的认领前缀写在每份配置与后端前缀清单里，认领与装配无关，开关关闭时该前缀对已认证调用答 404；未认证调用先被 `account` 端的网关拒绝为 401，这是各端认领前缀的普遍行为。契约属于应用自己的第二级契约：应用所有的操作与特性在合并文档里带所有者标记，平台包的生成面与特性名不含它们（[api-sdk](web/design-web-api-sdk.md)）。
 - **路由对调用方的要求与应答。** 调用方须已认证、不在冒充中、不是静态凭据主体、不是服务账户，不满足答 403。资格由服务端判定：调用方已有自己的个人租户的成员关系时读回它，不论是否还有别的成员关系；没有个人租户而成员关系为空时建；没有个人租户而有其他成员关系答 409 `already-member`，不建；租户行已存在而状态不是启用答 409 `tenant-unavailable`，不写任何东西；别名被别的租户占用或派生的标识越出名册域答 409 `identifier-unavailable`，重试不会成功。成功应答 `{ tenant: { id, alias, kind: "personal" }, created }`，`created` 表示这次调用建了租户。依赖不可用答 503，不带着半份结果放行。
 - **租户标识由账户标识确定性派生。** 标识与别名取同一个由固定前缀加账户标识组成的字符串，不取手机号、显示名或任何个人信息：别名随请求出现在日志、审计与路径里，是请求面标识，不翻译，也不含个人信息。确定性使并发的两次调用撞上同一个唯一约束，后到者读回既有租户。
-- **每次调用幂等地核对并补齐，但不覆盖运营者的决定。** 租户行（`Create`，已存在则读回，读回前先经 `EnterRegistered` 追平本副本的名册快照）；账户在该租户的成员关系（已有一行，不论状态，就不改写，没有才写）；租户内的非内置角色 `owner`（`Manager.PutRole`）；该角色的授予收敛到宿主声明的允许集（`Seeder.SeedGrants` 补入缺的，多出的撤销）；账户到该角色的绑定（`Manager.PutBinding`，缺才写）。运营者要收回个人租户，停用租户即可，ensure 不替它复原；只删成员关系或绑定不算收回，下一次调用会补回。某一步失败时前面各步留着，下次调用补齐，补齐的那次调用 `created` 为假。
+- **每次调用幂等地核对并补齐，但不覆盖运营者的决定。** 租户行（不存在时经 `Create` 建，已存在则读回，读回前先经 `EnterRegistered` 追平本副本的名册快照）；账户在该租户的成员关系（已有一行，不论状态，就不改写，没有才写）；租户内的非内置角色 `owner`（`Manager.PutRole`）；该角色的授予收敛到宿主声明的允许集（`Seeder.SeedGrants` 补入缺的，多出的撤销）；账户到该角色的绑定（`Manager.PutBinding`，缺才写）。运营者要收回个人租户，停用租户即可，ensure 不替它复原；只删成员关系或绑定不算收回，下一次调用会补回。某一步失败时前面各步留着，下次调用补齐，补齐的那次调用 `created` 为假。
 - **owner 的权限是宿主声明的允许集，不是租户域的全部权限。** 允许集只含个人租户该有的业务资源面，由宿主在代码里显式列出（现为对象存储的各项权限；通知面不声明权限点）。认证模块的租户级管理动作——成员管理、邀请、身份提供方管理、冒充与客户端管理，以及非成员放行——按租户域决策，授给 owner 会让每个自助注册的账户成为带成员与冒充管理权的租户管理员，并使被它加入的账户永远得不到自己的个人租户，所以不在允许集内。允许集由宿主声明而不由目录推出，进程之后新声明的租户级权限因此不会自动进入 owner。已按旧口径建出的个人租户，其 owner 的多余授予在下一次 ensure 时撤销。
 - **租户框架在已认证、非冒充、没有当前租户且特性 `workspace.personal` 在场时调用它。** 有当前租户的账户（平台员工经名册读得到租户上下文，或已选定租户者）不触发；名册读被 403 拒绝才算普通成员、没有当前租户而触发，名册读的其他失败（5xx、网络、超时）不触发，沿用该读自己的失败呈现与重试，名册读成功的平台员工默认选中第一个启用且不是个人租户的租户；成功后把应答的别名挂成当前租户上下文；失败（含 503）时，取租户数据的页面渲染可重试的失败占位，重试再调一次，账户级页面照常渲染；409 时不挂个人租户，租户区回落到占位租户读取（本节之外的既有限制），读答裸 404，按「账户没有成员关系时的租户区」渲染「无法访问当前组织」；租户为空时读被禁用、只会停在加载占位，所以不以空租户收场。
 - **个人租户的展示取前端文案。** 租户记录没有展示名；应答标明 `kind` 为 `personal` 时，租户选择器渲染个人空间的文案（zh-CN 与 en-US 各一键），其余租户渲染别名，别名从不翻译。
@@ -379,6 +381,8 @@ flowchart TD
 | 平台基线（`serve`/`worker` 的点名集与配置样例） | 部分实现 | `starters/demo/server/main.go` `baselineServe`、`baselineWorker`；`starters/demo/server/testdata/` |
 | 审查装配（`-tags review` 的构建变体与 `server/review/sqlite.yaml`） | 已实现 | `starters/demo/server/review.go` `reviewModules`、`reviewSender`；`starters/demo/server/review_off.go` `reviewModules`；`starters/demo/server/review/sqlite.yaml` |
 | 审查装配的提交门禁腿 | 已实现 | `./Makefile` `vet-review` |
+| 审查装配的回环守卫 | 已实现 | `starters/demo/server/review.go` `reviewGuardModule`、`loopbackAddress` |
+| 只在 `review` 标签下编译的用例在提交门禁里被执行 | 未实现 | — |
 | 通知面的宿主侧授权 | 已实现 | `starters/demo/server/notification.go` `notificationModule`、`notificationRoutes`；纳入见 `starters/demo/server/main.go` `baselineServe` |
 | `seed` 命令 | 已实现 | `starters/demo/server/seed.go` `seedModule`、`seedSchema`、`seedDatabase`、`seedTenant`、`seedAdministration`、`seedBinding`、`seedSettings`；命令见 `starters/demo/server/main.go` `addStack` |
 | `gen` 命令 | 已实现 | `starters/demo/server/main.go` `genModule`、`genDocument`、`featureVocabulary` |
