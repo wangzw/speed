@@ -505,11 +505,9 @@ describe('the impersonation shell', () => {
     const notice = await screen.findByRole('region', {
       name: authUiEnUS.impersonation.regionLabel,
     })
-    expect(
-      within(notice).getByText(
-        authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
-      ),
-    ).toBeInTheDocument()
+    expect(notice).toHaveTextContent(
+      authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
+    )
     expect(
       within(notice).getByText(
         authUiEnUS.impersonation.tenant.replace('{{tenant}}', 'acme'),
@@ -798,11 +796,9 @@ describe('the impersonation shell', () => {
     const again = await screen.findByRole('region', {
       name: authUiEnUS.impersonation.regionLabel,
     })
-    expect(
-      within(again).getByText(
-        authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
-      ),
-    ).toBeInTheDocument()
+    expect(again).toHaveTextContent(
+      authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
+    )
     // The finished interval's confirmation does not cover the new
     // interval's announcement in the permanent live region.
     await waitFor(() =>
@@ -881,11 +877,9 @@ describe('the impersonation shell', () => {
     const again = await screen.findByRole('region', {
       name: authUiEnUS.impersonation.regionLabel,
     })
-    expect(
-      within(again).getByText(
-        authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
-      ),
-    ).toBeInTheDocument()
+    expect(again).toHaveTextContent(
+      authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
+    )
   })
 
   it('shows no finished impersonation while the console page\'s status read is pending', async () => {
@@ -971,11 +965,9 @@ describe('the impersonation shell', () => {
     const notice = await screen.findByRole('region', {
       name: authUiEnUS.impersonation.regionLabel,
     })
-    expect(
-      within(notice).getByText(
-        authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
-      ),
-    ).toBeInTheDocument()
+    expect(notice).toHaveTextContent(
+      authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
+    )
     // The tenant comes from the grant, not from the roster: a roster read
     // is a platform management read and is refused to an impersonated
     // identity, so the frame must not issue one or fall back to the
@@ -2058,11 +2050,9 @@ describe('the impersonation shell', () => {
     const notice = await screen.findByRole('region', {
       name: authUiEnUS.impersonation.regionLabel,
     })
-    expect(
-      within(notice).getByText(
-        authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'acc-1'),
-      ),
-    ).toBeInTheDocument()
+    expect(notice).toHaveTextContent(
+      authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'acc-1'),
+    )
   })
 
   it('starts without a blanking window: the banner appears when the re-read settles', async () => {
