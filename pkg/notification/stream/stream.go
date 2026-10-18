@@ -107,7 +107,7 @@ func Module() core.Module {
 		},
 		Resources: []any{
 			schema(),
-			speedhttp.Spec{Endpoint: defaultEndpoint, Document: streamFragment},
+			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: streamFragment},
 			// The real-time push surface: its route is mounted whenever the
 			// module is in force and the process has an entry point, so the
 			// feature is static.

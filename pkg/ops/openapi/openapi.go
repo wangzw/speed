@@ -123,7 +123,7 @@ func Merge(specs []core.Resource[speedhttp.Spec], opts Options) ([]byte, error) 
 		}
 		source := fragmentSource{Module: res.Module, Endpoint: res.Value.Endpoint}
 		doc.Fragments = append(doc.Fragments, source)
-		if err := mergePaths(&doc, owners, source, part); err != nil {
+		if err := mergePaths(&doc, owners, source, res.Value, part); err != nil {
 			return nil, err
 		}
 		if err := mergeComponents(&doc, res.Module, part); err != nil {
@@ -174,17 +174,20 @@ func readFragment(module string, declared []byte) (fragment, error) {
 
 // mergePaths merges one fragment's operations into the document, judging each
 // against the ones already merged and tagging it with the endpoint it is served
-// on. owners is keyed by "path METHOD" and remembers the source of the
-// operation each key was taken by.
-func mergePaths(doc *document, owners map[string]fragmentSource, source fragmentSource, part fragment) error {
+// on. Each fragment path is resolved against the Spec's prefix and version
+// first, so the document carries absolute paths and a conflict is judged on
+// what a client would address. owners is keyed by "path METHOD" and remembers
+// the source of the operation each key was taken by.
+func mergePaths(doc *document, owners map[string]fragmentSource, source fragmentSource, spec speedhttp.Spec, part fragment) error {
 	for path, operations := range part.paths {
-		merged := doc.Paths[path]
+		absolute := spec.ResolvePath(path)
+		merged := doc.Paths[absolute]
 		if merged == nil {
 			merged = map[string]json.RawMessage{}
-			doc.Paths[path] = merged
+			doc.Paths[absolute] = merged
 		}
 		for method, raw := range operations {
-			where := strings.ToUpper(method) + " " + path
+			where := strings.ToUpper(method) + " " + absolute
 			if other, taken := owners[where]; taken {
 				return fmt.Errorf("%w: %s is declared by module %q for endpoint %q and by "+
 					"module %q for endpoint %q", ErrOperationConflict, where, other.Module,

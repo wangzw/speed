@@ -2,10 +2,11 @@
   "openapi": "3.1.0",
   "info": {"title": "authn profile", "version": "1.0.0"},
   "paths": {
-    "/api/v1/auth/me": {
+    "/auth/me": {
       "get": {
         "operationId": "authn.profile.get",
         "summary": "The caller's own profile",
+        "description": "The caller's own account, read from the identity the gateway left on the request; no path parameter or body names an account. An impersonating identity may reach this route and then reads the account it is impersonating. Every time that is present is RFC 3339 in UTC, and a zero instant in a time field other than last_login_at is the empty string; last_login_at is instead absent when the binding has never been used to sign in. The identity's own account being gone (a tombstone, or a row that cannot be read) is a 401, the same answer a request with no identity gets.",
         "responses": {
           "200": {
             "description": "The account, its identifiers and its external bindings",
@@ -18,17 +19,20 @@
       "patch": {
         "operationId": "authn.profile.patch",
         "summary": "Write the caller's own display name, attribute set, locale and time zone",
+        "description": "Writes the caller's own display name, its whole attribute set, and the language and time zone named inside that set; every body field is optional and a field left out is left as it is. The display name is written before the attribute set, and the two writes are not one atomic change: when the second fails, the first is already in force and the answer is that failure's. An impersonating identity is refused 403 without the body being read, and a caller with no login session, or one that does not meet the freshness the account's own factors call for, is refused 401 before anything is written.",
         "requestBody": {
           "required": true,
+          "description": "Fields to write; all are optional and an absent field is left unchanged, while an unknown field is refused. locale and time_zone are trimmed of surrounding whitespace before they are checked and stored, and an empty one clears its key.",
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
+                "description": "The profile write; the set of fields is closed and every one is optional. A body carrying no field succeeds and changes nothing.",
                 "properties": {
-                  "display_name": {"type": "string"},
-                  "attributes": {"type": "object", "additionalProperties": {"type": "string"}},
-                  "locale": {"type": "string"},
-                  "time_zone": {"type": "string"}
+                  "display_name": {"type": "string", "description": "The new display name, at most 100 characters; absent leaves the current one. A longer value is refused 400 by the account module."},
+                  "attributes": {"type": "object", "additionalProperties": {"type": "string"}, "description": "The whole attribute set to store, as string keys and string values; a given one - the empty object included - replaces the current set, and an absent one leaves it alone. A set outside the account module's bounds is refused 400."},
+                  "locale": {"type": "string", "description": "A BCP 47 language tag stored under the i18n.locale attribute. An invalid tag is refused 400; the empty string clears the attribute and an absent field leaves it alone."},
+                  "time_zone": {"type": "string", "description": "An IANA time-zone name stored under the i18n.tz attribute. A name outside the IANA set is refused 400; the empty string clears the attribute and an absent field leaves it alone."}
                 }
               }
             }
@@ -51,38 +55,41 @@
     "schemas": {
       "AuthnProfileProfile": {
         "type": "object",
+        "description": "The caller's own profile: the account's self fields plus its identifiers and external bindings, which this surface only reads. It is built field by field from the account module's values, so a field added to the record there does not reach a client by being there.",
         "required": ["account_id", "kind", "display_name", "mfa_required", "password_set", "created_at", "attributes", "locale", "time_zone", "identifiers", "links"],
         "properties": {
-          "account_id": {"type": "string"},
-          "kind": {"type": "string"},
-          "display_name": {"type": "string"},
-          "mfa_required": {"type": "boolean"},
-          "password_set": {"type": "boolean"},
+          "account_id": {"type": "string", "description": "The account's identifier, the one the request's identity names; never empty on a 200."},
+          "kind": {"type": "string", "description": "The account's kind: user or service, a service being a non-interactive API client."},
+          "display_name": {"type": "string", "description": "The account's display name, empty when it carries none"},
+          "mfa_required": {"type": "boolean", "description": "Whether the account must register a factor"},
+          "password_set": {"type": "boolean", "description": "Whether the account has a password credential set"},
           "created_at": {"type": "string", "description": "RFC 3339 in UTC, empty when the account carries no creation instant"},
           "attributes": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Never null; the empty object when the account carries none"},
           "locale": {"type": "string", "description": "Read out of the attribute set, empty when it carries none"},
           "time_zone": {"type": "string", "description": "Read out of the attribute set, empty when it carries none"},
-          "identifiers": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnProfileIdentifier"}},
-          "links": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnProfileLink"}}
+          "identifiers": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnProfileIdentifier"}, "description": "The account's identifiers; always an array, never null, and empty when the account has none"},
+          "links": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnProfileLink"}, "description": "The account's external bindings; always an array, never null, and empty when there are none. The provider's own subject for the person is not included"}
         }
       },
       "AuthnProfileIdentifier": {
         "type": "object",
+        "description": "One identifier bound to the account, with the way its ownership was established.",
         "required": ["id", "kind", "value", "verified_at", "verified_via"],
         "properties": {
-          "id": {"type": "string"},
-          "kind": {"type": "string"},
-          "value": {"type": "string"},
-          "verified_at": {"type": "string", "description": "RFC 3339 in UTC, empty when the identifier is unverified"},
-          "verified_via": {"type": "string", "description": "Empty when the identifier is unverified"}
+          "id": {"type": "string", "description": "The identifier's own identifier"},
+          "kind": {"type": "string", "description": "The identifier kind: username, email or phone"},
+          "value": {"type": "string", "description": "The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits"},
+          "verified_at": {"type": "string", "description": "RFC 3339 in UTC, the instant the identifier's ownership was established; always present, as no identifier is stored awaiting verification"},
+          "verified_via": {"type": "string", "description": "How the identifier's ownership was established: sms-code, email-code, invite, idp:<provider> (followed by the provider's identifier), admin, import-unverified or self. The first four prove ownership; admin, import-unverified and self only record a fact an administrator, an import or the account's own holder asserted"}
         }
       },
       "AuthnProfileLink": {
         "type": "object",
+        "description": "One external identity bound to the account, as the account module keeps it; it carries no provider subject.",
         "required": ["id", "provider", "created_at"],
         "properties": {
-          "id": {"type": "string"},
-          "provider": {"type": "string"},
+          "id": {"type": "string", "description": "The binding's own identifier"},
+          "provider": {"type": "string", "description": "The provider the binding was made through, as the provider is registered"},
           "email": {"type": "string", "description": "Absent when the provider gave no address"},
           "created_at": {"type": "string", "description": "RFC 3339 in UTC, empty when the binding carries no creation instant"},
           "last_login_at": {"type": "string", "description": "Absent when the binding has never been used to sign in"}
@@ -90,9 +97,10 @@
       },
       "AuthnProfilePatch": {
         "type": "object",
+        "description": "The self-writable fields as they stand after a profile write, read back from what was stored.",
         "required": ["display_name", "attributes", "locale", "time_zone"],
         "properties": {
-          "display_name": {"type": "string"},
+          "display_name": {"type": "string", "description": "The display name as it stands after the write; the account's current one when the body carried none"},
           "attributes": {"type": "object", "additionalProperties": {"type": "string"}, "description": "The whole attribute set as it stands, never null"},
           "locale": {"type": "string", "description": "Read out of the attribute set, empty when it carries none"},
           "time_zone": {"type": "string", "description": "Read out of the attribute set, empty when it carries none"}

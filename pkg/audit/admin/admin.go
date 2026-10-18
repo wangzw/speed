@@ -128,7 +128,7 @@ func Module() core.Module {
 		},
 		Resources: []any{
 			schema(),
-			speedhttp.Spec{Endpoint: defaultEndpoint, Document: openAPIFragment},
+			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: openAPIFragment},
 			// The record-query surface: its routes are mounted whenever the
 			// module is in force and the process has an entry point, so the
 			// feature is static.

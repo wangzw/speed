@@ -41,6 +41,13 @@ Top level: `openapi` (the version the fragments are written against), `info`
 `x-fragments` — a list of each fragment's source, `{module, endpoint}`, in module
 order.
 
+**Each fragment path is resolved against its Spec's `Prefix` and `Version`
+before it reaches the document.** A fragment declares `/auth/me` relative to the
+API root; `Spec.ResolvePath` composes `/api/v1/auth/me`, and that absolute path
+is what the document holds, what a conflict is judged on, and what a client
+addresses. A Spec that serves at the root (both fields empty) carries absolute
+paths already.
+
 Each operation carries the extension key `x-endpoint`, naming the endpoint the
 operation is served on: one document describes several listening endpoints, and
 a path alone does not say which one answers it. These two keys are the
@@ -49,7 +56,7 @@ change.
 
 ## Conflict semantics
 
-An operation declared for the same path and method by two fragments is a
+An operation declared for the same resolved path and method by two fragments is a
 conflict, judged **across endpoints as well as within one**: one document holds
 an operation once, and a route served on two endpoints is two operations the
 paths cannot tell apart. A component declared under one section and name with

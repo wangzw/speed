@@ -26,9 +26,9 @@ func TestTheStartDeclaresTheUnseasonedRefusal(t *testing.T) {
 	if err := json.Unmarshal(impersonationFragment, &doc); err != nil {
 		t.Fatalf("the fragment is not JSON: %v", err)
 	}
-	op, ok := doc.Paths["/api/v1/auth/impersonation"]["post"]
+	op, ok := doc.Paths["/auth/impersonation"]["post"]
 	if !ok {
-		t.Fatal("the fragment declares no POST /api/v1/auth/impersonation")
+		t.Fatal("the fragment declares no POST /auth/impersonation")
 	}
 	refusal, ok := op.Responses["403"]
 	if !ok {

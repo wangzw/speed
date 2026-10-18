@@ -184,7 +184,7 @@ func personalModule() core.Module {
 		},
 		Resources: []any{
 			personalSchema(),
-			speedhttp.Spec{Endpoint: personalEndpoint, Document: personalFragment},
+			speedhttp.Spec{Endpoint: personalEndpoint, Prefix: "api", Version: "v1", Document: personalFragment},
 			// The switch varies it, so it is posted in Init when the route is
 			// mounted and absent otherwise.
 			feature.Spec{Name: personalFeature, Conditional: true},

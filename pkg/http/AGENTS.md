@@ -25,6 +25,15 @@ select the endpoint that registered it, or the startup fails with
 `ErrUnclaimedRoute`. Two endpoints claiming one prefix on a listener, `/`
 included, fail the startup as `ErrClaimConflict`.
 
+**A `Spec` carries the path its fragment is relative to.** `Endpoint` names the
+logical endpoint; `Prefix` and `Version` are bare segments the reader joins into
+the API root (`api` and `v1` compose `/api/v1`), and the fragment's paths are
+written relative to it (`/auth/me`). A module serving a second API version
+declares a second `Spec` carrying that version. `Spec.APIRoot` and
+`Spec.ResolvePath` are the composition; the shape check refuses a `Prefix` with
+a leading or trailing slash, a `Version` that is not one literal segment, and a
+path that already carries the composed root.
+
 The API is the package's godoc, plus the runnable examples in `example_test.go`.
 Read `Middleware`'s field comments before adding a seat to a layer.
 

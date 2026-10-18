@@ -130,7 +130,7 @@ func Module() core.Module {
 			permissionSpec(),
 			translationSpec(),
 			messageCatalog,
-			speedhttp.Spec{Endpoint: defaultEndpoint, Document: metadataFragment},
+			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: metadataFragment},
 			// The object surface: its routes are mounted whenever the module is
 			// in force and the process has an entry point, so the feature is
 			// static. Which byte backend is assembled does not change it.

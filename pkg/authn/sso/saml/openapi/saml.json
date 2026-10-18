@@ -2,17 +2,18 @@
   "openapi": "3.1.0",
   "info": {"title": "authn sso saml", "version": "1.0.0"},
   "paths": {
-    "/api/v1/auth/sso/saml/{provider}/metadata": {
+    "/auth/sso/saml/{provider}/metadata": {
       "get": {
         "operationId": "authn.sso.saml.metadata",
         "summary": "The service provider metadata for one SAML provider",
+        "description": "Returns the SAML 2.0 service provider entity descriptor that the identity provider side is registered against, as XML. The entityID is this metadata address itself, so each provider sees a distinct service provider; the assertion consumer service points at the engine's callback route for the same provider with the HTTP-POST binding, WantAssertionsSigned is true, and AuthnRequestsSigned follows the provider's sign_requests setting. Every URL is derived from the configured public address, never from the Host or X-Forwarded-* headers. When the deployment is configured with an SP certificate, the descriptor carries the current SP signing certificate and, while a rotation is in progress, the next certificate beside it; a deployment that configures neither an SP key nor an SP certificate publishes no key descriptor at all. The descriptor is declared valid for seven days from generation. The route is public. It answers 404 when the identifier names no provider, a disabled provider, or one whose protocol is not saml; 503 when the provider register cannot be reached.",
         "parameters": [
-          {"name": "provider", "in": "path", "required": true, "schema": {"type": "string"}}
+          {"name": "provider", "in": "path", "required": true, "description": "The identifier of the enterprise provider whose service provider metadata is requested; the provider must be enabled and registered with the saml protocol.", "schema": {"type": "string"}}
         ],
         "responses": {
           "200": {
             "description": "The entity descriptor, as application/samlmetadata+xml",
-            "content": {"application/samlmetadata+xml": {"schema": {"type": "string"}}}
+            "content": {"application/samlmetadata+xml": {"schema": {"type": "string", "description": "The entity descriptor as an application/samlmetadata+xml document: the SAML 2.0 service provider metadata served for the provider."}}}
           },
           "404": {"description": "No enabled SAML provider has this identifier"},
           "503": {"description": "The provider register could not be reached"}

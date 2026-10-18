@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/vislake/speed/pkg/core"
@@ -40,6 +42,9 @@ func validateSpecs(specs []core.Resource[Spec]) error {
 // The two are separately maintained facts and are allowed to drift; a mismatch
 // produces no failure signal at all.
 func validateSpec(module string, s Spec) error {
+	if err := validateSpecRoot(module, s); err != nil {
+		return err
+	}
 	if len(bytes.TrimSpace(s.Document)) == 0 {
 		return fmt.Errorf("%w: module %q declared a Spec with an empty Document. "+
 			"Either embed the module's openapi.json into it or drop the declaration",
@@ -79,5 +84,81 @@ func validateSpec(module string, s Spec) error {
 			"level. Add it with the OpenAPI version the fragment is written against, "+
 			"for example %q: \"3.1.0\"", ErrInvalidSpec, module, openAPIField, openAPIField)
 	}
+	return validateDocumentPaths(module, s, top)
+}
+
+// validateSpecRoot checks Prefix and Version, the two path parts the reader
+// prepends to every path in the fragment.
+func validateSpecRoot(module string, s Spec) error {
+	if s.Prefix != "" {
+		if err := checkPrefixSegments(s.Prefix); err != nil {
+			return fmt.Errorf("%w: module %q declared a Spec whose Prefix %q %s. Write the "+
+				"endpoint's path as bare segments without a leading slash, for example \"api\"",
+				ErrInvalidSpec, module, s.Prefix, err)
+		}
+	}
+	if s.Version != "" && !literalSegment(s.Version) {
+		return fmt.Errorf("%w: module %q declared a Spec whose Version %q is not one bare literal "+
+			"segment. Write the version without slashes or wildcards, for example \"v1\"",
+			ErrInvalidSpec, module, s.Version)
+	}
 	return nil
+}
+
+// validateDocumentPaths holds the fragment's paths to the relative form the
+// reader expects: each begins with "/" and none already carries the API root,
+// which would be prepended twice.
+func validateDocumentPaths(module string, s Spec, top map[string]json.RawMessage) error {
+	raw, ok := top["paths"]
+	if !ok {
+		return nil
+	}
+	var paths map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &paths); err != nil {
+		return fmt.Errorf("%w: module %q declared a Spec whose paths section is not a JSON object: %w",
+			ErrInvalidSpec, module, err)
+	}
+	root := s.APIRoot()
+	for path := range paths {
+		if !strings.HasPrefix(path, "/") {
+			return fmt.Errorf("%w: module %q declared the path %q, which does not begin with \"/\". "+
+				"Every OpenAPI path is absolute from the API root", ErrInvalidSpec, module, path)
+		}
+		if root == "" {
+			continue
+		}
+		if path == root || strings.HasPrefix(path, root+"/") {
+			return fmt.Errorf("%w: module %q declared the path %q, which already carries the API root "+
+				"%q. Write the path relative to the root, for example %q",
+				ErrInvalidSpec, module, path, root, strings.TrimPrefix(path, root))
+		}
+	}
+	return nil
+}
+
+// checkPrefixSegments validates a path written as bare literal segments, the
+// form Prefix takes: "api" or "internal/api", never "/api".
+func checkPrefixSegments(prefix string) error {
+	if strings.HasPrefix(prefix, "/") {
+		return errors.New("begins with \"/\"; write bare segments, for example \"api\"")
+	}
+	if strings.HasSuffix(prefix, "/") {
+		return errors.New("ends with \"/\"")
+	}
+	for _, segment := range strings.Split(prefix, "/") {
+		if !literalSegment(segment) {
+			return fmt.Errorf("carries the segment %q, which is not a literal segment name", segment)
+		}
+	}
+	return nil
+}
+
+// literalSegment reports whether one path segment is a plain name: no
+// wildcard, parameter marker, query, fragment, escape or whitespace.
+func literalSegment(segment string) bool {
+	if segment == "" || segment == "." || segment == ".." {
+		return false
+	}
+	return !strings.ContainsAny(segment, "/:*?#%") &&
+		!strings.ContainsFunc(segment, unicode.IsSpace)
 }

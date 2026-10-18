@@ -2,117 +2,125 @@
   "openapi": "3.1.0",
   "info": {"title": "tenant.admin", "version": "1.0.0"},
   "paths": {
-    "/api/v1/tenant/admin/tenants": {
+    "/tenant/admin/tenants": {
       "get": {
         "operationId": "tenant.admin.tenants.list",
         "summary": "List every tenant the roster holds",
+        "description": "Reads every tenant in the roster, ordered by identifier. The roster is the set of tenants this deployment serves and the read is not paged, so the answer always carries the whole list. It is a platform-domain read: the caller needs tenant.read in the platform domain, and no cross-tenant context or permission is involved. Reads write no audit row.",
         "responses": {
           "200": {
             "description": "Every tenant, in the roster's order by identifier",
-            "content": {"application/json": {"schema": {"type": "object", "required": ["tenants"], "properties": {"tenants": {"type": "array", "items": {"$ref": "#/components/schemas/TenantAdminTenant"}}}}}}
+            "content": {"application/json": {"schema": {"type": "object", "description": "The whole roster in one answer, because the listing is not paged.", "required": ["tenants"], "properties": {"tenants": {"type": "array", "items": {"$ref": "#/components/schemas/TenantAdminTenant"}, "description": "Every tenant the roster holds, ordered by identifier."}}}}}
           },
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no tenant.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no tenant.read in the platform domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "post": {
         "operationId": "tenant.admin.tenants.create",
         "summary": "Register an active tenant",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TenantAdminTenantRegistration"}}}},
+        "description": "Registers a tenant the roster does not hold yet. The body gives the identifier and the alias; the new tenant starts active. Registration never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A mandatory audit row must land before the roster is called; if it cannot, the registration does not run and the request is answered 503.",
+        "requestBody": {"description": "The registration: the identifier to insert and the alias the request surface will address the tenant by. The state is not part of it, because a registered tenant starts active.", "required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TenantAdminTenantRegistration"}}}},
         "responses": {
           "201": {
             "description": "The registered tenant",
-            "content": {"application/json": {"schema": {"type": "object", "required": ["tenant"], "properties": {"tenant": {"$ref": "#/components/schemas/TenantAdminTenant"}}}}}
+            "content": {"application/json": {"schema": {"type": "object", "description": "The tenant as registered, in the same view the read routes render.", "required": ["tenant"], "properties": {"tenant": {"$ref": "#/components/schemas/TenantAdminTenant", "description": "The registered tenant, its state active."}}}}}
           },
-          "400": {"description": "The identifier or the alias is outside the identifier domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no tenant.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "409": {"description": "The identifier or the alias is already taken", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "400": {"description": "The identifier or the alias is outside the identifier domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no tenant.manage in the platform domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The identifier or the alias is already taken", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
-    "/api/v1/tenant/admin/tenants/{id}": {
+    "/tenant/admin/tenants/{id}": {
       "get": {
         "operationId": "tenant.admin.tenants.get",
         "summary": "Read one tenant the roster holds",
-        "parameters": [{"$ref": "#/components/parameters/TenantAdminTenantID"}],
+        "description": "Reads one tenant by its identifier, the natural key the roster keys a row by, so no opaque row identifier appears in a path. An identifier the roster does not hold is a 404. Reads write no audit row.",
+        "parameters": [{"$ref": "#/components/parameters/TenantAdminTenantID", "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."}],
         "responses": {
           "200": {
             "description": "The tenant",
-            "content": {"application/json": {"schema": {"type": "object", "required": ["tenant"], "properties": {"tenant": {"$ref": "#/components/schemas/TenantAdminTenant"}}}}}
+            "content": {"application/json": {"schema": {"type": "object", "description": "The tenant the identifier named.", "required": ["tenant"], "properties": {"tenant": {"$ref": "#/components/schemas/TenantAdminTenant", "description": "The tenant, with its identifier, alias and state."}}}}}
           },
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no tenant.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "404": {"description": "No tenant carries the identifier", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no tenant.read in the platform domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "404": {"description": "No tenant carries the identifier", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "patch": {
         "operationId": "tenant.admin.tenants.setAlias",
         "summary": "Change one tenant's alias",
-        "parameters": [{"$ref": "#/components/parameters/TenantAdminTenantID"}],
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["alias"], "properties": {"alias": {"type": "string"}}}}}},
+        "description": "Changes one tenant's alias and nothing else; the tenant's state is left as it stands. The path identifier and the new alias must both be identifiers. A tenant the roster does not hold is a 404, and an alias another tenant holds is a 409. A mandatory audit row lands before the write; if it cannot, the alias is unchanged and the request is answered 503.",
+        "parameters": [{"$ref": "#/components/parameters/TenantAdminTenantID", "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."}],
+        "requestBody": {"description": "The new alias, which must be an identifier.", "required": true, "content": {"application/json": {"schema": {"type": "object", "description": "The rename request: the alias to give the tenant the path names.", "required": ["alias"], "properties": {"alias": {"type": "string", "description": "The new alias; an alias another tenant holds is refused with a 409."}}}}}},
         "responses": {
           "204": {"description": "The alias was changed"},
-          "400": {"description": "The identifier or the alias is outside the identifier domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no tenant.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "404": {"description": "No tenant carries the identifier", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "409": {"description": "The alias is already taken", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "400": {"description": "The identifier or the alias is outside the identifier domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no tenant.manage in the platform domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "404": {"description": "No tenant carries the identifier", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The alias is already taken", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
-    "/api/v1/tenant/admin/tenants/{id}/status": {
+    "/tenant/admin/tenants/{id}/status": {
       "post": {
         "operationId": "tenant.admin.tenants.setStatus",
         "summary": "Change one tenant's state",
-        "parameters": [{"$ref": "#/components/parameters/TenantAdminTenantID"}],
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["status"], "properties": {"status": {"type": "string", "enum": ["active", "disabled"]}}}}}},
+        "description": "Changes one tenant's state, which is one of the closed set active and disabled. The roster has no delete, so disabling is the only way to stop serving a tenant. An identifier the roster does not hold is a 404. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.",
+        "parameters": [{"$ref": "#/components/parameters/TenantAdminTenantID", "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."}],
+        "requestBody": {"description": "The target state, one of the closed set active and disabled.", "required": true, "content": {"application/json": {"schema": {"type": "object", "description": "The state change request.", "required": ["status"], "properties": {"status": {"type": "string", "enum": ["active", "disabled"], "description": "active serves the tenant; disabled stops serving it."}}}}}},
         "responses": {
           "204": {"description": "The state was changed"},
-          "400": {"description": "The identifier is outside the identifier domain or the status is outside the closed set active/disabled", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no tenant.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "404": {"description": "No tenant carries the identifier", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "400": {"description": "The identifier is outside the identifier domain or the status is outside the closed set active/disabled", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no tenant.manage in the platform domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "404": {"description": "No tenant carries the identifier", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     }
   },
   "components": {
     "parameters": {
-      "TenantAdminTenantID": {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+      "TenantAdminTenantID": {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."}
     },
     "schemas": {
       "TenantAdminTenant": {
         "type": "object",
+        "description": "One tenant as the management routes render it: the identifier, the alias and the state.",
         "required": ["id", "alias", "status"],
         "properties": {
-          "id": {"type": "string"},
-          "alias": {"type": "string"},
-          "status": {"type": "string", "enum": ["active", "disabled"]}
+          "id": {"type": "string", "description": "The tenant's identifier, the natural key the roster keys the row by."},
+          "alias": {"type": "string", "description": "The alias the request surface addresses the tenant by."},
+          "status": {"type": "string", "enum": ["active", "disabled"], "description": "The tenant's state: active is served, disabled is not."}
         }
       },
       "TenantAdminTenantRegistration": {
         "type": "object",
+        "description": "A registration: the identifier to insert and the alias to give it. The state is not part of it, because a registered tenant starts active.",
         "required": ["id", "alias"],
         "properties": {
-          "id": {"type": "string"},
-          "alias": {"type": "string"}
+          "id": {"type": "string", "description": "The identifier to register; the roster refuses one it already holds."},
+          "alias": {"type": "string", "description": "The alias to give the tenant; the roster refuses one another tenant already holds."}
         }
       },
       "Problem": {
         "type": "object",
+        "description": "An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.",
         "required": ["type", "status"],
         "properties": {
-          "type": {"type": "string"},
-          "title": {"type": "string"},
-          "status": {"type": "integer"},
-          "detail": {"type": "string"},
-          "instance": {"type": "string"}
+          "type": {"type": "string", "description": "The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>."},
+          "title": {"type": "string", "description": "A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code."},
+          "status": {"type": "integer", "description": "The HTTP status code the response is written with, repeated from the status line."},
+          "detail": {"type": "string", "description": "A longer explanation of this occurrence. Present only when the answering module has one to give, and those that set one render it in the request language."},
+          "instance": {"type": "string", "description": "A URI identifying this occurrence; absent when there is none to give."}
         }
       }
     }

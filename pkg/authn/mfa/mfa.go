@@ -124,7 +124,7 @@ func Module() core.Module {
 		Resources: []any{
 			settingsSchema(),
 			db.Migrations{FS: migrationsFS},
-			speedhttp.Spec{Endpoint: defaultEndpoint, Document: mfaFragment},
+			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: mfaFragment},
 			// The multi-factor self-service surface: the two guarded routes the
 			// module mounts, which are present whenever it is in force.
 			feature.Spec{Name: "authn.mfa"},

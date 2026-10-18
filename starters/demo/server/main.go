@@ -886,8 +886,9 @@ func applicationOperations(reg *core.Registry, specs []core.Resource[speedhttp.S
 				genModuleName, spec.Module, err)
 		}
 		for path, methods := range fragment.Paths {
+			absolute := spec.Value.ResolvePath(path)
 			for method := range methods {
-				operations[strings.ToUpper(method)+" "+path] = true
+				operations[strings.ToUpper(method)+" "+absolute] = true
 			}
 		}
 	}

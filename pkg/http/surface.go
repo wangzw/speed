@@ -3,6 +3,7 @@ package http
 import (
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -261,7 +262,49 @@ type Spec struct {
 	// is a static declaration, and this module does not interpret what it
 	// describes.
 	Endpoint string
-	// Document is the OpenAPI fragment, as JSON. A module usually reads its
-	// own openapi.json in with //go:embed.
+	// Prefix is the path the endpoint serves its API under, written as bare
+	// segments: "api", or "internal/api" for a nested prefix. The slashes
+	// are the reader's to insert. The fragment's paths are relative to it,
+	// so the module declares the endpoint's path here rather than repeating
+	// it in every path. Empty means the endpoint serves at the root.
+	Prefix string
+	// Version is the API version segment the module serves, one bare
+	// segment: "v1". A module that starts serving a second version declares
+	// it here and beside it a fragment for that version. Empty means the
+	// module's API carries no version segment.
+	Version string
+	// Document is the OpenAPI fragment, as JSON. Its paths are relative to
+	// Prefix and Version — "/auth/me", not "/api/v1/auth/me". A module
+	// usually reads its own openapi.json in with //go:embed.
 	Document []byte
+}
+
+// APIRoot is the path the fragment's paths are relative to: Prefix and
+// Version joined into one absolute path, with an empty part contributing no
+// segment. It is "" when the fragment's paths are absolute.
+func (s Spec) APIRoot() string {
+	parts := make([]string, 0, 2)
+	for _, part := range []string{s.Prefix, s.Version} {
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "/" + strings.Join(parts, "/")
+}
+
+// ResolvePath returns the absolute path of one path written in the fragment.
+// A fragment with no APIRoot carries absolute paths already, and its paths are
+// returned unchanged.
+func (s Spec) ResolvePath(path string) string {
+	root := s.APIRoot()
+	if root == "" {
+		return path
+	}
+	if path == "/" {
+		return root
+	}
+	return root + path
 }

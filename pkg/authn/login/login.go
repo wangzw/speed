@@ -111,7 +111,7 @@ func Module() core.Module {
 		},
 		Resources: []any{
 			settingsSchema(),
-			speedhttp.Spec{Endpoint: defaultEndpoint, Document: loginFragment},
+			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: loginFragment},
 			// The optional account self-service surfaces. Each is posted in
 			// Init from the same judgement that mounts it; the name constants
 			// live beside that judgement.

@@ -24,36 +24,61 @@ import { speedRequestCredentialless } from './runtime.js';
  */
 export type AuditAdminRecordDetail = {[key: string]: string};
 
+/**
+ * One audit row as the query routes render it: the recorded fact, the identity and capture path behind it, and what it acted on.
+ */
 export interface AuditAdminRecord {
   /** The row identifier, rendered as text */
   id: string;
   /** Empty when the row belongs to no tenant */
   tenant: string;
+  /** When the recorded fact happened, in UTC */
   occurred_at: string;
+  /** The acting identity's responsibility key, that is the identity that really acted; empty when the row records a system operation. An impersonated account is named in detail.on_behalf_of instead */
   actor: string;
+  /** The capture path that produced the row */
   source: string;
+  /** What was done, as the emitting call site and the reader agree to spell it; the audit module fixes no vocabulary */
   action: string;
+  /** The type of the thing acted on, together with its identifier */
   object: string;
+  /** How the action ended */
   outcome: string;
+  /** Why the action was taken */
   purpose: string;
   /** Empty object when the row carries no detail */
   detail: AuditAdminRecordDetail;
 }
 
+/**
+ * One page of audit records and the cursor that continues after them.
+ */
 export interface AuditAdminRecordPage {
+  /** The records on this page, newest first */
   entries: AuditAdminRecord[];
   /** The cursor of the next page, empty on the last page */
   next: string;
 }
 
+/**
+ * An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.
+ */
 export interface Problem {
+  /** The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>. */
   type: string;
+  /** A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code. */
   title?: string;
+  /** The HTTP status code the response is written with, repeated from the status line. */
   status: number;
+  /** A longer explanation of this occurrence. Present only when the answering module has one to give, and those that set one render it in the request language. */
   detail?: string;
+  /** A URI identifying this occurrence; absent when there is none to give. */
   instance?: string;
 }
 
+/**
+ * user for a human account, service for a non-interactive API client.
+ */
 export type AuthnAdminAccountKind = typeof AuthnAdminAccountKind[keyof typeof AuthnAdminAccountKind];
 
 
@@ -62,6 +87,9 @@ export const AuthnAdminAccountKind = {
   service: 'service',
 } as const;
 
+/**
+ * disabled, active or deleted; deleted is terminal and leaves a tombstone.
+ */
 export type AuthnAdminAccountStatusProperty = typeof AuthnAdminAccountStatusProperty[keyof typeof AuthnAdminAccountStatusProperty];
 
 
@@ -76,25 +104,43 @@ export const AuthnAdminAccountStatusProperty = {
  */
 export type AuthnAdminAccountAttributes = {[key: string]: string};
 
+/**
+ * One account as the management routes show it, built field by field so that a field added to the stored account does not reach a client by being there.
+ */
 export interface AuthnAdminAccount {
+  /** The account's opaque identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive. */
   id: string;
+  /** user for a human account, service for a non-interactive API client. */
   kind: AuthnAdminAccountKind;
+  /** disabled, active or deleted; deleted is terminal and leaves a tombstone. */
   status: AuthnAdminAccountStatusProperty;
+  /** The account's display name, at most 100 characters and not used for any decision. */
   display_name: string;
+  /** True when the account must register a factor before it can sign in. */
   mfa_required: boolean;
+  /** True when the account may not be impersonated, independent of any Decider. */
   protected: boolean;
+  /** True when the account carries a password credential. */
   password_set: boolean;
   /** Absent when the account carries no attribute set */
   attributes?: AuthnAdminAccountAttributes;
+  /** When the account was created, as an RFC 3339 instant in UTC. */
   created_at: string;
 }
 
+/**
+ * One page of accounts and the cursor of the next page.
+ */
 export interface AuthnAdminAccountList {
+  /** The accounts on this page, in ascending identifier order. */
   accounts: AuthnAdminAccount[];
   /** The cursor of the next page, empty on the last page */
   next_cursor: string;
 }
 
+/**
+ * user for a human account, service for a non-interactive API client.
+ */
 export type AuthnAdminAccountCreateKind = typeof AuthnAdminAccountCreateKind[keyof typeof AuthnAdminAccountCreateKind];
 
 
@@ -104,7 +150,7 @@ export const AuthnAdminAccountCreateKind = {
 } as const;
 
 /**
- * How the administrator states the email came to be verified; empty or absent writes it unverified
+ * How the administrator states the email came to be verified: admin or import-unverified. It is required whenever email is present, because an address written here is always recorded as verified; empty or absent is refused with 400.
  */
 export type AuthnAdminAccountCreateEmailVerifiedVia = typeof AuthnAdminAccountCreateEmailVerifiedVia[keyof typeof AuthnAdminAccountCreateEmailVerifiedVia];
 
@@ -116,7 +162,7 @@ export const AuthnAdminAccountCreateEmailVerifiedVia = {
 } as const;
 
 /**
- * How the administrator states the phone came to be verified; empty or absent writes it unverified
+ * How the administrator states the phone came to be verified: admin or import-unverified. It is required whenever phone is present, because a number written here is always recorded as verified; empty or absent is refused with 400.
  */
 export type AuthnAdminAccountCreatePhoneVerifiedVia = typeof AuthnAdminAccountCreatePhoneVerifiedVia[keyof typeof AuthnAdminAccountCreatePhoneVerifiedVia];
 
@@ -132,23 +178,37 @@ export const AuthnAdminAccountCreatePhoneVerifiedVia = {
  */
 export type AuthnAdminAccountCreateAttributes = {[key: string]: string};
 
+/**
+ * The request that creates an account. A user account must name at least one of username, email and phone.
+ */
 export interface AuthnAdminAccountCreate {
+  /** user for a human account, service for a non-interactive API client. */
   kind: AuthnAdminAccountCreateKind;
+  /** The account's display name; absent writes an empty one. */
   display_name?: string;
+  /** A login name to add. At least one of username, email and phone is required for a user account; a username is lower-cased before it is stored. */
   username?: string;
+  /** An email address to add, asserted by the administrator. It is trimmed and lower-cased before it is stored, and it needs email_verified_via. */
   email?: string;
-  /** How the administrator states the email came to be verified; empty or absent writes it unverified */
+  /** How the administrator states the email came to be verified: admin or import-unverified. It is required whenever email is present, because an address written here is always recorded as verified; empty or absent is refused with 400. */
   email_verified_via?: AuthnAdminAccountCreateEmailVerifiedVia;
+  /** A phone number to add, in E.164 with a leading plus sign and 7 to 15 digits; it needs phone_verified_via. */
   phone?: string;
-  /** How the administrator states the phone came to be verified; empty or absent writes it unverified */
+  /** How the administrator states the phone came to be verified: admin or import-unverified. It is required whenever phone is present, because a number written here is always recorded as verified; empty or absent is refused with 400. */
   phone_verified_via?: AuthnAdminAccountCreatePhoneVerifiedVia;
+  /** An initial password; absent leaves the account without one. It must pass the password policy. */
   password?: string;
   /** Absent writes no attribute set */
   attributes?: AuthnAdminAccountCreateAttributes;
+  /** True when the account must register a factor before it can sign in. */
   mfa_required?: boolean;
 }
 
+/**
+ * A response carrying one account.
+ */
 export interface AuthnAdminAccountEnvelope {
+  /** The account the response carries. */
   account: AuthnAdminAccount;
 }
 
@@ -157,6 +217,9 @@ export interface AuthnAdminAccountEnvelope {
  */
 export type AuthnAdminAccountPatchAttributes = {[key: string]: string};
 
+/**
+ * A partial update: every field is optional, and each one left out leaves the stored value as it is.
+ */
 export interface AuthnAdminAccountPatch {
   /** Absent leaves the display name as it is */
   display_name?: string;
@@ -166,6 +229,9 @@ export interface AuthnAdminAccountPatch {
   protected?: boolean;
 }
 
+/**
+ * pending until the factor is confirmed, then active; disabled once it can no longer be used.
+ */
 export type AuthnAdminFactorStatus = typeof AuthnAdminFactorStatus[keyof typeof AuthnAdminFactorStatus];
 
 
@@ -175,13 +241,23 @@ export const AuthnAdminFactorStatus = {
   disabled: 'disabled',
 } as const;
 
+/**
+ * One registered factor: its kind, label and status, and nothing of its credential.
+ */
 export interface AuthnAdminFactor {
+  /** The factor kind: totp, sms or webauthn. */
   kind: string;
+  /** The label the account gave the factor, for display only. */
   label: string;
+  /** pending until the factor is confirmed, then active; disabled once it can no longer be used. */
   status: AuthnAdminFactorStatus;
 }
 
+/**
+ * The factors registered on one account.
+ */
 export interface AuthnAdminFactorList {
+  /** The account's registered factors; the empty array when it has none. */
   factors: AuthnAdminFactor[];
 }
 
@@ -207,52 +283,89 @@ export const AuthnAdminIdentifierWriteVerifiedVia = {
   admin: 'admin',
 } as const;
 
+/**
+ * The request that adds one identifier to an account.
+ */
 export interface AuthnAdminIdentifierWrite {
   /** A phone number is added or changed only through an SMS code and is refused here */
   kind: AuthnAdminIdentifierWriteKind;
+  /** The identifier's text; it is normalized before it is stored, so a username is lower-cased and an email address is trimmed and lower-cased. */
   value: string;
   /** How the administrator states the identifier came to be verified */
   verified_via?: AuthnAdminIdentifierWriteVerifiedVia;
 }
 
+/**
+ * The request that sets the account-level required-factor flag.
+ */
 export interface AuthnAdminMFARequired {
+  /** True when the account must register a factor before it can sign in. */
   required: boolean;
 }
 
+/**
+ * The number of factors a multi-factor reset removed.
+ */
 export interface AuthnAdminRemoved {
   /** The number of factors removed */
   removed: number;
 }
 
+/**
+ * The request that sets an administrator's temporary password.
+ */
 export interface AuthnAdminPasswordReset {
   /** The temporary password, handed out once and never echoed, logged or audited */
   password: string;
 }
 
+/**
+ * The number of sessions a bulk revocation ended.
+ */
 export interface AuthnAdminRevoked {
   /** The number of sessions revoked */
   revoked: number;
 }
 
+/**
+ * One service secret as the listing shows it: identifier, label, expiry and revocation state, never the secret value.
+ */
 export interface AuthnAdminSecret {
+  /** The secret's identifier, not the secret value. */
   id: string;
+  /** The label given to the secret when it was created. */
   label: string;
+  /** When the secret expires, as an RFC 3339 instant in UTC; the zero instant 0001-01-01T00:00:00Z means it never expires. */
   expires_at: string;
+  /** True when the secret has been revoked. */
   revoked: boolean;
 }
 
+/**
+ * The service secrets of one account, oldest first.
+ */
 export interface AuthnAdminSecretList {
+  /** The account's service secrets, oldest first; the empty array when it has none. */
   secrets: AuthnAdminSecret[];
 }
 
+/**
+ * The request that mints a service secret.
+ */
 export interface AuthnAdminSecretCreate {
+  /** The label for the administrator's own reference: at most 100 bytes of valid UTF-8 with no control character. */
   label: string;
   /** Absent mints a secret with no expiry */
   expires_at?: string;
 }
 
+/**
+ * A freshly minted service secret. The secret value appears in this response only.
+ */
 export interface AuthnAdminSecretCreated {
+  /** The new secret's identifier. */
   id: string;
+  /** The label given in the request. */
   label: string;
   /** The secret itself, handed out once and never again */
   secret: string;
@@ -260,23 +373,37 @@ export interface AuthnAdminSecretCreated {
   expires_at: string;
 }
 
+/**
+ * One session of an account, without any credential a caller could use to take it over.
+ */
 export interface AuthnAdminSession {
+  /** The session's opaque identifier. */
   id: string;
+  /** The session kind: browser for a cookie session, token for an access and refresh token pair. */
   kind: string;
   /** 0 none, 1 single factor, 2 multi-factor */
   assurance: number;
+  /** When the session last authenticated, as an RFC 3339 instant in UTC. */
   auth_time: string;
   /** Absent unless the session carries an impersonation */
   impersonation_id?: string;
+  /** When the session was created, as an RFC 3339 instant in UTC. */
   created_at: string;
+  /** When a request last used the session, as an RFC 3339 instant in UTC. */
   last_seen_at: string;
+  /** The session's absolute expiry, as an RFC 3339 instant in UTC. */
   expires_at: string;
+  /** True when the session has been revoked. */
   revoked: boolean;
   /** True when the row is the caller's own session */
   current: boolean;
 }
 
+/**
+ * The live sessions of one account, most recently created first.
+ */
 export interface AuthnAdminSessionList {
+  /** The account's live browser and token sessions, most recently created first; the empty array when it has none. */
   sessions: AuthnAdminSession[];
 }
 
@@ -291,18 +418,31 @@ export const AuthnAdminAccountStatusStatus = {
   disabled: 'disabled',
 } as const;
 
+/**
+ * The request that changes an account's status.
+ */
 export interface AuthnAdminAccountStatus {
   /** The deleted state is reached only through the delete route */
   status: AuthnAdminAccountStatusStatus;
 }
 
+/**
+ * One impersonation record. The reason never appears here; it is in the record and the audit row alone.
+ */
 export interface AuthnAdminImpersonation {
+  /** The record's identifier. */
   id: string;
+  /** The identifier of the account that started the impersonation. */
   actor: string;
+  /** The identifier of the account being impersonated. */
   target: string;
+  /** The tenant the impersonation is confined to. */
   tenant: string;
+  /** The identifier of the actor's session that carries the impersonation. */
   session_id: string;
+  /** When the impersonation started, as an RFC 3339 instant in UTC. */
   started_at: string;
+  /** When the impersonation lapses, as an RFC 3339 instant in UTC. */
   ends_at: string;
   /** The zero instant 0001-01-01T00:00:00Z while the record is still in force */
   ended_at: string;
@@ -310,31 +450,53 @@ export interface AuthnAdminImpersonation {
   end_reason?: string;
 }
 
+/**
+ * One page of impersonation records of one tenant, in ascending record-identifier order, and the cursor of the next page.
+ */
 export interface AuthnAdminImpersonationList {
+  /** The records on this page; the empty array when the tenant has none. */
   impersonations: AuthnAdminImpersonation[];
   /** The cursor of the next page, empty on the last page */
   next_cursor: string;
 }
 
+/**
+ * One SSO provider. The encrypted client secret never appears, and warnings names each setting that loosens a default.
+ */
 export interface AuthnAdminProvider {
+  /** The provider's identifier. */
   id: string;
+  /** The owning tenant's identifier; immutable after creation. */
   tenant: string;
+  /** The protocol: oidc or saml. */
   protocol: string;
+  /** The provider's display name; 1 to 64 characters. */
   name: string;
+  /** True when the provider may be used for sign-in. */
   enabled: boolean;
+  /** jit creates an account on first sign-in; preprovisioned matches only an account an administrator has already created. */
   provisioning: string;
+  /** True when the provider's assertion may count as a multi-factor proof, and only when its acr (or SAML AuthnContextClassRef) is in the configured list. */
   trust_idp_mfa: boolean;
+  /** True when an unsolicited assertion from the provider is accepted; the route then warns that login CSRF cannot be defended against. */
   allow_idp_initiated: boolean;
+  /** True when SHA-1 signed assertions are accepted; the route then warns about the downgrade. */
   allow_sha1: boolean;
+  /** True when just-in-time sign-up may merge into an existing account; the route then warns about it. */
   merge_existing: boolean;
   /** The protocol's own configuration; absent when the provider carries none */
   config?: unknown;
+  /** The provider's version, raised by every write. */
   version: number;
   /** Absent when no setting loosens a default */
   warnings?: string[];
 }
 
+/**
+ * A response carrying one SSO provider.
+ */
 export interface AuthnAdminProviderEnvelope {
+  /** The provider the response carries. */
   provider: AuthnAdminProvider;
 }
 
@@ -343,13 +505,19 @@ export interface AuthnAdminProviderEnvelope {
  */
 export type AuthnAdminProviderWriteConfig = { [key: string]: unknown };
 
+/**
+ * The request that creates or replaces an SSO provider. Booleans left out keep their stored value on an update and are false on a create, and config is required either way.
+ */
 export interface AuthnAdminProviderWrite {
   /** Absent on a create takes the path's tenant; a value that names another is refused */
   tenant?: string;
+  /** The protocol: oidc or saml. The set is closed. */
   protocol: string;
+  /** The provider's display name; 1 to 64 characters. */
   name: string;
   /** Absent leaves the enabled flag as it is (false on a create) */
   enabled?: boolean;
+  /** jit creates an account on first sign-in; preprovisioned matches only an account an administrator has already created. Required, with no default. */
   provisioning: string;
   /** Absent leaves the flag as it is (false on a create) */
   trust_idp_mfa?: boolean;
@@ -361,19 +529,29 @@ export interface AuthnAdminProviderWrite {
   merge_existing?: boolean;
   /** The protocol's own configuration */
   config?: AuthnAdminProviderWriteConfig;
-  /** Absent writes no client secret */
+  /** Absent writes no client secret on a create and keeps the stored one on an update */
   client_secret?: string;
 }
 
+/**
+ * The request that claims a domain for an SSO provider.
+ */
 export interface AuthnAdminDomainClaim {
+  /** The domain to claim, for example example.com; it is trimmed and lower-cased before it is stored. */
   domain: string;
 }
 
+/**
+ * The token to publish in DNS to verify a claimed domain.
+ */
 export interface AuthnAdminVerifyToken {
   /** The token to publish in DNS */
   verify_token: string;
 }
 
+/**
+ * The stored state. Expiry is not stored: an expired pending invitation still reads pending.
+ */
 export type AuthnInviteInvitationStatus = typeof AuthnInviteInvitationStatus[keyof typeof AuthnInviteInvitationStatus];
 
 
@@ -383,79 +561,137 @@ export const AuthnInviteInvitationStatus = {
   revoked: 'revoked',
 } as const;
 
+/**
+ * One invitation as the management face shows it. It never carries the acceptance token.
+ */
 export interface AuthnInviteInvitation {
+  /** The invitation's opaque identifier, used to revoke it. */
   id: string;
+  /** The string form of the tenant identifier the invitation grants a membership in. */
   tenant: string;
   /** The normalized address */
   email: string;
+  /** The stored state. Expiry is not stored: an expired pending invitation still reads pending. */
   status: AuthnInviteInvitationStatus;
+  /** The account identifier of the issuer; empty when a host command issued the invitation without an HTTP identity. */
   invited_by: string;
+  /** RFC 3339 deadline in UTC; a pending invitation at or past it can no longer be accepted. */
   expires_at: string;
   /** The zero instant 0001-01-01T00:00:00Z when the invitation has not been accepted */
   accepted_at: string;
+  /** RFC 3339 timestamp in UTC of issuance. */
   created_at: string;
 }
 
+/**
+ * One page of a tenant's invitations together with the cursor of the next page.
+ */
 export interface AuthnInvitePage {
+  /** The invitations of this page, ordered by status ascending (pending, accepted, revoked) and then newest first with the identifier as the tie-break. */
   invitations: AuthnInviteInvitation[];
   /** The cursor of the next page, empty on the last page */
   next_cursor: string;
 }
 
+/**
+ * The answer of an issue: the invitation's view together with its one-time acceptance token.
+ */
 export interface AuthnInviteIssued {
+  /** The issued invitation; the token is delivered beside it, not inside it. */
   invitation: AuthnInviteInvitation;
   /** The acceptance token, handed out once */
   token: string;
 }
 
+/**
+ * One account's membership in one tenant.
+ */
 export interface AuthnAdminMember {
+  /** The member account's identifier. */
   account: string;
+  /** The tenant's identifier. */
   tenant: string;
+  /** True when the membership is in force; false means suspended, which reads as not a member. */
   active: boolean;
+  /** True when the member is exempt from the tenant's enforced SSO requirement. */
   sso_exempt: boolean;
+  /** How the membership came to exist: admin, invite, import or jit:<provider identifier>. */
   source: string;
 }
 
+/**
+ * One page of a tenant's memberships, in ascending account-identifier order.
+ */
 export interface AuthnAdminMemberList {
+  /** The memberships on this page; the empty array when the tenant has none. */
   members: AuthnAdminMember[];
 }
 
+/**
+ * The request that writes a membership. An absent active writes false.
+ */
 export interface AuthnAdminMemberWrite {
+  /** True adds or resumes the membership; false suspends it, and a suspended membership reads as not a member. */
   active?: boolean;
   /** Absent records the change as an administrator's */
   source?: string;
+  /** True exempts the member from the tenant's enforced SSO requirement. */
   sso_exempt?: boolean;
 }
 
+/**
+ * The request that sets or clears a member's exemption from the tenant's SSO requirement.
+ */
 export interface AuthnAdminMemberSSOExempt {
+  /** True exempts the member; false clears the exemption. */
   sso_exempt: boolean;
 }
 
+/**
+ * The SSO providers of one tenant.
+ */
 export interface AuthnAdminProviderList {
+  /** The tenant's providers; the empty array when it has none. */
   providers: AuthnAdminProvider[];
 }
 
+/**
+ * One input a method asks the client for, named by the method and rendered according to its kind.
+ */
 export interface AuthnLoginField {
+  /** The input's key: the client submits its value under this name in the `input` map of the start request or of the answer. */
   name: string;
+  /** How the client renders the input: `text`, `password`, `code` or `phone`. */
   kind: string;
+  /** Whether the step needs a value; absent means the field may be left out. */
   required?: boolean;
+  /** Whether the value must not be displayed or echoed, as for a password or a code; absent means it is not secret. */
   secret?: boolean;
 }
 
+/**
+ * One second factor the flow offers to verify: its identifier, its kind and a display label. It carries nothing secret.
+ */
 export interface AuthnLoginFactor {
+  /** The factor's identifier; send it as `input.factor` when answering the second-factor step. */
   id: string;
+  /** The factor kind, such as `totp`, `sms` or `webauthn`; the client renders the challenge according to it. */
   kind: string;
+  /** A display label for the factor; it may be empty, in which case the client falls back to the kind's own name. */
   label?: string;
 }
 
+/**
+ * What the client does at the flow's current step. Only the members that belong to `kind` are present: `challenge` carries `fields`; `redirect` carries `url` and `method`; `factor` carries `factors`; `enroll` carries `kinds`; `webauthn` carries `options`; `complete` carries nothing.
+ */
 export interface AuthnLoginStep {
   /** What the client does next: challenge, redirect, factor, enroll, complete or webauthn */
   kind: string;
   /** The inputs a challenge step asks for */
   fields?: AuthnLoginField[];
-  /** How long a challenge lives, in seconds */
+  /** How long a challenge lives, in seconds. No handler of this fragment sets it, so the member is absent from every answer. */
   expires_in?: number;
-  /** How soon a challenge may be asked for again, in seconds */
+  /** How soon a challenge may be asked for again, in seconds. No handler of this fragment sets it, so the member is absent from every answer. */
   resend_after?: number;
   /** Where a redirect step sends the user agent */
   url?: string;
@@ -465,10 +701,13 @@ export interface AuthnLoginStep {
   factors?: AuthnLoginFactor[];
   /** The factor kinds an enroll step takes in */
   kinds?: string[];
-  /** The public-key options a webauthn step carries */
+  /** The data a webauthn step carries: the public-key creation or request options of a WebAuthn ceremony, or, for a TOTP enrollment, an object with an `otpauth_uri` the client renders as a QR code. */
   options?: unknown;
 }
 
+/**
+ * One open login flow, as returned by a start, by an answer that keeps the flow open, or by the current-flow read: the step number the next answer must echo, the flow's state, the flow token when the flow is bound by the header, and what the client does next.
+ */
 export interface AuthnLoginFlow {
   /** The step number the next answer must echo */
   seq: number;
@@ -476,9 +715,13 @@ export interface AuthnLoginFlow {
   state: string;
   /** The flow token, set only when the flow is bound by the Authn-Flow header */
   flow_token?: string;
+  /** What the client does at the flow's current step. */
   next: AuthnLoginStep;
 }
 
+/**
+ * Lifecycle status: `pending` is registered but not yet confirmed and is never used to verify, `active` may verify, and `disabled` (left by an administrator reset or a clone warning) stays as a row that no longer counts.
+ */
 export type AuthnMfaFactorStatus = typeof AuthnMfaFactorStatus[keyof typeof AuthnMfaFactorStatus];
 
 
@@ -488,19 +731,29 @@ export const AuthnMfaFactorStatus = {
   disabled: 'disabled',
 } as const;
 
+/**
+ * One factor row of the caller's account: what the register holds about the factor, with nothing a kind keeps for itself.
+ */
 export interface AuthnMfaFactor {
+  /** The factor's identifier; use it as the `id` path parameter of `DELETE /auth/factors/{id}`. */
   id: string;
+  /** The factor kind: `totp`, `sms` or `webauthn`. */
   kind: string;
+  /** The display label stored with the factor; this module writes an empty label when it registers one. */
   label: string;
+  /** Lifecycle status: `pending` is registered but not yet confirmed and is never used to verify, `active` may verify, and `disabled` (left by an administrator reset or a clone warning) stays as a row that no longer counts. */
   status: AuthnMfaFactorStatus;
   /** When the factor row was created, as an RFC 3339 instant */
   created_at: string;
   /** When the factor became active, as an RFC 3339 instant; absent until it is */
   activated_at?: string;
-  /** When the factor last held, as an RFC 3339 instant; absent until it does */
+  /** When the factor last passed a verification, as an RFC 3339 instant; absent until it first does */
   last_used_at?: string;
 }
 
+/**
+ * The literal `authenticated`, marking a completed login.
+ */
 export type AuthnLoginSessionState = typeof AuthnLoginSessionState[keyof typeof AuthnLoginSessionState];
 
 
@@ -508,14 +761,23 @@ export const AuthnLoginSessionState = {
   authenticated: 'authenticated',
 } as const;
 
+/**
+ * The public facts of the session a login created. No token or secret is included.
+ */
 export interface AuthnLoginSessionView {
+  /** The session identifier; the browser client holds the session cookie written in the same response. */
   id: string;
   /** The session's expiry as an RFC 3339 instant, or empty */
   expires_at: string;
 }
 
+/**
+ * The answer of a login completed with `delivery=session`, and of a step-up completed on a cookie session: the state name `authenticated` and the public facts of the session that was created or elevated. The session cookie is set in the same response.
+ */
 export interface AuthnLoginSession {
+  /** The literal `authenticated`, marking a completed login. */
   state: AuthnLoginSessionState;
+  /** The public facts of the session the login created. */
   session: AuthnLoginSessionView;
 }
 
@@ -530,6 +792,9 @@ export const AuthnLoginTokenState = {
   elevated: 'elevated',
 } as const;
 
+/**
+ * The authorization scheme the access token is sent with; it is always `Bearer`.
+ */
 export type AuthnLoginTokenTokenType = typeof AuthnLoginTokenTokenType[keyof typeof AuthnLoginTokenTokenType];
 
 
@@ -537,10 +802,15 @@ export const AuthnLoginTokenTokenType = {
   Bearer: 'Bearer',
 } as const;
 
+/**
+ * The answer of a login completed with `delivery=token`, and of a token-delivered step-up: the state name, the token type, the access token, its lifetime and the refresh token.
+ */
 export interface AuthnLoginToken {
   /** authenticated for a login; elevated for a step-up, which issues no refresh token and carries it empty */
   state: AuthnLoginTokenState;
+  /** The authorization scheme the access token is sent with; it is always `Bearer`. */
   token_type: AuthnLoginTokenTokenType;
+  /** The access token, sent in the `Authorization` header as `Bearer <value>`. */
   access_token: string;
   /** The access token's lifetime in seconds */
   expires_in: number;
@@ -559,6 +829,9 @@ export const AuthnLoginActionResultState = {
   enrolled: 'enrolled',
 } as const;
 
+/**
+ * The answer of a flow that finished by binding an external identity (`linked`) or registering a factor (`enrolled`); neither issues a session or a token.
+ */
 export interface AuthnLoginActionResult {
   /** linked when the flow bound an external identity; enrolled when it registered a factor */
   state: AuthnLoginActionResultState;
@@ -575,6 +848,9 @@ export const AuthnLoginIdentifierStateState = {
   pending: 'pending',
 } as const;
 
+/**
+ * The answer of adding an identifier: `added` when the identifier is written, `pending` when a code was sent to an email address and the answer is still to come. The two durations are present only in the pending state.
+ */
 export interface AuthnLoginIdentifierState {
   /** added when the identifier is written; pending when a code was sent to an address and its answer is still to come */
   state: AuthnLoginIdentifierStateState;
@@ -584,7 +860,11 @@ export interface AuthnLoginIdentifierState {
   resend_after?: number;
 }
 
+/**
+ * An impersonation record as a client sees it. The reason and the administrator's identity are not part of it.
+ */
 export interface AuthnImpersonationGrant {
+  /** Identifier of the impersonation record, minted when the start was granted. */
   id: string;
   /** The impersonated account */
   target: string;
@@ -592,14 +872,23 @@ export interface AuthnImpersonationGrant {
   tenant: string;
   /** Absent on the answer to a start, present on a record in force */
   started_at?: string;
+  /** RFC 3339 instant at which the record stops being valid; never more than one hour after it began. */
   ends_at: string;
 }
 
+/**
+ * The answer of the status route.
+ */
 export interface AuthnImpersonationGrantEnvelope {
+  /** The record in force on the session, including the instant it began. */
   grant: AuthnImpersonationGrant;
 }
 
+/**
+ * The answer of a start: the record just created and, for a bearer credential, the impersonation access token.
+ */
 export interface AuthnImpersonationStart {
+  /** The record just created; started_at is absent because a start answer does not carry the start instant. */
   grant: AuthnImpersonationGrant;
   /** Present on a bearer start; absent on a cookie start, whose carrier is the session cookie */
   access_token?: string;
@@ -609,18 +898,33 @@ export interface AuthnImpersonationStart {
   expires_in?: number;
 }
 
+/**
+ * The answer of the acceptance read: the invitation a token points to.
+ */
 export interface AuthnInviteView {
+  /** The invitation the token points to, without its token. */
   invitation: AuthnInviteInvitation;
 }
 
+/**
+ * The membership an acceptance wrote.
+ */
 export interface AuthnInviteAccept {
+  /** Identifier of the account the membership belongs to: an existing account or one created by this acceptance. */
   account: string;
+  /** The string form of the tenant identifier the membership was written in. */
   tenant: string;
+  /** Whether the membership is active; an acceptance always writes an active one. */
   active: boolean;
+  /** The membership's source; an acceptance always writes invite. */
   source: string;
+  /** Whether the membership is exempt from SSO enforcement; an acceptance writes false. */
   sso_exempt: boolean;
 }
 
+/**
+ * One public JSON Web Key. The published keys carry `kty`, `kid`, `alg` and `use`; the remaining members depend on the key type: an EC key carries `crv`, `x` and `y`, an RSA key carries `n` and `e`.
+ */
 export interface AuthnTokenJWK {
   /** The key type, for example EC or RSA */
   kty: string;
@@ -630,15 +934,24 @@ export interface AuthnTokenJWK {
   kid: string;
   /** The signature algorithm the key signs and verifies with */
   alg?: string;
+  /** The curve of an EC key; only P-256 is supported, so this is `P-256`. */
   crv?: string;
+  /** The x coordinate of an EC public key, base64url-encoded without padding. */
   x?: string;
+  /** The y coordinate of an EC public key, base64url-encoded without padding. */
   y?: string;
+  /** The modulus of an RSA public key, at least 2048 bits, base64url-encoded without padding. */
   n?: string;
+  /** The public exponent of an RSA public key, base64url-encoded without padding. */
   e?: string;
   [key: string]: unknown;
  }
 
+/**
+ * The public key set published on `GET /auth/jwks.json`, served as `application/jwk-set+json`. It holds the public half of every key loaded at startup and no private field.
+ */
 export interface AuthnTokenJWKS {
+  /** Every configured key's public JWK; the set is never empty. */
   keys: AuthnTokenJWK[];
 }
 
@@ -647,18 +960,29 @@ export interface AuthnTokenJWKS {
  */
 export type AuthnProfileProfileAttributes = {[key: string]: string};
 
+/**
+ * One identifier bound to the account, with the way its ownership was established.
+ */
 export interface AuthnProfileIdentifier {
+  /** The identifier's own identifier */
   id: string;
+  /** The identifier kind: username, email or phone */
   kind: string;
+  /** The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits */
   value: string;
-  /** RFC 3339 in UTC, empty when the identifier is unverified */
+  /** RFC 3339 in UTC, the instant the identifier's ownership was established; always present, as no identifier is stored awaiting verification */
   verified_at: string;
-  /** Empty when the identifier is unverified */
+  /** How the identifier's ownership was established: sms-code, email-code, invite, idp:<provider> (followed by the provider's identifier), admin, import-unverified or self. The first four prove ownership; admin, import-unverified and self only record a fact an administrator, an import or the account's own holder asserted */
   verified_via: string;
 }
 
+/**
+ * One external identity bound to the account, as the account module keeps it; it carries no provider subject.
+ */
 export interface AuthnProfileLink {
+  /** The binding's own identifier */
   id: string;
+  /** The provider the binding was made through, as the provider is registered */
   provider: string;
   /** Absent when the provider gave no address */
   email?: string;
@@ -668,11 +992,19 @@ export interface AuthnProfileLink {
   last_login_at?: string;
 }
 
+/**
+ * The caller's own profile: the account's self fields plus its identifiers and external bindings, which this surface only reads. It is built field by field from the account module's values, so a field added to the record there does not reach a client by being there.
+ */
 export interface AuthnProfileProfile {
+  /** The account's identifier, the one the request's identity names; never empty on a 200. */
   account_id: string;
+  /** The account's kind: user or service, a service being a non-interactive API client. */
   kind: string;
+  /** The account's display name, empty when it carries none */
   display_name: string;
+  /** Whether the account must register a factor */
   mfa_required: boolean;
+  /** Whether the account has a password credential set */
   password_set: boolean;
   /** RFC 3339 in UTC, empty when the account carries no creation instant */
   created_at: string;
@@ -682,7 +1014,9 @@ export interface AuthnProfileProfile {
   locale: string;
   /** Read out of the attribute set, empty when it carries none */
   time_zone: string;
+  /** The account's identifiers; always an array, never null, and empty when the account has none */
   identifiers: AuthnProfileIdentifier[];
+  /** The account's external bindings; always an array, never null, and empty when there are none. The provider's own subject for the person is not included */
   links: AuthnProfileLink[];
 }
 
@@ -691,7 +1025,11 @@ export interface AuthnProfileProfile {
  */
 export type AuthnProfilePatchAttributes = {[key: string]: string};
 
+/**
+ * The self-writable fields as they stand after a profile write, read back from what was stored.
+ */
 export interface AuthnProfilePatch {
+  /** The display name as it stands after the write; the account's current one when the body carried none */
   display_name: string;
   /** The whole attribute set as it stands, never null */
   attributes: AuthnProfilePatchAttributes;
@@ -701,6 +1039,9 @@ export interface AuthnProfilePatch {
   time_zone: string;
 }
 
+/**
+ * One login method as the discovery document reports it: its stable name, how a client renders it, the protocol a redirect or enterprise method speaks, its brand label, whether it can open an account, and the inputs its first step asks for.
+ */
 export interface AuthnMethodDescriptor {
   /** The method's stable name */
   name: string;
@@ -716,23 +1057,37 @@ export interface AuthnMethodDescriptor {
   fields?: AuthnLoginField[];
 }
 
+/**
+ * Whether a first login may open an account on this deployment, derived from the account module's signup switch. A closed switch does not remove a method; it only makes a first login for an unknown identifier fail.
+ */
 export interface AuthnLoginSignup {
   /** Whether a first login may open an account */
   enabled: boolean;
 }
 
+/**
+ * The second-factor kinds the deployment takes in, as the multi-factor module reports them. This is a deployment-level list, not the caller's own registered factors.
+ */
 export interface AuthnLoginMFA {
   /** The kinds of second factor the deployment takes in */
   factors: string[];
 }
 
+/**
+ * The discovery document of the login surface: one descriptor per login method that takes part and is not turned off, whether a first login may open an account, and the second-factor kinds the deployment takes in. Enterprise identity providers are not listed here; they are discovered through the SSO module.
+ */
 export interface AuthnLoginMethods {
   /** The methods taking part that are not turned off, one descriptor each, sorted by name */
   methods: AuthnMethodDescriptor[];
+  /** Whether a first login may open an account on this deployment. */
   signup: AuthnLoginSignup;
+  /** The second-factor kinds the deployment takes in. */
   mfa: AuthnLoginMFA;
 }
 
+/**
+ * The answer to a phone-verification send: how long the code lives and how soon another code may be asked for, both in whole seconds. It carries neither the challenge identifier nor any fact about whether the number is already held by another account.
+ */
 export interface AuthnLoginPhoneChallenge {
   /** How long the code lives, in seconds */
   expires_in: number;
@@ -755,6 +1110,9 @@ export const AuthnSessionViewMethodsItem = {
   'client-secret': 'client-secret',
 } as const;
 
+/**
+ * The assurance level the authentication reached; "none" when the identity carries no level.
+ */
 export type AuthnSessionViewAssurance = typeof AuthnSessionViewAssurance[keyof typeof AuthnSessionViewAssurance];
 
 
@@ -764,16 +1122,23 @@ export const AuthnSessionViewAssurance = {
   multi: 'multi',
 } as const;
 
+/**
+ * Whether the request carries a signed-in identity and, when it does, the facts the identity is built from.
+ */
 export interface AuthnSessionView {
   /** False when nobody is signed in; every other field is then absent */
   authenticated: boolean;
+  /** The public identifier of the session the request came with; absent when nobody is signed in. */
   session_id?: string;
   /** The account the request is taken to be from; the impersonated account while impersonating */
   account_id?: string;
   /** The account whose hands are on the request; present only while impersonating */
   actor_id?: string;
+  /** True only while the identity is impersonating another account; absent otherwise. */
   impersonating?: boolean;
+  /** The authentication methods the identity completed, each from the closed set named by the enum; absent when the session records none. */
   methods?: AuthnSessionViewMethodsItem[];
+  /** The assurance level the authentication reached; "none" when the identity carries no level. */
   assurance?: AuthnSessionViewAssurance;
   /** The instant of the last interactive authentication, absent when the identity carries none */
   auth_time?: string;
@@ -781,16 +1146,27 @@ export interface AuthnSessionView {
   provider?: string;
 }
 
+/**
+ * The outcome of revoking every session of the caller's but the current one.
+ */
 export interface AuthnSessionRevoked {
   /** The number of sessions revoked */
   revoked: number;
 }
 
+/**
+ * One live session of the caller's, as the listing reports it.
+ */
 export interface AuthnSessionItem {
+  /** The public session identifier; it names the row and is not a credential. */
   id: string;
+  /** The session kind, browser or token; service-account sessions are never listed. */
   kind: string;
+  /** When the session was created, as an RFC 3339 instant in UTC. */
   created_at: string;
+  /** Last activity of the session, as an RFC 3339 instant in UTC. For a browser session this is the last use the row was written for: touches are coalesced, written at most once per effective touch interval — the configured interval capped at half the idle timeout — so the value lags the newest use by up to that interval. A token session has no renewal path, so its value is the creation time. */
   last_seen_at: string;
+  /** The absolute expiry, as an RFC 3339 instant in UTC. A browser session can stop being valid earlier, once its idle timeout passes. */
   expires_at: string;
   /** Empty when the session carries none */
   client_ip: string;
@@ -800,7 +1176,11 @@ export interface AuthnSessionItem {
   current: boolean;
 }
 
+/**
+ * The caller's own live sessions, in the order the listing reports them.
+ */
 export interface AuthnSessionList {
+  /** The live browser and token sessions of the account, most recently created first; the empty array when there are none. */
   sessions: AuthnSessionItem[];
 }
 
@@ -815,14 +1195,23 @@ export const AuthnSsoProviderProtocol = {
   saml: 'saml',
 } as const;
 
+/**
+ * One SSO sign-in entry a client can offer for a domain. It carries only public identity; no endpoint, configuration or secret is exposed.
+ */
 export interface AuthnSsoProvider {
+  /** The provider's opaque identifier, used to start a sign-in flow for this provider. */
   id: string;
+  /** The tenant-chosen display name of the provider, meant to be shown on the sign-in screen. */
   name: string;
   /** The protocol the provider's sign-in entry uses */
   protocol: AuthnSsoProviderProtocol;
 }
 
+/**
+ * The success body of `POST /auth/token`, per RFC 6749 §5.1. A `client_credentials` response carries no `refresh_token`.
+ */
 export interface AuthnTokenResponse {
+  /** The signed access token: a compact JWT, presented as a `Bearer` credential. */
   access_token: string;
   /** Always Bearer */
   token_type: string;
@@ -832,57 +1221,106 @@ export interface AuthnTokenResponse {
   refresh_token?: string;
 }
 
+/**
+ * One permission the catalog declares.
+ */
 export interface AuthzAdminPermissionView {
+  /** The permission name as the catalog declares it, for example authn.tenant.access. Only the authn.* permissions are the same vocabulary as authn.Action and carry its string; a permission outside it, such as authz.role.read, has no corresponding authn.Action. */
   permission: string;
 }
 
+/**
+ * One role binding: an account holds a role within a tenant.
+ */
 export interface AuthzAdminBindingView {
+  /** The tenant the binding belongs to. */
   tenant: string;
+  /** The account the role is bound to. */
   account: string;
+  /** The role bound to the account. */
   role: string;
+  /** When the binding was written, as an RFC 3339 instant in UTC. */
   granted_at: string;
 }
 
+/**
+ * One role of a tenant as the role routes report it.
+ */
 export interface AuthzAdminRoleView {
+  /** The tenant the role belongs to. */
   tenant: string;
+  /** The role name within the tenant. */
   role: string;
+  /** True for a builtin role: the management face can neither rewrite nor remove it, nor change its grants. The mark is set by the host that seeds the policy data and is never cleared. */
   builtin: boolean;
+  /** The i18n key of the role's description text; stored as given and not resolved by this surface. */
   description_key: string;
+  /** When the role was written, as an RFC 3339 instant in UTC. */
   created_at: string;
 }
 
+/**
+ * The body of a role write: the role's description key only. The builtin mark is not part of the body; a member sent under that name reaches nothing.
+ */
 export interface AuthzAdminRoleWrite {
+  /** The i18n key of the role's description text. It is stored as given and not resolved by this surface. */
   description_key: string;
 }
 
+/**
+ * One permission grant of a role: the (resource, action) pair the policy engine matches on.
+ */
 export interface AuthzAdminGrantView {
+  /** The tenant the grant belongs to. */
   tenant: string;
+  /** The role holding the grant. */
   role: string;
+  /** The resource the grant matches on. */
   resource: string;
+  /** The action the grant matches on. */
   action: string;
+  /** When the grant was written, as an RFC 3339 instant in UTC. */
   created_at: string;
 }
 
+/**
+ * The feature document: the feature names this process serves, decided by the assembly at start and frozen before the first request, so it is the same for every caller and every tenant. The object is extensible — a field added beside features is a compatible change — and carries no feature of its own.
+ */
 export interface FeatureBoardDocument {
   /** The feature names this process serves, ascending and without repetition. Each name answers whether a frontend surface the caller's build carries is served here; the response carries no configuration value, method descriptor or rendering description. */
   features: string[];
 }
 
 /**
+ * The type's parameters after the allow-list filter, as an opaque JSON object the client renders into the message; null when the message carries none.
  * @nullable
  */
 export type NotificationMessageParams = { [key: string]: unknown } | null;
 
+/**
+ * One in-app message as the inbox shows it. The title and body arrive already rendered, and the bookkeeping columns — tenant, recipient, dedupe key, expiry and update time — are not part of this view.
+ */
 export interface NotificationMessage {
+  /** The message identifier; it is the value the per-message mark-read route takes. */
   id: string;
+  /** The notification type key the message was dispatched under, shaped like <module>.<entity>.<action>. */
   type_key: string;
+  /** The group the message was filed under; the listing filters on it. Empty when the message was filed under none. */
   group: string;
+  /** The rendered title, in the language the delivery pipeline rendered it in. */
   title: string;
+  /** The rendered body, in the language the delivery pipeline rendered it in. */
   body: string;
-  /** @nullable */
+  /**
+     * The type's parameters after the allow-list filter, as an opaque JSON object the client renders into the message; null when the message carries none.
+     * @nullable
+     */
   params: NotificationMessageParams;
+  /** The optional navigation target; the empty string when the message carries none. */
   link: string;
+  /** The first-read instant as an RFC 3339 instant in UTC; null while the message is unread, and never rewritten once set. */
   read_at?: string;
+  /** When the message was written, as an RFC 3339 instant in UTC. */
   created_at: string;
 }
 
@@ -895,14 +1333,23 @@ export const NotificationPreferenceChannelsItem = {
   sms: 'sms',
 } as const;
 
+/**
+ * One row of the caller's preference matrix: a notification type and the channels that type's dispatches would go out under for the caller.
+ */
 export interface NotificationPreference {
+  /** The notification type key this row describes. */
   type_key: string;
+  /** The type's grouping label, copied from its declaration. */
   group: string;
+  /** The caller's effective channel set for the type: the stored channels when a row exists, otherwise the type's default channels; a type that cannot be unsubscribed always carries its default channels. */
   channels: NotificationPreferenceChannelsItem[];
   /** True when the channels came from a stored row, false when they are the type's default channels */
   explicit: boolean;
 }
 
+/**
+ * The body of a single-channel preference update.
+ */
 export interface NotificationSetPreferenceRequest {
   /** The target state of the channel; a body naming none is told apart from one naming false */
   enabled: boolean;
@@ -917,14 +1364,25 @@ export const NotificationTypeDefaultChannelsItem = {
   sms: 'sms',
 } as const;
 
+/**
+ * One notification type as declared by the business module that owns it; the taxonomy is fixed at startup and read-only for the life of the process.
+ */
 export interface NotificationType {
+  /** The globally unique type key; two modules declaring one key fail the process startup. */
   key: string;
+  /** The grouping label the declaring module assigns to the type. */
   group: string;
+  /** The channels a recipient gets for this type when no preference row is stored. Non-empty, free of duplicates, and drawn from the channel set. */
   default_channels: NotificationTypeDefaultChannelsItem[];
+  /** Whether a recipient may change this type's channel set. False means writes answer 409 and the effective set is always default_channels. */
   unsubscribable: boolean;
+  /** The parameter names the declaring module allows to be shown to the recipient. This module stores and returns the list but does not interpret it. */
   recipient_visible_params: string[];
 }
 
+/**
+ * The lifecycle state: pending after declaration, uploaded once bytes are stored, completed after the completion call, deleted once tombstoned. A deleted object reads as 404 on every route except delete.
+ */
 export type ObjectstoreObjectState = typeof ObjectstoreObjectState[keyof typeof ObjectstoreObjectState];
 
 
@@ -935,83 +1393,147 @@ export const ObjectstoreObjectState = {
   deleted: 'deleted',
 } as const;
 
+/**
+ * One object as the routes expose it: the values observed by the last upload plus the row's timestamps. It never carries the internal storage key, and every instant is UTC.
+ */
 export interface ObjectstoreObject {
+  /** The object's identifier, minted at declaration; every other object route takes it in the path. */
   id: string;
   /** The declared label, normalized once when the object was created; empty when none was declared or it normalized to nothing */
   name: string;
+  /** The lifecycle state: pending after declaration, uploaded once bytes are stored, completed after the completion call, deleted once tombstoned. A deleted object reads as 404 on every route except delete. */
   state: ObjectstoreObjectState;
+  /** The observed byte count recorded by the last upload; zero until the first upload lands. */
   size: number;
+  /** The content type recorded by the last upload, taken from the declared content_type; empty until the first upload lands. */
   mime: string;
+  /** The SHA-256 of the stored bytes as 64 lowercase hex digits, computed during the last upload; empty until the first upload lands. */
   checksum_sha256: string;
+  /** When a completed object will be swept into deleted, written from object-ttl at completion; absent when no lifetime is configured, so the object does not expire. */
   expires_at?: string;
+  /** When the object was declared, as an RFC 3339 instant in UTC. */
   created_at: string;
+  /** When the row last changed, whether by declaration, upload, completion or deletion, as an RFC 3339 instant in UTC. */
   updated_at: string;
 }
 
+/**
+ * The body of a declaration: what the caller states before any byte is stored. size and content_type are required; name and checksum_sha256 may be omitted.
+ */
 export interface ObjectstoreDeclaration {
   /** An optional label for the object; normalized before storing, and omitted or empty stores an empty name */
   name?: string;
+  /** The object's size in bytes; must be positive, and the upload's byte count must equal it exactly. A declaration without a positive size is refused whole. */
   size: number;
+  /** The media type the bytes will carry; must be non-blank. The upload records it as the object's mime. */
   content_type: string;
   /** The declared SHA-256 as 64 hex digits; empty declares no checksum */
   checksum_sha256?: string;
 }
 
+/**
+ * One declared setting item as this management surface shows it, on the selected layer. The declaration fields come from the key table; written, has_row and value come from that layer's rows and from the resolved read. Every value-bearing field is text in the declared type's own form, so a duration reads as "5m0s" rather than as a count of nanoseconds.
+ */
 export interface SettingsAdminSetting {
+  /** The full setting key: the declaring module's namespace joined with the item's own segment by a dot. */
   key: string;
   /** The module that declared the item */
   namespace: string;
+  /** The declared type's name as reflection reports it, such as `string`, `int`, `bool` or `time.Duration`; the item's values are stored and rendered in that type's text form. */
   type: string;
+  /** The human-readable text the declaring module gave the item. */
   description: string;
   /** The declared rule over the item's values, empty when every value of the type is admitted */
   domain: string;
+  /** Whether the item is a credential. A sensitive item's default is empty and its written and value carry a fixed mask string; has_row still reports whether the layer holds a row. */
   sensitive: boolean;
   /** The declared default in the declared type's text form, empty for a sensitive item */
   default: string;
   /** The text the selected layer holds, the mask string for a sensitive item */
   written: string;
-  /** Whether the selected layer holds a row for the item; written is empty both when it holds none and when the row's text is empty */
+  /** Whether the selected layer holds a row for the item. For a non-sensitive item, written is empty both when no row is held and when the row's text is empty; a sensitive item's written is the mask string whether or not a row exists. */
   has_row: boolean;
   /** The text the item resolves to after the three-level fallback, the mask string for a sensitive item */
   value: string;
 }
 
+/**
+ * The vendor's review verdict on one template in one language.
+ */
 export interface SmsAdminApproval {
+  /** The verdict in this capability's own vocabulary: pending, approved, rejected or withdrawn; an empty string means a review this process does not track. The vendor's raw status numbers are never exposed. */
   state: string;
+  /** The vendor's own explanation, present when it turned the template down and it gave one; omitted otherwise. */
   reason?: string;
 }
 
+/**
+ * The vendor's review verdict per language, keyed by locale; a vendor approves a template per language. A configured template carries an empty object because this process does not track its review.
+ */
 export type SmsAdminTemplateApprovals = {[key: string]: SmsAdminApproval};
 
+/**
+ * One template as the management surface reports it: its logical name, its source, its ordered parameter names, the languages it holds a code for, the vendor's review per language, whether sends are allowed, and its write counters. It carries no vendor code.
+ */
 export interface SmsAdminTemplate {
+  /** The logical template name a caller sends under; the management routes address a template by it. */
   name: string;
+  /** Where the template came from: config for one read from the configuration, runtime for one this process created. A config template is read-only at runtime, always enabled, and carries no approvals and no version. */
   source: string;
+  /** The parameter names the template substitutes, in the order the vendor approved them; a positional vendor lays values out in this order. */
   params: string[];
+  /** The languages the template holds a vendor code for. A code is what a send needs but not the whole of what it needs: a runtime template sends only while it is enabled and the language's vendor review is approved, and every language a runtime template names starts pending review whether the template was registered or submitted, so this list normally includes languages that cannot be sent in yet. A configured template is always enabled and its review is not tracked, so each language it holds a code for can be sent in. */
   locales: string[];
+  /** The vendor's review verdict per language, keyed by locale; a vendor approves a template per language. A configured template carries an empty object because this process does not track its review. */
   approvals: SmsAdminTemplateApprovals;
+  /** Whether a message may go out under the template. A configured template is always enabled; a runtime template's value is set by the enable route and is independent of the vendor's review. */
   enabled: boolean;
+  /** The number of writes this runtime record has taken, used as the optimistic-concurrency condition; 0 for a configured template, which has no version. */
   version: number;
+  /** When the record was first written, in UTC and RFC 3339 format; the zero time for a configured template. */
   created_at: string;
+  /** When the record was last written, in UTC and RFC 3339 format; the zero time for a configured template. */
   updated_at: string;
 }
 
+/**
+ * The vendor's template code per language, keyed by locale. Every language named starts pending, and the template starts enabled.
+ */
 export type SmsAdminRegisterCodes = {[key: string]: string};
 
+/**
+ * The body of a registration: a template whose vendor code the operator already has.
+ */
 export interface SmsAdminRegister {
+  /** The logical template name to take up; required and non-empty, and the name a caller will later send under. A language the name already holds is a 409. */
   name: string;
+  /** The parameter names the template substitutes, in the order the vendor approved them. */
   params: string[];
+  /** The vendor's template code per language, keyed by locale. Every language named starts pending, and the template starts enabled. */
   codes: SmsAdminRegisterCodes;
 }
 
+/**
+ * The body of a submission: a template handed to the vendor for review.
+ */
 export interface SmsAdminSubmission {
+  /** The logical template name the submission creates; required and non-empty. */
   name: string;
+  /** The template body, written with ${name} placeholders naming the entries of params. The carrier rewrites them into the vendor's own syntax, in params order. */
   content: string;
+  /** What the template is for, in the shared vocabulary: verification, notification or marketing. The carrier maps it to the vendor's spelling. */
   kind: string;
+  /** The language this submission is for, opaque to the capability. A vendor approves per language, so one submission yields one code for one language. */
   locale: string;
+  /** The parameter names content substitutes, in the order the template expects them. */
   params: string[];
+  /** A note for the vendor's reviewer; may be empty. */
   remark: string;
 }
 
+/**
+ * The tenant's state: active is served, disabled is not.
+ */
 export type TenantAdminTenantStatus = typeof TenantAdminTenantStatus[keyof typeof TenantAdminTenantStatus];
 
 
@@ -1020,14 +1542,25 @@ export const TenantAdminTenantStatus = {
   disabled: 'disabled',
 } as const;
 
+/**
+ * One tenant as the management routes render it: the identifier, the alias and the state.
+ */
 export interface TenantAdminTenant {
+  /** The tenant's identifier, the natural key the roster keys the row by. */
   id: string;
+  /** The alias the request surface addresses the tenant by. */
   alias: string;
+  /** The tenant's state: active is served, disabled is not. */
   status: TenantAdminTenantStatus;
 }
 
+/**
+ * A registration: the identifier to insert and the alias to give it. The state is not part of it, because a registered tenant starts active.
+ */
 export interface TenantAdminTenantRegistration {
+  /** The identifier to register; the roster refuses one it already holds. */
   id: string;
+  /** The alias to give the tenant; the roster refuses one another tenant already holds. */
   alias: string;
 }
 
@@ -1041,6 +1574,9 @@ export const OpsHealthStatus = {
   ok: 'ok',
 } as const;
 
+/**
+ * The liveness response body: a single status field, always ok on a process that can answer.
+ */
 export interface OpsHealth {
   /** The literal the liveness route writes; a live process always answers ok */
   status: OpsHealthStatus;
@@ -1062,6 +1598,9 @@ export const OpsReadinessStatus = {
   unavailable: 'unavailable',
 } as const;
 
+/**
+ * The readiness response body, carrying the verdict and, when it is unavailable, one line per part that failed.
+ */
 export interface OpsReadiness {
   /** ready when every part answered, unavailable otherwise */
   status: OpsReadinessStatus;
@@ -1088,7 +1627,7 @@ export type AuditAdminRecordsListParams = {
  */
 since?: string;
 /**
- * Read rows at or before this instant, RFC 3339
+ * Read rows before this instant, RFC 3339
  */
 until?: string;
 /**
@@ -1115,127 +1654,262 @@ limit?: number;
 };
 
 export type AuthnAdminAccountsListParams = {
+/**
+ * Filters by account status: disabled, active or deleted. Absent or empty selects every status except deleted; deleted selects the tombstones. Any other value is 400.
+ */
 status?: string;
+/**
+ * Filters by account kind: user or service. Absent or empty selects both; any other value is 400.
+ */
 kind?: string;
+/**
+ * Filters by the leading part of one identifier of the kind named in identifier_kind. The prefix is normalized the way stored identifiers are (a username lower-cased, an email address trimmed and lower-cased) and must be at least 3 characters. It must be given together with identifier_kind; one without the other is 400.
+ */
 identifier_prefix?: string;
+/**
+ * The identifier kind the prefix applies to: username, email or phone. Required whenever identifier_prefix is given, and refused without it.
+ */
 identifier_kind?: string;
 /**
  * The account's display name by its leading bytes, case-sensitive; must be valid UTF-8 text; absent or empty selects every display name
  */
 display_name_prefix?: string;
+/**
+ * The next_cursor of the previous page, or empty for the first page. The cursor is the identifier of the last account on that page, and the page is read by it rather than by an offset.
+ */
 after?: string;
+/**
+ * The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400.
+ */
 limit?: number;
 };
 
 export type AuthnAdminImpersonationsListParams = {
+/**
+ * The tenant whose records the page holds, as the tenant identifier; it scopes the read and fills the decision's tenant. Required: absent or empty is 400.
+ */
 tenant: string;
+/**
+ * The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400.
+ */
 limit?: number;
+/**
+ * The next_cursor of the previous page, or empty for the first page; the cursor is the identifier of the last record on that page.
+ */
 after?: string;
 };
 
 export type AuthnInviteListParams = {
+/**
+ * Maximum number of invitations to return. Omitted or 0 serves 100; a value above 1000 is capped at 1000. A negative or non-integer value is refused with 400.
+ */
 limit?: number;
+/**
+ * Opaque cursor from a previous page's next_cursor; omit it to start at the first page. A value that does not decode is refused with 400 rather than served as the first page.
+ */
 after?: string;
 };
 
+/**
+ * The issue request: the invited address, which is normalized before it is stored, and an optional deadline.
+ */
 export type AuthnInviteIssueBody = {
+  /** The invited address as given; it is trimmed, lower-cased and must be printable ASCII with exactly one @, at most 254 bytes. */
   email: string;
+  /** Absolute deadline in RFC 3339. Omitted or the zero instant takes the configured lifetime; a value not later than the current time is refused with 400. */
   expires_at?: string;
 };
 
 export type AuthnAdminMembersListParams = {
+/**
+ * The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400.
+ */
 limit?: number;
+/**
+ * The account identifier of the last membership on the previous page, or empty for the first page.
+ */
 after?: string;
 };
 
+/**
+ * An object whose single member lists every factor the caller's account has registered.
+ */
 export type AuthnMfaFactors200 = {
+  /** The caller's factor rows, ordered oldest first by creation time and then by identifier; an empty array when the account has registered none. */
   factors: AuthnMfaFactor[];
 };
 
+/**
+ * The fields the method's first step takes, as name-to-value strings. At most 8 members, each value at most 512 bytes; anything beyond is a 400 bad-request.
+ */
 export type AuthnLoginStartBodyInput = {[key: string]: string};
 
+/**
+ * The start request; `method` must name a login method this deployment takes in, or the call is a bad request.
+ */
 export type AuthnLoginStartBody = {
+  /** The stable name of a login method, as returned in `name` by `GET /auth/methods`. A name the deployment does not take in is a 400 bad-request; a method turned off by the deployment is a 403 method-disabled. */
   method?: string;
+  /** Not read by this route: a flow started here always has the purpose login. Use `POST /auth/flows/authenticated` for link, step-up or enroll. */
   purpose?: string;
+  /** How a completed login is delivered: `session` (the default) sets the session cookie and answers the session view; `token` answers an access and refresh token pair. `token` must be enabled by the deployment and requires the token capability, otherwise the request is a 400 bad-request. */
   delivery?: string;
+  /** Where to send the user agent after a callback login completes: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts. Anything else is a 400 bad-request. The value is stored in the flow record, and no parameter of the callback request can change it. */
   return_to?: string;
+  /** How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method. */
   binding?: string;
+  /** The fields the method's first step takes, as name-to-value strings. At most 8 members, each value at most 512 bytes; anything beyond is a 400 bad-request. */
   input?: AuthnLoginStartBodyInput;
 };
 
+/**
+ * The fields the step takes, as name-to-value strings. At most 8 members, each value at most 8 KiB; a second-factor step reads `factor` to choose the factor and then the values that factor asks for, an enrollment step reads `kind`, and `complete` reads nothing.
+ */
 export type AuthnLoginAnswerBodyInput = {[key: string]: string};
 
+/**
+ * One answer to the bound flow: which step is being answered, the step number to echo, and the fields the step takes.
+ */
 export type AuthnLoginAnswerBody = {
+  /** The `seq` of the flow as last returned. It must equal the record's current step number; a stale or future value is a 401 flow-invalid. */
   seq?: number;
+  /** The step being answered: `answer` for a first-factor submission, only while the flow is at the first factor; `factor` for a second-factor step, only at the second factor; `enroll` for an enrollment step, only at the enroll state; `complete` to take the result of a ready flow. A name outside this set is a 400 bad-request, and a step that does not match the flow's state is a 401 flow-invalid. */
   step?: string;
+  /** The fields the step takes, as name-to-value strings. At most 8 members, each value at most 8 KiB; a second-factor step reads `factor` to choose the factor and then the values that factor asks for, an enrollment step reads `kind`, and `complete` reads nothing. */
   input?: AuthnLoginAnswerBodyInput;
 };
 
+/**
+ * The fields the started step takes, as name-to-value strings: the method's first step for `link`, the enrollment step for `enroll` where `kind` names the factor kind, and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes.
+ */
 export type AuthnLoginStartAuthenticatedBodyInput = {[key: string]: string};
 
+/**
+ * The start request for a purpose other than login; `purpose` must be `link`, `step-up` or `enroll`.
+ */
 export type AuthnLoginStartAuthenticatedBody = {
+  /** The method to run for `link`, and for a `step-up` of an account that holds no factor. For an enrollment it is not read, and for a step-up the policy answers with usable factors it is not read either; a step-up whose account holds factors but none usable for this session is refused with 401 insufficient_user_authentication before the method is consulted. A name the deployment does not take in is a 400 bad-request. */
   method?: string;
+  /** Required, and one of `link`, `step-up` or `enroll`: bind an external identity, strengthen the current session, or register a factor. Any other value, including an empty one, is a 400 bad-request. */
   purpose?: string;
+  /** Not read by this route: the delivery follows the kind of the session the request came with — a browser session completes as `session`, a token session as `token`. */
   delivery?: string;
+  /** Where to send the user agent after a callback login completes: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts. Anything else is a 400 bad-request. The value is stored in the flow record, and no parameter of the callback request can change it. */
   return_to?: string;
+  /** How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method. */
   binding?: string;
+  /** The fields the started step takes, as name-to-value strings: the method's first step for `link`, the enrollment step for `enroll` where `kind` names the factor kind, and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes. */
   input?: AuthnLoginStartAuthenticatedBodyInput;
 };
 
+/**
+ * The login identifier to add: a username or an email address.
+ */
 export type AuthnLoginAddIdentifierBody = {
-  /** The identifier kind to add: username or email; a phone is added through /api/v1/auth/phone */
+  /** The identifier kind to add: username or email; a phone is added through /auth/phone */
   kind: string;
-  /** The login name or address to add */
+  /** The login name or address to add. A username must be non-empty after trimming whitespace and is written as given. An email address is trimmed and lowercased first, then accepted only when it is ASCII, contains exactly one `@` with no whitespace, and is at most 254 bytes; anything else is a 400 bad-request. */
   value: string;
 };
 
+/**
+ * The code sent to the email address being added.
+ */
 export type AuthnLoginVerifyIdentifierBody = {
+  /** The six-digit code the email channel delivered, as a string. Empty or longer than 32 bytes is a 400 bad-request; a wrong code is a 401 login-failed, and five wrong codes for one issued code spend the pending verification. */
   code: string;
 };
 
+/**
+ * The parameters of a start. Only account is required by the schema; a missing or empty tenant or reason is refused with 403.
+ */
 export type AuthnImpersonationStartBody = {
+  /** Identifier of the account to impersonate: an enabled, non-protected user account other than the caller's own, and an active member of tenant. */
   account: string;
+  /** Identifier of the tenant the impersonation is confined to; it may not be empty or contain whitespace or control characters, so omitting it is refused. */
   tenant?: string;
+  /** Why the impersonation is started. It is trimmed, then must be one to 500 characters with no control characters; it is stored on the record and in the audit row and never appears in a response. */
   reason?: string;
+  /** Requested lifetime in whole seconds. Zero or absent takes the max-ttl setting (30 minutes by default); the settled lifetime is the shortest of the request, that setting, the remaining lifetime of the caller's session and a hard ceiling of one hour. */
   ttl_seconds?: number;
 };
 
+/**
+ * The acceptance request; both fields are read only when the invited address has no account.
+ */
 export type AuthnInviteAcceptBody = {
+  /** Display name of the account created when the invited address has no account; ignored when the address already belongs to one. */
   display_name?: string;
+  /** Initial password of the account created when the invited address has no account; ignored when the address already belongs to one. */
   password?: string;
 };
 
+/**
+ * The whole attribute set to store, as string keys and string values; a given one - the empty object included - replaces the current set, and an absent one leaves it alone. A set outside the account module's bounds is refused 400.
+ */
 export type AuthnProfilePatchBodyAttributes = {[key: string]: string};
 
+/**
+ * The profile write; the set of fields is closed and every one is optional. A body carrying no field succeeds and changes nothing.
+ */
 export type AuthnProfilePatchBody = {
+  /** The new display name, at most 100 characters; absent leaves the current one. A longer value is refused 400 by the account module. */
   display_name?: string;
+  /** The whole attribute set to store, as string keys and string values; a given one - the empty object included - replaces the current set, and an absent one leaves it alone. A set outside the account module's bounds is refused 400. */
   attributes?: AuthnProfilePatchBodyAttributes;
+  /** A BCP 47 language tag stored under the i18n.locale attribute. An invalid tag is refused 400; the empty string clears the attribute and an absent field leaves it alone. */
   locale?: string;
+  /** An IANA time-zone name stored under the i18n.tz attribute. A name outside the IANA set is refused 400; the empty string clears the attribute and an absent field leaves it alone. */
   time_zone?: string;
 };
 
+/**
+ * The password change: the password the account has now, when it has one, and the new one.
+ */
 export type AuthnLoginChangePasswordBody = {
+  /** The password the account has now. Empty or absent is allowed for an account that signed up through an external provider and holds no password; a wrong value is a 401 login-failed. */
   current_password?: string;
+  /** The new password, required and non-empty. The password module decides the policy: a value outside it is a 400 bad-request, and a value equal to the current password is refused. */
   new_password?: string;
 };
 
+/**
+ * The phone number to send a verification code to.
+ */
 export type AuthnLoginStartPhoneBody = {
+  /** The number in international E.164 form: a leading `+`, a non-zero country digit, then 6 to 14 more digits. The value is not parsed, completed or reformatted, so a national-format number is a 400 bad-request. */
   phone?: string;
+  /** Not accepted by this route: the body is decoded with unknown members refused, so a body carrying this member is a 400 bad-request. The challenge is held server-side against the caller's session and is never sent to the client. */
   challenge_id?: string;
 };
 
+/**
+ * The verification code sent to the pending phone number.
+ */
 export type AuthnLoginVerifyPhoneBody = {
+  /** The code as the SMS channel sent it. Empty or longer than 32 bytes is a 400 bad-request before any comparison; a wrong code is a 401 login-failed and counts against the number. */
   code?: string;
 };
 
+/**
+ * The discovery request. It carries the email address and nothing else; an unknown field is refused as a bad request.
+ */
 export type AuthnSsoDiscoverBody = {
+  /** The full email address. Only the text after the last '@' is used as the domain; the local part is discarded, and an address with no '@' is a bad request. */
   email?: string;
 };
 
+/**
+ * The discovery answer, always of this shape. The providers array is present whether or not anything matches.
+ */
 export type AuthnSsoDiscover200 = {
+  /** The providers that have verified the domain and are enabled, in ascending id order; an empty array when none match. */
   providers: AuthnSsoProvider[];
 };
 
+/**
+ * The grant to perform, one of `client_credentials` and `refresh_token`. Required; any other value answers `unsupported_grant_type`.
+ */
 export type AuthnTokenIssueBodyGrantType = typeof AuthnTokenIssueBodyGrantType[keyof typeof AuthnTokenIssueBodyGrantType];
 
 
@@ -1244,34 +1918,65 @@ export const AuthnTokenIssueBodyGrantType = {
   refresh_token: 'refresh_token',
 } as const;
 
+/**
+ * The form fields of a token request. Which fields are read depends on `grant_type`.
+ */
 export type AuthnTokenIssueBody = {
+  /** The grant to perform, one of `client_credentials` and `refresh_token`. Required; any other value answers `unsupported_grant_type`. */
   grant_type?: AuthnTokenIssueBodyGrantType;
+  /** The refresh token to rotate, read only for the `refresh_token` grant, where a missing value answers `invalid_request`. The response carries the rotated replacement. */
   refresh_token?: string;
+  /** The service account identifier, read together with `client_secret` only when the request has no usable `Authorization: Basic` header. */
   client_id?: string;
+  /** The service account secret, read together with `client_id`. A missing identifier or secret answers `invalid_client`. */
   client_secret?: string;
 };
 
+/**
+ * The form field of a revocation request. A request whose form cannot be read still answers 200.
+ */
 export type AuthnTokenRevokeBody = {
+  /** The token to revoke: a refresh token, an access token, or any unrecognised string. The response does not reveal which kind it was or whether it existed. */
   token?: string;
 };
 
+/**
+ * The catalog's declared permissions.
+ */
 export type AuthzAdminPermissionsList200 = {
+  /** Every declared permission, one view each; not sorted. */
   permissions: AuthzAdminPermissionView[];
 };
 
+/**
+ * The tenant's bindings.
+ */
 export type AuthzAdminBindingsList200 = {
+  /** Every binding of the tenant, ordered by account and then role. */
   bindings: AuthzAdminBindingView[];
 };
 
+/**
+ * The account's bindings within the tenant.
+ */
 export type AuthzAdminBindingsOf200 = {
+  /** Every binding the account holds within the tenant, ordered by role name. */
   bindings: AuthzAdminBindingView[];
 };
 
+/**
+ * The tenant's roles.
+ */
 export type AuthzAdminRolesList200 = {
+  /** Every role of the tenant, ordered by role name. */
   roles: AuthzAdminRoleView[];
 };
 
+/**
+ * The role's grants.
+ */
 export type AuthzAdminGrantsList200 = {
+  /** Every grant the role holds, ordered by resource and then action. */
   grants: AuthzAdminGrantView[];
 };
 
@@ -1290,29 +1995,55 @@ limit?: number;
 offset?: number;
 };
 
+/**
+ * One page of messages and the number of rows the filter matches.
+ */
 export type NotificationInboxListMessages200 = {
+  /** The page's messages, newest first; the empty array when the page has none. */
   messages: NotificationMessage[];
+  /** The number of the caller's unexpired messages the filter matches, without the page bound. */
   total: number;
 };
 
+/**
+ * How many messages this call marked read.
+ */
 export type NotificationInboxMarkAllMessagesRead200 = {
+  /** The number of rows whose read_at changed; zero when nothing was unread. */
   read_count: number;
 };
 
+/**
+ * The caller's unread count.
+ */
 export type NotificationInboxGetUnreadCount200 = {
+  /** The number of unread, unexpired messages in the caller's inbox. */
   unread: number;
 };
 
+/**
+ * The caller's preference matrix: one row per notification type in the taxonomy, ordered by type key.
+ */
 export type NotificationPreferencesListPreferences200 = {
+  /** One row per type in the taxonomy, ordered by type key; each row's channels is the caller's effective set for that type. */
   preferences: NotificationPreference[];
 };
 
+/**
+ * The type's effective channel set after the update.
+ */
 export type NotificationPreferencesUpdatePreference200 = {
+  /** The type key the update applied to, echoed from the path. */
   type_key: string;
+  /** The type's effective channel set after the update: the stored channels when a row exists, otherwise the type's default channels, deduplicated and stably ordered. */
   channels: string[];
 };
 
+/**
+ * The taxonomy: one entry per notification type, ordered by type key.
+ */
 export type NotificationPreferencesListTypes200 = {
+  /** Every type collected for this process, ordered by type key; the set comes from module declarations rather than from a table. */
   types: NotificationType[];
 };
 
@@ -1327,20 +2058,37 @@ cursor?: string;
 limit?: number;
 };
 
+/**
+ * One page of the tenant's undeleted objects; next_cursor is empty when the page was not full.
+ */
 export type ObjectstoreMetadataListObjects200 = {
+  /** The page's objects, at most limit of them, ordered by creation instant and then identifier, both ascending. */
   objects: ObjectstoreObject[];
+  /** The cursor to pass on the next call; empty when the page was not full, meaning no further page is known. */
   next_cursor: string;
 };
 
+/**
+ * The view of the object just declared; it is pending and its observed size, mime and checksum_sha256 are not filled in yet.
+ */
 export type ObjectstoreMetadataCreateObject201 = {
+  /** The declared object's view. */
   object: ObjectstoreObject;
 };
 
+/**
+ * The view of the requested object.
+ */
 export type ObjectstoreMetadataGetObject200 = {
+  /** The requested object's view. */
   object: ObjectstoreObject;
 };
 
+/**
+ * The view of the object after the call; a repeat on an already-completed object returns it unchanged.
+ */
 export type ObjectstoreMetadataCompleteObject200 = {
+  /** The completed object's view. */
   object: ObjectstoreObject;
 };
 
@@ -1388,7 +2136,11 @@ layer: SettingsAdminLayerParameter;
 tenant?: SettingsAdminTenantParameter;
 };
 
+/**
+ * The write's body: exactly one object, whose `value` member carries the value to store.
+ */
 export type SettingsAdminSettingsSetBody = {
+  /** The value to store, in the JSON form the item's declared type is read from: a string for a string, duration, or text-decoding item, a number for a numeric item, a boolean for a bool item. It is encoded under the declared type and then held to the item's declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. */
   value: unknown;
 };
 
@@ -1404,39 +2156,75 @@ after?: string;
 limit?: number;
 };
 
+/**
+ * One page of the template set, ordered by name, with the cursor that continues it.
+ */
 export type SmsAdminTemplatesList200 = {
+  /** The templates on this page, ordered by name. */
   templates: SmsAdminTemplate[];
+  /** The last name on this page, to be passed as after on the next request; empty when this page is the last. */
   next_cursor: string;
 };
 
+/**
+ * The template the registration created.
+ */
 export type SmsAdminTemplatesRegister201 = {
+  /** The registered template. */
   template: SmsAdminTemplate;
 };
 
+/**
+ * The template the submission created.
+ */
 export type SmsAdminTemplatesOffer201 = {
+  /** The created template, with its language starting pending review. */
   template: SmsAdminTemplate;
 };
 
+/**
+ * The target state of the template's ability to send.
+ */
 export type SmsAdminTemplatesSetEnabledBody = {
+  /** True lets messages go out under the template, false stops them. The member is required and must be a JSON boolean; a body without it is a 400. */
   enabled: boolean;
 };
 
+/**
+ * The whole roster in one answer, because the listing is not paged.
+ */
 export type TenantAdminTenantsList200 = {
+  /** Every tenant the roster holds, ordered by identifier. */
   tenants: TenantAdminTenant[];
 };
 
+/**
+ * The tenant as registered, in the same view the read routes render.
+ */
 export type TenantAdminTenantsCreate201 = {
+  /** The registered tenant, its state active. */
   tenant: TenantAdminTenant;
 };
 
+/**
+ * The tenant the identifier named.
+ */
 export type TenantAdminTenantsGet200 = {
+  /** The tenant, with its identifier, alias and state. */
   tenant: TenantAdminTenant;
 };
 
+/**
+ * The rename request: the alias to give the tenant the path names.
+ */
 export type TenantAdminTenantsSetAliasBody = {
+  /** The new alias; an alias another tenant holds is refused with a 409. */
   alias: string;
 };
 
+/**
+ * active serves the tenant; disabled stops serving it.
+ */
 export type TenantAdminTenantsSetStatusBodyStatus = typeof TenantAdminTenantsSetStatusBodyStatus[keyof typeof TenantAdminTenantsSetStatusBodyStatus];
 
 
@@ -1445,11 +2233,16 @@ export const TenantAdminTenantsSetStatusBodyStatus = {
   disabled: 'disabled',
 } as const;
 
+/**
+ * The state change request.
+ */
 export type TenantAdminTenantsSetStatusBody = {
+  /** active serves the tenant; disabled stops serving it. */
   status: TenantAdminTenantsSetStatusBodyStatus;
 };
 
 /**
+ * Reads one page of the audit table across every tenant and the rows that belong to none, newest first. All supplied conditions apply together: the time window plus each non-empty set of actions, outcomes and actors. Paging is cut by row identifier rather than by offset, so rows appended while paging do not shift the page that follows. The page size defaults to 50 and is capped at 200; the answer's next is empty on the last page.
  * @summary Page through the audit records, newest first
  */
 export const auditAdminRecordsList = (
@@ -1520,6 +2313,7 @@ export function useAuditAdminRecordsList<TData = Awaited<ReturnType<typeof audit
 
 
 /**
+ * Reads one audit row by its identifier. The identifier is unique over the whole table, so the row is found whatever tenant it belongs to, or when it belongs to none. The identifier must be a non-negative decimal integer and the request must carry no query parameter; anything else is a 400. An identifier of zero, or one that no row holds, is a 404.
  * @summary Read one audit record by its row identifier
  */
 export const auditAdminRecordsGet = (
@@ -1589,6 +2383,7 @@ export function useAuditAdminRecordsGet<TData = Awaited<ReturnType<typeof auditA
 
 
 /**
+ * Returns one page of accounts in ascending identifier order, which for the UUIDv7 identifiers the module generates is close to creation order. Deleted accounts (tombstones) are left out unless the status filter asks for them. Every accepted filter given an empty value means no filter, and the query parameter set is closed: a parameter not declared here is refused with 400 rather than ignored. Requires the account.read action on the platform scope.
  * @summary List accounts, one page at a time
  */
 export const authnAdminAccountsList = (
@@ -1659,6 +2454,7 @@ export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof auth
 
 
 /**
+ * Creates a user or a service account. A user account must name at least one login identifier in this request — username, email or phone — because an account without one could not sign in; a service account signs in with a service secret and is not held to that. An email address or phone number is written with the way the administrator may state (admin or import-unverified), never with a proof of ownership. Creating a service account additionally needs the client.manage action. The mandatory audit row is written before the account row.
  * @summary Create an account
  */
 export const authnAdminAccountsCreate = (
@@ -1723,6 +2519,7 @@ export const useAuthnAdminAccountsCreate = <TError = void,
     }
 
 /**
+ * Deletes the account and erases its personal data, leaving a tombstone that keeps the identifier, kind, status and creation time: identifiers, external bindings, password credential, service secrets and memberships are removed. Requires account.delete and a fresh local multi-factor authentication from the caller.
  * @summary Delete an account
  */
 export const authnAdminAccountsDelete = (
@@ -1785,6 +2582,7 @@ export const useAuthnAdminAccountsDelete = <TError = void,
     }
 
 /**
+ * Reads one account by its identifier. A deleted account reads as not found, as does an identifier that never existed. Requires the account.read action, with the account as both the decision's target and target account.
  * @summary Read one account
  */
 export const authnAdminAccountsGet = (
@@ -1854,6 +2652,7 @@ export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authn
 
 
 /**
+ * Writes the display name, the whole attribute set and the protected flag, each only when the request names it; a field left out is left as it is. protected is a host's mark that the account may not be impersonated, independent of any Decider. Requires account.update.
  * @summary Update an account
  */
 export const authnAdminAccountsPatch = (
@@ -1919,6 +2718,7 @@ export const useAuthnAdminAccountsPatch = <TError = void,
     }
 
 /**
+ * Lists the account's registered factors as kind, label and status, and nothing of their credentials. Requires account.read.
  * @summary List an account's registered factors
  */
 export const authnAdminAccountsFactors = (
@@ -1988,6 +2788,7 @@ export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof a
 
 
 /**
+ * Adds a login name (username) or an email address to the account. The identifier is recorded as administrator-asserted (verified_via admin) and is not evidence of ownership, so it does not by itself justify automatic linking or merging. A phone number is refused here: it is added or changed only through an SMS code. Requires account.update.
  * @summary Add an identifier to an account
  */
 export const authnAdminAccountsAddIdentifier = (
@@ -2053,6 +2854,7 @@ export const useAuthnAdminAccountsAddIdentifier = <TError = void,
     }
 
 /**
+ * Removes the identifier named by its own identifier (the identifier row's id, not its value) from the account. Removing an identifier the account does not hold succeeds without changing anything. Requires account.update.
  * @summary Remove an identifier from an account
  */
 export const authnAdminAccountsRemoveIdentifier = (
@@ -2116,6 +2918,7 @@ export const useAuthnAdminAccountsRemoveIdentifier = <TError = void,
     }
 
 /**
+ * Sets the account-level flag that requires the account to register a factor. Requires account.update.
  * @summary Set whether an account must register a factor
  */
 export const authnAdminAccountsSetMFARequired = (
@@ -2181,6 +2984,7 @@ export const useAuthnAdminAccountsSetMFARequired = <TError = void,
     }
 
 /**
+ * Disables every factor registered on the account, sets the account's mfa_required flag so it must register a factor again, revokes every session of the account, and answers how many factors were removed. Requires mfa.reset, a fresh local non-SMS multi-factor authentication and a seasoned non-SMS factor of the caller's own; a caller without one gets 403 factor-not-seasoned.
  * @summary Remove an account's registered factors
  */
 export const authnAdminAccountsResetMFA = (
@@ -2243,6 +3047,7 @@ export const useAuthnAdminAccountsResetMFA = <TError = void,
     }
 
 /**
+ * Sets a temporary password that the account must change at its next sign-in, then revokes every session of the account. The revocation runs after the password write, so its failure is logged and does not undo the reset. The password is never echoed, logged or audited. Requires account.update, a fresh local non-SMS multi-factor authentication and a seasoned factor of the caller's own; a caller without one gets 403 factor-not-seasoned.
  * @summary Reset an account's password
  */
 export const authnAdminAccountsResetPassword = (
@@ -2308,6 +3113,7 @@ export const useAuthnAdminAccountsResetPassword = <TError = void,
     }
 
 /**
+ * Revokes every unrevoked browser and token session of the account, including one whose deadline has already passed, and answers with the number revoked. One audit row per session is written before the revocation, so the set read and the set revoked are the same; an account with nothing in that set revokes nothing and writes nothing. Requires session.revoke. Retrying is idempotent.
  * @summary Revoke every session of an account
  */
 export const authnAdminAccountsRevokeSessions = (
@@ -2370,6 +3176,7 @@ export const useAuthnAdminAccountsRevokeSessions = <TError = void,
     }
 
 /**
+ * Lists the account's service secrets oldest first, as identifier, label, absolute expiry and revocation state; the secret value itself is never returned. Requires account.read.
  * @summary List an account's service secrets
  */
 export const authnAdminAccountsSecretsList = (
@@ -2439,6 +3246,7 @@ export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<type
 
 
 /**
+ * Mints a service secret for a service account; only a service account has them, so any other account is 400. The secret value is returned in this response only and can never be read again. An expiry, when given, must be in the future. Requires client.manage and a fresh local multi-factor authentication.
  * @summary Create a service secret for an account
  */
 export const authnAdminAccountsSecretsCreate = (
@@ -2504,6 +3312,7 @@ export const useAuthnAdminAccountsSecretsCreate = <TError = void,
     }
 
 /**
+ * Revokes the service secret named by its identifier, not by the secret value. Requires client.manage and a fresh local multi-factor authentication.
  * @summary Revoke a service secret
  */
 export const authnAdminAccountsSecretsRevoke = (
@@ -2567,6 +3376,7 @@ export const useAuthnAdminAccountsSecretsRevoke = <TError = void,
     }
 
 /**
+ * Lists the account's live browser and token sessions, most recently created first, without any credential or token material. Each row's current is true when it is the caller's own session. Requires session.read.
  * @summary List an account's sessions
  */
 export const authnAdminAccountsSessions = (
@@ -2636,6 +3446,7 @@ export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof 
 
 
 /**
+ * Disables or restores an account; status is active or disabled. The deleted state is reached only through the delete route and is refused here. Requires account.disable and a fresh local multi-factor authentication. Sessions of a disabled account are cleaned up synchronously; a cleanup failure answers 503 while the status change stands, and retrying the same request completes the cleanup idempotently.
  * @summary Change an account's status
  */
 export const authnAdminAccountsStatus = (
@@ -2701,6 +3512,7 @@ export const useAuthnAdminAccountsStatus = <TError = void,
     }
 
 /**
+ * Lists the impersonation records of the tenant named by the required tenant query parameter, one page at a time, in ascending record-identifier order. The tenant scopes the read and fills the decision's tenant, so the page holds only that tenant's records and the cursor counts them. Records are never deleted, and a record still in force whose deadline has passed is evaluated and stored as ended before it is returned. Requires impersonation.read.
  * @summary List impersonation records, one page at a time
  */
 export const authnAdminImpersonationsList = (
@@ -2771,6 +3583,7 @@ export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeo
 
 
 /**
+ * Revokes an impersonation record; the record is read first, including an already ended one, to learn its tenant and target, which fill the decision. Revoking a record that has already ended is a no-op and gets the same answer as the first revocation. This route writes no mandatory audit: revoking is a move in the safe direction, and the impersonation module writes its own best-effort row. Requires impersonation.revoke.
  * @summary Revoke an impersonation record
  */
 export const authnAdminImpersonationsRevoke = (
@@ -2833,6 +3646,7 @@ export const useAuthnAdminImpersonationsRevoke = <TError = void,
     }
 
 /**
+ * Revokes one session by its identifier. The session is read first to learn its account, which fills the decision's target account. Requires session.revoke. Revoking an already revoked session succeeds with the same answer.
  * @summary Revoke one session by its identifier
  */
 export const authnAdminSessionsRevoke = (
@@ -2895,6 +3709,7 @@ export const useAuthnAdminSessionsRevoke = <TError = void,
     }
 
 /**
+ * Deletes the provider. Requires idp.manage, with the provider's own tenant as the decision's tenant.
  * @summary Delete an SSO provider
  */
 export const authnAdminSsoProvidersDelete = (
@@ -2957,6 +3772,7 @@ export const useAuthnAdminSsoProvidersDelete = <TError = void,
     }
 
 /**
+ * Reads one provider by its identifier. The provider's own tenant, resolved from the store, is the decision's tenant. The encrypted client secret never appears. Requires idp.manage.
  * @summary Read one SSO provider
  */
 export const authnAdminSsoProvidersGet = (
@@ -3026,6 +3842,7 @@ export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof a
 
 
 /**
+ * A full write of the provider: protocol, name, provisioning and config must be present, and the config is validated with unknown keys refused. Booleans left out keep their stored value, and an omitted client_secret keeps the stored one. The tenant is immutable: a body naming another tenant is 400. Requires idp.manage; each write raises version.
  * @summary Update an SSO provider
  */
 export const authnAdminSsoProvidersUpdate = (
@@ -3091,6 +3908,7 @@ export const useAuthnAdminSsoProvidersUpdate = <TError = void,
     }
 
 /**
+ * Claims a domain for the provider and answers the verification token to publish in the domain's DNS TXT record; the claim stays unverified until the verify route finds that record. Requires idp.manage. A domain another provider has already verified is 409; an unverified claim by another provider may stand beside this one.
  * @summary Claim a domain for an SSO provider
  */
 export const authnAdminSsoProvidersClaimDomain = (
@@ -3156,6 +3974,7 @@ export const useAuthnAdminSsoProvidersClaimDomain = <TError = void,
     }
 
 /**
+ * Removes a claimed domain, verified or not, from the provider. Requires idp.manage.
  * @summary Remove a domain from an SSO provider
  */
 export const authnAdminSsoProvidersRemoveDomain = (
@@ -3219,6 +4038,7 @@ export const useAuthnAdminSsoProvidersRemoveDomain = <TError = void,
     }
 
 /**
+ * Verifies a claimed domain by looking up the TXT record that must hold the verification token and, when it does, marks the claim verified. A domain the provider holds no claim on, or a record that does not hold the token, marks nothing verified. Requires idp.manage.
  * @summary Verify a claimed domain of an SSO provider
  */
 export const authnAdminSsoProvidersVerifyDomain = (
@@ -3282,6 +4102,7 @@ export const useAuthnAdminSsoProvidersVerifyDomain = <TError = void,
     }
 
 /**
+ * Refreshes the provider's metadata by dispatching to the refresher registered for its protocol. A protocol with no refresher in this assembly is 400, and a provider with no metadata URL cannot be refreshed. On a parse or validation failure the stored config is kept and the failure is answered. Requires idp.manage; a successful refresh writes the new config and raises version.
  * @summary Refresh an SSO provider's metadata
  */
 export const authnAdminSsoProvidersRefreshMetadata = (
@@ -3344,6 +4165,7 @@ export const useAuthnAdminSsoProvidersRefreshMetadata = <TError = void,
     }
 
 /**
+ * Re-runs verification for every domain the provider has verified; a claim that was never verified is not looked up. Requires idp.manage.
  * @summary Re-verify every claimed domain of an SSO provider
  */
 export const authnAdminSsoProvidersReverifyDomains = (
@@ -3406,6 +4228,7 @@ export const useAuthnAdminSsoProvidersReverifyDomains = <TError = void,
     }
 
 /**
+ * Returns one page of the tenant's invitations, ordered by status ascending (pending, accepted, revoked) and then by creation time descending with the identifier as the tie-break. The cursor is opaque: pass the previous page's next_cursor as after to resume, and an unreadable cursor is refused with 400 rather than served as the first page. Expired pending invitations are still listed with status pending. A read writes no audit row.
  * @summary One page of a tenant's invitations
  */
 export const authnInviteList = (
@@ -3480,6 +4303,7 @@ export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInvite
 
 
 /**
+ * Normalizes the address (trimmed, lower-cased printable ASCII with exactly one @, at most 254 bytes), then issues a pending invitation. A pending invitation for the same tenant and address is superseded in the same transaction, so its token stops working. expires_at is optional: when absent, the zero instant or the configured lifetime applies (168 hours by default), and a deadline not later than the current time is refused. Requires the authn.membership.manage decision in the tenant; failure to write the mandatory audit row answers 503 without issuing.
  * @summary Issue an invitation to an address in a tenant
  */
 export const authnInviteIssue = (
@@ -3545,6 +4369,7 @@ export const useAuthnInviteIssue = <TError = void,
     }
 
 /**
+ * Revokes a pending invitation and voids its token; the invitation identifier also serves as the decision's target. Revoking an already revoked invitation succeeds idempotently, while revoking an accepted one answers 409 because removing a membership is not this route's job. Failure to write the mandatory audit row answers 503 without revoking.
  * @summary Revoke a pending invitation
  */
 export const authnInviteRevoke = (
@@ -3608,6 +4433,7 @@ export const useAuthnInviteRevoke = <TError = void,
     }
 
 /**
+ * Lists one tenant's memberships, one page at a time, in ascending account-identifier order. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.
  * @summary List a tenant's members
  */
 export const authnAdminMembersList = (
@@ -3682,6 +4508,7 @@ export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authn
 
 
 /**
+ * Removes the account's membership from the tenant. Requires membership.manage with the path's tenant. The route is idempotent: a membership that is not there is already removed, and the call answers 204.
  * @summary Remove an account's membership from a tenant
  */
 export const authnAdminMembersRemove = (
@@ -3745,6 +4572,7 @@ export const useAuthnAdminMembersRemove = <TError = void,
     }
 
 /**
+ * Writes one account's membership in one tenant: active true adds or resumes it and active false suspends it, and a suspended membership reads as no membership. source records how it came to exist; omitted records it as an administrator's change. The account must exist and not be a tombstone. Requires membership.manage with the path's tenant.
  * @summary Write an account's membership in a tenant
  */
 export const authnAdminMembersPut = (
@@ -3811,6 +4639,7 @@ export const useAuthnAdminMembersPut = <TError = void,
     }
 
 /**
+ * Sets or clears a member's emergency exemption from the tenant's enforced SSO requirement. The membership must already exist: an absent one is 404, and the route changes only the exemption, leaving the rest of the membership as it is. Requires membership.manage.
  * @summary Set an account's exemption from a tenant's SSO requirement
  */
 export const authnAdminMembersSsoExempt = (
@@ -3877,6 +4706,7 @@ export const useAuthnAdminMembersSsoExempt = <TError = void,
     }
 
 /**
+ * Lists the tenant's SSO providers. The encrypted client secret never appears. Requires idp.manage with the path's tenant.
  * @summary List a tenant's SSO providers
  */
 export const authnAdminSsoProvidersList = (
@@ -3946,6 +4776,7 @@ export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof 
 
 
 /**
+ * Creates an SSO provider in the tenant. The path and the body must agree on the tenant: an absent body tenant takes the path's, and a different one is 400. protocol is oidc or saml; provisioning is jit or preprovisioned and has no default. A client secret is carried only by an OIDC provider. Every write raises the provider's version. Requires idp.manage.
  * @summary Create an SSO provider in a tenant
  */
 export const authnAdminSsoProvidersCreate = (
@@ -4011,6 +4842,7 @@ export const useAuthnAdminSsoProvidersCreate = <TError = void,
     }
 
 /**
+ * Handles a provider's callback as a top-level browser navigation. The callback is bound through the flow cookie only, because a navigation cannot set a request header; the path's provider must equal the provider recorded in the flow and the flow must be at its first factor, otherwise the call is a 401 flow-invalid before any method is asked. The engine moves the flow to processing before calling the method, so a replayed authorization code or assertion loses the compare-and-swap and gets 401 flow-invalid. A GET callback that carries no flow cookie is always 401 flow-invalid: an identity-provider-initiated sign-in is served only as a POST. A cookie login that completes on this route answers 303 to the flow's stored return target instead of a body.
  * @summary Handle a provider's callback as a browser navigation
  */
 export const authnLoginCallbackGet = (
@@ -4080,6 +4912,7 @@ export function useAuthnLoginCallbackGet<TData = Awaited<ReturnType<typeof authn
 
 
 /**
+ * Handles a provider's callback delivered as a cross-site form post, which is how SAML's assertion consumer service is reached. The callback is bound through the flow cookie only, because a form post cannot set a request header; the path's provider must equal the provider recorded in the flow and the flow must be at its first factor, otherwise the call is a 401 flow-invalid before any method is asked. The posted form is bounded to 512 KiB before it is parsed, and a body over that bound is answered 401 login-failed with the flow left a tombstone. The engine moves the flow to processing before calling the method, so an assertion is handled at most once. Without a flow cookie the route serves an identity-provider-initiated sign-in, but only for an enterprise provider whose row enables it.
  * @summary Handle a provider's callback as a cross-site form post
  */
 export const authnLoginCallbackPost = (
@@ -4142,6 +4975,7 @@ export const useAuthnLoginCallbackPost = <TError = Problem,
     }
 
 /**
+ * Answers every factor row the caller's account has registered, ordered oldest first by creation time and then by identifier. Each row carries the kind, label, lifecycle status and the instants it was created, activated and last used; it carries no seed, key, public key or other data a kind keeps for itself. The list is empty when the account has registered none.
  * @summary List the caller's own registered factors
  */
 export const authnMfaFactors = (
@@ -4211,6 +5045,7 @@ export function useAuthnMfaFactors<TData = Awaited<ReturnType<typeof authnMfaFac
 
 
 /**
+ * Removes one factor of the caller's account: whatever the factor's kind keeps for it is removed first, then its register row. The call requires a fresh multi-factor authentication verified locally, so one merely declared by an identity provider does not satisfy it; an impersonating identity is refused. A factor that is not the caller's answers the same as one already gone, so the route never answers 404 and repeating a removal is idempotent. When the account has mfa_required set, its last active factor cannot be removed.
  * @summary Remove one of the caller's own factors
  */
 export const authnMfaRemoveFactor = (
@@ -4273,6 +5108,7 @@ export const useAuthnMfaRemoveFactor = <TError = Problem,
     }
 
 /**
+ * Starts a login flow for the method named in the body and advances it through the method's first step. The flow token is written to the flow cookie, or, with `binding` set to `header`, returned in `flow_token` with no cookie; later calls are bound to the flow by that token. The route reads no cookie, so a stale session cookie does not prevent a login. Depending on the method and the multi-factor policy, the returned flow may already stand at a second-factor, enrollment or ready step. A body that is not `application/json` is a 415, an unknown member or a value outside its domain is a 400, and a credential the method did not accept is a 401 login-failed — except two refusals the route answers as a 400: a phone prefix the deployment does not allow (`unsupported-region`) and an identifier that cannot name an account (`bad-request`). A 429 carries `Retry-After` when the back-off states a delay.
  * @summary Start a login flow for one method
  */
 export const authnLoginStart = (
@@ -4337,6 +5173,7 @@ export const useAuthnLoginStart = <TError = Problem,
     }
 
 /**
+ * Advances the flow the request is bound to by one step. The body must echo the flow's current `seq`, or the call is a 401 flow-invalid. `step` must be one of `answer`, `factor`, `enroll` or `complete`: a name outside that set is a 400 bad-request, and a step the flow's state does not accept is a 401 flow-invalid. A flow accepts at most eight client answers, after which it is moved to failed and every later answer is a 401 flow-invalid. The answer is the flow at its next step or, once the flow is ready, the completed result: the session view, the token pair, or the `linked`/`enrolled` result of a link or enrollment. Each step is a compare-and-swap on the flow record, so concurrent answers are decided by the store and the loser gets 401 flow-invalid rather than a retry.
  * @summary Answer the current step of the flow the request is bound to
  */
 export const authnLoginAnswer = (
@@ -4401,6 +5238,7 @@ export const useAuthnLoginAnswer = <TError = Problem,
     }
 
 /**
+ * Starts a `link`, `step-up` or `enroll` flow on the identity the gateway authenticated and advances it to its first step. The flow is bound to that account and session, and an impersonating identity is refused with 403 impersonation-restricted. A link and an enrollment require the fresh authentication the account's factors call for — a fresh local multi-factor when the account holds an active factor, a fresh first factor otherwise — and answer 401 insufficient_user_authentication with `WWW-Authenticate` when it does not hold. A step-up whose account holds at least one factor usable for this session starts at the second factor and answers the offered factors without calling the method; an account that holds factors but none usable for this session — because each was activated at or after the session authenticated — is refused with 401 insufficient_user_authentication, and an account with no factor starts at the first factor with the method named in the body. The delivery mode is not read from the body: it follows the kind of the request's session.
  * @summary Start a flow on the identity already signed in
  */
 export const authnLoginStartAuthenticated = (
@@ -4465,6 +5303,7 @@ export const useAuthnLoginStartAuthenticated = <TError = Problem,
     }
 
 /**
+ * Removes the flow the request is bound to and clears the flow cookie. The flow token is read from the cookie or the `Authn-Flow` header. A request with no binding, with a wrong binding, or naming a flow that is already gone is answered the same 401 flow-invalid, while a request that removes a live flow answers 204; no session, token or account state is touched.
  * @summary Abandon the flow the request is bound to
  */
 export const authnLoginAbandon = (
@@ -4527,6 +5366,7 @@ export const useAuthnLoginAbandon = <TError = Problem,
     }
 
 /**
+ * Reads the flow the request is bound to so a client can resume it, for example after a page refresh or after a callback sent the user agent back. The flow token is taken from the flow cookie or the `Authn-Flow` header, and a flow bound by the header gets it echoed in `flow_token`. A missing or mismatched binding, and a flow that is done, failed or gone, are all answered 401 flow-invalid. The reply is built from the stored record alone, so a first-factor step the method named cannot be re-prompted with its fields and its `next.kind` is `challenge`.
  * @summary The state of the flow the request is bound to
  */
 export const authnLoginCurrent = (
@@ -4596,6 +5436,7 @@ export function useAuthnLoginCurrent<TData = Awaited<ReturnType<typeof authnLogi
 
 
 /**
+ * Adds one login identifier to the caller's account. `kind=username` writes a login name at once, recorded as the account's own assertion; `kind=email` sends a code to the address and answers `state: pending` with how long the code lives and how soon another may be sent, and the address is written only after `POST /auth/identifiers/verify` accepts the code. A second code to the same normalized address within the resend interval is a 429 throttled; the window is held against the address and shared across sessions and accounts. The call requires the fresh authentication every change of what proves the account asks for and refuses an impersonating identity; a write rotates the caller's session token and revokes the account's other sessions. A login name or address another account holds is a 409 conflict, and a deployment with no email channel answers the email branch with 503 unavailable.
  * @summary Add one of the caller's own login identifiers
  */
 export const authnLoginAddIdentifier = (
@@ -4660,6 +5501,7 @@ export const useAuthnLoginAddIdentifier = <TError = Problem,
     }
 
 /**
+ * Accepts the code sent to an email address being added and, on a match, writes the address as an identifier verified by that code. The pending address and the code's digest are read from the server-side record of the caller's session, so the client submits only the code and cannot choose which address is verified. A missing record, one that names another account, or one that does not parse is a 401 flow-invalid. A wrong code is a 401 login-failed; five wrong codes for one issued code spend the pending verification, and the record also expires with the code's lifetime. On success the record is consumed, the caller's session token is rotated, the account's other sessions are revoked, and the answer is 200 with `state: added`.
  * @summary Verify the code sent to an email address being added
  */
 export const authnLoginVerifyIdentifier = (
@@ -4724,6 +5566,7 @@ export const useAuthnLoginVerifyIdentifier = <TError = Problem,
     }
 
 /**
+ * Removes one login identifier the caller's account holds. The identifier must be the caller's own: one that does not exist and one that belongs to another account are answered identically as a 400 bad-request, so the route discloses nothing about what another account holds. The call requires the fresh authentication every change of what proves the account asks for and refuses an impersonating identity. The route does not check whether the identifier is the account's last way to sign in, so the last one can be removed; that rule belongs to unbinding an external identity. Unlike the routes that add a way in, this one does not revoke the caller's other sessions, and it publishes no event of its own: `authn.identifier.changed` is published by the account module on the removal.
  * @summary Remove one of the caller's own identifiers
  */
 export const authnLoginRemoveIdentifier = (
@@ -4786,6 +5629,7 @@ export const useAuthnLoginRemoveIdentifier = <TError = Problem,
     }
 
 /**
+ * Ends the unended record on the caller's session with the reason explicit, whether or not it is still valid, and answers 204. Repeating it is safe: once the record is ended a further call answers 404. Under a cookie credential the impersonation marker is cleared from the session without rotating its token, so the caller continues as its own identity; a failed audit write does not undo the end.
  * @summary End the impersonation on the caller's session
  */
 export const authnImpersonationEnd = (
@@ -4848,6 +5692,7 @@ export const useAuthnImpersonationEnd = <TError = void,
     }
 
 /**
+ * Answers the record still in force on the caller's session, including the instant it began. Before answering, the record is judged against the current time and the bound session, actor, target and target membership; one that has lapsed is ended and answers 404, as does a credential that carries no session.
  * @summary The impersonation in force on the caller's session
  */
 export const authnImpersonationStatus = (
@@ -4917,6 +5762,7 @@ export function useAuthnImpersonationStatus<TData = Awaited<ReturnType<typeof au
 
 
 /**
+ * Begins an impersonation on the caller's session and answers with the record just created. The caller must have authenticated locally with a recent multi-factor authentication whose second factor is a one-time code or a passkey, and must hold a seasoned factor for the account. A cookie credential receives the record only and has the impersonation marker set on its session; a bearer credential also receives an impersonation access token whose lifetime is the shorter of the access-token setting and the record's remaining lifetime.
  * @summary Start impersonating another account
  */
 export const authnImpersonationStart = (
@@ -4981,6 +5827,7 @@ export const useAuthnImpersonationStart = <TError = void,
     }
 
 /**
+ * Resolves the token's SHA-256 to an invitation and returns its view so a client can show what it is about to accept. The route is public and the token is the whole credential; the response never carries a token. An unknown token is 404. The view reflects the stored state even when the invitation can no longer be accepted, so the client should read status and expires_at rather than assume the link is redeemable.
  * @summary Read the invitation a token points to
  */
 export const authnInviteAcceptView = (
@@ -5050,6 +5897,7 @@ export function useAuthnInviteAcceptView<TData = Awaited<ReturnType<typeof authn
 
 
 /**
+ * Redeems the invitation and writes a membership whose source is invite. When the invited address already belongs to an account, the membership is added to it and display_name and password are ignored; otherwise an enabled user account is created first, with the address verified through the invitation. Two concurrent redemptions of one token leave at most one winner. A token that is expired, revoked or already accepted is 409.
  * @summary Redeem an invitation, creating the account when the address has none
  */
 export const authnInviteAccept = (
@@ -5115,6 +5963,7 @@ export const useAuthnInviteAccept = <TError = void,
     }
 
 /**
+ * The public halves of the keys loaded at startup, each with its RFC 7638 thumbprint as `kid`, its algorithm and `use` of `sig`; no private field is included. The body is fixed for the life of the process and holds no secret, so this is the one authn response with a public cache: `Cache-Control: public, max-age=300`, the window a key rotation waits out before switching the signing key.
  * @summary The public keys that verify the issued tokens
  */
 export const authnTokenJwks = (
@@ -5184,6 +6033,7 @@ export function useAuthnTokenJwks<TData = Awaited<ReturnType<typeof authnTokenJw
 
 
 /**
+ * Unbinds one external identity from the caller's account. The binding must be the caller's own; one that is not, whether it does not exist or belongs to another account, is a 400 bad-request. The call requires the fresh authentication every change of what proves the account asks for — a multi-factor assurance merely declared by an identity provider does not count — and refuses an impersonating identity. The account module refuses to remove the last way to sign in (409 conflict); a way only an identity provider declared does not count as a way to sign in, which is why this route asks for local freshness. On success the call publishes `authn.binding.changed` when the provider is in the event payload's closed set, rotates the caller's session token, revokes the account's other sessions, and answers 204.
  * @summary Unbind one of the caller's own external identities
  */
 export const authnLoginUnlink = (
@@ -5246,6 +6096,7 @@ export const useAuthnLoginUnlink = <TError = Problem,
     }
 
 /**
+ * Revokes the session the request's credential belongs to and writes a Set-Cookie header that has the browser drop the session cookie. When the identity is impersonating, the session revoked is the administrator's own, the one the credential belongs to, so the impersonation ends with it. A repeated call from the same credential is answered 401 on the replica that revoked the session, which clears its verification cache when it writes; another replica keeps accepting it until its check cache expires (check-ttl, five seconds by default) and answers 204 idempotently until then.
  * @summary Revoke the session the request came with and clear its cookie
  */
 export const authnSessionLogout = (
@@ -5308,6 +6159,7 @@ export const useAuthnSessionLogout = <TError = void,
     }
 
 /**
+ * The caller's own account, read from the identity the gateway left on the request; no path parameter or body names an account. An impersonating identity may reach this route and then reads the account it is impersonating. Every time that is present is RFC 3339 in UTC, and a zero instant in a time field other than last_login_at is the empty string; last_login_at is instead absent when the binding has never been used to sign in. The identity's own account being gone (a tombstone, or a row that cannot be read) is a 401, the same answer a request with no identity gets.
  * @summary The caller's own profile
  */
 export const authnProfileGet = (
@@ -5377,6 +6229,7 @@ export function useAuthnProfileGet<TData = Awaited<ReturnType<typeof authnProfil
 
 
 /**
+ * Writes the caller's own display name, its whole attribute set, and the language and time zone named inside that set; every body field is optional and a field left out is left as it is. The display name is written before the attribute set, and the two writes are not one atomic change: when the second fails, the first is already in force and the answer is that failure's. An impersonating identity is refused 403 without the body being read, and a caller with no login session, or one that does not meet the freshness the account's own factors call for, is refused 401 before anything is written.
  * @summary Write the caller's own display name, attribute set, locale and time zone
  */
 export const authnProfilePatch = (
@@ -5441,6 +6294,7 @@ export const useAuthnProfilePatch = <TError = void,
     }
 
 /**
+ * Lists one descriptor per login method that takes part and is not turned off by the deployment, sorted by method name, together with whether a first login may open an account and the second-factor kinds the deployment takes in. It reads no credential and no request body, so every caller gets the same document. A method turned off by the deployment is left out rather than reported with a flag, and the call answers 503 when the settings that decide which methods are off cannot be read. Enterprise identity providers are not listed here; they are discovered through the SSO module.
  * @summary List the login methods this deployment offers
  */
 export const authnLoginMethods = (
@@ -5510,6 +6364,7 @@ export function useAuthnLoginMethods<TData = Awaited<ReturnType<typeof authnLogi
 
 
 /**
+ * Changes the caller's password. The call requires the fresh authentication every change of what proves the account asks for — a fresh local multi-factor when the account holds an active factor, a fresh first factor otherwise — and refuses an impersonating identity with 403 impersonation-restricted. The current password may be empty for an account that signed up through a provider and holds no password; a wrong one is a 401 login-failed, and a new password outside the password module's policy is a 400 bad-request. On success the current session is rotated to a new token, the account's other sessions are revoked, and the answer is 204 with the new session cookie set. An account that has neither a username nor a verified email is refused with 409 login-identifier-required.
  * @summary Change the caller's password
  */
 export const authnLoginChangePassword = (
@@ -5574,6 +6429,7 @@ export const useAuthnLoginChangePassword = <TError = Problem,
     }
 
 /**
+ * Sends a verification code to a phone number the caller wants to add to the account, and answers how long the code lives and how soon another may be sent, both in whole seconds. The answer carries no challenge identifier and no hint whether the number already belongs to another account: a number another account holds is sent a code exactly as a free one is, and the conflict surfaces only when the verified number is written. The pending verification is held against the caller's session, so one session has at most one and a later call replaces it. The route is present only in an assembly that takes in the SMS code capability. A key-value store that cannot be read is a 503 before any code is sent; a store that cannot be written after the code went out is also a 503, and the code then cannot be verified.
  * @summary Send a code to a phone number being added to the account
  */
 export const authnLoginStartPhone = (
@@ -5638,6 +6494,7 @@ export const useAuthnLoginStartPhone = <TError = Problem,
     }
 
 /**
+ * Verifies the code sent to the pending number and binds that number to the caller's account as an identifier verified by SMS code, replacing a phone the account already has. The number and the challenge are taken from the server-side record of the caller's session, not from the request, so a client cannot choose which number is verified. The number's back-off is checked before the code is compared, so a number in back-off answers 429 without offering the code to a guess; a wrong code is a 401 login-failed and counts against the number, and a correct one clears the back-off. On success the pending record is consumed, the caller's session token is rotated, the account's other sessions are revoked, and the answer is 204. A missing pending record, or one that names another account, is a 401 flow-invalid.
  * @summary Verify the code sent to a phone number
  */
 export const authnLoginVerifyPhone = (
@@ -5702,6 +6559,7 @@ export const useAuthnLoginVerifyPhone = <TError = Problem,
     }
 
 /**
+ * Answers whether the request carries a signed-in identity and, when it does, the facts about it. It may be called without a credential: that answer is {"authenticated": false} rather than a 401, so a front end can ask on startup; a credential that is presented and does not hold is still a 401. An impersonating identity is answered here, naming both the impersonated account and the actor.
  * @summary Who is signed in on this session
  */
 export const authnSessionGet = (
@@ -5771,6 +6629,7 @@ export function useAuthnSessionGet<TData = Awaited<ReturnType<typeof authnSessio
 
 
 /**
+ * Revokes every unrevoked browser and token session of the caller's account except the one the request came with, in a single statement, and answers with the number of rows it changed. Expiry is not a condition: a session past its expiry that was never revoked is revoked and counted too. Service-account sessions are untouched. An impersonating identity is refused with 403.
  * @summary Revoke every session of the caller's but the current one
  */
 export const authnSessionRevokeOthers = (
@@ -5833,6 +6692,7 @@ export const useAuthnSessionRevokeOthers = <TError = void,
     }
 
 /**
+ * Lists the caller's own live browser and token sessions, most recently created first (by creation instant, then by identifier), with the current one flagged. Service-account sessions are not listed, and the list is not paginated: every live session of the account is returned. An impersonating identity is refused with 403.
  * @summary List the caller's own live sessions
  */
 export const authnSessionList = (
@@ -5902,6 +6762,7 @@ export function useAuthnSessionList<TData = Awaited<ReturnType<typeof authnSessi
 
 
 /**
+ * Revokes one of the caller's own sessions. A session that does not exist, belongs to another account, or is a service-account session is answered with the same 403, so the route does not reveal which identifiers exist. Revoking the current session also writes a Set-Cookie header that has the browser drop the session cookie. Revoking an already revoked session of the caller's succeeds.
  * @summary Revoke one of the caller's own sessions
  */
 export const authnSessionRevokeOne = (
@@ -5964,6 +6825,7 @@ export const useAuthnSessionRevokeOne = <TError = void,
     }
 
 /**
+ * Answers the SSO sign-in entries of an email address's domain. It is public and needs no tenant context. Only the text after the last '@' is used; the local part is never looked up, so the answer does not reveal whether an account exists. The domain is lowercased and trimmed, then must be printable ASCII: an address with no '@', or a domain that is empty, over 253 bytes, non-ASCII, has a label that is empty or over 63 bytes, or is not made of labels of letters, digits and inner hyphens, is refused. Only providers that have verified the domain and are enabled are named, in ascending id order; an empty list is answered when none match, in the same shape and timing as a match. The body must be application/json and may carry no field other than email. The response is sent with Cache-Control: no-store.
  * @summary The sign-in entries that exist for an email address's domain
  */
 export const authnSsoDiscover = (
@@ -6028,6 +6890,7 @@ export const useAuthnSsoDiscover = <TError = Problem,
     }
 
 /**
+ * Returns the SAML 2.0 service provider entity descriptor that the identity provider side is registered against, as XML. The entityID is this metadata address itself, so each provider sees a distinct service provider; the assertion consumer service points at the engine's callback route for the same provider with the HTTP-POST binding, WantAssertionsSigned is true, and AuthnRequestsSigned follows the provider's sign_requests setting. Every URL is derived from the configured public address, never from the Host or X-Forwarded-* headers. When the deployment is configured with an SP certificate, the descriptor carries the current SP signing certificate and, while a rotation is in progress, the next certificate beside it; a deployment that configures neither an SP key nor an SP certificate publishes no key descriptor at all. The descriptor is declared valid for seven days from generation. The route is public. It answers 404 when the identifier names no provider, a disabled provider, or one whose protocol is not saml; 503 when the provider register cannot be reached.
  * @summary The service provider metadata for one SAML provider
  */
 export const authnSsoSamlMetadata = (
@@ -6097,6 +6960,7 @@ export function useAuthnSsoSamlMetadata<TData = Awaited<ReturnType<typeof authnS
 
 
 /**
+ * The RFC 6749 token endpoint. The body is `application/x-www-form-urlencoded` and is capped at 8 KiB; a body that is not a form, is over the limit, or omits `grant_type` answers `invalid_request`, and a `grant_type` outside the closed set `client_credentials` and `refresh_token` answers `unsupported_grant_type`. Client authentication is read from `Authorization: Basic` first and from the `client_id` and `client_secret` form fields only when no usable Basic header is present. A success carries `Cache-Control: no-store` and `Pragma: no-cache`; failures carry the RFC 6749 §5.2 body whose only member is `error`, with no `error_description`, and are never problem+json.
  * @summary Exchange a client credential or a refresh token for an access token
  */
 export const authnTokenIssue = (
@@ -6174,6 +7038,7 @@ export const useAuthnTokenIssue = <TError = void,
     }
 
 /**
+ * The RFC 7009 revocation endpoint. The body is `application/x-www-form-urlencoded`, capped at 8 KiB, and its only read field is `token`. The answer is 200 with an empty body whatever the token's state — valid, invalid, unknown, or a body that cannot be read — so a presenter cannot use the endpoint to probe whether a token exists. A refresh token revokes the session it belongs to, an ordinary access token whose signature holds revokes its `sid`'s session, an impersonation token ends its record and leaves the administrator's session alone, and a service access token is a no-op. Only a dependency that cannot answer gives 503 `temporarily_unavailable`, in the RFC 6749 §5.2 body, rather than reporting a revocation that did not happen.
  * @summary Revoke a refresh token
  */
 export const authnTokenRevoke = (
@@ -6242,6 +7107,7 @@ export const useAuthnTokenRevoke = <TError = void,
     }
 
 /**
+ * Lists every permission the process's catalog declares, one view each: the union of the permission lists the registered modules declared. The order is the catalog's collection order and is not sorted. The list is not filtered by which modules this process runs, so a permission may be listed that no mounted surface serves.
  * @summary List every permission the catalog declares
  */
 export const authzAdminPermissionsList = (
@@ -6311,6 +7177,7 @@ export function useAuthzAdminPermissionsList<TData = Awaited<ReturnType<typeof a
 
 
 /**
+ * Lists every role binding of the tenant, ordered by account identifier and then role name, one view each. A tenant with no binding yields an empty list. The list is not paginated.
  * @summary List every role binding of a tenant
  */
 export const authzAdminBindingsList = (
@@ -6380,6 +7247,7 @@ export function useAuthzAdminBindingsList<TData = Awaited<ReturnType<typeof auth
 
 
 /**
+ * Lists every binding the account holds within the tenant, ordered by role name ascending, one view each. An account with no binding, or a tenant with none, yields an empty list; the account is not looked up. The list is not paginated.
  * @summary List every binding an account holds within a tenant
  */
 export const authzAdminBindingsOf = (
@@ -6453,6 +7321,7 @@ export function useAuthzAdminBindingsOf<TData = Awaited<ReturnType<typeof authzA
 
 
 /**
+ * Removes the account's binding to the role within the tenant. An empty account is refused with a 400 before anything is written. Removing a binding that does not exist succeeds with 204 and changes nothing. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
  * @summary Remove an account's binding to a role within a tenant
  */
 export const authzAdminBindingsDelete = (
@@ -6517,6 +7386,7 @@ export const useAuthzAdminBindingsDelete = <TError = Problem,
     }
 
 /**
+ * Binds a role to an account within the tenant. The role must exist in the tenant; a builtin role may be bound. An empty account is refused with a 400 before anything is written. Binding a role the account already holds succeeds and leaves the existing row unchanged. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
  * @summary Bind a role to an account within a tenant
  */
 export const authzAdminBindingsPut = (
@@ -6581,6 +7451,7 @@ export const useAuthzAdminBindingsPut = <TError = Problem,
     }
 
 /**
+ * Lists every role stored for the tenant, one view each, ordered by role name ascending. The tenant is the policy domain the rows belong to and is not looked up in a roster: a tenant with no role yields an empty list. The list is not paginated.
  * @summary List a tenant's roles
  */
 export const authzAdminRolesList = (
@@ -6650,6 +7521,7 @@ export function useAuthzAdminRolesList<TData = Awaited<ReturnType<typeof authzAd
 
 
 /**
+ * Removes the role and, in one transaction, its permission grants and its account bindings, so no grant or binding outlives the role. Removing a role that does not exist succeeds with 204 and changes nothing. A builtin role cannot be removed. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
  * @summary Remove a role, revoking its grants and bindings with it
  */
 export const authzAdminRolesDelete = (
@@ -6780,6 +7652,7 @@ export const useAuthzAdminRolesPut = <TError = Problem,
     }
 
 /**
+ * Lists every permission grant the role holds as the (resource, action) pairs the policy engine matches on, ordered by resource and then action. A role that holds no grant, or does not exist, yields an empty list; the role is not looked up. The list is not paginated.
  * @summary List every permission grant a role holds
  */
 export const authzAdminGrantsList = (
@@ -6853,6 +7726,7 @@ export function useAuthzAdminGrantsList<TData = Awaited<ReturnType<typeof authzA
 
 
 /**
+ * Revokes one permission from a role. The permission in the path is translated to its (resource, action) pair; a permission with no translation row is a 400. Revoking a grant the role does not hold succeeds with 204 and changes nothing, and a role that is not in the tenant is not refused: no grant row matches and the answer is also 204. A builtin role's grants cannot be revoked: that is a 409. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
  * @summary Revoke a permission from a role
  */
 export const authzAdminGrantsDelete = (
@@ -6917,6 +7791,7 @@ export const useAuthzAdminGrantsDelete = <TError = Problem,
     }
 
 /**
+ * Grants one permission to a role. The permission in the path is checked against the catalog and translated to its (resource, action) pair before anything is written; a permission the catalog does not declare, or one with no translation row, is a 400 and no write happens. The role must exist in the tenant and must not be builtin: an absent role is a 400, and a builtin one is a 409, since its grants cannot be changed. Granting a permission the role already holds succeeds and leaves the existing row unchanged. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
  * @summary Grant a permission to a role
  */
 export const authzAdminGrantsPut = (
@@ -7051,6 +7926,7 @@ export function useFeatureBoardList<TData = Awaited<ReturnType<typeof featureBoa
 
 
 /**
+ * Lists the messages of the inbox the request's identity resolves to — the impersonated account's inbox while impersonating. Messages are ordered by creation instant descending, then by identifier descending, so pages stay stable when rows share an instant. Expired rows are not listed, and total counts every row the filter matches without the page bound. A limit outside 0..200, a negative offset, or a non-numeric limit or offset is refused whole with a 400 rather than clamped. A request without an identity is answered 401, and a store failure is answered 503.
  * @summary One page of the caller's messages
  */
 export const notificationInboxListMessages = (
@@ -7121,6 +7997,7 @@ export function useNotificationInboxListMessages<TData = Awaited<ReturnType<type
 
 
 /**
+ * Marks every not-yet-read message of the request's identity's inbox read in one conditional statement and answers how many rows it changed. Expiry is not part of the predicate, so an expired unread row is still marked. A repeated call matches nothing and answers zero, and the first-read timestamp of a message already read is never rewritten. A request without an identity is answered 401, and a store failure is answered 503.
  * @summary Mark every unread message of the caller read
  */
 export const notificationInboxMarkAllMessagesRead = (
@@ -7183,6 +8060,7 @@ export const useNotificationInboxMarkAllMessagesRead = <TError = Problem,
     }
 
 /**
+ * Counts the messages of the request's identity's inbox that are neither read nor expired; an expired row is excluded even when it was never read. The count covers the whole inbox rather than a page. A request without an identity is answered 401, and a store failure is answered 503.
  * @summary The number of the caller's unread, unexpired messages
  */
 export const notificationInboxGetUnreadCount = (
@@ -7252,6 +8130,7 @@ export function useNotificationInboxGetUnreadCount<TData = Awaited<ReturnType<ty
 
 
 /**
+ * Marks one message read and answers 204 with no body. Marking a message that is already read is a successful no-op that leaves its first-read timestamp alone. An identifier that is unknown, belongs to another account, or belongs to another tenant is answered with the same 404, so the route does not reveal which messages exist. A request without an identity is answered 401, and a store failure is answered 503.
  * @summary Mark one message read
  */
 export const notificationInboxMarkMessageRead = (
@@ -7314,6 +8193,7 @@ export const useNotificationInboxMarkMessageRead = <TError = Problem,
     }
 
 /**
+ * Returns one row per type in the taxonomy for the caller, ordered by type key. Each row's channels are the effective set: the channels stored for the type when the recipient has a row, otherwise the type's default channels; explicit says which. A type that cannot be unsubscribed always reports its default channels and is never explicit. The response keys its representation by the negotiated language (Vary: Accept-Language). A stored row that cannot be read answers 503.
  * @summary The caller's preference matrix, one row per type in the taxonomy
  */
 export const notificationPreferencesListPreferences = (
@@ -7383,6 +8263,7 @@ export function useNotificationPreferencesListPreferences<TData = Awaited<Return
 
 
 /**
+ * Applies the body's enabled to the channel named in the path and answers with the type's effective channel set after the change. true adds the channel to the current effective set, false removes it; the result is deduplicated and stably ordered. When the target set equals the current effective set the call answers 200 without writing a row, so repeating it is harmless. Only that one channel changes; the type's other channels keep their effective value. Checks run in a fixed order — body, channel, type, unsubscribability — so an unknown channel is never taken for a no-op.
  * @summary Turn one channel on or off for one type and return that type's effective set
  */
 export const notificationPreferencesUpdatePreference = (
@@ -7449,6 +8330,7 @@ export const useNotificationPreferencesUpdatePreference = <TError = Problem,
     }
 
 /**
+ * One long-lived connection, scoped by the request's tenant and the caller's effective account (the impersonated account while impersonation is in force). The server writes a frame each time the inbox gains a row for that pair, and the connection ends when the client disconnects, the entry point drains or the process stops. Every frame is named message and its data is a JSON object carrying the published event payload (message_id, tenant_id, recipient_user_id, type_key); a client reads the inbox by message_id to obtain content. Delivery is best-effort: the hub is in memory and per replica, nothing is replayed, arrival order carries no business meaning, and a connection with 64 frames already pending drops its own further frames rather than delaying the publisher. The route does not decide who may connect; host authorization does.
  * @summary Subscribe to the caller's in-app notifications as a server-sent event stream
  */
 export const notificationStreamSubscribe = (
@@ -7518,6 +8400,7 @@ export function useNotificationStreamSubscribe<TData = Awaited<ReturnType<typeof
 
 
 /**
+ * Returns every notification type collected from the registered modules, ordered by type key. The list is the same for every recipient: it comes from module declarations, not from stored preference rows, so it does not depend on the caller or the tenant. The route declares no permission gate of its own; who may call it is the host's decision. The response keys its representation by the negotiated language (Vary: Accept-Language) even though the body itself is not translated.
  * @summary The notification type taxonomy, one list every recipient shares
  */
 export const notificationPreferencesListTypes = (
@@ -7587,6 +8470,7 @@ export function useNotificationPreferencesListTypes<TData = Awaited<ReturnType<t
 
 
 /**
+ * Lists this tenant's objects that are not deleted, ordered by creation instant and then identifier, both ascending. The cursor is opaque and continues after the last row of the previous page, so rows written while a caller pages do not shift rows already read. limit defaults to 50 rows when absent or zero; a negative limit, one above 200, a non-numeric limit or a cursor this module did not write is refused whole with a 400. A database failure is answered 503.
  * @summary One page of the tenant's undeleted objects
  */
 export const objectstoreMetadataListObjects = (
@@ -7657,6 +8541,7 @@ export function useObjectstoreMetadataListObjects<TData = Awaited<ReturnType<typ
 
 
 /**
+ * Declares an object: validates the declaration, normalizes the name once, mints the object identifier and lands a pending row, with an upload window opened from the configured upload-window. size must be positive, content_type must be non-blank, and checksum_sha256 is either empty or 64 hex digits; a declaration that fails any of these is refused whole and lands no row. An omitted, empty or reduced-to-nothing name stores as an empty string rather than failing. The response is the pending view: its size, mime and checksum_sha256 are not filled in until the first upload records them.
  * @summary Declare an object and open its upload window
  */
 export const objectstoreMetadataCreateObject = (
@@ -7721,6 +8606,7 @@ export const useObjectstoreMetadataCreateObject = <TError = Problem,
     }
 
 /**
+ * Removes the object's bytes through the byte backend and tombstones its row with state deleted. An object already deleted is a success that touches no byte, so a repeat is idempotent. A byte-backend failure leaves the row unchanged and answers 503. An unknown identifier or another tenant's object is answered 404.
  * @summary Remove an object's bytes and tombstone its row
  */
 export const objectstoreMetadataDeleteObject = (
@@ -7783,6 +8669,7 @@ export const useObjectstoreMetadataDeleteObject = <TError = Problem,
     }
 
 /**
+ * Returns one object's view. A deleted object is answered exactly like an unknown identifier or another tenant's object, with a 404, so the response does not reveal whether the object existed. The view never carries the internal storage key, and every instant is UTC.
  * @summary One object's metadata
  */
 export const objectstoreMetadataGetObject = (
@@ -7852,6 +8739,7 @@ export function useObjectstoreMetadataGetObject<TData = Awaited<ReturnType<typeo
 
 
 /**
+ * Moves an uploaded object to completed and writes expires_at from the configured object-ttl, leaving it absent when no lifetime is configured; the object's bytes become readable. A pending object was never uploaded and is a 409; an already-completed object is returned unchanged with its expiry as it was, so a repeat is idempotent. A deleted object, an unknown identifier or another tenant's object is a 404.
  * @summary Move an object to completed
  */
 export const objectstoreMetadataCompleteObject = (
@@ -7914,6 +8802,7 @@ export const useObjectstoreMetadataCompleteObject = <TError = Problem,
     }
 
 /**
+ * Streams a completed object's bytes, with Content-Type taken from the recorded mime and application/octet-stream when none was recorded. Only a completed object can be read: pending or uploaded is a 409, while deleted, unknown or another tenant's is a 404. A completed row whose bytes are missing from the backend is a 503. No Content-Disposition is set; a client that wants a filename takes the view's name.
  * @summary The object's bytes, with the content type taken from its recorded MIME
  */
 export const objectstoreMetadataGetObjectContent = (
@@ -7984,6 +8873,7 @@ export function useObjectstoreMetadataGetObjectContent<TData = Awaited<ReturnTyp
 
 
 /**
+ * Stores the request body as the object's bytes under the internal key. The request's Content-Length is the byte count that must equal the declared size; a request carrying no Content-Length, or one whose count differs, is refused before any byte is stored. The object must be pending or uploaded and its upload window must still be open: a completed object or a closed window is a 409, and a deleted object or one this tenant cannot see is a 404. A successful upload records the observed size and SHA-256 and moves the object to uploaded; re-uploading a pending or uploaded object replaces its bytes under the same key.
  * @summary Store the request body as the object's bytes
  */
 export const objectstoreMetadataUploadObjectContent = (
@@ -8049,6 +8939,7 @@ export const useObjectstoreMetadataUploadObjectContent = <TError = Problem,
     }
 
 /**
+ * Returns every item in the declaration listing, including keys declared by modules that do not run in this process, each with the value it resolves to on the selected layer. Resolution walks the three-level fallback starting at that layer: the tenant row, then the global row, then the declared default. Every value-bearing field is text in the declared type's own form; for a sensitive item default is empty and written and value carry a fixed mask string. A failure to read the layer's rows or to resolve a value answers 503 rather than leaving the item out.
  * @summary List every declared setting with its value on the selected layer
  */
 export const settingsAdminSettingsList = (
@@ -8119,6 +9010,7 @@ export function useSettingsAdminSettingsList<TData = Awaited<ReturnType<typeof s
 
 
 /**
+ * Returns the declared items whose namespace equals the path segment, that is the group one module declared, each carrying the same fields and resolved the same way as on the all-items route. The declaration listing is not narrowed to the modules running in this process. A namespace no declared item belongs to answers 404 without a problem document.
  * @summary List the declared settings one namespace declares
  */
 export const settingsAdminSettingsListNamespace = (
@@ -8146,7 +9038,7 @@ export const getSettingsAdminSettingsListNamespaceQueryKey = (namespace: string,
     }
 
 
-export const getSettingsAdminSettingsListNamespaceQueryOptions = <TData = Awaited<ReturnType<typeof settingsAdminSettingsListNamespace>>, TError = Problem>(namespace: string,
+export const getSettingsAdminSettingsListNamespaceQueryOptions = <TData = Awaited<ReturnType<typeof settingsAdminSettingsListNamespace>>, TError = Problem | void>(namespace: string,
     params: SettingsAdminSettingsListNamespaceParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof settingsAdminSettingsListNamespace>>, TError, TData>, }
 ) => {
 
@@ -8166,14 +9058,14 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type SettingsAdminSettingsListNamespaceQueryResult = NonNullable<Awaited<ReturnType<typeof settingsAdminSettingsListNamespace>>>
-export type SettingsAdminSettingsListNamespaceQueryError = Problem
+export type SettingsAdminSettingsListNamespaceQueryError = Problem | void
 
 
 /**
  * @summary List the declared settings one namespace declares
  */
 
-export function useSettingsAdminSettingsListNamespace<TData = Awaited<ReturnType<typeof settingsAdminSettingsListNamespace>>, TError = Problem>(
+export function useSettingsAdminSettingsListNamespace<TData = Awaited<ReturnType<typeof settingsAdminSettingsListNamespace>>, TError = Problem | void>(
  namespace: string,
     params: SettingsAdminSettingsListNamespaceParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof settingsAdminSettingsListNamespace>>, TError, TData>, }
 
@@ -8193,6 +9085,7 @@ export function useSettingsAdminSettingsListNamespace<TData = Awaited<ReturnType
 
 
 /**
+ * Drops the selected layer's explicit row for the setting named by the namespace and key path segments. The full key `<namespace>.<key>` must match a declared item, otherwise the answer is 404; deleting a row the layer does not hold is not an error. Once the row is gone the item resolves through the fallback again. A mandatory audit row is written before the change, and if it cannot be written the row is left in place and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.
  * @summary Drop the selected layer's explicit row for one setting
  */
 export const settingsAdminSettingsRemove = (
@@ -8212,7 +9105,7 @@ export const settingsAdminSettingsRemove = (
 
 
 
-export const getSettingsAdminSettingsRemoveMutationOptions = <TError = Problem,
+export const getSettingsAdminSettingsRemoveMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof settingsAdminSettingsRemove>>, TError,{namespace: string;key: string;params: SettingsAdminSettingsRemoveParams}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof settingsAdminSettingsRemove>>, TError,{namespace: string;key: string;params: SettingsAdminSettingsRemoveParams}, TContext> => {
 
@@ -8241,12 +9134,12 @@ const {mutation: mutationOptions} = options ?
 
     export type SettingsAdminSettingsRemoveMutationResult = NonNullable<Awaited<ReturnType<typeof settingsAdminSettingsRemove>>>
 
-    export type SettingsAdminSettingsRemoveMutationError = Problem
+    export type SettingsAdminSettingsRemoveMutationError = Problem | void
 
     /**
  * @summary Drop the selected layer's explicit row for one setting
  */
-export const useSettingsAdminSettingsRemove = <TError = Problem,
+export const useSettingsAdminSettingsRemove = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof settingsAdminSettingsRemove>>, TError,{namespace: string;key: string;params: SettingsAdminSettingsRemoveParams}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof settingsAdminSettingsRemove>>,
@@ -8258,6 +9151,7 @@ export const useSettingsAdminSettingsRemove = <TError = Problem,
     }
 
 /**
+ * Writes one row for the setting named by the namespace and key path segments on the selected layer. The full key `<namespace>.<key>` must match a declared item, otherwise the answer is 404. The value is encoded under the item's declared type and then held to its declared domain, so a duration written as "300s" is stored as "5m0s"; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. A mandatory audit row is written before the change, and if it cannot be written the setting is left untouched and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.
  * @summary Write one setting row on the selected layer
  */
 export const settingsAdminSettingsSet = (
@@ -8280,7 +9174,7 @@ export const settingsAdminSettingsSet = (
 
 
 
-export const getSettingsAdminSettingsSetMutationOptions = <TError = Problem,
+export const getSettingsAdminSettingsSetMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof settingsAdminSettingsSet>>, TError,{namespace: string;key: string;data: SettingsAdminSettingsSetBody;params: SettingsAdminSettingsSetParams}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof settingsAdminSettingsSet>>, TError,{namespace: string;key: string;data: SettingsAdminSettingsSetBody;params: SettingsAdminSettingsSetParams}, TContext> => {
 
@@ -8309,12 +9203,12 @@ const {mutation: mutationOptions} = options ?
 
     export type SettingsAdminSettingsSetMutationResult = NonNullable<Awaited<ReturnType<typeof settingsAdminSettingsSet>>>
     export type SettingsAdminSettingsSetMutationBody = SettingsAdminSettingsSetBody
-    export type SettingsAdminSettingsSetMutationError = Problem
+    export type SettingsAdminSettingsSetMutationError = Problem | void
 
     /**
  * @summary Write one setting row on the selected layer
  */
-export const useSettingsAdminSettingsSet = <TError = Problem,
+export const useSettingsAdminSettingsSet = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof settingsAdminSettingsSet>>, TError,{namespace: string;key: string;data: SettingsAdminSettingsSetBody;params: SettingsAdminSettingsSetParams}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof settingsAdminSettingsSet>>,
@@ -8326,6 +9220,7 @@ export const useSettingsAdminSettingsSet = <TError = Problem,
     }
 
 /**
+ * Returns one page of every template the registry holds, configured ones included, ordered by template name. A page holds 50 entries when the request names no limit; a limit of 0 reads the same way, and a limit above 200 is capped at 200. The decision is made in the platform domain on sms.template.read, so a grant in a tenant does not reach this set.
  * @summary Page through the template set, configured templates included
  */
 export const smsAdminTemplatesList = (
@@ -8396,6 +9291,7 @@ export function useSmsAdminTemplatesList<TData = Awaited<ReturnType<typeof smsAd
 
 
 /**
+ * Takes up a runtime template whose vendor code the operator already has. Every language named starts pending and the template starts enabled: enablement is independent of the vendor's review, which the registry reads back per language from then on. A name that is empty or only whitespace is a 400 before the registry is called, and a language the name already holds is a 409. The mandatory audit row is written before the action and outside any transaction, so an audit failure answers 503 and takes nothing up.
  * @summary Take up a template whose vendor code the operator already has
  */
 export const smsAdminTemplatesRegister = (
@@ -8460,6 +9356,7 @@ export const useSmsAdminTemplatesRegister = <TError = Problem,
     }
 
 /**
+ * Hands a template to the vendor for review through the vendor's own API and takes up the code the vendor answers with; the submission's language starts pending. Content is written with ${name} placeholders naming the entries of params, and a carrier whose vendor takes positional placeholders rewrites them in params order. An empty or whitespace-only name is a 400 before the vendor is called; a submission the vendor or the registry refuses is a 400, and a language the name already holds is a 409. The mandatory audit row is written before the action and outside any transaction, so an audit failure answers 503 and submits nothing.
  * @summary Hand a template to the vendor for review and take up the code it answers with
  */
 export const smsAdminTemplatesOffer = (
@@ -8524,6 +9421,7 @@ export const useSmsAdminTemplatesOffer = <TError = Problem,
     }
 
 /**
+ * Drops a runtime template from this process; the vendor's copy is left alone. A template that came from the configuration cannot be removed at runtime: naming one is a 409 whose problem type is urn:speed:sms:config-template, while a name the registry does not hold is a 404 with no problem body. The mandatory audit row is written before the action and outside any transaction, so an audit failure answers 503 and removes nothing. Success is 204 with no body.
  * @summary Drop a runtime template from this process, the vendor left alone
  */
 export const smsAdminTemplatesRemove = (
@@ -8586,6 +9484,7 @@ export const useSmsAdminTemplatesRemove = <TError = Problem,
     }
 
 /**
+ * Turns a runtime template's ability to send on or off. Enablement is orthogonal to the vendor's review: a template may be enabled while its review is still pending, and a send still waits for the review. The body must carry enabled; a body without it is a 400 rather than a disable by omission. A configured template is a 409 whose problem type is urn:speed:sms:config-template, and an unknown name is a 404. The mandatory audit row is written before the action and outside any transaction, so an audit failure answers 503 and changes nothing. Success is 204 with no body.
  * @summary Turn a runtime template's ability to send on or off
  */
 export const smsAdminTemplatesSetEnabled = (
@@ -8651,6 +9550,7 @@ export const useSmsAdminTemplatesSetEnabled = <TError = Problem,
     }
 
 /**
+ * Reads every tenant in the roster, ordered by identifier. The roster is the set of tenants this deployment serves and the read is not paged, so the answer always carries the whole list. It is a platform-domain read: the caller needs tenant.read in the platform domain, and no cross-tenant context or permission is involved. Reads write no audit row.
  * @summary List every tenant the roster holds
  */
 export const tenantAdminTenantsList = (
@@ -8720,6 +9620,7 @@ export function useTenantAdminTenantsList<TData = Awaited<ReturnType<typeof tena
 
 
 /**
+ * Registers a tenant the roster does not hold yet. The body gives the identifier and the alias; the new tenant starts active. Registration never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A mandatory audit row must land before the roster is called; if it cannot, the registration does not run and the request is answered 503.
  * @summary Register an active tenant
  */
 export const tenantAdminTenantsCreate = (
@@ -8784,6 +9685,7 @@ export const useTenantAdminTenantsCreate = <TError = Problem,
     }
 
 /**
+ * Reads one tenant by its identifier, the natural key the roster keys a row by, so no opaque row identifier appears in a path. An identifier the roster does not hold is a 404. Reads write no audit row.
  * @summary Read one tenant the roster holds
  */
 export const tenantAdminTenantsGet = (
@@ -8853,6 +9755,7 @@ export function useTenantAdminTenantsGet<TData = Awaited<ReturnType<typeof tenan
 
 
 /**
+ * Changes one tenant's alias and nothing else; the tenant's state is left as it stands. The path identifier and the new alias must both be identifiers. A tenant the roster does not hold is a 404, and an alias another tenant holds is a 409. A mandatory audit row lands before the write; if it cannot, the alias is unchanged and the request is answered 503.
  * @summary Change one tenant's alias
  */
 export const tenantAdminTenantsSetAlias = (
@@ -8918,6 +9821,7 @@ export const useTenantAdminTenantsSetAlias = <TError = Problem,
     }
 
 /**
+ * Changes one tenant's state, which is one of the closed set active and disabled. The roster has no delete, so disabling is the only way to stop serving a tenant. An identifier the roster does not hold is a 404. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.
  * @summary Change one tenant's state
  */
 export const tenantAdminTenantsSetStatus = (
@@ -8983,6 +9887,7 @@ export const useTenantAdminTenantsSetStatus = <TError = Problem,
     }
 
 /**
+ * Reads nothing and always answers 200, so any answer at all means the process is up. The route is mounted on the endpoint named by ops.endpoint (default "ops"), which the host assembles unguarded: a probe needs no credential and no tenant.
  * @summary The process is alive
  */
 export const getHealth = (
@@ -9052,6 +9957,7 @@ export function useGetHealth<TData = Awaited<ReturnType<typeof getHealth>>, TErr
 
 
 /**
+ * Serves the document itself rather than a wrapper, merged once at startup and never recomputed, so every request reads the same bytes. Every declared fragment is merged, including those of modules that do not run in this command, because the document states which API this binary provides. Its title and version come from ops.title and ops.version, and it carries top-level openapi, info, paths, components, x-fragments, and a per-operation x-endpoint naming the endpoint that serves each route.
  * @summary The API document, merged from every module's fragment
  */
 export const getOpenapiJson = (
@@ -9121,6 +10027,7 @@ export function useGetOpenapiJson<TData = Awaited<ReturnType<typeof getOpenapiJs
 
 
 /**
+ * The verdict is read fresh on every request and nothing is cached or polled in the background: each endpoint the process declared must be accepting requests, and when a database is assembled it is pinged once. Only process-level availability is reported, never tenant or business state. 200 means every check passed; 503 names each part that failed in failures.
  * @summary Every declared endpoint accepts requests and the database answers
  */
 export const getReady = (

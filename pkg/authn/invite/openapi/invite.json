@@ -2,23 +2,26 @@
   "openapi": "3.1.0",
   "info": {"title": "authn invite", "version": "1.0.0"},
   "paths": {
-    "/api/v1/auth/admin/tenants/{tenant}/invitations": {
+    "/auth/admin/tenants/{tenant}/invitations": {
       "post": {
         "operationId": "authn.invite.issue",
         "summary": "Issue an invitation to an address in a tenant",
+        "description": "Normalizes the address (trimmed, lower-cased printable ASCII with exactly one @, at most 254 bytes), then issues a pending invitation. A pending invitation for the same tenant and address is superseded in the same transaction, so its token stops working. expires_at is optional: when absent, the zero instant or the configured lifetime applies (168 hours by default), and a deadline not later than the current time is refused. Requires the authn.membership.manage decision in the tenant; failure to write the mandatory audit row answers 503 without issuing.",
         "parameters": [
-          {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}}
+          {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The string form of the tenant identifier the invitation belongs to; the authn.membership.manage decision is made in this tenant."}
         ],
         "requestBody": {
           "required": true,
+          "description": "The address to invite and an optional absolute deadline. Only email is required.",
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
+                "description": "The issue request: the invited address, which is normalized before it is stored, and an optional deadline.",
                 "required": ["email"],
                 "properties": {
-                  "email": {"type": "string"},
-                  "expires_at": {"type": "string", "format": "date-time"}
+                  "email": {"type": "string", "description": "The invited address as given; it is trimmed, lower-cased and must be printable ASCII with exactly one @, at most 254 bytes."},
+                  "expires_at": {"type": "string", "format": "date-time", "description": "Absolute deadline in RFC 3339. Omitted or the zero instant takes the configured lifetime; a value not later than the current time is refused with 400."}
                 }
               }
             }
@@ -38,10 +41,11 @@
       "get": {
         "operationId": "authn.invite.list",
         "summary": "One page of a tenant's invitations",
+        "description": "Returns one page of the tenant's invitations, ordered by status ascending (pending, accepted, revoked) and then by creation time descending with the identifier as the tie-break. The cursor is opaque: pass the previous page's next_cursor as after to resume, and an unreadable cursor is refused with 400 rather than served as the first page. Expired pending invitations are still listed with status pending. A read writes no audit row.",
         "parameters": [
-          {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}},
-          {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer"}},
-          {"name": "after", "in": "query", "required": false, "schema": {"type": "string"}}
+          {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The string form of the tenant identifier the invitation belongs to; the authn.membership.manage decision is made in this tenant."},
+          {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer"}, "description": "Maximum number of invitations to return. Omitted or 0 serves 100; a value above 1000 is capped at 1000. A negative or non-integer value is refused with 400."},
+          {"name": "after", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Opaque cursor from a previous page's next_cursor; omit it to start at the first page. A value that does not decode is refused with 400 rather than served as the first page."}
         ],
         "responses": {
           "200": {
@@ -55,13 +59,14 @@
         }
       }
     },
-    "/api/v1/auth/admin/tenants/{tenant}/invitations/{id}": {
+    "/auth/admin/tenants/{tenant}/invitations/{id}": {
       "delete": {
         "operationId": "authn.invite.revoke",
         "summary": "Revoke a pending invitation",
+        "description": "Revokes a pending invitation and voids its token; the invitation identifier also serves as the decision's target. Revoking an already revoked invitation succeeds idempotently, while revoking an accepted one answers 409 because removing a membership is not this route's job. Failure to write the mandatory audit row answers 503 without revoking.",
         "parameters": [
-          {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}},
-          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+          {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The string form of the tenant identifier the invitation belongs to; the authn.membership.manage decision is made in this tenant."},
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The invitation's opaque identifier, which also serves as the decision's target."}
         ],
         "responses": {
           "204": {"description": "The invitation was revoked"},
@@ -74,12 +79,13 @@
         }
       }
     },
-    "/api/v1/auth/invitations/{token}": {
+    "/auth/invitations/{token}": {
       "get": {
         "operationId": "authn.invite.acceptView",
         "summary": "Read the invitation a token points to",
+        "description": "Resolves the token's SHA-256 to an invitation and returns its view so a client can show what it is about to accept. The route is public and the token is the whole credential; the response never carries a token. An unknown token is 404. The view reflects the stored state even when the invitation can no longer be accepted, so the client should read status and expires_at rather than assume the link is redeemable.",
         "parameters": [
-          {"name": "token", "in": "path", "required": true, "schema": {"type": "string"}}
+          {"name": "token", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The acceptance token, prefixed spd_inv_, which identifies the invitation and is the whole credential on this public route."}
         ],
         "responses": {
           "200": {
@@ -94,18 +100,21 @@
       "post": {
         "operationId": "authn.invite.accept",
         "summary": "Redeem an invitation, creating the account when the address has none",
+        "description": "Redeems the invitation and writes a membership whose source is invite. When the invited address already belongs to an account, the membership is added to it and display_name and password are ignored; otherwise an enabled user account is created first, with the address verified through the invitation. Two concurrent redemptions of one token leave at most one winner. A token that is expired, revoked or already accepted is 409.",
         "parameters": [
-          {"name": "token", "in": "path", "required": true, "schema": {"type": "string"}}
+          {"name": "token", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The acceptance token, prefixed spd_inv_, which identifies the invitation and is the whole credential on this public route."}
         ],
         "requestBody": {
           "required": true,
+          "description": "The display name and initial password used only when the invited address has no account yet.",
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
+                "description": "The acceptance request; both fields are read only when the invited address has no account.",
                 "properties": {
-                  "display_name": {"type": "string"},
-                  "password": {"type": "string"}
+                  "display_name": {"type": "string", "description": "Display name of the account created when the invited address has no account; ignored when the address already belongs to one."},
+                  "password": {"type": "string", "description": "Initial password of the account created when the invited address has no account; ignored when the address already belongs to one."}
                 }
               }
             }
@@ -128,50 +137,55 @@
     "schemas": {
       "AuthnInviteInvitation": {
         "type": "object",
+        "description": "One invitation as the management face shows it. It never carries the acceptance token.",
         "required": ["id", "tenant", "email", "status", "invited_by", "expires_at", "accepted_at", "created_at"],
         "properties": {
-          "id": {"type": "string"},
-          "tenant": {"type": "string"},
+          "id": {"type": "string", "description": "The invitation's opaque identifier, used to revoke it."},
+          "tenant": {"type": "string", "description": "The string form of the tenant identifier the invitation grants a membership in."},
           "email": {"type": "string", "description": "The normalized address"},
-          "status": {"type": "string", "enum": ["pending", "accepted", "revoked"]},
-          "invited_by": {"type": "string"},
-          "expires_at": {"type": "string", "format": "date-time"},
+          "status": {"type": "string", "enum": ["pending", "accepted", "revoked"], "description": "The stored state. Expiry is not stored: an expired pending invitation still reads pending."},
+          "invited_by": {"type": "string", "description": "The account identifier of the issuer; empty when a host command issued the invitation without an HTTP identity."},
+          "expires_at": {"type": "string", "format": "date-time", "description": "RFC 3339 deadline in UTC; a pending invitation at or past it can no longer be accepted."},
           "accepted_at": {"type": "string", "format": "date-time", "description": "The zero instant 0001-01-01T00:00:00Z when the invitation has not been accepted"},
-          "created_at": {"type": "string", "format": "date-time"}
+          "created_at": {"type": "string", "format": "date-time", "description": "RFC 3339 timestamp in UTC of issuance."}
         }
       },
       "AuthnInviteIssued": {
         "type": "object",
+        "description": "The answer of an issue: the invitation's view together with its one-time acceptance token.",
         "required": ["invitation", "token"],
         "properties": {
-          "invitation": {"$ref": "#/components/schemas/AuthnInviteInvitation"},
+          "invitation": {"$ref": "#/components/schemas/AuthnInviteInvitation", "description": "The issued invitation; the token is delivered beside it, not inside it."},
           "token": {"type": "string", "description": "The acceptance token, handed out once"}
         }
       },
       "AuthnInviteView": {
         "type": "object",
+        "description": "The answer of the acceptance read: the invitation a token points to.",
         "required": ["invitation"],
         "properties": {
-          "invitation": {"$ref": "#/components/schemas/AuthnInviteInvitation"}
+          "invitation": {"$ref": "#/components/schemas/AuthnInviteInvitation", "description": "The invitation the token points to, without its token."}
         }
       },
       "AuthnInvitePage": {
         "type": "object",
+        "description": "One page of a tenant's invitations together with the cursor of the next page.",
         "required": ["invitations", "next_cursor"],
         "properties": {
-          "invitations": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnInviteInvitation"}},
+          "invitations": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnInviteInvitation"}, "description": "The invitations of this page, ordered by status ascending (pending, accepted, revoked) and then newest first with the identifier as the tie-break."},
           "next_cursor": {"type": "string", "description": "The cursor of the next page, empty on the last page"}
         }
       },
       "AuthnInviteAccept": {
         "type": "object",
+        "description": "The membership an acceptance wrote.",
         "required": ["account", "tenant", "active", "source", "sso_exempt"],
         "properties": {
-          "account": {"type": "string"},
-          "tenant": {"type": "string"},
-          "active": {"type": "boolean"},
-          "source": {"type": "string"},
-          "sso_exempt": {"type": "boolean"}
+          "account": {"type": "string", "description": "Identifier of the account the membership belongs to: an existing account or one created by this acceptance."},
+          "tenant": {"type": "string", "description": "The string form of the tenant identifier the membership was written in."},
+          "active": {"type": "boolean", "description": "Whether the membership is active; an acceptance always writes an active one."},
+          "source": {"type": "string", "description": "The membership's source; an acceptance always writes invite."},
+          "sso_exempt": {"type": "boolean", "description": "Whether the membership is exempt from SSO enforcement; an acceptance writes false."}
         }
       }
     }

@@ -117,7 +117,7 @@ func Module() core.Module {
 		Resources: []any{
 			schema(),
 			db.Migrations{FS: migrationsFS},
-			speedhttp.Spec{Endpoint: defaultEndpoint, Document: inviteFragment},
+			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: inviteFragment},
 			// The invitation faces: issued and accepted on routes mounted
 			// whenever the module is in force, so the feature is static.
 			feature.Spec{Name: "authn.invitations"},

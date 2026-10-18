@@ -118,7 +118,7 @@ func Module() core.Module {
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Resources: []any{
-			speedhttp.Spec{Endpoint: defaultEndpoint, Document: adminFragment},
+			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: adminFragment},
 			feature.Spec{Name: featureAdmin},
 			feature.Spec{Name: featureSessions, Conditional: true},
 			feature.Spec{Name: featureFactors, Conditional: true},

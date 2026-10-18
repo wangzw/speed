@@ -2,18 +2,21 @@
   "openapi": "3.1.0",
   "info": {"title": "authn sso", "version": "1.0.0"},
   "paths": {
-    "/api/v1/auth/sso/discover": {
+    "/auth/sso/discover": {
       "post": {
         "operationId": "authn.sso.discover",
         "summary": "The sign-in entries that exist for an email address's domain",
+        "description": "Answers the SSO sign-in entries of an email address's domain. It is public and needs no tenant context. Only the text after the last '@' is used; the local part is never looked up, so the answer does not reveal whether an account exists. The domain is lowercased and trimmed, then must be printable ASCII: an address with no '@', or a domain that is empty, over 253 bytes, non-ASCII, has a label that is empty or over 63 bytes, or is not made of labels of letters, digits and inner hyphens, is refused. Only providers that have verified the domain and are enabled are named, in ascending id order; an empty list is answered when none match, in the same shape and timing as a match. The body must be application/json and may carry no field other than email. The response is sent with Cache-Control: no-store.",
         "requestBody": {
+          "description": "The email address whose domain is looked up. Required; only the domain part is read.",
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
+                "description": "The discovery request. It carries the email address and nothing else; an unknown field is refused as a bad request.",
                 "properties": {
-                  "email": {"type": "string"}
+                  "email": {"type": "string", "description": "The full email address. Only the text after the last '@' is used as the domain; the local part is discarded, and an address with no '@' is a bad request."}
                 }
               }
             }
@@ -22,15 +25,15 @@
         "responses": {
           "200": {
             "description": "The providers that have verified the domain, an empty list when none match",
-            "content": {"application/json": {"schema": {"type": "object", "required": ["providers"], "properties": {"providers": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnSsoProvider"}}}}}}
+            "content": {"application/json": {"schema": {"type": "object", "description": "The discovery answer, always of this shape. The providers array is present whether or not anything matches.", "required": ["providers"], "properties": {"providers": {"type": "array", "description": "The providers that have verified the domain and are enabled, in ascending id order; an empty array when none match.", "items": {"$ref": "#/components/schemas/AuthnSsoProvider"}}}}}}
           },
           "400": {
             "description": "The body could not be read, or it names no domain",
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
           },
           "503": {
             "description": "The provider register could not be reached",
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
           }
         }
       }
@@ -40,22 +43,24 @@
     "schemas": {
       "AuthnSsoProvider": {
         "type": "object",
+        "description": "One SSO sign-in entry a client can offer for a domain. It carries only public identity; no endpoint, configuration or secret is exposed.",
         "required": ["id", "name", "protocol"],
         "properties": {
-          "id": {"type": "string"},
-          "name": {"type": "string"},
+          "id": {"type": "string", "description": "The provider's opaque identifier, used to start a sign-in flow for this provider."},
+          "name": {"type": "string", "description": "The tenant-chosen display name of the provider, meant to be shown on the sign-in screen."},
           "protocol": {"type": "string", "enum": ["oidc", "saml"], "description": "The protocol the provider's sign-in entry uses"}
         }
       },
       "Problem": {
         "type": "object",
+        "description": "An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.",
         "required": ["type", "status"],
         "properties": {
-          "type": {"type": "string"},
-          "title": {"type": "string"},
-          "status": {"type": "integer"},
-          "detail": {"type": "string"},
-          "instance": {"type": "string"}
+          "type": {"type": "string", "description": "The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>."},
+          "title": {"type": "string", "description": "A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code."},
+          "status": {"type": "integer", "description": "The HTTP status code the response is written with, repeated from the status line."},
+          "detail": {"type": "string", "description": "A longer explanation of this occurrence. Present only when the answering module has one to give, and those that set one render it in the request language."},
+          "instance": {"type": "string", "description": "A URI identifying this occurrence; absent when there is none to give."}
         }
       }
     }

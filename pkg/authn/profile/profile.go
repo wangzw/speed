@@ -103,7 +103,7 @@ func Module() core.Module {
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Resources: []any{
-			speedhttp.Spec{Endpoint: defaultEndpoint, Document: profileFragment},
+			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: profileFragment},
 		},
 
 		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {

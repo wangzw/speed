@@ -3,6 +3,7 @@ package openapi
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -30,6 +31,16 @@ func parse(t *testing.T, merged []byte) map[string]any {
 	return doc
 }
 
+// keysOf returns the keys of an object map, sorted, for a failure message.
+func keysOf(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
 // nested walks a chain of object keys and reports the value there, failing the
 // case when any of them is absent or is not an object.
 func nested(t *testing.T, doc map[string]any, keys ...string) map[string]any {
@@ -43,6 +54,56 @@ func nested(t *testing.T, doc map[string]any, keys ...string) map[string]any {
 		at = next
 	}
 	return at
+}
+
+// TestMergeResolvesPathsAgainstTheSpecRoot pins the composition each fragment
+// relies on: its paths are relative to the Spec's Prefix and Version, and two
+// fragments under different roots keep two distinct operations even when the
+// relative path is spelled the same.
+func TestMergeResolvesPathsAgainstTheSpecRoot(t *testing.T) {
+	merged, err := Merge([]core.Resource[speedhttp.Spec]{
+		{Module: "account", Value: speedhttp.Spec{
+			Endpoint: "account", Prefix: "api",
+			Version: "v1", Document: []byte(`{"paths":{"/auth/me":{"get":{}}}}`),
+		}},
+		{Module: "unversioned", Value: speedhttp.Spec{
+			Endpoint: "api", Prefix: "api",
+			Document: []byte(`{"paths":{"/auth/me":{"get":{}}}}`),
+		}},
+	}, Options{Title: "the platform", Version: "1.2.3"})
+	if err != nil {
+		t.Fatalf("merging two fragments under different roots failed: %v", err)
+	}
+	paths := nested(t, parse(t, merged), "paths")
+	for _, want := range []string{"/api/v1/auth/me", "/api/auth/me"} {
+		if _, ok := paths[want]; !ok {
+			t.Errorf("the merged document has no path %q; it holds %v", want, keysOf(paths))
+		}
+	}
+}
+
+// TestMergeJudgesConflictsOnTheResolvedPath holds two fragments declaring one
+// operation to be a conflict once their relative paths resolve to the same
+// absolute path.
+func TestMergeJudgesConflictsOnTheResolvedPath(t *testing.T) {
+	_, err := Merge([]core.Resource[speedhttp.Spec]{
+		{Module: "one", Value: speedhttp.Spec{
+			Endpoint: "account", Prefix: "api",
+			Version: "v1", Document: []byte(`{"paths":{"/auth/me":{"get":{}}}}`),
+		}},
+		{Module: "two", Value: speedhttp.Spec{
+			Endpoint: "admin", Prefix: "api",
+			Version: "v1", Document: []byte(`{"paths":{"/auth/me":{"get":{}}}}`),
+		}},
+	}, Options{Title: "the platform", Version: "1.2.3"})
+	if !errors.Is(err, ErrOperationConflict) {
+		t.Fatalf("two fragments resolving to one path merged with %v, want ErrOperationConflict", err)
+	}
+	for _, module := range []string{"one", "two"} {
+		if !strings.Contains(err.Error(), module) {
+			t.Errorf("the conflict %q does not name module %q", err, module)
+		}
+	}
 }
 
 func TestMergeCombinesFragmentsAndNamesTheirSources(t *testing.T) {

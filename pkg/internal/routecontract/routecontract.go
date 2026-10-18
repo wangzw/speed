@@ -234,7 +234,10 @@ func declared(t *testing.T, reg *core.Registry, module string) []Route {
 		if res.Module != module {
 			continue
 		}
-		out = append(out, operations(t, module, res.Value.Document)...)
+		for _, route := range operations(t, module, res.Value.Document) {
+			route.Path = res.Value.ResolvePath(route.Path)
+			out = append(out, route)
+		}
 	}
 	return out
 }
@@ -273,7 +276,7 @@ func declaredParams(t *testing.T, reg *core.Registry, module string) map[Route]m
 		if res.Module != module {
 			continue
 		}
-		readParams(t, module, res.Value.Document, out)
+		readParams(t, module, res.Value, out)
 	}
 	return out
 }
@@ -283,12 +286,12 @@ func declaredParams(t *testing.T, reg *core.Registry, module string) map[Route]m
 // "parameters" list are read: a parameter a path item writes above its methods
 // is not, and path, header and cookie parameters are skipped because the check is
 // about the query surface alone.
-func readParams(t *testing.T, module string, fragment []byte, into map[Route]map[string]bool) {
+func readParams(t *testing.T, module string, spec speedhttp.Spec, into map[Route]map[string]bool) {
 	t.Helper()
 	var doc struct {
 		Paths map[string]map[string]json.RawMessage `json:"paths"`
 	}
-	if err := json.Unmarshal(fragment, &doc); err != nil {
+	if err := json.Unmarshal(spec.Document, &doc); err != nil {
 		t.Fatalf("routecontract: the fragment module %q declares is not a JSON object: %v", module, err)
 	}
 	for path, item := range doc.Paths {
@@ -307,7 +310,7 @@ func readParams(t *testing.T, module string, fragment []byte, into map[Route]map
 				t.Fatalf("routecontract: the %s operation on %s in a fragment module %q declares is not a JSON object: %v",
 					upper, path, module, err)
 			}
-			route := Route{Method: upper, Path: ginPath(path)}
+			route := Route{Method: upper, Path: spec.ResolvePath(ginPath(path))}
 			for _, p := range op.Parameters {
 				if p.In != "query" {
 					continue

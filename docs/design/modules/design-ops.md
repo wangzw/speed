@@ -32,6 +32,7 @@ core.Module{
         {Token: (*db.Database)(nil), Optional: true},
     },
     Resources: []any{
+        // Prefix 与 Version 留空：三条探针路由在 ops 监听的根上。
         speedhttp.Spec{Endpoint: /* 配置点名的端，缺省 ops */, Document: opsOpenAPI},
     },
     New:   ...,
@@ -59,6 +60,8 @@ func Merge(specs []core.Resource[speedhttp.Spec], opts Options) ([]byte, error)
 `Options` 载 `Title` 与 `Version`（对应 `ops.title` 与 `ops.version`，模块从配置取，`gen` 命令从命令行取）。
 
 **它是纯函数**：输入是片段与选项，输出是文档或错误，没有别的输入。同一个二进制、同一组片段，模块在 `Init` 里合并的结果与 `gen` 写出的结果逐字节相同——两者的差别只在谁调用、把结果交付到哪里（一个挂在 `/openapi.json` 上，一个写进制品）。
+
+**片段里的 path 是相对写法**：合并时按声明它的 `Spec.Prefix` 与 `Spec.Version` 拼成完整路径，冲突也按拼出的路径判定（[ADR-http-spec-path-2026-10-18](../../adr/adr-http-spec-path-2026-10-18.md)）。本模块自己的片段两者皆空，三条探针路由因而保持根路径。
 
 `pkg/ops/openapi` **不登记模块**：它没有生命周期、不交付功能、不声明资源。它是这一能力目录下供两个调用方共用的实现，也是本能力唯一需要被模块之外调用的面。
 

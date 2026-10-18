@@ -84,6 +84,86 @@ func TestSpecErrorNamesDeclaringModule(t *testing.T) {
 	}
 }
 
+// TestAPIRootJoinsBareSegments pins the composition the merge and the route
+// contract both rely on: Prefix and Version are bare segments, and the reader
+// supplies the slashes.
+func TestAPIRootJoinsBareSegments(t *testing.T) {
+	for _, c := range []struct {
+		spec Spec
+		root string
+	}{
+		{Spec{}, ""},
+		{Spec{Prefix: "api"}, "/api"},
+		{Spec{Version: "v1"}, "/v1"},
+		{Spec{Prefix: "api", Version: "v1"}, "/api/v1"},
+		{Spec{Prefix: "internal/api", Version: "v1"}, "/internal/api/v1"},
+	} {
+		if got := c.spec.APIRoot(); got != c.root {
+			t.Errorf("APIRoot of Prefix %q and Version %q is %q, want %q",
+				c.spec.Prefix, c.spec.Version, got, c.root)
+		}
+		if got := c.spec.ResolvePath("/things"); got != c.root+"/things" {
+			t.Errorf("ResolvePath(/things) under %q is %q, want %q", c.root, got, c.root+"/things")
+		}
+	}
+	if got := (Spec{Prefix: "api", Version: "v1"}).ResolvePath("/"); got != "/api/v1" {
+		t.Errorf("ResolvePath(/) under /api/v1 is %q, want the root itself", got)
+	}
+}
+
+// TestSpecRejectsAPrefixWrittenWithSlashes holds the form Prefix takes: bare
+// segments. A leading slash would be carried into the composed path twice.
+func TestSpecRejectsAPrefixWrittenWithSlashes(t *testing.T) {
+	err := validateSpec("billing", Spec{
+		Endpoint: "public", Prefix: "/api",
+		Document: []byte(validFragment),
+	})
+	assertInvalidSpec(t, err, "billing", "bare segments")
+}
+
+// TestSpecRejectsNonLiteralPrefixOrVersion covers the values that would stop
+// composing a path a client can address.
+func TestSpecRejectsNonLiteralPrefixOrVersion(t *testing.T) {
+	for _, c := range []struct {
+		reason string
+		spec   Spec
+	}{
+		{"literal segment", Spec{Prefix: "internal//api"}},
+		{"literal segment", Spec{Prefix: "api/../internal"}},
+		{"literal segment", Spec{Prefix: "api:v1"}},
+		{"literal segment", Spec{Version: "v1/beta"}},
+		{"literal segment", Spec{Version: ".."}},
+	} {
+		c.spec.Endpoint = "public"
+		c.spec.Document = []byte(validFragment)
+		err := validateSpec("billing", c.spec)
+		assertInvalidSpec(t, err, "billing", c.reason)
+	}
+}
+
+// TestSpecRejectsPathsThatAlreadyCarryTheRoot holds a fragment to the relative
+// form: a path written with the Prefix and Version it already declares would
+// reach the client under the root twice.
+func TestSpecRejectsPathsThatAlreadyCarryTheRoot(t *testing.T) {
+	document := []byte(`{"openapi":"3.1.0","paths":{"/api/v1/auth":{}}}`)
+	err := validateSpec("billing", Spec{
+		Endpoint: "public", Prefix: "api", Version: "v1",
+		Document: document,
+	})
+	assertInvalidSpec(t, err, "billing", "already carries the API root")
+}
+
+// TestSpecAcceptsRelativePathsUnderARoot is the positive half of the two
+// refusals above.
+func TestSpecAcceptsRelativePathsUnderARoot(t *testing.T) {
+	if err := validateSpec("billing", Spec{
+		Endpoint: "public", Prefix: "api", Version: "v1",
+		Document: []byte(validFragment),
+	}); err != nil {
+		t.Fatalf("a fragment with relative paths under a root was refused: %v", err)
+	}
+}
+
 // TestSpecUnknownEndpointIsNotAFailure pins one of the design's accepted
 // costs. Spec and the actual registrations are separately maintained facts and
 // are allowed to drift; a check here would turn "this API is not enabled in

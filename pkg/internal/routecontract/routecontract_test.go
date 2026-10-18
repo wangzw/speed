@@ -3,6 +3,8 @@ package routecontract
 import (
 	"reflect"
 	"testing"
+
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
 // The check reads an OpenAPI path that writes its parameter as {name} and a
@@ -84,14 +86,14 @@ func TestDifferencesIsSilentWhenTheTwoSetsAreOne(t *testing.T) {
 // writes above its methods is not read either.
 func TestReadParamsReadsQueryParametersOnly(t *testing.T) {
 	into := map[Route]map[string]bool{}
-	readParams(t, "example", []byte(`{"paths":{
+	readParams(t, "example", speedhttp.Spec{Document: []byte(`{"paths":{
 		"/things/{id}": {"get": {"parameters":[
 			{"name": "id", "in": "path"},
 			{"name": "limit", "in": "query"},
 			{"name": "after", "in": "query"}
 		]}},
 		"/things": {"post": {"parameters": [{"name": "X-Token", "in": "header"}]}}
-	}}`), into)
+	}}`)}, into)
 	get := into[Route{Method: "GET", Path: "/things/:id"}]
 	if !get["limit"] || !get["after"] || get["id"] {
 		t.Errorf("the get operation's query parameters are %v, want limit and after and no path parameter", get)

@@ -54,6 +54,10 @@ it is currently serving. The merge itself lives in the exported package
 `pkg/ops/openapi`, so a build tool can produce the same bytes without
 constructing any module.
 
+A fragment's paths are relative to its Spec's `Prefix` and `Version`, and the
+merge resolves them into absolute paths before they reach the document, so a
+conflict is judged on what a client would address.
+
 The document's top level carries `openapi`, `info` (title and version from the
 two input items), `paths`, `components`, and the extension key `x-fragments`
 listing each fragment's source (module and endpoint). Each operation carries the

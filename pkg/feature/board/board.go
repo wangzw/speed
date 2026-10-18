@@ -111,7 +111,7 @@ func Module() core.Module {
 		Provides: []core.Provision{{Token: (*feature.Board)(nil), Exclusive: true}},
 		Resources: []any{
 			schema(),
-			speedhttp.Spec{Endpoint: fragmentEndpoint, Document: openAPIFragment},
+			speedhttp.Spec{Endpoint: fragmentEndpoint, Prefix: "api", Version: "v1", Document: openAPIFragment},
 		},
 
 		// Prepare reads the configuration and checks every declaration in the

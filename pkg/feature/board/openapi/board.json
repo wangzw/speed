@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {"title": "feature.board", "version": "1.0.0"},
   "paths": {
-    "/api/v1/features": {
+    "/features": {
       "get": {
         "operationId": "feature.board.list",
         "summary": "Read the feature document this process serves",
@@ -25,7 +25,7 @@
           "401": {
             "description": "The request carries no identity",
             "content": {
-              "application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}
+              "application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}
             }
           }
         }
@@ -36,6 +36,7 @@
     "schemas": {
       "FeatureBoardDocument": {
         "type": "object",
+        "description": "The feature document: the feature names this process serves, decided by the assembly at start and frozen before the first request, so it is the same for every caller and every tenant. The object is extensible — a field added beside features is a compatible change — and carries no feature of its own.",
         "required": ["features"],
         "properties": {
           "features": {
@@ -47,13 +48,14 @@
       },
       "Problem": {
         "type": "object",
+        "description": "An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.",
         "required": ["type", "status"],
         "properties": {
-          "type": {"type": "string"},
-          "status": {"type": "integer"},
-          "title": {"type": "string"},
-          "detail": {"type": "string"},
-          "instance": {"type": "string"}
+          "type": {"type": "string", "description": "The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>."},
+          "title": {"type": "string", "description": "A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code."},
+          "status": {"type": "integer", "description": "The HTTP status code the response is written with, repeated from the status line."},
+          "detail": {"type": "string", "description": "A longer explanation of this occurrence. Present only when the answering module has one to give, and those that set one render it in the request language."},
+          "instance": {"type": "string", "description": "A URI identifying this occurrence; absent when there is none to give."}
         }
       }
     }

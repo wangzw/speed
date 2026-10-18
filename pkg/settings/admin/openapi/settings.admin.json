@@ -2,85 +2,89 @@
   "openapi": "3.1.0",
   "info": {"title": "settings.admin", "version": "1.0.0"},
   "paths": {
-    "/api/v1/settings/admin/settings": {
+    "/settings/admin/settings": {
       "get": {
         "operationId": "settings.admin.settings.list",
         "summary": "List every declared setting with its value on the selected layer",
+        "description": "Returns every item in the declaration listing, including keys declared by modules that do not run in this process, each with the value it resolves to on the selected layer. Resolution walks the three-level fallback starting at that layer: the tenant row, then the global row, then the declared default. Every value-bearing field is text in the declared type's own form; for a sensitive item default is empty and written and value carry a fixed mask string. A failure to read the layer's rows or to resolve a value answers 503 rather than leaving the item out.",
         "parameters": [
-          {"$ref": "#/components/parameters/SettingsAdminLayer"},
-          {"$ref": "#/components/parameters/SettingsAdminTenant"}
+          {"$ref": "#/components/parameters/SettingsAdminLayer", "description": "The layer the listing reads: `global` for the platform layer, or `tenant` for the layer of the tenant named by `tenant`. There is no default; an absent value or one outside this set is a 400."},
+          {"$ref": "#/components/parameters/SettingsAdminTenant", "description": "The tenant whose layer the listing reads. Required when `layer` is `tenant` and refused when it is `global`; an empty identifier or one containing blanks or control characters is a 400."}
         ],
         "responses": {
           "200": {
             "description": "Every declared item",
             "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/SettingsAdminSetting"}}}}
           },
-          "400": {"description": "The layer selection is unreadable, or the tenant identifier is outside its value domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no settings.read in the layer's domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "400": {"description": "The layer selection is unreadable, or the tenant identifier is outside its value domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no settings.read in the layer's domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
-    "/api/v1/settings/admin/settings/{namespace}": {
+    "/settings/admin/settings/{namespace}": {
       "get": {
         "operationId": "settings.admin.settings.listNamespace",
         "summary": "List the declared settings one namespace declares",
+        "description": "Returns the declared items whose namespace equals the path segment, that is the group one module declared, each carrying the same fields and resolved the same way as on the all-items route. The declaration listing is not narrowed to the modules running in this process. A namespace no declared item belongs to answers 404 without a problem document.",
         "parameters": [
-          {"$ref": "#/components/parameters/SettingsAdminLayer"},
-          {"$ref": "#/components/parameters/SettingsAdminTenant"},
-          {"$ref": "#/components/parameters/SettingsAdminNamespace"}
+          {"$ref": "#/components/parameters/SettingsAdminLayer", "description": "The layer the listing reads: `global` for the platform layer, or `tenant` for the layer of the tenant named by `tenant`. There is no default; an absent value or one outside this set is a 400."},
+          {"$ref": "#/components/parameters/SettingsAdminTenant", "description": "The tenant whose layer the listing reads. Required when `layer` is `tenant` and refused when it is `global`; an empty identifier or one containing blanks or control characters is a 400."},
+          {"$ref": "#/components/parameters/SettingsAdminNamespace", "description": "The namespace whose declared items the listing returns: the declaring module, which is the key's leading segment (for example `deals` or `authn.session`). A namespace no declared item belongs to is a 404."}
         ],
         "responses": {
           "200": {
             "description": "The namespace's declared items",
             "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/SettingsAdminSetting"}}}}
           },
-          "400": {"description": "The layer selection is unreadable, or the tenant identifier is outside its value domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no settings.read in the layer's domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "404": {"description": "No declared item belongs to the namespace", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "400": {"description": "The layer selection is unreadable, or the tenant identifier is outside its value domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no settings.read in the layer's domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "404": {"description": "No declared item belongs to the namespace"},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
-    "/api/v1/settings/admin/settings/{namespace}/{key}": {
+    "/settings/admin/settings/{namespace}/{key}": {
       "put": {
         "operationId": "settings.admin.settings.set",
         "summary": "Write one setting row on the selected layer",
+        "description": "Writes one row for the setting named by the namespace and key path segments on the selected layer. The full key `<namespace>.<key>` must match a declared item, otherwise the answer is 404. The value is encoded under the item's declared type and then held to its declared domain, so a duration written as \"300s\" is stored as \"5m0s\"; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. A mandatory audit row is written before the change, and if it cannot be written the setting is left untouched and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.",
         "parameters": [
-          {"$ref": "#/components/parameters/SettingsAdminLayer"},
-          {"$ref": "#/components/parameters/SettingsAdminTenant"},
-          {"$ref": "#/components/parameters/SettingsAdminNamespace"},
-          {"$ref": "#/components/parameters/SettingsAdminKey"}
+          {"$ref": "#/components/parameters/SettingsAdminLayer", "description": "The layer the write lands on: `global` for the platform layer, or `tenant` for the layer of the tenant named by `tenant`. There is no default; an absent value or one outside this set is a 400."},
+          {"$ref": "#/components/parameters/SettingsAdminTenant", "description": "The tenant whose layer the write lands on. Required when `layer` is `tenant` and refused when it is `global`; an empty identifier or one containing blanks or control characters is a 400."},
+          {"$ref": "#/components/parameters/SettingsAdminNamespace", "description": "The namespace of the item to write: the declaring module, which is the key's leading segment. Joined with `key` by a dot to form the full key, which must be declared."},
+          {"$ref": "#/components/parameters/SettingsAdminKey", "description": "The rest of the setting key under the namespace; dots are allowed. Joined with the namespace by a dot to form the full key, which must be declared."}
         ],
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["value"], "properties": {"value": {}}}}}},
+        "requestBody": {"required": true, "description": "The value to store, wrapped in one object.", "content": {"application/json": {"schema": {"type": "object", "description": "The write's body: exactly one object, whose `value` member carries the value to store.", "required": ["value"], "properties": {"value": {"description": "The value to store, in the JSON form the item's declared type is read from: a string for a string, duration, or text-decoding item, a number for a numeric item, a boolean for a bool item. It is encoded under the declared type and then held to the item's declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422."}}}}}},
         "responses": {
           "204": {"description": "The row was written"},
-          "400": {"description": "The layer selection is unreadable, the tenant identifier is outside its value domain, or the body is not one object", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no settings.write in the layer's domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "404": {"description": "The full key has no declaration", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "422": {"description": "The value cannot be encoded under the declared type or lies outside its declared domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "400": {"description": "The layer selection is unreadable, the tenant identifier is outside its value domain, or the body is not one object", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no settings.write in the layer's domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "404": {"description": "The full key has no declaration"},
+          "422": {"description": "The value cannot be encoded under the declared type or lies outside its declared domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "delete": {
         "operationId": "settings.admin.settings.remove",
         "summary": "Drop the selected layer's explicit row for one setting",
+        "description": "Drops the selected layer's explicit row for the setting named by the namespace and key path segments. The full key `<namespace>.<key>` must match a declared item, otherwise the answer is 404; deleting a row the layer does not hold is not an error. Once the row is gone the item resolves through the fallback again. A mandatory audit row is written before the change, and if it cannot be written the row is left in place and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.",
         "parameters": [
-          {"$ref": "#/components/parameters/SettingsAdminLayer"},
-          {"$ref": "#/components/parameters/SettingsAdminTenant"},
-          {"$ref": "#/components/parameters/SettingsAdminNamespace"},
-          {"$ref": "#/components/parameters/SettingsAdminKey"}
+          {"$ref": "#/components/parameters/SettingsAdminLayer", "description": "The layer whose row is dropped: `global` for the platform layer, or `tenant` for the layer of the tenant named by `tenant`. There is no default; an absent value or one outside this set is a 400."},
+          {"$ref": "#/components/parameters/SettingsAdminTenant", "description": "The tenant whose layer the row is dropped from. Required when `layer` is `tenant` and refused when it is `global`; an empty identifier or one containing blanks or control characters is a 400."},
+          {"$ref": "#/components/parameters/SettingsAdminNamespace", "description": "The namespace of the item whose row is dropped: the declaring module, which is the key's leading segment. Joined with `key` by a dot to form the full key, which must be declared."},
+          {"$ref": "#/components/parameters/SettingsAdminKey", "description": "The rest of the setting key under the namespace; dots are allowed. Joined with the namespace by a dot to form the full key, which must be declared."}
         ],
         "responses": {
           "204": {"description": "The row was dropped"},
-          "400": {"description": "The layer selection is unreadable, or the tenant identifier is outside its value domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no settings.write in the layer's domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "404": {"description": "The full key has no declaration", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "400": {"description": "The layer selection is unreadable, or the tenant identifier is outside its value domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no settings.write in the layer's domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "404": {"description": "The full key has no declaration"},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     }
@@ -89,35 +93,37 @@
     "parameters": {
       "SettingsAdminLayer": {"name": "layer", "in": "query", "required": true, "schema": {"type": "string", "enum": ["global", "tenant"]}, "description": "The layer the values are read or written at; there is no default"},
       "SettingsAdminTenant": {"name": "tenant", "in": "query", "required": false, "schema": {"type": "string"}, "description": "The tenant identifier; required for the tenant layer and refused for the global one"},
-      "SettingsAdminNamespace": {"name": "namespace", "in": "path", "required": true, "schema": {"type": "string"}},
-      "SettingsAdminKey": {"name": "key", "in": "path", "required": true, "schema": {"type": "string"}}
+      "SettingsAdminNamespace": {"name": "namespace", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The namespace the item was declared under: the declaring module, which is the key's leading segment (for example `deals` or `authn.session`). It selects the item's group on the namespace listing route, and is joined with `key` by a dot to form the full setting key on the write and delete routes."},
+      "SettingsAdminKey": {"name": "key", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The rest of the setting key under the namespace; it may contain dots. Joined with `namespace` by a dot to form the full key `<namespace>.<key>`, which must match a declared item."}
     },
     "schemas": {
       "SettingsAdminSetting": {
         "type": "object",
+        "description": "One declared setting item as this management surface shows it, on the selected layer. The declaration fields come from the key table; written, has_row and value come from that layer's rows and from the resolved read. Every value-bearing field is text in the declared type's own form, so a duration reads as \"5m0s\" rather than as a count of nanoseconds.",
         "required": ["key", "namespace", "type", "description", "domain", "sensitive", "default", "written", "has_row", "value"],
         "properties": {
-          "key": {"type": "string"},
+          "key": {"type": "string", "description": "The full setting key: the declaring module's namespace joined with the item's own segment by a dot."},
           "namespace": {"type": "string", "description": "The module that declared the item"},
-          "type": {"type": "string"},
-          "description": {"type": "string"},
+          "type": {"type": "string", "description": "The declared type's name as reflection reports it, such as `string`, `int`, `bool` or `time.Duration`; the item's values are stored and rendered in that type's text form."},
+          "description": {"type": "string", "description": "The human-readable text the declaring module gave the item."},
           "domain": {"type": "string", "description": "The declared rule over the item's values, empty when every value of the type is admitted"},
-          "sensitive": {"type": "boolean"},
+          "sensitive": {"type": "boolean", "description": "Whether the item is a credential. A sensitive item's default is empty and its written and value carry a fixed mask string; has_row still reports whether the layer holds a row."},
           "default": {"type": "string", "description": "The declared default in the declared type's text form, empty for a sensitive item"},
           "written": {"type": "string", "description": "The text the selected layer holds, the mask string for a sensitive item"},
-          "has_row": {"type": "boolean", "description": "Whether the selected layer holds a row for the item; written is empty both when it holds none and when the row's text is empty"},
+          "has_row": {"type": "boolean", "description": "Whether the selected layer holds a row for the item. For a non-sensitive item, written is empty both when no row is held and when the row's text is empty; a sensitive item's written is the mask string whether or not a row exists."},
           "value": {"type": "string", "description": "The text the item resolves to after the three-level fallback, the mask string for a sensitive item"}
         }
       },
       "Problem": {
         "type": "object",
+        "description": "An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.",
         "required": ["type", "status"],
         "properties": {
-          "type": {"type": "string"},
-          "title": {"type": "string"},
-          "status": {"type": "integer"},
-          "detail": {"type": "string"},
-          "instance": {"type": "string"}
+          "type": {"type": "string", "description": "The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>."},
+          "title": {"type": "string", "description": "A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code."},
+          "status": {"type": "integer", "description": "The HTTP status code the response is written with, repeated from the status line."},
+          "detail": {"type": "string", "description": "A longer explanation of this occurrence. Present only when the answering module has one to give, and those that set one render it in the request language."},
+          "instance": {"type": "string", "description": "A URI identifying this occurrence; absent when there is none to give."}
         }
       }
     }

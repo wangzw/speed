@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {"title": "workspace personal", "version": "1.0.0"},
   "paths": {
-    "/api/v1/workspace/personal": {
+    "/workspace/personal": {
       "post": {
         "operationId": "workspace.personal.ensure",
         "summary": "Ensure the caller's personal tenant exists and is complete",
@@ -12,10 +12,10 @@
             "description": "The personal tenant, complete; created says whether this call registered it",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkspacePersonalReply"}}}
           },
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller is impersonating, is a service account, or is a static-table subject that cannot own a tenant", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "409": {"description": "The caller cannot have a personal tenant: it belongs to another tenant while holding none of its own (already-member), its personal tenant exists and is not enabled (tenant-unavailable), or the derived identifier or alias is unavailable (identifier-unavailable). The type field names which. Already-member changes if the other membership is removed, and tenant-unavailable changes if an operator enables the tenant; identifier-unavailable does not change on retry", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer; no part of the result is returned", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller is impersonating, is a service account, or is a static-table subject that cannot own a tenant", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The caller cannot have a personal tenant: it belongs to another tenant while holding none of its own (already-member), its personal tenant exists and is not enabled (tenant-unavailable), or the derived identifier or alias is unavailable (identifier-unavailable). The type field names which. Already-member changes if the other membership is removed, and tenant-unavailable changes if an operator enables the tenant; identifier-unavailable does not change on retry", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer; no part of the result is returned", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     }
@@ -24,6 +24,7 @@
     "schemas": {
       "WorkspacePersonalReply": {
         "type": "object",
+        "description": "The answer to a successful ensure: the caller's personal tenant and whether this call registered it.",
         "required": ["tenant", "created"],
         "properties": {
           "tenant": {"$ref": "#/components/schemas/WorkspacePersonalTenant"},
@@ -32,22 +33,24 @@
       },
       "WorkspacePersonalTenant": {
         "type": "object",
+        "description": "The personal tenant the ensure names. It carries no display name: the frontend renders the personal label from the kind.",
         "required": ["id", "alias", "kind"],
         "properties": {
-          "id": {"type": "string", "description": "The tenant identifier"},
+          "id": {"type": "string", "description": "The tenant identifier, derived deterministically from the account identifier: the fixed prefix \"personal-\" followed by the account identifier, the same string the alias carries. The scoped tables hold it, so it takes no phone number, display name or other personal data, and it does not change with the request language"},
           "alias": {"type": "string", "description": "The request-surface name, equal to the identifier for a personal tenant"},
           "kind": {"type": "string", "enum": ["personal"], "description": "The tenant kind; the frontend renders the personal label from it"}
         }
       },
       "Problem": {
         "type": "object",
+        "description": "An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.",
         "required": ["type", "status"],
         "properties": {
-          "type": {"type": "string"},
-          "title": {"type": "string"},
-          "status": {"type": "integer"},
-          "detail": {"type": "string"},
-          "instance": {"type": "string"}
+          "type": {"type": "string", "description": "The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>."},
+          "title": {"type": "string", "description": "A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code."},
+          "status": {"type": "integer", "description": "The HTTP status code the response is written with, repeated from the status line."},
+          "detail": {"type": "string", "description": "A longer explanation of this occurrence. Present only when the answering module has one to give, and those that set one render it in the request language."},
+          "instance": {"type": "string", "description": "A URI identifying this occurrence; absent when there is none to give."}
         }
       }
     }

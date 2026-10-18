@@ -2,54 +2,56 @@
   "openapi": "3.1.0",
   "info": {"title": "authn mfa", "version": "1.0.0"},
   "paths": {
-    "/api/v1/auth/factors": {
+    "/auth/factors": {
       "get": {
         "operationId": "authn.mfa.factors",
         "summary": "List the caller's own registered factors",
+        "description": "Answers every factor row the caller's account has registered, ordered oldest first by creation time and then by identifier. Each row carries the kind, label, lifecycle status and the instants it was created, activated and last used; it carries no seed, key, public key or other data a kind keeps for itself. The list is empty when the account has registered none.",
         "responses": {
           "200": {
             "description": "The caller's factors, without any seed, key or other secret of a kind's own",
-            "content": {"application/json": {"schema": {"type": "object", "required": ["factors"], "properties": {"factors": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnMfaFactor"}}}}}}
+            "content": {"application/json": {"schema": {"type": "object", "description": "An object whose single member lists every factor the caller's account has registered.", "required": ["factors"], "properties": {"factors": {"type": "array", "description": "The caller's factor rows, ordered oldest first by creation time and then by identifier; an empty array when the account has registered none.", "items": {"$ref": "#/components/schemas/AuthnMfaFactor"}}}}}}
           },
           "401": {
             "description": "No usable credential",
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
           },
           "503": {
-            "description": "The factor register could not be reached",
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+            "description": "The factor could not be removed: the factor store or the account data it needs was unavailable. The cause is logged and not sent",
+            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
           }
         }
       }
     },
-    "/api/v1/auth/factors/{id}": {
+    "/auth/factors/{id}": {
       "delete": {
         "operationId": "authn.mfa.removeFactor",
         "summary": "Remove one of the caller's own factors",
+        "description": "Removes one factor of the caller's account: whatever the factor's kind keeps for it is removed first, then its register row. The call requires a fresh multi-factor authentication verified locally, so one merely declared by an identity provider does not satisfy it; an impersonating identity is refused. A factor that is not the caller's answers the same as one already gone, so the route never answers 404 and repeating a removal is idempotent. When the account has mfa_required set, its last active factor cannot be removed.",
         "parameters": [
-          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+          {"name": "id", "in": "path", "required": true, "description": "The factor identifier, as returned in `id` by `GET /auth/factors`. Empty or longer than 64 bytes is refused as a bad request without reading the register.", "schema": {"type": "string"}}
         ],
         "responses": {
           "204": {"description": "The factor was removed, or is not the caller's and reads as already gone"},
           "400": {
             "description": "The factor identifier is malformed",
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
           },
           "401": {
             "description": "No usable credential, or a fresh multi-factor authentication is required",
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
           },
           "403": {
             "description": "The identity is impersonating, which the route refuses",
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
           },
           "409": {
-            "description": "The factor is the account's last one",
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+            "description": "The factor is the account's last active factor, which cannot be removed while the account requires multi-factor authentication",
+            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
           },
           "503": {
-            "description": "The factor register could not be reached",
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+            "description": "The factor could not be removed: the factor store or the account data it needs was unavailable. The cause is logged and not sent",
+            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
           }
         }
       }
@@ -59,26 +61,28 @@
     "schemas": {
       "AuthnMfaFactor": {
         "type": "object",
+        "description": "One factor row of the caller's account: what the register holds about the factor, with nothing a kind keeps for itself.",
         "required": ["id", "kind", "label", "status", "created_at"],
         "properties": {
-          "id": {"type": "string"},
-          "kind": {"type": "string"},
-          "label": {"type": "string"},
-          "status": {"type": "string", "enum": ["pending", "active", "disabled"]},
+          "id": {"type": "string", "description": "The factor's identifier; use it as the `id` path parameter of `DELETE /auth/factors/{id}`."},
+          "kind": {"type": "string", "description": "The factor kind: `totp`, `sms` or `webauthn`."},
+          "label": {"type": "string", "description": "The display label stored with the factor; this module writes an empty label when it registers one."},
+          "status": {"type": "string", "description": "Lifecycle status: `pending` is registered but not yet confirmed and is never used to verify, `active` may verify, and `disabled` (left by an administrator reset or a clone warning) stays as a row that no longer counts.", "enum": ["pending", "active", "disabled"]},
           "created_at": {"type": "string", "description": "When the factor row was created, as an RFC 3339 instant"},
           "activated_at": {"type": "string", "description": "When the factor became active, as an RFC 3339 instant; absent until it is"},
-          "last_used_at": {"type": "string", "description": "When the factor last held, as an RFC 3339 instant; absent until it does"}
+          "last_used_at": {"type": "string", "description": "When the factor last passed a verification, as an RFC 3339 instant; absent until it first does"}
         }
       },
       "Problem": {
         "type": "object",
+        "description": "An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.",
         "required": ["type", "status"],
         "properties": {
-          "type": {"type": "string"},
-          "title": {"type": "string"},
-          "status": {"type": "integer"},
-          "detail": {"type": "string"},
-          "instance": {"type": "string"}
+          "type": {"type": "string", "description": "The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>."},
+          "title": {"type": "string", "description": "A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code."},
+          "status": {"type": "integer", "description": "The HTTP status code the response is written with, repeated from the status line."},
+          "detail": {"type": "string", "description": "A longer explanation of this occurrence. Present only when the answering module has one to give, and those that set one render it in the request language."},
+          "instance": {"type": "string", "description": "A URI identifying this occurrence; absent when there is none to give."}
         }
       }
     }

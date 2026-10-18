@@ -915,8 +915,9 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 				t.Fatalf("reading the fragment module %q declares: %v", spec.Module, err)
 			}
 			for path, methods := range fragment.Paths {
+				absolute := spec.Value.ResolvePath(path)
 				for method := range methods {
-					key := strings.ToUpper(method) + " " + path
+					key := strings.ToUpper(method) + " " + absolute
 					if _, duplicate := expected[key]; duplicate {
 						t.Fatalf("%s is declared by more than one fragment", key)
 					}

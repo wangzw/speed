@@ -120,7 +120,7 @@ func Module() core.Module {
 		},
 		Resources: []any{
 			configSchema(),
-			speedhttp.Spec{Endpoint: defaultEndpoint, Document: samlFragment},
+			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: samlFragment},
 		},
 
 		// Prepare states the stance alone. The service provider's key comes from

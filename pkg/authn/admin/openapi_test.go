@@ -27,8 +27,8 @@ func TestTheResetsDeclareTheUnseasonedRefusal(t *testing.T) {
 		t.Fatalf("the fragment is not JSON: %v", err)
 	}
 	for _, path := range []string{
-		"/api/v1/auth/admin/accounts/{id}/password",
-		"/api/v1/auth/admin/accounts/{id}/mfa-reset",
+		"/auth/admin/accounts/{id}/password",
+		"/auth/admin/accounts/{id}/mfa-reset",
 	} {
 		op, ok := doc.Paths[path]["post"]
 		if !ok {

@@ -2,22 +2,25 @@
   "openapi": "3.1.0",
   "info": {"title": "authn impersonation", "version": "1.0.0"},
   "paths": {
-    "/api/v1/auth/impersonation": {
+    "/auth/impersonation": {
       "post": {
         "operationId": "authn.impersonation.start",
         "summary": "Start impersonating another account",
+        "description": "Begins an impersonation on the caller's session and answers with the record just created. The caller must have authenticated locally with a recent multi-factor authentication whose second factor is a one-time code or a passkey, and must hold a seasoned factor for the account. A cookie credential receives the record only and has the impersonation marker set on its session; a bearer credential also receives an impersonation access token whose lifetime is the shorter of the access-token setting and the record's remaining lifetime.",
         "requestBody": {
           "required": true,
+          "description": "The target account, the tenant the impersonation is confined to, the reason to record, and the requested lifetime.",
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
+                "description": "The parameters of a start. Only account is required by the schema; a missing or empty tenant or reason is refused with 403.",
                 "required": ["account"],
                 "properties": {
-                  "account": {"type": "string"},
-                  "tenant": {"type": "string"},
-                  "reason": {"type": "string"},
-                  "ttl_seconds": {"type": "integer", "format": "int64"}
+                  "account": {"type": "string", "description": "Identifier of the account to impersonate: an enabled, non-protected user account other than the caller's own, and an active member of tenant."},
+                  "tenant": {"type": "string", "description": "Identifier of the tenant the impersonation is confined to; it may not be empty or contain whitespace or control characters, so omitting it is refused."},
+                  "reason": {"type": "string", "description": "Why the impersonation is started. It is trimmed, then must be one to 500 characters with no control characters; it is stored on the record and in the audit row and never appears in a response."},
+                  "ttl_seconds": {"type": "integer", "format": "int64", "description": "Requested lifetime in whole seconds. Zero or absent takes the max-ttl setting (30 minutes by default); the settled lifetime is the shortest of the request, that setting, the remaining lifetime of the caller's session and a hard ceiling of one hour."}
                 }
               }
             }
@@ -38,6 +41,7 @@
       "get": {
         "operationId": "authn.impersonation.status",
         "summary": "The impersonation in force on the caller's session",
+        "description": "Answers the record still in force on the caller's session, including the instant it began. Before answering, the record is judged against the current time and the bound session, actor, target and target membership; one that has lapsed is ended and answers 404, as does a credential that carries no session.",
         "responses": {
           "200": {
             "description": "The record still valid on the session",
@@ -51,6 +55,7 @@
       "delete": {
         "operationId": "authn.impersonation.end",
         "summary": "End the impersonation on the caller's session",
+        "description": "Ends the unended record on the caller's session with the reason explicit, whether or not it is still valid, and answers 204. Repeating it is safe: once the record is ended a further call answers 404. Under a cookie credential the impersonation marker is cleared from the session without rotating its token, so the caller continues as its own identity; a failed audit write does not undo the end.",
         "responses": {
           "204": {"description": "The impersonation ended"},
           "401": {"description": "No usable credential"},
@@ -64,27 +69,30 @@
     "schemas": {
       "AuthnImpersonationGrant": {
         "type": "object",
+        "description": "An impersonation record as a client sees it. The reason and the administrator's identity are not part of it.",
         "required": ["id", "target", "tenant", "ends_at"],
         "properties": {
-          "id": {"type": "string"},
+          "id": {"type": "string", "description": "Identifier of the impersonation record, minted when the start was granted."},
           "target": {"type": "string", "description": "The impersonated account"},
           "tenant": {"type": "string", "description": "The tenant the impersonation is confined to"},
           "started_at": {"type": "string", "format": "date-time", "description": "Absent on the answer to a start, present on a record in force"},
-          "ends_at": {"type": "string", "format": "date-time"}
+          "ends_at": {"type": "string", "format": "date-time", "description": "RFC 3339 instant at which the record stops being valid; never more than one hour after it began."}
         }
       },
       "AuthnImpersonationGrantEnvelope": {
         "type": "object",
+        "description": "The answer of the status route.",
         "required": ["grant"],
         "properties": {
-          "grant": {"$ref": "#/components/schemas/AuthnImpersonationGrant"}
+          "grant": {"$ref": "#/components/schemas/AuthnImpersonationGrant", "description": "The record in force on the session, including the instant it began."}
         }
       },
       "AuthnImpersonationStart": {
         "type": "object",
+        "description": "The answer of a start: the record just created and, for a bearer credential, the impersonation access token.",
         "required": ["grant"],
         "properties": {
-          "grant": {"$ref": "#/components/schemas/AuthnImpersonationGrant"},
+          "grant": {"$ref": "#/components/schemas/AuthnImpersonationGrant", "description": "The record just created; started_at is absent because a start answer does not carry the start instant."},
           "access_token": {"type": "string", "description": "Present on a bearer start; absent on a cookie start, whose carrier is the session cookie"},
           "token_type": {"type": "string", "description": "Present with access_token; always Bearer"},
           "expires_in": {"type": "integer", "format": "int64", "description": "Present with access_token; the access token's lifetime in whole seconds"}

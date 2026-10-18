@@ -476,23 +476,27 @@ func ExampleErrorResponder() {
 //
 // The fragment is a static declaration: this module stores it and checks its
 // shape at startup, and a reader takes the declarations up with
-// core.Resources, each carrying the name of the module that owns it.
+// core.Resources, each carrying the name of the module that owns it. Prefix and
+// Version are bare segments the reader joins into the root the fragment's
+// paths are relative to.
 func ExampleSpec() {
 	reg := core.New()
 	reg.Register(core.Module{
 		Name: "catalog",
 		Resources: []any{speedhttp.Spec{
 			Endpoint: "public",
-			Document: []byte(`{"openapi":"3.1.0","info":{"title":"Catalog"},"paths":{}}`),
+			Prefix:   "api",
+			Version:  "v1",
+			Document: []byte(`{"openapi":"3.1.0","info":{"title":"Catalog"},"paths":{"/things":{}}}`),
 		}},
 	})
 
 	for _, declared := range core.Resources[speedhttp.Spec](reg) {
-		fmt.Println(declared.Module, declared.Value.Endpoint)
+		fmt.Println(declared.Module, declared.Value.Endpoint, declared.Value.APIRoot())
 	}
 
 	// Output:
-	// catalog public
+	// catalog public /api/v1
 }
 
 // ExampleSpec_invalidShape declares a fragment whose shape is not usable. The

@@ -2,192 +2,208 @@
   "openapi": "3.1.0",
   "info": {"title": "authz.admin", "version": "1.0.0"},
   "paths": {
-    "/api/v1/authz/admin/permissions": {
+    "/authz/admin/permissions": {
       "get": {
         "operationId": "authz.admin.permissions.list",
         "summary": "List every permission the catalog declares",
+        "description": "Lists every permission the process's catalog declares, one view each: the union of the permission lists the registered modules declared. The order is the catalog's collection order and is not sorted. The list is not filtered by which modules this process runs, so a permission may be listed that no mounted surface serves.",
         "responses": {
           "200": {
             "description": "Every declared permission",
-            "content": {"application/json": {"schema": {"type": "object", "required": ["permissions"], "properties": {"permissions": {"type": "array", "items": {"$ref": "#/components/schemas/AuthzAdminPermissionView"}}}}}}
+            "content": {"application/json": {"schema": {"type": "object", "description": "The catalog's declared permissions.", "required": ["permissions"], "properties": {"permissions": {"type": "array", "description": "Every declared permission, one view each; not sorted.", "items": {"$ref": "#/components/schemas/AuthzAdminPermissionView"}}}}}}
           },
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no role.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.read in the platform domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
-    "/api/v1/authz/admin/tenants/{tenant}/roles": {
+    "/authz/admin/tenants/{tenant}/roles": {
       "get": {
         "operationId": "authz.admin.roles.list",
         "summary": "List a tenant's roles",
-        "parameters": [{"$ref": "#/components/parameters/AuthzAdminTenant"}],
+        "description": "Lists every role stored for the tenant, one view each, ordered by role name ascending. The tenant is the policy domain the rows belong to and is not looked up in a roster: a tenant with no role yields an empty list. The list is not paginated.",
+        "parameters": [{"$ref": "#/components/parameters/AuthzAdminTenant", "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain."}],
         "responses": {
           "200": {
             "description": "Every role of the tenant",
-            "content": {"application/json": {"schema": {"type": "object", "required": ["roles"], "properties": {"roles": {"type": "array", "items": {"$ref": "#/components/schemas/AuthzAdminRoleView"}}}}}}
+            "content": {"application/json": {"schema": {"type": "object", "description": "The tenant's roles.", "required": ["roles"], "properties": {"roles": {"type": "array", "description": "Every role of the tenant, ordered by role name.", "items": {"$ref": "#/components/schemas/AuthzAdminRoleView"}}}}}}
           },
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no role.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "400": {"description": "The tenant is empty", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.read in the platform domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
-    "/api/v1/authz/admin/tenants/{tenant}/roles/{role}": {
+    "/authz/admin/tenants/{tenant}/roles/{role}": {
       "put": {
         "operationId": "authz.admin.roles.put",
         "summary": "Create or rewrite a role",
         "description": "The request carries the role's description key only. The builtin mark is not writable here: it is set by the host that seeds the policy data, and once set it cannot be cleared through this surface.",
         "parameters": [
-          {"$ref": "#/components/parameters/AuthzAdminTenant"},
-          {"$ref": "#/components/parameters/AuthzAdminRole"}
+          {"$ref": "#/components/parameters/AuthzAdminTenant", "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain."},
+          {"$ref": "#/components/parameters/AuthzAdminRole", "description": "The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."}
         ],
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthzAdminRoleWrite"}}}},
+        "requestBody": {"description": "The role's description key.", "required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthzAdminRoleWrite"}}}},
         "responses": {
           "204": {"description": "The role was written"},
-          "400": {"description": "The body is not one object", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "409": {"description": "The role is builtin and cannot be changed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "400": {"description": "The body is not one object, or the tenant is empty", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The role is builtin and cannot be changed", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "delete": {
         "operationId": "authz.admin.roles.delete",
         "summary": "Remove a role, revoking its grants and bindings with it",
+        "description": "Removes the role and, in one transaction, its permission grants and its account bindings, so no grant or binding outlives the role. Removing a role that does not exist succeeds with 204 and changes nothing. A builtin role cannot be removed. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.",
         "parameters": [
-          {"$ref": "#/components/parameters/AuthzAdminTenant"},
-          {"$ref": "#/components/parameters/AuthzAdminRole"}
+          {"$ref": "#/components/parameters/AuthzAdminTenant", "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain."},
+          {"$ref": "#/components/parameters/AuthzAdminRole", "description": "The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."}
         ],
         "responses": {
           "204": {"description": "The role was removed"},
-          "400": {"description": "No such role, or the named role belongs to another tenant", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "409": {"description": "The role is builtin and cannot be removed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "400": {"description": "The tenant is empty", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The role is builtin and cannot be removed", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
-    "/api/v1/authz/admin/tenants/{tenant}/roles/{role}/grants": {
+    "/authz/admin/tenants/{tenant}/roles/{role}/grants": {
       "get": {
         "operationId": "authz.admin.grants.list",
         "summary": "List every permission grant a role holds",
+        "description": "Lists every permission grant the role holds as the (resource, action) pairs the policy engine matches on, ordered by resource and then action. A role that holds no grant, or does not exist, yields an empty list; the role is not looked up. The list is not paginated.",
         "parameters": [
-          {"$ref": "#/components/parameters/AuthzAdminTenant"},
-          {"$ref": "#/components/parameters/AuthzAdminRole"}
+          {"$ref": "#/components/parameters/AuthzAdminTenant", "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain."},
+          {"$ref": "#/components/parameters/AuthzAdminRole", "description": "The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."}
         ],
         "responses": {
           "200": {
             "description": "The role's grants",
-            "content": {"application/json": {"schema": {"type": "object", "required": ["grants"], "properties": {"grants": {"type": "array", "items": {"$ref": "#/components/schemas/AuthzAdminGrantView"}}}}}}
+            "content": {"application/json": {"schema": {"type": "object", "description": "The role's grants.", "required": ["grants"], "properties": {"grants": {"type": "array", "description": "Every grant the role holds, ordered by resource and then action.", "items": {"$ref": "#/components/schemas/AuthzAdminGrantView"}}}}}}
           },
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no role.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "400": {"description": "The tenant is empty", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.read in the platform domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
-    "/api/v1/authz/admin/tenants/{tenant}/roles/{role}/grants/{permission}": {
+    "/authz/admin/tenants/{tenant}/roles/{role}/grants/{permission}": {
       "put": {
         "operationId": "authz.admin.grants.put",
         "summary": "Grant a permission to a role",
+        "description": "Grants one permission to a role. The permission in the path is checked against the catalog and translated to its (resource, action) pair before anything is written; a permission the catalog does not declare, or one with no translation row, is a 400 and no write happens. The role must exist in the tenant and must not be builtin: an absent role is a 400, and a builtin one is a 409, since its grants cannot be changed. Granting a permission the role already holds succeeds and leaves the existing row unchanged. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.",
         "parameters": [
-          {"$ref": "#/components/parameters/AuthzAdminTenant"},
-          {"$ref": "#/components/parameters/AuthzAdminRole"},
-          {"$ref": "#/components/parameters/AuthzAdminPermission"}
+          {"$ref": "#/components/parameters/AuthzAdminTenant", "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain."},
+          {"$ref": "#/components/parameters/AuthzAdminRole", "description": "The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."},
+          {"$ref": "#/components/parameters/AuthzAdminPermission", "description": "The permission name as the catalog declares it, for example authz.role.read. It is translated to its (resource, action) pair before the write."}
         ],
         "responses": {
           "204": {"description": "The permission was granted"},
-          "400": {"description": "The named permission is not in the catalog, or the translation has no row for it, or the named role belongs to another tenant", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "400": {"description": "The tenant is empty, the named permission is not in the catalog, or the translation has no row for it, or the named role belongs to another tenant", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The role is builtin and its grants cannot be changed", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "delete": {
         "operationId": "authz.admin.grants.delete",
         "summary": "Revoke a permission from a role",
+        "description": "Revokes one permission from a role. The permission in the path is translated to its (resource, action) pair; a permission with no translation row is a 400. Revoking a grant the role does not hold succeeds with 204 and changes nothing, and a role that is not in the tenant is not refused: no grant row matches and the answer is also 204. A builtin role's grants cannot be revoked: that is a 409. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.",
         "parameters": [
-          {"$ref": "#/components/parameters/AuthzAdminTenant"},
-          {"$ref": "#/components/parameters/AuthzAdminRole"},
-          {"$ref": "#/components/parameters/AuthzAdminPermission"}
+          {"$ref": "#/components/parameters/AuthzAdminTenant", "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain."},
+          {"$ref": "#/components/parameters/AuthzAdminRole", "description": "The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."},
+          {"$ref": "#/components/parameters/AuthzAdminPermission", "description": "The permission name as the catalog declares it, for example authz.role.read. It is translated to its (resource, action) pair before the write."}
         ],
         "responses": {
           "204": {"description": "The permission was revoked"},
-          "400": {"description": "The translation has no row for the named permission, or the named role belongs to another tenant", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "400": {"description": "The tenant is empty, or the translation has no row for the named permission", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The role is builtin and its grants cannot be revoked", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
-    "/api/v1/authz/admin/tenants/{tenant}/bindings": {
+    "/authz/admin/tenants/{tenant}/bindings": {
       "get": {
         "operationId": "authz.admin.bindings.list",
         "summary": "List every role binding of a tenant",
-        "parameters": [{"$ref": "#/components/parameters/AuthzAdminTenant"}],
+        "description": "Lists every role binding of the tenant, ordered by account identifier and then role name, one view each. A tenant with no binding yields an empty list. The list is not paginated.",
+        "parameters": [{"$ref": "#/components/parameters/AuthzAdminTenant", "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain."}],
         "responses": {
           "200": {
             "description": "The tenant's bindings",
-            "content": {"application/json": {"schema": {"type": "object", "required": ["bindings"], "properties": {"bindings": {"type": "array", "items": {"$ref": "#/components/schemas/AuthzAdminBindingView"}}}}}}
+            "content": {"application/json": {"schema": {"type": "object", "description": "The tenant's bindings.", "required": ["bindings"], "properties": {"bindings": {"type": "array", "description": "Every binding of the tenant, ordered by account and then role.", "items": {"$ref": "#/components/schemas/AuthzAdminBindingView"}}}}}}
           },
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no role.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "400": {"description": "The tenant is empty", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.read in the platform domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
-    "/api/v1/authz/admin/tenants/{tenant}/bindings/{account}": {
+    "/authz/admin/tenants/{tenant}/bindings/{account}": {
       "get": {
         "operationId": "authz.admin.bindings.of",
         "summary": "List every binding an account holds within a tenant",
+        "description": "Lists every binding the account holds within the tenant, ordered by role name ascending, one view each. An account with no binding, or a tenant with none, yields an empty list; the account is not looked up. The list is not paginated.",
         "parameters": [
-          {"$ref": "#/components/parameters/AuthzAdminTenant"},
-          {"$ref": "#/components/parameters/AuthzAdminAccount"}
+          {"$ref": "#/components/parameters/AuthzAdminTenant", "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain."},
+          {"$ref": "#/components/parameters/AuthzAdminAccount", "description": "The account identifier the binding is addressed by."}
         ],
         "responses": {
           "200": {
             "description": "The account's bindings within the tenant",
-            "content": {"application/json": {"schema": {"type": "object", "required": ["bindings"], "properties": {"bindings": {"type": "array", "items": {"$ref": "#/components/schemas/AuthzAdminBindingView"}}}}}}
+            "content": {"application/json": {"schema": {"type": "object", "description": "The account's bindings within the tenant.", "required": ["bindings"], "properties": {"bindings": {"type": "array", "description": "Every binding the account holds within the tenant, ordered by role name.", "items": {"$ref": "#/components/schemas/AuthzAdminBindingView"}}}}}}
           },
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no role.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "400": {"description": "The tenant is empty", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.read in the platform domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
-    "/api/v1/authz/admin/tenants/{tenant}/bindings/{account}/{role}": {
+    "/authz/admin/tenants/{tenant}/bindings/{account}/{role}": {
       "put": {
         "operationId": "authz.admin.bindings.put",
         "summary": "Bind a role to an account within a tenant",
+        "description": "Binds a role to an account within the tenant. The role must exist in the tenant; a builtin role may be bound. An empty account is refused with a 400 before anything is written. Binding a role the account already holds succeeds and leaves the existing row unchanged. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.",
         "parameters": [
-          {"$ref": "#/components/parameters/AuthzAdminTenant"},
-          {"$ref": "#/components/parameters/AuthzAdminAccount"},
-          {"$ref": "#/components/parameters/AuthzAdminRole"}
+          {"$ref": "#/components/parameters/AuthzAdminTenant", "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain."},
+          {"$ref": "#/components/parameters/AuthzAdminAccount", "description": "The account identifier the binding is addressed by."},
+          {"$ref": "#/components/parameters/AuthzAdminRole", "description": "The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."}
         ],
         "responses": {
           "204": {"description": "The role was bound"},
-          "400": {"description": "The account is empty, no such role, or the named role belongs to another tenant", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "400": {"description": "The tenant or the account is empty, no such role, or the named role belongs to another tenant", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "delete": {
         "operationId": "authz.admin.bindings.delete",
         "summary": "Remove an account's binding to a role within a tenant",
+        "description": "Removes the account's binding to the role within the tenant. An empty account is refused with a 400 before anything is written. Removing a binding that does not exist succeeds with 204 and changes nothing. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.",
         "parameters": [
-          {"$ref": "#/components/parameters/AuthzAdminTenant"},
-          {"$ref": "#/components/parameters/AuthzAdminAccount"},
-          {"$ref": "#/components/parameters/AuthzAdminRole"}
+          {"$ref": "#/components/parameters/AuthzAdminTenant", "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain."},
+          {"$ref": "#/components/parameters/AuthzAdminAccount", "description": "The account identifier the binding is addressed by."},
+          {"$ref": "#/components/parameters/AuthzAdminRole", "description": "The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."}
         ],
         "responses": {
           "204": {"description": "The binding was removed"},
-          "400": {"description": "The account is empty, or the named role belongs to another tenant", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "400": {"description": "The account or the tenant is empty", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     }
@@ -195,64 +211,70 @@
   "components": {
     "parameters": {
       "AuthzAdminTenant": {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The tenant identifier, taken as the policy domain"},
-      "AuthzAdminRole": {"name": "role", "in": "path", "required": true, "schema": {"type": "string"}},
-      "AuthzAdminPermission": {"name": "permission", "in": "path", "required": true, "schema": {"type": "string"}},
-      "AuthzAdminAccount": {"name": "account", "in": "path", "required": true, "schema": {"type": "string"}}
+      "AuthzAdminRole": {"name": "role", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The role name within the tenant, addressed by this natural key."},
+      "AuthzAdminPermission": {"name": "permission", "in": "path", "required": true, "schema": {"type": "string"}, "description": "A permission name the catalog declares, translated to its (resource, action) pair before a write."},
+      "AuthzAdminAccount": {"name": "account", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The account identifier a binding is addressed by."}
     },
     "schemas": {
       "AuthzAdminPermissionView": {
+        "description": "One permission the catalog declares.",
         "type": "object",
         "required": ["permission"],
-        "properties": {"permission": {"type": "string"}}
+        "properties": {"permission": {"type": "string", "description": "The permission name as the catalog declares it, for example authn.tenant.access. Only the authn.* permissions are the same vocabulary as authn.Action and carry its string; a permission outside it, such as authz.role.read, has no corresponding authn.Action."}}
       },
       "AuthzAdminRoleView": {
+        "description": "One role of a tenant as the role routes report it.",
         "type": "object",
         "required": ["tenant", "role", "builtin", "description_key", "created_at"],
         "properties": {
-          "tenant": {"type": "string"},
-          "role": {"type": "string"},
-          "builtin": {"type": "boolean"},
-          "description_key": {"type": "string"},
-          "created_at": {"type": "string", "format": "date-time"}
+          "tenant": {"type": "string", "description": "The tenant the role belongs to."},
+          "role": {"type": "string", "description": "The role name within the tenant."},
+          "builtin": {"type": "boolean", "description": "True for a builtin role: the management face can neither rewrite nor remove it, nor change its grants. The mark is set by the host that seeds the policy data and is never cleared."},
+          "description_key": {"type": "string", "description": "The i18n key of the role's description text; stored as given and not resolved by this surface."},
+          "created_at": {"type": "string", "format": "date-time", "description": "When the role was written, as an RFC 3339 instant in UTC."}
         }
       },
       "AuthzAdminRoleWrite": {
+        "description": "The body of a role write: the role's description key only. The builtin mark is not part of the body; a member sent under that name reaches nothing.",
         "type": "object",
         "required": ["description_key"],
         "properties": {
-          "description_key": {"type": "string"}
+          "description_key": {"type": "string", "description": "The i18n key of the role's description text. It is stored as given and not resolved by this surface."}
         }
       },
       "AuthzAdminGrantView": {
+        "description": "One permission grant of a role: the (resource, action) pair the policy engine matches on.",
         "type": "object",
         "required": ["tenant", "role", "resource", "action", "created_at"],
         "properties": {
-          "tenant": {"type": "string"},
-          "role": {"type": "string"},
-          "resource": {"type": "string"},
-          "action": {"type": "string"},
-          "created_at": {"type": "string", "format": "date-time"}
+          "tenant": {"type": "string", "description": "The tenant the grant belongs to."},
+          "role": {"type": "string", "description": "The role holding the grant."},
+          "resource": {"type": "string", "description": "The resource the grant matches on."},
+          "action": {"type": "string", "description": "The action the grant matches on."},
+          "created_at": {"type": "string", "format": "date-time", "description": "When the grant was written, as an RFC 3339 instant in UTC."}
         }
       },
       "AuthzAdminBindingView": {
+        "description": "One role binding: an account holds a role within a tenant.",
         "type": "object",
         "required": ["tenant", "account", "role", "granted_at"],
         "properties": {
-          "tenant": {"type": "string"},
-          "account": {"type": "string"},
-          "role": {"type": "string"},
-          "granted_at": {"type": "string", "format": "date-time"}
+          "tenant": {"type": "string", "description": "The tenant the binding belongs to."},
+          "account": {"type": "string", "description": "The account the role is bound to."},
+          "role": {"type": "string", "description": "The role bound to the account."},
+          "granted_at": {"type": "string", "format": "date-time", "description": "When the binding was written, as an RFC 3339 instant in UTC."}
         }
       },
       "Problem": {
         "type": "object",
+        "description": "An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.",
         "required": ["type", "status"],
         "properties": {
-          "type": {"type": "string"},
-          "title": {"type": "string"},
-          "status": {"type": "integer"},
-          "detail": {"type": "string"},
-          "instance": {"type": "string"}
+          "type": {"type": "string", "description": "The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>."},
+          "title": {"type": "string", "description": "A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code."},
+          "status": {"type": "integer", "description": "The HTTP status code the response is written with, repeated from the status line."},
+          "detail": {"type": "string", "description": "A longer explanation of this occurrence. Present only when the answering module has one to give, and those that set one render it in the request language."},
+          "instance": {"type": "string", "description": "A URI identifying this occurrence; absent when there is none to give."}
         }
       }
     }

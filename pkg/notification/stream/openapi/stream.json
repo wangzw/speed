@@ -2,17 +2,18 @@
   "openapi": "3.1.0",
   "info": {"title": "notification stream", "version": "1.0.0"},
   "paths": {
-    "/api/v1/notifications/stream": {
+    "/notifications/stream": {
       "get": {
         "operationId": "notification.stream.subscribe",
         "summary": "Subscribe to the caller's in-app notifications as a server-sent event stream",
+        "description": "One long-lived connection, scoped by the request's tenant and the caller's effective account (the impersonated account while impersonation is in force). The server writes a frame each time the inbox gains a row for that pair, and the connection ends when the client disconnects, the entry point drains or the process stops. Every frame is named message and its data is a JSON object carrying the published event payload (message_id, tenant_id, recipient_user_id, type_key); a client reads the inbox by message_id to obtain content. Delivery is best-effort: the hub is in memory and per replica, nothing is replayed, arrival order carries no business meaning, and a connection with 64 frames already pending drops its own further frames rather than delaying the publisher. The route does not decide who may connect; host authorization does.",
         "responses": {
           "200": {
             "description": "One text/event-stream for the life of the connection; each event is named message and its data is the published event payload as JSON",
-            "content": {"text/event-stream": {"schema": {"type": "string"}}}
+            "content": {"text/event-stream": {"schema": {"type": "string", "description": "The raw event-stream body: a sequence of SSE frames, each one an event: message line, a data: line holding a JSON object, and a blank line, with no terminating frame or sentinel."}}}
           },
-          "401": {"description": "The request carries no identity, so there is no recipient to scope the connection to", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "500": {"description": "The response writer cannot flush a stream", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+          "401": {"description": "The request carries no identity, so there is no recipient to scope the connection to", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "500": {"description": "The response writer cannot flush a stream", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     }
@@ -21,13 +22,14 @@
     "schemas": {
       "Problem": {
         "type": "object",
+        "description": "An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.",
         "required": ["type", "status"],
         "properties": {
-          "type": {"type": "string"},
-          "title": {"type": "string"},
-          "status": {"type": "integer"},
-          "detail": {"type": "string"},
-          "instance": {"type": "string"}
+          "type": {"type": "string", "description": "The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>."},
+          "title": {"type": "string", "description": "A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code."},
+          "status": {"type": "integer", "description": "The HTTP status code the response is written with, repeated from the status line."},
+          "detail": {"type": "string", "description": "A longer explanation of this occurrence. Present only when the answering module has one to give, and those that set one render it in the request language."},
+          "instance": {"type": "string", "description": "A URI identifying this occurrence; absent when there is none to give."}
         }
       }
     }

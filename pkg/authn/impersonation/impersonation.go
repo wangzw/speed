@@ -120,7 +120,7 @@ func Module() core.Module {
 		Resources: []any{
 			settingsSchema(),
 			db.Migrations{FS: migrationsFS},
-			speedhttp.Spec{Endpoint: defaultEndpoint, Document: impersonationFragment},
+			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: impersonationFragment},
 			// The impersonation self-service routes: mounted whenever the module
 			// is in force, so the feature is static.
 			feature.Spec{Name: "authn.impersonation"},
