@@ -174,7 +174,7 @@ type ScopeGuard interface {
 | 因素与口令 | `POST B/admin/accounts/:id/password` | `account.update` | 管理员提交临时口令，是请求体，从不回显、不进日志与审计，缺省置 `must_change`；发起者新鲜的本地多因素且 `MFA.Seasoned`；强制审计；成功后撤销该账户的全部会话 |
 | 账户 | `POST B/admin/accounts/:id/identifiers`、`DELETE B/admin/accounts/:id/identifiers/:identifier` | `account.update` | 添加用户名（登录名）与管理员断言的邮箱，邮箱的 `verified_via` 为 `admin`，不作自动关联与并入的依据；强制审计 |
 | 账户 | `POST B/admin/accounts/:id/status` | `account.disable` | 新鲜的本地多因素；强制审计；停用后同步清理会话（`AccountLifecycle`），清理失败 503，重试幂等 |
-| 会话 | `GET B/admin/accounts/:id/sessions`、`POST B/admin/accounts/:id/revoke-sessions`、`DELETE B/admin/sessions/:id` | `session.read`、`session.revoke` | `DELETE B/admin/sessions/:id` 先 `Sessions.Get` 解析会话所属账户，`Decision.Target` 填会话标识、`TargetAccount` 填账户；强制审计 |
+| 会话 | `GET B/admin/accounts/:id/sessions`、`POST B/admin/accounts/:id/revoke-sessions`、`DELETE B/admin/sessions/:id` | `session.read`、`session.revoke` | `GET B/admin/accounts/:id/sessions` 的每一行带 `current` 标记：该行是调用方自己的会话时为真，取自调用方身份的会话标识，其余为假，与自助路由 `GET B/sessions` 的同名标记同义；`DELETE B/admin/sessions/:id` 先 `Sessions.Get` 解析会话所属账户，`Decision.Target` 填会话标识、`TargetAccount` 填账户；强制审计 |
 | 因素与口令 | `GET B/admin/accounts/:id/factors`、`POST B/admin/accounts/:id/mfa-required`、`POST B/admin/accounts/:id/mfa-reset` | `account.read`、`account.update`、`mfa.reset` | 清单只交回种类、标签、状态；重置要新鲜的本地非短信多因素与 `MFA.Seasoned`；强制审计 |
 | 服务密钥 | `GET\|POST B/admin/accounts/:id/secrets`、`DELETE B/admin/accounts/:id/secrets/:secret` | `client.manage`（`GET` 为 `account.read`） | `GET` 经 `ListServiceSecrets`，只交标识、标签、期限与撤销状态；创建与撤销要新鲜的本地多因素；密钥只在创建应答里出现一次；撤销后同步撤销该密钥的 service 会话；强制审计 |
 | 成员关系 | `GET B/admin/tenants/:tenant/members`、`PUT\|DELETE B/admin/tenants/:tenant/members/:account`、`PUT B/admin/tenants/:tenant/members/:account/sso-exempt` | `membership.manage` | `Decision.Tenant` 取路径里的租户标识，不是别名，所以 `authn.admin` 不依赖租户名册；强制审计 |
@@ -436,6 +436,7 @@ flowchart TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
+| 管理面会话列表的 `current` 标记 | 未实现 | — |
 | 重置因素与重置口令在 `Seasoned` 不满足时答 403 `factor-not-seasoned` | 已实现 | `pkg/authn/admin/factor.go` `requireAdministrator` |
 | 根包的 `Decider`、`Decision`、`Action` 常量 | 已实现 | `pkg/authn/decide.go` `Decider`、`Decision`、`Action` |
 | 根包的 `ScopeGuard` | 已实现 | `pkg/authn/scope.go` `ScopeGuard`；`pkg/authn/gate/gate.go` `wire`；`pkg/tenant/admission/admission.go` `(*layer).Covers` |
