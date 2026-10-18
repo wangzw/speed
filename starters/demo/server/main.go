@@ -469,6 +469,12 @@ func addStack(root *config.Command, s stack) {
 	// telemetry and export providers.
 	serve := node.Sub(serveCommand)
 	serve.Include(baselineServe...)
+	// The review assembly's additions: the social login methods and the SMS
+	// family with a sender that writes the code to the log. The list is empty in
+	// a default build, so this line names nothing there; see review.go and
+	// review_off.go. The configuration the review build reads is the copy under
+	// server/review, never one of testdata/.
+	serve.Include(reviewModules...)
 	serve.Include(s.kv, s.event, log.ModuleName, otel.ModuleName, s.exporter)
 	serve.Do(core.StageServe, untilCancelled(serveCommand))
 

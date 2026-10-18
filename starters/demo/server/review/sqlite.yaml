@@ -1,0 +1,219 @@
+# The review assembly's configuration: the demo program built with -tags review,
+# on the sqlite stack. It is the baseline stack's file (testdata/sqlite.yaml)
+# plus the sections the review build's modules read — the social login methods,
+# the SMS family and the review SMS sender — and it lives outside testdata so
+# the six baselines stay untouched. It carries fake credentials on purpose:
+# nothing here reaches a provider or a carrier.
+#
+# Run both commands from starters/demo/server, so that every relative path in
+# this file — the token signing key, the object store's root, the database —
+# resolves:
+#
+#   go -C starters/demo/server build -tags review -o demo-review .
+#   env -C starters/demo/server ./demo-review --config file:review/sqlite.yaml sqlite seed
+#   env -C starters/demo/server ./demo-review --config file:review/sqlite.yaml sqlite serve
+#
+# The seed run is idempotent and needed once: it writes the operator account,
+# the tenant, and the runtime settings this build cannot start without —
+# authn.sms.allowed-prefixes above all, whose declared default admits no number.
+#
+# The database is ./var/review.db, relative to starters/demo/server. The
+# review build shares the var/ directory with the baseline (the token signing
+# key is var/token-signing-key.pem) but not its database file, so a review run
+# neither reads nor writes the state a baseline run keeps in var/demo.db.
+#
+# The SMS verification code is never fixed here. The SMS module generates it and
+# the review sender writes it to the process log; search the server output for
+# "review sms: a verification code was sent" and read its verification_code
+# field. (The attribute is not named "code" because that name is a registered
+# sensitive key of the process, and the logging layer would mask the value.)
+
+http:
+  listeners:
+    backend:
+      address: "127.0.0.1:8080"
+    ops:
+      address: "127.0.0.1:8083"
+  # Each endpoint claims the path prefixes it answers on its listener. The
+  # dispatch selects an endpoint by these claims alone, the longest claim
+  # winning, and a path under no non-root claim goes to the endpoint that
+  # claims "/". The table is the product's fixed namespace map: a capability
+  # dropped from a run, or from the imports, keeps its namespace claimed. See
+  # AGENTS.md.
+  endpoints:
+    api:
+      listener: backend
+      prefixes: ["/api"]
+    account:
+      listener: backend
+      prefixes: ["/auth", "/features"]
+    admin:
+      listener: backend
+      prefixes: ["/audit", "/authz", "/settings", "/sms", "/tenant"]
+    ops:
+      # Alone on its listener, so it claims "/" by default.
+      listener: ops
+    web:
+      listener: backend
+      prefixes: ["/"]
+  cors:
+    endpoints:
+      api:
+        allow-origins:
+          - "https://app.demo.test"
+
+ops:
+  endpoint: ops
+  title: demo
+  version: 0.1.0
+
+webui:
+  endpoint: web
+
+log:
+  level: info
+
+observability:
+  otel:
+    service-name: demo
+
+authn:
+  # REVIEW: signup open, so a first login through SMS can open an account and
+  # the methods listing reports signup.enabled.
+  account:
+    signup: open
+  gate:
+    endpoints: [api, account, admin]
+    mount:
+      endpoint: account
+      base-path: "/auth"
+      public-url: "http://localhost:8080"
+  # REVIEW: the four social methods. The identifiers and secrets are fake and
+  # exist so the methods start and build an authorization URL; no callback is
+  # ever expected from these providers.
+  login:
+    google:
+      client-id: "review-google-client"
+      client-secret: "review-google-secret"
+    github:
+      client-id: "review-github-client"
+      client-secret: "review-github-secret"
+    wechat-mp:
+      app-id: "review-wechat-mp-app"
+      app-secret: "review-wechat-mp-secret"
+    wechat-web:
+      app-id: "review-wechat-web-app"
+      app-secret: "review-wechat-web-secret"
+  token:
+    algorithm: ES256
+    signing-key-file: var/token-signing-key.pem
+  mfa:
+    totp:
+      issuer: demo
+    webauthn:
+      rp-id: localhost
+      rp-name: demo
+      origins:
+        - "http://localhost:8080"
+
+# The SMS sending family. sms.registry holds the templates the SMS module sends
+# its codes under; the three names and the parameter pair are the contract the
+# module checks at startup. The codes are the carrier's identifiers, which for
+# the review sender are labels it writes to the log. The review sender declares
+# no configuration item, so this file carries no section for it.
+sms:
+  registry:
+    templates:
+      authn.code.login:
+        params: ["code", "ttl_minutes"]
+        codes:
+          en-US: "review-login"
+      authn.code.mfa:
+        params: ["code", "ttl_minutes"]
+        codes:
+          en-US: "review-mfa"
+      authn.code.enroll:
+        params: ["code", "ttl_minutes"]
+        codes:
+          en-US: "review-enroll"
+
+tenant:
+  resolve:
+    endpoints: [api]
+    extractor: header
+    header-name: X-Tenant
+  admission:
+    endpoints: [api]
+  admin:
+    endpoints: [admin]
+
+authz:
+  guard:
+    endpoints: [api]
+    undeclared: closed
+  admin:
+    endpoints: [admin]
+
+audit:
+  journal:
+    endpoints: [api, account, admin]
+    requests:
+      - "POST /api/v1/objects"
+      - "DELETE /api/v1/objects/:id"
+  admin:
+    endpoints: [admin]
+
+ratelimit:
+  endpoints: [api]
+
+settings:
+  admin:
+    endpoints: [admin]
+
+feature:
+  board:
+    endpoint: account
+
+notification:
+  inbox:
+    endpoints: [api]
+  stream:
+    endpoints: [api]
+  preferences:
+    endpoints: [api]
+
+objectstore:
+  fs:
+    root: "./var/objects"
+  metadata:
+    endpoints: [api]
+
+seed:
+  accounts:
+    - identifier: operator@demo.test
+      password: operator-dev-secret
+      display-name: Demo Operator
+      platform-admin: true
+  tenants:
+    - acme
+  settings:
+    - key: "authn.mfa.sensitive-min-age"
+      value: "1h"
+    # REVIEW: the numbers the SMS method may send to. The declared default is
+    # the empty table, which admits no number at all; these two prefixes are
+    # what make +1 and +86 numbers reachable in the review.
+    - key: "authn.sms.allowed-prefixes"
+      value: '["+1","+86"]'
+
+db:
+  sqlite:
+    dsn: "./var/review.db"
+    encryption-key: "dev-only-change-me-0123456789abcdef"
+
+kv:
+  memory:
+    replicas: 1
+
+event:
+  memory:
+    replicas: 1
