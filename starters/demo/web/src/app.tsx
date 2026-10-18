@@ -94,6 +94,12 @@ import {
   useImpersonationStatus,
 } from './impersonation.js'
 import { DemoNavLabel } from './nav-label.js'
+import {
+  AccountNavIcon,
+  HomeNavIcon,
+  NotificationsNavIcon,
+  ObjectsNavIcon,
+} from './nav-icons.js'
 import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
 import {
@@ -101,6 +107,7 @@ import {
   TENANT_HOME_PATH,
 } from './pages/not-found-page.js'
 import { SignInView } from './pages/sign-in-view.js'
+import { ACCOUNT_PATH, OBJECTS_PATH } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
 import {
   AUTH_CALLBACK_PATH,
@@ -112,6 +119,20 @@ import {
 /** The platform-staff permission domain the console routes' codes resolve in:
  * auth-core names 'system' the tenant-independent platform-staff set. */
 const CONSOLE_PERMISSION_DOMAIN = 'system'
+
+/**
+ * The tenant navigation's icons, keyed by the route path `useNavItems` uses
+ * as an entry's id. The collapsed sidebar rail shows an entry's icon in
+ * place of its clipped label (AppShell's own contract), so every tenant
+ * entry carries one: without it, collapsing the sidebar would show cut-off
+ * text where the console's navigation shows icons.
+ */
+const TENANT_NAV_ICONS: Readonly<Record<string, ReactElement>> = {
+  '/': <HomeNavIcon />,
+  [ACCOUNT_PATH]: <AccountNavIcon />,
+  [OBJECTS_PATH]: <ObjectsNavIcon />,
+  [NOTIFICATIONS_PATH]: <NotificationsNavIcon />,
+}
 
 /** The app view root: routing installed once, over the shell switch. The
  * route table is gated (the notification, object and console declarations
@@ -445,6 +466,7 @@ function TenantFrame({
     .map((item): AppShellNavItem => ({
       id: item.id,
       label: item.label,
+      icon: TENANT_NAV_ICONS[item.id],
       href: item.href,
       selected: item.selected,
       onClick: (event) => {

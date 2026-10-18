@@ -18,16 +18,20 @@
 
 import { act, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import authUiEnUS from '../../../../web/packages/auth-ui/src/locales/en-US.json' with { type: 'json' }
 import authUiZhCN from '../../../../web/packages/auth-ui/src/locales/zh-CN.json' with { type: 'json' }
 import consoleUiEnUS from '../../../../web/packages/console-ui/src/locales/en-US.json' with { type: 'json' }
 import layoutKitEnUS from '../../../../web/packages/layout-kit/src/locales/en-US.json' with { type: 'json' }
+import layoutKitZhCN from '../../../../web/packages/layout-kit/src/locales/zh-CN.json' with { type: 'json' }
+import notificationUiEnUS from '../../../../web/packages/notification-ui/src/locales/en-US.json' with { type: 'json' }
+import notificationUiZhCN from '../../../../web/packages/notification-ui/src/locales/zh-CN.json' with { type: 'json' }
 import uiKitEnUS from '../../../../web/packages/ui-kit/src/locales/en-US.json' with { type: 'json' }
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import demoZhCN from './locales/zh-CN.json' with { type: 'json' }
 import { renderDemoApp } from './test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
+import { mockMatchMedia } from '@speed/test-utils/matchMedia'
 import { AUTH_CALLBACK_PATH } from './routes.js'
 import {
   ANONYMOUS_SNAPSHOT,
@@ -716,6 +720,95 @@ describe('the tenant area header controls', () => {
     expect(
       screen.getByRole('button', { name: demoEnUS.colorMode.toLight }),
     ).toBeInTheDocument()
+  })
+})
+
+describe('the tenant navigation icons', () => {
+  const CASES = [
+    {
+      language: 'en-US',
+      labels: [
+        demoEnUS.nav.home,
+        demoEnUS.nav.account,
+        demoEnUS.nav.objects,
+        notificationUiEnUS.inbox.title,
+      ],
+      collapse: layoutKitEnUS.appShell.collapseNav,
+      open: layoutKitEnUS.appShell.openNav,
+    },
+    {
+      language: 'zh-CN',
+      labels: [
+        demoZhCN.nav.home,
+        demoZhCN.nav.account,
+        demoZhCN.nav.objects,
+        notificationUiZhCN.inbox.title,
+      ],
+      collapse: layoutKitZhCN.appShell.collapseNav,
+      open: layoutKitZhCN.appShell.openNav,
+    },
+  ] as const
+
+  afterEach(() => {
+    // The default stub (the desktop branch) is installed once per file;
+    // restore it after the narrow-width case.
+    mockMatchMedia(true)
+  })
+
+  it.each(CASES)(
+    'keeps an icon and a tooltip on every collapsed entry ($language)',
+    async ({ language, labels, collapse }) => {
+      mockMatchMedia(true)
+      const user = userEvent.setup()
+      renderDemoApp({
+        session: createTestSession(authenticatedSnapshot()),
+        language,
+      })
+
+      // The navigation is derived from the route table; wait for it.
+      await screen.findByRole('link', { name: labels[0] })
+      await user.click(screen.getByRole('button', { name: collapse }))
+
+      for (const label of labels) {
+        const link = screen.getByRole('link', { name: label })
+        // The rail's contract: an entry with an icon shows the icon and
+        // hides (clips) the label, which remains the accessible name.
+        expect(
+          link.querySelector('.MuiListItemIcon-root svg'),
+        ).not.toBeNull()
+        // The clip recipe lives on the ListItemText root.
+        const textRoot = link.querySelector('.MuiListItemText-root')
+        expect(textRoot).toHaveStyle({ position: 'absolute' })
+      }
+
+      // Every clipped entry is named in full on hover.
+      for (const label of labels) {
+        await user.hover(screen.getByRole('link', { name: label }))
+        expect(await screen.findByRole('tooltip')).toHaveTextContent(label)
+      }
+    },
+  )
+
+  it('leaves the temporary drawer at narrow widths with icons beside visible labels', async () => {
+    mockMatchMedia(false)
+    const user = userEvent.setup()
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    await user.click(
+      screen.getByRole('button', { name: layoutKitEnUS.appShell.openNav }),
+    )
+
+    for (const label of [
+      demoEnUS.nav.home,
+      demoEnUS.nav.account,
+      demoEnUS.nav.objects,
+      notificationUiEnUS.inbox.title,
+    ]) {
+      const link = screen.getByRole('link', { name: label })
+      expect(link.querySelector('.MuiListItemIcon-root svg')).not.toBeNull()
+      const textRoot = link.querySelector('.MuiListItemText-root')
+      expect(textRoot).not.toHaveStyle({ position: 'absolute' })
+    }
   })
 })
 
