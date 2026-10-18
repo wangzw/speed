@@ -174,7 +174,8 @@ graph TD
 | 后端消息视图的 `read_at` 为 JSON `null` | 读成未读（`null`、`undefined`、空串等同） |
 | 未挂开启器或 `enabled` 为 false | 订阅惰性，面仍按挂载与标签页重新可见各自读一次 |
 | 未挂 `NotificationPresenceProvider` | 按 `preferences` 为假、`channels` 为空处理：通知面不渲染偏好矩阵、不发分类法与偏好读，单独挂载的偏好矩阵只有 `in_app` 一列 |
-| 实时连接被拒或被断开 | 一次失败上报，provider 以退避重开；宿主不感知单次失败 |
+| 实时连接被断开 | 一次失败上报，provider 以封顶的指数退避重开，退避随连续失败增长、只在收到一帧时复位；宿主不感知单次失败 |
+| 打开连接被准入层拒绝（没有问题对象的裸 404） | provider 停止重连：重试不能改变这个拒绝，每次重连都会刷新一条控制台错误；租户或生效身份改变、或标签页由隐藏变为可见时重新打开一次 |
 
 本包不重试读与写（重试归传输层与宿主的查询客户端），实时连接的重连是 provider 自己的策略。
 
@@ -205,3 +206,4 @@ graph TD
 | 通知面在特性 `notification.preferences` 缺席时不渲染偏好矩阵、不发其读取 | 未实现 | — |
 | `notificationRoutes` 的 `requires` | 已实现 | `web/packages/notification-ui/src/routes.tsx` `notificationRoutes`；`web/packages/notification-ui/src/route.ts` `NotificationRoute` |
 | 准入层的裸 404 渲染为「无法访问当前组织」，不渲染成可重试的失败 | 未实现 | — |
+| 实时连接被准入层拒绝时停止重连，退避随连续失败增长 | 未实现 | — |
