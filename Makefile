@@ -89,6 +89,13 @@ test-integration-race: modules-present deps-up ## Test every module's integratio
 vet-integration: modules-present ## Compile every module's integration cases, running nothing
 	@failed=; $(call each,$(MODULES),vet integration,go -C $$it vet -tags=integration ./...); $(each-end)
 
+# The review assembly is a build variant of the demo program: its files carry
+# the `review` tag and no leg above compiles them. Compiling it here keeps the
+# variant from rotting into not building, and gives the tag the leg the
+# test-tier gate requires of every tag written in the tree.
+vet-review: modules-present ## Compile the review build variant, running nothing
+	@failed=; $(call each,$(MODULES),vet review,go -C $$it vet -tags=review ./...); $(each-end)
+
 # `golangci-lint run` takes a process-wide lock by default, so two checkouts
 # running the gate at once make one of them die with "parallel golangci-lint
 # is running" — indistinguishable from a code failure. The flag lets
@@ -175,6 +182,7 @@ check: ## Run everything a commit is gated on (no external service needed)
 	@$(MAKE) test
 	@$(MAKE) test-race
 	@$(MAKE) vet-integration
+	@$(MAKE) vet-review
 	@$(MAKE) lint
 	@$(MAKE) tidy-check
 	@$(MAKE) repo-check
