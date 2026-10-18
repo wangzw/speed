@@ -28,8 +28,11 @@
     "enrollTotpHelp": "Scan or copy this setup URI into your authenticator app.",
     "codeLabel": "Authenticator code",
     "passkeyPrompt": "Use your device to sign in with a passkey.",
+    "passkeyWaiting": "Waiting for your device…",
+    "passkeyCancel": "Cancel",
+    "passkeyRetry": "Try again",
     "passkeyUnsupported": "This browser cannot carry out a passkey ceremony.",
-    "passkeyCancelled": "The passkey prompt was dismissed. Try again.",
+    "passkeyCancelled": "No usable passkey was found, or the prompt was dismissed. Try again.",
     "passkeyFailed": "The passkey ceremony did not complete.",
     "factorKind": {
       "totp": "Authenticator app",

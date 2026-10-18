@@ -28,8 +28,11 @@
     "enrollTotpHelp": "将以下设置 URI 扫描或复制到验证器应用。",
     "codeLabel": "验证器验证码",
     "passkeyPrompt": "用你的设备以通行密钥登录。",
+    "passkeyWaiting": "正在等待你的设备…",
+    "passkeyCancel": "取消",
+    "passkeyRetry": "重试",
     "passkeyUnsupported": "此浏览器无法进行通行密钥仪式。",
-    "passkeyCancelled": "通行密钥提示已取消，请重试。",
+    "passkeyCancelled": "未找到可用的通行密钥，或通行密钥提示已被取消。请重试。",
     "passkeyFailed": "通行密钥仪式未能完成。",
     "factorKind": {
       "totp": "验证器应用",

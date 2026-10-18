@@ -37,10 +37,11 @@
  * and a server-supplied label wins over both.
  */
 
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
+import CircularProgress from '@mui/material/CircularProgress'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useForm } from 'react-hook-form'
@@ -201,8 +202,18 @@ function TotpFields({
 
 /** The passkey ceremony step: one button that drives the browser's WebAuthn
  * ceremony against the step's options and reports the credential it returns.
- * A browser without WebAuthn, a dismissed prompt and a failed ceremony each
- * render their own message rather than a silent no-op. */
+ *
+ * The ceremony can sit pending for as long as the browser waits on the
+ * device (a page with no authenticator at all keeps it pending until it is
+ * dismissed), so a click moves the step into an explicit waiting state: the
+ * waiting message and a cancel control replace the button instead of
+ * leaving a disabled button as the only signal. The credential API offers
+ * no portable way to abort a running ceremony, so cancel stops this step
+ * from waiting on it -- the call is left to settle on its own and its late
+ * answer, success or failure, is discarded. A browser without WebAuthn, a
+ * cancelled or dismissed ceremony and a failed ceremony each render their
+ * own message, and the retry action runs the ceremony again against the
+ * same step. */
 function PasskeyFields({
   options,
   busy,
@@ -217,17 +228,40 @@ function PasskeyFields({
   const { t } = useAuthUiTranslation()
   const [working, setWorking] = useState(false)
   const [errorKey, setErrorKey] = useState<string | null>(null)
+  // The ceremony the view is currently waiting on. Cancel flips the token
+  // so the promise's late settlement (and a retry's own token) stay apart.
+  const pendingRef = useRef<{ cancelled: boolean } | null>(null)
 
   async function run(): Promise<void> {
+    const token = { cancelled: false }
+    pendingRef.current = token
     setWorking(true)
     setErrorKey(null)
     try {
-      onAnswer({ credential: await runWebauthn(options) })
+      const credential = await runWebauthn(options)
+      if (!token.cancelled) {
+        onAnswer({ credential })
+      }
     } catch (failure) {
-      setErrorKey(webauthnErrorKey(failure))
+      if (!token.cancelled) {
+        setErrorKey(webauthnErrorKey(failure))
+      }
     } finally {
-      setWorking(false)
+      if (pendingRef.current === token) {
+        pendingRef.current = null
+        setWorking(false)
+      }
     }
+  }
+
+  function cancel(): void {
+    const pending = pendingRef.current
+    if (pending !== null) {
+      pending.cancelled = true
+      pendingRef.current = null
+    }
+    setWorking(false)
+    setErrorKey('signInFlow.passkeyCancelled')
   }
 
   return (
@@ -240,14 +274,34 @@ function PasskeyFields({
           {t(errorKey)}
         </Alert>
       )}
-      <Button
-        type="button"
-        variant="contained"
-        disabled={busy || working}
-        onClick={() => void run()}
-      >
-        {submit}
-      </Button>
+      {working ? (
+        <>
+          <Box
+            role="status"
+            sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}
+          >
+            <CircularProgress size={18} aria-hidden={true} />
+            <Typography>{t('signInFlow.passkeyWaiting')}</Typography>
+          </Box>
+          <Button
+            type="button"
+            variant="outlined"
+            disabled={busy}
+            onClick={cancel}
+          >
+            {t('signInFlow.passkeyCancel')}
+          </Button>
+        </>
+      ) : (
+        <Button
+          type="button"
+          variant="contained"
+          disabled={busy}
+          onClick={() => void run()}
+        >
+          {errorKey === null ? submit : t('signInFlow.passkeyRetry')}
+        </Button>
+      )}
     </Box>
   )
 }

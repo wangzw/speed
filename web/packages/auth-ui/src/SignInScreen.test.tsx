@@ -43,6 +43,42 @@ const BOTH_FORMS = methodList([
   { name: 'sms', kind: 'form' },
 ])
 
+/** A discovery document with the passkey method alone, so the ceremony
+ * step is the surface under test. */
+const PASSKEY_ONLY = methodList([
+  { name: 'passkey', kind: 'webauthn', label: 'Passkey' },
+])
+
+/** Replace navigator.credentials for one case; the result restores the
+ * property. */
+function stubCredentials(value: unknown): () => void {
+  const original = Object.getOwnPropertyDescriptor(window.navigator, 'credentials')
+  Object.defineProperty(window.navigator, 'credentials', {
+    value,
+    configurable: true,
+  })
+  return () => {
+    if (original === undefined) {
+      delete (window.navigator as { credentials?: unknown }).credentials
+    } else {
+      Object.defineProperty(window.navigator, 'credentials', original)
+    }
+  }
+}
+
+/** A harness whose passkey flow opens on its assertion step. No answer is
+ * scripted: the cases below stop before one travels. */
+function makePasskeyHarness() {
+  return makeHarness({
+    [LOGIN_START]: () =>
+      openFlow({
+        seq: 1,
+        state: 'first',
+        next: { kind: 'webauthn', options: { challenge: 'abc', rpId: 'x' } },
+      }),
+  })
+}
+
 /** A harness that completes a password flow and drives the SMS channel's
  * two steps, dispatching on the request method and step. */
 function makeSignInHarness() {
@@ -453,6 +489,126 @@ describe('SignInScreen', () => {
       }
     }
     // No answer travelled: the browser could not run the ceremony.
+    expect(
+      harness.calls.find((call) => call.path === '/auth/flows/answer'),
+    ).toBeUndefined()
+  })
+
+  it('show the waiting message and a cancel control while the ceremony is pending', async () => {
+    const harness = makePasskeyHarness()
+    // A ceremony that stays pending, as one does on a page with no
+    // authenticator to answer it.
+    const pending = new Promise<PublicKeyCredential>(() => {})
+    const get = vi.fn().mockReturnValue(pending)
+    const restore = stubCredentials({ get, create: vi.fn() })
+    try {
+      renderWithProviders(
+        <SignInScreen
+          session={harness.session}
+          discovery={PASSKEY_ONLY}
+          onSignedIn={vi.fn()}
+        />,
+      )
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'Passkey' }))
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+      )
+      expect(
+        await screen.findByText(zhCN.signInFlow.passkeyWaiting),
+      ).toBeInTheDocument()
+      // The cancel control is interactive, and the Continue action gave way
+      // to the waiting state rather than sitting there disabled.
+      expect(
+        screen.getByRole('button', { name: zhCN.signInFlow.passkeyCancel }),
+      ).toBeEnabled()
+      expect(
+        screen.queryByRole('button', { name: zhCN.signInFlow.submit }),
+      ).not.toBeInTheDocument()
+    } finally {
+      restore()
+    }
+    expect(get).toHaveBeenCalledTimes(1)
+  })
+
+  it('turn a cancelled ceremony into an explicit failure with a retry that re-issues it', async () => {
+    const harness = makePasskeyHarness()
+    const pending = new Promise<PublicKeyCredential>(() => {})
+    const get = vi.fn().mockReturnValue(pending)
+    const restore = stubCredentials({ get, create: vi.fn() })
+    try {
+      renderWithProviders(
+        <SignInScreen
+          session={harness.session}
+          discovery={PASSKEY_ONLY}
+          onSignedIn={vi.fn()}
+        />,
+      )
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'Passkey' }))
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+      )
+      await screen.findByText(zhCN.signInFlow.passkeyWaiting)
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.passkeyCancel }),
+      )
+      // Cancel is an explicit failure, not a return to the idle step.
+      expect(
+        await screen.findByText(zhCN.signInFlow.passkeyCancelled),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByText(zhCN.signInFlow.passkeyWaiting),
+      ).not.toBeInTheDocument()
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.passkeyRetry }),
+      )
+      // Retry re-issues the same step's ceremony.
+      expect(
+        await screen.findByText(zhCN.signInFlow.passkeyWaiting),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByText(zhCN.signInFlow.passkeyCancelled),
+      ).not.toBeInTheDocument()
+    } finally {
+      restore()
+    }
+    expect(get).toHaveBeenCalledTimes(2)
+    // Neither the cancelled ceremony nor its retry answered the flow.
+    expect(
+      harness.calls.find((call) => call.path === '/auth/flows/answer'),
+    ).toBeUndefined()
+  })
+
+  it('render the explicit failure when the ceremony rejects with no authenticator', async () => {
+    const harness = makePasskeyHarness()
+    const get = vi
+      .fn()
+      .mockRejectedValue(new DOMException('no authenticator', 'NotAllowedError'))
+    const restore = stubCredentials({ get, create: vi.fn() })
+    try {
+      renderWithProviders(
+        <SignInScreen
+          session={harness.session}
+          discovery={PASSKEY_ONLY}
+          onSignedIn={vi.fn()}
+        />,
+      )
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'Passkey' }))
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+      )
+      expect(
+        await screen.findByText(zhCN.signInFlow.passkeyCancelled),
+      ).toBeInTheDocument()
+      // The failure offers the way out: a retry, not a dead end.
+      expect(
+        screen.getByRole('button', { name: zhCN.signInFlow.passkeyRetry }),
+      ).toBeEnabled()
+    } finally {
+      restore()
+    }
     expect(
       harness.calls.find((call) => call.path === '/auth/flows/answer'),
     ).toBeUndefined()
