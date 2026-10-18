@@ -25,12 +25,14 @@ import {
   runHeadingOrderCheck,
 } from '../../test-utils/axe.js'
 import {
+  containerMaxWidthOf,
   emittedStyleText,
   hasCoarsePointerTouchTarget,
 } from '@speed/test-utils/emitted-css'
 import {
   DataTable,
   PRIMARY_COLUMN_MAX_WIDTH,
+  PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
   primaryColumnMaxWidthSx,
 } from './DataTable.js'
 import type { DataTableColumn, DataTableProps } from './DataTable.js'
@@ -103,6 +105,7 @@ function renderTemplate(
 describe('DataTable', () => {
   it('defines the shared primary-column cap: one width below md, another from md up', () => {
     expect(PRIMARY_COLUMN_MAX_WIDTH).toEqual({ belowMd: 160, fromMd: 200 })
+    expect(PRIMARY_COLUMN_CONTENT_MAX_WIDTH).toEqual({ '@': 160, '@md': 200 })
     expect(primaryColumnMaxWidthSx).toEqual({
       maxWidth: { '@': 160, '@md': 200 },
     })
@@ -1021,6 +1024,117 @@ describe('DataTable', () => {
       await user.click(button)
       await utils.findByText(
         renderTemplate(enUS.dataTable.copiedValue, { value: 'member-1' }),
+      )
+    })
+  })
+
+  // `contentMaxWidth` bounds the whole cell -- the rendered text and the
+  // `cellFullValue` copy control together -- so the cap cannot drift wider
+  // than declared by one control's width. jsdom renders no layout, so the
+  // proof is the generated container-query declarations on the wrapper
+  // that holds both, the truncation declarations on the text box alone,
+  // and the control sitting outside that box. The real-browser companion
+  // measurement (the whole-cell scroll width against the cap) lives in the
+  // README's verification record.
+  describe('whole-cell content cap (per-column opt-in)', () => {
+    const CAPPED_COLUMNS: readonly DataTableColumn<Member>[] = [
+      {
+        id: 'name',
+        header: 'Name',
+        cellWrap: 'nowrap',
+        cellFullValue: (row) => `member-${row.id}`,
+        contentMaxWidth: { '@': 120, '@md': 180 },
+        cell: (row) => row.name,
+      },
+      {
+        id: 'plain',
+        header: 'Plain',
+        cellWrap: 'nowrap',
+        cellFullValue: (row) => `plain-${row.id}`,
+        cell: (row) => row.name,
+      },
+    ]
+
+    it('puts the container-query cap on the wrapper that includes the control', () => {
+      const utils = renderTable({ columns: CAPPED_COLUMNS })
+      const [cappedCell] = utils
+        .getAllByText('Ada')
+        .map((element) => element.closest('td'))
+        .filter((cell): cell is HTMLTableCellElement => cell !== null)
+      const wrapper = cappedCell?.firstElementChild
+      expect(wrapper).not.toBeNull()
+      expect(containerMaxWidthOf(wrapper as Element)).toEqual(
+        new Map([
+          [0, 120],
+          [900, 180],
+        ]),
+      )
+    })
+
+    it('truncates inside the cap and leaves the copy control whole beside it', () => {
+      const utils = renderTable({ columns: CAPPED_COLUMNS })
+      const cell = utils
+        .getAllByText('Ada')
+        .map((element) => element.closest('td') as HTMLElement)[0]
+      const wrapper = cell!.firstElementChild as HTMLElement
+      const button = within(wrapper).getByRole('button', {
+        name: renderTemplate(zhCN.dataTable.copyValue, { value: 'member-1' }),
+      })
+      // The text box is the button's sibling and owns the truncation; the
+      // control sits outside it and refuses to shrink, so it is neither
+      // clipped nor counted past the wrapper's cap.
+      const textBox = button.previousElementSibling as HTMLElement
+      expect(textBox).not.toBeNull()
+      expect(textBox).toHaveStyle({
+        minWidth: '0px',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      })
+      expect(button.parentElement).toBe(wrapper)
+      expect(button).toHaveStyle({ flexShrink: '0' })
+    })
+
+    it('leaves a column without the field byte-for-byte free of the cap', () => {
+      const utils = renderTable({ columns: CAPPED_COLUMNS })
+      const plainCell = utils
+        .getAllByText('Ada')
+        .map((element) => element.closest('td'))
+        .filter((cell): cell is HTMLTableCellElement => cell !== null)[1]
+      const wrapper = plainCell?.firstElementChild
+      expect(wrapper).not.toBeNull()
+      expect(containerMaxWidthOf(wrapper as Element)).toEqual(new Map())
+      // The prior inline-flex wrapper shape: the rendered text sits
+      // directly in it (no truncating sub-box) beside the control.
+      expect(wrapper).toHaveTextContent('Ada')
+      const button = within(wrapper as HTMLElement).getByRole('button', {
+        name: renderTemplate(zhCN.dataTable.copyValue, { value: 'plain-1' }),
+      })
+      expect(button.previousElementSibling).toBeNull()
+    })
+
+    it('caps a row without a full value without inventing a copy control', () => {
+      const columns: readonly DataTableColumn<Member>[] = [
+        {
+          id: 'name',
+          header: 'Name',
+          cellWrap: 'nowrap',
+          cellFullValue: () => undefined,
+          contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+          cell: (row) => row.name,
+        },
+      ]
+      const utils = renderTable({ columns })
+      const cell = utils.getByText('Ada').closest('td') as HTMLElement
+      expect(cell).not.toHaveAttribute('title')
+      expect(within(cell).queryByRole('button')).toBeNull()
+      const wrapper = cell.firstElementChild
+      expect(wrapper).not.toBeNull()
+      expect(containerMaxWidthOf(wrapper as Element)).toEqual(
+        new Map([
+          [0, 160],
+          [900, 200],
+        ]),
       )
     })
   })

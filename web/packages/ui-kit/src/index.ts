@@ -79,9 +79,11 @@ export {
 export {
   DataTable,
   PRIMARY_COLUMN_MAX_WIDTH,
+  PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
   primaryColumnMaxWidthSx,
   type DataTableColumn,
   type DataTableColumnCellWrap,
+  type DataTableColumnContentMaxWidth,
   type DataTableColumnPriority,
   type DataTableFilter,
   type DataTablePagination,

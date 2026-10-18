@@ -40,7 +40,7 @@ string lives in the bilingual `ui-kit` namespace registered through
 | `components/FormField.tsx` | `FormField`, `FormFieldProps`, `FormFieldRenderState`, `REQUIRED_ERROR_KEY` |
 | `components/FormLayout.tsx` | `FormLayout`, `FormLayoutProps`, `FormLayoutColumns` |
 | `zod-form-resolver.ts` | `zodFormResolver`, `INVALID_ERROR_KEY` |
-| `components/DataTable.tsx` | `DataTable`, `DataTableColumn`, `DataTableColumnCellWrap`, `DataTableColumnPriority`, `DataTableSort`, `DataTableSortDirection`, `DataTableFilter`, `DataTablePagination`, `DataTableProps` |
+| `components/DataTable.tsx` | `DataTable`, `DataTableColumn`, `DataTableColumnCellWrap`, `DataTableColumnContentMaxWidth`, `DataTableColumnPriority`, `DataTableSort`, `DataTableSortDirection`, `DataTableFilter`, `DataTablePagination`, `DataTableProps`, `PRIMARY_COLUMN_MAX_WIDTH`, `PRIMARY_COLUMN_CONTENT_MAX_WIDTH`, `primaryColumnMaxWidthSx` |
 | `components/InlineError.tsx` | `InlineError`, `InlineErrorProps`, `errorCodeOf` |
 | `components/InlineSuccess.tsx` | `InlineSuccess`, `InlineSuccessProps` |
 | `components/WriteFeedbackRegion.tsx` | `WriteFeedbackRegion`, `WriteFeedbackRegionProps` |
@@ -741,6 +741,24 @@ for gets neither. Identifier columns are where a host sets both
 clipboard write and announcement; the clipboard stub is the test's own,
 since jsdom ships no `navigator.clipboard`.
 
+**A copy control widens the cell it sits in, so cap the whole cell.** A
+column's `contentMaxWidth?: number | string | { '@': ..., '@md': ... }`
+bounds the rendered content and the `cellFullValue` copy control
+together: the text truncates inside the cap while the control keeps its
+own width and is never clipped. The responsive form answers to the table
+container's width, like `priority` (`'@'` is the 0px baseline, `'@md'`
+from 900px). Only capping the text would leave every such column one
+control wider than declared. Omitting the field leaves the column's
+rendering byte-identical to the one it had before the field existed; a
+row whose `cellFullValue` answers `undefined` is still capped but gains
+no control. The shared primary-column cap is exported both as the pair
+`PRIMARY_COLUMN_MAX_WIDTH` and in this field's container-query form
+`PRIMARY_COLUMN_CONTENT_MAX_WIDTH`; pages pass the latter.
+`DataTable.test.tsx`'s "whole-cell content cap" cases pin the wrapper's
+container-query declaration, the truncating sub-box, and the control
+outside it; the README's Deferrals record why a jsdom suite cannot prove
+a rendered width.
+
 **Column priority is the opt-in reflow alternative to that scroll
 fallback, and it is container-triggered.** The table's root box declares
 `container-type: inline-size`, so every responsive rule inside the table
@@ -806,6 +824,9 @@ const columns: DataTableColumn<Member>[] = [
     // by hover, keyboard and touch.
     cellWrap: 'nowrap',
     cellFullValue: (row) => row.email,
+    // Bound the text and the copy control together. 160px below the
+    // table container's `md`, 200px from it up.
+    contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
     cell: (row) => row.email,
   },
   // Dropped first as the container narrows (hidden below the container `lg`).

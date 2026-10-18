@@ -91,6 +91,18 @@
  * answers `undefined` for gets neither channel. Identifier columns are
  * where a host sets both `cellWrap: 'nowrap'` and `cellFullValue`.
  *
+ * `contentMaxWidth` is the third per-column opt-in and the one that
+ * makes a cap agree with the copy control: it bounds the cell content as
+ * a whole -- the rendered text plus that control -- rather than the text
+ * alone. The text truncates inside the cap; the control keeps its own
+ * width and is never clipped, so the cell cannot end up wider than the
+ * declared value by the control's width. The value is a container-query
+ * responsive one (see DataTableColumnContentMaxWidth); a plain number or
+ * CSS length applies at every width. Omitting it changes nothing: a
+ * column without it renders the exact cell it rendered before the prop
+ * existed, and a row whose `cellFullValue` answers `undefined` is capped
+ * without gaining a control.
+ *
  * The whole table is a CSS container: the root box declares
  * `container-type: inline-size`, so every responsive rule inside it
  * answers to the table's own width -- how wide the host placed it --
@@ -188,6 +200,20 @@ export type DataTableColumnPriority = 'high' | 'medium' | 'low'
  */
 export type DataTableColumnCellWrap = 'wrap' | 'nowrap'
 
+/**
+ * A column's whole-cell content width cap. The responsive form uses the
+ * table container's own width, exactly like `priority`: `'@'` is the
+ * 0px baseline (below the container's `md`, 900px) and `'@md'` applies
+ * from 900px up, so `{ '@': 160, '@md': 200 }` reads as 160px below
+ * `md` and 200px from it. A plain number or CSS length applies at every
+ * width. See DataTableColumn.contentMaxWidth and the component header
+ * note for what the cap includes.
+ */
+export type DataTableColumnContentMaxWidth =
+  | number
+  | string
+  | Readonly<Record<string, number | string>>
+
 /** One column definition: header plus a per-row cell renderer. */
 export interface DataTableColumn<T> {
   /** Stable column identity; also the sort-state columnId. */
@@ -227,6 +253,16 @@ export interface DataTableColumn<T> {
    * neither the title nor the control.
    */
   readonly cellFullValue?: (row: T) => string | undefined
+  /**
+   * Opt-in whole-cell width cap: bounds the rendered cell content and the
+   * `cellFullValue` copy control together, so the text truncates inside
+   * the cap instead of the control adding a copy button's width past it
+   * (see the component header note). The value is a container-query
+   * responsive one (DataTableColumnContentMaxWidth); a plain number or
+   * CSS length applies at every width. Omitting it renders the exact
+   * cell the column rendered before this prop existed.
+   */
+  readonly contentMaxWidth?: DataTableColumnContentMaxWidth
   /** Renders one row's cell; rowIndex is the index within `rows`. */
   readonly cell: (row: T, rowIndex: number) => ReactNode
 }
@@ -330,17 +366,28 @@ export const PRIMARY_COLUMN_MAX_WIDTH = {
 } as const
 
 /**
- * `PRIMARY_COLUMN_MAX_WIDTH` as a container-query sx value: the
- * `@` baseline applies below the container's `md` (900px), `@md` from it
- * up. Spread it into the content inside a capped cell -- the cell itself
- * keeps `cellWrap: 'nowrap'`, and `Typography noWrap` plus this max width
- * truncates with an ellipsis.
+ * The same cap in `contentMaxWidth`'s container-query form: 160px below
+ * the table container's `md` (900px), 200px from it up. Pages pass this
+ * to a column whose cap must include the `cellFullValue` copy control,
+ * and keep the numbers in one place.
  */
-export const primaryColumnMaxWidthSx = {
-  maxWidth: {
+export const PRIMARY_COLUMN_CONTENT_MAX_WIDTH: DataTableColumnContentMaxWidth =
+  {
     '@': PRIMARY_COLUMN_MAX_WIDTH.belowMd,
     '@md': PRIMARY_COLUMN_MAX_WIDTH.fromMd,
-  },
+  }
+
+/**
+ * `PRIMARY_COLUMN_MAX_WIDTH` as a container-query sx value: the
+ * `@` baseline applies below the container's `md` (900px), `@md` from it
+ * up. Spread it into the content of a capped cell that has no copy
+ * control -- the cell itself keeps `cellWrap: 'nowrap'`, and
+ * `Typography noWrap` plus this max width truncates with an ellipsis. A
+ * column with a `cellFullValue` declares `contentMaxWidth` instead, which
+ * counts the control.
+ */
+export const primaryColumnMaxWidthSx = {
+  maxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
 }
 
 /**
@@ -403,7 +450,18 @@ const COPY_FEEDBACK_MS = 2000
  * has no `navigator.clipboard`), and a refused write leaves the control
  * silent rather than failing the page.
  */
-function CopyValueButton({ value }: { readonly value: string }) {
+function CopyValueButton({
+  value,
+  pinned = false,
+}: {
+  readonly value: string
+  /**
+   * Whether the hosting cell declares a `contentMaxWidth`. The cap must
+   * leave the control its full width, so a pinned control refuses to
+   * shrink; without the cap the prior flex behavior stays byte-identical.
+   */
+  readonly pinned?: boolean
+}) {
   const { t } = useUiKitTranslation()
   const [copied, setCopied] = useState(false)
 
@@ -429,6 +487,7 @@ function CopyValueButton({ value }: { readonly value: string }) {
         size="small"
         aria-label={t('dataTable.copyValue', { value })}
         onClick={copy}
+        sx={pinned ? { flexShrink: 0 } : undefined}
       >
         {copied ? <CopiedIcon /> : <CopyIcon />}
       </IconButton>
@@ -738,6 +797,7 @@ export function DataTable<T>({
                   )}
                   {columns.map((column) => {
                     const fullValue = column.cellFullValue?.(row)
+                    const capped = column.contentMaxWidth !== undefined
                     return (
                       <TableCell
                         key={column.id}
@@ -750,17 +810,52 @@ export function DataTable<T>({
                         }}
                       >
                         {fullValue === undefined ? (
-                          column.cell(row, index)
+                          capped ? (
+                            <Box
+                              sx={{
+                                maxWidth: column.contentMaxWidth,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {column.cell(row, index)}
+                            </Box>
+                          ) : (
+                            column.cell(row, index)
+                          )
                         ) : (
                           <Box
                             sx={{
                               display: 'inline-flex',
                               alignItems: 'center',
                               columnGap: 0.5,
+                              ...(capped
+                                ? { maxWidth: column.contentMaxWidth }
+                                : {}),
                             }}
                           >
-                            {column.cell(row, index)}
-                            <CopyValueButton value={fullValue} />
+                            {capped ? (
+                              // The cap bounds the whole cell, so the text
+                              // yields width to the copy control: it shrinks
+                              // and truncates while the control stays whole.
+                              <Box
+                                sx={{
+                                  minWidth: 0,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {column.cell(row, index)}
+                              </Box>
+                            ) : (
+                              column.cell(row, index)
+                            )}
+                            <CopyValueButton
+                              value={fullValue}
+                              pinned={capped}
+                            />
                           </Box>
                         )}
                       </TableCell>

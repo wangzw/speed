@@ -253,10 +253,17 @@ own. DataTable's pointer rules assert the `@media (pointer: coarse)`
 fine)` row-hover gate. The cell-wrap cases assert the declared
 `white-space: nowrap` on an opted-in column's header and body cells and
 its absence on a column that does not opt in -- the declaration jsdom
-can show, not a rendered width. As with every `emittedStyleText()`
-assertion in this package, these prove the right declarations were
-wired in, not that a real viewport or container actually hides a
-column or scrolls a table.
+can show, not a rendered width. The whole-cell cap cases
+(`contentMaxWidth`) assert the cap's container-query `max-width` on the
+wrapper that holds the rendered text and the `cellFullValue` control
+together, the `min-width: 0`/overflow/ellipsis declarations on the text
+sub-box alone, and the control outside that box refusing to shrink; a
+column without the field carries no cap rule and keeps the prior
+inline-flex shape, and a row without a full value is capped without a
+control. As with every `emittedStyleText()` assertion in this package,
+these prove the right declarations were wired in, not that a real
+viewport or container actually hides a column, scrolls a table, or
+renders a cap at its declared width.
 
 ## Deferrals (recorded, do not re-open silently)
 
