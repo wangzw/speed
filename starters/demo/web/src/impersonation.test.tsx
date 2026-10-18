@@ -230,7 +230,7 @@ function deferred(): { readonly promise: Promise<void>; readonly resolve: () => 
 /** The generated endpoints the views reach, scripted per test. */
 function makeBackend(options: {
   readonly grant?: GrantFixture
-  readonly endStatus?: 'ok' | '404'
+  readonly endStatus?: 'ok' | '404' | 'error'
   /** Holds the roster read open until the suite resolves it. */
   readonly rosterGate?: Promise<void>
   /** Keeps the status read answering the grant after the DELETE settles: a
@@ -344,6 +344,13 @@ function makeBackend(options: {
       }
       if (method === 'DELETE') {
         deletes += 1
+        if (options.endStatus === 'error') {
+          // The write was refused: the impersonation stays in force.
+          return Promise.reject({
+            status: 503,
+            code: 'authn.unavailable',
+          })
+        }
         if (options.statusLags !== true) {
           grant = undefined
         }
@@ -2150,6 +2157,50 @@ describe('the impersonation shell', () => {
     expect(screen.getByRole('status')).toHaveTextContent(
       authUiEnUS.impersonation.ended,
     )
+    expect(backend.deletes()).toBe(1)
+  })
+
+  it('brings a dismissed notice back to show a failed end from the account menu', async () => {
+    window.history.replaceState({}, '', '/')
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+      endStatus: 'error',
+    })
+    bindRequestFn(backend.fn)
+    const session = scriptedSession(targetSnapshot(), () => targetSnapshot())
+    const user = userEvent.setup()
+
+    renderDemoApp({ session })
+
+    const notice = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    await user.click(
+      within(notice).getByRole('button', {
+        name: authUiEnUS.impersonation.hide,
+      }),
+    )
+    expect(banner()).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Target One' }))
+    await user.click(
+      screen.getByRole('menuitem', { name: authUiEnUS.impersonation.end }),
+    )
+
+    // The failure text belongs to the banner, which was hidden: the host
+    // resets the dismissal so the error is visible, and the chip is
+    // expanded again.
+    const again = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    expect(
+      within(again).getByRole('alert'),
+    ).toHaveTextContent(authUiEnUS.errors.authn.unavailable)
+    expect(
+      screen.getByRole('button', {
+        name: authUiEnUS.impersonation.impersonating,
+      }),
+    ).toHaveAttribute('aria-expanded', 'true')
     expect(backend.deletes()).toBe(1)
   })
 
