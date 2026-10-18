@@ -498,6 +498,8 @@ enforced by registration):
 | `socialCallback.*` | the callback handler: the pending notice, the retry action |
 | `signOut.*` | the sign-out button: label and busy state |
 | `sessionEnded.*` | the session-ended screen: title, description, sign-in-again action |
+| `acceptInvitation.*` | the invitation landing: title, loading notice, tenant/email/expiry facts, the accept action, the retry action, and the accepted and not-found states |
+| `impersonation.*` | the impersonation banner: the region name, the acting-as / tenant / expiry statements, the management-unavailable notice, and the end action with its ending and ended messages |
 | `errors.*` | code-to-text answers (see below) |
 
 Hosts reword the kit by registering their own identical-key bundle pair
