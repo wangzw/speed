@@ -85,10 +85,18 @@ export type PhoneNumberFieldProps = {
   readonly showValidationError?: boolean
 }
 
-/** Narrow at phone widths, wider from sm; the number field takes the rest. */
+/**
+ * The selector fits its flag-and-calling-code content: 96px at phone
+ * widths and 112px from sm, rather than a share of the row. The number
+ * field takes the remaining width.
+ */
 const COUNTRY_WIDTH_SX: SxProps<Theme> = (theme) => ({
-  width: { xs: theme.spacing(15), sm: theme.spacing(21) },
+  width: { xs: theme.spacing(12), sm: theme.spacing(14) },
   flexShrink: 0,
+  // The floating label keeps its natural width. MUI caps it at
+  // `calc(133% - 32px)`, which ellipsizes "Country/region" at the 96px
+  // phone width even though the scaled text fits inside the field.
+  '& .MuiInputLabel-root.MuiInputLabel-shrink': { maxWidth: 'none' },
 })
 
 export function PhoneNumberField({

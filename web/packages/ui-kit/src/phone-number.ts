@@ -3,12 +3,13 @@
  *
  * A phone number is edited as two parts -- a country/region and a local
  * number -- and submitted as one E.164 string. Everything country-aware
- * here is libphonenumber-js's, not a table of our own: its "min" metadata
- * build supplies the country set, the calling codes, the as-you-type
- * grouping and the per-country length/prefix validation. Country names
- * are not data of ours either: they come from `Intl.DisplayNames` at
- * render time, so they follow the active language without a translation
- * key per region.
+ * here is libphonenumber-js's, not a table of our own: its "mobile"
+ * metadata build supplies the country set, the calling codes, the
+ * as-you-type grouping and the per-country number-plan validation, so
+ * a number of a legal length but an impossible plan is refused rather
+ * than sent. Country names are not data of ours either: they come from
+ * `Intl.DisplayNames` at render time, so they follow the active language
+ * without a translation key per region.
  *
  * The two validation verdicts are deliberately distinct:
  * `incomplete` (a number that is still shorter than any number of that
@@ -23,8 +24,8 @@ import {
   getCountries,
   getCountryCallingCode,
   parsePhoneNumberFromString,
-} from 'libphonenumber-js/min'
-import type { CountryCode } from 'libphonenumber-js/min'
+} from 'libphonenumber-js/mobile'
+import type { CountryCode } from 'libphonenumber-js/mobile'
 
 /** The two ways a typed number can be refused before it is sent. */
 export type PhoneNumberValidation = 'incomplete' | 'invalid'

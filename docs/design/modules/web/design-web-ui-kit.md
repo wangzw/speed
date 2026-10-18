@@ -143,7 +143,7 @@ export const uiKitResources: Readonly<Record<string, ResourceBundle>>
 | `react-hook-form` | peer（必需，^7） | 表单家族的 `FormProvider`/`Controller` 需要树里只有一份 RHF |
 | `zod` | peer（必需，^4） | 表单校验桥 `zodFormResolver` 的 schema 类型；schema 由宿主构造，树里只能有一份 zod |
 | `@speed/tokens`、`@speed/i18n` | 依赖 | 本包映射的 token 树，与全部组件据以渲染的 i18n 实例与绑定 |
-| `libphonenumber-js` | 依赖 | `PhoneNumberField` 与号码助手的逐国家/地区数据：国际区号、随输入分组、长度与前缀校验。取它的 `min` 元数据集（约 84 KB 原文 / 20 KB gzip 的元数据，另加解析与格式化代码）。本包 `sideEffects: false`，不使用该控件的构建会把依赖摇掉 |
+| `libphonenumber-js` | 依赖 | `PhoneNumberField` 与号码助手的逐国家/地区数据：国际区号、随输入分组、号段校验。取它的 `mobile` 元数据集（约 100 KB 原文 / 25 KB gzip 的元数据，另加解析与格式化代码）。选 `mobile` 是因为它带有手机号段模式，长度合法但号段不可能的号码会被拒绝而不是发往短信通道。本包 `sideEffects: false`，不使用该控件的构建会把依赖摇掉 |
 
 框架相邻的 peer 一律是 peer：新加一个框架相邻依赖要在同一提交里给出「单份拷贝」的论证。
 

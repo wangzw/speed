@@ -43,7 +43,7 @@ const CN_E164 = '+8613800000001'
 const US_NATIONAL = '4155552671'
 const US_E164 = '+14155552671'
 const UI_KIT_ZH = uiKitResources['zh-CN'] as {
-  readonly phoneNumber: { readonly incomplete: string }
+  readonly phoneNumber: { readonly incomplete: string; readonly invalid: string }
   readonly form: { readonly required: string }
 }
 
@@ -414,6 +414,32 @@ describe('SMSSignInForm', () => {
     expect(phone).toHaveAttribute('aria-invalid', 'true')
     // The invalid number never reaches the server, so its generic refusal
     // copy is not what the viewer meets.
+    expect(harness.calls).toHaveLength(0)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('refuse a legal-length number with an impossible number plan locally', async () => {
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(),
+    })
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    const user = userEvent.setup()
+    await selectCountry(user, 'CN', '86')
+    const phone = screen.getByLabelText(zhCN.smsSignIn.phoneLabel)
+    // Eleven digits is a possible CN length, but `12` starts no CN number
+    // plan, so the number must be refused rather than sent.
+    await user.type(phone, '12345678901')
+    await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }))
+
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(
+          UI_KIT_ZH.phoneNumber.invalid.replace('{{code}}', '86'),
+        ).length,
+      ).toBeGreaterThan(0),
+    )
+    expect(phone).toHaveAttribute('aria-invalid', 'true')
+    // The impossible number never reaches the server.
     expect(harness.calls).toHaveLength(0)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })

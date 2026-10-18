@@ -163,10 +163,11 @@ describe('PhoneNumberField', () => {
     )
   })
 
-  it('sizes the selector with theme spacing, not raw pixels', () => {
+  it('sizes the selector to its flag-and-code content, not half the row', () => {
     // `sx` turns a numeric `width` into pixels; the selector's width must
-    // go through theme.spacing instead, or the field collapses to 15px at
-    // phone widths. The base rule is the xs width: spacing(15) = 120px.
+    // go through theme.spacing instead, or the field collapses to 12px at
+    // phone widths. The base rule is the xs width: spacing(12) = 96px;
+    // from sm it is spacing(14) = 112px.
     renderWithProviders(<Harness initialCountry="CN" />)
     const root = document.querySelector('.MuiAutocomplete-root')
     expect(root).not.toBeNull()
@@ -177,6 +178,11 @@ describe('PhoneNumberField', () => {
     const widths = ownClasses
       .map((name) => new RegExp(`\\.${name}\\{[^}]*width:(\\d+)px`).exec(css)?.[1])
       .filter((width): width is string => width !== undefined)
-    expect(widths).toContain('120')
+    expect(widths).toContain('96')
+    expect(css).toContain('width:112px')
+    // The floating label keeps its natural width instead of MUI's
+    // ellipsizing cap, so "Country/region" is not truncated at 96px.
+    expect(css).toContain('.MuiInputLabel-root.MuiInputLabel-shrink')
+    expect(css).toContain('max-width:none')
   })
 })

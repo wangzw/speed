@@ -98,6 +98,14 @@ describe('validation and assembly', () => {
     expect(toE164('US', '0000000000')).toBeNull()
   })
 
+  it('calls a legal-length number with an impossible number plan invalid', () => {
+    // Eleven digits is a possible CN length, but no CN number plan starts
+    // 12; a US number typed under CN is likewise impossible there.
+    expect(validatePhoneNumber('CN', '12345678901')).toBe('invalid')
+    expect(validatePhoneNumber('CN', '4155552671')).toBe('invalid')
+    expect(toE164('CN', '12345678901')).toBeNull()
+  })
+
   it('accepts a valid number', () => {
     expect(validatePhoneNumber('CN', '13800000001')).toBeNull()
     expect(validatePhoneNumber('US', '4155552671')).toBeNull()

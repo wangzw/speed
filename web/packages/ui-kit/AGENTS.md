@@ -37,9 +37,11 @@ inline) is enforced over this package's `src` by the workspace's own
 `speed/no-literal-text` ESLint rule.
 
 `PhoneNumberField` is the package's one dependency on country data:
-`libphonenumber-js` (its `min` metadata build, about 84 KB raw / 20 KB
+`libphonenumber-js` (its `mobile` metadata build, about 100 KB raw / 25 KB
 gzipped plus the parser/formatter code) supplies calling codes, the
-as-you-type grouping and the per-country length/prefix validation. It is
+as-you-type grouping and the per-country number-plan validation. The
+`mobile` plan patterns are why: a number of a legal length but an
+impossible plan is refused rather than sent to the SMS channel. It is
 a regular dependency rather than a peer -- no host module or instance is
 shared -- and the package sets `sideEffects: false`, so a bundle that
 does not use the phone control tree-shakes it away. Country names are

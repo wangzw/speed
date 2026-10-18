@@ -727,8 +727,9 @@ const phone = toE164(country, nationalNumber) // null while invalid
 - The component never sends anything: the host owns the two parts and
   decides when to submit.
 
-The country data is **`libphonenumber-js`'s** (`min` metadata build), not
-a table maintained here -- see Dependencies for the bundle cost.
+The country data is **`libphonenumber-js`'s** (`mobile` metadata build),
+not a table maintained here -- see Dependencies for the bundle cost and
+why the `mobile` build.
 
 ### DataTable
 
@@ -1258,7 +1259,7 @@ same rationale documented here.
 | `react-hook-form` | peer (required, ^7) | the form family's `FormProvider`/`Controller` identity needs one RHF in the tree, and `FormLayout`'s `UseFormReturn` must be the host's own type. devDependency 7.87.0 is the tested point (the peer range is the ^7 API family) |
 | `zod` | peer (required, ^4) | the host builds the schema `zodFormResolver` consumes, so the schema instance and this package's `ZodType` must be one class -- one zod in the tree, exactly like `react-hook-form`. devDependency 4.6.7 is the tested point |
 | `@speed/tokens`, `@speed/i18n` | dependencies | the token tree this package maps, and the i18n instance/bindings every component renders through |
-| `libphonenumber-js` | dependency | the per-country phone data behind `PhoneNumberField` and its helpers: calling codes, as-you-type grouping and length/prefix validation. Imported from its `min` metadata build, about 84 KB raw / 20 KB gzipped of metadata plus the parser/formatter code. The package sets `sideEffects: false`, so a bundle that does not use the phone control tree-shakes it away |
+| `libphonenumber-js` | dependency | the per-country phone data behind `PhoneNumberField` and its helpers: calling codes, as-you-type grouping and number-plan validation. Imported from its `mobile` metadata build, about 100 KB raw / 25 KB gzipped of metadata plus the parser/formatter code. That build carries the mobile number-plan patterns, so a number of a legal length but an impossible plan is refused instead of being sent. The package sets `sideEffects: false`, so a bundle that does not use the phone control tree-shakes it away |
 
 ## Deferrals and recorded decisions
 
