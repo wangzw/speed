@@ -24,6 +24,11 @@
   "home": {
     "heading": "开始使用",
     "intro": "本骨架不带业务域；下列是平台开箱即用的能力，先四处看看，再长你自己的业务。",
+    "setupNotice": {
+      "title": "完成账户设置。",
+      "action": "去完成账户设置",
+      "dismiss": "关闭提示"
+    },
     "cards": {
       "account": {
         "title": "账户设置",
@@ -73,6 +78,14 @@
   "colorMode": {
     "toDark": "切换到深色主题",
     "toLight": "切换到浅色主题"
+  },
+  "workspace": {
+    "personal": "个人空间",
+    "failure": {
+      "title": "无法准备你的空间",
+      "description": "准备个人空间时出了问题，请稍后重试。",
+      "retry": "重试"
+    }
   },
   "notFound": {
     "heading": "页面不存在",

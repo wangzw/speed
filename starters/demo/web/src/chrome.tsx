@@ -155,6 +155,18 @@ export function setTenantAliases(aliases: ReadonlyMap<string, string>): void {
 }
 
 /**
+ * Records one tenant's current alias, leaving the rest as they were. The
+ * personal tenant's alias is written here before the frame announces it as
+ * the current tenant: no roster read carries it, so without this record the
+ * request surface would fall back to the placeholder list and announce null.
+ */
+export function setTenantAlias(tenantId: string, alias: string): void {
+  const next = new Map(rosterAliases)
+  next.set(tenantId, alias)
+  rosterAliases = next
+}
+
+/**
  * The value the client announces on every request as X-Tenant: the current
  * tenant's ALIAS, the name the request surface carries -- the roster's current
  * alias when the app has read it, the placeholder's otherwise. This is the
@@ -207,23 +219,42 @@ export function HeaderActions(): ReactElement {
 }
 
 /**
- * The tenant switcher over the host's placeholder tenant list. The
- * current tenant is a host fact (a route change, not a session op), and
- * product-shell places the switcher in the userMenu slot; the console
- * banner, which resolves no tenant, does not render it.
+ * The tenant switcher over the host's tenant list. The current tenant is a
+ * host fact (a route change, not a session op), and product-shell places the
+ * switcher in the userMenu slot; the console banner, which resolves no tenant,
+ * does not render it.
+ *
+ * A personal tenant is the whole list while it is the current tenant: the
+ * tenant record carries no display name, so the label is the host's bilingual
+ * 「个人空间 / Personal workspace」 text rather than the alias. Any other
+ * tenant is the placeholder list, whose rows render their names as they stand.
  */
 export function TenantMenu({
   tenantId,
+  personalTenant,
   onTenantSelect,
 }: {
   /** The id of the tenant the host currently resolves to, or null. */
   readonly tenantId: string | null
+  /** The caller's personal tenant, when one was ensured, or null. */
+  readonly personalTenant: { readonly id: string; readonly alias: string } | null
   /** Reports the tenant the user picked; the host switches its route/state. */
   readonly onTenantSelect: (tenantId: string) => void
 }): ReactElement {
+  const { t } = useTranslation(DEMO_NAMESPACE)
+  const tenants: readonly DemoTenant[] =
+    personalTenant === null
+      ? DEMO_TENANTS
+      : [
+          {
+            id: personalTenant.id,
+            alias: personalTenant.alias,
+            name: t('workspace.personal'),
+          },
+        ]
   return (
     <TenantSwitcher
-      tenants={DEMO_TENANTS}
+      tenants={tenants}
       currentTenantId={tenantId}
       onSelect={onTenantSelect}
     />

@@ -47,9 +47,11 @@ export const ANONYMOUS_SNAPSHOT: AuthSnapshot = {
 /**
  * The authenticated snapshot with the given permission lists attached. Each
  * domain defaults to null -- an unknown set, the state a host that attaches
- * none leaves the session in. The feature state defaults to the whole platform
- * vocabulary (every gated surface present); a suite that needs a narrowed
- * document, a pending read or a failed one passes its own.
+ * none leaves the session in. The feature state defaults to the platform
+ * vocabulary a baseline deployment serves: every gated surface present, less
+ * workspace.personal, whose host switch is off by default. A suite that needs
+ * a narrowed document, a pending read, a failed one, or the personal tenant
+ * passes its own.
  */
 export function authenticatedSnapshot(options: {
   readonly tenant?: readonly string[] | null
@@ -76,12 +78,16 @@ export function authenticatedSnapshot(options: {
       tenant: options.tenant ?? null,
       system: options.system ?? null,
     },
-    // The suite's session serves the whole platform vocabulary unless the
-    // test narrows it, so the feature-gated pages and controls are present
-    // by default.
+    // The suite's session serves the platform vocabulary a baseline
+    // deployment serves unless the test narrows it, so the feature-gated
+    // pages and controls are present by default. The personal tenant is the
+    // exception: its switch defaults to off, and the host asks for it by
+    // naming the feature.
     features: options.features ?? {
       state: 'ready',
-      names: new Set(FEATURE_NAMES),
+      names: new Set(
+        FEATURE_NAMES.filter((name) => name !== 'workspace.personal'),
+      ),
     },
   }
 }

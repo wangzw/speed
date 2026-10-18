@@ -23,6 +23,7 @@ import {
   PROFILE_GET,
   authenticatedCompletion,
   completeFlow,
+  FEATURES_GET,
   makeHarness,
   methodList,
   openFlow,
@@ -175,5 +176,68 @@ describe('the sign-in surface', () => {
     expect(
       await screen.findByText(demoEnUS.accountSetup.password.loginNameRequired),
     ).toBeInTheDocument()
+  })
+
+  it('lands a registration in the tenant area when the personal tenant is in force', async () => {
+    const harness = makeHarness({
+      // The deployment serves workspace.personal: the registration goes to
+      // the tenant home, where the one-time setup notice links on to the
+      // setup page.
+      [FEATURES_GET]: () => ({ features: ['workspace.personal'] }),
+      [LOGIN_METHODS]: () =>
+        methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        ),
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [
+              { name: 'code', kind: 'code', required: true, secret: true },
+            ],
+          },
+        }),
+      [LOGIN_ANSWER]: (call) =>
+        (call.options?.body as { step?: string }).step === 'complete'
+          ? authenticatedCompletion()
+          : completeFlow(2),
+      [PROFILE_GET]: () => principal(),
+    })
+    renderDemoApp({ session: harness.session })
+
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', { name: authEn.mode.registerEntry }),
+    )
+    await user.type(
+      screen.getByLabelText(authEn.smsSignIn.phoneLabel),
+      '+14155550123',
+    )
+    await user.click(
+      screen.getByRole('button', { name: authEn.smsSignIn.sendCode }),
+    )
+    await user.type(
+      await screen.findByLabelText(authEn.smsSignIn.codeLabel),
+      '123456',
+    )
+    const form = screen
+      .getByLabelText(authEn.smsSignIn.codeLabel)
+      .closest('form') as HTMLFormElement
+    await user.click(
+      within(form).getByRole('button', { name: authEn.smsSignIn.submit }),
+    )
+
+    // The registration landed on the tenant home rather than the setup page,
+    // and the home page offers the one-time notice into the setup flow.
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    expect(
+      await screen.findByText(demoEnUS.home.setupNotice.title),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: demoEnUS.home.setupNotice.action }),
+    ).toHaveAttribute('href', ACCOUNT_SETUP_PATH)
   })
 })

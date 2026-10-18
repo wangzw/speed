@@ -22,25 +22,29 @@
  * page never reloads (the same shape the shell's navigation entries take).
  */
 
+import { useEffect, useState } from 'react'
 import type { MouseEvent, ReactElement } from 'react'
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
+import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
 import { featurePresence, useFeatureState } from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
 import {
   presentDeclarations,
   useHasRoute,
-  useNavigate,
 } from '@speed/route-kit'
 import { PageHeader } from '@speed/ui-kit'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   consoleShellRoutes,
   useConsoleTarget,
 } from '../console-routes.js'
 import {
   ACCOUNT_PATH,
+  ACCOUNT_SETUP_PATH,
   NOTIFICATIONS_PATH,
   OBJECTS_PATH,
 } from '../paths.js'
@@ -79,6 +83,22 @@ const START_CARDS: readonly StartCard[] = [
 /** The app's starting page: the platform's capabilities as a card grid. */
 export function HomePage(): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
+  const location = useLocation()
+  const navigate = useNavigate()
+  // A registration completed through the SMS sign-in lands here with a
+  // one-shot router-state flag (src/pages/sign-in-view.tsx). The notice is
+  // local to this visit: clearing the history entry's state means a reload or
+  // a later return does not show it again, and dismissing it drops it from
+  // the page.
+  const [setupNotice, setSetupNotice] = useState(false)
+  useEffect(() => {
+    const state = location.state as { readonly registration?: unknown } | null
+    if (state?.registration !== 'sms') {
+      return
+    }
+    setSetupNotice(true)
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.state, location.pathname, navigate])
   return (
     <Box
       component="section"
@@ -95,6 +115,27 @@ export function HomePage(): ReactElement {
       }}
     >
       <PageHeader title={t('home.heading')} description={t('home.intro')} />
+      {setupNotice ? (
+        <Alert
+          severity="info"
+          onClose={() => setSetupNotice(false)}
+          closeText={t('home.setupNotice.dismiss')}
+        >
+          <Typography variant="body2">
+            {t('home.setupNotice.title')}
+          </Typography>
+          <Link
+            href={ACCOUNT_SETUP_PATH}
+            underline="hover"
+            onClick={(event) => {
+              event.preventDefault()
+              navigate(ACCOUNT_SETUP_PATH)
+            }}
+          >
+            {t('home.setupNotice.action')}
+          </Link>
+        </Alert>
+      ) : null}
       <Box
         sx={{
           display: 'grid',

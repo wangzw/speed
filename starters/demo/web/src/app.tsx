@@ -70,7 +70,7 @@ import {
 import type { RouteContext, RoutePresence } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { tenantAdminTenantsList } from './app-api/index.js'
+import { tenantAdminTenantsList, workspacePersonalEnsure } from './app-api/index.js'
 import { useAppServices } from './app-services.js'
 import {
   AppBrand,
@@ -78,6 +78,7 @@ import {
   getCurrentTenantId,
   HeaderActions,
   setCurrentTenantId,
+  setTenantAlias,
   setTenantAliases,
   TenantMenu,
   UserMenu,
@@ -305,6 +306,10 @@ function TenantFrame({
   const inboxServed = useFeature('notification.inbox')
   const streamServed = useFeature('notification.stream')
   const rosterServed = useFeature('tenant.admin')
+  // The host's personal-tenant policy: when this feature is in force, an
+  // account with no current tenant is given one by the server's ensure, and a
+  // registration lands in the tenant area with it (src/pages/sign-in-view.tsx).
+  const personalServed = useFeature('workspace.personal')
   const snapshot = useAuthState()
   const authenticated = snapshot.state === 'authenticated'
   // Whose identity this session acts as right now. A start or end swaps it,
@@ -352,6 +357,23 @@ function TenantFrame({
     setCurrentTenantId(id)
     setTenantIdState(id)
   }, [])
+  // The personal tenant the server ensured, held for the switcher's label: the
+  // tenant record carries no display name, so the host renders the bilingual
+  // 「个人空间 / Personal workspace」 text from it (src/chrome.tsx).
+  const [personalTenant, setPersonalTenant] = useState<{
+    readonly id: string
+    readonly alias: string
+  } | null>(null)
+  // Whether the roster read has settled, so the ensure below never races it:
+  // an account that already has a current tenant must not trigger.
+  const [rosterSettled, setRosterSettled] = useState(false)
+  // The ensure's retryable failure (a 503, or any failure that is not the
+  // 409 already-member): the tenant area then renders a retry instead of its
+  // content.
+  const [personalFailure, setPersonalFailure] = useState(false)
+  // A retry tick: the failure view's control bumps it, which re-runs the
+  // ensure effect.
+  const [personalRetry, setPersonalRetry] = useState(0)
   // The identity-change gap. Ending an impersonation re-decides the current
   // tenant from the roster, but until that roster read lands the current
   // tenant keeps the ended grant's value (when the status read answered a
@@ -391,6 +413,7 @@ function TenantFrame({
   // queries gate on the tenant being known (TenantProvider below).
   useEffect(() => {
     if (!authenticated) {
+      setRosterSettled(false)
       return
     }
     if (impersonating) {
@@ -403,21 +426,25 @@ function TenantFrame({
       // from the placeholder otherwise (the known limitation this shares
       // with a member who cannot read the roster).
       setTenantId(grant?.tenant ?? null)
+      setRosterSettled(true)
       return
     }
     if (!featuresReady) {
       // A pending or failed document never stands in for "tenant.admin
       // absent": the current tenant stays unknown.
       setTenantId(null)
+      setRosterSettled(false)
       setIdentitySettling(false)
       return
     }
     if (!rosterServed) {
       setTenantId(DEFAULT_TENANT_ID)
+      setRosterSettled(true)
       setIdentitySettling(false)
       return
     }
     let cancelled = false
+    setRosterSettled(false)
     // Deferred into a promise: the generated operation reaches the api-sdk
     // request seam, which throws synchronously when no request function is
     // bound (a suite that mounts the app without the assembly). Deferring
@@ -434,13 +461,19 @@ function TenantFrame({
         )
         const first = answer.tenants.find((tenant) => tenant.status === 'active')
         setTenantId(first?.id ?? DEFAULT_TENANT_ID)
+        setRosterSettled(true)
         setIdentitySettling(false)
       })
       .catch(() => {
         if (cancelled) {
           return
         }
-        setTenantId(DEFAULT_TENANT_ID)
+        // A refused roster read (an ordinary member) leaves no current
+        // tenant while the personal tenant is served, so the ensure below
+        // runs; without it the frame keeps the placeholder fallback it has
+        // always had.
+        setTenantId(personalServed ? null : DEFAULT_TENANT_ID)
+        setRosterSettled(true)
         setIdentitySettling(false)
       })
     return () => {
@@ -453,9 +486,81 @@ function TenantFrame({
     authenticated,
     featuresReady,
     rosterServed,
+    personalServed,
     impersonating,
     principalId,
     grant?.tenant,
+    setTenantId,
+  ])
+
+  // Reset the personal tenant the moment the identity it belongs to changes:
+  // a started or ended impersonation swaps the effective account, and a
+  // tenant the previous identity ensured must not label the new one.
+  useEffect(() => {
+    setPersonalTenant(null)
+    setPersonalFailure(false)
+  }, [principalId, generation, impersonating])
+
+  // The personal ensure. It runs only when every eligibility fact the server
+  // will check holds here too: an authenticated session that is not
+  // impersonating, a settled feature document that serves workspace.personal,
+  // a settled roster read, and no current tenant. An account that already has
+  // one -- platform staff whose roster read answered, or a viewer who picked
+  // one -- never calls it.
+  //
+  // The server decides the answer: 200 sets the personal tenant as the
+  // current one (the alias is recorded before it is announced, because no
+  // roster read carries it); 409 already-member leaves the account with no
+  // personal tenant and the frame falls back to the placeholder, whose
+  // tenant-scoped reads the admission layer refuses with the 「无法访问当前
+  // 组织」 state; every other failure is the tenant area's retryable failure.
+  useEffect(() => {
+    if (!authenticated || impersonating || !featuresReady || !personalServed) {
+      return undefined
+    }
+    if (!rosterSettled || tenantId !== null) {
+      return undefined
+    }
+    let cancelled = false
+    setPersonalFailure(false)
+    void Promise.resolve()
+      .then(() => workspacePersonalEnsure())
+      .then((answer) => {
+        if (cancelled) {
+          return
+        }
+        setTenantAlias(answer.tenant.id, answer.tenant.alias)
+        setPersonalTenant({ id: answer.tenant.id, alias: answer.tenant.alias })
+        setTenantId(answer.tenant.id)
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return
+        }
+        if (errorStatus(error) === 409) {
+          // already-member: the account belongs to another tenant. It gets no
+          // personal one, and the placeholder tenant is what makes its reads
+          // fire and render the admission refusal.
+          setPersonalTenant(null)
+          setTenantId(DEFAULT_TENANT_ID)
+          setIdentitySettling(false)
+          return
+        }
+        setPersonalFailure(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [
+    authenticated,
+    impersonating,
+    featuresReady,
+    personalServed,
+    rosterSettled,
+    tenantId,
+    principalId,
+    generation,
+    personalRetry,
     setTenantId,
   ])
   const items = useNavItems()
@@ -552,7 +657,11 @@ function TenantFrame({
           userMenu={
             <>
               {impersonating || identitySettling ? null : (
-                <TenantMenu tenantId={tenantId} onTenantSelect={setTenantId} />
+                <TenantMenu
+                  tenantId={tenantId}
+                  personalTenant={personalTenant}
+                  onTenantSelect={setTenantId}
+                />
               )}
               {/* The chip sits ahead of the account menu: while an
                   impersonation is in force it is the persistent visible
@@ -564,7 +673,15 @@ function TenantFrame({
           }
           signIn={<SignInView />}
         >
-          <Box sx={{ p: 3 }}>{children}</Box>
+          <Box sx={{ p: 3 }}>
+            {personalFailure && tenantId === null ? (
+              <TenantProvisionFailure
+                onRetry={() => setPersonalRetry((current) => current + 1)}
+              />
+            ) : (
+              children
+            )}
+          </Box>
         </ProductShell>
         </ImpersonationNoticeProvider>
       </NotificationStreamProvider>
@@ -771,6 +888,47 @@ function ConsoleAccessPending(): ReactElement {
       <CircularProgress aria-label={t('console.accessPending')} />
     </Box>
   )
+}
+
+/**
+ * The tenant area's retryable failure while the personal tenant could not be
+ * ensured (a 503, or any answer that is not the 409 already-member). It takes
+ * the content's place because no tenant is current: a page's tenant-scoped
+ * reads cannot answer, and retrying the ensure is the one action that can
+ * settle them.
+ */
+function TenantProvisionFailure({
+  onRetry,
+}: {
+  readonly onRetry: () => void
+}): ReactElement {
+  const { t } = useTranslation(DEMO_NAMESPACE)
+  return (
+    <Box
+      component="section"
+      role="alert"
+      sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 640 }}
+    >
+      <Typography variant="h5" component="h2">
+        {t('workspace.failure.title')}
+      </Typography>
+      <Typography variant="body1">
+        {t('workspace.failure.description')}
+      </Typography>
+      <Box>
+        <Button onClick={onRetry}>{t('workspace.failure.retry')}</Button>
+      </Box>
+    </Box>
+  )
+}
+
+/** The HTTP status of a failed generated call, when it carries one. */
+function errorStatus(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null) {
+    return undefined
+  }
+  const status = (error as { readonly status?: unknown }).status
+  return typeof status === 'number' ? status : undefined
 }
 
 /** The view a feature-gated path renders while the host's presence

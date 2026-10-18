@@ -1,0 +1,255 @@
+/**
+ * The personal-tenant trigger in the tenant frame.
+ *
+ * The server decides the answer; the host's job is to ask only when every
+ * eligibility fact the server checks holds -- authenticated, not impersonating,
+ * the workspace.personal feature in force, a settled roster read that left no
+ * current tenant -- and to render what each answer means: the personal tenant
+ * as the current one, the admission refusal for the 409 already-member, and a
+ * retryable failure for everything else. The generated ensure operation runs
+ * through the api-sdk runtime seam, so each case binds a scripted request
+ * function and observes the calls it makes.
+ */
+
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it } from 'vitest'
+import type { RequestFn, RequestOptions } from '@speed/api-client'
+import { bindRequestFn } from '@speed/api-sdk/runtime'
+import demoEnUS from './locales/en-US.json' with { type: 'json' }
+import demoZhCN from './locales/zh-CN.json' with { type: 'json' }
+import {
+  DEFAULT_TENANT_ID,
+  getCurrentTenantAlias,
+  getCurrentTenantId,
+  setCurrentTenantId,
+  setTenantAliases,
+} from './chrome.js'
+import { renderDemoApp } from './test-utils/render.js'
+import {
+  authenticatedSnapshot,
+  createTestSession,
+  readyFeatures,
+} from './test-utils/session.js'
+
+const PERSONAL_ID = 'personal-account-1'
+const ROSTER_PATH = '/tenant/admin/tenants'
+const ENSURE_PATH = '/workspace/personal'
+
+const PERSONAL_FEATURES = ['tenant.admin', 'workspace.personal'] as const
+
+/** Binds a scripted request function: the case-specific answers are plain
+ * values, and the seam's generic result type is the caller's contract. */
+function bindScript(
+  fn: (path: string, call: RequestOptions) => Promise<unknown>,
+): void {
+  bindRequestFn(fn as unknown as RequestFn)
+}
+
+/** A scripted request function: the roster read refuses like a member's, and
+ * the ensure answers as the case asks. Every other call fails loudly. */
+function script(options: {
+  readonly roster?: 'refused' | { readonly tenants: readonly unknown[] }
+  readonly ensure?: 'success' | 'conflict' | 'unavailable'
+  readonly ensureCalls?: string[]
+  readonly calls?: string[]
+}): void {
+  const ensure = options.ensure ?? 'success'
+  bindScript(async (path, call) => {
+    options.calls?.push(`${call.method ?? 'GET'} ${path}`)
+    if ((call.method ?? 'GET') === 'GET' && path === ROSTER_PATH) {
+      if (options.roster === 'refused') {
+        throw Object.assign(new Error('the roster read was refused'), {
+          status: 403,
+        })
+      }
+      return options.roster ?? { tenants: [] }
+    }
+    if (call.method === 'POST' && path === ENSURE_PATH) {
+      options.ensureCalls?.push(ENSURE_PATH)
+      if (ensure === 'conflict') {
+        throw Object.assign(new Error('already a member'), { status: 409 })
+      }
+      if (ensure === 'unavailable') {
+        throw Object.assign(new Error('the store is unavailable'), {
+          status: 503,
+        })
+      }
+      return {
+        tenant: { id: PERSONAL_ID, alias: PERSONAL_ID, kind: 'personal' },
+        created: true,
+      }
+    }
+    throw new Error(`unexpected ${call.method ?? 'GET'} ${path}`)
+  })
+}
+
+beforeEach(() => {
+  setCurrentTenantId(null)
+  setTenantAliases(new Map())
+})
+
+describe('the tenant frame and the personal tenant', () => {
+  it('ensures a personal tenant when no current tenant is left, and labels it', async () => {
+    const ensureCalls: string[] = []
+    script({ roster: 'refused', ensure: 'success', ensureCalls })
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
+      ),
+    })
+
+    expect(
+      await screen.findByRole('button', {
+        name: demoEnUS.workspace.personal,
+      }),
+    ).toBeInTheDocument()
+    expect(ensureCalls).toEqual([ENSURE_PATH])
+    expect(getCurrentTenantId()).toBe(PERSONAL_ID)
+    expect(getCurrentTenantAlias()).toBe(PERSONAL_ID)
+  })
+
+  it('renders the personal label in the interface language', async () => {
+    script({ roster: 'refused' })
+    renderDemoApp({
+      language: 'zh-CN',
+      session: createTestSession(
+        authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
+      ),
+    })
+
+    expect(
+      await screen.findByRole('button', { name: demoZhCN.workspace.personal }),
+    ).toBeInTheDocument()
+  })
+
+  it('does not call the ensure when the feature is not in force', async () => {
+    const calls: string[] = []
+    script({ roster: 'refused', calls })
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ features: readyFeatures('tenant.admin') }),
+      ),
+    })
+
+    await waitFor(() => expect(getCurrentTenantId()).toBe(DEFAULT_TENANT_ID))
+    expect(calls).not.toContain(`POST ${ENSURE_PATH}`)
+  })
+
+  it('does not call the ensure when a current tenant is settled', async () => {
+    const calls: string[] = []
+    script({
+      roster: {
+        tenants: [{ id: 'acme', alias: 'acme', status: 'active' }],
+      },
+      calls,
+    })
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
+      ),
+    })
+
+    await waitFor(() => expect(getCurrentTenantId()).toBe('acme'))
+    expect(calls).not.toContain(`POST ${ENSURE_PATH}`)
+  })
+
+  it('does not call the ensure while impersonating', async () => {
+    const calls: string[] = []
+    bindScript(async (path, call) => {
+      calls.push(`${call.method ?? 'GET'} ${path}`)
+      if ((call.method ?? 'GET') === 'GET' && path === '/auth/impersonation') {
+        return {
+          grant: {
+            id: 'grant-1',
+            target: 'account-1',
+            tenant: 'acme',
+            ends_at: '2999-01-01T00:00:00Z',
+          },
+        }
+      }
+      if ((call.method ?? 'GET') === 'GET' && path === ROSTER_PATH) {
+        throw Object.assign(new Error('the roster read was refused'), {
+          status: 403,
+        })
+      }
+      throw new Error(`unexpected ${call.method ?? 'GET'} ${path}`)
+    })
+    const snapshot = authenticatedSnapshot({
+      features: readyFeatures(...PERSONAL_FEATURES),
+    })
+    renderDemoApp({
+      session: createTestSession({ ...snapshot, impersonating: true }),
+    })
+
+    await waitFor(() =>
+      expect(calls).toContain('GET /auth/impersonation'),
+    )
+    expect(calls).not.toContain(`POST ${ENSURE_PATH}`)
+  })
+
+  it('renders a retryable failure on a 503, and the retry asks again', async () => {
+    const ensureCalls: string[] = []
+    let behavior: 'unavailable' | 'success' = 'unavailable'
+    bindScript(async (path, call) => {
+      if ((call.method ?? 'GET') === 'GET' && path === ROSTER_PATH) {
+        throw Object.assign(new Error('the roster read was refused'), {
+          status: 403,
+        })
+      }
+      if (call.method === 'POST' && path === ENSURE_PATH) {
+        ensureCalls.push(ENSURE_PATH)
+        if (behavior === 'unavailable') {
+          throw Object.assign(new Error('the store is unavailable'), {
+            status: 503,
+          })
+        }
+        return {
+          tenant: { id: PERSONAL_ID, alias: PERSONAL_ID, kind: 'personal' },
+          created: true,
+        }
+      }
+      throw new Error(`unexpected ${call.method ?? 'GET'} ${path}`)
+    })
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
+      ),
+    })
+
+    const failure = await screen.findByRole('alert')
+    expect(failure).toHaveTextContent(demoEnUS.workspace.failure.title)
+    expect(ensureCalls).toHaveLength(1)
+    expect(getCurrentTenantId()).toBeNull()
+
+    behavior = 'success'
+    fireEvent.click(
+      screen.getByRole('button', { name: demoEnUS.workspace.failure.retry }),
+    )
+    expect(
+      await screen.findByRole('button', { name: demoEnUS.workspace.personal }),
+    ).toBeInTheDocument()
+    expect(ensureCalls).toHaveLength(2)
+    expect(getCurrentTenantId()).toBe(PERSONAL_ID)
+  })
+
+  it('keeps no personal tenant on the 409, falling back to the placeholder', async () => {
+    const ensureCalls: string[] = []
+    script({ roster: 'refused', ensure: 'conflict', ensureCalls })
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
+      ),
+    })
+
+    await waitFor(() => expect(getCurrentTenantId()).toBe(DEFAULT_TENANT_ID))
+    expect(ensureCalls).toHaveLength(1)
+    // No personal tenant was set, and no retryable failure is shown: the
+    // tenant-scoped reads fire under the placeholder and render the admission
+    // layer's refusal (「无法访问当前组织」), which is the tenant area's state
+    // for an account without a readable roster.
+    expect(
+      screen.queryByRole('button', { name: demoEnUS.workspace.personal }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})

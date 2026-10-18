@@ -21,10 +21,13 @@
  *
  * Registration folds into the sign-in flow, so a completed registration is
  * not a page of its own: the screen reports the mode and channel it
- * completed on, and a registration that went through SMS (the only channel
- * that opens an account here) lands on the account setup page to add a
- * username and then a password. Every other outcome leaves the viewer in
- * the app the session flip already opened.
+ * completed on. With the personal-tenant feature in force, a registration
+ * that went through SMS (the only channel that opens an account here) lands
+ * on the tenant area's home, where the home page offers a one-time
+ * 「完成账户设置」 notice; without it there is no tenant area to land in, so
+ * the registration continues on the account setup page to add a username and
+ * then a password. Every other outcome leaves the viewer in the app the
+ * session flip already opened.
  */
 
 import Box from '@mui/material/Box'
@@ -33,12 +36,13 @@ import Typography from '@mui/material/Typography'
 import { SignInScreen } from '@speed/auth-ui'
 import type { SignInContext } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
-import { useNavigate } from '@speed/route-kit'
 import type { ReactElement } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAppServices } from '../app-services.js'
 import { ACCOUNT_SETUP_PATH, AUTH_CALLBACK_PATH } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 import { navigateToAuthorizationUrl } from '../sign-in-navigation.js'
+import { TENANT_HOME_PATH } from './not-found-page.js'
 
 /** The social / enterprise block this host hands the screen: the provider's
  * round trip comes back to the app's callback route, and the authorization
@@ -55,13 +59,30 @@ export function SignInView(): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
   const navigate = useNavigate()
   // A registration completed through SMS: the account exists but has no
-  // login name or password yet, so the setup page finishes it. Everything
-  // else -- an ordinary sign-in, any other channel -- enters the app as the
-  // session flip already does.
+  // login name or password yet, so the host carries it on. Everything else --
+  // an ordinary sign-in, any other channel -- enters the app as the session
+  // flip already does.
+  //
+  // The feature is read from the session snapshot at completion time, not
+  // from a render hook: the flow's completion commits the authenticated
+  // snapshot and the feature document it read together, and this callback
+  // runs before React re-renders, so a render-time value would still be the
+  // anonymous one.
   const onSignedIn = (context: SignInContext): void => {
-    if (context.mode === 'register' && context.channel === 'sms') {
-      navigate(ACCOUNT_SETUP_PATH)
+    if (context.mode !== 'register' || context.channel !== 'sms') {
+      return
     }
+    const features = session.getSnapshot().features
+    const personalServed =
+      features.state === 'ready' && features.names.has('workspace.personal')
+    if (personalServed) {
+      // The flag is router state, not a query parameter and not storage: it
+      // is true for this navigation only, and the home page clears it as it
+      // reads it.
+      navigate(TENANT_HOME_PATH, { state: { registration: 'sms' } })
+      return
+    }
+    navigate(ACCOUNT_SETUP_PATH)
   }
   return (
     <Box
