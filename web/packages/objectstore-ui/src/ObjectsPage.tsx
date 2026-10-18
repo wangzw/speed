@@ -146,10 +146,13 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
         // The module normalized the name once, so it is safe as a text
         // node; the full value lives in the details dialog, and the cell
         // stays one line with an ellipsis rather than widening the table.
+        // The cap answers to the table's container: the sm tier has only
+        // the name, state and actions columns to spend its width on, and a
+        // 240px name there pushes the row actions past the edge.
         <Typography
           variant="body2"
           noWrap
-          sx={{ maxWidth: 240 }}
+          sx={{ maxWidth: { '@': 160, '@md': 200 } }}
           color={object.name === '' ? 'text.secondary' : undefined}
         >
           {object.name === '' ? t('list.unnamed') : object.name}
@@ -196,7 +199,17 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
       priority: 'low',
       cellWrap: 'nowrap',
       cell: (object) => (
-        <Typography variant="body2">{object.mime}</Typography>
+        // A registered MIME type can run past 60 characters; the cell
+        // truncates instead of widening the table, and the hover title
+        // carries the complete value (the details dialog shows it too).
+        <Typography
+          variant="body2"
+          noWrap
+          title={object.mime}
+          sx={{ maxWidth: 160 }}
+        >
+          {object.mime}
+        </Typography>
       ),
     },
     {

@@ -68,15 +68,15 @@ function sequence(calls: readonly RecordedRequest[]): string[] {
 }
 
 /**
- * The `display` value each `@container (min-width: Npx)` rule gives
- * `element`, keyed by N. Column priority is pure CSS emitted into the
- * stylesheet, and jsdom evaluates no container query, so the declared
- * tier can only be read from the generated rules -- matched against the
+ * The declarations each `@container (min-width: Npx)` rule gives
+ * `element`, keyed by N. Container-keyed styling is pure CSS emitted into
+ * the stylesheet, and jsdom evaluates no container query, so the declared
+ * value can only be read from the generated rules -- matched against the
  * element so a sibling column's rule is not mistaken for this one.
  */
-function containerDisplayOf(element: Element): Map<number, string> {
+function containerDeclarationsOf(element: Element): Map<number, string> {
   const css = emittedStyleText()
-  const displays = new Map<number, string>()
+  const declarations = new Map<number, string>()
   const atRule = /@container \(min-width:(\d+)px\)\{/g
   let match: RegExpExecArray | null
   while ((match = atRule.exec(css)) !== null) {
@@ -101,11 +101,18 @@ function containerDisplayOf(element: Element): Map<number, string> {
       } catch {
         continue
       }
-      const display = /display:([a-z-]+)/.exec(inner[2] ?? '')
-      if (display?.[1] !== undefined) {
-        displays.set(Number(match[1]), display[1])
-      }
+      declarations.set(Number(match[1]), inner[2] ?? '')
     }
+  }
+  return declarations
+}
+
+/** The `display` value each container rule gives `element`, keyed by N. */
+function containerDisplayOf(element: Element): Map<number, string> {
+  const displays = new Map<number, string>()
+  for (const [width, declarations] of containerDeclarationsOf(element)) {
+    const display = /display:([a-z-]+)/.exec(declarations)
+    if (display?.[1] !== undefined) displays.set(width, display[1])
   }
   return displays
 }
@@ -207,6 +214,27 @@ describe('ObjectsPage', () => {
         name: `Copy ${id}`,
       }),
     ).toBeInTheDocument()
+  })
+
+  it('caps the name and content-type widths by the table container', async () => {
+    const mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    const name = 'quarterly-financial-report-2026-q3-consolidated.xlsx'
+    makeObjectStoreRig(() =>
+      jsonResponse(200, {
+        objects: [{ ...OBJECT_A, name, mime }],
+        next_cursor: '',
+      }),
+    )
+    renderWithProviders(<ObjectsPage />, { language: 'en-US' })
+
+    const nameText = await screen.findByText(name)
+    const nameDeclarations = containerDeclarationsOf(nameText)
+    expect(nameDeclarations.get(0)).toContain('max-width:160px')
+    expect(nameDeclarations.get(900)).toContain('max-width:200px')
+
+    const mimeText = screen.getByText(mime)
+    expect(mimeText).toHaveAttribute('title', mime)
+    expect(mimeText).toHaveStyle({ maxWidth: '160px' })
   })
 
   it('renders the unnamed copy when an object has no name', async () => {
