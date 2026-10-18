@@ -144,11 +144,15 @@ export function PhoneNumberField({
       : validatePhoneNumber(country, nationalNumber)
 
   const messageKey =
-    validation === 'incomplete'
-      ? 'phoneNumber.incomplete'
-      : validation === 'invalid'
-        ? 'phoneNumber.invalid'
-        : null
+    // A draft still names no country, so naming the selected one would
+    // point the viewer at a country the value does not belong to.
+    internationalDraft !== null
+      ? 'phoneNumber.incompleteInternational'
+      : validation === 'incomplete'
+        ? 'phoneNumber.incomplete'
+        : validation === 'invalid'
+          ? 'phoneNumber.invalid'
+          : null
   const errorText =
     messageKey !== null
       ? touched || showValidationError
@@ -166,6 +170,10 @@ export function PhoneNumberField({
       const parts = parseInternationalPhoneNumber(raw)
       if (parts === null) {
         setInternationalDraft(raw)
+        // The draft replaces the number on screen, so the value the host
+        // holds must go with it: otherwise a submit would send the
+        // previous number while the viewer reads the new, unfinished one.
+        onNationalNumberChange('')
         return
       }
       setInternationalDraft(null)

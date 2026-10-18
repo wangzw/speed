@@ -707,13 +707,16 @@ const phone = toE164(country, nationalNumber) // null while invalid
   once it names a country the selector switches and the local part is
   filled, so a pasted E.164 number needs no country pick first. Until it
   is long enough to name one, the raw text stays on screen, so a
-  `+`-number typed by hand does not lose its leading sign.
+  `+`-number typed by hand does not lose its leading sign. While such a
+  draft is on screen the host's number is emptied with it, so a submit
+  cannot send the number the draft replaced.
 - **Validation** is per country and names the calling code:
   `phoneNumber.incomplete` ("The number is incomplete under +86.") for a
   number shorter than the country allows, `phoneNumber.invalid` for an
-  implausible one, and `form.required` when a submit arrived empty.
-  `showValidationError` gates the message so a viewer is not scolded
-  mid-typing; leaving the field also reveals it.
+  implausible one, `phoneNumber.incompleteInternational` while the draft
+  names no country yet (so no code is named), and `form.required` when a
+  submit arrived empty. `showValidationError` gates the message so a
+  viewer is not scolded mid-typing; leaving the field also reveals it.
 - **`toE164(country, nationalNumber)`** is the one place the parts are
   joined: the E.164 string, or `null` while they do not make a valid
   number. `validatePhoneNumber`, `formatNationalPhoneNumber`,

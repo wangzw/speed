@@ -8,7 +8,7 @@
 
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { emittedStyleText } from '@speed/test-utils/emitted-css'
 import { renderWithProviders } from '../../test-utils/render.js'
@@ -99,6 +99,37 @@ describe('PhoneNumberField', () => {
     // Too short to name a country yet: the raw value stays on screen
     // rather than being reduced to digits.
     expect(number).toHaveValue('+86')
+  })
+
+  it('clears the host number while a leading + names no country yet', () => {
+    // The draft replaces the number on screen; if the host kept the old
+    // number, a submit would send it while the viewer reads the new one.
+    function Tracked() {
+      const [nationalNumber, setNationalNumber] = useState('4155552671')
+      return (
+        <>
+          <PhoneNumberField
+            country="US"
+            nationalNumber={nationalNumber}
+            onCountryChange={() => undefined}
+            onNationalNumberChange={setNationalNumber}
+            countryLabel={COUNTRY_LABEL}
+            numberLabel={NUMBER_LABEL}
+            showValidationError
+          />
+          <output data-testid="host-number">{nationalNumber}</output>
+        </>
+      )
+    }
+    renderWithProviders(<Tracked />)
+    fireEvent.change(screen.getByLabelText(NUMBER_LABEL), {
+      target: { value: '+' },
+    })
+    expect(screen.getByTestId('host-number').textContent).toBe('')
+    // The draft names no country, so the message cannot name one either.
+    expect(
+      screen.getByText(zhCN.phoneNumber.incompleteInternational),
+    ).toBeInTheDocument()
   })
 
   it('names the calling code in an incomplete number error', async () => {

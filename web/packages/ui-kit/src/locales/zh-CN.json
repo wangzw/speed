@@ -41,7 +41,8 @@
   },
   "phoneNumber": {
     "incomplete": "该号码在 +{{code}} 下位数不完整。",
-    "invalid": "该号码在 +{{code}} 下无效。"
+    "invalid": "该号码在 +{{code}} 下无效。",
+    "incompleteInternational": "请输入完整的国际号码。"
   },
   "dataTable": {
     "loading": "加载中",

@@ -41,7 +41,8 @@
   },
   "phoneNumber": {
     "incomplete": "The number is incomplete under +{{code}}.",
-    "invalid": "The number is not valid under +{{code}}."
+    "invalid": "The number is not valid under +{{code}}.",
+    "incompleteInternational": "Enter the complete international number."
   },
   "dataTable": {
     "loading": "Loading",
