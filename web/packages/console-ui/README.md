@@ -114,7 +114,7 @@ feature-gated control without importing the host's session package.
 | `ConsoleShell.tsx` | `ConsoleShell`, `ConsoleShellProps` |
 | `route.ts` | `ConsoleRoute`, `ConsoleRouteContext`, `ConsoleRouteParams`, `ConsoleRouteTable`, `ConsoleNavGroup` |
 | `nav-groups.tsx` | `consoleNavGroups` |
-| `operations.tsx` | `ConsoleOperations`, `consoleOperations`, `ConsoleOperationsProvider`, `useConsoleOperations`, `settingKeyRest`, the view row types, the write input types |
+| `operations.tsx` | `ConsoleOperations`, `consoleOperations`, `ConsoleOperationsProvider`, `useConsoleOperations`, `ConsoleAuditRecordsOptions`, `settingKeyRest`, the view row types, the write input types |
 | `routes.tsx` | `dashboardAdminRoutes`, `tenantAdminRoutes`, `accountsAdminRoutes`, `sessionsAdminRoutes`, `impersonationsAdminRoutes`, `permissionsAdminRoutes`, `invitationsAdminRoutes`, `ssoAdminRoutes`, `settingsAdminRoutes`, `smsAdminRoutes`, `auditAdminRoutes`, `consoleRoutes` |
 | `DashboardPage.tsx` | `DashboardPage` |
 | `TenantRosterPage.tsx` | `TenantRosterPage` |
