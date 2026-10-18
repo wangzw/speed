@@ -41,12 +41,13 @@ program beside this directory embeds with `go:embed` and serves through
   (`src/locales/{en-US,zh-CN}.json`, identical leaf key sets). A navigation
   label that must translate reactively is a component (`src/nav-label.tsx`),
   because a declaration's label is a React element.
-- **The sign-in surface names where a fresh deployment's first account comes
-  from.** The skeleton folds registration into the sign-in flow and ships
-  neither SMS nor social sign-in, so a new deployment has no account and no way
-  to make one from the surface; `src/pages/sign-in-view.tsx` carries a note
-  under the form pointing at the server's `seed` command. A product that grows
-  its own registration replaces the note with it.
+- **The sign-in surface carries no deployment-operation copy.** The skeleton
+  folds registration into the sign-in flow and reads the login methods from
+  the deployment's discovery document, so `src/pages/sign-in-view.tsx` frames
+  `SignInScreen` with the app's brand and heading only: which methods are
+  enabled, and whether registration is offered, are the deployment's facts
+  rather than text the page asserts. A product that wants its own copy adds
+  it as host content.
 - **Every backend call goes through a generated operation** -- the platform's,
   from `@speed/api-sdk`, or the app's own, from `src/app-api` -- over the
   request function the assembly binds into the runtime seam

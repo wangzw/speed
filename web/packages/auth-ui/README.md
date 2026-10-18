@@ -30,14 +30,16 @@ package ships.
 
 | Module | Exports |
 |---|---|
-| `SignInScreen.tsx` | `SignInScreen`, `SignInScreenProps`, `SignInChannel`, `SignInMode`, `SocialSignInOptions` |
+| `SignInScreen.tsx` | `SignInScreen`, `SignInScreenProps`, `SignInContext`, `SignInChannel`, `SignInMode`, `SocialSignInOptions` |
 | `PasswordSignInForm.tsx` | `PasswordSignInForm`, `PasswordSignInFormProps` |
 | `SMSSignInForm.tsx` | `SMSSignInForm`, `SMSSignInFormProps` |
 | `SocialSignInSection.tsx` | `SocialSignInSection`, `SocialSignInSectionProps`, `SocialProvider`, `SocialProviderConfig` |
 | `SocialCallbackHandler.tsx` | `SocialCallbackHandler`, `SocialCallbackHandlerProps` |
 | `SignOutButton.tsx` | `SignOutButton`, `SignOutButtonProps` |
 | `SessionEndedScreen.tsx` | `SessionEndedScreen`, `SessionEndedScreenProps` |
+| `AcceptInvitationScreen.tsx` | `AcceptInvitationScreen`, `AcceptInvitationScreenProps`, `AcceptInvitationInput`, `InvitationOperations`, `InvitationSummary` |
 | `ImpersonationBanner.tsx` | `ImpersonationBanner`, `ImpersonationBannerProps`, `ImpersonationBannerState` |
+| `ImpersonationNotice.tsx` | `ImpersonationNoticeProvider`, `ImpersonationNoticeProviderProps`, `ImpersonationIndicator`, `ImpersonationEndMenuItem`, `ImpersonationEndMenuItemProps`, `useImpersonationNotice`, `ImpersonationNotice` |
 | `resources.ts` | `AUTH_UI_NAMESPACE`, `authUiResources` |
 
 Everything else (`src/internal/`) is shared plumbing -- the flow-stepping
@@ -234,12 +236,16 @@ groups the descriptors by `kind`:
 - `webauthn` methods render a passkey button and its ceremony step.
 
 An unknown `kind` is ignored; a method name the family does not know still
-renders through its descriptor. A successful sign-in on any channel fires
-`onSignedIn` once. The screen renders no heading of its own: the page above
-(branding, the heading) is host content. `mode` is a presentational switch:
-a "register" entry appears (with a "sign in" entry back) where the
-deployment lets a first login open an account, but it runs the one sign-in
-flow -- the account opens server-side.
+renders through its descriptor. A successful sign-in on a channel the screen
+drives itself -- a form or the passkey ceremony -- fires `onSignedIn` once
+with the mode and that channel's method name (`SignInContext`). Redirect and
+enterprise methods complete through the callback route instead: the screen
+hands their authorization URLs to the host and fires no `onSignedIn`. The
+screen renders no heading of its own: the page above (branding, the heading)
+is host content. `mode` is a presentational switch: a "register" entry
+appears (with a "sign in" entry back) where the deployment lets a first
+login open an account, but it runs the one sign-in flow -- the account opens
+server-side.
 
 While the read is in flight a `role="status"` notice shows; a failed read
 renders its error code in a banner with a retry button. The tab strip is
@@ -255,7 +261,7 @@ switching unmounts the previous form.
 | `discovery` | `AuthnMethodList` | a pre-fetched discovery document to render instead of reading one; when given the screen fires no read |
 | `mode` | `'sign-in' \| 'register'` | the presentational mode; defaults to `'sign-in'` |
 | `social` | `SocialSignInOptions` | the redirect / enterprise block host config; omitted to run without one |
-| `onSignedIn` | `() => void` | fired once after a sign-in commits on any channel |
+| `onSignedIn` | `(context: SignInContext) => void` | fired once after a sign-in commits on a channel the screen drives (a form or the passkey ceremony), with the mode and the channel's method name; redirect and enterprise methods complete through the callback route and fire none |
 | `channels` | `readonly ('password' \| 'sms')[]` | **deprecated**: still narrows the form strip for one major |
 | `defaultChannel` | `'password' \| 'sms'` | **deprecated**: the channel selected on first render |
 
@@ -539,7 +545,7 @@ enforced by registration):
 |---|---|
 | `passwordSignIn.*` | the password channel: title, field labels (identifier, password, new password), submit, the credential refusal |
 | `smsSignIn.*` | the SMS channel: title, country/phone labels, the phone hint, send/resubmit/change-phone actions, the sent notice (the assembled E.164 number), the used-code notice. The per-country validation messages live in the `ui-kit` namespace (`phoneNumber.*`) |
-| `signInFlow.*` | the step renderer: the continue action, the factor/enroll titles, the factor-kind names (a guarded closed set plus an "other" label), the passkey prompt and its unsupported/cancelled/failed messages, the unavailable-step notice |
+| `signInFlow.*` | the step renderer: the continue action, the factor/enroll titles, the factor-kind names (a guarded closed set plus an "other" label), the passkey prompt, its waiting notice and cancel/retry actions, and its unsupported/cancelled/failed messages, the unavailable-step notice |
 | `discovery.*` | the sign-in surface: the loading notice and the retry action |
 | `mode.*` | the sign-in surface: the register / sign-in entries and the register hint |
 | `enterprise.*` | the enterprise entry: the email label, the continue action, the provider-picker title and the no-match notice |

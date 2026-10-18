@@ -168,14 +168,14 @@ would be new host-facing behavior this package's design deliberately
 avoids elsewhere). No prop was added or changed, and every existing
 consumer is visually unaffected outside the narrow-viewport cases
 these protections exist for. Because a wrapped header row is taller
-than the theme's single-row toolbar height, the header's rendered
-height is measured (a ResizeObserver on the app bar and the banner slot,
-where the browser provides one) and the three offset placeholders that keep content
-clear of the fixed AppBar -- inside the drawer paper and inside
-`main`, for whichever drawer variant is mounted -- derive their height
-from that measurement, so a wrapped header never covers the top of
-the content below it. jsdom has no ResizeObserver and no layout, so
-the placeholders keep the theme toolbar height there and the
+than the theme's single-row toolbar height, the fixed head container's
+rendered height is measured (one ResizeObserver on the container that holds
+the app bar and the banner, where the browser provides one) and the three
+offset placeholders that keep content clear of the fixed AppBar -- inside the
+drawer paper and inside `main`, for whichever drawer variant is mounted --
+derive their height from that measurement, so a wrapped header never covers
+the top of the content below it. jsdom has no ResizeObserver and no layout,
+so the placeholders keep the theme toolbar height there and the
 measurement path is proven through a stubbed observer; the real
 browser round trip is what the mechanism exists for.
 
