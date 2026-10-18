@@ -202,7 +202,7 @@ stateDiagram-v2
 
 ### 无重试的查询策略
 
-`createQueryClient` 让查询与变更都不重试：瞬时重试属传输层（`api-client` 的冻结重试策略只重试可挽回的瞬时类，且在单次请求内），带码的应答是重复无法挽回的确定答复，而变更在应答丢失后绝不能重发（创建可能已在服务端提交）。每一项 `staleTime` 为 0，故重挂载或窗口重新聚焦会在当前令牌下重读。
+`createQueryClient` 让查询与变更都不重试：瞬时重试属传输层（`api-client` 的冻结重试策略只重试可挽回的瞬时类，且在单次请求内），带码的应答是重复无法挽回的确定答复，而变更在应答丢失后绝不能重发（创建可能已在服务端提交）。查询缺省显式写出 `staleTime: 0`，并显式写出 `refetchOnMount`、`refetchOnWindowFocus` 与 `refetchOnReconnect` 为 `true`，不依赖库的默认值：每一项 `staleTime` 为 0，且这三类自动重读的触发都未被关掉，故重挂载、标签页重新可见与重新联网都会在当前令牌下重读。依赖本包的视图级测试台复用这份 `createQueryClient`，不另建带不同缺省的 `QueryClient`；本包之下的共享测试支持包不 import 本包，自行写出同一组缺省值，使测试里的重读时机与生产一致。
 
 ## 错误与失败语义
 
@@ -230,4 +230,5 @@ stateDiagram-v2
 | `ProductShell` 三支视图机 | 已实现 | `web/packages/product-shell/src/components/ProductShell.tsx` `ProductShell`、`ProductShellProps` |
 | `banner` 槽的透传 | 已实现 | `web/packages/product-shell/src/components/ProductShell.tsx` `ProductShell`、`ProductShellProps` |
 | 应用入口装配 `bootstrapSpeedApp` 与定义类型 | 已实现 | `web/packages/product-shell/src/bootstrap.tsx` `bootstrapSpeedApp`、`SpeedAppDefinition`、`SpeedAppServices`、`watchSessionEnd`、`createQueryClient` |
+| 查询缺省显式写出 `staleTime` 与三类自动重读的触发，视图级测试台复用 `createQueryClient` | 未实现 | — |
 | 双语命名空间资源 | 已实现 | `web/packages/product-shell/src/resources.ts` `PRODUCT_SHELL_NAMESPACE`、`productShellResources` |
