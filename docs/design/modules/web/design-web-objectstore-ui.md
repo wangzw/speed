@@ -115,7 +115,9 @@ sequenceDiagram
 
 - **一个槽，翻页与刷新也 `reset`，它们在下载或删除进行中禁用。** 下载的失败不与「对象已删除」并存；翻页与刷新改变列表的上下文，旧结果不留在新的一页之上，因此翻页与刷新在作用域 `pending` 时禁用。
 - **删除的确认对话框在确认点击时关闭；删除进行中，本页全部删除控件禁用并标忙。** 删除因此不重叠，一个槽不丢结果。
-- **刷新控件在读进行中禁用并标忙，已有数据的刷新失败保留旧列表并渲染陈旧提示**，来源包括刷新、窗口重新聚焦与上传或删除后的失效重读；刷新失败是 403 时，无权限空态替换旧列表并隐藏分页控件，不渲染陈旧提示、不给重试。
+- **读在进行中时，刷新控件带 `aria-busy` 与忙态指示、保持原生可聚焦，再次激活不发第二次请求；已有数据的刷新失败保留旧列表并渲染陈旧提示**，来源包括刷新、标签页重新可见与上传或删除后的失效重读；刷新失败是 403 时，无权限空态替换旧列表并隐藏分页控件，不渲染陈旧提示、不给重试。聚焦的控件被置为原生 `disabled` 会使焦点落回文档，所以读的忙态不禁用刷新控件，与 [console-ui](design-web-console-ui.md) 的「页的刷新动作」同一规则。
+- **无租户在场时刷新控件禁用。** 列表读因无租户在场而被禁用时，刷新直接调用查询的重读，重读不看读的启用条件，不禁用就会在无租户在场时发出请求，破坏该读的失败关闭（见「错误与失败语义」）。
+- **下载经同一个作用域，落定且无失败时落一条点名对象的成功文案。** 下载以一次 `run` 结算，成功文案点名被下载的对象，在 zh-CN 与 en-US 语言包里各一键，取代槽里先前的「对象已删除」；失败落错误码文本。
 - **删除失败也使租户子树失效重读**，使服务端已不存在的行（`objectstore.not_found`、`objectstore.conflict`）不留在屏上。
 - **上传队列每行自成一个槽，不占用页面的下载与删除的槽。** 行的状态与错误是该行的结果，重试把行回到上传中，结算播报点名文件；一次选取多个文件是多次尝试。
 - **上传行的失败文本取自错误码。** 上传三步的任一步失败，行上渲染该失败码在当前语言下的文本，而不是一句固定的「上传失败」；非 ApiError 形状的抛出经 `errorCodeOf` 折叠，渲染未知兜底。
@@ -161,7 +163,10 @@ sequenceDiagram
 | 格式化与下载落盘 | 已实现 | `web/packages/objectstore-ui/src/internal/format.ts` `formatUtc`、`formatByteNumber`、`downloadFilename`；`web/packages/objectstore-ui/src/internal/download.ts` `saveBlob` |
 | 错误文案与异步分支 | 已实现 | `web/packages/objectstore-ui/src/internal/error-text.ts` `useObjectstoreUiErrorText`；`web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection` |
 | 命名空间资源 | 已实现 | `web/packages/objectstore-ui/src/resources.ts` `OBJECTSTORE_UI_NAMESPACE`、`objectstoreUiResources` |
-| 对象页的反馈作用域、删除的忙态与刷新的陈旧提示 | 未实现 | — |
+| 对象页的反馈作用域（下载与删除共用一个槽，下载成功落点名对象的确认，翻页与刷新 `reset`，作用域写入在途时它们禁用） | 未实现 | — |
+| 删除进行中本页全部删除控件禁用并标忙 | 未实现 | — |
+| 读忙态下刷新控件带 `aria-busy` 而不置原生 `disabled`、已有数据的刷新失败的陈旧提示、403 时替换旧列表并隐藏分页 | 未实现 | — |
+| 无租户在场时刷新控件禁用 | 未实现 | — |
 | 删除失败后的失效重读 | 未实现 | — |
 | 对象名称的列表列、详情字段与下载文件名 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage`；`web/packages/objectstore-ui/src/ObjectDetailDialog.tsx` `ObjectDetailDialog`；`web/packages/objectstore-ui/src/internal/format.ts` `downloadFilename` |
 | 对象列表的列优先级与对象标识的短显示 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage` |
