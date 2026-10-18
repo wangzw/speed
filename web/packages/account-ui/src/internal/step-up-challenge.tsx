@@ -26,9 +26,16 @@
  *
  * An account with no active factor is read from the caller's own factor
  * list (GET /auth/factors), and what the refusal asked for is decided
- * from the caller's own session (GET /auth/session). Both requirements
- * the self-service writes can carry are told apart by whether the session
- * already proves a fresh first factor:
+ * from the caller's own session (GET /auth/session). The session read is
+ * forced when the dialog opens: the cached view may predate a sign-in
+ * completed while the dialog was closed, so it is not allowed to answer.
+ * The verdict is taken once per opening and stays fixed while the dialog
+ * stays open -- a parked dialog never changes its mind because a later
+ * render puts the stored authentication time outside the window -- and
+ * the dialog shows its starting placeholder, starting no flow, until
+ * that read lands. Both requirements the self-service writes can carry
+ * are told apart by whether the session already proves a fresh first
+ * factor:
  *
  *  - When it does (assurance of at least one factor, the last interactive
  *    authentication within the five minutes the requirement fixes), a
@@ -67,7 +74,7 @@
  * session shows its code text and the host's session gate converges.
  */
 
-import { useEffect, useId, useRef } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -86,6 +93,17 @@ import { useAccountUiTranslation } from './translation.js'
 /** How recent a first factor must be for the self-service writes: the
  * server's fixed FreshFirstFactor window, not a setting. */
 const FIRST_FACTOR_WINDOW_MS = 5 * 60 * 1000
+
+/** What a self-service write's refusal asked for, read from the session
+ * view taken when the dialog opened: the multi-factor requirement (the
+ * session already proves a fresh first factor), a fresh first factor
+ * (named with the method that established the session), or a method this
+ * dialog cannot re-prove / a failed read (a new sign-in is the only way
+ * out). */
+type RefusalVerdict =
+  | { readonly kind: 'multi-factor' }
+  | { readonly kind: 'fresh-first-factor'; readonly method: string }
+  | { readonly kind: 'unknown-method' }
 
 export interface StepUpChallengeProps {
   /** Whether the dialog is showing. Opening resets its per-attempt state. */
@@ -113,24 +131,63 @@ export function StepUpChallenge({
   const noFactor =
     open && factors.isSuccess && activeFactorCount(factors.data) === 0
   // Only an account with no factor needs its session read: with a factor
-  // the flow enters at the factor step and names no method.
-  const sessionView = useSessionViewQuery(open && noFactor)
-  const readingSession = open && noFactor && sessionView.isPending
+  // the flow enters at the factor step and names no method. The hook's own
+  // data is never read -- the cached view may predate a sign-in completed
+  // while the dialog was closed, so the verdict below is taken from the
+  // read this opening forces through `refetch`.
+  const { refetch: readSessionView } = useSessionViewQuery(open && noFactor)
+  // The refusal's requirement, decided once per opening and frozen while
+  // the dialog stays open: a parked dialog does not start a flow because a
+  // later render puts the stored authentication time outside the window.
+  const [verdict, setVerdict] = useState<RefusalVerdict | null>(null)
+  // A new opening decides afresh; nothing is carried over from the last
+  // one. Adjusting the state during render, before the reopen commits,
+  // keeps the previous verdict from being read even once.
+  const [previousOpen, setPreviousOpen] = useState(open)
+  if (open !== previousOpen) {
+    setPreviousOpen(open)
+    setVerdict(null)
+  }
+  // Decide from a read issued now: the opening forces one, and the dialog
+  // waits on its placeholder until it lands. A read that fails names no
+  // method.
+  useEffect(() => {
+    if (!open || !noFactor || verdict !== null) {
+      return
+    }
+    let cancelled = false
+    void readSessionView().then((result) => {
+      if (cancelled) {
+        return
+      }
+      const view = result.data
+      setVerdict(
+        result.isError || view === undefined
+          ? { kind: 'unknown-method' }
+          : decideRefusal(view),
+      )
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [open, noFactor, verdict, readSessionView])
+  const awaitingVerdict = open && noFactor && verdict === null
+  // The starting placeholder while the decision's read is in flight.
+  const readingSession = awaitingVerdict
   // The session already proves a fresh first factor, so the refusal cannot
   // be about freshness: it asks for multi-factor.
-  const freshFirst =
-    open && noFactor && sessionView.isSuccess && freshFirstFactor(sessionView.data)
+  const freshFirst = open && noFactor && verdict?.kind === 'multi-factor'
   const reproofMethod =
-    open && noFactor && sessionView.isSuccess && !freshFirst
-      ? firstFactorMethod(sessionView.data)
+    open && noFactor && verdict?.kind === 'fresh-first-factor'
+      ? verdict.method
       : undefined
   const reproveFirst = reproofMethod !== undefined
   // The method is unknown (social or enterprise sign-in, or a failed
   // session read): the only way out is a new sign-in.
   const reloginOnly =
-    open && noFactor && !readingSession && !freshFirst && !reproveFirst
+    open && noFactor && verdict?.kind === 'unknown-method'
   const startFlow =
-    open && !checking && !readingSession && (!noFactor || reproveFirst)
+    open && !checking && !awaitingVerdict && (!noFactor || reproveFirst)
   const { phase, step, seq, errorCode, answer } = useStepUp(
     session,
     startFlow,
@@ -274,6 +331,18 @@ function activeFactorCount(
   return page.factors.filter((factor) => factor.status === 'active').length
 }
 
+/** The requirement the refusal asked for, read once from the session view
+ * an opening forced. */
+function decideRefusal(view: AuthnSessionView): RefusalVerdict {
+  if (freshFirstFactor(view)) {
+    return { kind: 'multi-factor' }
+  }
+  const method = firstFactorMethod(view)
+  return method === undefined
+    ? { kind: 'unknown-method' }
+    : { kind: 'fresh-first-factor', method }
+}
+
 /** Whether the session already proves a first factor recent enough for the
  * FreshFirstFactor requirement (assurance of at least one factor, the
  * authentication no older than the fixed window). When it does, a write
@@ -281,11 +350,13 @@ function activeFactorCount(
  * of the gated writes asks for multi-factor instead (the challenge's
  * acr_values 2, where the fresh-first refusal is acr_values 1). The 401's
  * challenge parameters are not surfaced by the request layer, so the
- * session's own state answers the same question. A timestamp ahead of this
- * clock is never read as fresh: an uncertain read re-proves, and only a
- * provably fresh session keeps the multi-factor hint. */
-function freshFirstFactor(view: AuthnSessionView | undefined): boolean {
-  if (view === undefined || view.authenticated !== true) {
+ * session's own state answers the same question. Evaluated once per
+ * opening, when the session read lands; the verdict it feeds is frozen
+ * while the dialog stays open. A timestamp ahead of this clock is never
+ * read as fresh: an uncertain read re-proves, and only a provably fresh
+ * session keeps the multi-factor hint. */
+function freshFirstFactor(view: AuthnSessionView): boolean {
+  if (view.authenticated !== true) {
     return false
   }
   if (view.assurance !== 'single' && view.assurance !== 'multi') {
@@ -308,10 +379,8 @@ function freshFirstFactor(view: AuthnSessionView | undefined): boolean {
  * amr set the session view publishes: `password` for `pwd`, `sms` for
  * `sms`. A social or enterprise sign-in names no method this dialog can
  * re-prove. */
-function firstFactorMethod(
-  view: AuthnSessionView | undefined,
-): string | undefined {
-  const methods = view?.methods ?? []
+function firstFactorMethod(view: AuthnSessionView): string | undefined {
+  const methods = view.methods ?? []
   if (methods.includes('pwd')) {
     return 'password'
   }

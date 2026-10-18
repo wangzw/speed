@@ -17,12 +17,16 @@
  * those explanations; an account with no factor re-proves the first factor
  * with the method that established its session when the session is past
  * the fresh-first-factor window, answers under the flow's `answer` step,
- * and re-logins instead when that method cannot be named; and cancel fires
- * onCancel without running the gated action.
+ * and re-logins instead when that method cannot be named; a reopening
+ * decides from a session read taken after it opens, not from the cached
+ * view, and starts no flow until that read lands; a dialog parked on the
+ * enrollment hint keeps its verdict past the five-minute window; and cancel
+ * fires onCancel without running the gated action.
  */
 
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AuthSession, AuthSnapshot } from '@speed/auth-core'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
@@ -163,6 +167,62 @@ function mountSession(
     />,
   )
   return { onSuccess, onCancel }
+}
+
+/** Test control over a dialog mounted once under the providers: the reopen
+ * and re-render cases need one provider tree (and so one QueryClient)
+ * across several renders, which RTL's `rerender` cannot give -- it
+ * replaces the whole tree, providers included. */
+interface DialogControl {
+  setOpen(dialogOpen: boolean): void
+  rerender(): void
+}
+
+function Harness({
+  session,
+  onSuccess,
+  onCancel,
+  control,
+}: {
+  readonly session: AuthSession
+  readonly onSuccess: () => void
+  readonly onCancel: () => void
+  readonly control: DialogControl
+}) {
+  const [open, setOpen] = useState(true)
+  const [, setVersion] = useState(0)
+  control.setOpen = setOpen
+  control.rerender = () => setVersion((version) => version + 1)
+  return (
+    <StepUpChallenge
+      open={open}
+      session={session}
+      onSuccess={onSuccess}
+      onCancel={onCancel}
+    />
+  )
+}
+
+function renderControlled(
+  session: AuthSession,
+  handlers: {
+    readonly onSuccess: () => void
+    readonly onCancel: () => void
+  },
+): DialogControl {
+  const control: DialogControl = {
+    setOpen: () => undefined,
+    rerender: () => undefined,
+  }
+  renderWithProviders(
+    <Harness
+      session={session}
+      onSuccess={handlers.onSuccess}
+      onCancel={handlers.onCancel}
+      control={control}
+    />,
+  )
+  return control
 }
 
 /** An established session: the snapshot the step-up shortfall classifier
@@ -419,6 +479,140 @@ describe('StepUpChallenge', () => {
     await screen.findByLabelText('identifier')
     const start = rig.calls.find((call) => call.path === FLOW_START)
     expect(start?.body).toEqual({ purpose: 'step-up', method: 'password' })
+  })
+
+  it('decides a reopening from a fresh session read, not the cached view', async () => {
+    // The first opening reads a first factor proved ten minutes ago, so it
+    // starts a first-factor flow. The dialog is then closed and the session
+    // re-established: the server now answers a just-authenticated session.
+    // Reopening must read again -- the cached view still says ten minutes
+    // and would start a second, spurious flow before the fresh answer
+    // switched the dialog to the enrollment hint. One QueryClient serves
+    // both openings, so the cache is the one a host would hold.
+    let justAuthenticated = false
+    // The reopened opening's session read is held open, so the case can
+    // observe the dialog before the fresh answer lands.
+    let unblockSession: (() => void) | null = null
+    const sessionHeld = new Promise<void>((resolve) => {
+      unblockSession = resolve
+    })
+    const rig = makeRealClientRig(async (call: RealCall) => {
+      if (call.method === 'GET' && call.path === '/auth/factors') {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'GET' && call.path === '/auth/session') {
+        if (justAuthenticated) {
+          await sessionHeld
+        }
+        return jsonResponse(
+          200,
+          sessionBody({
+            methods: ['pwd'],
+            ageMs: justAuthenticated ? 0 : 10 * 60 * 1000,
+          }),
+        )
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'code', kind: 'text' }],
+          },
+        })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/auth/flows/current'
+      ) {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    })
+    rig.store.set('access-1')
+    const onSuccess = vi.fn()
+    const onCancel = vi.fn()
+    const starts = () =>
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === FLOW_START,
+      )
+    const control = renderControlled(rig.session, { onSuccess, onCancel })
+
+    // The first opening re-proves the first factor on its `answer` step.
+    await screen.findByLabelText('code')
+    expect(starts()).toHaveLength(1)
+
+    // Cancel closes the dialog; the session is re-established while it is
+    // closed.
+    act(() => control.setOpen(false))
+    await waitFor(() =>
+      expect(
+        rig.calls.some(
+          (call) =>
+            call.method === 'DELETE' && call.path === '/auth/flows/current',
+        ),
+      ).toBe(true),
+    )
+    justAuthenticated = true
+
+    // The reopening must wait on its own read: while that read is in
+    // flight the dialog shows its starting placeholder and starts nothing
+    // -- the cached view would start a first-factor flow here at once.
+    act(() => control.setOpen(true))
+    expect(await screen.findByText(zhCN.mfa.stepUp.starting)).toBeTruthy()
+    expect(starts()).toHaveLength(1)
+
+    // The fresh read lands: the requirement is multi-factor now, so the
+    // dialog names the missing second factor and still starts nothing.
+    act(() => unblockSession?.())
+    expect(await screen.findByText(zhCN.mfa.stepUp.noFactor)).toBeTruthy()
+    expect(starts()).toHaveLength(1)
+  })
+
+  it('keeps a parked verdict across the five-minute boundary', async () => {
+    // A dialog parked on the enrollment hint must not re-decide from the
+    // clock: a later render after the five-minute window would otherwise
+    // turn the same panel into a first-factor flow and start it.
+    const openedAt = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(openedAt)
+    try {
+      const rig = makeRealClientRig((call: RealCall) => {
+        if (call.method === 'GET' && call.path === '/auth/factors') {
+          return jsonResponse(200, { factors: [] })
+        }
+        if (call.method === 'GET' && call.path === '/auth/session') {
+          return jsonResponse(200, sessionBody())
+        }
+        if (
+          call.method === 'DELETE' &&
+          call.path === '/auth/flows/current'
+        ) {
+          return new Response(null, { status: 204 })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      })
+      rig.store.set('access-1')
+      const onSuccess = vi.fn()
+      const onCancel = vi.fn()
+      const control = renderControlled(rig.session, { onSuccess, onCancel })
+
+      // Just inside the window: the refusal asks for multi-factor.
+      expect(await screen.findByText(zhCN.mfa.stepUp.noFactor)).toBeTruthy()
+      expect(
+        rig.calls.some((call) => call.path === FLOW_START),
+      ).toBe(false)
+
+      // Six minutes later, a re-render reads the same frozen verdict.
+      clock.mockReturnValue(openedAt + 6 * 60 * 1000)
+      act(() => control.rerender())
+      expect(screen.getByText(zhCN.mfa.stepUp.noFactor)).toBeTruthy()
+      expect(
+        rig.calls.some((call) => call.path === FLOW_START),
+      ).toBe(false)
+    } finally {
+      clock.mockRestore()
+    }
   })
 
   it('offers a re-login when the session names no first-factor method', async () => {
