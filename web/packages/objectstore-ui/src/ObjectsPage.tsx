@@ -67,6 +67,14 @@ import type { StoredObject } from './internal/models.js'
 /** The rows the list requests per page (within the module's accepted range). */
 const DEFAULT_PAGE_SIZE = 20
 
+/**
+ * How much of an object identifier the list shows. The column is one of
+ * the low-priority ones, so its cell stays narrow; the complete
+ * identifier is the cell's `title`/copy value and the detail dialog's
+ * field, both reachable without widening the table.
+ */
+const ID_PREFIX_LENGTH = 8
+
 export interface ObjectsPageProps {
   /**
    * The page size the list requests; the module applies a default and an
@@ -151,13 +159,19 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
     {
       id: 'id',
       header: t('list.column.id'),
+      priority: 'low',
       cellWrap: 'nowrap',
       cellFullValue: (object) => object.id,
-      cell: (object) => <Typography variant="body2">{object.id}</Typography>,
+      cell: (object) => (
+        <Typography variant="body2">
+          {object.id.slice(0, ID_PREFIX_LENGTH)}
+        </Typography>
+      ),
     },
     {
       id: 'state',
       header: t('list.column.state'),
+      priority: 'high',
       cellWrap: 'nowrap',
       cell: (object) => (
         <Typography variant="body2" color="text.secondary">
@@ -179,7 +193,7 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
     {
       id: 'mime',
       header: t('list.column.mime'),
-      priority: 'medium',
+      priority: 'low',
       cellWrap: 'nowrap',
       cell: (object) => (
         <Typography variant="body2">{object.mime}</Typography>

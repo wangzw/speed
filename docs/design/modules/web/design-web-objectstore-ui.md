@@ -164,6 +164,6 @@ sequenceDiagram
 | 对象页的反馈作用域、删除的忙态与刷新的陈旧提示 | 未实现 | — |
 | 删除失败后的失效重读 | 未实现 | — |
 | 对象名称的列表列、详情字段与下载文件名 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage`；`web/packages/objectstore-ui/src/ObjectDetailDialog.tsx` `ObjectDetailDialog`；`web/packages/objectstore-ui/src/internal/format.ts` `downloadFilename` |
-| 对象列表的列优先级与对象标识的短显示 | 未实现 | — |
+| 对象列表的列优先级与对象标识的短显示 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage` |
 | 错误白名单组合会话生命周期码族及其双语文案 | 未实现 | — |
 | 上传行的失败文本取自错误码 | 未实现 | — |

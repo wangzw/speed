@@ -23,7 +23,10 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
 import { renderWithProviders } from '../test-utils/render.js'
-import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
+import {
+  emittedStyleText,
+  hasCoarsePointerTouchTarget,
+} from '@speed/test-utils/emitted-css'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import {
   blobResponse,
@@ -64,6 +67,66 @@ function sequence(calls: readonly RecordedRequest[]): string[] {
   return calls.map((call) => `${call.method} ${call.path}`)
 }
 
+/**
+ * The `display` value each `@container (min-width: Npx)` rule gives
+ * `element`, keyed by N. Column priority is pure CSS emitted into the
+ * stylesheet, and jsdom evaluates no container query, so the declared
+ * tier can only be read from the generated rules -- matched against the
+ * element so a sibling column's rule is not mistaken for this one.
+ */
+function containerDisplayOf(element: Element): Map<number, string> {
+  const css = emittedStyleText()
+  const displays = new Map<number, string>()
+  const atRule = /@container \(min-width:(\d+)px\)\{/g
+  let match: RegExpExecArray | null
+  while ((match = atRule.exec(css)) !== null) {
+    const open = atRule.lastIndex - 1
+    let depth = 0
+    let end = open
+    for (; end < css.length; end += 1) {
+      if (css[end] === '{') depth += 1
+      else if (css[end] === '}') {
+        depth -= 1
+        if (depth === 0) break
+      }
+    }
+    const body = css.slice(open + 1, end)
+    const rule = /([^{}]+)\{([^{}]*)\}/g
+    let inner: RegExpExecArray | null
+    while ((inner = rule.exec(body)) !== null) {
+      const selector = inner[1]?.trim() ?? ''
+      if (!selector.includes('.css-')) continue
+      try {
+        if (!element.matches(selector)) continue
+      } catch {
+        continue
+      }
+      const display = /display:([a-z-]+)/.exec(inner[2] ?? '')
+      if (display?.[1] !== undefined) {
+        displays.set(Number(match[1]), display[1])
+      }
+    }
+  }
+  return displays
+}
+
+/**
+ * The priority a rendered header cell's CSS declares: the widest
+ * container at which it is hidden, mapped to the tier that restores it
+ * (600 -> 'high', 900 -> 'medium', 1200 -> 'low'). A cell with no
+ * priority carries no container rule at all.
+ */
+function declaredPriority(header: Element): 'high' | 'medium' | 'low' | undefined {
+  const visibleFrom = [...containerDisplayOf(header).entries()]
+    .filter(([, display]) => display === 'table-cell')
+    .map(([width]) => width)
+    .sort((a, b) => a - b)[0]
+  if (visibleFrom === 600) return 'high'
+  if (visibleFrom === 900) return 'medium'
+  if (visibleFrom === 1200) return 'low'
+  return undefined
+}
+
 describe('ObjectsPage', () => {
   it("lists the tenant's objects from the list route", async () => {
     makeObjectStoreRig(() => jsonResponse(200, { objects: [OBJECT_A], next_cursor: '' }))
@@ -100,6 +163,50 @@ describe('ObjectsPage', () => {
       overflow: 'hidden',
       textOverflow: 'ellipsis',
     })
+  })
+
+  it("declares the columns' priority tiers so the name and actions stay on screen", async () => {
+    makeObjectStoreRig(() =>
+      jsonResponse(200, { objects: [OBJECT_A], next_cursor: '' }),
+    )
+    renderWithProviders(<ObjectsPage />, { language: 'en-US' })
+    await screen.findByText('greeting.txt')
+
+    const header = (label: string): Element => {
+      const found = screen
+        .getAllByRole('columnheader')
+        .find((cell) => cell.textContent === label)
+      expect(found).toBeDefined()
+      return found as Element
+    }
+
+    // The primary identity and the row's entry point never hide.
+    expect(declaredPriority(header('Name'))).toBeUndefined()
+    expect(declaredPriority(header('Actions'))).toBeUndefined()
+    expect(declaredPriority(header('State'))).toBe('high')
+    expect(declaredPriority(header('Created'))).toBe('medium')
+    expect(declaredPriority(header('Type'))).toBe('low')
+    expect(declaredPriority(header('Size'))).toBe('low')
+    expect(declaredPriority(header('Object'))).toBe('low')
+  })
+
+  it('shows the identifier prefix while carrying the complete identifier as title and copy value', async () => {
+    const id = 'obj-0123456789abcdef'
+    makeObjectStoreRig(() =>
+      jsonResponse(200, { objects: [{ ...OBJECT_A, id }], next_cursor: '' }),
+    )
+    renderWithProviders(<ObjectsPage />, { language: 'en-US' })
+
+    const prefix = await screen.findByText(id.slice(0, 8))
+    const idCell = prefix.closest('td')
+    expect(idCell).not.toBeNull()
+    expect(within(idCell as HTMLElement).queryByText(id)).toBeNull()
+    expect(idCell).toHaveAttribute('title', id)
+    expect(
+      within(idCell as HTMLElement).getByRole('button', {
+        name: `Copy ${id}`,
+      }),
+    ).toBeInTheDocument()
   })
 
   it('renders the unnamed copy when an object has no name', async () => {
