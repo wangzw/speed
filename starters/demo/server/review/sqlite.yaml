@@ -212,6 +212,11 @@ seed:
   settings:
     - key: "authn.mfa.sensitive-min-age"
       value: "1h"
+    # REVIEW: the official-account entry is assembled but not offered. The
+    # method descriptor never reaches /auth/methods, so the sign-in page
+    # renders no 微信（公众号）button; the web QR code entry stays.
+    - key: "authn.login.disabled-methods"
+      value: '["wechat.mp"]'
     # REVIEW: the numbers the SMS method may send to. The declared default is
     # the empty table, which admits no number at all; these two prefixes are
     # what make +1 and +86 numbers reachable in the review.
