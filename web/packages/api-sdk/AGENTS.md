@@ -82,10 +82,12 @@ orval input is `contracts/api.json`, the demo host's `gen` command
 merging the OpenAPI fragments the platform modules declare -- each
 module's `http.Spec` resource, through `pkg/ops/openapi.Merge` -- every
 platform module with an HTTP fragment is a merge member; a consuming
-app's own fragments are NOT members, by design: the app's own API is
-generated into the app's own SDK through the app-owned flow -- the
-starter's personal-tenant ensure is the app fragment that exercises
-that leg), the
+app's own fragments are members too, and their operations carry the
+application-owner tag `gen` writes from the declaring module's Go
+package, which `web/orval.config.ts`'s `input.filters` excludes, so this
+surface stays platform-only: the app's own API is generated into the
+app's own SDK through the app-owned flow -- the starter's personal-tenant
+ensure is the app fragment that exercises that leg), the
 runtime binding, the regeneration
 tooling (config + fixup script) and the CI wiring that regenerates and
 diffs the artifact. `@speed/auth-core` compile-consumes the authn
@@ -128,10 +130,14 @@ Three entry points:
   hosts bind.
 - `./features` (generated `src/features.ts`) -- `FeatureNameRegistry`,
   the `FeatureName` key type and `FEATURE_NAMES`, written by
-  `web/scripts/feature-names.mjs` from `contracts/features.json`. A
-  feature name written in frontend code takes this type, so a
-  misspelled name fails to compile; `FEATURE_NAMES` is the run-time
-  membership list.
+  `web/scripts/feature-names.mjs` from `contracts/features.json`. The
+  file registers the platform-owned entries only; an application adds
+  its own names through the module augmentation the same generator
+  writes into the application (the demo writes
+  `starters/demo/web/src/app-api/features.ts`). A feature name written
+  in frontend code takes this type, so a misspelled name fails to
+  compile; `FEATURE_NAMES` is the run-time membership list of the
+  platform names.
 
 `src/runtime.test.ts` pins the binding's behaviour; `src/index.test.ts`
 pins the generated surface's observable behaviour (hooks issue the

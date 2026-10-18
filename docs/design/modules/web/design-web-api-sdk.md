@@ -208,8 +208,8 @@ flowchart LR
 | 生成配置（输入、mutator、按操作覆写） | 已实现 | `web/orval.config.ts` |
 | nodenext 的 mutator import 后处理 | 已实现 | `web/scripts/orval-nodenext-fixup.mjs` |
 | 入口的对外面（`.`、`./runtime` 与 `./features`） | 已实现 | `web/packages/api-sdk/package.json` 的 `exports` |
-| 本包的生成面与特性名只含平台所有的成员，由测试守住 | 未实现 | — |
+| 本包的生成面与特性名只含平台所有的成员，由测试守住 | 已实现 | `starters/demo/server/main.go` `moduleOwner`、`markOperations`、`featureVocabulary`；`web/orval.config.ts` 的 `input.filters`；`web/scripts/feature-names.mjs`；`web/packages/api-sdk/src/ownership.test.ts`、`features.test.ts` |
 | 特性名类型（`src/features.ts`） | 已实现 | `web/packages/api-sdk/src/features.ts` `FeatureNameRegistry`、`FeatureName`、`FEATURE_NAMES` |
 | 特性名生成器 | 已实现 | `web/scripts/feature-names.mjs` |
 | 特性名的新鲜度测试与类型断言 | 已实现 | `web/packages/api-sdk/src/features.test.ts`；`web/packages/auth-core/src/features.test.ts` |
-| 应用特性名的模块增补 | 未实现 | — |
+| 应用特性名的模块增补 | 已实现 | `web/scripts/feature-names.mjs`（第三个输出参数）；`starters/demo/web/src/app-api/features.ts`；`starters/demo/web/package.json` 的 `api:gen` |
