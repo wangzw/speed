@@ -631,10 +631,12 @@ describe('the impersonation shell', () => {
       within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
     )
 
-    // The identity change has settled and the roster read is in flight, so
-    // the host holds no current tenant yet. That is a transition, not the
-    // switcher's no-current-tenant state: the switcher stays out of the bar
-    // rather than stating the host has no tenant while it is only reading.
+    // The identity change has settled and the roster read is in flight. The
+    // current tenant still holds the ended grant's value, so the roster list
+    // has no matching row to switch to: that is a transition, not the
+    // switcher's no-current-tenant state, and the switcher stays out of the
+    // bar rather than stating the host has no tenant while it is only
+    // reading.
     await waitFor(() => expect(banner()).toBeNull())
     await waitFor(() => expect(backend.rosterReads()).toBe(1))
     expect(tenantSwitcherTrigger()).toBeNull()
@@ -737,6 +739,206 @@ describe('the impersonation shell', () => {
     // closed and a new registration opened.
     await waitFor(() => expect(opened.length).toBeGreaterThanOrEqual(2))
     expect(opened[0]?.closed).toBe(1)
+  })
+
+  it('shows the banner for a new impersonation after an end settles normally', async () => {
+    window.history.replaceState({}, '', '/')
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+    })
+    // The second interval's status read names a grant again: the server holds
+    // one in force, unlike the interval the end closed.
+    const second = grantFixture(new Date(Date.now() + 3_600_000).toISOString())
+    let phase: 'first' | 'second' = 'first'
+    const request: RequestFn = <T,>(
+      path: string,
+      options?: RequestOptions,
+    ) => {
+      if (
+        phase === 'second' &&
+        path === '/auth/impersonation' &&
+        (options?.method ?? 'GET') === 'GET'
+      ) {
+        return Promise.resolve({ grant: second } as T)
+      }
+      const answer = backend.fn<T>(path, options)
+      if (path === '/auth/impersonation' && options?.method === 'DELETE') {
+        phase = 'second'
+      }
+      return answer
+    }
+    bindRequestFn(request)
+    const session = scriptedSession(targetSnapshot(), () => operatorSnapshot())
+    const user = userEvent.setup()
+
+    renderDemoApp({ session })
+
+    const notice = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    await user.click(
+      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+    )
+    await waitFor(() => expect(banner()).toBeNull())
+    await screen.findByRole('link', { name: demoEnUS.nav.console })
+
+    // A later impersonation in the same mount renders its banner: the
+    // withheld state belongs to the finished interval.
+    act(() => {
+      session.set(targetSnapshot())
+    })
+    const again = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    expect(
+      within(again).getByText(
+        authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the banner for a new impersonation after a snapshot flip races the end write', async () => {
+    window.history.replaceState({}, '', '/')
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+    })
+    const gate = deferred()
+    let deletes = 0
+    let phase: 'first' | 'second' = 'first'
+    const second = grantFixture(new Date(Date.now() + 3_600_000).toISOString())
+    const request: RequestFn = <T,>(
+      path: string,
+      options?: RequestOptions,
+    ) => {
+      if (
+        phase === 'second' &&
+        path === '/auth/impersonation' &&
+        (options?.method ?? 'GET') === 'GET'
+      ) {
+        return Promise.resolve({ grant: second } as T)
+      }
+      if (path === '/auth/impersonation' && options?.method === 'DELETE') {
+        deletes += 1
+        return gate.promise.then(() => backend.fn<T>(path, options))
+      }
+      return backend.fn<T>(path, options)
+    }
+    bindRequestFn(request)
+    let restores = 0
+    const session = scriptedSession(targetSnapshot(), () => {
+      restores += 1
+      return operatorSnapshot()
+    })
+    const user = userEvent.setup()
+
+    renderDemoApp({ session })
+
+    const notice = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    await user.click(
+      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+    )
+    await waitFor(() => expect(deletes).toBe(1))
+
+    // Another cause -- an expiry, a bare 404 elsewhere, another tab -- settles
+    // the snapshot while the end write is still in flight.
+    act(() => {
+      session.set(operatorSnapshot())
+    })
+    await waitFor(() => expect(banner()).toBeNull())
+
+    // The write settles after the flip: the release edge has already run, so
+    // the banner must not be withheld again for the rest of this mount.
+    await act(async () => {
+      gate.resolve()
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(restores).toBeGreaterThan(0))
+
+    phase = 'second'
+    act(() => {
+      session.set(targetSnapshot())
+    })
+    const again = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    expect(
+      within(again).getByText(
+        authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('shows no finished impersonation while the console page\'s status read is pending', async () => {
+    window.history.replaceState({}, '', '/')
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+    })
+    // Once the console page mounts, its status read is held open: the cached
+    // answer is all the page has to render while it waits.
+    const statusGate = deferred()
+    let holdStatus = false
+    const request: RequestFn = <T,>(
+      path: string,
+      options?: RequestOptions,
+    ) => {
+      if (path === '/authz/admin/permissions') {
+        return Promise.resolve({
+          permissions: [
+            { permission: 'tenant.read' },
+            { permission: 'authn.impersonation.read' },
+          ],
+        } as T)
+      }
+      if (
+        holdStatus &&
+        path === '/auth/impersonation' &&
+        (options?.method ?? 'GET') === 'GET'
+      ) {
+        return statusGate.promise.then(() => backend.fn<T>(path, options))
+      }
+      return backend.fn<T>(path, options)
+    }
+    bindRequestFn(request)
+    const session = scriptedSession(targetSnapshot(), () => operatorSnapshot())
+    const user = userEvent.setup()
+
+    renderDemoApp({ session })
+
+    const notice = await screen.findByRole('region', {
+      name: authUiEnUS.impersonation.regionLabel,
+    })
+    await user.click(
+      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+    )
+    await waitFor(() => expect(banner()).toBeNull())
+    await screen.findByRole('link', { name: demoEnUS.nav.console })
+
+    holdStatus = true
+    act(() => {
+      window.history.pushState({}, '', '/console/impersonations?tenant=acme')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+
+    expect(
+      await screen.findByText(consoleUiEnUS.impersonations.current.title),
+    ).toBeInTheDocument()
+    // The finished grant is not rendered as current while the read is out:
+    // the interval's cache entry was evicted when its read was disabled.
+    expect(
+      screen.getByText(consoleUiEnUS.impersonations.current.loading),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(consoleUiEnUS.impersonations.current.target, {
+        exact: false,
+      }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('button', {
+        name: consoleUiEnUS.impersonations.current.end,
+      }),
+    ).toBeNull()
   })
 
   it('shows the banner after a full reload while impersonating', async () => {
@@ -1547,7 +1749,7 @@ describe('the impersonation shell', () => {
     ).toBeInTheDocument()
   })
 
-  it('keeps the settled permission set when the end\'s session re-read hangs', async () => {
+  it('keeps the settled permission set when the start\'s session re-read hangs', async () => {
     window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
     const backend = makeBackend()
     const request: RequestFn = <T,>(
@@ -1613,7 +1815,7 @@ describe('the impersonation shell', () => {
     await waitFor(() => expect(window.location.pathname).toBe('/'))
   })
 
-  it('keeps the settled permission set when the end\'s session re-read is refused', async () => {
+  it('keeps the settled permission set when the start\'s session re-read is refused', async () => {
     window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
     const backend = makeBackend()
     const request: RequestFn = <T,>(

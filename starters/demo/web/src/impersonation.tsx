@@ -117,7 +117,9 @@ const START_MUTATION_KEY: readonly unknown[] | undefined =
 /** The status read's generated query key. The identity change evicts every
  * other cached row and leaves this one alone: evicting it would make the
  * mounted status observer re-read immediately, and a re-read that answers
- * the bare 404 would re-enter the ended path it just handled. */
+ * the bare 404 would re-enter the ended path it just handled. Once the read
+ * is disabled -- the interval is over -- its own hook evicts it, so the next
+ * interval starts from a fresh read rather than the finished grant. */
 const STATUS_QUERY_KEY: readonly unknown[] = getAuthnImpersonationStatusQueryKey()
 
 /** Whether a mutation key is the start write's (same parts, same order). */
@@ -330,9 +332,21 @@ export function isNotImpersonating(error: unknown): boolean {
 export function useImpersonationStatus(
   enabled: boolean,
 ): AuthnImpersonationGrant | undefined {
-  const { session } = useAppServices()
+  const { session, queryClient } = useAppServices()
   const { applyIdentityChange } = useIdentityChange()
   const status = useAuthnImpersonationStatus({ query: { enabled } })
+
+  // The status query lives in the shared cache across intervals, so an
+  // interval that has ended would leave its grant behind for the cache's
+  // gcTime -- and a page that reads it on first render would present the
+  // finished impersonation as current. Evict it only once the observer is
+  // disabled: evicting a live observer would make it re-read at once, and a
+  // re-read answering the bare 404 would re-enter the ended path.
+  useEffect(() => {
+    if (!enabled) {
+      queryClient.removeQueries({ queryKey: STATUS_QUERY_KEY })
+    }
+  }, [enabled, queryClient])
 
   // Each impersonation interval answers for itself: the status query lives
   // across intervals in the shared cache, and the previous interval's grant
@@ -635,11 +649,17 @@ export function ImpersonationBannerSlot({
     }
     // The write settled, so the banner must not keep saying an
     // impersonation is in force; the snapshot may take up to one check-ttl
-    // to agree. The identity change and its bounded re-read follow without
-    // being awaited: the banner's contract is the write.
-    setWithheld(true)
+    // to agree. A snapshot that flipped while the write was in flight --
+    // an expiry, a bare 404 elsewhere, another tab -- already withdrew it,
+    // and withholding again would outlive the flip: the release edge has
+    // run and will not run again, so a later impersonation in this mount
+    // would stay hidden. The identity change and its bounded re-read follow
+    // without being awaited: the banner's contract is the write.
+    if (session.getSnapshot().impersonating) {
+      setWithheld(true)
+    }
     void holdUntilSettled()
-  }, [endImpersonation, holdUntilSettled])
+  }, [endImpersonation, holdUntilSettled, session])
 
   const principal = snapshot.principal
   const subject =
