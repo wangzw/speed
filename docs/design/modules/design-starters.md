@@ -278,13 +278,13 @@ flowchart TD
 
 决策见 [ADR-starters-personal-tenant-2026-10-18](../../adr/adr-starters-personal-tenant-2026-10-18.md)。宿主配置开启个人租户时（缺省关闭），示范为没有成员关系的账户建一个个人租户，使注册完成的账户在租户区即可使用。
 
-- **服务端是一个宿主模块，不进 `pkg/` 的公共面。** 它在 `account` 端挂一条没有租户解析的路由 `POST /workspace/personal`，并声明特性 `workspace.personal`；开关关闭时路由不挂、特性不在场。`/workspace` 作为 `account` 端的认领前缀写在每份配置与后端前缀清单里，认领与装配无关，开关关闭时该前缀答 404。契约属于应用自己的第二级契约，不进平台的契约。
+- **服务端是一个宿主模块，不进 `pkg/` 的公共面。** 它在 `account` 端挂一条没有租户解析的路由 `POST /workspace/personal`，并声明特性 `workspace.personal`；开关关闭时路由不挂、特性不在场。`/workspace` 作为 `account` 端的认领前缀写在每份配置与后端前缀清单里，认领与装配无关，开关关闭时该前缀对已认证调用答 404；未认证调用先被 `account` 端的网关拒绝为 401，这是各端认领前缀的普遍行为。契约属于应用自己的第二级契约：应用所有的操作与特性在合并文档里带所有者标记，平台包的生成面与特性名不含它们（[api-sdk](web/design-web-api-sdk.md)）。
 - **路由对调用方的要求与应答。** 调用方须已认证、不在冒充中，冒充中答 403。资格由服务端判定：调用方的成员关系为空，或只有它自己的个人租户；已有其他成员关系答 409 `already-member`，不建。成功应答 `{ tenant: { id, alias, kind: "personal" }, created }`，`created` 表示这次调用建了租户。依赖不可用答 503，不带着半份结果放行。
 - **租户标识由账户标识确定性派生。** 标识与别名取同一个由固定前缀加账户标识组成的字符串，不取手机号、显示名或任何个人信息：别名随请求出现在日志、审计与路径里，是请求面标识，不翻译，也不含个人信息。确定性使并发的两次调用撞上同一个唯一约束，后到者读回既有租户。
 - **每次调用幂等地核对并补齐五件事。** 租户行（`Create`，已存在则读回）；账户在该租户的成员关系；租户内的非内置角色 `owner`（`Manager.PutRole`）；该角色对租户域内全部权限的授予（`Seeder.SeedGrants`，与种入平台运营角色同一做法，只增不删，进程之后新声明的权限在下一次调用时补入）；账户到该角色的绑定（`Manager.PutBinding`）。某一步失败时前面各步留着，下次调用补齐。
-- **租户框架在已认证、非冒充、没有当前租户且特性 `workspace.personal` 在场时调用它。** 有当前租户的账户（平台员工经名册读得到租户上下文，或已选定租户者）不触发；成功后把应答的别名挂成当前租户上下文；失败是 503 时租户区渲染可重试的失败占位，重试再调一次；409 时保持没有当前租户，租户区的读按「账户没有成员关系时的租户区」渲染。
+- **租户框架在已认证、非冒充、没有当前租户且特性 `workspace.personal` 在场时调用它。** 有当前租户的账户（平台员工经名册读得到租户上下文，或已选定租户者）不触发；成功后把应答的别名挂成当前租户上下文；失败是 503 时租户区渲染可重试的失败占位，重试再调一次；409 时不挂个人租户，租户区回落到占位租户读取（本节之外的既有限制），读答裸 404，按「账户没有成员关系时的租户区」渲染「无法访问当前组织」；租户为空时读被禁用、只会停在加载占位，所以不以空租户收场。
 - **个人租户的展示取前端文案。** 租户记录没有展示名；应答标明 `kind` 为 `personal` 时，租户选择器与租户区标题渲染个人空间的文案（zh-CN 与 en-US 各一键），其余租户渲染别名，别名从不翻译。
-- **注册完成后的落点。** 启用个人租户时，注册模式下经短信渠道登录成功后，示范把页面带到租户区首页，首页顶部一条可关闭的「完成账户设置」提示链接到 `/account/setup`，它只在这次注册之后出现一次，不是每次登录都出现；未启用时没有租户区可去，落点仍是 `/account/setup`。
+- **注册完成后的落点与一次性提示。** 启用个人租户时，注册模式下经短信渠道登录成功后落在租户区首页。首页顶部的「完成账户设置」提示（可关闭，链接到 `/account/setup`）由 ensure 应答的 `created` 为真触发——账户刚得到个人租户——且 `GET /auth/me` 显示账户设置未完成（没有可作登录名的标识或没有口令），而不由登录屏的注册模式触发，所以直接以新号码走普通短信登录而隐式开户的账户同样得到这条提示。登录完成应答不带「新开户」的事实，平台契约不为它加字段。未启用个人租户时没有这个信号，注册模式下的落点仍是 `/account/setup`。
 
 ### 冒充期间的壳
 
@@ -352,7 +352,7 @@ flowchart TD
 - **业务模块**：使用者的模块落在 `server/modules/`，照 `pkg/` 的模块形态写（描述符加 `init` 登记），被 `main.go` 的命令树纳入。这是「加一个业务」在示范里的唯一动作。
 - **命令组的叶子**：占位的组骨架供使用者按业务填一次性运维动作。
 - **前端的业务页面**：经路由包的声明式注册面接入（[web](web/README.md)）；页面依赖的后端面随装配而变时，声明以 `requires` 列出对应的特性名（见「前端的页面表」）。
-- **业务模块的特性**：业务模块以 `feature.Spec` 声明自己服务的特性，条件特性在 `Init` 中经 `feature.Board` 的 `Post` 报告；`gen` 写出的 `contracts/features.json` 随之含有它们，前端的特性名类型经登记接口增补（[feature](design-feature.md) 的扩展点、[api-sdk](web/design-web-api-sdk.md)）。示范自带的应用模块不声明特性：本仓库的 `contracts/features.json` 是平台包 `@speed/api-sdk/features` 的生成源，只含平台模块的声明（[api-sdk](web/design-web-api-sdk.md)）。
+- **业务模块的特性**：业务模块以 `feature.Spec` 声明自己服务的特性，条件特性在 `Init` 中经 `feature.Board` 的 `Post` 报告；`gen` 写出的 `contracts/features.json` 随之含有它们，前端的特性名类型经登记接口增补（[feature](design-feature.md) 的扩展点、[api-sdk](web/design-web-api-sdk.md)）。示范自带的个人租户模块声明特性 `workspace.personal`；它在 `contracts/features.json` 里标为应用所有，平台包 `@speed/api-sdk/features` 的生成只取平台所有的项，应用所有的名字由应用内的模块增补并入前端的 `FeatureName`（[api-sdk](web/design-web-api-sdk.md)）。
 
 ## 实现状态
 
@@ -381,8 +381,8 @@ flowchart TD
 | 横幅在应用栏之下、横幅的隐藏与复位、应用栏的身份指示、账户菜单的结束项 | 已实现 | `starters/demo/web/src/impersonation.tsx` `useImpersonationNoticeState`、`ImpersonationBannerSlot`、`ImpersonationChip`；`starters/demo/web/src/app.tsx` `TenantFrame`；`starters/demo/web/src/chrome.tsx` `UserMenu` |
 | 冒充期间的壳（横幅挂载、身份变更动作、当前租户、实时订阅重建、到期的有界重读、开始冒充时的读暂停、控制台区在冒充中的重定向） | 已实现 | `starters/demo/web/src/impersonation.tsx` `IdentityChangeProvider`、`useImpersonationStatus`、`ImpersonationBannerSlot`；`starters/demo/web/src/app.tsx` `TenantFrame`、`ConsoleImpersonationGate`、`ConsoleEntry`；`starters/demo/web/src/console-routes.ts` `useConsoleTarget`；`starters/demo/web/src/platform-permissions.tsx` `usePlatformPermissions` |
 | 注册模式下短信登录之后的完成设置页（用户名、口令） | 已实现 | `starters/demo/web/src/pages/account-setup-page.tsx` `AccountSetupPage`；`starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
-| 个人租户：服务端 ensure、`POST /workspace/personal`、特性 `workspace.personal`、`/workspace` 的认领，以及租户框架的触发 | 未实现 | — |
-| 启用个人租户时注册完成后落在租户区首页并带一次完成设置的提示 | 未实现 | — |
+| 个人租户：服务端 ensure、`POST /workspace/personal`、特性 `workspace.personal`、`/workspace` 的认领，以及租户框架的触发 | 已实现 | `starters/demo/server/personal.go` `personalModule`、`personalProduct`；`starters/demo/server/personal-openapi.json`；`starters/demo/web/src/app.tsx` `TenantFrame` |
+| 启用个人租户时注册完成后落在租户区首页，完成设置的提示由 ensure 应答的 `created` 触发 | 部分实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView`；`starters/demo/web/src/pages/home-page.tsx` `HomePage`；`starters/demo/web/src/app.tsx` `TenantFrame` |
 | 登录页文案不断言装配 | 已实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
 | `backend` 监听上各端的认领前缀（`testdata/` 的每份配置与示范测试的配置） | 已实现 | `starters/demo/server/testdata/` 六份配置的 `http.endpoints.*.prefixes`；`starters/demo/server/demo_test.go` `demoConfig` |
 | 后端前缀清单 `backend-prefixes.json` 与由它生成的开发代理 | 已实现 | `starters/demo/web/backend-prefixes.json`；`starters/demo/web/src/backend-prefixes.ts` `backendProxyRules`；`starters/demo/web/vite.config.ts` |
