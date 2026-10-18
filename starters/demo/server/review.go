@@ -7,9 +7,11 @@ package main
 // gives the SMS login method a sender that writes the verification code to the
 // log instead of calling a carrier.
 //
-// Because those log lines and the seeded credentials are for one machine only,
-// the assembly also carries a guard: a run whose HTTP listener is not loopback
-// fails at startup instead of serving the codes to a network.
+// The assembly also carries a guard: a run whose HTTP listener is not loopback
+// fails at startup, before a socket is bound. The guard limits the listening
+// address only — a log line can still leave the machine through log collection
+// or export — and what it keeps off the network is the seeded administrator
+// password the repository publishes and the open signup.
 //
 // The baseline admits only capabilities that start without a credential, an
 // external account or a service outside the deployment stack (see main.go). A
@@ -36,6 +38,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 
 	"github.com/vislake/speed/pkg/config"
@@ -75,8 +78,8 @@ const reviewCarrierName = "review"
 // social methods deliver a LoginMethod each and read their credentials from the
 // review configuration; the SMS three are the code state machine, its template
 // registry and the login method over them, with the review sender supplying the
-// carrier; the guard refuses a run that would expose the review credentials
-// beyond the machine.
+// carrier; the guard refuses a listening address reachable beyond the machine,
+// where the seeded administrator password and the open signup would be public.
 var reviewModules = []string{
 	googlelogin.ModuleName,
 	githublogin.ModuleName,
@@ -114,11 +117,12 @@ func init() {
 
 // reviewGuardModule refuses a run whose listening addresses are not loopback.
 //
-// The review build writes every verification code to the process log and seeds
-// the administrator credential the repository publishes, so a process anyone on
-// the network can reach gives both away. The guard reads the HTTP module's
-// listener addresses in Prepare, before any socket is bound: a non-loopback
-// address fails the startup, and the run never serves.
+// The review build seeds the administrator credential the repository publishes
+// and opens signup, so a process anyone on the network can reach hands both to
+// anyone. The guard reads the HTTP module's listener addresses in Prepare,
+// before any socket is bound: a non-loopback address fails the startup, and the
+// run never serves. It limits the listener only: a verification code written to
+// the process log can still leave the machine through log collection or export.
 func reviewGuardModule() core.Module {
 	return core.Module{
 		Name:     reviewGuardModuleName,
@@ -156,13 +160,22 @@ func checkReviewListeners(reader config.Reader) error {
 	if err := reader.Decode(reviewHTTPConfigNamespace, &cfg); err != nil {
 		return fmt.Errorf("%s: reading the listener addresses: %w", reviewGuardModuleName, err)
 	}
-	for name, listener := range cfg.Listeners {
+	// The names are visited in order so that a run reporting a bad address
+	// reports the same one every time, and so the verdict does not depend on
+	// map iteration order.
+	names := make([]string, 0, len(cfg.Listeners))
+	for name := range cfg.Listeners {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		listener := cfg.Listeners[name]
 		if loopbackAddress(listener.Address) {
 			continue
 		}
 		return fmt.Errorf("%s: listener %q is bound to %q, which is not a loopback address. "+
-			"The review build writes verification codes to the process log and seeds a published "+
-			"administrator credential, so it serves loopback addresses only",
+			"The review build seeds a published administrator credential and opens signup, "+
+			"so it serves loopback addresses only",
 			reviewGuardModuleName, name, listener.Address)
 	}
 	return nil
