@@ -76,9 +76,13 @@ func TestServePublishesTheFeatureDocument(t *testing.T) {
 	for _, module := range baselineServe {
 		servedModules[module] = true
 	}
+	declared, err := declaredVocabulary()
+	if err != nil {
+		t.Fatalf("reading this binary's declarations: %v", err)
+	}
 	staticServed := make(map[string]bool)
 	conditionalServed := make(map[string]bool)
-	for _, entry := range declaredVocabulary() {
+	for _, entry := range declared {
 		if !servedModules[entry.Module] {
 			continue
 		}
@@ -160,27 +164,36 @@ func authenticatedGet(t *testing.T, url, token string) rawResponse {
 const committedVocabularyPath = "../../../contracts/features.json"
 
 // vocabularyEntry is one declaration as contracts/features.json carries it.
+// Owner is derived from the declaring module's Go package, the same way gen
+// writes it: the platform module's packages are platform-owned, every other
+// module path is application-owned.
 type vocabularyEntry struct {
 	Name        string `json:"name"`
 	Module      string `json:"module"`
+	Owner       string `json:"owner"`
 	Conditional bool   `json:"conditional"`
 }
 
 // declaredVocabulary is the vocabulary this binary's declarations imply: every
 // feature.Spec in the available set, sorted by name. The available set is what
 // the imports reach, the same scope the merged document covers.
-func declaredVocabulary() []vocabularyEntry {
+func declaredVocabulary() ([]vocabularyEntry, error) {
 	resources := core.Resources[feature.Spec](core.ProcessRegistry)
 	entries := make([]vocabularyEntry, 0, len(resources))
 	for _, resource := range resources {
+		owner, err := moduleOwner(core.ProcessRegistry, resource.Module)
+		if err != nil {
+			return nil, err
+		}
 		entries = append(entries, vocabularyEntry{
 			Name:        resource.Value.Name,
 			Module:      resource.Module,
+			Owner:       owner,
 			Conditional: resource.Value.Conditional,
 		})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
-	return entries
+	return entries, nil
 }
 
 // TestGenWritesTheFeatureVocabulary runs gen with --features and reads what it
@@ -201,10 +214,14 @@ func TestGenWritesTheFeatureVocabulary(t *testing.T) {
 	var written struct {
 		Features []vocabularyEntry `json:"features"`
 	}
-	if err := json.Unmarshal(raw, &written); err != nil {
+	if err = json.Unmarshal(raw, &written); err != nil {
 		t.Fatalf("the vocabulary gen wrote is not JSON: %v\n%s", err, raw)
 	}
-	if declared := declaredVocabulary(); !reflect.DeepEqual(written.Features, declared) {
+	declared, err := declaredVocabulary()
+	if err != nil {
+		t.Fatalf("reading this binary's declarations: %v", err)
+	}
+	if !reflect.DeepEqual(written.Features, declared) {
 		t.Errorf("gen wrote\n%+v\nwant\n%+v", written.Features, declared)
 	}
 }
@@ -224,13 +241,34 @@ func TestCommittedFeatureVocabulary(t *testing.T) {
 	var committed struct {
 		Features []vocabularyEntry `json:"features"`
 	}
-	if err := json.Unmarshal(raw, &committed); err != nil {
+	if err = json.Unmarshal(raw, &committed); err != nil {
 		t.Fatalf("%s is not JSON: %v", committedVocabularyPath, err)
 	}
-	declared := declaredVocabulary()
+	declared, err := declaredVocabulary()
+	if err != nil {
+		t.Fatalf("reading this binary's declarations: %v", err)
+	}
 	if !reflect.DeepEqual(committed.Features, declared) {
 		t.Errorf("the committed feature vocabulary is out of step with this binary's declarations:\n"+
 			"committed: %+v\ndeclared:  %+v\nregenerate it with the gen command's --features flag",
 			committed.Features, declared)
+	}
+	// The ownership split is the reason the artifact carries an owner at all:
+	// the host's own module must be application-owned so the platform package
+	// does not register its name, and a platform module must be
+	// platform-owned. The comparison above already holds every entry to this
+	// criterion; these two anchors name the property so a reader sees what the
+	// split is for.
+	owners := make(map[string]string, len(committed.Features))
+	for _, entry := range committed.Features {
+		owners[entry.Name] = entry.Owner
+	}
+	if got := owners["workspace.personal"]; got != ownerApplication {
+		t.Errorf("workspace.personal is owned by %q, want %q: the host's own module must not "+
+			"enter the platform package", got, ownerApplication)
+	}
+	if got := owners["tenant.admin"]; got != ownerPlatform {
+		t.Errorf("tenant.admin is owned by %q, want %q: a platform module's declaration is "+
+			"platform-owned", got, ownerPlatform)
 	}
 }

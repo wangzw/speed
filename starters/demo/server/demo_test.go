@@ -884,6 +884,41 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 				t.Errorf("the document has no GET %s", path)
 			}
 		}
+		// The host's own route is a member of the document and carries the
+		// application-owner tag orval's platform generation filters on; no
+		// platform operation carries it. The tag is read from the document, not
+		// assumed: the fragment declares no tags of its own.
+		post, ok := doc.Paths["/workspace/personal"]["post"]
+		if !ok {
+			t.Fatalf("the document has no POST /workspace/personal, the host's own fragment")
+		}
+		var personal struct {
+			Tags []string `json:"tags"`
+		}
+		if err := json.Unmarshal(post, &personal); err != nil {
+			t.Fatalf("reading POST /workspace/personal: %v", err)
+		}
+		if !slices.Contains(personal.Tags, applicationOperationTag) {
+			t.Errorf("POST /workspace/personal carries tags %v, want %q among them",
+				personal.Tags, applicationOperationTag)
+		}
+		for path, methods := range doc.Paths {
+			for method, raw := range methods {
+				if path == "/workspace/personal" && method == "post" {
+					continue
+				}
+				var operation struct {
+					Tags []string `json:"tags"`
+				}
+				if err := json.Unmarshal(raw, &operation); err != nil {
+					t.Fatalf("reading %s %s: %v", strings.ToUpper(method), path, err)
+				}
+				if slices.Contains(operation.Tags, applicationOperationTag) {
+					t.Errorf("%s %s carries %q, but it is not an application-owned operation",
+						strings.ToUpper(method), path, applicationOperationTag)
+				}
+			}
+		}
 		named := false
 		for _, fragment := range doc.Fragments {
 			if fragment.Module == "ops" {

@@ -47,7 +47,11 @@ import (
 	"io/fs"
 	"os"
 	"os/signal"
+	"reflect"
+	"runtime"
+	"slices"
 	"sort"
+	"strings"
 	"syscall"
 
 	"github.com/vislake/speed/pkg/config"
@@ -684,10 +688,19 @@ func genDocument(_ context.Context, reg *core.Registry) error {
 	if in.Version == "" {
 		in.Version = hostVersionNumber
 	}
-	document, err := openapi.Merge(core.Resources[speedhttp.Spec](reg),
-		openapi.Options{Title: in.Title, Version: in.Version})
+	specs := core.Resources[speedhttp.Spec](reg)
+	appOperations, err := applicationOperations(reg, specs)
 	if err != nil {
 		return err
+	}
+	document, err := openapi.Merge(specs, openapi.Options{Title: in.Title, Version: in.Version})
+	if err != nil {
+		return err
+	}
+	if len(appOperations) > 0 {
+		if document, err = markOperations(document, appOperations); err != nil {
+			return err
+		}
 	}
 	if in.Output == "" {
 		if _, err = os.Stdout.Write(document); err != nil {
@@ -710,12 +723,32 @@ func genDocument(_ context.Context, reg *core.Registry) error {
 	return os.WriteFile(in.Features, vocabulary, 0o600)
 }
 
+// The owner vocabulary: every feature declaration and every merged operation
+// says whether the platform ships it or the application does. The two writers
+// that read it — the feature-name generator and orval's platform configuration
+// — select the platform side by it; the application's own generation takes
+// both.
+const (
+	// ownerPlatform is the owner of a declaration made by a module the
+	// platform module delivers (package path under the pkg module).
+	ownerPlatform = "platform"
+	// ownerApplication is the owner of a declaration made by the host's own
+	// modules.
+	ownerApplication = "application"
+	// applicationOperationTag is the tag an application-owned operation
+	// carries in the merged document. orval 8.17.0 filters operations by
+	// their tags (input.filters.tags), so the tag is the mark the platform
+	// generation excludes and the application generation keeps.
+	applicationOperationTag = "speed.application"
+)
+
 // featureEntry is one declaration in the feature vocabulary: the name, the
-// module that declared it, and whether the module has to post it for it to be
-// present in a run.
+// module that declared it, its owner, and whether the module has to post it for
+// it to be present in a run.
 type featureEntry struct {
 	Name        string `json:"name"`
 	Module      string `json:"module"`
+	Owner       string `json:"owner"`
 	Conditional bool   `json:"conditional"`
 }
 
@@ -729,9 +762,14 @@ func featureVocabulary(reg *core.Registry) ([]byte, error) {
 	declarations := core.Resources[feature.Spec](reg)
 	entries := make([]featureEntry, 0, len(declarations))
 	for _, declaration := range declarations {
+		owner, err := moduleOwner(reg, declaration.Module)
+		if err != nil {
+			return nil, err
+		}
 		entries = append(entries, featureEntry{
 			Name:        declaration.Value.Name,
 			Module:      declaration.Module,
+			Owner:       owner,
 			Conditional: declaration.Value.Conditional,
 		})
 	}
@@ -743,6 +781,179 @@ func featureVocabulary(reg *core.Registry) ([]byte, error) {
 		return nil, fmt.Errorf("%s: encoding the feature vocabulary: %w", genModuleName, err)
 	}
 	return body, nil
+}
+
+// moduleOwner answers who ships the named module: the platform or the
+// application. The criterion is the Go package the module's descriptor lives
+// in, not its name: the platform is the module the pkg package belongs to, and
+// every module whose code sits under that module path is platform-owned; a
+// module in any other module path (the host's own, or another application's)
+// is application-owned. The package is read from the first lifecycle callback
+// the descriptor carries, because a descriptor is built where its module lives
+// and its callbacks are functions in that package. A module with no callback
+// has no provenance to read and is refused rather than guessed at.
+func moduleOwner(reg *core.Registry, module string) (string, error) {
+	descriptor, found := reg.Lookup(module)
+	if !found {
+		return "", fmt.Errorf("%s: module %q declared a resource but is not registered", genModuleName, module)
+	}
+	packagePath, ok := modulePackage(descriptor)
+	if !ok {
+		return "", fmt.Errorf("%s: module %q carries no lifecycle callback, so its owning package "+
+			"cannot be read; give the descriptor one or the vocabulary cannot be split by owner",
+			genModuleName, module)
+	}
+	platform := platformModulePath()
+	if packagePath == platform || strings.HasPrefix(packagePath, platform+"/") {
+		return ownerPlatform, nil
+	}
+	return ownerApplication, nil
+}
+
+// modulePackage reports the import path of the package that declared a module
+// descriptor. The callbacks are written in that package (a constructor that
+// returns the descriptor usually has them as closures), and
+// runtime.FuncForPC reports the symbol with its import path. A package-level
+// function (`pkg/observability/stdout.prepare`) and a closure
+// (`pkg/audit/admin.Module.func1`) both split the same way: everything up to
+// the last slash is the package path, and the segment after it starts with the
+// package name followed by a dot.
+func modulePackage(descriptor core.Module) (string, bool) {
+	callbacks := []any{
+		descriptor.Prepare,
+		descriptor.New,
+		descriptor.Migrate,
+		descriptor.Init,
+		descriptor.Start,
+		descriptor.Serve,
+		descriptor.Stop,
+		descriptor.Close,
+	}
+	for _, callback := range callbacks {
+		if callback == nil {
+			continue
+		}
+		value := reflect.ValueOf(callback)
+		if value.Kind() != reflect.Func || value.IsNil() {
+			continue
+		}
+		fn := runtime.FuncForPC(value.Pointer())
+		if fn == nil {
+			continue
+		}
+		name := fn.Name()
+		slash := strings.LastIndex(name, "/")
+		rest := name[slash+1:]
+		dot := strings.Index(rest, ".")
+		if dot < 0 {
+			continue
+		}
+		return name[:slash+1] + rest[:dot], true
+	}
+	return "", false
+}
+
+// platformModulePath is the import path of the platform module's root. It is
+// taken from the core package at run time rather than written down, so the
+// criterion survives a copied starter whose dependency lives at another
+// import path: core is the one package every platform module reaches, and its
+// package path is the module path plus "/core".
+func platformModulePath() string {
+	return strings.TrimSuffix(reflect.TypeFor[core.Module]().PkgPath(), "/core")
+}
+
+// applicationOperations answers the operations the merged document takes from
+// application-owned fragments, keyed as "METHOD path". The fragments are read
+// from the declaring modules' own documents rather than from names, so an
+// application module's route is marked wherever it appears; a platform
+// fragment that declares the same operation is a merge conflict before this is
+// reached.
+func applicationOperations(reg *core.Registry, specs []core.Resource[speedhttp.Spec]) (map[string]bool, error) {
+	operations := map[string]bool{}
+	for _, spec := range specs {
+		owner, err := moduleOwner(reg, spec.Module)
+		if err != nil {
+			return nil, err
+		}
+		if owner != ownerApplication {
+			continue
+		}
+		var fragment struct {
+			Paths map[string]map[string]json.RawMessage `json:"paths"`
+		}
+		if err = json.Unmarshal(spec.Value.Document, &fragment); err != nil {
+			return nil, fmt.Errorf("%s: reading the fragment module %q declares: %w",
+				genModuleName, spec.Module, err)
+		}
+		for path, methods := range fragment.Paths {
+			for method := range methods {
+				operations[strings.ToUpper(method)+" "+path] = true
+			}
+		}
+	}
+	return operations, nil
+}
+
+// markOperations adds the application-owner tag to the named operations of the
+// merged document. The document is read and written with the same field order
+// and the same value encodings openapi.Merge uses, so an operation the map does
+// not name keeps its exact bytes; only the named operations gain the tag.
+func markOperations(document []byte, operations map[string]bool) ([]byte, error) {
+	var merged struct {
+		OpenAPI    string                                `json:"openapi"`
+		Info       json.RawMessage                       `json:"info"`
+		Paths      map[string]map[string]json.RawMessage `json:"paths"`
+		Components map[string]map[string]json.RawMessage `json:"components"`
+		Fragments  []json.RawMessage                     `json:"x-fragments"`
+	}
+	if err := json.Unmarshal(document, &merged); err != nil {
+		return nil, fmt.Errorf("%s: reading the merged document: %w", genModuleName, err)
+	}
+	for path, methods := range merged.Paths {
+		for method, raw := range methods {
+			if !operations[strings.ToUpper(method)+" "+path] {
+				continue
+			}
+			tagged, err := withTag(raw, applicationOperationTag)
+			if err != nil {
+				return nil, fmt.Errorf("%s: tagging %s %s: %w", genModuleName,
+					strings.ToUpper(method), path, err)
+			}
+			methods[method] = tagged
+		}
+	}
+	marked, err := json.Marshal(merged)
+	if err != nil {
+		return nil, fmt.Errorf("%s: writing the merged document: %w", genModuleName, err)
+	}
+	return marked, nil
+}
+
+// withTag appends tag to an operation's tags array, keeping any tags the
+// fragment declared and adding the mark once.
+func withTag(raw json.RawMessage, tag string) (json.RawMessage, error) {
+	var operation map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &operation); err != nil {
+		return nil, err
+	}
+	if operation == nil {
+		return nil, fmt.Errorf("the operation is not a JSON object")
+	}
+	var tags []string
+	if declared, found := operation["tags"]; found {
+		if err := json.Unmarshal(declared, &tags); err != nil {
+			return nil, fmt.Errorf("the operation's tags are not a string array: %w", err)
+		}
+	}
+	if !slices.Contains(tags, tag) {
+		tags = append(tags, tag)
+	}
+	encoded, err := json.Marshal(tags)
+	if err != nil {
+		return nil, err
+	}
+	operation["tags"] = encoded
+	return json.Marshal(operation)
 }
 
 // cliCommand is one leaf of a command group: the word, how far it drives the
