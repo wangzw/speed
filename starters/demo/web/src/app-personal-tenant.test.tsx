@@ -122,6 +122,22 @@ describe('the tenant frame and the personal tenant', () => {
     ).toBeInTheDocument()
   })
 
+  it('does not call the ensure for an anonymous viewer', async () => {
+    const calls: string[] = []
+    script({ roster: 'refused', calls })
+    renderDemoApp()
+
+    // The anonymous viewer meets the host's sign-in surface; the ensure needs
+    // an authenticated caller and is never issued.
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.signIn.heading,
+      }),
+    ).toBeInTheDocument()
+    expect(calls).not.toContain(`POST ${ENSURE_PATH}`)
+  })
+
   it('does not call the ensure when the feature is not in force', async () => {
     const calls: string[] = []
     script({ roster: 'refused', calls })
