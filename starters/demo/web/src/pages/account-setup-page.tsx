@@ -39,25 +39,11 @@ import { useTranslation } from '@speed/i18n'
 import { useNavigate } from '@speed/route-kit'
 import { PageHeader } from '@speed/ui-kit'
 import type { ReactElement } from 'react'
+import { isLoginName } from '../account-setup.js'
 import { useAuthnProfileGet } from '../app-api/index.js'
 import { useAppServices } from '../app-services.js'
 import { TENANT_HOME_PATH } from './not-found-page.js'
 import { DEMO_NAMESPACE } from '../resources.js'
-
-/**
- * Whether one identifier can serve as a login name: a username, or an email
- * address that has been verified. A phone is a way to sign in but not a
- * login name, so it does not unlock password sign-in.
- */
-function isLoginName(identifier: {
-  readonly kind: string
-  readonly verified_at: string
-}): boolean {
-  if (identifier.kind === 'username') {
-    return true
-  }
-  return identifier.kind === 'email' && identifier.verified_at !== ''
-}
 
 export function AccountSetupPage(): ReactElement {
   const { session } = useAppServices()

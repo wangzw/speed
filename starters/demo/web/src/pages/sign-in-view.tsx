@@ -21,13 +21,16 @@
  *
  * Registration folds into the sign-in flow, so a completed registration is
  * not a page of its own: the screen reports the mode and channel it
- * completed on. With the personal-tenant feature in force, a registration
- * that went through SMS (the only channel that opens an account here) lands
- * on the tenant area's home, where the home page offers a one-time
- * 「完成账户设置」 notice; without it there is no tenant area to land in, so
- * the registration continues on the account setup page to add a username and
- * then a password. Every other outcome leaves the viewer in the app the
- * session flip already opened.
+ * completed on. The register mode decides the landing only. With the
+ * personal-tenant feature in force, a registration that went through SMS
+ * (the only channel that opens an account here) lands on the tenant area's
+ * home -- and so does an ordinary SMS sign-in with a new number, which opens
+ * the account implicitly; in both cases the home page decides whether to
+ * offer the one-time 「完成账户设置」 notice from the personal-tenant ensure
+ * answer and the profile, never from this screen's mode. Without the feature
+ * there is no tenant area to land in, so the registration continues on the
+ * account setup page to add a username and then a password. Every other
+ * outcome leaves the viewer in the app the session flip already opened.
  */
 
 import Box from '@mui/material/Box'
@@ -58,9 +61,15 @@ export function SignInView(): ReactElement {
   const { session } = useAppServices()
   const { t } = useTranslation(DEMO_NAMESPACE)
   const navigate = useNavigate()
-  // A registration completed through SMS: the account exists but has no
-  // login name or password yet, so the host carries it on. Everything else --
-  // an ordinary sign-in, any other channel -- enters the app as the session
+  // A registration completed through SMS: the register mode decides where
+  // the just-opened account lands. With the personal tenant in force it
+  // lands in the tenant area; the home page decides on its own whether the
+  // account still needs the setup notice, from the personal-tenant ensure
+  // answer and the profile -- not from this callback, so an implicit
+  // opening through an ordinary SMS sign-in gets the same treatment.
+  // Without the personal tenant there is no tenant area to land in, so the
+  // registration continues on the setup page. Everything else -- an
+  // ordinary sign-in, any other channel -- enters the app as the session
   // flip already does.
   //
   // The feature is read from the session snapshot at completion time, not
@@ -76,10 +85,7 @@ export function SignInView(): ReactElement {
     const personalServed =
       features.state === 'ready' && features.names.has('workspace.personal')
     if (personalServed) {
-      // The flag is router state, not a query parameter and not storage: it
-      // is true for this navigation only, and the home page clears it as it
-      // reads it.
-      navigate(TENANT_HOME_PATH, { state: { registration: 'sms' } })
+      navigate(TENANT_HOME_PATH)
       return
     }
     navigate(ACCOUNT_SETUP_PATH)

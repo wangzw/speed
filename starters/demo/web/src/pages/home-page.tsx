@@ -22,7 +22,6 @@
  * page never reloads (the same shape the shell's navigation entries take).
  */
 
-import { useEffect, useState } from 'react'
 import type { MouseEvent, ReactElement } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -37,11 +36,12 @@ import {
   useHasRoute,
 } from '@speed/route-kit'
 import { PageHeader } from '@speed/ui-kit'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import {
   consoleShellRoutes,
   useConsoleTarget,
 } from '../console-routes.js'
+import { usePersonalTenantNotice } from '../personal-tenant-notice.js'
 import {
   ACCOUNT_PATH,
   ACCOUNT_SETUP_PATH,
@@ -83,22 +83,15 @@ const START_CARDS: readonly StartCard[] = [
 /** The app's starting page: the platform's capabilities as a card grid. */
 export function HomePage(): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
-  const location = useLocation()
   const navigate = useNavigate()
-  // A registration completed through the SMS sign-in lands here with a
-  // one-shot router-state flag (src/pages/sign-in-view.tsx). The notice is
-  // local to this visit: clearing the history entry's state means a reload or
-  // a later return does not show it again, and dismissing it drops it from
-  // the page.
-  const [setupNotice, setSetupNotice] = useState(false)
-  useEffect(() => {
-    const state = location.state as { readonly registration?: unknown } | null
-    if (state?.registration !== 'sms') {
-      return
-    }
-    setSetupNotice(true)
-    navigate(location.pathname, { replace: true, state: null })
-  }, [location.state, location.pathname, navigate])
+  // The frame's ensure answer is the trigger: the account just received its
+  // personal tenant and its GET /auth/me shows setup incomplete
+  // (src/personal-tenant-notice.tsx). The sign-in screen's registration mode
+  // is not -- an ordinary SMS sign-in with a new number opens the account
+  // implicitly and gets the same notice. Dismissing it is remembered for the
+  // identity's session, so leaving and returning to the page does not bring
+  // it back.
+  const setupNotice = usePersonalTenantNotice()
   return (
     <Box
       component="section"
@@ -115,10 +108,10 @@ export function HomePage(): ReactElement {
       }}
     >
       <PageHeader title={t('home.heading')} description={t('home.intro')} />
-      {setupNotice ? (
+      {setupNotice.visible ? (
         <Alert
           severity="info"
-          onClose={() => setSetupNotice(false)}
+          onClose={setupNotice.dismiss}
           closeText={t('home.setupNotice.dismiss')}
         >
           <Typography variant="body2">

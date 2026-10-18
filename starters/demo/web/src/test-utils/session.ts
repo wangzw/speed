@@ -80,14 +80,13 @@ export function authenticatedSnapshot(options: {
     },
     // The suite's session serves the platform vocabulary a baseline
     // deployment serves unless the test narrows it, so the feature-gated
-    // pages and controls are present by default. The personal tenant is the
-    // exception: its switch defaults to off, and the host asks for it by
-    // naming the feature.
+    // pages and controls are present by default. Application-owned names
+    // (the personal tenant's workspace.personal, for one) are not in the
+    // platform package's FEATURE_NAMES; a suite that needs one passes its own
+    // feature state.
     features: options.features ?? {
       state: 'ready',
-      names: new Set(
-        FEATURE_NAMES.filter((name) => name !== 'workspace.personal'),
-      ),
+      names: new Set(FEATURE_NAMES),
     },
   }
 }

@@ -70,6 +70,7 @@ import {
 import type { RouteContext, RoutePresence } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
+import { setupIncomplete } from './account-setup.js'
 import { tenantAdminTenantsList, workspacePersonalEnsure } from './app-api/index.js'
 import { useAppServices } from './app-services.js'
 import {
@@ -104,6 +105,7 @@ import {
   NotificationsNavIcon,
   ObjectsNavIcon,
 } from './nav-icons.js'
+import { PersonalTenantNoticeProvider } from './personal-tenant-notice.js'
 import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
 import {
@@ -299,8 +301,10 @@ function TenantFrame({
 }): ReactElement {
   const navigate = useNavigate()
   // The assembled client: its event-stream opener feeds the notification
-  // surface's live subscription below.
-  const { api } = useAppServices()
+  // surface's live subscription below. The session is read at the ensure
+  // answer, where its authenticated snapshot is the GET /auth/me read that
+  // says whether setup is still incomplete.
+  const { api, session } = useAppServices()
   // The notification surfaces and the roster are feature-gated; the hooks fail
   // closed, so a pending or failed document opens and reads nothing.
   const inboxServed = useFeature('notification.inbox')
@@ -364,6 +368,12 @@ function TenantFrame({
     readonly id: string
     readonly alias: string
   } | null>(null)
+  // Whether this identity's ensure answer reported that it had just created
+  // the account's personal tenant while the profile still shows setup
+  // incomplete. The home page turns that fact into its one-time
+  // 「完成账户设置」 notice (src/personal-tenant-notice.tsx); an ordinary SMS
+  // sign-in with a new number reaches it exactly like a registration does.
+  const [personalSetupEligible, setPersonalSetupEligible] = useState(false)
   // Whether the roster read has settled, so the ensure below never races it:
   // an account that already has a current tenant must not trigger.
   const [rosterSettled, setRosterSettled] = useState(false)
@@ -499,6 +509,7 @@ function TenantFrame({
   useEffect(() => {
     setPersonalTenant(null)
     setPersonalFailure(false)
+    setPersonalSetupEligible(false)
   }, [principalId, generation, impersonating])
 
   // The personal ensure. It runs only when every eligibility fact the server
@@ -532,6 +543,21 @@ function TenantFrame({
         setTenantAlias(answer.tenant.id, answer.tenant.alias)
         setPersonalTenant({ id: answer.tenant.id, alias: answer.tenant.alias })
         setTenantId(answer.tenant.id)
+        // `created` says this call registered the tenant, so the account is
+        // new to password sign-in until it adds a login name and a password.
+        // The profile is the GET /auth/me read the session committed with
+        // the login; it is what makes the home page offer the one-time
+        // 「完成账户设置」 notice, whether the account came from the register
+        // entry or from an ordinary SMS sign-in with a new number.
+        const current = session.getSnapshot()
+        if (
+          answer.created &&
+          current.state === 'authenticated' &&
+          current.principal !== null &&
+          setupIncomplete(current.principal)
+        ) {
+          setPersonalSetupEligible(true)
+        }
       })
       .catch((error: unknown) => {
         if (cancelled) {
@@ -561,6 +587,7 @@ function TenantFrame({
     principalId,
     generation,
     personalRetry,
+    session,
     setTenantId,
   ])
   const items = useNavItems()
@@ -673,15 +700,20 @@ function TenantFrame({
           }
           signIn={<SignInView />}
         >
-          <Box sx={{ p: 3 }}>
-            {personalFailure && tenantId === null ? (
-              <TenantProvisionFailure
-                onRetry={() => setPersonalRetry((current) => current + 1)}
-              />
-            ) : (
-              children
-            )}
-          </Box>
+          <PersonalTenantNoticeProvider
+            key={`${principalId}:${generation}`}
+            eligible={personalSetupEligible}
+          >
+            <Box sx={{ p: 3 }}>
+              {personalFailure && tenantId === null ? (
+                <TenantProvisionFailure
+                  onRetry={() => setPersonalRetry((current) => current + 1)}
+                />
+              ) : (
+                children
+              )}
+            </Box>
+          </PersonalTenantNoticeProvider>
         </ProductShell>
         </ImpersonationNoticeProvider>
       </NotificationStreamProvider>

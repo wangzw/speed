@@ -50,6 +50,7 @@ function bindScript(
 function script(options: {
   readonly roster?: 'refused' | { readonly tenants: readonly unknown[] }
   readonly ensure?: 'success' | 'conflict' | 'unavailable'
+  readonly ensureCreated?: boolean
   readonly ensureCalls?: string[]
   readonly calls?: string[]
 }): void {
@@ -76,7 +77,7 @@ function script(options: {
       }
       return {
         tenant: { id: PERSONAL_ID, alias: PERSONAL_ID, kind: 'personal' },
-        created: true,
+        created: options.ensureCreated ?? true,
       }
     }
     throw new Error(`unexpected ${call.method ?? 'GET'} ${path}`)
@@ -106,6 +107,44 @@ describe('the tenant frame and the personal tenant', () => {
     expect(ensureCalls).toEqual([ENSURE_PATH])
     expect(getCurrentTenantId()).toBe(PERSONAL_ID)
     expect(getCurrentTenantAlias()).toBe(PERSONAL_ID)
+  })
+
+  it('does not offer the setup notice when the personal tenant already existed', async () => {
+    // The account already held its personal tenant, so the ensure answer is
+    // created: false. The profile is deliberately left incomplete: the
+    // notice's other half is true, which makes created the deciding fact.
+    script({ roster: 'refused', ensureCreated: false })
+    const snapshot = authenticatedSnapshot({
+      features: readyFeatures(...PERSONAL_FEATURES),
+    })
+    if (snapshot.principal === null) {
+      throw new Error('the authenticated snapshot carries no principal')
+    }
+    renderDemoApp({
+      session: createTestSession({
+        ...snapshot,
+        principal: {
+          ...snapshot.principal,
+          password_set: false,
+          identifiers: [
+            {
+              id: 'identifier-phone',
+              kind: 'phone',
+              value: '+14155550123',
+              verified_at: '2026-01-01T00:00:00Z',
+              verified_via: 'sms',
+            },
+          ],
+        },
+      }),
+    })
+
+    // The ensure settled (the switcher labels the personal tenant), and the
+    // home page shows no notice because this call created nothing.
+    expect(
+      await screen.findByRole('button', { name: demoEnUS.workspace.personal }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull()
   })
 
   it('renders the personal label in the interface language', async () => {

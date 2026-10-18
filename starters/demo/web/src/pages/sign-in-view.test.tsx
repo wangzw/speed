@@ -180,9 +180,8 @@ describe('the sign-in surface', () => {
 
   it('lands a registration in the tenant area when the personal tenant is in force', async () => {
     const harness = makeHarness({
-      // The deployment serves workspace.personal: the registration goes to
-      // the tenant home, where the one-time setup notice links on to the
-      // setup page.
+      // The deployment serves workspace.personal: the register mode's
+      // landing is the tenant home rather than the setup page.
       [FEATURES_GET]: () => ({ features: ['workspace.personal'] }),
       [LOGIN_METHODS]: () =>
         methodList(
@@ -230,9 +229,96 @@ describe('the sign-in surface', () => {
       within(form).getByRole('button', { name: authEn.smsSignIn.submit }),
     )
 
-    // The registration landed on the tenant home rather than the setup page,
-    // and the home page offers the one-time notice into the setup flow.
+    // The registration landed on the tenant home rather than the setup page.
+    // Whether the home page offers the setup notice is a question the ensure
+    // answer and the profile settle, not the register mode -- the case below
+    // drives it through an ordinary sign-in.
     await waitFor(() => expect(window.location.pathname).toBe('/'))
+    expect(
+      await screen.findByRole('heading', { level: 1, name: demoEnUS.home.heading }),
+    ).toBeInTheDocument()
+  })
+
+  it('offers the setup notice to a new phone opened by a plain SMS sign-in', async () => {
+    // No register entry is clicked: this is the ordinary sign-in form. The
+    // deployment's SMS method opens an account for a number it does not know,
+    // so the completion creates the account implicitly. The ensure answer is
+    // what says the personal tenant was just created, and GET /auth/me shows
+    // no login name and no password -- the two facts the notice is made of.
+    const harness = makeHarness({
+      [FEATURES_GET]: () => ({
+        features: ['tenant.admin', 'workspace.personal'],
+      }),
+      [LOGIN_METHODS]: () =>
+        methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        ),
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [
+              { name: 'code', kind: 'code', required: true, secret: true },
+            ],
+          },
+        }),
+      [LOGIN_ANSWER]: (call) =>
+        (call.options?.body as { step?: string }).step === 'complete'
+          ? authenticatedCompletion()
+          : completeFlow(2),
+      [PROFILE_GET]: () =>
+        principal({
+          password_set: false,
+          identifiers: [
+            {
+              id: 'identifier-phone',
+              kind: 'phone',
+              value: '+14155550123',
+              verified_at: '2026-01-01T00:00:00Z',
+              verified_via: 'sms',
+            },
+          ],
+        }),
+      // An ordinary member cannot read the tenant roster; the frame's failed
+      // read leaves no current tenant, which is what lets the ensure run.
+      'GET /tenant/admin/tenants': () => {
+        throw Object.assign(new Error('the roster read was refused'), {
+          status: 403,
+        })
+      },
+      'POST /workspace/personal': () => ({
+        tenant: {
+          id: 'personal-account-1',
+          alias: 'personal-account-1',
+          kind: 'personal',
+        },
+        created: true,
+      }),
+    })
+    renderDemoApp({ session: harness.session })
+
+    const user = userEvent.setup()
+    await user.type(
+      await screen.findByLabelText(authEn.smsSignIn.phoneLabel),
+      '+14155550123',
+    )
+    await user.click(
+      screen.getByRole('button', { name: authEn.smsSignIn.sendCode }),
+    )
+    await user.type(
+      await screen.findByLabelText(authEn.smsSignIn.codeLabel),
+      '123456',
+    )
+    const form = screen
+      .getByLabelText(authEn.smsSignIn.codeLabel)
+      .closest('form') as HTMLFormElement
+    await user.click(
+      within(form).getByRole('button', { name: authEn.smsSignIn.submit }),
+    )
+
     expect(
       await screen.findByText(demoEnUS.home.setupNotice.title),
     ).toBeInTheDocument()
