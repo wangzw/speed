@@ -60,6 +60,7 @@
     "description": "Add a username and a password so you can sign in without a text message next time.",
     "completeTitle": "Account setup is complete",
     "complete": "Your account setup is complete. You can sign in with your username and password.",
+    "completeWithEmail": "Your account setup is complete. You can sign in with your email address and password.",
     "home": "Go to the home page",
     "later": "Set up later",
     "password": {

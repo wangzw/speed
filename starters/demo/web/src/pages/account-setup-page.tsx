@@ -16,7 +16,9 @@
  * login_identifier_required, so the password section is withheld until the
  * profile lists one, and an explanatory line says to add a username first.
  * Once the account has both a login name and a password the page states
- * setup is complete. The profile query's cache entry is the one the sections
+ * setup is complete, naming the sign-in name the account holds: a username
+ * when it has one, a verified email address when that is the only login
+ * name. The profile query's cache entry is the one the sections
  * invalidate after each write, so adding a username reveals the password
  * section and setting a password flips the page to complete without a
  * reload.
@@ -55,6 +57,10 @@ export function AccountSetupPage(): ReactElement {
   const identifiers = profile.data?.identifiers
   const hasLoginName =
     identifiers?.some((identifier) => isLoginName(identifier)) ?? false
+  // A verified email is a login name, but it is not a username: the
+  // completion copy names the sign-in name the account actually holds.
+  const hasUsername =
+    identifiers?.some((identifier) => identifier.kind === 'username') ?? false
   const passwordSet = profile.data?.password_set === true
   const complete = hasLoginName && passwordSet
   return (
@@ -81,7 +87,11 @@ export function AccountSetupPage(): ReactElement {
             borderRadius: 1,
           }}
         >
-          <Typography variant="body1">{t('accountSetup.complete')}</Typography>
+          <Typography variant="body1">
+            {hasUsername
+              ? t('accountSetup.complete')
+              : t('accountSetup.completeWithEmail')}
+          </Typography>
         </Box>
       ) : null}
       {/* Usernames only: the setup page's job is the login name a password

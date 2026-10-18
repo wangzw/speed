@@ -186,6 +186,33 @@ describe('the account setup page', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('names the email address when it is the only login name', async () => {
+    bindProfile(
+      profileOf({
+        password_set: true,
+        identifiers: [
+          {
+            id: 'id-3',
+            kind: 'email',
+            value: 'member@example.com',
+            verified_at: '2026-01-01T00:00:00Z',
+            verified_via: 'code',
+          },
+        ],
+      }),
+    )
+    renderSetup()
+
+    expect(
+      await screen.findByText(demoEnUS.accountSetup.completeWithEmail),
+    ).toBeInTheDocument()
+    // The account has no username, so the completion copy must not tell it
+    // to sign in with one.
+    expect(
+      screen.queryByText(demoEnUS.accountSetup.complete),
+    ).not.toBeInTheDocument()
+  })
+
   it('treats a verified email as a login name', async () => {
     bindProfile(
       profileOf({
