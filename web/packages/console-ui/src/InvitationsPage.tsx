@@ -49,7 +49,7 @@ import {
   EmptyState,
   ListSkeleton,
   PageHeader,
-  PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+  PRIMARY_COLUMN_MAX_WIDTH,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
@@ -256,7 +256,7 @@ export function InvitationsPage() {
       // The invitation's primary identity: never hidden, and the shared
       // whole-cell cap -- which counts the copy control -- keeps the row
       // actions on screen.
-      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (invitation) => (
         <Typography variant="body2" noWrap>
           {invitation.email}
@@ -333,7 +333,7 @@ export function InvitationsPage() {
       header: t('members.column.account'),
       cellWrap: 'nowrap',
       cellFullValue: (member) => member.account,
-      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (member) => <AccountIdentity account={member.account} />,
     },
     {

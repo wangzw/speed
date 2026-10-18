@@ -31,8 +31,8 @@ import {
 } from '@speed/test-utils/emitted-css'
 import {
   DataTable,
+  LONG_TEXT_COLUMN_MAX_WIDTH,
   PRIMARY_COLUMN_MAX_WIDTH,
-  PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
   primaryColumnMaxWidthSx,
 } from './DataTable.js'
 import type { DataTableColumn, DataTableProps } from './DataTable.js'
@@ -103,9 +103,9 @@ function renderTemplate(
 }
 
 describe('DataTable', () => {
-  it('defines the shared primary-column cap: one width below md, another from md up', () => {
+  it('defines the shared caps: the primary pair grows at md, the long-text cap does not', () => {
     expect(PRIMARY_COLUMN_MAX_WIDTH).toEqual({ belowMd: 160, fromMd: 200 })
-    expect(PRIMARY_COLUMN_CONTENT_MAX_WIDTH).toEqual({ '@': 160, '@md': 200 })
+    expect(LONG_TEXT_COLUMN_MAX_WIDTH).toBe(160)
     expect(primaryColumnMaxWidthSx).toEqual({
       maxWidth: { '@': 160, '@md': 200 },
     })
@@ -1043,7 +1043,7 @@ describe('DataTable', () => {
         header: 'Name',
         cellWrap: 'nowrap',
         cellFullValue: (row) => `member-${row.id}`,
-        contentMaxWidth: { '@': 120, '@md': 180 },
+        contentMaxWidth: { belowMd: 120, fromMd: 180 },
         cell: (row) => row.name,
       },
       {
@@ -1055,7 +1055,7 @@ describe('DataTable', () => {
       },
     ]
 
-    it('puts the container-query cap on the wrapper that includes the control', () => {
+    it('converts the named pair into the below-md and from-md rules', () => {
       const utils = renderTable({ columns: CAPPED_COLUMNS })
       const [cappedCell] = utils
         .getAllByText('Ada')
@@ -1063,12 +1063,37 @@ describe('DataTable', () => {
         .filter((cell): cell is HTMLTableCellElement => cell !== null)
       const wrapper = cappedCell?.firstElementChild
       expect(wrapper).not.toBeNull()
+      // `belowMd` is the 0px baseline and `fromMd` the 900px rule, so the
+      // two values differ across the md boundary. jsdom neither evaluates
+      // container queries nor lays out, so this pins the generated rules;
+      // the real-browser measurement at 600/900/1200px pins which one is
+      // in force on either side of md.
       expect(containerMaxWidthOf(wrapper as Element)).toEqual(
         new Map([
           [0, 120],
           [900, 180],
         ]),
       )
+      expect(emittedStyleText()).toContain('@container (min-width:900px)')
+    })
+
+    it('applies a plain-number cap at every width', () => {
+      const columns: readonly DataTableColumn<Member>[] = [
+        {
+          id: 'name',
+          header: 'Name',
+          cellWrap: 'nowrap',
+          cellFullValue: (row) => `member-${row.id}`,
+          contentMaxWidth: 150,
+          cell: (row) => row.name,
+        },
+      ]
+      const utils = renderTable({ columns })
+      const cell = utils.getByText('Ada').closest('td') as HTMLElement
+      const wrapper = cell.firstElementChild as HTMLElement
+      expect(wrapper).toHaveStyle({ maxWidth: '150px' })
+      // No container-query rule was generated: one value at every width.
+      expect(containerMaxWidthOf(wrapper)).toEqual(new Map())
     })
 
     it('truncates inside the cap and leaves the copy control whole beside it', () => {
@@ -1120,7 +1145,7 @@ describe('DataTable', () => {
           header: 'Name',
           cellWrap: 'nowrap',
           cellFullValue: () => undefined,
-          contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+          contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
           cell: (row) => row.name,
         },
       ]

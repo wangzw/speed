@@ -96,12 +96,14 @@
  * a whole -- the rendered text plus that control -- rather than the text
  * alone. The text truncates inside the cap; the control keeps its own
  * width and is never clipped, so the cell cannot end up wider than the
- * declared value by the control's width. The value is a container-query
- * responsive one (see DataTableColumnContentMaxWidth); a plain number or
- * CSS length applies at every width. Omitting it changes nothing: a
- * column without it renders the exact cell it rendered before the prop
- * existed, and a row whose `cellFullValue` answers `undefined` is capped
- * without gaining a control.
+ * declared value by the control's width. The value is a plain number
+ * (applies at every width) or a `{ belowMd, fromMd }` named pair the
+ * component converts into a container query against the table's own
+ * width (see DataTableColumnContentMaxWidth), so callers never write
+ * container-query syntax. Omitting it changes nothing: a column without
+ * it renders the exact cell it rendered before the prop existed, and a
+ * row whose `cellFullValue` answers `undefined` is capped without
+ * gaining a control.
  *
  * The whole table is a CSS container: the root box declares
  * `container-type: inline-size`, so every responsive rule inside it
@@ -201,18 +203,20 @@ export type DataTableColumnPriority = 'high' | 'medium' | 'low'
 export type DataTableColumnCellWrap = 'wrap' | 'nowrap'
 
 /**
- * A column's whole-cell content width cap. The responsive form uses the
- * table container's own width, exactly like `priority`: `'@'` is the
- * 0px baseline (below the container's `md`, 900px) and `'@md'` applies
- * from 900px up, so `{ '@': 160, '@md': 200 }` reads as 160px below
- * `md` and 200px from it. A plain number or CSS length applies at every
- * width. See DataTableColumn.contentMaxWidth and the component header
+ * A column's whole-cell content width cap: a plain number (px at every
+ * width), or the `{ belowMd, fromMd }` named pair the component converts
+ * into a container query against the table container's own width,
+ * exactly like `priority` -- `belowMd` below the container's `md`
+ * (900px), `fromMd` from 900px up. Callers never write container-query
+ * syntax. See DataTableColumn.contentMaxWidth and the component header
  * note for what the cap includes.
  */
 export type DataTableColumnContentMaxWidth =
   | number
-  | string
-  | Readonly<Record<string, number | string>>
+  | {
+      readonly belowMd: number
+      readonly fromMd: number
+    }
 
 /** One column definition: header plus a per-row cell renderer. */
 export interface DataTableColumn<T> {
@@ -257,10 +261,11 @@ export interface DataTableColumn<T> {
    * Opt-in whole-cell width cap: bounds the rendered cell content and the
    * `cellFullValue` copy control together, so the text truncates inside
    * the cap instead of the control adding a copy button's width past it
-   * (see the component header note). The value is a container-query
-   * responsive one (DataTableColumnContentMaxWidth); a plain number or
-   * CSS length applies at every width. Omitting it renders the exact
-   * cell the column rendered before this prop existed.
+   * (see the component header note). The value is a plain number, or a
+   * `{ belowMd, fromMd }` named pair the component converts into a
+   * container query on the table's own width (DataTableColumnContentMaxWidth).
+   * Omitting it renders the exact cell the column rendered before this
+   * prop existed.
    */
   readonly contentMaxWidth?: DataTableColumnContentMaxWidth
   /** Renders one row's cell; rowIndex is the index within `rows`. */
@@ -355,10 +360,10 @@ function flip(direction: DataTableSortDirection): DataTableSortDirection {
 
 /**
  * The width cap the layout design gives a primary-identity column, shared
- * by every table page and by the long-text columns the design caps the
- * same way. The value answers to the table's own container: 160px below
- * `md`, 200px from `md` up. Pages spread this into the cell content's sx
- * instead of naming their own numbers, so the cap has one definition.
+ * by every table page. The value answers to the table's own container:
+ * 160px below `md`, 200px from `md` up. Pages pass it to the column's
+ * `contentMaxWidth` (no container-query syntax of their own), so the cap
+ * has one definition.
  */
 export const PRIMARY_COLUMN_MAX_WIDTH = {
   belowMd: 160,
@@ -366,16 +371,24 @@ export const PRIMARY_COLUMN_MAX_WIDTH = {
 } as const
 
 /**
- * The same cap in `contentMaxWidth`'s container-query form: 160px below
- * the table container's `md` (900px), 200px from it up. Pages pass this
- * to a column whose cap must include the `cellFullValue` copy control,
- * and keep the numbers in one place.
+ * The flat width cap for long-text columns that are not the primary
+ * identity (an audit object or actor, an object store's content type). It
+ * deliberately does not grow with the container tier: several long-text
+ * columns in one table must still sum within the tier's floor width.
  */
-export const PRIMARY_COLUMN_CONTENT_MAX_WIDTH: DataTableColumnContentMaxWidth =
-  {
-    '@': PRIMARY_COLUMN_MAX_WIDTH.belowMd,
-    '@md': PRIMARY_COLUMN_MAX_WIDTH.fromMd,
-  }
+export const LONG_TEXT_COLUMN_MAX_WIDTH = 160
+
+/**
+ * Converts a cap into the value MUI's `sx` applies: a number at every
+ * width, or the named pair as the container-query form whose `@`
+ * baseline is `<container> md` and whose `@md` is 900px up.
+ */
+function contentMaxWidthSx(
+  value: DataTableColumnContentMaxWidth,
+): number | { '@': number; '@md': number } {
+  if (typeof value === 'number') return value
+  return { '@': value.belowMd, '@md': value.fromMd }
+}
 
 /**
  * `PRIMARY_COLUMN_MAX_WIDTH` as a container-query sx value: the
@@ -387,7 +400,7 @@ export const PRIMARY_COLUMN_CONTENT_MAX_WIDTH: DataTableColumnContentMaxWidth =
  * counts the control.
  */
 export const primaryColumnMaxWidthSx = {
-  maxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+  maxWidth: contentMaxWidthSx(PRIMARY_COLUMN_MAX_WIDTH),
 }
 
 /**
@@ -797,7 +810,8 @@ export function DataTable<T>({
                   )}
                   {columns.map((column) => {
                     const fullValue = column.cellFullValue?.(row)
-                    const capped = column.contentMaxWidth !== undefined
+                    const cap = column.contentMaxWidth
+                    const capped = cap !== undefined
                     return (
                       <TableCell
                         key={column.id}
@@ -813,7 +827,7 @@ export function DataTable<T>({
                           capped ? (
                             <Box
                               sx={{
-                                maxWidth: column.contentMaxWidth,
+                                maxWidth: contentMaxWidthSx(cap),
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
                                 whiteSpace: 'nowrap',
@@ -831,7 +845,7 @@ export function DataTable<T>({
                               alignItems: 'center',
                               columnGap: 0.5,
                               ...(capped
-                                ? { maxWidth: column.contentMaxWidth }
+                                ? { maxWidth: contentMaxWidthSx(cap) }
                                 : {}),
                             }}
                           >

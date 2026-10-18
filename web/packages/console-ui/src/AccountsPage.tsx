@@ -88,7 +88,7 @@ import {
   FormLayout,
   ListSkeleton,
   PageHeader,
-  PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+  PRIMARY_COLUMN_MAX_WIDTH,
   SidePanel,
   primaryColumnMaxWidthSx,
   useWriteFeedback,
@@ -441,7 +441,7 @@ export function AccountsPage() {
       cellFullValue: (row) => row.id,
       // The prefix is short, but the cap counts the copy control beside
       // it, so the whole identifier cell stays inside the shared budget.
-      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (row) => (
         <Typography variant="body2">{identifierPrefix(row.id)}</Typography>
       ),
@@ -601,7 +601,7 @@ export function AccountsPage() {
       priority: 'low',
       cellWrap: 'nowrap',
       cellFullValue: (row) => row.id,
-      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (row) => (
         <Typography variant="body2">{identifierPrefix(row.id)}</Typography>
       ),

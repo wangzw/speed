@@ -48,7 +48,7 @@ import {
   EmptyState,
   ListSkeleton,
   PageHeader,
-  PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+  PRIMARY_COLUMN_MAX_WIDTH,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
@@ -285,7 +285,7 @@ export function SsoPage() {
       // whole-cell cap -- which counts the copy control -- keeps it from
       // widening the table past its container. The complete name stays on
       // the cell title and copy control.
-      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (provider) => (
         <Typography variant="body2" noWrap>
           {provider.name}

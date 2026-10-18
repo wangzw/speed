@@ -50,8 +50,9 @@ import Typography from '@mui/material/Typography'
 import {
   DataTable,
   ListSkeleton,
+  LONG_TEXT_COLUMN_MAX_WIDTH,
   PageHeader,
-  PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+  PRIMARY_COLUMN_MAX_WIDTH,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -190,9 +191,9 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       cellWrap: 'nowrap',
       cellFullValue: (record) => record.action,
       // A recorded action (an HTTP method and route) can run long; the
-      // shared whole-cell cap truncates the text and the complete value
+      // primary-identity cap truncates the text and the complete value
       // stays on the title and copy control.
-      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (record) => (
         <Typography variant="body2" noWrap>
           {basePath === undefined ? (
@@ -212,7 +213,7 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       cellWrap: 'nowrap',
       cellFullValue: (record) =>
         record.object === '' ? undefined : record.object,
-      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+      contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (record) => (
         <Typography variant="body2" noWrap>
           {record.object}
@@ -226,7 +227,7 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       cellWrap: 'nowrap',
       cellFullValue: (record) =>
         record.actor === '' ? undefined : record.actor,
-      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+      contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (record) => <AccountIdentity account={record.actor} />,
     },
     {

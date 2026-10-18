@@ -40,7 +40,7 @@ string lives in the bilingual `ui-kit` namespace registered through
 | `components/FormField.tsx` | `FormField`, `FormFieldProps`, `FormFieldRenderState`, `REQUIRED_ERROR_KEY` |
 | `components/FormLayout.tsx` | `FormLayout`, `FormLayoutProps`, `FormLayoutColumns` |
 | `zod-form-resolver.ts` | `zodFormResolver`, `INVALID_ERROR_KEY` |
-| `components/DataTable.tsx` | `DataTable`, `DataTableColumn`, `DataTableColumnCellWrap`, `DataTableColumnContentMaxWidth`, `DataTableColumnPriority`, `DataTableSort`, `DataTableSortDirection`, `DataTableFilter`, `DataTablePagination`, `DataTableProps`, `PRIMARY_COLUMN_MAX_WIDTH`, `PRIMARY_COLUMN_CONTENT_MAX_WIDTH`, `primaryColumnMaxWidthSx` |
+| `components/DataTable.tsx` | `DataTable`, `DataTableColumn`, `DataTableColumnCellWrap`, `DataTableColumnContentMaxWidth`, `DataTableColumnPriority`, `DataTableSort`, `DataTableSortDirection`, `DataTableFilter`, `DataTablePagination`, `DataTableProps`, `PRIMARY_COLUMN_MAX_WIDTH`, `LONG_TEXT_COLUMN_MAX_WIDTH`, `primaryColumnMaxWidthSx` |
 | `components/InlineError.tsx` | `InlineError`, `InlineErrorProps`, `errorCodeOf` |
 | `components/InlineSuccess.tsx` | `InlineSuccess`, `InlineSuccessProps` |
 | `components/WriteFeedbackRegion.tsx` | `WriteFeedbackRegion`, `WriteFeedbackRegionProps` |
@@ -742,22 +742,25 @@ clipboard write and announcement; the clipboard stub is the test's own,
 since jsdom ships no `navigator.clipboard`.
 
 **A copy control widens the cell it sits in, so cap the whole cell.** A
-column's `contentMaxWidth?: number | string | { '@': ..., '@md': ... }`
+column's `contentMaxWidth?: number | { belowMd: number; fromMd: number }`
 bounds the rendered content and the `cellFullValue` copy control
 together: the text truncates inside the cap while the control keeps its
-own width and is never clipped. The responsive form answers to the table
-container's width, like `priority` (`'@'` is the 0px baseline, `'@md'`
-from 900px). Only capping the text would leave every such column one
-control wider than declared. Omitting the field leaves the column's
-rendering byte-identical to the one it had before the field existed; a
-row whose `cellFullValue` answers `undefined` is still capped but gains
-no control. The shared primary-column cap is exported both as the pair
-`PRIMARY_COLUMN_MAX_WIDTH` and in this field's container-query form
-`PRIMARY_COLUMN_CONTENT_MAX_WIDTH`; pages pass the latter.
-`DataTable.test.tsx`'s "whole-cell content cap" cases pin the wrapper's
-container-query declaration, the truncating sub-box, and the control
-outside it; the README's Deferrals record why a jsdom suite cannot prove
-a rendered width.
+own width and is never clipped. A plain number applies at every width;
+the named pair is converted inside the component into a container query
+against the table container's width, like `priority` (`belowMd` below
+the container's `md`, 900px; `fromMd` from 900px up), so pages never
+write container-query syntax. Only capping the text would leave every
+such column one control wider than declared. Omitting the field leaves
+the column's rendering byte-identical to the one it had before the field
+existed; a row whose `cellFullValue` answers `undefined` is still capped
+but gains no control. The shared caps are exported as the primary
+identity's `PRIMARY_COLUMN_MAX_WIDTH` (`{ belowMd: 160, fromMd: 200 }`)
+and the other long-text columns' `LONG_TEXT_COLUMN_MAX_WIDTH` (160, a
+number that does not grow with the tier); pages pass them as
+`contentMaxWidth` values. `DataTable.test.tsx`'s "whole-cell content
+cap" cases pin both forms' generated declarations, the truncating
+sub-box, and the control outside it; the README's Deferrals record why a
+jsdom suite cannot prove a rendered width.
 
 **Column priority is the opt-in reflow alternative to that scroll
 fallback, and it is container-triggered.** The table's root box declares
@@ -826,7 +829,7 @@ const columns: DataTableColumn<Member>[] = [
     cellFullValue: (row) => row.email,
     // Bound the text and the copy control together. 160px below the
     // table container's `md`, 200px from it up.
-    contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+    contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
     cell: (row) => row.email,
   },
   // Dropped first as the container narrows (hidden below the container `lg`).
@@ -1188,10 +1191,11 @@ same rationale documented here.
 ## Deferrals and recorded decisions
 
 - **No browser test runner**: the suite is jsdom plus axe. Rendered
-  geometry -- including the whole-cell cap (`contentMaxWidth`) counting
-  the copy control at 600/900/1200px containers -- is measured in
-  Chromium ad hoc, not by a committed gate; a CI browser leg would need a
-  runner dependency and a shared harness.
+  geometry -- the whole-cell cap (`contentMaxWidth`) counting the copy
+  control, the primary identity at 160px/200px across the 900px
+  boundary, and the flat 160px long-text cap, at 600/900/1200px
+  containers -- is measured in Chromium ad hoc, not by a committed gate;
+  a CI browser leg would need a runner dependency and a shared harness.
 - **DataTable column-hiding / priority-reflow for narrow containers**:
   shipped (see the DataTable section's Column priority subsection) --
   an opt-in `priority` field on `DataTableColumn` hides lower-priority

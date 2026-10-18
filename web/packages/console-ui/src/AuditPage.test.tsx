@@ -130,7 +130,7 @@ describe('AuditPage', () => {
     ).toBeNull()
   })
 
-  it('caps the action, object and actor cells with the shared width cap', async () => {
+  it('caps the action column with the primary cap and the object and actor flat', async () => {
     const action = 'pkg.objectstore.metadata.create'
     const object = '/api/v1/objects/a-very-long-registered-route'
     const operations = createConsoleOperations(
@@ -142,32 +142,37 @@ describe('AuditPage', () => {
     renderWithProviders(<AuditPage />, { operations })
     await screen.findByText(action)
 
-    const sharedCap = new Map([
+    const primaryCap = new Map([
       [0, 160],
       [900, 200],
     ])
-    // The cap sits on the wrapper that holds the text and the copy
-    // control together, so the control is counted inside the budget.
+    // The action is the primary identity: its cap grows at md. The cap
+    // sits on the wrapper that holds the text and the copy control
+    // together, so the control is counted inside the budget.
     const actionCell = screen.getByText(action).closest('td')
     expect(actionCell).toHaveAttribute('title', action)
     expect(containerMaxWidthOf(actionCell!.firstElementChild!)).toEqual(
-      sharedCap,
+      primaryCap,
     )
 
+    // The object and the actor are long-text columns that are not the
+    // primary identity: a flat cap that does not grow with the container.
     const objectCell = screen.getByText(object).closest('td')
     expect(objectCell).toHaveAttribute('title', object)
-    expect(containerMaxWidthOf(objectCell!.firstElementChild!)).toEqual(
-      sharedCap,
-    )
+    expect(objectCell!.firstElementChild).toHaveStyle({ maxWidth: '160px' })
+    expect(
+      containerMaxWidthOf(objectCell!.firstElementChild!),
+    ).toEqual(new Map())
 
     // The actor renders its resolved display name inside the capped box;
     // the complete recorded identifier stays on the cell title.
     const actorText = await screen.findByText('Operator')
     const actorCell = actorText.closest('td')
     expect(actorCell).toHaveAttribute('title', 'acc-1')
-    expect(containerMaxWidthOf(actorCell!.firstElementChild!)).toEqual(
-      sharedCap,
-    )
+    expect(actorCell!.firstElementChild).toHaveStyle({ maxWidth: '160px' })
+    expect(
+      containerMaxWidthOf(actorCell!.firstElementChild!),
+    ).toEqual(new Map())
   })
 
   it('formats the recorded time in UTC in the current language', async () => {

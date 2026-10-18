@@ -176,7 +176,7 @@ describe('ObjectsPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('caps the name and content-type widths by the table container', async () => {
+  it('caps the name at the primary cap and the content type at the flat one', async () => {
     const mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     const name = 'quarterly-financial-report-2026-q3-consolidated.xlsx'
     makeObjectStoreRig(() =>
@@ -188,13 +188,16 @@ describe('ObjectsPage', () => {
     renderWithProviders(<ObjectsPage />, { language: 'en-US' })
 
     const nameText = await screen.findByText(name)
-    // The cap sits on the whole-cell wrapper, not on the text node.
+    // The name is the primary identity: its cap grows at md, and it sits
+    // on the whole-cell wrapper rather than on the text node.
     const nameDeclarations = containerDeclarationsOf(
       nameText.closest('td')!.firstElementChild!,
     )
     expect(nameDeclarations.get(0)).toContain('max-width:160px')
     expect(nameDeclarations.get(900)).toContain('max-width:200px')
 
+    // The content type is a long-text column that is not the primary
+    // identity: a flat cap that does not grow with the container.
     const mimeText = screen.getByText(mime)
     expect(mimeText).toHaveAttribute('title', mime)
     expect(mimeText).toHaveStyle({ maxWidth: '160px' })

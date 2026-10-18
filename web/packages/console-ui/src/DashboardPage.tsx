@@ -34,8 +34,9 @@ import Typography from '@mui/material/Typography'
 import {
   DataTable,
   ListSkeleton,
+  LONG_TEXT_COLUMN_MAX_WIDTH,
   PageHeader,
-  PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+  PRIMARY_COLUMN_MAX_WIDTH,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -160,7 +161,7 @@ export function DashboardPage() {
       header: t('dashboard.recent.column.action'),
       cellWrap: 'nowrap',
       cellFullValue: (record) => record.action,
-      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (record) => (
         <Typography variant="body2" noWrap>
           {record.action}
@@ -174,7 +175,7 @@ export function DashboardPage() {
       cellWrap: 'nowrap',
       cellFullValue: (record) =>
         record.object === '' ? undefined : record.object,
-      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+      contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (record) => (
         <Typography variant="body2" noWrap>
           {record.object}
@@ -188,7 +189,7 @@ export function DashboardPage() {
       cellWrap: 'nowrap',
       cellFullValue: (record) =>
         record.actor === '' ? undefined : record.actor,
-      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+      contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (record) => <AccountIdentity account={record.actor} />,
     },
     {

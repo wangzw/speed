@@ -44,8 +44,9 @@ import {
   FileUploader,
   InlineSuccess,
   ListSkeleton,
+  LONG_TEXT_COLUMN_MAX_WIDTH,
   PageHeader,
-  PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+  PRIMARY_COLUMN_MAX_WIDTH,
   errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
@@ -146,10 +147,10 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
       // The module normalized the name once, so it is safe as a text
       // node; the full value lives in the details dialog, and the cell
       // stays one line with an ellipsis rather than widening the table.
-      // The cap is the shared one: the sm tier has only the name, state
-      // and actions columns to spend its width on, and a 240px name there
-      // pushes the row actions past the edge.
-      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+      // The cap is the shared primary-identity one: the sm tier has only
+      // the name, state and actions columns to spend its width on, and a
+      // 240px name there pushes the row actions past the edge.
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (object) => (
         <Typography
           variant="body2"
@@ -207,7 +208,7 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
           variant="body2"
           noWrap
           title={object.mime}
-          sx={{ maxWidth: 160 }}
+          sx={{ maxWidth: LONG_TEXT_COLUMN_MAX_WIDTH }}
         >
           {object.mime}
         </Typography>

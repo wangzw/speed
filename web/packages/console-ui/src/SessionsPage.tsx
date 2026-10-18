@@ -29,7 +29,7 @@ import {
   InlineSuccess,
   ListSkeleton,
   PageHeader,
-  PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+  PRIMARY_COLUMN_MAX_WIDTH,
   errorCodeOf,
   primaryColumnMaxWidthSx,
 } from '@speed/ui-kit'
@@ -79,7 +79,7 @@ export function SessionsPage() {
       cellFullValue: (session) => session.id,
       // The prefix is short, but the cap counts the copy control beside
       // it, so the whole identifier cell stays inside the shared budget.
-      contentMaxWidth: PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (session) => (
         <Typography variant="body2">
           {identifierPrefix(session.id)}

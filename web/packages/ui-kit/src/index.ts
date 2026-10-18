@@ -78,8 +78,8 @@ export {
 } from './zod-form-resolver.js'
 export {
   DataTable,
+  LONG_TEXT_COLUMN_MAX_WIDTH,
   PRIMARY_COLUMN_MAX_WIDTH,
-  PRIMARY_COLUMN_CONTENT_MAX_WIDTH,
   primaryColumnMaxWidthSx,
   type DataTableColumn,
   type DataTableColumnCellWrap,
