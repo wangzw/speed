@@ -37,6 +37,8 @@ import {
 } from '@speed/route-kit'
 import { PageHeader } from '@speed/ui-kit'
 import { useNavigate } from 'react-router-dom'
+import { setupIncomplete } from '../account-setup.js'
+import { useAuthnProfileGet } from '../app-api/index.js'
 import {
   consoleShellRoutes,
   useConsoleTarget,
@@ -92,6 +94,17 @@ export function HomePage(): ReactElement {
   // identity's session, so leaving and returning to the page does not bring
   // it back.
   const setupNotice = usePersonalTenantNotice()
+  // Once the notice has appeared, the account's CURRENT profile decides
+  // whether it still applies: completing setup makes it disappear, whichever
+  // page the account finished on. The read runs only while the notice is
+  // eligible, so an account that is not being offered it issues no request;
+  // the setup page invalidates this same cache entry after each write.
+  const profile = useAuthnProfileGet({
+    query: { enabled: setupNotice.visible },
+  })
+  const setupStillIncomplete =
+    profile.data === undefined || setupIncomplete(profile.data)
+  const showSetupNotice = setupNotice.visible && setupStillIncomplete
   return (
     <Box
       component="section"
@@ -108,7 +121,7 @@ export function HomePage(): ReactElement {
       }}
     >
       <PageHeader title={t('home.heading')} description={t('home.intro')} />
-      {setupNotice.visible ? (
+      {showSetupNotice ? (
         <Alert
           severity="info"
           onClose={setupNotice.dismiss}

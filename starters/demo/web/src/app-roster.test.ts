@@ -51,4 +51,29 @@ describe('the announced tenant, once the roster is read', () => {
     })
     expect(getCurrentTenantAlias()).toBe('acme-inc')
   })
+
+  it('chooses the first active tenant that is not a personal tenant', async () => {
+    // The roster is ordered by identifier, so a personal tenant ('personal-')
+    // sorts before most deployment tenants. It belongs to one account and
+    // would refuse a staff viewer, so the default must skip it.
+    const request: RequestFn = async <T>(path: string): Promise<T> => {
+      if (path === '/tenant/admin/tenants') {
+        return {
+          tenants: [
+            { id: 'personal-abc', alias: 'personal-abc', status: 'active' },
+            { id: 'tenant-main', alias: 'tenant-main', status: 'active' },
+          ],
+        } as T
+      }
+      throw new Error(`the suite binds only the roster read: ${path}`)
+    }
+    bindRequestFn(request)
+
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    await waitFor(() => {
+      expect(getCurrentTenantId()).toBe('tenant-main')
+    })
+    expect(getCurrentTenantAlias()).toBe('tenant-main')
+  })
 })

@@ -180,6 +180,10 @@ describe('the sign-in surface', () => {
   })
 
   it('lands a registration in the tenant area when the personal tenant is in force', async () => {
+    // Start away from the root: the wait below can then only succeed when
+    // the completion actually navigated to the tenant home, not because the
+    // page happened to stay where it was.
+    window.history.replaceState({}, '', '/objects')
     const harness = makeHarness({
       // The deployment serves workspace.personal: the register mode's
       // landing is the tenant home rather than the setup page.
@@ -238,6 +242,133 @@ describe('the sign-in surface', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: demoEnUS.home.heading }),
     ).toBeInTheDocument()
+  })
+
+  it('lands a registration on the setup page when the feature document failed', async () => {
+    // A failed feature read is neither "personal tenant served" nor "absent":
+    // the register mode must fall back to the setup page, and the setup page
+    // still renders because it needs no feature.
+    const harness = makeHarness({
+      [FEATURES_GET]: () => {
+        throw Object.assign(new Error('the feature read failed'), {
+          status: 503,
+        })
+      },
+      [LOGIN_METHODS]: () =>
+        methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        ),
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [
+              { name: 'code', kind: 'code', required: true, secret: true },
+            ],
+          },
+        }),
+      [LOGIN_ANSWER]: (call) =>
+        (call.options?.body as { step?: string }).step === 'complete'
+          ? authenticatedCompletion()
+          : completeFlow(2),
+      [PROFILE_GET]: () => principal(),
+    })
+    renderDemoApp({ session: harness.session })
+
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', { name: authEn.mode.registerEntry }),
+    )
+    await user.type(
+      screen.getByLabelText(authEn.smsSignIn.phoneLabel),
+      '+14155550123',
+    )
+    await user.click(
+      screen.getByRole('button', { name: authEn.smsSignIn.sendCode }),
+    )
+    await user.type(
+      await screen.findByLabelText(authEn.smsSignIn.codeLabel),
+      '123456',
+    )
+    const form = screen
+      .getByLabelText(authEn.smsSignIn.codeLabel)
+      .closest('form') as HTMLFormElement
+    await user.click(
+      within(form).getByRole('button', { name: authEn.smsSignIn.submit }),
+    )
+
+    await waitFor(() =>
+      expect(window.location.pathname).toBe(ACCOUNT_SETUP_PATH),
+    )
+  })
+
+  it('stays on the console path when a registration completes in its session gate', async () => {
+    // The console area's session gate embeds this surface, so the console URL
+    // is the viewer's destination; the register mode's landing belongs to the
+    // application's own sign-in page.
+    window.history.replaceState({}, '', '/console')
+    const harness = makeHarness({
+      [FEATURES_GET]: () => ({
+        features: ['tenant.admin', 'workspace.personal'],
+      }),
+      [LOGIN_METHODS]: () =>
+        methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        ),
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [
+              { name: 'code', kind: 'code', required: true, secret: true },
+            ],
+          },
+        }),
+      [LOGIN_ANSWER]: (call) =>
+        (call.options?.body as { step?: string }).step === 'complete'
+          ? authenticatedCompletion()
+          : completeFlow(2),
+      [PROFILE_GET]: () => principal(),
+    })
+    renderDemoApp({ session: harness.session })
+
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', { name: authEn.mode.registerEntry }),
+    )
+    await user.type(
+      screen.getByLabelText(authEn.smsSignIn.phoneLabel),
+      '+14155550123',
+    )
+    await user.click(
+      screen.getByRole('button', { name: authEn.smsSignIn.sendCode }),
+    )
+    await user.type(
+      await screen.findByLabelText(authEn.smsSignIn.codeLabel),
+      '123456',
+    )
+    const form = screen
+      .getByLabelText(authEn.smsSignIn.codeLabel)
+      .closest('form') as HTMLFormElement
+    await user.click(
+      within(form).getByRole('button', { name: authEn.smsSignIn.submit }),
+    )
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('heading', {
+          level: 1,
+          name: demoEnUS.signIn.heading,
+        }),
+      ).toBeNull(),
+    )
+    expect(window.location.pathname).toBe('/console')
   })
 
   it('offers the setup notice to a new phone opened by a plain SMS sign-in', async () => {

@@ -11,10 +11,12 @@
  * function and observes the calls it makes.
  */
 
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
+import type { AuthnProfileProfile } from './app-api/index.js'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import demoZhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
@@ -24,8 +26,10 @@ import {
   setCurrentTenantId,
   setTenantAliases,
 } from './chrome.js'
+import { ACCOUNT_SETUP_PATH } from './paths.js'
 import { renderDemoApp } from './test-utils/render.js'
 import {
+  ANONYMOUS_SNAPSHOT,
   authenticatedSnapshot,
   createTestSession,
   readyFeatures,
@@ -45,25 +49,93 @@ function bindScript(
   bindRequestFn(fn as unknown as RequestFn)
 }
 
-/** A scripted request function: the roster read refuses like a member's, and
- * the ensure answers as the case asks. Every other call fails loudly. */
+/** The roster answer a case scripts: a member's refusal, a successful list,
+ * an HTTP failure of another status, or a network failure carrying none. */
+type RosterAnswer =
+  | 'refused'
+  | 'network'
+  | { readonly tenants: readonly unknown[] }
+  | { readonly status: number }
+
+/** A profile the session's GET /auth/me answers: no login name and no
+ * password -- the setup-incomplete state the notice is about. */
+const INCOMPLETE_PROFILE: AuthnProfileProfile = {
+  account_id: 'account-1',
+  kind: 'user',
+  display_name: 'Test User',
+  mfa_required: false,
+  password_set: false,
+  created_at: '2026-01-01T00:00:00Z',
+  attributes: {},
+  locale: 'en-US',
+  time_zone: 'UTC',
+  identifiers: [
+    {
+      id: 'identifier-phone',
+      kind: 'phone',
+      value: '+14155550123',
+      verified_at: '2026-01-01T00:00:00Z',
+      verified_via: 'sms',
+    },
+  ],
+  links: [],
+}
+
+/** The profile of an account that completed setup: a username and a
+ * password. */
+const COMPLETE_PROFILE: AuthnProfileProfile = {
+  ...INCOMPLETE_PROFILE,
+  password_set: true,
+  identifiers: [
+    ...INCOMPLETE_PROFILE.identifiers,
+    {
+      id: 'identifier-username',
+      kind: 'username',
+      value: 'test-user',
+      verified_at: '',
+      verified_via: '',
+    },
+  ],
+}
+
+/** A scripted request function: the roster read answers as the case asks,
+ * the ensure does too, and GET /auth/me answers the profile when the case
+ * scripts one (the home page reads it once the notice is eligible). Every
+ * other call fails loudly. */
 function script(options: {
-  readonly roster?: 'refused' | { readonly tenants: readonly unknown[] }
+  readonly roster?: RosterAnswer
   readonly ensure?: 'success' | 'conflict' | 'unavailable'
-  readonly ensureCreated?: boolean
+  /** Whether the answer reports a creation; a function answers per call. */
+  readonly ensureCreated?: boolean | (() => boolean)
   readonly ensureCalls?: string[]
   readonly calls?: string[]
+  readonly profile?: () => AuthnProfileProfile
 }): void {
   const ensure = options.ensure ?? 'success'
   bindScript(async (path, call) => {
     options.calls?.push(`${call.method ?? 'GET'} ${path}`)
     if ((call.method ?? 'GET') === 'GET' && path === ROSTER_PATH) {
-      if (options.roster === 'refused') {
+      const roster = options.roster ?? { tenants: [] }
+      if (roster === 'refused') {
         throw Object.assign(new Error('the roster read was refused'), {
           status: 403,
         })
       }
-      return options.roster ?? { tenants: [] }
+      if (roster === 'network') {
+        throw new TypeError('failed to fetch')
+      }
+      if ('status' in roster) {
+        throw Object.assign(new Error('the roster read failed'), {
+          status: roster.status,
+        })
+      }
+      return roster
+    }
+    if ((call.method ?? 'GET') === 'GET' && path === '/auth/me') {
+      if (options.profile === undefined) {
+        throw new Error('the case scripts no profile')
+      }
+      return options.profile()
     }
     if (call.method === 'POST' && path === ENSURE_PATH) {
       options.ensureCalls?.push(ENSURE_PATH)
@@ -75,13 +147,62 @@ function script(options: {
           status: 503,
         })
       }
+      const created =
+        typeof options.ensureCreated === 'function'
+          ? options.ensureCreated()
+          : (options.ensureCreated ?? true)
       return {
         tenant: { id: PERSONAL_ID, alias: PERSONAL_ID, kind: 'personal' },
-        created: options.ensureCreated ?? true,
+        created,
       }
     }
     throw new Error(`unexpected ${call.method ?? 'GET'} ${path}`)
   })
+}
+
+/** Moves the app to a path through the browser history, the way a link
+ * outside React (or a typed URL) does: the router listens for popstate. */
+function navigateTo(pathname: string): void {
+  window.history.pushState({}, '', pathname)
+  window.dispatchEvent(new PopStateEvent('popstate'))
+}
+
+/** The authenticated snapshot with a principal whose setup state the case
+ * chooses. */
+function snapshotWithProfile(
+  complete: boolean,
+  features = readyFeatures(...PERSONAL_FEATURES),
+) {
+  const snapshot = authenticatedSnapshot({ features })
+  if (snapshot.principal === null) {
+    throw new Error('the authenticated snapshot carries no principal')
+  }
+  return {
+    ...snapshot,
+    principal: {
+      ...snapshot.principal,
+      password_set: complete,
+      identifiers: complete
+        ? [
+            {
+              id: 'identifier-username',
+              kind: 'username',
+              value: 'test-user',
+              verified_at: '',
+              verified_via: '',
+            },
+          ]
+        : [
+            {
+              id: 'identifier-phone',
+              kind: 'phone',
+              value: '+14155550123',
+              verified_at: '2026-01-01T00:00:00Z',
+              verified_via: 'sms',
+            },
+          ],
+    },
+  }
 }
 
 beforeEach(() => {
@@ -306,5 +427,284 @@ describe('the tenant frame and the personal tenant', () => {
       screen.queryByRole('button', { name: demoEnUS.workspace.personal }),
     ).not.toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('does not ensure a personal tenant when the roster read fails with a 5xx', async () => {
+    const calls: string[] = []
+    script({ roster: { status: 500 }, calls })
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
+      ),
+    })
+
+    // Only a 403 says "an ordinary member". A 5xx says nothing about
+    // membership, so it falls back to the placeholder tenant and the ensure
+    // is never called.
+    await waitFor(() => expect(getCurrentTenantId()).toBe(DEFAULT_TENANT_ID))
+    expect(calls).toContain(`GET ${ROSTER_PATH}`)
+    expect(calls).not.toContain(`POST ${ENSURE_PATH}`)
+  })
+
+  it('does not ensure a personal tenant on a network failure', async () => {
+    const calls: string[] = []
+    script({ roster: 'network', calls })
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
+      ),
+    })
+
+    await waitFor(() => expect(getCurrentTenantId()).toBe(DEFAULT_TENANT_ID))
+    expect(calls).not.toContain(`POST ${ENSURE_PATH}`)
+  })
+
+  it('offers no notice and reads no profile when a new tenant already has a complete account', async () => {
+    const calls: string[] = []
+    script({
+      roster: 'refused',
+      ensureCreated: true,
+      profile: () => COMPLETE_PROFILE,
+      calls,
+    })
+    renderDemoApp({
+      session: createTestSession(snapshotWithProfile(true)),
+    })
+
+    // The ensure created the tenant, but the account already holds the
+    // username and password the notice would ask it to add: the eligibility
+    // condition is false, so the home page never even reads the profile.
+    expect(
+      await screen.findByRole('button', { name: demoEnUS.workspace.personal }),
+    ).toBeInTheDocument()
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(calls).not.toContain('GET /auth/me')
+    expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull()
+  })
+
+  it('keeps the account-level pages rendering while the ensure keeps failing', async () => {
+    // The account setup page reads no tenant data, so a sustained ensure
+    // failure must not replace it with the tenant failure view: that is
+    // where a new account adds the username and password.
+    window.history.replaceState({}, '', ACCOUNT_SETUP_PATH)
+    const ensureCalls: string[] = []
+    script({
+      roster: 'refused',
+      ensure: 'unavailable',
+      ensureCalls,
+      profile: () => INCOMPLETE_PROFILE,
+    })
+    renderDemoApp({
+      session: createTestSession(snapshotWithProfile(false)),
+    })
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.accountSetup.title,
+      }),
+    ).toBeInTheDocument()
+    // Let the ensure's rejection settle and React commit what it makes of
+    // it before judging the page.
+    await waitFor(() => expect(ensureCalls).toHaveLength(1))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(screen.queryByText(demoEnUS.workspace.failure.title)).toBeNull()
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: demoEnUS.accountSetup.title,
+      }),
+    ).toBeInTheDocument()
+    expect(getCurrentTenantId()).toBeNull()
+  })
+
+  it('keeps the account page rendering while the ensure keeps failing', async () => {
+    window.history.replaceState({}, '', '/account')
+    const ensureCalls: string[] = []
+    script({
+      roster: 'refused',
+      ensure: 'unavailable',
+      ensureCalls,
+      profile: () => INCOMPLETE_PROFILE,
+    })
+    renderDemoApp({
+      session: createTestSession(snapshotWithProfile(false)),
+    })
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.account.title,
+      }),
+    ).toBeInTheDocument()
+    await waitFor(() => expect(ensureCalls).toHaveLength(1))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(screen.queryByText(demoEnUS.workspace.failure.title)).toBeNull()
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: demoEnUS.account.title,
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('still replaces a tenant-reading page with the retryable failure', async () => {
+    window.history.replaceState({}, '', '/')
+    script({ roster: 'refused', ensure: 'unavailable' })
+    renderDemoApp({
+      session: createTestSession(snapshotWithProfile(false)),
+    })
+
+    expect(
+      await screen.findByText(demoEnUS.workspace.failure.title),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps the notice dismissed across navigation', async () => {
+    window.history.replaceState({}, '', '/')
+    script({
+      roster: 'refused',
+      ensureCreated: true,
+      profile: () => INCOMPLETE_PROFILE,
+    })
+    renderDemoApp({
+      session: createTestSession(snapshotWithProfile(false)),
+    })
+
+    expect(
+      await screen.findByText(demoEnUS.home.setupNotice.title),
+    ).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', { name: demoEnUS.home.setupNotice.dismiss }),
+    )
+    expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull()
+
+    // Leave the home page and come back: the dismissal belongs to the
+    // identity's session, so the notice stays away.
+    act(() => navigateTo(ACCOUNT_SETUP_PATH))
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.accountSetup.title,
+      }),
+    ).toBeInTheDocument()
+    act(() => navigateTo('/'))
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.home.heading,
+      }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull()
+  })
+
+  it('resets the notice when the identity changes', async () => {
+    let ensures = 0
+    script({
+      roster: 'refused',
+      // The first identity's tenant is created; the second identity already
+      // has its own, so it must not inherit the first one's notice.
+      ensureCreated: () => ensures++ === 0,
+      profile: () => INCOMPLETE_PROFILE,
+    })
+    const session = createTestSession(snapshotWithProfile(false))
+    renderDemoApp({ session })
+
+    expect(
+      await screen.findByText(demoEnUS.home.setupNotice.title),
+    ).toBeInTheDocument()
+
+    act(() => session.set(ANONYMOUS_SNAPSHOT))
+    // The home page is gone with the session; the reset runs while the shell
+    // renders its ended state.
+    await waitFor(() =>
+      expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull(),
+    )
+
+    act(() =>
+      session.set({
+        ...snapshotWithProfile(false),
+        principal: {
+          ...(snapshotWithProfile(false).principal ?? {}),
+          account_id: 'account-2',
+        },
+      }),
+    )
+    // The second identity's ensure answered created: false, and the first
+    // identity's eligibility was cleared when the session turned anonymous.
+    expect(
+      await screen.findByRole('button', { name: demoEnUS.workspace.personal }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull()
+  })
+
+  it('hides the notice once setup is completed on another page', async () => {
+    let complete = false
+    script({
+      roster: 'refused',
+      ensureCreated: true,
+      profile: () => (complete ? COMPLETE_PROFILE : INCOMPLETE_PROFILE),
+    })
+    const user = userEvent.setup()
+    renderDemoApp({
+      session: createTestSession(snapshotWithProfile(false)),
+    })
+
+    expect(
+      await screen.findByText(demoEnUS.home.setupNotice.title),
+    ).toBeInTheDocument()
+
+    // The account follows the notice to the setup page and completes it
+    // there; coming back, the home page reads the current profile and the
+    // notice is gone.
+    complete = true
+    await user.click(
+      screen.getByRole('link', { name: demoEnUS.home.setupNotice.action }),
+    )
+    expect(
+      await screen.findByText(demoEnUS.accountSetup.complete),
+    ).toBeInTheDocument()
+    await user.click(
+      screen.getByRole('link', { name: demoEnUS.accountSetup.home }),
+    )
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.home.heading,
+      }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull()
+  })
+
+  it('clears the current tenant and the aliases when the session turns anonymous', async () => {
+    // A renamed alias the roster reported earlier: after the session ends it
+    // must be gone with the identity that read it.
+    setTenantAliases(new Map([['acme', 'acme-renamed']]))
+    script({ roster: 'refused', ensureCreated: true })
+    const session = createTestSession(snapshotWithProfile(true))
+    renderDemoApp({ session })
+
+    expect(
+      await screen.findByRole('button', { name: demoEnUS.workspace.personal }),
+    ).toBeInTheDocument()
+    expect(getCurrentTenantId()).toBe(PERSONAL_ID)
+    expect(getCurrentTenantAlias()).toBe(PERSONAL_ID)
+
+    act(() => session.set(ANONYMOUS_SNAPSHOT))
+
+    // No identity is left for a tenant fact to belong to: both cells are
+    // cleared, and a tenant the alias map still held would not resolve.
+    await waitFor(() => expect(getCurrentTenantId()).toBeNull())
+    expect(getCurrentTenantAlias()).toBeNull()
+    // The roster alias is gone too: the placeholder's own name is what a
+    // later resolution falls back to, not the ended identity's read.
+    setCurrentTenantId('acme')
+    expect(getCurrentTenantAlias()).toBe('acme')
   })
 })

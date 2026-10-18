@@ -17,6 +17,7 @@
 
 import { screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { bindRequestFn } from '@speed/api-sdk/runtime'
 import type { RequestFn, SpeedClient } from '@speed/api-client'
 import type { FeatureState } from '@speed/auth-core'
 import {
@@ -359,10 +360,23 @@ describe('the console entry and home card follow the served declarations', () =>
 
 describe('the live notification stream', () => {
   it('opens only while the deployment serves notification.stream', async () => {
+    // The stream is tenant-scoped, so it also waits for a settled tenant
+    // context: this case serves the roster and answers it, the way a
+    // deployment with notification.stream always can.
+    bindRequestFn((async (path: string) => {
+      if (path === '/tenant/admin/tenants') {
+        return { tenants: [{ id: 'acme', alias: 'acme', status: 'active' }] }
+      }
+      throw new Error(`the gating suite binds only the roster: ${path}`)
+    }) as RequestFn)
     const served: string[] = []
     const { unmount } = renderDemoApp({
       session: sessionWith(
-        readyFeatures('notification.inbox', 'notification.stream'),
+        readyFeatures(
+          'tenant.admin',
+          'notification.inbox',
+          'notification.stream',
+        ),
       ),
       api: countingClient(served),
     })
@@ -371,12 +385,12 @@ describe('the live notification stream', () => {
 
     const absent: string[] = []
     renderDemoApp({
-      session: sessionWith(readyFeatures('notification.inbox')),
+      session: sessionWith(readyFeatures('tenant.admin', 'notification.inbox')),
       api: countingClient(absent),
     })
     await screen.findByText(demoEnUS.home.heading)
-    // The provider would otherwise reconnect through its backoff against an
-    // endpoint the deployment does not mount.
+    // The provider would otherwise open a connection the server must refuse
+    // with a bare 404.
     expect(absent).toHaveLength(0)
   })
 })

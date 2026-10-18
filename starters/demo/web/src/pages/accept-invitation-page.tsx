@@ -69,7 +69,10 @@ export function AcceptInvitationPage({
   // anonymous viewer meets the sign-in surface, and the session flip
   // re-renders this page onto the accept screen.
   if (snapshot.state !== 'authenticated') {
-    return <SignInView />
+    // The URL carries the invitation token: a registration completed here
+    // must stay on it, so the session flip renders this page's accept
+    // screen rather than the app navigating to the register mode's landing.
+    return <SignInView keepLanding />
   }
 
   return (

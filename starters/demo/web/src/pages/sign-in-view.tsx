@@ -21,16 +21,24 @@
  *
  * Registration folds into the sign-in flow, so a completed registration is
  * not a page of its own: the screen reports the mode and channel it
- * completed on. The register mode decides the landing only. With the
- * personal-tenant feature in force, a registration that went through SMS
- * (the only channel that opens an account here) lands on the tenant area's
- * home -- and so does an ordinary SMS sign-in with a new number, which opens
- * the account implicitly; in both cases the home page decides whether to
- * offer the one-time 「完成账户设置」 notice from the personal-tenant ensure
- * answer and the profile, never from this screen's mode. Without the feature
- * there is no tenant area to land in, so the registration continues on the
- * account setup page to add a username and then a password. Every other
- * outcome leaves the viewer in the app the session flip already opened.
+ * completed on. The register mode decides the landing only, and only on the
+ * application's own sign-in page. With the personal-tenant feature in force,
+ * a registration that went through SMS (the only channel that opens an
+ * account here) lands on the tenant area's home -- and so does an ordinary
+ * SMS sign-in with a new number, which opens the account implicitly; in both
+ * cases the home page decides whether to offer the one-time 「完成账户设置」
+ * notice from the personal-tenant ensure answer and the profile, never from
+ * this screen's mode. Without the feature there is no tenant area to land
+ * in, so the registration continues on the account setup page to add a
+ * username and then a password. Every other outcome leaves the viewer in the
+ * app the session flip already opened.
+ *
+ * A surface that embeds this view inside a flow of its own passes
+ * `keepLanding`: the invitation landing and the console area's session gate
+ * sign the viewer in place, so a registration completed there leaves the
+ * invitation token in the URL or the console path the viewer asked for. The
+ * session flip itself re-renders those surfaces; navigating away would lose
+ * what the URL carried.
  */
 
 import Box from '@mui/material/Box'
@@ -57,7 +65,18 @@ const SOCIAL_SIGN_IN = {
   },
 } as const
 
-export function SignInView(): ReactElement {
+export function SignInView({
+  keepLanding = false,
+}: {
+  /**
+   * Whether the surface embedding this view owns the landing: true leaves
+   * the viewer at the current URL after a registration, so the embedding
+   * page (the invitation landing, the console session gate) re-renders onto
+   * its own content instead of the app navigating away. The application's
+   * own sign-in page leaves it false and lands by the register mode.
+   */
+  readonly keepLanding?: boolean
+} = {}): ReactElement {
   const { session } = useAppServices()
   const { t } = useTranslation(DEMO_NAMESPACE)
   const navigate = useNavigate()
@@ -79,6 +98,12 @@ export function SignInView(): ReactElement {
   // anonymous one.
   const onSignedIn = (context: SignInContext): void => {
     if (context.mode !== 'register' || context.channel !== 'sms') {
+      return
+    }
+    if (keepLanding) {
+      // The embedding page's URL is the destination: the session flip
+      // re-renders it (the invitation landing onto its accept screen, the
+      // console gate onto the console) and no navigation may take it away.
       return
     }
     const features = session.getSnapshot().features

@@ -113,7 +113,7 @@ import {
   TENANT_HOME_PATH,
 } from './pages/not-found-page.js'
 import { SignInView } from './pages/sign-in-view.js'
-import { ACCOUNT_PATH, OBJECTS_PATH } from './paths.js'
+import { ACCOUNT_PATH, isAccountLevelPath, OBJECTS_PATH } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
 import {
   AUTH_CALLBACK_PATH,
@@ -125,6 +125,14 @@ import {
 /** The platform-staff permission domain the console routes' codes resolve in:
  * auth-core names 'system' the tenant-independent platform-staff set. */
 const CONSOLE_PERMISSION_DOMAIN = 'system'
+
+/**
+ * The server's personal-tenant identifier prefix (starters/demo/server's
+ * personal.go, personalIDPrefix). The roster's tenant view carries no kind,
+ * so the host tells a personal tenant from the identifier the server
+ * derives. The two spellings must stay in sync by hand.
+ */
+const PERSONAL_TENANT_ID_PREFIX = 'personal-'
 
 /**
  * The tenant navigation's icons, keyed by the route path `useNavItems` uses
@@ -147,6 +155,21 @@ const TENANT_NAV_ICONS: Readonly<Record<string, ReactElement>> = {
  * gated path renders while that answer is pending or failed. */
 export function DemoApp(): ReactElement {
   const presence = featurePresence(useFeatureState())
+  const authenticated = useAuthState().state === 'authenticated'
+  // A session that ends leaves no identity for the host's current tenant or
+  // its alias map to belong to. Clear both module-level cells here, in the
+  // always-mounted root, so the clearing does not depend on which frame is
+  // mounted: the console area's session gate unmounts TenantFrame, and a
+  // viewer who signs in again from there would otherwise inherit the ended
+  // account's tenant -- under a personal tenant, another account's tenant --
+  // for the window before the roster or the ensure settles. TenantFrame
+  // re-syncs its own state with this clearing below.
+  useEffect(() => {
+    if (!authenticated) {
+      setCurrentTenantId(null)
+      setTenantAliases(new Map())
+    }
+  }, [authenticated])
   return (
     <RouteProvider
       table={routes}
@@ -305,6 +328,11 @@ function TenantFrame({
   // answer, where its authenticated snapshot is the GET /auth/me read that
   // says whether setup is still incomplete.
   const { api, session } = useAppServices()
+  // The page the frame is rendering. The personal-tenant failure placeholder
+  // replaces only the pages that read tenant data; the account-level pages
+  // read none and stay usable (src/paths.ts).
+  const { pathname } = useLocation()
+  const accountLevel = isAccountLevelPath(pathname)
   // The notification surfaces and the roster are feature-gated; the hooks fail
   // closed, so a pending or failed document opens and reads nothing.
   const inboxServed = useFeature('notification.inbox')
@@ -377,9 +405,16 @@ function TenantFrame({
   // Whether the roster read has settled, so the ensure below never races it:
   // an account that already has a current tenant must not trigger.
   const [rosterSettled, setRosterSettled] = useState(false)
+  // Whether the current tenant is a SETTLED context rather than the
+  // placeholder fallback. A tenant-scoped surface that opens a connection
+  // (the notification stream) waits for this: the placeholder's alias names
+  // no tenant the caller belongs to, and a new account would otherwise open
+  // the stream before its personal tenant's ensure completes and be refused
+  // 404.
+  const [tenantSettled, setTenantSettled] = useState(false)
   // The ensure's retryable failure (a 503, or any failure that is not the
-  // 409 already-member): the tenant area then renders a retry instead of its
-  // content.
+  // 409 already-member): the tenant-reading pages then render a retry
+  // instead of their content, while the account-level pages keep rendering.
   const [personalFailure, setPersonalFailure] = useState(false)
   // A retry tick: the failure view's control bumps it, which re-runs the
   // ensure effect.
@@ -423,9 +458,17 @@ function TenantFrame({
   // queries gate on the tenant being known (TenantProvider below).
   useEffect(() => {
     if (!authenticated) {
+      // The root already cleared the module-level cells; this keeps the
+      // frame's own state in step while it stays mounted (the ending
+      // session keeps rendering the sign-in surface until it flips).
+      setTenantId(null)
       setRosterSettled(false)
+      setTenantSettled(false)
       return
     }
+    // The tenant is unknown until this read settles it; only the branches
+    // below that produce a real context raise the flag.
+    setTenantSettled(false)
     if (impersonating) {
       // The roster read is a platform management read, refused to an
       // impersonated identity. The current tenant is the grant's tenant
@@ -437,6 +480,7 @@ function TenantFrame({
       // with a member who cannot read the roster).
       setTenantId(grant?.tenant ?? null)
       setRosterSettled(true)
+      setTenantSettled(grant?.tenant != null)
       return
     }
     if (!featuresReady) {
@@ -448,6 +492,9 @@ function TenantFrame({
       return
     }
     if (!rosterServed) {
+      // No roster to read: the frame falls back to the placeholder, which
+      // names no tenant the caller is known to belong to. It is what the
+      // frame renders, not a settled tenant context.
       setTenantId(DEFAULT_TENANT_ID)
       setRosterSettled(true)
       setIdentitySettling(false)
@@ -469,20 +516,38 @@ function TenantFrame({
         setTenantAliases(
           new Map(answer.tenants.map((tenant) => [tenant.id, tenant.alias])),
         )
-        const first = answer.tenants.find((tenant) => tenant.status === 'active')
+        // The staff default is the first active tenant that is not someone's
+        // personal tenant: the roster view carries no kind, so the server's
+        // identifier prefix tells them apart. A personal tenant belongs to
+        // one account and answers a staff viewer 404; it also sorts before
+        // most deployment identifiers ('p' < 't', 'z'), so without this the
+        // first active row would often be a stranger's personal space.
+        const first = answer.tenants.find(
+          (tenant) =>
+            tenant.status === 'active' &&
+            !tenant.id.startsWith(PERSONAL_TENANT_ID_PREFIX),
+        )
         setTenantId(first?.id ?? DEFAULT_TENANT_ID)
         setRosterSettled(true)
+        setTenantSettled(true)
         setIdentitySettling(false)
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (cancelled) {
           return
         }
-        // A refused roster read (an ordinary member) leaves no current
-        // tenant while the personal tenant is served, so the ensure below
-        // runs; without it the frame keeps the placeholder fallback it has
-        // always had.
-        setTenantId(personalServed ? null : DEFAULT_TENANT_ID)
+        // Only a 403 means the ordinary member the design names: the roster
+        // is a platform management read, so a member without tenant.read is
+        // refused it. Their lack of a current tenant is what the ensure
+        // below fills. Every other failure -- a 5xx, a network error, a
+        // timeout, a 401 -- says nothing about membership and must not
+        // create a personal tenant: it falls back to the placeholder, as the
+        // frame does when the feature is off.
+        setTenantId(
+          personalServed && errorStatus(error) === 403
+            ? null
+            : DEFAULT_TENANT_ID,
+        )
         setRosterSettled(true)
         setIdentitySettling(false)
       })
@@ -543,6 +608,8 @@ function TenantFrame({
         setTenantAlias(answer.tenant.id, answer.tenant.alias)
         setPersonalTenant({ id: answer.tenant.id, alias: answer.tenant.alias })
         setTenantId(answer.tenant.id)
+        // The personal tenant is a real context the caller is a member of.
+        setTenantSettled(true)
         // `created` says this call registered the tenant, so the account is
         // new to password sign-in until it adds a login name and a password.
         // The profile is the GET /auth/me read the session committed with
@@ -569,6 +636,7 @@ function TenantFrame({
           // fire and render the admission refusal.
           setPersonalTenant(null)
           setTenantId(DEFAULT_TENANT_ID)
+          setTenantSettled(false)
           setIdentitySettling(false)
           return
         }
@@ -621,12 +689,16 @@ function TenantFrame({
           the acting tenant and re-reads the unread count and message list
           on every pushed frame. Mounted here, inside the tenant area,
           because the notification endpoints are tenant-scoped. It opens only
-          once the session is authenticated AND the process serves
-          notification.stream: an absent stream would otherwise reconnect
-          through its backoff against an unmounted endpoint. */}
+          once the session is authenticated, the process serves
+          notification.stream, AND the tenant context has settled: a new
+          account's personal tenant arrives through the ensure, and a
+          connection opened before it settles would carry the placeholder's
+          alias and be refused. An absent feature would otherwise open a
+          connection the server must refuse with a bare 404 on every mount,
+          identity change and tab return. */}
       <NotificationStreamProvider
         openStream={api.openEventStream}
-        enabled={authenticated && streamServed}
+        enabled={authenticated && streamServed && tenantSettled}
         identityGeneration={generation}
       >
         <ImpersonationNoticeProvider
@@ -705,7 +777,13 @@ function TenantFrame({
             eligible={personalSetupEligible}
           >
             <Box sx={{ p: 3 }}>
-              {personalFailure && tenantId === null ? (
+              {/* The retryable failure replaces only the pages that read
+                  tenant data. The account-level pages (the account settings
+                  page, the setup page, the binding callback) read none, so
+                  they keep rendering while the ensure retries -- otherwise a
+                  sustained failure would lock a new account out of adding a
+                  username, setting a password, or revoking a session. */}
+              {personalFailure && tenantId === null && !accountLevel ? (
                 <TenantProvisionFailure
                   onRetry={() => setPersonalRetry((current) => current + 1)}
                 />
@@ -781,7 +859,11 @@ function SessionGate({
 }): ReactElement {
   const snapshot = useAuthState()
   if (snapshot.state !== 'authenticated') {
-    return <SignInView />
+    // The console URL is the viewer's destination: a registration completed
+    // here stays on it instead of being taken to the tenant home or the
+    // setup page (the register mode's landing belongs to the app's own
+    // sign-in page).
+    return <SignInView keepLanding />
   }
   return <>{children}</>
 }
@@ -925,9 +1007,10 @@ function ConsoleAccessPending(): ReactElement {
 /**
  * The tenant area's retryable failure while the personal tenant could not be
  * ensured (a 503, or any answer that is not the 409 already-member). It takes
- * the content's place because no tenant is current: a page's tenant-scoped
- * reads cannot answer, and retrying the ensure is the one action that can
- * settle them.
+ * the place of the pages that read tenant data, because no tenant is current
+ * and their tenant-scoped reads cannot answer; retrying the ensure is the one
+ * action that can settle them. The account-level pages read no tenant data
+ * and are rendered instead of this view (src/app.tsx).
  */
 function TenantProvisionFailure({
   onRetry,

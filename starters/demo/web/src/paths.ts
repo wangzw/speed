@@ -52,6 +52,25 @@ export const NOTIFICATIONS_PATH: string = notificationRoutes[0]?.path ?? '/'
 export const ACCOUNT_CALLBACK_PATH = '/account/callback'
 
 /**
+ * The account-level pages: the routes that read no tenant data, so they
+ * stay usable whatever the tenant context's state. The account settings
+ * page and the setup page the registration completes on are the ones the
+ * design names; the binding callback is the same family (it completes a
+ * write of the account's own), and the tenant frame renders all three
+ * inside the tenant area.
+ */
+const ACCOUNT_LEVEL_PATHS: ReadonlySet<string> = new Set([
+  ACCOUNT_PATH,
+  ACCOUNT_SETUP_PATH,
+  ACCOUNT_CALLBACK_PATH,
+])
+
+/** Whether the path is an account-level page (no tenant-scoped reads). */
+export function isAccountLevelPath(pathname: string): boolean {
+  return ACCOUNT_LEVEL_PATHS.has(pathname)
+}
+
+/**
  * The public invite-acceptance route's prefix: an invitee's link lands on
  * `/invitations/<token>`. The route is not a navigation destination (it is
  * unlabelled and renders outside both shells, src/app.tsx), so it carries no

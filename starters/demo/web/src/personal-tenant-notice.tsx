@@ -9,12 +9,14 @@
  * account opened implicitly by an ordinary SMS sign-in gets the same notice
  * -- it only decides where a completed registration lands.
  *
- * The eligibility is decided where the ensure answer arrives (TenantFrame,
+ * The trigger is decided where the ensure answer arrives (TenantFrame,
  * src/app.tsx), and the home page consumes it through this context: both are
  * inside one tenant frame, and the fact must survive a navigation away from
- * the home page and back within the same session. Dismissing it is
- * remembered for the session too; mounting the provider under a new identity
- * resets both.
+ * the home page and back within the same session. Once the notice has
+ * appeared, the home page re-reads the account's current profile and stops
+ * offering it as soon as setup is complete -- the trigger is one-time, the
+ * wish to finish setup is not. Dismissing it is remembered for the session
+ * too; mounting the provider under a new identity resets both.
  */
 
 import {
