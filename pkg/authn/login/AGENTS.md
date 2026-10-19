@@ -18,14 +18,17 @@ command that names this module and delivers no method fails at startup with
 `authn.ErrNoLoginMethod`, as two methods of one name do with
 `authn.ErrMethodConflict`.
 
-Two inner packages carry the parts that would otherwise crowd this one.
+Three inner packages carry the parts that would otherwise crowd this one.
 `login/internal/resolve` resolves a `Proof` into an account — opening an account
 at signup, linking or merging an external identity — and answers one `Result` the
 engine lands on the flow. `login/internal/selfservice` mounts the account's own
 routes: the password and phone writes, adding or deleting a login identifier
 (a username in one step, an email only once its code comes back over the optional
-`authn.EmailCodeSender` channel), and unbinding an external identity. This
-package builds both and calls them; neither is reachable from another module.
+`authn.EmailCodeSender` channel), and unbinding an external identity.
+`login/internal/stepup` owns the one reading of the `WWW-Authenticate` value a
+step-up refusal carries, because a typed handler returns a fault and has no
+response writer. This package builds the first two and calls them, and uses
+`stepup` for its own refusals; none is reachable from another module.
 
 The API is the package's godoc. Read `Module`'s comment before changing the
 descriptor and `migrateFirst`/`resolveAndDecide` before changing what a state

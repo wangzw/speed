@@ -23,7 +23,7 @@ func TestTheCatalogRouteListsDeclaredPermissions(t *testing.T) {
 		authz.PermissionAccountRead,
 	}
 	r := newRig(t, declared...)
-	w := r.serve(r.p.handlePermissionList, http.MethodGet, "/api/v1/authz/admin/permissions", nil, nil)
+	w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/authz/admin/permissions", nil, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("the catalog route answered %d, want 200", w.Code)
 	}
@@ -62,7 +62,7 @@ func TestTheCatalogRouteListsDeclaredPermissions(t *testing.T) {
 func TestTheCatalogRouteRequiresRoleRead(t *testing.T) {
 	t.Run("the route asks the guard for role.read", func(t *testing.T) {
 		r := newRig(t, authz.PermissionRoleRead)
-		w := r.serve(r.p.handlePermissionList, http.MethodGet, "/api/v1/authz/admin/permissions", nil, nil)
+		w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/authz/admin/permissions", nil, nil)
 		if got := r.guard.askedFor(); len(got) != 1 || got[0] != authz.PermissionRoleRead {
 			t.Fatalf("the catalog route asked the guard for %v, want [authz.role.read]", got)
 		}
@@ -81,7 +81,7 @@ func TestTheCatalogRouteRequiresRoleRead(t *testing.T) {
 	t.Run("a refusal is a 403 with nothing downstream", func(t *testing.T) {
 		r := newRig(t, authz.PermissionRoleRead)
 		r.guard.allow = false
-		w := r.serve(r.p.handlePermissionList, http.MethodGet, "/api/v1/authz/admin/permissions", nil, nil)
+		w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/authz/admin/permissions", nil, nil)
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("a refused catalog read answered %d, want 403", w.Code)
 		}
@@ -127,7 +127,7 @@ func TestTheCatalogRouteNamesNoOpaqueID(t *testing.T) {
 	if !mounted() {
 		t.Fatalf("the module declares no GET route at %s", pathPermissions)
 	}
-	w := r.serve(r.p.handlePermissionList, http.MethodGet, pathPermissions, nil, nil)
+	w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, pathPermissions, nil, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("the catalog route answered %d with no path parameter, want 200", w.Code)
 	}

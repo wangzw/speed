@@ -50,6 +50,16 @@ The API is the package's godoc. Read the `LoginMethod` comments in
   from the `Host` header or a forwarded header, so a provider's IdP sees a stable
   service provider.
 
+**The metadata route is declared as an HTTP operation, and the fragment is
+generated.** `operations.go` declares the route with its input and answer types;
+`openapi/saml.json` is a build product of that declaration, regenerated with:
+
+```
+UPDATE_FRAGMENTS=1 go -C pkg test ./authn/sso/saml -run TestTheFragmentIsGeneratedFromTheDeclarations
+```
+
+Without the variable the same test is the drift gate.
+
 ## Running it
 
 From the repository root, over every module in the workspace:

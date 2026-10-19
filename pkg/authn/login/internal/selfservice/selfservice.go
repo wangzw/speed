@@ -20,7 +20,6 @@ package selfservice
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -132,30 +131,55 @@ const (
 	FeatureEmail = "authn.identifiers.email"
 )
 
-// Mount registers the routes. The two phone routes are registered only when the
-// service has SMSCodes; post, when it is not nil, is called in that same
-// judgement with the feature name the surface publishes. The email branch is
-// switched on by EmailSender, and its feature is posted in the judgement that
-// reads that dependency. The engine passes its report function here and calls
-// Mount from its Init, where the feature board accepts a post.
+// Mount registers the routes. rel turns a declared route into the relative path
+// the mounter joins to its base; the login engine passes its own resolver, so
+// the fragment's paths and the mounting read one declaration. The two phone
+// routes are registered only when the service has SMSCodes; post, when it is not
+// nil, is called in that same judgement with the feature name the surface
+// publishes. The email branch is switched on by EmailSender, and its feature is
+// posted in the judgement that reads that dependency. The engine passes its
+// report function here and calls Mount from its Init, where the feature board
+// accepts a post.
 //
 // Every route is guarded: the gateway authenticates it, and a request without a
 // credential never reaches a handler.
-func (s *Service) Mount(m mount.Mounter, post func(name string)) {
+func (s *Service) Mount(m mount.Mounter, rel func(string) string, post func(name string)) {
 	r := &routes{Service: s, endpoint: m.Endpoint()}
-	m.Guarded(http.MethodPut, "/password", r.changePassword)
+	m.Guarded(http.MethodPut, rel(pathPassword),
+		withWriter(r.guardedBody(actionPasswordChange, passwordOperation.Handle(r.changePassword))))
 	if s.deps.SMSCodes != nil {
-		m.Guarded(http.MethodPost, "/phone", r.startPhone)
-		m.Guarded(http.MethodPost, "/phone/verify", r.verifyPhone)
+		m.Guarded(http.MethodPost, rel(pathPhone),
+			withWriter(r.guardedBody("", startPhoneOperation.Handle(r.startPhone))))
+		m.Guarded(http.MethodPost, rel(pathPhoneVerify),
+			withWriter(r.guardedBody("", verifyPhoneOperation.Handle(r.verifyPhone))))
 		postFeature(post, FeaturePhone)
 	}
 	if s.deps.EmailSender != nil {
 		postFeature(post, FeatureEmail)
 	}
-	m.Guarded(http.MethodPost, "/identifiers", r.addIdentifier)
-	m.Guarded(http.MethodPost, "/identifiers/verify", r.verifyIdentifier)
-	m.Guarded(http.MethodDelete, "/identifiers/:id", r.removeIdentifier)
-	m.Guarded(http.MethodDelete, "/links/:id", r.unlink)
+	m.Guarded(http.MethodPost, rel(pathIdentifiers),
+		withWriter(r.guardedBody("", addIdentifierOperation.Handle(r.addIdentifier))))
+	m.Guarded(http.MethodPost, rel(pathIdentifiersVerify),
+		withWriter(r.guardedBody("", verifyIdentifierOperation.Handle(r.verifyIdentifier))))
+	m.Guarded(http.MethodDelete, rel(pathIdentifier), withWriter(removeIdentifierOperation.Handle(r.removeIdentifier)))
+	m.Guarded(http.MethodDelete, rel(pathLink), withWriter(unlinkOperation.Handle(r.unlink)))
+}
+
+// guardedBody applies the capability's body rules before the entry point binds
+// a write route's body: the media type, then the identity, session and
+// freshness checks the handler makes first, then the 64 KiB cap. The caller the
+// check decided is carried to the handler, so the checks run once.
+func (r *routes) guardedBody(action string, next gin.HandlerFunc) gin.HandlerFunc {
+	return mount.GuardBody(func(c *gin.Context) bool {
+		call := r.call(c.Request.Context(), nil)
+		who, ok := r.authorize(call, action)
+		if !ok {
+			call.refuse(c)
+			return false
+		}
+		c.Request = c.Request.WithContext(withCaller(c.Request.Context(), who))
+		return true
+	}, next)
 }
 
 // postFeature reports a feature name when the engine handed Mount a reporting
@@ -163,43 +187,5 @@ func (s *Service) Mount(m mount.Mounter, post func(name string)) {
 func postFeature(post func(name string), name string) {
 	if post != nil {
 		post(name)
-	}
-}
-
-// The sentinels a handler reads out of what it called, and the answer of each.
-// A wrong current password is the one place a 401 answers a request that is
-// authenticated; the table of the account module gives it as login-failed.
-func (r *routes) fail(c *gin.Context, err error) {
-	ctx := c.Request.Context()
-	var throttled *authn.ThrottledError
-	switch {
-	case errors.As(err, &throttled):
-		mount.Throttled(c, throttled.RetryAfter)
-	case errors.Is(err, authn.ErrThrottled):
-		mount.Throttled(c, 0)
-	case errors.Is(err, authn.ErrPasswordPolicy), errors.Is(err, authn.ErrInvalidIdentifier),
-		errors.Is(err, authn.ErrInvalidArgument):
-		mount.Fail(c, mount.CodeBadRequest)
-	case errors.Is(err, authn.ErrIdentifierRequired):
-		mount.Fail(c, mount.CodeLoginIdentifierRequired)
-	case errors.Is(err, authn.ErrAccountExists), errors.Is(err, authn.ErrBindingConflict),
-		errors.Is(err, authn.ErrLastLoginMethod), errors.Is(err, authn.ErrLastFactor),
-		errors.Is(err, authn.ErrFactorLimit):
-		mount.Fail(c, mount.CodeConflict)
-	case errors.Is(err, authn.ErrUnsupportedRegion):
-		mount.Fail(c, mount.CodeUnsupportedRegion)
-	case errors.Is(err, authn.ErrInvalidCredentials):
-		mount.Unauthorized(c, r.endpoint, mount.CodeLoginFailed)
-	case errors.Is(err, authn.ErrAccountNotFound), errors.Is(err, authn.ErrSessionNotFound),
-		errors.Is(err, authn.ErrSessionRevoked):
-		mount.Unauthorized(c, r.endpoint, "")
-	case errors.Is(err, authn.ErrBusy):
-		mount.Busy(c)
-	case errors.Is(err, authn.ErrUnavailable):
-		logWarn(ctx, "a dependency of an account self-service route is unavailable", err)
-		mount.Unavailable(c)
-	default:
-		logError(ctx, "an account self-service route failed on a call it cannot answer for", err)
-		mount.Unavailable(c)
 	}
 }

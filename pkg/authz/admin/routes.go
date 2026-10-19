@@ -10,23 +10,19 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The management routes, relative to the fixed base path. They are mounted on
-// their own base path and not under a configurable one, and every one of them
-// is addressed by a natural key — a role, a permission, an account — so that no
-// opaque row identifier ever appears in a path.
-const (
-	basePath = "/api/v1/authz/admin"
+// The paths the management routes are mounted on, resolved from the declarations
+// against the API root the module's Spec carries. The declarations write them
+// relative to that root, so the fragment and the registration share one source.
+var (
+	pathPermissions = authzAdminSpec.ResolvePath(pathPermissionsFragment)
 
-	pathPermissions = basePath + "/permissions"
-
-	pathRoles  = basePath + "/tenants/:tenant/roles"
-	pathRole   = basePath + "/tenants/:tenant/roles/:role"
-	pathGrants = basePath + "/tenants/:tenant/roles/:role/grants"
-	pathGrant  = basePath + "/tenants/:tenant/roles/:role/grants/:permission"
-
-	pathBindings  = basePath + "/tenants/:tenant/bindings"
-	pathBindingOf = basePath + "/tenants/:tenant/bindings/:account"
-	pathBinding   = basePath + "/tenants/:tenant/bindings/:account/:role"
+	pathRoles     = authzAdminSpec.ResolvePath(pathRolesFragment)
+	pathRole      = authzAdminSpec.ResolvePath(pathRoleFragment)
+	pathGrants    = authzAdminSpec.ResolvePath(pathGrantsFragment)
+	pathGrant     = authzAdminSpec.ResolvePath(pathGrantFragment)
+	pathBindings  = authzAdminSpec.ResolvePath(pathBindingsFragment)
+	pathBindingOf = authzAdminSpec.ResolvePath(pathBindingOfFragment)
+	pathBinding   = authzAdminSpec.ResolvePath(pathBindingFragment)
 )
 
 // managementGroups names the route groups in the order the start diagnostic
@@ -53,32 +49,74 @@ func withRealm(endpoint string, handler gin.HandlerFunc) gin.HandlerFunc {
 	}
 }
 
-// route is one management route: the method and path it answers and the handler
-// that serves it.
+// route is one management route: the method and path it answers, the permission
+// the handler-internal decision asks for, and the handler that serves it.
 type route struct {
 	method  string
 	path    string
+	perm    authz.Permission
 	handler gin.HandlerFunc
 }
 
 // routes is the closed set of management routes, in the order they are mounted.
+// Each handler is bound from the operation declared for it, so it receives the
+// declared input and writes the declared answer, and each is put behind the
+// guard that makes the identity and permission decision before the entry point
+// binds the request.
 func (p *product) routes() []route {
-	return []route{
-		{http.MethodGet, pathPermissions, p.handlePermissionList},
+	routes := []route{
+		{
+			http.MethodGet, pathPermissions, authz.PermissionRoleRead,
+			permissionListOperation.Handle(p.handlePermissionList),
+		},
 
-		{http.MethodGet, pathRoles, p.handleRoleList},
-		{http.MethodPut, pathRole, p.handleRolePut},
-		{http.MethodDelete, pathRole, p.handleRoleDelete},
+		{
+			http.MethodGet, pathRoles, authz.PermissionRoleRead,
+			roleListOperation.Handle(p.handleRoleList),
+		},
+		{
+			http.MethodPut, pathRole, authz.PermissionRoleManage,
+			prescreenRoleWrite(rolePutOperation.Handle(p.handleRolePut)),
+		},
+		{
+			http.MethodDelete, pathRole, authz.PermissionRoleManage,
+			roleDeleteOperation.Handle(p.handleRoleDelete),
+		},
 
-		{http.MethodGet, pathGrants, p.handleGrantList},
-		{http.MethodPut, pathGrant, p.handleGrantPut},
-		{http.MethodDelete, pathGrant, p.handleGrantDelete},
+		{
+			http.MethodGet, pathGrants, authz.PermissionRoleRead,
+			grantListOperation.Handle(p.handleGrantList),
+		},
+		{
+			http.MethodPut, pathGrant, authz.PermissionRoleManage,
+			grantPutOperation.Handle(p.handleGrantPut),
+		},
+		{
+			http.MethodDelete, pathGrant, authz.PermissionRoleManage,
+			grantDeleteOperation.Handle(p.handleGrantDelete),
+		},
 
-		{http.MethodGet, pathBindings, p.handleBindingList},
-		{http.MethodGet, pathBindingOf, p.handleBindingOf},
-		{http.MethodPut, pathBinding, p.handleBindingPut},
-		{http.MethodDelete, pathBinding, p.handleBindingDelete},
+		{
+			http.MethodGet, pathBindings, authz.PermissionRoleRead,
+			bindingListOperation.Handle(p.handleBindingList),
+		},
+		{
+			http.MethodGet, pathBindingOf, authz.PermissionRoleRead,
+			bindingOfOperation.Handle(p.handleBindingOf),
+		},
+		{
+			http.MethodPut, pathBinding, authz.PermissionRoleManage,
+			bindingPutOperation.Handle(p.handleBindingPut),
+		},
+		{
+			http.MethodDelete, pathBinding, authz.PermissionRoleManage,
+			bindingDeleteOperation.Handle(p.handleBindingDelete),
+		},
 	}
+	for i := range routes {
+		routes[i].handler = p.guardRoute(routes[i].perm, routes[i].handler)
+	}
+	return routes
 }
 
 // mount resolves every configured endpoint on the entry point and registers the
@@ -110,12 +148,12 @@ func (p *product) mount(router speedhttp.Router) error {
 // route-declaration surface, when one is present.
 //
 // The routes are declared open so that the authorization middleware lets a
-// request reach the handler: the handler makes the decision, on the permission
-// the request's method implies, through the handler-internal guard. Declaring
-// them to require a permission would make the middleware decide, and the module
-// grants itself no permission. With no declaration surface the routes carry no
-// declaration, and a guarded endpoint answers them as undeclared — which is why
-// a command that mounts these routes should name the enforcement module too.
+// request reach the guard wrapper: the wrapper makes the decision, on the
+// permission the request's method implies. Declaring them to require a
+// permission would make the middleware decide, and the module grants itself no
+// permission. With no declaration surface the routes carry no declaration, and a
+// guarded endpoint answers them as undeclared — which is why a command that
+// mounts these routes should name the enforcement module too.
 func (p *product) declareOpen() {
 	if p.gate == nil {
 		return

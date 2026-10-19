@@ -17,7 +17,7 @@ import (
 func TestAnUnauthorisedBindingDeleteReachesNoManagerAndWritesNoAudit(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
-	w := r.serve(r.p.handleBindingDelete, http.MethodDelete,
+	w := r.serve(writeRoute(r.p, bindingDeleteOperation.Handle(r.p.handleBindingDelete)), http.MethodDelete,
 		"/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor",
 		params("tenant", "t1", "account", "acct-1", "role", "editor"), nil)
 	if w.Code != http.StatusForbidden {
@@ -41,7 +41,7 @@ func TestAnUnauthorisedBindingDeleteReachesNoManagerAndWritesNoAudit(t *testing.
 // account was uncovered.
 func TestDeletingABindingAsksForRoleManageAndLandsOneSuccessRow(t *testing.T) {
 	r := newRig(t)
-	w := r.serve(r.p.handleBindingDelete, http.MethodDelete,
+	w := r.serve(writeRoute(r.p, bindingDeleteOperation.Handle(r.p.handleBindingDelete)), http.MethodDelete,
 		"/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor",
 		params("tenant", "t1", "account", "acct-1", "role", "editor"), nil)
 	if w.Code != http.StatusNoContent {
@@ -72,7 +72,7 @@ func TestDeletingABindingTheManagerRefusesIsMapped(t *testing.T) {
 	t.Run("a tenant mismatch is a 400", func(t *testing.T) {
 		r := newRig(t)
 		r.manager.fail(authz.ErrTenantMismatch)
-		w := r.serve(r.p.handleBindingDelete, http.MethodDelete,
+		w := r.serve(writeRoute(r.p, bindingDeleteOperation.Handle(r.p.handleBindingDelete)), http.MethodDelete,
 			"/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor",
 			params("tenant", "t1", "account", "acct-1", "role", "editor"), nil)
 		if w.Code != http.StatusBadRequest {
@@ -82,7 +82,7 @@ func TestDeletingABindingTheManagerRefusesIsMapped(t *testing.T) {
 	t.Run("a store failure is a 503 with a linked failed row", func(t *testing.T) {
 		r := newRig(t)
 		r.manager.fail(errors.New("the store is down"))
-		w := r.serve(r.p.handleBindingDelete, http.MethodDelete,
+		w := r.serve(writeRoute(r.p, bindingDeleteOperation.Handle(r.p.handleBindingDelete)), http.MethodDelete,
 			"/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor",
 			params("tenant", "t1", "account", "acct-1", "role", "editor"), nil)
 		if w.Code != http.StatusServiceUnavailable {
@@ -110,7 +110,7 @@ func TestDeletingABindingTheManagerRefusesIsMapped(t *testing.T) {
 func TestABindingWriteWhoseAuditDoesNotLandIsA503(t *testing.T) {
 	r := newRig(t)
 	r.audit.fail(errors.New("the audit store is down"))
-	w := r.serve(r.p.handleBindingPut, http.MethodPut,
+	w := r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
 		"/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor",
 		params("tenant", "t1", "account", "acct-1", "role", "editor"), nil)
 	if w.Code != http.StatusServiceUnavailable {
@@ -132,10 +132,14 @@ func TestAnonymousRequestsAreRefusedOnEveryBindingRoute(t *testing.T) {
 		path    string
 		params  gin.Params
 	}{
-		"the list":         {func(p *product) gin.HandlerFunc { return p.handleBindingList }, http.MethodGet, "/api/v1/authz/admin/tenants/t1/bindings", params("tenant", "t1")},
-		"the account read": {func(p *product) gin.HandlerFunc { return p.handleBindingOf }, http.MethodGet, "/api/v1/authz/admin/tenants/t1/bindings/acct-1", params("tenant", "t1", "account", "acct-1")},
-		"the write":        {func(p *product) gin.HandlerFunc { return p.handleBindingPut }, http.MethodPut, "/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor", params("tenant", "t1", "account", "acct-1", "role", "editor")},
-		"the delete":       {func(p *product) gin.HandlerFunc { return p.handleBindingDelete }, http.MethodDelete, "/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor", params("tenant", "t1", "account", "acct-1", "role", "editor")},
+		"the list": {func(p *product) gin.HandlerFunc {
+			return readRoute(p, bindingListOperation.Handle(p.handleBindingList))
+		}, http.MethodGet, "/api/v1/authz/admin/tenants/t1/bindings", params("tenant", "t1")},
+		"the account read": {func(p *product) gin.HandlerFunc { return readRoute(p, bindingOfOperation.Handle(p.handleBindingOf)) }, http.MethodGet, "/api/v1/authz/admin/tenants/t1/bindings/acct-1", params("tenant", "t1", "account", "acct-1")},
+		"the write":        {func(p *product) gin.HandlerFunc { return writeRoute(p, bindingPutOperation.Handle(p.handleBindingPut)) }, http.MethodPut, "/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor", params("tenant", "t1", "account", "acct-1", "role", "editor")},
+		"the delete": {func(p *product) gin.HandlerFunc {
+			return writeRoute(p, bindingDeleteOperation.Handle(p.handleBindingDelete))
+		}, http.MethodDelete, "/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor", params("tenant", "t1", "account", "acct-1", "role", "editor")},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -162,7 +166,7 @@ func TestABindingReadWhoseManagerFailsIsMapped(t *testing.T) {
 	t.Run("the list", func(t *testing.T) {
 		r := newRig(t)
 		r.manager.fail(errors.New("the store is down"))
-		w := r.serve(r.p.handleBindingList, http.MethodGet, "/api/v1/authz/admin/tenants/t1/bindings",
+		w := r.serve(readRoute(r.p, bindingListOperation.Handle(r.p.handleBindingList)), http.MethodGet, "/api/v1/authz/admin/tenants/t1/bindings",
 			params("tenant", "t1"), nil)
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("a binding list whose manager failed answered %d, want 503", w.Code)
@@ -174,7 +178,7 @@ func TestABindingReadWhoseManagerFailsIsMapped(t *testing.T) {
 	t.Run("the account read", func(t *testing.T) {
 		r := newRig(t)
 		r.manager.fail(errors.New("the store is down"))
-		w := r.serve(r.p.handleBindingOf, http.MethodGet, "/api/v1/authz/admin/tenants/t1/bindings/acct-1",
+		w := r.serve(readRoute(r.p, bindingOfOperation.Handle(r.p.handleBindingOf)), http.MethodGet, "/api/v1/authz/admin/tenants/t1/bindings/acct-1",
 			params("tenant", "t1", "account", "acct-1"), nil)
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("an account read whose manager failed answered %d, want 503", w.Code)
@@ -193,13 +197,13 @@ func TestTheBindingListViewCarriesEveryField(t *testing.T) {
 		{Tenant: "t1", Account: "acct-1", Role: "editor"},
 		{Tenant: "t1", Account: "acct-2", Role: "viewer"},
 	}
-	w := r.serve(r.p.handleBindingList, http.MethodGet, "/api/v1/authz/admin/tenants/t1/bindings",
+	w := r.serve(readRoute(r.p, bindingListOperation.Handle(r.p.handleBindingList)), http.MethodGet, "/api/v1/authz/admin/tenants/t1/bindings",
 		params("tenant", "t1"), nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("listing the bindings answered %d, want 200", w.Code)
 	}
 	var got struct {
-		Bindings []bindingView `json:"bindings"`
+		Bindings []AuthzAdminBindingView `json:"bindings"`
 	}
 	decodeInto(t, w.Body.String(), &got)
 	if len(got.Bindings) != 2 {
@@ -217,7 +221,7 @@ func TestTheBindingListViewCarriesEveryField(t *testing.T) {
 // set the audit object to the tenant, fails here.
 func TestABindingWriteCarriesTheRoleAndTheAuditObject(t *testing.T) {
 	r := newRig(t)
-	w := r.serve(r.p.handleBindingPut, http.MethodPut,
+	w := r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
 		"/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor",
 		params("tenant", "t1", "account", "acct-1", "role", "editor"), nil)
 	if w.Code != http.StatusNoContent {
@@ -240,11 +244,11 @@ func TestABindingWriteCarriesTheRoleAndTheAuditObject(t *testing.T) {
 func TestTheBindingDecisionIsAskedInThePlatformDomain(t *testing.T) {
 	for name, drive := range map[string]func(*rig){
 		"the list": func(r *rig) {
-			r.serve(r.p.handleBindingList, http.MethodGet, "/api/v1/authz/admin/tenants/other/bindings",
+			r.serve(readRoute(r.p, bindingListOperation.Handle(r.p.handleBindingList)), http.MethodGet, "/api/v1/authz/admin/tenants/other/bindings",
 				params("tenant", "other"), nil)
 		},
 		"the write": func(r *rig) {
-			r.serve(r.p.handleBindingPut, http.MethodPut, "/api/v1/authz/admin/tenants/other/bindings/acct-1/editor",
+			r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut, "/api/v1/authz/admin/tenants/other/bindings/acct-1/editor",
 				params("tenant", "other", "account", "acct-1", "role", "editor"), nil)
 		},
 	} {

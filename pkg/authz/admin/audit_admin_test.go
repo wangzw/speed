@@ -79,7 +79,7 @@ func TestEachActionIDIsFresh(t *testing.T) {
 func TestTheEmittedDetailKeysAreTheLiterals(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(errors.New("the store is down"))
-	w := r.serve(r.p.handleRolePut, http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/editor",
+	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/editor",
 		params("tenant", "t1", "role", "editor"), roleBody{})
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("the write answered %d, want 503", w.Code)

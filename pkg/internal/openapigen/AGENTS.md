@@ -44,7 +44,8 @@ The generator mirrors the entry point's binding and reply model:
   `json`-tagged fields, form bodies the `form`-tagged ones, multipart bodies the
   form fields plus file fields published as binary strings, and an
   octet-stream body is a binary string. The request body's description and
-  required flag are published.
+  required flag are published, and a body structure's own description goes on
+  a blank field of the input, the same convention an answer structure uses.
 - **Responses** follow the reply kind the declaration allows: a JSON body is
   the declared structure's schema; an octet-stream or other non-text payload is
   a binary string; a text payload is a string; `text/event-stream` publishes
@@ -67,6 +68,12 @@ Both are **build-time dependencies**. Nothing in a module's non-test code
 imports this package, so no host binary links them, and `pkg/http`'s dependency
 budget is unchanged. `pkg/go.mod` carries them because this package lives in
 that module.
+
+A module outside `pkg` — a host under `starters/` — reaches `Generate` through
+`pkg/http/openapigen`, which forwards here. The implementation stays in this
+package because the internal path keeps it out of reach of non-test host code;
+the forwarding package exists only because the internal rule does not admit an
+importer outside the `pkg` tree.
 
 ## Normalisation
 

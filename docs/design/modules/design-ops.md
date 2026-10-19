@@ -228,4 +228,5 @@ sequenceDiagram
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | `ops` 模块（探针路由、OpenAPI 合并、就绪判定） | 已实现 | `pkg/ops/ops.go` `Module` |
+| 探针路由的 operation 声明与片段生成 | 已实现 | `pkg/ops/operations.go`；`pkg/ops/openapi_generated_test.go` |
 | `pkg/ops/openapi` 的 `Merge`（供模块与 `gen` 命令共用的纯函数） | 已实现 | `pkg/ops/openapi/openapi.go` `Merge` |

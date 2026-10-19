@@ -1,26 +1,18 @@
 package admin
 
 import (
+	"context"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/vislake/speed/pkg/authn"
-	"github.com/vislake/speed/pkg/authn/internal/mount"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// secretView is one service secret as the management routes show it: its
+// secretViewOf builds one service secret as the management routes show it: its
 // identifier, its label, its expiry and whether it was revoked, and never the
 // secret.
-type secretView struct {
-	ID        string    `json:"id"`
-	Label     string    `json:"label"`
-	ExpiresAt time.Time `json:"expires_at"`
-	Revoked   bool      `json:"revoked"`
-}
-
-func secretViewOf(s authn.ServiceSecretInfo) secretView {
-	return secretView{
+func secretViewOf(s authn.ServiceSecretInfo) AuthnAdminSecret {
+	return AuthnAdminSecret{
 		ID:        s.ID,
 		Label:     s.Label,
 		ExpiresAt: s.ExpiresAt.UTC(),
@@ -30,117 +22,110 @@ func secretViewOf(s authn.ServiceSecretInfo) secretView {
 
 // handleSecretList answers GET /admin/accounts/:id/secrets. The action is
 // account.read.
-func (m *product) handleSecretList(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
+func (m *product) handleSecretList(ctx context.Context, in accountIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := m.caller(ctx)
+	if err != nil {
+		return nil, err
 	}
-	accountID := authn.AccountID(c.Param("id"))
-	if _, err := m.accounts.Get(c.Request.Context(), accountID); err != nil {
-		m.getFailure(c, err)
-		return
+	if err = m.admit(id); err != nil {
+		return nil, err
 	}
-	if !m.asks(c, authn.Decision{
+	accountID := authn.AccountID(in.ID)
+	if _, err = m.accounts.Get(ctx, accountID); err != nil {
+		return m.replyFailure("reading an object", err)
+	}
+	if err = m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountRead, Actor: id,
 		Target: string(accountID), TargetAccount: string(accountID),
-	}) {
-		return
+	}); err != nil {
+		return nil, err
 	}
-	secrets, err := m.accounts.ListServiceSecrets(c.Request.Context(), accountID)
+	secrets, err := m.accounts.ListServiceSecrets(ctx, accountID)
 	if err != nil {
-		m.cause(c, "listing service secrets", err)
-		return
+		return nil, m.unavailable("listing service secrets", err)
 	}
-	views := make([]secretView, len(secrets))
+	views := make([]AuthnAdminSecret, len(secrets))
 	for i, s := range secrets {
 		views[i] = secretViewOf(s)
 	}
-	c.JSON(200, gin.H{"secrets": views})
-}
-
-// createSecretBody is the request of a service-secret creation.
-type createSecretBody struct {
-	Label     string     `json:"label"`
-	ExpiresAt *time.Time `json:"expires_at"`
+	return speedhttp.JSONReply(200, AuthnAdminSecretList{Secrets: views}), nil
 }
 
 // handleSecretCreate answers POST /admin/accounts/:id/secrets: it mints a secret
 // for a service account, handed over once and never again. The action is
 // client.manage and the actor needs a fresh local multi-factor authentication.
-func (m *product) handleSecretCreate(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
+func (m *product) handleSecretCreate(ctx context.Context, in secretCreateInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := m.caller(ctx)
+	if err != nil {
+		return nil, err
 	}
-	accountID := authn.AccountID(c.Param("id"))
-	var body createSecretBody
-	if !mount.Decode(c, &body) {
-		return
+	if err = m.admit(id); err != nil {
+		return nil, err
 	}
-	if _, err := m.accounts.Get(c.Request.Context(), accountID); err != nil {
-		m.getFailure(c, err)
-		return
+	accountID := authn.AccountID(in.ID)
+	if _, err = m.accounts.Get(ctx, accountID); err != nil {
+		return m.replyFailure("reading an object", err)
 	}
-	if !m.asks(c, authn.Decision{
+	if err = m.asks(ctx, authn.Decision{
 		Action: authn.ActionClientManage, Actor: id,
 		Target: string(accountID), TargetAccount: string(accountID),
-	}) {
-		return
+	}); err != nil {
+		return nil, err
 	}
-	if !m.require(c, id, authn.FreshLocalMulti(m.settings.recentWindow())) {
-		return
+	if err = m.require(id, authn.FreshLocalMulti(m.settings.recentWindow())); err != nil {
+		return nil, err
 	}
 	actionID := newActionID()
-	if !m.auditRequired(c, mandatory(actionServiceKeyCreate, string(accountID),
-		map[string]string{detailActionID: actionID})) {
-		return
+	if err = m.auditRequired(ctx, mandatory(actionServiceKeyCreate, string(accountID),
+		map[string]string{detailActionID: actionID})); err != nil {
+		return nil, err
 	}
-	secretID, secret, err := m.accountAdm.CreateServiceSecret(c.Request.Context(), accountID, body.Label, body.ExpiresAt)
+	secretID, secret, err := m.accountAdm.CreateServiceSecret(ctx, accountID, in.Label, in.ExpiresAt)
 	if err != nil {
-		m.auditBestEffort(c.Request.Context(), failedAudit(actionServiceKeyCreate, string(accountID), actionID))
-		m.answer(c, "creating a service secret", err)
-		return
+		m.auditBestEffort(ctx, failedAudit(actionServiceKeyCreate, string(accountID), actionID))
+		return m.replyFailure("creating a service secret", err)
 	}
 	expires := time.Time{}
-	if body.ExpiresAt != nil {
-		expires = body.ExpiresAt.UTC()
+	if in.ExpiresAt != nil {
+		expires = in.ExpiresAt.UTC()
 	}
-	c.JSON(201, gin.H{"id": secretID, "label": body.Label, "secret": secret, "expires_at": expires})
+	return speedhttp.JSONReply(201, AuthnAdminSecretCreated{
+		ID: secretID, Label: in.Label, Secret: secret, ExpiresAt: expires,
+	}), nil
 }
 
 // handleSecretRevoke answers DELETE /admin/accounts/:id/secrets/:secret. The
 // action is client.manage and the actor needs a fresh local multi-factor
 // authentication.
-func (m *product) handleSecretRevoke(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
+func (m *product) handleSecretRevoke(ctx context.Context, in secretRevokeInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := m.caller(ctx)
+	if err != nil {
+		return nil, err
 	}
-	accountID := authn.AccountID(c.Param("id"))
-	secretID := c.Param("secret")
-	if _, err := m.accounts.Get(c.Request.Context(), accountID); err != nil {
-		m.getFailure(c, err)
-		return
+	if err := m.admit(id); err != nil {
+		return nil, err
 	}
-	if !m.asks(c, authn.Decision{
+	accountID := authn.AccountID(in.ID)
+	if _, err := m.accounts.Get(ctx, accountID); err != nil {
+		return m.replyFailure("reading an object", err)
+	}
+	if err := m.asks(ctx, authn.Decision{
 		Action: authn.ActionClientManage, Actor: id,
 		Target: string(accountID), TargetAccount: string(accountID),
-	}) {
-		return
+	}); err != nil {
+		return nil, err
 	}
-	if !m.require(c, id, authn.FreshLocalMulti(m.settings.recentWindow())) {
-		return
+	if err := m.require(id, authn.FreshLocalMulti(m.settings.recentWindow())); err != nil {
+		return nil, err
 	}
 	actionID := newActionID()
-	if !m.auditRequired(c, mandatory(actionServiceKeyRevoke, string(accountID),
-		map[string]string{detailActionID: actionID, detailSecretID: secretID})) {
-		return
+	if err := m.auditRequired(ctx, mandatory(actionServiceKeyRevoke, string(accountID),
+		map[string]string{detailActionID: actionID, detailSecretID: in.Secret})); err != nil {
+		return nil, err
 	}
-	if err := m.accountAdm.RevokeServiceSecret(c.Request.Context(), accountID, secretID); err != nil {
-		m.auditBestEffort(c.Request.Context(), failedAudit(actionServiceKeyRevoke, string(accountID), actionID))
-		m.answer(c, "revoking a service secret", err)
-		return
+	if err := m.accountAdm.RevokeServiceSecret(ctx, accountID, in.Secret); err != nil {
+		m.auditBestEffort(ctx, failedAudit(actionServiceKeyRevoke, string(accountID), actionID))
+		return m.replyFailure("revoking a service secret", err)
 	}
-	c.Status(204)
-	c.Writer.WriteHeaderNow()
+	return speedhttp.EmptyReply(204), nil
 }

@@ -28,6 +28,11 @@ const (
 	invalidValueCode = "invalid-value"
 )
 
+// errNoDeclaredItem reports a namespace no declared item belongs to. The answer
+// is a bare 404 with no problem document, so the handler turns the sentinel into
+// an empty reply rather than returning it as an error.
+var errNoDeclaredItem = errors.New("settings.admin: no declared item belongs to the namespace")
+
 // The query keys and the closed set of values the layer selection takes. The
 // layer is named by the query string and has no default; the tenant is required
 // on a tenant layer and refused on the global one. Both names and both values
@@ -55,6 +60,23 @@ type selection struct {
 	tenant string
 }
 
+// selectionOf builds the selection of a request whose layer the route's
+// authorization step already validated: a tenant layer was held to the tenant
+// identifier's domain and a global layer carried no tenant. It validates
+// nothing itself, which is why it is called only from the declared handlers,
+// behind that step.
+func selectionOf(layer, tenant string) selection {
+	if layer == layerTenant {
+		return selection{
+			layer:  settings.ForTenant(tenant),
+			domain: authz.Domain(tenant),
+			name:   layerTenant,
+			tenant: tenant,
+		}
+	}
+	return selection{layer: settings.Global(), domain: authz.PlatformDomain, name: layerGlobal}
+}
+
 // caller reads the identity the gateway put on the request.
 //
 // A management route is reached with no identity only when the authorization
@@ -63,7 +85,7 @@ type selection struct {
 // a request that cannot be put to the policy, and neither is a denial, so the
 // answer is the 401 the admission and authorization layers write for a route
 // that requires an identity and carries none: the status alone, no type, and the
-// same realm challenge. The handler returns without asking the guard or reading
+// same realm challenge. The route returns without asking the guard or reading
 // anything.
 func (p *product) caller(c *gin.Context) (authn.Identity, bool) {
 	id, ok := authn.FromContext(c.Request.Context())
@@ -127,7 +149,7 @@ func quoteRealm(name string) string {
 // selectLayer settles the layer and the policy domain from the query string.
 //
 // The layer has no default: an absent or unreadable layer is a 400, and the
-// handler returns before the guard is asked. The tenant identifier is external
+// route returns before the guard is asked. The tenant identifier is external
 // input, and settings.ForTenant panics on one outside the tenant identifier's
 // domain — non-empty and free of blanks and control characters — so it is held
 // to that domain here before a layer is built, and a value outside it is a 400.
@@ -144,20 +166,14 @@ func (p *product) selectLayer(c *gin.Context) (selection, bool) {
 			p.bad(c)
 			return selection{}, false
 		}
-		return selection{layer: settings.Global(), domain: authz.PlatformDomain, name: layerGlobal}, true
+		return selectionOf(layerGlobal, ""), true
 	case layerTenant:
 		values, present := query[queryTenant]
 		if !present || len(values) != 1 || !inTenantDomain(values[0]) {
 			p.bad(c)
 			return selection{}, false
 		}
-		tenant := values[0]
-		return selection{
-			layer:  settings.ForTenant(tenant),
-			domain: authz.Domain(tenant),
-			name:   layerTenant,
-			tenant: tenant,
-		}, true
+		return selectionOf(layerTenant, values[0]), true
 	default:
 		p.bad(c)
 		return selection{}, false
@@ -184,9 +200,9 @@ func notInAnIdentifier(r rune) bool {
 
 // require asks the handler-internal guard for one permission in the layer's
 // domain. It is the decision every management route makes after reading the
-// caller and settling the layer, and before parsing anything: a shortfall is
-// answered by the guard — a 403 for a denial, a 503 for an outage — and the
-// handler returns.
+// caller and settling the layer, and before the entry point binds the input: a
+// shortfall is answered by the guard — a 403 for a denial, a 503 for an outage —
+// and the route returns.
 //
 // The domain is named explicitly rather than read from the request. A global
 // layer is a platform operation, decided in the platform domain; deciding in
@@ -196,28 +212,17 @@ func (p *product) require(c *gin.Context, perm authz.Permission, domain authz.Do
 	return p.guard.RequirePermissionIn(c, perm, domain)
 }
 
-// body decodes a JSON request body into target. A body that is not one object is
-// a 400, and the handler returns without touching the settings module.
-func (p *product) body(c *gin.Context, target any) bool {
-	if err := c.ShouldBindJSON(target); err != nil {
-		p.bad(c)
-		return false
-	}
-	return true
-}
-
 // auditRequired writes the mandatory audit row of a write, outside any
 // transaction and before the action. A row that does not land is the audit
 // module's state, and the action is not carried out: the answer is a 503 and the
-// handler returns. The cause goes to the log and never to the caller.
-func (p *product) auditRequired(c *gin.Context, e audit.Entry) bool {
-	if err := p.audit.Record(c.Request.Context(), e); err != nil {
+// route returns. The cause goes to the log and never to the caller.
+func (p *product) auditRequired(ctx context.Context, e audit.Entry) error {
+	if err := p.audit.Record(ctx, e); err != nil {
 		p.logger.Error(ModuleName+": the mandatory audit row could not be written, so the action was not carried out",
 			slog.String("action", e.Action), slog.String("cause", err.Error()))
-		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
-		return false
+		return p.failure(http.StatusServiceUnavailable)
 	}
-	return true
+	return nil
 }
 
 // auditBestEffort writes the failed row that closes a write the settings module
@@ -229,59 +234,47 @@ func (p *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 	}
 }
 
-// answer maps a failure the settings module returned to the response it belongs
+// answer maps a failure the settings module returned to the answer it belongs
 // to.
 //
 // The mapping is closed and fail-closed. A value that cannot be encoded under
-// the declared type or lies outside its declared domain is a 422; a key with no
-// declaration is a 404; any other failure is a 503 whose cause stays in the log
-// and never reaches the caller.
-//
+// the declared type or lies outside its declared domain is a 422; any other
+// failure is a 503 whose cause stays in the log and never reaches the caller.
 // settings.ErrNotLoaded is not mapped: it is the read before the settings
 // module's Init loaded its snapshot, and a management route reads on the request
-// path, by which time every module's Init has run. A settings surface that
-// answers it here is answering about an assembly that never reached the request
-// path, so it falls to the same 503 an unknown failure gets.
-func (p *product) answer(c *gin.Context, op string, err error) {
+// path, by which time every module's Init has run.
+func (p *product) answer(op string, err error) error {
 	switch {
 	case errors.Is(err, settings.ErrTypeMismatch), errors.Is(err, settings.ErrInvalidValue):
-		p.invalidValue(c)
-	case errors.Is(err, settings.ErrUnknownKey):
-		p.notFound(c)
+		return p.invalidValue()
 	default:
-		p.unavailable(c, op, err)
+		return p.unavailable(op, err)
 	}
 }
 
 // bad answers a request this module refuses on shape alone: an unreadable layer
-// selection, a tenant identifier outside its value domain, or a body it cannot
-// read. It is written before any settings call.
+// selection or a tenant identifier outside its value domain. It is written before
+// the entry point binds the request and before any settings call.
 func (p *product) bad(c *gin.Context) {
 	speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusBadRequest, Type: typePrefix + badRequestCode})
 }
 
-// invalidValue answers a write the settings module refused because the value
-// cannot be encoded under the declared type or lies outside its declared domain.
-func (p *product) invalidValue(c *gin.Context) {
-	speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusUnprocessableEntity, Type: typePrefix + invalidValueCode})
-}
-
-// notFound answers a route whose full key has no declaration, or whose namespace
-// group holds none: a bare 404, carrying no problem code of this capability.
-func (p *product) notFound(c *gin.Context) {
-	c.Status(http.StatusNotFound)
-	c.Writer.WriteHeaderNow()
+// invalidValue is the answer to a write the settings module refused because the
+// value cannot be encoded under the declared type or lies outside its declared
+// domain.
+func (p *product) invalidValue() error {
+	return speedhttp.Fault{Status: http.StatusUnprocessableEntity, Type: typePrefix + invalidValueCode}
 }
 
 // unavailable logs a failure and answers a 503, never telling the caller which
 // dependency failed.
-func (p *product) unavailable(c *gin.Context, op string, err error) {
+func (p *product) unavailable(op string, err error) error {
 	p.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
-	speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
+	return p.failure(http.StatusServiceUnavailable)
 }
 
-// noContent answers a write that landed: 204 with no body.
-func (p *product) noContent(c *gin.Context) {
-	c.Status(http.StatusNoContent)
-	c.Writer.WriteHeaderNow()
+// failure is the answer of one of this module's own refusals: the status alone,
+// with the capability's problem type where the refusal names one.
+func (p *product) failure(status int) error {
+	return speedhttp.Fault{Status: status}
 }

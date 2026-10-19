@@ -1,6 +1,9 @@
 package admin
 
 import (
+	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -9,6 +12,7 @@ import (
 
 	"github.com/vislake/speed/pkg/audit/journal"
 	"github.com/vislake/speed/pkg/authn"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -40,136 +44,120 @@ var listParams = map[string]bool{
 // narrowed by a time window and sets of actions, outcomes and actors, read
 // newest first.
 //
-// The order is fixed: read the caller (401 with no identity) → ask the guard for
-// audit.read (a shortfall is the guard's own answer) → read the query parameters
-// and check their shape (a shape this module cannot read is a 400) → read the
-// table under a cross-tenant mark (a read failure is a 503) → answer a page.
-func (p *product) handleRecordList(c *gin.Context) {
-	caller, ok := p.caller(c)
-	if !ok || !p.require(c) {
-		return
-	}
-	q, ok := p.listQuery(c)
+// The caller and the decision are the mounted route's: the guard in front of
+// this handler read the identity (401 with no identity) and asked for
+// audit.read (a shortfall is the guard's own answer) before any parsing ran.
+// The handler reads the parameters, checks their shape (a shape this module
+// cannot read is a 400), reads the table under a cross-tenant mark (a read
+// failure is a 503) and answers a page.
+func (p *product) handleRecordList(ctx context.Context, in RecordListInput) (AuditAdminRecordPage, error) {
+	caller, ok := authn.FromContext(ctx)
 	if !ok {
-		return
+		return AuditAdminRecordPage{}, speedhttp.Fault{Status: http.StatusUnauthorized}
 	}
-	rows, next, err := p.reader.Query(tenant.CrossTenant(c.Request.Context()), q)
+	q, ok := listQueryOf(in)
+	if !ok {
+		return AuditAdminRecordPage{}, badRequestFault()
+	}
+	rows, next, err := p.reader.Query(tenant.CrossTenant(ctx), q)
 	if err != nil {
-		p.answer(c, "querying audit records", err)
-		return
+		return AuditAdminRecordPage{}, p.answerErr("querying audit records", err)
 	}
-	views := make([]recordView, len(rows))
+	entries := make([]AuditAdminRecord, len(rows))
 	for i, r := range rows {
-		views[i] = recordViewOf(r)
+		entries[i] = recordViewOf(r)
 	}
-	p.logRead(c, caller, len(rows))
-	c.JSON(http.StatusOK, recordPage{Entries: views, Next: next})
+	p.logRead(recordsPath, caller, len(rows))
+	return AuditAdminRecordPage{Entries: entries, Next: next}, nil
 }
 
 // handleRecordGet answers GET /api/v1/audit/admin/records/:id: one audit record, taken
 // by the row identifier, which is unique over the whole table and so needs no
 // tenant.
 //
-// The order is the list route's, with the path parameter parsed in place of the
-// query parameters: read the caller → ask the guard → read the path parameter
-// (a path that is not an identifier is a 400) → read the table under a
-// cross-tenant mark (a read failure is a 503) → answer the record, or a 404 when
-// the table holds no such row.
-func (p *product) handleRecordGet(c *gin.Context) {
-	caller, ok := p.caller(c)
-	if !ok || !p.require(c) {
-		return
-	}
-	// This route takes no query parameter; any is a shape the module refuses.
-	if !onlyAccepted(c, nil) {
-		p.bad(c)
-		return
-	}
-	rowID, ok := parseRowID(c.Param("id"))
+// The caller and the decision are the mounted route's, as on the list route.
+// The handler reads the path parameter (a path that is not an identifier is a
+// 400), reads the table under a cross-tenant mark (a read failure is a 503) and
+// answers the record, or a bare 404 when the table holds no such row. The 404
+// carries no problem document: it says a row is not there, not which refusal it
+// was.
+func (p *product) handleRecordGet(ctx context.Context, in RecordGetInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	caller, ok := authn.FromContext(ctx)
 	if !ok {
-		p.bad(c)
-		return
+		return nil, speedhttp.Fault{Status: http.StatusUnauthorized}
+	}
+	rowID, ok := parseRowID(in.ID)
+	if !ok {
+		return nil, badRequestFault()
 	}
 	if rowID == 0 {
 		// A row identifier is never zero, so a path naming zero names no row.
-		p.notFound(c)
-		return
+		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	}
-	rows, _, err := p.reader.Query(tenant.CrossTenant(c.Request.Context()), journal.Query{ID: rowID, Limit: 1})
+	rows, _, err := p.reader.Query(tenant.CrossTenant(ctx), journal.Query{ID: rowID, Limit: 1})
 	if err != nil {
-		p.answer(c, "reading an audit record", err)
-		return
+		return nil, p.answerErr("reading an audit record", err)
 	}
 	if len(rows) == 0 {
-		p.notFound(c)
-		return
+		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	}
-	p.logRead(c, caller, 1)
-	c.JSON(http.StatusOK, recordViewOf(rows[0]))
+	p.logRead(recordPath, caller, 1)
+	return speedhttp.JSONReply(http.StatusOK, recordViewOf(rows[0])), nil
 }
 
-// listQuery reads the list route's query parameters into a read query. A
-// parameter the route does not accept, a time bound that is not RFC 3339, an
-// action, outcome or actor that names nothing, and a limit that is not a
-// non-negative integer are each a 400. A limit above the read surface's maximum
-// is not refused: the read surface caps it.
-func (p *product) listQuery(c *gin.Context) (journal.Query, bool) {
-	if !onlyAccepted(c, listParams) {
-		p.bad(c)
-		return journal.Query{}, false
-	}
+// listQueryOf turns the list route's bound input into a read query. A time
+// bound that is not RFC 3339, an action, outcome or actor that names nothing,
+// and a limit that is not a non-negative integer are each a refusal. A limit
+// above the read surface's maximum is not refused: the read surface caps it.
+func listQueryOf(in RecordListInput) (journal.Query, bool) {
 	var q journal.Query
-	if s := c.Query(paramSince); s != "" {
-		t, ok := parseInstant(s)
+	if in.Since != "" {
+		t, ok := parseInstant(in.Since)
 		if !ok {
-			p.bad(c)
 			return journal.Query{}, false
 		}
 		q.Since = t
 	}
-	if s := c.Query(paramUntil); s != "" {
-		t, ok := parseInstant(s)
+	if in.Until != "" {
+		t, ok := parseInstant(in.Until)
 		if !ok {
-			p.bad(c)
 			return journal.Query{}, false
 		}
 		q.Until = t
 	}
-	for _, action := range c.QueryArray(paramAction) {
+	for _, action := range in.Action {
 		if action == "" {
-			p.bad(c)
 			return journal.Query{}, false
 		}
 		q.Actions = append(q.Actions, action)
 	}
-	for _, outcome := range c.QueryArray(paramOutcome) {
+	for _, outcome := range in.Outcome {
 		if outcome == "" {
-			p.bad(c)
 			return journal.Query{}, false
 		}
 		q.Outcomes = append(q.Outcomes, outcome)
 	}
-	for _, actor := range c.QueryArray(paramActor) {
+	for _, actor := range in.Actor {
 		if actor == "" {
-			p.bad(c)
 			return journal.Query{}, false
 		}
 		q.Actors = append(q.Actors, actor)
 	}
-	q.After = c.Query(paramCursor)
-	if s := c.Query(paramLimit); s != "" {
-		n, err := strconv.Atoi(s)
-		if err != nil || n < 0 {
-			p.bad(c)
-			return journal.Query{}, false
-		}
-		q.Limit = n
+	q.After = in.Cursor
+	if in.Limit < 0 {
+		return journal.Query{}, false
 	}
+	q.Limit = in.Limit
 	return q, true
 }
 
 // onlyAccepted reports whether every query parameter on the request is in the
 // accepted set. A nil set accepts none, which is the get route's shape.
+//
+// The typed binder reads only the parameters an operation declares and silently
+// ignores the rest, so this check stays in front of the handler to keep the set
+// closed: a misspelled bound is reported rather than swallowed by a read that
+// ignores it.
 func onlyAccepted(c *gin.Context, accepted map[string]bool) bool {
 	for key := range c.Request.URL.Query() {
 		if !accepted[key] {
@@ -205,9 +193,26 @@ func parseRowID(s string) (uint64, bool) {
 // action, and a row per read would grow the table with its being read — so the
 // trace of a read is this line: the route, the caller and the number of rows the
 // read answered.
-func (p *product) logRead(c *gin.Context, caller authn.Identity, hits int) {
+func (p *product) logRead(route string, caller authn.Identity, hits int) {
 	p.logger.Info(ModuleName+": a query was read",
-		"route", c.FullPath(),
+		"route", route,
 		"caller", caller.Key(),
 		"hits", hits)
+}
+
+// answerErr maps a failure the read surface returned to the response it belongs
+// to.
+//
+// The mapping is closed and fail-closed. A cursor that is not one the read
+// surface handed out is a shape failure the handler could not see before the
+// read — the cursor is opaque — so it is a 400; anything else is a 503 whose
+// cause stays in the log and never reaches the caller. A failure the mapping
+// does not name does not fall through as a success: it is the same 503 an
+// unknown failure gets.
+func (p *product) answerErr(op string, err error) error {
+	if errors.Is(err, journal.ErrInvalidQuery) {
+		return badRequestFault()
+	}
+	p.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
+	return speedhttp.Fault{Status: http.StatusServiceUnavailable}
 }

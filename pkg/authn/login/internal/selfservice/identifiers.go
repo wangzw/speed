@@ -1,14 +1,14 @@
 package selfservice
 
 import (
+	"context"
 	"net/http"
 	"slices"
 	"strings"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -17,27 +17,27 @@ import (
 // belongs to another account, is answered the same way, so that a caller learns
 // nothing about identifiers it does not hold. Whether the removal leaves the
 // account a way to log in is the account module's to say.
-func (r *routes) removeIdentifier(c *gin.Context) {
+func (r *routes) removeIdentifier(ctx context.Context, in identifierPathInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	c := r.call(ctx, meta)
 	who, ok := r.authorize(c, "")
 	if !ok {
-		return
+		return c.result()
 	}
-	ctx := c.Request.Context()
-	target := c.Param("id")
-	held, err := r.deps.Accounts.Identifiers(ctx, who.account)
+	held, err := r.deps.Accounts.Identifiers(c.ctx, who.account)
 	if err != nil {
 		r.fail(c, err)
-		return
+		return c.result()
 	}
-	if !slices.ContainsFunc(held, func(i authn.Identifier) bool { return i.ID == target }) {
-		mount.Fail(c, mount.CodeBadRequest)
-		return
+	if !slices.ContainsFunc(held, func(i authn.Identifier) bool { return i.ID == in.ID }) {
+		c.fail(mount.CodeBadRequest)
+		return c.result()
 	}
-	if err := r.deps.Admin.RemoveIdentifier(ctx, who.account, target); err != nil {
+	if err := r.deps.Admin.RemoveIdentifier(c.ctx, who.account, in.ID); err != nil {
 		r.fail(c, err)
-		return
+		return c.result()
 	}
-	c.Status(http.StatusNoContent)
+	c.empty(http.StatusNoContent)
+	return c.result()
 }
 
 // unlink answers DELETE /links/:id. As for an identifier, the binding has to be
@@ -46,46 +46,46 @@ func (r *routes) removeIdentifier(c *gin.Context) {
 // as none, which is why the freshness this route asks for is a local one. After
 // the unbinding the current session is rotated, the others are revoked and
 // authn.binding.changed is published.
-func (r *routes) unlink(c *gin.Context) {
+func (r *routes) unlink(ctx context.Context, in linkPathInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	c := r.call(ctx, meta)
 	who, ok := r.authorize(c, actionBindingUnlink)
 	if !ok {
-		return
+		return c.result()
 	}
-	ctx := c.Request.Context()
-	target := c.Param("id")
-	held, err := r.deps.Accounts.Externals(ctx, who.account)
+	held, err := r.deps.Accounts.Externals(c.ctx, who.account)
 	if err != nil {
 		r.fail(c, err)
-		return
+		return c.result()
 	}
-	i := slices.IndexFunc(held, func(b authn.ExternalBinding) bool { return b.ID == target })
+	i := slices.IndexFunc(held, func(b authn.ExternalBinding) bool { return b.ID == in.ID })
 	if i < 0 {
-		mount.Fail(c, mount.CodeBadRequest)
-		return
+		c.fail(mount.CodeBadRequest)
+		return c.result()
 	}
 	provider := held[i].Provider
-	if err := r.deps.Admin.UnlinkExternal(ctx, who.account, target); err != nil {
+	if err := r.deps.Admin.UnlinkExternal(c.ctx, who.account, in.ID); err != nil {
 		r.fail(c, err)
-		return
+		return c.result()
 	}
 	class, known := providerClass(provider)
 	var detail map[string]string
 	if !known {
-		log.FromContext(ctx).Warn(moduleName + ": an external identity of a provider outside the classes of the " +
+		log.FromContext(c.ctx).Warn(moduleName + ": an external identity of a provider outside the classes of the " +
 			"event payload was unlinked, so no authn.binding.changed was published")
 	} else {
 		detail = map[string]string{"provider": class}
-		r.publish(ctx, authn.EventBindingChanged, authn.BindingChanged{
+		r.publish(c.ctx, authn.EventBindingChanged, authn.BindingChanged{
 			AccountID:     string(who.account),
 			ProviderClass: class,
 			Change:        "unlinked",
 			Source:        "explicit",
 		})
 	}
-	r.record(ctx, actionBindingUnlink, outcomeSuccess, who.account, detail)
+	r.record(c.ctx, actionBindingUnlink, outcomeSuccess, who.account, detail)
 	if r.settle(c, who, authn.ReasonSelf) {
-		c.Status(http.StatusNoContent)
+		c.empty(http.StatusNoContent)
 	}
+	return c.result()
 }
 
 // providerClass is the class of a provider in the closed set the event payload

@@ -35,8 +35,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/config"
@@ -60,12 +58,10 @@ const personalFeature = personalModuleName
 // personalConfigItem is the switch, relative to the module's namespace.
 const personalConfigItem = "enabled"
 
-// personalRoutePath is the route the ensure is served at. It hangs off the
-// account endpoint's /api/v1/workspace claim; the prefix is written into every
-// configuration and into the frontend's backend-prefix manifest, so it stays
-// claimed even when the switch is off (the claim is configuration, the mounting
-// is assembly: an off switch answers the prefix with 404).
-const personalRoutePath = "/api/v1/workspace/personal"
+// personalPathFragment is the route as the fragment writes it: relative to the
+// API root the module's Spec declares. The mounting resolves it to the absolute
+// path the route is registered at.
+const personalPathFragment = "/workspace/personal"
 
 // personalEndpoint is the listening endpoint the route is mounted on and the
 // endpoint the OpenAPI fragment describes. It is fixed: the route is deliberately
@@ -146,8 +142,75 @@ var (
 	errRosterLagging = errors.New("the roster's snapshot has not caught up with the tenant row")
 )
 
+// personalFragmentTitle and personalFragmentVersion are the info section the
+// fragment personalOperations generates. The generation test compares the
+// committed bytes with what these name.
+const (
+	personalFragmentTitle   = "workspace personal"
+	personalFragmentVersion = "1.0.0"
+)
+
 //go:embed personal-openapi.json
 var personalFragment []byte
+
+// personalSpec is the API root the module's fragment and route hang off. The
+// route hangs off the account endpoint's /api/v1/workspace claim; the prefix is
+// written into every configuration and into the frontend's backend-prefix
+// manifest, so it stays claimed even when the switch is off (the claim is
+// configuration, the mounting is assembly: an off switch answers the prefix
+// with 404).
+var personalSpec = speedhttp.Spec{
+	Endpoint: personalEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: personalFragment,
+}
+
+// personalRoutePath is the absolute path the ensure is mounted on: the fragment
+// path resolved against the API root.
+var personalRoutePath = personalSpec.ResolvePath(personalPathFragment)
+
+// personalEnsureOperation declares the ensure route and binds its types: the
+// handler receives no input and returns the reply, so the entry point binds the
+// request and writes the declared success answer. The failure answers are the
+// route's closed set; a refusal the declaration does not carry is answered 500.
+var personalEnsureOperation = speedhttp.NewOperation[struct{}, WorkspacePersonalReply](
+	"workspace.personal.ensure",
+	http.MethodPost,
+	personalPathFragment,
+	"Ensure the caller's personal tenant exists and is complete",
+	"Creates the caller's personal tenant on first call and reads it back afterwards, completing its "+
+		"owner role and binding and converging the role's grants to the host's allowlist on every "+
+		"call. A membership row that exists is left as it stands, and a tenant that is not enabled is "+
+		"refused without a write. The tenant identifier and alias are derived from the account "+
+		"identifier; the answer names the tenant and whether this call created it.",
+	nil,
+	[]speedhttp.Response{
+		{
+			Status:      200,
+			Description: "The personal tenant, complete; created says whether this call registered it",
+			Body:        &speedhttp.Body{MediaType: "application/json"},
+		},
+		speedhttp.ProblemResponse(http.StatusUnauthorized,
+			"The request carries no identity"),
+		speedhttp.ProblemResponse(http.StatusForbidden,
+			"The caller is impersonating, is a service account, or is a static-table subject that "+
+				"cannot own a tenant"),
+		speedhttp.ProblemResponse(http.StatusConflict,
+			"The caller cannot have a personal tenant: it belongs to another tenant while holding "+
+				"none of its own (already-member), its personal tenant exists and is not enabled "+
+				"(tenant-unavailable), or the derived identifier or alias is unavailable "+
+				"(identifier-unavailable). The type field names which. Already-member changes if the "+
+				"other membership is removed, and tenant-unavailable changes if an operator enables "+
+				"the tenant; identifier-unavailable does not change on retry"),
+		speedhttp.ProblemResponse(http.StatusServiceUnavailable,
+			"A dependency could not answer; no part of the result is returned"),
+	},
+)
+
+// personalOperations is this module's declaration of the API it serves. The
+// fragment is generated from it; the route is mounted from the same declaration.
+var personalOperations = speedhttp.Operations{personalEnsureOperation}
 
 // init registers this module. The import is the wiring, as for every host
 // module; the serve command's Include list is what puts it in a run.
@@ -184,7 +247,8 @@ func personalModule() core.Module {
 		},
 		Resources: []any{
 			personalSchema(),
-			speedhttp.Spec{Endpoint: personalEndpoint, Prefix: "api", Version: "v1", Document: personalFragment},
+			personalSpec,
+			personalOperations,
 			// The switch varies it, so it is posted in Init when the route is
 			// mounted and absent otherwise.
 			feature.Spec{Name: personalFeature, Conditional: true},
@@ -329,7 +393,8 @@ func (p *personalProduct) wire(reg *core.Registry) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w: %q: %w", personalModuleName, speedhttp.ErrUnknownEndpoint, personalEndpoint, err)
 	}
-	endpoint.Route(http.MethodPost, personalRoutePath, p.handleEnsure)
+	endpoint.Route(personalEnsureOperation.Method, personalRoutePath,
+		personalEnsureOperation.Handle(p.handleEnsure))
 	// An impersonating identity is let through the gateway so the handler can
 	// answer it 403. Without the registration surface the gateway's default
 	// refuses the route for an impersonating caller, which is a 401.
@@ -362,18 +427,24 @@ func optionalPersonal[T any](reg *core.Registry, what string) (T, bool, error) {
 	}
 }
 
-// personalReply is the ensure's success answer.
-type personalReply struct {
-	Tenant  personalTenantView `json:"tenant"`
-	Created bool               `json:"created"`
+// WorkspacePersonalReply is the ensure's success answer. It is the operation's
+// declared success body, so its exported name is the component name the
+// fragment publishes.
+type WorkspacePersonalReply struct {
+	_ struct{} `description:"The answer to a successful ensure: the caller's personal tenant and whether this call registered it."`
+
+	Tenant  WorkspacePersonalTenant `json:"tenant" required:"true"`
+	Created bool                    `json:"created" required:"true" description:"Whether this call registered the tenant"`
 }
 
-// personalTenantView is the tenant the answer names. It carries no display name:
-// the frontend renders the personal label from Kind.
-type personalTenantView struct {
-	ID    string `json:"id"`
-	Alias string `json:"alias"`
-	Kind  string `json:"kind"`
+// WorkspacePersonalTenant is the tenant the answer names. It carries no display
+// name: the frontend renders the personal label from Kind.
+type WorkspacePersonalTenant struct {
+	_ struct{} `description:"The personal tenant the ensure names. It carries no display name: the frontend renders the personal label from the kind."`
+
+	ID    string `json:"id" required:"true" description:"The tenant identifier, derived deterministically from the account identifier: the fixed prefix \"personal-\" followed by the account identifier, the same string the alias carries. The scoped tables hold it, so it takes no phone number, display name or other personal data, and it does not change with the request language"`
+	Alias string `json:"alias" required:"true" description:"The request-surface name, equal to the identifier for a personal tenant"`
+	Kind  string `json:"kind" required:"true" enum:"personal" description:"The tenant kind; the frontend renders the personal label from it"`
 }
 
 // personalResult is the ensure's outcome before it is rendered.
@@ -392,72 +463,67 @@ type personalResult struct {
 // not enabled is the 409 tenant-unavailable, and an identifier or alias the
 // tenant cannot take is the 409 identifier-unavailable. Every dependency
 // failure is a 503 that carries no part of the result.
-func (p *personalProduct) handleEnsure(c *gin.Context) {
-	ctx := c.Request.Context()
+func (p *personalProduct) handleEnsure(ctx context.Context, _ struct{}) (WorkspacePersonalReply, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
-		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusUnauthorized})
-		return
+		return WorkspacePersonalReply{}, speedhttp.Fault{Status: http.StatusUnauthorized}
 	}
 	if id.Impersonating() {
-		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusForbidden})
-		return
+		return WorkspacePersonalReply{}, speedhttp.Fault{Status: http.StatusForbidden}
 	}
 	if slices.Contains(id.Methods(), authn.MethodClientSecret) {
 		// A service account authenticates only with its client secret, so the
 		// method is the account kind: a non-interactive API client is given
 		// tenant access by an administrator and gets no workspace of its own.
-		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusForbidden})
-		return
+		return WorkspacePersonalReply{}, speedhttp.Fault{Status: http.StatusForbidden}
 	}
 	account := id.Account()
 	if account == "" || account.IsStatic() {
 		// A subject of the static credential table has no account row, so it
 		// cannot hold a membership or own a tenant.
-		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusForbidden})
-		return
+		return WorkspacePersonalReply{}, speedhttp.Fault{Status: http.StatusForbidden}
 	}
 	result, err := p.ensure(ctx, account)
 	switch {
 	case err == nil:
-		c.JSON(http.StatusOK, personalReply{
-			Tenant: personalTenantView{
+		return WorkspacePersonalReply{
+			Tenant: WorkspacePersonalTenant{
 				ID:    string(result.Tenant.ID),
 				Alias: result.Tenant.Alias,
 				Kind:  personalKind,
 			},
 			Created: result.Created,
-		})
+		}, nil
 	case errors.Is(err, errAlreadyMember):
-		speedhttp.Fail(c, speedhttp.Problem{
+		return WorkspacePersonalReply{}, speedhttp.Fault{
 			Status: http.StatusConflict,
 			Type:   personalProblemPrefix + alreadyMemberCode,
-		})
+		}
 	case errors.Is(err, errTenantUnavailable):
 		p.logger.Warn(personalModuleName+": the personal tenant is not enabled",
 			"account", account.String(), "tenant", string(personalTenantID(account)), "cause", err.Error())
-		speedhttp.Fail(c, speedhttp.Problem{
+		return WorkspacePersonalReply{}, speedhttp.Fault{
 			Status: http.StatusConflict,
 			Type:   personalProblemPrefix + tenantUnavailableCode,
-		})
+		}
 	case errors.Is(err, errIdentifierUnavailable):
 		p.logger.Warn(personalModuleName+": the personal tenant's identifier is unavailable",
 			"account", account.String(), "tenant", string(personalTenantID(account)), "cause", err.Error())
-		speedhttp.Fail(c, speedhttp.Problem{
+		return WorkspacePersonalReply{}, speedhttp.Fault{
 			Status: http.StatusConflict,
 			Type:   personalProblemPrefix + identifierUnavailableCode,
-		})
+		}
 	case errors.Is(err, errRosterLagging):
 		// The expected race: another call or another replica wrote the row and
 		// this replica's snapshot has not caught up. It is retryable, not a
 		// failure of the run, so it is not an error-level record.
 		p.logger.Warn(personalModuleName+": the roster's snapshot lags the personal tenant row",
 			"account", account.String(), "tenant", string(personalTenantID(account)), "cause", err.Error())
-		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
+		return WorkspacePersonalReply{}, speedhttp.Fault{Status: http.StatusServiceUnavailable}
 	default:
 		p.logger.Error(personalModuleName+": the personal tenant could not be ensured",
 			"account", account.String(), "tenant", string(personalTenantID(account)), "cause", err.Error())
-		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
+		return WorkspacePersonalReply{}, speedhttp.Fault{Status: http.StatusServiceUnavailable}
 	}
 }
 

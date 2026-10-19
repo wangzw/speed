@@ -11,11 +11,11 @@ module is in force.
 
 The module grants itself no permission. It declares every management route open
 on the authorization middleware — so the middleware lets a request through to
-the handler — and the handler makes the decision itself: it reads the caller from
-the request, asks the handler-internal `authz.guard` API for `authz.role.read` on
-a read or `authz.role.manage` on a write, and answers a shortfall before anything
-else runs. The module carries only the vocabulary the catalog already declares;
-it puts no permission in place.
+the route's guard wrapper — and the wrapper makes the decision itself: it reads
+the caller from the request, asks the handler-internal `authz.guard` API for
+`authz.role.read` on a read or `authz.role.manage` on a write, and answers a
+shortfall before anything else runs. The module carries only the vocabulary the
+catalog already declares; it puts no permission in place.
 
 Taken in only by a command that wants the management routes, it is absent from
 every other command: without it a tenant's roles, grants and bindings are still
@@ -58,15 +58,16 @@ write that lands answers 204 and no body.
 
 ## Boundaries
 
-- **One decision order, for every route, read and write alike.** The handler
-  reads the caller first: a request with no identity is a 401 — the problem the
-  admission and authorization layers write for a route that requires an identity
-  and carries none: the status alone, no type, and the realm challenge naming the
-  endpoint the route was mounted on — and the handler returns without asking the
-  guard. Then it asks the guard for the route's permission: a shortfall is the
-  guard's own refusal, a 403 for a denial and a 503 for an outage. Only past the
-  decision does a write parse its body, run its checks, land its audit and call
-  the `Manager`, or a read call the `Manager` and answer.
+- **One decision order, for every route, read and write alike.** The route's
+  guard wrapper reads the caller first: a request with no identity is a 401 —
+  the problem the admission and authorization layers write for a route that
+  requires an identity and carries none: the status alone, no type, and the
+  realm challenge naming the endpoint the route was mounted on — and the
+  wrapper returns without asking the guard. Then it asks the guard for the
+  route's permission: a shortfall is the guard's own refusal, a 403 for a denial
+  and a 503 for an outage. Only past the decision does a write have its body
+  bound, run its checks, land its audit and call the `Manager`, or a read call
+  the `Manager` and answer.
 - **The decision is made in the platform domain, whatever tenant the path names.**
   The handler asks through the guard's explicit-domain form with
   `authz.PlatformDomain`, so the tenant in a management path is the data the
@@ -98,8 +99,10 @@ write that lands answers 204 and no body.
   management surface does not set it: the host's seeding step does, through
   `Manager.MarkRoleBuiltin`, and the host's seeding surface is the one write
   that adds a grant to the role afterwards. A `builtin` member a client sends
-  reaches nothing; the handler forwards a record without it, and `PutRole`
-  refuses a record that carries it.
+  reaches nothing: the route's body prescreen drops every member the declaration
+  does not carry before the entry point binds the declared input, the typed
+  handler builds its record from the declared field alone, and `PutRole` refuses
+  a record that carries the mark.
 - **The refusal mapping is closed and fail-closed.** An unknown role and a
   tenant mismatch — a request that named something that is not there, or crossed
   a tenant — are 400s; a builtin role is a 409; any other failure of the `Manager`
@@ -114,13 +117,13 @@ write that lands answers 204 and no body.
   empty-tenant check is in the store, and the manager reports it as the
   tenant mismatch this module maps to a 400, so the write is forwarded to the
   manager with the empty tenant intact.
-- **The module decides its own routes in the handler and declares them open.**
-  The middleware lets a management request through to the handler, which makes
-  the decision; the module grants itself no permission. Where the assembly
-  delivers the route-declaration surface, `Init` registers every management route
-  open on it. With no surface the routes carry no declaration, and a guarded
-  endpoint answers them as undeclared — which is why a command that mounts these
-  routes should name the enforcement module too.
+- **The module decides its own routes in a guard wrapper and declares them
+  open.** The middleware lets a management request through to the wrapper, which
+  makes the decision in front of the typed handler; the module grants itself no
+  permission. Where the assembly delivers the route-declaration surface, `Init`
+  registers every management route open on it. With no surface the routes carry
+  no declaration, and a guarded endpoint answers them as undeclared — which is
+  why a command that mounts these routes should name the enforcement module too.
 - **The module delivers no capability and registers `authz.admin`.** It carries
   no product another module resolves; it is taken in only to mount the routes. It
   states `StateEnabled` and never `StateAuto`: whether the management routes exist
@@ -178,11 +181,11 @@ go -C pkg test -race ./authz/admin/...
 env -C pkg golangci-lint run ./authz/admin/...
 ```
 
-The tests ask for no service and no environment. The cases drive the handlers
-over a real `*gin.Context` on an `httptest` recorder, with stand-ins for the
-manager, the catalog, the guard, the audit and the configuration reader, which
-count and record the calls they got — so a case can assert that a route the guard
-refused, and a write whose audit did not land, reached no table. The assembly
-cases drive the module's descriptor through a real registry, which is where what
-it requires and takes up is observed. A live case runs the real entry point and
-the module's own routes end to end on a loopback port the system picks.
+The tests ask for no service and no environment. The cases drive the declared
+operations over a real `*gin.Context` on an `httptest` recorder, with stand-ins
+for the manager, the catalog, the guard, the audit and the configuration reader,
+which count and record the calls they got — so a case can assert that a route
+the guard refused, and a write whose audit did not land, reached no table. The
+assembly cases drive the module's descriptor through a real registry, which is
+where what it requires and takes up is observed. A live case runs the real entry
+point and the module's own routes end to end on a loopback port the system picks.

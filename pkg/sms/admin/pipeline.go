@@ -43,7 +43,7 @@ const (
 // a request that cannot be put to the policy, and neither is a denial, so the
 // answer is the 401 the admission and authorization layers write for a route
 // that requires an identity and carries none: the status alone, no type, and the
-// same realm challenge. The handler returns without asking the guard or reading
+// same realm challenge. The route returns without asking the guard or reading
 // anything.
 func (p *product) caller(c *gin.Context) (authn.Identity, bool) {
 	id, ok := authn.FromContext(c.Request.Context())
@@ -55,10 +55,10 @@ func (p *product) caller(c *gin.Context) (authn.Identity, bool) {
 }
 
 // realmOf reads back the endpoint a management route was mounted on, the name
-// the handler writes as the realm of its 401. It is empty off the mounted route
-// — the handler called directly — and the challenge is then written with an
-// empty realm, which is the shape the design fixes and not a value a client
-// reads off the header.
+// the 401 writes as the realm of its challenge. It is empty off the mounted route
+// — the route called directly — and the challenge is then written with an empty
+// realm, which is the shape the design fixes and not a value a client reads off
+// the header.
 func realmOf(c *gin.Context) string {
 	if v, ok := c.Get(realmKey); ok {
 		if name, ok := v.(string); ok {
@@ -105,9 +105,9 @@ func quoteRealm(name string) string {
 }
 
 // require asks the handler-internal guard for one permission. It is the decision
-// every management route makes after reading the caller and before parsing
+// every management route makes after reading the caller and before binding
 // anything: a shortfall is answered by the guard — a 403 for a denial, a 503 for
-// an outage — and the handler returns.
+// an outage — and the route returns.
 //
 // The decision is made in the platform domain. The template set is the process's
 // own and not a tenant's, so a template operation is a platform one; deciding in
@@ -119,28 +119,39 @@ func (p *product) require(c *gin.Context, perm authz.Permission) bool {
 	return p.guard.RequirePermissionIn(c, perm, authz.PlatformDomain)
 }
 
-// body decodes a JSON request body into target. A body that is not one object is
-// a 400, and the handler returns without touching the registry.
-func (p *product) body(c *gin.Context, target any) bool {
-	if err := c.ShouldBindJSON(target); err != nil {
-		p.bad(c)
-		return false
+// permitted wraps one operation's handler with the two decisions every
+// management route makes before the entry point binds its input: the caller is
+// read first, and a request with no identity is answered 401; then the guard is
+// asked for the route's permission, and a shortfall is answered by the guard.
+//
+// The decision lives in this wrapper rather than in the typed handler because
+// the guard's API takes a *gin.Context, which a typed handler does not receive.
+// Running it here keeps the order the surface has always had — identity,
+// permission, then input — while the handler itself stays inside the declared
+// input and answer types.
+func (p *product) permitted(perm authz.Permission, handler gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if _, ok := p.caller(c); !ok {
+			return
+		}
+		if !p.require(c, perm) {
+			return
+		}
+		handler(c)
 	}
-	return true
 }
 
 // auditRequired writes the mandatory audit row of a write, outside any
 // transaction and before the action. A row that does not land is the audit
 // module's state, and the action is not carried out: the answer is a 503 and the
 // handler returns. The cause goes to the log and never to the caller.
-func (p *product) auditRequired(c *gin.Context, e audit.Entry) bool {
-	if err := p.audit.Record(c.Request.Context(), e); err != nil {
+func (p *product) auditRequired(ctx context.Context, e audit.Entry) error {
+	if err := p.audit.Record(ctx, e); err != nil {
 		p.logger.Error(ModuleName+": the mandatory audit row could not be written, so the action was not carried out",
 			slog.String("action", e.Action), slog.String("cause", err.Error()))
-		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
-		return false
+		return speedhttp.Fault{Status: http.StatusServiceUnavailable}
 	}
-	return true
+	return nil
 }
 
 // auditBestEffort writes the failed row that closes a write the registry
@@ -156,66 +167,31 @@ func (p *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 //
 // The mapping is closed and fail-closed. A template that came from the
 // configuration is a 409 that names its source, because the target exists but
-// cannot be changed at runtime; a template the registry does not hold is a 404;
-// a name the registry already holds is a 409; a configuration or a message the
-// registry refuses is a 400; any other failure is a 503 whose cause stays in the
-// log and never reaches the caller.
+// cannot be changed at runtime; a template the registry does not hold is a 404
+// that carries no problem document; a name the registry already holds is a 409;
+// a configuration or a message the registry refuses is a 400; any other failure
+// is a 503 whose cause stays in the log and never reaches the caller.
+//
+// The 404 is returned as an empty reply rather than as a fault: the surface has
+// always answered a missing template with the status alone, and the entry
+// point's fault path always writes a problem document.
 //
 // sms.ErrNotSendable is not mapped. It is the sending path's sentinel, answered
 // by Resolve when a template may not be sent under, and no management route
 // reaches it; a registry that answers it here is answering the wrong question,
 // so it falls to the same 503 an unknown failure gets.
-func (p *product) answer(c *gin.Context, op string, err error) {
+func (p *product) answer(op string, err error) (speedhttp.Reply, error) {
 	switch {
 	case errors.Is(err, sms.ErrImmutable):
-		p.fromConfig(c)
+		return nil, speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + configTemplateCode}
 	case errors.Is(err, sms.ErrNoTemplate):
-		p.notFound(c)
+		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	case errors.Is(err, sms.ErrTemplateExists):
-		p.conflict(c)
+		return nil, speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + conflictCode}
 	case errors.Is(err, sms.ErrInvalidConfig), errors.Is(err, sms.ErrRejected):
-		p.bad(c)
+		return nil, speedhttp.Fault{Status: http.StatusBadRequest, Type: typePrefix + badRequestCode}
 	default:
-		p.unavailable(c, op, err)
+		p.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
+		return nil, speedhttp.Fault{Status: http.StatusServiceUnavailable}
 	}
-}
-
-// bad answers a request this module refuses on shape alone: a path parameter or
-// a body it cannot read. It is written before any registry call.
-func (p *product) bad(c *gin.Context) {
-	speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusBadRequest, Type: typePrefix + badRequestCode})
-}
-
-// conflict answers a write the registry refused because the name is already
-// taken.
-func (p *product) conflict(c *gin.Context) {
-	speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusConflict, Type: typePrefix + conflictCode})
-}
-
-// fromConfig answers a write the registry refused because the named template came
-// from the configuration. The problem type names that source, so an operator
-// reads the fix — edit the configuration and restart — off the answer rather than
-// having to tell this refusal apart from a name collision by the log.
-func (p *product) fromConfig(c *gin.Context) {
-	speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusConflict, Type: typePrefix + configTemplateCode})
-}
-
-// notFound answers a management route whose template the registry does not hold:
-// a bare 404, carrying no problem code of this capability.
-func (p *product) notFound(c *gin.Context) {
-	c.Status(http.StatusNotFound)
-	c.Writer.WriteHeaderNow()
-}
-
-// unavailable logs a failure and answers a 503, never telling the caller which
-// dependency failed.
-func (p *product) unavailable(c *gin.Context, op string, err error) {
-	p.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
-	speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
-}
-
-// noContent answers a write that landed: 204 with no body.
-func (p *product) noContent(c *gin.Context) {
-	c.Status(http.StatusNoContent)
-	c.Writer.WriteHeaderNow()
 }

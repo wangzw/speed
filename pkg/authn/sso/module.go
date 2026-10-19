@@ -80,6 +80,17 @@ const defaultEndpoint = "account"
 //go:embed openapi/sso.json
 var ssoFragment []byte
 
+// ssoSpec is the API root this module's fragment and routes hang off. Its
+// prefix and version are the common ones; the fragment writes the capability's
+// own segment, so a route's declared path begins with the part of the mounter's
+// base that lies below this root.
+var ssoSpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: ssoFragment,
+}
+
 // dnsTimeout bounds one TXT lookup. It is the deadline a domain verification and
 // a re-verification each take.
 const dnsTimeout = 5 * time.Second
@@ -135,7 +146,8 @@ func Module() core.Module {
 			configSchema(),
 			settingsSchema(),
 			db.Migrations{FS: migrationsFS},
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: ssoFragment},
+			ssoSpec,
+			operations,
 		},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {

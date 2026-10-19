@@ -234,13 +234,14 @@ func TestStopAndCloseTolerateAnAbsentInstance(t *testing.T) {
 	}
 }
 
-// serve calls a readiness handler and records its answer.
-func serve(t *testing.T, handler gin.HandlerFunc) response {
+// serve calls a readiness handler and records its answer. The handler is bound
+// to the readiness operation, so the case sees exactly what a request would.
+func serve(t *testing.T, handler func(context.Context, struct{}, *speedhttp.Meta) (speedhttp.Reply, error)) response {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("GET", readyPath, nil)
-	handler(c)
+	readinessOperation.Handle(handler)(c)
 	return response{status: w.Code, header: w.Header(), body: w.Body.String()}
 }

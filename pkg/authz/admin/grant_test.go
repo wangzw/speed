@@ -19,7 +19,7 @@ import (
 // catalog check would reach the manager.
 func TestGrantingAPermissionOutsideTheCatalogIsRefused(t *testing.T) {
 	r := newRig(t) // the catalog declares no permission
-	w := r.serve(r.p.handleGrantPut, http.MethodPut,
+	w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
 		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 	if w.Code != http.StatusBadRequest {
@@ -42,7 +42,7 @@ func TestGrantingAPermissionOutsideTheCatalogIsRefused(t *testing.T) {
 // written down here, so a hardcoded wrong pair in the handler is caught.
 func TestGrantingATranslatedPermissionCallsPutGrantWithThePair(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
-	w := r.serve(r.p.handleGrantPut, http.MethodPut,
+	w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
 		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 	if w.Code != http.StatusNoContent {
@@ -73,7 +73,7 @@ func TestGrantingATranslatedPermissionCallsPutGrantWithThePair(t *testing.T) {
 func TestAGrantOnABuiltinPositionIsRefused(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	r.manager.fail(authz.ErrBuiltinRole)
-	w := r.serve(r.p.handleGrantPut, http.MethodPut,
+	w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
 		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 	if w.Code != http.StatusConflict {
@@ -93,7 +93,7 @@ func TestAGrantOnABuiltinPositionIsRefused(t *testing.T) {
 // idempotent, so the write lands as a 204 carrying the translated pair.
 func TestDeletingAnAbsentGrantIsIdempotent(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
-	w := r.serve(r.p.handleGrantDelete, http.MethodDelete,
+	w := r.serve(writeRoute(r.p, grantDeleteOperation.Handle(r.p.handleGrantDelete)), http.MethodDelete,
 		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 	if w.Code != http.StatusNoContent {
@@ -121,7 +121,7 @@ func TestDeletingAnAbsentGrantIsIdempotent(t *testing.T) {
 func TestAWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByActionID(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	r.manager.fail(errors.New("the store is down"))
-	w := r.serve(r.p.handleGrantPut, http.MethodPut,
+	w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
 		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 	if w.Code != http.StatusServiceUnavailable {
@@ -153,7 +153,7 @@ func TestAWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByActionID(
 func TestAnUnauthorisedWriteReachesNoManagerAndWritesNoAudit(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	r.guard.allow = false
-	w := r.serve(r.p.handleGrantPut, http.MethodPut,
+	w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
 		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 	if w.Code != http.StatusForbidden {
@@ -175,7 +175,7 @@ func TestAnUnauthorisedWriteReachesNoManagerAndWritesNoAudit(t *testing.T) {
 func TestListingGrantsAnswersTheRowsAsViews(t *testing.T) {
 	r := newRig(t, authz.PermissionRoleRead)
 	r.manager.grants = []authz.GrantRecord{{Tenant: "t1", Role: "r1", Resource: "account", Action: "read"}}
-	w := r.serve(r.p.handleGrantList, http.MethodGet,
+	w := r.serve(readRoute(r.p, grantListOperation.Handle(r.p.handleGrantList)), http.MethodGet,
 		"/api/v1/authz/admin/tenants/t1/roles/r1/grants",
 		params("tenant", "t1", "role", "r1"), nil)
 	if w.Code != http.StatusOK {

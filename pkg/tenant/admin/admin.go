@@ -82,10 +82,21 @@ var ErrInvalidConfig = errors.New("tenant.admin: a configuration this module can
 // the merged document.
 const defaultEndpoint = "admin"
 
-// openAPIFragment is this module's OpenAPI fragment, read at build time.
+// openAPIFragment is this module's OpenAPI fragment, read at build time. It is
+// generated from the operations this module declares, not written by hand.
 //
 //go:embed openapi/tenant.admin.json
 var openAPIFragment []byte
+
+// tenantAdminSpec is the API root this module's fragment and routes hang off.
+// The fragment is generated from operations; the routes are mounted from the
+// same declarations and resolved against this root.
+var tenantAdminSpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: openAPIFragment,
+}
 
 // init registers this module with the process registry. Registration travels
 // with the import, which is what makes "does this command mount the management
@@ -113,7 +124,8 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // The outward declaration carries a speedhttp.Spec resource beside the schema
 // and the two authorization specs: it holds this module's OpenAPI fragment,
 // which describes the management routes, for a reader that merges the fragments
-// into one document (the run's ops module, or a build's gen command).
+// into one document (the run's ops module, or a build's gen command). The
+// operations the fragment is generated from are declared beside it.
 //
 // The stance is StateEnabled and never StateAuto: whether to mount the
 // management routes is a decision on the command tree, not a conclusion a
@@ -129,7 +141,8 @@ func Module() core.Module {
 		},
 		Resources: []any{
 			schema(), permissionSpec(), translationSpec(),
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: openAPIFragment},
+			tenantAdminSpec,
+			operations,
 			// The roster management surface: its routes are mounted whenever the
 			// module is in force and the process has an entry point, so the
 			// feature is static.

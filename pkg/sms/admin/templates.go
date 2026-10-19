@@ -1,13 +1,13 @@
 package admin
 
 import (
+	"context"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/gin-gonic/gin"
-
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/sms"
 )
 
@@ -20,60 +20,42 @@ const (
 	maxPageSize     = 200
 )
 
-// handleTemplateList answers GET /api/v1/sms/admin/templates: one page of the template
+// handleTemplateList answers GET /sms/admin/templates: one page of the template
 // set, configured templates included. It is a read, so the action is
 // template.read. The page is ordered by template name and the cursor is the last
 // name on it, so a caller continues from where the previous page ended.
-func (p *product) handleTemplateList(c *gin.Context) {
-	if _, ok := p.caller(c); !ok {
-		return
+func (p *product) handleTemplateList(ctx context.Context, in ListTemplatesInput) (templatePageBody, error) {
+	if in.Limit < 0 {
+		return templatePageBody{}, speedhttp.Fault{
+			Status: http.StatusBadRequest,
+			Type:   typePrefix + badRequestCode,
+		}
 	}
-	if !p.require(c, PermissionTemplateRead) {
-		return
+	q := listQuery{after: in.After, limit: in.Limit}
+	switch {
+	case q.limit == 0:
+		q.limit = defaultPageSize
+	case q.limit > maxPageSize:
+		q.limit = maxPageSize
 	}
-	q, ok := p.listQuery(c)
-	if !ok {
-		return
-	}
-	records, err := p.registry.List(c.Request.Context())
+	records, err := p.registry.List(ctx)
 	if err != nil {
-		p.answer(c, "listing the templates", err)
-		return
+		p.logger.Error(ModuleName+": listing the templates failed", "cause", err.Error())
+		return templatePageBody{}, speedhttp.Fault{Status: http.StatusServiceUnavailable}
 	}
 	page, next := paginate(records, q)
-	views := make([]templateView, len(page))
+	views := make([]SmsAdminTemplate, len(page))
 	for i, r := range page {
 		views[i] = templateViewOf(r)
 	}
-	c.JSON(http.StatusOK, gin.H{"templates": views, "next_cursor": next})
+	return templatePageBody{Templates: views, NextCursor: next}, nil
 }
 
-// listQuery reads the list's query parameters. The cursor is the name to
-// continue after; the limit is a count, and a value that is not a non-negative
-// integer is a 400 before the registry is read.
+// listQuery is the page read once its limit has been resolved: the name to
+// continue after and the page size.
 type listQuery struct {
 	after string
 	limit int
-}
-
-func (p *product) listQuery(c *gin.Context) (listQuery, bool) {
-	q := listQuery{after: c.Query("after"), limit: defaultPageSize}
-	if s := c.Query("limit"); s != "" {
-		n, err := strconv.Atoi(s)
-		if err != nil || n < 0 {
-			p.bad(c)
-			return listQuery{}, false
-		}
-		switch {
-		case n == 0:
-			q.limit = defaultPageSize
-		case n > maxPageSize:
-			q.limit = maxPageSize
-		default:
-			q.limit = n
-		}
-	}
-	return q, true
 }
 
 // paginate takes one page of records, ordered by template name, and the cursor
@@ -100,15 +82,7 @@ func paginate(records []sms.Record, q listQuery) ([]sms.Record, string) {
 	return page, next
 }
 
-// registerBody is the request of a registration: the template's logical name,
-// the parameter names it substitutes and the carrier code for each language.
-type registerBody struct {
-	Name   string            `json:"name"`
-	Params []string          `json:"params"`
-	Codes  map[string]string `json:"codes"`
-}
-
-// handleTemplateRegister answers POST /api/v1/sms/admin/templates: it takes up a
+// handleTemplateRegister answers POST /sms/admin/templates: it takes up a
 // template whose vendor code the operator already has. It is a write, so the
 // action is template.manage. The mandatory audit row lands before the registry
 // is called; a name the registry already holds is a 409, and a template set the
@@ -116,51 +90,29 @@ type registerBody struct {
 //
 // An empty name is refused on shape before the registry is called: the route
 // addresses a template by its name, and the empty name names no row.
-func (p *product) handleTemplateRegister(c *gin.Context) {
-	if _, ok := p.caller(c); !ok {
-		return
-	}
-	if !p.require(c, PermissionTemplateManage) {
-		return
-	}
-	var body registerBody
-	if !p.body(c, &body) {
-		return
-	}
-	if strings.TrimSpace(body.Name) == "" {
-		p.bad(c)
-		return
+func (p *product) handleTemplateRegister(ctx context.Context, in registerBody, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	if strings.TrimSpace(in.Name) == "" {
+		return nil, speedhttp.Fault{Status: http.StatusBadRequest, Type: typePrefix + badRequestCode}
 	}
 	actionID := newActionID()
-	if !p.auditRequired(c, mandatory(actionTemplateRegister, body.Name, map[string]string{
+	if err := p.auditRequired(ctx, mandatory(actionTemplateRegister, in.Name, map[string]string{
 		detailActionID: actionID,
-		detailTemplate: body.Name,
-	})) {
-		return
+		detailTemplate: in.Name,
+	})); err != nil {
+		return nil, err
 	}
-	record, err := p.registry.Register(c.Request.Context(), body.Name, sms.TemplateSpec{
-		Params: body.Params,
-		Codes:  body.Codes,
+	record, err := p.registry.Register(ctx, in.Name, sms.TemplateSpec{
+		Params: in.Params,
+		Codes:  in.Codes,
 	})
 	if err != nil {
-		p.auditBestEffort(c.Request.Context(), failedAudit(actionTemplateRegister, body.Name, actionID))
-		p.answer(c, "registering a template", err)
-		return
+		p.auditBestEffort(ctx, failedAudit(actionTemplateRegister, in.Name, actionID))
+		return p.answer("registering a template", err)
 	}
-	c.JSON(http.StatusCreated, gin.H{"template": templateViewOf(record)})
+	return speedhttp.JSONReply(http.StatusCreated, registeredTemplateBody{Template: templateViewOf(record)}), nil
 }
 
-// offerBody is the request of a submission: the fields of a sms.Submission.
-type offerBody struct {
-	Name    string   `json:"name"`
-	Content string   `json:"content"`
-	Kind    string   `json:"kind"`
-	Locale  string   `json:"locale"`
-	Params  []string `json:"params"`
-	Remark  string   `json:"remark"`
-}
-
-// handleTemplateOffer answers POST /api/v1/sms/admin/templates/submissions: it hands a
+// handleTemplateOffer answers POST /sms/admin/templates/submissions: it hands a
 // template to the vendor for review and takes up the code the vendor answers
 // with. It is a write, so the action is template.manage. The mandatory audit row
 // lands before the registry is called; a submission the vendor or the registry
@@ -168,114 +120,73 @@ type offerBody struct {
 //
 // An empty name is refused on shape before the registry is called, the same as
 // the registration: the submission names the template it creates.
-func (p *product) handleTemplateOffer(c *gin.Context) {
-	if _, ok := p.caller(c); !ok {
-		return
-	}
-	if !p.require(c, PermissionTemplateManage) {
-		return
-	}
-	var body offerBody
-	if !p.body(c, &body) {
-		return
-	}
-	if strings.TrimSpace(body.Name) == "" {
-		p.bad(c)
-		return
+func (p *product) handleTemplateOffer(ctx context.Context, in offerBody, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	if strings.TrimSpace(in.Name) == "" {
+		return nil, speedhttp.Fault{Status: http.StatusBadRequest, Type: typePrefix + badRequestCode}
 	}
 	submission := sms.Submission{
-		Name:    body.Name,
-		Content: body.Content,
-		Kind:    sms.Kind(body.Kind),
-		Locale:  body.Locale,
-		Params:  body.Params,
-		Remark:  body.Remark,
+		Name:    in.Name,
+		Content: in.Content,
+		Kind:    sms.Kind(in.Kind),
+		Locale:  in.Locale,
+		Params:  in.Params,
+		Remark:  in.Remark,
 	}
 	actionID := newActionID()
-	if !p.auditRequired(c, mandatory(actionTemplateOffer, body.Name, map[string]string{
+	if err := p.auditRequired(ctx, mandatory(actionTemplateOffer, in.Name, map[string]string{
 		detailActionID: actionID,
-		detailTemplate: body.Name,
-	})) {
-		return
+		detailTemplate: in.Name,
+	})); err != nil {
+		return nil, err
 	}
-	record, err := p.registry.Offer(c.Request.Context(), submission)
+	record, err := p.registry.Offer(ctx, submission)
 	if err != nil {
-		p.auditBestEffort(c.Request.Context(), failedAudit(actionTemplateOffer, body.Name, actionID))
-		p.answer(c, "offering a template", err)
-		return
+		p.auditBestEffort(ctx, failedAudit(actionTemplateOffer, in.Name, actionID))
+		return p.answer("offering a template", err)
 	}
-	c.JSON(http.StatusCreated, gin.H{"template": templateViewOf(record)})
+	return speedhttp.JSONReply(http.StatusCreated, offeredTemplateBody{Template: templateViewOf(record)}), nil
 }
 
-// enabledBody is the request of an enable or a disable. The target state is a
-// pointer so that a body naming none is told apart from one naming false: the
-// route changes a template's state, and a body that names no state is a request
-// this module refuses rather than a disable by omission.
-type enabledBody struct {
-	Enabled *bool `json:"enabled"`
-}
-
-// handleTemplateSetEnabled answers POST /api/v1/sms/admin/templates/:name/enabled: it
+// handleTemplateSetEnabled answers POST /sms/admin/templates/:name/enabled: it
 // turns a message's ability to go out under a runtime template on or off. It is
-// a write, so the action is template.manage. The mandatory audit row lands before
-// the registry is called; a template that came from the configuration is a 409
-// naming its source, and a name the registry does not hold is a 404.
-func (p *product) handleTemplateSetEnabled(c *gin.Context) {
-	if _, ok := p.caller(c); !ok {
-		return
-	}
-	if !p.require(c, PermissionTemplateManage) {
-		return
-	}
-	name := c.Param("name")
-	var body enabledBody
-	if !p.body(c, &body) {
-		return
-	}
-	if body.Enabled == nil {
-		p.bad(c)
-		return
+// a write, so the action is template.manage. The mandatory audit row lands
+// before the registry is called; a template that came from the configuration is
+// a 409 naming its source, and a name the registry does not hold is a 404.
+func (p *product) handleTemplateSetEnabled(ctx context.Context, in setEnabledInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	if in.Enabled == nil {
+		return nil, speedhttp.Fault{Status: http.StatusBadRequest, Type: typePrefix + badRequestCode}
 	}
 	actionID := newActionID()
-	if !p.auditRequired(c, mandatory(actionTemplateEnable, name, map[string]string{
+	if err := p.auditRequired(ctx, mandatory(actionTemplateEnable, in.Name, map[string]string{
 		detailActionID: actionID,
-		detailTemplate: name,
-		detailEnabled:  strconv.FormatBool(*body.Enabled),
-	})) {
-		return
+		detailTemplate: in.Name,
+		detailEnabled:  strconv.FormatBool(*in.Enabled),
+	})); err != nil {
+		return nil, err
 	}
-	if err := p.registry.SetEnabled(c.Request.Context(), name, *body.Enabled); err != nil {
-		p.auditBestEffort(c.Request.Context(), failedAudit(actionTemplateEnable, name, actionID))
-		p.answer(c, "setting a template's enabled state", err)
-		return
+	if err := p.registry.SetEnabled(ctx, in.Name, *in.Enabled); err != nil {
+		p.auditBestEffort(ctx, failedAudit(actionTemplateEnable, in.Name, actionID))
+		return p.answer("setting a template's enabled state", err)
 	}
-	p.noContent(c)
+	return speedhttp.EmptyReply(http.StatusNoContent), nil
 }
 
-// handleTemplateRemove answers DELETE /api/v1/sms/admin/templates/:name: it drops a
-// runtime template from this process, at the vendor left alone. It is a write, so
-// the action is template.manage. The mandatory audit row lands before the
-// registry is called; a template that came from the configuration is a 409 naming
-// its source, and a name the registry does not hold is a 404.
-func (p *product) handleTemplateRemove(c *gin.Context) {
-	if _, ok := p.caller(c); !ok {
-		return
-	}
-	if !p.require(c, PermissionTemplateManage) {
-		return
-	}
-	name := c.Param("name")
+// handleTemplateRemove answers DELETE /sms/admin/templates/:name: it drops a
+// runtime template from this process, at the vendor left alone. It is a write,
+// so the action is template.manage. The mandatory audit row lands before the
+// registry is called; a template that came from the configuration is a 409
+// naming its source, and a name the registry does not hold is a 404.
+func (p *product) handleTemplateRemove(ctx context.Context, in templateNameInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	actionID := newActionID()
-	if !p.auditRequired(c, mandatory(actionTemplateRemove, name, map[string]string{
+	if err := p.auditRequired(ctx, mandatory(actionTemplateRemove, in.Name, map[string]string{
 		detailActionID: actionID,
-		detailTemplate: name,
-	})) {
-		return
+		detailTemplate: in.Name,
+	})); err != nil {
+		return nil, err
 	}
-	if err := p.registry.Remove(c.Request.Context(), name); err != nil {
-		p.auditBestEffort(c.Request.Context(), failedAudit(actionTemplateRemove, name, actionID))
-		p.answer(c, "removing a template", err)
-		return
+	if err := p.registry.Remove(ctx, in.Name); err != nil {
+		p.auditBestEffort(ctx, failedAudit(actionTemplateRemove, in.Name, actionID))
+		return p.answer("removing a template", err)
 	}
-	p.noContent(c)
+	return speedhttp.EmptyReply(http.StatusNoContent), nil
 }

@@ -65,6 +65,12 @@ const defaultEndpoint = "account"
 //go:embed openapi/admin.json
 var adminFragment []byte
 
+// adminSpec is the API this module's operations are declared against: the
+// fragment's endpoint, its root and the document generated from the
+// declarations. The mounting resolves each declared route against the same
+// root, so a path is written once.
+var adminSpec = speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: adminFragment}
+
 // diagnosticPrefix starts every line this module writes to the startup
 // diagnostics, which have several writers; it is the gateway's, so that a
 // reader scanning for what authentication did finds both.
@@ -118,7 +124,7 @@ func Module() core.Module {
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Resources: []any{
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: adminFragment},
+			adminSpec,
 			feature.Spec{Name: featureAdmin},
 			feature.Spec{Name: featureSessions, Conditional: true},
 			feature.Spec{Name: featureFactors, Conditional: true},

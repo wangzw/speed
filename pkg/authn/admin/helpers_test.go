@@ -835,17 +835,19 @@ func (r *rig) do(method, path string, body any, opts ...authntest.Option) *httpt
 // invoke calls a handler directly, with the identity the options build and the
 // path parameters given, bypassing the gateway. It is how a case drives the
 // handler's own impersonation check, which the Mounter's gateway would answer
-// first.
+// first. A nil body sends an empty JSON object, because the entry point binds
+// the operation's declared body before the handler runs; an operation that
+// declares none ignores it.
 func (r *rig) invoke(handler gin.HandlerFunc, method, target string, params gin.Params, body any, opts ...authntest.Option) *httptest.ResponseRecorder {
 	r.t.Helper()
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	var reader io.Reader
-	if body != nil {
-		encoded, _ := json.Marshal(body)
-		reader = bytes.NewReader(encoded)
+	if body == nil {
+		body = map[string]any{}
 	}
+	encoded, _ := json.Marshal(body)
+	reader := bytes.NewReader(encoded)
 	req := httptest.NewRequest(method, target, reader)
 	req.Header.Set("Content-Type", "application/json")
 	req = req.WithContext(authntest.Context(r.t, req.Context(), opts...))

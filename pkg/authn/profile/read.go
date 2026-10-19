@@ -1,12 +1,9 @@
 package profile
 
 import (
-	"net/http"
-
-	"github.com/gin-gonic/gin"
+	"context"
 
 	"github.com/vislake/speed/pkg/authn"
-	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
 
 // handleGetMe answers GET B/me: the caller's own profile, read from the account
@@ -18,27 +15,22 @@ import (
 // the 401 the gateway writes for a route that requires one; nothing of the
 // client's own naming is dereferenced, because the account comes from the
 // context and no path parameter carries one.
-func (p *product) handleGetMe(c *gin.Context) {
-	ctx := c.Request.Context()
+func (p *product) handleGetMe(ctx context.Context, _ struct{}) (AuthnProfileProfile, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok || id.Account() == "" {
-		mount.Unauthorized(c, p.mounter.Endpoint(), "")
-		return
+		return AuthnProfileProfile{}, p.unauthorized()
 	}
 	account, err := p.accounts.Get(ctx, id.Account())
 	if err != nil {
-		p.readFailure(c, err)
-		return
+		return AuthnProfileProfile{}, p.readFailure(err)
 	}
 	identifiers, err := p.accounts.Identifiers(ctx, id.Account())
 	if err != nil {
-		p.readFailure(c, err)
-		return
+		return AuthnProfileProfile{}, p.readFailure(err)
 	}
 	links, err := p.accounts.Externals(ctx, id.Account())
 	if err != nil {
-		p.readFailure(c, err)
-		return
+		return AuthnProfileProfile{}, p.readFailure(err)
 	}
-	c.JSON(http.StatusOK, profileViewOf(account, identifiers, links))
+	return profileViewOf(account, identifiers, links), nil
 }

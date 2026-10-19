@@ -15,7 +15,10 @@ import (
 )
 
 // route is one management route as a case drives it: its handler, the method
-// and path, and the path parameters the handler reads.
+// and path, and the path parameters the handler reads. The handler is the one
+// the operation's declaration binds, so a case drives the same entry point the
+// mounter registers: the input is bound from the request before the handler
+// runs.
 type route struct {
 	name    string
 	handler gin.HandlerFunc
@@ -30,40 +33,40 @@ type route struct {
 // checks those cases exercise come before a body is read.
 func allRoutes(p *product) []route {
 	return []route{
-		{"account list", p.handleAccountList, http.MethodGet, "/admin/accounts", nil},
-		{"account create", p.handleAccountCreate, http.MethodPost, "/admin/accounts", nil},
-		{"account get", p.handleAccountGet, http.MethodGet, "/admin/accounts/x", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"account patch", p.handleAccountPatch, http.MethodPatch, "/admin/accounts/x", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"account delete", p.handleAccountDelete, http.MethodDelete, "/admin/accounts/x", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"account status", p.handleAccountStatus, http.MethodPost, "/admin/accounts/x/status", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"identifier add", p.handleIdentifierAdd, http.MethodPost, "/admin/accounts/x/identifiers", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"identifier remove", p.handleIdentifierRemove, http.MethodDelete, "/admin/accounts/x/identifiers/y", gin.Params{{Key: "id", Value: string(userID)}, {Key: "identifier", Value: identifier}}},
-		{"password reset", p.handlePasswordReset, http.MethodPost, "/admin/accounts/x/password", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"factor list", p.handleFactorList, http.MethodGet, "/admin/accounts/x/factors", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"mfa required", p.handleMFARequired, http.MethodPost, "/admin/accounts/x/mfa-required", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"mfa reset", p.handleMFAReset, http.MethodPost, "/admin/accounts/x/mfa-reset", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"account sessions", p.handleAccountSessions, http.MethodGet, "/admin/accounts/x/sessions", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"revoke sessions", p.handleRevokeAccountSessions, http.MethodPost, "/admin/accounts/x/revoke-sessions", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"session revoke", p.handleSessionRevoke, http.MethodDelete, "/admin/sessions/x", gin.Params{{Key: "id", Value: string(sessionA)}}},
-		{"secret list", p.handleSecretList, http.MethodGet, "/admin/accounts/x/secrets", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"secret create", p.handleSecretCreate, http.MethodPost, "/admin/accounts/x/secrets", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"secret revoke", p.handleSecretRevoke, http.MethodDelete, "/admin/accounts/x/secrets/y", gin.Params{{Key: "id", Value: string(userID)}, {Key: "secret", Value: secretA}}},
-		{"member list", p.handleMemberList, http.MethodGet, "/admin/tenants/t/members", gin.Params{{Key: "tenant", Value: tenantA}}},
-		{"member put", p.handleMemberPut, http.MethodPut, "/admin/tenants/t/members/x", gin.Params{{Key: "tenant", Value: tenantA}, {Key: "account", Value: string(userID)}}},
-		{"member remove", p.handleMemberRemove, http.MethodDelete, "/admin/tenants/t/members/x", gin.Params{{Key: "tenant", Value: tenantA}, {Key: "account", Value: string(userID)}}},
-		{"sso exempt", p.handleMemberSSOExempt, http.MethodPut, "/admin/tenants/t/members/x/sso-exempt", gin.Params{{Key: "tenant", Value: tenantA}, {Key: "account", Value: string(userID)}}},
-		{"provider list", p.handleProviderList, http.MethodGet, "/admin/tenants/t/sso/providers", gin.Params{{Key: "tenant", Value: tenantA}}},
-		{"provider create", p.handleProviderCreate, http.MethodPost, "/admin/tenants/t/sso/providers", gin.Params{{Key: "tenant", Value: tenantA}}},
-		{"provider get", p.handleProviderGet, http.MethodGet, "/admin/sso/providers/x", gin.Params{{Key: "id", Value: idpA}}},
-		{"provider update", p.handleProviderUpdate, http.MethodPut, "/admin/sso/providers/x", gin.Params{{Key: "id", Value: idpA}}},
-		{"provider delete", p.handleProviderDelete, http.MethodDelete, "/admin/sso/providers/x", gin.Params{{Key: "id", Value: idpA}}},
-		{"domain claim", p.handleDomainClaim, http.MethodPost, "/admin/sso/providers/x/domains", gin.Params{{Key: "id", Value: idpA}}},
-		{"domain remove", p.handleDomainRemove, http.MethodDelete, "/admin/sso/providers/x/domains/d", gin.Params{{Key: "id", Value: idpA}, {Key: "domain", Value: "d.example"}}},
-		{"domain verify", p.handleDomainVerify, http.MethodPost, "/admin/sso/providers/x/domains/d/verify", gin.Params{{Key: "id", Value: idpA}, {Key: "domain", Value: "d.example"}}},
-		{"reverify domains", p.handleReverifyDomains, http.MethodPost, "/admin/sso/providers/x/reverify-domains", gin.Params{{Key: "id", Value: idpA}}},
-		{"metadata refresh", p.handleMetadataRefresh, http.MethodPost, "/admin/sso/providers/x/metadata/refresh", gin.Params{{Key: "id", Value: idpA}}},
-		{"impersonation list", p.handleImpersonationList, http.MethodGet, "/admin/impersonations", nil},
-		{"impersonation revoke", p.handleImpersonationRevoke, http.MethodDelete, "/admin/impersonations/x", gin.Params{{Key: "id", Value: grantA}}},
+		{"account list", accountListOperation.Handle(p.handleAccountList), http.MethodGet, "/admin/accounts", nil},
+		{"account create", accountCreateOperation.Handle(p.handleAccountCreate), http.MethodPost, "/admin/accounts", nil},
+		{"account get", accountGetOperation.Handle(p.handleAccountGet), http.MethodGet, "/admin/accounts/x", gin.Params{{Key: "id", Value: string(userID)}}},
+		{"account patch", accountPatchOperation.Handle(p.handleAccountPatch), http.MethodPatch, "/admin/accounts/x", gin.Params{{Key: "id", Value: string(userID)}}},
+		{"account delete", accountDeleteOperation.Handle(p.handleAccountDelete), http.MethodDelete, "/admin/accounts/x", gin.Params{{Key: "id", Value: string(userID)}}},
+		{"account status", accountStatusOperation.Handle(p.handleAccountStatus), http.MethodPost, "/admin/accounts/x/status", gin.Params{{Key: "id", Value: string(userID)}}},
+		{"identifier add", identifierAddOperation.Handle(p.handleIdentifierAdd), http.MethodPost, "/admin/accounts/x/identifiers", gin.Params{{Key: "id", Value: string(userID)}}},
+		{"identifier remove", identifierRemoveOperation.Handle(p.handleIdentifierRemove), http.MethodDelete, "/admin/accounts/x/identifiers/y", gin.Params{{Key: "id", Value: string(userID)}, {Key: "identifier", Value: identifier}}},
+		{"password reset", passwordResetOperation.Handle(p.handlePasswordReset), http.MethodPost, "/admin/accounts/x/password", gin.Params{{Key: "id", Value: string(userID)}}},
+		{"factor list", factorListOperation.Handle(p.handleFactorList), http.MethodGet, "/admin/accounts/x/factors", gin.Params{{Key: "id", Value: string(userID)}}},
+		{"mfa required", mfaFlagOperation.Handle(p.handleMFARequired), http.MethodPost, "/admin/accounts/x/mfa-required", gin.Params{{Key: "id", Value: string(userID)}}},
+		{"mfa reset", mfaResetOperation.Handle(p.handleMFAReset), http.MethodPost, "/admin/accounts/x/mfa-reset", gin.Params{{Key: "id", Value: string(userID)}}},
+		{"account sessions", accountSessionsOperation.Handle(p.handleAccountSessions), http.MethodGet, "/admin/accounts/x/sessions", gin.Params{{Key: "id", Value: string(userID)}}},
+		{"revoke sessions", revokeSessionsOperation.Handle(p.handleRevokeAccountSessions), http.MethodPost, "/admin/accounts/x/revoke-sessions", gin.Params{{Key: "id", Value: string(userID)}}},
+		{"session revoke", sessionRevokeOperation.Handle(p.handleSessionRevoke), http.MethodDelete, "/admin/sessions/x", gin.Params{{Key: "id", Value: string(sessionA)}}},
+		{"secret list", secretListOperation.Handle(p.handleSecretList), http.MethodGet, "/admin/accounts/x/secrets", gin.Params{{Key: "id", Value: string(userID)}}},
+		{"secret create", secretCreateOperation.Handle(p.handleSecretCreate), http.MethodPost, "/admin/accounts/x/secrets", gin.Params{{Key: "id", Value: string(userID)}}},
+		{"secret revoke", secretRevokeOperation.Handle(p.handleSecretRevoke), http.MethodDelete, "/admin/accounts/x/secrets/y", gin.Params{{Key: "id", Value: string(userID)}, {Key: "secret", Value: secretA}}},
+		{"member list", memberListOperation.Handle(p.handleMemberList), http.MethodGet, "/admin/tenants/t/members", gin.Params{{Key: "tenant", Value: tenantA}}},
+		{"member put", memberWriteOperation.Handle(p.handleMemberPut), http.MethodPut, "/admin/tenants/t/members/x", gin.Params{{Key: "tenant", Value: tenantA}, {Key: "account", Value: string(userID)}}},
+		{"member remove", memberRemoveOperation.Handle(p.handleMemberRemove), http.MethodDelete, "/admin/tenants/t/members/x", gin.Params{{Key: "tenant", Value: tenantA}, {Key: "account", Value: string(userID)}}},
+		{"sso exempt", memberExemptOperation.Handle(p.handleMemberSSOExempt), http.MethodPut, "/admin/tenants/t/members/x/sso-exempt", gin.Params{{Key: "tenant", Value: tenantA}, {Key: "account", Value: string(userID)}}},
+		{"provider list", providerListOperation.Handle(p.handleProviderList), http.MethodGet, "/admin/tenants/t/sso/providers", gin.Params{{Key: "tenant", Value: tenantA}}},
+		{"provider create", providerCreateOperation.Handle(p.handleProviderCreate), http.MethodPost, "/admin/tenants/t/sso/providers", gin.Params{{Key: "tenant", Value: tenantA}}},
+		{"provider get", providerGetOperation.Handle(p.handleProviderGet), http.MethodGet, "/admin/sso/providers/x", gin.Params{{Key: "id", Value: idpA}}},
+		{"provider update", providerUpdateOperation.Handle(p.handleProviderUpdate), http.MethodPut, "/admin/sso/providers/x", gin.Params{{Key: "id", Value: idpA}}},
+		{"provider delete", providerDeleteOperation.Handle(p.handleProviderDelete), http.MethodDelete, "/admin/sso/providers/x", gin.Params{{Key: "id", Value: idpA}}},
+		{"domain claim", domainClaimOperation.Handle(p.handleDomainClaim), http.MethodPost, "/admin/sso/providers/x/domains", gin.Params{{Key: "id", Value: idpA}}},
+		{"domain remove", domainRemoveOperation.Handle(p.handleDomainRemove), http.MethodDelete, "/admin/sso/providers/x/domains/d", gin.Params{{Key: "id", Value: idpA}, {Key: "domain", Value: "d.example"}}},
+		{"domain verify", domainVerifyOperation.Handle(p.handleDomainVerify), http.MethodPost, "/admin/sso/providers/x/domains/d/verify", gin.Params{{Key: "id", Value: idpA}, {Key: "domain", Value: "d.example"}}},
+		{"reverify domains", reverifyDomainsOperation.Handle(p.handleReverifyDomains), http.MethodPost, "/admin/sso/providers/x/reverify-domains", gin.Params{{Key: "id", Value: idpA}}},
+		{"metadata refresh", metadataRefreshOperation.Handle(p.handleMetadataRefresh), http.MethodPost, "/admin/sso/providers/x/metadata/refresh", gin.Params{{Key: "id", Value: idpA}}},
+		{"impersonation list", impersonationListOperation.Handle(p.handleImpersonationList), http.MethodGet, "/admin/impersonations", nil},
+		{"impersonation revoke", impersonationRevokeOperation.Handle(p.handleImpersonationRevoke), http.MethodDelete, "/admin/impersonations/x", gin.Params{{Key: "id", Value: grantA}}},
 	}
 }
 

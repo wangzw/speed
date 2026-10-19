@@ -96,7 +96,7 @@ type Preferences interface {
 
 `PUT /preferences/:typeKey/:channel` 的正文是 `{ "enabled": true | false }`。判定顺序固定，收口在一处：
 
-1. **正文可读**：正文不是一个对象、或 `enabled` 不是一个布尔值，即 `ErrInvalidRequest`（400）。
+1. **正文可读**：入口模块在 handler 之前绑定正文。`Content-Type` 缺失或不是 `application/json` 答 415；正文为空答 400（PUT 的正文声明为必需）；正文不是 JSON 对象（字面量 `null` 除外，它按空对象绑定）、`enabled` 是 `null` 之外的其它非布尔值、或带声明之外的成员也答 400。这些拒绝是入口模块的答案：`Problem.Type` 为 `about:blank`，标题是标准英文状态文本，没有 detail。字面量 `null` 绑定成空对象后与缺少 `enabled` 同形，因此与「正文没有 `enabled`、或 `enabled` 是 `null`」一道由本模块的 handler 答 400 `urn:speed:notification:bad-request`，标题与 detail 由本模块的消息目录渲染。两种情况都不触达存储。
 2. **渠道已知**：`KnownChannel(channel)` 为 false 即 `ErrUnknownChannel`，先于任何 no-op 分支拒绝。
 3. **类型在册**：`Type(typeKey)` 的第二个结果为 false 即 `ErrUnknownType`。
 4. **类型可退订**：该类型的 `Unsubscribable` 为 false 即 `ErrNotUnsubscribable`。
@@ -113,9 +113,15 @@ type Preferences interface {
 
 ```mermaid
 flowchart TD
-    A[收到 PUT] --> B{正文可读?}
-    B -- 否 --> B1[400]
-    B -- 是 --> C{渠道在闭集里?}
+    A[收到 PUT] --> A1{Content-Type 是 application/json?}
+    A1 -- 否 --> A2[415 入口模块]
+    A1 -- 是 --> A3{正文非空?}
+    A3 -- 否 --> A4[400 入口模块]
+    A3 -- 是 --> B{正文是对象或字面量 null，enabled 是布尔或 null，无声明外成员?}
+    B -- 否 --> B1[400 入口模块]
+    B -- 是 --> B2{enabled 是布尔?}
+    B2 -- 否 --> B3[400 本模块]
+    B2 -- 是 --> C{渠道在闭集里?}
     C -- 否 --> C1[400 未知渠道]
     C -- 是 --> D{类型在分类法里?}
     D -- 否 --> D1[400 未知类型]
@@ -138,14 +144,15 @@ flowchart TD
 
 ### 哨兵错误
 
-`GET` 路由不产生本模块自己的拒绝（除 503 一类的内部失败）；`PUT` 的拒绝映射到这些哨兵，调用方与本模块的 handler 都以 `errors.Is` 判别，包裹一律用 `%w`。
+`GET` 路由不产生本模块自己的拒绝（除 503 一类的内部失败）；`PUT` 中由 handler 判定的拒绝映射到这些哨兵，调用方与本模块的 handler 都以 `errors.Is` 判别，包裹一律用 `%w`。
 
 | 哨兵 | 定义处 | 含义 | 应答 |
 |---|---|---|---|
 | `ErrUnknownType` | `pkg/notification` | 点名的类型不在分类法里 | 400 `urn:speed:notification:bad-request` |
 | `ErrUnknownChannel` | `pkg/notification` | 点名的渠道不在渠道闭集里 | 400 `urn:speed:notification:bad-request` |
 | `ErrNotUnsubscribable` | `pkg/notification` | 该类型的 `Unsubscribable` 为 false，不可退订 | 409 `urn:speed:notification:not-unsubscribable` |
-| `ErrInvalidRequest` | `pkg/notification` | 请求形状不可读：正文不是一个对象、`enabled` 不是布尔值 | 400 `urn:speed:notification:bad-request` |
+
+正文不含 `enabled` 的拒绝由 handler 直接作出，不对应 `pkg/notification` 的哨兵。入口模块在 handler 之前对正文绑定作出的拒绝（415 与 400）不属于本模块，因而也不映射到这里的哨兵。
 
 ## 依赖
 
@@ -259,7 +266,10 @@ classDiagram
 
 | 情形 | 表现 |
 |---|---|
-| `PUT` 正文不可读、`enabled` 非布尔 | 400 `urn:speed:notification:bad-request`（`ErrInvalidRequest`），不触达存储 |
+| `PUT` 的 `Content-Type` 缺失或不是 `application/json` | 415，由入口模块在 handler 之前拒绝；`Problem.Type` 为 `about:blank`，标题是标准英文状态文本，没有 detail，不触达存储 |
+| `PUT` 正文为空（声明为必需） | 400，由入口模块在 handler 之前拒绝；`Problem.Type` 为 `about:blank`，标题是标准英文状态文本，没有 detail，不触达存储 |
+| `PUT` 正文不是 JSON 对象（字面量 `null` 除外）、`enabled` 是 `null` 之外的其它非布尔值、或带声明之外的成员 | 400，由入口模块在 handler 之前拒绝；`Problem.Type` 为 `about:blank`，标题是标准英文状态文本，没有 detail，不触达存储 |
+| `PUT` 正文不含 `enabled`（`enabled` 为 `null` 同形），或正文本身是字面量 `null`（按空对象绑定） | 400 `urn:speed:notification:bad-request`，标题与 detail 由本模块的消息目录渲染，不触达存储 |
 | 点名的渠道不在闭集里 | 400 `urn:speed:notification:bad-request`（`ErrUnknownChannel`），先于 no-op 分支拒绝 |
 | 点名的类型不在分类法里 | 400 `urn:speed:notification:bad-request`（`ErrUnknownType`） |
 | 类型不可退订 | 409 `urn:speed:notification:not-unsubscribable`（`ErrNotUnsubscribable`） |
@@ -291,10 +301,10 @@ classDiagram
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 接缝 `Preferences` 与分类法资源 `TypeSpec` | 已实现 | `pkg/notification/notification.go` `Preferences`、`TypeSpec`、`ValidateTypeSpec`；`pkg/notification/preferences/preferences.go` `Module`、`ModuleName`、`product` |
-| 分类法的收集、校验与只读视图 | 已实现 | `pkg/notification/preferences/taxonomy.go` `buildTaxonomy`、`Types`、`Type`；`pkg/notification/preferences/views.go` `typeView`、`typeViewOf` |
+| 分类法的收集、校验与只读视图 | 已实现 | `pkg/notification/preferences/taxonomy.go` `buildTaxonomy`、`Types`、`Type`；`pkg/notification/preferences/views.go` `NotificationType`、`typeViewOf` |
 | `notification_preferences` 表与迁移 | 已实现 | `pkg/notification/preferences/preferences.go` `Module`、`ModuleName`、`tableName`；`pkg/notification/preferences/store.go` `preferenceRow`；`pkg/notification/preferences/migrations` |
 | 有效集的计算 | 已实现 | `pkg/notification/preferences/store.go` `Effective`、`canonicalChannels`；`pkg/notification/preferences/routes.go` `effectiveChannels` |
-| 偏好路由与 PUT 的判定顺序 | 已实现 | `pkg/notification/preferences/preferences.go` `routes`、`mount`；`pkg/notification/preferences/routes.go` `handleTypes`、`handlePreferences`、`handleSetPreference`；`pkg/notification/preferences/store.go` `Set` |
+| 偏好路由与 PUT 的判定顺序 | 已实现 | `pkg/notification/preferences/preferences.go` `routes`、`mount`；`pkg/notification/preferences/operations.go` `listTypesOperation`、`listPreferencesOperation`、`updatePreferenceOperation`；`pkg/notification/preferences/routes.go` `listTypes`、`listPreferences`、`setPreference`；`pkg/notification/preferences/store.go` `Set` |
 | 配置命名空间与端名清单 | 已实现 | `pkg/notification/preferences/config.go` `ConfigNamespace`、`schema`、`validateEndpoints`、`readConfig`；`pkg/notification/preferences/preferences.go` `readerOf`、`mount` |
-| OpenAPI 片段声明 | 已实现 | `pkg/notification/preferences/openapi/preferences.json`；`pkg/notification/preferences/preferences.go` `preferencesFragment`、`defaultEndpoint`、`Module` |
+| operation 声明与 OpenAPI 片段生成 | 已实现 | `pkg/notification/preferences/operations.go`；`pkg/notification/preferences/openapi_generated_test.go`；片段 `pkg/notification/preferences/openapi/preferences.json` |
 | 静态特性 `notification.preferences` 的 `feature.Spec` 声明 | 已实现 | `pkg/notification/preferences/preferences.go` `Module`；`pkg/notification/preferences/feature_test.go` `TestTheModuleDeclaresThePreferencesFeature` |

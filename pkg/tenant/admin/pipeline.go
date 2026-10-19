@@ -1,9 +1,13 @@
 package admin
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"strings"
 
@@ -26,25 +30,6 @@ const (
 	badRequestCode = "bad-request"
 	conflictCode   = "conflict"
 )
-
-// caller reads the identity the gateway put on the request.
-//
-// A management route is reached with no identity only when the authorization
-// middleware let an anonymous request through — the routes are declared open —
-// or when the request is on an endpoint that middleware does not guard. Both are
-// a request that cannot be put to the policy, and neither is a denial, so the
-// answer is the 401 the admission and authorization layers write for a route
-// that requires an identity and carries none: the status alone, no type, and the
-// same realm challenge. The handler returns without asking the guard or reading
-// anything.
-func (p *product) caller(c *gin.Context) (authn.Identity, bool) {
-	id, ok := authn.FromContext(c.Request.Context())
-	if !ok {
-		writeNoIdentity401(c, realmOf(c))
-		return authn.Identity{}, false
-	}
-	return id, true
-}
 
 // realmOf reads back the endpoint a management route was mounted on, the name
 // the handler writes as the realm of its 401. It is empty off the mounted route
@@ -96,43 +81,96 @@ func quoteRealm(name string) string {
 	return b.String()
 }
 
-// require asks the handler-internal guard for one permission in the platform
-// domain. It is the decision every management route makes after reading the
-// caller and before parsing anything: a shortfall is answered by the guard — a
-// 403 for a denial, a 503 for an outage — and the handler returns.
+// guardRoute puts the route's identity and permission decision in front of the
+// declared handler.
 //
+// The decision cannot live in the handler: the entry point binds the declared
+// input — including the JSON body — before it calls the handler, so a handler
+// that refused a missing identity would answer a request with an unreadable body
+// after the binding refusal instead of before it. The management surface's order
+// is identity, then permission, then shape, and this wrapper is what keeps it.
 // The decision is made in the platform domain and not the tenant the request
-// resolved to. The roster is the process's own table of which tenants exist, so
-// a roster operation is a platform one; deciding in whatever tenant the request
-// happened to resolve to would let a caller authorized in one tenant reach the
-// whole roster by sending a tenant header. The explicit-domain form is what
-// makes the decision independent of the request's tenant.
-func (p *product) require(c *gin.Context, perm authz.Permission) bool {
-	return p.guard.RequirePermissionIn(c, perm, authz.PlatformDomain)
+// resolved to: the roster is the process's own table of which tenants exist, so
+// deciding in whatever tenant the request happened to resolve to would let a
+// caller authorized in one tenant reach the whole roster by sending a tenant
+// header.
+//
+// A shortfall is answered here and the declared handler is not called: a 401
+// with the realm challenge when there is no identity, and the guard's own 403 or
+// 503 when it refuses.
+func (p *product) guardRoute(perm authz.Permission, next gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if _, ok := authn.FromContext(c.Request.Context()); !ok {
+			writeNoIdentity401(c, realmOf(c))
+			return
+		}
+		if !p.guard.RequirePermissionIn(c, perm, authz.PlatformDomain) {
+			return
+		}
+		next(c)
+	}
 }
 
-// body decodes a JSON request body into target. A body that is not one object is
-// a 400, and the handler returns without touching the roster.
-func (p *product) body(c *gin.Context, target any) bool {
-	if err := c.ShouldBindJSON(target); err != nil {
-		p.bad(c)
-		return false
+// prescreenJSON answers a JSON body the declared binding would refuse, before
+// the binding runs, so the refusal carries this module's bad-request problem
+// type.
+//
+// The entry point answers a binding failure with a problem document whose type
+// is empty, which reaches a client as about:blank. This surface promises
+// urn:speed:tenant:bad-request for every request it refuses on shape, and the
+// handler runs after the binding, so the type cannot be restored there. The body
+// is read once here, probed as a JSON object whose members fit the declared
+// input, and put back for the binding that follows. A media type the entry point
+// will refuse is left to it, so its 415 answer is unchanged.
+//
+// Unknown members are not probed: the declared binding refuses them itself, with
+// the entry point's untyped 400.
+func prescreenJSON[T any](p *product, next gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		mediaType, _, err := mime.ParseMediaType(c.GetHeader("Content-Type"))
+		if err != nil || strings.ToLower(mediaType) != "application/json" {
+			next(c)
+			return
+		}
+		if c.Request.Body == nil {
+			next(c)
+			return
+		}
+		raw, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			p.refuse(c)
+			return
+		}
+		c.Request.Body = io.NopCloser(bytes.NewReader(raw))
+		if len(raw) == 0 {
+			next(c)
+			return
+		}
+		var object map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+			p.refuse(c)
+			return
+		}
+		var probe T
+		if err := json.Unmarshal(raw, &probe); err != nil {
+			p.refuse(c)
+			return
+		}
+		next(c)
 	}
-	return true
 }
 
 // auditRequired writes the mandatory audit row of a write, outside any
 // transaction and before the action. A row that does not land is the audit
-// module's state, and the action is not carried out: the answer is a 503 and the
-// handler returns. The cause goes to the log and never to the caller.
-func (p *product) auditRequired(c *gin.Context, e audit.Entry) bool {
-	if err := p.audit.Record(c.Request.Context(), e); err != nil {
+// module's state, and the action is not carried out: the handler returns a 503
+// and the cause goes to the log, never to the caller.
+func (p *product) auditRequired(ctx context.Context, e audit.Entry) error {
+	if err := p.audit.Record(ctx, e); err != nil {
 		p.logger.Error(ModuleName+": the mandatory audit row could not be written, so the action was not carried out",
 			slog.String("action", e.Action), slog.String("cause", err.Error()))
-		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
-		return false
+		return speedhttp.Fault{Status: http.StatusServiceUnavailable}
 	}
-	return true
+	return nil
 }
 
 // auditBestEffort writes the failed row that closes a write the roster refused.
@@ -144,7 +182,8 @@ func (p *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 	}
 }
 
-// answer maps a failure the roster returned to the response it belongs to.
+// failureOf maps a failure the roster returned to the error the entry point
+// answers with.
 //
 // The mapping is closed and fail-closed. An identifier the roster's table
 // already holds is a 409; an alias another tenant holds is a 409; an identifier
@@ -159,46 +198,36 @@ func (p *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 // from a management route answers them; a roster that answers one here is
 // answering the wrong question, so it falls to the same 503 an unknown failure
 // gets.
-func (p *product) answer(c *gin.Context, op string, err error) {
+func (p *product) failureOf(op string, err error) error {
 	switch {
 	case errors.Is(err, tenant.ErrTenantExists), errors.Is(err, tenant.ErrAliasConflict):
-		p.conflict(c)
+		return speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + conflictCode}
 	case errors.Is(err, tenant.ErrInvalidTenant):
-		p.notFound(c)
+		return speedhttp.Fault{Status: http.StatusNotFound}
 	default:
-		p.unavailable(c, op, err)
+		p.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
+		return speedhttp.Fault{Status: http.StatusServiceUnavailable}
 	}
 }
 
-// bad answers a request this module refuses on shape alone: a path parameter or
-// a body it cannot read, or a status outside the closed set. It is written
-// before any roster call.
-func (p *product) bad(c *gin.Context) {
+// replyFailure is failureOf for a handler that builds its own answer. The 404
+// this surface writes is a bare status with no body, which the problem-document
+// writer cannot produce, so it becomes an empty reply; every other failure stays
+// the fault failureOf names.
+func (p *product) replyFailure(op string, err error) (speedhttp.Reply, error) {
+	if errors.Is(err, tenant.ErrInvalidTenant) {
+		return speedhttp.EmptyReply(http.StatusNotFound), nil
+	}
+	return nil, p.failureOf(op, err)
+}
+
+// refuse answers a request this module refuses on shape alone. The answer is
+// written before any roster call and carries the bad-request problem type.
+func (p *product) refuse(c *gin.Context) {
 	speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusBadRequest, Type: typePrefix + badRequestCode})
 }
 
-// conflict answers a write the roster refused because an identifier or an alias
-// is already taken.
-func (p *product) conflict(c *gin.Context) {
-	speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusConflict, Type: typePrefix + conflictCode})
-}
-
-// notFound answers a management route whose tenant the roster does not hold: a
-// bare 404, carrying no problem code of this capability.
-func (p *product) notFound(c *gin.Context) {
-	c.Status(http.StatusNotFound)
-	c.Writer.WriteHeaderNow()
-}
-
-// unavailable logs a failure and answers a 503, never telling the caller which
-// dependency failed.
-func (p *product) unavailable(c *gin.Context, op string, err error) {
-	p.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
-	speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
-}
-
-// noContent answers a write that landed: 204 with no body.
-func (p *product) noContent(c *gin.Context) {
-	c.Status(http.StatusNoContent)
-	c.Writer.WriteHeaderNow()
+// badRequest is refuse as an error a typed handler returns.
+func badRequest() error {
+	return speedhttp.Fault{Status: http.StatusBadRequest, Type: typePrefix + badRequestCode}
 }

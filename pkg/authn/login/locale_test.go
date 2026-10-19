@@ -4,8 +4,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/gin-gonic/gin"
 )
 
 // TestLocaleOfPassesTheRequestLanguageThrough holds the engine's mapping of the
@@ -30,11 +28,11 @@ func TestLocaleOfPassesTheRequestLanguageThrough(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.header, func(t *testing.T) {
-			c, _ := gin.CreateTestContext(httptest.NewRecorder())
-			c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			if tc.header != "" {
-				c.Request.Header.Set("Accept-Language", tc.header)
+				req.Header.Set("Accept-Language", tc.header)
 			}
+			c := &call{ctx: req.Context(), req: req}
 			if got := localeOf(c); got != tc.want {
 				t.Errorf("localeOf(%q) = %q, want %q", tc.header, got, tc.want)
 			}

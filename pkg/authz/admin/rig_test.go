@@ -16,6 +16,30 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
+// roleBody is the request a role write's cases send: the description key alone.
+// The route's declared input pairs it with the path's tenant and role.
+type roleBody struct {
+	DescriptionKey string `json:"description_key"`
+}
+
+// readRoute binds a read operation's typed handler behind the route's
+// identity-and-permission guard, the way the module mounts it.
+func readRoute(p *product, handler gin.HandlerFunc) gin.HandlerFunc {
+	return p.guardRoute(authz.PermissionRoleRead, handler)
+}
+
+// writeRoute binds a write operation's typed handler behind the route's
+// identity-and-permission guard, the way the module mounts it.
+func writeRoute(p *product, handler gin.HandlerFunc) gin.HandlerFunc {
+	return p.guardRoute(authz.PermissionRoleManage, handler)
+}
+
+// rolePutRoute binds the role write's operation, the one route whose body the
+// module prescreens before the entry point binds it.
+func rolePutRoute(p *product) gin.HandlerFunc {
+	return writeRoute(p, prescreenRoleWrite(rolePutOperation.Handle(p.handleRolePut)))
+}
+
 // rig is the module with every dependency a case drives, built directly so a
 // case can call one handler with the exact identity and path parameters it wants
 // without bringing the entry point up.

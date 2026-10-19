@@ -9,16 +9,16 @@
 // and how the answer is shaped.
 //
 // Every route is declared open on the authorization middleware, so the
-// middleware lets a request through and the handler makes the decision itself:
-// it reads the caller from the request, settles the layer and the policy domain
-// from the query string, asks the handler-internal authz.guard API for
-// settings.read on a read or settings.write on a write, and answers a shortfall
-// before anything else runs. The domain follows the layer: a global read or
-// write is decided in the platform domain, a tenant's in that tenant's own, so
-// the two are two decisions and a caller authorized in one tenant cannot reach
-// the global layer. A read that is allowed ends there; a write lands a mandatory
-// audit row outside any transaction and before the action, calls the settings
-// module, and maps a refusal to its answer.
+// middleware lets a request through and the route's own authorization step makes
+// the decision: it reads the caller from the request, settles the layer and the
+// policy domain from the query string, asks the handler-internal authz.guard API
+// for settings.read on a read or settings.write on a write, and answers a
+// shortfall before the declared handler runs. The domain follows the layer: a
+// global read or write is decided in the platform domain, a tenant's in that
+// tenant's own, so the two are two decisions and a caller authorized in one
+// tenant cannot reach the global layer. A read that is allowed ends there; a
+// write lands a mandatory audit row outside any transaction and before the
+// action, calls the settings module, and maps a refusal to its answer.
 //
 // A sensitive item's value is masked here. The settings module withholds a
 // sensitive item's default from its listing but still hands out its value from a
@@ -84,10 +84,19 @@ const allEndpoints = "*"
 // the merged document.
 const defaultEndpoint = "admin"
 
-// openAPIFragment is this module's OpenAPI fragment, read at build time.
+// openAPIFragment is this module's OpenAPI fragment, read at build time. It is
+// generated from operations, not written by hand.
 //
 //go:embed openapi/settings.admin.json
 var openAPIFragment []byte
+
+// adminSpec is the API root this module's fragment and routes hang off.
+var adminSpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: openAPIFragment,
+}
 
 // init registers this module with the process registry. Registration travels
 // with the import, which is what makes "does this command mount the management
@@ -134,7 +143,8 @@ func Module() core.Module {
 		},
 		Resources: []any{
 			schema(),
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: openAPIFragment},
+			adminSpec,
+			operations,
 			// The settings management surface: its routes are mounted whenever
 			// the module is in force and the process has an entry point, so the
 			// feature is static.

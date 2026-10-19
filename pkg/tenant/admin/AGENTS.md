@@ -76,15 +76,17 @@ permission and every route would refuse its caller.
   would carry whatever status this process last read, and a tenant another replica
   disabled in the window between the snapshot and the table would be served again.
   `SetAlias` writes the alias column alone and reads no status.
-- **One decision order, for every route, read and write alike.** The handler reads
-  the caller first: a request with no identity is a 401 — the problem the
-  admission and authorization layers write for a route that requires an identity
-  and carries none: the status alone, no type, and the realm challenge naming the
-  endpoint the route was mounted on — and the handler returns without asking the
-  guard. Then it asks the guard for the route's permission: a shortfall is the
-  guard's own refusal, a 403 for a denial and a 503 for an outage. Only past the
-  decision does a write parse its body, run its checks, land its audit and call
-  the roster, or a read call the roster and answer.
+- **One decision order, for every route, read and write alike.** The route's guard
+  wrapper reads the caller first: a request with no identity is a 401 — the
+  problem the admission and authorization layers write for a route that requires
+  an identity and carries none: the status alone, no type, and the realm
+  challenge naming the endpoint the route was mounted on — and the wrapper
+  returns without asking the guard. Then it asks the guard for the route's
+  permission: a shortfall is the guard's own refusal, a 403 for a denial and a
+  503 for an outage. Only past the decision does a write parse its body, run its
+  checks, land its audit and call the roster, or a read call the roster and
+  answer. The wrapper sits in front of the declared handler because the entry
+  point binds a typed operation's input before it calls the handler.
 - **The decision is made in the platform domain, whatever tenant the request
   carries.** The roster is the process's own table of which tenants exist and not
   a tenant's, so the handler asks through the guard's explicit-domain form with
@@ -120,13 +122,13 @@ permission and every route would refuse its caller.
   value, it only refuses one outside the role the root package defines. A read
   runs no shape check of its own: whether an identifier names a tenant is the
   roster's to answer, and one it does not hold is a 404.
-- **The module decides its own routes in the handler and declares them open.** The
-  middleware lets a management request through to the handler, which makes the
-  decision; the module grants itself no permission. Where the assembly delivers
-  the route-declaration surface, `Init` registers every management route open on
-  it. With no surface the routes carry no declaration, and a guarded endpoint
-  answers them as undeclared — which is why a command that mounts these routes
-  should name the enforcement module too.
+- **The module decides its own routes in a guard wrapper and declares them
+  open.** The middleware lets a management request through to the wrapper, which
+  makes the decision in front of the typed handler; the module grants itself no
+  permission. Where the assembly delivers the route-declaration surface, `Init`
+  registers every management route open on it. With no surface the routes carry
+  no declaration, and a guarded endpoint answers them as undeclared — which is
+  why a command that mounts these routes should name the enforcement module too.
 - **The module delivers no capability and registers `tenant.admin`.** It carries no
   product another module resolves; it is taken in only to mount the routes. It
   states `StateEnabled` and never `StateAuto`: whether the management routes exist

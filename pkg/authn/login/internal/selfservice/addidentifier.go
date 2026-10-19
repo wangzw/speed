@@ -14,10 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
 // The kinds the self-service add accepts. A phone is not one: it is added
@@ -152,21 +151,6 @@ func normalizeEmail(raw string) (string, bool) {
 	return v, true
 }
 
-// addIdentifierRequest is the body of POST /identifiers.
-type addIdentifierRequest struct {
-	Kind  string `json:"kind"`
-	Value string `json:"value"`
-}
-
-// addIdentifierResponse is the answer of POST /identifiers and, with the state
-// added, of POST /identifiers/verify: what the call did, and for a pending email
-// how long the code lives and how soon another may be asked for.
-type addIdentifierResponse struct {
-	State       string `json:"state"`
-	ExpiresIn   int64  `json:"expires_in,omitempty"`
-	ResendAfter int64  `json:"resend_after,omitempty"`
-}
-
 // addIdentifier answers POST /identifiers: it adds one login identifier the
 // caller chooses. A username is a login name and carries no ownership to prove,
 // so it is written at once, recorded as the account's own assertion. An email is
@@ -178,35 +162,32 @@ type addIdentifierResponse struct {
 // the account, refuses an impersonation, and ends like the phone routes: the
 // current session gets a fresh token and the account's other sessions are
 // revoked, because a new login name is a new way into the account.
-func (r *routes) addIdentifier(c *gin.Context) {
+func (r *routes) addIdentifier(ctx context.Context, in addIdentifierInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	c := r.call(ctx, meta)
 	who, ok := r.authorize(c, "")
 	if !ok {
-		return
+		return c.result()
 	}
-	var req addIdentifierRequest
-	if !mount.Decode(c, &req) {
-		return
-	}
-	ctx := c.Request.Context()
-	switch req.Kind {
+	switch in.Kind {
 	case identifierKindUsername:
-		if strings.TrimSpace(req.Value) == "" {
-			mount.Fail(c, mount.CodeBadRequest)
-			return
+		if strings.TrimSpace(in.Value) == "" {
+			c.fail(mount.CodeBadRequest)
+			return c.result()
 		}
-		if err := r.deps.Admin.AddIdentifier(ctx, who.account, authn.IdentifierUsername, req.Value,
+		if err := r.deps.Admin.AddIdentifier(c.ctx, who.account, authn.IdentifierUsername, in.Value,
 			authn.Verification{Via: authn.VerifiedViaSelf}); err != nil {
 			r.fail(c, err)
-			return
+			return c.result()
 		}
 		if r.settle(c, who, authn.ReasonSelf) {
-			c.JSON(http.StatusOK, addIdentifierResponse{State: identifierStateAdded})
+			c.json(http.StatusOK, addIdentifierResponse{State: identifierStateAdded})
 		}
 	case identifierKindEmail:
-		r.addEmail(c, who, req.Value)
+		r.addEmail(c, who, in.Value)
 	default:
-		mount.Fail(c, mount.CodeBadRequest)
+		c.fail(mount.CodeBadRequest)
 	}
+	return c.result()
 }
 
 // addEmail starts the email branch of POST /identifiers: it sends a code to the
@@ -214,21 +195,20 @@ func (r *routes) addIdentifier(c *gin.Context) {
 // channel has no way to prove an address, so it answers that the route is
 // unavailable; the code reaches the address and nothing the client reads says
 // whether it left.
-func (r *routes) addEmail(c *gin.Context, who caller, raw string) {
-	ctx := c.Request.Context()
+func (r *routes) addEmail(c *call, who caller, raw string) {
 	if r.deps.EmailSender == nil {
-		logWarn(ctx, "an email identifier was asked for on a deployment with no email channel", nil)
-		mount.Unavailable(c)
+		logWarn(c.ctx, "an email identifier was asked for on a deployment with no email channel", nil)
+		c.unavailable()
 		return
 	}
 	email, ok := normalizeEmail(raw)
 	if !ok {
-		mount.Fail(c, mount.CodeBadRequest)
+		c.fail(mount.CodeBadRequest)
 		return
 	}
 	key := emailKey(who.session)
-	ttl := r.durations.get(ctx, keyEmailCodeTTL, defaultEmailCodeTTL, minEmailCodeTTL, maxEmailCodeTTL)
-	resend := r.durations.get(ctx, keyEmailResendInterval, defaultEmailResendInterval, minEmailResendInterval, maxEmailResendInterval)
+	ttl := r.durations.get(c.ctx, keyEmailCodeTTL, defaultEmailCodeTTL, minEmailCodeTTL, maxEmailCodeTTL)
+	resend := r.durations.get(c.ctx, keyEmailResendInterval, defaultEmailResendInterval, minEmailResendInterval, maxEmailResendInterval)
 
 	// Another code within the interval is a 429, so a client cannot turn the
 	// route into a flood of messages to one address. The window is held against
@@ -241,31 +221,31 @@ func (r *routes) addEmail(c *gin.Context, who caller, raw string) {
 	resendKey := emailResendKey(email)
 	mark, err := json.Marshal(emailResendMark{SentAt: now.Unix()})
 	if err != nil {
-		mount.Unavailable(c)
+		c.unavailable()
 		return
 	}
-	claimed, err := r.deps.KV.SetIfAbsent(ctx, resendKey, mark, resend)
+	claimed, err := r.deps.KV.SetIfAbsent(c.ctx, resendKey, mark, resend)
 	if err != nil {
-		logWarn(ctx, "the resend window of an email address cannot be claimed", err)
-		mount.Unavailable(c)
+		logWarn(c.ctx, "the resend window of an email address cannot be claimed", err)
+		c.unavailable()
 		return
 	}
 	if !claimed {
-		mount.Throttled(c, r.resendWait(ctx, resendKey, resend))
+		c.throttled(r.resendWait(c.ctx, resendKey, resend))
 		return
 	}
 
 	code, err := emailCode()
 	if err != nil {
-		logWarn(ctx, "an email verification code could not be drawn", err)
-		r.releaseResend(ctx, resendKey)
-		mount.Unavailable(c)
+		logWarn(c.ctx, "an email verification code could not be drawn", err)
+		r.releaseResend(c.ctx, resendKey)
+		c.unavailable()
 		return
 	}
-	if err = r.deps.EmailSender.SendCode(ctx, email, code, ttl, smsLocale(ctx)); err != nil {
+	if err = r.deps.EmailSender.SendCode(c.ctx, email, code, ttl, smsLocale(c.ctx)); err != nil {
 		// The message did not leave, so the address is not held to the interval:
 		// the claim is given back and the caller may ask again at once.
-		r.releaseResend(ctx, resendKey)
+		r.releaseResend(c.ctx, resendKey)
 		r.fail(c, err)
 		return
 	}
@@ -275,16 +255,16 @@ func (r *routes) addEmail(c *gin.Context, who caller, raw string) {
 	}
 	value, err := json.Marshal(rec)
 	if err != nil {
-		mount.Unavailable(c)
+		c.unavailable()
 		return
 	}
-	if err = r.deps.KV.Set(ctx, key, value, ttl); err != nil {
-		logWarn(ctx, "the store of pending email verifications cannot be written", err)
-		mount.Unavailable(c)
+	if err = r.deps.KV.Set(c.ctx, key, value, ttl); err != nil {
+		logWarn(c.ctx, "the store of pending email verifications cannot be written", err)
+		c.unavailable()
 		return
 	}
-	c.JSON(http.StatusOK, addIdentifierResponse{
-		State: identifierStatePending, ExpiresIn: seconds(ttl), ResendAfter: seconds(resend),
+	c.json(http.StatusOK, addIdentifierResponse{
+		State: identifierStatePending, ExpiresIn: int(seconds(ttl)), ResendAfter: int(seconds(resend)),
 	})
 }
 
@@ -315,11 +295,6 @@ func (r *routes) releaseResend(ctx context.Context, resendKey string) {
 	}
 }
 
-// verifyIdentifierRequest is the body of POST /identifiers/verify.
-type verifyIdentifierRequest struct {
-	Code string `json:"code"`
-}
-
 // verifyIdentifier answers POST /identifiers/verify: it checks the code sent to
 // the address and, on a match, writes the address as a verified identifier and
 // publishes it through the account module. The record of the session is read
@@ -328,55 +303,52 @@ type verifyIdentifierRequest struct {
 // leaks. A code that does not match counts an attempt, and the record is spent
 // once the attempts are used up, so a six-digit code cannot be guessed over its
 // lifetime.
-func (r *routes) verifyIdentifier(c *gin.Context) {
+func (r *routes) verifyIdentifier(ctx context.Context, in verifyIdentifierInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	c := r.call(ctx, meta)
 	who, ok := r.authorize(c, "")
 	if !ok {
-		return
+		return c.result()
 	}
-	var req verifyIdentifierRequest
-	if !mount.Decode(c, &req) {
-		return
+	if in.Code == "" || len(in.Code) > maxCodeLen {
+		c.fail(mount.CodeBadRequest)
+		return c.result()
 	}
-	if req.Code == "" || len(req.Code) > maxCodeLen {
-		mount.Fail(c, mount.CodeBadRequest)
-		return
-	}
-	ctx := c.Request.Context()
 	key := emailKey(who.session)
-	raw, present, err := r.deps.KV.Get(ctx, key)
+	raw, present, err := r.deps.KV.Get(c.ctx, key)
 	if err != nil {
-		logWarn(ctx, "the store of pending email verifications cannot be read", err)
-		mount.Unavailable(c)
-		return
+		logWarn(c.ctx, "the store of pending email verifications cannot be read", err)
+		c.unavailable()
+		return c.result()
 	}
 	var rec emailRecord
 	if !present || json.Unmarshal(raw, &rec) != nil || rec.Account != string(who.account) ||
 		rec.Email == "" || rec.CodeDigest == "" {
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
-		return
+		c.unauthorized(mount.CodeFlowInvalid)
+		return c.result()
 	}
 	attemptKey := emailAttemptKey(rec.CodeDigest)
-	if !emailCodeMatches(rec.CodeDigest, emailDigest(who.session, req.Code)) {
-		r.countEmailAttempt(ctx, key, attemptKey, rec.ExpiresAt)
-		mount.Unauthorized(c, r.endpoint, mount.CodeLoginFailed)
-		return
+	if !emailCodeMatches(rec.CodeDigest, emailDigest(who.session, in.Code)) {
+		r.countEmailAttempt(c.ctx, key, attemptKey, rec.ExpiresAt)
+		c.unauthorized(mount.CodeLoginFailed)
+		return c.result()
 	}
 
-	bindErr := r.deps.Admin.AddIdentifier(ctx, who.account, authn.IdentifierEmail, rec.Email,
+	bindErr := r.deps.Admin.AddIdentifier(c.ctx, who.account, authn.IdentifierEmail, rec.Email,
 		authn.Verification{Via: authn.VerifiedViaEmailCode})
-	if err := r.deps.KV.Delete(ctx, key); err != nil {
-		logWarn(ctx, "a consumed email verification could not be deleted", err)
+	if err := r.deps.KV.Delete(c.ctx, key); err != nil {
+		logWarn(c.ctx, "a consumed email verification could not be deleted", err)
 	}
-	if err := r.deps.KV.Delete(ctx, attemptKey); err != nil {
-		logWarn(ctx, "the attempt count of a consumed email verification could not be deleted", err)
+	if err := r.deps.KV.Delete(c.ctx, attemptKey); err != nil {
+		logWarn(c.ctx, "the attempt count of a consumed email verification could not be deleted", err)
 	}
 	if bindErr != nil {
 		r.fail(c, bindErr)
-		return
+		return c.result()
 	}
 	if r.settle(c, who, authn.ReasonSelf) {
-		c.JSON(http.StatusOK, addIdentifierResponse{State: identifierStateAdded})
+		c.json(http.StatusOK, addIdentifierResponse{State: identifierStateAdded})
 	}
+	return c.result()
 }
 
 // countEmailAttempt records one failed attempt against a pending verification,

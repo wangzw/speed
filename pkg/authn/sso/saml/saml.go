@@ -79,6 +79,16 @@ const defaultEndpoint = "account"
 //go:embed openapi/saml.json
 var samlFragment []byte
 
+// samlSpec is the API root this module's fragment and routes hang off. The
+// fragment is generated from operations; the routes are mounted from the same
+// declarations and resolved against this root.
+var samlSpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: samlFragment,
+}
+
 // product must satisfy the capabilities it delivers.
 var (
 	_ authn.LoginMethod          = (*product)(nil)
@@ -120,7 +130,8 @@ func Module() core.Module {
 		},
 		Resources: []any{
 			configSchema(),
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: samlFragment},
+			samlSpec,
+			operations,
 		},
 
 		// Prepare states the stance alone. The service provider's key comes from

@@ -6,7 +6,10 @@ capability. It registers the module named `ops`.
 
 It exists as a module through its descriptor and its lifecycle callbacks alone —
 it declares no `Provides` — and through the `http.Spec` resource it declares for
-itself, which carries the OpenAPI fragment describing its own three routes.
+itself, which carries the OpenAPI fragment describing its own three routes. The
+routes are declared as typed operations (`operations.go`) and the fragment is
+generated from those declarations; `openapi_generated_test.go` fails when the
+committed fragment stops matching them.
 
 The routes, all `GET`, mounted on the endpoint `ops.endpoint` names:
 

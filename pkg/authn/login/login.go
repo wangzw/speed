@@ -77,6 +77,17 @@ const defaultEndpoint = "account"
 //go:embed openapi/login.json
 var loginFragment []byte
 
+// loginSpec is the API root this module's fragment and routes hang off. Its
+// prefix and version are the common ones; the fragment writes the capability's
+// own segment, so a route's declared path begins with the part of the mounter's
+// base that lies below this root.
+var loginSpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: loginFragment,
+}
+
 // init registers this module with the process registry.
 func init() { core.ProcessRegistry.Register(Module()) }
 
@@ -111,7 +122,8 @@ func Module() core.Module {
 		},
 		Resources: []any{
 			settingsSchema(),
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: loginFragment},
+			loginSpec,
+			operations,
 			// The optional account self-service surfaces. Each is posted in
 			// Init from the same judgement that mounts it; the name constants
 			// live beside that judgement.

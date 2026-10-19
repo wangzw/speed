@@ -4,8 +4,6 @@ import (
 	"context"
 	"embed"
 
-	"github.com/gin-gonic/gin"
-
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/i18n"
 )
@@ -54,19 +52,17 @@ func (s *inboxStore) text(ctx context.Context, key i18n.Key, fallback string) st
 	return fallback
 }
 
-// refuse writes a problem for one refusal: its status, its type and its rendered
-// title and detail. An empty code writes the 503 — no problem type — whose cause
-// stays in the log and whose body carries only a generic title.
-func (s *inboxStore) refuse(c *gin.Context, status int, code string) {
-	ctx := c.Request.Context()
-	problem := speedhttp.Problem{Status: status}
+// refusal builds the fault for one refusal: its status, its type and its
+// rendered title and detail. An empty code writes the 503 — no problem type —
+// whose cause stays in the log and whose body carries only a generic title.
+func (s *inboxStore) refusal(ctx context.Context, status int, code string) speedhttp.Fault {
+	fault := speedhttp.Fault{Status: status}
 	if code == "" {
-		problem.Title = s.text(ctx, i18n.Key("notification.inbox.unavailable"+titleSuffix), "Service Unavailable")
-		speedhttp.Fail(c, problem)
-		return
+		fault.Title = s.text(ctx, i18n.Key("notification.inbox.unavailable"+titleSuffix), "Service Unavailable")
+		return fault
 	}
-	problem.Type = typePrefix + code
-	problem.Title = s.text(ctx, i18n.Key("notification.inbox."+code+titleSuffix), englishTitles[code])
-	problem.Detail = s.text(ctx, i18n.Key("notification.inbox."+code+detailSuffix), englishDetails[code])
-	speedhttp.Fail(c, problem)
+	fault.Type = typePrefix + code
+	fault.Title = s.text(ctx, i18n.Key("notification.inbox."+code+titleSuffix), englishTitles[code])
+	fault.Detail = s.text(ctx, i18n.Key("notification.inbox."+code+detailSuffix), englishDetails[code])
+	return fault
 }

@@ -631,5 +631,5 @@ CREATE TABLE authn_webauthn_credentials (
 | `guard.Require` 与加强认证应答 | 已实现 | `pkg/authn/guard/guard.go` |
 | 加强认证的 `Elevate` 与仪式数据承载；归 [authn-session](design-authn-session.md) 与 [authn-login](design-authn-login.md) | 已实现 | `pkg/authn/session/sessions.go` `Elevate`；`pkg/authn/login/engine.go` |
 | 根包 import 守卫 | 已实现 | `pkg/authn/deps_test.go` `TestTheRootPackageImportsOnlyWhatItMay`、`TestTheRootPackageClosureHoldsNoThirdPartyPackage` |
-| 对外契约片段：`openapi/mfa.json`，经模块的 `Spec` 资源声明 | 已实现 | `pkg/authn/mfa/mfa.go` `Module`、`defaultEndpoint` |
+| operation 声明与对外契约片段生成：`openapi/mfa.json` | 已实现 | `pkg/authn/mfa/operations.go`；`pkg/authn/mfa/openapi_generated_test.go`；片段 `pkg/authn/mfa/openapi/mfa.json` |
 | 静态特性 `authn.mfa` 的声明 | 已实现 | `pkg/authn/mfa/mfa.go` `Module`；`pkg/authn/mfa/feature_test.go` `TestTheModuleDeclaresTheMultiFactorFeature` |

@@ -1,24 +1,17 @@
 package mfa
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
-
-	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
-)
-
-// The routes of the factor self-service, relative to the base path the mounter
-// carries. Registering a factor is not among them: it goes through the login
-// engine's enroll purpose, which is the one entry for it.
-const (
-	factorsRoute = "/factors"
-	factorRoute  = "/factors/:id"
-	factorParam  = "id"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
 // maxFactorIDLen is the longest a factor identifier in a path may be before the
@@ -26,28 +19,45 @@ const (
 // far shorter, so a longer one names nothing.
 const maxFactorIDLen = 64
 
+// typePrefix starts the Problem.Type of every failure this capability's
+// handlers write, the code following it being one of mount's closed table.
+const typePrefix = "urn:speed:authn:"
+
+// stepUpDescription is the error_description of the step-up challenge, the same
+// text mount.StepUpRequired writes.
+const stepUpDescription = "A stronger or more recent authentication is required"
+
 // mountRoutes registers the routes. Both are guarded by the gateway, which is
 // what makes them Required, and neither is registered Impersonable: the gateway
-// refuses an impersonating identity on them, and the handlers refuse one too, so
-// the refusal does not depend on a single layer.
+// refuses an impersonating identity on them, and the handler refuses one too, so
+// the refusal does not depend on a single layer. Each route is registered from
+// the operation that declares it, so the handler's input and answer types, the
+// fragment and the route are one source.
 func (m *product) mountRoutes() {
-	m.mounter.Guarded(http.MethodGet, factorsRoute, m.listFactors)
-	m.mounter.Guarded(http.MethodDelete, factorRoute, m.deleteFactor)
+	m.mounter.Guarded(http.MethodGet, mountRel(mfaSpec, factorsOperation.Path),
+		factorsOperation.Handle(m.listFactors))
+	m.mounter.Guarded(http.MethodDelete, mountRel(mfaSpec, removeFactorOperation.Path),
+		removeFactorOperation.Handle(m.deleteFactor))
 }
 
-// factorView is one factor as the list shows it. It is built field by field from
-// the record, which holds nothing secret to begin with, so that a field added to
-// the record later does not reach a client by being there.
-type factorView struct {
-	ID          string     `json:"id"`
-	Kind        string     `json:"kind"`
-	Label       string     `json:"label"`
-	Status      string     `json:"status"`
-	CreatedAt   time.Time  `json:"created_at"`
-	ActivatedAt *time.Time `json:"activated_at,omitempty"`
-	LastUsedAt  *time.Time `json:"last_used_at,omitempty"`
+// mountRel turns a declared route into the relative path the mounter joins to
+// its base. The declaration writes the route against the module's API root, and
+// the fragment is a static declaration fixed before configuration, so the part
+// of it the capability owns is the default mount base less that root. Removing
+// it leaves the relative path the mounter takes, whatever base the deployment
+// configured: a configured base moves the routes without moving the contract,
+// which is the split the Spec already accepts. A declared route that does not
+// begin with the owned part is a declaration defect, not something to mount at a
+// guessed path.
+func mountRel(spec speedhttp.Spec, declared string) string {
+	rel, err := mount.RelativePath(mount.DefaultBasePath, spec.ResolvePath(declared))
+	if err != nil {
+		panic(diagnosticPrefix + ModuleName + ": " + err.Error())
+	}
+	return rel
 }
 
+// statusName is the lifecycle status as the wire names it.
 func statusName(s authn.FactorStatus) string {
 	switch s {
 	case authn.FactorPending:
@@ -59,8 +69,11 @@ func statusName(s authn.FactorStatus) string {
 	}
 }
 
-func viewOf(rec authn.FactorRecord) factorView {
-	v := factorView{
+// viewOf builds one factor as the list shows it, field by field from the
+// record, which holds nothing secret to begin with, so that a field added to the
+// record later does not reach a client by being there.
+func viewOf(rec authn.FactorRecord) AuthnMfaFactor {
+	v := AuthnMfaFactor{
 		ID:        rec.ID,
 		Kind:      string(rec.Kind),
 		Label:     rec.Label,
@@ -80,22 +93,20 @@ func viewOf(rec authn.FactorRecord) factorView {
 
 // listFactors answers GET /factors: the caller's own factors, in a list that
 // carries no seed, key or other data of a kind's own.
-func (m *product) listFactors(c *gin.Context) {
-	id, ok := authn.FromContext(c.Request.Context())
+func (m *product) listFactors(ctx context.Context, _ struct{}) (AuthnMfaFactorList, error) {
+	id, ok := authn.FromContext(ctx)
 	if !ok {
-		mount.Unauthorized(c, m.mounter.Endpoint(), "")
-		return
+		return AuthnMfaFactorList{}, m.unauthorized()
 	}
-	recs, err := m.Factors(c.Request.Context(), id.Account())
+	recs, err := m.Factors(ctx, id.Account())
 	if err != nil {
-		m.answerError(c, id.Account(), err)
-		return
+		return AuthnMfaFactorList{}, m.answerError(id.Account(), err)
 	}
-	views := make([]factorView, len(recs))
+	views := make([]AuthnMfaFactor, len(recs))
 	for i, rec := range recs {
 		views[i] = viewOf(rec)
 	}
-	c.JSON(http.StatusOK, gin.H{"factors": views})
+	return AuthnMfaFactorList{Factors: views}, nil
 }
 
 // deleteFactor answers DELETE /factors/:id. It asks for a fresh multi-factor
@@ -103,46 +114,115 @@ func (m *product) listFactors(c *gin.Context) {
 // enough to remove an account's own factor. A factor that is not the caller's
 // reads as one already gone, because the route has no 404 among its answers and
 // a different answer for another account's identifier would say it exists.
-func (m *product) deleteFactor(c *gin.Context) {
-	ctx := c.Request.Context()
+func (m *product) deleteFactor(ctx context.Context, in removeFactorInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
-		mount.Unauthorized(c, m.mounter.Endpoint(), "")
-		return
+		return nil, m.unauthorized()
 	}
 	if id.Impersonating() {
-		mount.Forbidden(c, mount.CodeImpersonationRestricted)
-		return
+		return nil, authnFailure(http.StatusForbidden, mount.CodeImpersonationRestricted)
 	}
 	requirement := authn.FreshLocalMulti(m.settings.recentWindow())
 	if !id.Satisfies(requirement, m.clock.Now()) {
-		mount.StepUpRequired(c, id, requirement)
-		return
+		return nil, m.stepUpRequired(id, requirement)
 	}
-	factorID := c.Param(factorParam)
-	if factorID == "" || len(factorID) > maxFactorIDLen {
-		mount.Fail(c, mount.CodeBadRequest)
-		return
+	if in.ID == "" || len(in.ID) > maxFactorIDLen {
+		return nil, authnFailure(http.StatusBadRequest, mount.CodeBadRequest)
 	}
-	err := m.Remove(ctx, id.Account(), factorID)
+	err := m.Remove(ctx, id.Account(), in.ID)
 	switch {
 	case err == nil, errors.Is(err, authn.ErrFactorNotEnrolled):
-		c.Status(http.StatusNoContent)
-		c.Writer.WriteHeaderNow()
+		return speedhttp.EmptyReply(http.StatusNoContent), nil
 	default:
-		m.answerError(c, id.Account(), err)
+		return nil, m.answerError(id.Account(), err)
 	}
 }
 
-// answerError writes the answer for an error a route's call returned: a conflict
+// unauthorized is the 401 of a route reached without an identity. The gateway
+// refuses this first, with the capability's challenge; where the route is
+// reached without the gateway the handler answers the same challenge itself, as
+// the fault's declared header, so its 401 is the one RFC 9110 requires a 401 to
+// carry rather than a bare problem document.
+func (m *product) unauthorized() error {
+	return speedhttp.Fault{
+		Status: http.StatusUnauthorized,
+		Headers: []speedhttp.HeaderValue{{
+			Name:  "WWW-Authenticate",
+			Value: mount.UnauthorizedChallenge(m.mounter.Endpoint()),
+		}},
+	}
+}
+
+// stepUpRequired is the 401 of an identity that does not meet a requirement. Its
+// type is insufficient_user_authentication and its challenge names the scheme
+// the identity authenticated with, the level the route wants and, when the
+// requirement asks for freshness, the maximum age.
+func (m *product) stepUpRequired(id authn.Identity, requirement authn.Requirement) error {
+	return speedhttp.Fault{
+		Status: http.StatusUnauthorized,
+		Type:   typePrefix + mount.CodeInsufficientUserAuthentication,
+		Headers: []speedhttp.HeaderValue{{
+			Name:  "WWW-Authenticate",
+			Value: stepUpChallenge(id.Challenge(), requirement),
+		}},
+	}
+}
+
+// stepUpChallenge is the WWW-Authenticate value of mount.StepUpRequired, built
+// here because a typed handler answers with a fault and mount exposes no
+// exported builder for the step-up form. The level is written as its number,
+// and max_age only when the requirement carries one, in whole seconds rounded
+// up.
+func stepUpChallenge(scheme string, r authn.Requirement) string {
+	var b strings.Builder
+	b.WriteString(challengeScheme(scheme))
+	b.WriteString(` error="` + mount.CodeInsufficientUserAuthentication + `", error_description="`)
+	b.WriteString(stepUpDescription)
+	b.WriteString(`", acr_values="`)
+	b.WriteString(strconv.Itoa(int(r.Assurance)))
+	b.WriteByte('"')
+	if r.MaxAge > 0 {
+		b.WriteString(`, max_age="`)
+		b.WriteString(strconv.FormatInt(int64((r.MaxAge+time.Second-1)/time.Second), 10))
+		b.WriteByte('"')
+	}
+	return b.String()
+}
+
+// challengeScheme returns scheme when it is an RFC 9110 token, and Bearer
+// otherwise. The gateway stamps Identity.Challenge from the credential's
+// carrier, so an odd value is a zero identity or a defect, and neither may put a
+// character into the field that ends it or starts another.
+func challengeScheme(scheme string) string {
+	if scheme == "" {
+		return "Bearer"
+	}
+	for i := 0; i < len(scheme); i++ {
+		ch := scheme[i]
+		switch {
+		case ch >= 'a' && ch <= 'z', ch >= 'A' && ch <= 'Z', ch >= '0' && ch <= '9',
+			strings.IndexByte("!#$%&'*+-.^_`|~", ch) >= 0:
+		default:
+			return "Bearer"
+		}
+	}
+	return scheme
+}
+
+// authnFailure is a refusal of one of the capability's problem codes: the entry
+// point writes it as a problem document of the code's status and type.
+func authnFailure(status int, code string) error {
+	return speedhttp.Fault{Status: status, Type: typePrefix + code}
+}
+
+// answerError is the answer for an error a route's call returned: a conflict
 // for the last factor, and for everything else an outage that names no cause,
 // which the log carries.
-func (m *product) answerError(c *gin.Context, account authn.AccountID, err error) {
+func (m *product) answerError(account authn.AccountID, err error) error {
 	if errors.Is(err, authn.ErrLastFactor) {
-		mount.Fail(c, mount.CodeConflict)
-		return
+		return authnFailure(http.StatusConflict, mount.CodeConflict)
 	}
 	m.logger.Warn(ModuleName+": a factor route could not be served",
 		slog.String("account", string(account)), slog.String("cause", err.Error()))
-	mount.Unavailable(c)
+	return authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)
 }

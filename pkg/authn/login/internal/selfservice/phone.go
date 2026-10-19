@@ -9,10 +9,9 @@ import (
 	"net/http"
 	"regexp"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/i18n"
 )
 
@@ -66,20 +65,6 @@ func smsLocale(ctx context.Context) string {
 	return string(locale)
 }
 
-// startPhoneRequest is the body of POST /phone.
-type startPhoneRequest struct {
-	Phone string `json:"phone"`
-}
-
-// startPhoneResponse is the answer of POST /phone: how long the code lives and
-// how soon another may be asked for, in seconds. It carries neither the
-// challenge nor anything that tells whether the number is already another
-// account's.
-type startPhoneResponse struct {
-	ExpiresIn   int64 `json:"expires_in"`
-	ResendAfter int64 `json:"resend_after"`
-}
-
 // startPhone answers POST /phone: it sends a code to the number and keeps what is
 // needed to check it in the store, replacing the session's earlier record.
 //
@@ -90,60 +75,52 @@ type startPhoneResponse struct {
 //
 // A store that cannot be read is a 503 before the code is sent, because a code
 // that cannot be verified is a message paid for and sent to no use.
-func (r *routes) startPhone(c *gin.Context) {
+func (r *routes) startPhone(ctx context.Context, in startPhoneInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	c := r.call(ctx, meta)
 	who, ok := r.authorize(c, "")
 	if !ok {
-		return
+		return c.result()
 	}
-	var req startPhoneRequest
-	if !mount.Decode(c, &req) {
-		return
+	if !e164.MatchString(in.Phone) {
+		c.fail(mount.CodeBadRequest)
+		return c.result()
 	}
-	if !e164.MatchString(req.Phone) {
-		mount.Fail(c, mount.CodeBadRequest)
-		return
-	}
-	ctx := c.Request.Context()
 	key := phoneKey(who.session)
-	if _, _, err := r.deps.KV.Get(ctx, key); err != nil {
-		logWarn(ctx, "the store of pending phone verifications cannot be read", err)
-		mount.Unavailable(c)
-		return
+	if _, _, err := r.deps.KV.Get(c.ctx, key); err != nil {
+		logWarn(c.ctx, "the store of pending phone verifications cannot be read", err)
+		c.unavailable()
+		return c.result()
 	}
-	codeTTL := r.durations.get(ctx, keyCodeTTL, defaultCodeTTL, minCodeTTL, maxCodeTTL)
-	resend := r.durations.get(ctx, keyResendInterval, defaultResendInterval, minResendInterval, maxResendInterval)
+	codeTTL := r.durations.get(c.ctx, keyCodeTTL, defaultCodeTTL, minCodeTTL, maxCodeTTL)
+	resend := r.durations.get(c.ctx, keyResendInterval, defaultResendInterval, minResendInterval, maxResendInterval)
 
 	sentAt := r.deps.Clock.Now()
-	challenge, err := r.deps.SMSCodes.Send(ctx, authn.SendCode{
+	challenge, err := r.deps.SMSCodes.Send(c.ctx, authn.SendCode{
 		Purpose: authn.SMSPurposeEnroll,
-		Phone:   req.Phone,
+		Phone:   in.Phone,
 		Account: who.account,
-		Locale:  smsLocale(ctx),
+		Locale:  smsLocale(c.ctx),
 		Deliver: true,
 	})
 	if err != nil {
 		r.fail(c, err)
-		return
+		return c.result()
 	}
 	// The record does not outlive the challenge row, whose lifetime began when
 	// the code was written, a little before now.
 	ttl := codeTTL - r.deps.Clock.Now().Sub(sentAt)
-	value, err := json.Marshal(phoneRecord{Account: string(who.account), Phone: req.Phone, ChallengeID: challenge})
+	value, err := json.Marshal(phoneRecord{Account: string(who.account), Phone: in.Phone, ChallengeID: challenge})
 	if err != nil || ttl <= 0 {
-		mount.Unavailable(c)
-		return
+		c.unavailable()
+		return c.result()
 	}
-	if err := r.deps.KV.Set(ctx, key, value, ttl); err != nil {
-		logWarn(ctx, "the store of pending phone verifications cannot be written", err)
-		mount.Unavailable(c)
-		return
+	if err := r.deps.KV.Set(c.ctx, key, value, ttl); err != nil {
+		logWarn(c.ctx, "the store of pending phone verifications cannot be written", err)
+		c.unavailable()
+		return c.result()
 	}
-	c.JSON(http.StatusOK, startPhoneResponse{ExpiresIn: seconds(codeTTL), ResendAfter: seconds(resend)})
-}
-
-// verifyPhoneRequest is the body of POST /phone/verify.
-type verifyPhoneRequest struct {
-	Code string `json:"code"`
+	c.json(http.StatusOK, startPhoneResponse{ExpiresIn: int(seconds(codeTTL)), ResendAfter: int(seconds(resend))})
+	return c.result()
 }
 
 // verifyPhone answers POST /phone/verify. The order is the one the back-off
@@ -158,78 +135,75 @@ type verifyPhoneRequest struct {
 // a number another account holds. The record is deleted once the code has been
 // accepted, whether or not the binding succeeded, because the challenge is
 // consumed and the record cannot be used again.
-func (r *routes) verifyPhone(c *gin.Context) {
+func (r *routes) verifyPhone(ctx context.Context, in verifyPhoneInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	c := r.call(ctx, meta)
 	who, ok := r.authorize(c, "")
 	if !ok {
-		return
+		return c.result()
 	}
-	var req verifyPhoneRequest
-	if !mount.Decode(c, &req) {
-		return
+	if in.Code == "" || len(in.Code) > maxCodeLen {
+		c.fail(mount.CodeBadRequest)
+		return c.result()
 	}
-	if req.Code == "" || len(req.Code) > maxCodeLen {
-		mount.Fail(c, mount.CodeBadRequest)
-		return
-	}
-	ctx := c.Request.Context()
 	key := phoneKey(who.session)
-	raw, present, err := r.deps.KV.Get(ctx, key)
+	raw, present, err := r.deps.KV.Get(c.ctx, key)
 	if err != nil {
-		logWarn(ctx, "the store of pending phone verifications cannot be read", err)
-		mount.Unavailable(c)
-		return
+		logWarn(c.ctx, "the store of pending phone verifications cannot be read", err)
+		c.unavailable()
+		return c.result()
 	}
 	var rec phoneRecord
 	if !present || json.Unmarshal(raw, &rec) != nil || rec.Account != string(who.account) ||
 		rec.Phone == "" || rec.ChallengeID == "" {
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
-		return
+		c.unauthorized(mount.CodeFlowInvalid)
+		return c.result()
 	}
 
 	throttleKey := phoneThrottleKey(rec.Phone)
-	wait, err := r.deps.Throttle.Check(ctx, authn.ScopePhone, throttleKey)
+	wait, err := r.deps.Throttle.Check(c.ctx, authn.ScopePhone, throttleKey)
 	if err != nil {
-		logWarn(ctx, "the back-off of a phone number cannot be read", err)
-		mount.Unavailable(c)
-		return
+		logWarn(c.ctx, "the back-off of a phone number cannot be read", err)
+		c.unavailable()
+		return c.result()
 	}
 	if wait > 0 {
-		mount.Throttled(c, wait)
-		return
+		c.throttled(wait)
+		return c.result()
 	}
 
-	switch err := r.deps.SMSCodes.Verify(ctx, rec.ChallengeID, req.Code); {
+	switch err := r.deps.SMSCodes.Verify(c.ctx, rec.ChallengeID, in.Code); {
 	case err == nil:
 	case errors.Is(err, authn.ErrInvalidCredentials):
-		engaged, failErr := r.deps.Throttle.Fail(ctx, authn.ScopePhone, throttleKey)
+		engaged, failErr := r.deps.Throttle.Fail(c.ctx, authn.ScopePhone, throttleKey)
 		if failErr != nil {
-			logWarn(ctx, "the failure of a phone code cannot be counted", failErr)
-			mount.Unavailable(c)
-			return
+			logWarn(c.ctx, "the failure of a phone code cannot be counted", failErr)
+			c.unavailable()
+			return c.result()
 		}
 		if engaged {
-			r.engaged(ctx, authn.ScopePhone)
+			r.engaged(c.ctx, authn.ScopePhone)
 		}
-		mount.Unauthorized(c, r.endpoint, mount.CodeLoginFailed)
-		return
+		c.unauthorized(mount.CodeLoginFailed)
+		return c.result()
 	default:
 		r.fail(c, err)
-		return
+		return c.result()
 	}
-	if err := r.deps.Throttle.Succeed(ctx, authn.ScopePhone, throttleKey); err != nil {
-		logWarn(ctx, "the back-off of a phone number cannot be cleared", err)
+	if err := r.deps.Throttle.Succeed(c.ctx, authn.ScopePhone, throttleKey); err != nil {
+		logWarn(c.ctx, "the back-off of a phone number cannot be cleared", err)
 	}
 
-	bindErr := r.deps.Admin.AddIdentifier(ctx, who.account, authn.IdentifierPhone, rec.Phone,
+	bindErr := r.deps.Admin.AddIdentifier(c.ctx, who.account, authn.IdentifierPhone, rec.Phone,
 		authn.Verification{Via: authn.VerifiedViaSMSCode})
-	if err := r.deps.KV.Delete(ctx, key); err != nil {
-		logWarn(ctx, "a consumed phone verification could not be deleted", err)
+	if err := r.deps.KV.Delete(c.ctx, key); err != nil {
+		logWarn(c.ctx, "a consumed phone verification could not be deleted", err)
 	}
 	if bindErr != nil {
 		r.fail(c, bindErr)
-		return
+		return c.result()
 	}
 	if r.settle(c, who, authn.ReasonSelf) {
-		c.Status(http.StatusNoContent)
+		c.empty(http.StatusNoContent)
 	}
+	return c.result()
 }

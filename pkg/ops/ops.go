@@ -100,6 +100,7 @@ func Module() core.Module {
 		Resources: []any{
 			schema(),
 			speedhttp.Spec{Endpoint: defaultEndpoint, Document: opsFragment},
+			operations,
 		},
 
 		New:   newProduct,
@@ -224,9 +225,9 @@ func initProduct(_ context.Context, reg *core.Registry, instance any) error {
 
 	p.router = router
 	p.document = document
-	endpoint.Route(http.MethodGet, healthPath, reportHealth)
-	endpoint.Route(http.MethodGet, readyPath, p.reportReady)
-	endpoint.Route(http.MethodGet, documentPath, p.serveDocument)
+	endpoint.Route(http.MethodGet, healthPath, healthOperation.Handle(reportHealth))
+	endpoint.Route(http.MethodGet, readyPath, readinessOperation.Handle(p.reportReady))
+	endpoint.Route(http.MethodGet, documentPath, documentOperation.Handle(p.serveDocument))
 	return nil
 }
 

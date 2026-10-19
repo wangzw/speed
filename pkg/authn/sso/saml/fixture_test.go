@@ -369,7 +369,15 @@ func (f *fakeAudit) Record(_ context.Context, e audit.Entry) error {
 // sink its entries land in.
 func newTestProduct(t *testing.T, providers *fakeProviders) (*product, *fakeAudit) {
 	t.Helper()
-	m := mounttest.New(t, mounttest.WithPublicURL(testPublicURL), mounttest.WithBase(testBasePath))
+	return newTestProductAtBase(t, providers, testBasePath)
+}
+
+// newTestProductAtBase assembles a product whose mounter is configured with base
+// as its base path, so a test can hold behaviour under a base the host chose
+// rather than the default.
+func newTestProductAtBase(t *testing.T, providers *fakeProviders, base string) (*product, *fakeAudit) {
+	t.Helper()
+	m := mounttest.New(t, mounttest.WithPublicURL(testPublicURL), mounttest.WithBase(base))
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	sink := &fakeAudit{}
 	return &product{

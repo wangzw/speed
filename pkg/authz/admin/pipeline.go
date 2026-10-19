@@ -1,8 +1,11 @@
 package admin
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -21,29 +24,10 @@ import (
 // and not what was refused, so naming a kind would separate the failures the
 // answer is meant to keep apart.
 const (
-	typePrefix   = "urn:speed:authz:"
-	badRequest   = "bad-request"
-	conflictCode = "conflict"
+	typePrefix     = "urn:speed:authz:"
+	badRequestCode = "bad-request"
+	conflictCode   = "conflict"
 )
-
-// caller reads the identity the gateway put on the request.
-//
-// A management route is reached with no identity only when the authorization
-// middleware let an anonymous request through — the routes are declared open —
-// or when the request is on an endpoint that middleware does not guard. Both are
-// a request that cannot be put to the policy, and neither is a denial, so the
-// answer is the 401 the admission and authorization layers write for a route
-// that requires an identity and carries none: the status alone, no type, and the
-// same realm challenge. The handler returns without asking the guard or reading
-// anything.
-func (p *product) caller(c *gin.Context) (authn.Identity, bool) {
-	id, ok := authn.FromContext(c.Request.Context())
-	if !ok {
-		writeNoIdentity401(c, realmOf(c))
-		return authn.Identity{}, false
-	}
-	return id, true
-}
 
 // realmOf reads back the endpoint a management route was mounted on, the name
 // the handler writes as the realm of its 401. It is empty off the mounted route
@@ -97,43 +81,126 @@ func quoteRealm(name string) string {
 	return b.String()
 }
 
-// require asks the handler-internal guard for one permission in the platform
-// domain. It is the decision every management route makes after reading the
-// caller and before parsing anything: a shortfall is answered by the guard — a
-// 403 for a denial, a 503 for an outage — and the handler returns.
+// guardRoute puts the route's identity and permission decision in front of the
+// declared handler.
 //
+// The decision cannot live in the handler: the entry point binds the declared
+// input — including a request body — before it calls the handler, so a handler
+// that refused a missing identity would answer a request with an unreadable body
+// after the binding refusal instead of before it. The management surface's order
+// is identity, then permission, then shape, and this wrapper is what keeps it.
 // The decision is made in the platform domain and not the tenant the request
-// resolved to. The tenant in a management path is the data the route acts on, so
+// resolved to: the tenant in a management path is the data the route acts on, so
 // deciding in the request's own tenant would let a caller authorized in one
 // tenant reach another's roles, grants and bindings by naming that tenant in the
-// path. The platform domain is where platform operations hold their roles; a
-// caller without a grant there is refused whatever tenant the path names.
-func (p *product) require(c *gin.Context, perm authz.Permission) bool {
-	return p.guard.RequirePermissionIn(c, perm, authz.PlatformDomain)
+// path.
+//
+// A shortfall is answered here and the declared handler is not called: a 401
+// with the realm challenge when there is no identity, and the guard's own 403 or
+// 503 when it refuses.
+func (p *product) guardRoute(perm authz.Permission, next gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if _, ok := authn.FromContext(c.Request.Context()); !ok {
+			writeNoIdentity401(c, realmOf(c))
+			return
+		}
+		if !p.guard.RequirePermissionIn(c, perm, authz.PlatformDomain) {
+			return
+		}
+		next(c)
+	}
 }
 
-// body decodes a JSON request body into target. A body that is not one object is
-// a 400, and the handler returns without touching the manager.
-func (p *product) body(c *gin.Context, target any) bool {
-	if err := c.ShouldBindJSON(target); err != nil {
-		p.bad(c)
-		return false
+// prescreenRoleWrite reproduces the body reading this surface's contract
+// promises before the entry point binds the declared input: a body that is one
+// JSON object, with every member the declaration does not describe ignored.
+//
+// The entry point's binding is closed and header-strict — a member the input
+// does not declare is a 400, and a Content-Type other than application/json is a
+// 415 — while this surface's role write accepts a JSON object whatever its
+// media type and forwards only the description key. A member such as `builtin`
+// reaches nothing: it is dropped here, before the binding, and the handler
+// builds its record from the declared field alone. A body that is not one JSON
+// object is refused with this module's bad-request code, the answer the shape
+// refusal has always carried.
+func prescreenRoleWrite(next gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Body == nil {
+			refuseBadRequest(c)
+			return
+		}
+		raw, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			refuseBadRequest(c)
+			return
+		}
+		if len(bytes.TrimSpace(raw)) == 0 {
+			refuseBadRequest(c)
+			return
+		}
+		var members map[string]json.RawMessage
+		if decodeErr := json.NewDecoder(bytes.NewReader(raw)).Decode(&members); decodeErr != nil {
+			refuseBadRequest(c)
+			return
+		}
+		if members == nil {
+			// A literal null decoded into no object. The write is a role with no
+			// description key, which is the value the surface's original body
+			// reader left behind.
+			members = map[string]json.RawMessage{}
+		}
+		kept := make(map[string]json.RawMessage, 1)
+		if value, ok := members["description_key"]; ok {
+			// The declared field is a string. A value of another shape is refused
+			// here with this module's code, the answer the surface's original body
+			// reader gave it, rather than reaching the entry point's untyped 400.
+			var text string
+			if valueErr := json.Unmarshal(value, &text); valueErr != nil {
+				refuseBadRequest(c)
+				return
+			}
+			kept["description_key"] = value
+		}
+		encoded, err := json.Marshal(kept)
+		if err != nil {
+			refuseBadRequest(c)
+			return
+		}
+		c.Request.Body = io.NopCloser(bytes.NewReader(encoded))
+		c.Request.ContentLength = int64(len(encoded))
+		c.Request.Header.Set("Content-Type", "application/json")
+		next(c)
 	}
-	return true
+}
+
+// refuseBadRequest answers a request this module refuses on shape alone, before
+// any manager call, with the bad-request problem type.
+func refuseBadRequest(c *gin.Context) {
+	speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusBadRequest, Type: typePrefix + badRequestCode})
+}
+
+// badRequest is the shape refusal as an error a typed handler returns.
+func badRequest() error {
+	return speedhttp.Fault{Status: http.StatusBadRequest, Type: typePrefix + badRequestCode}
+}
+
+// conflict is a write the manager refused because of the state of the target,
+// such as an attempt to change or delete a builtin role.
+func conflict() error {
+	return speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + conflictCode}
 }
 
 // auditRequired writes the mandatory audit row of a write, outside any
 // transaction and before the action. A row that does not land is the audit
-// module's state, and the action is not carried out: the answer is a 503 and the
-// handler returns. The cause goes to the log and never to the caller.
-func (p *product) auditRequired(c *gin.Context, e audit.Entry) bool {
-	if err := p.audit.Record(c.Request.Context(), e); err != nil {
+// module's state, and the action is not carried out: the handler returns a 503
+// and the cause goes to the log, never to the caller.
+func (p *product) auditRequired(ctx context.Context, e audit.Entry) error {
+	if err := p.audit.Record(ctx, e); err != nil {
 		p.logger.Error(ModuleName+": the mandatory audit row could not be written, so the action was not carried out",
 			slog.String("action", e.Action), slog.String("cause", err.Error()))
-		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
-		return false
+		return speedhttp.Fault{Status: http.StatusServiceUnavailable}
 	}
-	return true
+	return nil
 }
 
 // auditBestEffort writes the failed row that closes a write the manager refused.
@@ -145,7 +212,8 @@ func (p *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 	}
 }
 
-// answer maps a failure the manager returned to the response it belongs to.
+// failureOf maps a failure the manager returned to the error the entry point
+// answers with.
 //
 // The mapping is closed and fail-closed: an unknown role and a tenant mismatch
 // are 400s because the request named something that is not there or crossed a
@@ -156,38 +224,14 @@ func (p *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 // permission the catalog does not hold, and no manager write path returns it —
 // a grant naming an undeclared permission is refused by the catalog check before
 // the manager is reached.
-func (p *product) answer(c *gin.Context, op string, err error) {
+func (p *product) failureOf(op string, err error) error {
 	switch {
 	case errors.Is(err, authz.ErrUnknownRole), errors.Is(err, authz.ErrTenantMismatch):
-		p.bad(c)
+		return badRequest()
 	case errors.Is(err, authz.ErrBuiltinRole):
-		p.conflict(c)
+		return conflict()
 	default:
-		p.unavailable(c, op, err)
+		p.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
+		return speedhttp.Fault{Status: http.StatusServiceUnavailable}
 	}
-}
-
-// bad answers a request this module refuses on shape alone: a path parameter or
-// a body it cannot read. It is written before any manager call.
-func (p *product) bad(c *gin.Context) {
-	speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusBadRequest, Type: typePrefix + badRequest})
-}
-
-// conflict answers a write the manager refused because of the state of the
-// target, such as an attempt to change or delete a builtin role.
-func (p *product) conflict(c *gin.Context) {
-	speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusConflict, Type: typePrefix + conflictCode})
-}
-
-// unavailable logs a failure and answers a 503, never telling the caller which
-// dependency failed.
-func (p *product) unavailable(c *gin.Context, op string, err error) {
-	p.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
-	speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
-}
-
-// noContent answers a write that landed: 204 with no body.
-func (p *product) noContent(c *gin.Context) {
-	c.Status(http.StatusNoContent)
-	c.Writer.WriteHeaderNow()
 }

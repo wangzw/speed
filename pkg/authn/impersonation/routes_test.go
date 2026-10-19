@@ -3,6 +3,7 @@ package impersonation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
 func init() { gin.SetMode(gin.TestMode) }
@@ -67,7 +69,7 @@ func TestStartOverCookieAttachesTheSessionAndWritesTheCookie(t *testing.T) {
 			t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
 		}
 		var body struct {
-			Grant grantView `json:"grant"`
+			Grant AuthnImpersonationGrant `json:"grant"`
 		}
 		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 			t.Fatalf("the body %q is not the grant: %v", w.Body.String(), err)
@@ -202,7 +204,7 @@ func TestStatusReturnsTheRecordInForceAndNotFoundWithout(t *testing.T) {
 			t.Fatalf("the status answered %d, want 200: %s", w.Code, w.Body.String())
 		}
 		var body struct {
-			Grant grantView `json:"grant"`
+			Grant AuthnImpersonationGrant `json:"grant"`
 		}
 		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 			t.Fatalf("the status body is not the grant: %v", err)
@@ -261,16 +263,22 @@ func TestAnImpersonatingIdentityIsRefusedOnTheStartRoute(t *testing.T) {
 }
 
 // TestTheStartHandlerRefusesAnImpersonatingIdentityItself holds the handler's own
-// refusal, the fallback for a path that does not go through the gateway.
+// refusal, the fallback for a path that does not go through the gateway. The
+// typed handler answers a fault rather than writing a response, so the fault is
+// what the case reads.
 func TestTheStartHandlerRefusesAnImpersonatingIdentityItself(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := authntest.Context(t, context.Background(), impersonatingOpts(sessionBackend)...)
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request = startRequest(postBody()).WithContext(ctx)
-		r.p.handleStart(c)
-		if w.Code != http.StatusForbidden {
-			t.Fatalf("status = %d, want 403", w.Code)
+		_, err := r.p.handleStart(ctx, startInput{Account: "acct-user", Tenant: "tenant-a", Reason: "a support call"}, nil)
+		var fault speedhttp.Fault
+		if !errors.As(err, &fault) {
+			t.Fatalf("the handler answered %v, want a fault", err)
+		}
+		if fault.Status != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403", fault.Status)
+		}
+		if want := "urn:speed:authn:impersonation-restricted"; fault.Type != want {
+			t.Errorf("the problem type is %q, want %q", fault.Type, want)
 		}
 		// The refusal is the handler's own and never reaches Start, so nothing is
 		// audited, no denied attempt is counted and no record is written. Without
@@ -313,7 +321,7 @@ func TestStartOverCookiePublishesTheStartedPayload(t *testing.T) {
 			t.Fatalf("the start answered %d: %s", w.Code, w.Body.String())
 		}
 		var body struct {
-			Grant grantView `json:"grant"`
+			Grant AuthnImpersonationGrant `json:"grant"`
 		}
 		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 			t.Fatalf("the body %q is not the grant: %v", w.Body.String(), err)
@@ -341,7 +349,7 @@ func TestStatusAnswersNotFoundForALapsedRecord(t *testing.T) {
 			t.Fatalf("the start answered %d", start.Code)
 		}
 		var body struct {
-			Grant grantView `json:"grant"`
+			Grant AuthnImpersonationGrant `json:"grant"`
 		}
 		if err := json.Unmarshal(start.Body.Bytes(), &body); err != nil {
 			t.Fatalf("the start body is not the grant: %v", err)
@@ -417,10 +425,10 @@ func TestStartSeparatesAnUnseasonedActorFromAShortfall(t *testing.T) {
 	})
 }
 
-// TestAnswerStartMapsEachErrorToItsStatusAndCode holds the handler's answer to
-// each error Start returns: the status and the problem code the design fixes,
-// which the gateway and the client read.
-func TestAnswerStartMapsEachErrorToItsStatusAndCode(t *testing.T) {
+// TestStartFailureMapsEachErrorToItsStatusAndCode holds the handler's answer to
+// each error Start returns: the fault's status and problem code are the design's,
+// which the entry point writes and the client reads.
+func TestStartFailureMapsEachErrorToItsStatusAndCode(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		for _, c := range []struct {
 			name   string
@@ -436,21 +444,15 @@ func TestAnswerStartMapsEachErrorToItsStatusAndCode(t *testing.T) {
 			{"an active record", authn.ErrImpersonationActive, http.StatusConflict, "conflict"},
 		} {
 			t.Run(c.name, func(t *testing.T) {
-				w := httptest.NewRecorder()
-				g, _ := gin.CreateTestContext(w)
-				g.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/impersonation", nil)
-				r.p.answerStart(g, adminIdentity(t), c.err)
-				if w.Code != c.status {
-					t.Fatalf("answerStart answered %d, want %d", w.Code, c.status)
+				var fault speedhttp.Fault
+				if !errors.As(r.p.startFailure(adminIdentity(t), c.err), &fault) {
+					t.Fatalf("startFailure answered %v, want a fault", c.err)
 				}
-				var body struct {
-					Type string `json:"type"`
+				if fault.Status != c.status {
+					t.Fatalf("startFailure answered %d, want %d", fault.Status, c.status)
 				}
-				if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-					t.Fatalf("the body %q is not a problem: %v", w.Body.String(), err)
-				}
-				if want := "urn:speed:authn:" + c.code; body.Type != want {
-					t.Errorf("the problem type is %q, want %q", body.Type, want)
+				if want := "urn:speed:authn:" + c.code; fault.Type != want {
+					t.Errorf("the problem type is %q, want %q", fault.Type, want)
 				}
 			})
 		}

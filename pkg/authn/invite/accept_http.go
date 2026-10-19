@@ -2,51 +2,45 @@ package invite
 
 import (
 	"context"
-	"errors"
+	"net/http"
 
-	"github.com/gin-gonic/gin"
-
-	"github.com/vislake/speed/pkg/authn"
-	"github.com/vislake/speed/pkg/authn/internal/mount"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
-
-// acceptBody is the request of an acceptance. DisplayName and Password are read
-// only when the invited address has no account yet.
-type acceptBody struct {
-	DisplayName string `json:"display_name"`
-	Password    string `json:"password"`
-}
 
 // handleAcceptView answers GET /invitations/:token: it reads the invitation a
 // token points to, so a client can show what it is about to accept. The route is
-// public and the token is the whole credential.
-func (p *product) handleAcceptView(c *gin.Context) {
-	inv, err := p.viewToken(c.Request.Context(), c.Param("token"))
+// public and the token is the whole credential. An unknown token is a bare 404,
+// which the handler builds.
+func (p *product) handleAcceptView(ctx context.Context, in acceptViewInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	inv, err := p.viewToken(ctx, in.Token)
 	if err != nil {
-		p.answerAccept(c, "reading an invitation", err)
-		return
+		return p.acceptAnswerReply("reading an invitation", err)
 	}
-	c.JSON(200, gin.H{"invitation": invitationViewOf(inv)})
+	return speedhttp.JSONReply(http.StatusOK, AuthnInviteView{Invitation: invitationViewOf(inv)}), nil
 }
 
 // handleAccept answers POST /invitations/:token: it redeems the invitation,
 // making an account when the address has none and writing the membership. The
 // route is public and the token is the whole credential.
-func (p *product) handleAccept(c *gin.Context) {
-	var body acceptBody
-	if !mount.Decode(c, &body) {
-		return
+//
+// A request that declares a length of zero carries no body and is refused: the
+// route has always required a body, while a body of "{}" is a body and is
+// accepted. An unknown length — a chunked request, or an HTTP/2 one without
+// Content-Length — says nothing about whether a body is there, so the request is
+// bound normally and the binder is what reads the body.
+func (p *product) handleAccept(ctx context.Context, in acceptInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	if meta.ContentLength == 0 {
+		return nil, p.badRequest()
 	}
-	mem, err := p.Accept(c.Request.Context(), AcceptInvite{
-		Token:       c.Param("token"),
-		DisplayName: body.DisplayName,
-		Password:    body.Password,
+	mem, err := p.Accept(ctx, AcceptInvite{
+		Token:       in.Token,
+		DisplayName: in.DisplayName,
+		Password:    in.Password,
 	})
 	if err != nil {
-		p.answerAccept(c, "accepting an invitation", err)
-		return
+		return p.acceptAnswerReply("accepting an invitation", err)
 	}
-	c.JSON(201, acceptViewOf(mem))
+	return speedhttp.JSONReply(http.StatusCreated, acceptViewOf(mem)), nil
 }
 
 // viewToken reads the invitation a token points to. It is the read side of the
@@ -63,22 +57,4 @@ func (p *product) viewToken(ctx context.Context, token string) (Invitation, erro
 		return Invitation{}, ErrInvitationNotFound
 	}
 	return toInvitation(row), nil
-}
-
-// answerAccept maps a failure of the acceptance face to its response. An
-// invitation that is not there is a 404; one that can no longer be accepted —
-// expired, revoked or already accepted — is a 409; a bad argument is a 400; any
-// other failure is a 503 whose cause stays in the log.
-func (p *product) answerAccept(c *gin.Context, op string, err error) {
-	switch {
-	case errors.Is(err, ErrInvitationNotFound):
-		p.notFound(c)
-	case errors.Is(err, ErrInvitationExpired), errors.Is(err, ErrInvitationRevoked),
-		errors.Is(err, ErrInvitationAlreadyAccepted):
-		mount.Fail(c, mount.CodeConflict)
-	case errors.Is(err, authn.ErrInvalidArgument):
-		p.bad(c)
-	default:
-		p.cause(c, op, err)
-	}
 }

@@ -4,9 +4,6 @@ import (
 	"context"
 	"embed"
 
-	"github.com/gin-gonic/gin"
-
-	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/i18n"
 )
 
@@ -60,21 +57,4 @@ func (p *product) text(ctx context.Context, key i18n.Key, fallback string) strin
 		return rendered
 	}
 	return fallback
-}
-
-// refuse writes a problem for one refusal: its status, its type and its rendered
-// title and detail. An empty code writes the 503 — no problem type of any kind —
-// whose cause stays in the log and whose body carries only a generic title.
-func (p *product) refuse(c *gin.Context, status int, code string) {
-	ctx := c.Request.Context()
-	problem := speedhttp.Problem{Status: status}
-	if code == "" {
-		problem.Title = p.text(ctx, i18n.Key("notification.preferences.unavailable"+titleSuffix), "Service Unavailable")
-		speedhttp.Fail(c, problem)
-		return
-	}
-	problem.Type = typePrefix + code
-	problem.Title = p.text(ctx, i18n.Key("notification.preferences."+code+titleSuffix), englishTitles[code])
-	problem.Detail = p.text(ctx, i18n.Key("notification.preferences."+code+detailSuffix), englishDetails[code])
-	speedhttp.Fail(c, problem)
 }

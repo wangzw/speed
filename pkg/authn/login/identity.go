@@ -6,8 +6,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/identity"
@@ -81,11 +79,11 @@ const actionLogin = "authn.login"
 // record alone. It is never handed to a handler and never becomes the request's
 // own context, so it does not flow back into the request chain. The row is
 // best-effort: a failure is an Error and never fails the login.
-func (r *routes) auditLogin(c *gin.Context, rec record, account authn.AccountID, session authn.SessionID, methods []authn.Method, result authn.MFAResult) {
+func (r *routes) auditLogin(c *call, rec record, account authn.AccountID, session authn.SessionID, methods []authn.Method, result authn.MFAResult) {
 	if r.audit == nil {
 		return
 	}
-	base := c.Request.Context()
+	base := c.ctx
 	now := r.clock.Now()
 	id := identity.New(authn.Principal{
 		Account:    account,
@@ -145,11 +143,11 @@ const actionBindingLink = "authn.binding.link"
 // written with an empty actor; the context it is written under is derived for
 // this one call, exactly as auditLogin derives its own. It is handed to no
 // handler and never becomes the request's context.
-func (r *routes) auditBindingLink(c *gin.Context, account authn.AccountID, provider string) {
+func (r *routes) auditBindingLink(c *call, account authn.AccountID, provider string) {
 	if r.audit == nil {
 		return
 	}
-	base := c.Request.Context()
+	base := c.ctx
 	id := identity.New(authn.Principal{
 		Account:  account,
 		AuthTime: r.clock.Now(),

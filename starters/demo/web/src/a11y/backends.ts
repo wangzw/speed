@@ -47,7 +47,7 @@ import type {
   AuthnAdminProviderList,
   AuthnImpersonationGrantEnvelope,
   AuthnInvitePage,
-  AuthnMfaFactors200,
+  AuthnMfaFactorList,
   AuthnProfileProfile,
   AuthnSessionList,
   AuthzAdminBindingView,
@@ -155,7 +155,7 @@ const NOTIFICATION_MESSAGE: NotificationMessage = {
   group: 'example',
   title: 'An example notification',
   body: 'Something happened.',
-  params: null,
+  params: {},
   link: '/',
   created_at: INSTANT,
 }
@@ -303,8 +303,8 @@ const EXACT: Readonly<Record<string, RouteAnswer>> = {
       factors: [
         { id: 'factor-1', kind: 'totp', label: 'Authenticator', status: 'active', created_at: INSTANT },
       ],
-    } satisfies AuthnMfaFactors200,
-    { factors: [] } satisfies AuthnMfaFactors200,
+    } satisfies AuthnMfaFactorList,
+    { factors: [] } satisfies AuthnMfaFactorList,
   ),
   '/api/v1/objects': answer(
     { objects: [OBJECT], next_cursor: '' } satisfies ObjectstoreMetadataListObjects200,

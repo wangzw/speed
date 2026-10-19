@@ -1,11 +1,10 @@
 package ops
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
-
-	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/db"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -22,21 +21,9 @@ type product struct {
 	document []byte
 }
 
-// health is what the liveness route answers with.
-type health struct {
-	Status string `json:"status"`
-}
-
-// readiness is what the readiness route answers with: the verdict and, when it
-// is unavailable, which parts failed.
-type readiness struct {
-	Status   string   `json:"status"`
-	Failures []string `json:"failures,omitempty"`
-}
-
 // reportHealth answers that the process is alive. It reads nothing.
-func reportHealth(c *gin.Context) {
-	c.JSON(http.StatusOK, health{Status: "ok"})
+func reportHealth(context.Context, struct{}) (OpsHealth, error) {
+	return OpsHealth{Status: "ok"}, nil
 }
 
 // reportReady answers whether this process can serve: every declared endpoint
@@ -44,7 +31,11 @@ func reportHealth(c *gin.Context) {
 // failure is named, so a probe's log says which half was down. The verdict is
 // read fresh on every request — no endpoint state is cached and the database is
 // pinged each time — so a reader sees the state as it is now.
-func (p *product) reportReady(c *gin.Context) {
+//
+// The answer is built rather than returned as a typed success body because an
+// unavailable process is a 503 carrying this same readiness document, not a
+// problem document; both statuses are declared against OpsReadiness.
+func (p *product) reportReady(ctx context.Context, _ struct{}, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	var failures []string
 	for _, name := range p.router.Endpoints() {
 		endpoint, err := p.router.Endpoint(name)
@@ -58,19 +49,21 @@ func (p *product) reportReady(c *gin.Context) {
 	if p.database != nil {
 		if pool, err := p.database.DB().DB(); err != nil {
 			failures = append(failures, "the database handle has no connection pool: "+err.Error())
-		} else if err := pool.PingContext(c.Request.Context()); err != nil {
+		} else if err := pool.PingContext(ctx); err != nil {
 			failures = append(failures, "the database does not answer: "+err.Error())
 		}
 	}
 	if len(failures) > 0 {
-		c.JSON(http.StatusServiceUnavailable, readiness{Status: "unavailable", Failures: failures})
-		return
+		return speedhttp.JSONReply(http.StatusServiceUnavailable,
+			OpsReadiness{Status: "unavailable", Failures: failures}), nil
 	}
-	c.JSON(http.StatusOK, readiness{Status: "ready"})
+	return speedhttp.JSONReply(http.StatusOK, OpsReadiness{Status: "ready"}), nil
 }
 
 // serveDocument answers the merged OpenAPI document. It is merged once in Init
-// and never recomputed, so every request reads the same bytes.
-func (p *product) serveDocument(c *gin.Context) {
-	c.Data(http.StatusOK, "application/json; charset=utf-8", p.document)
+// and never recomputed, so every request reads the same bytes. The bytes are
+// already an encoded document, so they are written as they are rather than
+// re-encoded from a value.
+func (p *product) serveDocument(context.Context, struct{}, *speedhttp.Meta) (speedhttp.Reply, error) {
+	return speedhttp.BytesReply(http.StatusOK, "application/json; charset=utf-8", p.document), nil
 }

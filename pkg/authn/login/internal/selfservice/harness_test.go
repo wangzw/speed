@@ -131,9 +131,16 @@ func newHarness(t *testing.T, cfgs ...func(*config)) *harness {
 	if cfg.impersonable {
 		mounter = impersonableMounter{h.m}
 	}
-	svc.Mount(mounter, nil)
+	svc.Mount(mounter, declaredRel, nil)
 	h.as()
 	return h
+}
+
+// declaredRel turns a route declared against the module's API root into the
+// relative path the test Mounter joins to its base. The login engine passes its
+// own resolver in production; the harness runs without it.
+func declaredRel(declared string) string {
+	return strings.TrimPrefix(declared, "/auth")
 }
 
 // impersonableMounter registers every guarded route as one an impersonating

@@ -3,6 +3,7 @@ package admin
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -10,14 +11,12 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The query routes, relative to the fixed base path. They are mounted on their
-// own base path and not under a configurable one, and each is addressed by a
+// The query routes' absolute paths: the paths the fragment declares, resolved
+// against the API root the module's Spec declares. Each is addressed by a
 // natural key — a row identifier — so no opaque cursor ever appears in a path.
-const (
-	basePath = "/api/v1/audit/admin"
-
-	pathRecords = basePath + "/records"
-	pathRecord  = basePath + "/records/:id"
+var (
+	recordsPath = auditSpec.ResolvePath(pathRecords)
+	recordPath  = auditSpec.ResolvePath(pathRecord)
 )
 
 // managementGroups names the route groups in the order the start diagnostic
@@ -52,14 +51,60 @@ type route struct {
 	handler gin.HandlerFunc
 }
 
+// shape is one route's request-shape check. It runs after the caller and the
+// decision and before the typed handler binds the declared input.
+type shape func(*gin.Context) bool
+
 // routes is the closed set of query routes, in the order they are mounted. Every
 // route reads and none exports: the export surface is another permission and
-// another module's to carry.
+// another module's to carry. Each handler is the operation declared for the
+// route, bound to its typed input and answer, behind the route's decision.
 func (p *product) routes() []route {
 	return []route{
-		{http.MethodGet, pathRecords, p.handleRecordList},
-		{http.MethodGet, pathRecord, p.handleRecordGet},
+		{http.MethodGet, recordsPath, p.guardRoute(listParams, listShape, listOperation.Handle(p.handleRecordList))},
+		{http.MethodGet, recordPath, p.guardRoute(nil, nil, getOperation.Handle(p.handleRecordGet))},
 	}
+}
+
+// guardRoute puts one decision order in front of a route, whatever the route
+// reads: the caller first — a request with no identity is the 401 with this
+// endpoint's challenge, and the guard is not asked — then the handler-internal
+// guard for audit.read, whose shortfall it answers itself. Only past the
+// decision does the request's shape get checked and the typed handler run.
+//
+// The typed handler receives a context and its bound input, not the request, so
+// the parts of the order that need the request stay here. The closed query set
+// is one of them: the binder reads only the parameters the declaration carries
+// and ignores the rest, so this is what keeps the set closed.
+func (p *product) guardRoute(accepted map[string]bool, check shape, next gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if _, ok := p.caller(c); !ok || !p.require(c) {
+			return
+		}
+		if !onlyAccepted(c, accepted) {
+			p.bad(c)
+			return
+		}
+		if check != nil && !check(c) {
+			p.bad(c)
+			return
+		}
+		next(c)
+	}
+}
+
+// listShape checks the one bound the typed binder would answer with its generic
+// refusal rather than this module's: a limit that is not a non-negative
+// integer. The declaration carries the parameter as an integer, so the binder
+// cannot tell a bad value from a shape the caller meant to send; the check here
+// answers it before the binder reads anything.
+func listShape(c *gin.Context) bool {
+	s := c.Query(paramLimit)
+	if s == "" {
+		return true
+	}
+	n, err := strconv.Atoi(s)
+	return err == nil && n >= 0
 }
 
 // mount resolves every configured endpoint on the entry point and registers the

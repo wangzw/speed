@@ -77,12 +77,12 @@ func bind[In, Out any](
 			))
 		}
 	}
-	binding := newRequestBinding(input, requestMediaTypeOf(request))
+	binding := newRequestBinding(input, request)
 	return func(c *gin.Context) {
 		c.Set(declaredFailuresContextKey, declaredResponses(responses))
 		in, err := bindInput[In](c, binding)
 		if err != nil {
-			refuseBinding(c, err)
+			refuseBinding(c, responses, err)
 			return
 		}
 		out, err := handle(c.Request.Context(), in)
@@ -102,23 +102,16 @@ func bind[In, Out any](
 	}
 }
 
-// requestMediaTypeOf is the media type an operation binds its request body by,
-// or "" when the declaration carries no body.
-func requestMediaTypeOf(request *RequestBody) string {
-	if request == nil {
-		return ""
-	}
-	return request.MediaType
-}
-
 // requestBinding is one operation's request declaration, read once when the
-// handler is built: which media type the body carries, and which fields of the
-// input each source fills.
+// handler is built: which media type the body carries, whether a body is
+// required, and which fields of the input each source fills.
 type requestBinding struct {
 	input reflect.Type
 	// mediaType is the request body's media type, normalised; empty when the
 	// operation takes no body.
 	mediaType string
+	// required is whether a request must carry a body.
+	required bool
 	// json, form and file map a member name to its field index.
 	json map[string]int
 	form map[string]int
@@ -130,10 +123,17 @@ type requestBinding struct {
 // newRequestBinding reads an operation's request declaration and panics on a
 // declaration no request could ever be bound against. The check is at handler
 // build time because it is a defect in the declaration, not in a request.
-func newRequestBinding(input reflect.Type, requestMediaType string) requestBinding {
+func newRequestBinding(input reflect.Type, request *RequestBody) requestBinding {
+	requestMediaType := ""
+	required := false
+	if request != nil {
+		requestMediaType = request.MediaType
+		required = request.Required
+	}
 	binding := requestBinding{
 		input:     input,
 		mediaType: normaliseMediaType(requestMediaType),
+		required:  required,
 		raw:       -1,
 	}
 	for i := 0; input != nil && i < input.NumField(); i++ {
@@ -262,12 +262,19 @@ func validateInput[In any](in In) error {
 	return nil
 }
 
-// refuseBinding answers a binding refusal. The 422 a failed Validate produces
-// carries the validator's own text as the problem's detail, since it says what
-// value was refused; the other refusals say only what could not be read.
-func refuseBinding(c *gin.Context, err error) {
-	problem := Problem{Status: statusOf(err)}
-	if problem.Status == http.StatusUnprocessableEntity {
+// refuseBinding answers a binding refusal. The problem's type is the one the
+// operation declares for that status, so a request refused before the handler
+// runs is answered in the same vocabulary as one the handler refuses. The 422 a
+// failed Validate produces carries the validator's own text as the problem's
+// detail, since it says what value was refused; the other refusals say only
+// what could not be read.
+func refuseBinding(c *gin.Context, responses []Response, err error) {
+	status := statusOf(err)
+	problem := Problem{Status: status}
+	if response, ok := responseOf(responses, status); ok {
+		problem.Type = response.ProblemType
+	}
+	if status == http.StatusUnprocessableEntity {
 		problem.Detail = err.Error()
 	}
 	Fail(c, problem)
@@ -281,6 +288,35 @@ func normaliseMediaType(value string) string {
 		return strings.ToLower(strings.TrimSpace(value))
 	}
 	return strings.ToLower(mediaType)
+}
+
+// contentTypeMatches reports whether a request's Content-Type header declares
+// the media type the operation binds by. Parameters are ignored, except for
+// JSON: a JSON body is decoded as UTF-8, so a charset naming another encoding
+// is refused rather than read under the wrong assumption.
+func contentTypeMatches(header, declared string) bool {
+	mediaType, params, err := mime.ParseMediaType(header)
+	if err != nil {
+		return false
+	}
+	if !strings.EqualFold(mediaType, declared) {
+		return false
+	}
+	if declared != requestMediaTypeJSON {
+		return true
+	}
+	for name, value := range params {
+		if !strings.EqualFold(name, "charset") || !strings.EqualFold(value, "utf-8") {
+			return false
+		}
+	}
+	return true
+}
+
+// requiredBodyError is the refusal of a request the declaration says must carry
+// a body and that carries none.
+func requiredBodyError() error {
+	return &bindingError{status: http.StatusBadRequest, reason: "http: the request body is required"}
 }
 
 // responseOf returns the declared response with the given status.
@@ -348,7 +384,6 @@ func bindParameters(c *gin.Context, value reflect.Value, input reflect.Type) err
 		}
 		var raw string
 		var present bool
-		var repeated bool
 		switch source {
 		case "path":
 			raw = c.Param(name)
@@ -356,7 +391,7 @@ func bindParameters(c *gin.Context, value reflect.Value, input reflect.Type) err
 		case "query":
 			values := c.QueryArray(name)
 			if len(values) > 0 {
-				raw, present, repeated = values[0], true, len(values) > 1
+				raw, present = values[0], true
 			}
 		case "header":
 			raw = c.GetHeader(name)
@@ -378,10 +413,8 @@ func bindParameters(c *gin.Context, value reflect.Value, input reflect.Type) err
 		}
 		// An empty query value means the parameter is absent unless the field
 		// holds text: "?limit=" is how a client leaves an integer or a boolean
-		// unset, while "?q=" is a real empty string. A repeated value is still
-		// refused below, because dropping the other value would answer from an
-		// input the caller did not send.
-		if source == "query" && !repeated && raw == "" && !textual(target.Type()) {
+		// unset, while "?q=" is a real empty string.
+		if source == "query" && raw == "" && !textual(target.Type()) {
 			continue
 		}
 		if target.Kind() == reflect.Slice && source == "query" {
@@ -393,15 +426,8 @@ func bindParameters(c *gin.Context, value reflect.Value, input reflect.Type) err
 			}
 			continue
 		}
-		// A repeated value has no single value to store in a scalar field;
-		// taking the first would silently drop the rest of what the caller
-		// sent.
-		if repeated {
-			return &bindingError{
-				status: http.StatusBadRequest,
-				reason: fmt.Sprintf("http: the parameter %q is repeated but the field is not a slice", name),
-			}
-		}
+		// A scalar field holds one value, so a repeated parameter fills it from
+		// the first one; a slice field above reads every value.
 		if err := setScalar(target, raw); err != nil {
 			return &bindingError{
 				status: http.StatusBadRequest,
@@ -513,7 +539,7 @@ func jsonFields(input reflect.Type) map[string]int {
 // the body is read, so a handler never sees a body decoded by a reader the
 // declaration did not ask for.
 func (b requestBinding) bindBody(c *gin.Context, value reflect.Value) error {
-	if actual := normaliseMediaType(c.GetHeader("Content-Type")); actual != b.mediaType {
+	if !contentTypeMatches(c.GetHeader("Content-Type"), b.mediaType) {
 		return &bindingError{
 			status: http.StatusUnsupportedMediaType,
 			reason: fmt.Sprintf("http: the request body must be %s", b.mediaType),
@@ -534,26 +560,27 @@ func (b requestBinding) bindBody(c *gin.Context, value reflect.Value) error {
 
 // bindJSON reads a JSON object into the input's json-tagged fields. Unknown
 // members are refused, so a body carrying a field the declaration does not
-// describe is a 400 rather than a silently dropped value.
+// describe is a 400 rather than a silently dropped value. An empty body is the
+// zero input when the declaration does not require one, and a 400 when it does.
 func (b requestBinding) bindJSON(c *gin.Context, value reflect.Value) error {
 	raw, err := readRequestBody(c)
 	if err != nil {
 		return err
 	}
-	var members map[string]json.RawMessage
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &members); err != nil {
-			return &bindingError{status: http.StatusBadRequest, reason: "http: the request body is not a JSON object"}
+	if len(raw) == 0 {
+		if b.required {
+			return requiredBodyError()
 		}
-		// A literal null decodes into a nil map without an error; the body is
-		// declared as an object, so null is refused rather than read as an
-		// empty one.
-		if members == nil {
-			return &bindingError{status: http.StatusBadRequest, reason: "http: the request body is not a JSON object"}
-		}
+		return nil
 	}
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &members); err != nil {
+		return &bindingError{status: http.StatusBadRequest, reason: "http: the request body is not a JSON object"}
+	}
+	// A literal null decodes into a nil map without an error and binds as the
+	// empty object, which is how the declaration reads an absent body.
 	for name, member := range members {
-		index, ok := b.json[name]
+		index, ok := b.jsonField(name)
 		if !ok {
 			return &bindingError{
 				status: http.StatusBadRequest,
@@ -570,11 +597,34 @@ func (b requestBinding) bindJSON(c *gin.Context, value reflect.Value) error {
 	return nil
 }
 
+// jsonField returns the field a JSON member names. An exact name wins; a
+// member whose name differs only in case still binds, which is how
+// encoding/json reads a struct and how the pre-declaration handlers read a
+// request body.
+func (b requestBinding) jsonField(name string) (int, bool) {
+	if index, ok := b.json[name]; ok {
+		return index, true
+	}
+	folded := strings.ToLower(name)
+	for field, index := range b.json {
+		if strings.ToLower(field) == folded {
+			return index, true
+		}
+	}
+	return 0, false
+}
+
 // bindForm reads a urlencoded body into the input's form-tagged fields.
 func (b requestBinding) bindForm(c *gin.Context, value reflect.Value) error {
 	raw, err := readRequestBody(c)
 	if err != nil {
 		return err
+	}
+	if len(raw) == 0 {
+		if b.required {
+			return requiredBodyError()
+		}
+		return nil
 	}
 	values, err := url.ParseQuery(string(raw))
 	if err != nil {
@@ -591,7 +641,11 @@ func (b requestBinding) bindMultipart(c *gin.Context, value reflect.Value) error
 	if err := c.Request.ParseMultipartForm(multipartMemory); err != nil {
 		return multipartError(err)
 	}
-	if c.Request.MultipartForm == nil {
+	if c.Request.MultipartForm == nil ||
+		len(c.Request.MultipartForm.Value)+len(c.Request.MultipartForm.File) == 0 {
+		if b.required {
+			return requiredBodyError()
+		}
 		return nil
 	}
 	if err := setFormValues(url.Values(c.Request.MultipartForm.Value), value, b.form); err != nil {
@@ -689,6 +743,9 @@ func (b requestBinding) bindRaw(c *gin.Context, value reflect.Value) error {
 	raw, err := readRequestBody(c)
 	if err != nil {
 		return err
+	}
+	if b.required && len(raw) == 0 {
+		return requiredBodyError()
 	}
 	value.Field(b.raw).SetBytes(raw)
 	return nil

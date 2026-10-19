@@ -317,13 +317,62 @@ func TestAnImpersonatingIdentityCannotDeleteAFactor(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodDelete, listPath+"/"+id, nil)
 	c.Request = c.Request.WithContext(authntest.Context(t, c.Request.Context(), impersonating...))
-	c.Params = gin.Params{{Key: factorParam, Value: id}}
-	r.p.deleteFactor(c)
+	c.Params = gin.Params{{Key: "id", Value: id}}
+	removeFactorOperation.Handle(r.p.deleteFactor)(c)
 	if w.Code != http.StatusForbidden || problemOf(t, w).Type != problemType+mount.CodeImpersonationRestricted {
 		t.Errorf("the handler alone: DELETE = %d %s, want 403 impersonation-restricted", w.Code, w.Body.String())
 	}
 	if _, there := r.status(id); !there {
 		t.Error("the factor was deleted by an impersonating identity")
+	}
+}
+
+// A request that reaches one of the handlers without the gateway — the path the
+// handler's own refusal exists for — is answered 401 with the capability's
+// challenge, not a bare problem document: RFC 9110 requires a 401 to carry one.
+// The chain is the mounter's own wrapper with no gateway in front of it; the
+// handler writes the header through the fault the entry point writes.
+func TestTheHandlersOwn401CarriesTheCapabilityChallenge(t *testing.T) {
+	r := routed(t, authn.FactorTOTP)
+	cases := []struct {
+		name    string
+		method  string
+		path    string
+		params  gin.Params
+		handler gin.HandlerFunc
+	}{
+		{
+			"GET /factors", http.MethodGet, listPath, nil,
+			factorsOperation.Handle(r.p.listFactors),
+		},
+		{
+			"DELETE /factors/:id", http.MethodDelete, listPath + "/unknown",
+			gin.Params{{Key: "id", Value: "unknown"}},
+			removeFactorOperation.Handle(r.p.deleteFactor),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(tc.method, tc.path, nil)
+			// The cross-origin check the mounter applies to an unsafe method is
+			// not what this case is about; a same-origin request passes it.
+			c.Request.Header.Set("Sec-Fetch-Site", "same-origin")
+			c.Params = tc.params
+			mount.Wrap(r.mounter.CSRF(), r.mounter.Endpoint(), tc.handler)(c)
+
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401", w.Code)
+			}
+			if got, want := w.Header().Get("WWW-Authenticate"),
+				`Bearer realm="main", Cookie realm="main"`; got != want {
+				t.Errorf("WWW-Authenticate = %q, want %q", got, want)
+			}
+			if p := problemOf(t, w); p.Type != "about:blank" || p.Status != http.StatusUnauthorized {
+				t.Errorf("the problem is %+v, want the default 401 document", p)
+			}
+		})
 	}
 }
 

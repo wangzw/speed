@@ -1,13 +1,13 @@
 package login
 
 import (
+	"context"
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
 // The kinds of a next step, the closed set the client reads out of next.kind.
@@ -23,90 +23,26 @@ const (
 // The states a completed login answers with.
 const stateAuthenticated = "authenticated"
 
-// flowReply is the answer to a step that keeps the flow open. flow_token is set
-// only for a header-bound start.
-type flowReply struct {
-	Seq       int      `json:"seq"`
-	State     string   `json:"state"`
-	FlowToken string   `json:"flow_token,omitempty"`
-	Next      stepView `json:"next"`
-}
+// The states a flow that ends without a session answers with.
+const (
+	stateLinked   = "linked"
+	stateEnrolled = "enrolled"
+)
 
-// stepView is what the client does next.
-type stepView struct {
-	Kind        string       `json:"kind"`
-	Fields      []fieldView  `json:"fields,omitempty"`
-	ExpiresIn   int          `json:"expires_in,omitempty"`
-	ResendAfter int          `json:"resend_after,omitempty"`
-	URL         string       `json:"url,omitempty"`
-	Method      string       `json:"method,omitempty"`
-	Factors     []factorView `json:"factors,omitempty"`
-	Kinds       []string     `json:"kinds,omitempty"`
-	Options     any          `json:"options,omitempty"`
-}
-
-// fieldView is one input the client is asked for.
-type fieldView struct {
-	Name     string `json:"name"`
-	Kind     string `json:"kind"`
-	Required bool   `json:"required,omitempty"`
-	Secret   bool   `json:"secret,omitempty"`
-}
-
-// sessionReply is the body of a completed login delivered as a cookie.
-type sessionReply struct {
-	State   string      `json:"state"`
-	Session sessionView `json:"session"`
-}
-
-// sessionView is the public facts of a session.
-type sessionView struct {
-	ID        string `json:"id"`
-	ExpiresAt string `json:"expires_at"`
-}
-
-// tokenReply is the body of a completed login delivered as a token pair.
-type tokenReply struct {
-	State        string `json:"state"`
-	TokenType    string `json:"token_type"`
-	AccessToken  string `json:"access_token"`
-	ExpiresIn    int    `json:"expires_in"`
-	RefreshToken string `json:"refresh_token"`
-}
-
-// methodDescriptorView is one login method in the discovery document.
-type methodDescriptorView struct {
-	Name         string      `json:"name"`
-	Kind         string      `json:"kind"`
-	Protocol     string      `json:"protocol,omitempty"`
-	Label        string      `json:"label,omitempty"`
-	OpensAccount bool        `json:"opens_account,omitempty"`
-	Fields       []fieldView `json:"fields,omitempty"`
-}
-
-// signupView says whether the deployment lets a first login open an account.
-type signupView struct {
-	Enabled bool `json:"enabled"`
-}
-
-// mfaView is the kinds of second factor the deployment takes in.
-type mfaView struct {
-	Factors []string `json:"factors"`
-}
-
-// methodsReply is the body of the methods listing: the descriptors of the
-// methods taking part that are not turned off, whether registration is open, and
-// the kinds of second factor the deployment offers.
-type methodsReply struct {
-	Methods []methodDescriptorView `json:"methods"`
-	Signup  signupView             `json:"signup"`
-	MFA     mfaView                `json:"mfa"`
+// wire writes a body as the answer route's union when the call is the answer
+// route, and as the body itself otherwise.
+func (c *call) wire(body any) {
+	if c.union {
+		c.answer(body)
+		return
+	}
+	c.json(http.StatusOK, body)
 }
 
 // writeFlow writes a reply that keeps a flow open. flowToken is echoed only for
 // a request that carried it in the Authn-Flow header.
-func (r *routes) writeFlow(c *gin.Context, rec record, flowToken string) {
-	c.JSON(http.StatusOK, flowReply{
+func (r *routes) writeFlow(c *call, rec record, flowToken string) {
+	c.wire(flowReply{
 		Seq:       rec.Seq,
 		State:     rec.State,
 		FlowToken: flowToken,
@@ -115,31 +51,33 @@ func (r *routes) writeFlow(c *gin.Context, rec record, flowToken string) {
 }
 
 // writeComplete writes the reply of a step that has reached ready.
-func writeComplete(c *gin.Context, rec record) {
-	c.JSON(http.StatusOK, flowReply{Seq: rec.Seq, State: rec.State, Next: stepView{Kind: nextComplete}})
+func writeComplete(c *call, rec record) {
+	c.wire(flowReply{Seq: rec.Seq, State: rec.State, Next: stepView{Kind: nextComplete}})
 }
 
 // writeSession writes the body of a completed login delivered as a cookie.
-func writeSession(c *gin.Context, issued authn.Issued) {
-	c.JSON(http.StatusOK, sessionReply{
+func writeSession(c *call, issued authn.Issued) {
+	c.wire(sessionReply{
 		State:   stateAuthenticated,
 		Session: sessionView{ID: string(issued.ID), ExpiresAt: rfc3339(issued.ExpiresAt)},
 	})
 }
 
 // writeToken writes the body of a completed login delivered as a token pair.
-func writeToken(c *gin.Context, access authn.AccessToken, refresh authn.RefreshToken, now time.Time) {
-	expiresIn := int(access.ExpiresAt.Sub(now).Seconds())
-	if expiresIn < 0 {
-		expiresIn = 0
-	}
-	c.JSON(http.StatusOK, tokenReply{
+func writeToken(c *call, access authn.AccessToken, refresh authn.RefreshToken, now time.Time) {
+	c.wire(tokenReply{
 		State:        stateAuthenticated,
 		TokenType:    "Bearer",
 		AccessToken:  access.Value,
-		ExpiresIn:    expiresIn,
+		ExpiresIn:    max(0, int(access.ExpiresAt.Sub(now).Seconds())),
 		RefreshToken: refresh.Value,
 	})
+}
+
+// writeAction writes the body of a flow that ended by linking an identity or
+// registering a factor.
+func writeAction(c *call, state string) {
+	c.wire(actionReply{State: state})
 }
 
 // nextOf is what a client does next given where the flow stands. A flow refreshed
@@ -202,14 +140,15 @@ func rfc3339(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
-// methods answers GET B/methods with the descriptors of the methods taking part
+// methods answers GET flows with the descriptors of the methods taking part
 // that are not turned off, in the order of their names, together with whether
 // registration is open and the kinds of second factor the deployment offers.
-func (r *routes) methods(c *gin.Context) {
+func (r *routes) methods(ctx context.Context, _ struct{}, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	c := r.call(ctx, meta)
 	disabled, err := r.settings.disabledMethods()
 	if err != nil {
 		r.fail(c, err)
-		return
+		return c.result()
 	}
 	off := make(map[string]bool, len(disabled))
 	for _, name := range disabled {
@@ -222,11 +161,12 @@ func (r *routes) methods(c *gin.Context) {
 		}
 		out = append(out, descriptorView(r.product.methods[name].Describe()))
 	}
-	c.JSON(http.StatusOK, methodsReply{
+	c.json(http.StatusOK, methodsReply{
 		Methods: out,
 		Signup:  signupView{Enabled: r.signup},
 		MFA:     mfaView{Factors: r.factorKinds()},
 	})
+	return c.result()
 }
 
 // descriptorView copies a method's descriptor into the wire shape.
@@ -241,39 +181,43 @@ func descriptorView(d authn.MethodDescriptor) methodDescriptorView {
 	}
 }
 
-// current answers GET B/flows/current with the state of the flow the request is
+// current answers GET flows/current with the state of the flow the request is
 // bound to, so that a page refresh can resume.
-func (r *routes) current(c *gin.Context) {
+func (r *routes) current(ctx context.Context, _ struct{}, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	c := r.call(ctx, meta)
 	_, echo, rec, _, ok := r.requireBinding(c, true)
 	if !ok {
-		return
+		return c.result()
 	}
 	switch rec.State {
 	case stateDone, stateFailed:
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
-		return
+		c.unauthorized(mount.CodeFlowInvalid)
+		return c.result()
 	}
 	r.writeFlow(c, rec, echo)
+	return c.result()
 }
 
-// abandon answers DELETE B/flows/current by removing the flow the request is
+// abandon answers DELETE flows/current by removing the flow the request is
 // bound to. It is idempotent: a request with no binding or with a binding to a
 // flow that is gone is the same 401 flow-invalid, and a request that removes a
 // live flow answers 204.
-func (r *routes) abandon(c *gin.Context) {
+func (r *routes) abandon(ctx context.Context, _ struct{}, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	c := r.call(ctx, meta)
 	token, _, ok := r.readBindingToken(c, true)
 	if !ok {
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
-		return
+		c.unauthorized(mount.CodeFlowInvalid)
+		return c.result()
 	}
-	if _, _, err := r.loadFlow(c.Request.Context(), token); err != nil {
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
-		return
+	if _, _, err := r.loadFlow(c.ctx, token); err != nil {
+		c.unauthorized(mount.CodeFlowInvalid)
+		return c.result()
 	}
-	if err := r.deleteFlow(c.Request.Context(), token); err != nil {
+	if err := r.deleteFlow(c.ctx, token); err != nil {
 		r.fail(c, err)
-		return
+		return c.result()
 	}
 	r.setFlowCookie(c, "", -1)
-	c.Status(http.StatusNoContent)
+	c.empty(http.StatusNoContent)
+	return c.result()
 }

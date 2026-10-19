@@ -2,7 +2,6 @@ package admin
 
 import (
 	"fmt"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 
@@ -14,13 +13,14 @@ import (
 // their own base path and not under a configurable one, and every one of them is
 // addressed by a natural key — a template name — so that no opaque row
 // identifier ever appears in a path.
+//
+// The paths are the resolved forms of the declarations in operations.go, which
+// are written relative to the API root the fragment carries.
 const (
 	basePath = "/api/v1/sms/admin"
 
-	pathTemplates       = basePath + "/templates"
-	pathSubmissions     = basePath + "/templates/submissions"
-	pathTemplateEnabled = basePath + "/templates/:name/enabled"
-	pathTemplate        = basePath + "/templates/:name"
+	pathTemplates   = basePath + "/templates"
+	pathSubmissions = basePath + "/templates/submissions"
 )
 
 // managementGroups names the route groups in the order the start diagnostic
@@ -29,7 +29,7 @@ const (
 var managementGroups = []string{"templates"}
 
 // realmKey is where the name of the endpoint a management route was mounted on
-// is put for the handler to read back. A handler that answers 401 itself writes
+// is put for the handler to read back. A route that answers 401 itself writes
 // the endpoint's name as the realm of its challenge — the name of the protection
 // space, the same realm the admission and authorization layers use — and the
 // endpoint name is known only where the routes are mounted, which is why it is
@@ -56,13 +56,36 @@ type route struct {
 }
 
 // routes is the closed set of management routes, in the order they are mounted.
+// Each route's handler is bound from the operation declared for it, and wrapped
+// with the decisions the surface makes before the entry point binds the input:
+// the caller is read and the route's permission is asked.
 func (p *product) routes() []route {
 	return []route{
-		{http.MethodGet, pathTemplates, p.handleTemplateList},
-		{http.MethodPost, pathTemplates, p.handleTemplateRegister},
-		{http.MethodPost, pathSubmissions, p.handleTemplateOffer},
-		{http.MethodPost, pathTemplateEnabled, p.handleTemplateSetEnabled},
-		{http.MethodDelete, pathTemplate, p.handleTemplateRemove},
+		{
+			listOperation.Method,
+			adminSpec.ResolvePath(listOperation.Path),
+			p.permitted(PermissionTemplateRead, listOperation.Handle(p.handleTemplateList)),
+		},
+		{
+			registerOperation.Method,
+			adminSpec.ResolvePath(registerOperation.Path),
+			p.permitted(PermissionTemplateManage, registerOperation.Handle(p.handleTemplateRegister)),
+		},
+		{
+			offerOperation.Method,
+			adminSpec.ResolvePath(offerOperation.Path),
+			p.permitted(PermissionTemplateManage, offerOperation.Handle(p.handleTemplateOffer)),
+		},
+		{
+			setEnabledOperation.Method,
+			adminSpec.ResolvePath(setEnabledOperation.Path),
+			p.permitted(PermissionTemplateManage, setEnabledOperation.Handle(p.handleTemplateSetEnabled)),
+		},
+		{
+			removeOperation.Method,
+			adminSpec.ResolvePath(removeOperation.Path),
+			p.permitted(PermissionTemplateManage, removeOperation.Handle(p.handleTemplateRemove)),
+		},
 	}
 }
 

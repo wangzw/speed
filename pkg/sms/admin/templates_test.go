@@ -512,6 +512,22 @@ func TestTheViewCarriesNoVendorCode(t *testing.T) {
 	}
 }
 
+// A missing template is answered with the status alone: a 404 that carries no
+// problem document, which is the shape the fragment declares and the surface has
+// always written. The answer is an empty reply, so a declared body would turn it
+// into an internal error.
+func TestAMissingTemplateIsAnsweredWithNoBody(t *testing.T) {
+	r := newRig(t)
+	r.registry.fail(sms.ErrNoTemplate)
+	w := r.do(http.MethodDelete, "/api/v1/sms/admin/templates/gone", nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (body %s)", w.Code, w.Body.String())
+	}
+	if w.Body.Len() != 0 {
+		t.Errorf("body = %q, want none", w.Body.String())
+	}
+}
+
 // ptr returns a pointer to v, for building a body whose target is a pointer so a
 // case can tell an absent field from a false one.
 func ptr(v bool) *bool { return &v }

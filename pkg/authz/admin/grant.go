@@ -1,34 +1,25 @@
 package admin
 
 import (
-	"net/http"
-
-	"github.com/gin-gonic/gin"
+	"context"
 
 	"github.com/vislake/speed/pkg/authz"
 )
 
 // handleGrantList answers GET /api/v1/authz/admin/tenants/:tenant/roles/:role/grants:
 // every permission grant the role holds. It is a read, so the action is
-// role.read.
-func (p *product) handleGrantList(c *gin.Context) {
-	if _, ok := p.caller(c); !ok {
-		return
-	}
-	if !p.require(c, authz.PermissionRoleRead) {
-		return
-	}
-	tenant, role := c.Param("tenant"), authz.Role(c.Param("role"))
-	grants, err := p.manager.Grants(c.Request.Context(), tenant, role)
+// role.read; the identity and the permission are decided by the route's guard
+// wrapper before this handler is called.
+func (p *product) handleGrantList(ctx context.Context, in roleInput) (grantListBody, error) {
+	grants, err := p.manager.Grants(ctx, in.Tenant, authz.Role(in.Role))
 	if err != nil {
-		p.answer(c, "listing the grants", err)
-		return
+		return grantListBody{}, p.failureOf("listing the grants", err)
 	}
-	views := make([]grantView, len(grants))
+	views := make([]AuthzAdminGrantView, len(grants))
 	for i, g := range grants {
 		views[i] = grantViewOf(g)
 	}
-	c.JSON(http.StatusOK, gin.H{"grants": views})
+	return grantListBody{Grants: views}, nil
 }
 
 // handleGrantPut answers PUT
@@ -40,40 +31,31 @@ func (p *product) handleGrantList(c *gin.Context) {
 // manager is called; a permission the catalog does not hold, or one the
 // translation has no row for, is a 400 and the manager is not touched. The
 // mandatory audit row lands before the manager writes.
-func (p *product) handleGrantPut(c *gin.Context) {
-	if _, ok := p.caller(c); !ok {
-		return
-	}
-	if !p.require(c, authz.PermissionRoleManage) {
-		return
-	}
-	tenant, role := c.Param("tenant"), authz.Role(c.Param("role"))
-	permission := authz.Permission(c.Param("permission"))
+func (p *product) handleGrantPut(ctx context.Context, in grantInput) (struct{}, error) {
+	role := authz.Role(in.Role)
+	permission := authz.Permission(in.Permission)
 	if !p.catalog.Has(permission) {
-		p.bad(c)
-		return
+		return struct{}{}, badRequest()
 	}
 	resource, action, ok := p.catalog.ObjectAction(permission)
 	if !ok {
-		p.bad(c)
-		return
+		return struct{}{}, badRequest()
 	}
 	actionID := newActionID()
-	if !p.auditRequired(c, mandatory(actionGrantPut, string(permission), map[string]string{
+	if err := p.auditRequired(ctx, mandatory(actionGrantPut, string(permission), map[string]string{
 		detailActionID:   actionID,
-		detailTenant:     tenant,
+		detailTenant:     in.Tenant,
 		detailRole:       string(role),
 		detailPermission: string(permission),
-	})) {
-		return
+	})); err != nil {
+		return struct{}{}, err
 	}
-	record := authz.GrantRecord{Tenant: tenant, Role: role, Resource: resource, Action: action}
-	if err := p.manager.PutGrant(c.Request.Context(), record); err != nil {
-		p.auditBestEffort(c.Request.Context(), failedAudit(actionGrantPut, string(permission), actionID))
-		p.answer(c, "writing a grant", err)
-		return
+	record := authz.GrantRecord{Tenant: in.Tenant, Role: role, Resource: resource, Action: action}
+	if err := p.manager.PutGrant(ctx, record); err != nil {
+		p.auditBestEffort(ctx, failedAudit(actionGrantPut, string(permission), actionID))
+		return struct{}{}, p.failureOf("writing a grant", err)
 	}
-	p.noContent(c)
+	return struct{}{}, nil
 }
 
 // handleGrantDelete answers DELETE
@@ -83,34 +65,26 @@ func (p *product) handleGrantPut(c *gin.Context) {
 // The permission named in the path is translated to the (resource, action) pair
 // before the manager is called; a permission the translation has no row for is a
 // 400. The mandatory audit row lands before the manager writes.
-func (p *product) handleGrantDelete(c *gin.Context) {
-	if _, ok := p.caller(c); !ok {
-		return
-	}
-	if !p.require(c, authz.PermissionRoleManage) {
-		return
-	}
-	tenant, role := c.Param("tenant"), authz.Role(c.Param("role"))
-	permission := authz.Permission(c.Param("permission"))
+func (p *product) handleGrantDelete(ctx context.Context, in grantInput) (struct{}, error) {
+	role := authz.Role(in.Role)
+	permission := authz.Permission(in.Permission)
 	resource, action, ok := p.catalog.ObjectAction(permission)
 	if !ok {
-		p.bad(c)
-		return
+		return struct{}{}, badRequest()
 	}
 	actionID := newActionID()
-	if !p.auditRequired(c, mandatory(actionGrantDelete, string(permission), map[string]string{
+	if err := p.auditRequired(ctx, mandatory(actionGrantDelete, string(permission), map[string]string{
 		detailActionID:   actionID,
-		detailTenant:     tenant,
+		detailTenant:     in.Tenant,
 		detailRole:       string(role),
 		detailPermission: string(permission),
-	})) {
-		return
+	})); err != nil {
+		return struct{}{}, err
 	}
-	record := authz.GrantRecord{Tenant: tenant, Role: role, Resource: resource, Action: action}
-	if err := p.manager.DeleteGrant(c.Request.Context(), record); err != nil {
-		p.auditBestEffort(c.Request.Context(), failedAudit(actionGrantDelete, string(permission), actionID))
-		p.answer(c, "deleting a grant", err)
-		return
+	record := authz.GrantRecord{Tenant: in.Tenant, Role: role, Resource: resource, Action: action}
+	if err := p.manager.DeleteGrant(ctx, record); err != nil {
+		p.auditBestEffort(ctx, failedAudit(actionGrantDelete, string(permission), actionID))
+		return struct{}{}, p.failureOf("deleting a grant", err)
 	}
-	p.noContent(c)
+	return struct{}{}, nil
 }

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/notification"
 )
@@ -68,7 +70,7 @@ func TestGetTypesReportsTheTaxonomy(t *testing.T) {
 	h.drive(t, func(_ context.Context, reg *core.Registry) error {
 		p := productOfAssembly(t, reg)
 		rec := serveHandler(t, http.MethodGet, pathTypes, "/api/v1/notifications/types",
-			context.Background(), nil, p.handleTypes)
+			context.Background(), nil, listTypesOperation.Handle(p.listTypes))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("GET /types answered %d, want 200: %s", rec.Code, rec.Body.String())
 		}
@@ -76,7 +78,7 @@ func TestGetTypesReportsTheTaxonomy(t *testing.T) {
 			t.Errorf("GET /types Vary = %q, want it to name Accept-Language", got)
 		}
 		var body struct {
-			Types []typeView `json:"types"`
+			Types []NotificationType `json:"types"`
 		}
 		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 			t.Fatalf("decoding the body: %v", err)
@@ -141,7 +143,7 @@ func TestGetPreferencesReportsTheEffectiveMatrix(t *testing.T) {
 
 // preferenceMatrix is the GET /preferences body.
 type preferenceMatrix struct {
-	Preferences []preferenceView `json:"preferences"`
+	Preferences []NotificationPreference `json:"preferences"`
 }
 
 // getPreferences drives GET /preferences with the recipient on the context and
@@ -149,7 +151,7 @@ type preferenceMatrix struct {
 func getPreferences(t *testing.T, ctx context.Context, p *product) preferenceMatrix {
 	t.Helper()
 	rec := serveHandler(t, http.MethodGet, pathPreferences, "/api/v1/notifications/preferences",
-		WithRecipient(ctx, "user-1"), nil, p.handlePreferences)
+		WithRecipient(ctx, "user-1"), nil, listPreferencesOperation.Handle(p.listPreferences))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /preferences answered %d: %s", rec.Code, rec.Body.String())
 	}
@@ -164,17 +166,37 @@ func getPreferences(t *testing.T, ctx context.Context, p *product) preferenceMat
 }
 
 // putPreference drives one PUT and returns the recorder, so a case reads the
-// status and the body.
+// status and the body. The request carries the declared application/json media
+// type, which the entry point requires to bind the body.
 func putPreference(t *testing.T, ctx context.Context, p *product, typeKey, channel, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	return serveHandler(t, http.MethodPut, pathPreferenceChannel,
-		"/api/v1/notifications/preferences/"+typeKey+"/"+channel,
-		WithRecipient(ctx, "user-1"), strings.NewReader(body), p.handleSetPreference)
+	return putPreferenceAs(t, ctx, p, typeKey, channel, body, "application/json")
 }
 
-// TestPutFollowsTheFixedDecisionOrder holds the order the design fixes: the body
-// is read first, the channel is checked before the type and before any no-op
-// branch, the type before unsubscribability, and only then is the set written.
+// putPreferenceAs drives one PUT with the given Content-Type. An empty value
+// sends none, so a case can hold the entry point's 415 refusal.
+func putPreferenceAs(t *testing.T, ctx context.Context, p *product, typeKey, channel, body, contentType string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.Handle(http.MethodPut, pathPreferenceChannel, updatePreferenceOperation.Handle(p.setPreference))
+	req, err := http.NewRequestWithContext(WithRecipient(ctx, "user-1"), http.MethodPut,
+		"/api/v1/notifications/preferences/"+typeKey+"/"+channel, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("building the request: %v", err)
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestPutFollowsTheFixedDecisionOrder holds the order the design fixes: a body
+// naming no enabled is refused first, the channel is checked before the type and
+// before any no-op branch, the type before unsubscribability, and only then is
+// the set written.
 func TestPutFollowsTheFixedDecisionOrder(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		unsubscribable := aSpec("billing.invoice_paid", true, notification.ChannelInApp, notification.ChannelEmail)
@@ -198,15 +220,19 @@ func TestPutFollowsTheFixedDecisionOrder(t *testing.T) {
 				body    string
 				want    expect
 			}{
-				{"body is not an object", "billing.invoice_paid", "email", `"nope"`, expect{http.StatusBadRequest, badRequestCode}},
-				{"enabled is not a bool", "billing.invoice_paid", "email", `{"enabled": "yes"}`, expect{http.StatusBadRequest, badRequestCode}},
-				{"enabled is missing", "billing.invoice_paid", "email", `{}`, expect{http.StatusBadRequest, badRequestCode}},
+				{"enabled is missing", "billing.invoice_paid", "email", `{}`, expect{status: http.StatusBadRequest, code: badRequestCode}},
+				// A literal null body binds as the empty object at the entry point,
+				// which reaches the handler as a body naming no enabled.
+				{"body is null", "billing.invoice_paid", "email", `null`, expect{status: http.StatusBadRequest, code: badRequestCode}},
+				// A literal null enabled decodes into the pointer as nil, the same
+				// state as a body naming no enabled, so the handler refuses it.
+				{"enabled is null", "billing.invoice_paid", "email", `{"enabled": null}`, expect{status: http.StatusBadRequest, code: badRequestCode}},
 				// The channel is checked before the type: an unknown channel on an
 				// unknown type is refused as a bad request on the channel.
-				{"unknown channel before unknown type", "nope.nope", "pigeon", `{"enabled": true}`, expect{http.StatusBadRequest, badRequestCode}},
-				{"unknown channel", "billing.invoice_paid", "pigeon", `{"enabled": true}`, expect{http.StatusBadRequest, badRequestCode}},
-				{"unknown type", "nope.nope", "email", `{"enabled": true}`, expect{http.StatusBadRequest, badRequestCode}},
-				{"not unsubscribable", "authn.code.sent", "in_app", `{"enabled": false}`, expect{http.StatusConflict, notUnsubscribableCode}},
+				{"unknown channel before unknown type", "nope.nope", "pigeon", `{"enabled": true}`, expect{status: http.StatusBadRequest, code: badRequestCode}},
+				{"unknown channel", "billing.invoice_paid", "pigeon", `{"enabled": true}`, expect{status: http.StatusBadRequest, code: badRequestCode}},
+				{"unknown type", "nope.nope", "email", `{"enabled": true}`, expect{status: http.StatusBadRequest, code: badRequestCode}},
+				{"not unsubscribable", "authn.code.sent", "in_app", `{"enabled": false}`, expect{status: http.StatusConflict, code: notUnsubscribableCode}},
 			}
 			for _, tc := range cases {
 				t.Run(tc.name, func(t *testing.T) {
@@ -215,8 +241,73 @@ func TestPutFollowsTheFixedDecisionOrder(t *testing.T) {
 					if rec.Code != tc.want.status {
 						t.Fatalf("PUT answered %d, want %d: %s", rec.Code, tc.want.status, rec.Body.String())
 					}
-					if got := problemType(t, rec.Body.Bytes()); got != typePrefix+tc.want.code {
-						t.Errorf("problem type = %q, want %q", got, typePrefix+tc.want.code)
+					problem := problemOf(t, rec.Body.Bytes())
+					if want := typePrefix + tc.want.code; problem.Type != want {
+						t.Errorf("problem type = %q, want %q", problem.Type, want)
+					}
+					if problem.Title == "" {
+						t.Error("the module's refusal carries no title")
+					}
+					if problem.Detail == "" {
+						t.Error("the module's refusal carries no detail")
+					}
+					if after := rowCount(t, reg); after != before {
+						t.Errorf("a refused PUT changed the row count %d -> %d", before, after)
+					}
+				})
+			}
+			return nil
+		})
+	})
+}
+
+// TestPutRefusesABodyOutsideTheDeclaration holds the entry point's binding
+// refusals: a Content-Type that is not application/json is a 415, and an empty
+// body (the declaration marks it required), a body that is not a JSON object, a
+// body whose enabled is not a boolean, or one that carries a member the
+// declaration does not describe is a 400. A literal null is not among them: the
+// entry point binds it as the empty object, so it is the module's refusal and is
+// held by TestPutFollowsTheFixedDecisionOrder. These answers are the entry
+// point's, so they carry the default problem document — about:blank, the
+// standard English status text and no detail — and none of them reaches the
+// handler or writes a row.
+func TestPutRefusesABodyOutsideTheDeclaration(t *testing.T) {
+	forEachEngine(t, func(t *testing.T, e engine) {
+		spec := aSpec("billing.invoice_paid", true, notification.ChannelInApp, notification.ChannelEmail)
+		h := e.on(t, harness{declare: []core.Module{declaringModule("billing", spec)}})
+		h.drive(t, func(_ context.Context, reg *core.Registry) error {
+			ctx := tenantCtx(t, reg, "acme")
+			p := productOfAssembly(t, reg)
+
+			cases := []struct {
+				name        string
+				contentType string
+				body        string
+				status      int
+			}{
+				{"body is empty", "application/json", "", http.StatusBadRequest},
+				{"body is not an object", "application/json", `"nope"`, http.StatusBadRequest},
+				{"enabled is not a bool", "application/json", `{"enabled": "yes"}`, http.StatusBadRequest},
+				{"unknown member", "application/json", `{"enabled": true, "extra": 1}`, http.StatusBadRequest},
+				{"media type is not JSON", "text/plain", `{"enabled": true}`, http.StatusUnsupportedMediaType},
+				{"media type is missing", "", `{"enabled": true}`, http.StatusUnsupportedMediaType},
+			}
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					before := rowCount(t, reg)
+					rec := putPreferenceAs(t, ctx, p, "billing.invoice_paid", "email", tc.body, tc.contentType)
+					if rec.Code != tc.status {
+						t.Fatalf("PUT answered %d, want %d: %s", rec.Code, tc.status, rec.Body.String())
+					}
+					problem := problemOf(t, rec.Body.Bytes())
+					if problem.Type != "about:blank" {
+						t.Errorf("problem type = %q, want the entry point's default about:blank", problem.Type)
+					}
+					if want := http.StatusText(tc.status); problem.Title != want {
+						t.Errorf("problem title = %q, want the standard %q", problem.Title, want)
+					}
+					if problem.Detail != "" {
+						t.Errorf("problem detail = %q, want none from the entry point", problem.Detail)
 					}
 					if after := rowCount(t, reg); after != before {
 						t.Errorf("a refused PUT changed the row count %d -> %d", before, after)
@@ -317,14 +408,19 @@ func putChannels(t *testing.T, body []byte) []string {
 	return out.Channels
 }
 
-// problemType decodes a problem body's type member.
-func problemType(t *testing.T, body []byte) string {
+// problem is the members of a problem document a case reads.
+type problem struct {
+	Type   string `json:"type"`
+	Title  string `json:"title"`
+	Detail string `json:"detail"`
+}
+
+// problemOf decodes a problem body's members.
+func problemOf(t *testing.T, body []byte) problem {
 	t.Helper()
-	var out struct {
-		Type string `json:"type"`
-	}
+	var out problem
 	if err := json.Unmarshal(body, &out); err != nil {
 		t.Fatalf("decoding the problem body: %v", err)
 	}
-	return out.Type
+	return out
 }

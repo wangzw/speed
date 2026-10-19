@@ -6,8 +6,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
@@ -35,6 +33,21 @@ type caller struct {
 	session authn.SessionID
 }
 
+// callerKey carries the caller a body precheck already decided to the handler,
+// so the identity, session and freshness checks run once per request.
+type callerKey struct{}
+
+// withCaller returns ctx carrying the caller a precheck decided.
+func withCaller(ctx context.Context, who caller) context.Context {
+	return context.WithValue(ctx, callerKey{}, who)
+}
+
+// callerFrom returns the caller a precheck decided, or false when there is none.
+func callerFrom(ctx context.Context) (caller, bool) {
+	who, ok := ctx.Value(callerKey{}).(caller)
+	return who, ok
+}
+
 // authorize is what every route that changes how the account is proven does
 // before it reads the request body or calls anything. It answers the request and
 // returns false when the identity may not go on:
@@ -49,19 +62,22 @@ type caller struct {
 //
 // action names the audit action of a refusal for a step-up, empty for a route
 // whose refusals leave no row.
-func (r *routes) authorize(c *gin.Context, action string) (caller, bool) {
-	ctx := c.Request.Context()
+func (r *routes) authorize(c *call, action string) (caller, bool) {
+	ctx := c.ctx
+	if who, carried := callerFrom(ctx); carried {
+		return who, true
+	}
 	id, ok := authn.FromContext(ctx)
 	if !ok || id.Account() == "" {
-		mount.Unauthorized(c, r.endpoint, "")
+		c.unauthorized("")
 		return caller{}, false
 	}
 	if id.Impersonating() {
-		mount.Forbidden(c, mount.CodeImpersonationRestricted)
+		c.forbidden(mount.CodeImpersonationRestricted)
 		return caller{}, false
 	}
 	if id.Session() == "" {
-		mount.Unauthorized(c, r.endpoint, "")
+		c.unauthorized("")
 		return caller{}, false
 	}
 	req, err := r.requirement(ctx, id.Account())
@@ -73,7 +89,7 @@ func (r *routes) authorize(c *gin.Context, action string) (caller, bool) {
 		if action != "" {
 			r.record(ctx, action, outcomeDenied, id.Account(), nil)
 		}
-		mount.StepUpRequired(c, id, req)
+		c.stepUp(id, req)
 		return caller{}, false
 	}
 	return caller{account: id.Account(), session: id.Session()}, true
@@ -105,12 +121,12 @@ func (r *routes) requirement(ctx context.Context, account authn.AccountID) (auth
 // account; the cookie is written whenever the token was rotated, because the old
 // one no longer holds. It answers the request and returns false when either
 // call failed, the change itself being in force.
-func (r *routes) settle(c *gin.Context, who caller, reason string) bool {
-	ctx := c.Request.Context()
+func (r *routes) settle(c *call, who caller, reason string) bool {
+	ctx := c.ctx
 	issued, rotateErr := r.deps.Sessions.Rotate(ctx, who.session)
 	_, revokeErr := r.deps.Sessions.RevokeAccount(ctx, who.account, who.session, reason)
 	if rotateErr == nil && issued.Token != "" {
-		r.deps.Sessions.SetCookie(c.Writer, issued)
+		r.deps.Sessions.SetCookie(c.w, issued)
 	}
 	if err := errors.Join(rotateErr, revokeErr); err != nil {
 		r.fail(c, err)
@@ -155,14 +171,6 @@ func (r *routes) engaged(ctx context.Context, scope authn.ThrottleScope) {
 	if r.deps.ThrottleEngaged != nil {
 		r.deps.ThrottleEngaged(ctx, scope)
 	}
-}
-
-func logWarn(ctx context.Context, msg string, err error) {
-	attrs := []any{}
-	if err != nil {
-		attrs = append(attrs, slog.String("cause", err.Error()))
-	}
-	log.FromContext(ctx).Warn(moduleName+": "+msg, attrs...)
 }
 
 func logError(ctx context.Context, msg string, err error) {

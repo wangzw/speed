@@ -1,130 +1,118 @@
 package invite
 
 import (
-	"strconv"
+	"context"
+	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/vislake/speed/pkg/authn"
-	"github.com/vislake/speed/pkg/authn/internal/mount"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
-
-// issueBody is the request of an issue. ExpiresAt is optional; left out, the
-// configured lifetime applies.
-type issueBody struct {
-	Email     string     `json:"email"`
-	ExpiresAt *time.Time `json:"expires_at"`
-}
 
 // handleIssue answers POST /admin/tenants/:tenant/invitations: it issues an
 // invitation and returns its view together with the one-time token. The action
 // is membership.manage, decided in the tenant in the path.
-func (p *product) handleIssue(c *gin.Context) {
-	id, ok := p.caller(c)
-	if !ok || !p.admit(c, id) {
-		return
+//
+// The entry point binds the declared input before the handler runs, so a body it
+// cannot read is refused before the decision; the decision still comes before
+// the action, and nothing of the body is read by the domain call when the
+// decision refuses.
+func (p *product) handleIssue(ctx context.Context, in issueInput) (AuthnInviteIssued, error) {
+	id, err := p.caller(ctx)
+	if err != nil {
+		return AuthnInviteIssued{}, err
 	}
-	tenant := c.Param("tenant")
-	if tenant == "" {
-		p.bad(c)
-		return
+	if err = p.admit(id); err != nil {
+		return AuthnInviteIssued{}, err
 	}
-	if !p.asks(c, authn.Decision{Action: authn.ActionMembershipManage, Actor: id, Tenant: tenant}) {
-		return
+	if in.Tenant == "" {
+		return AuthnInviteIssued{}, p.badRequest()
 	}
-	// The decision comes first, and only then is the body parsed and shaped:
-	// an unauthorized caller learns nothing about the body it sent.
-	var body issueBody
-	if !mount.Decode(c, &body) {
-		return
+	if err = p.asks(ctx, authn.Decision{
+		Action: authn.ActionMembershipManage, Actor: id, Tenant: in.Tenant,
+	}); err != nil {
+		return AuthnInviteIssued{}, err
 	}
-	if body.Email == "" {
-		p.bad(c)
-		return
+	if in.Email == "" {
+		return AuthnInviteIssued{}, p.badRequest()
 	}
-	in := IssueInvite{Tenant: tenant, Email: body.Email}
-	if body.ExpiresAt != nil {
-		in.ExpiresAt = *body.ExpiresAt
+	deadline := time.Time{}
+	if in.ExpiresAt != nil {
+		deadline = *in.ExpiresAt
 	}
 	actionID := newActionID()
-	if !p.auditRequired(c, mandatory(actionIssue, tenant,
-		map[string]string{detailActionID: actionID, detailTenant: tenant})) {
-		return
+	if err = p.auditRequired(ctx, mandatory(actionIssue, in.Tenant,
+		map[string]string{detailActionID: actionID, detailTenant: in.Tenant})); err != nil {
+		return AuthnInviteIssued{}, err
 	}
-	issued, err := p.Issue(c.Request.Context(), in)
+	issued, err := p.Issue(ctx, IssueInvite{Tenant: in.Tenant, Email: in.Email, ExpiresAt: deadline})
 	if err != nil {
-		p.auditBestEffort(c.Request.Context(), failedAudit(actionIssue, tenant, actionID))
-		p.answer(c, "issuing an invitation", err)
-		return
+		p.auditBestEffort(ctx, failedAudit(actionIssue, in.Tenant, actionID))
+		return AuthnInviteIssued{}, p.answer("issuing an invitation", err)
 	}
-	c.JSON(201, issuedView{Invitation: invitationViewOf(issued.Invitation), Token: issued.Token})
+	return issuedViewOf(issued), nil
 }
 
 // handleList answers GET /admin/tenants/:tenant/invitations: one page of the
 // tenant's invitations. The action is membership.manage, and a read writes no
 // audit row.
-func (p *product) handleList(c *gin.Context) {
-	id, ok := p.caller(c)
-	if !ok || !p.admit(c, id) {
-		return
-	}
-	tenant := c.Param("tenant")
-	if !p.asks(c, authn.Decision{Action: authn.ActionMembershipManage, Actor: id, Tenant: tenant}) {
-		return
-	}
-	// The page's shape is judged after the decision, so a refused caller
-	// learns nothing about what a well-formed query looks like.
-	var page authn.Page
-	if s := c.Query("limit"); s != "" {
-		n, err := strconv.Atoi(s)
-		if err != nil || n < 0 {
-			p.bad(c)
-			return
-		}
-		page.Limit = n
-	}
-	page.After = c.Query("after")
-	invitations, next, err := p.List(c.Request.Context(), tenant, page)
+func (p *product) handleList(ctx context.Context, in listInput) (AuthnInvitePage, error) {
+	id, err := p.caller(ctx)
 	if err != nil {
-		p.answer(c, "listing invitations", err)
-		return
+		return AuthnInvitePage{}, err
 	}
-	views := make([]invitationView, len(invitations))
+	if err = p.admit(id); err != nil {
+		return AuthnInvitePage{}, err
+	}
+	if err = p.asks(ctx, authn.Decision{
+		Action: authn.ActionMembershipManage, Actor: id, Tenant: in.Tenant,
+	}); err != nil {
+		return AuthnInvitePage{}, err
+	}
+	// A negative cap is refused here rather than by a binding rule: the entry
+	// point parses the query value, and the route's answer to a value outside
+	// the domain is the 400 it has always been.
+	if in.Limit < 0 {
+		return AuthnInvitePage{}, p.badRequest()
+	}
+	invitations, next, err := p.List(ctx, in.Tenant, authn.Page{Limit: in.Limit, After: in.After})
+	if err != nil {
+		return AuthnInvitePage{}, p.answer("listing invitations", err)
+	}
+	views := make([]AuthnInviteInvitation, len(invitations))
 	for i, inv := range invitations {
 		views[i] = invitationViewOf(inv)
 	}
-	c.JSON(200, gin.H{"invitations": views, "next_cursor": next})
+	return AuthnInvitePage{Invitations: views, NextCursor: next}, nil
 }
 
 // handleRevoke answers DELETE /admin/tenants/:tenant/invitations/:id: it
 // revokes a pending invitation. The action is membership.manage, and the
 // invitation's identifier is the decision's target.
-func (p *product) handleRevoke(c *gin.Context) {
-	id, ok := p.caller(c)
-	if !ok || !p.admit(c, id) {
-		return
+func (p *product) handleRevoke(ctx context.Context, in revokeInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := p.caller(ctx)
+	if err != nil {
+		return nil, err
 	}
-	tenant := c.Param("tenant")
-	invitation := c.Param("id")
-	if !p.asks(c, authn.Decision{
-		Action: authn.ActionMembershipManage, Actor: id, Tenant: tenant, Target: invitation,
-	}) {
-		return
+	if err := p.admit(id); err != nil {
+		return nil, err
 	}
-	if invitation == "" {
-		p.bad(c)
-		return
+	if err := p.asks(ctx, authn.Decision{
+		Action: authn.ActionMembershipManage, Actor: id, Tenant: in.Tenant, Target: in.ID,
+	}); err != nil {
+		return nil, err
+	}
+	if in.ID == "" {
+		return nil, p.badRequest()
 	}
 	actionID := newActionID()
-	if !p.auditRequired(c, mandatory(actionRevoke, invitation,
-		map[string]string{detailActionID: actionID, detailTenant: tenant})) {
-		return
+	if err := p.auditRequired(ctx, mandatory(actionRevoke, in.ID,
+		map[string]string{detailActionID: actionID, detailTenant: in.Tenant})); err != nil {
+		return nil, err
 	}
-	if err := p.Revoke(c.Request.Context(), tenant, invitation); err != nil {
-		p.auditBestEffort(c.Request.Context(), failedAudit(actionRevoke, invitation, actionID))
-		p.answer(c, "revoking an invitation", err)
-		return
+	if err := p.Revoke(ctx, in.Tenant, in.ID); err != nil {
+		p.auditBestEffort(ctx, failedAudit(actionRevoke, in.ID, actionID))
+		return p.answerReply("revoking an invitation", err)
 	}
-	p.noContent(c)
+	return speedhttp.EmptyReply(http.StatusNoContent), nil
 }

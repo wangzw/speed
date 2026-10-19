@@ -109,6 +109,16 @@ func ProblemResponse(status int, description string) Response {
 	return ErrorResponse(DefaultErrorShape(), status, description)
 }
 
+// ProblemResponseOf declares one error answer whose request-binding refusals
+// carry the given problem type: the type is the one the entry point writes when
+// it refuses the request before the handler runs. It is how a capability keeps
+// its closed code vocabulary on the answers no handler produces.
+func ProblemResponseOf(status int, description, problemType string) Response {
+	response := ProblemResponse(status, description)
+	response.ProblemType = problemType
+	return response
+}
+
 // Failures merges an API's common failures with the operation's own: a
 // specific response replaces the common one with the same status, and a status
 // only one of the two carries is added. The result is the operation's closed

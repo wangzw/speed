@@ -58,10 +58,22 @@ const ConfigNamespace = ModuleName
 const defaultEndpoint = "account"
 
 // inviteFragment is this module's OpenAPI fragment, describing the management
-// and acceptance routes.
+// and acceptance routes. It is generated from the operation declarations, never
+// written by hand.
 //
 //go:embed openapi/invite.json
 var inviteFragment []byte
+
+// inviteSpec is the API root this module's fragment and routes hang off. Its
+// prefix and version are the common ones; the fragment writes the capability's
+// own segment, so a route's declared path begins with the part of the mounter's
+// base that lies below this root.
+var inviteSpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: inviteFragment,
+}
 
 //go:embed migrations
 var migrationRoot embed.FS
@@ -117,7 +129,8 @@ func Module() core.Module {
 		Resources: []any{
 			schema(),
 			db.Migrations{FS: migrationsFS},
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: inviteFragment},
+			inviteSpec,
+			operations,
 			// The invitation faces: issued and accepted on routes mounted
 			// whenever the module is in force, so the feature is static.
 			feature.Spec{Name: "authn.invitations"},

@@ -27,15 +27,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The routes this module mounts, relative to the mounter's base path. The two
-// POST endpoints are registered by the piece that builds the token endpoint; the
-// key set is the one this piece mounts. All three are a stable closed set: a
-// reader outside the module writes them down.
-const (
-	tokenPath  = "/token"
-	revokePath = "/token/revoke"
-)
-
 // refreshTokenPrefix starts every refresh token. It makes the credential
 // recognisable to the log redactors and secret scanners, and is part of the
 // stable surface. tokenBytes is the randomness behind it, in bytes.

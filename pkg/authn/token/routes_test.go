@@ -52,9 +52,9 @@ func (r *rig) goodServiceSecret() authn.SessionID {
 }
 
 // decodeToken reads a token endpoint body.
-func decodeToken(t *testing.T, rec *httptest.ResponseRecorder) tokenResponse {
+func decodeToken(t *testing.T, rec *httptest.ResponseRecorder) AuthnTokenResponse {
 	t.Helper()
-	var body tokenResponse
+	var body AuthnTokenResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("the body is not a token response: %v\n%s", err, rec.Body.String())
 	}
@@ -421,6 +421,59 @@ func TestTheTokenEndpointsAreCallbacksWithoutTheCrossOriginCheck(t *testing.T) {
 	if decodeError(t, rec)["error"] != errInvalidRequest {
 		t.Errorf("a cross-site POST did not reach the handler: %s", rec.Body.String())
 	}
+}
+
+// TestTheEndpointsReadTheFormTheWayTheDesignFixesIt holds the endpoint's own
+// reading of a form against the entry point's stricter binding. An OAuth client
+// sends parameters these endpoints have no use for — RFC 7009's
+// token_type_hint is the standard one — and the answer stays 200 or the RFC
+// 6749 §5.2 body rather than the entry point's problem document. A repeated key
+// keeps its first value, which is the value the endpoint has always read.
+func TestTheEndpointsReadTheFormTheWayTheDesignFixesIt(t *testing.T) {
+	t.Run("an extra parameter is ignored", func(t *testing.T) {
+		r := newRig(t)
+		m := r.mountToken()
+		r.goodServiceSecret()
+		rec := form(m, m.Base()+tokenPath, url.Values{
+			"grant_type":    {grantClientCredentials},
+			"client_id":     {string(account)},
+			"client_secret": {"spd_cs_whatever"},
+			"scope":         {"tokens.read"},
+		})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("a repeated grant_type keeps its first value", func(t *testing.T) {
+		r := newRig(t)
+		m := r.mountToken()
+		r.goodServiceSecret()
+		rec := form(m, m.Base()+tokenPath, url.Values{
+			"grant_type":    {grantClientCredentials, "password"},
+			"client_id":     {string(account)},
+			"client_secret": {"spd_cs_whatever"},
+		})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("a revocation hint is ignored", func(t *testing.T) {
+		r := newRig(t)
+		m := r.mountToken()
+		id, refresh := r.issueRefresh()
+		rec := form(m, m.Base()+revokePath, url.Values{
+			"token":           {refresh.Value},
+			"token_type_hint": {"refresh_token"},
+		})
+		if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+			t.Fatalf("status = %d, body = %q, want 200 and an empty body", rec.Code, rec.Body.String())
+		}
+		if got := r.sessions.revoked; len(got) != 1 || got[0] != id {
+			t.Errorf("the revocation reached %v, want the token's session %s", got, id)
+		}
+	})
 }
 
 // TestTheGrantErrorMappingIsClosed holds the mapping of every sentinel a grant

@@ -13,9 +13,9 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-func decodeProfile(t *testing.T, rec *httptest.ResponseRecorder) profileView {
+func decodeProfile(t *testing.T, rec *httptest.ResponseRecorder) AuthnProfileProfile {
 	t.Helper()
-	var v profileView
+	var v AuthnProfileProfile
 	if err := json.Unmarshal(rec.Body.Bytes(), &v); err != nil {
 		t.Fatalf("decoding the profile: %v (body %s)", err, rec.Body.String())
 	}
@@ -123,8 +123,49 @@ func TestGetWithoutAnIdentityIs401(t *testing.T) {
 	if rec := r.doAnonymous(http.MethodGet, "/api/v1/auth/me", nil); rec.Code != http.StatusUnauthorized {
 		t.Errorf("through the gateway: status = %d, want 401", rec.Code)
 	}
-	if rec := r.invokeAnonymous(r.p.handleGetMe, http.MethodGet, "/api/v1/auth/me", nil); rec.Code != http.StatusUnauthorized {
+	if rec := r.invokeAnonymous(getOperation.Handle(r.p.handleGetMe), http.MethodGet, "/api/v1/auth/me", nil); rec.Code != http.StatusUnauthorized {
 		t.Errorf("the handler with no identity: status = %d, want 401", rec.Code)
+	}
+}
+
+// TestTheHandlersOwn401CarriesTheCapabilityChallenge holds the header a 401 of
+// the read handler itself carries: the endpoint's Bearer and Cookie challenge,
+// in the header the declared 401 response declares. RFC 9110 requires a 401 to
+// carry one, and the declared header is what lets the handler's fault write it.
+func TestTheHandlersOwn401CarriesTheCapabilityChallenge(t *testing.T) {
+	const want = `Bearer realm="main", Cookie realm="main"`
+	cases := []struct {
+		name string
+		arm  func(*rig)
+		call func(*rig) *httptest.ResponseRecorder
+	}{
+		{
+			name: "no identity",
+			arm:  func(*rig) {},
+			call: func(r *rig) *httptest.ResponseRecorder {
+				return r.invokeAnonymous(getOperation.Handle(r.p.handleGetMe), http.MethodGet, "/api/v1/auth/me", nil)
+			},
+		},
+		{
+			name: "the account is gone",
+			arm:  func(r *rig) { r.accounts.getErr = authn.ErrAccountNotFound },
+			call: func(r *rig) *httptest.ResponseRecorder {
+				return r.invoke(getOperation.Handle(r.p.handleGetMe), http.MethodGet, "/api/v1/auth/me", nil, me()...)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t)
+			tc.arm(r)
+			rec := tc.call(r)
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401", rec.Code)
+			}
+			if got := rec.Header().Get("WWW-Authenticate"); got != want {
+				t.Errorf("WWW-Authenticate = %q, want %q", got, want)
+			}
+		})
 	}
 }
 

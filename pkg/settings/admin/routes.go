@@ -10,35 +10,23 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The management routes, relative to the fixed base path. They are mounted on
-// their own base path and not under a configurable one, and every one of them is
-// addressed by a natural key — a setting key's namespace and the rest of the key
-// — so that no opaque row identifier ever appears in a path.
-const (
-	basePath = "/api/v1/settings/admin"
-
-	pathSettings     = basePath + "/settings"
-	pathNamespace    = basePath + "/settings/:namespace"
-	pathNamespaceKey = basePath + "/settings/:namespace/:key"
-)
-
 // managementGroups names the route groups in the order the start diagnostic
 // writes them. The whole surface is one group, and it is always mounted, because
 // the settings surface it reads and writes is required.
 var managementGroups = []string{"settings"}
 
 // realmKey is where the name of the endpoint a management route was mounted on
-// is put for the handler to read back. A handler that answers 401 itself writes
+// is put for the handler to read back. A route that answers 401 itself writes
 // the endpoint's name as the realm of its challenge — the name of the protection
 // space, the same realm the admission and authorization layers use — and the
 // endpoint name is known only where the routes are mounted, which is why it is
 // carried on the request rather than read in the handler.
 const realmKey = "settings.admin.realm"
 
-// withRealm wraps a management handler so the endpoint it was mounted on reaches
-// it as the realm of its 401. The same handler is mounted on every configured
-// endpoint, so the realm is bound per endpoint here rather than held by the
-// handler.
+// withRealm wraps a management route so the endpoint it was mounted on reaches
+// it as the realm of its 401. The same declaration is mounted on every
+// configured endpoint, so the realm is bound per endpoint here rather than held
+// by the route.
 func withRealm(endpoint string, handler gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set(realmKey, endpoint)
@@ -46,8 +34,40 @@ func withRealm(endpoint string, handler gin.HandlerFunc) gin.HandlerFunc {
 	}
 }
 
+// authorize wraps an operation's handler with the decision this module makes
+// itself: the identity the request carries, the layer its query string names and
+// the permission that layer implies. The routes are declared open, so the
+// middleware lets every request reach this wrapper; it refuses an anonymous
+// request with the realm challenge, an unreadable layer selection with the
+// capability's bad-request problem, and a permission shortfall with the guard's
+// own answer, all before the entry point binds the request and before any
+// settings call.
+//
+// The decision stays in front of the declared handler because the typed handler
+// receives no request: the realm is bound per endpoint at the mount, and the
+// guard's refusals are written through it. The handler then reads the settled
+// layer from its bound input, which the wrapper has already validated.
+func (p *product) authorize(perm authz.Permission, handler gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if _, ok := p.caller(c); !ok {
+			return
+		}
+		sel, ok := p.selectLayer(c)
+		if !ok {
+			return
+		}
+		if !p.require(c, perm, sel.domain) {
+			return
+		}
+		handler(c)
+	}
+}
+
 // route is one management route: the method and path it answers and the handler
-// that serves it.
+// that serves it, the permission decision already bound into the handler's
+// wrapper. The path is absolute, resolved from the declaration against the
+// module's API root once here so the mounting and the declaration share one
+// source.
 type route struct {
 	method  string
 	path    string
@@ -55,12 +75,26 @@ type route struct {
 }
 
 // routes is the closed set of management routes, in the order they are mounted.
+// Each route is bound from the operation declared for it, so the handler
+// receives the declared input and writes the declared answer.
 func (p *product) routes() []route {
 	return []route{
-		{http.MethodGet, pathSettings, p.handleList},
-		{http.MethodGet, pathNamespace, p.handleListNamespace},
-		{http.MethodPut, pathNamespaceKey, p.handleSet},
-		{http.MethodDelete, pathNamespaceKey, p.handleRemove},
+		{
+			http.MethodGet, adminSpec.ResolvePath(pathSettings),
+			p.authorize(authz.PermissionSettingsRead, listOperation.Handle(p.handleList)),
+		},
+		{
+			http.MethodGet, adminSpec.ResolvePath(pathNamespace),
+			p.authorize(authz.PermissionSettingsRead, namespaceOperation.Handle(p.handleListNamespace)),
+		},
+		{
+			http.MethodPut, adminSpec.ResolvePath(pathNamespaceKey),
+			p.authorize(authz.PermissionSettingsWrite, setOperation.Handle(p.handleSet)),
+		},
+		{
+			http.MethodDelete, adminSpec.ResolvePath(pathNamespaceKey),
+			p.authorize(authz.PermissionSettingsWrite, removeOperation.Handle(p.handleRemove)),
+		},
 	}
 }
 
@@ -93,12 +127,13 @@ func (p *product) mount(router speedhttp.Router) error {
 // route-declaration surface, when one is present.
 //
 // The routes are declared open so that the authorization middleware lets a
-// request reach the handler: the handler makes the decision, on the permission
-// the request's method implies, through the handler-internal guard. Declaring
-// them to require a permission would make the middleware decide, and the module
-// grants itself no permission. With no declaration surface the routes carry no
-// declaration, and a guarded endpoint answers them as undeclared — which is why
-// a command that mounts these routes should name the enforcement module too.
+// request reach the route: the route's own authorization step makes the
+// decision, on the permission the request's method implies, through the
+// handler-internal guard. Declaring them to require a permission would make the
+// middleware decide, and the module grants itself no permission. With no
+// declaration surface the routes carry no declaration, and a guarded endpoint
+// answers them as undeclared — which is why a command that mounts these routes
+// should name the enforcement module too.
 func (p *product) declareOpen() {
 	if p.gate == nil {
 		return

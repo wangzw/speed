@@ -195,9 +195,9 @@ type Spec struct {
 
 **应答是封闭集，动态部分运行期核对。** 状态必须已声明；媒体类型必须与该状态的声明一致（声明 `*/*` 表示由 handler 在该状态内选择）；动态响应头的名字必须已声明；JSON 应答的 body 类型必须等于声明的结构；未声明或类型不符按内部错误答 500，不写出未声明的应答。这类拒绝在构建 handler 时也会对明显无法描述的声明生效：空媒体类型的 body、无结构的 JSON body、204/304 带 body、简单形态的多个 2xx。
 
-**错误应答由公共集加覆盖声明。** 模块把一组 `Response` 作为公共失败集，`Failures(common, specific...)` 按状态合并：operation 同名状态的应答覆盖公共应答，任一侧独有的状态被加入。`Fault` 承载状态、问题类型、标题与详情，handler 可以返回它，也可以 `panic` 它；入口模块只写出该 operation 声明过的状态，未声明的一律 500。恢复层把携带 Problem 的 panic 只在该状态已声明时当作拒绝写出，其余 panic 仍按缺陷处理。**错误体形状是一份声明**（`ErrorShape`）：默认是 RFC 9457 问题文档；宿主交付自定义 `ErrorResponder` 时，用同一个形状声明它的错误应答，片段因此描述真正会写出的内容（[ADR-http-failure-responses-2026-10-19](../../../adr/adr-http-failure-responses-2026-10-19.md)）。
+**错误应答由公共集加覆盖声明。** 模块把一组 `Response` 作为公共失败集，`Failures(common, specific...)` 按状态合并：operation 同名状态的应答覆盖公共应答，任一侧独有的状态被加入。`Fault` 承载状态、问题类型、标题与详情，handler 可以返回它，也可以 `panic` 它；入口模块只写出该 operation 声明过的状态，未声明的一律 500。恢复层把携带 Problem 的 panic 只在该状态已声明时当作拒绝写出，其余 panic 仍按缺陷处理。`Response` 携带可选的问题类型（`ProblemResponseOf` 声明它）：入口模块在 handler 运行之前以某个状态拒绝请求（请求体绑定失败）时，写出该状态声明的问题类型，一个能力的绑定拒绝与它的 handler 拒绝因而使用同一套问题代码。**错误体形状是一份声明**（`ErrorShape`）：默认是 RFC 9457 问题文档；宿主交付自定义 `ErrorResponder` 时，用同一个形状声明它的错误应答，片段因此描述真正会写出的内容（[ADR-http-failure-responses-2026-10-19](../../../adr/adr-http-failure-responses-2026-10-19.md)）。
 
-`pkg/internal/openapigen` 从同一份声明生成片段，桥接 `swaggest/openapi-go` 做 JSON Schema 反射与 OpenAPI 3.1 组装；片段因此是构建产物，生成结果与提交的片段不一致即生成测试失败。迁移按模块进行，尚未迁移的模块继续手写片段。`Spec` 给片段的文档与 API 根，`Operations` 给文档的内容；两者都在 `Resources` 里静态声明，都不参与路由（[ADR-http-openapi-generation-2026-10-18](../../../adr/adr-http-openapi-generation-2026-10-18.md)）。
+`pkg/internal/openapigen` 从同一份声明生成片段，桥接 `swaggest/openapi-go` 做 JSON Schema 反射与 OpenAPI 3.1 组装；`pkg/http/openapigen` 是它的转出口，给位于 `pkg` 树之外、Go internal 规则够不到的宿主模块（如 `starters/`）使用同一个生成器；片段因此是构建产物，生成结果与提交的片段不一致即生成测试失败；每个声明 API 的模块都从自己的 operation 声明生成片段，没有手写的片段。`Spec` 给片段的文档与 API 根，`Operations` 给文档的内容；两者都在 `Resources` 里静态声明，都不参与路由（[ADR-http-openapi-generation-2026-10-18](../../../adr/adr-http-openapi-generation-2026-10-18.md)）。
 
 `Spec` 不参与路由。它供文档合并、网关配置与权限清单这些发生在装配之外的用途读取，与实际登记是两份各自维护的事实（[ADR-http-routing-2026-09-14](../../../adr/adr-http-routing-2026-09-14.md)）。读取方用 `core.Resources[http.Spec](reg)` 取得全部片段，每一份都带着声明它的模块名，合并冲突因而能点到来源。**本模块交付的片段由运行面 [ops](../design-ops.md) 合并并发布，它取可用集、不做减法**（见 [ops](../design-ops.md) 的取材域与 [ADR-ops-spec-reader-2026-10-15](../../../adr/adr-ops-spec-reader-2026-10-15.md)）。
 
@@ -718,5 +718,5 @@ gin 的 `*gin.Context` 只在它所属那次请求的处理期间有效：handle
 | 拒绝文本的本地化渲染与本模块的消息目录 | 已实现 | `pkg/http/messages.go` `localesFS`、`messageCatalog`、`refusalKey`、`refusalTitle`，`pkg/http/locales/*.json`；`pkg/http/module.go` `localizerFor` |
 | 错误响应的形状与写出入口 | 已实现 | `pkg/http/problem.go` `Problem`、`ErrorResponder`、`Fail`、`respondProblem`，`pkg/http/module.go` `errorResponder` |
 | `Spec` 资源、形状校验与查询 | 已实现 | `pkg/http/surface.go` `Spec`、`pkg/http/spec.go` `validateSpecs`、`validateSpec` |
-| operation 声明资源与 OpenAPI 片段生成 | 已实现 | `pkg/http/operation.go` `Operations`、`Operation`、`ProblemDocument`；`pkg/internal/openapigen` `Generate` |
+| operation 声明资源与 OpenAPI 片段生成 | 已实现 | `pkg/http/operation.go` `Operations`、`Operation`、`ProblemDocument`；`pkg/internal/openapigen` `Generate`；`pkg/http/openapigen` `Generate`（给宿主模块的转出口） |
 | 排空信号 | 已实现 | `pkg/http/draining.go` `Draining`、`pkg/http/listener.go` `(*listener).start`、`(*listener).stop` |

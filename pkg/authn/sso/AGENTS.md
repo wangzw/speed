@@ -70,7 +70,9 @@ The API is the package's godoc. Read the `SSOProviders` comments in
   domain, never its local part, and answers the same shape — an empty list when
   nothing matches — so a request cannot be used as an account-existence oracle
   (`handleDiscover`, `TestTheDiscoveryOfAnUnknownDomainIsTheSameEmptyShape`). It
-  is registered public and answers 400 only for a domain that cannot be reduced.
+  is registered public. A domain that cannot be reduced is a 400 `bad-request`;
+  a body the capability's decoder refuses is a 400 `bad-request` and a body of
+  another media type a 415 `unsupported-media-type`, both before any lookup.
 - **The change event is a hint, never the authority.** `Put` and `Delete` publish
   `authn.idp.changed` after the commit, and a domain verification, withdrawal or
   removal publishes its own change; a publication that fails is a `Warn` and never

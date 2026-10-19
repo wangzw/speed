@@ -1,100 +1,355 @@
 {
-  "openapi": "3.1.0",
-  "info": {"title": "notification preferences", "version": "1.0.0"},
-  "paths": {
-    "/notifications/types": {
-      "get": {
-        "operationId": "notification.preferences.listTypes",
-        "summary": "The notification type taxonomy, one list every recipient shares",
-        "description": "Returns every notification type collected from the registered modules, ordered by type key. The list is the same for every recipient: it comes from module declarations, not from stored preference rows, so it does not depend on the caller or the tenant. The route declares no permission gate of its own; who may call it is the host's decision. The response keys its representation by the negotiated language (Vary: Accept-Language) even though the body itself is not translated.",
-        "responses": {
-          "200": {
-            "description": "The taxonomy",
-            "content": {"application/json": {"schema": {"type": "object", "description": "The taxonomy: one entry per notification type, ordered by type key.", "required": ["types"], "properties": {"types": {"type": "array", "description": "Every type collected for this process, ordered by type key; the set comes from module declarations rather than from a table.", "items": {"$ref": "#/components/schemas/NotificationType"}}}}}}
+  "components": {
+    "schemas": {
+      "Channel": {
+        "enum": [
+          "in_app",
+          "email",
+          "sms"
+        ],
+        "type": "string"
+      },
+      "NotificationPreference": {
+        "description": "One row of the caller's preference matrix: a notification type and the channels that type's dispatches would go out under for the caller.",
+        "properties": {
+          "channels": {
+            "description": "The caller's effective channel set for the type: the stored channels when a row exists, otherwise the type's default channels; a type that cannot be unsubscribed always carries its default channels.",
+            "items": {
+              "$ref": "#/components/schemas/Channel"
+            },
+            "type": "array"
+          },
+          "explicit": {
+            "description": "True when the channels came from a stored row, false when they are the type's default channels",
+            "type": "boolean"
+          },
+          "group": {
+            "description": "The type's grouping label, copied from its declaration.",
+            "type": "string"
+          },
+          "type_key": {
+            "description": "The notification type key this row describes.",
+            "type": "string"
           }
-        }
+        },
+        "required": [
+          "type_key",
+          "group",
+          "channels",
+          "explicit"
+        ],
+        "type": "object"
+      },
+      "NotificationSetPreferenceRequest": {
+        "additionalProperties": false,
+        "description": "The body of a single-channel preference update.",
+        "properties": {
+          "enabled": {
+            "description": "The target state of the channel; a body naming none is told apart from one naming false",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "NotificationType": {
+        "description": "One notification type as declared by the business module that owns it; the taxonomy is fixed at startup and read-only for the life of the process.",
+        "properties": {
+          "default_channels": {
+            "description": "The channels a recipient gets for this type when no preference row is stored. Non-empty, free of duplicates, and drawn from the channel set.",
+            "items": {
+              "$ref": "#/components/schemas/Channel"
+            },
+            "type": "array"
+          },
+          "group": {
+            "description": "The grouping label the declaring module assigns to the type.",
+            "type": "string"
+          },
+          "key": {
+            "description": "The globally unique type key; two modules declaring one key fail the process startup.",
+            "type": "string"
+          },
+          "recipient_visible_params": {
+            "description": "The parameter names the declaring module allows to be shown to the recipient. This module stores and returns the list but does not interpret it.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "unsubscribable": {
+            "description": "Whether a recipient may change this type's channel set. False means writes answer 409 and the effective set is always default_channels.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "group",
+          "default_channels",
+          "unsubscribable",
+          "recipient_visible_params"
+        ],
+        "type": "object"
+      },
+      "Problem": {
+        "description": "An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.",
+        "properties": {
+          "detail": {
+            "description": "A longer explanation of this occurrence, present only when the answering module has one to give. It may be a sentence rendered in the request language or a language-neutral token such as \"forbidden\", so clients must not parse it.",
+            "type": "string"
+          },
+          "instance": {
+            "description": "A URI identifying this occurrence; absent when there is none to give.",
+            "type": "string"
+          },
+          "status": {
+            "description": "The HTTP status code the response is written with, repeated from the status line.",
+            "type": "integer"
+          },
+          "title": {
+            "description": "A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code.",
+            "type": "string"
+          },
+          "type": {
+            "description": "The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "status"
+        ],
+        "type": "object"
       }
-    },
+    }
+  },
+  "info": {
+    "title": "notification preferences",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
     "/notifications/preferences": {
       "get": {
-        "operationId": "notification.preferences.listPreferences",
-        "summary": "The caller's preference matrix, one row per type in the taxonomy",
         "description": "Returns one row per type in the taxonomy for the caller, ordered by type key. Each row's channels are the effective set: the channels stored for the type when the recipient has a row, otherwise the type's default channels; explicit says which. A type that cannot be unsubscribed always reports its default channels and is never explicit. The response keys its representation by the negotiated language (Vary: Accept-Language). A stored row that cannot be read answers 503.",
+        "operationId": "notification.preferences.listPreferences",
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The caller's preference matrix: one row per notification type in the taxonomy, ordered by type key.",
+                  "properties": {
+                    "preferences": {
+                      "description": "One row per type in the taxonomy, ordered by type key; each row's channels is the caller's effective set for that type.",
+                      "items": {
+                        "$ref": "#/components/schemas/NotificationPreference"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "preferences"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
             "description": "The preference matrix; each row's channels are the effective set",
-            "content": {"application/json": {"schema": {"type": "object", "description": "The caller's preference matrix: one row per notification type in the taxonomy, ordered by type key.", "required": ["preferences"], "properties": {"preferences": {"type": "array", "description": "One row per type in the taxonomy, ordered by type key; each row's channels is the caller's effective set for that type.", "items": {"$ref": "#/components/schemas/NotificationPreference"}}}}}}
+            "headers": {
+              "Vary": {
+                "description": "Accept-Language: the body does not vary by language, but this module's error responses do.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
-          "503": {"description": "The preference matrix could not be read", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
-        }
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The preference matrix could not be read",
+            "headers": {
+              "Vary": {
+                "description": "Accept-Language: the body does not vary by language, but this module's error responses do.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "The caller's preference matrix, one row per type in the taxonomy"
       }
     },
     "/notifications/preferences/{typeKey}/{channel}": {
       "put": {
-        "operationId": "notification.preferences.updatePreference",
-        "summary": "Turn one channel on or off for one type and return that type's effective set",
         "description": "Applies the body's enabled to the channel named in the path and answers with the type's effective channel set after the change. true adds the channel to the current effective set, false removes it; the result is deduplicated and stably ordered. When the target set equals the current effective set the call answers 200 without writing a row, so repeating it is harmless. Only that one channel changes; the type's other channels keep their effective value. Checks run in a fixed order — body, channel, type, unsubscribability — so an unknown channel is never taken for a no-op.",
+        "operationId": "notification.preferences.updatePreference",
         "parameters": [
-          {"name": "typeKey", "in": "path", "required": true, "description": "The notification type key, as listed by GET /notifications/types; a key not in the taxonomy is answered 400.", "schema": {"type": "string"}},
-          {"name": "channel", "in": "path", "required": true, "description": "The channel to turn on or off: one of in_app, email, sms. Any other value is answered 400 before the no-op check.", "schema": {"type": "string", "enum": ["in_app", "email", "sms"]}}
+          {
+            "description": "The notification type key, as listed by GET /notifications/types; a key not in the taxonomy is answered 400.",
+            "in": "path",
+            "name": "typeKey",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The channel to turn on or off: one of in_app, email, sms. Any other value is answered 400 before the no-op check.",
+            "in": "path",
+            "name": "channel",
+            "required": true,
+            "schema": {
+              "enum": [
+                "in_app",
+                "email",
+                "sms"
+              ],
+              "type": "string"
+            }
+          }
         ],
-        "requestBody": {"required": true, "description": "The target state of the channel named in the path; enabled is required and a body without it is answered 400.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/NotificationSetPreferenceRequest"}}}},
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationSetPreferenceRequest"
+              }
+            }
+          },
+          "description": "The target state of the channel named in the path; enabled is required and a body without it is answered 400.",
+          "required": true
+        },
         "responses": {
           "200": {
-            "description": "The type's effective channel set after the update; a target equal to the current set answers without writing",
-            "content": {"application/json": {"schema": {"type": "object", "description": "The type's effective channel set after the update.", "required": ["type_key", "channels"], "properties": {"type_key": {"type": "string", "description": "The type key the update applied to, echoed from the path."}, "channels": {"type": "array", "description": "The type's effective channel set after the update: the stored channels when a row exists, otherwise the type's default channels, deduplicated and stably ordered.", "items": {"type": "string"}}}}}}
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The type's effective channel set after the update.",
+                  "properties": {
+                    "channels": {
+                      "description": "The type's effective channel set after the update: the stored channels when a row exists, otherwise the type's default channels, deduplicated and stably ordered.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "type_key": {
+                      "description": "The type key the update applied to, echoed from the path.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type_key",
+                    "channels"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The type's effective channel set after the update; a target equal to the current set answers without writing"
           },
-          "400": {"description": "The body is not readable, the channel is unknown, the type is not in the taxonomy, or no recipient is named", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "409": {"description": "The type cannot be unsubscribed", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
-          "503": {"description": "The preference could not be read or written", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
-        }
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The body is not readable, the channel is unknown, the type is not in the taxonomy, or no recipient is named"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The type cannot be unsubscribed"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is over the endpoint's limit"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is not application/json"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The preference could not be read or written"
+          }
+        },
+        "summary": "Turn one channel on or off for one type and return that type's effective set"
       }
-    }
-  },
-  "components": {
-    "schemas": {
-      "NotificationType": {
-        "type": "object",
-        "description": "One notification type as declared by the business module that owns it; the taxonomy is fixed at startup and read-only for the life of the process.",
-        "required": ["key", "group", "default_channels", "unsubscribable", "recipient_visible_params"],
-        "properties": {
-          "key": {"type": "string", "description": "The globally unique type key; two modules declaring one key fail the process startup."},
-          "group": {"type": "string", "description": "The grouping label the declaring module assigns to the type."},
-          "default_channels": {"type": "array", "description": "The channels a recipient gets for this type when no preference row is stored. Non-empty, free of duplicates, and drawn from the channel set.", "items": {"type": "string", "enum": ["in_app", "email", "sms"]}},
-          "unsubscribable": {"type": "boolean", "description": "Whether a recipient may change this type's channel set. False means writes answer 409 and the effective set is always default_channels."},
-          "recipient_visible_params": {"type": "array", "description": "The parameter names the declaring module allows to be shown to the recipient. This module stores and returns the list but does not interpret it.", "items": {"type": "string"}}
-        }
-      },
-      "NotificationPreference": {
-        "type": "object",
-        "description": "One row of the caller's preference matrix: a notification type and the channels that type's dispatches would go out under for the caller.",
-        "required": ["type_key", "group", "channels", "explicit"],
-        "properties": {
-          "type_key": {"type": "string", "description": "The notification type key this row describes."},
-          "group": {"type": "string", "description": "The type's grouping label, copied from its declaration."},
-          "channels": {"type": "array", "description": "The caller's effective channel set for the type: the stored channels when a row exists, otherwise the type's default channels; a type that cannot be unsubscribed always carries its default channels.", "items": {"type": "string", "enum": ["in_app", "email", "sms"]}},
-          "explicit": {"type": "boolean", "description": "True when the channels came from a stored row, false when they are the type's default channels"}
-        }
-      },
-      "NotificationSetPreferenceRequest": {
-        "type": "object",
-        "description": "The body of a single-channel preference update.",
-        "required": ["enabled"],
-        "properties": {
-          "enabled": {"type": "boolean", "description": "The target state of the channel; a body naming none is told apart from one naming false"}
-        }
-      },
-      "Problem": {
-        "type": "object",
-        "description": "An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.",
-        "required": ["type", "status"],
-        "properties": {
-          "type": {"type": "string", "description": "The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>."},
-          "title": {"type": "string", "description": "A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code."},
-          "status": {"type": "integer", "description": "The HTTP status code the response is written with, repeated from the status line."},
-          "detail": {"type": "string", "description": "A longer explanation of this occurrence, present only when the answering module has one to give. It may be a sentence rendered in the request language or a language-neutral token such as \"forbidden\", so clients must not parse it."},
-          "instance": {"type": "string", "description": "A URI identifying this occurrence; absent when there is none to give."}
-        }
+    },
+    "/notifications/types": {
+      "get": {
+        "description": "Returns every notification type collected from the registered modules, ordered by type key. The list is the same for every recipient: it comes from module declarations, not from stored preference rows, so it does not depend on the caller or the tenant. The route declares no permission gate of its own; who may call it is the host's decision. The response keys its representation by the negotiated language (Vary: Accept-Language) even though the body itself is not translated.",
+        "operationId": "notification.preferences.listTypes",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The taxonomy: one entry per notification type, ordered by type key.",
+                  "properties": {
+                    "types": {
+                      "description": "Every type collected for this process, ordered by type key; the set comes from module declarations rather than from a table.",
+                      "items": {
+                        "$ref": "#/components/schemas/NotificationType"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "types"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The taxonomy",
+            "headers": {
+              "Vary": {
+                "description": "Accept-Language: the body does not vary by language, but this module's error responses do.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "The notification type taxonomy, one list every recipient shares"
       }
     }
   }

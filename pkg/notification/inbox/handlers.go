@@ -1,11 +1,9 @@
 package inbox
 
 import (
+	"context"
 	"errors"
 	"net/http"
-	"strconv"
-
-	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/authn"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -37,133 +35,96 @@ const (
 // answer is the status alone — the routes hold no realm challenge of their own.
 // The recipient is the identity's effective account, so an impersonation reads
 // the impersonated account's inbox.
-func (s *inboxStore) caller(c *gin.Context) (string, bool) {
-	id, ok := authn.FromContext(c.Request.Context())
+func (s *inboxStore) caller(ctx context.Context) (string, error) {
+	id, ok := authn.FromContext(ctx)
 	if !ok {
-		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusUnauthorized})
-		return "", false
+		return "", speedhttp.Fault{Status: http.StatusUnauthorized}
 	}
-	return string(id.Account()), true
+	return string(id.Account()), nil
 }
 
-// handleList answers GET /api/v1/notifications/messages: one page of the
+// listMessages answers GET /api/v1/notifications/messages: one page of the
 // caller's messages. The only filter is group; limit defaults to 50 and is
 // refused outside 0..200, and a negative offset is refused, both whole.
-func (s *inboxStore) handleList(c *gin.Context) {
-	recipient, ok := s.caller(c)
-	if !ok {
-		return
-	}
-	q, ok := pageQuery(c)
-	if !ok {
-		s.refuse(c, http.StatusBadRequest, badRequestCode)
-		return
-	}
-	page, err := s.List(c.Request.Context(), recipient, q)
+func (s *inboxStore) listMessages(ctx context.Context, in ListMessagesInput) (messagePageBody, error) {
+	recipient, err := s.caller(ctx)
 	if err != nil {
-		s.answer(c, "listing the inbox", err)
-		return
+		return messagePageBody{}, err
 	}
-	views := make([]messageView, len(page.Items))
-	for i, m := range page.Items {
-		views[i] = messageViewOf(m)
-	}
-	c.JSON(http.StatusOK, gin.H{"messages": views, "total": page.Total})
-}
-
-// handleUnreadCount answers GET /api/v1/notifications/messages/unread-count:
-// the number of the caller's unread, unexpired messages.
-func (s *inboxStore) handleUnreadCount(c *gin.Context) {
-	recipient, ok := s.caller(c)
-	if !ok {
-		return
-	}
-	n, err := s.UnreadCount(c.Request.Context(), recipient)
-	if err != nil {
-		s.answer(c, "counting the unread messages", err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"unread": n})
-}
-
-// handleReadAll answers POST /api/v1/notifications/messages/read-all: it marks
-// every unread message of the caller read and answers how many were marked. A
-// repeat matches nothing and answers zero.
-func (s *inboxStore) handleReadAll(c *gin.Context) {
-	recipient, ok := s.caller(c)
-	if !ok {
-		return
-	}
-	n, err := s.ReadAll(c.Request.Context(), recipient)
-	if err != nil {
-		s.answer(c, "marking the messages read", err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"read_count": n})
-}
-
-// handleMessageRead answers POST /api/v1/notifications/messages/:messageId/read:
-// it marks one message read and answers 204, or 404 when the message is not one
-// this recipient can see.
-func (s *inboxStore) handleMessageRead(c *gin.Context) {
-	recipient, ok := s.caller(c)
-	if !ok {
-		return
-	}
-	if err := s.MarkRead(c.Request.Context(), recipient, c.Param("messageId")); err != nil {
-		s.answer(c, "marking a message read", err)
-		return
-	}
-	c.Status(http.StatusNoContent)
-	c.Writer.WriteHeaderNow()
-}
-
-// pageQuery reads the group, limit and offset of a listing. A limit left off or
-// written as zero becomes the default; a limit below zero or above the cap, a
-// negative offset, or a limit or offset that is not a number is refused whole
-// with a 400, which is what the caller is told rather than being handed a page
-// bound it did not ask for.
-func pageQuery(c *gin.Context) (notification.ListQuery, bool) {
-	q := notification.ListQuery{Group: c.Query("group")}
-	if raw := c.Query("limit"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil {
-			return q, false
-		}
-		q.Limit = n
-	}
+	q := notification.ListQuery{Group: in.Group, Limit: in.Limit, Offset: in.Offset}
 	if q.Limit == 0 {
 		q.Limit = defaultPageLimit
 	}
-	if q.Limit < 0 || q.Limit > maxPageLimit {
-		return q, false
+	if q.Limit < 0 || q.Limit > maxPageLimit || q.Offset < 0 {
+		return messagePageBody{}, s.refusal(ctx, http.StatusBadRequest, badRequestCode)
 	}
-	if raw := c.Query("offset"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil {
-			return q, false
-		}
-		q.Offset = n
+	page, err := s.List(ctx, recipient, q)
+	if err != nil {
+		return messagePageBody{}, s.answer(ctx, "listing the inbox", err)
 	}
-	if q.Offset < 0 {
-		return q, false
+	views := make([]NotificationMessage, len(page.Items))
+	for i, m := range page.Items {
+		views[i] = messageViewOf(m)
 	}
-	return q, true
+	return messagePageBody{Messages: views, Total: page.Total}, nil
 }
 
-// answer maps a failure a method returned to the response it belongs to. The
+// unreadCount answers GET /api/v1/notifications/messages/unread-count: the
+// number of the caller's unread, unexpired messages.
+func (s *inboxStore) unreadCount(ctx context.Context, _ struct{}) (unreadCountBody, error) {
+	recipient, err := s.caller(ctx)
+	if err != nil {
+		return unreadCountBody{}, err
+	}
+	n, err := s.UnreadCount(ctx, recipient)
+	if err != nil {
+		return unreadCountBody{}, s.answer(ctx, "counting the unread messages", err)
+	}
+	return unreadCountBody{Unread: n}, nil
+}
+
+// markAllRead answers POST /api/v1/notifications/messages/read-all: it marks
+// every unread message of the caller read and answers how many were marked. A
+// repeat matches nothing and answers zero.
+func (s *inboxStore) markAllRead(ctx context.Context, _ struct{}) (readAllBody, error) {
+	recipient, err := s.caller(ctx)
+	if err != nil {
+		return readAllBody{}, err
+	}
+	n, err := s.ReadAll(ctx, recipient)
+	if err != nil {
+		return readAllBody{}, s.answer(ctx, "marking the messages read", err)
+	}
+	return readAllBody{ReadCount: n}, nil
+}
+
+// markMessageRead answers POST
+// /api/v1/notifications/messages/:messageId/read: it marks one message read and
+// answers 204, or 404 when the message is not one this recipient can see.
+func (s *inboxStore) markMessageRead(ctx context.Context, in MarkMessageReadInput) (struct{}, error) {
+	recipient, err := s.caller(ctx)
+	if err != nil {
+		return struct{}{}, err
+	}
+	if err := s.MarkRead(ctx, recipient, in.MessageID); err != nil {
+		return struct{}{}, s.answer(ctx, "marking a message read", err)
+	}
+	return struct{}{}, nil
+}
+
+// answer maps a failure a method returned to the answer it belongs to. The
 // mapping is closed and fail-closed: a request whose shape cannot be read is a
 // 400, a message this recipient cannot see is a 404 of the message-not-found
 // code, and every other failure — a database that could not answer, anything
 // unnamed — is a 503 whose cause stays in the log and never reaches the caller.
-func (s *inboxStore) answer(c *gin.Context, op string, err error) {
+func (s *inboxStore) answer(ctx context.Context, op string, err error) error {
 	switch {
 	case errors.Is(err, notification.ErrInvalidRequest):
-		s.refuse(c, http.StatusBadRequest, badRequestCode)
+		return s.refusal(ctx, http.StatusBadRequest, badRequestCode)
 	case errors.Is(err, notification.ErrMessageNotFound):
-		s.refuse(c, http.StatusNotFound, messageNotFoundCode)
+		return s.refusal(ctx, http.StatusNotFound, messageNotFoundCode)
 	default:
 		s.logger.Error(ModuleName+": "+op+" failed", "cause", err.Error())
-		s.refuse(c, http.StatusServiceUnavailable, "")
+		return s.refusal(ctx, http.StatusServiceUnavailable, "")
 	}
 }

@@ -60,10 +60,19 @@ const ModuleName = "authn.profile"
 const defaultEndpoint = "account"
 
 // profileFragment is this module's OpenAPI fragment, describing the two routes it
-// mounts.
+// mounts. It is generated from the declarations in operations.go, not written by
+// hand.
 //
 //go:embed openapi/profile.json
 var profileFragment []byte
+
+// profileSpec is the API root this module's fragment and routes hang off.
+var profileSpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: profileFragment,
+}
 
 // diagnosticPrefix starts every line this module writes to the startup
 // diagnostics, which have several writers; it is the gateway's, so that a reader
@@ -103,7 +112,8 @@ func Module() core.Module {
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Resources: []any{
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: profileFragment},
+			profileSpec,
+			operations,
 		},
 
 		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {

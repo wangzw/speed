@@ -21,7 +21,7 @@
 
 import type {
   AuthnMfaFactor,
-  AuthnMfaFactors200,
+  AuthnMfaFactorList,
   AuthnProfileIdentifier,
   AuthnProfileLink,
   AuthnProfileProfile,
@@ -51,7 +51,7 @@ export type SessionList = AuthnSessionList
 export type AccountFactor = AuthnMfaFactor
 
 /** The body of GET /api/v1/auth/factors. */
-export type FactorList = AuthnMfaFactors200
+export type FactorList = AuthnMfaFactorList
 
 /** Narrows a profile read to its shape; an absent body reads as empty. */
 export function asProfile(raw: unknown): AccountProfile {

@@ -306,6 +306,21 @@ type jsonInput struct {
 // TestAJSONRequestBodyPublishesOnlyJSONFields holds the JSON request body: the
 // json-tagged fields become the object schema, their required and description
 // tags travel with them, and the parameter fields stay parameters.
+// TestABodyOperationPublishesTheLimitRefusal holds the platform answer every
+// body-bearing operation can receive: the entry point refuses a body over the
+// endpoint's limit with 413, so the fragment carries it even when the
+// declaration's own set omits it.
+func TestABodyOperationPublishesTheLimitRefusal(t *testing.T) {
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[jsonInput, struct{}](
+		"the.module.write", http.MethodPost, "/items/:id", "", "", requestBody("application/json"),
+		[]speedhttp.Response{{Status: 204, Description: "No content"}},
+	)})
+	responses := operationOfMethod(t, doc, "post")["responses"].(map[string]interface{})
+	if _, ok := responses["413"]; !ok {
+		t.Errorf("the body operation publishes no 413 response: %v", responses)
+	}
+}
+
 func TestAJSONRequestBodyPublishesOnlyJSONFields(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[jsonInput, struct{}](
 		"the.module.write", http.MethodPost, "/items/:id", "", "", requestBody("application/json"),
@@ -338,6 +353,63 @@ func TestAJSONRequestBodyPublishesOnlyJSONFields(t *testing.T) {
 	}
 	if parameters["name"] != nil || parameters["hidden"] != nil {
 		t.Errorf("a body field is published as a parameter: %v", parameters)
+	}
+}
+
+// describedJSONInput declares the body schema's own description the way an
+// answer structure does: on a blank field.
+type describedJSONInput struct {
+	_    struct{} `description:"The body of one update."`
+	Name string   `json:"name" required:"true"`
+}
+
+// TestAJSONRequestBodyPublishesItsSchemaDescription holds the struct-level
+// description: a blank field on the input is published as the body schema's
+// description, on the named component the operation references.
+func TestAJSONRequestBodyPublishesItsSchemaDescription(t *testing.T) {
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[describedJSONInput, struct{}](
+		"the.module.write", http.MethodPost, "/items", "", "",
+		&speedhttp.RequestBody{MediaType: "application/json", Required: true, Name: "DescribedBody"},
+		[]speedhttp.Response{{Status: 204, Description: "No content"}},
+	)})
+	schemas := doc["components"].(map[string]interface{})["schemas"].(map[string]interface{})
+	schema, ok := schemas["DescribedBody"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("the components carry no DescribedBody: %v", schemas)
+	}
+	if schema["description"] != "The body of one update." {
+		t.Errorf("the body schema description reads %v, want the declared one", schema["description"])
+	}
+}
+
+// openJSONInput declares a body whose route tolerates members the declaration
+// does not describe: the blank field opens the object the way an answer
+// structure does.
+type openJSONInput struct {
+	_    struct{} `additionalProperties:"true" description:"The body of one update."`
+	Name string   `json:"name" required:"true"`
+}
+
+// TestAJSONRequestBodyCanDeclareAnOpenSchema holds the escape hatch for a route
+// that drops the members its declaration does not carry rather than refusing
+// them: the body schema is published open, so it does not claim a refusal the
+// route does not make.
+func TestAJSONRequestBodyCanDeclareAnOpenSchema(t *testing.T) {
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[openJSONInput, struct{}](
+		"the.module.write", http.MethodPost, "/items", "", "",
+		&speedhttp.RequestBody{MediaType: "application/json", Required: true, Name: "OpenBody"},
+		[]speedhttp.Response{{Status: 204, Description: "No content"}},
+	)})
+	schemas := doc["components"].(map[string]interface{})["schemas"].(map[string]interface{})
+	schema, ok := schemas["OpenBody"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("the components carry no OpenBody: %v", schemas)
+	}
+	if open, ok := schema["additionalProperties"].(bool); !ok || !open {
+		t.Errorf("the body schema reads %v, want additionalProperties true", schema)
+	}
+	if schema["description"] != "The body of one update." {
+		t.Errorf("the body schema description reads %v, want the declared one", schema["description"])
 	}
 }
 

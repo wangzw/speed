@@ -67,6 +67,17 @@ const defaultEndpoint = "account"
 //go:embed openapi/mfa.json
 var mfaFragment []byte
 
+// mfaSpec is the API root this module's fragment and routes hang off. Its
+// prefix and version are the common ones; the fragment writes the capability's
+// own segment, so a route's declared path begins with the part of the mounter's
+// base that lies below this root.
+var mfaSpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: mfaFragment,
+}
+
 //go:embed migrations
 var migrationRoot embed.FS
 
@@ -124,7 +135,7 @@ func Module() core.Module {
 		Resources: []any{
 			settingsSchema(),
 			db.Migrations{FS: migrationsFS},
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: mfaFragment},
+			mfaSpec,
 			// The multi-factor self-service surface: the two guarded routes the
 			// module mounts, which are present whenever it is in force.
 			feature.Spec{Name: "authn.mfa"},

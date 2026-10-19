@@ -513,13 +513,118 @@ func TestAbandonedFlowRefusesANextAnswer(t *testing.T) {
 	})
 }
 
-// TestAnOversizedBodyIsRefused holds the 64 KiB body limit.
+// TestAnOversizedBodyIsRefused holds the capability's 64 KiB body limit. The
+// body is a valid start request padded with white space past the limit, so the
+// refusal cannot come from a field's own bound: without the limit the request
+// would begin a flow. The problem type is the capability's code, because the
+// design groups a body over the limit with one that does not parse.
 func TestAnOversizedBodyIsRefused(t *testing.T) {
 	assemble(t, func(h *harness) {
-		big := `{"method":"password","input":{"identifier":"` + strings.Repeat("a", 70_000) + `"}}`
-		rec := h.do(http.MethodPost, "/api/v1/auth/flows", big)
+		padded := `{"method":"password"}` + strings.Repeat(" ", 70_000)
+		rec := h.do(http.MethodPost, "/api/v1/auth/flows", padded)
 		if rec.status != http.StatusBadRequest {
-			t.Errorf("an oversized body answered %d, want 400: %s", rec.status, rec.body)
+			t.Fatalf("an oversized body answered %d, want 400: %s", rec.status, rec.body)
+		}
+		if got := rec.json(t)["type"]; got != "urn:speed:authn:bad-request" {
+			t.Errorf("an oversized body answered type %v, want urn:speed:authn:bad-request", got)
+		}
+	})
+}
+
+// TestABindingRefusalCarriesTheCapabilityCode holds the problem type of the
+// answers no handler produces. A body the entry point refuses before a handler
+// runs is answered in the capability's vocabulary, not with the RFC 9457
+// default: a malformed body and an unknown member are bad-request, and another
+// media type is unsupported-media-type.
+func TestABindingRefusalCarriesTheCapabilityCode(t *testing.T) {
+	for _, c := range []struct {
+		name        string
+		body        string
+		contentType string
+		status      int
+		kind        string
+	}{
+		{"malformed", `{"method":`, "application/json", http.StatusBadRequest, "urn:speed:authn:bad-request"},
+		{
+			"unknown member", `{"method":"password","nope":1}`, "application/json", http.StatusBadRequest,
+			"urn:speed:authn:bad-request",
+		},
+		{
+			"wrong media type", `{"method":"password"}`, "text/plain", http.StatusUnsupportedMediaType,
+			"urn:speed:authn:unsupported-media-type",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			assemble(t, func(h *harness) {
+				rec := h.do(http.MethodPost, "/api/v1/auth/flows", c.body, func(r *http.Request) {
+					r.Header.Set("Content-Type", c.contentType)
+				})
+				if rec.status != c.status {
+					t.Fatalf("answer = %d %s, want %d", rec.status, rec.body, c.status)
+				}
+				if got := rec.json(t)["type"]; got != c.kind {
+					t.Errorf("problem type = %v, want %s", got, c.kind)
+				}
+			})
+		})
+	}
+}
+
+// TestTheAnswerChecksTheBindingBeforeTheBody holds the order the design gives
+// the answer route: the content type, then the flow binding, then the body. A
+// request with no binding and a malformed body is refused the flow-invalid 401
+// with the capability's challenge, not a 400 about the body it was never
+// allowed to send.
+func TestTheAnswerChecksTheBindingBeforeTheBody(t *testing.T) {
+	assemble(t, func(h *harness) {
+		rec := h.do(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":`)
+		if rec.status != http.StatusUnauthorized {
+			t.Fatalf("an unbound answer with a malformed body answered %d, want 401: %s", rec.status, rec.body)
+		}
+		if got := rec.json(t)["type"]; got != "urn:speed:authn:flow-invalid" {
+			t.Errorf("problem type = %v, want urn:speed:authn:flow-invalid", got)
+		}
+		if rec.header.Get("WWW-Authenticate") == "" {
+			t.Error("the flow-invalid 401 carries no WWW-Authenticate challenge")
+		}
+	})
+}
+
+// TestTheAnswerCarriesTheCapabilityCodeForAMalformedBody holds the other half of
+// the answer route's order: once the binding holds, a body that does not parse
+// is answered bad-request with the capability's code, not the RFC 9457 default.
+func TestTheAnswerCarriesTheCapabilityCodeForAMalformedBody(t *testing.T) {
+	assemble(t, func(h *harness) {
+		h.createAccount("lena", "lena-password")
+		if start := h.post("/api/v1/auth/flows", map[string]any{"method": "password"}); start.status != http.StatusOK {
+			t.Fatalf("POST flows answered %d: %s", start.status, start.body)
+		}
+		rec := h.do(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":`)
+		if rec.status != http.StatusBadRequest {
+			t.Fatalf("a bound answer with a malformed body answered %d, want 400: %s", rec.status, rec.body)
+		}
+		if got := rec.json(t)["type"]; got != "urn:speed:authn:bad-request" {
+			t.Errorf("problem type = %v, want urn:speed:authn:bad-request", got)
+		}
+	})
+}
+
+// TestStartAuthenticatedAcceptsTheDeliveryMember holds that the authenticated
+// start takes the start body the login route takes: `delivery` is accepted and
+// ignored, because the delivery of an authenticated flow follows the kind of
+// the request's session. A client that reuses the login start body is not
+// refused an unknown member.
+func TestStartAuthenticatedAcceptsTheDeliveryMember(t *testing.T) {
+	assemble(t, func(h *harness) {
+		h.createAccount("karen", "karen-password")
+		if done := h.loginFlow("karen", "karen-password"); done.status != http.StatusOK {
+			t.Fatalf("the login answered %d: %s", done.status, done.body)
+		}
+		rec := h.post("/api/v1/auth/flows/authenticated", map[string]any{
+			"purpose": "step-up", "method": "password", "delivery": "session",
+		})
+		if rec.status != http.StatusOK {
+			t.Errorf("the authenticated start with a delivery member answered %d: %s", rec.status, rec.body)
 		}
 	})
 }

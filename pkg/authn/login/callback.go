@@ -5,60 +5,70 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/authn/internal/step"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
+
+// callbackGet handles the redirect a provider sends the user agent back with as
+// a browser navigation.
+func (r *routes) callbackGet(ctx context.Context, in callbackInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	return r.callback(r.call(ctx, meta), in.Provider)
+}
+
+// callbackPost handles a provider's callback delivered as a cross-site form
+// post.
+func (r *routes) callbackPost(ctx context.Context, in callbackInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	return r.callback(r.call(ctx, meta), in.Provider)
+}
 
 // callback handles the redirect an external party sends the user agent back
 // with. The engine moves the flow to processing before the method is asked, so
 // that a replayed authorization code or assertion loses the compare-and-swap and
 // is answered an invalid flow.
-func (r *routes) callback(c *gin.Context) {
-	provider := c.Param("provider")
-	ctx := c.Request.Context()
+func (r *routes) callback(c *call, provider string) (speedhttp.Reply, error) {
 	token, _, present := r.readBindingToken(c, false)
 	if !present {
 		r.callbackIDPInitiated(c, provider)
-		return
+		return c.result()
 	}
-	rec, raw, err := r.loadFlow(ctx, token)
+	rec, raw, err := r.loadFlow(c.ctx, token)
 	if err != nil {
 		r.fail(c, err)
-		return
+		return c.result()
 	}
 	// A callback only needs the flow to exist and to be at the first factor: a
 	// link, a step-up and an enrollment started on POST flows/authenticated with
 	// a redirect method land their provider's callback on this very route.
 	if rec.State != stateFirst {
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
-		return
+		c.unauthorized(mount.CodeFlowInvalid)
+		return c.result()
 	}
 	// The path's provider must be the one the flow recorded before the method is
 	// asked: a social method records its own name, an enterprise provider records
 	// the identifier the start input named. A callback aimed at another provider
 	// is refused and never reaches a method.
 	if rec.Provider != provider {
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
-		return
+		c.unauthorized(mount.CodeFlowInvalid)
+		return c.result()
 	}
 	m, ok := r.method(rec.Method)
 	if !ok {
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
-		return
+		c.unauthorized(mount.CodeFlowInvalid)
+		return c.result()
 	}
 	if !r.beginProcessing(c, token, rec, raw) {
-		return
+		return c.result()
 	}
 	r.answerCallback(c, token, rec, m)
+	return c.result()
 }
 
 // beginProcessing swaps a first-state flow to processing. A false result means
 // another callback already claimed it, or the record moved, and the request is
 // answered an invalid flow.
-func (r *routes) beginProcessing(c *gin.Context, token string, rec record, raw []byte) bool {
+func (r *routes) beginProcessing(c *call, token string, rec record, raw []byte) bool {
 	proc := rec
 	proc.State = stateProcessing
 	return r.swap(c, token, raw, proc)
@@ -68,13 +78,12 @@ func (r *routes) beginProcessing(c *gin.Context, token string, rec record, raw [
 // of processing. A refusal, an outage or an unresolved account leaves the flow a
 // tombstone: the authorization code or assertion is spent and the user starts
 // again.
-func (r *routes) answerCallback(c *gin.Context, token string, rec record, m authn.LoginMethod) {
-	ctx := c.Request.Context()
+func (r *routes) answerCallback(c *call, token string, rec record, m authn.LoginMethod) {
 	proc := rec
 	proc.State = stateProcessing
 	procBytes, err := json.Marshal(proc)
 	if err != nil {
-		serverError(c)
+		c.serverError()
 		return
 	}
 	form, ok := formValues(c)
@@ -86,21 +95,21 @@ func (r *routes) answerCallback(c *gin.Context, token string, rec record, m auth
 		if !r.swap(c, token, procBytes, failed) {
 			return
 		}
-		mount.Unauthorized(c, r.endpoint, mount.CodeLoginFailed)
+		c.unauthorized(mount.CodeLoginFailed)
 		return
 	}
 	f := r.flowState(proc, token)
 	in := authn.StepInput{
 		Action: authn.InputCallback,
-		Query:  c.Request.URL.Query(),
+		Query:  c.req.URL.Query(),
 		Form:   form,
-		Client: requestClient(c),
+		Client: c.clientInfo(),
 	}
-	got, ok := r.invoke(ctx, proc.Method, func(cctx context.Context) (authn.Step, error) {
+	got, ok := r.invoke(c.ctx, proc.Method, func(cctx context.Context) (authn.Step, error) {
 		return m.Answer(cctx, f, in)
 	})
 	if !ok {
-		serverError(c)
+		c.serverError()
 		return
 	}
 	r.migrateCallback(c, token, procBytes, proc, got)
@@ -109,7 +118,7 @@ func (r *routes) answerCallback(c *gin.Context, token string, rec record, m auth
 // migrateCallback turns a callback's answer into the next record state. The old
 // bytes are those of the processing record, so the second compare-and-swap
 // matches what the first one wrote.
-func (r *routes) migrateCallback(c *gin.Context, token string, old []byte, rec record, got authn.Step) {
+func (r *routes) migrateCallback(c *call, token string, old []byte, rec record, got authn.Step) {
 	if !r.recordSends(c, token, old, &rec, got) {
 		return
 	}
@@ -151,22 +160,22 @@ func (r *routes) migrateCallback(c *gin.Context, token string, old []byte, rec r
 		if !r.swap(c, token, old, rec) {
 			return
 		}
-		r.reportLogin(c.Request.Context(), rec, outcomeFailed)
-		mount.Unauthorized(c, r.endpoint, mount.CodeLoginFailed)
+		r.reportLogin(c.ctx, rec, outcomeFailed)
+		c.unauthorized(mount.CodeLoginFailed)
 	case step.KindUnavailable:
 		rec.State = stateFailed
 		if !r.swap(c, token, old, rec) {
 			return
 		}
-		r.reportLogin(c.Request.Context(), rec, outcomeUnavailable)
-		mount.Unavailable(c)
+		r.reportLogin(c.ctx, rec, outcomeUnavailable)
+		c.unavailable()
 	default:
 		rec.State = stateFailed
 		if !r.swap(c, token, old, rec) {
 			return
 		}
 		r.logger.Error(ModuleName + ": a login method gave an answer a callback may not give")
-		serverError(c)
+		c.serverError()
 	}
 }
 
@@ -176,24 +185,23 @@ func (r *routes) migrateCallback(c *gin.Context, token string, old []byte, rec r
 // and answers it like any other callback. Without a binding this path cannot
 // defend against a login CSRF, which is why the provider row leaves it off by
 // default.
-func (r *routes) callbackIDPInitiated(c *gin.Context, provider string) {
-	ctx := c.Request.Context()
-	if c.Request.Method != http.MethodPost || r.sso == nil {
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
+func (r *routes) callbackIDPInitiated(c *call, provider string) {
+	if c.req.Method != http.MethodPost || r.sso == nil {
+		c.unauthorized(mount.CodeFlowInvalid)
 		return
 	}
-	row, err := r.sso.Get(ctx, provider)
+	row, err := r.sso.Get(c.ctx, provider)
 	if err != nil {
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
+		c.unauthorized(mount.CodeFlowInvalid)
 		return
 	}
 	if !row.AllowIDPInitiated || !row.Enabled {
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
+		c.unauthorized(mount.CodeFlowInvalid)
 		return
 	}
 	m, ok := r.method(row.Protocol)
 	if !ok {
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
+		c.unauthorized(mount.CodeFlowInvalid)
 		return
 	}
 	ret := r.settings.defaultReturnTo()
@@ -219,7 +227,7 @@ func (r *routes) callbackIDPInitiated(c *gin.Context, provider string) {
 		CreatedAt: now,
 		ExpiresAt: now.Add(ttl),
 	}
-	if _, err := r.storeFlow(ctx, token, rec, ttl); err != nil {
+	if _, err := r.storeFlow(c.ctx, token, rec, ttl); err != nil {
 		r.fail(c, err)
 		return
 	}
@@ -236,13 +244,13 @@ const maxCallbackFormBytes = 512 << 10
 // binding. The body is bounded before it is parsed; the second result is false
 // when the body is over the limit or does not parse, which the caller answers as
 // a refusal rather than handing a method a form it cannot trust.
-func formValues(c *gin.Context) (map[string][]string, bool) {
-	if c.Request.Method != http.MethodPost {
+func formValues(c *call) (map[string][]string, bool) {
+	if c.req.Method != http.MethodPost {
 		return nil, true
 	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxCallbackFormBytes)
-	if err := c.Request.ParseForm(); err != nil {
+	c.req.Body = http.MaxBytesReader(c.w, c.req.Body, maxCallbackFormBytes)
+	if err := c.req.ParseForm(); err != nil {
 		return nil, false
 	}
-	return c.Request.PostForm, true
+	return c.req.PostForm, true
 }

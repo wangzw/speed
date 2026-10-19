@@ -16,7 +16,7 @@ func TestListingBindingsRequiresRoleReadAndPassesThePathTenant(t *testing.T) {
 	r := newRig(t)
 	r.manager.bindings = []authz.Binding{{Tenant: "t1", Account: "acct-1", Role: "editor"}}
 
-	w := r.serve(r.p.handleBindingList, http.MethodGet,
+	w := r.serve(readRoute(r.p, bindingListOperation.Handle(r.p.handleBindingList)), http.MethodGet,
 		"/api/v1/authz/admin/tenants/t1/bindings", params("tenant", "t1"), nil)
 
 	if w.Code != http.StatusOK {
@@ -41,7 +41,7 @@ func TestListingAnAccountsBindingsCallsBindingsOf(t *testing.T) {
 	r := newRig(t)
 	r.manager.bindings = []authz.Binding{{Tenant: "t1", Account: "acct-9", Role: "editor"}}
 
-	w := r.serve(r.p.handleBindingOf, http.MethodGet,
+	w := r.serve(readRoute(r.p, bindingOfOperation.Handle(r.p.handleBindingOf)), http.MethodGet,
 		"/api/v1/authz/admin/tenants/t1/bindings/acct-9", params("tenant", "t1", "account", "acct-9"), nil)
 
 	if w.Code != http.StatusOK {
@@ -63,7 +63,7 @@ func TestBindingAnUnknownRoleIsRefused(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(authz.ErrUnknownRole)
 
-	w := r.serve(r.p.handleBindingPut, http.MethodPut,
+	w := r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
 		"/api/v1/authz/admin/tenants/t1/bindings/acct-1/ghost",
 		params("tenant", "t1", "account", "acct-1", "role", "ghost"), nil)
 
@@ -79,7 +79,7 @@ func TestBindingAnUnknownRoleIsRefused(t *testing.T) {
 // downstream runs — the manager is not called and no audit row is written.
 func TestBindingWithAnEmptyAccountIsRefused(t *testing.T) {
 	r := newRig(t)
-	w := r.serve(r.p.handleBindingPut, http.MethodPut,
+	w := r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
 		"/api/v1/authz/admin/tenants/t1/bindings//editor",
 		params("tenant", "t1", "account", "", "role", "editor"), nil)
 
@@ -103,7 +103,7 @@ func TestBindingWithAnEmptyAccountIsRefused(t *testing.T) {
 // off the manager never being called.
 func TestRemovingABindingWithAnEmptyAccountIsRefused(t *testing.T) {
 	r := newRig(t)
-	w := r.serve(r.p.handleBindingDelete, http.MethodDelete,
+	w := r.serve(writeRoute(r.p, bindingDeleteOperation.Handle(r.p.handleBindingDelete)), http.MethodDelete,
 		"/api/v1/authz/admin/tenants/t1/bindings//editor",
 		params("tenant", "t1", "account", "", "role", "editor"), nil)
 
@@ -130,7 +130,7 @@ func TestAnEmptyTenantOnABindingWriteIsForwardedAndRefusedAsABadRequest(t *testi
 	r := newRig(t)
 	r.manager.fail(authz.ErrTenantMismatch)
 
-	w := r.serve(r.p.handleBindingPut, http.MethodPut,
+	w := r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
 		"/api/v1/authz/admin/tenants//bindings/acct-1/editor",
 		params("tenant", "", "account", "acct-1", "role", "editor"), nil)
 
@@ -158,7 +158,7 @@ func TestAnEmptyTenantOnABindingWriteIsForwardedAndRefusedAsABadRequest(t *testi
 func TestABindingWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByActionID(t *testing.T) {
 	t.Run("a landed write leaves the mandatory success row", func(t *testing.T) {
 		r := newRig(t)
-		w := r.serve(r.p.handleBindingPut, http.MethodPut,
+		w := r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
 			"/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor",
 			params("tenant", "t1", "account", "acct-1", "role", "editor"), nil)
 
@@ -181,7 +181,7 @@ func TestABindingWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByAc
 	t.Run("a refused write links a failed row by action id", func(t *testing.T) {
 		r := newRig(t)
 		r.manager.fail(authz.ErrUnknownRole)
-		w := r.serve(r.p.handleBindingPut, http.MethodPut,
+		w := r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
 			"/api/v1/authz/admin/tenants/t1/bindings/acct-1/ghost",
 			params("tenant", "t1", "account", "acct-1", "role", "ghost"), nil)
 
@@ -213,7 +213,7 @@ func TestADenialLeavesNoAuditRowAndNoWrite(t *testing.T) {
 	t.Run("the guard's denial", func(t *testing.T) {
 		r := newRig(t)
 		r.guard.allow = false
-		w := r.serve(r.p.handleBindingPut, http.MethodPut,
+		w := r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
 			"/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor",
 			params("tenant", "t1", "account", "acct-1", "role", "editor"), nil)
 
@@ -230,7 +230,7 @@ func TestADenialLeavesNoAuditRowAndNoWrite(t *testing.T) {
 
 	t.Run("an anonymous request", func(t *testing.T) {
 		r := newRig(t)
-		w := r.serveAnonymous(r.p.handleBindingPut, http.MethodPut,
+		w := r.serveAnonymous(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
 			"/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor",
 			params("tenant", "t1", "account", "acct-1", "role", "editor"))
 

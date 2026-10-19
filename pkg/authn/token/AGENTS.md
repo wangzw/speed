@@ -59,6 +59,27 @@ The API is the package's godoc.
   is `config.OriginPrimary`, so neither the environment nor the command line
   can turn the session check off; the signing key file is `Sensitive` and
   carries no command-line flag. A switch that is off is a `Warn` startup line.
+- **The routes are declared as HTTP operations, and the fragment is generated
+  from the declarations.** `operations.go` declares the key set, the token
+  endpoint and the revocation endpoint — method, path relative to the API root,
+  summary, description, form body and responses — and binds each handler's
+  input and answer types. All three are `ReplyOperation`s: the key set answers
+  `application/jwk-set+json`, and the two POST endpoints answer the RFC 6749
+  §5.2 JSON body on failure rather than the entry point's problem document.
+  `openapi/token.json` is a build product of the same declarations, generated
+  by `pkg/internal/openapigen`, never written by hand. The mounter takes each
+  route's path from its declaration, so the fragment and the registration
+  cannot drift.
+- **The two POST endpoints read their form the way RFC 6749 and RFC 7009 fix
+  it, not the way the entry point binds a form.** Before the binding runs, the
+  route reduces the body to the declared `grant_type`, `refresh_token`,
+  `client_id`, `client_secret` and `token` fields: the body is capped at 8 KiB,
+  a body that is not a urlencoded form reads as no form, an extra parameter is
+  ignored and a repeated key keeps its first value. A usable
+  `Authorization: Basic` header is folded into `client_id` and `client_secret`
+  first. The entry point's binding would refuse an unknown key with a problem
+  document, which an OAuth client sending `token_type_hint` or `scope` could
+  not read, and the answer has to stay the RFC 6749 §5.2 body.
 - **The key set is public; every other response is not.** `GET B/jwks.json`
   is registered through `mount.Public` and writes its own
   `Cache-Control: public, max-age=300` over the mounter's `no-store`, because
@@ -91,3 +112,11 @@ make check
 ```
 go test -race ./authn/token/...
 ```
+
+The fragment is regenerated after a change to the operation declarations:
+
+```
+UPDATE_FRAGMENTS=1 go -C pkg test ./authn/token -run TestTheFragmentIsGeneratedFromTheDeclarations
+```
+
+Without the variable the same test is the drift gate; `make check` runs it.

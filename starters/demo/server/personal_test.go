@@ -709,7 +709,7 @@ func TestTheEnsureRefusesAServiceAccount(t *testing.T) {
 		authntest.WithMethods(authn.MethodClientSecret),
 	)
 	c, recorder := ginContext(ctx)
-	product.handleEnsure(c)
+	serveEnsure(product, c)
 	if recorder.Code != http.StatusForbidden {
 		t.Fatalf("a service account's ensure answered %d, want 403:\n%s", recorder.Code, recorder.Body.String())
 	}
@@ -729,7 +729,7 @@ func TestTheEnsureAnswersAnIdentifierConflict409(t *testing.T) {
 		roster.createErr = fmt.Errorf("%w: another tenant holds it", tenant.ErrAliasConflict)
 		ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
 		c, recorder := ginContext(ctx)
-		product.handleEnsure(c)
+		serveEnsure(product, c)
 		assertPersonalType(t, recorder, http.StatusConflict, identifierUnavailableCode)
 	})
 	t.Run("the derived identifier is outside the roster's domain", func(t *testing.T) {
@@ -747,7 +747,7 @@ func TestTheEnsureAnswers401AndForbiddenCallers(t *testing.T) {
 	product, roster, memberships, manager, seeder := unitProduct()
 
 	c, recorder := ginContext(context.Background())
-	product.handleEnsure(c)
+	serveEnsure(product, c)
 	if recorder.Code != http.StatusUnauthorized {
 		t.Errorf("an unauthenticated ensure answered %d, want 401", recorder.Code)
 	}
@@ -757,7 +757,7 @@ func TestTheEnsureAnswers401AndForbiddenCallers(t *testing.T) {
 		authntest.WithBackend("static"),
 	)
 	c, recorder = ginContext(static)
-	product.handleEnsure(c)
+	serveEnsure(product, c)
 	if recorder.Code != http.StatusForbidden {
 		t.Errorf("a static subject's ensure answered %d, want 403", recorder.Code)
 	}
@@ -774,7 +774,7 @@ func TestTheEnsureAnswersADependencyFailure503WithoutTheCause(t *testing.T) {
 	roster.createErr = errors.New("the tenant table is unavailable")
 	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
 	c, recorder := ginContext(ctx)
-	product.handleEnsure(c)
+	serveEnsure(product, c)
 	if recorder.Code != http.StatusServiceUnavailable {
 		t.Fatalf("a dependency failure answered %d, want 503:\n%s", recorder.Code, recorder.Body.String())
 	}
@@ -913,6 +913,13 @@ func TestTheWireRegistersNothingWithTheSwitchOff(t *testing.T) {
 	}
 }
 
+// serveEnsure runs the operation's bound handler against c, the way the entry
+// point does: the handler receives the request's context and the entry point
+// writes the declared answer.
+func serveEnsure(product *personalProduct, c *gin.Context) {
+	personalEnsureOperation.Handle(product.handleEnsure)(c)
+}
+
 // ginContext builds a gin test context whose request carries ctx.
 func ginContext(ctx context.Context) (*gin.Context, *httptest.ResponseRecorder) {
 	gin.SetMode(gin.TestMode)
@@ -936,7 +943,7 @@ func TestTheEnsureAnswersAnImpersonatingCaller403(t *testing.T) {
 		authntest.WithScope("acme"),
 	)
 	c, recorder := ginContext(ctx)
-	product.handleEnsure(c)
+	serveEnsure(product, c)
 	if recorder.Code != http.StatusForbidden {
 		t.Errorf("an impersonating ensure answered %d, want 403:\n%s", recorder.Code, recorder.Body.String())
 	}
@@ -951,7 +958,7 @@ func TestTheEnsureAnswersAnotherMembership409(t *testing.T) {
 	}
 	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
 	c, recorder := ginContext(ctx)
-	product.handleEnsure(c)
+	serveEnsure(product, c)
 	if recorder.Code != http.StatusConflict {
 		t.Fatalf("an account of another tenant answered %d, want 409:\n%s", recorder.Code, recorder.Body.String())
 	}
@@ -980,7 +987,7 @@ func TestTheEnsureAnswersADisabledTenant409(t *testing.T) {
 
 	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
 	c, recorder := ginContext(ctx)
-	product.handleEnsure(c)
+	serveEnsure(product, c)
 	assertPersonalType(t, recorder, http.StatusConflict, "tenant-unavailable")
 	if memberships.puts != 0 || manager.putRole != 0 || manager.putBinding != 0 || seeder.seed != 0 {
 		t.Errorf("the refused ensure wrote %d membership(s), %d role(s), %d binding(s), %d seeding(s), want none",
@@ -993,11 +1000,11 @@ func TestTheEnsureAnswersTheTenantAndKind(t *testing.T) {
 	product, _, _, _, _ := unitProduct()
 	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
 	c, recorder := ginContext(ctx)
-	product.handleEnsure(c)
+	serveEnsure(product, c)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("the ensure answered %d, want 200:\n%s", recorder.Code, recorder.Body.String())
 	}
-	var reply personalReply
+	var reply WorkspacePersonalReply
 	if err := json.Unmarshal(recorder.Body.Bytes(), &reply); err != nil {
 		t.Fatalf("the answer is not JSON: %v\n%s", err, recorder.Body.String())
 	}

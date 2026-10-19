@@ -476,3 +476,39 @@ func TestTheDescriptorCarriesTheRequestDeclaration(t *testing.T) {
 		t.Errorf("the reply descriptor carries %+v, want the declared request body", descriptor.Request)
 	}
 }
+
+// TestABindingRefusalCarriesTheDeclaredProblemType holds that a request refused
+// before the handler runs is answered in the operation's own vocabulary: the
+// problem type declared on the response of that status, not the RFC 9457
+// default about:blank.
+func TestABindingRefusalCarriesTheDeclaredProblemType(t *testing.T) {
+	const (
+		badRequestType = "urn:test:bad-request"
+		mediaTypeType  = "urn:test:unsupported-media-type"
+	)
+	operation := NewOperation[readInput, struct{}](
+		"the.module.write", http.MethodPost, "/items/:id", "", "",
+		requestBody("application/json"),
+		[]Response{
+			{Status: http.StatusNoContent, Description: "No content"},
+			{Status: http.StatusBadRequest, Description: "The body could not be read", ProblemType: badRequestType},
+			{Status: http.StatusUnsupportedMediaType, Description: "Not JSON", ProblemType: mediaTypeType},
+		},
+	)
+	handler := operation.Handle(func(context.Context, readInput) (struct{}, error) {
+		t.Error("the handler ran with a body the binding refused")
+		return struct{}{}, nil
+	})
+
+	malformed := httptest.NewRequest(http.MethodPost, "/items/abc", strings.NewReader("{"))
+	malformed.Header.Set("Content-Type", "application/json")
+	if got := problemBodyOf(t, serve(t, http.MethodPost, "/items/:id", handler, malformed))["type"]; got != badRequestType {
+		t.Errorf("a malformed body's problem type = %v, want %s", got, badRequestType)
+	}
+
+	unsupported := httptest.NewRequest(http.MethodPost, "/items/abc", strings.NewReader("{}"))
+	unsupported.Header.Set("Content-Type", "text/plain")
+	if got := problemBodyOf(t, serve(t, http.MethodPost, "/items/:id", handler, unsupported))["type"]; got != mediaTypeType {
+		t.Errorf("a wrong media type's problem type = %v, want %s", got, mediaTypeType)
+	}
+}

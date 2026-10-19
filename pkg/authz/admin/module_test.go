@@ -228,14 +228,14 @@ func (a assembly) drive(t *testing.T, action func(*core.Registry)) error {
 func TestThePermissionTheRouteAsksFor(t *testing.T) {
 	t.Run("a read asks for role.read", func(t *testing.T) {
 		r := newRig(t)
-		r.serve(r.p.handleRoleList, http.MethodGet, "/api/v1/authz/admin/tenants/t1/roles", params("tenant", "t1"), nil)
+		r.serve(readRoute(r.p, roleListOperation.Handle(r.p.handleRoleList)), http.MethodGet, "/api/v1/authz/admin/tenants/t1/roles", params("tenant", "t1"), nil)
 		if got := r.guard.askedFor(); len(got) != 1 || got[0] != authz.PermissionRoleRead {
 			t.Fatalf("the read asked for %v, want [authz.role.read]", got)
 		}
 	})
 	t.Run("a write asks for role.manage", func(t *testing.T) {
 		r := newRig(t)
-		r.serve(r.p.handleRolePut, http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/r1",
+		r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/r1",
 			params("tenant", "t1", "role", "r1"), roleBody{})
 		if got := r.guard.askedFor(); len(got) != 1 || got[0] != authz.PermissionRoleManage {
 			t.Fatalf("the write asked for %v, want [authz.role.manage]", got)
@@ -250,7 +250,7 @@ func TestThePermissionTheRouteAsksFor(t *testing.T) {
 // another's roles by naming that tenant in the path.
 func TestTheDecisionIsAskedInThePlatformDomain(t *testing.T) {
 	r := newRig(t)
-	r.serve(r.p.handleRoleList, http.MethodGet, "/api/v1/authz/admin/tenants/other/roles", params("tenant", "other"), nil)
+	r.serve(readRoute(r.p, roleListOperation.Handle(r.p.handleRoleList)), http.MethodGet, "/api/v1/authz/admin/tenants/other/roles", params("tenant", "other"), nil)
 	if got := r.guard.domainsAsked(); len(got) != 1 || got[0] != authz.PlatformDomain {
 		t.Fatalf("the read decided in %v, want [system]: the platform domain and not the path tenant", got)
 	}
@@ -261,7 +261,7 @@ func TestTheDecisionIsAskedInThePlatformDomain(t *testing.T) {
 func TestADeniedCallerIsRefusedBeforeTheManager(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
-	w := r.serve(r.p.handleRoleList, http.MethodGet, "/api/v1/authz/admin/tenants/t1/roles", params("tenant", "t1"), nil)
+	w := r.serve(readRoute(r.p, roleListOperation.Handle(r.p.handleRoleList)), http.MethodGet, "/api/v1/authz/admin/tenants/t1/roles", params("tenant", "t1"), nil)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("a denied read answered %d, want 403", w.Code)
 	}
@@ -276,7 +276,7 @@ func TestADeniedCallerIsRefusedBeforeTheManager(t *testing.T) {
 // same condition: no problem type and the realm challenge.
 func TestAnAnonymousCallerGetsA401(t *testing.T) {
 	r := newRig(t)
-	w := r.serveAnonymous(r.p.handleRolePut, http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/r1",
+	w := r.serveAnonymous(rolePutRoute(r.p), http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/r1",
 		params("tenant", "t1", "role", "r1"))
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("an anonymous write answered %d, want 401", w.Code)
@@ -300,7 +300,7 @@ func TestAnAnonymousCallerGetsA401(t *testing.T) {
 func TestAGuardOutageIsA503(t *testing.T) {
 	r := newRig(t)
 	r.guard.err = errors.New("the engine is unavailable")
-	w := r.serve(r.p.handleRolePut, http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/r1",
+	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/r1",
 		params("tenant", "t1", "role", "r1"), roleBody{})
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("a guard outage answered %d, want 503", w.Code)
@@ -316,7 +316,7 @@ func TestAGuardOutageIsA503(t *testing.T) {
 func TestTheMandatoryAuditLandsBeforeTheWrite(t *testing.T) {
 	t.Run("a landing row precedes the write", func(t *testing.T) {
 		r := newRig(t)
-		w := r.serve(r.p.handleRolePut, http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/r1",
+		w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/r1",
 			params("tenant", "t1", "role", "r1"), roleBody{})
 		if w.Code != http.StatusNoContent {
 			t.Fatalf("a permitted write answered %d, want 204", w.Code)
@@ -332,7 +332,7 @@ func TestTheMandatoryAuditLandsBeforeTheWrite(t *testing.T) {
 	t.Run("a row that does not land refuses the write", func(t *testing.T) {
 		r := newRig(t)
 		r.audit.fail(errors.New("the audit store is down"))
-		w := r.serve(r.p.handleRolePut, http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/r1",
+		w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/r1",
 			params("tenant", "t1", "role", "r1"), roleBody{})
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("a write whose audit did not land answered %d, want 503", w.Code)
@@ -349,7 +349,7 @@ func TestTheMandatoryAuditLandsBeforeTheWrite(t *testing.T) {
 func TestAFailedWriteLeavesAFailedRow(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(authz.ErrBuiltinRole)
-	w := r.serve(r.p.handleRoleDelete, http.MethodDelete, "/api/v1/authz/admin/tenants/t1/roles/r1",
+	w := r.serve(writeRoute(r.p, roleDeleteOperation.Handle(r.p.handleRoleDelete)), http.MethodDelete, "/api/v1/authz/admin/tenants/t1/roles/r1",
 		params("tenant", "t1", "role", "r1"), nil)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("deleting a builtin role answered %d, want 409", w.Code)
@@ -381,7 +381,7 @@ func TestTheFailureToAnswerMapping(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			r := newRig(t)
 			r.manager.fail(tc.err)
-			w := r.serve(r.p.handleRolePut, http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/r1",
+			w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/r1",
 				params("tenant", "t1", "role", "r1"), roleBody{})
 			if w.Code != tc.want {
 				t.Fatalf("the answer = %d, want %d", w.Code, tc.want)
@@ -396,7 +396,7 @@ func TestTheFailureToAnswerMapping(t *testing.T) {
 func TestAGrantOnAnUnknownPermissionIsRefusedBeforeTheManager(t *testing.T) {
 	t.Run("an undeclared permission", func(t *testing.T) {
 		r := newRig(t)
-		w := r.serve(r.p.handleGrantPut, http.MethodPut,
+		w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
 			"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
 			params("tenant", "t1", "role", "r1", "permission", "authn.account.read"), nil)
 		if w.Code != http.StatusBadRequest {
@@ -411,7 +411,7 @@ func TestAGrantOnAnUnknownPermissionIsRefusedBeforeTheManager(t *testing.T) {
 	})
 	t.Run("a declared permission is translated and written", func(t *testing.T) {
 		r := newRig(t, authz.PermissionAccountRead)
-		w := r.serve(r.p.handleGrantPut, http.MethodPut,
+		w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
 			"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
 			params("tenant", "t1", "role", "r1", "permission", "authn.account.read"), nil)
 		if w.Code != http.StatusNoContent {
@@ -432,7 +432,7 @@ func TestAGrantOnAnUnknownPermissionIsRefusedBeforeTheManager(t *testing.T) {
 // mandatory row first.
 func TestABindingCarriesTheNaturalKeys(t *testing.T) {
 	r := newRig(t)
-	w := r.serve(r.p.handleBindingPut, http.MethodPut,
+	w := r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
 		"/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor",
 		params("tenant", "t1", "account", "acct-1", "role", "editor"), nil)
 	if w.Code != http.StatusNoContent {
@@ -451,7 +451,7 @@ func TestABindingCarriesTheNaturalKeys(t *testing.T) {
 // answers the catalog's declared permissions as views.
 func TestTheCatalogRouteShowsTheDeclaredPermissions(t *testing.T) {
 	r := newRig(t, authz.PermissionRoleRead, authz.PermissionRoleManage)
-	w := r.serve(r.p.handlePermissionList, http.MethodGet, "/api/v1/authz/admin/permissions", nil, nil)
+	w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/authz/admin/permissions", nil, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("the catalog route answered %d, want 200", w.Code)
 	}

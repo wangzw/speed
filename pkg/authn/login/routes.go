@@ -3,7 +3,6 @@ package login
 import (
 	"errors"
 	"log/slog"
-	"mime"
 	"net/http"
 	"strings"
 
@@ -11,19 +10,8 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
+	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/log"
-)
-
-// The route paths this module mounts, relative to the base path. A callback's
-// provider segment is a login method's name for a social method and an
-// enterprise provider's identifier for SSO.
-const (
-	pathMethods      = "/methods"
-	pathFlows        = "/flows"
-	pathFlowsAuth    = "/flows/authenticated"
-	pathFlowsAnswer  = "/flows/answer"
-	pathFlowsCurrent = "/flows/current"
-	pathCallback     = "/callback/:provider"
 )
 
 // The carriers a flow token travels in. The cookie keeps its __Host- prefix and
@@ -44,23 +32,61 @@ type routes struct {
 }
 
 // mountRoutes registers this module's routes and the account self-service
-// routes. The callback is registered through Callback, so its cross-site POST
-// skips the cross-origin check while every other route keeps it.
+// routes. Each route is registered from the operation that declares it, so the
+// handler's input and answer types, the fragment and the route are one source.
+// The callback is registered through Callback, so its cross-site POST skips the
+// cross-origin check while every other route keeps it.
 func (p *product) mountRoutes() {
 	r := &routes{product: p, endpoint: p.mounter.Endpoint()}
 	m := p.mounter
 
-	m.Public(http.MethodGet, pathMethods, r.methods)
-	m.Public(http.MethodPost, pathFlows, r.startFlow)
-	m.Guarded(http.MethodPost, pathFlowsAuth, r.startAuthenticated)
-	m.Public(http.MethodPost, pathFlowsAnswer, r.answer)
-	m.Public(http.MethodGet, pathFlowsCurrent, r.current)
-	m.Public(http.MethodDelete, pathFlowsCurrent, r.abandon)
-	m.Callback([]string{http.MethodGet, http.MethodPost}, pathCallback, r.callback)
+	m.Public(http.MethodGet, mountRel(methodsOperation.Path), withRequest(methodsOperation.Handle(r.methods)))
+	m.Public(http.MethodPost, mountRel(startOperation.Path),
+		withRequest(mount.GuardBody(nil, startOperation.Handle(r.startFlow))))
+	m.Guarded(http.MethodPost, mountRel(startAuthenticatedOperation.Path),
+		withRequest(mount.GuardBody(r.identityPrecheck, startAuthenticatedOperation.Handle(r.startAuthenticated))))
+	m.Public(http.MethodPost, mountRel(answerOperation.Path),
+		withRequest(mount.GuardBody(r.bindingPrecheck, answerOperation.Handle(r.answer))))
+	m.Public(http.MethodGet, mountRel(currentOperation.Path), withRequest(currentOperation.Handle(r.current)))
+	m.Public(http.MethodDelete, mountRel(abandonOperation.Path), withRequest(abandonOperation.Handle(r.abandon)))
+	m.Callback([]string{http.MethodGet}, mountRel(callbackGetOperation.Path),
+		withRequest(callbackGetOperation.Handle(r.callbackGet)))
+	m.Callback([]string{http.MethodPost}, mountRel(callbackPostOperation.Path),
+		withRequest(callbackPostOperation.Handle(r.callbackPost)))
 
 	if p.selfservice != nil {
-		p.selfservice.Mount(m, p.postFeature)
+		p.selfservice.Mount(m, mountRel, p.postFeature)
 	}
+}
+
+// bindingPrecheck refuses an answer whose flow binding is missing or wrong
+// before the entry point reads the body, which is the order the design gives the
+// answer route: the content type, then the binding, then the body's own fields.
+// The body is read only after the binding holds.
+func (r *routes) bindingPrecheck(c *gin.Context) bool {
+	call := r.call(c.Request.Context(), nil)
+	if _, _, _, _, ok := r.requireBinding(call, true); !ok {
+		call.refuse(c)
+		return false
+	}
+	return true
+}
+
+// identityPrecheck refuses a request with no identity, or an impersonating one,
+// before the entry point reads the body. It is the check the start handler makes
+// first, moved ahead of the body so that the request is not read for a caller
+// the route will refuse anyway.
+func (r *routes) identityPrecheck(c *gin.Context) bool {
+	id, ok := authn.FromContext(c.Request.Context())
+	if !ok || id.Account() == "" {
+		mount.Unauthorized(c, r.endpoint, "")
+		return false
+	}
+	if id.Impersonating() {
+		mount.Forbidden(c, mount.CodeImpersonationRestricted)
+		return false
+	}
+	return true
 }
 
 // cookieName is the name of the flow cookie: the prefixed one in production, the
@@ -73,11 +99,18 @@ func (r *routes) cookieName() string {
 	return flowCookieName
 }
 
-// setFlowCookie writes the flow cookie, the carrier of the binding secret for a
-// cookie-bound flow.
-func (r *routes) setFlowCookie(c *gin.Context, token string, maxAge int) {
-	c.SetSameSite(http.SameSiteNoneMode)
-	c.SetCookie(r.cookieName(), token, maxAge, flowCookiePath, "", !r.allowInsecure, true)
+// setFlowCookie adds the flow cookie, the carrier of the binding secret for a
+// cookie-bound flow. A maxAge of -1 clears it.
+func (r *routes) setFlowCookie(c *call, token string, maxAge int) {
+	c.setCookie(&http.Cookie{
+		Name:     r.cookieName(),
+		Value:    token,
+		Path:     flowCookiePath,
+		MaxAge:   maxAge,
+		Secure:   !r.allowInsecure,
+		HttpOnly: true,
+		SameSite: http.SameSiteNoneMode,
+	})
 }
 
 // readBindingToken reads the flow token from the request. A cookie-bound route
@@ -86,12 +119,12 @@ func (r *routes) setFlowCookie(c *gin.Context, token string, maxAge int) {
 // only the cookie, because a user agent navigation cannot set a header.
 // fromHeader reports that the token arrived in the Authn-Flow header, which is
 // what makes a reply echo it in its body.
-func (r *routes) readBindingToken(c *gin.Context, allowHeader bool) (token string, fromHeader, ok bool) {
-	if v, err := c.Cookie(r.cookieName()); err == nil && v != "" {
+func (r *routes) readBindingToken(c *call, allowHeader bool) (token string, fromHeader, ok bool) {
+	if v := c.cookieValue(r.cookieName()); v != "" {
 		return v, false, true
 	}
 	if allowHeader {
-		if v := c.GetHeader(flowHeader); v != "" {
+		if v := c.header(flowHeader); v != "" {
 			return v, true, true
 		}
 	}
@@ -102,13 +135,13 @@ func (r *routes) readBindingToken(c *gin.Context, allowHeader bool) (token strin
 // and returns false when the binding is missing or does not match, which is the
 // 401 flow-invalid that covers a missing cookie, a wrong header and a binding
 // that names another flow.
-func (r *routes) requireBinding(c *gin.Context, allowHeader bool) (token string, echo string, rec record, raw []byte, ok bool) {
+func (r *routes) requireBinding(c *call, allowHeader bool) (token string, echo string, rec record, raw []byte, ok bool) {
 	found, fromHeader, present := r.readBindingToken(c, allowHeader)
 	if !present {
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
+		c.unauthorized(mount.CodeFlowInvalid)
 		return "", "", record{}, nil, false
 	}
-	loaded, rawBytes, err := r.loadFlow(c.Request.Context(), found)
+	loaded, rawBytes, err := r.loadFlow(c.ctx, found)
 	if err != nil {
 		r.fail(c, err)
 		return "", "", record{}, nil, false
@@ -119,80 +152,76 @@ func (r *routes) requireBinding(c *gin.Context, allowHeader bool) (token string,
 	return found, echo, loaded, rawBytes, true
 }
 
-// contentTypeJSON checks the request's Content-Type before the body is read, so
-// that a body of another type is the 415 the design orders before the binding
-// check. mount.Decode checks it again when it reads the body.
-func contentTypeJSON(c *gin.Context) bool {
-	value := c.GetHeader("Content-Type")
-	media, params, err := mime.ParseMediaType(value)
-	if err != nil || media != "application/json" {
-		mount.Fail(c, mount.CodeUnsupportedMediaType)
-		return false
+// localeOf reads the language a request names and passes it through as it
+// stands. It reads first the language the i18n layer settled into the request
+// context — the supported locale the request's header asked for, negotiated by
+// quality — and falls back to reading the header directly for a run with no i18n
+// layer, taking the first tag as written. Either way the value is a BCP 47 tag
+// the SMS module resolves against the languages its carrier declares: the empty
+// string names none and resolves to the run's default.
+func localeOf(c *call) string {
+	if locale, ok := i18n.FromContext(c.ctx); ok {
+		return string(locale)
 	}
-	for k, v := range params {
-		if k != "charset" || !strings.EqualFold(v, "utf-8") {
-			mount.Fail(c, mount.CodeUnsupportedMediaType)
-			return false
+	header := c.header("Accept-Language")
+	for _, part := range strings.Split(header, ",") {
+		tag := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
+		if tag == "" {
+			continue
 		}
+		return tag
 	}
-	return true
-}
-
-// requestClient is where the request came from, for logs and audit. The entry
-// point does not trust forwarded headers, so the address is the peer's.
-func requestClient(c *gin.Context) authn.ClientInfo {
-	return authn.ClientInfo{IP: c.ClientIP(), UserAgent: c.Request.UserAgent()}
+	return ""
 }
 
 // fail maps an error from the engine or a dependency to the answer the design
 // gives it. Every case names a code; the default is the 503 that never says
 // which dependency failed.
-func (r *routes) fail(c *gin.Context, err error) {
-	ctx := c.Request.Context()
+func (r *routes) fail(c *call, err error) {
 	var throttled *authn.ThrottledError
 	switch {
 	case err == nil:
 		return
 	case errors.As(err, &throttled):
-		mount.Throttled(c, throttled.RetryAfter)
+		c.throttled(throttled.RetryAfter)
 	case errors.Is(err, authn.ErrThrottled):
-		mount.Throttled(c, 0)
+		c.throttled(0)
 	case errors.Is(err, authn.ErrFlowInvalid), errors.Is(err, authn.ErrStepOutOfOrder):
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
+		c.unauthorized(mount.CodeFlowInvalid)
 	case errors.Is(err, authn.ErrMethodDisabled):
-		mount.Forbidden(c, mount.CodeMethodDisabled)
+		c.forbidden(mount.CodeMethodDisabled)
 	case errors.Is(err, authn.ErrImpersonationRestricted):
-		mount.Forbidden(c, mount.CodeImpersonationRestricted)
+		c.forbidden(mount.CodeImpersonationRestricted)
 	case errors.Is(err, authn.ErrAccountUnavailable):
-		mount.Forbidden(c, mount.CodeAccountUnavailable)
+		c.forbidden(mount.CodeAccountUnavailable)
 	case errors.Is(err, authn.ErrLinkRequired):
-		mount.Unauthorized(c, r.endpoint, mount.CodeLinkRequired)
+		c.unauthorized(mount.CodeLinkRequired)
 	case errors.Is(err, authn.ErrBindingConflict), errors.Is(err, authn.ErrAccountExists),
 		errors.Is(err, authn.ErrLastLoginMethod), errors.Is(err, authn.ErrLastFactor),
 		errors.Is(err, authn.ErrFactorLimit):
-		mount.Fail(c, mount.CodeConflict)
+		c.fail(mount.CodeConflict)
 	case errors.Is(err, authn.ErrIdentifierRequired):
-		mount.Fail(c, mount.CodeLoginIdentifierRequired)
+		c.fail(mount.CodeLoginIdentifierRequired)
 	case errors.Is(err, authn.ErrUnsupportedRegion):
-		mount.Fail(c, mount.CodeUnsupportedRegion)
+		c.fail(mount.CodeUnsupportedRegion)
 	case errors.Is(err, authn.ErrPasswordPolicy), errors.Is(err, authn.ErrInvalidArgument),
 		errors.Is(err, authn.ErrInvalidIdentifier):
-		mount.Fail(c, mount.CodeBadRequest)
+		c.fail(mount.CodeBadRequest)
 	case errors.Is(err, authn.ErrBusy):
-		mount.Busy(c)
+		c.busy()
 	case errors.Is(err, authn.ErrInvalidCredentials), errors.Is(err, authn.ErrAccountNotFound),
 		errors.Is(err, authn.ErrSignupClosed), errors.Is(err, authn.ErrDomainMismatch),
 		errors.Is(err, authn.ErrNotProvisioned), errors.Is(err, authn.ErrProvisionRefused),
 		errors.Is(err, authn.ErrNoFactor), errors.Is(err, authn.ErrFactorNotEnrolled):
-		mount.Unauthorized(c, r.endpoint, mount.CodeLoginFailed)
+		c.unauthorized(mount.CodeLoginFailed)
 	case errors.Is(err, authn.ErrUnavailable):
-		log.FromContext(ctx).Warn(ModuleName+": a dependency of a login route is unavailable",
+		log.FromContext(c.ctx).Warn(ModuleName+": a dependency of a login route is unavailable",
 			slog.String("cause", err.Error()))
-		mount.Unavailable(c)
+		c.unavailable()
 	default:
-		log.FromContext(ctx).Error(ModuleName+": a login route failed on a call it cannot answer for",
+		log.FromContext(c.ctx).Error(ModuleName+": a login route failed on a call it cannot answer for",
 			slog.String("cause", err.Error()))
-		mount.Unavailable(c)
+		c.unavailable()
 	}
 }
 
@@ -200,13 +229,13 @@ func (r *routes) fail(c *gin.Context, err error) {
 // that did not hold, which is login-failed, except for the two causes the design
 // answers as a 400: a phone prefix the deployment does not allow, and an
 // identifier that cannot name an account. The cause goes to no body.
-func (r *routes) refusedStep(c *gin.Context, cause error) {
+func (r *routes) refusedStep(c *call, cause error) {
 	switch {
 	case errors.Is(cause, authn.ErrUnsupportedRegion):
-		mount.Fail(c, mount.CodeUnsupportedRegion)
+		c.fail(mount.CodeUnsupportedRegion)
 	case errors.Is(cause, authn.ErrInvalidIdentifier):
-		mount.Fail(c, mount.CodeBadRequest)
+		c.fail(mount.CodeBadRequest)
 	default:
-		mount.Unauthorized(c, r.endpoint, mount.CodeLoginFailed)
+		c.unauthorized(mount.CodeLoginFailed)
 	}
 }

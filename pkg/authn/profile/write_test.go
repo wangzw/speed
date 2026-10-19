@@ -1,8 +1,10 @@
 package profile
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,9 +17,9 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-func decodePatch(t *testing.T, rec *httptest.ResponseRecorder) patchView {
+func decodePatch(t *testing.T, rec *httptest.ResponseRecorder) AuthnProfilePatch {
 	t.Helper()
-	var v patchView
+	var v AuthnProfilePatch
 	if err := json.Unmarshal(rec.Body.Bytes(), &v); err != nil {
 		t.Fatalf("decoding the write view: %v (body %s)", err, rec.Body.String())
 	}
@@ -39,6 +41,124 @@ func noSession() []authntest.Option {
 	return []authntest.Option{
 		authntest.WithAccount(meAccount),
 		authntest.WithAuthTime(time.Now()),
+	}
+}
+
+// sendBody sends a request through the Mounter with a raw body and Content-Type,
+// so a case can drive the capability's decode rule. An empty contentType leaves
+// the header off the request.
+func (r *rig) sendBody(method, path, contentType string, body io.Reader, opts ...authntest.Option) *httptest.ResponseRecorder {
+	r.t.Helper()
+	r.mounter.As(opts...)
+	req := httptest.NewRequest(method, path, body)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	return r.mounter.Do(req)
+}
+
+// problemTypeOf reads the problem type of a refusal.
+func problemTypeOf(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	var problem struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("the answer is not a problem document: %v (body %s)", err, rec.Body.String())
+	}
+	return problem.Type
+}
+
+// TestPatchDecodesTheBodyByTheCapabilityRule holds the rule the route applied
+// before it was declared as an operation: the media type is application/json
+// with no parameter or with charset=utf-8 only, the body is non-empty and no
+// larger than the capability's 64 KiB limit, it is one JSON value the
+// declaration can hold, and every refusal carries the capability's own problem
+// code rather than the entry point's default about:blank.
+func TestPatchDecodesTheBodyByTheCapabilityRule(t *testing.T) {
+	oversized := []byte(`{"display_name":"` + strings.Repeat("a", mount.MaxBodyBytes) + `"}`)
+	cases := []struct {
+		name        string
+		contentType string
+		body        io.Reader
+		want        int
+		code        string
+	}{
+		{"an empty body", "application/json", nil, http.StatusBadRequest, mount.CodeBadRequest},
+		{"a body of white space", "application/json", strings.NewReader(" \n"), http.StatusBadRequest, mount.CodeBadRequest},
+		{"malformed JSON", "application/json", strings.NewReader("{"), http.StatusBadRequest, mount.CodeBadRequest},
+		{"a value that is not an object", "application/json", strings.NewReader(`"nope"`), http.StatusBadRequest, mount.CodeBadRequest},
+		{"an unknown member", "application/json", strings.NewReader(`{"status":"disabled"}`), http.StatusBadRequest, mount.CodeBadRequest},
+		{"a body over the capability limit", "application/json", bytes.NewReader(oversized), http.StatusBadRequest, mount.CodeBadRequest},
+		{"the media type missing", "", strings.NewReader(`{}`), http.StatusUnsupportedMediaType, mount.CodeUnsupportedMediaType},
+		{"a media type that is not JSON", "text/plain", strings.NewReader(`{}`), http.StatusUnsupportedMediaType, mount.CodeUnsupportedMediaType},
+		{"a charset other than utf-8", "application/json; charset=utf-16", strings.NewReader(`{}`), http.StatusUnsupportedMediaType, mount.CodeUnsupportedMediaType},
+		{"a parameter beyond charset", `application/json; profile="x"`, strings.NewReader(`{}`), http.StatusUnsupportedMediaType, mount.CodeUnsupportedMediaType},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t)
+			rec := r.sendBody(http.MethodPatch, "/api/v1/auth/me", tc.contentType, tc.body, me()...)
+			if rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d (body %s)", rec.Code, tc.want, rec.Body.String())
+			}
+			if want := typePrefix + tc.code; problemTypeOf(t, rec) != want {
+				t.Errorf("problem type = %q, want %q", problemTypeOf(t, rec), want)
+			}
+			if r.admin.count("set-display-name") != 0 || r.admin.count("set-attributes") != 0 {
+				t.Error("a refused body reached a write")
+			}
+		})
+	}
+}
+
+// TestPatchNullBodyChangesNothing holds the null body the old decoder read as
+// the zero value: the route answers 200 and neither write nor audit row runs.
+func TestPatchNullBodyChangesNothing(t *testing.T) {
+	r := newRig(t)
+	rec := r.sendBody(http.MethodPatch, "/api/v1/auth/me", "application/json", strings.NewReader("null"), me()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if r.admin.count("set-display-name") != 0 || r.admin.count("set-attributes") != 0 {
+		t.Errorf("a null body called a write: display-name %d, attributes %d",
+			r.admin.count("set-display-name"), r.admin.count("set-attributes"))
+	}
+	if rows := r.audit.entries(); len(rows) != 0 {
+		t.Errorf("a null body wrote an audit row: %+v", rows)
+	}
+	if got := decodePatch(t, rec); got.DisplayName != "Me" {
+		t.Errorf("the answer's display_name = %q, want the current Me", got.DisplayName)
+	}
+}
+
+// TestPatchAcceptsABodyAtTheCapabilityLimit holds the boundary: a body of
+// exactly mount.MaxBodyBytes is within the limit and is processed.
+func TestPatchAcceptsABodyAtTheCapabilityLimit(t *testing.T) {
+	r := newRig(t)
+	displayName := strings.Repeat("a", mount.MaxBodyBytes-len(`{"display_name":""}`))
+	rec := r.sendBody(http.MethodPatch, "/api/v1/auth/me", "application/json",
+		strings.NewReader(`{"display_name":"`+displayName+`"}`), me()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if r.admin.displayName != displayName {
+		t.Errorf("the written display name is %d bytes, want the whole %d-byte one",
+			len(r.admin.displayName), len(displayName))
+	}
+}
+
+// TestPatchAcceptsAUTF8Charset holds the one media-type parameter the rule
+// allows: the declared type with charset=utf-8 is bound and processed.
+func TestPatchAcceptsAUTF8Charset(t *testing.T) {
+	r := newRig(t)
+	rec := r.sendBody(http.MethodPatch, "/api/v1/auth/me", "application/json; charset=utf-8",
+		strings.NewReader(`{"display_name":"Renamed"}`), me()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if r.admin.displayName != "Renamed" {
+		t.Errorf("the written display name = %q, want Renamed", r.admin.displayName)
 	}
 }
 
@@ -193,6 +313,53 @@ func TestPatchInvalidLocaleAndTimeZoneAre400(t *testing.T) {
 	}
 }
 
+// TestPatchRefusalsCarryTheCapabilityProblemType holds the fault path: a value
+// outside its domain is answered with the capability's own problem type, the
+// prefix and code the entry point writes from the returned fault.
+func TestPatchRefusalsCarryTheCapabilityProblemType(t *testing.T) {
+	r := newRig(t)
+	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"locale": "!!!"}, me()...)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	var problem struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("the answer is not a problem document: %v", err)
+	}
+	if want := typePrefix + mount.CodeBadRequest; problem.Type != want {
+		t.Errorf("problem type = %q, want %q", problem.Type, want)
+	}
+}
+
+// TestPatchRefusesBeforeTheBodyIsRead holds the order the route documents: the
+// identity, the impersonation, the session and the freshness are decided before
+// the body is bound. A body the declaration would refuse is therefore answered
+// with the earlier refusal, not the binding's 400.
+func TestPatchRefusesBeforeTheBodyIsRead(t *testing.T) {
+	cases := []struct {
+		name string
+		opts []authntest.Option
+		want int
+	}{
+		{"impersonating", impersonating(), http.StatusForbidden},
+		{"no session", noSession(), http.StatusUnauthorized},
+		{"stale", stale(), http.StatusUnauthorized},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t)
+			// A member the declaration does not carry: binding it would be a 400.
+			body := map[string]any{"unknown": "member"}
+			rec := r.invoke(r.p.patchEntry(), http.MethodPatch, "/api/v1/auth/me", body, tc.opts...)
+			if rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d before the body is read (body %s)", rec.Code, tc.want, rec.Body.String())
+			}
+		})
+	}
+}
+
 // TestPatchIsNotReachableWhileImpersonating holds the refusal at both layers: the
 // gateway answers 401 because the route is not impersonable, and the handler
 // answers 403 as the fallback for a registration made wrongly, without reading a
@@ -202,7 +369,7 @@ func TestPatchIsNotReachableWhileImpersonating(t *testing.T) {
 	if rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, impersonating()...); rec.Code != http.StatusUnauthorized {
 		t.Errorf("through the gateway: status = %d, want 401", rec.Code)
 	}
-	rec := r.invoke(r.p.handlePatchMe, http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, impersonating()...)
+	rec := r.invoke(r.p.patchEntry(), http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, impersonating()...)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("the handler while impersonating: status = %d, want 403", rec.Code)
 	}
@@ -225,7 +392,7 @@ func TestPatchWithoutASessionIs401(t *testing.T) {
 // TestPatchWithoutAnIdentityIs401 holds the no-identity refusal at the handler.
 func TestPatchWithoutAnIdentityIs401(t *testing.T) {
 	r := newRig(t)
-	rec := r.invokeAnonymous(r.p.handlePatchMe, http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"})
+	rec := r.invokeAnonymous(r.p.patchEntry(), http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"})
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}

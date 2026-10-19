@@ -20,7 +20,7 @@ import (
 func TestAnUnauthorisedRoleDeleteReachesNoManagerAndWritesNoAudit(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
-	w := r.serve(r.p.handleRoleDelete, http.MethodDelete, "/api/v1/authz/admin/tenants/t1/roles/editor",
+	w := r.serve(writeRoute(r.p, roleDeleteOperation.Handle(r.p.handleRoleDelete)), http.MethodDelete, "/api/v1/authz/admin/tenants/t1/roles/editor",
 		params("tenant", "t1", "role", "editor"), nil)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("an unauthorised role delete answered %d, want 403", w.Code)
@@ -42,7 +42,7 @@ func TestAnUnauthorisedRoleDeleteReachesNoManagerAndWritesNoAudit(t *testing.T) 
 // other answer.
 func TestDeletingARoleAsksForRoleManageAndLandsOneSuccessRow(t *testing.T) {
 	r := newRig(t)
-	w := r.serve(r.p.handleRoleDelete, http.MethodDelete, "/api/v1/authz/admin/tenants/t1/roles/editor",
+	w := r.serve(writeRoute(r.p, roleDeleteOperation.Handle(r.p.handleRoleDelete)), http.MethodDelete, "/api/v1/authz/admin/tenants/t1/roles/editor",
 		params("tenant", "t1", "role", "editor"), nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("deleting a role answered %d, want 204", w.Code)
@@ -71,7 +71,7 @@ func TestARoleListWhoseManagerFailsIsMapped(t *testing.T) {
 	t.Run("a tenant mismatch is a 400", func(t *testing.T) {
 		r := newRig(t)
 		r.manager.fail(authz.ErrTenantMismatch)
-		w := r.serve(r.p.handleRoleList, http.MethodGet, "/api/v1/authz/admin/tenants/t1/roles",
+		w := r.serve(readRoute(r.p, roleListOperation.Handle(r.p.handleRoleList)), http.MethodGet, "/api/v1/authz/admin/tenants/t1/roles",
 			params("tenant", "t1"), nil)
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("a role list whose manager refused the tenant answered %d, want 400", w.Code)
@@ -80,7 +80,7 @@ func TestARoleListWhoseManagerFailsIsMapped(t *testing.T) {
 	t.Run("any other failure is a 503 with no list", func(t *testing.T) {
 		r := newRig(t)
 		r.manager.fail(errors.New("the store is down"))
-		w := r.serve(r.p.handleRoleList, http.MethodGet, "/api/v1/authz/admin/tenants/t1/roles",
+		w := r.serve(readRoute(r.p, roleListOperation.Handle(r.p.handleRoleList)), http.MethodGet, "/api/v1/authz/admin/tenants/t1/roles",
 			params("tenant", "t1"), nil)
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("a role list whose manager failed answered %d, want 503", w.Code)
@@ -102,9 +102,9 @@ func TestAnonymousRequestsAreRefusedOnEveryRoleRoute(t *testing.T) {
 		path    string
 		params  gin.Params
 	}{
-		"the list":   {func(p *product) gin.HandlerFunc { return p.handleRoleList }, http.MethodGet, "/api/v1/authz/admin/tenants/t1/roles", params("tenant", "t1")},
-		"the write":  {func(p *product) gin.HandlerFunc { return p.handleRolePut }, http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/editor", params("tenant", "t1", "role", "editor")},
-		"the delete": {func(p *product) gin.HandlerFunc { return p.handleRoleDelete }, http.MethodDelete, "/api/v1/authz/admin/tenants/t1/roles/editor", params("tenant", "t1", "role", "editor")},
+		"the list":   {func(p *product) gin.HandlerFunc { return readRoute(p, roleListOperation.Handle(p.handleRoleList)) }, http.MethodGet, "/api/v1/authz/admin/tenants/t1/roles", params("tenant", "t1")},
+		"the write":  {func(p *product) gin.HandlerFunc { return rolePutRoute(p) }, http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/editor", params("tenant", "t1", "role", "editor")},
+		"the delete": {func(p *product) gin.HandlerFunc { return writeRoute(p, roleDeleteOperation.Handle(p.handleRoleDelete)) }, http.MethodDelete, "/api/v1/authz/admin/tenants/t1/roles/editor", params("tenant", "t1", "role", "editor")},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -134,7 +134,7 @@ func TestAnonymousRequestsAreRefusedOnEveryRoleRoute(t *testing.T) {
 func TestARolePutFailureLeavesAFailedRow(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(errors.New("the store is down"))
-	w := r.serve(r.p.handleRolePut, http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/editor",
+	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/editor",
 		params("tenant", "t1", "role", "editor"), roleBody{})
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("a put whose action failed answered %d, want 503", w.Code)
@@ -167,13 +167,13 @@ func TestTheRoleListViewCarriesEveryField(t *testing.T) {
 	r.manager.roles = []authz.RoleRecord{
 		{Tenant: "t1", Role: "editor", Builtin: true, DescriptionKey: "authz.role.editor", CreatedAt: created},
 	}
-	w := r.serve(r.p.handleRoleList, http.MethodGet, "/api/v1/authz/admin/tenants/t1/roles",
+	w := r.serve(readRoute(r.p, roleListOperation.Handle(r.p.handleRoleList)), http.MethodGet, "/api/v1/authz/admin/tenants/t1/roles",
 		params("tenant", "t1"), nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("listing the roles answered %d, want 200", w.Code)
 	}
 	var got struct {
-		Roles []roleView `json:"roles"`
+		Roles []AuthzAdminRoleView `json:"roles"`
 	}
 	decodeInto(t, w.Body.String(), &got)
 	if len(got.Roles) != 1 {
@@ -196,7 +196,7 @@ func TestTheRoleListViewCarriesEveryField(t *testing.T) {
 func TestARoleWriteAuditCarriesTheObjectAndDetail(t *testing.T) {
 	t.Run("the put", func(t *testing.T) {
 		r := newRig(t)
-		w := r.serve(r.p.handleRolePut, http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/editor",
+		w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/editor",
 			params("tenant", "t1", "role", "editor"), roleBody{})
 		if w.Code != http.StatusNoContent {
 			t.Fatalf("writing a role answered %d, want 204", w.Code)
@@ -215,7 +215,7 @@ func TestARoleWriteAuditCarriesTheObjectAndDetail(t *testing.T) {
 	})
 	t.Run("the delete", func(t *testing.T) {
 		r := newRig(t)
-		w := r.serve(r.p.handleRoleDelete, http.MethodDelete, "/api/v1/authz/admin/tenants/t1/roles/editor",
+		w := r.serve(writeRoute(r.p, roleDeleteOperation.Handle(r.p.handleRoleDelete)), http.MethodDelete, "/api/v1/authz/admin/tenants/t1/roles/editor",
 			params("tenant", "t1", "role", "editor"), nil)
 		if w.Code != http.StatusNoContent {
 			t.Fatalf("deleting a role answered %d, want 204", w.Code)
@@ -241,7 +241,7 @@ func TestAMalformedRoleBodyIsRefused(t *testing.T) {
 	for _, raw := range []string{`{"builtin":`, `[1, 2, 3]`, `not json at all`} {
 		t.Run(raw, func(t *testing.T) {
 			r := newRig(t)
-			w := r.serveRaw(r.p.handleRolePut, http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/editor",
+			w := r.serveRaw(rolePutRoute(r.p), http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/editor",
 				params("tenant", "t1", "role", "editor"), raw)
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("a malformed body answered %d, want 400", w.Code)
@@ -265,7 +265,7 @@ func TestTheRoleRefusalProblemTypes(t *testing.T) {
 	t.Run("a 400 is the bad-request code", func(t *testing.T) {
 		r := newRig(t)
 		r.manager.fail(authz.ErrUnknownRole)
-		w := r.serve(r.p.handleRolePut, http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/ghost",
+		w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/ghost",
 			params("tenant", "t1", "role", "ghost"), roleBody{})
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("the answer = %d, want 400", w.Code)
@@ -277,7 +277,7 @@ func TestTheRoleRefusalProblemTypes(t *testing.T) {
 	t.Run("a 409 is the conflict code", func(t *testing.T) {
 		r := newRig(t)
 		r.manager.fail(authz.ErrBuiltinRole)
-		w := r.serve(r.p.handleRoleDelete, http.MethodDelete, "/api/v1/authz/admin/tenants/t1/roles/editor",
+		w := r.serve(writeRoute(r.p, roleDeleteOperation.Handle(r.p.handleRoleDelete)), http.MethodDelete, "/api/v1/authz/admin/tenants/t1/roles/editor",
 			params("tenant", "t1", "role", "editor"), nil)
 		if w.Code != http.StatusConflict {
 			t.Fatalf("the answer = %d, want 409", w.Code)
@@ -294,7 +294,7 @@ func TestTheRoleRefusalProblemTypes(t *testing.T) {
 // type, or dropped the challenge, would not be the same shape as theirs.
 func TestAnAnonymousRoleRequestWritesA401WithoutAType(t *testing.T) {
 	r := newRig(t)
-	w := r.serveAnonymous(r.p.handleRolePut, http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/editor",
+	w := r.serveAnonymous(rolePutRoute(r.p), http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/editor",
 		params("tenant", "t1", "role", "editor"))
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("an anonymous request answered %d, want 401", w.Code)

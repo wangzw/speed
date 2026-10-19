@@ -4,13 +4,13 @@
 //
 // The module grants itself no permission; it carries only the vocabulary the
 // catalog already declares. Every route is declared open on the authorization
-// middleware, so the middleware lets a request through and the handler makes
-// the decision itself: it reads the caller from the request, asks the
-// handler-internal Guard for authz.role.read on a read or authz.role.manage on
-// a write, and answers a shortfall before anything else runs. A read that is
-// allowed ends there; a write lands a mandatory audit row outside any
-// transaction and before the action, calls the manager, and maps a refusal to
-// its answer.
+// middleware, so the middleware lets a request through to the route's guard
+// wrapper, which makes the decision in front of the typed handler: it reads the
+// caller from the request, asks the handler-internal Guard for authz.role.read
+// on a read or authz.role.manage on a write, and answers a shortfall before
+// anything else runs. A read that is allowed ends there; a write lands a
+// mandatory audit row outside any transaction and before the action, calls the
+// manager, and maps a refusal to its answer.
 //
 // The routes are mounted on the endpoints the authz.admin.endpoints list names,
 // and the start diagnostics name the endpoints and the groups.
@@ -71,10 +71,19 @@ const allEndpoints = "*"
 // the merged document.
 const defaultEndpoint = "admin"
 
-// openAPIFragment is this module's OpenAPI fragment, read at build time.
+// openAPIFragment is this module's OpenAPI fragment, read at build time. It is
+// generated from operations, not written by hand.
 //
 //go:embed openapi/authz.admin.json
 var openAPIFragment []byte
+
+// authzAdminSpec is the API root this module's fragment and routes hang off.
+var authzAdminSpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: openAPIFragment,
+}
 
 // init registers this module with the process registry. Registration travels
 // with the import, which is what makes "does this command mount the management
@@ -120,7 +129,8 @@ func Module() core.Module {
 		},
 		Resources: []any{
 			schema(),
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: openAPIFragment},
+			authzAdminSpec,
+			operations,
 			// The management surface: its routes are mounted whenever the
 			// module is in force and the process has an entry point, neither of
 			// which the module itself varies, so the feature is static.

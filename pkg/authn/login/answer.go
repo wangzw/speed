@@ -3,19 +3,11 @@ package login
 import (
 	"context"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/authn/internal/step"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
-
-// answerRequest is the body of POST flows/answer.
-type answerRequest struct {
-	Seq   int               `json:"seq"`
-	Step  string            `json:"step"`
-	Input map[string]string `json:"input"`
-}
 
 // fieldFactor and fieldCode are the input keys a second-factor step carries.
 const (
@@ -24,87 +16,82 @@ const (
 )
 
 // answer handles one step of a flow the request is bound to. It checks the
-// binding before the body, then the content type while reading it, then the step
-// number and the step itself.
-func (r *routes) answer(c *gin.Context) {
-	if !contentTypeJSON(c) {
-		return
-	}
+// binding, then the step number and the step itself; the body was bound by the
+// entry point before the handler.
+func (r *routes) answer(ctx context.Context, in answerInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	c := r.call(ctx, meta)
+	c.union = true
 	token, echo, rec, raw, ok := r.requireBinding(c, true)
 	if !ok {
-		return
+		return c.result()
 	}
-	var req answerRequest
-	if !mount.Decode(c, &req) {
-		return
+	if in.Seq != rec.Seq {
+		c.unauthorized(mount.CodeFlowInvalid)
+		return c.result()
 	}
-	if req.Seq != rec.Seq {
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
-		return
-	}
-	switch req.Step {
+	switch in.Step {
 	case stepAnswer:
 		if rec.State != stateFirst {
-			mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
-			return
+			c.unauthorized(mount.CodeFlowInvalid)
+			return c.result()
 		}
 	case stepFactor:
 		if rec.State != stateSecond {
-			mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
-			return
+			c.unauthorized(mount.CodeFlowInvalid)
+			return c.result()
 		}
 	case stepEnroll:
 		if rec.State != stateEnroll {
-			mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
-			return
+			c.unauthorized(mount.CodeFlowInvalid)
+			return c.result()
 		}
 	case stepComplete:
 		if rec.State != stateReady {
-			mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
-			return
+			c.unauthorized(mount.CodeFlowInvalid)
+			return c.result()
 		}
 	default:
-		mount.Fail(c, mount.CodeBadRequest)
-		return
+		c.fail(mount.CodeBadRequest)
+		return c.result()
 	}
-	if req.Step != stepComplete && rec.Answers >= maxAnswers {
+	if in.Step != stepComplete && rec.Answers >= maxAnswers {
 		failed := rec
 		failed.State = stateFailed
 		if !r.swap(c, token, raw, failed) {
-			return
+			return c.result()
 		}
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
-		return
+		c.unauthorized(mount.CodeFlowInvalid)
+		return c.result()
 	}
-	if err := checkFields(req.Input, maxAnswerFieldBytes); err != nil {
+	if err := checkFields(in.Input, maxAnswerFieldBytes); err != nil {
 		r.fail(c, err)
-		return
+		return c.result()
 	}
 
-	switch req.Step {
+	switch in.Step {
 	case stepAnswer:
-		r.applyFirstSubmit(c, token, echo, rec, raw, req.Input)
+		r.applyFirstSubmit(c, token, echo, rec, raw, in.Input)
 	case stepFactor:
-		r.applyFactor(c, token, echo, rec, raw, req.Input)
+		r.applyFactor(c, token, echo, rec, raw, in.Input)
 	case stepEnroll:
-		r.applyEnroll(c, token, echo, rec, raw, req.Input["kind"], req.Input)
+		r.applyEnroll(c, token, echo, rec, raw, in.Input["kind"], in.Input)
 	case stepComplete:
 		r.complete(c, token, rec, raw)
 	}
+	return c.result()
 }
 
 // applyFactor handles a second-factor step: the first step for a factor starts
 // its challenge, and a step whose factor is the one already challenged verifies
 // it.
-func (r *routes) applyFactor(c *gin.Context, token, echo string, rec record, raw []byte, fields map[string]string) {
-	ctx := c.Request.Context()
+func (r *routes) applyFactor(c *call, token, echo string, rec record, raw []byte, fields map[string]string) {
 	factorID := fields[fieldFactor]
 	if factorID == "" {
-		mount.Fail(c, mount.CodeBadRequest)
+		c.fail(mount.CodeBadRequest)
 		return
 	}
 	if !offeredContains(rec.MFA.Offered, factorID) {
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
+		c.unauthorized(mount.CodeFlowInvalid)
 		return
 	}
 	if rec.MFA.ChallengeRef != factorID {
@@ -112,12 +99,12 @@ func (r *routes) applyFactor(c *gin.Context, token, echo string, rec record, raw
 		return
 	}
 	f := r.flowState(rec, token)
-	in := authn.StepInput{Action: authn.InputSubmit, Fields: fields, Client: requestClient(c)}
-	got, ok := r.invoke(ctx, "factor", func(cctx context.Context) (authn.Step, error) {
+	in := authn.StepInput{Action: authn.InputSubmit, Fields: fields, Client: c.clientInfo()}
+	got, ok := r.invoke(c.ctx, "factor", func(cctx context.Context) (authn.Step, error) {
 		return r.mfa.Verify(cctx, f, factorID, in)
 	})
 	if !ok {
-		serverError(c)
+		c.serverError()
 		return
 	}
 	if !r.recordSends(c, token, raw, &rec, got) {
@@ -139,30 +126,29 @@ func (r *routes) applyFactor(c *gin.Context, token, echo string, rec record, raw
 		if !r.swap(c, token, raw, rec) {
 			return
 		}
-		r.reportLogin(ctx, rec, outcomeFailed)
-		mount.Unauthorized(c, r.endpoint, mount.CodeLoginFailed)
+		r.reportLogin(c.ctx, rec, outcomeFailed)
+		c.unauthorized(mount.CodeLoginFailed)
 	case step.KindThrottled:
-		r.reportLogin(ctx, rec, outcomeThrottled)
-		mount.Throttled(c, step.RetryAfterOf(got))
+		r.reportLogin(c.ctx, rec, outcomeThrottled)
+		c.throttled(step.RetryAfterOf(got))
 	case step.KindUnavailable:
-		r.reportLogin(ctx, rec, outcomeUnavailable)
-		mount.Unavailable(c)
+		r.reportLogin(c.ctx, rec, outcomeUnavailable)
+		c.unavailable()
 	default:
 		r.logger.Error(ModuleName + ": a factor gave an answer a verification step may not give")
-		serverError(c)
+		c.serverError()
 	}
 }
 
 // challengeFactor starts a verification on a chosen factor and keeps its state
 // for the step that answers it.
-func (r *routes) challengeFactor(c *gin.Context, token, echo string, rec record, raw []byte, factorID string) {
-	ctx := c.Request.Context()
+func (r *routes) challengeFactor(c *call, token, echo string, rec record, raw []byte, factorID string) {
 	f := r.flowState(rec, token)
-	got, ok := r.invoke(ctx, "factor", func(cctx context.Context) (authn.Step, error) {
+	got, ok := r.invoke(c.ctx, "factor", func(cctx context.Context) (authn.Step, error) {
 		return r.mfa.Challenge(cctx, f, factorID)
 	})
 	if !ok {
-		serverError(c)
+		c.serverError()
 		return
 	}
 	if !r.recordSends(c, token, raw, &rec, got) {
@@ -195,17 +181,17 @@ func (r *routes) challengeFactor(c *gin.Context, token, echo string, rec record,
 		if !r.swap(c, token, raw, rec) {
 			return
 		}
-		r.reportLogin(ctx, rec, outcomeFailed)
-		mount.Unauthorized(c, r.endpoint, mount.CodeLoginFailed)
+		r.reportLogin(c.ctx, rec, outcomeFailed)
+		c.unauthorized(mount.CodeLoginFailed)
 	case step.KindThrottled:
-		r.reportLogin(ctx, rec, outcomeThrottled)
-		mount.Throttled(c, step.RetryAfterOf(got))
+		r.reportLogin(c.ctx, rec, outcomeThrottled)
+		c.throttled(step.RetryAfterOf(got))
 	case step.KindUnavailable:
-		r.reportLogin(ctx, rec, outcomeUnavailable)
-		mount.Unavailable(c)
+		r.reportLogin(c.ctx, rec, outcomeUnavailable)
+		c.unavailable()
 	default:
 		r.logger.Error(ModuleName + ": a factor gave an answer a challenge step may not give")
-		serverError(c)
+		c.serverError()
 	}
 }
 

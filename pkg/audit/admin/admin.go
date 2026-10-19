@@ -80,10 +80,21 @@ const allEndpoints = "*"
 // the merged document.
 const defaultEndpoint = "admin"
 
-// openAPIFragment is this module's OpenAPI fragment, read at build time.
+// openAPIFragment is this module's OpenAPI fragment, read at build time. It is
+// generated from operations, not written by hand.
 //
 //go:embed openapi/audit.admin.json
 var openAPIFragment []byte
+
+// auditSpec is the API root this module's fragment and routes hang off. The
+// fragment is generated from the operations the module declares; the routes are
+// mounted from the same declarations and resolved against this root.
+var auditSpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: openAPIFragment,
+}
 
 // init registers this module with the process registry. Registration travels
 // with the import, which is what makes "does this command mount the query
@@ -128,7 +139,7 @@ func Module() core.Module {
 		},
 		Resources: []any{
 			schema(),
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: openAPIFragment},
+			auditSpec,
 			// The record-query surface: its routes are mounted whenever the
 			// module is in force and the process has an entry point, so the
 			// feature is static.

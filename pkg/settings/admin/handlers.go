@@ -1,56 +1,55 @@
 package admin
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"reflect"
 
-	"github.com/gin-gonic/gin"
+	speedhttp "github.com/vislake/speed/pkg/http"
 
-	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// writeBody is the request of a write: the one value to store. The value is
-// decoded as the JSON the client wrote — a number, a bool, a string — and handed
-// to the settings module, which encodes it under the declared type and holds it
-// to the item's declared domain.
-type writeBody struct {
-	Value any `json:"value"`
+// jsonContentType is the media type the entry point's JSON writer sets. A reply
+// operation's JSON answer is written through c.Data, which carries the declared
+// media type as it stands, so the one declared without the charset parameter
+// would reach the wire without it; this is the media type the simple form's
+// reader and the reply form's writer share.
+const jsonContentType = "application/json; charset=utf-8"
+
+// replyJSON builds a 200 answer carrying body as JSON, with the media type the
+// entry point's own JSON writer produces. It is the answer of a reply operation
+// that also has to write a bare 404, which the simple form cannot.
+func replyJSON(body any) (speedhttp.Reply, error) {
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	return speedhttp.BytesReply(http.StatusOK, jsonContentType, encoded), nil
 }
 
-// handleList answers GET /api/v1/settings/admin/settings: every declared setting item
-// with the value each resolves to on the selected layer. It is a read, so it
-// asks for settings.read in the layer's domain.
-func (p *product) handleList(c *gin.Context) {
-	if _, ok := p.caller(c); !ok {
-		return
-	}
-	sel, ok := p.selectLayer(c)
-	if !ok {
-		return
-	}
-	if !p.require(c, authz.PermissionSettingsRead, sel.domain) {
-		return
-	}
-	p.list(c, sel, "")
+// handleList answers GET /settings/admin/settings: every declared setting item
+// with the value each resolves to on the selected layer. The route's
+// authorization step has already settled the layer and decided the read.
+func (p *product) handleList(ctx context.Context, in listInput) ([]SettingsAdminSetting, error) {
+	return p.list(ctx, selectionOf(in.Layer, in.Tenant), "")
 }
 
-// handleListNamespace answers GET /api/v1/settings/admin/settings/:namespace: the
+// handleListNamespace answers GET /settings/admin/settings/:namespace: the
 // declared items that namespace declared, each as the all-items route shows it.
-// It is a read, so it asks for settings.read in the layer's domain. A namespace
-// that no declared item belongs to is a 404.
-func (p *product) handleListNamespace(c *gin.Context) {
-	if _, ok := p.caller(c); !ok {
-		return
+// A namespace that no declared item belongs to is a bare 404.
+func (p *product) handleListNamespace(ctx context.Context, in namespaceInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	views, err := p.list(ctx, selectionOf(in.Layer, in.Tenant), in.Namespace)
+	if errors.Is(err, errNoDeclaredItem) {
+		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	}
-	sel, ok := p.selectLayer(c)
-	if !ok {
-		return
+	if err != nil {
+		return nil, err
 	}
-	if !p.require(c, authz.PermissionSettingsRead, sel.domain) {
-		return
-	}
-	p.list(c, sel, c.Param("namespace"))
+	return replyJSON(views)
 }
 
 // list answers a read route with the declared items, limited to namespace when
@@ -59,11 +58,11 @@ func (p *product) handleListNamespace(c *gin.Context) {
 // The items are the declaration listing, which takes no IO and needs no context.
 // Each item's written text and row existence come from the selected layer's rows,
 // and its resolved text from a read at that layer, which walks the three-level
-// fallback. A
-// namespace no declared item belongs to is a 404; a failure to read the rows or
-// resolve a value is a 503, because a listing that could not read a row must not
-// answer as though the row were not there.
-func (p *product) list(c *gin.Context, sel selection, namespace string) {
+// fallback. A namespace no declared item belongs to is a bare 404, reported as
+// errNoDeclaredItem; a failure to read the rows or resolve a value is a 503,
+// because a listing that could not read a row must not answer as though the row
+// were not there.
+func (p *product) list(ctx context.Context, sel selection, namespace string) ([]SettingsAdminSetting, error) {
 	items := p.store.Declared()
 	if namespace != "" {
 		group := make([]settings.DeclaredItem, 0, len(items))
@@ -73,16 +72,14 @@ func (p *product) list(c *gin.Context, sel selection, namespace string) {
 			}
 		}
 		if len(group) == 0 {
-			p.notFound(c)
-			return
+			return nil, errNoDeclaredItem
 		}
 		items = group
 	}
 
-	rows, err := p.store.List(c.Request.Context(), sel.layer)
+	rows, err := p.store.List(ctx, sel.layer)
 	if err != nil {
-		p.unavailable(c, "listing the settings rows", err)
-		return
+		return nil, p.unavailable("listing the settings rows", err)
 	}
 	// The rows are keyed by their text and, separately, by their existence: an
 	// empty text is a row the layer holds as much as a non-empty one, and a
@@ -94,16 +91,15 @@ func (p *product) list(c *gin.Context, sel selection, namespace string) {
 		present[row.Key] = true
 	}
 
-	views := make([]settingView, 0, len(items))
+	views := make([]SettingsAdminSetting, 0, len(items))
 	for _, item := range items {
 		value, err := p.resolve(item, sel.layer)
 		if err != nil {
-			p.unavailable(c, "resolving a setting", err)
-			return
+			return nil, p.unavailable("resolving a setting", err)
 		}
 		views = append(views, viewOf(item, written[item.Key], present[item.Key], value))
 	}
-	c.JSON(http.StatusOK, views)
+	return views, nil
 }
 
 // resolve reads one item at the layer and writes the resolved value in the
@@ -118,103 +114,82 @@ func (p *product) resolve(item settings.DeclaredItem, layer settings.Layer) (str
 	return renderValue(item.Type, target.Elem().Interface())
 }
 
-// handleSet answers PUT /api/v1/settings/admin/settings/:namespace/:key: it writes one
-// row on the selected layer. It is a write, so it asks for settings.write in the
-// layer's domain.
+// handleSet answers PUT /settings/admin/settings/:namespace/:key: it writes one
+// row on the selected layer. The route's authorization step has already settled
+// the layer and decided the write, and the entry point has already bound the
+// body.
 //
-// The order is fixed: the layer and the body are held to their shape, the full
-// key is required to be declared, the mandatory audit row lands before the
-// action, and the settings module is called last. A key with no declaration is a
-// 404 and a value the settings module refuses is a 422.
+// The order is fixed: the full key is required to be declared, the mandatory
+// audit row lands before the action, and the settings module is called last. A
+// key with no declaration is a bare 404 and a value the settings module refuses
+// is a 422.
 //
 // The write's actor is the caller's accountability key, Identity.Key(), which
 // under an impersonation is the administrator whose hands are on the request and
 // not the account impersonated: the settings change is attributed to whoever
 // made it, and the settings module records that key in the event it publishes.
-func (p *product) handleSet(c *gin.Context) {
-	caller, ok := p.caller(c)
-	if !ok {
-		return
-	}
-	sel, ok := p.selectLayer(c)
-	if !ok {
-		return
-	}
-	if !p.require(c, authz.PermissionSettingsWrite, sel.domain) {
-		return
-	}
-	var body writeBody
-	if !p.body(c, &body) {
-		return
-	}
-	key := fullKey(c)
+func (p *product) handleSet(ctx context.Context, in setInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	caller, _ := authn.FromContext(ctx)
+	sel := selectionOf(in.Layer, in.Tenant)
+	key := fullKeyOf(in.Namespace, in.Key)
 	if _, declared := p.declared(key); !declared {
-		p.notFound(c)
-		return
+		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	}
 	actionID := newActionID()
-	if !p.auditRequired(c, mandatory(actionSet, key, detail(sel, key, actionID))) {
-		return
+	if err := p.auditRequired(ctx, mandatory(actionSet, key, detail(sel, key, actionID))); err != nil {
+		return nil, err
 	}
-	err := p.store.Set(c.Request.Context(), settings.Write{
+	err := p.store.Set(ctx, settings.Write{
 		Layer: sel.layer,
 		Key:   key,
-		Value: body.Value,
+		Value: in.Value,
 		Actor: caller.Key(),
 	})
 	if err != nil {
-		p.auditBestEffort(c.Request.Context(), failedAudit(actionSet, key, actionID))
-		p.answer(c, "writing a setting", err)
-		return
+		p.auditBestEffort(ctx, failedAudit(actionSet, key, actionID))
+		if errors.Is(err, settings.ErrUnknownKey) {
+			return speedhttp.EmptyReply(http.StatusNotFound), nil
+		}
+		return nil, p.answer("writing a setting", err)
 	}
-	p.noContent(c)
+	return speedhttp.EmptyReply(http.StatusNoContent), nil
 }
 
-// handleRemove answers DELETE /api/v1/settings/admin/settings/:namespace/:key: it drops
-// the selected layer's explicit row for one key. It is a write, so it asks for
-// settings.write in the layer's domain.
+// handleRemove answers DELETE /settings/admin/settings/:namespace/:key: it drops
+// the selected layer's explicit row for one key. The route's authorization step
+// has already settled the layer and decided the write.
 //
 // The full key is required to be declared before the action, a key with no
-// declaration being a 404; the mandatory audit row lands before the settings
-// module is called; and any failure the module returns is a 503, because a
-// delete of a declared row has no other refusal to name.
+// declaration being a bare 404; the mandatory audit row lands before the
+// settings module is called; and any failure the module returns is a 503,
+// because a delete of a declared row has no other refusal to name.
 //
 // As on the write route, the actor is the caller's accountability key,
 // Identity.Key() — the hands on the request, which under an impersonation is the
 // administrator and not the account impersonated.
-func (p *product) handleRemove(c *gin.Context) {
-	caller, ok := p.caller(c)
-	if !ok {
-		return
-	}
-	sel, ok := p.selectLayer(c)
-	if !ok {
-		return
-	}
-	if !p.require(c, authz.PermissionSettingsWrite, sel.domain) {
-		return
-	}
-	key := fullKey(c)
+func (p *product) handleRemove(ctx context.Context, in removeInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	caller, _ := authn.FromContext(ctx)
+	sel := selectionOf(in.Layer, in.Tenant)
+	key := fullKeyOf(in.Namespace, in.Key)
 	if _, declared := p.declared(key); !declared {
-		p.notFound(c)
-		return
+		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	}
 	actionID := newActionID()
-	if !p.auditRequired(c, mandatory(actionDelete, key, detail(sel, key, actionID))) {
-		return
+	if err := p.auditRequired(ctx, mandatory(actionDelete, key, detail(sel, key, actionID))); err != nil {
+		return nil, err
 	}
-	if err := p.store.Delete(c.Request.Context(), sel.layer, key, caller.Key()); err != nil {
-		p.auditBestEffort(c.Request.Context(), failedAudit(actionDelete, key, actionID))
-		p.unavailable(c, "deleting a setting", err)
-		return
+	if err := p.store.Delete(ctx, sel.layer, key, caller.Key()); err != nil {
+		p.auditBestEffort(ctx, failedAudit(actionDelete, key, actionID))
+		return nil, p.unavailable("deleting a setting", err)
 	}
-	p.noContent(c)
+	return speedhttp.EmptyReply(http.StatusNoContent), nil
 }
 
-// fullKey assembles the full setting key from the route's two path parameters:
-// the namespace that declared the item and the rest of the key under it.
-func fullKey(c *gin.Context) string {
-	return c.Param("namespace") + "." + c.Param("key")
+// fullKeyOf assembles the full setting key from the route's two path
+// parameters: the namespace that declared the item and the rest of the key
+// under it.
+func fullKeyOf(namespace, key string) string {
+	return namespace + "." + key
 }
 
 // declared reports the declaration of a full key, and whether one covers it. The

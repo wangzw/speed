@@ -1,14 +1,11 @@
 package admin
 
 import (
-	"errors"
-	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/vislake/speed/pkg/audit/journal"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -24,6 +21,11 @@ const (
 	badRequestCode = "bad-request"
 )
 
+// badRequestFault is the 400 every shape refusal of this module answers with.
+func badRequestFault() error {
+	return speedhttp.Fault{Status: http.StatusBadRequest, Type: typePrefix + badRequestCode}
+}
+
 // caller reads the identity the gateway put on the request.
 //
 // A query route is reached with no identity only when the authorization
@@ -32,7 +34,7 @@ const (
 // a request that cannot be put to the policy, and neither is a denial, so the
 // answer is the 401 the admission and authorization layers write for a route
 // that requires an identity and carries none: the status alone, no type, and the
-// same realm challenge. The handler returns without asking the guard or reading
+// same realm challenge. The route returns without asking the guard or reading
 // anything.
 func (p *product) caller(c *gin.Context) (authn.Identity, bool) {
 	id, ok := authn.FromContext(c.Request.Context())
@@ -96,7 +98,7 @@ func quoteRealm(name string) string {
 // require asks the handler-internal guard for audit.read. It is the decision
 // every query route makes after reading the caller and before parsing anything:
 // a shortfall is answered by the guard — a 403 for a denial, a 503 for an
-// outage — and the handler returns.
+// outage — and the route returns.
 //
 // The decision is made in the platform domain. The audit table is the process's
 // own and not a tenant's: it holds every tenant's rows and the rows that belong
@@ -112,34 +114,4 @@ func (p *product) require(c *gin.Context) bool {
 // a query parameter it cannot read. It is written before any read of the table.
 func (p *product) bad(c *gin.Context) {
 	speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusBadRequest, Type: typePrefix + badRequestCode})
-}
-
-// notFound answers a get route whose row the table does not hold: a bare 404,
-// carrying no problem code of this capability.
-func (p *product) notFound(c *gin.Context) {
-	c.Status(http.StatusNotFound)
-	c.Writer.WriteHeaderNow()
-}
-
-// unavailable logs a read failure and answers a 503, never telling the caller
-// which dependency failed or why.
-func (p *product) unavailable(c *gin.Context, op string, err error) {
-	p.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
-	speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
-}
-
-// answer maps a failure the read surface returned to the response it belongs to.
-//
-// The mapping is closed and fail-closed. A cursor that is not one the read
-// surface handed out is a shape failure the handler could not see before the
-// read — the cursor is opaque — so it is a 400; anything else is a 503 whose
-// cause stays in the log and never reaches the caller. A failure the mapping
-// does not name does not fall through as a success: it is the same 503 an
-// unknown failure gets.
-func (p *product) answer(c *gin.Context, op string, err error) {
-	if errors.Is(err, journal.ErrInvalidQuery) {
-		p.bad(c)
-		return
-	}
-	p.unavailable(c, op, err)
 }

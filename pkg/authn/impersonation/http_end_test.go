@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -122,6 +123,7 @@ type httpReply struct {
 	status     int
 	body       string
 	setCookies []string
+	header     http.Header
 }
 
 // sessionView is the part of GET /api/v1/auth/session these cases read.
@@ -333,6 +335,7 @@ func (h *httpHarness) do(client *http.Client, method, path string, body any, coo
 		status:     resp.StatusCode,
 		body:       string(raw),
 		setCookies: resp.Header.Values("Set-Cookie"),
+		header:     resp.Header.Clone(),
 	}
 }
 
@@ -474,6 +477,11 @@ func TestTheStartRotatesTheCookieAndTheEndLeavesIt(t *testing.T) {
 		if len(started.setCookies) != 1 {
 			t.Errorf("the start write wrote %d Set-Cookie header(s), want exactly 1: %v",
 				len(started.setCookies), started.setCookies)
+		}
+		cacheControl := started.header.Values("Cache-Control")
+		if !slices.Contains(cacheControl, "no-store") || !slices.Contains(cacheControl, cacheControlSetCookie) {
+			t.Errorf("the start write's Cache-Control reads %v, want the mounter's no-store and %q beside the cookie it issues",
+				cacheControl, cacheControlSetCookie)
 		}
 
 		ended := h.do(h.client, http.MethodDelete, "/api/v1/auth/impersonation", nil, "", "")

@@ -84,6 +84,16 @@ var migrationRoot embed.FS
 //go:embed openapi/inbox.json
 var inboxFragment []byte
 
+// inboxSpec is the API root this module's fragment and routes hang off. The
+// fragment is generated from operations; the routes are mounted from the same
+// declarations and resolved against this root.
+var inboxSpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: inboxFragment,
+}
+
 // migrationsFS is migrationRoot with the wrapping directory removed, so the
 // tree the database module sees has one directory per dialect at its root,
 // which is the shape it reads.
@@ -135,7 +145,8 @@ func Module() core.Module {
 			schema(),
 			db.Migrations{FS: migrationsFS},
 			messageCatalog,
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: inboxFragment},
+			inboxSpec,
+			operations,
 			// The inbox surface: its routes are mounted whenever the module is
 			// in force and the process has an entry point, so the feature is
 			// static.

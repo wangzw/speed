@@ -246,6 +246,16 @@
             },
             "description": "The body is not a JSON object or the declaration is not readable"
           },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is over the endpoint's limit"
+          },
           "415": {
             "content": {
               "application/problem+json": {
@@ -560,6 +570,16 @@
               }
             },
             "description": "The object's state does not allow the action, or its upload window has closed"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is over the endpoint's limit"
           },
           "415": {
             "content": {

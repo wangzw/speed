@@ -59,6 +59,17 @@ const defaultEndpoint = "account"
 //go:embed openapi/impersonation.json
 var impersonationFragment []byte
 
+// impersonationSpec is the API root this module's fragment and routes hang off.
+// Its prefix and version are the common ones; the fragment writes the
+// capability's own segment, so a route's declared path begins with the part of
+// the mounter's base that lies below this root.
+var impersonationSpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: impersonationFragment,
+}
+
 // diagnosticPrefix starts every line this module writes to the startup
 // diagnostics, which have several writers.
 const diagnosticPrefix = "authn: "
@@ -120,7 +131,8 @@ func Module() core.Module {
 		Resources: []any{
 			settingsSchema(),
 			db.Migrations{FS: migrationsFS},
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: impersonationFragment},
+			impersonationSpec,
+			operations,
 			// The impersonation self-service routes: mounted whenever the module
 			// is in force, so the feature is static.
 			feature.Spec{Name: "authn.impersonation"},

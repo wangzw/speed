@@ -6,56 +6,76 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-
-	"github.com/gin-gonic/gin"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
+
+// typePrefix starts the Problem.Type of every failure this capability's
+// handlers write, the code following it being one of mount's closed table.
+const typePrefix = "urn:speed:authn:"
+
+// errNotFound marks a capability failure that means the object the route names
+// is not there. A management route answers it as a bare 404, which carries no
+// problem document; the reply handlers turn it into one, and a simple handler,
+// whose operation cannot write a bare 404, never produces it.
+var errNotFound = errors.New("authn.admin: no such object")
+
+// authnFailure is a refusal of one of the capability's problem codes: the entry
+// point writes it as a problem document of the code's status and type.
+func authnFailure(status int, code string) error {
+	return speedhttp.Fault{Status: status, Type: typePrefix + code}
+}
 
 // caller reads the identity the gateway put on the request. The routes are
 // guarded, so a request that reaches a handler carries one; an absent identity
-// is answered with the gateway's own 401 rather than read as a caller.
-func (m *product) caller(c *gin.Context) (authn.Identity, bool) {
-	id, ok := authn.FromContext(c.Request.Context())
+// is answered with the gateway's own 401, challenge included, rather than read
+// as a caller.
+func (m *product) caller(ctx context.Context) (authn.Identity, error) {
+	id, ok := authn.FromContext(ctx)
 	if !ok {
-		mount.Unauthorized(c, m.mounter.Endpoint(), "")
-		return authn.Identity{}, false
+		return authn.Identity{}, speedhttp.Fault{
+			Status: http.StatusUnauthorized,
+			Headers: []speedhttp.HeaderValue{{
+				Name:  "WWW-Authenticate",
+				Value: mount.UnauthorizedChallenge(m.mounter.Endpoint()),
+			}},
+		}
 	}
-	return id, true
+	return id, nil
 }
 
 // admit applies the two checks every management route makes before it reads
-// anything: the actor is not impersonating, and a Decider is there. It answers
-// and returns false when either fails, so that a deployment with no Decider
-// tells a caller nothing about which objects exist.
-func (m *product) admit(c *gin.Context, id authn.Identity) bool {
+// anything: the actor is not impersonating, and a Decider is there. It answers a
+// refusal as an error, so that a deployment with no Decider tells a caller
+// nothing about which objects exist.
+func (m *product) admit(id authn.Identity) error {
 	if id.Impersonating() {
-		mount.Forbidden(c, mount.CodeImpersonationRestricted)
-		return false
+		return authnFailure(http.StatusForbidden, mount.CodeImpersonationRestricted)
 	}
 	if m.decider == nil {
-		mount.Forbidden(c, mount.CodeForbidden)
-		return false
+		return authnFailure(http.StatusForbidden, mount.CodeForbidden)
 	}
-	return true
+	return nil
 }
 
-// asks puts one Decision to the Decider. It returns true only when the action
-// is allowed; a refusal is a 403 and an error or a panic is a 503, each already
-// answered, and the handler returns.
-func (m *product) asks(c *gin.Context, d authn.Decision) bool {
-	allow, err := m.callDecider(c.Request.Context(), d)
+// asks puts one Decision to the Decider. A refusal is a 403 and an error or a
+// panic is a 503; either is returned as the fault the entry point writes.
+func (m *product) asks(ctx context.Context, d authn.Decision) error {
+	allow, err := m.callDecider(ctx, d)
 	switch {
 	case err != nil:
-		m.cause(c, "asking the Decider", err)
-		return false
+		m.logger.Error(ModuleName+": asking the Decider failed", slog.String("cause", err.Error()))
+		return authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)
 	case !allow:
-		mount.Forbidden(c, mount.CodeForbidden)
-		return false
+		return authnFailure(http.StatusForbidden, mount.CodeForbidden)
 	}
-	return true
+	return nil
 }
 
 // callDecider calls Decide and turns a returned error and a panic alike into
@@ -74,31 +94,91 @@ func (m *product) callDecider(ctx context.Context, d authn.Decision) (allow bool
 	return allow, nil
 }
 
-// require holds the actor to a strength requirement, answering the step-up 401
-// and returning false when it falls short. A zero requirement asks for nothing.
-func (m *product) require(c *gin.Context, id authn.Identity, req authn.Requirement) bool {
+// require holds the actor to a strength requirement and returns the step-up 401
+// when it falls short. A zero requirement asks for nothing.
+func (m *product) require(id authn.Identity, req authn.Requirement) error {
 	if req == (authn.Requirement{}) {
-		return true
+		return nil
 	}
 	if id.Satisfies(req, m.now()) {
-		return true
+		return nil
 	}
-	mount.StepUpRequired(c, id, req)
-	return false
+	return stepUpRequired(id, req)
+}
+
+// stepUpRequired is the 401 of an identity that does not meet a requirement:
+// the problem type insufficient_user_authentication and, in WWW-Authenticate,
+// the scheme the identity authenticated with followed by the level, the
+// freshness and the local-only flag the requirement names.
+//
+// The challenge is built here rather than through the capability's writer
+// because a typed handler has no *gin.Context to hand it; the shape is the one
+// that writer produces, byte for byte.
+func stepUpRequired(id authn.Identity, r authn.Requirement) error {
+	return speedhttp.Fault{
+		Status: http.StatusUnauthorized,
+		Type:   typePrefix + mount.CodeInsufficientUserAuthentication,
+		Headers: []speedhttp.HeaderValue{{
+			Name:  "WWW-Authenticate",
+			Value: stepUpChallenge(id.Challenge(), r),
+		}},
+	}
+}
+
+// stepUpChallenge renders the step-up challenge: RFC 9470's parameters carried
+// on the scheme the identity authenticated with, which is this capability's
+// convention on Cookie and Basic as well as on Bearer.
+func stepUpChallenge(scheme string, r authn.Requirement) string {
+	var b strings.Builder
+	b.WriteString(challengeScheme(scheme))
+	b.WriteString(` error="insufficient_user_authentication", error_description="`)
+	b.WriteString(stepUpDescription)
+	b.WriteString(`", acr_values="`)
+	b.WriteString(strconv.Itoa(int(r.Assurance)))
+	b.WriteByte('"')
+	if r.MaxAge > 0 {
+		b.WriteString(`, max_age="`)
+		b.WriteString(strconv.FormatInt(int64((r.MaxAge+time.Second-1)/time.Second), 10))
+		b.WriteByte('"')
+	}
+	return b.String()
+}
+
+// stepUpDescription is the error_description of the step-up challenge. It names
+// no requirement of the route and nothing of the account.
+const stepUpDescription = "A stronger or more recent authentication is required"
+
+// challengeScheme returns scheme when it is an RFC 9110 token, and Bearer
+// otherwise. The gateway stamps Identity.Challenge, so an odd value is a zero
+// identity or a defect, and neither may put a character into a header that ends
+// the field.
+func challengeScheme(scheme string) string {
+	if scheme == "" {
+		return "Bearer"
+	}
+	for i := 0; i < len(scheme); i++ {
+		ch := scheme[i]
+		switch {
+		case ch >= 'a' && ch <= 'z', ch >= 'A' && ch <= 'Z', ch >= '0' && ch <= '9',
+			strings.IndexByte("!#$%&'*+-.^_`|~", ch) >= 0:
+		default:
+			return "Bearer"
+		}
+	}
+	return scheme
 }
 
 // auditRequired writes the mandatory audit row of a write, outside any
 // transaction and before the action. A row that does not land is the module's
 // own failure or the audit module's state, and the action is not carried out:
-// the answer is 503 and the handler returns.
-func (m *product) auditRequired(c *gin.Context, e audit.Entry) bool {
-	if err := m.audit.Record(c.Request.Context(), e); err != nil {
+// the answer is 503.
+func (m *product) auditRequired(ctx context.Context, e audit.Entry) error {
+	if err := m.audit.Record(ctx, e); err != nil {
 		m.logger.Error(ModuleName+": the mandatory audit row could not be written, so the action was not carried out",
 			slog.String("action", e.Action), slog.String("cause", err.Error()))
-		mount.Unavailable(c)
-		return false
+		return authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)
 	}
-	return true
+	return nil
 }
 
 // auditBestEffort writes an audit row that does not block the action. A failure
@@ -110,47 +190,50 @@ func (m *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 	}
 }
 
-// cause logs a failure and answers 503, never telling the caller which
-// dependency failed.
-func (m *product) cause(c *gin.Context, op string, err error) {
-	m.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
-	mount.Unavailable(c)
-}
-
-// answer maps a failure a capability returned to the response it belongs to.
-// A failure the route did not cause that no sentinel names is a 503.
-func (m *product) answer(c *gin.Context, op string, err error) {
+// answer maps a failure a capability returned to the refusal it belongs to. A
+// missing object is errNotFound, which a reply handler writes as a bare 404; a
+// failure the route did not cause that no sentinel names is a 503.
+func (m *product) answer(op string, err error) error {
 	switch {
 	case errors.Is(err, authn.ErrAccountNotFound), errors.Is(err, authn.ErrSessionNotFound),
 		errors.Is(err, authn.ErrProviderNotFound), errors.Is(err, authn.ErrNotImpersonating):
-		c.Status(http.StatusNotFound)
-		c.Writer.WriteHeaderNow()
+		return errNotFound
 	case errors.Is(err, authn.ErrInvalidArgument), errors.Is(err, authn.ErrInvalidIdentifier),
 		errors.Is(err, authn.ErrPasswordPolicy), errors.Is(err, authn.ErrInvalidConfig),
 		errors.Is(err, authn.ErrIdentifierRequired):
-		mount.Fail(c, mount.CodeBadRequest)
+		return authnFailure(http.StatusBadRequest, mount.CodeBadRequest)
 	case errors.Is(err, authn.ErrAccountExists), errors.Is(err, authn.ErrBindingConflict),
 		errors.Is(err, authn.ErrDomainClaimed), errors.Is(err, authn.ErrLastLoginMethod),
 		errors.Is(err, authn.ErrFactorLimit), errors.Is(err, authn.ErrLastFactor):
-		mount.Fail(c, mount.CodeConflict)
+		return authnFailure(http.StatusConflict, mount.CodeConflict)
 	case errors.Is(err, authn.ErrUnsupportedRegion):
-		mount.Fail(c, mount.CodeUnsupportedRegion)
+		return authnFailure(http.StatusBadRequest, mount.CodeUnsupportedRegion)
 	default:
-		m.cause(c, op, err)
+		m.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
+		return authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)
 	}
 }
 
-// notFound answers an administration route whose object is not there: a bare
-// 404, the shape the design states for a missing account, session, provider or
-// record, carrying no problem code of this capability.
-func (m *product) notFound(c *gin.Context) {
-	c.Status(http.StatusNotFound)
-	c.Writer.WriteHeaderNow()
+// replyFailure maps a capability failure to the answer of a reply operation: a
+// missing object is a bare 404, every other refusal is the fault answer returns.
+func (m *product) replyFailure(op string, err error) (speedhttp.Reply, error) {
+	mapped := m.answer(op, err)
+	if errors.Is(mapped, errNotFound) {
+		return speedhttp.EmptyReply(http.StatusNotFound), nil
+	}
+	return nil, mapped
 }
 
 // bad answers a body or a query parameter the route refuses: a 400 with this
 // capability's code. It is for shape problems the handler judges itself, ahead
 // of any capability call.
-func (m *product) bad(c *gin.Context) {
-	mount.Fail(c, mount.CodeBadRequest)
+func (m *product) bad() error {
+	return authnFailure(http.StatusBadRequest, mount.CodeBadRequest)
+}
+
+// unavailable answers a failure of a dependency: a 503 whose cause stays in the
+// log and never reaches the caller.
+func (m *product) unavailable(op string, err error) error {
+	m.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
+	return authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)
 }

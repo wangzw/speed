@@ -230,5 +230,5 @@ sequenceDiagram
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 管理面 `settings.admin`（路由、按层判定、审计、敏感遮蔽、回绝映射） | 已实现 | `pkg/settings/admin/admin.go` `Module`；`pkg/settings/admin/routes.go` `routes`、`mount`；`pkg/settings/admin/handlers.go` `handleList`、`handleListNamespace`、`handleSet`、`handleRemove`；`pkg/settings/admin/pipeline.go` `selectLayer`、`require`、`auditRequired`；`pkg/settings/admin/views.go` `maskedValue`、`viewOf` |
-| 管理面 `settings.admin` 的 OpenAPI 片段与 `speedhttp.Spec` 资源 | 已实现 | `pkg/settings/admin/openapi/settings.admin.json`；`pkg/settings/admin/admin.go` `Module`、`defaultEndpoint`、`openAPIFragment` |
+| 管理面 `settings.admin` 的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/settings/admin/operations.go`；`pkg/settings/admin/openapi_generated_test.go`；片段 `pkg/settings/admin/openapi/settings.admin.json` |
 | 静态特性 `settings.admin` 的 `feature.Spec` 声明 | 已实现 | `pkg/settings/admin/admin.go` `Module`；`pkg/settings/admin/feature_test.go` `TestTheModuleDeclaresTheSettingsAdminFeature` |

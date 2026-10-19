@@ -80,6 +80,16 @@ const defaultEndpoint = "admin"
 //go:embed openapi/sms.admin.json
 var openAPIFragment []byte
 
+// adminSpec is the API root this module's fragment and routes hang off. The
+// fragment is generated from the operations declarations in operations.go; the
+// routes are mounted from the same declarations and resolved against this root.
+var adminSpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: openAPIFragment,
+}
+
 // init registers this module with the process registry. Registration travels
 // with the import, which is what makes "does this command mount the management
 // routes" a question the host answers by importing this package and writing
@@ -122,7 +132,8 @@ func Module() core.Module {
 		},
 		Resources: []any{
 			schema(), permissionSpec(), translationSpec(), messageCatalog,
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: openAPIFragment},
+			adminSpec,
+			operations,
 			// The template-management surface: its routes are mounted whenever
 			// the module is in force and the process has an entry point, so the
 			// feature is static.

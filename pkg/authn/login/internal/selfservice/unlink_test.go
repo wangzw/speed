@@ -46,15 +46,18 @@ func TestAnIdentifierThatIsNotTheCallersIsNotRemoved(t *testing.T) {
 }
 
 // TestRemovingAnIdentifierMapsTheAccountModulesAnswers holds each answer the
-// removal can give. The module that owns the rule says whether the account keeps
-// a way to log in; the handler only answers.
+// removal can give. The route does not check whether the identifier is the
+// account's last way to log in, and the account module's removal does not
+// answer that refusal: it belongs to unbinding an external identity, so the
+// route declares no 409 and an answer it does not declare becomes the defect
+// answer the entry point gives.
 func TestRemovingAnIdentifierMapsTheAccountModulesAnswers(t *testing.T) {
 	for _, c := range []struct {
 		err  error
 		code int
 		kind string
 	}{
-		{authn.ErrLastLoginMethod, http.StatusConflict, "conflict"},
+		{authn.ErrLastLoginMethod, http.StatusInternalServerError, ""},
 		{authn.ErrUnavailable, http.StatusServiceUnavailable, "unavailable"},
 		{errors.New("driver: down"), http.StatusServiceUnavailable, "unavailable"},
 	} {

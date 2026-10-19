@@ -1,56 +1,53 @@
 package preferences
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
-
+	speedhttp "github.com/vislake/speed/pkg/http"
+	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/notification"
 )
 
-// handleTypes answers GET /types: the taxonomy itself, one list every recipient
+// listTypes answers GET /types: the taxonomy itself, one list every recipient
 // shares. It is a read with no tenant of its own and it refuses nothing of this
 // module's own; the body does not vary by language, but the endpoint keys its
 // representation by the negotiated language — this module's error responses are
-// written in it — so the Vary header keeps a shared cache from serving one
-// language's representation for another.
-func (p *product) handleTypes(c *gin.Context) {
-	c.Header("Vary", "Accept-Language")
+// written in it — so the declared Vary header keeps a shared cache from serving
+// one language's representation for another.
+func (p *product) listTypes(_ context.Context, _ struct{}) (typesBody, error) {
 	specs := p.taxonomy.Types()
-	views := make([]typeView, len(specs))
+	views := make([]NotificationType, len(specs))
 	for i, spec := range specs {
 		views[i] = typeViewOf(spec)
 	}
-	c.JSON(http.StatusOK, gin.H{"types": views})
+	return typesBody{Types: views}, nil
 }
 
-// handlePreferences answers GET /preferences: the caller's preference matrix,
-// one row per type in the taxonomy. Each row's channels are the effective set —
-// the stored channels when the recipient has a row for the type, the type's
-// default channels otherwise. Like GET /types it refuses nothing of this
-// module's own and keys its representation by language.
-func (p *product) handlePreferences(c *gin.Context) {
-	c.Header("Vary", "Accept-Language")
-	ctx := c.Request.Context()
+// listPreferences answers GET /preferences: the caller's preference matrix, one
+// row per type in the taxonomy. Each row's channels are the effective set — the
+// stored channels when the recipient has a row for the type, the type's default
+// channels otherwise. Like GET /types it refuses nothing of this module's own
+// and keys its representation by language.
+func (p *product) listPreferences(ctx context.Context, _ struct{}) (preferencesBody, error) {
 	recipient, _ := recipientFrom(ctx)
 	stored, err := p.loadStored(ctx, recipient)
 	if err != nil {
-		p.answer(c, "reading the preferences", err)
-		return
+		return preferencesBody{}, withVary(p.answer(ctx, "reading the preferences", err))
 	}
 	specs := p.taxonomy.Types()
-	views := make([]preferenceView, len(specs))
+	views := make([]NotificationPreference, len(specs))
 	for i, spec := range specs {
 		channels, explicit := effectiveChannels(spec, stored)
-		views[i] = preferenceView{
+		views[i] = NotificationPreference{
 			TypeKey:  spec.Key,
 			Group:    spec.Group,
-			Channels: channelStrings(channels),
+			Channels: channelNames(channels),
 			Explicit: explicit,
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"preferences": views})
+	return preferencesBody{Preferences: views}, nil
 }
 
 // effectiveChannels computes the effective set of one type for the recipient
@@ -68,46 +65,36 @@ func effectiveChannels(spec notification.TypeSpec, stored map[string][]notificat
 	return canonicalChannels(spec.DefaultChannels), false
 }
 
-// setPreferenceBody is the request of a PUT: the target state of one channel for
-// one type. The state is a pointer so that a body naming none is told apart from
-// one naming false.
-type setPreferenceBody struct {
-	Enabled *bool `json:"enabled"`
-}
-
-// handleSetPreference answers PUT /preferences/:typeKey/:channel: it turns one
+// setPreference answers PUT /preferences/:typeKey/:channel: it turns one
 // channel on or off for one type and returns that type's effective set.
 //
-// The decision order is fixed. The body is read first; the channel is checked
-// next, before any no-op branch, so an unknown channel is never taken for a
-// no-op; the type is checked after the channel; and the type's unsubscribability
-// is checked after that. Only then is the effective set computed and the target
-// set derived from it, and a target that equals the current effective set is a
-// 200 that writes nothing. A write that does proceed goes through Set.
-func (p *product) handleSetPreference(c *gin.Context) {
-	ctx := c.Request.Context()
-
-	var body setPreferenceBody
-	if err := c.ShouldBindJSON(&body); err != nil || body.Enabled == nil {
-		p.refuse(c, http.StatusBadRequest, badRequestCode)
-		return
+// The decision order is fixed. The entry point binds the body before the
+// handler runs, so a body it could not decode — not a JSON object, a
+// non-boolean enabled other than null, an unknown member — is refused there
+// with the entry point's own problem document. The handler first refuses a body
+// naming no enabled — a literal null binds as if absent — then checks the
+// channel before any no-op branch, so an unknown
+// channel is never taken for a no-op; the type is checked after the channel;
+// and the type's unsubscribability is checked after that. Only then is the
+// effective set computed and the target set derived from it, and a target that
+// equals the current effective set is a 200 that writes nothing. A write that
+// does proceed goes through Set.
+func (p *product) setPreference(ctx context.Context, in SetPreferenceInput) (preferenceSetBody, error) {
+	if in.Enabled == nil {
+		return preferenceSetBody{}, p.refusal(ctx, http.StatusBadRequest, badRequestCode)
 	}
 
-	channel := notification.Channel(c.Param("channel"))
+	channel := notification.Channel(in.Channel)
 	if !notification.KnownChannel(channel) {
-		p.refuse(c, http.StatusBadRequest, badRequestCode)
-		return
+		return preferenceSetBody{}, p.refusal(ctx, http.StatusBadRequest, badRequestCode)
 	}
 
-	typeKey := c.Param("typeKey")
-	spec, ok := p.taxonomy.Type(typeKey)
+	spec, ok := p.taxonomy.Type(in.TypeKey)
 	if !ok {
-		p.refuse(c, http.StatusBadRequest, badRequestCode)
-		return
+		return preferenceSetBody{}, p.refusal(ctx, http.StatusBadRequest, badRequestCode)
 	}
 	if !spec.Unsubscribable {
-		p.refuse(c, http.StatusConflict, notUnsubscribableCode)
-		return
+		return preferenceSetBody{}, p.refusal(ctx, http.StatusConflict, notUnsubscribableCode)
 	}
 
 	recipient, ok := recipientFrom(ctx)
@@ -115,45 +102,69 @@ func (p *product) handleSetPreference(c *gin.Context) {
 		// A write names a recipient; the host's identity and authorization side
 		// supplies it on the request context, and a request that reaches this
 		// handler without one cannot be acted on.
-		p.refuse(c, http.StatusBadRequest, badRequestCode)
-		return
+		return preferenceSetBody{}, p.refusal(ctx, http.StatusBadRequest, badRequestCode)
 	}
 
-	current, err := p.Effective(ctx, recipient, typeKey)
+	current, err := p.Effective(ctx, recipient, in.TypeKey)
 	if err != nil {
-		p.answer(c, "reading the preference", err)
-		return
+		return preferenceSetBody{}, p.answer(ctx, "reading the preference", err)
 	}
-	target := applyToggle(current, channel, *body.Enabled)
+	target := applyToggle(current, channel, *in.Enabled)
 	if sameSet(target, current) {
-		c.JSON(http.StatusOK, gin.H{"type_key": typeKey, "channels": channelStrings(current)})
-		return
+		return preferenceSetBody{TypeKey: in.TypeKey, Channels: channelStrings(current)}, nil
 	}
 
-	written, err := p.Set(ctx, recipient, typeKey, target)
+	written, err := p.Set(ctx, recipient, in.TypeKey, target)
 	if err != nil {
-		p.answer(c, "writing the preference", err)
-		return
+		return preferenceSetBody{}, p.answer(ctx, "writing the preference", err)
 	}
-	c.JSON(http.StatusOK, gin.H{"type_key": typeKey, "channels": channelStrings(written)})
+	return preferenceSetBody{TypeKey: in.TypeKey, Channels: channelStrings(written)}, nil
 }
 
-// answer maps a failure a seam method returned to the response it belongs to.
-// The mapping is closed and fail-closed: a request whose shape cannot be read, an
-// unknown type or channel, and a bad request are a 400; a type that cannot be
-// unsubscribed is a 409; every other failure — a missing tenant, a table that
-// cannot be read — is a 503 whose cause stays in the log and never reaches the
-// caller.
-func (p *product) answer(c *gin.Context, op string, err error) {
+// withVary adds the route's declared Vary header to a failure, so a refusal
+// carries the representation key the success answer does. The hand-written
+// handler set the header before it read the table; a simple operation writes the
+// success headers itself, so the failure carries it as a fault header, which the
+// 503 declaration allows.
+func withVary(err error) error {
+	var fault speedhttp.Fault
+	if !errors.As(err, &fault) {
+		return err
+	}
+	fault.Headers = append(fault.Headers, speedhttp.HeaderValue{Name: "Vary", Value: "Accept-Language"})
+	return fault
+}
+
+// answer maps a failure a seam method returned to the answer it belongs to. The
+// mapping is closed and fail-closed: an unknown type or channel is a 400; a
+// type that cannot be unsubscribed is a 409; every other failure — a missing
+// tenant, a table that cannot be read — is a 503 whose cause stays in the log
+// and never reaches the caller.
+func (p *product) answer(ctx context.Context, op string, err error) error {
 	switch {
-	case errors.Is(err, notification.ErrInvalidRequest),
-		errors.Is(err, notification.ErrUnknownType),
+	case errors.Is(err, notification.ErrUnknownType),
 		errors.Is(err, notification.ErrUnknownChannel):
-		p.refuse(c, http.StatusBadRequest, badRequestCode)
+		return p.refusal(ctx, http.StatusBadRequest, badRequestCode)
 	case errors.Is(err, notification.ErrNotUnsubscribable):
-		p.refuse(c, http.StatusConflict, notUnsubscribableCode)
+		return p.refusal(ctx, http.StatusConflict, notUnsubscribableCode)
 	default:
 		p.logger.Error(ModuleName+": "+op+" failed", "cause", err.Error())
-		p.refuse(c, http.StatusServiceUnavailable, "")
+		return p.refusal(ctx, http.StatusServiceUnavailable, "")
 	}
+}
+
+// refusal builds the answer a handler returns for one refusal: its status, its
+// type and its rendered title and detail. An empty code writes the 503 — no
+// problem type of any kind — whose cause stays in the log and whose body
+// carries only a generic title.
+func (p *product) refusal(ctx context.Context, status int, code string) error {
+	problem := speedhttp.Fault{Status: status}
+	if code == "" {
+		problem.Title = p.text(ctx, i18n.Key("notification.preferences.unavailable"+titleSuffix), "Service Unavailable")
+		return problem
+	}
+	problem.Type = typePrefix + code
+	problem.Title = p.text(ctx, i18n.Key("notification.preferences."+code+titleSuffix), englishTitles[code])
+	problem.Detail = p.text(ctx, i18n.Key("notification.preferences."+code+detailSuffix), englishDetails[code])
+	return problem
 }

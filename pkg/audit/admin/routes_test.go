@@ -150,7 +150,7 @@ func TestTheListAnswersAPageAndPassesTheQueryThrough(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
 	}
-	var page recordPage
+	var page AuditAdminRecordPage
 	decode(t, w, &page)
 	if len(page.Entries) != 2 {
 		t.Fatalf("the page holds %d entries, want 2", len(page.Entries))
@@ -228,7 +228,7 @@ func TestTheGetRouteAnswersOneRecord(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
 	}
-	var view recordView
+	var view AuditAdminRecord
 	decode(t, w, &view)
 	if view.ID != "42" || view.Action != "a.remove" {
 		t.Errorf("the view is %+v, want the row the read surface returned", view)

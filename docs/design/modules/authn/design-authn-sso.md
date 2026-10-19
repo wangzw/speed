@@ -600,5 +600,5 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 | `authn.idp.changed` 的发布与缓存失效订阅 | 已实现 | `pkg/authn/sso/providers.go` `publishChange`、`events.go`；`pkg/authn/sso/oidc/subscribe.go` `subscribe`、`onIDPChanged`；`pkg/authn/sso/saml/events.go` `subscribe`、`onIDPChanged`、`spCache.flush` |
 | 指标 `authn.sso.assertions` 与审计动作 `authn.sso.reject` 的写入点 | 已实现 | `pkg/authn/sso/saml/reject.go` `newMeters`、`actionSSOReject`；`pkg/authn/sso/oidc/metrics.go` `assertionsName`；`pkg/authn/sso/oidc/method.go` `reject`、`logRefusal`、`actionReject` |
 | goxmldsig 版本下限与依赖的 `pkg/go.mod` 条目 | 已实现 | `pkg/go.mod`（gosaml2、goxmldsig、go-oidc、x/oauth2）；`pkg/authn/deps_test.go` `goxmldsigFloor`、`pinnedLibraries` |
-| 对外契约片段：`openapi/sso.json`，经模块的 `Spec` 资源声明 | 已实现 | `pkg/authn/sso/module.go` `Module`、`defaultEndpoint` |
-| `authn.sso.saml` 的对外契约片段：`openapi/saml.json`，经模块的 `Spec` 资源声明 | 已实现 | `pkg/authn/sso/saml/saml.go` `Module`、`defaultEndpoint` |
+| operation 声明与对外契约片段生成：`openapi/sso.json` | 已实现 | `pkg/authn/sso/operations.go`；`pkg/authn/sso/openapi_generated_test.go`；片段 `pkg/authn/sso/openapi/sso.json` |
+| `authn.sso.saml` 的 operation 声明与对外契约片段生成：`openapi/saml.json` | 已实现 | `pkg/authn/sso/saml/operations.go`；`pkg/authn/sso/saml/openapi_generated_test.go`；片段 `pkg/authn/sso/saml/openapi/saml.json` |

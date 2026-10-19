@@ -1,25 +1,15 @@
 package admin
 
 import (
-	"strconv"
-
-	"github.com/gin-gonic/gin"
+	"context"
 
 	"github.com/vislake/speed/pkg/authn"
-	"github.com/vislake/speed/pkg/authn/internal/mount"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// memberView is one membership as the management routes show it.
-type memberView struct {
-	Account   string `json:"account"`
-	Tenant    string `json:"tenant"`
-	Active    bool   `json:"active"`
-	SSOExempt bool   `json:"sso_exempt"`
-	Source    string `json:"source"`
-}
-
-func memberViewOf(mem authn.Membership) memberView {
-	return memberView{
+// memberViewOf builds one membership as the management routes show it.
+func memberViewOf(mem authn.Membership) AuthnAdminMember {
+	return AuthnAdminMember{
 		Account:   string(mem.Account),
 		Tenant:    mem.Tenant,
 		Active:    mem.Active,
@@ -32,160 +22,133 @@ func memberViewOf(mem authn.Membership) memberView {
 // path is the decision's tenant; there is no look-up of the tenant itself,
 // because this capability does not hold a tenant roster. The action is
 // membership.manage.
-func (m *product) handleMemberList(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
-	}
-	tenant := c.Param("tenant")
-	var page authn.Page
-	if s := c.Query("limit"); s != "" {
-		n, err := strconv.Atoi(s)
-		if err != nil || n < 0 {
-			m.bad(c)
-			return
-		}
-		page.Limit = n
-	}
-	page.After = c.Query("after")
-	if !m.asks(c, authn.Decision{Action: authn.ActionMembershipManage, Actor: id, Tenant: tenant}) {
-		return
-	}
-	members, err := m.memberships.Members(c.Request.Context(), tenant, page)
+func (m *product) handleMemberList(ctx context.Context, in memberListInput) (AuthnAdminMemberList, error) {
+	id, err := m.caller(ctx)
 	if err != nil {
-		m.cause(c, "listing members", err)
-		return
+		return AuthnAdminMemberList{}, err
 	}
-	views := make([]memberView, len(members))
+	if err = m.admit(id); err != nil {
+		return AuthnAdminMemberList{}, err
+	}
+	if in.Limit < 0 {
+		return AuthnAdminMemberList{}, m.bad()
+	}
+	page := authn.Page{Limit: in.Limit, After: in.After}
+	if err = m.asks(ctx, authn.Decision{Action: authn.ActionMembershipManage, Actor: id, Tenant: in.Tenant}); err != nil {
+		return AuthnAdminMemberList{}, err
+	}
+	members, err := m.memberships.Members(ctx, in.Tenant, page)
+	if err != nil {
+		return AuthnAdminMemberList{}, m.unavailable("listing members", err)
+	}
+	views := make([]AuthnAdminMember, len(members))
 	for i, mem := range members {
 		views[i] = memberViewOf(mem)
 	}
-	c.JSON(200, gin.H{"members": views})
-}
-
-// memberBody is the request of a membership write.
-type memberBody struct {
-	Active    bool   `json:"active"`
-	Source    string `json:"source"`
-	SSOExempt bool   `json:"sso_exempt"`
+	return AuthnAdminMemberList{Members: views}, nil
 }
 
 // handleMemberPut answers PUT /admin/tenants/:tenant/members/:account: it adds,
 // suspends or resumes a membership. The action is membership.manage.
-func (m *product) handleMemberPut(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
+func (m *product) handleMemberPut(ctx context.Context, in memberWriteInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := m.caller(ctx)
+	if err != nil {
+		return nil, err
 	}
-	tenant := c.Param("tenant")
-	accountID := authn.AccountID(c.Param("account"))
-	var body memberBody
-	if !mount.Decode(c, &body) {
-		return
+	if err := m.admit(id); err != nil {
+		return nil, err
 	}
-	source := body.Source
+	accountID := authn.AccountID(in.Account)
+	source := in.Source
 	if source == "" {
 		source = authn.ReasonAdmin
 	}
-	if !m.asks(c, authn.Decision{
-		Action: authn.ActionMembershipManage, Actor: id, Tenant: tenant,
+	if err := m.asks(ctx, authn.Decision{
+		Action: authn.ActionMembershipManage, Actor: id, Tenant: in.Tenant,
 		Target: string(accountID), TargetAccount: string(accountID),
-	}) {
-		return
+	}); err != nil {
+		return nil, err
 	}
 	actionID := newActionID()
-	if !m.auditRequired(c, mandatory(actionMembershipSet, string(accountID),
-		map[string]string{detailActionID: actionID, detailTenant: tenant})) {
-		return
+	if err := m.auditRequired(ctx, mandatory(actionMembershipSet, string(accountID),
+		map[string]string{detailActionID: actionID, detailTenant: in.Tenant})); err != nil {
+		return nil, err
 	}
 	mem := authn.Membership{
-		Account: accountID, Tenant: tenant, Active: body.Active,
-		Source: source, SSOExempt: body.SSOExempt,
+		Account: accountID, Tenant: in.Tenant, Active: in.Active,
+		Source: source, SSOExempt: in.SSOExempt,
 	}
-	if err := m.memberships.Put(c.Request.Context(), mem); err != nil {
-		m.auditBestEffort(c.Request.Context(), failedAudit(actionMembershipSet, string(accountID), actionID))
-		m.answer(c, "writing a membership", err)
-		return
+	if err := m.memberships.Put(ctx, mem); err != nil {
+		m.auditBestEffort(ctx, failedAudit(actionMembershipSet, string(accountID), actionID))
+		return m.replyFailure("writing a membership", err)
 	}
-	c.Status(204)
-	c.Writer.WriteHeaderNow()
+	return speedhttp.EmptyReply(204), nil
 }
 
 // handleMemberRemove answers DELETE /admin/tenants/:tenant/members/:account. The
 // action is membership.manage.
-func (m *product) handleMemberRemove(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
+func (m *product) handleMemberRemove(ctx context.Context, in memberAddressInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := m.caller(ctx)
+	if err != nil {
+		return nil, err
 	}
-	tenant := c.Param("tenant")
-	accountID := authn.AccountID(c.Param("account"))
-	if !m.asks(c, authn.Decision{
-		Action: authn.ActionMembershipManage, Actor: id, Tenant: tenant,
+	if err := m.admit(id); err != nil {
+		return nil, err
+	}
+	accountID := authn.AccountID(in.Account)
+	if err := m.asks(ctx, authn.Decision{
+		Action: authn.ActionMembershipManage, Actor: id, Tenant: in.Tenant,
 		Target: string(accountID), TargetAccount: string(accountID),
-	}) {
-		return
+	}); err != nil {
+		return nil, err
 	}
 	actionID := newActionID()
-	if !m.auditRequired(c, mandatory(actionMembershipRemove, string(accountID),
-		map[string]string{detailActionID: actionID, detailTenant: tenant})) {
-		return
+	if err := m.auditRequired(ctx, mandatory(actionMembershipRemove, string(accountID),
+		map[string]string{detailActionID: actionID, detailTenant: in.Tenant})); err != nil {
+		return nil, err
 	}
-	if err := m.memberships.Remove(c.Request.Context(), accountID, tenant); err != nil {
-		m.auditBestEffort(c.Request.Context(), failedAudit(actionMembershipRemove, string(accountID), actionID))
-		m.answer(c, "removing a membership", err)
-		return
+	if err := m.memberships.Remove(ctx, accountID, in.Tenant); err != nil {
+		m.auditBestEffort(ctx, failedAudit(actionMembershipRemove, string(accountID), actionID))
+		return m.replyFailure("removing a membership", err)
 	}
-	c.Status(204)
-	c.Writer.WriteHeaderNow()
-}
-
-// ssoExemptBody is the request of a change of the SSO exemption flag.
-type ssoExemptBody struct {
-	SSOExempt bool `json:"sso_exempt"`
+	return speedhttp.EmptyReply(204), nil
 }
 
 // handleMemberSSOExempt answers PUT
 // /admin/tenants/:tenant/members/:account/sso-exempt: it sets or clears the
 // emergency exemption from the tenant's enforced SSO. The action is
 // membership.manage.
-func (m *product) handleMemberSSOExempt(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
-	}
-	tenant := c.Param("tenant")
-	accountID := authn.AccountID(c.Param("account"))
-	var body ssoExemptBody
-	if !mount.Decode(c, &body) {
-		return
-	}
-	mem, found, err := m.memberships.Membership(c.Request.Context(), tenant, accountID)
+func (m *product) handleMemberSSOExempt(ctx context.Context, in memberExemptInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := m.caller(ctx)
 	if err != nil {
-		m.cause(c, "reading a membership", err)
-		return
+		return nil, err
+	}
+	if err = m.admit(id); err != nil {
+		return nil, err
+	}
+	accountID := authn.AccountID(in.Account)
+	mem, found, err := m.memberships.Membership(ctx, in.Tenant, accountID)
+	if err != nil {
+		return nil, m.unavailable("reading a membership", err)
 	}
 	if !found {
-		m.notFound(c)
-		return
+		return speedhttp.EmptyReply(404), nil
 	}
-	if !m.asks(c, authn.Decision{
-		Action: authn.ActionMembershipManage, Actor: id, Tenant: tenant,
+	if err := m.asks(ctx, authn.Decision{
+		Action: authn.ActionMembershipManage, Actor: id, Tenant: in.Tenant,
 		Target: string(accountID), TargetAccount: string(accountID),
-	}) {
-		return
+	}); err != nil {
+		return nil, err
 	}
 	actionID := newActionID()
-	if !m.auditRequired(c, mandatory(actionMembershipSet, string(accountID),
-		map[string]string{detailActionID: actionID, detailTenant: tenant, detailChange: "sso-exempt"})) {
-		return
+	if err := m.auditRequired(ctx, mandatory(actionMembershipSet, string(accountID),
+		map[string]string{detailActionID: actionID, detailTenant: in.Tenant, detailChange: "sso-exempt"})); err != nil {
+		return nil, err
 	}
-	mem.SSOExempt = body.SSOExempt
-	if err := m.memberships.Put(c.Request.Context(), mem); err != nil {
-		m.auditBestEffort(c.Request.Context(), failedAudit(actionMembershipSet, string(accountID), actionID))
-		m.answer(c, "writing the SSO exemption", err)
-		return
+	mem.SSOExempt = in.SSOExempt
+	if err := m.memberships.Put(ctx, mem); err != nil {
+		m.auditBestEffort(ctx, failedAudit(actionMembershipSet, string(accountID), actionID))
+		return m.replyFailure("writing the SSO exemption", err)
 	}
-	c.Status(204)
-	c.Writer.WriteHeaderNow()
+	return speedhttp.EmptyReply(204), nil
 }

@@ -42,7 +42,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"net/http"
 
 	"gorm.io/gorm"
 
@@ -86,6 +85,14 @@ var migrationRoot embed.FS
 
 //go:embed openapi/preferences.json
 var preferencesFragment []byte
+
+// preferencesSpec is the API root this module's fragment and routes hang off.
+var preferencesSpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: preferencesFragment,
+}
 
 // migrationsFS is migrationRoot with the wrapping directory removed, so the tree
 // the database module sees has one directory per dialect at its root, which is
@@ -139,7 +146,7 @@ func Module() core.Module {
 			schema(),
 			db.Migrations{FS: migrationsFS},
 			messageCatalog,
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: preferencesFragment},
+			preferencesSpec,
 			// The preference surface: its routes are mounted whenever the
 			// module is in force and the process has an entry point, so the
 			// feature is static.
@@ -331,20 +338,22 @@ type route struct {
 	handler gin.HandlerFunc
 }
 
-// The routes, under the fixed base path, in the order they are mounted. The set
-// is closed.
-const (
-	basePath              = "/api/v1/notifications"
-	pathTypes             = basePath + "/types"
-	pathPreferences       = basePath + "/preferences"
-	pathPreferenceChannel = basePath + "/preferences/:typeKey/:channel"
+// The absolute paths the routes are mounted on: the paths the fragment declares,
+// resolved against the API root the module's Spec declares. They are the
+// module's whole route surface.
+var (
+	pathTypes             = preferencesSpec.ResolvePath(pathTypesFragment)
+	pathPreferences       = preferencesSpec.ResolvePath(pathPreferencesFragment)
+	pathPreferenceChannel = preferencesSpec.ResolvePath(pathPreferenceChannelFragment)
 )
 
-// routes is the closed set of routes this module mounts.
+// routes is the closed set of routes this module mounts. Each route is bound
+// from the operation declared for it, so the handler receives the declared input
+// and writes the declared answer.
 func (p *product) routes() []route {
 	return []route{
-		{http.MethodGet, pathTypes, p.handleTypes},
-		{http.MethodGet, pathPreferences, p.handlePreferences},
-		{http.MethodPut, pathPreferenceChannel, p.handleSetPreference},
+		{listTypesOperation.Method, pathTypes, listTypesOperation.Handle(p.listTypes)},
+		{listPreferencesOperation.Method, pathPreferences, listPreferencesOperation.Handle(p.listPreferences)},
+		{updatePreferenceOperation.Method, pathPreferenceChannel, updatePreferenceOperation.Handle(p.setPreference)},
 	}
 }

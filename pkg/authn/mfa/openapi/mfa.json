@@ -1,89 +1,235 @@
 {
+  "components": {
+    "schemas": {
+      "AuthnMfaFactor": {
+        "description": "One factor row of the caller's account: what the register holds about the factor, with nothing a kind keeps for itself.",
+        "properties": {
+          "activated_at": {
+            "description": "When the factor became active, as an RFC 3339 instant; absent until it is",
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_at": {
+            "description": "When the factor row was created, as an RFC 3339 instant",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "The factor's identifier; use it as the `id` path parameter of `DELETE /auth/factors/{id}`.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "The factor kind: `totp`, `sms` or `webauthn`.",
+            "type": "string"
+          },
+          "label": {
+            "description": "The display label stored with the factor; this module writes an empty label when it registers one.",
+            "type": "string"
+          },
+          "last_used_at": {
+            "description": "When the factor last passed a verification, as an RFC 3339 instant; absent until it first does",
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "description": "Lifecycle status: `pending` is registered but not yet confirmed and is never used to verify, `active` may verify, and `disabled` (left by an administrator reset or a clone warning) stays as a row that no longer counts.",
+            "enum": [
+              "pending",
+              "active",
+              "disabled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "status",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "AuthnMfaFactorList": {
+        "description": "An object whose single member lists every factor the caller's account has registered.",
+        "properties": {
+          "factors": {
+            "description": "The caller's factor rows, ordered oldest first by creation time and then by identifier; an empty array when the account has registered none.",
+            "items": {
+              "$ref": "#/components/schemas/AuthnMfaFactor"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "factors"
+        ],
+        "type": "object"
+      },
+      "Problem": {
+        "description": "An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.",
+        "properties": {
+          "detail": {
+            "description": "A longer explanation of this occurrence, present only when the answering module has one to give. It may be a sentence rendered in the request language or a language-neutral token such as \"forbidden\", so clients must not parse it.",
+            "type": "string"
+          },
+          "instance": {
+            "description": "A URI identifying this occurrence; absent when there is none to give.",
+            "type": "string"
+          },
+          "status": {
+            "description": "The HTTP status code the response is written with, repeated from the status line.",
+            "type": "integer"
+          },
+          "title": {
+            "description": "A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code.",
+            "type": "string"
+          },
+          "type": {
+            "description": "The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "status"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "authn mfa",
+    "version": "1.0.0"
+  },
   "openapi": "3.1.0",
-  "info": {"title": "authn mfa", "version": "1.0.0"},
   "paths": {
     "/auth/factors": {
       "get": {
-        "operationId": "authn.mfa.factors",
-        "summary": "List the caller's own registered factors",
         "description": "Answers every factor row the caller's account has registered, ordered oldest first by creation time and then by identifier. Each row carries the kind, label, lifecycle status and the instants it was created, activated and last used; it carries no seed, key, public key or other data a kind keeps for itself. The list is empty when the account has registered none.",
+        "operationId": "authn.mfa.factors",
         "responses": {
           "200": {
-            "description": "The caller's factors, without any seed, key or other secret of a kind's own",
-            "content": {"application/json": {"schema": {"type": "object", "description": "An object whose single member lists every factor the caller's account has registered.", "required": ["factors"], "properties": {"factors": {"type": "array", "description": "The caller's factor rows, ordered oldest first by creation time and then by identifier; an empty array when the account has registered none.", "items": {"$ref": "#/components/schemas/AuthnMfaFactor"}}}}}}
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthnMfaFactorList"
+                }
+              }
+            },
+            "description": "The caller's factors, without any seed, key or other secret of a kind's own"
           },
           "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
             "description": "No usable credential",
-            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "503": {
-            "description": "The factors could not be listed: the factor store was unavailable. The cause is logged and not sent",
-            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The factors could not be listed: the factor store was unavailable. The cause is logged and not sent"
           }
-        }
+        },
+        "summary": "List the caller's own registered factors"
       }
     },
     "/auth/factors/{id}": {
       "delete": {
-        "operationId": "authn.mfa.removeFactor",
-        "summary": "Remove one of the caller's own factors",
         "description": "Removes one factor of the caller's account: whatever the factor's kind keeps for it is removed first, then its register row. The call requires a fresh multi-factor authentication verified locally, so one merely declared by an identity provider does not satisfy it; an impersonating identity is refused. A factor that is not the caller's answers the same as one already gone, so the route never answers 404 and repeating a removal is idempotent. When the account has mfa_required set, its last active factor cannot be removed.",
+        "operationId": "authn.mfa.removeFactor",
         "parameters": [
-          {"name": "id", "in": "path", "required": true, "description": "The factor identifier, as returned in `id` by `GET /auth/factors`. Empty or longer than 64 bytes is refused as a bad request without reading the register.", "schema": {"type": "string"}}
+          {
+            "description": "The factor identifier, as returned in `id` by `GET /auth/factors`. Empty or longer than 64 bytes is refused as a bad request without reading the register.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
-          "204": {"description": "The factor was removed, or is not the caller's and reads as already gone"},
+          "204": {
+            "description": "The factor was removed, or is not the caller's and reads as already gone"
+          },
           "400": {
-            "description": "The factor identifier is malformed",
-            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The factor identifier is malformed"
           },
           "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
             "description": "No usable credential, or a fresh multi-factor authentication is required",
-            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "The capability's challenge. An unusable credential is challenged with the Bearer and Cookie schemes; a fresher authentication is challenged with the scheme the identity authenticated with, the level it must reach and, when one applies, a maximum age.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "403": {
-            "description": "The identity is impersonating, which the route refuses",
-            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The identity is impersonating, which the route refuses"
           },
           "409": {
-            "description": "The factor is the account's last active factor, which cannot be removed while the account requires multi-factor authentication",
-            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The factor is the account's last active factor, which cannot be removed while the account requires multi-factor authentication"
           },
           "503": {
-            "description": "The factor could not be removed: the factor store or the account data it needs was unavailable. The cause is logged and not sent",
-            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The factor could not be removed: the factor store or the account data it needs was unavailable. The cause is logged and not sent"
           }
-        }
-      }
-    }
-  },
-  "components": {
-    "schemas": {
-      "AuthnMfaFactor": {
-        "type": "object",
-        "description": "One factor row of the caller's account: what the register holds about the factor, with nothing a kind keeps for itself.",
-        "required": ["id", "kind", "label", "status", "created_at"],
-        "properties": {
-          "id": {"type": "string", "description": "The factor's identifier; use it as the `id` path parameter of `DELETE /auth/factors/{id}`."},
-          "kind": {"type": "string", "description": "The factor kind: `totp`, `sms` or `webauthn`."},
-          "label": {"type": "string", "description": "The display label stored with the factor; this module writes an empty label when it registers one."},
-          "status": {"type": "string", "description": "Lifecycle status: `pending` is registered but not yet confirmed and is never used to verify, `active` may verify, and `disabled` (left by an administrator reset or a clone warning) stays as a row that no longer counts.", "enum": ["pending", "active", "disabled"]},
-          "created_at": {"type": "string", "description": "When the factor row was created, as an RFC 3339 instant"},
-          "activated_at": {"type": "string", "description": "When the factor became active, as an RFC 3339 instant; absent until it is"},
-          "last_used_at": {"type": "string", "description": "When the factor last passed a verification, as an RFC 3339 instant; absent until it first does"}
-        }
-      },
-      "Problem": {
-        "type": "object",
-        "description": "An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.",
-        "required": ["type", "status"],
-        "properties": {
-          "type": {"type": "string", "description": "The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>."},
-          "title": {"type": "string", "description": "A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code."},
-          "status": {"type": "integer", "description": "The HTTP status code the response is written with, repeated from the status line."},
-          "detail": {"type": "string", "description": "A longer explanation of this occurrence, present only when the answering module has one to give. It may be a sentence rendered in the request language or a language-neutral token such as \"forbidden\", so clients must not parse it."},
-          "instance": {"type": "string", "description": "A URI identifying this occurrence; absent when there is none to give."}
-        }
+        },
+        "summary": "Remove one of the caller's own factors"
       }
     }
   }

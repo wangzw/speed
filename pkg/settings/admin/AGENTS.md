@@ -108,23 +108,26 @@ row's existence without revealing the text.
 
 ## Boundaries
 
-- **One decision order, for every route, read and write alike.** The handler
-  reads the caller first: a request with no identity is a 401 — the problem the
-  admission and authorization layers write for a route that requires an identity
-  and carries none: the status alone, no type, and the realm challenge naming the
-  endpoint the route was mounted on — and the handler returns without asking the
-  guard. Then it settles the layer and the domain from the query string: a layer
-  selection or a tenant identifier outside its value domain is a 400, written
-  before the guard is asked. Then it asks the guard for the route's permission in
-  the layer's domain: a shortfall is the guard's own refusal, a 403 for a denial
-  and a 503 for an outage. Only past the decision does a write parse its body, run
-  its shape checks, land its audit and call the settings module, or a read call
-  the settings module and answer.
+- **One decision order, for every route, read and write alike.** The route's
+  authorization step reads the caller first: a request with no identity is a 401 —
+  the problem the admission and authorization layers write for a route that
+  requires an identity and carries none: the status alone, no type, and the realm
+  challenge naming the endpoint the route was mounted on — and the route returns
+  without asking the guard. Then it settles the layer and the domain from the
+  query string: a layer selection or a tenant identifier outside its value domain
+  is a 400, written before the guard is asked. Then it asks the guard for the
+  route's permission in the layer's domain: a shortfall is the guard's own
+  refusal, a 403 for a denial and a 503 for an outage. Only past the decision does
+  the entry point bind a write's body and the declared handler run its shape
+  checks, land its audit and call the settings module, or a read call the settings
+  module and answer. The step sits in front of the declared handler because a
+  typed handler receives no request, and the realm is bound per endpoint at the
+  mount.
 - **The decision is made per layer, in the layer's own domain.** The global layer
   is a platform operation, decided in the platform domain `authz.PlatformDomain`;
   a tenant layer is decided in that tenant's domain `authz.Domain(id)`. The two
   are two decisions on the same permission, so a caller authorized in one tenant
-  cannot reach the global layer by sending a tenant header. The handler asks
+  cannot reach the global layer by sending a tenant header. The route asks
   through the guard's explicit-domain form, so the request's own resolved tenant
   never steers it.
 - **The mandatory audit of a write lands before the action, outside any
@@ -149,13 +152,13 @@ row's existence without revealing the text.
 - **A shape refusal happens after the decision and before the action.** An
   unreadable body is a 400, and a full key no declaration covers is a 404; both
   reach neither the audit nor the settings module.
-- **The module decides its own routes in the handler and declares them open.**
-  The middleware lets a management request through to the handler, which makes the
-  decision; the module grants itself no permission. Where the assembly delivers
-  the route-declaration surface, `Init` registers every management route open on
-  it. With no surface the routes carry no declaration, and a guarded endpoint
-  answers them as undeclared — which is why a command that mounts these routes
-  should name the enforcement module too.
+- **The module decides its own routes ahead of the declared handler and declares
+  them open.** The middleware lets a management request through to the route,
+  which makes the decision; the module grants itself no permission. Where the
+  assembly delivers the route-declaration surface, `Init` registers every
+  management route open on it. With no surface the routes carry no declaration,
+  and a guarded endpoint answers them as undeclared — which is why a command that
+  mounts these routes should name the enforcement module too.
 - **The module delivers no capability and registers `settings.admin`.** It
   carries no product another module resolves; it is taken in only to mount the
   routes. It states `StateEnabled` and never `StateAuto`: whether the management

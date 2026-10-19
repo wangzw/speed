@@ -11,10 +11,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
 // fakeSSO is an enterprise provider register a case scripts. Only Get is
@@ -481,13 +481,14 @@ func TestBeginProcessingLosingTheRecordIsRefused(t *testing.T) {
 
 	rt := &routes{product: r.p}
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/callback/password", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/callback/password", nil)
+	c := &call{ctx: req.Context(), req: req, w: w, endpoint: mounttest.DefaultEndpoint}
 	if rt.beginProcessing(c, token, rec, raw) {
 		t.Error("beginProcessing accepted a record that had moved")
 	}
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("beginProcessing losing the swap answered %d, want 401", w.Code)
+	var fault speedhttp.Fault
+	if !errors.As(c.err, &fault) || fault.Status != http.StatusUnauthorized {
+		t.Errorf("beginProcessing losing the swap answered %v, want a 401 fault", c.err)
 	}
 	if n := m.calls.Load(); n != 0 {
 		t.Errorf("the method was asked %d times, want none", n)
@@ -626,5 +627,36 @@ func TestACallbackBodyOverTheLimitIsRefused(t *testing.T) {
 	within := r.postForm("/api/v1/auth/callback/password", "SAMLResponse=ok", cookie)
 	if within.Code != http.StatusSeeOther {
 		t.Errorf("a callback body within the limit answered %d, want 303: %s", within.Code, within.Body.String())
+	}
+}
+
+// TestACallbackWritesTheReturnTargetTheWayRedirectDoes holds the Location value
+// of the completion: a return target that is a path of this server has its dot
+// segments removed, and a byte outside ASCII is percent-escaped, so the header
+// carries a valid URI reference rather than a raw UTF-8 byte.
+func TestACallbackWritesTheReturnTargetTheWayRedirectDoes(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		returnTo string
+		location string
+	}{
+		{"dot segments", "/a/../b", "/b"},
+		{"trailing slash", "/a/b/", "/a/b/"},
+		{"non-ASCII", "/café", "/caf%C3%A9"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := &redirectMethod{}
+			r := newRigMethod(t, m)
+			r.allow("acct1")
+
+			cookie := startRedirect(t, r, `,"return_to":"`+c.returnTo+`"`)
+			cb := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
+			if cb.Code != http.StatusSeeOther {
+				t.Fatalf("the callback answered %d, want 303: %s", cb.Code, cb.Body.String())
+			}
+			if got := cb.Header().Get("Location"); got != c.location {
+				t.Errorf("Location = %q, want %q", got, c.location)
+			}
+		})
 	}
 }

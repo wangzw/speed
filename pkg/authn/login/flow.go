@@ -111,14 +111,6 @@ type mfaState struct {
 	Enrolled     string       `json:"enrolled,omitempty"`
 }
 
-// factorView is one factor as the client sees it: its identifier, its kind and a
-// display label. It carries nothing secret.
-type factorView struct {
-	ID    string `json:"id"`
-	Kind  string `json:"kind"`
-	Label string `json:"label,omitempty"`
-}
-
 // passState is the conclusion of a second factor that held, kept so that the
 // assurance can be composed at the completion.
 type passState struct {

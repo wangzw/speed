@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
 	"github.com/vislake/speed/pkg/event"
 )
@@ -61,6 +63,9 @@ func TestTheMetadataRoutePublishesTheEntityAndBothCertificates(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("metadata answered %d, want 200", rec.Code)
 	}
+	if got := rec.Header().Get("Content-Type"); got != contentTypeMetadata {
+		t.Errorf("metadata answered content type %q, want %q", got, contentTypeMetadata)
+	}
 	body := rec.Body.String()
 	if !strings.Contains(body, testEntityID()) {
 		t.Errorf("the metadata does not name the entity identifier %q: %s", testEntityID(), body)
@@ -89,8 +94,15 @@ func TestTheMetadataRouteIsNotFoundForAProviderThatDoesNotAnswer(t *testing.T) {
 
 	m := p.mounter.(*mounttest.Mounter)
 	req := httptest.NewRequest(http.MethodGet, testBasePath+"/sso/saml/"+testProviderID+"/metadata", nil)
-	if rec := m.Do(req); rec.Code != http.StatusNotFound {
+	rec := m.Do(req)
+	if rec.Code != http.StatusNotFound {
 		t.Errorf("metadata for a disabled provider answered %d, want 404", rec.Code)
+	}
+	if body := rec.Body.String(); body != "" {
+		t.Errorf("a not-found carried the body %q, want a bare status with no body", body)
+	}
+	if got := rec.Header().Get("Content-Type"); strings.Contains(got, "application/problem+json") {
+		t.Errorf("a not-found carried the content type %q, want no problem document", got)
 	}
 }
 
@@ -105,8 +117,83 @@ func TestTheMetadataRouteAnswersTheRegisterFailure(t *testing.T) {
 
 	m := p.mounter.(*mounttest.Mounter)
 	req := httptest.NewRequest(http.MethodGet, testBasePath+"/sso/saml/"+testProviderID+"/metadata", nil)
-	if rec := m.Do(req); rec.Code != http.StatusServiceUnavailable {
+	rec := m.Do(req)
+	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("metadata under a register outage answered %d, want 503", rec.Code)
+	}
+	if got := problemType(t, rec); got != typePrefix+mount.CodeUnavailable {
+		t.Errorf("a register outage carries the problem type %q, want %q", got, typePrefix+mount.CodeUnavailable)
+	}
+}
+
+// problemType reads a problem document's type, or "" when the body is not one.
+func problemType(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	var p struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+		return ""
+	}
+	return p.Type
+}
+
+// TestTheMetadataRouteIsRegisteredPublicAtTheDeclaredPath holds the route's
+// access level and the translation of its declaration: the fragment writes the
+// path from the API root and the mounter joins its base to the relative form.
+func TestTheMetadataRouteIsRegisteredPublicAtTheDeclaredPath(t *testing.T) {
+	idp := newIDP(t)
+	p, _ := newTestProduct(t, newFakeProviders(providerRow(providerConfigJSON(t, idp, nil))))
+	p.mountMetadata()
+
+	registrations := p.mounter.(*mounttest.Mounter).Registrations()
+	if len(registrations) != 1 {
+		t.Fatalf("mounted %d routes, want the metadata route alone", len(registrations))
+	}
+	got := registrations[0]
+	if got.Kind != mounttest.Public {
+		t.Errorf("the metadata route is registered %q, want public", got.Kind)
+	}
+	if len(got.Methods) != 1 || got.Methods[0] != http.MethodGet {
+		t.Errorf("the metadata route is registered for %v, want GET", got.Methods)
+	}
+	if want := testBasePath + "/sso/saml/:provider/metadata"; got.Path != want {
+		t.Errorf("the metadata route is registered at %q, want %q", got.Path, want)
+	}
+	if got.Impersonable {
+		t.Error("the metadata route is registered impersonable, want the plain route")
+	}
+}
+
+// TestTheMetadataRouteFollowsAConfiguredBase holds the translation when the host
+// configures a base other than the default: the declaration is written against
+// the default base, so the route moves with the configured base while the entity
+// identifier and the ACS address are generated from that same base.
+func TestTheMetadataRouteFollowsAConfiguredBase(t *testing.T) {
+	const base = "/identity"
+	idp := newIDP(t)
+	p, _ := newTestProductAtBase(t, newFakeProviders(providerRow(providerConfigJSON(t, idp, nil))), base)
+	p.sp = generateSPKeys(t)
+	p.mountMetadata()
+
+	registrations := p.mounter.(*mounttest.Mounter).Registrations()
+	if len(registrations) != 1 {
+		t.Fatalf("mounted %d routes, want the metadata route alone", len(registrations))
+	}
+	if want := base + "/sso/saml/:provider/metadata"; registrations[0].Path != want {
+		t.Errorf("the metadata route is registered at %q, want %q", registrations[0].Path, want)
+	}
+
+	rec := p.mounter.(*mounttest.Mounter).Do(httptest.NewRequest(http.MethodGet, base+"/sso/saml/"+testProviderID+"/metadata", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("metadata answered %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if want := testPublicURL + base + "/sso/saml/" + testProviderID + "/metadata"; !strings.Contains(body, want) {
+		t.Errorf("the metadata does not name the entity identifier %q: %s", want, body)
+	}
+	if want := testPublicURL + base + "/callback/" + testProviderID; !strings.Contains(body, want) {
+		t.Errorf("the metadata does not name the ACS %q", want)
 	}
 }
 

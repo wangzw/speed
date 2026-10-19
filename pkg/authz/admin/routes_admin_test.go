@@ -1,6 +1,9 @@
 package admin
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -28,8 +31,26 @@ func (r *rig) engine() *gin.Engine {
 // options build.
 func (r *rig) send(e *gin.Engine, method, target string, opts ...authntest.Option) *httptest.ResponseRecorder {
 	r.t.Helper()
+	return r.sendBody(e, method, target, nil, opts...)
+}
+
+// sendBody issues one request through the mounted engine with a JSON body and
+// the identity the options build.
+func (r *rig) sendBody(e *gin.Engine, method, target string, body any, opts ...authntest.Option) *httptest.ResponseRecorder {
+	r.t.Helper()
+	var reader io.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			r.t.Fatalf("encoding the body: %v", err)
+		}
+		reader = bytes.NewReader(encoded)
+	}
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(method, target, nil)
+	req := httptest.NewRequest(method, target, reader)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	req = req.WithContext(authntest.Context(r.t, req.Context(), opts...))
 	e.ServeHTTP(w, req)
 	return w
@@ -83,5 +104,38 @@ func TestThePermissionsReadRouteIsWired(t *testing.T) {
 	}
 	if !hasKey(t, w.Body.String(), "permissions") {
 		t.Fatalf("the answer %q does not carry the permissions key", w.Body.String())
+	}
+}
+
+// TestEveryWriteRouteAsksForRoleManage holds the write side of the route table's
+// permission mapping: every write sent through the mounted table asks the guard
+// for authz.role.manage. The permission now lives in the route table's perm
+// field, so a case that binds the guard through a test helper would assert the
+// helper's constant and not the table's; sending through routes() makes the
+// table's entry the thing under test.
+func TestEveryWriteRouteAsksForRoleManage(t *testing.T) {
+	cases := map[string]struct {
+		method string
+		path   string
+		body   any
+	}{
+		"the role write":     {http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/editor", roleBody{DescriptionKey: "authz.role.editor"}},
+		"the role delete":    {http.MethodDelete, "/api/v1/authz/admin/tenants/t1/roles/editor", nil},
+		"the grant write":    {http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/editor/grants/" + string(authz.PermissionAccountRead), nil},
+		"the grant delete":   {http.MethodDelete, "/api/v1/authz/admin/tenants/t1/roles/editor/grants/" + string(authz.PermissionAccountRead), nil},
+		"the binding write":  {http.MethodPut, "/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor", nil},
+		"the binding delete": {http.MethodDelete, "/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor", nil},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t, authz.PermissionAccountRead)
+			w := r.sendBody(r.engine(), tc.method, tc.path, tc.body)
+			if w.Code != http.StatusNoContent {
+				t.Fatalf("the write answered %d, want 204; body = %q", w.Code, w.Body.String())
+			}
+			if got := r.guard.askedFor(); len(got) != 1 || got[0] != authz.PermissionRoleManage {
+				t.Fatalf("the write asked for %v, want [authz.role.manage]", got)
+			}
+		})
 	}
 }

@@ -28,26 +28,26 @@ export type AuditAdminRecordDetail = {[key: string]: string};
  * One audit row as the query routes render it: the recorded fact, the identity and capture path behind it, and what it acted on.
  */
 export interface AuditAdminRecord {
-  /** The row identifier, rendered as text */
-  id: string;
-  /** Empty when the row belongs to no tenant */
-  tenant: string;
-  /** When the recorded fact happened, in UTC */
-  occurred_at: string;
-  /** The acting identity's responsibility key, that is the identity that really acted; empty when the row records a system operation. An impersonated account is named in detail.on_behalf_of instead */
-  actor: string;
-  /** The capture path that produced the row */
-  source: string;
   /** What was done, as the emitting call site and the reader agree to spell it; the audit module fixes no vocabulary */
   action: string;
+  /** The acting identity's responsibility key, that is the identity that really acted; empty when the row records a system operation. An impersonated account is named in detail.on_behalf_of instead */
+  actor: string;
+  /** Empty object when the row carries no detail */
+  detail: AuditAdminRecordDetail;
+  /** The row identifier, rendered as text */
+  id: string;
   /** The type of the thing acted on, together with its identifier */
   object: string;
+  /** When the recorded fact happened, in UTC */
+  occurred_at: string;
   /** How the action ended */
   outcome: string;
   /** Why the action was taken */
   purpose: string;
-  /** Empty object when the row carries no detail */
-  detail: AuditAdminRecordDetail;
+  /** The capture path that produced the row */
+  source: string;
+  /** Empty when the row belongs to no tenant */
+  tenant: string;
 }
 
 /**
@@ -64,16 +64,16 @@ export interface AuditAdminRecordPage {
  * An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.
  */
 export interface Problem {
-  /** The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>. */
-  type: string;
-  /** A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code. */
-  title?: string;
-  /** The HTTP status code the response is written with, repeated from the status line. */
-  status: number;
   /** A longer explanation of this occurrence, present only when the answering module has one to give. It may be a sentence rendered in the request language or a language-neutral token such as "forbidden", so clients must not parse it. */
   detail?: string;
   /** A URI identifying this occurrence; absent when there is none to give. */
   instance?: string;
+  /** The HTTP status code the response is written with, repeated from the status line. */
+  status: number;
+  /** A short summary of the kind of problem. A module that sets none gets the standard English status text for the status code. */
+  title?: string;
+  /** The machine-readable code identifying the kind of problem. A module that sets none gets the RFC 9457 default about:blank; codes this platform defines are URNs of the form urn:speed:<capability>:<code>. */
+  type: string;
 }
 
 /**
@@ -108,24 +108,24 @@ export type AuthnAdminAccountAttributes = {[key: string]: string};
  * One account as the management routes show it, built field by field so that a field added to the stored account does not reach a client by being there.
  */
 export interface AuthnAdminAccount {
-  /** The account's opaque identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive. */
-  id: string;
-  /** user for a human account, service for a non-interactive API client. */
-  kind: AuthnAdminAccountKind;
-  /** disabled, active or deleted; deleted is terminal and leaves a tombstone. */
-  status: AuthnAdminAccountStatusProperty;
-  /** The account's display name, at most 100 characters and not used for any decision. */
-  display_name: string;
-  /** True when the account must register a factor before it can sign in. */
-  mfa_required: boolean;
-  /** True when the account may not be impersonated, independent of any Decider. */
-  protected: boolean;
-  /** True when the account carries a password credential. */
-  password_set: boolean;
   /** Absent when the account carries no attribute set */
   attributes?: AuthnAdminAccountAttributes;
   /** When the account was created, as an RFC 3339 instant in UTC. */
   created_at: string;
+  /** The account's display name, at most 100 characters and not used for any decision. */
+  display_name: string;
+  /** The account's opaque identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive. */
+  id: string;
+  /** user for a human account, service for a non-interactive API client. */
+  kind: AuthnAdminAccountKind;
+  /** True when the account must register a factor before it can sign in. */
+  mfa_required: boolean;
+  /** True when the account carries a password credential. */
+  password_set: boolean;
+  /** True when the account may not be impersonated, independent of any Decider. */
+  protected: boolean;
+  /** disabled, active or deleted; deleted is terminal and leaves a tombstone. */
+  status: AuthnAdminAccountStatusProperty;
 }
 
 /**
@@ -139,15 +139,9 @@ export interface AuthnAdminAccountList {
 }
 
 /**
- * user for a human account, service for a non-interactive API client.
+ * Absent writes no attribute set
  */
-export type AuthnAdminAccountCreateKind = typeof AuthnAdminAccountCreateKind[keyof typeof AuthnAdminAccountCreateKind];
-
-
-export const AuthnAdminAccountCreateKind = {
-  user: 'user',
-  service: 'service',
-} as const;
+export type AuthnAdminAccountCreateAttributes = {[key: string]: string};
 
 /**
  * How the administrator states the email came to be verified: admin or import-unverified. It is required whenever email is present, because an address written here is always recorded as verified; empty or absent is refused with 400.
@@ -162,6 +156,17 @@ export const AuthnAdminAccountCreateEmailVerifiedVia = {
 } as const;
 
 /**
+ * user for a human account, service for a non-interactive API client.
+ */
+export type AuthnAdminAccountCreateKind = typeof AuthnAdminAccountCreateKind[keyof typeof AuthnAdminAccountCreateKind];
+
+
+export const AuthnAdminAccountCreateKind = {
+  user: 'user',
+  service: 'service',
+} as const;
+
+/**
  * How the administrator states the phone came to be verified: admin or import-unverified. It is required whenever phone is present, because a number written here is always recorded as verified; empty or absent is refused with 400.
  */
 export type AuthnAdminAccountCreatePhoneVerifiedVia = typeof AuthnAdminAccountCreatePhoneVerifiedVia[keyof typeof AuthnAdminAccountCreatePhoneVerifiedVia];
@@ -173,35 +178,27 @@ export const AuthnAdminAccountCreatePhoneVerifiedVia = {
   'import-unverified': 'import-unverified',
 } as const;
 
-/**
- * Absent writes no attribute set
- */
-export type AuthnAdminAccountCreateAttributes = {[key: string]: string};
-
-/**
- * The request that creates an account. A user account must name at least one of username, email and phone.
- */
 export interface AuthnAdminAccountCreate {
-  /** user for a human account, service for a non-interactive API client. */
-  kind: AuthnAdminAccountCreateKind;
+  /** Absent writes no attribute set */
+  attributes?: AuthnAdminAccountCreateAttributes;
   /** The account's display name; absent writes an empty one. */
   display_name?: string;
-  /** A login name to add. At least one of username, email and phone is required for a user account; a username is lower-cased before it is stored. */
-  username?: string;
   /** An email address to add, asserted by the administrator. It is trimmed and lower-cased before it is stored, and it needs email_verified_via. */
   email?: string;
   /** How the administrator states the email came to be verified: admin or import-unverified. It is required whenever email is present, because an address written here is always recorded as verified; empty or absent is refused with 400. */
   email_verified_via?: AuthnAdminAccountCreateEmailVerifiedVia;
+  /** user for a human account, service for a non-interactive API client. */
+  kind: AuthnAdminAccountCreateKind;
+  /** True when the account must register a factor before it can sign in. */
+  mfa_required?: boolean;
+  /** An initial password; absent leaves the account without one. It must pass the password policy. */
+  password?: string;
   /** A phone number to add, in E.164 with a leading plus sign and 7 to 15 digits; it needs phone_verified_via. */
   phone?: string;
   /** How the administrator states the phone came to be verified: admin or import-unverified. It is required whenever phone is present, because a number written here is always recorded as verified; empty or absent is refused with 400. */
   phone_verified_via?: AuthnAdminAccountCreatePhoneVerifiedVia;
-  /** An initial password; absent leaves the account without one. It must pass the password policy. */
-  password?: string;
-  /** Absent writes no attribute set */
-  attributes?: AuthnAdminAccountCreateAttributes;
-  /** True when the account must register a factor before it can sign in. */
-  mfa_required?: boolean;
+  /** A login name to add. At least one of username, email and phone is required for a user account; a username is lower-cased before it is stored. */
+  username?: string;
 }
 
 /**
@@ -217,14 +214,11 @@ export interface AuthnAdminAccountEnvelope {
  */
 export type AuthnAdminAccountPatchAttributes = {[key: string]: string};
 
-/**
- * A partial update: every field is optional, and each one left out leaves the stored value as it is.
- */
 export interface AuthnAdminAccountPatch {
-  /** Absent leaves the display name as it is */
-  display_name?: string;
   /** Absent leaves the attribute set as it is */
   attributes?: AuthnAdminAccountPatchAttributes;
+  /** Absent leaves the display name as it is */
+  display_name?: string;
   /** Absent leaves the protected flag as it is */
   protected?: boolean;
 }
@@ -283,9 +277,6 @@ export const AuthnAdminIdentifierWriteVerifiedVia = {
   admin: 'admin',
 } as const;
 
-/**
- * The request that adds one identifier to an account.
- */
 export interface AuthnAdminIdentifierWrite {
   /** A phone number is added or changed only through an SMS code and is refused here */
   kind: AuthnAdminIdentifierWriteKind;
@@ -295,9 +286,6 @@ export interface AuthnAdminIdentifierWrite {
   verified_via?: AuthnAdminIdentifierWriteVerifiedVia;
 }
 
-/**
- * The request that sets the account-level required-factor flag.
- */
 export interface AuthnAdminMFARequired {
   /** True when the account must register a factor before it can sign in. */
   required: boolean;
@@ -311,9 +299,6 @@ export interface AuthnAdminRemoved {
   removed: number;
 }
 
-/**
- * The request that sets an administrator's temporary password.
- */
 export interface AuthnAdminPasswordReset {
   /** The temporary password, handed out once and never echoed, logged or audited */
   password: string;
@@ -331,12 +316,12 @@ export interface AuthnAdminRevoked {
  * One service secret as the listing shows it: identifier, label, expiry and revocation state, never the secret value.
  */
 export interface AuthnAdminSecret {
+  /** When the secret expires, as an RFC 3339 instant in UTC; the zero instant 0001-01-01T00:00:00Z means it never expires. */
+  expires_at: string;
   /** The secret's identifier, not the secret value. */
   id: string;
   /** The label given to the secret when it was created. */
   label: string;
-  /** When the secret expires, as an RFC 3339 instant in UTC; the zero instant 0001-01-01T00:00:00Z means it never expires. */
-  expires_at: string;
   /** True when the secret has been revoked. */
   revoked: boolean;
 }
@@ -349,54 +334,54 @@ export interface AuthnAdminSecretList {
   secrets: AuthnAdminSecret[];
 }
 
-/**
- * The request that mints a service secret.
- */
 export interface AuthnAdminSecretCreate {
-  /** The label for the administrator's own reference: at most 100 bytes of valid UTF-8 with no control character. */
-  label?: string;
   /** Absent mints a secret with no expiry */
   expires_at?: string;
+  /** The label for the administrator's own reference: at most 100 bytes of valid UTF-8 with no control character. */
+  label?: string;
 }
 
 /**
  * A freshly minted service secret. The secret value appears in this response only.
  */
 export interface AuthnAdminSecretCreated {
+  /** The zero instant 0001-01-01T00:00:00Z when the request named no expiry */
+  expires_at: string;
   /** The new secret's identifier. */
   id: string;
   /** The label given in the request. */
   label: string;
   /** The secret itself, handed out once and never again */
   secret: string;
-  /** The zero instant 0001-01-01T00:00:00Z when the request named no expiry */
-  expires_at: string;
 }
 
 /**
  * One session of an account, without any credential a caller could use to take it over.
  */
 export interface AuthnAdminSession {
-  /** The session's opaque identifier. */
-  id: string;
-  /** The session kind: browser for a cookie session, token for an access and refresh token pair. */
-  kind: string;
-  /** 0 none, 1 single factor, 2 multi-factor */
+  /**
+     * 0 none, 1 single factor, 2 multi-factor
+     * @minimum 0
+     */
   assurance: number;
   /** When the session last authenticated, as an RFC 3339 instant in UTC. */
   auth_time: string;
-  /** Absent unless the session carries an impersonation */
-  impersonation_id?: string;
   /** When the session was created, as an RFC 3339 instant in UTC. */
   created_at: string;
-  /** When a request last used the session, as an RFC 3339 instant in UTC. */
-  last_seen_at: string;
-  /** The session's absolute expiry, as an RFC 3339 instant in UTC. */
-  expires_at: string;
-  /** True when the session has been revoked. */
-  revoked: boolean;
   /** True when the row is the caller's own session */
   current: boolean;
+  /** The session's absolute expiry, as an RFC 3339 instant in UTC. */
+  expires_at: string;
+  /** The session's opaque identifier. */
+  id: string;
+  /** Absent unless the session carries an impersonation */
+  impersonation_id?: string;
+  /** The session kind: browser for a cookie session, token for an access and refresh token pair. */
+  kind: string;
+  /** When a request last used the session, as an RFC 3339 instant in UTC. */
+  last_seen_at: string;
+  /** True when the session has been revoked. */
+  revoked: boolean;
 }
 
 /**
@@ -418,9 +403,6 @@ export const AuthnAdminAccountStatusStatus = {
   disabled: 'disabled',
 } as const;
 
-/**
- * The request that changes an account's status.
- */
 export interface AuthnAdminAccountStatus {
   /** The deleted state is reached only through the delete route */
   status: AuthnAdminAccountStatusStatus;
@@ -430,24 +412,24 @@ export interface AuthnAdminAccountStatus {
  * One impersonation record. The reason never appears here; it is in the record and the audit row alone.
  */
 export interface AuthnAdminImpersonation {
-  /** The record's identifier. */
-  id: string;
   /** The identifier of the account that started the impersonation. */
   actor: string;
-  /** The identifier of the account being impersonated. */
-  target: string;
-  /** The tenant the impersonation is confined to. */
-  tenant: string;
+  /** Absent while the record is still in force */
+  end_reason?: string;
+  /** The zero instant 0001-01-01T00:00:00Z while the record is still in force */
+  ended_at: string;
+  /** When the impersonation lapses, as an RFC 3339 instant in UTC. */
+  ends_at: string;
+  /** The record's identifier. */
+  id: string;
   /** The identifier of the actor's session that carries the impersonation. */
   session_id: string;
   /** When the impersonation started, as an RFC 3339 instant in UTC. */
   started_at: string;
-  /** When the impersonation lapses, as an RFC 3339 instant in UTC. */
-  ends_at: string;
-  /** The zero instant 0001-01-01T00:00:00Z while the record is still in force */
-  ended_at: string;
-  /** Absent while the record is still in force */
-  end_reason?: string;
+  /** The identifier of the account being impersonated. */
+  target: string;
+  /** The tenant the impersonation is confined to. */
+  tenant: string;
 }
 
 /**
@@ -464,28 +446,28 @@ export interface AuthnAdminImpersonationList {
  * One SSO provider. The encrypted client secret never appears, and warnings names each setting that loosens a default.
  */
 export interface AuthnAdminProvider {
-  /** The provider's identifier. */
-  id: string;
-  /** The owning tenant's identifier; immutable after creation. */
-  tenant: string;
-  /** The protocol: oidc or saml. */
-  protocol: string;
-  /** The provider's display name; 1 to 64 characters. */
-  name: string;
-  /** True when the provider may be used for sign-in. */
-  enabled: boolean;
-  /** jit creates an account on first sign-in; preprovisioned matches only an account an administrator has already created. */
-  provisioning: string;
-  /** True when the provider's assertion may count as a multi-factor proof, and only when its acr (or SAML AuthnContextClassRef) is in the configured list. */
-  trust_idp_mfa: boolean;
   /** True when an unsolicited assertion from the provider is accepted; the route then warns that login CSRF cannot be defended against. */
   allow_idp_initiated: boolean;
   /** True when SHA-1 signed assertions are accepted; the route then warns about the downgrade. */
   allow_sha1: boolean;
-  /** True when just-in-time sign-up may merge into an existing account; the route then warns about it. */
-  merge_existing: boolean;
   /** The protocol's own configuration; absent when the provider carries none */
   config?: unknown;
+  /** True when the provider may be used for sign-in. */
+  enabled: boolean;
+  /** The provider's identifier. */
+  id: string;
+  /** True when just-in-time sign-up may merge into an existing account; the route then warns about it. */
+  merge_existing: boolean;
+  /** The provider's display name; 1 to 64 characters. */
+  name: string;
+  /** The protocol: oidc or saml. */
+  protocol: string;
+  /** jit creates an account on first sign-in; preprovisioned matches only an account an administrator has already created. */
+  provisioning: string;
+  /** The owning tenant's identifier; immutable after creation. */
+  tenant: string;
+  /** True when the provider's assertion may count as a multi-factor proof, and only when its acr (or SAML AuthnContextClassRef) is in the configured list. */
+  trust_idp_mfa: boolean;
   /** The provider's version, raised by every write. */
   version: number;
   /** Absent when no setting loosens a default */
@@ -503,39 +485,33 @@ export interface AuthnAdminProviderEnvelope {
 /**
  * The protocol's own configuration
  */
-export type AuthnAdminProviderWriteConfig = { [key: string]: unknown };
+export type AuthnAdminProviderWriteConfig = {[key: string]: unknown};
 
-/**
- * The request that creates or replaces an SSO provider. Booleans left out keep their stored value on an update and are false on a create, and config is required either way.
- */
 export interface AuthnAdminProviderWrite {
-  /** Absent on a create takes the path's tenant; a value that names another is refused */
-  tenant?: string;
-  /** The protocol: oidc or saml. The set is closed. */
-  protocol: string;
-  /** The provider's display name; 1 to 64 characters. */
-  name: string;
-  /** Absent leaves the enabled flag as it is (false on a create) */
-  enabled?: boolean;
-  /** jit creates an account on first sign-in; preprovisioned matches only an account an administrator has already created. Required, with no default. */
-  provisioning: string;
-  /** Absent leaves the flag as it is (false on a create) */
-  trust_idp_mfa?: boolean;
   /** Absent leaves the flag as it is (false on a create) */
   allow_idp_initiated?: boolean;
   /** Absent leaves the flag as it is (false on a create) */
   allow_sha1?: boolean;
-  /** Absent leaves the flag as it is (false on a create) */
-  merge_existing?: boolean;
-  /** The protocol's own configuration */
-  config?: AuthnAdminProviderWriteConfig;
   /** Absent writes no client secret on a create and keeps the stored one on an update */
   client_secret?: string;
+  /** The protocol's own configuration */
+  config?: AuthnAdminProviderWriteConfig;
+  /** Absent leaves the enabled flag as it is (false on a create) */
+  enabled?: boolean;
+  /** Absent leaves the flag as it is (false on a create) */
+  merge_existing?: boolean;
+  /** The provider's display name; 1 to 64 characters. */
+  name: string;
+  /** The protocol: oidc or saml. The set is closed. */
+  protocol: string;
+  /** jit creates an account on first sign-in; preprovisioned matches only an account an administrator has already created. Required, with no default. */
+  provisioning: string;
+  /** Absent on a create takes the path's tenant; a value that names another is refused */
+  tenant?: string;
+  /** Absent leaves the flag as it is (false on a create) */
+  trust_idp_mfa?: boolean;
 }
 
-/**
- * The request that claims a domain for an SSO provider.
- */
 export interface AuthnAdminDomainClaim {
   /** The domain to claim, for example example.com; it is trimmed and lower-cased before it is stored. */
   domain: string;
@@ -565,22 +541,22 @@ export const AuthnInviteInvitationStatus = {
  * One invitation as the management face shows it. It never carries the acceptance token.
  */
 export interface AuthnInviteInvitation {
-  /** The invitation's opaque identifier, used to revoke it. */
-  id: string;
-  /** The string form of the tenant identifier the invitation grants a membership in. */
-  tenant: string;
-  /** The normalized address */
-  email: string;
-  /** The stored state. Expiry is not stored: an expired pending invitation still reads pending. */
-  status: AuthnInviteInvitationStatus;
-  /** The account identifier of the issuer; empty when a host command issued the invitation without an HTTP identity. */
-  invited_by: string;
-  /** RFC 3339 deadline in UTC; a pending invitation at or past it can no longer be accepted. */
-  expires_at: string;
   /** The zero instant 0001-01-01T00:00:00Z when the invitation has not been accepted */
   accepted_at: string;
   /** RFC 3339 timestamp in UTC of issuance. */
   created_at: string;
+  /** The normalized address */
+  email: string;
+  /** RFC 3339 deadline in UTC; a pending invitation at or past it can no longer be accepted. */
+  expires_at: string;
+  /** The invitation's opaque identifier, used to revoke it. */
+  id: string;
+  /** The account identifier of the issuer; empty when a host command issued the invitation without an HTTP identity. */
+  invited_by: string;
+  /** The stored state. Expiry is not stored: an expired pending invitation still reads pending. */
+  status: AuthnInviteInvitationStatus;
+  /** The string form of the tenant identifier the invitation grants a membership in. */
+  tenant: string;
 }
 
 /**
@@ -609,14 +585,14 @@ export interface AuthnInviteIssued {
 export interface AuthnAdminMember {
   /** The member account's identifier. */
   account: string;
-  /** The tenant's identifier. */
-  tenant: string;
   /** True when the membership is in force; false means suspended, which reads as not a member. */
   active: boolean;
-  /** True when the member is exempt from the tenant's enforced SSO requirement. */
-  sso_exempt: boolean;
   /** How the membership came to exist: admin, invite, import or jit:<provider identifier>. */
   source: string;
+  /** True when the member is exempt from the tenant's enforced SSO requirement. */
+  sso_exempt: boolean;
+  /** The tenant's identifier. */
+  tenant: string;
 }
 
 /**
@@ -627,9 +603,6 @@ export interface AuthnAdminMemberList {
   members: AuthnAdminMember[];
 }
 
-/**
- * The request that writes a membership. An absent active writes false.
- */
 export interface AuthnAdminMemberWrite {
   /** True adds or resumes the membership; false suspends it, and a suspended membership reads as not a member. */
   active?: boolean;
@@ -639,9 +612,6 @@ export interface AuthnAdminMemberWrite {
   sso_exempt?: boolean;
 }
 
-/**
- * The request that sets or clears a member's exemption from the tenant's SSO requirement.
- */
 export interface AuthnAdminMemberSSOExempt {
   /** True exempts the member; false clears the exemption. */
   sso_exempt: boolean;
@@ -653,20 +623,6 @@ export interface AuthnAdminMemberSSOExempt {
 export interface AuthnAdminProviderList {
   /** The tenant's providers; the empty array when it has none. */
   providers: AuthnAdminProvider[];
-}
-
-/**
- * One input a method asks the client for, named by the method and rendered according to its kind.
- */
-export interface AuthnLoginField {
-  /** The input's key: the client submits its value under this name in the `input` map of the start request or of the answer. */
-  name: string;
-  /** How the client renders the input: `text`, `password`, `code` or `phone`. */
-  kind: string;
-  /** Whether the step needs a value; absent means the field may be left out. */
-  required?: boolean;
-  /** Whether the value must not be displayed or echoed, as for a password or a code; absent means it is not secret. */
-  secret?: boolean;
 }
 
 /**
@@ -682,41 +638,55 @@ export interface AuthnLoginFactor {
 }
 
 /**
+ * One input a method asks the client for, named by the method and rendered according to its kind.
+ */
+export interface AuthnLoginField {
+  /** How the client renders the input: `text`, `password`, `code` or `phone`. */
+  kind: string;
+  /** The input's key: the client submits its value under this name in the `input` map of the start request or of the answer. */
+  name: string;
+  /** Whether the step needs a value; absent means the field may be left out. */
+  required?: boolean;
+  /** Whether the value must not be displayed or echoed, as for a password or a code; absent means it is not secret. */
+  secret?: boolean;
+}
+
+/**
  * What the client does at the flow's current step. Only the members that belong to `kind` are present: `challenge` carries `fields`; `redirect` carries `url` and `method`; `factor` carries `factors`; `enroll` carries `kinds`; `webauthn` carries `options`; `complete` carries nothing.
  */
 export interface AuthnLoginStep {
-  /** What the client does next: challenge, redirect, factor, enroll, complete or webauthn */
-  kind: string;
-  /** The inputs a challenge step asks for */
-  fields?: AuthnLoginField[];
   /** How long a challenge lives, in seconds. No handler of this fragment sets it, so the member is absent from every answer. */
   expires_in?: number;
+  /** The factors a second-factor step offers */
+  factors?: AuthnLoginFactor[];
+  /** The inputs a challenge step asks for */
+  fields?: AuthnLoginField[];
+  /** What the client does next: challenge, redirect, factor, enroll, complete or webauthn */
+  kind: string;
+  /** The factor kinds an enroll step takes in */
+  kinds?: string[];
+  /** The HTTP method the redirect uses */
+  method?: string;
+  /** The data a webauthn step carries: the public-key creation or request options of a WebAuthn ceremony, or, for a TOTP enrollment, an object with an `otpauth_uri` the client renders as a QR code. */
+  options?: unknown;
   /** How soon a challenge may be asked for again, in seconds. No handler of this fragment sets it, so the member is absent from every answer. */
   resend_after?: number;
   /** Where a redirect step sends the user agent */
   url?: string;
-  /** The HTTP method the redirect uses */
-  method?: string;
-  /** The factors a second-factor step offers */
-  factors?: AuthnLoginFactor[];
-  /** The factor kinds an enroll step takes in */
-  kinds?: string[];
-  /** The data a webauthn step carries: the public-key creation or request options of a WebAuthn ceremony, or, for a TOTP enrollment, an object with an `otpauth_uri` the client renders as a QR code. */
-  options?: unknown;
 }
 
 /**
  * One open login flow, as returned by a start, by an answer that keeps the flow open, or by the current-flow read: the step number the next answer must echo, the flow's state, the flow token when the flow is bound by the header, and what the client does next.
  */
 export interface AuthnLoginFlow {
-  /** The step number the next answer must echo */
-  seq: number;
-  /** The flow's state: first, second, enroll, ready, processing, done or failed */
-  state: string;
   /** The flow token, set only when the flow is bound by the Authn-Flow header */
   flow_token?: string;
   /** What the client does at the flow's current step. */
   next: AuthnLoginStep;
+  /** The step number the next answer must echo */
+  seq: number;
+  /** The flow's state: first, second, enroll, ready, processing, done or failed */
+  state: string;
 }
 
 /**
@@ -735,20 +705,38 @@ export const AuthnMfaFactorStatus = {
  * One factor row of the caller's account: what the register holds about the factor, with nothing a kind keeps for itself.
  */
 export interface AuthnMfaFactor {
+  /** When the factor became active, as an RFC 3339 instant; absent until it is */
+  activated_at?: string;
+  /** When the factor row was created, as an RFC 3339 instant */
+  created_at: string;
   /** The factor's identifier; use it as the `id` path parameter of `DELETE /auth/factors/{id}`. */
   id: string;
   /** The factor kind: `totp`, `sms` or `webauthn`. */
   kind: string;
   /** The display label stored with the factor; this module writes an empty label when it registers one. */
   label: string;
-  /** Lifecycle status: `pending` is registered but not yet confirmed and is never used to verify, `active` may verify, and `disabled` (left by an administrator reset or a clone warning) stays as a row that no longer counts. */
-  status: AuthnMfaFactorStatus;
-  /** When the factor row was created, as an RFC 3339 instant */
-  created_at: string;
-  /** When the factor became active, as an RFC 3339 instant; absent until it is */
-  activated_at?: string;
   /** When the factor last passed a verification, as an RFC 3339 instant; absent until it first does */
   last_used_at?: string;
+  /** Lifecycle status: `pending` is registered but not yet confirmed and is never used to verify, `active` may verify, and `disabled` (left by an administrator reset or a clone warning) stays as a row that no longer counts. */
+  status: AuthnMfaFactorStatus;
+}
+
+/**
+ * An object whose single member lists every factor the caller's account has registered.
+ */
+export interface AuthnMfaFactorList {
+  /** The caller's factor rows, ordered oldest first by creation time and then by identifier; an empty array when the account has registered none. */
+  factors: AuthnMfaFactor[];
+}
+
+/**
+ * The public facts of the session a login created. No token or secret is included.
+ */
+export interface AuthnLoginSessionView {
+  /** The session's expiry as an RFC 3339 instant, or empty */
+  expires_at: string;
+  /** The session identifier; the browser client holds the session cookie written in the same response. */
+  id: string;
 }
 
 /**
@@ -762,23 +750,13 @@ export const AuthnLoginSessionState = {
 } as const;
 
 /**
- * The public facts of the session a login created. No token or secret is included.
- */
-export interface AuthnLoginSessionView {
-  /** The session identifier; the browser client holds the session cookie written in the same response. */
-  id: string;
-  /** The session's expiry as an RFC 3339 instant, or empty */
-  expires_at: string;
-}
-
-/**
  * The answer of a login completed with `delivery=session`, and of a step-up completed on a cookie session: the state name `authenticated` and the public facts of the session that was created or elevated. The session cookie is set in the same response.
  */
 export interface AuthnLoginSession {
-  /** The literal `authenticated`, marking a completed login. */
-  state: AuthnLoginSessionState;
   /** The public facts of the session the login created. */
   session: AuthnLoginSessionView;
+  /** The literal `authenticated`, marking a completed login. */
+  state: AuthnLoginSessionState;
 }
 
 /**
@@ -806,16 +784,16 @@ export const AuthnLoginTokenTokenType = {
  * The answer of a login completed with `delivery=token`, and of a token-delivered step-up: the state name, the token type, the access token, its lifetime and the refresh token.
  */
 export interface AuthnLoginToken {
-  /** authenticated for a login; elevated for a step-up, which issues no refresh token and carries it empty */
-  state: AuthnLoginTokenState;
-  /** The authorization scheme the access token is sent with; it is always `Bearer`. */
-  token_type: AuthnLoginTokenTokenType;
   /** The access token, sent in the `Authorization` header as `Bearer <value>`. */
   access_token: string;
   /** The access token's lifetime in seconds */
   expires_in: number;
   /** Empty on a step-up, which issues no refresh token */
   refresh_token: string;
+  /** authenticated for a login; elevated for a step-up, which issues no refresh token and carries it empty */
+  state: AuthnLoginTokenState;
+  /** The authorization scheme the access token is sent with; it is always `Bearer`. */
+  token_type: AuthnLoginTokenTokenType;
 }
 
 /**
@@ -838,6 +816,11 @@ export interface AuthnLoginActionResult {
 }
 
 /**
+ * One of four shapes, told apart by `state` and the members present: an open flow, a completed login delivered as a session, a completed login delivered as a token pair or an elevated step-up, or the result of a link or enrollment.
+ */
+export type AuthnLoginAnswer = AuthnLoginFlow | AuthnLoginSession | AuthnLoginToken | AuthnLoginActionResult;
+
+/**
  * added when the identifier is written; pending when a code was sent to an address and its answer is still to come
  */
 export type AuthnLoginIdentifierStateState = typeof AuthnLoginIdentifierStateState[keyof typeof AuthnLoginIdentifierStateState];
@@ -852,28 +835,28 @@ export const AuthnLoginIdentifierStateState = {
  * The answer of adding an identifier: `added` when the identifier is written, `pending` when a code was sent to an email address and the answer is still to come. The two durations are present only in the pending state.
  */
 export interface AuthnLoginIdentifierState {
-  /** added when the identifier is written; pending when a code was sent to an address and its answer is still to come */
-  state: AuthnLoginIdentifierStateState;
   /** How long the code lives, in seconds; absent when the state is added */
   expires_in?: number;
   /** How soon another code may be asked for, in seconds; absent when the state is added */
   resend_after?: number;
+  /** added when the identifier is written; pending when a code was sent to an address and its answer is still to come */
+  state: AuthnLoginIdentifierStateState;
 }
 
 /**
  * An impersonation record as a client sees it. The reason and the administrator's identity are not part of it.
  */
 export interface AuthnImpersonationGrant {
+  /** RFC 3339 instant at which the record stops being valid; never more than one hour after it began. */
+  ends_at: string;
   /** Identifier of the impersonation record, minted when the start was granted. */
   id: string;
+  /** Absent on the answer to a start, present on a record in force */
+  started_at?: string;
   /** The impersonated account */
   target: string;
   /** The tenant the impersonation is confined to */
   tenant: string;
-  /** Absent on the answer to a start, present on a record in force */
-  started_at?: string;
-  /** RFC 3339 instant at which the record stops being valid; never more than one hour after it began. */
-  ends_at: string;
 }
 
 /**
@@ -888,14 +871,14 @@ export interface AuthnImpersonationGrantEnvelope {
  * The answer of a start: the record just created and, for a bearer credential, the impersonation access token.
  */
 export interface AuthnImpersonationStart {
-  /** The record just created; started_at is absent because a start answer does not carry the start instant. */
-  grant: AuthnImpersonationGrant;
   /** Present on a bearer start; absent on a cookie start, whose carrier is the session cookie */
   access_token?: string;
-  /** Present with access_token; always Bearer */
-  token_type?: string;
   /** Present with access_token; the access token's lifetime in whole seconds */
   expires_in?: number;
+  /** The record just created; started_at is absent because a start answer does not carry the start instant. */
+  grant: AuthnImpersonationGrant;
+  /** Present with access_token; always Bearer */
+  token_type?: string;
 }
 
 /**
@@ -912,38 +895,38 @@ export interface AuthnInviteView {
 export interface AuthnInviteAccept {
   /** Identifier of the account the membership belongs to: an existing account or one created by this acceptance. */
   account: string;
-  /** The string form of the tenant identifier the membership was written in. */
-  tenant: string;
   /** Whether the membership is active; an acceptance always writes an active one. */
   active: boolean;
   /** The membership's source; an acceptance always writes invite. */
   source: string;
   /** Whether the membership is exempt from SSO enforcement; an acceptance writes false. */
   sso_exempt: boolean;
+  /** The string form of the tenant identifier the membership was written in. */
+  tenant: string;
 }
 
 /**
  * One public JSON Web Key. The published keys carry `kty`, `kid`, `alg` and `use`; the remaining members depend on the key type: an EC key carries `crv`, `x` and `y`, an RSA key carries `n` and `e`.
  */
 export interface AuthnTokenJWK {
-  /** The key type, for example EC or RSA */
-  kty: string;
-  /** The key use, signature */
-  use?: string;
-  /** The RFC 7638 thumbprint of the public key */
-  kid: string;
   /** The signature algorithm the key signs and verifies with */
   alg?: string;
   /** The curve of an EC key; only P-256 is supported, so this is `P-256`. */
   crv?: string;
+  /** The public exponent of an RSA public key, base64url-encoded without padding. */
+  e?: string;
+  /** The RFC 7638 thumbprint of the public key */
+  kid: string;
+  /** The key type, for example EC or RSA */
+  kty: string;
+  /** The modulus of an RSA public key, at least 2048 bits, base64url-encoded without padding. */
+  n?: string;
+  /** The key use, signature */
+  use?: string;
   /** The x coordinate of an EC public key, base64url-encoded without padding. */
   x?: string;
   /** The y coordinate of an EC public key, base64url-encoded without padding. */
   y?: string;
-  /** The modulus of an RSA public key, at least 2048 bits, base64url-encoded without padding. */
-  n?: string;
-  /** The public exponent of an RSA public key, base64url-encoded without padding. */
-  e?: string;
   [key: string]: unknown;
  }
 
@@ -980,16 +963,16 @@ export interface AuthnProfileIdentifier {
  * One external identity bound to the account, as the account module keeps it; it carries no provider subject.
  */
 export interface AuthnProfileLink {
-  /** The binding's own identifier */
-  id: string;
-  /** The provider the binding was made through, as the provider is registered */
-  provider: string;
-  /** Absent when the provider gave no address */
-  email?: string;
   /** RFC 3339 in UTC, empty when the binding carries no creation instant */
   created_at: string;
+  /** Absent when the provider gave no address */
+  email?: string;
+  /** The binding's own identifier */
+  id: string;
   /** Absent when the binding has never been used to sign in */
   last_login_at?: string;
+  /** The provider the binding was made through, as the provider is registered */
+  provider: string;
 }
 
 /**
@@ -998,26 +981,26 @@ export interface AuthnProfileLink {
 export interface AuthnProfileProfile {
   /** The account's identifier, the one the request's identity names; never empty on a 200. */
   account_id: string;
-  /** The account's kind: user or service, a service being a non-interactive API client. */
-  kind: string;
+  /** Never null; the empty object when the account carries none */
+  attributes: AuthnProfileProfileAttributes;
+  /** RFC 3339 in UTC, empty when the account carries no creation instant */
+  created_at: string;
   /** The account's display name, empty when it carries none */
   display_name: string;
+  /** The account's identifiers; always an array, never null, and empty when the account has none */
+  identifiers: AuthnProfileIdentifier[];
+  /** The account's kind: user or service, a service being a non-interactive API client. */
+  kind: string;
+  /** The account's external bindings; always an array, never null, and empty when there are none. The provider's own subject for the person is not included */
+  links: AuthnProfileLink[];
+  /** Read out of the attribute set, empty when it carries none */
+  locale: string;
   /** Whether the account must register a factor */
   mfa_required: boolean;
   /** Whether the account has a password credential set */
   password_set: boolean;
-  /** RFC 3339 in UTC, empty when the account carries no creation instant */
-  created_at: string;
-  /** Never null; the empty object when the account carries none */
-  attributes: AuthnProfileProfileAttributes;
-  /** Read out of the attribute set, empty when it carries none */
-  locale: string;
   /** Read out of the attribute set, empty when it carries none */
   time_zone: string;
-  /** The account's identifiers; always an array, never null, and empty when the account has none */
-  identifiers: AuthnProfileIdentifier[];
-  /** The account's external bindings; always an array, never null, and empty when there are none. The provider's own subject for the person is not included */
-  links: AuthnProfileLink[];
 }
 
 /**
@@ -1029,10 +1012,10 @@ export type AuthnProfilePatchAttributes = {[key: string]: string};
  * The self-writable fields as they stand after a profile write, read back from what was stored.
  */
 export interface AuthnProfilePatch {
-  /** The display name as it stands after the write; the account's current one when the body carried none */
-  display_name: string;
   /** The whole attribute set as it stands, never null */
   attributes: AuthnProfilePatchAttributes;
+  /** The display name as it stands after the write; the account's current one when the body carried none */
+  display_name: string;
   /** Read out of the attribute set, empty when it carries none */
   locale: string;
   /** Read out of the attribute set, empty when it carries none */
@@ -1043,26 +1026,18 @@ export interface AuthnProfilePatch {
  * One login method as the discovery document reports it: its stable name, how a client renders it, the protocol a redirect or enterprise method speaks, its brand label, whether it can open an account, and the inputs its first step asks for.
  */
 export interface AuthnMethodDescriptor {
-  /** The method's stable name */
-  name: string;
-  /** How a client renders the method: form, redirect, enterprise or webauthn */
-  kind: string;
-  /** The wire protocol a redirect or enterprise method speaks: oauth2, oidc or saml; empty otherwise */
-  protocol?: string;
-  /** The method's brand name where it has one, otherwise empty for a name-keyed translation */
-  label?: string;
-  /** Whether the method may open an account for an identifier it does not yet know */
-  opens_account?: boolean;
   /** The inputs the method's first step asks for, empty for a method that does not open with a form */
   fields?: AuthnLoginField[];
-}
-
-/**
- * Whether a first login may open an account on this deployment, derived from the account module's signup switch. A closed switch does not remove a method; it only makes a first login for an unknown identifier fail.
- */
-export interface AuthnLoginSignup {
-  /** Whether a first login may open an account */
-  enabled: boolean;
+  /** How a client renders the method: form, redirect, enterprise or webauthn */
+  kind: string;
+  /** The method's brand name where it has one, otherwise empty for a name-keyed translation */
+  label?: string;
+  /** The method's stable name */
+  name: string;
+  /** Whether the method may open an account for an identifier it does not yet know */
+  opens_account?: boolean;
+  /** The wire protocol a redirect or enterprise method speaks: oauth2, oidc or saml; empty otherwise */
+  protocol?: string;
 }
 
 /**
@@ -1074,15 +1049,23 @@ export interface AuthnLoginMFA {
 }
 
 /**
+ * Whether a first login may open an account on this deployment, derived from the account module's signup switch. A closed switch does not remove a method; it only makes a first login for an unknown identifier fail.
+ */
+export interface AuthnLoginSignup {
+  /** Whether a first login may open an account */
+  enabled: boolean;
+}
+
+/**
  * The discovery document of the login surface: one descriptor per login method that takes part and is not turned off, whether a first login may open an account, and the second-factor kinds the deployment takes in. Enterprise identity providers are not listed here; they are discovered through the SSO module.
  */
 export interface AuthnLoginMethods {
   /** The methods taking part that are not turned off, one descriptor each, sorted by name */
   methods: AuthnMethodDescriptor[];
-  /** Whether a first login may open an account on this deployment. */
-  signup: AuthnLoginSignup;
   /** The second-factor kinds the deployment takes in. */
   mfa: AuthnLoginMFA;
+  /** Whether a first login may open an account on this deployment. */
+  signup: AuthnLoginSignup;
 }
 
 /**
@@ -1213,12 +1196,12 @@ export interface AuthnSsoProvider {
 export interface AuthnTokenResponse {
   /** The signed access token: a compact JWT, presented as a `Bearer` credential. */
   access_token: string;
-  /** Always Bearer */
-  token_type: string;
   /** The access token's remaining lifetime in whole seconds */
   expires_in: number;
   /** Present only for the refresh_token grant */
   refresh_token?: string;
+  /** Always Bearer */
+  token_type: string;
 }
 
 /**
@@ -1255,30 +1238,30 @@ export interface AuthzAdminPermissionView {
  * One role binding: an account holds a role within a tenant.
  */
 export interface AuthzAdminBindingView {
-  /** The tenant the binding belongs to. */
-  tenant: string;
   /** The account the role is bound to. */
   account: string;
-  /** The role bound to the account. */
-  role: string;
   /** When the binding was written, as an RFC 3339 instant in UTC. */
   granted_at: string;
+  /** The role bound to the account. */
+  role: string;
+  /** The tenant the binding belongs to. */
+  tenant: string;
 }
 
 /**
  * One role of a tenant as the role routes report it.
  */
 export interface AuthzAdminRoleView {
-  /** The tenant the role belongs to. */
-  tenant: string;
-  /** The role name within the tenant. */
-  role: string;
   /** True for a builtin role: the management face can neither rewrite nor remove it, nor change its grants. The mark is set by the host that seeds the policy data and is never cleared. */
   builtin: boolean;
-  /** The i18n key of the role's description text; stored as given and not resolved by this surface. */
-  description_key: string;
   /** When the role was written, as an RFC 3339 instant in UTC. */
   created_at: string;
+  /** The i18n key of the role's description text; stored as given and not resolved by this surface. */
+  description_key: string;
+  /** The role name within the tenant. */
+  role: string;
+  /** The tenant the role belongs to. */
+  tenant: string;
 }
 
 /**
@@ -1287,22 +1270,23 @@ export interface AuthzAdminRoleView {
 export interface AuthzAdminRoleWrite {
   /** The i18n key of the role's description text. It is stored as given and not resolved by this surface. */
   description_key: string;
-}
+  [key: string]: unknown;
+ }
 
 /**
  * One permission grant of a role: the (resource, action) pair the policy engine matches on.
  */
 export interface AuthzAdminGrantView {
-  /** The tenant the grant belongs to. */
-  tenant: string;
-  /** The role holding the grant. */
-  role: string;
-  /** The resource the grant matches on. */
-  resource: string;
   /** The action the grant matches on. */
   action: string;
   /** When the grant was written, as an RFC 3339 instant in UTC. */
   created_at: string;
+  /** The resource the grant matches on. */
+  resource: string;
+  /** The role holding the grant. */
+  role: string;
+  /** The tenant the grant belongs to. */
+  tenant: string;
 }
 
 /**
@@ -1315,41 +1299,37 @@ export interface FeatureBoardDocument {
 
 /**
  * The type's parameters after the allow-list filter, as an opaque JSON object the client renders into the message; null when the message carries none.
- * @nullable
  */
-export type NotificationMessageParams = { [key: string]: unknown } | null;
+export type NotificationMessageParams = {[key: string]: unknown};
 
 /**
  * One in-app message as the inbox shows it. The title and body arrive already rendered, and the bookkeeping columns — tenant, recipient, dedupe key, expiry and update time — are not part of this view.
  */
 export interface NotificationMessage {
-  /** The message identifier; it is the value the per-message mark-read route takes. */
-  id: string;
-  /** The notification type key the message was dispatched under, shaped like <module>.<entity>.<action>. */
-  type_key: string;
-  /** The group the message was filed under; the listing filters on it. Empty when the message was filed under none. */
-  group: string;
-  /** The rendered title, in the language the delivery pipeline rendered it in. */
-  title: string;
   /** The rendered body, in the language the delivery pipeline rendered it in. */
   body: string;
-  /**
-     * The type's parameters after the allow-list filter, as an opaque JSON object the client renders into the message; null when the message carries none.
-     * @nullable
-     */
-  params: NotificationMessageParams;
-  /** The optional navigation target; the empty string when the message carries none. */
-  link: string;
-  /** The first-read instant as an RFC 3339 instant in UTC; null while the message is unread, and never rewritten once set. */
-  read_at?: string;
   /** When the message was written, as an RFC 3339 instant in UTC. */
   created_at: string;
+  /** The group the message was filed under; the listing filters on it. Empty when the message was filed under none. */
+  group: string;
+  /** The message identifier; it is the value the per-message mark-read route takes. */
+  id: string;
+  /** The optional navigation target; the empty string when the message carries none. */
+  link: string;
+  /** The type's parameters after the allow-list filter, as an opaque JSON object the client renders into the message; null when the message carries none. */
+  params: NotificationMessageParams;
+  /** The first-read instant as an RFC 3339 instant in UTC; null while the message is unread, and never rewritten once set. */
+  read_at?: string;
+  /** The rendered title, in the language the delivery pipeline rendered it in. */
+  title: string;
+  /** The notification type key the message was dispatched under, shaped like <module>.<entity>.<action>. */
+  type_key: string;
 }
 
-export type NotificationPreferenceChannelsItem = typeof NotificationPreferenceChannelsItem[keyof typeof NotificationPreferenceChannelsItem];
+export type Channel = typeof Channel[keyof typeof Channel];
 
 
-export const NotificationPreferenceChannelsItem = {
+export const Channel = {
   in_app: 'in_app',
   email: 'email',
   sms: 'sms',
@@ -1359,14 +1339,14 @@ export const NotificationPreferenceChannelsItem = {
  * One row of the caller's preference matrix: a notification type and the channels that type's dispatches would go out under for the caller.
  */
 export interface NotificationPreference {
-  /** The notification type key this row describes. */
-  type_key: string;
-  /** The type's grouping label, copied from its declaration. */
-  group: string;
   /** The caller's effective channel set for the type: the stored channels when a row exists, otherwise the type's default channels; a type that cannot be unsubscribed always carries its default channels. */
-  channels: NotificationPreferenceChannelsItem[];
+  channels: Channel[];
   /** True when the channels came from a stored row, false when they are the type's default channels */
   explicit: boolean;
+  /** The type's grouping label, copied from its declaration. */
+  group: string;
+  /** The notification type key this row describes. */
+  type_key: string;
 }
 
 /**
@@ -1377,29 +1357,20 @@ export interface NotificationSetPreferenceRequest {
   enabled: boolean;
 }
 
-export type NotificationTypeDefaultChannelsItem = typeof NotificationTypeDefaultChannelsItem[keyof typeof NotificationTypeDefaultChannelsItem];
-
-
-export const NotificationTypeDefaultChannelsItem = {
-  in_app: 'in_app',
-  email: 'email',
-  sms: 'sms',
-} as const;
-
 /**
  * One notification type as declared by the business module that owns it; the taxonomy is fixed at startup and read-only for the life of the process.
  */
 export interface NotificationType {
-  /** The globally unique type key; two modules declaring one key fail the process startup. */
-  key: string;
+  /** The channels a recipient gets for this type when no preference row is stored. Non-empty, free of duplicates, and drawn from the channel set. */
+  default_channels: Channel[];
   /** The grouping label the declaring module assigns to the type. */
   group: string;
-  /** The channels a recipient gets for this type when no preference row is stored. Non-empty, free of duplicates, and drawn from the channel set. */
-  default_channels: NotificationTypeDefaultChannelsItem[];
-  /** Whether a recipient may change this type's channel set. False means writes answer 409 and the effective set is always default_channels. */
-  unsubscribable: boolean;
+  /** The globally unique type key; two modules declaring one key fail the process startup. */
+  key: string;
   /** The parameter names the declaring module allows to be shown to the recipient. This module stores and returns the list but does not interpret it. */
   recipient_visible_params: string[];
+  /** Whether a recipient may change this type's channel set. False means writes answer 409 and the effective set is always default_channels. */
+  unsubscribable: boolean;
 }
 
 /**
@@ -1454,36 +1425,36 @@ export interface ObjectstoreDeclaration {
  * One declared setting item as this management surface shows it, on the selected layer. The declaration fields come from the key table; written, has_row and value come from that layer's rows and from the resolved read. Every value-bearing field is text in the declared type's own form, so a duration reads as "5m0s" rather than as a count of nanoseconds.
  */
 export interface SettingsAdminSetting {
-  /** The full setting key: the declaring module's namespace joined with the item's own segment by a dot. */
-  key: string;
-  /** The module that declared the item */
-  namespace: string;
-  /** The declared type's name as reflection reports it, such as `string`, `int`, `bool` or `time.Duration`; the item's values are stored and rendered in that type's text form. */
-  type: string;
+  /** The declared default in the declared type's text form, empty for a sensitive item */
+  default: string;
   /** The human-readable text the declaring module gave the item. */
   description: string;
   /** The declared rule over the item's values, empty when every value of the type is admitted */
   domain: string;
-  /** Whether the item is a credential. A sensitive item's default is empty and its written and value carry a fixed mask string; has_row still reports whether the layer holds a row. */
-  sensitive: boolean;
-  /** The declared default in the declared type's text form, empty for a sensitive item */
-  default: string;
-  /** The text the selected layer holds, the mask string for a sensitive item */
-  written: string;
   /** Whether the selected layer holds a row for the item. For a non-sensitive item, written is empty both when no row is held and when the row's text is empty; a sensitive item's written is the mask string whether or not a row exists. */
   has_row: boolean;
+  /** The full setting key: the declaring module's namespace joined with the item's own segment by a dot. */
+  key: string;
+  /** The module that declared the item */
+  namespace: string;
+  /** Whether the item is a credential. A sensitive item's default is empty and its written and value carry a fixed mask string; has_row still reports whether the layer holds a row. */
+  sensitive: boolean;
+  /** The declared type's name as reflection reports it, such as "string", "int", "bool" or "time.Duration"; the item's values are stored and rendered in that type's text form. */
+  type: string;
   /** The text the item resolves to after the three-level fallback, the mask string for a sensitive item */
   value: string;
+  /** The text the selected layer holds, the mask string for a sensitive item */
+  written: string;
 }
 
 /**
  * The vendor's review verdict on one template in one language.
  */
 export interface SmsAdminApproval {
-  /** The verdict in this capability's own vocabulary: pending, approved, rejected or withdrawn; an empty string means a review this process does not track. The vendor's raw status numbers are never exposed. */
-  state: string;
   /** The vendor's own explanation, present when it turned the template down and it gave one; omitted otherwise. */
   reason?: string;
+  /** The verdict in this capability's own vocabulary: pending, approved, rejected or withdrawn; an empty string means a review this process does not track. The vendor's raw status numbers are never exposed. */
+  state: string;
 }
 
 /**
@@ -1495,24 +1466,24 @@ export type SmsAdminTemplateApprovals = {[key: string]: SmsAdminApproval};
  * One template as the management surface reports it: its logical name, its source, its ordered parameter names, the languages it holds a code for, the vendor's review per language, whether sends are allowed, and its write counters. It carries no vendor code.
  */
 export interface SmsAdminTemplate {
-  /** The logical template name a caller sends under; the management routes address a template by it. */
-  name: string;
-  /** Where the template came from: config for one read from the configuration, runtime for one this process created. A config template is read-only at runtime, always enabled, and carries no approvals and no version. */
-  source: string;
-  /** The parameter names the template substitutes, in the order the vendor approved them; a positional vendor lays values out in this order. */
-  params: string[];
-  /** The languages the template holds a vendor code for. A code is what a send needs but not the whole of what it needs: a runtime template sends only while it is enabled and the language's vendor review is approved, and every language a runtime template names starts pending review whether the template was registered or submitted, so this list normally includes languages that cannot be sent in yet. A configured template is always enabled and its review is not tracked, so each language it holds a code for can be sent in. */
-  locales: string[];
   /** The vendor's review verdict per language, keyed by locale; a vendor approves a template per language. A configured template carries an empty object because this process does not track its review. */
   approvals: SmsAdminTemplateApprovals;
-  /** Whether a message may go out under the template. A configured template is always enabled; a runtime template's value is set by the enable route and is independent of the vendor's review. */
-  enabled: boolean;
-  /** The number of writes this runtime record has taken, used as the optimistic-concurrency condition; 0 for a configured template, which has no version. */
-  version: number;
   /** When the record was first written, in UTC and RFC 3339 format; the zero time for a configured template. */
   created_at: string;
+  /** Whether a message may go out under the template. A configured template is always enabled; a runtime template's value is set by the enable route and is independent of the vendor's review. */
+  enabled: boolean;
+  /** The languages the template holds a vendor code for. A code is what a send needs but not the whole of what it needs: a runtime template sends only while it is enabled and the language's vendor review is approved, and every language a runtime template names starts pending review whether the template was registered or submitted, so this list normally includes languages that cannot be sent in yet. A configured template is always enabled and its review is not tracked, so each language it holds a code for can be sent in. */
+  locales: string[];
+  /** The logical template name a caller sends under; the management routes address a template by it. */
+  name: string;
+  /** The parameter names the template substitutes, in the order the vendor approved them; a positional vendor lays values out in this order. */
+  params: string[];
+  /** Where the template came from: config for one read from the configuration, runtime for one this process created. A config template is read-only at runtime, always enabled, and carries no approvals and no version. */
+  source: string;
   /** When the record was last written, in UTC and RFC 3339 format; the zero time for a configured template. */
   updated_at: string;
+  /** The number of writes this runtime record has taken, used as the optimistic-concurrency condition; 0 for a configured template, which has no version. */
+  version: number;
 }
 
 /**
@@ -1520,30 +1491,24 @@ export interface SmsAdminTemplate {
  */
 export type SmsAdminRegisterCodes = {[key: string]: string};
 
-/**
- * The body of a registration: a template whose vendor code the operator already has.
- */
 export interface SmsAdminRegister {
+  /** The vendor's template code per language, keyed by locale. Every language named starts pending, and the template starts enabled. */
+  codes: SmsAdminRegisterCodes;
   /** The logical template name to take up; required and non-empty, and the name a caller will later send under. A language the name already holds is a 409. */
   name: string;
   /** The parameter names the template substitutes, in the order the vendor approved them. */
   params: string[];
-  /** The vendor's template code per language, keyed by locale. Every language named starts pending, and the template starts enabled. */
-  codes: SmsAdminRegisterCodes;
 }
 
-/**
- * The body of a submission: a template handed to the vendor for review.
- */
 export interface SmsAdminSubmission {
-  /** The logical template name the submission creates; required and non-empty. */
-  name: string;
   /** The template body, written with ${name} placeholders naming the entries of params. The carrier rewrites them into the vendor's own syntax, in params order. */
   content: string;
   /** What the template is for, in the shared vocabulary: verification, notification or marketing. The carrier maps it to the vendor's spelling. */
   kind: string;
   /** The language this submission is for, opaque to the capability. A vendor approves per language, so one submission yields one code for one language. */
   locale: string;
+  /** The logical template name the submission creates; required and non-empty. */
+  name: string;
   /** The parameter names content substitutes, in the order the template expects them. */
   params: string[];
   /** A note for the vendor's reviewer; may be empty. */
@@ -1565,22 +1530,19 @@ export const TenantAdminTenantStatus = {
  * One tenant as the management routes render it: the identifier, the alias and the state.
  */
 export interface TenantAdminTenant {
-  /** The tenant's identifier, the natural key the roster keys the row by. */
-  id: string;
   /** The alias the request surface addresses the tenant by. */
   alias: string;
+  /** The tenant's identifier, the natural key the roster keys the row by. */
+  id: string;
   /** The tenant's state: active is served, disabled is not. */
   status: TenantAdminTenantStatus;
 }
 
-/**
- * A registration: the identifier to insert and the alias to give it. The state is not part of it, because a registered tenant starts active.
- */
 export interface TenantAdminTenantRegistration {
-  /** The identifier to register; the roster refuses one it already holds. */
-  id: string;
   /** The alias to give the tenant; the roster refuses one another tenant already holds. */
   alias: string;
+  /** The identifier to register; the roster refuses one it already holds. */
+  id: string;
 }
 
 /**
@@ -1621,24 +1583,11 @@ export const OpsReadinessStatus = {
  * The readiness response body, carrying the verdict and, when it is unavailable, one line per part that failed.
  */
 export interface OpsReadiness {
-  /** ready when every part answered, unavailable otherwise */
-  status: OpsReadinessStatus;
   /** One line per part that failed; absent when the verdict is ready */
   failures?: string[];
+  /** ready when every part answered, unavailable otherwise */
+  status: OpsReadinessStatus;
 }
-
-export type SettingsAdminLayerParameter = typeof SettingsAdminLayerParameter[keyof typeof SettingsAdminLayerParameter];
-
-
-export const SettingsAdminLayerParameter = {
-  global: 'global',
-  tenant: 'tenant',
-} as const;
-
-/**
- * The tenant identifier; required for the tenant layer and refused for the global one
- */
-export type SettingsAdminTenantParameter = string;
 
 export type AuditAdminRecordsListParams = {
 /**
@@ -1751,14 +1700,6 @@ after?: string;
 };
 
 /**
- * An object whose single member lists every factor the caller's account has registered.
- */
-export type AuthnMfaFactors200 = {
-  /** The caller's factor rows, ordered oldest first by creation time and then by identifier; an empty array when the account has registered none. */
-  factors: AuthnMfaFactor[];
-};
-
-/**
  * The fields the method's first step takes, as name-to-value strings. At most 8 members, each value at most 512 bytes; anything beyond is a 400 bad-request.
  */
 export type AuthnLoginStartBodyInput = {[key: string]: string};
@@ -1767,18 +1708,18 @@ export type AuthnLoginStartBodyInput = {[key: string]: string};
  * The start request; `method` must name a login method this deployment takes in, or the call is a bad request.
  */
 export type AuthnLoginStartBody = {
+  /** How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method. */
+  binding?: string;
+  /** How a completed login is delivered: `session` (the default) sets the session cookie and answers the session view; `token` answers an access and refresh token pair. `token` must be enabled by the deployment and requires the token capability, otherwise the request is a 400 bad-request. */
+  delivery?: string;
+  /** The fields the method's first step takes, as name-to-value strings. At most 8 members, each value at most 512 bytes; anything beyond is a 400 bad-request. */
+  input?: AuthnLoginStartBodyInput;
   /** The stable name of a login method, as returned in `name` by `GET /auth/methods`. A name the deployment does not take in is a 400 bad-request; a method turned off by the deployment is a 403 method-disabled. */
   method?: string;
   /** Accepted but not read by this route: a flow started here always has the purpose login. Use `POST /auth/flows/authenticated` for link, step-up or enroll. */
   purpose?: string;
-  /** How a completed login is delivered: `session` (the default) sets the session cookie and answers the session view; `token` answers an access and refresh token pair. `token` must be enabled by the deployment and requires the token capability, otherwise the request is a 400 bad-request. */
-  delivery?: string;
   /** Where to send the user agent after a callback login completes: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts. Anything else is a 400 bad-request. The value is stored in the flow record, and no parameter of the callback request can change it. */
   return_to?: string;
-  /** How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method. */
-  binding?: string;
-  /** The fields the method's first step takes, as name-to-value strings. At most 8 members, each value at most 512 bytes; anything beyond is a 400 bad-request. */
-  input?: AuthnLoginStartBodyInput;
 };
 
 /**
@@ -1790,12 +1731,12 @@ export type AuthnLoginAnswerBodyInput = {[key: string]: string};
  * One answer to the bound flow: which step is being answered, the step number to echo, and the fields the step takes.
  */
 export type AuthnLoginAnswerBody = {
+  /** The fields the step takes, as name-to-value strings. At most 8 members, each value at most 8 KiB; a second-factor step reads `factor` to choose the factor and then the values that factor asks for, an enrollment step reads `kind`, and `complete` reads nothing. */
+  input?: AuthnLoginAnswerBodyInput;
   /** The `seq` of the flow as last returned. It must equal the record's current step number; a stale or future value is a 401 flow-invalid. */
   seq?: number;
   /** The step being answered: `answer` for a first-factor submission, only while the flow is at the first factor; `factor` for a second-factor step, only at the second factor; `enroll` for an enrollment step, only at the enroll state; `complete` to take the result of a ready flow. A name outside this set is a 400 bad-request, and a step that does not match the flow's state is a 401 flow-invalid. */
   step?: string;
-  /** The fields the step takes, as name-to-value strings. At most 8 members, each value at most 8 KiB; a second-factor step reads `factor` to choose the factor and then the values that factor asks for, an enrollment step reads `kind`, and `complete` reads nothing. */
-  input?: AuthnLoginAnswerBodyInput;
 };
 
 /**
@@ -1807,16 +1748,18 @@ export type AuthnLoginStartAuthenticatedBodyInput = {[key: string]: string};
  * The start request for a purpose other than login; `purpose` must be `link`, `step-up` or `enroll`.
  */
 export type AuthnLoginStartAuthenticatedBody = {
+  /** How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method. */
+  binding?: string;
+  /** Accepted but not read: the delivery mode follows the kind of the request's session. It is accepted so that a client may send this route the same start body it sends to `POST /auth/flows`. */
+  delivery?: string;
+  /** The fields the started step takes, as name-to-value strings: the method's first step for `link`, the enrollment step for `enroll` where `kind` names the factor kind, and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes. */
+  input?: AuthnLoginStartAuthenticatedBodyInput;
   /** The method to run for `link`, and for a `step-up` of an account that holds no factor. For an enrollment it is not read, and for a step-up the policy answers with usable factors it is not read either; a step-up whose account holds factors but none usable for this session is refused with 401 insufficient_user_authentication before the method is consulted. A name the deployment does not take in is a 400 bad-request. */
   method?: string;
   /** Required, and one of `link`, `step-up` or `enroll`: bind an external identity, strengthen the current session, or register a factor. Any other value, including an empty one, is a 400 bad-request. */
   purpose?: string;
   /** Where to send the user agent after a callback login completes: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts. Anything else is a 400 bad-request. The value is stored in the flow record, and no parameter of the callback request can change it. */
   return_to?: string;
-  /** How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method. */
-  binding?: string;
-  /** The fields the started step takes, as name-to-value strings: the method's first step for `link`, the enrollment step for `enroll` where `kind` names the factor kind, and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes. */
-  input?: AuthnLoginStartAuthenticatedBodyInput;
 };
 
 /**
@@ -1843,10 +1786,10 @@ export type AuthnLoginVerifyIdentifierBody = {
 export type AuthnImpersonationStartBody = {
   /** Identifier of the account to impersonate: an enabled, non-protected user account other than the caller's own, and an active member of tenant. */
   account: string;
-  /** Identifier of the tenant the impersonation is confined to; it may not be empty or contain whitespace or control characters, so omitting it is refused. */
-  tenant?: string;
   /** Why the impersonation is started. It is trimmed, then must be one to 500 characters with no control characters; it is stored on the record and in the audit row and never appears in a response. */
   reason?: string;
+  /** Identifier of the tenant the impersonation is confined to; it may not be empty or contain whitespace or control characters, so omitting it is refused. */
+  tenant?: string;
   /** Requested lifetime in whole seconds. Zero or absent takes the max-ttl setting (30 minutes by default); the settled lifetime is the shortest of the request, that setting, the remaining lifetime of the caller's session and a hard ceiling of one hour. */
   ttl_seconds?: number;
 };
@@ -1870,10 +1813,10 @@ export type AuthnProfilePatchBodyAttributes = {[key: string]: string};
  * The profile write; the set of fields is closed and every one is optional. A body carrying no field succeeds and changes nothing.
  */
 export type AuthnProfilePatchBody = {
-  /** The new display name, at most 100 characters; absent leaves the current one. A longer value is refused 400 by the account module. */
-  display_name?: string;
   /** The whole attribute set to store, as string keys and string values; a given one - the empty object included - replaces the current set, and an absent one leaves it alone. A set outside the account module's bounds is refused 400. */
   attributes?: AuthnProfilePatchBodyAttributes;
+  /** The new display name, at most 100 characters; absent leaves the current one. A longer value is refused 400 by the account module. */
+  display_name?: string;
   /** A BCP 47 language tag stored under the i18n.locale attribute. An invalid tag is refused 400; the empty string clears the attribute and an absent field leaves it alone. */
   locale?: string;
   /** An IANA time-zone name stored under the i18n.tz attribute. A name outside the IANA set is refused 400; the empty string clears the attribute and an absent field leaves it alone. */
@@ -1903,7 +1846,7 @@ export type AuthnLoginStartPhoneBody = {
  */
 export type AuthnLoginVerifyPhoneBody = {
   /** The code as the SMS channel sent it. Empty or longer than 32 bytes is a 400 bad-request before any comparison; a wrong code is a 401 login-failed and counts against the number. */
-  code?: string;
+  code: string;
 };
 
 /**
@@ -1933,23 +1876,17 @@ export const AuthnTokenIssueBodyGrantType = {
   refresh_token: 'refresh_token',
 } as const;
 
-/**
- * The form fields of a token request. Which fields are read depends on `grant_type`.
- */
 export type AuthnTokenIssueBody = {
-  /** The grant to perform, one of `client_credentials` and `refresh_token`. Required; any other value answers `unsupported_grant_type`. */
-  grant_type?: AuthnTokenIssueBodyGrantType;
-  /** The refresh token to rotate, read only for the `refresh_token` grant, where a missing value answers `invalid_request`. The response carries the rotated replacement. */
-  refresh_token?: string;
   /** The service account identifier, read together with `client_secret` only when the request has no usable `Authorization: Basic` header. */
   client_id?: string;
   /** The service account secret, read together with `client_id`. A missing identifier or secret answers `invalid_client`. */
   client_secret?: string;
+  /** The grant to perform, one of `client_credentials` and `refresh_token`. Required; any other value answers `unsupported_grant_type`. */
+  grant_type?: AuthnTokenIssueBodyGrantType;
+  /** The refresh token to rotate, read only for the `refresh_token` grant, where a missing value answers `invalid_request`. The response carries the rotated replacement. */
+  refresh_token?: string;
 };
 
-/**
- * The form field of a revocation request. A request whose form cannot be read still answers 200.
- */
 export type AuthnTokenRevokeBody = {
   /** The token to revoke: a refresh token, an access token, or any unrecognised string. The response does not reveal which kind it was or whether it existed. */
   token?: string;
@@ -2048,10 +1985,10 @@ export type NotificationPreferencesListPreferences200 = {
  * The type's effective channel set after the update.
  */
 export type NotificationPreferencesUpdatePreference200 = {
-  /** The type key the update applied to, echoed from the path. */
-  type_key: string;
   /** The type's effective channel set after the update: the stored channels when a row exists, otherwise the type's default channels, deduplicated and stably ordered. */
   channels: string[];
+  /** The type key the update applied to, echoed from the path. */
+  type_key: string;
 };
 
 /**
@@ -2109,51 +2046,80 @@ export type ObjectstoreMetadataCompleteObject200 = {
 
 export type SettingsAdminSettingsListParams = {
 /**
- * The layer the values are read or written at; there is no default
+ * The layer the listing reads: "global" for the platform layer, or "tenant" for the layer of the tenant named by "tenant". There is no default; an absent value or one outside this set is a 400.
  */
-layer: SettingsAdminLayerParameter;
+layer: SettingsAdminSettingsListLayer;
 /**
- * The tenant identifier; required for the tenant layer and refused for the global one
+ * The tenant whose layer the listing reads. Required when "layer" is "tenant" and refused when it is "global"; an empty identifier or one containing blanks or control characters is a 400.
  */
-tenant?: SettingsAdminTenantParameter;
+tenant?: string;
 };
+
+export type SettingsAdminSettingsListLayer = typeof SettingsAdminSettingsListLayer[keyof typeof SettingsAdminSettingsListLayer];
+
+
+export const SettingsAdminSettingsListLayer = {
+  global: 'global',
+  tenant: 'tenant',
+} as const;
 
 export type SettingsAdminSettingsListNamespaceParams = {
 /**
- * The layer the values are read or written at; there is no default
+ * The layer the listing reads: "global" for the platform layer, or "tenant" for the layer of the tenant named by "tenant". There is no default; an absent value or one outside this set is a 400.
  */
-layer: SettingsAdminLayerParameter;
+layer: SettingsAdminSettingsListNamespaceLayer;
 /**
- * The tenant identifier; required for the tenant layer and refused for the global one
+ * The tenant whose layer the listing reads. Required when "layer" is "tenant" and refused when it is "global"; an empty identifier or one containing blanks or control characters is a 400.
  */
-tenant?: SettingsAdminTenantParameter;
+tenant?: string;
 };
+
+export type SettingsAdminSettingsListNamespaceLayer = typeof SettingsAdminSettingsListNamespaceLayer[keyof typeof SettingsAdminSettingsListNamespaceLayer];
+
+
+export const SettingsAdminSettingsListNamespaceLayer = {
+  global: 'global',
+  tenant: 'tenant',
+} as const;
 
 export type SettingsAdminSettingsRemoveParams = {
 /**
- * The layer the values are read or written at; there is no default
+ * The layer whose row is dropped: "global" for the platform layer, or "tenant" for the layer of the tenant named by "tenant". There is no default; an absent value or one outside this set is a 400.
  */
-layer: SettingsAdminLayerParameter;
+layer: SettingsAdminSettingsRemoveLayer;
 /**
- * The tenant identifier; required for the tenant layer and refused for the global one
+ * The tenant whose layer the row is dropped from. Required when "layer" is "tenant" and refused when it is "global"; an empty identifier or one containing blanks or control characters is a 400.
  */
-tenant?: SettingsAdminTenantParameter;
+tenant?: string;
 };
+
+export type SettingsAdminSettingsRemoveLayer = typeof SettingsAdminSettingsRemoveLayer[keyof typeof SettingsAdminSettingsRemoveLayer];
+
+
+export const SettingsAdminSettingsRemoveLayer = {
+  global: 'global',
+  tenant: 'tenant',
+} as const;
 
 export type SettingsAdminSettingsSetParams = {
 /**
- * The layer the values are read or written at; there is no default
+ * The layer the write lands on: "global" for the platform layer, or "tenant" for the layer of the tenant named by "tenant". There is no default; an absent value or one outside this set is a 400.
  */
-layer: SettingsAdminLayerParameter;
+layer: SettingsAdminSettingsSetLayer;
 /**
- * The tenant identifier; required for the tenant layer and refused for the global one
+ * The tenant whose layer the write lands on. Required when "layer" is "tenant" and refused when it is "global"; an empty identifier or one containing blanks or control characters is a 400.
  */
-tenant?: SettingsAdminTenantParameter;
+tenant?: string;
 };
 
-/**
- * The write's body: exactly one object, whose `value` member carries the value to store.
- */
+export type SettingsAdminSettingsSetLayer = typeof SettingsAdminSettingsSetLayer[keyof typeof SettingsAdminSettingsSetLayer];
+
+
+export const SettingsAdminSettingsSetLayer = {
+  global: 'global',
+  tenant: 'tenant',
+} as const;
+
 export type SettingsAdminSettingsSetBody = {
   /** The value to store, in the JSON form the item's declared type is read from: a string for a string, duration, or text-decoding item, a number for a numeric item, a boolean for a bool item. It is encoded under the declared type and then held to the item's declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. */
   value: unknown;
@@ -2175,10 +2141,10 @@ limit?: number;
  * One page of the template set, ordered by name, with the cursor that continues it.
  */
 export type SmsAdminTemplatesList200 = {
-  /** The templates on this page, ordered by name. */
-  templates: SmsAdminTemplate[];
   /** The last name on this page, to be passed as after on the next request; empty when this page is the last. */
   next_cursor: string;
+  /** The templates on this page, ordered by name. */
+  templates: SmsAdminTemplate[];
 };
 
 /**
@@ -2197,9 +2163,6 @@ export type SmsAdminTemplatesOffer201 = {
   template: SmsAdminTemplate;
 };
 
-/**
- * The target state of the template's ability to send.
- */
 export type SmsAdminTemplatesSetEnabledBody = {
   /** True lets messages go out under the template, false stops them. The member is required and must be a JSON boolean; a body without it is a 400. */
   enabled: boolean;
@@ -2229,9 +2192,6 @@ export type TenantAdminTenantsGet200 = {
   tenant: TenantAdminTenant;
 };
 
-/**
- * The rename request: the alias to give the tenant the path names.
- */
 export type TenantAdminTenantsSetAliasBody = {
   /** The new alias; an alias another tenant holds is refused with a 409. */
   alias: string;
@@ -2248,9 +2208,6 @@ export const TenantAdminTenantsSetStatusBodyStatus = {
   disabled: 'disabled',
 } as const;
 
-/**
- * The state change request.
- */
 export type TenantAdminTenantsSetStatusBody = {
   /** active serves the tenant; disabled stops serving it. */
   status: TenantAdminTenantsSetStatusBodyStatus;
@@ -2353,7 +2310,7 @@ export const getAuditAdminRecordsGetQueryKey = (id: string,) => {
     }
 
 
-export const getAuditAdminRecordsGetQueryOptions = <TData = Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError = Problem>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError, TData>, }
+export const getAuditAdminRecordsGetQueryOptions = <TData = Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError = Problem | void>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError, TData>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -2372,14 +2329,14 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuditAdminRecordsGetQueryResult = NonNullable<Awaited<ReturnType<typeof auditAdminRecordsGet>>>
-export type AuditAdminRecordsGetQueryError = Problem
+export type AuditAdminRecordsGetQueryError = Problem | void
 
 
 /**
  * @summary Read one audit record by its row identifier
  */
 
-export function useAuditAdminRecordsGet<TData = Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError = Problem>(
+export function useAuditAdminRecordsGet<TData = Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError = Problem | void>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError, TData>, }
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -4541,7 +4498,7 @@ export const authnAdminMembersRemove = (
 
 
 
-export const getAuthnAdminMembersRemoveMutationOptions = <TError = Problem,
+export const getAuthnAdminMembersRemoveMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersRemove>>, TError,{tenant: string;account: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersRemove>>, TError,{tenant: string;account: string}, TContext> => {
 
@@ -4570,12 +4527,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AuthnAdminMembersRemoveMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminMembersRemove>>>
 
-    export type AuthnAdminMembersRemoveMutationError = Problem
+    export type AuthnAdminMembersRemoveMutationError = Problem | void
 
     /**
  * @summary Remove an account's membership from a tenant
  */
-export const useAuthnAdminMembersRemove = <TError = Problem,
+export const useAuthnAdminMembersRemove = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersRemove>>, TError,{tenant: string;account: string}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminMembersRemove>>,
@@ -4999,7 +4956,7 @@ export const authnMfaFactors = (
 ) => {
 
 
-      return speedRequest<AuthnMfaFactors200>(
+      return speedRequest<AuthnMfaFactorList>(
       {url: `/api/v1/auth/factors`, method: 'GET', signal
     },
       );
@@ -5197,7 +5154,7 @@ export const authnLoginAnswer = (
 ) => {
 
 
-      return speedRequest<AuthnLoginFlow | AuthnLoginSession | AuthnLoginToken | AuthnLoginActionResult>(
+      return speedRequest<AuthnLoginAnswer>(
       {url: `/api/v1/auth/flows/answer`, method: 'POST',
       headers: {'Content-Type': 'application/json', },
       data: authnLoginAnswerBody, signal
@@ -6930,7 +6887,7 @@ export const getAuthnSsoSamlMetadataQueryKey = (provider: string,) => {
     }
 
 
-export const getAuthnSsoSamlMetadataQueryOptions = <TData = Awaited<ReturnType<typeof authnSsoSamlMetadata>>, TError = void>(provider: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authnSsoSamlMetadata>>, TError, TData>, }
+export const getAuthnSsoSamlMetadataQueryOptions = <TData = Awaited<ReturnType<typeof authnSsoSamlMetadata>>, TError = void | Problem>(provider: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authnSsoSamlMetadata>>, TError, TData>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -6949,14 +6906,14 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type AuthnSsoSamlMetadataQueryResult = NonNullable<Awaited<ReturnType<typeof authnSsoSamlMetadata>>>
-export type AuthnSsoSamlMetadataQueryError = void
+export type AuthnSsoSamlMetadataQueryError = void | Problem
 
 
 /**
  * @summary The service provider metadata for one SAML provider
  */
 
-export function useAuthnSsoSamlMetadata<TData = Awaited<ReturnType<typeof authnSsoSamlMetadata>>, TError = void>(
+export function useAuthnSsoSamlMetadata<TData = Awaited<ReturnType<typeof authnSsoSamlMetadata>>, TError = void | Problem>(
  provider: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authnSsoSamlMetadata>>, TError, TData>, }
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -6979,22 +6936,22 @@ export function useAuthnSsoSamlMetadata<TData = Awaited<ReturnType<typeof authnS
  * @summary Exchange a client credential or a refresh token for an access token
  */
 export const authnTokenIssue = (
-    authnTokenIssueBody: AuthnTokenIssueBody,
+    authnTokenIssueBody?: AuthnTokenIssueBody,
  signal?: AbortSignal
 ) => {
 
       const formUrlEncoded = new URLSearchParams();
-if(authnTokenIssueBody.grant_type !== undefined) {
- formUrlEncoded.append(`grant_type`, authnTokenIssueBody.grant_type);
- }
-if(authnTokenIssueBody.refresh_token !== undefined) {
- formUrlEncoded.append(`refresh_token`, authnTokenIssueBody.refresh_token);
- }
-if(authnTokenIssueBody.client_id !== undefined) {
+if(authnTokenIssueBody?.client_id !== undefined) {
  formUrlEncoded.append(`client_id`, authnTokenIssueBody.client_id);
  }
-if(authnTokenIssueBody.client_secret !== undefined) {
+if(authnTokenIssueBody?.client_secret !== undefined) {
  formUrlEncoded.append(`client_secret`, authnTokenIssueBody.client_secret);
+ }
+if(authnTokenIssueBody?.grant_type !== undefined) {
+ formUrlEncoded.append(`grant_type`, authnTokenIssueBody.grant_type);
+ }
+if(authnTokenIssueBody?.refresh_token !== undefined) {
+ formUrlEncoded.append(`refresh_token`, authnTokenIssueBody.refresh_token);
  }
 
       return speedRequestCredentialless<AuthnTokenResponse>(
@@ -7007,9 +6964,9 @@ if(authnTokenIssueBody.client_secret !== undefined) {
 
 
 
-export const getAuthnTokenIssueMutationOptions = <TError = AuthnTokenOAuthError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnTokenIssue>>, TError,{data: AuthnTokenIssueBody}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnTokenIssue>>, TError,{data: AuthnTokenIssueBody}, TContext> => {
+export const getAuthnTokenIssueMutationOptions = <TError = AuthnTokenOAuthError | Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnTokenIssue>>, TError,{data?: AuthnTokenIssueBody}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnTokenIssue>>, TError,{data?: AuthnTokenIssueBody}, TContext> => {
 
 const mutationKey = ['authnTokenIssue'];
 const {mutation: mutationOptions} = options ?
@@ -7021,7 +6978,7 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnTokenIssue>>, {data: AuthnTokenIssueBody}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnTokenIssue>>, {data?: AuthnTokenIssueBody}> = (props) => {
           const {data} = props ?? {};
 
           return  authnTokenIssue(data,)
@@ -7035,18 +6992,18 @@ const {mutation: mutationOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AuthnTokenIssueMutationResult = NonNullable<Awaited<ReturnType<typeof authnTokenIssue>>>
-    export type AuthnTokenIssueMutationBody = AuthnTokenIssueBody
-    export type AuthnTokenIssueMutationError = AuthnTokenOAuthError
+    export type AuthnTokenIssueMutationBody = AuthnTokenIssueBody | undefined
+    export type AuthnTokenIssueMutationError = AuthnTokenOAuthError | Problem
 
     /**
  * @summary Exchange a client credential or a refresh token for an access token
  */
-export const useAuthnTokenIssue = <TError = AuthnTokenOAuthError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnTokenIssue>>, TError,{data: AuthnTokenIssueBody}, TContext>, }
+export const useAuthnTokenIssue = <TError = AuthnTokenOAuthError | Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnTokenIssue>>, TError,{data?: AuthnTokenIssueBody}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof authnTokenIssue>>,
         TError,
-        {data: AuthnTokenIssueBody},
+        {data?: AuthnTokenIssueBody},
         TContext
       > => {
       return useMutation(getAuthnTokenIssueMutationOptions(options));
@@ -7057,12 +7014,12 @@ export const useAuthnTokenIssue = <TError = AuthnTokenOAuthError,
  * @summary Revoke a refresh token
  */
 export const authnTokenRevoke = (
-    authnTokenRevokeBody: AuthnTokenRevokeBody,
+    authnTokenRevokeBody?: AuthnTokenRevokeBody,
  signal?: AbortSignal
 ) => {
 
       const formUrlEncoded = new URLSearchParams();
-if(authnTokenRevokeBody.token !== undefined) {
+if(authnTokenRevokeBody?.token !== undefined) {
  formUrlEncoded.append(`token`, authnTokenRevokeBody.token);
  }
 
@@ -7076,9 +7033,9 @@ if(authnTokenRevokeBody.token !== undefined) {
 
 
 
-export const getAuthnTokenRevokeMutationOptions = <TError = AuthnTokenOAuthError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnTokenRevoke>>, TError,{data: AuthnTokenRevokeBody}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnTokenRevoke>>, TError,{data: AuthnTokenRevokeBody}, TContext> => {
+export const getAuthnTokenRevokeMutationOptions = <TError = Problem | AuthnTokenOAuthError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnTokenRevoke>>, TError,{data?: AuthnTokenRevokeBody}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnTokenRevoke>>, TError,{data?: AuthnTokenRevokeBody}, TContext> => {
 
 const mutationKey = ['authnTokenRevoke'];
 const {mutation: mutationOptions} = options ?
@@ -7090,7 +7047,7 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnTokenRevoke>>, {data: AuthnTokenRevokeBody}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnTokenRevoke>>, {data?: AuthnTokenRevokeBody}> = (props) => {
           const {data} = props ?? {};
 
           return  authnTokenRevoke(data,)
@@ -7104,18 +7061,18 @@ const {mutation: mutationOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AuthnTokenRevokeMutationResult = NonNullable<Awaited<ReturnType<typeof authnTokenRevoke>>>
-    export type AuthnTokenRevokeMutationBody = AuthnTokenRevokeBody
-    export type AuthnTokenRevokeMutationError = AuthnTokenOAuthError
+    export type AuthnTokenRevokeMutationBody = AuthnTokenRevokeBody | undefined
+    export type AuthnTokenRevokeMutationError = Problem | AuthnTokenOAuthError
 
     /**
  * @summary Revoke a refresh token
  */
-export const useAuthnTokenRevoke = <TError = AuthnTokenOAuthError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnTokenRevoke>>, TError,{data: AuthnTokenRevokeBody}, TContext>, }
+export const useAuthnTokenRevoke = <TError = Problem | AuthnTokenOAuthError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnTokenRevoke>>, TError,{data?: AuthnTokenRevokeBody}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof authnTokenRevoke>>,
         TError,
-        {data: AuthnTokenRevokeBody},
+        {data?: AuthnTokenRevokeBody},
         TContext
       > => {
       return useMutation(getAuthnTokenRevokeMutationOptions(options));
@@ -9325,7 +9282,7 @@ export const smsAdminTemplatesRegister = (
 
 
 
-export const getSmsAdminTemplatesRegisterMutationOptions = <TError = Problem,
+export const getSmsAdminTemplatesRegisterMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof smsAdminTemplatesRegister>>, TError,{data: SmsAdminRegister}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof smsAdminTemplatesRegister>>, TError,{data: SmsAdminRegister}, TContext> => {
 
@@ -9354,12 +9311,12 @@ const {mutation: mutationOptions} = options ?
 
     export type SmsAdminTemplatesRegisterMutationResult = NonNullable<Awaited<ReturnType<typeof smsAdminTemplatesRegister>>>
     export type SmsAdminTemplatesRegisterMutationBody = SmsAdminRegister
-    export type SmsAdminTemplatesRegisterMutationError = Problem
+    export type SmsAdminTemplatesRegisterMutationError = Problem | void
 
     /**
  * @summary Take up a template whose vendor code the operator already has
  */
-export const useSmsAdminTemplatesRegister = <TError = Problem,
+export const useSmsAdminTemplatesRegister = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof smsAdminTemplatesRegister>>, TError,{data: SmsAdminRegister}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof smsAdminTemplatesRegister>>,
@@ -9390,7 +9347,7 @@ export const smsAdminTemplatesOffer = (
 
 
 
-export const getSmsAdminTemplatesOfferMutationOptions = <TError = Problem,
+export const getSmsAdminTemplatesOfferMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof smsAdminTemplatesOffer>>, TError,{data: SmsAdminSubmission}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof smsAdminTemplatesOffer>>, TError,{data: SmsAdminSubmission}, TContext> => {
 
@@ -9419,12 +9376,12 @@ const {mutation: mutationOptions} = options ?
 
     export type SmsAdminTemplatesOfferMutationResult = NonNullable<Awaited<ReturnType<typeof smsAdminTemplatesOffer>>>
     export type SmsAdminTemplatesOfferMutationBody = SmsAdminSubmission
-    export type SmsAdminTemplatesOfferMutationError = Problem
+    export type SmsAdminTemplatesOfferMutationError = Problem | void
 
     /**
  * @summary Hand a template to the vendor for review and take up the code it answers with
  */
-export const useSmsAdminTemplatesOffer = <TError = Problem,
+export const useSmsAdminTemplatesOffer = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof smsAdminTemplatesOffer>>, TError,{data: SmsAdminSubmission}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof smsAdminTemplatesOffer>>,
@@ -9725,7 +9682,7 @@ export const getTenantAdminTenantsGetQueryKey = (id: string,) => {
     }
 
 
-export const getTenantAdminTenantsGetQueryOptions = <TData = Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError = Problem>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError, TData>, }
+export const getTenantAdminTenantsGetQueryOptions = <TData = Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError = Problem | void>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError, TData>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -9744,14 +9701,14 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type TenantAdminTenantsGetQueryResult = NonNullable<Awaited<ReturnType<typeof tenantAdminTenantsGet>>>
-export type TenantAdminTenantsGetQueryError = Problem
+export type TenantAdminTenantsGetQueryError = Problem | void
 
 
 /**
  * @summary Read one tenant the roster holds
  */
 
-export function useTenantAdminTenantsGet<TData = Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError = Problem>(
+export function useTenantAdminTenantsGet<TData = Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError = Problem | void>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError, TData>, }
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -9790,7 +9747,7 @@ export const tenantAdminTenantsSetAlias = (
 
 
 
-export const getTenantAdminTenantsSetAliasMutationOptions = <TError = Problem,
+export const getTenantAdminTenantsSetAliasMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>, TError,{id: string;data: TenantAdminTenantsSetAliasBody}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>, TError,{id: string;data: TenantAdminTenantsSetAliasBody}, TContext> => {
 
@@ -9819,12 +9776,12 @@ const {mutation: mutationOptions} = options ?
 
     export type TenantAdminTenantsSetAliasMutationResult = NonNullable<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>>
     export type TenantAdminTenantsSetAliasMutationBody = TenantAdminTenantsSetAliasBody
-    export type TenantAdminTenantsSetAliasMutationError = Problem
+    export type TenantAdminTenantsSetAliasMutationError = Problem | void
 
     /**
  * @summary Change one tenant's alias
  */
-export const useTenantAdminTenantsSetAlias = <TError = Problem,
+export const useTenantAdminTenantsSetAlias = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>, TError,{id: string;data: TenantAdminTenantsSetAliasBody}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>,
@@ -9856,7 +9813,7 @@ export const tenantAdminTenantsSetStatus = (
 
 
 
-export const getTenantAdminTenantsSetStatusMutationOptions = <TError = Problem,
+export const getTenantAdminTenantsSetStatusMutationOptions = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetStatus>>, TError,{id: string;data: TenantAdminTenantsSetStatusBody}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetStatus>>, TError,{id: string;data: TenantAdminTenantsSetStatusBody}, TContext> => {
 
@@ -9885,12 +9842,12 @@ const {mutation: mutationOptions} = options ?
 
     export type TenantAdminTenantsSetStatusMutationResult = NonNullable<Awaited<ReturnType<typeof tenantAdminTenantsSetStatus>>>
     export type TenantAdminTenantsSetStatusMutationBody = TenantAdminTenantsSetStatusBody
-    export type TenantAdminTenantsSetStatusMutationError = Problem
+    export type TenantAdminTenantsSetStatusMutationError = Problem | void
 
     /**
  * @summary Change one tenant's state
  */
-export const useTenantAdminTenantsSetStatus = <TError = Problem,
+export const useTenantAdminTenantsSetStatus = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetStatus>>, TError,{id: string;data: TenantAdminTenantsSetStatusBody}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof tenantAdminTenantsSetStatus>>,
@@ -9905,7 +9862,7 @@ export const useTenantAdminTenantsSetStatus = <TError = Problem,
  * Reads nothing and always answers 200, so any answer at all means the process is up. The route is mounted on the endpoint named by ops.endpoint (default "ops"), which the host assembles unguarded: a probe needs no credential and no tenant.
  * @summary The process is alive
  */
-export const getHealth = (
+export const opsHealth = (
 
  signal?: AbortSignal
 ) => {
@@ -9920,45 +9877,45 @@ export const getHealth = (
 
 
 
-export const getGetHealthQueryKey = () => {
+export const getOpsHealthQueryKey = () => {
     return [
     `/health`
     ] as const;
     }
 
 
-export const getGetHealthQueryOptions = <TData = Awaited<ReturnType<typeof getHealth>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getHealth>>, TError, TData>, }
+export const getOpsHealthQueryOptions = <TData = Awaited<ReturnType<typeof opsHealth>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof opsHealth>>, TError, TData>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetHealthQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getOpsHealthQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getHealth>>> = ({ signal }) => getHealth(signal);
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof opsHealth>>> = ({ signal }) => opsHealth(signal);
 
 
 
 
 
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getHealth>>, TError, TData> & { queryKey: QueryKey }
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof opsHealth>>, TError, TData> & { queryKey: QueryKey }
 }
 
-export type GetHealthQueryResult = NonNullable<Awaited<ReturnType<typeof getHealth>>>
-export type GetHealthQueryError = unknown
+export type OpsHealthQueryResult = NonNullable<Awaited<ReturnType<typeof opsHealth>>>
+export type OpsHealthQueryError = unknown
 
 
 /**
  * @summary The process is alive
  */
 
-export function useGetHealth<TData = Awaited<ReturnType<typeof getHealth>>, TError = unknown>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getHealth>>, TError, TData>, }
+export function useOpsHealth<TData = Awaited<ReturnType<typeof opsHealth>>, TError = unknown>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof opsHealth>>, TError, TData>, }
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetHealthQueryOptions(options)
+  const queryOptions = getOpsHealthQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -9975,7 +9932,7 @@ export function useGetHealth<TData = Awaited<ReturnType<typeof getHealth>>, TErr
  * Serves the document itself rather than a wrapper, merged once at startup and never recomputed, so every request reads the same bytes. Every declared fragment is merged, including those of modules that do not run in this command, because the document states which API this binary provides. Its title and version come from ops.title and ops.version, and it carries top-level openapi, info, paths, components, x-fragments, and a per-operation x-endpoint naming the endpoint that serves each route.
  * @summary The API document, merged from every module's fragment
  */
-export const getOpenapiJson = (
+export const opsDocument = (
 
  signal?: AbortSignal
 ) => {
@@ -9990,45 +9947,45 @@ export const getOpenapiJson = (
 
 
 
-export const getGetOpenapiJsonQueryKey = () => {
+export const getOpsDocumentQueryKey = () => {
     return [
     `/openapi.json`
     ] as const;
     }
 
 
-export const getGetOpenapiJsonQueryOptions = <TData = Awaited<ReturnType<typeof getOpenapiJson>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOpenapiJson>>, TError, TData>, }
+export const getOpsDocumentQueryOptions = <TData = Awaited<ReturnType<typeof opsDocument>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof opsDocument>>, TError, TData>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetOpenapiJsonQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getOpsDocumentQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOpenapiJson>>> = ({ signal }) => getOpenapiJson(signal);
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof opsDocument>>> = ({ signal }) => opsDocument(signal);
 
 
 
 
 
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOpenapiJson>>, TError, TData> & { queryKey: QueryKey }
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof opsDocument>>, TError, TData> & { queryKey: QueryKey }
 }
 
-export type GetOpenapiJsonQueryResult = NonNullable<Awaited<ReturnType<typeof getOpenapiJson>>>
-export type GetOpenapiJsonQueryError = unknown
+export type OpsDocumentQueryResult = NonNullable<Awaited<ReturnType<typeof opsDocument>>>
+export type OpsDocumentQueryError = unknown
 
 
 /**
  * @summary The API document, merged from every module's fragment
  */
 
-export function useGetOpenapiJson<TData = Awaited<ReturnType<typeof getOpenapiJson>>, TError = unknown>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOpenapiJson>>, TError, TData>, }
+export function useOpsDocument<TData = Awaited<ReturnType<typeof opsDocument>>, TError = unknown>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof opsDocument>>, TError, TData>, }
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetOpenapiJsonQueryOptions(options)
+  const queryOptions = getOpsDocumentQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -10045,7 +10002,7 @@ export function useGetOpenapiJson<TData = Awaited<ReturnType<typeof getOpenapiJs
  * The verdict is read fresh on every request and nothing is cached or polled in the background: each endpoint the process declared must be accepting requests, and when a database is assembled it is pinged once. Only process-level availability is reported, never tenant or business state. 200 means every check passed; 503 names each part that failed in failures.
  * @summary Every declared endpoint accepts requests and the database answers
  */
-export const getReady = (
+export const opsReadiness = (
 
  signal?: AbortSignal
 ) => {
@@ -10060,45 +10017,45 @@ export const getReady = (
 
 
 
-export const getGetReadyQueryKey = () => {
+export const getOpsReadinessQueryKey = () => {
     return [
     `/ready`
     ] as const;
     }
 
 
-export const getGetReadyQueryOptions = <TData = Awaited<ReturnType<typeof getReady>>, TError = OpsReadiness>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReady>>, TError, TData>, }
+export const getOpsReadinessQueryOptions = <TData = Awaited<ReturnType<typeof opsReadiness>>, TError = OpsReadiness>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof opsReadiness>>, TError, TData>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetReadyQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getOpsReadinessQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getReady>>> = ({ signal }) => getReady(signal);
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof opsReadiness>>> = ({ signal }) => opsReadiness(signal);
 
 
 
 
 
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getReady>>, TError, TData> & { queryKey: QueryKey }
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof opsReadiness>>, TError, TData> & { queryKey: QueryKey }
 }
 
-export type GetReadyQueryResult = NonNullable<Awaited<ReturnType<typeof getReady>>>
-export type GetReadyQueryError = OpsReadiness
+export type OpsReadinessQueryResult = NonNullable<Awaited<ReturnType<typeof opsReadiness>>>
+export type OpsReadinessQueryError = OpsReadiness
 
 
 /**
  * @summary Every declared endpoint accepts requests and the database answers
  */
 
-export function useGetReady<TData = Awaited<ReturnType<typeof getReady>>, TError = OpsReadiness>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReady>>, TError, TData>, }
+export function useOpsReadiness<TData = Awaited<ReturnType<typeof opsReadiness>>, TError = OpsReadiness>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof opsReadiness>>, TError, TData>, }
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetReadyQueryOptions(options)
+  const queryOptions = getOpsReadinessQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

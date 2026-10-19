@@ -4,22 +4,15 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// factorView is one factor as the management routes show it: its kind, its
-// label and its status, and nothing of its credential.
-type factorView struct {
-	Kind   string `json:"kind"`
-	Label  string `json:"label"`
-	Status string `json:"status"`
-}
-
-func factorViewOf(f authn.FactorRecord) factorView {
-	return factorView{Kind: string(f.Kind), Label: f.Label, Status: factorStatusName(f.Status)}
+// factorViewOf builds one factor as the management routes show it: its kind,
+// its label and its status, and nothing of its credential.
+func factorViewOf(f authn.FactorRecord) AuthnAdminFactor {
+	return AuthnAdminFactor{Kind: string(f.Kind), Label: f.Label, Status: factorStatusName(f.Status)}
 }
 
 // factorStatusName is the status's name as the view writes it.
@@ -37,115 +30,102 @@ func factorStatusName(s authn.FactorStatus) string {
 
 // handleFactorList answers GET /admin/accounts/:id/factors. The action is
 // account.read.
-func (m *product) handleFactorList(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
+func (m *product) handleFactorList(ctx context.Context, in accountIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := m.caller(ctx)
+	if err != nil {
+		return nil, err
 	}
-	accountID := authn.AccountID(c.Param("id"))
-	if _, err := m.accounts.Get(c.Request.Context(), accountID); err != nil {
-		m.getFailure(c, err)
-		return
+	if err = m.admit(id); err != nil {
+		return nil, err
 	}
-	if !m.asks(c, authn.Decision{
+	accountID := authn.AccountID(in.ID)
+	if _, err = m.accounts.Get(ctx, accountID); err != nil {
+		return m.replyFailure("reading an object", err)
+	}
+	if err = m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountRead, Actor: id,
 		Target: string(accountID), TargetAccount: string(accountID),
-	}) {
-		return
+	}); err != nil {
+		return nil, err
 	}
-	factors, err := m.mfa.Factors(c.Request.Context(), accountID)
+	factors, err := m.mfa.Factors(ctx, accountID)
 	if err != nil {
-		m.cause(c, "listing factors", err)
-		return
+		return nil, m.unavailable("listing factors", err)
 	}
-	views := make([]factorView, len(factors))
+	views := make([]AuthnAdminFactor, len(factors))
 	for i, f := range factors {
 		views[i] = factorViewOf(f)
 	}
-	c.JSON(200, gin.H{"factors": views})
-}
-
-// mfaRequiredBody is the request of a change of the required flag.
-type mfaRequiredBody struct {
-	Required bool `json:"required"`
+	return speedhttp.JSONReply(200, AuthnAdminFactorList{Factors: views}), nil
 }
 
 // handleMFARequired answers POST /admin/accounts/:id/mfa-required. The action is
 // account.update.
-func (m *product) handleMFARequired(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
+func (m *product) handleMFARequired(ctx context.Context, in mfaFlagInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := m.caller(ctx)
+	if err != nil {
+		return nil, err
 	}
-	accountID := authn.AccountID(c.Param("id"))
-	var body mfaRequiredBody
-	if !mount.Decode(c, &body) {
-		return
+	if err := m.admit(id); err != nil {
+		return nil, err
 	}
-	if _, err := m.accounts.Get(c.Request.Context(), accountID); err != nil {
-		m.getFailure(c, err)
-		return
+	accountID := authn.AccountID(in.ID)
+	if _, err := m.accounts.Get(ctx, accountID); err != nil {
+		return m.replyFailure("reading an object", err)
 	}
-	if !m.asks(c, authn.Decision{
+	if err := m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountUpdate, Actor: id,
 		Target: string(accountID), TargetAccount: string(accountID),
-	}) {
-		return
+	}); err != nil {
+		return nil, err
 	}
 	actionID := newActionID()
-	if !m.auditRequired(c, mandatory(actionAccountUpdate, string(accountID),
-		map[string]string{detailActionID: actionID, detailChange: "mfa-required"})) {
-		return
+	if err := m.auditRequired(ctx, mandatory(actionAccountUpdate, string(accountID),
+		map[string]string{detailActionID: actionID, detailChange: "mfa-required"})); err != nil {
+		return nil, err
 	}
-	if err := m.accountAdm.SetMFARequired(c.Request.Context(), accountID, body.Required); err != nil {
-		m.auditBestEffort(c.Request.Context(), failedAudit(actionAccountUpdate, string(accountID), actionID))
-		m.answer(c, "changing the required flag", err)
-		return
+	if err := m.accountAdm.SetMFARequired(ctx, accountID, in.Required); err != nil {
+		m.auditBestEffort(ctx, failedAudit(actionAccountUpdate, string(accountID), actionID))
+		return m.replyFailure("changing the required flag", err)
 	}
-	c.Status(204)
-	c.Writer.WriteHeaderNow()
+	return speedhttp.EmptyReply(204), nil
 }
 
 // handleMFAReset answers POST /admin/accounts/:id/mfa-reset: it disables the
 // account's factors. The action is mfa.reset; the actor needs a fresh, local,
 // non-SMS multi-factor authentication and a seasoned factor of their own.
-func (m *product) handleMFAReset(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
+func (m *product) handleMFAReset(ctx context.Context, in accountIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := m.caller(ctx)
+	if err != nil {
+		return nil, err
 	}
-	accountID := authn.AccountID(c.Param("id"))
-	if _, err := m.accounts.Get(c.Request.Context(), accountID); err != nil {
-		m.getFailure(c, err)
-		return
+	if err = m.admit(id); err != nil {
+		return nil, err
 	}
-	if !m.asks(c, authn.Decision{
+	accountID := authn.AccountID(in.ID)
+	if _, err = m.accounts.Get(ctx, accountID); err != nil {
+		return m.replyFailure("reading an object", err)
+	}
+	if err = m.asks(ctx, authn.Decision{
 		Action: authn.ActionMFAReset, Actor: id,
 		Target: string(accountID), TargetAccount: string(accountID),
-	}) {
-		return
+	}); err != nil {
+		return nil, err
 	}
-	if !m.requireAdministrator(c, id) {
-		return
+	if err = m.requireAdministrator(ctx, id); err != nil {
+		return nil, err
 	}
 	actionID := newActionID()
-	if !m.auditRequired(c, mandatory(actionMFAReset, string(accountID),
-		map[string]string{detailActionID: actionID})) {
-		return
+	if err = m.auditRequired(ctx, mandatory(actionMFAReset, string(accountID),
+		map[string]string{detailActionID: actionID})); err != nil {
+		return nil, err
 	}
-	removed, err := m.mfa.Reset(c.Request.Context(), accountID, authn.ReasonAdmin)
+	removed, err := m.mfa.Reset(ctx, accountID, authn.ReasonAdmin)
 	if err != nil {
-		m.auditBestEffort(c.Request.Context(), failedAudit(actionMFAReset, string(accountID), actionID))
-		m.answer(c, "resetting factors", err)
-		return
+		m.auditBestEffort(ctx, failedAudit(actionMFAReset, string(accountID), actionID))
+		return m.replyFailure("resetting factors", err)
 	}
-	c.JSON(200, gin.H{"removed": removed})
-}
-
-// passwordBody is the request of an administrator's password reset. The
-// temporary password is never echoed, logged or audited.
-type passwordBody struct {
-	Password string `json:"password"`
+	return speedhttp.JSONReply(200, AuthnAdminRemoved{Removed: removed}), nil
 }
 
 // handlePasswordReset answers POST /admin/accounts/:id/password: an
@@ -153,47 +133,42 @@ type passwordBody struct {
 // login, then every session of the account is revoked. The action is
 // account.update; the actor needs a fresh, local, non-SMS multi-factor
 // authentication and a seasoned factor of their own.
-func (m *product) handlePasswordReset(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
+func (m *product) handlePasswordReset(ctx context.Context, in passwordResetInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := m.caller(ctx)
+	if err != nil {
+		return nil, err
 	}
-	accountID := authn.AccountID(c.Param("id"))
-	var body passwordBody
-	if !mount.Decode(c, &body) {
-		return
+	if err = m.admit(id); err != nil {
+		return nil, err
 	}
-	if body.Password == "" {
-		m.bad(c)
-		return
+	accountID := authn.AccountID(in.ID)
+	if in.Password == "" {
+		return nil, m.bad()
 	}
-	if _, err := m.accounts.Get(c.Request.Context(), accountID); err != nil {
-		m.getFailure(c, err)
-		return
+	if _, err = m.accounts.Get(ctx, accountID); err != nil {
+		return m.replyFailure("reading an object", err)
 	}
-	if !m.asks(c, authn.Decision{
+	if err = m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountUpdate, Actor: id,
 		Target: string(accountID), TargetAccount: string(accountID),
-	}) {
-		return
+	}); err != nil {
+		return nil, err
 	}
-	if !m.requireAdministrator(c, id) {
-		return
+	if err = m.requireAdministrator(ctx, id); err != nil {
+		return nil, err
 	}
 	actionID := newActionID()
-	if !m.auditRequired(c, mandatory(actionAccountAuthReset, string(accountID),
-		map[string]string{detailActionID: actionID})) {
-		return
+	if err = m.auditRequired(ctx, mandatory(actionAccountAuthReset, string(accountID),
+		map[string]string{detailActionID: actionID})); err != nil {
+		return nil, err
 	}
-	err := m.passwords.Set(c.Request.Context(), accountID, body.Password, authn.SetPasswordOptions{MustChange: true})
+	err = m.passwords.Set(ctx, accountID, in.Password, authn.SetPasswordOptions{MustChange: true})
 	if err != nil {
-		m.auditBestEffort(c.Request.Context(), failedAudit(actionAccountAuthReset, string(accountID), actionID))
-		m.answer(c, "resetting a password", err)
-		return
+		m.auditBestEffort(ctx, failedAudit(actionAccountAuthReset, string(accountID), actionID))
+		return m.replyFailure("resetting a password", err)
 	}
-	m.revokeAfterPassword(c.Request.Context(), accountID)
-	c.Status(204)
-	c.Writer.WriteHeaderNow()
+	m.revokeAfterPassword(ctx, accountID)
+	return speedhttp.EmptyReply(204), nil
 }
 
 // revokeAfterPassword revokes every session of the account whose password was
@@ -218,28 +193,24 @@ func (m *product) revokeAfterPassword(ctx context.Context, id authn.AccountID) {
 // factors nor an account to answer for. The static-subject refusal and the
 // strength conditions are a step-up 401; a missing seasoned factor is the 403
 // the step-up cannot clear.
-func (m *product) requireAdministrator(c *gin.Context, id authn.Identity) bool {
+func (m *product) requireAdministrator(ctx context.Context, id authn.Identity) error {
 	if account := id.Account(); account == "" || account.IsStatic() {
-		mount.StepUpRequired(c, id, authn.FreshLocalMulti(m.settings.recentWindow()))
-		return false
+		return stepUpRequired(id, authn.FreshLocalMulti(m.settings.recentWindow()))
 	}
-	if !m.require(c, id, authn.FreshLocalMulti(m.settings.recentWindow())) {
-		return false
+	if err := m.require(id, authn.FreshLocalMulti(m.settings.recentWindow())); err != nil {
+		return err
 	}
 	if !hasNonSMSSecond(id.Methods()) {
-		mount.StepUpRequired(c, id, authn.FreshLocalMulti(m.settings.recentWindow()))
-		return false
+		return stepUpRequired(id, authn.FreshLocalMulti(m.settings.recentWindow()))
 	}
-	seasoned, err := m.mfa.Seasoned(c.Request.Context(), id.Account())
+	seasoned, err := m.mfa.Seasoned(ctx, id.Account())
 	if err != nil {
-		m.cause(c, "reading whether the actor has a seasoned factor", err)
-		return false
+		return m.unavailable("reading whether the actor has a seasoned factor", err)
 	}
 	if !seasoned {
-		mount.Forbidden(c, mount.CodeFactorNotSeasoned)
-		return false
+		return authnFailure(403, mount.CodeFactorNotSeasoned)
 	}
-	return true
+	return nil
 }
 
 // hasNonSMSSecond reports whether the method set carries a second factor that

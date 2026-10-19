@@ -158,8 +158,16 @@ type rig struct {
 // newRig builds the module over the handle with a root key configured.
 func newRig(t *testing.T, database db.Database) *rig {
 	t.Helper()
+	return newRigAtBase(t, database, mounttest.DefaultBase)
+}
+
+// newRigAtBase builds the module over the handle with the mounter configured
+// with base, so a case can hold behaviour under a base the host chose rather
+// than the default.
+func newRigAtBase(t *testing.T, database db.Database, basePath string) *rig {
+	t.Helper()
 	reader := authntest.ConfigReaderAll(t, "{}", Module())
-	mounter := mounttest.New(t)
+	mounter := mounttest.New(t, mounttest.WithBase(basePath))
 	p := build(database, mounter, resolved{}, reader)
 	r := &rig{
 		t: t, p: p, h: database.DB(), database: database,

@@ -104,8 +104,8 @@ func TestRoutesAnswerTheirShapesAndWriteNoRow(t *testing.T) {
 				t.Errorf("GET %s answered %d, want 200", pathMessages, w.Code)
 			}
 			var listing struct {
-				Messages []messageView `json:"messages"`
-				Total    int           `json:"total"`
+				Messages []NotificationMessage `json:"messages"`
+				Total    int                   `json:"total"`
 			}
 			decode(t, w, &listing)
 			if listing.Total != 2 || len(listing.Messages) != 2 {

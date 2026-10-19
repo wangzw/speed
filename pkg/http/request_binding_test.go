@@ -583,23 +583,25 @@ func TestAnEmptyQueryValueLeavesANonStringParameterUnset(t *testing.T) {
 	}
 }
 
-// TestARepeatedQueryValueForAScalarFieldIsRefused holds the parameter check: a
-// scalar field cannot hold both values, and dropping the second one silently
-// would answer from an input the caller did not send.
-func TestARepeatedQueryValueForAScalarFieldIsRefused(t *testing.T) {
+// TestARepeatedQueryValueForAScalarFieldTakesTheFirst holds the parameter
+// check: a scalar field holds one value, and the first one is it — the reading
+// a client that sent the name twice gets, rather than a refused request.
+func TestARepeatedQueryValueForAScalarFieldTakesTheFirst(t *testing.T) {
 	operation := NewOperation[parameterOnlyInput, struct{}](
 		"the.module.read", http.MethodGet, "/items/:id", "", "", nil,
 		[]Response{{Status: http.StatusNoContent, Description: "No content"}},
 	)
-	handler := operation.Handle(func(context.Context, parameterOnlyInput) (struct{}, error) {
-		t.Error("the handler ran with a repeated parameter")
+	handler := operation.Handle(func(_ context.Context, in parameterOnlyInput) (struct{}, error) {
+		if in.Limit != 1 {
+			t.Errorf("the handler saw limit=%d, want the first value 1", in.Limit)
+		}
 		return struct{}{}, nil
 	})
 	recorder := serve(t, http.MethodGet, "/items/:id", handler,
 		httptest.NewRequest(http.MethodGet, "/items/abc?limit=1&limit=2", nil))
 
-	if recorder.Code != http.StatusBadRequest {
-		t.Errorf("a repeated scalar parameter answered %d, want 400", recorder.Code)
+	if recorder.Code != http.StatusNoContent {
+		t.Errorf("a repeated scalar parameter answered %d, want 204", recorder.Code)
 	}
 }
 
@@ -658,23 +660,129 @@ func TestARepeatedMultipartFilePartIsRefused(t *testing.T) {
 	}
 }
 
-// TestANullJSONBodyIsRefused holds the JSON object check: null decodes into a
-// nil map without an error, but the body is declared as an object.
-func TestANullJSONBodyIsRefused(t *testing.T) {
+// TestANullJSONBodyBindsTheEmptyObject holds how a literal null is read: it
+// decodes into a nil map without an error and leaves the input at its zero
+// value, which is how the declaration reads an absent body.
+func TestANullJSONBodyBindsTheEmptyObject(t *testing.T) {
 	operation := NewOperation[readInput, struct{}](
 		"the.module.write", http.MethodPost, "/items/:id", "", "",
 		requestBody("application/json"),
 		[]Response{{Status: http.StatusNoContent, Description: "No content"}},
 	)
-	handler := operation.Handle(func(context.Context, readInput) (struct{}, error) {
-		t.Error("the handler ran with a null body")
+	handler := operation.Handle(func(_ context.Context, in readInput) (struct{}, error) {
+		if in.Mode != "" {
+			t.Errorf("the handler saw mode=%q, want the zero value", in.Mode)
+		}
 		return struct{}{}, nil
 	})
 	request := httptest.NewRequest(http.MethodPost, "/items/abc", strings.NewReader("null"))
 	request.Header.Set("Content-Type", "application/json")
 
 	recorder := serve(t, http.MethodPost, "/items/:id", handler, request)
-	if recorder.Code != http.StatusBadRequest {
-		t.Errorf("a null JSON body answered %d, want 400", recorder.Code)
+	if recorder.Code != http.StatusNoContent {
+		t.Errorf("a null JSON body answered %d, want 204", recorder.Code)
+	}
+}
+
+// TestAJSONBodyIsReadOnlyAsUTF8 holds the one parameter a JSON body's media
+// type is read for: the declared type with no parameter or with charset=utf-8
+// is accepted, and a charset naming another encoding is refused rather than
+// decoded under an assumption the body does not carry.
+func TestAJSONBodyIsReadOnlyAsUTF8(t *testing.T) {
+	for _, testCase := range []struct {
+		contentType string
+		status      int
+	}{
+		{"application/json", http.StatusNoContent},
+		{"application/json; charset=utf-8", http.StatusNoContent},
+		{"application/json; charset=UTF-8", http.StatusNoContent},
+		{"application/json; charset=latin1", http.StatusUnsupportedMediaType},
+		{"application/json; version=2", http.StatusUnsupportedMediaType},
+	} {
+		t.Run(testCase.contentType, func(t *testing.T) {
+			operation := NewOperation[readInput, struct{}](
+				"the.module.write", http.MethodPost, "/items/:id", "", "",
+				requestBody("application/json"),
+				[]Response{{Status: http.StatusNoContent, Description: "No content"}},
+			)
+			handler := operation.Handle(func(context.Context, readInput) (struct{}, error) {
+				return struct{}{}, nil
+			})
+			request := httptest.NewRequest(http.MethodPost, "/items/abc", strings.NewReader(`{"mode":"m"}`))
+			request.Header.Set("Content-Type", testCase.contentType)
+
+			recorder := serve(t, http.MethodPost, "/items/:id", handler, request)
+			if recorder.Code != testCase.status {
+				t.Errorf("Content-Type %q answered %d, want %d", testCase.contentType, recorder.Code, testCase.status)
+			}
+		})
+	}
+}
+
+// TestARequiredBodyMustBePresent holds requestBody.required: an empty body is
+// the zero input when the declaration does not require one and a 400 when it
+// does, before the handler runs.
+func TestARequiredBodyMustBePresent(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		required bool
+		status   int
+		ran      bool
+	}{
+		{"required", true, http.StatusBadRequest, false},
+		{"optional", false, http.StatusNoContent, true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			request := &RequestBody{MediaType: "application/json", Required: testCase.required}
+			operation := NewOperation[readInput, struct{}](
+				"the.module.write", http.MethodPost, "/items/:id", "", "", request,
+				[]Response{{Status: http.StatusNoContent, Description: "No content"}},
+			)
+			ran := false
+			handler := operation.Handle(func(context.Context, readInput) (struct{}, error) {
+				ran = true
+				return struct{}{}, nil
+			})
+			body := httptest.NewRequest(http.MethodPost, "/items/abc", strings.NewReader(""))
+			body.Header.Set("Content-Type", "application/json")
+
+			recorder := serve(t, http.MethodPost, "/items/:id", handler, body)
+			if recorder.Code != testCase.status {
+				t.Errorf("an empty body answered %d, want %d", recorder.Code, testCase.status)
+			}
+			if ran != testCase.ran {
+				t.Errorf("the handler ran = %v, want %v", ran, testCase.ran)
+			}
+		})
+	}
+}
+
+// caseInput is one JSON body member, for the member-name rule.
+type caseInput struct {
+	Name string `json:"name"`
+}
+
+// TestAJSONMemberNameMatchesCaseInsensitively holds encoding/json's rule: a
+// member whose name differs only in case still binds, which is how the
+// pre-declaration handlers read a body.
+func TestAJSONMemberNameMatchesCaseInsensitively(t *testing.T) {
+	operation := NewOperation[caseInput, struct{}](
+		"the.module.write", http.MethodPost, "/items", "", "",
+		requestBody("application/json"),
+		[]Response{{Status: http.StatusNoContent, Description: "No content"}},
+	)
+	var seen string
+	handler := operation.Handle(func(_ context.Context, in caseInput) (struct{}, error) {
+		seen = in.Name
+		return struct{}{}, nil
+	})
+	request := httptest.NewRequest(http.MethodPost, "/items", strings.NewReader(`{"NAME":"ada"}`))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := serve(t, http.MethodPost, "/items", handler, request)
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("a member differing in case answered %d, want 204", recorder.Code)
+	}
+	if seen != "ada" {
+		t.Errorf("the handler saw %q, want the member's value", seen)
 	}
 }

@@ -3,13 +3,38 @@ package profile
 import (
 	"errors"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
+
+// typePrefix starts the Problem.Type of every failure this capability's handlers
+// write, the code following it being one of mount's closed table.
+const typePrefix = "urn:speed:authn:"
+
+// authnFailure is a refusal of one of the capability's problem codes: the entry
+// point writes it as a problem document of the code's status and type.
+func authnFailure(status int, code string) error {
+	return speedhttp.Fault{Status: status, Type: typePrefix + code}
+}
+
+// unauthorized is the 401 a handler writes itself: the gateway's own answer for
+// a route that requires a credential, with the endpoint's challenge in the
+// header the declared 401 response carries.
+func (p *product) unauthorized() error {
+	return speedhttp.Fault{
+		Status: http.StatusUnauthorized,
+		Headers: []speedhttp.HeaderValue{{
+			Name:  "WWW-Authenticate",
+			Value: mount.UnauthorizedChallenge(p.mounter.Endpoint()),
+		}},
+	}
+}
 
 // admitStrength holds the caller to the freshness a write of the profile asks
 // for, answering the step-up 401 and returning false when it falls short.
@@ -24,7 +49,8 @@ import (
 func (p *product) admitStrength(c *gin.Context, id authn.Identity) bool {
 	factors, err := p.mfa.Factors(c.Request.Context(), id.Account())
 	if err != nil {
-		p.cause(c, "reading the account's factors", err)
+		p.logCause("reading the account's factors", err)
+		mount.Unavailable(c)
 		return false
 	}
 	requirement := authn.FreshFirstFactor()
@@ -45,32 +71,37 @@ func (p *product) admitStrength(c *gin.Context, id authn.Identity) bool {
 // account gone — a tombstone, or a row that cannot be read — is the caller's
 // identity no longer answering for an account, which is the same 401 an absent
 // identity gets; anything else is a 503 whose cause stays in the log.
-func (p *product) readFailure(c *gin.Context, err error) {
+func (p *product) readFailure(err error) error {
 	if errors.Is(err, authn.ErrAccountNotFound) {
-		mount.Unauthorized(c, p.mounter.Endpoint(), "")
-		return
+		return p.unauthorized()
 	}
-	p.cause(c, "reading the profile", err)
+	return p.cause("reading the profile", err)
 }
 
 // writeFailure maps a failure a write of the profile met. The identity's own
 // account gone is the 401 a read of it gets; a value the account module refuses
 // on shape or on its attribute bounds is a 400; anything else is a 503 whose
 // cause stays in the log.
-func (p *product) writeFailure(c *gin.Context, err error) {
+func (p *product) writeFailure(err error) error {
 	switch {
 	case errors.Is(err, authn.ErrAccountNotFound):
-		mount.Unauthorized(c, p.mounter.Endpoint(), "")
+		return p.unauthorized()
 	case errors.Is(err, authn.ErrInvalidArgument):
-		mount.Fail(c, mount.CodeBadRequest)
+		return authnFailure(http.StatusBadRequest, mount.CodeBadRequest)
 	default:
-		p.cause(c, "updating the profile", err)
+		return p.cause("updating the profile", err)
 	}
 }
 
-// cause logs a failure and answers 503, never telling the caller which dependency
-// failed.
-func (p *product) cause(c *gin.Context, op string, err error) {
+// cause logs a failure and returns the 503 fault, never telling the caller which
+// dependency failed.
+func (p *product) cause(op string, err error) error {
+	p.logCause(op, err)
+	return authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)
+}
+
+// logCause writes the Error line of a dependency failure. The cause belongs in
+// the log and never in an answer.
+func (p *product) logCause(op string, err error) {
 	p.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
-	mount.Unavailable(c)
 }

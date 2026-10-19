@@ -10,17 +10,13 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The management routes, relative to the fixed base path. They are mounted on
-// their own base path and not under a configurable one, and every one of them is
-// addressed by a natural key — a tenant identifier — so that no opaque row
-// identifier ever appears in a path, and the only key a path carries is the one
-// the roster itself names a tenant by.
-const (
-	basePath = "/api/v1/tenant/admin"
-
-	pathTenants      = basePath + "/tenants"
-	pathTenant       = basePath + "/tenants/:id"
-	pathTenantStatus = basePath + "/tenants/:id/status"
+// The paths the management routes are mounted on, resolved from the declarations
+// against the API root the module's Spec carries. The declarations write them
+// relative to that root, so the fragment and the registration share one source.
+var (
+	pathTenants      = tenantAdminSpec.ResolvePath(pathTenantsFragment)
+	pathTenant       = tenantAdminSpec.ResolvePath(pathTenantFragment)
+	pathTenantStatus = tenantAdminSpec.ResolvePath(pathTenantStatusFragment)
 )
 
 // managementGroups names the route groups in the order the start diagnostic
@@ -47,23 +43,48 @@ func withRealm(endpoint string, handler gin.HandlerFunc) gin.HandlerFunc {
 	}
 }
 
-// route is one management route: the method and path it answers and the handler
-// that serves it.
+// route is one management route: the method and path it answers, the permission
+// the handler-internal decision asks for, and the handler that serves it.
 type route struct {
 	method  string
 	path    string
+	perm    authz.Permission
 	handler gin.HandlerFunc
 }
 
 // routes is the closed set of management routes, in the order they are mounted.
+// Each handler is bound from the operation declared for it, so it receives the
+// declared input and writes the declared answer, and each is put behind the
+// guard that makes the identity and permission decision before the entry point
+// binds the request. The write routes are also prescreened, so a body the
+// binding refuses keeps this module's bad-request problem type.
 func (p *product) routes() []route {
-	return []route{
-		{http.MethodGet, pathTenants, p.handleTenantList},
-		{http.MethodPost, pathTenants, p.handleTenantCreate},
-		{http.MethodGet, pathTenant, p.handleTenantGet},
-		{http.MethodPatch, pathTenant, p.handleTenantSetAlias},
-		{http.MethodPost, pathTenantStatus, p.handleTenantSetStatus},
+	routes := []route{
+		{
+			http.MethodGet, pathTenants, PermissionTenantRead,
+			listOperation.Handle(p.handleTenantList),
+		},
+		{
+			http.MethodPost, pathTenants, PermissionTenantManage,
+			prescreenJSON[createBody](p, createOperation.Handle(p.handleTenantCreate)),
+		},
+		{
+			http.MethodGet, pathTenant, PermissionTenantRead,
+			getOperation.Handle(p.handleTenantGet),
+		},
+		{
+			http.MethodPatch, pathTenant, PermissionTenantManage,
+			prescreenJSON[setAliasInput](p, setAliasOperation.Handle(p.handleTenantSetAlias)),
+		},
+		{
+			http.MethodPost, pathTenantStatus, PermissionTenantManage,
+			prescreenJSON[setStatusInput](p, setStatusOperation.Handle(p.handleTenantSetStatus)),
+		},
 	}
+	for i := range routes {
+		routes[i].handler = p.guardRoute(routes[i].perm, routes[i].handler)
+	}
+	return routes
 }
 
 // mount resolves every configured endpoint on the entry point and registers the
@@ -95,12 +116,12 @@ func (p *product) mount(router speedhttp.Router) error {
 // route-declaration surface, when one is present.
 //
 // The routes are declared open so that the authorization middleware lets a
-// request reach the handler: the handler makes the decision, on the permission
-// the request's method implies, through the handler-internal guard. Declaring
-// them to require a permission would make the middleware decide, and the module
-// grants itself no permission. With no declaration surface the routes carry no
-// declaration, and a guarded endpoint answers them as undeclared — which is why
-// a command that mounts these routes should name the enforcement module too.
+// request reach the guard wrapper: the wrapper makes the decision, on the
+// permission the request's method implies. Declaring them to require a
+// permission would make the middleware decide, and the module grants itself no
+// permission. With no declaration surface the routes carry no
+// declaration, and a guarded endpoint answers them as undeclared — which is why a
+// command that mounts these routes should name the enforcement module too.
 func (p *product) declareOpen() {
 	if p.gate == nil {
 		return

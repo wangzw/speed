@@ -86,6 +86,25 @@ The effective set of one (recipient, type) is computed in exactly one place:
 
 `GET /preferences`, `Effective` and a `PUT` all consume this one computation.
 
+## How the surface is declared
+
+The routes are declared as an `http.Operations` set in `operations.go`, and
+each handler is bound to its declaration (`Operation[In, Out]`), so the entry
+point binds the declared input and writes the declared answer. The fragment
+`openapi/preferences.json` is **generated** from the same declarations by
+`pkg/internal/openapigen`, never written by hand. The `Spec` carries the API
+root (`api` / `v1`) and the mounting resolves each declared path against it, so
+the route and the document are one source. Regenerate the fragment after
+changing a declaration:
+
+```
+UPDATE_FRAGMENTS=1 go -C pkg test ./notification/preferences -run TestTheFragmentIsGeneratedFromTheDeclarations
+```
+
+The `PUT` body is read as `application/json`: a request whose content type is
+not that media type is refused with `415` before the handler runs, and an
+unknown JSON member is a `400`.
+
 ## Routes
 
 The base path is `/api/v1/notifications`. The route set is closed and every route
@@ -132,19 +151,27 @@ module's routes go on the API one.
 
 The order is fixed:
 
-1. the body is read — a body that is not an object, or whose `enabled` is not a
-   boolean, is `400`;
-2. the channel is checked against the closed set — an unknown channel is `400`,
+1. the entry point binds the body — a `Content-Type` that is not
+   `application/json` is a `415`; an empty body is a `400`, because the
+   declaration marks it required; and a body that is not a JSON object (a
+   literal `null` excepted — it binds as the empty object), whose `enabled` is
+   a non-boolean value (other than `null`), or that carries a member the
+   declaration does not describe is a `400`; these answers are the entry
+   point's, with the default problem document;
+2. a body naming no `enabled`, naming it `null`, or consisting of the literal
+   `null` (which binds as the empty object), is `400`, rendered from this
+   module's catalog;
+3. the channel is checked against the closed set — an unknown channel is `400`,
    **before any no-op branch**, so it is never taken for a no-op;
-3. the type is checked against the taxonomy — an unknown type is `400`;
-4. an unsubscribable type that is not — `409`;
-5. the current effective set is computed;
-6. the target set is derived from it (`enabled` true adds the channel, false
+4. the type is checked against the taxonomy — an unknown type is `400`;
+5. an unsubscribable type that is not — `409`;
+6. the current effective set is computed;
+7. the target set is derived from it (`enabled` true adds the channel, false
    removes it);
-7. a target equal to the current effective set is a `200` that **writes
+8. a target equal to the current effective set is a `200` that **writes
    nothing**, which also keeps a PUT of a row-less type to its own defaults from
    landing a row that would only make `explicit` lie;
-8. otherwise `Set` replaces the type's channels and the answer is the effective
+9. otherwise `Set` replaces the type's channels and the answer is the effective
    set.
 
 ## The table
@@ -170,15 +197,26 @@ A non-unsubscribable type never has a row: `Set` refuses to create one.
 
 ## Errors
 
-Every refusal is rendered from this module's own catalog under `locales/`, one
-file per locale with the same key set. `Problem.Type` carries the prefix
-`urn:speed:notification:`:
+The refusals a handler decides are rendered from this module's own catalog
+under `locales/`, one file per locale with the same key set. `Problem.Type`
+carries the prefix `urn:speed:notification:`:
 
-- `ErrInvalidRequest`, `ErrUnknownType`, `ErrUnknownChannel` — `400` with
+- `ErrUnknownType`, `ErrUnknownChannel` — `400` with
   `urn:speed:notification:bad-request`;
+- a body naming no `enabled`, or consisting of the literal `null` bound as the
+  empty object — `400` with `urn:speed:notification:bad-request`;
 - `ErrNotUnsubscribable` — `409` with `urn:speed:notification:not-unsubscribable`;
 - every other failure, a missing tenant among them — `503` with no type, whose
   cause stays in the log.
+
+A refusal the entry point makes while binding the body — a `Content-Type` that
+is not `application/json` (`415`), an empty body, a body that is not a JSON
+object (a literal `null` excepted, since it binds as the empty object), a
+non-boolean `enabled` other than `null`, and a member the declaration does not
+describe (`400`) — carries the default problem document: `about:blank`, the
+standard English status text, and no detail. This module's routes do not produce
+`ErrInvalidRequest`; the sentinel remains in `pkg/notification` for the other
+capability modules.
 
 ## Running it
 

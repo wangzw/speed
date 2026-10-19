@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
@@ -16,9 +14,9 @@ import (
 // complete runs the terminal action of a ready flow: the record is swapped to
 // the done tombstone first, so that the winner alone executes the action and a
 // login completes at most once.
-func (r *routes) complete(c *gin.Context, token string, rec record, raw []byte) {
+func (r *routes) complete(c *call, token string, rec record, raw []byte) {
 	if rec.State != stateReady {
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
+		c.unauthorized(mount.CodeFlowInvalid)
 		return
 	}
 	if rec.Purpose != authn.PurposeLogin && !r.review(c, rec) {
@@ -39,7 +37,7 @@ func (r *routes) complete(c *gin.Context, token string, rec record, raw []byte) 
 	case authn.PurposeEnroll:
 		r.completeEnroll(c, rec)
 	default:
-		serverError(c)
+		c.serverError()
 	}
 }
 
@@ -47,25 +45,24 @@ func (r *routes) complete(c *gin.Context, token string, rec record, raw []byte) 
 // flow was started on is still valid and still the flow's own, and that a link
 // or an enrollment still meets the freshness the account's factors call for. It
 // answers the request and returns false when it does not.
-func (r *routes) review(c *gin.Context, rec record) bool {
-	ctx := c.Request.Context()
-	status, err := r.sessions.StatusFresh(ctx, authn.SessionID(rec.Session))
+func (r *routes) review(c *call, rec record) bool {
+	status, err := r.sessions.StatusFresh(c.ctx, authn.SessionID(rec.Session))
 	if err != nil {
 		if errors.Is(err, authn.ErrSessionNotFound) || errors.Is(err, authn.ErrSessionRevoked) {
-			mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
+			c.unauthorized(mount.CodeFlowInvalid)
 			return false
 		}
 		r.fail(c, err)
 		return false
 	}
 	if !status.Active || string(status.Account) != rec.Account || status.ImpersonationID != "" {
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
+		c.unauthorized(mount.CodeFlowInvalid)
 		return false
 	}
 	if rec.Purpose == authn.PurposeLink || rec.Purpose == authn.PurposeEnroll {
 		req := r.requirementFor(rec.RequireMulti)
 		if !statusIdentity(status).Satisfies(req, r.clock.Now()) {
-			mount.StepUpRequired(c, statusIdentity(status), req)
+			c.stepUp(statusIdentity(status), req)
 			return false
 		}
 	}
@@ -104,10 +101,9 @@ func (r *routes) accountHasActiveFactor(ctx context.Context, account authn.Accou
 // account, revokes the session the request came with, and writes the audit row
 // and the event. redirect is true on the callback route of a cookie login, whose
 // answer is a 303 to the flow's return target.
-func (r *routes) completeLogin(c *gin.Context, rec record, redirect bool) {
-	ctx := c.Request.Context()
+func (r *routes) completeLogin(c *call, rec record, redirect bool) {
 	if rec.Proof == nil {
-		serverError(c)
+		c.serverError()
 		return
 	}
 	account := authn.AccountID(rec.Account)
@@ -127,7 +123,7 @@ func (r *routes) completeLogin(c *gin.Context, rec record, redirect bool) {
 		kind = authn.SessionToken
 	}
 	now := r.clock.Now()
-	issued, err := r.sessions.Create(ctx, authn.NewSession{
+	issued, err := r.sessions.Create(c.ctx, authn.NewSession{
 		Account:    account,
 		Kind:       kind,
 		Methods:    methods,
@@ -136,7 +132,7 @@ func (r *routes) completeLogin(c *gin.Context, rec record, redirect bool) {
 		AuthTime:   now,
 		Provider:   first.Provider,
 		Attributes: idpAttributes(first.External),
-		Client:     requestClient(c),
+		Client:     c.clientInfo(),
 	})
 	if err != nil {
 		r.fail(c, err)
@@ -148,9 +144,9 @@ func (r *routes) completeLogin(c *gin.Context, rec record, redirect bool) {
 			return
 		}
 	} else {
-		r.sessions.SetCookie(c.Writer, issued)
+		r.sessions.SetCookie(c.w, issued)
 		if redirect {
-			c.Redirect(http.StatusSeeOther, rec.ReturnTo)
+			c.redirect(http.StatusSeeOther, rec.ReturnTo)
 		} else {
 			writeSession(c, issued)
 		}
@@ -160,36 +156,37 @@ func (r *routes) completeLogin(c *gin.Context, rec record, redirect bool) {
 	// account's other sessions alone no longer: the password changed. The new
 	// session is created already, so it is the one left standing.
 	if first.PasswordChanged {
-		if _, err := r.sessions.RevokeAccount(ctx, account, issued.ID, authn.ReasonSelf); err != nil {
+		if _, err := r.sessions.RevokeAccount(c.ctx, account, issued.ID, authn.ReasonSelf); err != nil {
 			r.logger.Warn(ModuleName+": the account's other sessions could not be revoked after a password change",
 				"cause", err.Error())
 		}
 	}
 
-	if err := r.admin.Touch(ctx, account, now); err != nil {
+	if err := r.admin.Touch(c.ctx, account, now); err != nil {
 		r.logger.Warn(ModuleName+": the account's last-login time could not be recorded",
 			"cause", err.Error())
 	}
-	if oldID, ok, err := r.sessions.Current(c.Request); err == nil && ok {
-		if rerr := r.sessions.Revoke(ctx, oldID, authn.ReasonSelf); rerr != nil {
-			r.logger.Warn(ModuleName+": the session the login request came with could not be revoked",
-				"cause", rerr.Error())
+	if c.req != nil {
+		if oldID, ok, err := r.sessions.Current(c.req); err == nil && ok {
+			if rerr := r.sessions.Revoke(c.ctx, oldID, authn.ReasonSelf); rerr != nil {
+				r.logger.Warn(ModuleName+": the session the login request came with could not be revoked",
+					"cause", rerr.Error())
+			}
 		}
 	}
-	r.reportLogin(ctx, rec, outcomeSuccess)
+	r.reportLogin(c.ctx, rec, outcomeSuccess)
 	r.auditLogin(c, rec, account, issued.ID, methods, result)
-	r.publishLogin(ctx, account, issued.ID, methods, result, rec.Delivery)
+	r.publishLogin(c.ctx, account, issued.ID, methods, result, rec.Delivery)
 }
 
 // deliverToken issues the access token and the refresh token of a token login
 // and writes the answer.
-func (r *routes) deliverToken(c *gin.Context, account authn.AccountID, issued authn.Issued, methods []authn.Method, result authn.MFAResult, now time.Time) bool {
-	ctx := c.Request.Context()
+func (r *routes) deliverToken(c *call, account authn.AccountID, issued authn.Issued, methods []authn.Method, result authn.MFAResult, now time.Time) bool {
 	if r.tokens == nil {
-		serverError(c)
+		c.serverError()
 		return false
 	}
-	access, err := r.tokens.Issue(ctx, authn.IssueToken{
+	access, err := r.tokens.Issue(c.ctx, authn.IssueToken{
 		Account:   account,
 		Session:   issued.ID,
 		Methods:   methods,
@@ -200,7 +197,7 @@ func (r *routes) deliverToken(c *gin.Context, account authn.AccountID, issued au
 		r.fail(c, err)
 		return false
 	}
-	refresh, err := r.tokens.NewRefresh(ctx, issued.ID)
+	refresh, err := r.tokens.NewRefresh(c.ctx, issued.ID)
 	if err != nil {
 		r.fail(c, err)
 		return false
@@ -213,13 +210,12 @@ func (r *routes) deliverToken(c *gin.Context, account authn.AccountID, issued au
 // account had is revoked, then its password credential is deleted, and only
 // then is the session of this login created. The new session is not yet in the
 // store when the account's sessions are revoked, so a revoke cannot reach it.
-func (r *routes) mergeCleanup(c *gin.Context, account authn.AccountID) bool {
-	ctx := c.Request.Context()
-	if _, err := r.sessions.RevokeAccount(ctx, account, "", authn.ReasonSelf); err != nil {
+func (r *routes) mergeCleanup(c *call, account authn.AccountID) bool {
+	if _, err := r.sessions.RevokeAccount(c.ctx, account, "", authn.ReasonSelf); err != nil {
 		r.fail(c, err)
 		return false
 	}
-	if err := r.passwords.Clear(ctx, account); err != nil {
+	if err := r.passwords.Clear(c.ctx, account); err != nil {
 		r.fail(c, err)
 		return false
 	}
@@ -227,15 +223,14 @@ func (r *routes) mergeCleanup(c *gin.Context, account authn.AccountID) bool {
 }
 
 // completeLink binds the external identity the flow proved to the account.
-func (r *routes) completeLink(c *gin.Context, rec record) {
-	ctx := c.Request.Context()
+func (r *routes) completeLink(c *call, rec record) {
 	account := authn.AccountID(rec.Account)
 	if rec.Proof == nil || rec.Proof.External == nil {
-		serverError(c)
+		c.serverError()
 		return
 	}
 	ext := rec.Proof.External
-	err := r.admin.LinkExternal(ctx, account, authn.ExternalLink{
+	err := r.admin.LinkExternal(c.ctx, account, authn.ExternalLink{
 		Provider:      ext.Provider,
 		Subject:       ext.Subject,
 		Email:         ext.Email,
@@ -245,21 +240,20 @@ func (r *routes) completeLink(c *gin.Context, rec record) {
 		r.fail(c, err)
 		return
 	}
-	if _, err := r.sessions.RevokeAccount(ctx, account, authn.SessionID(rec.Session), authn.ReasonSelf); err != nil {
+	if _, err := r.sessions.RevokeAccount(c.ctx, account, authn.SessionID(rec.Session), authn.ReasonSelf); err != nil {
 		r.logger.Warn(ModuleName+": the account's other sessions could not be revoked after a link",
 			"cause", err.Error())
 	}
-	r.publishBinding(ctx, account, ext.Provider)
+	r.publishBinding(c.ctx, account, ext.Provider)
 	r.auditBindingLink(c, account, ext.Provider)
-	c.JSON(http.StatusOK, gin.H{"state": "linked"})
+	writeAction(c, stateLinked)
 }
 
 // completeStepUp elevates the flow's session to the level the second factor (or
 // the first factor, when the account had none) reached.
-func (r *routes) completeStepUp(c *gin.Context, rec record) {
-	ctx := c.Request.Context()
+func (r *routes) completeStepUp(c *call, rec record) {
 	account := authn.AccountID(rec.Account)
-	status, err := r.sessions.StatusFresh(ctx, authn.SessionID(rec.Session))
+	status, err := r.sessions.StatusFresh(c.ctx, authn.SessionID(rec.Session))
 	if err != nil {
 		r.fail(c, err)
 		return
@@ -272,7 +266,7 @@ func (r *routes) completeStepUp(c *gin.Context, rec record) {
 	result := r.mfa.Assurance(first, second)
 	methods := unionMethods(status.Methods, first.Methods, passMethods(second))
 	now := r.clock.Now()
-	issued, err := r.sessions.Elevate(ctx, authn.SessionID(rec.Session), authn.Elevation{
+	issued, err := r.sessions.Elevate(c.ctx, authn.SessionID(rec.Session), authn.Elevation{
 		Methods:    methods,
 		Assurance:  result.Assurance,
 		IDPAssured: result.IDPAssured,
@@ -284,10 +278,10 @@ func (r *routes) completeStepUp(c *gin.Context, rec record) {
 	}
 	if rec.Delivery == deliveryToken {
 		if r.tokens == nil {
-			serverError(c)
+			c.serverError()
 			return
 		}
-		access, err := r.tokens.Issue(ctx, authn.IssueToken{
+		access, err := r.tokens.Issue(c.ctx, authn.IssueToken{
 			Account:   account,
 			Session:   issued.ID,
 			Methods:   methods,
@@ -298,7 +292,7 @@ func (r *routes) completeStepUp(c *gin.Context, rec record) {
 			r.fail(c, err)
 			return
 		}
-		c.JSON(http.StatusOK, tokenReply{
+		c.wire(tokenReply{
 			State:       "elevated",
 			TokenType:   "Bearer",
 			AccessToken: access.Value,
@@ -307,7 +301,7 @@ func (r *routes) completeStepUp(c *gin.Context, rec record) {
 		return
 	}
 	if issued.Token != "" {
-		r.sessions.SetCookie(c.Writer, issued)
+		r.sessions.SetCookie(c.w, issued)
 	}
 	writeSession(c, issued)
 }
@@ -316,14 +310,13 @@ func (r *routes) completeStepUp(c *gin.Context, rec record) {
 // multi-factor module makes a pending row active on the factor's last step. The
 // account's other sessions are revoked, and the session's level is not changed,
 // since a factor registered during this authentication does not strengthen it.
-func (r *routes) completeEnroll(c *gin.Context, rec record) {
-	ctx := c.Request.Context()
+func (r *routes) completeEnroll(c *call, rec record) {
 	account := authn.AccountID(rec.Account)
-	if _, err := r.sessions.RevokeAccount(ctx, account, authn.SessionID(rec.Session), authn.ReasonSelf); err != nil {
+	if _, err := r.sessions.RevokeAccount(c.ctx, account, authn.SessionID(rec.Session), authn.ReasonSelf); err != nil {
 		r.logger.Warn(ModuleName+": the account's other sessions could not be revoked after an enrollment",
 			"cause", err.Error())
 	}
-	c.JSON(http.StatusOK, gin.H{"state": "enrolled"})
+	writeAction(c, stateEnrolled)
 }
 
 // passMethods is the second factor's methods, or nil when there was none.

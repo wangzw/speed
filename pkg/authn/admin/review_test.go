@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -41,16 +42,27 @@ func identifiersIn(rows []audit.Entry, key string) map[string]bool {
 // after the last colon of its type.
 func problemCode(t *testing.T, body string) string {
 	t.Helper()
+	return codeOf(problemType(t, body))
+}
+
+// problemType returns the full problem type of a problem response.
+func problemType(t *testing.T, body string) string {
+	t.Helper()
 	var p struct {
 		Type string `json:"type"`
 	}
 	if err := json.Unmarshal([]byte(body), &p); err != nil {
 		t.Fatalf("decoding the problem body %q: %v", body, err)
 	}
-	if i := strings.LastIndex(p.Type, ":"); i >= 0 {
-		return p.Type[i+1:]
-	}
 	return p.Type
+}
+
+// codeOf is the code part of a problem type, the part after the last colon.
+func codeOf(problemType string) string {
+	if i := strings.LastIndex(problemType, ":"); i >= 0 {
+		return problemType[i+1:]
+	}
+	return problemType
 }
 
 // TestTheStrongRoutesNeedASeasonedAdministratorWithANonSMSSecond holds the two
@@ -1172,5 +1184,260 @@ func TestPasswordResetWithoutASessionStore(t *testing.T) {
 	}
 	if !strings.Contains(r.logs.String(), "no session store") {
 		t.Error("the module did not report a password reset with no session store")
+	}
+}
+
+// TestBindingRefusalsCarryTheCapabilityProblemType holds that a request the
+// entry point refuses before the handler runs is answered in this capability's
+// vocabulary: a malformed body, an unknown member, a non-integer query value
+// and a wrong Content-Type are bad-request or unsupported-media-type, the same
+// codes the handlers write, and not the RFC 9457 default about:blank.
+func TestBindingRefusalsCarryTheCapabilityProblemType(t *testing.T) {
+	r := newRig(t)
+	cases := []struct {
+		name        string
+		method      string
+		path        string
+		contentType string
+		body        string
+		wantType    string
+	}{
+		{
+			"malformed JSON",
+			http.MethodPatch, "/api/v1/auth/admin/accounts/" + string(userID),
+			"application/json", "{", "urn:speed:authn:" + mount.CodeBadRequest,
+		},
+		{
+			"unknown member",
+			http.MethodPatch, "/api/v1/auth/admin/accounts/" + string(userID),
+			"application/json", `{"smuggled":1}`, "urn:speed:authn:" + mount.CodeBadRequest,
+		},
+		{
+			"non-integer query value",
+			http.MethodGet, "/api/v1/auth/admin/accounts?limit=abc",
+			"", "", "urn:speed:authn:" + mount.CodeBadRequest,
+		},
+		{
+			"wrong Content-Type",
+			http.MethodPatch, "/api/v1/auth/admin/accounts/" + string(userID),
+			"text/plain", "{}", "urn:speed:authn:" + mount.CodeUnsupportedMediaType,
+		},
+		{
+			"non-UTF-8 JSON charset",
+			http.MethodPatch, "/api/v1/auth/admin/accounts/" + string(userID),
+			"application/json; charset=latin1", "{}", "urn:speed:authn:" + mount.CodeUnsupportedMediaType,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r.mounter.As(fresh()...)
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			if tc.contentType != "" {
+				req.Header.Set("Content-Type", tc.contentType)
+			}
+			rec := r.mounter.Do(req)
+			if got := problemType(t, rec.Body.String()); got != tc.wantType {
+				t.Errorf("problem type = %q, want %q (status %d)", got, tc.wantType, rec.Code)
+			}
+		})
+	}
+}
+
+// TestARequiredBodyMustBePresent holds requestBody.required at the routes that
+// declare it: an empty JSON body is a 400 before the handler runs, so no
+// account is written, no flag changes and no membership is written.
+func TestARequiredBodyMustBePresent(t *testing.T) {
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		called func(*rig) int
+	}{
+		{
+			"account patch",
+			http.MethodPatch, "/api/v1/auth/admin/accounts/" + string(userID),
+			func(r *rig) int { return r.accountAdm.count("set-display-name") },
+		},
+		{
+			"mfa flag",
+			http.MethodPost, "/api/v1/auth/admin/accounts/" + string(userID) + "/mfa-required",
+			func(r *rig) int { return r.accountAdm.count("set-mfa-required") },
+		},
+		{
+			"membership write",
+			http.MethodPut, "/api/v1/auth/admin/tenants/" + tenantA + "/members/" + string(userID),
+			func(r *rig) int { return len(r.members.puts) },
+		},
+		{
+			"membership exemption",
+			http.MethodPut, "/api/v1/auth/admin/tenants/" + tenantA + "/members/" + string(userID) + "/sso-exempt",
+			func(r *rig) int { return len(r.members.puts) },
+		},
+		{
+			"service secret create",
+			http.MethodPost, "/api/v1/auth/admin/accounts/" + string(userID) + "/secrets",
+			func(r *rig) int { return r.accountAdm.count("create-secret") },
+		},
+		{
+			"provider update",
+			http.MethodPut, "/api/v1/auth/admin/sso/providers/" + idpA,
+			func(r *rig) int { return len(r.providers.puts) },
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t)
+			r.mounter.As(fresh()...)
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(""))
+			req.Header.Set("Content-Type", "application/json")
+			rec := r.mounter.Do(req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("an empty required body answered %d, want 400; body %s", rec.Code, rec.Body.String())
+			}
+			if got := problemType(t, rec.Body.String()); got != "urn:speed:authn:"+mount.CodeBadRequest {
+				t.Errorf("problem type = %q, want %q", got, "urn:speed:authn:"+mount.CodeBadRequest)
+			}
+			if n := tc.called(r); n != 0 {
+				t.Errorf("the capability was called %d times for an empty required body", n)
+			}
+			if n := len(r.audit.entries()); n != 0 {
+				t.Errorf("%d audit rows were written for an empty required body", n)
+			}
+		})
+	}
+}
+
+// TestEveryBodyCarryingRouteKeepsTheCapabilityBodyLimit holds the capability's
+// 64 KiB request-body limit at every route that declares a body. The limit is
+// the capability's own and is tighter than the endpoint's, so a body over it is
+// a 400 bad-request rather than a 413 or a request the handler processes. The
+// padding is trailing space, which JSON accepts, so without the guard each body
+// below would bind and reach its handler.
+func TestEveryBodyCarryingRouteKeepsTheCapabilityBodyLimit(t *testing.T) {
+	// A body of 70 KiB is over the capability's limit and stays well under the
+	// endpoint's default, which is what tells the two limits apart.
+	const overLimit = 70 << 10
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+	}{
+		{
+			"account create",
+			http.MethodPost, "/api/v1/auth/admin/accounts",
+			`{"kind":"user","username":"body-limit"}`,
+		},
+		{
+			"account patch",
+			http.MethodPatch, "/api/v1/auth/admin/accounts/" + string(userID),
+			`{"display_name":"body-limit"}`,
+		},
+		{
+			"account status",
+			http.MethodPost, "/api/v1/auth/admin/accounts/" + string(userID) + "/status",
+			`{"status":"disabled"}`,
+		},
+		{
+			"identifier add",
+			http.MethodPost, "/api/v1/auth/admin/accounts/" + string(userID) + "/identifiers",
+			`{"kind":"email","value":"limit@example.com"}`,
+		},
+		{
+			"password reset",
+			http.MethodPost, "/api/v1/auth/admin/accounts/" + string(userID) + "/password",
+			`{"password":"a-long-temporary-one"}`,
+		},
+		{
+			"mfa flag",
+			http.MethodPost, "/api/v1/auth/admin/accounts/" + string(userID) + "/mfa-required",
+			`{"required":true}`,
+		},
+		{
+			"service secret create",
+			http.MethodPost, "/api/v1/auth/admin/accounts/" + string(userID) + "/secrets",
+			`{"label":"body-limit"}`,
+		},
+		{
+			"membership write",
+			http.MethodPut, "/api/v1/auth/admin/tenants/" + tenantA + "/members/" + string(userID),
+			`{"active":true}`,
+		},
+		{
+			"membership exemption",
+			http.MethodPut, "/api/v1/auth/admin/tenants/" + tenantA + "/members/" + string(userID) + "/sso-exempt",
+			`{"sso_exempt":true}`,
+		},
+		{
+			"provider create",
+			http.MethodPost, "/api/v1/auth/admin/tenants/" + tenantA + "/sso/providers",
+			`{"protocol":"oidc","name":"Body limit","provisioning":"jit"}`,
+		},
+		{
+			"provider update",
+			http.MethodPut, "/api/v1/auth/admin/sso/providers/" + idpA,
+			`{"protocol":"oidc","name":"Body limit","provisioning":"jit"}`,
+		},
+		{
+			"domain claim",
+			http.MethodPost, "/api/v1/auth/admin/sso/providers/" + idpA + "/domains",
+			`{"domain":"example.com"}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t)
+			body := tc.body + strings.Repeat(" ", overLimit-len(tc.body))
+			if len(body) <= mount.MaxBodyBytes {
+				t.Fatalf("the case body is %d bytes, not over the %d-byte limit", len(body), mount.MaxBodyBytes)
+			}
+			r.mounter.As(fresh()...)
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := r.mounter.Do(req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("a %d-byte body answered %d, want 400; body %s", len(body), rec.Code, rec.Body.String())
+			}
+			if got := problemType(t, rec.Body.String()); got != "urn:speed:authn:"+mount.CodeBadRequest {
+				t.Errorf("problem type = %q, want %q", got, "urn:speed:authn:"+mount.CodeBadRequest)
+			}
+		})
+	}
+}
+
+// TestMemberRemoveMapsCapabilityFailuresToItsDeclaredAnswers holds the reply
+// operation's answer set: a failure the old handler mapped to 400, 404 and 409
+// still gets those statuses, rather than falling to the 500 of a status the
+// simple form could not declare.
+func TestMemberRemoveMapsCapabilityFailuresToItsDeclaredAnswers(t *testing.T) {
+	cases := []struct {
+		name   string
+		err    error
+		status int
+		code   string
+	}{
+		{"invalid argument", authn.ErrInvalidArgument, http.StatusBadRequest, mount.CodeBadRequest},
+		{"no such account", authn.ErrAccountNotFound, http.StatusNotFound, ""},
+		{"conflict", authn.ErrAccountExists, http.StatusConflict, mount.CodeConflict},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t)
+			r.members.err = tc.err
+			rec := r.do(http.MethodDelete,
+				"/api/v1/auth/admin/tenants/"+tenantA+"/members/"+string(userID), nil, fresh()...)
+			if rec.Code != tc.status {
+				t.Fatalf("status = %d, want %d; body %s", rec.Code, tc.status, rec.Body.String())
+			}
+			if tc.code == "" {
+				if rec.Body.Len() != 0 {
+					t.Errorf("a bare 404 carries a body: %s", rec.Body.String())
+				}
+				return
+			}
+			if got := problemCode(t, rec.Body.String()); got != tc.code {
+				t.Errorf("problem code = %q, want %q", got, tc.code)
+			}
+		})
 	}
 }

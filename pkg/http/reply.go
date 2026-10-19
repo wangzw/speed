@@ -205,12 +205,12 @@ func replyBind[In any](
 ) gin.HandlerFunc {
 	checkResponseBodies(responses)
 	checkReplyResponses(responses)
-	binding := newRequestBinding(input, requestMediaTypeOf(request))
+	binding := newRequestBinding(input, request)
 	return func(c *gin.Context) {
 		c.Set(declaredFailuresContextKey, declaredResponses(responses))
 		in, err := bindInput[In](c, binding)
 		if err != nil {
-			refuseBinding(c, err)
+			refuseBinding(c, responses, err)
 			return
 		}
 		meta := &Meta{

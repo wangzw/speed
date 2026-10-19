@@ -2,57 +2,38 @@ package admin
 
 import (
 	"encoding/json"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 )
 
-// TestTheDeclaredQueryParametersAreTheOnesTheHandlersRead holds the query
-// half of the fragment/registration contract. The route-level check
-// (openapi_test.go, pkg/internal/routecontract) compares the operations a
-// fragment declares against the routes the module mounts; it reads methods
-// and paths only, so a route that declares one query-parameter name and reads
-// another is served and documented and still answers the wrong rows -- the
-// failure a generated client never sees.
+// TestTheDeclaredQueryParametersAreTheOnesTheInputsCarry holds the two facts a
+// query-parameter contract is made of: the fragment's parameters, which a
+// generated client sends, and the query-tagged fields of the declared inputs,
+// which the entry point binds. A name that appears in one and not the other is
+// either a parameter the process ignores or a read no client can drive.
 //
-// The two facts are separately maintained: the fragment's query parameters
-// (what a generated client sends) and the names the handlers read with
-// gin.Context.Query / QueryArray (what the process honors). This check reads
-// both from their sources -- the embedded fragment, and the package's own
-// compiled sources through the AST -- and reports every name appearing in one
-// and not the other, in either direction.
-//
-// It is package-scoped: the union of the module's declared query names against
-// the union of the names its handlers read. That is the granularity the drift
-// has taken here (the account list's identifier filter, the account, member and
-// impersonation cursors), and it is what keeps a fragment whose parameter is
-// misspelled against the read from passing.
-func TestTheDeclaredQueryParametersAreTheOnesTheHandlersRead(t *testing.T) {
+// The check is package-scoped: the union of the module's declared query names
+// against the union its inputs carry. The fragment is generated from the same
+// declarations, so a drift here can only mean a hand-written fragment or an
+// input the generator reads differently, and both are defects.
+func TestTheDeclaredQueryParametersAreTheOnesTheInputsCarry(t *testing.T) {
 	declared := declaredQueryParams(t)
-	read := handlerQueryParams(t)
+	carried := inputQueryParams()
 
-	if len(declared) == 0 || len(read) == 0 {
-		t.Fatalf("the check would compare %d declared names against %d read names; "+
+	if len(declared) == 0 || len(carried) == 0 {
+		t.Fatalf("the check would compare %d declared names against %d carried names; "+
 			"one side being empty means the check is not reading what it thinks it is",
-			len(declared), len(read))
+			len(declared), len(carried))
 	}
 
-	declaredOnly := missingFrom(declared, read)
-	readOnly := missingFrom(read, declared)
-
-	for _, name := range declaredOnly {
-		t.Errorf("the fragment declares the query parameter %q, which no handler reads. "+
-			"A generated client would send it and the process would ignore it, so the request "+
-			"answers an unfiltered or unpaged result under a name that looks honored", name)
+	for _, name := range missingFrom(declared, carried) {
+		t.Errorf("the fragment declares the query parameter %q, which no declared input carries. "+
+			"A generated client would send it and the process would ignore it", name)
 	}
-	for _, name := range readOnly {
-		t.Errorf("a handler reads the query parameter %q, which the fragment does not declare. "+
-			"A generated client has no way to send it, so the read it drives is unreachable", name)
+	for _, name := range missingFrom(carried, declared) {
+		t.Errorf("a declared input carries the query parameter %q, which the fragment does not declare. "+
+			"A generated client has no way to send it", name)
 	}
 }
 
@@ -86,50 +67,25 @@ func declaredQueryParams(t *testing.T) []string {
 	return sortedUnique(names)
 }
 
-// handlerQueryParams returns the query-parameter names the package's handlers
-// read, parsed from the package's compiled sources, ascending and unique. A
-// name is a string literal passed to gin.Context.Query or QueryArray; the
-// receiver is not checked, because the package reads no other Query method.
-func handlerQueryParams(t *testing.T) []string {
-	t.Helper()
-
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("reading the package directory: %v", err)
-	}
-
+// inputQueryParams returns the query-parameter names the declared operations'
+// inputs carry, ascending and unique.
+func inputQueryParams() []string {
 	names := map[string]bool{}
-	fset := token.NewFileSet()
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+	for _, declared := range operations {
+		input := declared.Descriptor().Input
+		if input == nil {
 			continue
 		}
-		file, err := parser.ParseFile(fset, name, nil, 0)
-		if err != nil {
-			t.Fatalf("parsing %s: %v", name, err)
+		for i := 0; i < input.NumField(); i++ {
+			field := input.Field(i)
+			if field.PkgPath != "" {
+				continue
+			}
+			name := strings.Split(field.Tag.Get("query"), ",")[0]
+			if name != "" && name != "-" {
+				names[name] = true
+			}
 		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || (sel.Sel.Name != "Query" && sel.Sel.Name != "QueryArray") {
-				return true
-			}
-			if len(call.Args) == 0 {
-				return true
-			}
-			lit, ok := call.Args[0].(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING {
-				return true
-			}
-			if value, err := strconv.Unquote(lit.Value); err == nil {
-				names[value] = true
-			}
-			return true
-		})
 	}
 	return sortedUnique(names)
 }

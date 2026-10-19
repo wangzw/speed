@@ -294,6 +294,12 @@ type Response struct {
 	// Body is the answer body; its Structure is nil for the success response,
 	// whose body is the operation's Out type.
 	Body *Body
+	// ProblemType is the RFC 9457 problem type the entry point writes when it
+	// answers this status itself, before the handler runs: a request-binding
+	// refusal. A failure the handler returns carries its own type through
+	// Fault; this one is the type of the answers no handler produced. Empty
+	// leaves the RFC 9457 default about:blank.
+	ProblemType string
 }
 
 // Header is one response header.

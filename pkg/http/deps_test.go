@@ -19,10 +19,16 @@ const configPackage = repoPrefix + "pkg/config"
 // host that takes this module up therefore takes up too.
 const ginPackage = "github.com/gin-gonic/gin"
 
-// corsPackage is the subpackage of this module that bridges gin-contrib/cors,
-// the one library named below beyond gin and pkg/config. It is listed in
-// subpackagesInBudget and nowhere else.
+// corsPackage is the subpackage of this module that bridges gin-contrib/cors.
+// It is listed in subpackagesInBudget and nowhere else.
 const corsPackage = repoPrefix + "pkg/http/cors"
+
+// openapiGeneratorPackage is the subpackage that makes the fragment generator
+// importable to modules outside pkg. The implementation stays in
+// pkg/internal/openapigen; a host under starters/ is outside the tree the
+// internal rule admits, and its own fragment is still a build product of the
+// same declarations.
+const openapiGeneratorPackage = repoPrefix + "pkg/http/openapigen"
 
 // subpackagesInBudget are the packages under this directory that carry a
 // dependency face of their own: a subpackage that bridges a library the root
@@ -40,6 +46,7 @@ const corsPackage = repoPrefix + "pkg/http/cors"
 // keeping the scan over ./... rather than over the root package alone.
 var subpackagesInBudget = []string{
 	corsPackage,
+	openapiGeneratorPackage,
 }
 
 // openAPILibraries are the module paths of libraries that parse OpenAPI

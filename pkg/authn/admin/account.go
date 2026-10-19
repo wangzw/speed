@@ -1,33 +1,16 @@
 package admin
 
 import (
-	"strconv"
-	"time"
+	"context"
 	"unicode/utf8"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/vislake/speed/pkg/authn"
-	"github.com/vislake/speed/pkg/authn/internal/mount"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// accountView is one account as the management routes show it. It is built field
-// by field so that a field added to the account later does not reach a client by
-// being there.
-type accountView struct {
-	ID          string            `json:"id"`
-	Kind        string            `json:"kind"`
-	Status      string            `json:"status"`
-	DisplayName string            `json:"display_name"`
-	MFARequired bool              `json:"mfa_required"`
-	Protected   bool              `json:"protected"`
-	PasswordSet bool              `json:"password_set"`
-	Attributes  map[string]string `json:"attributes,omitempty"`
-	CreatedAt   time.Time         `json:"created_at"`
-}
-
-func accountViewOf(a authn.Account) accountView {
-	return accountView{
+// accountViewOf builds one account as the management routes show it.
+func accountViewOf(a authn.Account) AuthnAdminAccount {
+	return AuthnAdminAccount{
 		ID:          string(a.ID),
 		Kind:        string(a.Kind),
 		Status:      a.Status.String(),
@@ -40,11 +23,9 @@ func accountViewOf(a authn.Account) accountView {
 	}
 }
 
-// accountListParams is the set of query parameters the account list route
-// accepts, a closed set. A name not among them is a shape the module refuses, so
-// that a misspelled filter is reported rather than swallowed by a read that
-// ignores it. The set is what the OpenAPI fragment declares and what accountQuery
-// reads.
+// accountListParams is the closed set of query parameters the account list
+// route declares. The set is what the OpenAPI fragment publishes; the route
+// check holds the declaration to it.
 var accountListParams = map[string]bool{
 	"status":              true,
 	"kind":                true,
@@ -57,115 +38,79 @@ var accountListParams = map[string]bool{
 
 // handleAccountList answers GET /admin/accounts: one page of accounts, filtered
 // by status, kind and an identifier prefix. The action is account.read.
-func (m *product) handleAccountList(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
-	}
-	q, ok := m.accountQuery(c)
-	if !ok {
-		return
-	}
-	if !m.asks(c, authn.Decision{Action: authn.ActionAccountRead, Actor: id}) {
-		return
-	}
-	accounts, next, err := m.accounts.List(c.Request.Context(), q)
+func (m *product) handleAccountList(ctx context.Context, in accountListInput) (AuthnAdminAccountList, error) {
+	id, err := m.caller(ctx)
 	if err != nil {
-		m.cause(c, "listing accounts", err)
-		return
+		return AuthnAdminAccountList{}, err
 	}
-	views := make([]accountView, len(accounts))
+	if err = m.admit(id); err != nil {
+		return AuthnAdminAccountList{}, err
+	}
+	q, err := m.accountQuery(in)
+	if err != nil {
+		return AuthnAdminAccountList{}, err
+	}
+	if err = m.asks(ctx, authn.Decision{Action: authn.ActionAccountRead, Actor: id}); err != nil {
+		return AuthnAdminAccountList{}, err
+	}
+	accounts, next, err := m.accounts.List(ctx, q)
+	if err != nil {
+		return AuthnAdminAccountList{}, m.unavailable("listing accounts", err)
+	}
+	views := make([]AuthnAdminAccount, len(accounts))
 	for i, a := range accounts {
 		views[i] = accountViewOf(a)
 	}
-	c.JSON(200, gin.H{"accounts": views, "next_cursor": next})
+	return AuthnAdminAccountList{Accounts: views, NextCursor: next}, nil
 }
 
-// accountQuery reads the list's query parameters into a read query. A parameter
-// the route does not accept, a filter it does not know, an identifier prefix
-// without a kind, or a display-name prefix that is not text is a 400. An empty
-// value of an accepted filter — including an empty display_name_prefix — is no
-// filter, the same reading status, kind and after take.
-func (m *product) accountQuery(c *gin.Context) (authn.AccountQuery, bool) {
-	if !onlyAccepted(c, accountListParams) {
-		m.bad(c)
-		return authn.AccountQuery{}, false
-	}
+// accountQuery reads the list's query parameters into a read query. A filter it
+// does not know, an identifier prefix without a kind, or a display-name prefix
+// that is not text is a 400. An empty value of an accepted filter — including an
+// empty display_name_prefix — is no filter, the same reading status, kind and
+// after take.
+func (m *product) accountQuery(in accountListInput) (authn.AccountQuery, error) {
 	var q authn.AccountQuery
-	if s := c.Query("status"); s != "" {
+	if s := in.Status; s != "" {
 		st, ok := statusOf(s)
 		if !ok {
-			m.bad(c)
-			return authn.AccountQuery{}, false
+			return authn.AccountQuery{}, m.bad()
 		}
 		q.Status = &st
 	}
-	if k := c.Query("kind"); k != "" {
+	if k := in.Kind; k != "" {
 		kind := authn.AccountKind(k)
 		if !kind.Valid() {
-			m.bad(c)
-			return authn.AccountQuery{}, false
+			return authn.AccountQuery{}, m.bad()
 		}
 		q.Kind = kind
 	}
-	prefix, kind := c.Query("identifier_prefix"), c.Query("identifier_kind")
+	prefix, kind := in.IdentifierPrefix, in.IdentifierKind
 	if (prefix == "") != (kind == "") {
-		m.bad(c)
-		return authn.AccountQuery{}, false
+		return authn.AccountQuery{}, m.bad()
 	}
 	if prefix != "" {
 		ik := authn.IdentifierKind(kind)
 		if !identifierKindValid(ik) {
-			m.bad(c)
-			return authn.AccountQuery{}, false
+			return authn.AccountQuery{}, m.bad()
 		}
 		q.IdentifierKind, q.IdentifierPrefix = ik, prefix
 	}
-	if p := c.Query("display_name_prefix"); p != "" {
+	if p := in.DisplayNamePrefix; p != "" {
 		// A display name is stored as text, so a prefix that is not text is a
 		// shape the route refuses here rather than a byte sequence the read would
 		// hand to the database, which rejects it and answers an outage.
 		if !utf8.ValidString(p) {
-			m.bad(c)
-			return authn.AccountQuery{}, false
+			return authn.AccountQuery{}, m.bad()
 		}
 		q.DisplayNamePrefix = p
 	}
-	q.After = c.Query("after")
-	if s := c.Query("limit"); s != "" {
-		n, err := strconv.Atoi(s)
-		if err != nil || n < 0 {
-			m.bad(c)
-			return authn.AccountQuery{}, false
-		}
-		q.Limit = n
+	q.After = in.After
+	if in.Limit < 0 {
+		return authn.AccountQuery{}, m.bad()
 	}
-	return q, true
-}
-
-// onlyAccepted reports whether every query parameter on the request is in the
-// accepted set. A nil set accepts none.
-func onlyAccepted(c *gin.Context, accepted map[string]bool) bool {
-	for key := range c.Request.URL.Query() {
-		if !accepted[key] {
-			return false
-		}
-	}
-	return true
-}
-
-// createBody is the request of a create.
-type createBody struct {
-	Kind             string            `json:"kind"`
-	DisplayName      string            `json:"display_name"`
-	Username         string            `json:"username"`
-	Email            string            `json:"email"`
-	EmailVerifiedVia string            `json:"email_verified_via"`
-	Phone            string            `json:"phone"`
-	PhoneVerifiedVia string            `json:"phone_verified_via"`
-	Password         string            `json:"password"`
-	Attributes       map[string]string `json:"attributes"`
-	MFARequired      bool              `json:"mfa_required"`
+	q.Limit = in.Limit
+	return q, nil
 }
 
 // handleAccountCreate answers POST /admin/accounts. The action is
@@ -177,344 +122,299 @@ type createBody struct {
 // phone number it has no way to sign in, so the route refuses it before the
 // module writes a row nothing can use. A service account is not held to that:
 // it signs in with a service secret, not an identifier.
-func (m *product) handleAccountCreate(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
+func (m *product) handleAccountCreate(ctx context.Context, in accountCreateInput) (AuthnAdminAccountEnvelope, error) {
+	id, err := m.caller(ctx)
+	if err != nil {
+		return AuthnAdminAccountEnvelope{}, err
 	}
-	var body createBody
-	if !mount.Decode(c, &body) {
-		return
+	if err = m.admit(id); err != nil {
+		return AuthnAdminAccountEnvelope{}, err
 	}
-	kind := authn.AccountKind(body.Kind)
+	kind := authn.AccountKind(in.Kind)
 	if !kind.Valid() {
-		m.bad(c)
-		return
+		return AuthnAdminAccountEnvelope{}, m.bad()
 	}
-	emailVia, ok := administratorVia(body.EmailVerifiedVia)
+	emailVia, ok := administratorVia(in.EmailVerifiedVia)
 	if !ok {
-		m.bad(c)
-		return
+		return AuthnAdminAccountEnvelope{}, m.bad()
 	}
-	phoneVia, ok := administratorVia(body.PhoneVerifiedVia)
+	phoneVia, ok := administratorVia(in.PhoneVerifiedVia)
 	if !ok {
-		m.bad(c)
-		return
+		return AuthnAdminAccountEnvelope{}, m.bad()
 	}
-	if kind == authn.KindUser && body.Username == "" && body.Email == "" && body.Phone == "" {
-		m.bad(c)
-		return
+	if kind == authn.KindUser && in.Username == "" && in.Email == "" && in.Phone == "" {
+		return AuthnAdminAccountEnvelope{}, m.bad()
 	}
-	if !m.asks(c, authn.Decision{Action: authn.ActionAccountCreate, Actor: id}) {
-		return
+	if err = m.asks(ctx, authn.Decision{Action: authn.ActionAccountCreate, Actor: id}); err != nil {
+		return AuthnAdminAccountEnvelope{}, err
 	}
 	if kind == authn.KindService {
-		if !m.asks(c, authn.Decision{Action: authn.ActionClientManage, Actor: id}) {
-			return
+		if err = m.asks(ctx, authn.Decision{Action: authn.ActionClientManage, Actor: id}); err != nil {
+			return AuthnAdminAccountEnvelope{}, err
 		}
 	}
 
-	in := authn.CreateAccount{
+	create := authn.CreateAccount{
 		Kind:             kind,
-		DisplayName:      body.DisplayName,
-		Username:         body.Username,
-		Email:            body.Email,
+		DisplayName:      in.DisplayName,
+		Username:         in.Username,
+		Email:            in.Email,
 		EmailVerifiedVia: emailVia,
-		Phone:            body.Phone,
+		Phone:            in.Phone,
 		PhoneVerifiedVia: phoneVia,
-		Password:         body.Password,
-		Attributes:       body.Attributes,
-		MFARequired:      body.MFARequired,
+		Password:         in.Password,
+		Attributes:       in.Attributes,
+		MFARequired:      in.MFARequired,
 		Via:              authn.ReasonAdmin,
 	}
 	actionID := newActionID()
-	if !m.auditRequired(c, mandatory(actionAccountCreate, "",
-		map[string]string{detailActionID: actionID, detailKind: string(kind), detailSource: authn.ReasonAdmin})) {
-		return
+	if err = m.auditRequired(ctx, mandatory(actionAccountCreate, "",
+		map[string]string{detailActionID: actionID, detailKind: string(kind), detailSource: authn.ReasonAdmin})); err != nil {
+		return AuthnAdminAccountEnvelope{}, err
 	}
-	account, err := m.accountAdm.Create(c.Request.Context(), in)
+	account, err := m.accountAdm.Create(ctx, create)
 	if err != nil {
-		m.auditBestEffort(c.Request.Context(), failedAudit(actionAccountCreate, "", actionID))
-		m.answer(c, "creating an account", err)
-		return
+		m.auditBestEffort(ctx, failedAudit(actionAccountCreate, "", actionID))
+		return AuthnAdminAccountEnvelope{}, m.answer("creating an account", err)
 	}
-	c.JSON(201, gin.H{"account": accountViewOf(account)})
-}
-
-// patchBody is the request of a patch: each field left out is left as it is.
-type patchBody struct {
-	DisplayName *string           `json:"display_name"`
-	Attributes  map[string]string `json:"attributes"`
-	Protected   *bool             `json:"protected"`
+	return AuthnAdminAccountEnvelope{Account: accountViewOf(account)}, nil
 }
 
 // handleAccountPatch answers PATCH /admin/accounts/:id: the display name, the
 // attribute set and the protected flag. The action is account.update.
-func (m *product) handleAccountPatch(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
+func (m *product) handleAccountPatch(ctx context.Context, in accountPatchInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := m.caller(ctx)
+	if err != nil {
+		return nil, err
 	}
-	accountID := authn.AccountID(c.Param("id"))
-	if _, err := m.accounts.Get(c.Request.Context(), accountID); err != nil {
-		m.getFailure(c, err)
-		return
+	if err = m.admit(id); err != nil {
+		return nil, err
 	}
-	if !m.asks(c, authn.Decision{
+	accountID := authn.AccountID(in.ID)
+	if _, err = m.accounts.Get(ctx, accountID); err != nil {
+		return m.replyFailure("reading an object", err)
+	}
+	if err = m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountUpdate, Actor: id,
 		Target: string(accountID), TargetAccount: string(accountID),
-	}) {
-		return
-	}
-	var body patchBody
-	if !mount.Decode(c, &body) {
-		return
+	}); err != nil {
+		return nil, err
 	}
 	actionID := newActionID()
-	if !m.auditRequired(c, mandatory(actionAccountUpdate, string(accountID),
-		map[string]string{detailActionID: actionID, detailChange: "update"})) {
-		return
+	if err = m.auditRequired(ctx, mandatory(actionAccountUpdate, string(accountID),
+		map[string]string{detailActionID: actionID, detailChange: "update"})); err != nil {
+		return nil, err
 	}
-	if !m.applyPatch(c, accountID, body, actionID) {
-		return
+	if err = m.applyPatch(ctx, accountID, in, actionID); err != nil {
+		return m.replyFailure("updating an account", err)
 	}
-	account, err := m.accounts.Get(c.Request.Context(), accountID)
+	account, err := m.accounts.Get(ctx, accountID)
 	if err != nil {
-		m.getFailure(c, err)
-		return
+		return m.replyFailure("reading an object", err)
 	}
-	c.JSON(200, gin.H{"account": accountViewOf(account)})
+	return speedhttp.JSONReply(200, AuthnAdminAccountEnvelope{Account: accountViewOf(account)}), nil
 }
 
 // applyPatch writes each field the request named, in order. A failure closes the
 // patch with a failed row and the answer it belongs to.
-func (m *product) applyPatch(c *gin.Context, id authn.AccountID, body patchBody, actionID string) bool {
-	done := func(err error) bool {
+func (m *product) applyPatch(ctx context.Context, id authn.AccountID, in accountPatchInput, actionID string) error {
+	done := func(err error) error {
 		if err != nil {
-			m.auditBestEffort(c.Request.Context(), failedAudit(actionAccountUpdate, string(id), actionID))
-			m.answer(c, "updating an account", err)
-			return false
+			m.auditBestEffort(ctx, failedAudit(actionAccountUpdate, string(id), actionID))
 		}
-		return true
+		return err
 	}
-	if body.DisplayName != nil {
-		if !done(m.accountAdm.SetDisplayName(c.Request.Context(), id, *body.DisplayName)) {
-			return false
+	if in.DisplayName != nil {
+		if err := done(m.accountAdm.SetDisplayName(ctx, id, *in.DisplayName)); err != nil {
+			return err
 		}
 	}
-	if body.Attributes != nil {
-		if !done(m.accountAdm.SetAttributes(c.Request.Context(), id, body.Attributes)) {
-			return false
+	if in.Attributes != nil {
+		if err := done(m.accountAdm.SetAttributes(ctx, id, in.Attributes)); err != nil {
+			return err
 		}
 	}
-	if body.Protected != nil {
-		if !done(m.accountAdm.SetProtected(c.Request.Context(), id, *body.Protected)) {
-			return false
+	if in.Protected != nil {
+		if err := done(m.accountAdm.SetProtected(ctx, id, *in.Protected)); err != nil {
+			return err
 		}
 	}
-	return true
+	return nil
 }
 
 // handleAccountGet answers GET /admin/accounts/:id. The action is account.read.
-func (m *product) handleAccountGet(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
-	}
-	accountID := authn.AccountID(c.Param("id"))
-	account, err := m.accounts.Get(c.Request.Context(), accountID)
+func (m *product) handleAccountGet(ctx context.Context, in accountIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := m.caller(ctx)
 	if err != nil {
-		m.getFailure(c, err)
-		return
+		return nil, err
 	}
-	if !m.asks(c, authn.Decision{
+	if err = m.admit(id); err != nil {
+		return nil, err
+	}
+	accountID := authn.AccountID(in.ID)
+	account, err := m.accounts.Get(ctx, accountID)
+	if err != nil {
+		return m.replyFailure("reading an object", err)
+	}
+	if err := m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountRead, Actor: id,
 		Target: string(accountID), TargetAccount: string(accountID),
-	}) {
-		return
+	}); err != nil {
+		return nil, err
 	}
-	c.JSON(200, gin.H{"account": accountViewOf(account)})
+	return speedhttp.JSONReply(200, AuthnAdminAccountEnvelope{Account: accountViewOf(account)}), nil
 }
 
 // handleAccountDelete answers DELETE /admin/accounts/:id. The action is
 // account.delete and the actor needs a fresh local multi-factor authentication.
-func (m *product) handleAccountDelete(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
+func (m *product) handleAccountDelete(ctx context.Context, in accountIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := m.caller(ctx)
+	if err != nil {
+		return nil, err
 	}
-	accountID := authn.AccountID(c.Param("id"))
-	if _, err := m.accounts.Get(c.Request.Context(), accountID); err != nil {
-		m.getFailure(c, err)
-		return
+	if err := m.admit(id); err != nil {
+		return nil, err
 	}
-	if !m.asks(c, authn.Decision{
+	accountID := authn.AccountID(in.ID)
+	if _, err := m.accounts.Get(ctx, accountID); err != nil {
+		return m.replyFailure("reading an object", err)
+	}
+	if err := m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountDelete, Actor: id,
 		Target: string(accountID), TargetAccount: string(accountID),
-	}) {
-		return
+	}); err != nil {
+		return nil, err
 	}
-	if !m.require(c, id, authn.FreshLocalMulti(m.settings.recentWindow())) {
-		return
+	if err := m.require(id, authn.FreshLocalMulti(m.settings.recentWindow())); err != nil {
+		return nil, err
 	}
 	actionID := newActionID()
-	if !m.auditRequired(c, mandatory(actionAccountDelete, string(accountID),
-		map[string]string{detailActionID: actionID})) {
-		return
+	if err := m.auditRequired(ctx, mandatory(actionAccountDelete, string(accountID),
+		map[string]string{detailActionID: actionID})); err != nil {
+		return nil, err
 	}
-	if err := m.accountAdm.Delete(c.Request.Context(), accountID, authn.ReasonAdmin); err != nil {
-		m.auditBestEffort(c.Request.Context(), failedAudit(actionAccountDelete, string(accountID), actionID))
-		m.answer(c, "deleting an account", err)
-		return
+	if err := m.accountAdm.Delete(ctx, accountID, authn.ReasonAdmin); err != nil {
+		m.auditBestEffort(ctx, failedAudit(actionAccountDelete, string(accountID), actionID))
+		return m.replyFailure("deleting an account", err)
 	}
-	c.Status(204)
-	c.Writer.WriteHeaderNow()
-}
-
-// statusBody is the request of a status change.
-type statusBody struct {
-	Status string `json:"status"`
+	return speedhttp.EmptyReply(204), nil
 }
 
 // handleAccountStatus answers POST /admin/accounts/:id/status: it disables an
 // account or restores it. The action is account.disable and the actor needs a
 // fresh local multi-factor authentication.
-func (m *product) handleAccountStatus(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
+func (m *product) handleAccountStatus(ctx context.Context, in accountStatusInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := m.caller(ctx)
+	if err != nil {
+		return nil, err
 	}
-	accountID := authn.AccountID(c.Param("id"))
-	var body statusBody
-	if !mount.Decode(c, &body) {
-		return
+	if err = m.admit(id); err != nil {
+		return nil, err
 	}
-	status, ok := statusOf(body.Status)
+	accountID := authn.AccountID(in.ID)
+	status, ok := statusOf(in.Status)
 	if !ok || status == authn.StatusDeleted {
-		m.bad(c)
-		return
+		return nil, m.bad()
 	}
-	if _, err := m.accounts.Get(c.Request.Context(), accountID); err != nil {
-		m.getFailure(c, err)
-		return
+	if _, err = m.accounts.Get(ctx, accountID); err != nil {
+		return m.replyFailure("reading an object", err)
 	}
-	if !m.asks(c, authn.Decision{
+	if err = m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountDisable, Actor: id,
 		Target: string(accountID), TargetAccount: string(accountID),
-	}) {
-		return
+	}); err != nil {
+		return nil, err
 	}
-	if !m.require(c, id, authn.FreshLocalMulti(m.settings.recentWindow())) {
-		return
+	if err = m.require(id, authn.FreshLocalMulti(m.settings.recentWindow())); err != nil {
+		return nil, err
 	}
 	actionID := newActionID()
-	if !m.auditRequired(c, mandatory(actionAccountDisable, string(accountID),
-		map[string]string{detailActionID: actionID, detailChange: body.Status})) {
-		return
+	if err = m.auditRequired(ctx, mandatory(actionAccountDisable, string(accountID),
+		map[string]string{detailActionID: actionID, detailChange: in.Status})); err != nil {
+		return nil, err
 	}
-	if err := m.accountAdm.SetStatus(c.Request.Context(), accountID, status, authn.ReasonAdmin); err != nil {
-		m.auditBestEffort(c.Request.Context(), failedAudit(actionAccountDisable, string(accountID), actionID))
-		m.answer(c, "changing an account's status", err)
-		return
+	if err = m.accountAdm.SetStatus(ctx, accountID, status, authn.ReasonAdmin); err != nil {
+		m.auditBestEffort(ctx, failedAudit(actionAccountDisable, string(accountID), actionID))
+		return m.replyFailure("changing an account's status", err)
 	}
-	account, err := m.accounts.Get(c.Request.Context(), accountID)
+	account, err := m.accounts.Get(ctx, accountID)
 	if err != nil {
-		m.getFailure(c, err)
-		return
+		return m.replyFailure("reading an object", err)
 	}
-	c.JSON(200, gin.H{"account": accountViewOf(account)})
-}
-
-// identifierBody is the request of adding an identifier.
-type identifierBody struct {
-	Kind        string `json:"kind"`
-	Value       string `json:"value"`
-	VerifiedVia string `json:"verified_via"`
+	return speedhttp.JSONReply(200, AuthnAdminAccountEnvelope{Account: accountViewOf(account)}), nil
 }
 
 // handleIdentifierAdd answers POST /admin/accounts/:id/identifiers: it adds a
 // login name or an email address an administrator asserts. The action is
 // account.update.
-func (m *product) handleIdentifierAdd(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
+func (m *product) handleIdentifierAdd(ctx context.Context, in identifierAddInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := m.caller(ctx)
+	if err != nil {
+		return nil, err
 	}
-	accountID := authn.AccountID(c.Param("id"))
-	var body identifierBody
-	if !mount.Decode(c, &body) {
-		return
+	if err = m.admit(id); err != nil {
+		return nil, err
 	}
-	kind := authn.IdentifierKind(body.Kind)
-	if !adminIdentifierKind(kind) || body.Value == "" {
-		m.bad(c)
-		return
+	accountID := authn.AccountID(in.ID)
+	kind := authn.IdentifierKind(in.Kind)
+	if !adminIdentifierKind(kind) || in.Value == "" {
+		return nil, m.bad()
 	}
-	if body.VerifiedVia != "" && body.VerifiedVia != authn.VerifiedViaAdmin {
-		m.bad(c)
-		return
+	if in.VerifiedVia != "" && in.VerifiedVia != authn.VerifiedViaAdmin {
+		return nil, m.bad()
 	}
-	if _, err := m.accounts.Get(c.Request.Context(), accountID); err != nil {
-		m.getFailure(c, err)
-		return
+	if _, err = m.accounts.Get(ctx, accountID); err != nil {
+		return m.replyFailure("reading an object", err)
 	}
-	if !m.asks(c, authn.Decision{
+	if err = m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountUpdate, Actor: id,
 		Target: string(accountID), TargetAccount: string(accountID),
-	}) {
-		return
+	}); err != nil {
+		return nil, err
 	}
 	actionID := newActionID()
-	if !m.auditRequired(c, mandatory(actionAccountUpdate, string(accountID),
-		map[string]string{detailActionID: actionID, detailChange: "identifier-add"})) {
-		return
+	if err = m.auditRequired(ctx, mandatory(actionAccountUpdate, string(accountID),
+		map[string]string{detailActionID: actionID, detailChange: "identifier-add"})); err != nil {
+		return nil, err
 	}
-	err := m.accountAdm.AddIdentifier(c.Request.Context(), accountID, kind, body.Value, authn.Verification{Via: authn.VerifiedViaAdmin})
+	err = m.accountAdm.AddIdentifier(ctx, accountID, kind, in.Value, authn.Verification{Via: authn.VerifiedViaAdmin})
 	if err != nil {
-		m.auditBestEffort(c.Request.Context(), failedAudit(actionAccountUpdate, string(accountID), actionID))
-		m.answer(c, "adding an identifier", err)
-		return
+		m.auditBestEffort(ctx, failedAudit(actionAccountUpdate, string(accountID), actionID))
+		return m.replyFailure("adding an identifier", err)
 	}
-	c.Status(204)
-	c.Writer.WriteHeaderNow()
+	return speedhttp.EmptyReply(204), nil
 }
 
 // handleIdentifierRemove answers DELETE
 // /admin/accounts/:id/identifiers/:identifier. The action is account.update.
-func (m *product) handleIdentifierRemove(c *gin.Context) {
-	id, ok := m.caller(c)
-	if !ok || !m.admit(c, id) {
-		return
+func (m *product) handleIdentifierRemove(ctx context.Context, in identifierRemoveInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := m.caller(ctx)
+	if err != nil {
+		return nil, err
 	}
-	accountID := authn.AccountID(c.Param("id"))
-	if _, err := m.accounts.Get(c.Request.Context(), accountID); err != nil {
-		m.getFailure(c, err)
-		return
+	if err := m.admit(id); err != nil {
+		return nil, err
 	}
-	if !m.asks(c, authn.Decision{
+	accountID := authn.AccountID(in.ID)
+	if _, err := m.accounts.Get(ctx, accountID); err != nil {
+		return m.replyFailure("reading an object", err)
+	}
+	if err := m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountUpdate, Actor: id,
 		Target: string(accountID), TargetAccount: string(accountID),
-	}) {
-		return
+	}); err != nil {
+		return nil, err
 	}
 	actionID := newActionID()
-	if !m.auditRequired(c, mandatory(actionAccountUpdate, string(accountID),
-		map[string]string{detailActionID: actionID, detailChange: "identifier-remove"})) {
-		return
+	if err := m.auditRequired(ctx, mandatory(actionAccountUpdate, string(accountID),
+		map[string]string{detailActionID: actionID, detailChange: "identifier-remove"})); err != nil {
+		return nil, err
 	}
-	if err := m.accountAdm.RemoveIdentifier(c.Request.Context(), accountID, c.Param("identifier")); err != nil {
-		m.auditBestEffort(c.Request.Context(), failedAudit(actionAccountUpdate, string(accountID), actionID))
-		m.answer(c, "removing an identifier", err)
-		return
+	if err := m.accountAdm.RemoveIdentifier(ctx, accountID, in.Identifier); err != nil {
+		m.auditBestEffort(ctx, failedAudit(actionAccountUpdate, string(accountID), actionID))
+		return m.replyFailure("removing an identifier", err)
 	}
-	c.Status(204)
-	c.Writer.WriteHeaderNow()
-}
-
-// getFailure answers a read of an object that is not there with a 404 and any
-// other failure with a 503.
-func (m *product) getFailure(c *gin.Context, err error) {
-	m.answer(c, "reading an object", err)
+	return speedhttp.EmptyReply(204), nil
 }
 
 // statusOf maps a status name to the value it names.

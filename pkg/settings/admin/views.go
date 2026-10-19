@@ -15,38 +15,6 @@ import (
 // string in both fields, so a client reads one marker and not several.
 const maskedValue = "********"
 
-// settingView is one setting item as the management routes show it. It is built
-// field by field from a declaration and the resolved value and never handed
-// through as it stands, so that a field added to a declaration later does not
-// reach a client by being there.
-//
-// Every value-bearing field is text: default is the declared default in the
-// declared type's own text form, written is the text the selected layer holds,
-// and value is the text the item resolves to after the three-level fallback —
-// tenant row, global row, declared default. They share one form, so a client
-// compares and displays them without converting between a typed value and a row,
-// and a duration reads "5m0s" rather than as a count of nanoseconds. A sensitive
-// item's default is empty, and its written and value carry the mask string
-// instead of the value.
-//
-// written alone cannot say whether the layer holds a row: an empty text is both
-// a missing row and a row written as the empty string. has_row carries that fact
-// on its own, so a client can mark the item as the declared default or as an
-// override without interpreting the text, and a sensitive item tells a client
-// whether there is a row to remove even though its text is masked.
-type settingView struct {
-	Key         string `json:"key"`
-	Namespace   string `json:"namespace"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
-	Domain      string `json:"domain"`
-	Sensitive   bool   `json:"sensitive"`
-	Default     string `json:"default"`
-	Written     string `json:"written"`
-	HasRow      bool   `json:"has_row"`
-	Value       string `json:"value"`
-}
-
 // viewOf builds one item's view from its declaration, the text the selected
 // layer holds for it, whether it holds a row at all, and the text it resolves to.
 //
@@ -60,11 +28,11 @@ type settingView struct {
 // that read it: a second place building a view is a second place that can forget
 // to mask it, and a forgotten mask sends a credential out with the response.
 // The mask covers the text only; has_row reports the row's existence unchanged.
-func viewOf(item settings.DeclaredItem, written string, hasRow bool, value string) settingView {
+func viewOf(item settings.DeclaredItem, written string, hasRow bool, value string) SettingsAdminSetting {
 	// The metadata the declaration gave hangs off the embedded Item; the
 	// promoted selectors reach it.
 	if item.Sensitive {
-		return settingView{
+		return SettingsAdminSetting{
 			Key:         item.Key,
 			Namespace:   item.Module,
 			Type:        item.Type.String(),
@@ -77,7 +45,7 @@ func viewOf(item settings.DeclaredItem, written string, hasRow bool, value strin
 			Value:       maskedValue,
 		}
 	}
-	return settingView{
+	return SettingsAdminSetting{
 		Key:         item.Key,
 		Namespace:   item.Module,
 		Type:        item.Type.String(),

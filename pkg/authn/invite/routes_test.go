@@ -8,10 +8,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
+	"github.com/vislake/speed/pkg/authn/internal/mount"
+	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
 const pathAdmin = "/api/v1/auth/admin/tenants/tenant-a/invitations"
@@ -55,8 +59,8 @@ func TestIssueRouteAnswers201AndAuditsBeforeTheAction(t *testing.T) {
 		t.Fatalf("status = %d, want 201: %s", w.Code, w.Body.String())
 	}
 	var answered struct {
-		Invitation invitationView `json:"invitation"`
-		Token      string         `json:"token"`
+		Invitation AuthnInviteInvitation `json:"invitation"`
+		Token      string                `json:"token"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &answered); err != nil {
 		t.Fatalf("decoding the answer: %v", err)
@@ -208,5 +212,166 @@ func TestAcceptFaceIsPublicAndTokenAddressed(t *testing.T) {
 	w = h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{"display_name": "Alice"})
 	if w.Code != http.StatusConflict {
 		t.Fatalf("second accept status = %d, want 409", w.Code)
+	}
+}
+
+// TestAnUnknownObjectIsAnsweredWithABare404 holds the answer the fragment
+// declares for both faces: a missing invitation is a 404 with no problem
+// document, not the problem shape the other refusals use.
+func TestAnUnknownObjectIsAnsweredWithABare404(t *testing.T) {
+	h := newHarness(t)
+	h.asAdmin()
+	w := h.request(http.MethodDelete, "/api/v1/auth/admin/tenants/tenant-a/invitations/no-such-id", nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("revoke status = %d, want 404", w.Code)
+	}
+	if w.Body.Len() != 0 {
+		t.Errorf("the 404 carries the body %q, want none", w.Body.String())
+	}
+
+	h.mounter.AsAnonymous()
+	w = h.request(http.MethodGet, "/api/v1/auth/invitations/spd_inv_unknown", nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("accept view status = %d, want 404", w.Code)
+	}
+	if w.Body.Len() != 0 {
+		t.Errorf("the 404 carries the body %q, want none", w.Body.String())
+	}
+}
+
+// TestABodyOfAnotherMediaTypeIs415 holds the answer the entry point writes when
+// the request body is not the declared media type. The hand-written fragment
+// omitted it, although the handler it described has always answered it.
+func TestABodyOfAnotherMediaTypeIs415(t *testing.T) {
+	h := newHarness(t)
+	h.asAdmin()
+	req := httptest.NewRequest(http.MethodPost, pathAdmin,
+		strings.NewReader(`{"email":"alice@example.com"}`))
+	req.Header.Set("Content-Type", "text/plain")
+	w := h.mounter.Do(req)
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status = %d, want 415", w.Code)
+	}
+	if h.rowCount() != 0 {
+		t.Errorf("a row was written for a body of another media type")
+	}
+}
+
+// TestAcceptRefusesAnEmptyBody holds the one request the entry point would
+// otherwise read as the input's zero value: the route has always required a
+// body, and a body of "{}" is still a body. A declared length of zero is the
+// request that carries none.
+func TestAcceptRefusesAnEmptyBody(t *testing.T) {
+	h := newHarness(t)
+	h.accounts.put("alice@example.com", "acct-alice")
+	issued := h.issue("tenant-a", "alice@example.com")
+
+	h.mounter.AsAnonymous()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, nil)
+	req.Header.Set("Content-Type", "application/json")
+	w := h.mounter.Do(req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for an empty body", w.Code)
+	}
+	if h.members.count != 0 {
+		t.Errorf("a membership was written for an empty body")
+	}
+}
+
+// TestAcceptBindsAnUnknownLengthBody holds the request the declared-length check
+// must not refuse: a chunked body, or an HTTP/2 one without Content-Length, that
+// carries valid JSON. Its length is unknown until the body is read, and the
+// binder reads it like any other body.
+func TestAcceptBindsAnUnknownLengthBody(t *testing.T) {
+	h := newHarness(t)
+	h.accounts.put("alice@example.com", "acct-alice")
+	issued := h.issue("tenant-a", "alice@example.com")
+
+	h.mounter.AsAnonymous()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token,
+		strings.NewReader(`{"display_name":"Alice"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.ContentLength = -1
+	req.TransferEncoding = []string{"chunked"}
+	w := h.mounter.Do(req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 for an unknown-length body: %s", w.Code, w.Body.String())
+	}
+	if h.members.count != 1 {
+		t.Errorf("memberships written = %d, want one", h.members.count)
+	}
+}
+
+// TestRoutesMountUnderAConfiguredBasePath holds the mount translation against a
+// configured base path: the declaration is fixed before any configuration
+// exists, so the relative path is derived from the default base, and a
+// configured base moves every route without moving the contract.
+func TestRoutesMountUnderAConfiguredBasePath(t *testing.T) {
+	h := newHarness(t)
+	configured := mounttest.New(t, mounttest.WithBase("/identity"))
+	h.p.mounter = configured
+
+	var panicked any
+	func() {
+		defer func() { panicked = recover() }()
+		h.p.mountRoutes()
+	}()
+	if panicked != nil {
+		t.Fatalf("mounting under a configured base path panicked: %v", panicked)
+	}
+
+	for _, testCase := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/identity/admin/tenants/:tenant/invitations"},
+		{http.MethodGet, "/identity/admin/tenants/:tenant/invitations"},
+		{http.MethodDelete, "/identity/admin/tenants/:tenant/invitations/:id"},
+		{http.MethodGet, "/identity/invitations/:token"},
+		{http.MethodPost, "/identity/invitations/:token"},
+	} {
+		if _, ok := configured.Registered(testCase.method, testCase.path); !ok {
+			t.Errorf("%s %s was not mounted", testCase.method, testCase.path)
+		}
+	}
+}
+
+// TestAcceptTakesADeclaredLengthEmptyObjectBody holds the other side of the
+// empty-body refusal: a body of "{}" with a declared length is a body and is
+// accepted, as it has always been.
+func TestAcceptTakesADeclaredLengthEmptyObjectBody(t *testing.T) {
+	h := newHarness(t)
+	h.accounts.put("alice@example.com", "acct-alice")
+	issued := h.issue("tenant-a", "alice@example.com")
+
+	h.mounter.AsAnonymous()
+	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 for a declared-length {} body: %s", w.Code, w.Body.String())
+	}
+	if h.members.count != 1 {
+		t.Errorf("memberships written = %d, want one", h.members.count)
+	}
+}
+
+// TestAManagementHandlerAnswersItsOwn401WithTheChallenge holds the fault a
+// handler returns where the gateway is not in front of it: the 401 carries the
+// capability's challenge, which is the header the declaration puts on every 401.
+func TestAManagementHandlerAnswersItsOwn401WithTheChallenge(t *testing.T) {
+	h := newHarness(t)
+	_, err := h.p.handleIssue(context.Background(), issueInput{
+		Tenant: "tenant-a", Email: "alice@example.com",
+	})
+	var fault speedhttp.Fault
+	if !errors.As(err, &fault) {
+		t.Fatalf("error = %v, want a fault", err)
+	}
+	if fault.Status != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", fault.Status)
+	}
+	want := mount.UnauthorizedChallenge(h.mounter.Endpoint())
+	if len(fault.Headers) != 1 || fault.Headers[0].Name != "WWW-Authenticate" ||
+		fault.Headers[0].Value != want {
+		t.Errorf("headers = %+v, want WWW-Authenticate: %q", fault.Headers, want)
 	}
 }

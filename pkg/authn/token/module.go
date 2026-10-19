@@ -29,7 +29,6 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
-	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -122,7 +121,7 @@ func Module() core.Module {
 		Resources: []any{
 			schema(), settingsSchema(),
 			db.Migrations{FS: migrationsFS},
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: tokenFragment},
+			tokenSpec,
 		},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {

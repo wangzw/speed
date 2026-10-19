@@ -109,6 +109,16 @@ func Generate(title, version string, operations speedhttp.Operations) ([]byte, e
 				return nil, fmt.Errorf("openapigen: %s %s: %w", operation.Method, operation.Path, err)
 			}
 		}
+		// The entry point's body-limit layer answers a body over the endpoint's
+		// limit with 413 whether or not the operation declares it, so a
+		// body-bearing operation publishes that answer even when its own set
+		// omits it.
+		if operation.Request != nil && !declaresStatus(operation.Responses, http.StatusRequestEntityTooLarge) {
+			if err := addResponse(ctx, operation, speedhttp.ProblemResponse(http.StatusRequestEntityTooLarge,
+				"The request body is over the endpoint's limit")); err != nil {
+				return nil, fmt.Errorf("openapigen: %s %s: %w", operation.Method, operation.Path, err)
+			}
+		}
 		if err := r.AddOperation(ctx); err != nil {
 			return nil, fmt.Errorf("openapigen: %s %s: %w", operation.Method, operation.Path, err)
 		}
@@ -146,6 +156,16 @@ func addParameters(ctx openapi.OperationContext, operation speedhttp.OperationDe
 	}
 	ctx.AddReqStructure(instance(parameters))
 	return nil
+}
+
+// declaresStatus reports whether a response set carries an answer of status.
+func declaresStatus(responses []speedhttp.Response, status int) bool {
+	for _, response := range responses {
+		if response.Status == status {
+			return true
+		}
+	}
+	return false
 }
 
 // countSuccess is how many 2xx answers a response set carries.
@@ -390,12 +410,28 @@ func multipartBodyStructure(input reflect.Type) reflect.Type {
 
 // bodyStructure builds the structure a body is read into from the fields the
 // pick function selects. It returns nil when none is selected. The reflected
-// object is closed: the entry point refuses a JSON member, form key or
-// multipart part the declaration does not carry.
+// object is closed unless the declaration opens it: the entry point refuses a
+// JSON member, form key or multipart part the declaration does not carry, and a
+// surface that tolerates such members says so on the blank field.
+//
+// A blank field carrying a description tag declares the body schema's own
+// description, the same convention an answer structure uses. The same field's
+// additionalProperties tag, set to "true", declares the body's object open, for
+// a route whose wrapper drops the members the declaration does not describe
+// instead of refusing them. pkg/http reads neither — it binds only the exported,
+// tagged fields — so the declaration's input and the published schema can carry
+// them without the handler seeing them.
 func bodyStructure(input reflect.Type, pick func(reflect.StructField) (reflect.Type, string, bool)) reflect.Type {
 	fields := make([]reflect.StructField, 0, input.NumField())
+	description := ""
+	open := false
 	for i := 0; i < input.NumField(); i++ {
 		field := input.Field(i)
+		if field.Name == "_" && field.Type.Kind() == reflect.Struct {
+			description = field.Tag.Get("description")
+			open = field.Tag.Get("additionalProperties") == "true"
+			continue
+		}
 		if field.PkgPath != "" {
 			continue
 		}
@@ -413,19 +449,28 @@ func bodyStructure(input reflect.Type, pick func(reflect.StructField) (reflect.T
 	if len(fields) == 0 {
 		return nil
 	}
-	fields = append(fields, closedObjectField())
+	fields = append(fields, objectField(description, open))
 	return reflect.StructOf(fields)
 }
 
-// closedObjectField is the unnamed field the schema reflector reads as
-// additionalProperties=false for the object it is a member of. StructOf wants
-// the package path an unnamed field would carry.
-func closedObjectField() reflect.StructField {
+// objectField is the unnamed field the schema reflector reads as the object's
+// additionalProperties and, when one is declared, as the object's description.
+// The object is closed by default, because the entry point refuses a member the
+// declaration does not carry; a declaration that tolerates such members opens
+// it. StructOf wants the package path an unnamed field would carry.
+func objectField(description string, open bool) reflect.StructField {
+	tag := `additionalProperties:"false"`
+	if open {
+		tag = `additionalProperties:"true"`
+	}
+	if description != "" {
+		tag += " description:" + strconv.Quote(description)
+	}
 	return reflect.StructField{
 		Name:    "_",
 		PkgPath: "openapigen",
 		Type:    reflect.TypeOf(struct{}{}),
-		Tag:     `additionalProperties:"false"`,
+		Tag:     reflect.StructTag(tag),
 	}
 }
 

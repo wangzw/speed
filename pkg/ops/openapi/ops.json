@@ -1,55 +1,124 @@
 {
+  "components": {
+    "schemas": {
+      "OpsDocument": {
+        "additionalProperties": true,
+        "description": "The merged OpenAPI document: the version it declares, its info section, every merged path, the components its fragments declared, and x-fragments naming each source",
+        "type": "object"
+      },
+      "OpsHealth": {
+        "description": "The liveness response body: a single status field, always ok on a process that can answer.",
+        "properties": {
+          "status": {
+            "description": "The literal the liveness route writes; a live process always answers ok",
+            "enum": [
+              "ok"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "OpsReadiness": {
+        "description": "The readiness response body, carrying the verdict and, when it is unavailable, one line per part that failed.",
+        "properties": {
+          "failures": {
+            "description": "One line per part that failed; absent when the verdict is ready",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "description": "ready when every part answered, unavailable otherwise",
+            "enum": [
+              "ready",
+              "unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "operations",
+    "version": "1.0.0"
+  },
   "openapi": "3.1.0",
-  "info": {"title": "operations", "version": "1.0.0"},
   "paths": {
     "/health": {
       "get": {
-        "summary": "The process is alive",
         "description": "Reads nothing and always answers 200, so any answer at all means the process is up. The route is mounted on the endpoint named by ops.endpoint (default \"ops\"), which the host assembles unguarded: a probe needs no credential and no tenant.",
-        "responses": {"200": {"description": "Alive", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OpsHealth"}}}}}
-      }
-    },
-    "/ready": {
-      "get": {
-        "summary": "Every declared endpoint accepts requests and the database answers",
-        "description": "The verdict is read fresh on every request and nothing is cached or polled in the background: each endpoint the process declared must be accepting requests, and when a database is assembled it is pinged once. Only process-level availability is reported, never tenant or business state. 200 means every check passed; 503 names each part that failed in failures.",
+        "operationId": "ops.health",
         "responses": {
-          "200": {"description": "Ready", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OpsReadiness"}}}},
-          "503": {"description": "Not ready, naming each part that failed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OpsReadiness"}}}}
-        }
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsHealth"
+                }
+              }
+            },
+            "description": "Alive"
+          }
+        },
+        "summary": "The process is alive"
       }
     },
     "/openapi.json": {
       "get": {
-        "summary": "The API document, merged from every module's fragment",
         "description": "Serves the document itself rather than a wrapper, merged once at startup and never recomputed, so every request reads the same bytes. Every declared fragment is merged, including those of modules that do not run in this command, because the document states which API this binary provides. Its title and version come from ops.title and ops.version, and it carries top-level openapi, info, paths, components, x-fragments, and a per-operation x-endpoint naming the endpoint that serves each route.",
-        "responses": {"200": {"description": "The merged document", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OpsDocument"}}}}}
+        "operationId": "ops.document",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsDocument"
+                }
+              }
+            },
+            "description": "The merged document"
+          }
+        },
+        "summary": "The API document, merged from every module's fragment"
       }
-    }
-  },
-  "components": {
-    "schemas": {
-      "OpsHealth": {
-        "type": "object",
-        "description": "The liveness response body: a single status field, always ok on a process that can answer.",
-        "required": ["status"],
-        "properties": {
-          "status": {"type": "string", "enum": ["ok"], "description": "The literal the liveness route writes; a live process always answers ok"}
-        }
-      },
-      "OpsReadiness": {
-        "type": "object",
-        "description": "The readiness response body, carrying the verdict and, when it is unavailable, one line per part that failed.",
-        "required": ["status"],
-        "properties": {
-          "status": {"type": "string", "enum": ["ready", "unavailable"], "description": "ready when every part answered, unavailable otherwise"},
-          "failures": {"type": "array", "items": {"type": "string"}, "description": "One line per part that failed; absent when the verdict is ready"}
-        }
-      },
-      "OpsDocument": {
-        "type": "object",
-        "additionalProperties": true,
-        "description": "The merged OpenAPI document: the version it declares, its info section, every merged path, the components its fragments declared, and x-fragments naming each source"
+    },
+    "/ready": {
+      "get": {
+        "description": "The verdict is read fresh on every request and nothing is cached or polled in the background: each endpoint the process declared must be accepting requests, and when a database is assembled it is pinged once. Only process-level availability is reported, never tenant or business state. 200 means every check passed; 503 names each part that failed in failures.",
+        "operationId": "ops.readiness",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsReadiness"
+                }
+              }
+            },
+            "description": "Ready"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsReadiness"
+                }
+              }
+            },
+            "description": "Not ready, naming each part that failed"
+          }
+        },
+        "summary": "Every declared endpoint accepts requests and the database answers"
       }
     }
   }

@@ -5,15 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
-
-	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/authn/internal/step"
-	"github.com/vislake/speed/pkg/i18n"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
 // The two carriers a start may ask the flow token to travel in.
@@ -22,97 +19,80 @@ const (
 	bindingHeader = "header"
 )
 
-// startRequest is the body of POST flows and POST flows/authenticated.
-type startRequest struct {
-	Method   string            `json:"method"`
-	Purpose  string            `json:"purpose"`
-	Delivery string            `json:"delivery"`
-	ReturnTo string            `json:"return_to"`
-	Binding  string            `json:"binding"`
-	Input    map[string]string `json:"input"`
-}
-
 // startFlow begins a login flow. It reads no cookie, so a stale session cookie
 // in the browser does not stand in the way of logging in.
-func (r *routes) startFlow(c *gin.Context) {
-	if !contentTypeJSON(c) {
-		return
+func (r *routes) startFlow(ctx context.Context, in startInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	c := r.call(ctx, meta)
+	if !r.ipAllow(c) {
+		return c.result()
 	}
-	var req startRequest
-	if !mount.Decode(c, &req) {
-		return
-	}
-	ctx := c.Request.Context()
-	if !r.ipAllow(c, ctx) {
-		return
-	}
-	if _, ok := r.method(req.Method); !ok {
-		mount.Fail(c, mount.CodeBadRequest)
-		return
+	if _, ok := r.method(in.Method); !ok {
+		c.fail(mount.CodeBadRequest)
+		return c.result()
 	}
 	disabled, err := r.settings.disabledMethods()
 	if err != nil {
 		r.fail(c, err)
-		return
+		return c.result()
 	}
-	if slices.Contains(disabled, req.Method) {
-		mount.Forbidden(c, mount.CodeMethodDisabled)
-		return
+	if slices.Contains(disabled, in.Method) {
+		c.forbidden(mount.CodeMethodDisabled)
+		return c.result()
 	}
-	delivery := req.Delivery
+	delivery := in.Delivery
 	if delivery == "" {
 		delivery = deliverySession
 	}
 	if delivery != deliverySession && delivery != deliveryToken {
-		mount.Fail(c, mount.CodeBadRequest)
-		return
+		c.fail(mount.CodeBadRequest)
+		return c.result()
 	}
 	if !r.deliveryAllowed(delivery) || (delivery == deliveryToken && r.tokens == nil) {
-		mount.Fail(c, mount.CodeBadRequest)
-		return
+		c.fail(mount.CodeBadRequest)
+		return c.result()
 	}
-	if req.ReturnTo != "" {
-		if verr := checkReturnTo(req.ReturnTo, r.trustedOrigins); verr != nil {
+	if in.ReturnTo != "" {
+		if verr := checkReturnTo(in.ReturnTo, r.trustedOrigins); verr != nil {
 			r.fail(c, verr)
-			return
+			return c.result()
 		}
 	}
-	binding := req.Binding
+	binding := in.Binding
 	if binding == "" {
 		binding = bindingCookie
 	}
 	if binding != bindingCookie && binding != bindingHeader {
-		mount.Fail(c, mount.CodeBadRequest)
-		return
+		c.fail(mount.CodeBadRequest)
+		return c.result()
 	}
-	if verr := checkFields(req.Input, maxStartFieldBytes); verr != nil {
+	if verr := checkFields(in.Input, maxStartFieldBytes); verr != nil {
 		r.fail(c, verr)
-		return
+		return c.result()
 	}
 
 	token, err := newFlowToken()
 	if err != nil {
 		r.fail(c, err)
-		return
+		return c.result()
 	}
 	now := r.clock.Now()
 	ttl := r.settings.flowTTL()
 	rec := record{
 		Version:   recordVersion,
 		Purpose:   authn.PurposeLogin,
-		Method:    req.Method,
+		Method:    in.Method,
 		State:     stateFirst,
 		Binding:   tokenDigest(token),
 		Delivery:  delivery,
-		ReturnTo:  req.ReturnTo,
+		ReturnTo:  in.ReturnTo,
 		Locale:    localeOf(c),
 		CreatedAt: now,
 		ExpiresAt: now.Add(ttl),
 	}
-	raw, err := r.storeFlow(ctx, token, rec, ttl)
+	raw, err := r.storeFlow(c.ctx, token, rec, ttl)
 	if err != nil {
 		r.fail(c, err)
-		return
+		return c.result()
 	}
 	echo := ""
 	if binding == bindingHeader {
@@ -120,70 +100,64 @@ func (r *routes) startFlow(c *gin.Context) {
 	} else {
 		r.setFlowCookie(c, token, int(ttl.Seconds()))
 	}
-	r.applyFirstBegin(c, token, echo, rec, raw, req.Input)
+	r.applyFirstBegin(c, token, echo, rec, raw, in.Input)
+	return c.result()
 }
 
 // startAuthenticated begins a link, a step-up or an enrollment on the identity
 // the gateway authenticated.
-func (r *routes) startAuthenticated(c *gin.Context) {
-	if !contentTypeJSON(c) {
-		return
-	}
-	ctx := c.Request.Context()
-	id, ok := authn.FromContext(ctx)
+func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	c := r.call(ctx, meta)
+	id, ok := authn.FromContext(c.ctx)
 	if !ok || id.Account() == "" {
-		mount.Unauthorized(c, r.endpoint, "")
-		return
+		c.unauthorized("")
+		return c.result()
 	}
 	if id.Impersonating() {
-		mount.Forbidden(c, mount.CodeImpersonationRestricted)
-		return
+		c.forbidden(mount.CodeImpersonationRestricted)
+		return c.result()
 	}
-	var req startRequest
-	if !mount.Decode(c, &req) {
-		return
-	}
-	switch req.Purpose {
+	switch in.Purpose {
 	case authn.PurposeLink, authn.PurposeStepUp, authn.PurposeEnroll:
 	default:
-		mount.Fail(c, mount.CodeBadRequest)
-		return
+		c.fail(mount.CodeBadRequest)
+		return c.result()
 	}
-	if err := checkFields(req.Input, maxStartFieldBytes); err != nil {
+	if err := checkFields(in.Input, maxStartFieldBytes); err != nil {
 		r.fail(c, err)
-		return
+		return c.result()
 	}
-	if req.ReturnTo != "" {
-		if err := checkReturnTo(req.ReturnTo, r.trustedOrigins); err != nil {
+	if in.ReturnTo != "" {
+		if err := checkReturnTo(in.ReturnTo, r.trustedOrigins); err != nil {
 			r.fail(c, err)
-			return
+			return c.result()
 		}
 	}
-	status, err := r.sessions.StatusFresh(ctx, id.Session())
+	status, err := r.sessions.StatusFresh(c.ctx, id.Session())
 	if err != nil {
 		if isSessionGone(err) {
-			mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
-			return
+			c.unauthorized(mount.CodeFlowInvalid)
+			return c.result()
 		}
 		r.fail(c, err)
-		return
+		return c.result()
 	}
 	if !status.Active || status.Account != id.Account() {
-		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
-		return
+		c.unauthorized(mount.CodeFlowInvalid)
+		return c.result()
 	}
-	requireMulti, ok := r.startRequirement(c, ctx, id, req.Purpose)
+	requireMulti, ok := r.startRequirement(c, id, in.Purpose)
 	if !ok {
-		return
+		return c.result()
 	}
 
-	binding := req.Binding
+	binding := in.Binding
 	if binding == "" {
 		binding = bindingCookie
 	}
 	if binding != bindingCookie && binding != bindingHeader {
-		mount.Fail(c, mount.CodeBadRequest)
-		return
+		c.fail(mount.CodeBadRequest)
+		return c.result()
 	}
 	delivery := deliverySession
 	if status.Kind == authn.SessionToken {
@@ -193,19 +167,19 @@ func (r *routes) startAuthenticated(c *gin.Context) {
 	token, err := newFlowToken()
 	if err != nil {
 		r.fail(c, err)
-		return
+		return c.result()
 	}
 	now := r.clock.Now()
 	ttl := r.settings.flowTTL()
 	rec := record{
 		Version:      recordVersion,
-		Purpose:      req.Purpose,
+		Purpose:      in.Purpose,
 		State:        stateFirst,
 		Binding:      tokenDigest(token),
 		Account:      string(id.Account()),
 		Session:      string(id.Session()),
 		Delivery:     delivery,
-		ReturnTo:     req.ReturnTo,
+		ReturnTo:     in.ReturnTo,
 		RequireMulti: requireMulti,
 		Locale:       localeOf(c),
 		CreatedAt:    now,
@@ -213,36 +187,36 @@ func (r *routes) startAuthenticated(c *gin.Context) {
 	}
 
 	var offered []factorView
-	switch req.Purpose {
+	switch in.Purpose {
 	case authn.PurposeLink:
-		if _, ok := r.method(req.Method); !ok {
-			mount.Fail(c, mount.CodeBadRequest)
-			return
+		if _, ok := r.method(in.Method); !ok {
+			c.fail(mount.CodeBadRequest)
+			return c.result()
 		}
-		rec.Method = req.Method
+		rec.Method = in.Method
 	case authn.PurposeEnroll:
 		rec.State = stateEnroll
 	case authn.PurposeStepUp:
-		start, stepUpOffered, insufficient, serr := r.stepUpStart(ctx, status, req.Method)
+		start, stepUpOffered, insufficient, serr := r.stepUpStart(c.ctx, status, in.Method)
 		if serr != nil {
 			r.fail(c, serr)
-			return
+			return c.result()
 		}
 		if insufficient {
-			mount.StepUpRequired(c, id, authn.FreshLocalMulti(r.settings.recentWindow()))
-			return
+			c.stepUp(id, authn.FreshLocalMulti(r.settings.recentWindow()))
+			return c.result()
 		}
 		rec.State = start
-		rec.Method = req.Method
+		rec.Method = in.Method
 		rec.MFA.Required = start == stateSecond
 		rec.MFA.Offered = stepUpOffered
 		offered = stepUpOffered
 	}
 
-	raw, err := r.storeFlow(ctx, token, rec, ttl)
+	raw, err := r.storeFlow(c.ctx, token, rec, ttl)
 	if err != nil {
 		r.fail(c, err)
-		return
+		return c.result()
 	}
 	echo := ""
 	if binding == bindingHeader {
@@ -253,12 +227,13 @@ func (r *routes) startAuthenticated(c *gin.Context) {
 
 	switch rec.State {
 	case stateFirst:
-		r.applyFirstBegin(c, token, echo, rec, raw, req.Input)
+		r.applyFirstBegin(c, token, echo, rec, raw, in.Input)
 	case stateEnroll:
-		r.applyEnroll(c, token, echo, rec, raw, req.Input["kind"], req.Input)
+		r.applyEnroll(c, token, echo, rec, raw, in.Input["kind"], in.Input)
 	default: // second
 		r.replyStep(c, rec, stepView{Kind: nextFactor, Factors: offered}, echo)
 	}
+	return c.result()
 }
 
 // stepUpStart decides where a step-up flow starts. It asks the policy with a
@@ -297,18 +272,18 @@ func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, me
 // nothing beyond the identity the gateway stamped. It also reports whether that
 // requirement was the fresh local multi-factor a factor-holding account asks
 // for, which the flow records so its completion is held to the same one.
-func (r *routes) startRequirement(c *gin.Context, ctx context.Context, id authn.Identity, purpose string) (requireMulti, ok bool) {
+func (r *routes) startRequirement(c *call, id authn.Identity, purpose string) (requireMulti, ok bool) {
 	if purpose != authn.PurposeLink && purpose != authn.PurposeEnroll {
 		return false, true
 	}
-	requireMulti, err := r.accountHasActiveFactor(ctx, id.Account())
+	requireMulti, err := r.accountHasActiveFactor(c.ctx, id.Account())
 	if err != nil {
 		r.fail(c, err)
 		return false, false
 	}
 	req := r.requirementFor(requireMulti)
 	if !id.Satisfies(req, r.clock.Now()) {
-		mount.StepUpRequired(c, id, req)
+		c.stepUp(id, req)
 		return false, false
 	}
 	return requireMulti, true
@@ -317,15 +292,14 @@ func (r *routes) startRequirement(c *gin.Context, ctx context.Context, id authn.
 // applyEnroll drives a registration step through the multi-factor module. kind is
 // the factor kind a first step names and is empty on a later one; fields are the
 // request's own input, forwarded to the factor, whose step decides what it needs.
-func (r *routes) applyEnroll(c *gin.Context, token, echo string, rec record, raw []byte, kind string, fields map[string]string) {
-	ctx := c.Request.Context()
+func (r *routes) applyEnroll(c *call, token, echo string, rec record, raw []byte, kind string, fields map[string]string) {
 	f := r.flowState(rec, token)
-	in := authn.StepInput{Action: authn.InputSubmit, Fields: fields, Client: requestClient(c)}
-	got, ok := r.invoke(ctx, "enroll", func(cctx context.Context) (authn.Step, error) {
+	in := authn.StepInput{Action: authn.InputSubmit, Fields: fields, Client: c.clientInfo()}
+	got, ok := r.invoke(c.ctx, "enroll", func(cctx context.Context) (authn.Step, error) {
 		return r.mfa.Enroll(cctx, f, authn.FactorKind(kind), in)
 	})
 	if !ok {
-		serverError(c)
+		c.serverError()
 		return
 	}
 	if !r.recordSends(c, token, raw, &rec, got) {
@@ -366,14 +340,14 @@ func (r *routes) applyEnroll(c *gin.Context, token, echo string, rec record, raw
 		if !r.swap(c, token, raw, rec) {
 			return
 		}
-		mount.Unauthorized(c, r.endpoint, mount.CodeLoginFailed)
+		c.unauthorized(mount.CodeLoginFailed)
 	case step.KindThrottled:
-		mount.Throttled(c, step.RetryAfterOf(got))
+		c.throttled(step.RetryAfterOf(got))
 	case step.KindUnavailable:
-		mount.Unavailable(c)
+		c.unavailable()
 	default:
 		r.logger.Error(ModuleName + ": a factor gave an answer a registration step may not give")
-		serverError(c)
+		c.serverError()
 	}
 }
 
@@ -393,45 +367,23 @@ func checkFields(fields map[string]string, maxBytes int) error {
 	return nil
 }
 
-// localeOf reads the language a start request names and passes it through as it
-// stands. It reads first the language the i18n layer settled into the request
-// context — the supported locale the request's header asked for, negotiated by
-// quality — and falls back to reading the header directly for a run with no i18n
-// layer, taking the first tag as written. Either way the value is a BCP 47 tag
-// the SMS module resolves against the languages its carrier declares: the empty
-// string names none and resolves to the run's default.
-func localeOf(c *gin.Context) string {
-	if locale, ok := i18n.FromContext(c.Request.Context()); ok {
-		return string(locale)
-	}
-	header := c.GetHeader("Accept-Language")
-	for _, part := range strings.Split(header, ",") {
-		tag := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
-		if tag == "" {
-			continue
-		}
-		return tag
-	}
-	return ""
-}
-
 // ipAllow applies the source-address pre-throttle when it is on. A counter that
 // cannot be read skips the layer and writes a Warn, because the layer is only a
 // coarse pre-throttle and the authority is the failure back-off in the database.
-func (r *routes) ipAllow(c *gin.Context, ctx context.Context) bool {
+func (r *routes) ipAllow(c *call) bool {
 	limit := r.settings.ipLimit()
 	if limit <= 0 {
 		return true
 	}
-	key := "authn:ip:" + c.ClientIP() + ":" + r.clock.Now().Format("200601021504")
-	count, err := r.kv.IncrByFloatWithTTL(ctx, key, 1, time.Minute)
+	key := "authn:ip:" + c.clientIP + ":" + r.clock.Now().Format("200601021504")
+	count, err := r.kv.IncrByFloatWithTTL(c.ctx, key, 1, time.Minute)
 	if err != nil {
 		r.logger.Warn(ModuleName+": the source-address pre-throttle could not count, so it is skipped",
 			"cause", err.Error())
 		return true
 	}
 	if count > float64(limit) {
-		mount.Throttled(c, 0)
+		c.throttled(0)
 		return false
 	}
 	return true

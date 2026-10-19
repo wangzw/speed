@@ -150,7 +150,7 @@ func TestTheListShowsEveryDeclaredItemWithItsResolvedValue(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("the request ended with %d: %s", w.Code, w.Body.String())
 	}
-	var views []settingView
+	var views []SettingsAdminSetting
 	decode(t, w, &views)
 	if len(views) != 2 {
 		t.Fatalf("the listing holds %d items, want 2", len(views))
@@ -208,7 +208,7 @@ func TestAnEmptyTextRowIsReportedAsAHeldRow(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("the request ended with %d: %s", w.Code, w.Body.String())
 	}
-	var views []settingView
+	var views []SettingsAdminSetting
 	decode(t, w, &views)
 	if len(views) != 1 {
 		t.Fatalf("the listing holds %d items, want 1", len(views))
@@ -247,7 +247,7 @@ func TestASensitiveItemStillReportsWhetherItsRowExists(t *testing.T) {
 			if w.Code != http.StatusOK {
 				t.Fatalf("the request ended with %d: %s", w.Code, w.Body.String())
 			}
-			var views []settingView
+			var views []SettingsAdminSetting
 			decode(t, w, &views)
 			if len(views) != 1 {
 				t.Fatalf("the listing holds %d items, want 1", len(views))
@@ -278,7 +278,7 @@ func TestANamespaceGroupIsShownAndAnEmptyOneIsA404(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("the request ended with %d: %s", w.Code, w.Body.String())
 		}
-		var views []settingView
+		var views []SettingsAdminSetting
 		decode(t, w, &views)
 		if len(views) != 1 || views[0].Key != "ratelimit.window" {
 			t.Fatalf("the group holds %+v, want only ratelimit.window", views)
@@ -291,7 +291,7 @@ func TestANamespaceGroupIsShownAndAnEmptyOneIsA404(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("the request ended with %d: %s", w.Code, w.Body.String())
 		}
-		var views []settingView
+		var views []SettingsAdminSetting
 		decode(t, w, &views)
 		if len(views) != 1 || views[0].Key != "authn.session.idle-timeout" {
 			t.Fatalf("the group holds %+v, want only the session item", views)
@@ -326,7 +326,7 @@ func TestASensitiveItemsValueIsMasked(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("%s ended with %d: %s", target, w.Code, w.Body.String())
 		}
-		var views []settingView
+		var views []SettingsAdminSetting
 		decode(t, w, &views)
 		if len(views) != 1 {
 			t.Fatalf("%s holds %d items, want 1", target, len(views))

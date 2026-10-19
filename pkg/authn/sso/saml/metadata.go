@@ -1,6 +1,7 @@
 package saml
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/pem"
 	"encoding/xml"
@@ -9,21 +10,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	saml2 "github.com/russellhaering/gosaml2"
 	"github.com/russellhaering/gosaml2/types"
 	dsigtypes "github.com/russellhaering/goxmldsig/types"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/mount"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// metadataPath is the route this module mounts, relative to the base path. The
-// provider segment is an enterprise provider's identifier.
-const metadataPath = "/sso/saml/:provider/metadata"
-
-// callbackPathFmt is the engine's callback route, relative to the base path,
+// callbackPathPrefix is the engine's callback route, relative to the base path,
 // which the ACS address is derived from.
 const callbackPathPrefix = "/callback/"
+
+// typePrefix starts the Problem.Type of every failure this capability's handlers
+// write, the code following it being one of mount's closed table.
+const typePrefix = "urn:speed:authn:"
 
 // metadataValidity is how long the published metadata is declared valid.
 const metadataValidity = 7 * 24 * time.Hour
@@ -46,40 +48,60 @@ func (p *product) acsURL(id string) string {
 }
 
 // mountMetadata registers the service provider metadata route as a public one.
+// The route is registered from the operation that declares it, so the handler's
+// input and answer types, the fragment and the route are one source. The
+// declaration writes the route against the module's API root, and the relative
+// form is derived from the default base rather than the configured one: a
+// configured base moves the routes without moving the contract, so the mounter
+// joins its own base to a path that is already relative.
 func (p *product) mountMetadata() {
-	p.mounter.Public(http.MethodGet, metadataPath, p.serveMetadata)
+	rel, err := mount.RelativePath(mount.DefaultBasePath, samlSpec.ResolvePath(metadataOperation.Path))
+	if err != nil {
+		panic(diagnosticPrefix + ModuleName + ": " + err.Error())
+	}
+	p.mounter.Public(http.MethodGet, rel, metadataOperation.Handle(p.serveMetadata))
 }
 
 // serveMetadata answers one provider's service provider metadata. A provider
 // that does not exist, is disabled or is not a SAML provider is answered a
 // not-found: there is no service provider to describe.
-func (p *product) serveMetadata(c *gin.Context) {
-	id := c.Param("provider")
-	ctx := c.Request.Context()
-	row, err := p.providers.Get(ctx, id)
+func (p *product) serveMetadata(ctx context.Context, in metadataInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	row, err := p.providers.Get(ctx, in.Provider)
 	switch {
 	case errors.Is(err, authn.ErrProviderNotFound):
-		c.Status(http.StatusNotFound)
-		return
+		return notFoundReply(), nil
 	case err != nil:
-		c.Status(http.StatusServiceUnavailable)
-		return
+		return nil, unavailableFault()
 	}
 	if !row.Enabled || row.Protocol != providerProtocol {
-		c.Status(http.StatusNotFound)
-		return
+		return notFoundReply(), nil
 	}
 	doc, err := p.metadataEntity(row)
 	if err != nil {
-		c.Status(http.StatusNotFound)
-		return
+		return notFoundReply(), nil
 	}
 	body, err := xml.MarshalIndent(doc, "", "  ")
 	if err != nil {
-		c.Status(http.StatusInternalServerError)
-		return
+		return nil, speedhttp.Fault{Status: http.StatusInternalServerError}
 	}
-	c.Data(http.StatusOK, contentTypeMetadata, append([]byte(xml.Header), body...))
+	return speedhttp.BytesReply(http.StatusOK, contentTypeMetadata, append([]byte(xml.Header), body...)), nil
+}
+
+// notFoundReply is the refusal of a route whose named provider has no service
+// provider to describe. It carries no problem code: the capability's closed code
+// set has none for a not-found, and the design answers one bare, as an empty
+// reply with neither a body nor a content type.
+func notFoundReply() speedhttp.Reply {
+	return speedhttp.EmptyReply(http.StatusNotFound)
+}
+
+// unavailableFault is the refusal of a route whose provider register could not
+// be reached. The cause stays in the log and never reaches the caller.
+func unavailableFault() error {
+	return speedhttp.Fault{
+		Status: http.StatusServiceUnavailable,
+		Type:   typePrefix + mount.CodeUnavailable,
+	}
 }
 
 // metadataEntity builds one provider's entity descriptor: the entity identifier
