@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createI18n, type MissingKeyDetails } from './index'
 import {
   PLATFORM_ERRORS_NAMESPACE,
+  assertPlatformErrorBundleKeySet,
   platformErrorResources,
   registerPlatformErrors,
 } from './platform-errors'
@@ -216,5 +217,26 @@ describe('the bundle contents', () => {
         expect(placeholder[1], code).toMatch(/^[A-Za-z_]\w*$/)
       }
     }
+  })
+
+  it('accepts the packaged bundle and refuses one missing a code', () => {
+    const en = platformErrorResources['en-US']!
+    expect(() => assertPlatformErrorBundleKeySet('en-US', en)).not.toThrow()
+    const partial: ResourceBundle = { errors: { authn: { invalid_credentials: 'x' } } }
+    expect(() => assertPlatformErrorBundleKeySet('fr-FR', partial)).toThrow(
+      /packaged key set/,
+    )
+  })
+
+  it('refuses a bundle carrying a code the packaged one lacks', () => {
+    const en = platformErrorResources['en-US'] as {
+      readonly errors: Readonly<Record<string, string>>
+    }
+    const withExtra = {
+      errors: { ...en.errors, invented_code: 'x' },
+    }
+    expect(() => assertPlatformErrorBundleKeySet('en-US', withExtra)).toThrow(
+      /not in the packaged bundle/,
+    )
   })
 })

@@ -56,6 +56,46 @@ function listPaths(paths: readonly string[]): string {
 }
 
 /**
+ * Refuse a bundle that does not carry the packaged platform-error key set.
+ *
+ * A host registering an overlaid `platformErrorResources` (see
+ * `overlayResources`) goes through the same lookup table as the package,
+ * so a leaf the package drops or a code the host invents would render as a
+ * raw key at runtime. The comparison is against the packaged en-US bundle,
+ * not another registered language, so an instance whose supported set omit
+ * the shipped pair is still checked. `language` only names the bundle in
+ * the message.
+ */
+export function assertPlatformErrorBundleKeySet(
+  language: string,
+  bundle: ResourceBundle,
+): void {
+  const reference = platformErrorResources['en-US']
+  if (reference === undefined) {
+    return
+  }
+  const referenceLeaves = new Set<string>()
+  collectLeafPaths(reference, '', referenceLeaves, PLATFORM_ERRORS_NAMESPACE)
+  const leaves = new Set<string>()
+  collectLeafPaths(bundle, '', leaves, PLATFORM_ERRORS_NAMESPACE)
+  const missingKeys = [...referenceLeaves]
+    .filter((path) => !leaves.has(path))
+    .sort()
+  const addedKeys = [...leaves].filter((path) => !referenceLeaves.has(path)).sort()
+  if (missingKeys.length > 0 || addedKeys.length > 0) {
+    throw new Error(
+      `[speed-i18n] the platform error bundle for "${language}" must carry ` +
+        'the packaged key set' +
+        (missingKeys.length > 0 ? `; missing ${listPaths(missingKeys)}` : '') +
+        (addedKeys.length > 0
+          ? `; not in the packaged bundle ${listPaths(addedKeys)}`
+          : '') +
+        '. The bundle is the lookup table for the platform error codes.',
+    )
+  }
+}
+
+/**
  * Register the platform error bundle on the instance.
  *
  * Registration goes through registerNamespace, so the bundle's
@@ -111,40 +151,15 @@ export function registerPlatformErrors(
   // A supplied bundle is always compared to the packaged reference, not
   // only to the other registered languages: an instance whose supported
   // set omits the packaged pair still needs the whole code table.
-  const reference = platformErrorResources['en-US']
-  if (reference !== undefined) {
-    const referenceLeaves = new Set<string>()
-    collectLeafPaths(reference, '', referenceLeaves, PLATFORM_ERRORS_NAMESPACE)
-    for (const language of extraLanguages) {
-      const bundle = extra[language]
-      if (bundle === undefined) {
-        throw new Error(
-          `[speed-i18n] the extra platform error bundle for "${language}" is ` +
-            'missing: the extra record names the language without a bundle.',
-        )
-      }
-      const leaves = new Set<string>()
-      collectLeafPaths(bundle, '', leaves, PLATFORM_ERRORS_NAMESPACE)
-      const missingKeys = [...referenceLeaves]
-        .filter((path) => !leaves.has(path))
-        .sort()
-      const addedKeys = [...leaves]
-        .filter((path) => !referenceLeaves.has(path))
-        .sort()
-      if (missingKeys.length > 0 || addedKeys.length > 0) {
-        throw new Error(
-          `[speed-i18n] the extra platform error bundle for "${language}" must ` +
-            'carry the packaged key set' +
-            (missingKeys.length > 0
-              ? `; missing ${listPaths(missingKeys)}`
-              : '') +
-            (addedKeys.length > 0
-              ? `; not in the packaged bundle ${listPaths(addedKeys)}`
-              : '') +
-            '. The bundle is the lookup table for the platform error codes.',
-        )
-      }
+  for (const language of extraLanguages) {
+    const bundle = extra[language]
+    if (bundle === undefined) {
+      throw new Error(
+        `[speed-i18n] the extra platform error bundle for "${language}" is ` +
+          'missing: the extra record names the language without a bundle.',
+      )
     }
+    assertPlatformErrorBundleKeySet(language, bundle)
   }
   const missing = supported.filter(
     (language) =>
