@@ -28,6 +28,11 @@ GATED_TEST_TAGS := review
 # own package.
 REVIEW_MODULES := $(shell paths='$(strip $(MODULES))'; if [ -n "$$paths" ]; then grep -rlE --include='*.go' '^//go:build .*review' $$paths 2>/dev/null | sed -E 's|/[^/]+$$||' | sort -u; fi)
 
+# The packages that carry an OpenAPI generation test. A package without one
+# declares no API document, and running the generator's pattern there would
+# build every test binary for nothing.
+FRAGMENT_PACKAGES := $(shell paths='$(strip $(MODULES))'; if [ -n "$$paths" ]; then grep -rl --include='openapi_generated_test.go' '^package ' $$paths 2>/dev/null | sed -E 's|/[^/]+$$||' | sort -u; fi)
+
 # Every tools/check_*.py is a gate over this tree: it takes no arguments, it
 # reports against the current directory, and it is run by `make repo-check`.
 # A script under tools/ that is not a gate carries another prefix.
@@ -45,7 +50,7 @@ PYTHON ?= python3
 each = for it in $(1); do echo "==> $(2) $$it"; $(3) || failed="$${failed:+$$failed; }$(2) $$it"; done
 each-end = if [ -n "$$failed" ]; then echo "failed: $$failed" >&2; exit 1; fi
 
-.PHONY: help modules deps-up deps-down build test test-race test-integration test-integration-race \
+.PHONY: help modules deps-up deps-down build api-docs test test-race test-integration test-integration-race \
         vet-integration vet-review test-review fmt lint tidy tidy-check repo-check tools-test check python-version \
         modules-present web-check web-a11y web-browser
 
@@ -58,6 +63,15 @@ modules: modules-present ## Print the module directories derived from go.work
 build: modules-present ## Build every module, both in the workspace and standalone
 	@failed=; $(call each,$(MODULES),build,go -C $$it build ./...); \
 	  $(call each,$(MODULES),build standalone,GOWORK=off go -C $$it build ./...); $(each-end)
+
+# The API document is a build product: a module's fragment comes from its
+# operation declarations, and the merged contract comes from the fragments.
+# This regenerates both. `make check` holds the committed files to the
+# declarations, so a stale file fails there rather than here.
+api-docs: modules-present ## Regenerate every OpenAPI fragment and the merged contract
+	@failed=; $(call each,$(FRAGMENT_PACKAGES),fragment,env UPDATE_FRAGMENTS=1 go -C $$it test ./... -run '^TestTheFragmentIsGeneratedFromTheDeclarations$$' -count=1); $(each-end)
+	@go -C starters/demo/server run . --config file:testdata/sqlite-memory.yaml sqlite-memory gen \
+	  --title speed -o ../../../contracts/api.json --features ../../../contracts/features.json
 
 # The four backends the integration cases run against -- PostgreSQL, Redis,
 # NATS and memcached -- are the test environment, not part of the tests: the
