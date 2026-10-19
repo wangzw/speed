@@ -56,9 +56,21 @@
  * which case the screen fires no read of its own. The deprecated
  * `channels` / `defaultChannel` props still narrow and select the form
  * channels for one major.
+ *
+ * The screen is assembleable: `order` puts the four channel classes in the
+ * host's order (a class left out keeps its default position after the
+ * listed ones), and the first class actually rendered heads the surface
+ * with the "or"-less divider wording. `slots` opens the two places a host
+ * commonly adds content (above the channels, below the forms), and
+ * `providerIcon` supplies each redirect method's mark. `mode` is
+ * uncontrolled until `onModeChange` is given: then the prop is the only
+ * source of the presented mode and the register / sign-in switch merely
+ * reports its choice to the host, which re-renders with the new mode.
+ * `beforeStart` decides per attempt whether a channel's first flow may
+ * begin (a false answer starts nothing and renders no error).
  */
 
-import { useEffect, useId, useState } from 'react'
+import { Fragment, useEffect, useId, useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -88,12 +100,38 @@ import type { SignInDiscovery } from './internal/use-signin-discovery.js'
 import { methodLabel } from './internal/labels.js'
 import { InlineError } from './internal/inline-error.js'
 import { useAuthUiTranslation } from './internal/translation.js'
+import { GroupHeadingProvider } from './internal/group-heading.js'
+import type { HeadingLevel } from './internal/heading.js'
+import type {
+  SignInBeforeStart,
+  SignInMode,
+  SignInStartContext,
+} from './internal/start-gate.js'
 
 /** The form-channel names the deprecated override recognises. */
 export type SignInChannel = 'password' | 'sms'
 
-/** The presentational mode of the surface (both run the one sign-in flow). */
-export type SignInMode = 'sign-in' | 'register'
+export type { SignInBeforeStart, SignInMode, SignInStartContext }
+
+/** A channel class the screen assembles, in the order it renders them. */
+export type SignInGroup = 'form' | 'redirect' | 'enterprise' | 'webauthn'
+
+/** The order the screen renders the channel classes in when `order` is
+ * omitted. */
+const DEFAULT_GROUP_ORDER: readonly SignInGroup[] = [
+  'form',
+  'redirect',
+  'enterprise',
+  'webauthn',
+]
+
+/** The two places a host commonly adds its own content. */
+export interface SignInScreenSlots {
+  /** Rendered above the channel classes, below the mode header. */
+  readonly aboveChannels?: ReactNode
+  /** Rendered below the form channels (and their account sentence). */
+  readonly belowForms?: ReactNode
+}
 
 /**
  * What a completion on this screen reports to the host: the mode the
@@ -130,15 +168,38 @@ export interface SignInScreenProps {
    * SSR pass, a test). When given the screen fires no `listMethods` read.
    */
   readonly discovery?: AuthnMethodList
-  /** The presentational mode; `'sign-in'` by default. */
+  /** The presentational mode; `'sign-in'` by default. Controlled when
+   * `onModeChange` is given (see there). */
   readonly mode?: SignInMode
+  /** Fired when the register / sign-in switch is activated. Giving it makes
+   * `mode` the only source of the presented mode: the switch reports the
+   * choice and the host re-renders with it, instead of the screen keeping
+   * its own state. */
+  readonly onModeChange?: (mode: SignInMode) => void
   /** Fired once after a sign-in commits on a channel this screen drives,
    * with the mode and the channel's method name; the host decides what
    * follows. A host that ignores the argument is unaffected. */
   readonly onSignedIn?: (context: SignInContext) => void
+  /**
+   * Decides whether a channel's first flow may begin. A false answer
+   * starts nothing and renders no error; the flow's later steps are not
+   * gated. The context carries the method and the presented mode.
+   */
+  readonly beforeStart?: SignInBeforeStart
   /** The redirect / enterprise block of the screen; omitted to run without
    * one. */
   readonly social?: SocialSignInOptions
+  /** Host content in the screen's two open places (see SignInScreenSlots). */
+  readonly slots?: SignInScreenSlots
+  /** The order of the channel classes. A class left out keeps its default
+   * position after the listed ones. The first class rendered heads the
+   * surface with the "or"-less divider wording. */
+  readonly order?: readonly SignInGroup[]
+  /** The heading element the register-mode title renders as; `'h2'` by
+   * default (the screen normally sits under the host's page heading). */
+  readonly headingLevel?: HeadingLevel
+  /** The mark rendered before a redirect method's label. */
+  readonly providerIcon?: (provider: SocialProvider) => ReactNode
   /**
    * The form channels to offer, by name.
    * @deprecated The channels now come from the discovery document; this
@@ -160,8 +221,14 @@ export function SignInScreen({
   session,
   discovery,
   mode = 'sign-in',
+  onModeChange,
   onSignedIn,
+  beforeStart,
   social,
+  slots,
+  order,
+  headingLevel = 'h2',
+  providerIcon,
   channels,
   defaultChannel = 'password',
 }: SignInScreenProps) {
@@ -173,10 +240,28 @@ export function SignInScreen({
   })
   const state: SignInDiscovery =
     discovery === undefined ? fetched : { status: 'ready', discovery }
-  const [activeMode, setActiveMode] = useState<SignInMode>(mode)
+  // Uncontrolled by default: the screen switches its own mode. When the
+  // host takes the switch (`onModeChange` given), `mode` is the only
+  // source and the internal copy is never consulted.
+  const [internalMode, setInternalMode] = useState<SignInMode>(mode)
   useEffect(() => {
-    setActiveMode(mode)
+    setInternalMode(mode)
   }, [mode])
+  const controlledMode = onModeChange !== undefined
+  const activeMode = controlledMode ? mode : internalMode
+  const requestMode = (next: SignInMode): void => {
+    if (controlledMode) {
+      onModeChange?.(next)
+    } else {
+      setInternalMode(next)
+    }
+  }
+  // The screen's start gate: the same decision for every channel, with
+  // the mode the screen currently presents added to the context.
+  const startGate: SignInBeforeStart | undefined =
+    beforeStart === undefined
+      ? undefined
+      : (context) => beforeStart({ ...context, mode: activeMode })
   // The id base of the tab/tabpanel pair per form channel: each channel's
   // tab names its panel through aria-controls, and the panel -- the
   // mounted form, unmounted on switch -- answers through aria-labelledby.
@@ -324,6 +409,7 @@ export function SignInScreen({
         return (
           <PasswordSignInForm
             session={session}
+            beforeStart={startGate}
             onSignedIn={() => completed('password')}
           />
         )
@@ -331,6 +417,7 @@ export function SignInScreen({
         return (
           <SMSSignInForm
             session={session}
+            beforeStart={startGate}
             onSignedIn={() => completed('sms')}
           />
         )
@@ -340,31 +427,18 @@ export function SignInScreen({
             session={session}
             method={method.name}
             fields={method.fields ?? []}
+            beforeStart={startGate}
             onSignedIn={() => completed(method.name)}
           />
         )
     }
   }
 
-  return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%' }}>
-      {activeMode === 'register' ? (
-        <>
-          <Typography variant="h6" component="h2">
-            {t('mode.registerTitle')}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {t('mode.registerHint')}
-          </Typography>
-          <Button variant="text" onClick={() => setActiveMode('sign-in')}>
-            {t('mode.signInEntry')}
-          </Button>
-        </>
-      ) : registerVisible ? (
-        <Button variant="text" onClick={() => setActiveMode('register')}>
-          {t('mode.registerEntry')}
-        </Button>
-      ) : null}
+  // The form class: the strip (when there is a choice), the selected
+  // form, the sign-in-mode account sentence, and the host's below-forms
+  // slot.
+  const formBlock = (
+    <>
       {visibleForms.length > 1 ? (
         <Tabs
           value={selected}
@@ -399,28 +473,93 @@ export function SignInScreen({
           {t('mode.signInAccountHint')}
         </Typography>
       ) : null}
-      {redirectConfigs.length > 0 ? (
-        <SocialSignInSection
-          session={session}
-          providers={redirectConfigs}
-          onAuthorizeUrl={social?.onAuthorizeUrl}
-        />
+      {slots?.belowForms}
+    </>
+  )
+
+  // The discovery order runs the classes; a class the host left out keeps
+  // its default position after the listed ones, so a partial order cannot
+  // silently drop a channel set. The first class actually rendered heads
+  // the surface, and its divider drops the "or" that would refer to
+  // nothing above it.
+  const requestedOrder = order ?? DEFAULT_GROUP_ORDER
+  const groupOrder: readonly SignInGroup[] = [
+    ...Array.from(new Set(requestedOrder)),
+    ...DEFAULT_GROUP_ORDER.filter((group) => !requestedOrder.includes(group)),
+  ]
+  const hasGroup: Record<SignInGroup, boolean> = {
+    form: visibleForms.length > 0,
+    redirect: redirectConfigs.length > 0,
+    enterprise: visibleEnterprise.length > 0,
+    webauthn: visibleWebauthn.length > 0,
+  }
+  const firstGroup = groupOrder.find((group) => hasGroup[group]) ?? null
+
+  const renderGroup = (group: SignInGroup): ReactNode => {
+    const headingVariant = group === firstGroup ? 'plain' : 'or'
+    switch (group) {
+      case 'form':
+        return <Fragment key="form">{formBlock}</Fragment>
+      case 'redirect':
+        return (
+          <GroupHeadingProvider key="redirect" value={headingVariant}>
+            <SocialSignInSection
+              session={session}
+              providers={redirectConfigs}
+              onAuthorizeUrl={social?.onAuthorizeUrl}
+              providerIcon={providerIcon}
+              beforeStart={startGate}
+            />
+          </GroupHeadingProvider>
+        )
+      case 'enterprise':
+        return (
+          <EnterpriseSignIn
+            key="enterprise"
+            session={session}
+            returnTo={social?.returnTo}
+            onAuthorizeUrl={social?.onAuthorizeUrl}
+            beforeStart={startGate}
+          />
+        )
+      case 'webauthn':
+        return (
+          <GroupHeadingProvider key="webauthn" value={headingVariant}>
+            {visibleWebauthn.map((method) => (
+              <PasskeySignIn
+                key={method.name}
+                session={session}
+                method={method}
+                beforeStart={startGate}
+                onSignedIn={() => completed(method.name)}
+              />
+            ))}
+          </GroupHeadingProvider>
+        )
+    }
+  }
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%' }}>
+      {activeMode === 'register' ? (
+        <>
+          <Typography variant="h6" component={headingLevel}>
+            {t('mode.registerTitle')}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {t('mode.registerHint')}
+          </Typography>
+          <Button variant="text" onClick={() => requestMode('sign-in')}>
+            {t('mode.signInEntry')}
+          </Button>
+        </>
+      ) : registerVisible ? (
+        <Button variant="text" onClick={() => requestMode('register')}>
+          {t('mode.registerEntry')}
+        </Button>
       ) : null}
-      {visibleEnterprise.length > 0 ? (
-        <EnterpriseSignIn
-          session={session}
-          returnTo={social?.returnTo}
-          onAuthorizeUrl={social?.onAuthorizeUrl}
-        />
-      ) : null}
-      {visibleWebauthn.map((method) => (
-        <PasskeySignIn
-          key={method.name}
-          session={session}
-          method={method}
-          onSignedIn={() => completed(method.name)}
-        />
-      ))}
+      {slots?.aboveChannels}
+      {groupOrder.filter((group) => hasGroup[group]).map(renderGroup)}
     </Box>
   )
 }

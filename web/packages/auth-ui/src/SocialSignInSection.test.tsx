@@ -333,4 +333,96 @@ describe('SocialSignInSection', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(harness.calls).toHaveLength(2)
   })
+
+  it('consult the host’s start gate: a refusal begins no flow and renders no error', async () => {
+    const harness = makeHarness({})
+    const beforeStart = vi.fn(() => false)
+    const onAuthorizeUrl = vi.fn()
+    renderWithProviders(
+      <SocialSignInSection
+        session={harness.session}
+        providers={PROVIDERS}
+        onAuthorizeUrl={onAuthorizeUrl}
+        beforeStart={beforeStart}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.social.provider.google }),
+    )
+    await waitFor(() =>
+      expect(beforeStart).toHaveBeenCalledWith({ method: 'google' }),
+    )
+    expect(harness.calls).toHaveLength(0)
+    expect(onAuthorizeUrl).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('keep the provider button disabled while an async start gate is pending', async () => {
+    const harness = makeHarness({
+      [LOGIN_START]: () => redirectFlow(GOOGLE_AUTH_URL),
+    })
+    let release: (allowed: boolean) => void = () => {}
+    const beforeStart = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          release = resolve
+        }),
+    )
+    const onAuthorizeUrl = vi.fn()
+    renderWithProviders(
+      <SocialSignInSection
+        session={harness.session}
+        providers={PROVIDERS}
+        onAuthorizeUrl={onAuthorizeUrl}
+        beforeStart={beforeStart}
+      />,
+    )
+    const user = userEvent.setup()
+    const button = screen.getByRole('button', {
+      name: zhCN.social.provider.google,
+    })
+    await user.click(button)
+    await waitFor(() => expect(beforeStart).toHaveBeenCalledTimes(1))
+    // The gate has not answered yet: its own provider button is busy, so
+    // a second click cannot pass the same gate and start another flow.
+    expect(button).toBeDisabled()
+    expect(harness.calls).toHaveLength(0)
+    await act(async () => {
+      release(true)
+    })
+    await waitFor(() => expect(onAuthorizeUrl).toHaveBeenCalledTimes(1))
+    expect(harness.calls).toHaveLength(1)
+  })
+
+  it('render a provider’s mark from its config, else from the host lookup', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SocialSignInSection
+        session={harness.session}
+        providers={[
+          {
+            provider: 'google',
+            redirectUri: CALLBACK_URI,
+            icon: <span data-testid="mark-config" />,
+          },
+          { provider: 'github', redirectUri: CALLBACK_URI },
+        ]}
+        providerIcon={(provider) => (
+          <span data-testid={`mark-lookup-${provider}`} />
+        )}
+      />,
+    )
+    // The config's own icon wins; the lookup covers the rest.
+    expect(
+      screen
+        .getByRole('button', { name: zhCN.social.provider.google })
+        .querySelector('[data-testid="mark-config"]'),
+    ).not.toBeNull()
+    expect(
+      screen
+        .getByRole('button', { name: zhCN.social.provider.github })
+        .querySelector('[data-testid="mark-lookup-github"]'),
+    ).not.toBeNull()
+  })
 })

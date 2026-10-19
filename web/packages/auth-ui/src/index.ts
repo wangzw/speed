@@ -58,15 +58,23 @@ export {
 export {
   SignInScreen,
   type SignInChannel,
+  type SignInBeforeStart,
   type SignInContext,
+  type SignInGroup,
   type SignInMode,
-  type SocialSignInOptions,
   type SignInScreenProps,
+  type SignInScreenSlots,
+  type SignInStartContext,
+  type SocialSignInOptions,
 } from './SignInScreen.js'
 export {
   SignOutButton,
   type SignOutButtonProps,
 } from './SignOutButton.js'
+export {
+  SignOutMenuItem,
+  type SignOutMenuItemProps,
+} from './SignOutMenuItem.js'
 export {
   SessionEndedScreen,
   type SessionEndedScreenProps,
@@ -86,9 +94,13 @@ export {
 export {
   ImpersonationEndMenuItem,
   ImpersonationIndicator,
+  ImpersonationNoticeBanner,
+  ImpersonationNoticeIndicator,
   ImpersonationNoticeProvider,
   useImpersonationNotice,
   type ImpersonationEndMenuItemProps,
+  type ImpersonationIndicatorProps,
   type ImpersonationNotice,
+  type ImpersonationNoticeBannerProps,
   type ImpersonationNoticeProviderProps,
 } from './ImpersonationNotice.js'

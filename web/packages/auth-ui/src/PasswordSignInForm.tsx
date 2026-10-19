@@ -52,12 +52,18 @@ import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
 import { FlowStepFields } from './internal/flow-step.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
+import type { SignInBeforeStart } from './internal/start-gate.js'
 
 export interface PasswordSignInFormProps {
   /** The session the password login drives. */
   readonly session: AuthSession
   /** Fired once after a password login commits; the host navigates. */
   readonly onSignedIn?: () => void
+  /**
+   * Decides whether the password flow may begin. Returning false starts
+   * nothing and renders no error; only the first step is gated.
+   */
+  readonly beforeStart?: SignInBeforeStart
 }
 
 interface PasswordFields {
@@ -72,6 +78,7 @@ const LOGIN_FAILED = 'authn.login_failed'
 export function PasswordSignInForm({
   session,
   onSignedIn,
+  beforeStart,
 }: PasswordSignInFormProps) {
   const { t } = useAuthUiTranslation()
   const form = useForm<PasswordFields>({
@@ -88,6 +95,7 @@ export function PasswordSignInForm({
   const passwordInput = useRef<HTMLInputElement>(null)
 
   const driver = useFlowDriver(session, {
+    beforeStart,
     onFailure: (code) => {
       if (code === LOGIN_FAILED && credentialsMounted.current) {
         // The password field carries the refusal: the same helper-text

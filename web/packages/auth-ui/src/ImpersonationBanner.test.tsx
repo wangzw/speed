@@ -20,7 +20,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from '@speed/i18n'
-import { AppThemeProvider } from '@speed/ui-kit'
+import { AppThemeProvider, DisplayTimeZoneProvider } from '@speed/ui-kit'
 import { emittedStyleText } from '@speed/test-utils/emitted-css'
 import {
   ImpersonationBanner,
@@ -168,6 +168,38 @@ describe('ImpersonationBanner', () => {
     ).toBeInTheDocument()
   })
 
+  it('render the expiry in the host’s display time zone', () => {
+    const formatter = (timeZone: string): string =>
+      new Intl.DateTimeFormat('zh-CN', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone,
+      }).format(EXPIRES_AT)
+    // The two zones render the instant differently, so the assertion
+    // below discriminates the provider's effect.
+    expect(formatter('Asia/Shanghai')).not.toBe(formatter('UTC'))
+    renderWithProviders(
+      <DisplayTimeZoneProvider timeZone="Asia/Shanghai">
+        <ImpersonationBanner
+          impersonation={{ subject: SUBJECT, expiresAt: EXPIRES_AT }}
+          onEnd={() => {}}
+        />
+      </DisplayTimeZoneProvider>,
+    )
+    const notice = screen.getByRole('region', {
+      name: zhCN.impersonation.regionLabel,
+    })
+    expect(notice).toHaveTextContent(
+      zhCN.impersonation.expiresAt.replace(
+        '{{expiresAt}}',
+        formatter('Asia/Shanghai'),
+      ),
+    )
+    expect(notice).not.toHaveTextContent(
+      zhCN.impersonation.expiresAt.replace('{{expiresAt}}', formatter('UTC')),
+    )
+  })
+
   it('announces the start when an impersonation appears after mount', async () => {
     function Host() {
       const [impersonation, setImpersonation] =
@@ -270,6 +302,28 @@ describe('ImpersonationBanner', () => {
         impersonation={{ subject: SUBJECT, expiresAt: new Date('nope') }}
         onEnd={() => {}}
       />,
+    )
+    const notice = screen.getByRole('region', {
+      name: zhCN.impersonation.regionLabel,
+    })
+    expect(notice).toHaveTextContent(ACTING_AS_ZH)
+    expect(notice).not.toHaveTextContent(EXPIRY_LABEL_ZH)
+    expect(
+      screen.getByRole('button', { name: zhCN.impersonation.end }),
+    ).toBeEnabled()
+  })
+
+  it('renders the banner when the host’s display time zone is not an IANA name', () => {
+    // The provider forwards the host's value unvalidated, and the engine
+    // rejects an unknown zone with a RangeError; the banner must survive
+    // it and simply omit the expiry line.
+    renderWithProviders(
+      <DisplayTimeZoneProvider timeZone="Asia/Shangai">
+        <ImpersonationBanner
+          impersonation={{ subject: SUBJECT, expiresAt: EXPIRES_AT }}
+          onEnd={() => {}}
+        />
+      </DisplayTimeZoneProvider>,
     )
     const notice = screen.getByRole('region', {
       name: zhCN.impersonation.regionLabel,

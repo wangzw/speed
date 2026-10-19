@@ -33,9 +33,18 @@
  * callback route -- where the provider's round trip lands the browser
  * after the server handled it -- and it is sent as the flow's `return_to`
  * so the callback comes back to it.
+ *
+ * Each provider's mark is the host's: a config may carry its own `icon`,
+ * and the section's `providerIcon` lookup covers providers the host does
+ * not enumerate. A `beforeStart` gate may refuse the flow's start; a
+ * refused start sends nothing and renders no error. The divider heading
+ * follows the enclosing screen's group order (the first group drops the
+ * "or" that would refer to nothing above it); standalone, it keeps the
+ * default wording.
  */
 
 import { useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
@@ -45,6 +54,9 @@ import { methodLabel } from './internal/labels.js'
 import { errorCodeOf } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 import { isOpenFlow } from './internal/flow.js'
+import { useGroupHeadingVariant } from './internal/group-heading.js'
+import { allowedToStart } from './internal/start-gate.js'
+import type { SignInBeforeStart } from './internal/start-gate.js'
 
 /** A redirect sign-in method's name. The set is the deployment's: the
  * discovery document names the redirect methods, so this is a method name
@@ -63,6 +75,9 @@ export interface SocialProviderConfig {
   /** The host callback route sent as the flow's `return_to`; empty lets the
    * server use its configured default. */
   readonly redirectUri: string
+  /** The provider's own mark, rendered before its label. A config without
+   * one falls back to the section's `providerIcon` lookup. */
+  readonly icon?: ReactNode
 }
 
 export interface SocialSignInSectionProps {
@@ -76,6 +91,17 @@ export interface SocialSignInSectionProps {
    * (a caller that only exercises the request path).
    */
   readonly onAuthorizeUrl?: (provider: SocialProvider, authorizeUrl: string) => void
+  /**
+   * The provider's mark for one channel, rendered before its label. A
+   * config's own `icon` wins; this lookup covers provider sets the host
+   * does not enumerate itself (the discovery-derived ones).
+   */
+  readonly providerIcon?: (provider: SocialProvider) => ReactNode
+  /**
+   * Decides whether a channel's flow may begin. Returning false starts
+   * nothing and renders no error; only the first step is gated.
+   */
+  readonly beforeStart?: SignInBeforeStart
 }
 
 /** The protocol code an answer that is not the expected redirect step
@@ -86,8 +112,11 @@ export function SocialSignInSection({
   session,
   providers,
   onAuthorizeUrl,
+  providerIcon,
+  beforeStart,
 }: SocialSignInSectionProps) {
   const { t } = useAuthUiTranslation()
+  const headingVariant = useGroupHeadingVariant()
   // One busy slot per provider, never a single shared value: two
   // overlapping flights (two provider buttons clicked in quick
   // succession -- each flight's own button is the only one it locks)
@@ -103,12 +132,26 @@ export function SocialSignInSection({
   const attemptsRef = useRef(0)
 
   const authorize = async (config: SocialProviderConfig): Promise<void> => {
-    const attempt = ++attemptsRef.current
     const provider = config.provider
+    // Take the provider's busy slot before the gate resolves as well: an
+    // async gate suspends under the same disabled button, so a second
+    // click cannot pass the gate and begin a second flow.
+    setBusyProviders((previous) => new Set(previous).add(provider))
+    // The gate decides whether this channel's flow begins; a refusal
+    // starts nothing, leaves any standing banner alone and renders no
+    // error of its own.
+    if (!(await allowedToStart(beforeStart, { method: provider }))) {
+      setBusyProviders((previous) => {
+        const next = new Set(previous)
+        next.delete(provider)
+        return next
+      })
+      return
+    }
+    const attempt = ++attemptsRef.current
     // The newest attempt owns the banner: a new attempt clears any
     // failure an older attempt left behind.
     setErrorCode(null)
-    setBusyProviders((previous) => new Set(previous).add(provider))
     let authorizeUrl: string | null = null
     let failure: string | null = null
     try {
@@ -160,19 +203,25 @@ export function SocialSignInSection({
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}>
       <Divider textAlign="center" sx={{ color: 'text.secondary' }}>
-        {t('social.title')}
+        {t(
+          headingVariant === 'plain' ? 'social.titleFirst' : 'social.title',
+        )}
       </Divider>
-      {providers.map((config) => (
-        <Button
-          key={config.provider}
-          variant="outlined"
-          fullWidth
-          disabled={busyProviders.has(config.provider)}
-          onClick={() => void authorize(config)}
-        >
-          {methodLabel({ name: config.provider, label: config.label }, t)}
-        </Button>
-      ))}
+      {providers.map((config) => {
+        const icon = config.icon ?? providerIcon?.(config.provider)
+        return (
+          <Button
+            key={config.provider}
+            variant="outlined"
+            fullWidth
+            startIcon={icon}
+            disabled={busyProviders.has(config.provider)}
+            onClick={() => void authorize(config)}
+          >
+            {methodLabel({ name: config.provider, label: config.label }, t)}
+          </Button>
+        )
+      })}
       <InlineError code={errorCode} />
     </Box>
   )

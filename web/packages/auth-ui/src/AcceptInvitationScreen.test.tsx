@@ -12,6 +12,7 @@ import { AcceptInvitationScreen } from './AcceptInvitationScreen.js'
 import type { InvitationOperations } from './AcceptInvitationScreen.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import { DisplayTimeZoneProvider } from '@speed/ui-kit'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
@@ -209,5 +210,119 @@ describe('AcceptInvitationScreen', () => {
       name: zhCN.acceptInvitation.accept,
     })
     await expectNoAxeViolations()
+  })
+
+  it('render only the new-account inputs the host keeps', async () => {
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations()}
+        newAccountFields={{ displayName: false }}
+      />,
+    )
+    // The password input and the hint remain; the display name does not.
+    await screen.findByRole('button', { name: zhCN.acceptInvitation.accept })
+    expect(
+      screen.queryByLabelText(zhCN.acceptInvitation.displayNameLabel),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByLabelText(zhCN.acceptInvitation.passwordLabel),
+    ).toBeInTheDocument()
+    expect(screen.getByText(zhCN.acceptInvitation.newAccountHint)).toBeInTheDocument()
+  })
+
+  it('hide the hint when both new-account inputs are hidden', async () => {
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations()}
+        newAccountFields={{ displayName: false, password: false }}
+      />,
+    )
+    await screen.findByRole('button', { name: zhCN.acceptInvitation.accept })
+    expect(
+      screen.queryByLabelText(zhCN.acceptInvitation.displayNameLabel),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByLabelText(zhCN.acceptInvitation.passwordLabel),
+    ).not.toBeInTheDocument()
+    // A hint describing fields that are not there is not rendered.
+    expect(
+      screen.queryByText(zhCN.acceptInvitation.newAccountHint),
+    ).not.toBeInTheDocument()
+  })
+
+  it('render the titles at the host’s heading level, the confirmation one below', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations()}
+        headingLevel="h2"
+      />,
+    )
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: zhCN.acceptInvitation.title,
+      }),
+    ).toBeInTheDocument()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
+    )
+    // The confirmation continues the outline beneath the screen's title.
+    expect(
+      await screen.findByRole('heading', {
+        level: 3,
+        name: zhCN.acceptInvitation.accepted.title,
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('render the expiry in the host’s display time zone', async () => {
+    renderWithProviders(
+      <DisplayTimeZoneProvider timeZone="Asia/Shanghai">
+        <AcceptInvitationScreen token="tok-1" invitations={operations()} />
+      </DisplayTimeZoneProvider>,
+    )
+    const formatter = (timeZone: string): string =>
+      new Intl.DateTimeFormat('zh-CN', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone,
+      }).format(new Date(INVITATION.expiresAt))
+    const shanghai = formatter('Asia/Shanghai')
+    const utc = formatter('UTC')
+    // The two zones really do render the instant differently, so the
+    // assertion below discriminates the provider's effect.
+    expect(shanghai).not.toBe(utc)
+    expect(
+      await screen.findByText(
+        zhCN.acceptInvitation.expires.replace('{{expires}}', shanghai),
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(
+        zhCN.acceptInvitation.expires.replace('{{expires}}', utc),
+      ),
+    ).not.toBeInTheDocument()
+  })
+
+  it('omits the expiry line when the host’s display time zone is invalid', async () => {
+    // The host's zone is unvalidated: a stale or misspelled IANA name
+    // must degrade to no expiry line, never a label with no value
+    // beside it.
+    renderWithProviders(
+      <DisplayTimeZoneProvider timeZone="Asia/Shangai">
+        <AcceptInvitationScreen token="tok-1" invitations={operations()} />
+      </DisplayTimeZoneProvider>,
+    )
+    expect(
+      await screen.findByText(
+        zhCN.acceptInvitation.invited.replace('{{tenant}}', 'Acme'),
+      ),
+    ).toBeInTheDocument()
+    const emptyExpiry = zhCN.acceptInvitation.expires.replace('{{expires}}', '')
+    expect(screen.queryByText(emptyExpiry)).not.toBeInTheDocument()
   })
 })

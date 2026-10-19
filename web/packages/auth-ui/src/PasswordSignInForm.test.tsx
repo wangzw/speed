@@ -30,6 +30,7 @@ import {
   principal,
 } from '@speed/test-utils/session-harness'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import { createAppTheme } from '@speed/ui-kit'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
@@ -356,5 +357,46 @@ describe('PasswordSignInForm', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(onSignedIn).not.toHaveBeenCalled()
     expect(harness.store.get()).toBe('access-race')
+  })
+
+  it('consult the host’s start gate before beginning: a refusal sends nothing', async () => {
+    const harness = makeHarness({})
+    const beforeStart = vi.fn(() => false)
+    renderWithProviders(
+      <PasswordSignInForm session={harness.session} beforeStart={beforeStart} />,
+    )
+    await fillAndSubmit('alice@example.com', 's3cret-pass', ZH_LABELS)
+    await waitFor(() => expect(beforeStart).toHaveBeenCalledTimes(1))
+    // A standalone form has no presentational mode to report.
+    expect(beforeStart).toHaveBeenCalledWith({ method: 'password' })
+    expect(harness.calls).toHaveLength(0)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('render the TOTP setup URI in the theme’s mono stack', async () => {
+    // The enrollment step's otpauth_uri is rendered as a code block; the
+    // font family is the theme's mono entry, not a hardcoded literal.
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'enroll',
+          next: {
+            kind: 'webauthn',
+            options: { otpauth_uri: 'otpauth://totp/acme?secret=abc' },
+          },
+        }),
+    })
+    renderWithProviders(<PasswordSignInForm session={harness.session} />)
+    await fillAndSubmit('alice@example.com', 's3cret-pass', ZH_LABELS)
+    const uri = await screen.findByText(/otpauth:\/\/totp/)
+    const { theme } = createAppTheme()
+    // jsdom's computed value normalizes the quote style around family
+    // names; compare the stacks without quoting.
+    const unquote = (value: string): string => value.replace(/["']/g, '')
+    expect(unquote(getComputedStyle(uri).fontFamily)).toBe(
+      unquote(theme.typography.fontFamilyMono),
+    )
+    expect(getComputedStyle(uri).fontFamily).not.toBe('monospace')
   })
 })

@@ -44,6 +44,9 @@ import { InlineError } from './inline-error.js'
 import { FlowStepFields } from './flow-step.js'
 import { useFlowDriver } from './use-flow-driver.js'
 import { isOpenFlow } from './flow.js'
+import { useGroupHeadingVariant } from './group-heading.js'
+import { allowedToStart } from './start-gate.js'
+import type { SignInBeforeStart } from './start-gate.js'
 
 /** The protocol code an answer that is not the expected redirect step
  * renders (a contract-violating 2xx is not a successful start). */
@@ -62,6 +65,8 @@ export interface DescriptorSignInFormProps {
   readonly fields: readonly AuthnField[]
   /** Fired once after the login commits; the host navigates. */
   readonly onSignedIn?: () => void
+  /** Decides whether the method's flow may begin (see ./start-gate). */
+  readonly beforeStart?: SignInBeforeStart
 }
 
 export function DescriptorSignInForm({
@@ -69,6 +74,7 @@ export function DescriptorSignInForm({
   method,
   fields,
   onSignedIn,
+  beforeStart,
 }: DescriptorSignInFormProps) {
   const { t } = useAuthUiTranslation()
   const defaults: Record<string, string> = {}
@@ -79,6 +85,7 @@ export function DescriptorSignInForm({
   const [errorCode, setErrorCode] = useState<string | null>(null)
 
   const driver = useFlowDriver(session, {
+    beforeStart,
     onFailure: setErrorCode,
     onSettled: () => {
       try {
@@ -169,12 +176,15 @@ export interface EnterpriseSignInProps {
   /** Receives a provider's authorization URL once built; the host
    * navigates. */
   readonly onAuthorizeUrl?: (method: string, authorizeUrl: string) => void
+  /** Decides whether a provider's flow may begin (see ./start-gate). */
+  readonly beforeStart?: SignInBeforeStart
 }
 
 export function EnterpriseSignIn({
   session,
   returnTo,
   onAuthorizeUrl,
+  beforeStart,
 }: EnterpriseSignInProps) {
   const { t } = useAuthUiTranslation()
   const form = useForm<{ email: string }>({ defaultValues: { email: '' } })
@@ -197,8 +207,17 @@ export function EnterpriseSignIn({
   }
 
   const authorize = async (provider: AuthnSsoProvider): Promise<void> => {
-    setErrorCode(null)
+    // Take the busy flag before the gate resolves as well: an async gate
+    // suspends under the same disabled button, so a second click cannot
+    // pass the gate and begin a second flow.
     setBusy(true)
+    // The gate decides whether this provider's flow begins; a refusal
+    // starts nothing and renders no error of its own.
+    if (!(await allowedToStart(beforeStart, { method: provider.protocol }))) {
+      setBusy(false)
+      return
+    }
+    setErrorCode(null)
     let authorizeUrl: string | null = null
     let failure: string | null = null
     try {
@@ -319,17 +338,22 @@ export interface PasskeySignInProps {
   readonly method: AuthnMethodDescriptor
   /** Fired once after the passkey login commits; the host navigates. */
   readonly onSignedIn?: () => void
+  /** Decides whether the method's flow may begin (see ./start-gate). */
+  readonly beforeStart?: SignInBeforeStart
 }
 
 export function PasskeySignIn({
   session,
   method,
   onSignedIn,
+  beforeStart,
 }: PasskeySignInProps) {
   const { t } = useAuthUiTranslation()
+  const headingVariant = useGroupHeadingVariant()
   const [errorCode, setErrorCode] = useState<string | null>(null)
 
   const driver = useFlowDriver(session, {
+    beforeStart,
     onFailure: setErrorCode,
     onSettled: () => {
       try {
@@ -351,7 +375,7 @@ export function PasskeySignIn({
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}>
       <Divider textAlign="center" sx={{ color: 'text.secondary' }}>
-        {t('passkey.title')}
+        {t(headingVariant === 'plain' ? 'passkey.titleFirst' : 'passkey.title')}
       </Divider>
       {driver.step === null ? (
         <Button

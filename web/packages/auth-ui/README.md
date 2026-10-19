@@ -11,11 +11,16 @@ passed in as a prop, at the same tier as `ui-kit` and `layout-kit`:
 components never consume the auth-core hooks, never read session state,
 never attach or persist a session, never navigate, and never touch the
 network directly -- a successful sign-in fires the host's `onSignedIn`
-callback once, and everything that happens next is the host's. Every host
-callback runs only after the operation's verdict settled, and a throwing
-callback is contained: it is not a failure of the operation it follows --
-no error banner, no re-classified outcome, no unhandled rejection --
-because the commit already happened. Every built-in string renders from
+callback once, and everything that happens next is the host's. The
+outcome callbacks -- `onSignedIn` and `onAuthorizeUrl` -- run only
+after the operation's verdict settled, and a throwing callback is
+contained: it is not a failure of the operation it follows -- no error
+banner, no re-classified outcome, no unhandled rejection -- because the
+commit already happened. Three callbacks report a control event
+instead: `onSignIn` fires when the viewer asks to sign in again (the
+host navigates; no operation precedes it), the mode switch's
+`onModeChange` only reports the selection, and `SignOutMenuItem`'s
+`onActivate` runs just before the logout (a throw does not stop it). Every built-in string renders from
 the bilingual `auth-ui` namespace registered through `@speed/i18n`, and
 the form fields render through `ui-kit`'s `FormField`/`FormLayout`, the
 same discipline the other packages established.
@@ -30,16 +35,17 @@ package ships.
 
 | Module | Exports |
 |---|---|
-| `SignInScreen.tsx` | `SignInScreen`, `SignInScreenProps`, `SignInContext`, `SignInChannel`, `SignInMode`, `SocialSignInOptions` |
+| `SignInScreen.tsx` | `SignInScreen`, `SignInScreenProps`, `SignInContext`, `SignInChannel`, `SignInMode`, `SignInGroup`, `SignInScreenSlots`, `SignInBeforeStart`, `SignInStartContext`, `SocialSignInOptions` |
 | `PasswordSignInForm.tsx` | `PasswordSignInForm`, `PasswordSignInFormProps` |
 | `SMSSignInForm.tsx` | `SMSSignInForm`, `SMSSignInFormProps` |
 | `SocialSignInSection.tsx` | `SocialSignInSection`, `SocialSignInSectionProps`, `SocialProvider`, `SocialProviderConfig` |
 | `SocialCallbackHandler.tsx` | `SocialCallbackHandler`, `SocialCallbackHandlerProps` |
 | `SignOutButton.tsx` | `SignOutButton`, `SignOutButtonProps` |
+| `SignOutMenuItem.tsx` | `SignOutMenuItem`, `SignOutMenuItemProps` |
 | `SessionEndedScreen.tsx` | `SessionEndedScreen`, `SessionEndedScreenProps` |
 | `AcceptInvitationScreen.tsx` | `AcceptInvitationScreen`, `AcceptInvitationScreenProps`, `AcceptInvitationInput`, `InvitationOperations`, `InvitationSummary` |
 | `ImpersonationBanner.tsx` | `ImpersonationBanner`, `ImpersonationBannerProps`, `ImpersonationBannerState` |
-| `ImpersonationNotice.tsx` | `ImpersonationNoticeProvider`, `ImpersonationNoticeProviderProps`, `ImpersonationIndicator`, `ImpersonationEndMenuItem`, `ImpersonationEndMenuItemProps`, `useImpersonationNotice`, `ImpersonationNotice` |
+| `ImpersonationNotice.tsx` | `ImpersonationNoticeProvider`, `ImpersonationNoticeProviderProps`, `ImpersonationIndicator`, `ImpersonationIndicatorProps`, `ImpersonationEndMenuItem`, `ImpersonationEndMenuItemProps`, `ImpersonationNoticeBanner`, `ImpersonationNoticeBannerProps`, `ImpersonationNoticeIndicator`, `useImpersonationNotice`, `ImpersonationNotice` |
 | `resources.ts` | `AUTH_UI_NAMESPACE`, `authUiResources` |
 
 Everything else (`src/internal/`) is shared plumbing -- the flow-stepping
@@ -193,7 +199,7 @@ rendered by the shared step renderer (`src/internal/flow-step.tsx`): a
 `challenge` step renders one input per field the server asks for, a
 `factor` step renders one button per offered second factor, an `enroll`
 step one button per registerable kind, a `webauthn` step drives the
-browser's WebAuthn ceremony (`src/internal/webauthn.ts`) from its
+browser's WebAuthn ceremony (`@speed/auth-core/webauthn`) from its
 public-key options and reports the credential it returns, and a `ready` step (whose
 `next.kind` is `complete`) is
 taken automatically with `step: 'complete'`. A `redirect` step reaching the
@@ -272,11 +278,44 @@ renders as the `role="tabpanel"` with that id and the tab as its
 `aria-labelledby` -- only the active panel exists in the DOM, since
 switching unmounts the previous form.
 
+The surface is assembleable without changing its defaults:
+
+- `order` lists the channel classes (`'form' | 'redirect' | 'enterprise' |
+  'webauthn'`) in the host's order; a class left out keeps its default
+  position after the listed ones, so a partial order reorders rather than
+  silently dropping a channel set. The first class actually rendered heads
+  the surface, so the redirect and passkey dividers use the "or"-less
+  wording (`social.titleFirst`, `passkey.titleFirst`) instead of referring
+  to nothing above them.
+- `slots.aboveChannels` and `slots.belowForms` are the two open places a
+  host commonly fills (a notice, a "forgot password" link); they render
+  above the channel classes and below the form class respectively.
+- `providerIcon` supplies each redirect method's mark, rendered before its
+  label; `social.providers[].icon` (the deprecated override) wins per
+  channel.
+- `headingLevel` is the heading element the register-mode title renders
+  as; it defaults to `'h2'`, the level under the host's page heading.
+- `beforeStart` decides whether a channel's first flow may begin. It
+  receives `{ method, mode }`, may return a boolean or a promise of one,
+  and a `false` answer starts nothing and renders no error (nothing left
+  the page, so there is no server answer to show). A throwing gate is a
+  contained refusal too. Only the start is gated: a parked step's answers
+  are the flow's own later steps.
+- `onModeChange` turns `mode` into a controlled prop: the switch reports
+  `'register'` / `'sign-in'` and the host re-renders with the new mode,
+  instead of the screen keeping its own copy.
+
 | Prop | Type | Notes |
 |---|---|---|
 | `session` | `AuthSession` (required) | the session every channel on the screen drives |
 | `discovery` | `AuthnMethodList` | a pre-fetched discovery document to render instead of reading one; when given the screen fires no read |
-| `mode` | `'sign-in' \| 'register'` | the presentational mode; defaults to `'sign-in'` |
+| `mode` | `'sign-in' \| 'register'` | the presentational mode; defaults to `'sign-in'`; controlled when `onModeChange` is given |
+| `onModeChange` | `(mode: SignInMode) => void` | reports the register / sign-in switch; giving it makes `mode` the only source |
+| `beforeStart` | `(context: SignInStartContext) => boolean \| Promise<boolean>` | gates each channel's first flow; `{ method, mode }`; a false answer starts nothing and shows no error |
+| `slots` | `SignInScreenSlots` | `{ aboveChannels?, belowForms? }` host content |
+| `order` | `readonly SignInGroup[]` | the channel classes' order; unlisted classes keep their default position after the listed ones |
+| `headingLevel` | `'h1'…'h6'` | the register title's heading element; defaults to `'h2'` |
+| `providerIcon` | `(provider: SocialProvider) => ReactNode` | each redirect method's mark |
 | `social` | `SocialSignInOptions` | the redirect / enterprise block host config; omitted to run without one |
 | `onSignedIn` | `(context: SignInContext) => void` | fired once after a sign-in commits on a channel the screen drives (a form or the passkey ceremony), with the mode and the channel's method name; redirect and enterprise methods complete through the callback route and fire none |
 | `channels` | `readonly ('password' \| 'sms')[]` | **deprecated**: still narrows the form strip for one major |
@@ -331,6 +370,7 @@ refusal lands. Every other code renders through the whole-attempt banner.
 |---|---|---|
 | `session` | `AuthSession` (required) | the session the password login drives |
 | `onSignedIn` | `() => void` | fired once after a password login commits |
+| `beforeStart` | `(context) => boolean \| Promise<boolean>` | gates the flow's start; a false answer starts nothing and shows no error |
 
 ### SMSSignInForm
 
@@ -354,8 +394,10 @@ parks after the code keeps the generic banner.
 The phone step uses the shared two-part control
 (`PhoneNumberField` from `@speed/ui-kit`): a country/region selector and
 a local number, assembled into the E.164 string the flow takes. The
-selector starts on the country the browser locale names (zh-CN -> +86,
-en-US -> +1) and searches by country name, ISO code or calling code; a
+selector starts on the host's preferred country when the tree provides
+one (`ui-kit`'s phone-country default context), else the country the
+browser locale names (zh-CN -> +86, en-US -> +1), and searches by country
+name, ISO code or calling code; a
 pasted international number switches it and fills the local part itself.
 The number is validated per country before a request: a number too short
 for its country is refused locally with the calling code named, and never
@@ -377,6 +419,7 @@ Only a fresh code (a resend, or a request for a changed phone) can sign in.
 |---|---|---|
 | `session` | `AuthSession` (required) | the session the SMS sign-in drives |
 | `onSignedIn` | `() => void` | fired once after an SMS-code login commits |
+| `beforeStart` | `(context) => boolean \| Promise<boolean>` | gates each flow start (the first send, a resend); a false answer starts nothing and shows no error |
 
 ## Social sign-in
 
@@ -414,6 +457,12 @@ callback route, and it is sent as the flow's `return_to` so the provider's
 round trip lands the browser back on it; an empty `redirectUri` sends no
 `return_to` and lets the server use its configured default.
 
+Each provider's mark is the host's: a config may carry its own `icon`, and
+the section's `providerIcon` lookup covers providers the host does not
+enumerate (the discovery-derived set). The optional `beforeStart` gate
+decides whether a channel's flow may begin; a false answer starts nothing
+and renders no error.
+
 ```ts
 export type SocialProvider = string // a method name; the set is the deployment's
 
@@ -421,6 +470,7 @@ export interface SocialProviderConfig {
   readonly provider: SocialProvider
   readonly label?: string   // the method's brand name, from the discovery document
   readonly redirectUri: string
+  readonly icon?: ReactNode // the provider's own mark; beats the section lookup
 }
 ```
 
@@ -429,6 +479,8 @@ export interface SocialProviderConfig {
 | `session` | `AuthSession` (required) | the session that begins each channel's flow |
 | `providers` | `readonly SocialProviderConfig[]` (required) | the channels to render, in the order the host wants |
 | `onAuthorizeUrl` | `(provider, authorizeUrl) => void` | receives the channel's authorization URL once the flow hands it over; the host navigates |
+| `providerIcon` | `(provider: SocialProvider) => ReactNode` | the mark for a provider the config does not carry one for |
+| `beforeStart` | `(context) => boolean \| Promise<boolean>` | gates each channel's flow start; a false answer starts nothing and shows no error |
 
 ### SocialCallbackHandler
 
@@ -474,6 +526,22 @@ read primary-on-primary on the very surface the control usually sits on.
 |---|---|---|
 | `session` | `AuthSession` (required) | the session the sign-out drives |
 
+### SignOutMenuItem
+
+The same sign-out action as an account-menu item, for hosts whose sign-out
+lives in a menu. Activating it first calls `onActivate` (typically closing
+the menu, while the item is still mounted), then drives `session.logout()`.
+Unlike the button it renders no failure surface: logout is terminal -- the
+local session clears and the snapshot flips anonymous whether or not the
+server's revocation answered -- so the menu is gone with the session and a
+refusal has nowhere to render. The refusal is swallowed by design, and the
+item's label is the shared `signOut.label` text.
+
+| Prop | Type | Notes |
+|---|---|---|
+| `session` | `AuthSession` (required) | the session the sign-out drives |
+| `onActivate` | `() => void` | called before the logout, typically to close the menu |
+
 ## SessionEndedScreen
 
 The pure placeholder a host renders once protected content is gone -- the
@@ -505,11 +573,43 @@ continues the page's order.
 | `onSignIn` | `() => void` (required) | fired when the viewer asks to sign in again; the host navigates |
 | `headingLevel` | `EmptyStateProps['headingLevel']` | the real heading element the title renders as; defaults to `'h1'` |
 
+## AcceptInvitationScreen
+
+The recipient's side of an invitation: it reads the invitation a token
+points to and accepts it through two host-bound operations
+(`InvitationOperations`), so the package ships no invitation HTTP and its
+public surface references no generated contract type. The acceptance is
+public -- the token is the whole credential, and the membership lands on
+the invited address's account -- and a host may render its own sign-in
+surface ahead of the screen. A bare 404 renders "invitation not found" and
+a 409 "invitation no longer valid"; any other failure renders its code with
+a retry.
+
+The expiry renders in the host's display time zone when the tree provides
+one (`ui-kit`'s display-time-zone context), else the device zone. When the
+invited address has no account yet the acceptance creates one, so the
+screen offers an optional display name and password; `newAccountFields`
+lets a host that binds that flow itself hide either (both by default).
+Hiding both also hides the explanatory hint. `headingLevel` is the element
+the screen's titles render as (`'h1'` by default, the screen normally being
+the page); the accepted confirmation takes the level one below.
+
+| Prop | Type | Notes |
+|---|---|---|
+| `token` | `string` (required) | the token from the host's route |
+| `invitations` | `InvitationOperations` (required) | the host-bound read/accept operations |
+| `onAccepted` | `() => void` | fired once after the acceptance lands; the host navigates |
+| `newAccountFields` | `{ displayName?: boolean; password?: boolean }` | which new-account inputs to offer; both default to true |
+| `headingLevel` | `'h1'…'h6'` | the title's heading element; defaults to `'h1'` |
+
 ## Impersonation notice
 
-Four pieces over one host-owned state: the visible banner, the provider
-that holds its dismissal, the header chip that toggles it, and the
-account-menu item that ends the impersonation. All of them are pure
+Six pieces over one host-owned state: the visible banner, the provider
+that holds its dismissal, the header chip that toggles it, the
+account-menu item that ends the impersonation, and the two
+provider-reading bindings -- `ImpersonationNoticeBanner` and
+`ImpersonationNoticeIndicator` -- that wire the banner and the chip to the
+provider's own state, region id and focus target. All of them are pure
 presentation: no session, no hook, no request. The host says whether an
 impersonation is current (`impersonation`, or `null`), starts its one
 end write attempt (`onEnd`), and reports that attempt's state
@@ -558,6 +658,8 @@ status.
 | `ImpersonationNoticeProvider` | `impersonation`, `identityKey?`, `onEnd`, `pending?`, `failureCode?`, `successMessage?`, `children` | holds the dismissal and the region id; a new grant id between two known values, an identity change, an end or a failed attempt resets the dismissal |
 | `ImpersonationIndicator` | `impersonation`, `expanded`, `controls?`, `onToggle`, `ref?` | the header chip; its visible "Impersonating" text is its accessible name (the tooltip is a description) |
 | `ImpersonationEndMenuItem` | `onActivate?`, `divider?` | the account menu's end entry; renders nothing outside an impersonation or the provider |
+| `ImpersonationNoticeBanner` | `dismissible?` | the banner bound to the provider: its impersonation, shared attempt, dismissal state and region id. `dismissible` defaults to true and renders the close control; renders nothing outside the provider |
+| `ImpersonationNoticeIndicator` | — | the header chip bound to the provider's disclosure state, region id and focus ref; renders nothing outside the provider |
 
 ## Text and i18n
 
@@ -573,8 +675,8 @@ enforced by registration):
 | `discovery.*` | the sign-in surface: the loading notice and the retry action |
 | `mode.*` | the sign-in surface: the register mode's title and hint, the register / sign-in entries, and the sign-in mode's account-opening sentence |
 | `enterprise.*` | the enterprise entry: the email label, the continue action, the provider-picker title and the no-match notice |
-| `passkey.*` | the passkey entry: the divider title |
-| `social.*` | the social section: the divider title and one name per provider (`social.provider.<provider>`), including the per-mode names for a brand with several sign-in modes |
+| `passkey.*` | the passkey entry: the divider title, with an "or"-less variant for when the class heads the surface |
+| `social.*` | the social section: the divider title (and its "or"-less variant for the first class) and one name per provider (`social.provider.<provider>`), including the per-mode names for a brand with several sign-in modes |
 | `socialCallback.*` | the callback handler: the pending notice, the retry action |
 | `signOut.*` | the sign-out button: label and busy state |
 | `sessionEnded.*` | the session-ended screen: title, description, sign-in-again action |
@@ -606,8 +708,11 @@ login-flow endpoints answer with, plus the transport codes of the
 | Login flow (a refused credential, an expired or consumed flow, a disabled method, an unavailable account, a conflict, a throttle, an unavailable dependency, an unsupported phone region, a malformed body) | `authn.login_failed`, `authn.flow_invalid`, `authn.link_required`, `authn.method_disabled`, `authn.account_unavailable`, `authn.conflict`, `authn.throttled`, `authn.unavailable`, `authn.unsupported_region`, `authn.bad_request` |
 | Transport (the api-client contract) | `client.network`, `client.timeout`, `client.protocol` |
 
-Anything outside the whitelist -- a future authn code, a
-`client.http.<status>` answer, a non-`ApiError` throw -- renders the
+A `client.http.<status>` answer (the bare non-2xx the api-client
+synthesizes when there is no readable envelope) resolves through the
+parameterized `errors.client.http` leaf, carrying the status, so a 405,
+401 and 500 stay distinguishable. Anything else outside the whitelist -- a
+future authn code, a non-`ApiError` throw -- renders the
 `errors.unknown` fallback, so the bundle can never show a raw key, and a
 missing translation never leaks another language's text or an English
 fallback. The family's classifier (`errorCodeOf`) collapses non-`ApiError`
@@ -719,7 +824,7 @@ namespace discipline over `src/` the same way it does in every package.
   purposes (`link`, `step-up`, `enroll`) and their screens live in
   `@speed/account-ui` (`SocialBindingsSection` + `BindingCallbackHandler`,
   `MfaSection`). A passkey (`webauthn`) step a login flow parks on drives
-  its ceremony here (`src/internal/webauthn.ts`);
+  its ceremony here through `@speed/auth-core/webauthn`;
   the authenticated passes render it in `@speed/account-ui`.
 - **The channels are the deployment's, not the host's.** `SignInScreen`
   reads the discovery document (`session.listMethods`) and renders the

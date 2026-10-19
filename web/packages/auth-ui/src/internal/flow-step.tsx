@@ -19,10 +19,10 @@
  *  - `enroll`     -> one button per registerable factor kind.
  *  - `webauthn`   -> the factor's own JSON. TOTP's otpauth_uri is
  *    rendered as text beside a code field. A passkey's public-key options
- *    are driven by the WebAuthn ceremony (./webauthn) -- the browser's own
- *    API, no dependency -- whose credential is reported under the answer
- *    step the record's state names. The same surface renders a passkey
- *    login's first step and a passkey enrollment.
+ *    are driven by the WebAuthn ceremony (@speed/auth-core/webauthn) --
+ *    the browser's own API, no dependency -- whose credential is reported
+ *    under the answer step the record's state names. The same surface
+ *    renders a passkey login's first step and a passkey enrollment.
  *  - `complete`   -> nothing: the driver takes a ready step's result.
  *  - `redirect`   -> the host owns navigation; a redirect step that
  *    reaches this renderer (a callback route opened before the provider
@@ -33,8 +33,9 @@
  * selection and merges it back into the factor's answer (see
  * use-flow-driver). Factor and enroll labels follow the same guarded
  * vocabulary rule as the field names: a known kind renders its
- * translated name, an unknown one renders the generic "other" label,
- * and a server-supplied label wins over both.
+ * translated name, an unknown one shows the kind as given (the
+ * deployment's own vocabulary), and a server-supplied label wins over
+ * both.
  */
 
 import { useEffect, useId, useRef, useState } from 'react'
@@ -50,7 +51,7 @@ import type { AuthnField } from '@speed/auth-core'
 import { FormField, FormLayout } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './translation.js'
 import { fieldLabel } from './labels.js'
-import { WebauthnError, runWebauthn, webauthnStepOf } from './webauthn.js'
+import { WebauthnError, runWebauthn, webauthnStepOf } from '@speed/auth-core/webauthn'
 import type { OpenFlowState } from './flow.js'
 
 /** The factor/enroll kinds the family has wording for. */
@@ -78,7 +79,7 @@ export function FlowStepFields({
   const kindLabel = (kind: string): string =>
     (FACTOR_KINDS as readonly string[]).includes(kind)
       ? t(`signInFlow.factorKind.${kind}`)
-      : t('signInFlow.factorKind.other')
+      : kind
 
   switch (step.next.kind) {
     case 'challenge':
@@ -171,12 +172,12 @@ function TotpFields({
       <Typography
         variant="body2"
         component="pre"
-        sx={{
-          fontFamily: 'monospace',
+        sx={(theme) => ({
+          fontFamily: theme.typography.fontFamilyMono,
           wordBreak: 'break-all',
           whiteSpace: 'pre-wrap',
           m: 0,
-        }}
+        })}
       >
         {safeJson(options)}
       </Typography>

@@ -19,10 +19,12 @@
  *
  * Codes deliberately not whitelisted are the surface's own local notices
  * (the SMS channel's used-code text is a bundle key of its own, never a
- * server code) and the client.* answers the client synthesizes for a bare
- * non-2xx or an unreadable body, which land on errors.unknown by design.
+ * server code); the transport codes are whitelisted above, and a
+ * client.http.<status> answer resolves through the parameterized leaf
+ * rather than errors.unknown.
  */
 
+import { createErrorTextResolver } from '@speed/i18n'
 import { useAuthUiTranslation } from './translation.js'
 
 /**
@@ -52,26 +54,25 @@ export const ERROR_TEXT_CODES = [
 const KNOWN_CODES = new Set<string>(ERROR_TEXT_CODES)
 
 /**
- * The bare non-2xx the api-client synthesizes as client.http.<status> (a
- * response with no readable envelope). A family rather than a fixed code,
- * so it resolves through its own parameterized leaf -- the status kept in
- * the text -- instead of collapsing, with every other unlisted code, onto
- * the single unknown line.
+ * The bundle leaf the bare non-2xx family resolves through: the
+ * api-client synthesizes `client.http.<status>` for a response with no
+ * readable envelope, and the shared resolver carries the status into the
+ * namespace's parameterized leaf -- keeping a 405, 401 and 500
+ * distinguishable instead of collapsing, with every other unlisted code,
+ * onto the single unknown line.
  */
-const HTTP_ERROR_CODE = /^client\.http\.(\d{3})$/
+const HTTP_FAMILY_KEY = 'errors.client.http'
 
 /**
  * The code-to-text resolver hook: call with an ApiError code and get the
- * current-language text. A client.http.<status> answer resolves to the
- * parameterized errors.client.http leaf (its status carried through);
- * anything else unlisted resolves to 'errors.unknown'.
+ * current-language text. The key construction and the unknown fallback are
+ * the shared resolver's (@speed/i18n's error-text module); this hook binds
+ * it to the auth-ui namespace's whitelist and its parameterized bare-HTTP
+ * leaf.
  */
 export function useAuthUiErrorText(): (code: string) => string {
   const { t } = useAuthUiTranslation()
-  return (code: string) => {
-    const http = HTTP_ERROR_CODE.exec(code)
-    return http === null
-      ? t(KNOWN_CODES.has(code) ? `errors.${code}` : 'errors.unknown')
-      : t('errors.client.http', { status: http[1] ?? '' })
-  }
+  return createErrorTextResolver(t, KNOWN_CODES, {
+    httpFamily: { key: HTTP_FAMILY_KEY },
+  })
 }

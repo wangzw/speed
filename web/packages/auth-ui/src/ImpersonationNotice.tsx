@@ -32,6 +32,14 @@
  * When the close control hides the notice, focus moves to the indicator
  * chip rather than being lost to the document body; the chip is already
  * mounted, so the focus transfer is immediate.
+ *
+ * Two consumers read the provider themselves so a host does not have to
+ * wire the controlled props by hand: ImpersonationNoticeBanner renders the
+ * banner from the notice's state (with the provider's region id, and the
+ * close control unless `dismissible` is false), and
+ * ImpersonationNoticeIndicator renders the header chip bound to the same
+ * disclosure state and focus target. Both render nothing outside the
+ * provider.
  */
 
 import {
@@ -49,6 +57,7 @@ import Chip from '@mui/material/Chip'
 import MenuItem from '@mui/material/MenuItem'
 import Tooltip from '@mui/material/Tooltip'
 import { useAuthUiTranslation } from './internal/translation.js'
+import { ImpersonationBanner } from './ImpersonationBanner.js'
 import type { ImpersonationBannerState } from './ImpersonationBanner.js'
 
 export interface ImpersonationNoticeProviderProps {
@@ -322,5 +331,66 @@ export function ImpersonationEndMenuItem({
     >
       {t(notice.pending ? 'impersonation.ending' : 'impersonation.end')}
     </MenuItem>
+  )
+}
+
+export interface ImpersonationNoticeBannerProps {
+  /** Whether the banner's own close control renders. Defaults to true.
+   * False removes that control only: the provider's shared hidden state
+   * is still toggled by `ImpersonationNoticeIndicator`'s click, so a host
+   * that needs the notice to stay visible throughout renders neither the
+   * indicator nor a dismissible banner. */
+  readonly dismissible?: boolean
+}
+
+/**
+ * The banner bound to the enclosing notice provider: it renders the
+ * provider's impersonation, shared end attempt and dismissal state, with
+ * the provider's own region id so the indicator's `aria-controls` names
+ * it. Renders nothing outside the provider; inside one it renders the
+ * banner's permanent live region even while no impersonation is active
+ * (that is the controlled component's own contract).
+ */
+export function ImpersonationNoticeBanner({
+  dismissible = true,
+}: ImpersonationNoticeBannerProps): ReactElement | null {
+  const notice = useImpersonationNotice()
+  if (notice === null) {
+    return null
+  }
+  return (
+    <ImpersonationBanner
+      impersonation={notice.impersonation}
+      onEnd={notice.end}
+      pending={notice.pending}
+      failureCode={notice.failureCode}
+      successMessage={notice.successMessage}
+      dismissed={notice.dismissed}
+      onDismiss={dismissible ? notice.dismiss : undefined}
+      regionId={notice.regionId}
+    />
+  )
+}
+
+/**
+ * The header chip bound to the enclosing notice provider: expanded while
+ * the notice is visible, controlling the provider's region, toggling the
+ * same dismissal state, and carrying the provider's indicator ref so a
+ * dismissal moves focus here. Renders nothing outside the provider or
+ * while no impersonation is active.
+ */
+export function ImpersonationNoticeIndicator(): ReactElement | null {
+  const notice = useImpersonationNotice()
+  if (notice === null) {
+    return null
+  }
+  return (
+    <ImpersonationIndicator
+      impersonation={notice.impersonation}
+      expanded={!notice.dismissed}
+      controls={notice.regionId}
+      onToggle={notice.toggle}
+      ref={notice.indicatorRef}
+    />
   )
 }

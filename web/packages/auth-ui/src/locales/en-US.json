@@ -62,10 +62,12 @@
     "editEmail": "Use a different email"
   },
   "passkey": {
-    "title": "or sign in with a passkey"
+    "title": "or sign in with a passkey",
+    "titleFirst": "Sign in with a passkey"
   },
   "social": {
     "title": "or continue with a social account",
+    "titleFirst": "Continue with a social account",
     "provider": {
       "google": "Google",
       "github": "GitHub",

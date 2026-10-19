@@ -28,18 +28,32 @@ for, not a form it ships.
   (`session.discoverSso`) -- goes through that same session prop, so it
   is a session operation, not a hook consumption; a host that injects a
   pre-fetched document passes `discovery` and the screen reads nothing.
-- **Host callbacks run after the verdict and are contained.** Every
-  documented callback (`onSignedIn`, `onAuthorizeUrl`, `onSignIn`) fires
-  only after the operation it follows settled, and a throwing callback is
-  not a failure of that operation (the tenancy-ui discipline): the commit
-  already happened, so nothing here renders an error banner, re-classifies
-  the outcome into a failure state or offers a retry of an operation that
-  succeeded, and the containment keeps the throw out of the
-  fire-and-forget promise as an unhandled rejection. A submit whose login
+- **Host callbacks are contained.** `onSignedIn` and `onAuthorizeUrl`
+  fire only after the operation they report settled, and a throwing
+  callback is not a failure of that operation (the tenancy-ui
+  discipline): the commit already happened, so nothing here renders an
+  error banner, re-classifies the outcome into a failure state or offers
+  a retry of an operation that succeeded, and the containment keeps the
+  throw out of the fire-and-forget promise as an unhandled rejection.
+  Three callbacks report a control event instead: `onSignIn` fires when
+  the viewer asks to sign in again (the host navigates; no operation
+  precedes it), `onModeChange` fires when the mode switch is clicked --
+  before any request, there is no operation behind it -- and only
+  reports the selection, and `SignOutMenuItem`'s `onActivate` is called
+  immediately before its `session.logout()`, where a throw is contained
+  so the logout still runs.
+  A submit whose login
   lost a concurrent sign-in race (auth-core's `OperationSupersededError`)
   is likewise not an error: the driver renders no failure banner and the
   form fires no callback -- the winning call fires its own exactly once,
   and the host observes the authenticated snapshot through its own hooks.
+  `beforeStart` runs the other way round -- it decides whether a flow may
+  begin, so it is consulted *before* the request: a false answer starts
+  nothing and renders no error (nothing left the page, so there is no
+  server answer to show), a throwing gate is a contained refusal, and only
+  a channel's first step is gated (a parked step's answers are not).
+  `onModeChange`, when given, also makes `mode` a controlled prop: the
+  switch only reports, and the host re-renders with the selected mode.
   The SMS code step is the one exception: a phone-login code is single-use
   server-side, so the losing submit spent the very code its own answer
   verified, and the form must never advertise it as retryable. It renders
@@ -57,8 +71,12 @@ for, not a form it ships.
   (`src/internal/use-flow-driver.ts`). The renderer is one of three copies
   (`auth-ui`, `account-ui`, `console-ui`) kept in lockstep by hand: a
   change to how a step renders lands in all three in the same change. No
-  compiler check or test compares the copies. The `webauthn` step drives the
-  browser's WebAuthn ceremony (`src/internal/webauthn.ts`) from its
+  compiler check or test compares the copies. All three label a factor or
+  enroll kind the same way: a known kind renders its translated name, an
+  unknown one renders the server's own kind value (the deployment's
+  vocabulary, never a generic "other" label), and a factor option's
+  server-supplied label wins over both. The `webauthn` step drives the
+  browser's WebAuthn ceremony (`@speed/auth-core/webauthn`) from its
   public-key options and reports the credential it returns, while a
   `redirect` step reaching the renderer renders an unavailable notice. A
   step the server answers `authn.flow_invalid` returns the form to its
@@ -79,7 +97,9 @@ for, not a form it ships.
   `ui-kit` namespace.
 - **The error surface is a code whitelist.** Every submit path resolves
   its failure to one error code and renders that code's text in one
-  `role="alert"` banner; codes outside the whitelist render
+  `role="alert"` banner; a `client.http.<status>` answer resolves through
+  the namespace's parameterized `errors.client.http` leaf, carrying the
+  status in the text, and every other code outside the whitelist renders
   `errors.unknown`, so the bundle can never show a raw key.
 
 ## Rules that are load-bearing here
@@ -98,8 +118,8 @@ for, not a form it ships.
    component text here. A step's field label or factor-kind name is a
    server-supplied token rendered through a guarded closed set: the names
    the family has wording for resolve to a bundle key, anything else
-   renders verbatim (a field name) or the generic "other" label (a factor
-   kind), never a `t()` on an unlisted token.
+   renders verbatim (a field name or an unknown factor kind), never a
+   `t()` on an unlisted token.
 3. **New reachable error codes join the whitelist and both locale files
    in one commit.** `src/internal/error-text.ts`'s `ERROR_TEXT_CODES` is
    the reachable-subset whitelist this family renders (the login-flow
@@ -107,9 +127,13 @@ for, not a form it ships.
    `client.network`/`client.timeout`/`client.protocol` transport codes,
    with `errors.unknown` the fallback for anything else). When a code
    becomes reachable through a submit path of this family, it is added
-   there and to both `errors.*` sections at once. Codes deliberately not
-   whitelisted: any `client.http.*` answer and `client.unknown` (the
-   classifier's landing slot for non-`ApiError` throws) -- those render
+   there and to both `errors.*` sections at once. The `client.http.<status>`
+   family is the one exception: it is not listed in `ERROR_TEXT_CODES`,
+   but the shared resolver's `httpFamily` option routes it to the
+   parameterized `errors.client.http` leaf with the status carried in the
+   text (a 405, 401 and 500 stay distinguishable), so that leaf must
+   exist in both bundles. `client.unknown` (the classifier's landing slot
+   for non-`ApiError` throws) is not whitelisted and renders
    `errors.unknown` by design.
 4. **No direct HTTP in `src/`.** Every request flows through the
    session's generated operations over the `bindRequestFn` binding; this
@@ -145,11 +169,17 @@ for, not a form it ships.
 ## Public surface
 
 Everything in `src/index.ts` is public: `SignInScreen` (with
-`SignInChannel`, `SignInMode` and `SocialSignInOptions`), the two channel
+`SignInScreenProps`, `SignInContext`, `SignInChannel`, `SignInMode`,
+`SignInGroup`, `SignInScreenSlots`, `SignInBeforeStart`, `SignInStartContext`
+and `SocialSignInOptions`), the two channel
 components (`PasswordSignInForm`, `SMSSignInForm`), the social pair
 (`SocialSignInSection` with `SocialProvider` -- a method-name `string`,
 not a closed set -- and `SocialProviderConfig`, `SocialCallbackHandler`),
-`SignOutButton`, `SessionEndedScreen`, and the resource pair
+`SignOutButton`, `SignOutMenuItem`, `SessionEndedScreen`,
+`AcceptInvitationScreen` with its operation shapes, the impersonation
+surface (`ImpersonationBanner`, the notice provider and its consumers --
+including the provider-reading `ImpersonationNoticeBanner` and
+`ImpersonationNoticeIndicator`), and the resource pair
 (`AUTH_UI_NAMESPACE`, `authUiResources`). Prop tables and behaviour live in
 the README; `tsc -p tsconfig.json` type-checks every consumer-visible
 signature.

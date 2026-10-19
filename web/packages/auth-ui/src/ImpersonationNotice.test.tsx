@@ -20,6 +20,8 @@ import { AppThemeProvider } from '@speed/ui-kit'
 import {
   ImpersonationEndMenuItem,
   ImpersonationIndicator,
+  ImpersonationNoticeBanner,
+  ImpersonationNoticeIndicator,
   ImpersonationNoticeProvider,
   useImpersonationNotice,
 } from './ImpersonationNotice.js'
@@ -245,6 +247,98 @@ describe('ImpersonationEndMenuItem', () => {
     expect(
       screen.queryByRole('menuitem', { name: zhCN.impersonation.end }),
     ).not.toBeInTheDocument()
+  })
+})
+
+describe('provider-reading consumers', () => {
+  interface BoundProps {
+    readonly impersonation: ImpersonationBannerState | null
+    readonly onEnd?: () => void
+    readonly dismissible?: boolean
+  }
+
+  /** Renders the two provider-reading consumers under one provider. */
+  function renderBound({
+    impersonation,
+    onEnd = () => {},
+    dismissible,
+  }: BoundProps) {
+    const i18n = createAuthUiI18n()
+    return render(
+      <I18nextProvider i18n={i18n}>
+        <AppThemeProvider i18n={i18n}>
+          <ImpersonationNoticeProvider
+            impersonation={impersonation}
+            onEnd={onEnd}
+          >
+            <h1>Page</h1>
+            <ImpersonationNoticeIndicator />
+            <ImpersonationNoticeBanner dismissible={dismissible} />
+          </ImpersonationNoticeProvider>
+        </AppThemeProvider>
+      </I18nextProvider>,
+    )
+  }
+
+  const chip = (): HTMLElement =>
+    screen.getByRole('button', { name: zhCN.impersonation.impersonating })
+
+  it('render the banner and the chip from the provider’s state', () => {
+    renderBound({ impersonation: IMPERSONATION })
+    const region = screen.getByRole('region', {
+      name: zhCN.impersonation.regionLabel,
+    })
+    expect(region).toBeInTheDocument()
+    expect(chip()).toHaveAttribute('aria-expanded', 'true')
+    // The chip names the banner's own region.
+    expect(chip()).toHaveAttribute('aria-controls', region.id)
+  })
+
+  it('dismiss the banner from its close control and move focus to the chip', async () => {
+    const user = userEvent.setup()
+    renderBound({ impersonation: IMPERSONATION })
+    await user.click(
+      screen.getByRole('button', { name: zhCN.impersonation.hide }),
+    )
+    expect(
+      screen.queryByRole('region', { name: zhCN.impersonation.regionLabel }),
+    ).not.toBeInTheDocument()
+    // The persistent indication survives the dismissal and takes focus.
+    expect(chip()).toHaveAttribute('aria-expanded', 'false')
+    expect(chip()).toHaveFocus()
+  })
+
+  it('omit the close control when the host makes the notice non-dismissible', () => {
+    renderBound({ impersonation: IMPERSONATION, dismissible: false })
+    expect(
+      screen.queryByRole('button', { name: zhCN.impersonation.hide }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('region', { name: zhCN.impersonation.regionLabel }),
+    ).toBeInTheDocument()
+  })
+
+  it('start the shared end attempt from the banner', async () => {
+    const onEnd = vi.fn()
+    const user = userEvent.setup()
+    renderBound({ impersonation: IMPERSONATION, onEnd })
+    await user.click(
+      screen.getByRole('button', { name: zhCN.impersonation.end }),
+    )
+    expect(onEnd).toHaveBeenCalledTimes(1)
+  })
+
+  it('render nothing outside a provider', () => {
+    const i18n = createAuthUiI18n()
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <AppThemeProvider i18n={i18n}>
+          <ImpersonationNoticeIndicator />
+          <ImpersonationNoticeBanner />
+        </AppThemeProvider>
+      </I18nextProvider>,
+    )
+    expect(container).toBeEmptyDOMElement()
   })
 })
 

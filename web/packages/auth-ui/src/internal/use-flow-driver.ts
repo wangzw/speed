@@ -40,6 +40,8 @@ import { isOperationSuperseded } from '@speed/auth-core'
 import { errorCodeOf } from '@speed/ui-kit'
 import type { OpenFlowState, SettledFlowState } from './flow.js'
 import { answerStepFor, isOpenFlow } from './flow.js'
+import { allowedToStart } from './start-gate.js'
+import type { SignInBeforeStart } from './start-gate.js'
 
 /** The identity keys a multi-answer step carries across its sub-steps. */
 const CARRY_KEYS = ['factor', 'kind'] as const
@@ -74,6 +76,12 @@ export interface FlowDriverCallbacks {
    * single-use SMS code) hears it here.
    */
   readonly onSuperseded?: () => void
+  /**
+   * Decides whether the flow may begin (see ./start-gate). It gates
+   * `start` only: a parked step's answers are the flow's own later
+   * steps, not a new start.
+   */
+  readonly beforeStart?: SignInBeforeStart
 }
 
 export interface FlowDriver {
@@ -172,8 +180,25 @@ export function useFlowDriver(
   )
 
   const start = useCallback(
-    (request: Parameters<AuthSession['startFlow']>[0]) =>
-      run(() => session.startFlow(request)),
+    async (request: Parameters<AuthSession['startFlow']>[0]) => {
+      // The gate decides whether the flow begins; a refusal starts
+      // nothing and renders no error (see ./start-gate). It runs before
+      // the request, so `answer` -- the flow's own later steps -- is
+      // untouched. The busy flag is taken before the gate resolves too:
+      // an async gate (a host consent wall) suspends under the same
+      // pending indicator, so the channel's controls stay disabled for
+      // its duration and a second click cannot pass the gate and start a
+      // second flow.
+      setBusy(true)
+      const allowed = await allowedToStart(callbacksRef.current.beforeStart, {
+        method: request.method ?? '',
+      })
+      if (!allowed) {
+        setBusy(false)
+        return false
+      }
+      return run(() => session.startFlow(request))
+    },
     [run, session],
   )
 

@@ -15,10 +15,12 @@
  *
  * The phone field is the shared two-part control: a country/region
  * selector and a local number, assembled into the E.164 string the flow
- * takes. The selector starts on the country the browser locale names
- * (zh-CN -> +86, en-US -> +1) and searches by country name, ISO code or
- * calling code; a pasted international number switches it and fills the
- * local part itself. The number is validated per country before any
+ * takes. The selector starts on the host's preferred country when it
+ * provides one (ui-kit's phone-country default context), else the country
+ * the browser locale names (zh-CN -> +86, en-US -> +1), and searches by
+ * country name, ISO code or calling code; a pasted international number
+ * switches it and fills the local part itself. The number is validated per
+ * country before any
  * request: a number too short for the country is refused locally with the
  * calling code named, and never sent. That refusal moves focus to the
  * number field and carries the field's own message into the form's
@@ -74,8 +76,8 @@ import {
   FormField,
   FormLayout,
   PhoneNumberField,
-  defaultPhoneCountry,
   toE164,
+  usePhoneCountryDefault,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
 import type { AuthSession } from '@speed/auth-core'
@@ -84,12 +86,19 @@ import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
 import { FlowStepFields } from './internal/flow-step.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
+import type { SignInBeforeStart } from './internal/start-gate.js'
 
 export interface SMSSignInFormProps {
   /** The session the SMS sign-in drives. */
   readonly session: AuthSession
   /** Fired once after an SMS-code login commits; the host navigates. */
   readonly onSignedIn?: () => void
+  /**
+   * Decides whether the SMS flow may begin. Returning false starts
+   * nothing and renders no error; only the phone step (the flow's first
+   * step) is gated, so a resend that begins a new flow is gated too.
+   */
+  readonly beforeStart?: SignInBeforeStart
 }
 
 interface SmsFields {
@@ -101,15 +110,23 @@ function isCodePrompt(step: OpenFlowState): boolean {
   return step.state === 'first' && step.next.kind === 'challenge'
 }
 
-export function SMSSignInForm({ session, onSignedIn }: SMSSignInFormProps) {
+export function SMSSignInForm({
+  session,
+  onSignedIn,
+  beforeStart,
+}: SMSSignInFormProps) {
   const { t } = useAuthUiTranslation()
+  // The host's preferred starting country, else the browser locale's own
+  // region. Read once: it is the selector's starting value, not a value
+  // that follows a later provider change.
+  const preferredCountry = usePhoneCountryDefault()
   const form = useForm<SmsFields>({
     defaultValues: { code: '' },
   })
-  // The phone step's two parts. The country starts on the browser
-  // locale's own region, never blank; the assembled E.164 string is what
-  // the flow receives.
-  const [country, setCountry] = useState(() => defaultPhoneCountry())
+  // The phone step's two parts. The country starts on the host's preferred
+  // country when one is provided, else the browser locale's own region,
+  // never blank; the assembled E.164 string is what the flow receives.
+  const [country, setCountry] = useState(() => preferredCountry)
   const [nationalNumber, setNationalNumber] = useState('')
   // Set by a submit that could not assemble a number, so the control
   // shows its per-country message only when the viewer asked to send.
@@ -144,6 +161,7 @@ export function SMSSignInForm({ session, onSignedIn }: SMSSignInFormProps) {
   const sentToRef = useRef<string>('')
 
   const driver = useFlowDriver(session, {
+    beforeStart,
     onFailure: setErrorCode,
     onSuperseded: () => {
       const code = lastCodeRef.current

@@ -63,7 +63,8 @@ import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
 import type { Theme } from '@mui/material/styles'
-import { InlineSuccess, visuallyHiddenSx } from '@speed/ui-kit'
+import { formatInstant } from '@speed/i18n'
+import { InlineSuccess, useDisplayTimeZone, visuallyHiddenSx } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
 
@@ -248,16 +249,19 @@ function HideIcon(): ReactElement {
   )
 }
 
-/** Formats the expiry in the active language; a malformed date renders
- * nothing rather than throwing out of Intl. */
-function formatExpiry(expiresAt: Date, language: string): string | null {
-  if (Number.isNaN(expiresAt.getTime())) {
-    return null
-  }
-  return new Intl.DateTimeFormat(language, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(expiresAt)
+/** Formats the expiry in the active language and the host's display time
+ * zone (the device zone when none is provided); a malformed date, or a
+ * zone the engine rejects, renders nothing rather than throwing out of
+ * Intl. The host's zone is unvalidated by the provider, so a stale or
+ * misspelled IANA name must degrade to "no expiry line", not crash the
+ * render; the shared formatter owns that guard. */
+function formatExpiry(
+  expiresAt: Date,
+  language: string,
+  timeZone: string | undefined,
+): string | null {
+  const text = formatInstant(expiresAt, language, { timeZone })
+  return text === '' ? null : text
 }
 
 export function ImpersonationBanner({
@@ -271,6 +275,9 @@ export function ImpersonationBanner({
   regionId,
 }: ImpersonationBannerProps) {
   const { t, i18n } = useAuthUiTranslation()
+  // The host's display time zone when one is provided; absent, the device
+  // zone (the rendering before the provider existed).
+  const timeZone = useDisplayTimeZone()
 
   // The announcement is committed one tick after the impersonation
   // appears. The live region is therefore already in the tree and empty
@@ -307,7 +314,7 @@ export function ImpersonationBanner({
   const expiry =
     impersonation?.expiresAt == null
       ? null
-      : formatExpiry(impersonation.expiresAt, i18n.language ?? 'en-US')
+      : formatExpiry(impersonation.expiresAt, i18n.language ?? 'en-US', timeZone)
 
   return (
     <>

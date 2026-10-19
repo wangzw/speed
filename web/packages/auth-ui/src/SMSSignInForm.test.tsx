@@ -34,7 +34,7 @@ import {
   principal,
 } from '@speed/test-utils/session-harness'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
-import { uiKitResources } from '@speed/ui-kit'
+import { uiKitResources, PhoneCountryDefaultProvider } from '@speed/ui-kit'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
@@ -699,5 +699,77 @@ describe('SMSSignInForm', () => {
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(harness.store.get()).toBe('access-1')
+  })
+
+  it('start the selector on the host-scoped default country', () => {
+    const harness = makeHarness({})
+    // jsdom's browser locale is en-US (the US); the host default wins.
+    renderWithProviders(
+      <PhoneCountryDefaultProvider country="CN">
+        <SMSSignInForm session={harness.session} />
+      </PhoneCountryDefaultProvider>,
+    )
+    expect(
+      screen.getByRole('combobox', { name: zhCN.smsSignIn.countryLabel }),
+    ).toHaveValue('🇨🇳 +86')
+  })
+
+  it('consult the host’s start gate before sending: a refusal sends nothing', async () => {
+    const harness = makeHarness({})
+    const beforeStart = vi.fn(() => false)
+    renderWithProviders(
+      <SMSSignInForm session={harness.session} beforeStart={beforeStart} />,
+    )
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.smsSignIn.phoneLabel),
+      US_NATIONAL,
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }),
+    )
+    await waitFor(() => expect(beforeStart).toHaveBeenCalledTimes(1))
+    // A standalone form has no presentational mode to report.
+    expect(beforeStart).toHaveBeenCalledWith({ method: 'sms' })
+    expect(harness.calls).toHaveLength(0)
+    // No code step opened and no error rendered: the attempt never left.
+    expect(
+      screen.queryByLabelText(zhCN.smsSignIn.codeLabel),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('keep the send control disabled while an async start gate is pending', async () => {
+    const harness = makeHarness({ [LOGIN_START]: () => codeChallenge() })
+    let release: (allowed: boolean) => void = () => {}
+    const beforeStart = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          release = resolve
+        }),
+    )
+    renderWithProviders(
+      <SMSSignInForm session={harness.session} beforeStart={beforeStart} />,
+    )
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.smsSignIn.phoneLabel),
+      US_NATIONAL,
+    )
+    const send = screen.getByRole('button', { name: zhCN.smsSignIn.sendCode })
+    await user.click(send)
+    await waitFor(() => expect(beforeStart).toHaveBeenCalledTimes(1))
+    // The gate has not answered yet: the control is already busy, so a
+    // second click cannot pass the same gate and start another flow.
+    expect(send).toBeDisabled()
+    expect(harness.calls).toHaveLength(0)
+    await act(async () => {
+      release(true)
+    })
+    await waitFor(() =>
+      expect(screen.getByLabelText(zhCN.smsSignIn.codeLabel)).toBeInTheDocument(),
+    )
+    // The flow began once, not once per click.
+    expect(harness.calls).toHaveLength(1)
   })
 })

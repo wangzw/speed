@@ -1348,4 +1348,368 @@ describe('SignInScreen', () => {
     )
     await expectNoAxeViolations()
   })
+
+  it('report the mode switch to the host and never switch itself when controlled', async () => {
+    const harness = makeHarness({})
+    const onModeChange = vi.fn()
+    const first = renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        )}
+        onModeChange={onModeChange}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mode.registerEntry }),
+    )
+    // The switch only reports: `mode` is the only source, so the screen
+    // stays in the mode the host gave it.
+    expect(onModeChange).toHaveBeenCalledWith('register')
+    expect(screen.queryByText(zhCN.mode.registerHint)).not.toBeInTheDocument()
+    first.unmount()
+
+    // Mounted with the mode the host would set, the same switch reports
+    // the way back.
+    const controlled = makeHarness({})
+    const back = vi.fn()
+    renderWithProviders(
+      <SignInScreen
+        session={controlled.session}
+        discovery={methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        )}
+        mode="register"
+        onModeChange={back}
+      />,
+    )
+    expect(screen.getByText(zhCN.mode.registerHint)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: zhCN.mode.signInEntry }))
+    expect(back).toHaveBeenCalledWith('sign-in')
+  })
+
+  it('render the host’s above-channels and below-forms slots', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={BOTH_FORMS}
+        slots={{
+          aboveChannels: <p>host-above</p>,
+          belowForms: <p>host-below</p>,
+        }}
+      />,
+    )
+    expect(screen.getByText('host-above')).toBeInTheDocument()
+    expect(screen.getByText('host-below')).toBeInTheDocument()
+  })
+
+  it('render the channel classes in the host’s order, heading the first without “or”', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([
+          { name: 'password', kind: 'form' },
+          { name: 'google', kind: 'redirect', protocol: 'oidc', label: 'Google' },
+        ])}
+        order={['redirect', 'form']}
+      />,
+    )
+    // The first rendered class heads the surface, so its divider drops
+    // the "or" that would refer to nothing above it.
+    const social = screen.getByText(zhCN.social.titleFirst)
+    expect(screen.queryByText(zhCN.social.title)).not.toBeInTheDocument()
+    // The one form channel renders without a strip; its first field is
+    // the form class's place in document order.
+    const form = screen.getByLabelText(zhCN.passwordSignIn.identifierLabel)
+    // Redirect comes before the form in document order.
+    expect(
+      social.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('keep an unlisted channel class after the listed ones', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([
+          { name: 'password', kind: 'form' },
+          { name: 'passkey', kind: 'webauthn', label: 'Passkey' },
+        ])}
+        order={['form']}
+      />,
+    )
+    // A partial order reorders, it never silently drops a channel set.
+    expect(
+      screen.getByRole('button', { name: 'Passkey' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(zhCN.passkey.title)).toBeInTheDocument()
+  })
+
+  it('head the surface without “or” when the passkey class comes first', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([
+          { name: 'password', kind: 'form' },
+          { name: 'passkey', kind: 'webauthn', label: 'Passkey' },
+        ])}
+        order={['webauthn', 'form']}
+      />,
+    )
+    expect(screen.getByText(zhCN.passkey.titleFirst)).toBeInTheDocument()
+    expect(screen.queryByText(zhCN.passkey.title)).not.toBeInTheDocument()
+  })
+
+  it('render the register title as the host’s heading level', async () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        )}
+        mode="register"
+        headingLevel="h3"
+      />,
+    )
+    expect(
+      screen.getByRole('heading', {
+        level: 3,
+        name: zhCN.mode.registerTitle,
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('render each redirect method’s mark from the host lookup', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([
+          { name: 'google', kind: 'redirect', protocol: 'oidc', label: 'Google' },
+        ])}
+        providerIcon={(provider) => <span data-testid={`mark-${provider}`} />}
+      />,
+    )
+    const button = screen.getByRole('button', { name: 'Google' })
+    expect(
+      button.querySelector('[data-testid="mark-google"]'),
+    ).not.toBeNull()
+  })
+
+  it('refuse the password start at the gate: nothing sent, no error', async () => {
+    const harness = makeHarness({})
+    const beforeStart = vi.fn(() => false)
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([{ name: 'password', kind: 'form' }])}
+        beforeStart={beforeStart}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+      MAIL,
+    )
+    await user.type(screen.getByLabelText(zhCN.passwordSignIn.passwordLabel), PASS)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordSignIn.submit }),
+    )
+    await waitFor(() => expect(beforeStart).toHaveBeenCalledTimes(1))
+    // The gate receives the method and the presented mode.
+    expect(beforeStart).toHaveBeenCalledWith({
+      method: 'password',
+      mode: 'sign-in',
+    })
+    expect(harness.calls).toHaveLength(0)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('await an asynchronous gate answer before starting', async () => {
+    const harness = makeHarness({})
+    const beforeStart = vi.fn(async () => false)
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([{ name: 'password', kind: 'form' }])}
+        beforeStart={beforeStart}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+      MAIL,
+    )
+    await user.type(screen.getByLabelText(zhCN.passwordSignIn.passwordLabel), PASS)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordSignIn.submit }),
+    )
+    await waitFor(() => expect(beforeStart).toHaveBeenCalledTimes(1))
+    expect(harness.calls).toHaveLength(0)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('not gate the flow’s later steps, only its start', async () => {
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'code', kind: 'code', required: true }],
+          },
+        }),
+      [LOGIN_ANSWER]: (call) =>
+        (call.options?.body as { step?: string }).step === 'complete'
+          ? authenticatedCompletion()
+          : completeFlow(2),
+      [PROFILE_GET]: () => principal(),
+    })
+    let allowed = true
+    const beforeStart = vi.fn(() => allowed)
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([{ name: 'password', kind: 'form' }])}
+        beforeStart={beforeStart}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+      MAIL,
+    )
+    await user.type(screen.getByLabelText(zhCN.passwordSignIn.passwordLabel), PASS)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordSignIn.submit }),
+    )
+    // The first start passed the gate and parked a challenge step.
+    const code = await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
+    allowed = false
+    await user.type(code, '123456')
+    await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+    // The answer travelled even though the gate would now refuse: it
+    // gates starts, not a parked step's answers.
+    await waitFor(() =>
+      expect(
+        harness.calls.some(
+          (call) => call.path === '/api/v1/auth/flows/answer',
+        ),
+      ).toBe(true),
+    )
+    expect(beforeStart).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuse a social start at the gate', async () => {
+    const harness = makeHarness({})
+    const beforeStart = vi.fn(() => false)
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([
+          { name: 'google', kind: 'redirect', protocol: 'oidc', label: 'Google' },
+        ])}
+        beforeStart={beforeStart}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Google' }))
+    await waitFor(() =>
+      expect(beforeStart).toHaveBeenCalledWith({
+        method: 'google',
+        mode: 'sign-in',
+      }),
+    )
+    expect(harness.calls).toHaveLength(0)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('refuse an enterprise start at the gate after discovery', async () => {
+    const harness = makeHarness({
+      [SSO_DISCOVER]: () =>
+        ssoProviders([{ id: 'idp-1', name: 'Acme Okta', protocol: 'oidc' }]),
+    })
+    const beforeStart = vi.fn(() => false)
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([
+          { name: 'oidc', kind: 'enterprise', protocol: 'oidc' },
+        ])}
+        beforeStart={beforeStart}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText(zhCN.enterprise.emailLabel), MAIL)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.enterprise.continue }),
+    )
+    await user.click(await screen.findByRole('button', { name: 'Acme Okta' }))
+    await waitFor(() =>
+      expect(beforeStart).toHaveBeenCalledWith({
+        method: 'oidc',
+        mode: 'sign-in',
+      }),
+    )
+    // Only the provider discovery travelled; no flow began.
+    expect(harness.calls).toHaveLength(1)
+    expect(harness.calls[0]?.path).toBe('/api/v1/auth/sso/discover')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('keep an enterprise provider disabled while an async start gate is pending', async () => {
+    const harness = makeHarness({
+      [SSO_DISCOVER]: () =>
+        ssoProviders([{ id: 'idp-1', name: 'Acme Okta', protocol: 'oidc' }]),
+    })
+    let release: (allowed: boolean) => void = () => {}
+    const beforeStart = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          release = resolve
+        }),
+    )
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([
+          { name: 'oidc', kind: 'enterprise', protocol: 'oidc' },
+        ])}
+        beforeStart={beforeStart}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText(zhCN.enterprise.emailLabel), MAIL)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.enterprise.continue }),
+    )
+    const provider = await screen.findByRole('button', { name: 'Acme Okta' })
+    await user.click(provider)
+    await waitFor(() => expect(beforeStart).toHaveBeenCalledTimes(1))
+    // The gate has not answered yet: the provider button is already busy,
+    // so a second click cannot pass the same gate and start another flow.
+    expect(provider).toBeDisabled()
+    expect(
+      harness.calls.filter((call) => call.path === '/api/v1/auth/flows'),
+    ).toHaveLength(0)
+    await act(async () => {
+      release(true)
+    })
+    await waitFor(() =>
+      expect(
+        harness.calls.filter((call) => call.path === '/api/v1/auth/flows'),
+      ).toHaveLength(1),
+    )
+  })
 })

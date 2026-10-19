@@ -21,6 +21,13 @@
  * the screen offers an optional display name and password for that case (the
  * accept body's display_name and password); both are ignored when the address
  * already has an account, so leaving them blank accepts on the existing one.
+ * A host that binds the account creation itself restricts the pair through
+ * `newAccountFields`; hiding both also hides the hint that would describe
+ * fields that are not there. The screen's titles render as `headingLevel`
+ * (default h1, the screen normally being the page) and the accepted
+ * confirmation takes the level one below. The expiry renders in the host's
+ * display time zone when one is provided (ui-kit's display-time-zone
+ * context), else the device zone.
  *
  * The two read failures the contract names get their own text: a bare 404
  * ("no such invitation") and a 409 ("expired, revoked or already accepted");
@@ -37,9 +44,12 @@ import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { errorCodeOf } from '@speed/ui-kit'
+import { formatInstant } from '@speed/i18n'
+import { errorCodeOf, useDisplayTimeZone } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
+import { nextHeadingLevel } from './internal/heading.js'
+import type { HeadingLevel } from './internal/heading.js'
 
 /** The invitation as the screen renders it: the acceptView fields the
  * recipient needs (the host adapts the generated view to this shape). */
@@ -79,6 +89,23 @@ export interface AcceptInvitationScreenProps {
   readonly invitations: InvitationOperations
   /** Fired once after the acceptance lands; the host navigates. */
   readonly onAccepted?: () => void
+  /**
+   * Which of the new-account inputs to offer (both by default). The
+   * display name and password only matter when the invited address has no
+   * account yet; a host that binds that flow itself hides one or both.
+   * Hiding both also hides the explanatory hint, which would otherwise
+   * describe fields that are not there.
+   */
+  readonly newAccountFields?: {
+    readonly displayName?: boolean
+    readonly password?: boolean
+  }
+  /**
+   * The heading element the screen's titles render as; `'h1'` by default
+   * (the screen is normally the page). The accepted confirmation renders
+   * one level below it.
+   */
+  readonly headingLevel?: HeadingLevel
 }
 
 /** Whether a failure is a bare 404 (no such invitation) or a 409 (expired,
@@ -111,8 +138,16 @@ export function AcceptInvitationScreen({
   token,
   invitations,
   onAccepted,
+  newAccountFields,
+  headingLevel = 'h1',
 }: AcceptInvitationScreenProps) {
   const { t, i18n } = useAuthUiTranslation()
+  // The host's display time zone when one is provided; absent, the device
+  // zone (the same rendering as before the provider existed).
+  const timeZone = useDisplayTimeZone()
+  const showDisplayName = newAccountFields?.displayName !== false
+  const showPassword = newAccountFields?.password !== false
+  const showNewAccountFields = showDisplayName || showPassword
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<ScreenState>({ status: 'loading' })
   const [accepting, setAccepting] = useState(false)
@@ -191,7 +226,7 @@ export function AcceptInvitationScreen({
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
         {state.failure.kind === 'error' ? (
           <>
-            <Typography component="h1" variant="h5">
+            <Typography component={headingLevel} variant="h5">
               {t('acceptInvitation.error.title')}
             </Typography>
             <InlineError code={state.failure.code} />
@@ -201,7 +236,7 @@ export function AcceptInvitationScreen({
           </>
         ) : (
           <>
-            <Typography component="h1" variant="h5">
+            <Typography component={headingLevel} variant="h5">
               {state.failure.kind === 'missing'
                 ? t('acceptInvitation.missing.title')
                 : t('acceptInvitation.unavailable.title')}
@@ -220,10 +255,12 @@ export function AcceptInvitationScreen({
   // ready or accepted: the invitation summary and either the accept action or
   // the acceptance confirmation.
   const { invitation } = state
-  const expires = formatInstant(invitation.expiresAt, i18n.language)
+  const expiry = formatInstant(invitation.expiresAt, i18n.language, {
+    timeZone,
+  })
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-      <Typography component="h1" variant="h5">
+      <Typography component={headingLevel} variant="h5">
         {t('acceptInvitation.title')}
       </Typography>
       <Typography>
@@ -232,16 +269,22 @@ export function AcceptInvitationScreen({
       <Typography color="text.secondary">
         {t('acceptInvitation.email', { email: invitation.email })}
       </Typography>
-      <Typography color="text.secondary">
-        {t('acceptInvitation.expires', { expires })}
-      </Typography>
+      {/* The host's display zone is unvalidated, and the shared
+          formatter degrades a zone the engine rejects to an empty
+          string: an empty result means no expiry line, never a dated
+          label with no value beside it. */}
+      {expiry !== '' && (
+        <Typography color="text.secondary">
+          {t('acceptInvitation.expires', { expires: expiry })}
+        </Typography>
+      )}
 
       {state.status === 'accepted' ? (
         <Box
           role="status"
           sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}
         >
-          <Typography component="h2" variant="h6">
+          <Typography component={nextHeadingLevel(headingLevel)} variant="h6">
             {t('acceptInvitation.accepted.title')}
           </Typography>
           <Typography color="text.secondary">
@@ -250,22 +293,28 @@ export function AcceptInvitationScreen({
         </Box>
       ) : (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <TextField
-            size="small"
-            value={displayName}
-            onChange={(event) => setDisplayName(event.target.value)}
-            label={t('acceptInvitation.displayNameLabel')}
-          />
-          <TextField
-            size="small"
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            label={t('acceptInvitation.passwordLabel')}
-          />
-          <Typography variant="caption" color="text.secondary">
-            {t('acceptInvitation.newAccountHint')}
-          </Typography>
+          {showDisplayName ? (
+            <TextField
+              size="small"
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              label={t('acceptInvitation.displayNameLabel')}
+            />
+          ) : null}
+          {showPassword ? (
+            <TextField
+              size="small"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              label={t('acceptInvitation.passwordLabel')}
+            />
+          ) : null}
+          {showNewAccountFields ? (
+            <Typography variant="caption" color="text.secondary">
+              {t('acceptInvitation.newAccountHint')}
+            </Typography>
+          ) : null}
           <Button
             variant="contained"
             disabled={accepting}
@@ -279,20 +328,4 @@ export function AcceptInvitationScreen({
       )}
     </Box>
   )
-}
-
-/**
- * Formats a server instant in the current language through Intl, holding
- * the locale rules (never formatting a date by hand). An absent or malformed
- * value renders as empty text so a bad field can never reach Intl and throw.
- */
-function formatInstant(iso: string, language: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) {
-    return ''
-  }
-  return new Intl.DateTimeFormat(language, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date)
 }
