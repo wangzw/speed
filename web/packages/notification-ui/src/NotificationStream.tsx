@@ -36,7 +36,11 @@ import {
   getNotificationInboxListMessagesQueryKey,
   getNotificationStreamSubscribeQueryKey,
 } from '@speed/api-sdk'
-import { tenantQueryKey, useCurrentTenant } from '@speed/auth-core'
+import {
+  isTenantAdmissionRefusal,
+  tenantQueryKey,
+  useCurrentTenant,
+} from '@speed/auth-core'
 
 /**
  * The stream path, taken from the generated contract's own query-key
@@ -51,36 +55,6 @@ const RECONNECT_BASE_MS = 1000
 const RECONNECT_MAX_MS = 30000
 /** Cap on the backoff exponent, so 2 ** n stays a sane number. */
 const RECONNECT_MAX_EXPONENT = 6
-
-/**
- * The bare-HTTP code the transport synthesizes for a 404 with no readable
- * module code. The tenant admission layer's refusal is exactly that: the
- * stream route is tenant-scoped, and a caller outside the tenant is answered
- * a bare 404 that does not distinguish a missing tenant, a disabled one and a
- * non-member. The notification module's own refusals carry
- * `notification.*` codes instead.
- */
-const TENANT_REFUSAL_CODE = 'client.http.404'
-
-/**
- * Whether the failure the opener reported is the admission layer's tenant
- * refusal. The check is structural and reads the status off the answer the
- * opener surfaced -- a stream failure may or may not be an `ApiError`, so the
- * code alone is not enough. A 404 carrying a module code is the notification
- * module's own answer and is not the refusal.
- */
-function isAdmissionRefusal(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) {
-    return false
-  }
-  const candidate = error as { readonly status?: unknown; readonly code?: unknown }
-  if (typeof candidate.status === 'number' && candidate.status === 404) {
-    return (
-      typeof candidate.code !== 'string' || candidate.code.startsWith('client.')
-    )
-  }
-  return candidate.code === TENANT_REFUSAL_CODE
-}
 
 const NotificationStreamContext = createContext<EventStreamOpener | null>(null)
 
@@ -218,7 +192,10 @@ function NotificationStreamSubscriber({
         // the subscription, and a hidden tab that becomes visible opens
         // once, so both paths still recover.
         onError: (error: unknown) => {
-          refused = isAdmissionRefusal(error)
+          // The admission layer's refusal is classified by auth-core, so a
+          // stream failure that crossed the transport boundary reads the
+          // same way the surfaces read it.
+          refused = isTenantAdmissionRefusal(error)
         },
         onClose: () => {
           if (refused) {

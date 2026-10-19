@@ -6,11 +6,15 @@
  * notification-ui namespace for this package's strings, the ui-kit
  * namespace because the surfaces compose ui-kit components), the
  * AppThemeProvider tree, a QueryClientProvider and a TenantProvider (the
- * surfaces key their reads under the acting tenant). This file is that
- * journey: it renders the bell beside the notification center over a real
- * @speed/api-client whose scripted fetch answers genuine Response objects,
- * hears the bell count, marks every message read through the center, and
- * switches the whole page to the other supported language.
+ * surfaces key their reads under the acting tenant). The notification
+ * surface's feature-presence facts -- the preference matrix and the
+ * optional delivery channels -- come from NotificationPresenceProvider,
+ * which the quick start mounts from the host's feature document. This
+ * file is that journey: it renders the bell beside the notification
+ * center over a real @speed/api-client whose scripted fetch answers
+ * genuine Response objects, hears the bell count, marks every message
+ * read through the center, and switches the whole page to the other
+ * supported language.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -29,6 +33,7 @@ import { renderWithProviders } from '../test-utils/render.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { NotificationBell } from './NotificationBell.js'
 import { NotificationCenter } from './NotificationCenter.js'
+import { NotificationPresenceProvider } from './NotificationPresence.js'
 
 const MESSAGES_PATH = '/api/v1/notifications/messages'
 const READ_ALL_PATH = '/api/v1/notifications/messages/read-all'
@@ -89,10 +94,12 @@ describe('notification surface quick start', () => {
     const rig = makeRealClientRigWithoutSession(responder())
     rig.store.set('access-1')
     const { i18n } = renderWithProviders(
-      <div>
-        <NotificationBell onClick={() => undefined} />
-        <NotificationCenter />
-      </div>,
+      <NotificationPresenceProvider preferences channels={['email', 'sms']}>
+        <div>
+          <NotificationBell onClick={() => undefined} />
+          <NotificationCenter />
+        </div>
+      </NotificationPresenceProvider>,
     )
 
     // The bell reads the unread count.

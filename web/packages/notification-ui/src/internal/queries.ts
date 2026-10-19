@@ -50,13 +50,35 @@ function useActingTenantId(): string | null {
   return useCurrentTenant()?.tenantId ?? null
 }
 
-/** The caller's messages, optionally filtered by group (GET
+/** The listing filters a caller can apply to the message list. */
+export interface NotificationMessageListing {
+  /** Restrict the page to one group; absent or empty means every group. */
+  readonly group?: string
+  /** Page size; absent leaves the server's default page bound. */
+  readonly limit?: number
+  /** Number of rows to skip; absent means the first page. */
+  readonly offset?: number
+}
+
+/** The caller's messages, optionally filtered by group and paged (GET
  * /notifications/messages). */
-export function useNotificationMessages(group?: string) {
-  const params = useMemo(
-    () => (group === undefined || group === '' ? undefined : { group }),
-    [group],
-  )
+export function useNotificationMessages(listing?: NotificationMessageListing) {
+  const group = listing?.group
+  const limit = listing?.limit
+  const offset = listing?.offset
+  const params = useMemo(() => {
+    const next: { group?: string; limit?: number; offset?: number } = {}
+    if (group !== undefined && group !== '') {
+      next.group = group
+    }
+    if (limit !== undefined) {
+      next.limit = limit
+    }
+    if (offset !== undefined) {
+      next.offset = offset
+    }
+    return Object.keys(next).length === 0 ? undefined : next
+  }, [group, limit, offset])
   const bareKey = useMemo(
     () => getNotificationInboxListMessagesQueryKey(params),
     [params],

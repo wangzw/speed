@@ -19,10 +19,10 @@
  * refusals arrive as `notification.*` codes and keep their own error text.
  *
  * The refusal is detected from the answer, not a route-level permission
- * read: the server writes the 404, and the surface renders the answer. The
- * check is structural -- a bare non-2xx with no readable code envelope
- * surfaced as the client.http.404 code -- so it reads a plain object and
- * never imports the transport.
+ * read: the server writes the 404, and the surface renders the answer.
+ * @speed/auth-core's `isTenantAdmissionRefusal` owns the structural check
+ * (a bare 404 with no module code, surfaced as the client.http.404 code),
+ * so every consumer of the admission answer classifies it the same way.
  */
 
 import type { ReactNode } from 'react'
@@ -37,30 +37,8 @@ import type {
   EmptyStateHeadingLevel,
   EmptyStateNoHeading,
 } from '@speed/ui-kit'
+import { isTenantAdmissionRefusal } from '@speed/auth-core'
 import { useNotificationUiTranslation } from './translation.js'
-
-/**
- * The bare-HTTP code the transport synthesizes for a 404 with no readable
- * envelope. The admission layer's tenant refusal is exactly that; the
- * notification module's own refusals carry `notification.*` codes instead,
- * so their status alone never marks the tenant refusal.
- */
-const TENANT_REFUSAL_CODE = 'client.http.404'
-
-/**
- * Whether a read's or write's failure is the admission layer's tenant
- * refusal: a bare 404 surfaced as the client.http.404 code. Status alone is
- * not enough -- a typed notification refusal can also carry status 404 --
- * so the check reads the code, which the api-client synthesizes only when
- * the answer carried no module code.
- */
-export function isTenantRefusal(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) {
-    return false
-  }
-  const candidate = error as { readonly code?: unknown }
-  return candidate.code === TENANT_REFUSAL_CODE
-}
 
 export interface TenantAsyncSectionProps<Payload> {
   /** No answer yet: renders `loading`. */
@@ -97,7 +75,7 @@ export function TenantAsyncSection<Payload>({
   // The tenant refusal replaces the content even when a cached payload is
   // still on screen: once admission refuses the tenant, the older data
   // describes a tenant the caller can no longer enter.
-  if (!rest.pending && isTenantRefusal(error)) {
+  if (!rest.pending && isTenantAdmissionRefusal(error)) {
     return (
       <EmptyState
         variant="noPermission"

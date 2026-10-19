@@ -12,9 +12,11 @@
  *
  * The button is controlled: `onClick` is the host's navigation to the
  * notification surface -- the bell carries no routing itself, so it sits
- * in any shell's header actions.
+ * in any shell's header actions. A host may replace the default bell
+ * glyph through `icon`.
  */
 
+import type { MouseEvent, ReactNode } from 'react'
 import Badge from '@mui/material/Badge'
 import IconButton from '@mui/material/IconButton'
 import { useNotificationUnreadCount } from './internal/queries.js'
@@ -23,14 +25,16 @@ import { useNotificationUiTranslation } from './internal/translation.js'
 /** The largest count the badge prints before switching to "99+". */
 const BADGE_MAX = 99
 
-export interface NotificationBellProps {
+export type NotificationBellProps = {
   /** Invoked when the bell is activated; the host navigates to the
    * notification surface. */
-  readonly onClick: () => void
+  readonly onClick: (event: MouseEvent<HTMLButtonElement>) => void
+  /** The glyph shown inside the badge; defaults to the built-in bell. */
+  readonly icon?: ReactNode
 }
 
 /** The unread-count bell for a shell's header actions. */
-export function NotificationBell({ onClick }: NotificationBellProps) {
+export function NotificationBell({ onClick, icon }: NotificationBellProps) {
   const { t } = useNotificationUiTranslation()
   const { data } = useNotificationUnreadCount()
   const count = data ?? 0
@@ -52,7 +56,7 @@ export function NotificationBell({ onClick }: NotificationBellProps) {
           </span>
         }
       >
-        <BellIcon />
+        {icon ?? <BellIcon />}
       </Badge>
     </IconButton>
   )

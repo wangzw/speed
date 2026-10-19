@@ -3,14 +3,21 @@
  * caller's messages render (title, body, unread chip), an unread row's
  * "mark as read" POSTs that message's read route and the list re-reads
  * with it marked, the header action POSTs read-all and reports the
- * answer's count, an empty answer renders the empty placeholder, a
- * failed read renders the retryable error placeholder, and the whole
- * surface passes axe.
+ * answer's count, a message carrying a link activates the host's
+ * `onOpen` after marking it read, a page size pages through the
+ * response's total, the embedded variant renders its own heading, a
+ * per-row detail renderer appends content, an empty answer renders the
+ * empty placeholder, a failed read renders the retryable error
+ * placeholder, and the whole surface passes axe.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { useState } from 'react'
+import type { ReactElement } from 'react'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { formatInstant } from '@speed/i18n'
+import { DisplayTimeZoneProvider } from '@speed/ui-kit'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
   jsonResponse,
@@ -32,6 +39,7 @@ interface Row {
   readonly title: string
   readonly body: string
   read: boolean
+  readonly link?: string
 }
 
 function message(row: Row): Record<string, unknown> {
@@ -42,7 +50,7 @@ function message(row: Row): Record<string, unknown> {
     title: row.title,
     body: row.body,
     params: null,
-    link: '',
+    link: row.link ?? '',
     // The server's own shape: an unread message carries read_at as JSON
     // null (its view's *time.Time has no omitempty), a read one as an
     // instant string.
@@ -51,7 +59,8 @@ function message(row: Row): Record<string, unknown> {
   }
 }
 
-/** A stateful inbox the responder reads and mutates. */
+/** A stateful inbox the responder reads and mutates, honouring the
+ * listing's limit and offset. */
 function inboxResponder(rows: Row[]): RealResponder {
   const unread = () => rows.filter((row) => !row.read).length
   return (call: RealCall) => {
@@ -77,8 +86,12 @@ function inboxResponder(rows: Row[]): RealResponder {
       return new Response(null, { status: 204 })
     }
     if (call.path === MESSAGES_PATH && call.method === 'GET') {
+      const params = new URLSearchParams(call.query)
+      const rawLimit = params.get('limit')
+      const limit = rawLimit === null ? rows.length : Number(rawLimit)
+      const offset = Number(params.get('offset') ?? '0')
       return jsonResponse(200, {
-        messages: rows.map(message),
+        messages: rows.slice(offset, offset + limit).map(message),
         total: rows.length,
       })
     }
@@ -86,10 +99,28 @@ function inboxResponder(rows: Row[]): RealResponder {
   }
 }
 
-function mount(rows: Row[]) {
+function mount(rows: Row[], ui: ReactElement = <NotificationInbox />) {
   const rig = makeRealClientRigWithoutSession(inboxResponder(rows))
   rig.store.set('access-1')
-  return { rig, ...renderWithProviders(<NotificationInbox />) }
+  return { rig, ...renderWithProviders(ui) }
+}
+
+/** A host that changes the list context the inbox renders with: both a
+ * group filter and a page size change are new lists. */
+function ContextHarness({ pageSize }: { readonly pageSize: number }) {
+  const [group, setGroup] = useState('')
+  const [size, setSize] = useState(pageSize)
+  return (
+    <>
+      <button type="button" onClick={() => setGroup('billing')}>
+        change group
+      </button>
+      <button type="button" onClick={() => setSize(pageSize + 2)}>
+        change page size
+      </button>
+      <NotificationInbox group={group} pageSize={size} />
+    </>
+  )
 }
 
 describe('NotificationInbox', () => {
@@ -144,6 +175,317 @@ describe('NotificationInbox', () => {
     expect(
       rig.calls.some((call) => call.path === READ_ALL_PATH && call.method === 'POST'),
     ).toBe(true)
+  })
+
+  it('marks a linked message read before handing it to onOpen', async () => {
+    const order: string[] = []
+    const rows: Row[] = [
+      { id: 'm1', title: 'Open me', body: '', read: false, link: '/objects/1' },
+    ]
+    const responder = inboxResponder(rows)
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.method === 'POST' && call.path === `${MESSAGES_PATH}/m1/read`) {
+        order.push('read')
+      }
+      return responder(call)
+    })
+    rig.store.set('access-1')
+    const onOpen = vi.fn((message: { link: string }) =>
+      order.push(`open:${message.link}`),
+    )
+    renderWithProviders(<NotificationInbox onOpen={onOpen} />)
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Open me' }),
+    )
+    await waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1))
+    // The read lands first: a row is handed over already marked.
+    expect(order).toEqual(['read', 'open:/objects/1'])
+  })
+
+  it('opens an already-read linked message without writing a read', async () => {
+    const onOpen = vi.fn()
+    const { rig } = mount(
+      [{ id: 'm2', title: 'Already read', body: '', read: true, link: '/objects/2' }],
+      <NotificationInbox onOpen={onOpen} />,
+    )
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Already read' }),
+    )
+    await waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1))
+    expect(
+      rig.calls.some(
+        (call) => call.method === 'POST' && call.path === `${MESSAGES_PATH}/m2/read`,
+      ),
+    ).toBe(false)
+  })
+
+  it('pages through the response total with previous and next', async () => {
+    const { rig } = mount(
+      [
+        { id: 'm1', title: 'One', body: '', read: false },
+        { id: 'm2', title: 'Two', body: '', read: false },
+        { id: 'm3', title: 'Three', body: '', read: false },
+        { id: 'm4', title: 'Four', body: '', read: false },
+        { id: 'm5', title: 'Five', body: '', read: false },
+      ],
+      <NotificationInbox pageSize={2} />,
+    )
+    await screen.findByText('One')
+    expect(screen.queryByText('Three')).toBeNull()
+    const previous = screen.getByRole('button', { name: zhCN.inbox.previous })
+    expect(previous).toBeDisabled()
+
+    await userEvent.click(screen.getByRole('button', { name: zhCN.inbox.next }))
+    expect(await screen.findByText('Three')).toBeInTheDocument()
+    expect(screen.queryByText('One')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: zhCN.inbox.previous }),
+    ).toBeEnabled()
+    // The next page is the second window of the list.
+    expect(
+      rig.calls.some(
+        (call) =>
+          call.path === MESSAGES_PATH &&
+          call.method === 'GET' &&
+          new URLSearchParams(call.query).get('limit') === '2' &&
+          new URLSearchParams(call.query).get('offset') === '2',
+      ),
+    ).toBe(true)
+    expect(
+      screen.getByRole('button', { name: zhCN.inbox.next }),
+    ).toBeEnabled()
+
+    // The last page: five rows at a page size of two leave one row in the
+    // third window, and no fourth window exists to read. The pager must
+    // stop there rather than point past the total.
+    await userEvent.click(screen.getByRole('button', { name: zhCN.inbox.next }))
+    expect(await screen.findByText('Five')).toBeInTheDocument()
+    expect(screen.queryByText('Three')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: zhCN.inbox.next }),
+    ).toBeDisabled()
+    expect(
+      screen.getByRole('button', { name: zhCN.inbox.previous }),
+    ).toBeEnabled()
+    expect(
+      rig.calls.some(
+        (call) =>
+          call.path === MESSAGES_PATH &&
+          call.method === 'GET' &&
+          new URLSearchParams(call.query).get('offset') === '6',
+      ),
+    ).toBe(false)
+
+    await userEvent.click(
+      screen.getByRole('button', { name: zhCN.inbox.previous }),
+    )
+    expect(await screen.findByText('Three')).toBeInTheDocument()
+    await userEvent.click(
+      screen.getByRole('button', { name: zhCN.inbox.previous }),
+    )
+    expect(await screen.findByText('One')).toBeInTheDocument()
+  })
+
+  it('gates mark-all on the whole inbox, not the visible page', async () => {
+    const rows: Row[] = [
+      { id: 'm1', title: 'One', body: '', read: false },
+      { id: 'm2', title: 'Two', body: '', read: false },
+      { id: 'm3', title: 'Three', body: '', read: true },
+      { id: 'm4', title: 'Four', body: '', read: true },
+    ]
+    const { rig } = mount(rows, <NotificationInbox pageSize={2} />)
+    await screen.findByText('One')
+
+    await userEvent.click(screen.getByRole('button', { name: zhCN.inbox.next }))
+    // Page two holds only read rows, but the inbox still has two unread
+    // messages on page one: the whole-inbox action stays available.
+    await screen.findByText('Three')
+    const markAll = screen.getByRole('button', { name: zhCN.inbox.markAllRead })
+    expect(markAll).toBeEnabled()
+
+    await userEvent.click(markAll)
+    expect(
+      await screen.findByText(zhCN.inbox.markAllReadDone.replace('{{n}}', '2')),
+    ).toBeInTheDocument()
+    expect(
+      rig.calls.some((call) => call.path === READ_ALL_PATH && call.method === 'POST'),
+    ).toBe(true)
+    expect(rows.filter((row) => !row.read)).toHaveLength(0)
+  })
+
+  it('clears the list feedback when the page changes', async () => {
+    const rows: Row[] = [
+      { id: 'm1', title: 'One', body: '', read: false },
+      { id: 'm2', title: 'Two', body: '', read: false },
+      { id: 'm3', title: 'Three', body: '', read: false },
+    ]
+    const responder = inboxResponder(rows)
+    let failNext = true
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.path === READ_ALL_PATH && call.method === 'POST' && failNext) {
+        failNext = false
+        return jsonResponse(500, { code: 'notification.bad_request' })
+      }
+      return responder(call)
+    })
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationInbox pageSize={2} />)
+    await screen.findByText('One')
+
+    // A failed write belongs to the same feedback scope: the page it was
+    // raised on owns it, so the move clears the alert.
+    await userEvent.click(
+      screen.getByRole('button', { name: zhCN.inbox.markAllRead }),
+    )
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: zhCN.inbox.next }))
+    expect(await screen.findByText('Three')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+
+    // Read-all covers the whole inbox, not just the visible page.
+    await userEvent.click(
+      screen.getByRole('button', { name: zhCN.inbox.markAllRead }),
+    )
+    const done = zhCN.inbox.markAllReadDone.replace('{{n}}', '3')
+    expect(await screen.findByText(done)).toBeInTheDocument()
+
+    await userEvent.click(
+      screen.getByRole('button', { name: zhCN.inbox.previous }),
+    )
+    expect(await screen.findByText('One')).toBeInTheDocument()
+    // The confirmation described the previous page's context, so it goes
+    // with it.
+    expect(screen.queryByText(done)).toBeNull()
+  })
+
+  it('reads a new group from its first page, not from the previous page index', async () => {
+    const { rig } = mount(
+      [
+        { id: 'm1', title: 'One', body: '', read: false },
+        { id: 'm2', title: 'Two', body: '', read: false },
+        { id: 'm3', title: 'Three', body: '', read: false },
+        { id: 'm4', title: 'Four', body: '', read: false },
+      ],
+      <ContextHarness pageSize={2} />,
+    )
+    await screen.findByText('One')
+    await userEvent.click(screen.getByRole('button', { name: zhCN.inbox.next }))
+    await screen.findByText('Three')
+
+    // Inspect only the list reads issued after the context change: the
+    // previous page's offset must never be one of them.
+    rig.calls.length = 0
+    await userEvent.click(screen.getByRole('button', { name: 'change group' }))
+    await waitFor(() =>
+      expect(
+        rig.calls.some(
+          (call) =>
+            call.path === MESSAGES_PATH &&
+            new URLSearchParams(call.query).get('group') === 'billing' &&
+            new URLSearchParams(call.query).get('offset') === '0',
+        ),
+      ).toBe(true),
+    )
+    expect(
+      rig.calls.some(
+        (call) =>
+          call.path === MESSAGES_PATH &&
+          new URLSearchParams(call.query).get('group') === 'billing' &&
+          new URLSearchParams(call.query).get('offset') === '2',
+      ),
+    ).toBe(false)
+  })
+
+  it('clears a failed write when the page size changes', async () => {
+    const responder = inboxResponder([
+      { id: 'm1', title: 'One', body: '', read: false },
+      { id: 'm2', title: 'Two', body: '', read: false },
+    ])
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.path === READ_ALL_PATH && call.method === 'POST') {
+        return jsonResponse(500, { code: 'notification.bad_request' })
+      }
+      return responder(call)
+    })
+    rig.store.set('access-1')
+    renderWithProviders(<ContextHarness pageSize={2} />)
+    await screen.findByText('One')
+
+    await userEvent.click(
+      screen.getByRole('button', { name: zhCN.inbox.markAllRead }),
+    )
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'change page size' }),
+    )
+    // The failure described the previous list; a new page size is a new
+    // context, so the banner goes with it.
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  })
+
+  it('renders its own heading in the embedded variant instead of the page header', async () => {
+    mount(
+      [{ id: 'm1', title: 'One', body: '', read: false }],
+      <NotificationInbox variant="embedded" headingLevel="h3" />,
+    )
+    expect(
+      await screen.findByRole('heading', { level: 3, name: zhCN.inbox.title }),
+    ).toBeInTheDocument()
+    // The page-level h1 of the page variant is gone; the header's action
+    // still rides beside the heading.
+    expect(
+      screen.queryByRole('heading', { level: 1, name: zhCN.inbox.title }),
+    ).toBeNull()
+    expect(
+      screen.getByRole('button', { name: zhCN.inbox.markAllRead }),
+    ).toBeInTheDocument()
+  })
+
+  it('appends the per-row detail the host renders', async () => {
+    mount(
+      [{ id: 'm1', title: 'One', body: '', read: false }],
+      <NotificationInbox
+        renderDetail={(message) => <span>detail:{message.title}</span>}
+      />,
+    )
+    expect(await screen.findByText('detail:One')).toBeInTheDocument()
+  })
+
+  it('restricts the listing to the given group', async () => {
+    const { rig } = mount(
+      [{ id: 'm1', title: 'One', body: '', read: false }],
+      <NotificationInbox group="billing" />,
+    )
+    await screen.findByText('One')
+    expect(
+      rig.calls.some(
+        (call) =>
+          call.path === MESSAGES_PATH &&
+          call.method === 'GET' &&
+          new URLSearchParams(call.query).get('group') === 'billing',
+      ),
+    ).toBe(true)
+  })
+
+  it('formats a time in the display zone the host supplies', async () => {
+    const instant = '2026-08-01T01:00:00.000Z'
+    mount(
+      [{ id: 'm1', title: 'One', body: '', read: false }],
+      <DisplayTimeZoneProvider timeZone="Asia/Tokyo">
+        <NotificationInbox />
+      </DisplayTimeZoneProvider>,
+    )
+    expect(
+      await screen.findByText(
+        formatInstant(instant, 'zh-CN', { timeZone: 'Asia/Tokyo' }),
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(formatInstant(instant, 'zh-CN', { timeZone: 'UTC' })),
+    ).toBeNull()
   })
 
   it('renders the empty placeholder when there are no messages', async () => {

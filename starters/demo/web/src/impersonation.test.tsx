@@ -2149,9 +2149,16 @@ describe('the impersonation shell', () => {
         name: authUiEnUS.impersonation.impersonating,
       }),
     ).toBeNull()
-    expect(screen.getByRole('status')).toHaveTextContent(
-      authUiEnUS.impersonation.ended,
-    )
+    // Ending the impersonation remounts the tenant menu, whose switcher
+    // mounts its own (empty) role="status" region from the start, so the
+    // shell's permanent live region is no longer the only status region.
+    // Locate the ended confirmation through its text and assert the region
+    // that carries it.
+    expect(
+      screen
+        .getByText(authUiEnUS.impersonation.ended)
+        .closest('[role="status"]'),
+    ).toHaveTextContent(authUiEnUS.impersonation.ended)
     expect(backend.deletes()).toBe(1)
   })
 

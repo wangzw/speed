@@ -7,7 +7,8 @@
  * mark-all read (NotificationInbox), the per-type channel preference
  * matrix (NotificationPreferences), the composed page
  * (NotificationCenter), the live server-sent-event subscription
- * (NotificationStreamProvider), and the declarative route (notificationRoutes).
+ * (NotificationStreamProvider), the host's feature-presence facts
+ * (NotificationPresenceProvider), and the declarative route (notificationRoutes).
  * Every built-in string renders from the bilingual notification-ui
  * namespace (NOTIFICATION_UI_NAMESPACE + notificationUiResources, which
  * the host registers alongside ui-kit's); the surfaces render through
@@ -29,9 +30,22 @@ export {
   NotificationBell,
   type NotificationBellProps,
 } from './NotificationBell.js'
-export { NotificationInbox } from './NotificationInbox.js'
-export { NotificationPreferences } from './NotificationPreferences.js'
-export { NotificationCenter } from './NotificationCenter.js'
+export {
+  NotificationInbox,
+  type NotificationInboxProps,
+} from './NotificationInbox.js'
+export {
+  NotificationPreferences,
+  type NotificationPreferencesProps,
+} from './NotificationPreferences.js'
+export {
+  NotificationCenter,
+  type NotificationCenterProps,
+} from './NotificationCenter.js'
+export {
+  NotificationPresenceProvider,
+  type NotificationPresenceProviderProps,
+} from './NotificationPresence.js'
 export {
   NotificationStreamProvider,
   useNotificationStreamOpener,

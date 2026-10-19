@@ -22,6 +22,7 @@
  * state, so the two surfaces never describe the same refusal differently.
  */
 
+import { isTenantAdmissionRefusal } from '@speed/auth-core'
 import {
   CLIENT_TRANSPORT_ERROR_CODES,
   SESSION_LIFECYCLE_ERROR_CODES,
@@ -53,9 +54,13 @@ const KNOWN_CODES = new Set<string>(ERROR_TEXT_CODES)
 /**
  * The bare 404: the admission layer's tenant refusal. It resolves to the
  * surface's tenant sentence rather than the unknown fallback, so a refused
- * write names the same two causes the read's tenant state does.
+ * write names the same two causes the read's tenant state does. The
+ * code-only classifier is auth-core's predicate applied to the synthesized
+ * code, so the text never grows a second copy of the refusal's identity.
  */
-const TENANT_REFUSAL_CODE = 'client.http.404'
+function isTenantRefusalCode(code: string): boolean {
+  return isTenantAdmissionRefusal({ code })
+}
 
 /**
  * The code-to-text resolver hook: call with an ApiError code and get the
@@ -65,7 +70,7 @@ export function useNotificationUiErrorText(): (code: string) => string {
   const { t } = useNotificationUiTranslation()
   const resolveKnown = createErrorTextResolver(t, KNOWN_CODES)
   return (code) =>
-    code === TENANT_REFUSAL_CODE
+    isTenantRefusalCode(code)
       ? t('errors.tenantUnavailable')
       : resolveKnown(code)
 }

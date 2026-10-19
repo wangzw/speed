@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
@@ -36,6 +36,27 @@ describe('NotificationBell', () => {
     await userEvent.click(button)
     expect(onClick).toHaveBeenCalledTimes(1)
     await expectNoAxeViolations()
+  })
+
+  it('renders a host icon and hands the activation event to onClick', async () => {
+    const respond: RealResponder = () => jsonResponse(200, { unread: 0 })
+    const rig = makeRealClientRigWithoutSession(respond)
+    rig.store.set('access-1')
+    const onClick = vi.fn()
+    renderWithProviders(
+      <NotificationBell
+        onClick={onClick}
+        icon={<span data-testid="host-icon">*</span>}
+      />,
+    )
+    const button = await screen.findByRole('button', { name: zhCN.bell.label })
+    expect(within(button).getByTestId('host-icon')).toBeInTheDocument()
+    await userEvent.click(button)
+    expect(onClick).toHaveBeenCalledTimes(1)
+    // The handler receives the activation event, so a host can read the
+    // modifier keys or the target itself.
+    const event: unknown = onClick.mock.calls[0]?.[0]
+    expect(event).toHaveProperty('type', 'click')
   })
 
   it('renders the bare label with no badge when nothing is unread', async () => {

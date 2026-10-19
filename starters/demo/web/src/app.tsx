@@ -36,7 +36,7 @@
  * falls through to the tenant area like any other gated path.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -55,6 +55,7 @@ import { RouteGuard } from '@speed/layout-kit'
 import type { AppShellNavItem, RouteGuardStatus } from '@speed/layout-kit'
 import {
   NotificationBell,
+  NotificationPresenceProvider,
   NotificationStreamProvider,
 } from '@speed/notification-ui'
 import type { ConsoleRoute } from '@speed/console-ui'
@@ -307,10 +308,12 @@ function AppFrame({
  *
  * The feature document decides which of those surfaces exist: the roster read
  * runs only when tenant.admin is served, the bell only when notification.inbox
- * is, and the live subscription opens only when notification.stream is (beside
- * the session fact). The frame is also the wrapper the auth callback's absent
- * view renders in, so an absent callback and an unregistered path look the
- * same, inside the same shell.
+ * is, the live subscription opens only when notification.stream is (beside
+ * the session fact), and the notification surface's preference half and
+ * optional channels follow notification.preferences and
+ * notification.channel.email/sms. The frame is also the wrapper the auth
+ * callback's absent view renders in, so an absent callback and an unregistered
+ * path look the same, inside the same shell.
  */
 function TenantFrame({
   presence,
@@ -338,6 +341,19 @@ function TenantFrame({
   // closed, so a pending or failed document opens and reads nothing.
   const inboxServed = useFeature('notification.inbox')
   const streamServed = useFeature('notification.stream')
+  // The notification surface's presence facts: whether the preference matrix
+  // exists and which optional delivery channels the deployment serves. Both
+  // fail closed, so a pending or failed document offers neither.
+  const notificationPreferencesServed = useFeature('notification.preferences')
+  const emailChannelServed = useFeature('notification.channel.email')
+  const smsChannelServed = useFeature('notification.channel.sms')
+  const notificationChannels = useMemo<readonly ('email' | 'sms')[]>(
+    () => [
+      ...(emailChannelServed ? (['email'] as const) : []),
+      ...(smsChannelServed ? (['sms'] as const) : []),
+    ],
+    [emailChannelServed, smsChannelServed],
+  )
   const rosterServed = useFeature('tenant.admin')
   // The host's personal-tenant policy: when this feature is in force, an
   // account with no current tenant is given one by the server's ensure, and a
@@ -782,21 +798,30 @@ function TenantFrame({
             key={`${principalId}:${generation}`}
             eligible={personalSetupEligible}
           >
-            <Box sx={{ p: 3 }}>
-              {/* The retryable failure replaces only the pages that read
-                  tenant data. The account-level pages (the account settings
-                  page, the setup page, the binding callback) read none, so
-                  they keep rendering while the ensure retries -- otherwise a
-                  sustained failure would lock a new account out of adding a
-                  username, setting a password, or revoking a session. */}
-              {personalFailure && tenantId === null && !accountLevel ? (
-                <TenantProvisionFailure
-                  onRetry={() => setPersonalRetry((current) => current + 1)}
-                />
-              ) : (
-                children
-              )}
-            </Box>
+            {/* The notification surface's feature-presence facts: the
+                preference matrix and the optional delivery channels. They
+                wrap the routed pages, where the notification surface reads
+                them; an absent fact hides its surface (fail closed). */}
+            <NotificationPresenceProvider
+              preferences={notificationPreferencesServed}
+              channels={notificationChannels}
+            >
+              <Box sx={{ p: 3 }}>
+                {/* The retryable failure replaces only the pages that read
+                    tenant data. The account-level pages (the account settings
+                    page, the setup page, the binding callback) read none, so
+                    they keep rendering while the ensure retries -- otherwise a
+                    sustained failure would lock a new account out of adding a
+                    username, setting a password, or revoking a session. */}
+                {personalFailure && tenantId === null && !accountLevel ? (
+                  <TenantProvisionFailure
+                    onRetry={() => setPersonalRetry((current) => current + 1)}
+                  />
+                ) : (
+                  children
+                )}
+              </Box>
+            </NotificationPresenceProvider>
           </PersonalTenantNoticeProvider>
         </ProductShell>
         </ImpersonationNoticeProvider>

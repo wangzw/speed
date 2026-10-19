@@ -5,7 +5,7 @@
 本包是站内通知在浏览器里的面，包 `web/packages/notification-ui`。一个能力 UI 包对一个后端能力目录（[web](design-web.md) 的划分轴），本包对后端通知能力的收件箱、偏好与推送三个面。它交付：
 
 - **未读铃铛**：`NotificationBell` 读调用方的未读数（`GET /api/v1/notifications/messages/unread-count`），渲染为带徽标的图标按钮。计数落在按钮的可及名上（前端规范的图标按钮规则），徽标字形对无障碍树隐藏，读屏只播报一次。它受控：`onClick` 是宿主的导航，铃铛本身不含路由。
-- **收件箱面**：`NotificationInbox` 读一页消息（`GET /api/v1/notifications/messages`），逐行渲染标题、正文、时间与未读/已读标记，未读行提供「标记为已读」（`POST /api/v1/notifications/messages/:id/read`），页头提供「全部标记为已读」（`POST /api/v1/notifications/messages/read-all`）。
+- **收件箱面**：`NotificationInbox` 读一页消息（`GET /api/v1/notifications/messages`），逐行渲染标题、正文、时间与未读/已读标记，未读行提供「标记为已读」（`POST /api/v1/notifications/messages/:id/read`），页头提供「全部标记为已读」（`POST /api/v1/notifications/messages/read-all`）。可选入参让宿主按分组过滤、按页大小翻页、在每行附上详情、把带链接的行交给宿主打开，并以嵌入形态去掉页头、改在指定层级渲染标题。
 - **偏好矩阵**：`NotificationPreferences` 读按类型的渠道矩阵（`GET /api/v1/notifications/preferences`）与类型分类法（`GET /api/v1/notifications/types`，取每类型是否可退订），写入单个渠道的目标态（`PUT /api/v1/notifications/preferences/:typeKey/:channel`）。渠道列是 `in_app` 加宿主给出的、特性在场的可选渠道。
 - **通知面**：`NotificationCenter` 是默认组合——收件箱与其下的偏好矩阵；特性 `notification.preferences` 缺席时只有收件箱。
 - **实时订阅**：`NotificationStreamProvider` 经宿主交来的开启器打开 `GET /api/v1/notifications/stream`，每来一帧 `message` 即失效当前租户的未读数与消息列表。
@@ -30,12 +30,13 @@
 
 | 导出 | 种类 | 说明 |
 |---|---|---|
-| `NotificationBell` | 组件 | 带未读徽标的铃铛；`onClick` 上报激活。 |
-| `NotificationInbox` | 组件 | 收件箱面：消息列表、行内标记已读、全部标记已读。 |
-| `NotificationPreferences` | 组件 | 按类型的渠道偏好矩阵。 |
-| `NotificationCenter` | 组件 | 收件箱与偏好矩阵的组合页。 |
+| `NotificationBell` | 组件 | 带未读徽标的铃铛；`onClick` 上报激活事件，可选 `icon` 替换字形。 |
+| `NotificationInbox` | 组件 | 收件箱面：消息列表、行内标记已读、全部标记已读；可选激活、详情、分组与翻页、嵌入形态。 |
+| `NotificationPreferences` | 组件 | 按类型的渠道偏好矩阵；可选类型标签与分组标签。 |
+| `NotificationCenter` | 组件 | 收件箱与偏好矩阵的组合页；可选透传入参。 |
 | `NotificationStreamProvider` | 组件 | 实时订阅 provider；入参 `openStream`、`enabled`、`children`。 |
 | `NotificationPresenceProvider` | 组件 | 特性在场 provider；入参 `preferences`、`channels`、`children`。 |
+| `NotificationBellProps`、`NotificationInboxProps`、`NotificationPreferencesProps`、`NotificationCenterProps`、`NotificationPresenceProviderProps` | 类型 | 各组件的入参形状（见下）。 |
 | `useNotificationStreamOpener` | hook | 读嵌套组件可见的开启器，无 provider 时为 null。 |
 | `notificationRoutes` | 声明表 | 通知面的一个声明：路径 `/notifications`、视图、导航标签、`requires: ['notification.inbox']`。 |
 | `NotificationRoute`、`NotificationRouteContext`、`NotificationRouteParams`、`NotificationRouteTable` | 类型 | 声明面的结构性类型，与 route-kit 的声明形状相同；`NotificationRoute` 的可选字段 `requires` 的类型是 `readonly FeatureName[]`（`@speed/api-sdk/features`）。 |
@@ -53,6 +54,58 @@ interface NotificationStreamProviderProps {
 
 `openStream` 是装配处（`@speed/product-shell/bootstrap` 的 `bootstrapSpeedApp`）建的客户端的事件流开启器（`SpeedClient.openEventStream`）。`enabled` 是宿主的会话事实：本包不为它读会话状态，一个匿名的访客因此不会打开一个只会被拒的连接。宿主把特性 `notification.stream` 是否在场并进同一个入参：该特性缺席的部署上，打开的连接被准入层以裸 404 拒绝后停止重连，只在租户或生效身份改变、或标签页重新可见时重开一次；宿主仍应把特性是否在场并进 `enabled`，使缺席的部署不去打开它。两者之一缺席或 `enabled` 为 false 时，订阅是惰性的，面仍按挂载与标签页重新可见各自读一次。
 
+### 收件箱面的入参
+
+```ts
+interface NotificationInboxProps {
+  onOpen?: (message: NotificationMessage) => void        // 带 link 的行激活后交给宿主；先标已读
+  renderDetail?: (message: NotificationMessage) => ReactNode  // 每行尾部追加的内容
+  group?: string                                          // 只看一个分组；空串等同缺席
+  pageSize?: number                                       // 给出即按响应 total 翻页
+  variant?: 'page' | 'embedded'                           // 缺省 page
+  headingLevel?: EmptyStateHeadingLevel                   // embedded 的标题层级，缺省 h2
+}
+```
+
+`onOpen` 给出时，消息的 `link` 非空的行把标题渲染为激活控件。未读行的激活先写该条的已读，写成功后才回调 `onOpen`；已读行直接回调。写失败时该面的内联错误横幅渲染失败码，`onOpen` 不被调用，宿主因此不会在一个没有落地的状态上导航。
+
+`pageSize` 给出时列表按 `limit` 与 `offset` 读取，页脚按响应的 `total` 渲染「上一页」「下一页」：首页的「上一页」与末页的「下一页」禁用，`total` 不超过一页时不渲染页脚。翻页是一次上下文变化，页脚动作清空该面反馈作用域里的成功确认与失败的写状态。`group` 给出时列表只读该分组；标记已读与全部标记已读仍按服务的路由作用，不受列表过滤影响。
+
+`variant` 为 `embedded` 时省去页头，改在 `headingLevel` 渲染标题，标记全部已读的动作仍在标题旁；错误与拒绝两种占位跟随 `headingLevel`，空占位与 `page` 形态下一样不带标题，因为它落在面自身的标题之下，再出一级标题会重复进入大纲。缺省 `page` 以页头渲染标题。
+
+### 偏好矩阵的入参
+
+```ts
+interface NotificationPreferencesProps {
+  typeLabel?: (type: { key: string; group: string }) => string  // 缺省为 type key
+  groupLabel?: (group: string) => string                        // 给出即按分组渲染
+}
+```
+
+`typeLabel` 的返回值同时用于行的可见标签与每个渠道格的 `aria-label` 中的类型名，读屏与视觉因此读同一个名字。`groupLabel` 给出时行按 `group` 的首次出现顺序分组，每组之前渲染一行横跨全部列的组标题；不给时整张表不分组。
+
+### 通知面的入参
+
+```ts
+interface NotificationCenterProps {
+  inbox?: NotificationInboxProps
+  preferences?: NotificationPreferencesProps
+}
+```
+
+`NotificationCenter` 把 `inbox` 透传给收件箱面、把 `preferences` 透传给偏好矩阵；偏好矩阵仍只在特性在场时挂载（见下）。
+
+### 铃铛的入参
+
+```ts
+interface NotificationBellProps {
+  onClick: (event: MouseEvent<HTMLButtonElement>) => void  // 宿主的导航
+  icon?: ReactNode                                          // 缺省为内置铃铛字形
+}
+```
+
+`onClick` 收到激活事件，宿主可据修饰键或目标决定落点。`icon` 只替换徽标内的字形，可及名仍由本包给出。
+
 ### 特性在场的入参
 
 ```ts
@@ -69,7 +122,7 @@ interface NotificationPresenceProviderProps {
 
 ### 对外接口面
 
-`src/index.ts` 的导出集、各组件的 props 形状、`notificationRoutes` 的类型与它所列的特性、`NotificationStreamProvider` 与 `NotificationPresenceProvider` 的入参语义（含没有 provider 时的处理），以及 `NOTIFICATION_UI_NAMESPACE` 与 `notificationUiResources` 是对使用者的接口面。包以锁定版本组发布。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。
+`src/index.ts` 的导出集、各组件的 props 形状（含 `NotificationBellProps`、`NotificationInboxProps`、`NotificationPreferencesProps`、`NotificationCenterProps`）、`notificationRoutes` 的类型与它所列的特性、`NotificationStreamProvider` 与 `NotificationPresenceProvider` 的入参语义（含没有 provider 时的处理），以及 `NOTIFICATION_UI_NAMESPACE` 与 `notificationUiResources` 是对使用者的接口面。包以锁定版本组发布。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。
 
 ## 依赖
 
@@ -79,9 +132,9 @@ interface NotificationPresenceProviderProps {
 |---|---|---|
 | `@speed/api-sdk` | 依赖 | 通知的生成 operation 与查询键构造器；响应类型；子路径 `@speed/api-sdk/features` 的特性名类型 `FeatureName` |
 | `@speed/api-client` | 依赖 | 事件流开启器与帧的类型（`EventStreamOpener`、`EventStreamOptions`、`EventStreamHandle`、`ServerSentEvent`） |
-| `@speed/auth-core` | 依赖 | 当前租户（`useCurrentTenant`）与租户作用域查询键（`tenantQueryKey`、`useTenantQueryKey`） |
-| `@speed/i18n` | 依赖 | 命名空间翻译与错误码文本解析（`createErrorTextResolver`、会话生命周期与传输码） |
-| `@speed/ui-kit` | 依赖 | 页头、空态、列表骨架、四态分支、内联错误等受控组件 |
+| `@speed/auth-core` | 依赖 | 当前租户（`useCurrentTenant`）与租户作用域查询键（`tenantQueryKey`、`useTenantQueryKey`）；准入层拒绝的判定（`isTenantAdmissionRefusal`） |
+| `@speed/i18n` | 依赖 | 命名空间翻译与错误码文本解析（`createErrorTextResolver`、会话生命周期与传输码）；时间的显示时区解析与格式化（`resolveTimeZone`、`formatInstant`） |
+| `@speed/ui-kit` | 依赖 | 页头、空态、列表骨架、四态分支、内联错误等受控组件；显示时区上下文（`useDisplayTimeZone`） |
 | `react`、`react-dom`、`@mui/material`、`@emotion/*`、`@tanstack/react-query` | peer | 宿主持有的 React/MUI 树与查询客户端；单份使主题与查询上下文不分叉 |
 
 本包不 import 同层的其他能力 UI 包，也不同 `@speed/route-kit` 建边：`notificationRoutes` 的形状是复制的，不是 import 的。
@@ -94,6 +147,7 @@ interface NotificationPresenceProviderProps {
 graph TD
     NotificationBell --> useNotificationUnreadCount
     NotificationInbox --> useNotificationMessages
+    NotificationInbox --> useNotificationUnreadCount
     NotificationInbox --> useMarkNotificationRead
     NotificationInbox --> useMarkAllNotificationsRead
     NotificationPreferences --> useNotificationPreferences
@@ -102,14 +156,20 @@ graph TD
     NotificationCenter --> NotificationInbox
     NotificationCenter --> NotificationPreferences
     NotificationCenter --> NotificationPresenceProvider
+    NotificationCenter --> useNotificationPresence
     NotificationPreferences --> NotificationPresenceProvider
+    NotificationPreferences --> useNotificationPresence
     NotificationStreamProvider --> openEventStream
     notificationRoutes --> NotificationCenter
     useNotificationUnreadCount --> tenantQueryKey
     useNotificationMessages --> tenantQueryKey
     NotificationBell --> ui-kit
     NotificationInbox --> ui-kit
+    NotificationInbox --> formatInstant
+    NotificationInbox --> useDisplayTimeZone
     NotificationPreferences --> ui-kit
+    formatInstant --> i18n
+    useDisplayTimeZone --> ui-kit
     openEventStream --> api-client
     tenantQueryKey --> auth-core
 ```
@@ -143,13 +203,25 @@ graph TD
 
 ### 偏好矩阵的渲染
 
-矩阵的行来自偏好读（每个在册类型一行），渠道列是 `in_app` 加 `NotificationPresenceProvider` 给出的、特性在场的可选渠道，按平台封闭渠道词表（`in_app`、`email`、`sms`）的次序排列，勾选态取该行的有效集。类型分类法给出每类型的 `unsubscribable`：为 false 的类型整行禁用并标注不可退订（一次写入会被拒 409），分类法尚未到时按未知处理、保持可勾。一次勾选写上该渠道的目标态并回读，勾选态因而是最近一次成功读到的服务端应答；一次写只带被勾的那个渠道。
+矩阵的行来自偏好读（每个在册类型一行），渠道列是 `in_app` 加 `NotificationPresenceProvider` 给出的、特性在场的可选渠道，按平台封闭渠道词表（`in_app`、`email`、`sms`）的次序排列，勾选态取该行的有效集。宿主列出可选渠道的次序不参与列序。没有 provider 时可选渠道为空，矩阵只有 `in_app` 一列；单独挂载的矩阵按同一规则渲染。类型分类法给出每类型的 `unsubscribable`：为 false 的类型整行禁用并标注不可退订（一次写入会被拒 409），分类法尚未到时按未知处理、保持可勾。一次勾选写上该渠道的目标态并回读，勾选态因而是最近一次成功读到的服务端应答；一次写只带被勾的那个渠道。
 
 **隐藏一个渠道列不改变偏好的取值。** 偏好按（类型，渠道）逐格写入，隐藏列的已存值不受影响，渠道的取值集也不因装配增减（[notification-preferences](../notification/design-notification-preferences.md)、[ADR-notification-channels-2026-10-15](../../../adr/adr-notification-channels-2026-10-15.md)）；渠道列只决定矩阵渲染哪些格。
 
 ### 偏好面按特性在场渲染
 
 `NotificationCenter` 只在 `NotificationPresenceProvider` 给出 `preferences` 为真时渲染偏好矩阵；为假时只渲染收件箱，也不发分类法与偏好读。
+
+### 收件箱的激活、翻页与嵌入
+
+一行是否可激活只取决于消息的 `link` 与宿主的 `onOpen`：两者都在场时标题成为激活控件，否则标题是纯文本。未读行的激活先走生成面的标记已读写，写成功后调用 `onOpen`；已读行不写、直接调用。激活与行内的「标记为已读」是两个控制，点击后者只写不回调。
+
+分页只由两个可选入参决定：`pageSize` 给出 `limit`，当前页乘出 `offset`，页脚按响应的 `total` 决定两个方向是否可用。响应 `total` 不超过一页时页脚不渲染。翻页与分组、页大小变化一样是一次上下文变化：该面的成功确认与上一次写失败随之前往一页的上下文一起清空。
+
+嵌入形态只改变头的形状：页头换成 `headingLevel` 层级的标题，动作为同一处「全部标记为已读」；错误与拒绝占位跟随 `headingLevel`，空占位不带标题。
+
+### 时间的渲染
+
+消息时间经 `@speed/i18n` 的 `formatInstant` 渲染，语言取当前界面语言，时区取 `@speed/ui-kit` 的 `useDisplayTimeZone`；上下文缺席时按 `resolveTimeZone` 的时区链落到设备时区（环境无法回答时以 UTC 收尾）。宿主给出的时区未经本包校验，`resolveTimeZone` 拒绝引擎不认的值并继续沿链下落。引擎解析不了的字段按原文渲染。
 
 ### 写入的反馈
 
@@ -182,7 +254,9 @@ graph TD
 ## 扩展点
 
 - **宿主改写措辞。** 在启动处向 `NOTIFICATION_UI_NAMESPACE` 注册自己的一对同键 bundle，`notificationUiResources` 只是发布的默认。
-- **偏好面的落点。** `NotificationCenter` 把偏好矩阵放在通知面内；一个宿主也可单独挂 `NotificationPreferences` 到自己的账户页，挂不挂由宿主按特性 `notification.preferences` 决定，渠道列同样取自 `NotificationPresenceProvider`。
+- **收件箱的形状。** 宿主可用 `group` 收窄到一个分组，用 `pageSize` 打开翻页，用 `renderDetail` 在行尾追加自己的内容，用 `onOpen` 接管带链接行的打开动作，用 `variant` 与 `headingLevel` 把同一个面嵌进自己的页面。
+- **偏好面与渠道。** `NotificationCenter` 把偏好矩阵放在通知面内；一个宿主也可单独挂 `NotificationPreferences` 到自己的账户页，挂不挂由宿主按特性 `notification.preferences` 决定，渠道列同样取自 `NotificationPresenceProvider`。类型标签与分组标题经 `typeLabel`、`groupLabel` 交给宿主。
+- **铃铛的字形。** `icon` 替换徽标内的字形，可及名与未读数的播报仍由本包给出。
 - **不开实时。** 宿主不传 `openStream` 或传 `enabled: false` 即得一个只按挂载与标签页重新可见读通知的面，无需改动本包。
 - **新增一个后端通知面的渲染。** 加一个组件并经生成面发请求，加进本包的公开面与命名空间；不改壳，不改传输。
 
@@ -201,9 +275,9 @@ graph TD
 | 文案命名空间与双语资源 | 已实现 | `web/packages/notification-ui/src/resources.ts` `NOTIFICATION_UI_NAMESPACE`、`notificationUiResources` |
 | 收件箱与偏好矩阵的反馈作用域与成功确认 | 未实现 | — |
 | 收件箱列表与偏好矩阵读的陈旧提示 | 未实现 | — |
-| 特性在场 provider `NotificationPresenceProvider` | 未实现 | — |
-| 偏好矩阵的渠道列取 `in_app` 与特性在场的可选渠道 | 未实现 | — |
-| 通知面在特性 `notification.preferences` 缺席时不渲染偏好矩阵、不发其读取 | 未实现 | — |
+| 特性在场 provider `NotificationPresenceProvider` | 已实现 | `web/packages/notification-ui/src/NotificationPresence.tsx` `NotificationPresenceProvider` |
+| 偏好矩阵的渠道列取 `in_app` 与特性在场的可选渠道 | 已实现 | `web/packages/notification-ui/src/NotificationPreferences.tsx` `columns` |
+| 通知面在特性 `notification.preferences` 缺席时不渲染偏好矩阵、不发其读取 | 已实现 | `web/packages/notification-ui/src/NotificationCenter.tsx` `presence.preferences` 分支 |
 | `notificationRoutes` 的 `requires` | 已实现 | `web/packages/notification-ui/src/routes.tsx` `notificationRoutes`；`web/packages/notification-ui/src/route.ts` `NotificationRoute` |
-| 准入层的裸 404 渲染为「无法访问当前组织」，不渲染成可重试的失败 | 已实现 | `web/packages/notification-ui/src/internal/tenant-section.tsx` `TenantAsyncSection`、`isTenantRefusal`；`web/packages/notification-ui/src/internal/error-text.ts` `useNotificationUiErrorText` |
+| 准入层的裸 404 渲染为「无法访问当前组织」，不渲染成可重试的失败 | 已实现 | `web/packages/notification-ui/src/internal/tenant-section.tsx` `TenantAsyncSection`、`@speed/auth-core` 的 `isTenantAdmissionRefusal`；`web/packages/notification-ui/src/internal/error-text.ts` `useNotificationUiErrorText` |
 | 实时连接被准入层拒绝时停止重连 | 已实现 | `web/packages/notification-ui/src/NotificationStream.tsx` `NotificationStreamProvider` |

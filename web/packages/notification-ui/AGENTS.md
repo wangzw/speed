@@ -5,7 +5,8 @@ bell with its unread badge (`NotificationBell`), the inbox surface with
 per-message and mark-all read (`NotificationInbox`), the per-type channel
 preference matrix (`NotificationPreferences`), the composed page
 (`NotificationCenter`), the live server-sent-event subscription
-(`NotificationStreamProvider`), and the declarative route
+(`NotificationStreamProvider`), the host's feature-presence facts
+(`NotificationPresenceProvider`), and the declarative route
 (`notificationRoutes`). It sits at the capability-UI tier: it renders over
 the host's React/MUI tree, reads and writes through the react-query hooks
 generated into `@speed/api-sdk` over the host's QueryClient, and opens its
@@ -51,8 +52,25 @@ live stream through the assembled client's event-stream opener.
   the whitelist (`notification.bad_request`, `notification.message_not_found`,
   `notification.not_unsubscribable`, the session-lifecycle and transport
   codes) render `errors.unknown`, never a raw key.
-- **Times render through `Intl.DateTimeFormat`** in the current UI
-  language, never by hand; an unparseable value renders as-is.
+- **Times render through `@speed/i18n`'s `formatInstant`** in the current
+  UI language and the host's display time zone (`@speed/ui-kit`'s
+  `useDisplayTimeZone`); with no provider the zone chain falls to the
+  device's own zone, then UTC. A field the engine cannot parse renders
+  as-is.
+- **Feature presence is the host's fact, carried by context.**
+  `NotificationPresenceProvider` takes whether the preference matrix is
+  served and which optional channels exist; the package reads no feature
+  state itself. Without a provider both facts fail closed: the center
+  renders the inbox alone and issues neither the taxonomy nor the
+  preference read, and a standalone matrix offers the in-app column only.
+- **The optional surfaces are additive.** `NotificationInbox` accepts a
+  group filter, a page size with previous/next paging driven by the
+  response total, an `onOpen` action and a per-row detail renderer, and an
+  embedded variant; `NotificationPreferences` accepts a type label and a
+  group label (grouping renders only when the label is given);
+  `NotificationCenter` passes optional `inbox` and `preferences` props
+  through; `NotificationBell` accepts an `icon` and hands `onClick` the
+  activation event. None of them changes behaviour when absent.
 
 ## Invariants (code review enforces; do not weaken)
 
@@ -61,6 +79,12 @@ live stream through the assembled client's event-stream opener.
   `RouteDeclaration` (see `src/route.ts`); the shapes are copied, not
   imported, so same-tier packages never depend on one another. The host's
   composition layer collects the declaration.
+- **The tenant refusal is auth-core's classification.** The read surfaces,
+  the write banner's bare-404 text and the stream's reconnect stop all
+  classify the admission layer's bare 404 through `@speed/auth-core`'s
+  `isTenantAdmissionRefusal`; no copy of that predicate or its synthesized
+  code lives here, and a typed module refusal at the same status is never
+  read as the tenant refusal.
 - **No hand-written HTTP, no hand-written query keys.** Endpoint paths and
   response types come from `@speed/api-sdk`; the only path this package
   names is derived from the generated contract.
