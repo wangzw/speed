@@ -146,7 +146,7 @@ func (r *routes) completeLogin(c *call, rec record, redirect bool) {
 	} else {
 		r.sessions.SetCookie(c.w, issued)
 		if redirect {
-			c.redirect(http.StatusSeeOther, rec.ReturnTo)
+			c.redirect(http.StatusSeeOther, r.returnTarget(rec))
 		} else {
 			writeSession(c, issued)
 		}

@@ -197,7 +197,7 @@ type startInput struct {
 	Method   string            "json:\"method\" description:\"The stable name of a login method, as returned in `name` by `GET /auth/methods`. A name the deployment does not take in is a 400 bad-request; a method turned off by the deployment is a 403 method-disabled.\""
 	Purpose  string            "json:\"purpose\" description:\"Accepted but not read by this route: a flow started here always has the purpose login. Use `POST /auth/flows/authenticated` for link, step-up or enroll.\""
 	Delivery string            "json:\"delivery\" description:\"How a completed login is delivered: `session` (the default) sets the session cookie and answers the session view; `token` answers an access and refresh token pair. `token` must be enabled by the deployment and requires the token capability, otherwise the request is a 400 bad-request.\""
-	ReturnTo string            "json:\"return_to\" description:\"Where to send the user agent after a callback login completes: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts. Anything else is a 400 bad-request. The value is stored in the flow record, and no parameter of the callback request can change it.\""
+	ReturnTo string            "json:\"return_to\" description:\"Where the callback lands the user agent: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts; anything else is a 400 bad-request. The callback lands the user agent there for every purpose that reaches ready: a login, a link and a no-factor step-up. An absent or empty value uses the configured `authn.login.default-return-to`, which is held to the same rule and falls back to `/`. The value is stored in the flow record, and no parameter of the callback request can change it.\""
 	Binding  string            "json:\"binding\" description:\"How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method.\""
 	Input    map[string]string `json:"input" description:"The fields the method's first step takes, as name-to-value strings. At most 8 members, each value at most 512 bytes; anything beyond is a 400 bad-request."`
 }
@@ -209,7 +209,7 @@ type startAuthenticatedInput struct {
 	Method   string            "json:\"method\" description:\"The method to run for `link`, and for a `step-up` of an account that holds no factor. For an enrollment it is not read, and for a step-up the policy answers with usable factors it is not read either; a step-up whose account holds factors but none usable for this session is refused with 401 insufficient_user_authentication before the method is consulted. A name the deployment does not take in is a 400 bad-request.\""
 	Purpose  string            "json:\"purpose\" description:\"Required, and one of `link`, `step-up` or `enroll`: bind an external identity, strengthen the current session, or register a factor. Any other value, including an empty one, is a 400 bad-request.\""
 	Delivery string            "json:\"delivery\" description:\"Accepted but not read: the delivery mode follows the kind of the request's session. It is accepted so that a client may send this route the same start body it sends to `POST /auth/flows`.\""
-	ReturnTo string            "json:\"return_to\" description:\"Where to send the user agent after a callback login completes: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts. Anything else is a 400 bad-request. The value is stored in the flow record, and no parameter of the callback request can change it.\""
+	ReturnTo string            "json:\"return_to\" description:\"Where the callback lands the user agent: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts; anything else is a 400 bad-request. The callback lands the user agent there for every purpose that reaches ready: a login, a link and a no-factor step-up. An absent or empty value uses the configured `authn.login.default-return-to`, which is held to the same rule and falls back to `/`. The value is stored in the flow record, and no parameter of the callback request can change it.\""
 	Binding  string            "json:\"binding\" description:\"How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method.\""
 	Input    map[string]string "json:\"input\" description:\"The fields the started step takes, as name-to-value strings: the method's first step for `link`, the enrollment step for `enroll` where `kind` names the factor kind, and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes.\""
 }
@@ -247,7 +247,7 @@ var retryAfterHeader = speedhttp.Header{
 // locationHeader declares the header a redirect answer carries.
 var locationHeader = speedhttp.Header{
 	Name:        "Location",
-	Description: "The flow's stored return target.",
+	Description: "The flow's stored return target, or the configured `authn.login.default-return-to` when the flow recorded none.",
 }
 
 // unauthorized is the declaration of a 401 that carries the capability's
@@ -485,9 +485,11 @@ var callbackResponses = []speedhttp.Response{
 	{
 		Status: http.StatusSeeOther,
 		Description: "The user agent is sent to the flow's stored return target instead of being answered a " +
-			"body: a completed cookie login writes its session cookie in this response, and a flow that still " +
+			"body: a completed cookie login writes its session cookie in this response, a flow that still " +
 			"needs a second factor or an enrollment keeps the flow cookie and resumes with `GET " +
-			"/auth/flows/current`",
+			"/auth/flows/current`, and a callback of a purpose other than login that reached ready keeps the " +
+			"flow cookie the same way and completes through `POST /auth/flows/answer`. When the flow recorded " +
+			"no return target, the configured `authn.login.default-return-to` is used.",
 		Headers: []speedhttp.Header{locationHeader},
 	},
 	speedhttp.ProblemResponse(http.StatusBadRequest, "The callback is malformed"),
@@ -512,7 +514,10 @@ var callbackGetOperation = speedhttp.NewReplyOperation[callbackInput](
 		"method, so a replayed authorization code or assertion loses the compare-and-swap and gets 401 "+
 		"flow-invalid. A GET callback that carries no flow cookie is always 401 flow-invalid: an "+
 		"identity-provider-initiated sign-in is served only as a POST. A cookie login that completes on this "+
-		"route answers 303 to the flow's stored return target instead of a body.",
+		"route answers 303 to the flow's stored return target instead of a body. A callback of a purpose "+
+		"other than login (a link, or a step-up of an account with no factor) that reaches ready answers 303 "+
+		"the same way, with no session made: the flow stays in the cookie at ready for the host's callback page to read "+
+		"with `GET /auth/flows/current` and complete with `POST /auth/flows/answer`.",
 	nil,
 	callbackResponses,
 )
@@ -529,8 +534,12 @@ var callbackPostOperation = speedhttp.NewReplyOperation[callbackInput](
 		"at its first factor, otherwise the call is a 401 flow-invalid before any method is asked. The posted "+
 		"form is bounded to 512 KiB before it is parsed, and a body over that bound is answered 401 login-failed "+
 		"with the flow left a tombstone. The engine moves the flow to processing before calling the method, so "+
-		"an assertion is handled at most once. Without a flow cookie the route serves an "+
-		"identity-provider-initiated sign-in, but only for an enterprise provider whose row enables it.",
+		"an assertion is handled at most once. A callback of a purpose other than login (a link, or a "+
+		"step-up of an account with no factor) that reaches ready answers 303 to the flow's stored return "+
+		"target, with no session made and the flow left in the cookie for the host's callback page to read with `GET "+
+		"/auth/flows/current` and complete with `POST /auth/flows/answer`. Without a flow cookie the route "+
+		"serves an identity-provider-initiated sign-in, but only for an enterprise provider whose row "+
+		"enables it.",
 	nil,
 	callbackResponses,
 )

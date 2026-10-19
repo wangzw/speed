@@ -1756,7 +1756,7 @@ export type AuthnLoginStartBody = {
   method?: string;
   /** Accepted but not read by this route: a flow started here always has the purpose login. Use `POST /auth/flows/authenticated` for link, step-up or enroll. */
   purpose?: string;
-  /** Where to send the user agent after a callback login completes: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts. Anything else is a 400 bad-request. The value is stored in the flow record, and no parameter of the callback request can change it. */
+  /** Where the callback lands the user agent: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts; anything else is a 400 bad-request. The callback lands the user agent there for every purpose that reaches ready: a login, a link and a no-factor step-up. An absent or empty value uses the configured `authn.login.default-return-to`, which is held to the same rule and falls back to `/`. The value is stored in the flow record, and no parameter of the callback request can change it. */
   return_to?: string;
 };
 
@@ -1796,7 +1796,7 @@ export type AuthnLoginStartAuthenticatedBody = {
   method?: string;
   /** Required, and one of `link`, `step-up` or `enroll`: bind an external identity, strengthen the current session, or register a factor. Any other value, including an empty one, is a 400 bad-request. */
   purpose?: string;
-  /** Where to send the user agent after a callback login completes: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts. Anything else is a 400 bad-request. The value is stored in the flow record, and no parameter of the callback request can change it. */
+  /** Where the callback lands the user agent: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts; anything else is a 400 bad-request. The callback lands the user agent there for every purpose that reaches ready: a login, a link and a no-factor step-up. An absent or empty value uses the configured `authn.login.default-return-to`, which is held to the same rule and falls back to `/`. The value is stored in the flow record, and no parameter of the callback request can change it. */
   return_to?: string;
 };
 
@@ -5146,7 +5146,7 @@ export const useAuthnAdminSsoProvidersCreate = <TError = Problem,
     }
 
 /**
- * Handles a provider's callback as a top-level browser navigation. The callback is bound through the flow cookie only, because a navigation cannot set a request header; the path's provider must equal the provider recorded in the flow and the flow must be at its first factor, otherwise the call is a 401 flow-invalid before any method is asked. The engine moves the flow to processing before calling the method, so a replayed authorization code or assertion loses the compare-and-swap and gets 401 flow-invalid. A GET callback that carries no flow cookie is always 401 flow-invalid: an identity-provider-initiated sign-in is served only as a POST. A cookie login that completes on this route answers 303 to the flow's stored return target instead of a body.
+ * Handles a provider's callback as a top-level browser navigation. The callback is bound through the flow cookie only, because a navigation cannot set a request header; the path's provider must equal the provider recorded in the flow and the flow must be at its first factor, otherwise the call is a 401 flow-invalid before any method is asked. The engine moves the flow to processing before calling the method, so a replayed authorization code or assertion loses the compare-and-swap and gets 401 flow-invalid. A GET callback that carries no flow cookie is always 401 flow-invalid: an identity-provider-initiated sign-in is served only as a POST. A cookie login that completes on this route answers 303 to the flow's stored return target instead of a body. A callback of a purpose other than login (a link, or a step-up of an account with no factor) that reaches ready answers 303 the same way, with no session made: the flow stays in the cookie at ready for the host's callback page to read with `GET /auth/flows/current` and complete with `POST /auth/flows/answer`.
  * @summary Handle a provider's callback as a browser navigation
  */
 export const authnLoginCallbackGet = (
@@ -5240,7 +5240,7 @@ export function useAuthnLoginCallbackGet<TData = Awaited<ReturnType<typeof authn
 
 
 /**
- * Handles a provider's callback delivered as a cross-site form post, which is how SAML's assertion consumer service is reached. The callback is bound through the flow cookie only, because a form post cannot set a request header; the path's provider must equal the provider recorded in the flow and the flow must be at its first factor, otherwise the call is a 401 flow-invalid before any method is asked. The posted form is bounded to 512 KiB before it is parsed, and a body over that bound is answered 401 login-failed with the flow left a tombstone. The engine moves the flow to processing before calling the method, so an assertion is handled at most once. Without a flow cookie the route serves an identity-provider-initiated sign-in, but only for an enterprise provider whose row enables it.
+ * Handles a provider's callback delivered as a cross-site form post, which is how SAML's assertion consumer service is reached. The callback is bound through the flow cookie only, because a form post cannot set a request header; the path's provider must equal the provider recorded in the flow and the flow must be at its first factor, otherwise the call is a 401 flow-invalid before any method is asked. The posted form is bounded to 512 KiB before it is parsed, and a body over that bound is answered 401 login-failed with the flow left a tombstone. The engine moves the flow to processing before calling the method, so an assertion is handled at most once. A callback of a purpose other than login (a link, or a step-up of an account with no factor) that reaches ready answers 303 to the flow's stored return target, with no session made and the flow left in the cookie for the host's callback page to read with `GET /auth/flows/current` and complete with `POST /auth/flows/answer`. Without a flow cookie the route serves an identity-provider-initiated sign-in, but only for an enterprise provider whose row enables it.
  * @summary Handle a provider's callback as a cross-site form post
  */
 export const authnLoginCallbackPost = (

@@ -291,7 +291,7 @@ func (r *routes) resolveAndDecide(c *call, token, echo string, rec record, raw [
 		// return target with the flow left in the cookie; the front end resumes
 		// with GET flows/current.
 		if callback {
-			c.redirect(http.StatusSeeOther, rec.ReturnTo)
+			c.redirect(http.StatusSeeOther, r.returnTarget(rec))
 			return
 		}
 		r.replyStep(c, rec, r.nextOf(rec), echo)
@@ -348,21 +348,39 @@ func (r *routes) replyStep(c *call, rec record, next stepView, echo string) {
 
 // replyReady writes the reply of a flow that reached ready: for the callback
 // route of a cookie login the session is made here and the user agent is sent to
-// the return target; for a submit answer the client takes the result with
-// step=complete.
+// the return target; for a callback of another purpose the user agent is landed
+// the same way, with the flow left in the cookie for the client to complete; for
+// a submit answer the client takes the result with step=complete.
 func (r *routes) replyReady(c *call, token string, rec record, callback bool, echo string) {
-	if callback && rec.Purpose == authn.PurposeLogin {
-		switch rec.Delivery {
-		case deliverySession:
+	if callback {
+		switch {
+		case rec.Purpose == authn.PurposeLogin && rec.Delivery == deliverySession:
 			r.completeCallbackLogin(c, token, rec)
 			return
-		case deliveryToken:
+		case rec.Purpose == authn.PurposeLogin && rec.Delivery == deliveryToken:
 			// A token cannot ride a redirect URL: the flow waits for the client.
 			r.replyStep(c, rec, stepView{Kind: nextComplete}, echo)
+			return
+		case rec.Purpose != authn.PurposeLogin:
+			// A callback of a purpose other than login is a top-level navigation
+			// too, so it lands the user agent the same way. No session is made:
+			// the flow stays at ready in the cookie, the host's callback page
+			// reads it with GET flows/current, and the terminal action runs when
+			// the client answers complete.
+			c.redirect(http.StatusSeeOther, r.returnTarget(rec))
 			return
 		}
 	}
 	writeComplete(c, rec)
+}
+
+// returnTarget is where a callback lands the user agent: the return target the
+// flow recorded, or the deployment's default when the flow recorded none.
+func (r *routes) returnTarget(rec record) string {
+	if rec.ReturnTo != "" {
+		return rec.ReturnTo
+	}
+	return r.defaultReturnTarget()
 }
 
 // completeCallbackLogin runs the terminal action of a callback that finished a

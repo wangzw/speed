@@ -204,10 +204,7 @@ func (r *routes) callbackIDPInitiated(c *call, provider string) {
 		c.unauthorized(mount.CodeFlowInvalid)
 		return
 	}
-	ret := r.settings.defaultReturnTo()
-	if verr := checkReturnTo(ret, r.trustedOrigins); verr != nil {
-		ret = "/"
-	}
+	ret := r.defaultReturnTarget()
 	token, err := newFlowToken()
 	if err != nil {
 		r.fail(c, err)
@@ -233,6 +230,18 @@ func (r *routes) callbackIDPInitiated(c *call, provider string) {
 	}
 	r.setFlowCookie(c, token, int(ttl.Seconds()))
 	r.answerCallback(c, token, rec, m)
+}
+
+// defaultReturnTarget is the target a callback lands the user agent on when the
+// flow recorded no return_to: the configured authn.login.default-return-to,
+// held to the same rule a recorded return target is, or "/" when it does not
+// pass that rule.
+func (r *routes) defaultReturnTarget() string {
+	ret := r.settings.defaultReturnTo()
+	if verr := checkReturnTo(ret, r.trustedOrigins); verr != nil {
+		return "/"
+	}
+	return ret
 }
 
 // maxCallbackFormBytes is the bound on a callback's posted body, before the form

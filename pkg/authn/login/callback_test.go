@@ -138,10 +138,13 @@ func TestAConcurrentSecondCallbackIsRefused(t *testing.T) {
 	}
 }
 
-// TestACallbackOfAnyPurposeIsAccepted holds that the callback only needs the flow
-// to exist and be at the first factor: a link flow started on the authenticated
-// route continues through its provider's callback.
-func TestACallbackOfAnyPurposeIsAccepted(t *testing.T) {
+// TestANonLoginCallbackLandsOnTheReturnTarget holds that a callback of a
+// purpose other than login is a top-level navigation like any other: it answers
+// 303 to the flow's stored return target with an empty body and makes no
+// session, leaving the flow in the cookie at ready. The host's callback page
+// reads the flow with GET flows/current and then completes it, which binds the
+// identity.
+func TestANonLoginCallbackLandsOnTheReturnTarget(t *testing.T) {
 	m := &redirectMethod{}
 	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
 		return authn.StepProven(authn.Proof{External: &authn.External{
@@ -152,6 +155,120 @@ func TestACallbackOfAnyPurposeIsAccepted(t *testing.T) {
 	r.loginAsAuthenticated("acct1", "sid")
 	r.allow("acct1")
 
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"link","method":"password","return_to":"/account/callback"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+
+	cb := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
+	if cb.Code != http.StatusSeeOther {
+		t.Fatalf("the link callback answered %d, want 303: %s", cb.Code, cb.Body.String())
+	}
+	if loc := cb.Header().Get("Location"); loc != "/account/callback" {
+		t.Errorf("the link callback went to %q, want the flow's return_to", loc)
+	}
+	if cb.Body.Len() != 0 {
+		t.Errorf("the link callback wrote a body: %q", cb.Body.String())
+	}
+	if cookies := cb.Result().Cookies(); len(cookies) != 0 {
+		t.Errorf("the link callback set cookies %v, want none", cookies)
+	}
+	if n := len(r.sessions.created); n != 0 {
+		t.Errorf("the link callback made %d sessions, want none", n)
+	}
+
+	current := r.send(http.MethodGet, "/api/v1/auth/flows/current", "", "Cookie", cookie)
+	if current.Code != http.StatusOK {
+		t.Fatalf("GET flows/current after the callback answered %d: %s", current.Code, current.Body.String())
+	}
+	flow := decode(t, current.Body.String())
+	if flow["state"] != "ready" {
+		t.Errorf("the flow state after the callback is %v, want ready", flow["state"])
+	}
+	if k := flow["next"].(map[string]any)["kind"]; k != "complete" {
+		t.Errorf("the flow's next kind is %v, want complete", k)
+	}
+
+	// The flow left the first factor with the callback, so a second callback on
+	// the same cookie is no longer accepted.
+	again := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
+	if again.Code != http.StatusUnauthorized {
+		t.Fatalf("a second callback answered %d, want 401: %s", again.Code, again.Body.String())
+	}
+	if got := decode(t, again.Body.String())["type"]; got != "urn:speed:authn:flow-invalid" {
+		t.Errorf("the second callback's problem type is %v, want flow-invalid", got)
+	}
+
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"complete"}`, "Cookie", cookie)
+	if done.Code != http.StatusOK {
+		t.Fatalf("the completing answer answered %d, want 200: %s", done.Code, done.Body.String())
+	}
+	if got := decode(t, done.Body.String())["state"]; got != "linked" {
+		t.Errorf("the completing answer reports state %v, want linked", got)
+	}
+}
+
+// TestANoFactorStepUpThroughARedirectMethodLandsOnTheReturnTarget holds that a
+// step-up of an account with no enrolled factor, started through a redirect
+// method, is landed the same way: the callback answers 303 and leaves the ready
+// flow for the client to complete.
+func TestANoFactorStepUpThroughARedirectMethodLandsOnTheReturnTarget(t *testing.T) {
+	m := &redirectMethod{}
+	r := newRigMethod(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.allow("acct1")
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"step-up","method":"password","return_to":"/account/security"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+
+	cb := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
+	if cb.Code != http.StatusSeeOther {
+		t.Fatalf("the step-up callback answered %d, want 303: %s", cb.Code, cb.Body.String())
+	}
+	if loc := cb.Header().Get("Location"); loc != "/account/security" {
+		t.Errorf("the step-up callback went to %q, want the flow's return_to", loc)
+	}
+	if cb.Body.Len() != 0 {
+		t.Errorf("the step-up callback wrote a body: %q", cb.Body.String())
+	}
+	if n := len(r.sessions.created); n != 0 {
+		t.Errorf("the step-up callback made %d sessions, want none", n)
+	}
+
+	current := r.send(http.MethodGet, "/api/v1/auth/flows/current", "", "Cookie", cookie)
+	if current.Code != http.StatusOK {
+		t.Fatalf("GET flows/current after the callback answered %d: %s", current.Code, current.Body.String())
+	}
+	flow := decode(t, current.Body.String())
+	if flow["state"] != "ready" {
+		t.Errorf("the flow state after the step-up callback is %v, want ready", flow["state"])
+	}
+	if k := flow["next"].(map[string]any)["kind"]; k != "complete" {
+		t.Errorf("the flow's next kind is %v, want complete", k)
+	}
+}
+
+// TestACallbackWithNoReturnToLandsOnTheDefault holds the fallback: a non-login
+// flow that recorded no return_to lands on the deployment's configured
+// authn.login.default-return-to, the same target the IdP-initiated start uses.
+func TestACallbackWithNoReturnToLandsOnTheDefault(t *testing.T) {
+	m := &redirectMethod{}
+	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{External: &authn.External{
+			Provider: "google", Subject: "g1", Email: "ann@x.org", EmailVerified: true,
+		}}), nil
+	}
+	r := newRigMethod(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.allow("acct1")
+	r.p.settings = readerWith(map[string]string{ModuleName + "." + defaultReturnToKey: "/account"})
+
 	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"link","method":"password"}`)
 	if start.Code != http.StatusOK {
 		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
@@ -159,12 +276,81 @@ func TestACallbackOfAnyPurposeIsAccepted(t *testing.T) {
 	cookie := flowCookie(t, start)
 
 	cb := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
-	if cb.Code != http.StatusOK {
-		t.Fatalf("the link callback answered %d, want 200: %s", cb.Code, cb.Body.String())
+	if cb.Code != http.StatusSeeOther {
+		t.Fatalf("the callback answered %d, want 303: %s", cb.Code, cb.Body.String())
 	}
-	if k := decode(t, cb.Body.String())["next"].(map[string]any)["kind"]; k != "complete" {
-		t.Errorf("the link callback answered next kind %v, want complete", k)
+	if loc := cb.Header().Get("Location"); loc != "/account" {
+		t.Errorf("the callback with no return_to went to %q, want the configured default", loc)
 	}
+}
+
+// TestACallbackWithAnUnacceptableDefaultLandsOnRoot holds the other half of the
+// fallback: the configured default is held to the same rule as a recorded
+// return_to, so a default whose origin the deployment does not trust lands on
+// "/" rather than on an off-site address.
+func TestACallbackWithAnUnacceptableDefaultLandsOnRoot(t *testing.T) {
+	m := &redirectMethod{}
+	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{External: &authn.External{
+			Provider: "google", Subject: "g1", Email: "ann@x.org", EmailVerified: true,
+		}}), nil
+	}
+	r := newRigMethod(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.allow("acct1")
+	r.p.settings = readerWith(map[string]string{
+		ModuleName + "." + defaultReturnToKey: "https://evil.example.org/account",
+	})
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"link","method":"password"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+
+	cb := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
+	if cb.Code != http.StatusSeeOther {
+		t.Fatalf("the callback answered %d, want 303: %s", cb.Code, cb.Body.String())
+	}
+	if loc := cb.Header().Get("Location"); loc != "/" {
+		t.Errorf("the callback with an untrusted default went to %q, want /", loc)
+	}
+}
+
+// TestACookieLoginCallbackWithNoReturnToLandsOnTheDefault holds that the
+// fallback is not limited to a non-login purpose: a login started without
+// return_to lands on the configured default too, both when the callback
+// completes it and when it still needs a second factor. The start schema makes
+// return_to optional, so both endings are reachable.
+func TestACookieLoginCallbackWithNoReturnToLandsOnTheDefault(t *testing.T) {
+	m := &redirectMethod{}
+	r := newRigMethod(t, m)
+	r.allow("acct1")
+	r.p.settings = readerWith(map[string]string{ModuleName + "." + defaultReturnToKey: "/account"})
+
+	loc := func(t *testing.T) string {
+		t.Helper()
+		cookie := startRedirect(t, r, "")
+		cb := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
+		if cb.Code != http.StatusSeeOther {
+			t.Fatalf("the callback answered %d, want 303: %s", cb.Code, cb.Body.String())
+		}
+		return cb.Header().Get("Location")
+	}
+
+	t.Run("a completed login", func(t *testing.T) {
+		if got := loc(t); got != "/account" {
+			t.Errorf("a completed login with no return_to went to %q, want the configured default", got)
+		}
+	})
+
+	t.Run("a login needing a second factor", func(t *testing.T) {
+		r.mfa.outcome = authn.MFAFactor
+		r.mfa.offered = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorTOTP}}
+		if got := loc(t); got != "/account" {
+			t.Errorf("a login needing a second factor with no return_to went to %q, want the configured default", got)
+		}
+	})
 }
 
 // TestACompletedLinkWritesItsAuditRow holds the best-effort audit row of a
@@ -187,14 +373,15 @@ func TestACompletedLinkWritesItsAuditRow(t *testing.T) {
 	sink := &relaxAudit{}
 	r.p.audit = sink
 
-	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"link","method":"password"}`)
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"link","method":"password","return_to":"/account/callback"}`)
 	if start.Code != http.StatusOK {
 		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
 	}
 	cookie := flowCookie(t, start)
 	cb := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
-	if cb.Code != http.StatusOK {
-		t.Fatalf("the link callback answered %d, want 200: %s", cb.Code, cb.Body.String())
+	if cb.Code != http.StatusSeeOther {
+		t.Fatalf("the link callback answered %d, want 303: %s", cb.Code, cb.Body.String())
 	}
 	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"complete"}`, "Cookie", cookie)
 	if done.Code != http.StatusOK {

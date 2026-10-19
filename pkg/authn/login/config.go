@@ -170,8 +170,9 @@ func settingsSchema() settings.Schema {
 					callBudgetInDomain),
 			},
 			defaultReturnToKey: {
-				Description: "where an identity-provider-initiated SAML sign-in returns to when the flow " +
-					"carries no other target",
+				Description: "where a callback lands the user agent when the flow recorded no return " +
+					"target: an identity-provider-initiated SAML sign-in, a login the callback completes or " +
+					"leaves needing a factor, and a callback of a purpose other than login",
 			},
 			disabledMethodsKey: {
 				Description: "the login methods turned off at run time, by name, as a JSON array of strings",
