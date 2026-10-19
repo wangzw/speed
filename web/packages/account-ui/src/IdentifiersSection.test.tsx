@@ -237,7 +237,7 @@ describe('IdentifiersSection', () => {
     // The 401 opens the step-up dialog; winning it re-runs the removal.
     await screen.findByRole('button', { name: 'App' })
     await user.click(screen.getByRole('button', { name: 'App' }))
-    await user.type(await screen.findByLabelText('code'), '123456')
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
@@ -588,7 +588,7 @@ describe('IdentifiersSection', () => {
     // The 401 opens the step-up dialog; winning it re-runs the add.
     await screen.findByRole('button', { name: 'App' })
     await user.click(screen.getByRole('button', { name: 'App' }))
-    await user.type(await screen.findByLabelText('code'), '123456')
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
@@ -681,7 +681,7 @@ describe('IdentifiersSection', () => {
     )
 
     // The refusal opens the dialog on the SMS method's first step.
-    await user.type(await screen.findByLabelText('code'), '123456')
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
@@ -739,6 +739,33 @@ describe('IdentifiersSection', () => {
     const combo = await screen.findByRole('combobox')
     expect(combo).toHaveTextContent(zhCN.identifiers.add.kind.username)
     expect(combo).not.toHaveTextContent(zhCN.identifiers.add.kind.email)
+  })
+
+  it('does not offer the username kind when the host opts out', async () => {
+    // An email-only product passes offerUsername={false}: the add face
+    // keeps the email kind and never offers a username.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <IdentifiersSection session={rig.session} offerUsername={false} />,
+    )
+    fireEvent.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    const combo = await screen.findByRole('combobox')
+    expect(combo).toHaveTextContent(zhCN.identifiers.add.kind.email)
+    fireEvent.mouseDown(combo)
+    expect(
+      screen.queryByRole('option', {
+        name: zhCN.identifiers.add.kind.username,
+      }),
+    ).toBeNull()
   })
 
   it('does not offer the username kind when the profile already lists one', async () => {

@@ -4,7 +4,9 @@
  *
  * What this suite pins: the shared country/local control assembles the
  * number into E.164 and the send POSTs it under `phone`, advancing to the
- * code step whose sent notice names the assembled number; an empty number
+ * code step whose sent notice names the assembled number; the host's
+ * phone-country context sets the starting country, replacing the
+ * browser-locale answer; an empty number
  * disables the send action; a number too short for its country is refused
  * locally with the calling code named and sends nothing; the verify POSTs
  * the code alone (the number is the server's own record); a verified
@@ -18,7 +20,8 @@
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { uiKitResources } from '@speed/ui-kit'
+import type { ReactElement } from 'react'
+import { PhoneCountryDefaultProvider, uiKitResources } from '@speed/ui-kit'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
   errorResponse,
@@ -43,10 +46,15 @@ const VERIFY_PATH = '/api/v1/auth/phone/verify'
 const FLOW_START = '/api/v1/auth/flows/authenticated'
 const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
-function mount(respond: RealResponder) {
+/** Mounts the section; `wrap` lets a case place its own context above it
+ * (the host's preferred starting country). */
+function mount(
+  respond: RealResponder,
+  wrap: (ui: ReactElement) => ReactElement = (ui) => ui,
+) {
   const rig = makeRealClientRig(respond)
   rig.store.set('access-1')
-  const rendered = renderWithProviders(<PhoneSection session={rig.session} />)
+  const rendered = renderWithProviders(wrap(<PhoneSection session={rig.session} />))
   return { rig, ...rendered }
 }
 
@@ -100,6 +108,34 @@ describe('PhoneSection', () => {
     expect(rig.calls.find((call) => call.path === VERIFY_PATH)?.body).toEqual({
       code: '123456',
     })
+  })
+
+  it('starts on the host\'s preferred country and assembles the number under it', async () => {
+    // The host's phone-country context replaces the browser-locale answer:
+    // the selector starts on GB and the E.164 string carries +44, not the
+    // test environment's own region.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond, (ui) => (
+      <PhoneCountryDefaultProvider country="GB">{ui}</PhoneCountryDefaultProvider>
+    ))
+    const user = userEvent.setup()
+
+    const country = await screen.findByLabelText(zhCN.phone.country.label)
+    expect((country as HTMLInputElement).value).toContain('+44')
+
+    await user.type(screen.getByLabelText(zhCN.phone.phone.label), '7911123456')
+    await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+
+    await waitFor(() =>
+      expect(rig.calls.find((call) => call.path === PHONE_PATH)?.body).toEqual({
+        phone: '+447911123456',
+      }),
+    )
   })
 
   it('disables sending until a number is entered', async () => {
@@ -237,7 +273,7 @@ describe('PhoneSection', () => {
 
     await screen.findByRole('button', { name: 'App' })
     await user.click(screen.getByRole('button', { name: 'App' }))
-    await user.type(await screen.findByLabelText('code'), '123456')
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )

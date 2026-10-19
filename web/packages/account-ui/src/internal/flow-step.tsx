@@ -22,8 +22,9 @@
  *  - `webauthn`: the factor's own JSON. TOTP's `otpauth_uri` is extracted
  *    from it and rendered as its own read-only field -- the step's JSON is
  *    never shown as a blob -- beside a code field; a passkey's creation or
- *    request options are driven by the WebAuthn ceremony (./webauthn),
- *    whose credential is reported under the answer step the CALLER names.
+ *    request options are driven by the WebAuthn ceremony
+ *    (@speed/auth-core/webauthn), whose credential is reported under the
+ *    answer step the CALLER names.
  *    Both answer under the same step a `challenge` step would, because the
  *    record's state decides it: `enroll` in a registration, `factor` in
  *    the second factor of a step-up.
@@ -33,16 +34,50 @@
  *    navigates.
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import CircularProgress from '@mui/material/CircularProgress'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import type { AuthnStep } from '@speed/auth-core'
+import { WebauthnError, runWebauthn, webauthnStepOf } from '@speed/auth-core/webauthn'
 import { useAccountUiTranslation } from './translation.js'
-import { WebauthnError, runWebauthn, webauthnStepOf } from './webauthn.js'
+
+/** The bundle keys of the field names the family has wording for. A name
+ * outside this map renders verbatim, so a server-side field the family
+ * has no wording for shows its own name rather than a translated guess. */
+const FIELD_LABEL_KEYS: Readonly<Record<string, string>> = {
+  identifier: 'flowStep.field.identifier',
+  password: 'flowStep.field.password',
+  new_password: 'flowStep.field.newPassword',
+  phone: 'flowStep.field.phone',
+  code: 'flowStep.codeLabel',
+}
+
+/** The factor/enroll kinds the family has wording for. A known kind
+ * renders its translated name; an unknown one renders the kind's own
+ * name (the deployment's vocabulary, shown as given). A factor option's
+ * server-supplied label wins over both. */
+const FACTOR_KIND_KEYS: Readonly<Record<string, string>> = {
+  totp: 'mfa.factor.kind.totp',
+  webauthn: 'mfa.factor.kind.webauthn',
+  sms: 'mfa.factor.kind.sms',
+}
+
+/** A field name's display label (see the vocabulary above). */
+function fieldLabel(name: string, t: (key: string) => string): string {
+  const key = FIELD_LABEL_KEYS[name]
+  return key === undefined ? name : t(key)
+}
+
+/** A factor kind's display label (see the vocabulary above). */
+function factorKindLabel(kind: string, t: (key: string) => string): string {
+  const key = FACTOR_KIND_KEYS[kind]
+  return key === undefined ? kind : t(key)
+}
 
 /** One answer to a flow step: the answer step name and its input. */
 export interface FlowStepAnswer {
@@ -127,7 +162,7 @@ export function FlowStep({
             disabled={busy}
             onClick={() => onSubmit({ step: 'factor', input: { factor: factor.id } })}
           >
-            {factor.label ?? factor.kind}
+            {factor.label ?? factorKindLabel(factor.kind, t)}
           </Button>
         ))}
       </Box>
@@ -145,7 +180,7 @@ export function FlowStep({
             disabled={busy}
             onClick={() => onSubmit({ step: 'enroll', input: { kind } })}
           >
-            {kind}
+            {factorKindLabel(kind, t)}
           </Button>
         ))}
       </Box>
@@ -178,7 +213,7 @@ export function FlowStep({
                 mt: 1,
                 mb: 1.5,
                 '& textarea': {
-                  fontFamily: 'monospace',
+                  fontFamily: (theme) => theme.typography.fontFamilyMono,
                   wordBreak: 'break-all',
                 },
               }}
@@ -230,7 +265,7 @@ export function FlowStep({
         {step.fields.map((field) => (
           <TextField
             key={field.name}
-            label={field.name}
+            label={fieldLabel(field.name, t)}
             type={field.secret === true ? 'password' : 'text'}
             value={values[field.name] ?? ''}
             onChange={(event) =>
@@ -261,9 +296,22 @@ interface PasskeyPromptProps {
 }
 
 /** The passkey ceremony step: one button that drives the browser's
- * WebAuthn ceremony and reports the credential it returns. A browser
- * without WebAuthn, a dismissed prompt and a failed ceremony each render
- * their own message rather than a silent no-op. */
+ * WebAuthn ceremony and reports the credential it returns.
+ *
+ * The ceremony can sit pending for as long as the browser waits on the
+ * device, so a click moves the step into an explicit waiting state: the
+ * waiting message and a cancel control replace the button instead of
+ * leaving a disabled button as the only signal. The waiting notice mounts
+ * as an empty `role="status"` region and fills a commit later, so a
+ * screen reader announces it; focus moves to the cancel control, since
+ * the button that had it unmounted. Cancel is its own state transition,
+ * taken at once: it shows the failure and retry without waiting for the
+ * ceremony to settle, and only best-effort asks the browser to give up
+ * (the credential API does not guarantee it honours an abort). A late
+ * answer from an abandoned ceremony is discarded by attempt. Unmount
+ * abandons the ceremony the same way. A browser without WebAuthn, a
+ * dismissed prompt and a failed ceremony each render their own message,
+ * and the retry action runs the ceremony again against the same step. */
 function PasskeyPrompt({
   options,
   busy,
@@ -274,24 +322,82 @@ function PasskeyPrompt({
   const { t } = useAccountUiTranslation()
   const [working, setWorking] = useState(false)
   const [errorKey, setErrorKey] = useState<string | null>(null)
+  // The waiting notice's text, one commit behind the waiting phase: the
+  // region must mount empty.
+  const [waitingCommitted, setWaitingCommitted] = useState(false)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  // The ceremony currently being waited on. Cancel clears it before the
+  // failure renders, so the ceremony's late settlement and a retry's own
+  // attempt stay apart from this one.
+  const pendingRef = useRef<{
+    attempt: number
+    controller: AbortController
+  } | null>(null)
+  const attemptRef = useRef(0)
+
+  // Abandon the ceremony with the surface. An unmounted step has no flow
+  // to answer, so the attempt is invalidated and the browser is asked to
+  // give the ceremony up.
+  useEffect(
+    () => () => {
+      const pending = pendingRef.current
+      pendingRef.current = null
+      pending?.controller.abort()
+    },
+    [],
+  )
+
+  // The waiting notice's role="status" region must never mount together
+  // with its text, and the cancel control takes the focus the unmounted
+  // Continue button held.
+  useEffect(() => {
+    setWaitingCommitted(working)
+    if (working) {
+      cancelRef.current?.focus()
+    }
+  }, [working])
 
   async function run(): Promise<void> {
+    const attempt = attemptRef.current + 1
+    attemptRef.current = attempt
+    const controller = new AbortController()
+    pendingRef.current = { attempt, controller }
     setWorking(true)
     setErrorKey(null)
     try {
-      const credential = await runWebauthn(options)
-      onSubmit({ step: answerStep, input: { credential } })
+      const credential = await runWebauthn(options, controller.signal)
+      if (pendingRef.current?.attempt === attempt) {
+        onSubmit({ step: answerStep, input: { credential } })
+      }
     } catch (failure) {
-      setErrorKey(webauthnErrorKey(failure))
+      if (pendingRef.current?.attempt === attempt) {
+        setErrorKey(webauthnErrorKey(failure))
+      }
     } finally {
-      setWorking(false)
+      if (pendingRef.current?.attempt === attempt) {
+        pendingRef.current = null
+        setWorking(false)
+      }
     }
+  }
+
+  function cancel(): void {
+    const pending = pendingRef.current
+    pendingRef.current = null
+    pending?.controller.abort()
+    // Fail now. The ceremony's own rejection (if the abort reaches it) and
+    // its eventual settlement are both ignored: its attempt no longer
+    // matches pendingRef.
+    setWorking(false)
+    setErrorKey('flowStep.passkeyCancelled')
   }
 
   return (
     <Box sx={{ mt: 2 }}>
       <Typography variant="body2" color="text.secondary">
-        {t('flowStep.passkeyPrompt')}
+        {webauthnStepOf(options) === 'register'
+          ? t('flowStep.passkeyRegisterPrompt')
+          : t('flowStep.passkeyPrompt')}
       </Typography>
       {errorKey !== null && (
         <Box sx={{ mt: 1 }}>
@@ -300,16 +406,41 @@ function PasskeyPrompt({
           </Alert>
         </Box>
       )}
-      <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
-        <Button
-          type="button"
-          variant="contained"
-          disabled={busy || working}
-          onClick={() => void run()}
-        >
-          {submitLabel}
-        </Button>
-      </Box>
+      {working ? (
+        <>
+          <Box
+            role="status"
+            sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2 }}
+          >
+            <CircularProgress size={18} aria-hidden={true} />
+            <Typography>
+              {waitingCommitted ? t('flowStep.passkeyWaiting') : ''}
+            </Typography>
+          </Box>
+          <Box sx={{ mt: 1.5 }}>
+            <Button
+              ref={cancelRef}
+              type="button"
+              variant="outlined"
+              disabled={busy}
+              onClick={cancel}
+            >
+              {t('flowStep.passkeyCancel')}
+            </Button>
+          </Box>
+        </>
+      ) : (
+        <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
+          <Button
+            type="button"
+            variant="contained"
+            disabled={busy}
+            onClick={() => void run()}
+          >
+            {errorKey === null ? submitLabel : t('flowStep.passkeyRetry')}
+          </Button>
+        </Box>
+      )}
     </Box>
   )
 }

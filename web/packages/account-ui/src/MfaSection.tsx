@@ -83,14 +83,17 @@ const KNOWN_FACTOR_KINDS = new Set<string>(['totp', 'webauthn', 'sms'])
  * mfa.factor.status. A value outside the list renders no chip. */
 const KNOWN_FACTOR_STATUSES = new Set<string>(['active', 'pending', 'disabled'])
 
-/** The enrollment entries this package can render, one bundle key each.
- * Each is offered only when the deployment reports its kind (see the
- * section header): the list is filtered against GET /api/v1/auth/methods'
- * `mfa.factors`, so an entry the deployment cannot carry never renders. */
-const ENROLL_ENTRIES = [
-  { kind: 'totp', labelKey: 'mfa.enroll.totp' },
-  { kind: 'webauthn', labelKey: 'mfa.enroll.webauthn' },
-] as const
+/** The enrollable factor kinds this package has wording for, one bundle
+ * key each. The entries themselves are the deployment's own answer (see
+ * the section header): every kind GET /api/v1/auth/methods' `mfa.factors`
+ * lists gets one entry, a known kind renders its translated name and an
+ * unknown kind renders the generic other label while still starting that
+ * kind's flow. */
+const ENROLL_LABEL_KEYS: Readonly<Record<string, string>> = {
+  totp: 'mfa.enroll.totp',
+  webauthn: 'mfa.enroll.webauthn',
+  sms: 'mfa.enroll.sms',
+}
 
 /** The action a won step-up re-runs. */
 type GatedAction =
@@ -169,11 +172,10 @@ export function MfaSection({ session }: MfaSectionProps) {
   const factors = data?.factors
   const pending = isPending && data === undefined
   const busy = enrolling || removeMutation.isPending
-  // Only the entries the deployment reported are offered.
-  const enrollEntries =
-    enrollableKinds === null
-      ? []
-      : ENROLL_ENTRIES.filter((entry) => enrollableKinds.includes(entry.kind))
+  // Every kind the deployment reported gets an entry, in the document's
+  // order. An unknown kind still starts that kind's flow -- the generic
+  // label never turns a deployable factor into a missing entry.
+  const enrollEntries = enrollableKinds ?? []
 
   function invalidateFactors(): Promise<void> {
     return queryClient.invalidateQueries({
@@ -433,14 +435,14 @@ export function MfaSection({ session }: MfaSectionProps) {
                       gap: 1,
                     }}
                   >
-                    {enrollEntries.map((entry) => (
+                    {enrollEntries.map((kind) => (
                       <Button
-                        key={entry.kind}
+                        key={kind}
                         variant="outlined"
                         disabled={busy}
-                        onClick={() => void startEnroll(entry.kind)}
+                        onClick={() => void startEnroll(kind)}
                       >
-                        {t(entry.labelKey)}
+                        {t(ENROLL_LABEL_KEYS[kind] ?? 'mfa.enroll.other')}
                       </Button>
                     ))}
                   </Box>

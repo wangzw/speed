@@ -47,6 +47,7 @@ import {
   useAuthnProfilePatch,
 } from '@speed/api-sdk'
 import type { AuthSession } from '@speed/auth-core'
+import { useStepUpGate } from '@speed/auth-core'
 import {
   AsyncSection,
   errorCodeOf,
@@ -54,7 +55,6 @@ import {
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 import { useProfileQuery } from './internal/queries.js'
-import { useStepUpGate } from './internal/step-up-gate.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 

@@ -21,7 +21,8 @@ into `@speed/api-sdk` over the host's QueryClient (the shared-QueryClient
 contract: one host-bound QueryClient, never package-constructed), and
 writes through the generated mutations over the same `bindRequestFn`
 binding. The surfaces that drive a flow take the `@speed/auth-core`
-session as a required prop; the read-only ones take no props.
+session as a required prop; `PreferencesSection` takes it optionally
+(the step-up gate only), and the read-only ones take no props.
 
 ## What this package is
 
@@ -54,13 +55,15 @@ session as a required prop; the read-only ones take no props.
   listed none.
 - **Display times carry the account's timezone chain, explicitly.**
   Every timestamp a surface renders is formatted with an explicit
-  `timeZone` resolved through `resolveTimeZone` (internal/time-format:
-  the stored `time_zone`, else the device zone, else UTC) — never Intl's
+  `timeZone` through `@speed/i18n`'s `formatInstant` — never Intl's
   implicit process-local default, which would render one account
-  differently depending on which machine ran the code. The profile tier
-  reads `GET /api/v1/auth/me`; the query is shared and deduped across the
-  sections by react-query, so adding another time-rendering surface costs
-  no extra request. Every Intl construction in that helper is guarded.
+  differently depending on which machine ran the code. The chain is the
+  stored `time_zone`, then the host's `DisplayTimeZoneProvider` context
+  (which replaces only the device tier), then the device zone, then UTC;
+  every candidate is validated through `isSupportedTimeZone`/
+  `resolveTimeZone`. The profile tier reads `GET /api/v1/auth/me`; the
+  query is shared and deduped across the sections by react-query, so
+  adding another time-rendering surface costs no extra request.
 - **Every built-in string is bilingual and bundled.** All text renders
   from the `account-ui` namespace (`ACCOUNT_UI_NAMESPACE`, one
   `zh-CN.json` and one `en-US.json` under `src/locales/`, identical leaf
@@ -92,7 +95,11 @@ session as a required prop; the read-only ones take no props.
    (`src/internal/flow-step.tsx`) is one of three copies (`auth-ui`,
    `account-ui`, `console-ui`) kept in lockstep by hand: a change to how a
    step renders lands in all three in the same change. No compiler check
-   or test compares the copies.
+   or test compares the copies. All three label a factor or enroll kind
+   the same way: a known kind renders its translated name, an unknown one
+   renders the server's own kind value (the deployment's vocabulary, never
+   a generic "other" label), and a factor option's server-supplied label
+   wins over both.
 2. **State is discovered through the spec's own answers; the package
    renders exactly the operations that exist.** Registration is not a
    factor route — it is the login engine's enroll purpose — so
@@ -100,8 +107,10 @@ session as a required prop; the read-only ones take no props.
    from `GET /api/v1/auth/factors` and removal is `DELETE /api/v1/auth/factors/{id}`.
    The enrollment entries are the deployment's own answer too: the section
    reads `GET /api/v1/auth/methods`' `mfa.factors` (through `session.listMethods`)
-   and offers only those kinds, so it never offers a factor the assembly
-   cannot complete. The spec ships no disable operation: the server answers
+   and offers one entry per listed kind, so it never offers a factor the
+   assembly cannot complete. A known kind renders `mfa.enroll.<kind>`; an
+   unknown kind renders `mfa.enroll.other` and still starts that kind's
+   flow. The spec ships no disable operation: the server answers
    it by listing only live sessions. Do not invent operations the spec
    does not ship, and do not let a section render a state the server never
    answers with.
@@ -148,11 +157,14 @@ session as a required prop; the read-only ones take no props.
    devDependency: no public type references it; only the test-utils rig
    binds a real client.
 7. **`@speed/auth-ui` is never imported.** Same-layer packages do not
-   import each other. `SocialProvider`/`SocialProviderConfig` are this
-   package's own definitions, copied to match auth-ui's and kept in sync
-   with them — `SocialProvider` is a deployment login-method name (a
-   `string`, not a closed set; the WeChat pair arrives as `wechat.web` /
-   `wechat.mp`), and the same name lands in both copies together.
+   import each other. Social channels are the deployment's login-method
+   names, read from the discovery document (`session.listMethods()`,
+   `kind: 'redirect'`); the package carries no host-supplied channel list
+   and exports no channel-config type. A bound row resolves its provider
+   through the same document; a value no descriptor matches falls back to
+   the package's closed vocabulary. `StepUpDialog` is exported for the
+   host only — `@speed/console-ui` and `@speed/auth-ui` must not import
+   it (the former keeps its own copy).
 8. **The README's quick start is executed, not aspirational.**
    `src/usage-example.test.tsx` compiles and runs the documented
    composition (real api-client, genuine `Response` objects from a
@@ -170,22 +182,24 @@ session as a required prop; the read-only ones take no props.
    `onAuthorizeUrl`; `BindingCallbackHandler` fires `onBound` after a
    `link` completion and never claims a login happened. The current
    session is never revocable from the list. The step-up dialog renders
-   its "no active factor" state as text only, never a link: these
-   sections are the account settings surface, so its copy is
-   self-sufficient and nothing here navigates.
+   its "no active factor" state as text, and renders a link only when the
+   host supplies `accountHref` (the package itself still never navigates,
+   and the internal sections omit the prop): these sections are the
+   account settings surface, so their copy is self-sufficient.
 
 ## Public surface
 
 Everything in `src/index.ts` is public: the surfaces (`ProfileSection`
 with `ProfileSectionProps`; `PasswordSection` with `PasswordSectionProps`;
 `PhoneSection` with `PhoneSectionProps`; `IdentifiersSection` with
-`IdentifiersSectionProps`; `PreferencesSection`; `SessionsSection`;
-`SocialBindingsSection` with `SocialBindingsSectionProps`, `SocialProvider`
-and `SocialProviderConfig`; `MfaSection` with `MfaSectionProps`),
-`BindingCallbackHandler` with `BindingCallbackHandlerProps`, and the
-resource pair (`ACCOUNT_UI_NAMESPACE`, `accountUiResources`). Prop tables and behaviour
-live in the README; `tsc -p tsconfig.json` type-checks every
-consumer-visible signature.
+`IdentifiersSectionProps`; `PreferencesSection` with
+`PreferencesSectionProps`; `SessionsSection`; `SocialBindingsSection`
+with `SocialBindingsSectionProps`; `MfaSection` with `MfaSectionProps`),
+`BindingCallbackHandler` with `BindingCallbackHandlerProps`,
+`StepUpDialog` with `StepUpDialogProps` (the host seam; see rule 7), and
+the resource pair (`ACCOUNT_UI_NAMESPACE`, `accountUiResources`). Prop
+tables and behaviour live in the README; `tsc -p tsconfig.json`
+type-checks every consumer-visible signature.
 
 ## Testing
 
@@ -224,10 +238,11 @@ Recorded, with the current disposition, in the README's Known
 limitations and deferrals. The load-bearing ones for a contributor: the
 package ships no QR or clipboard integration, so the authenticator's
 `otpauth_uri` is manual-entry only (the passkey ceremony itself runs
-through the browser's WebAuthn API, driven by `src/internal/webauthn.ts`);
-the enrollment entries are the deployment's discovered factor kinds
-(`GET /api/v1/auth/methods`' `mfa.factors`), so an assembly without a passkey
-relying party shows no passkey entry; the session list renders the
+through the browser's WebAuthn API, driven by
+`@speed/auth-core/webauthn`); the enrollment entries are the deployment's
+discovered factor kinds (`GET /api/v1/auth/methods`' `mfa.factors`), one
+entry per kind with an unknown kind under the generic label, so an
+assembly without a passkey relying party shows no passkey entry; the session list renders the
 server's list (only live sessions, the current one never revocable here);
 session state does not survive a page load, the refresh token is
 JavaScript-visible in memory, and step-up elevation outlives exactly the

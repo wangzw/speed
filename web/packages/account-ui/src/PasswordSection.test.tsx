@@ -19,7 +19,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import enUS from './locales/en-US.json' with { type: 'json' }
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
-import { profileBody } from '../test-utils/fixtures.js'
+import { identifier, profileBody } from '../test-utils/fixtures.js'
 import {
   errorResponse,
   jsonResponse,
@@ -37,10 +37,15 @@ const PASSWORD_PATH = '/api/v1/auth/password'
 const FLOW_START = '/api/v1/auth/flows/authenticated'
 const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
-function mount(respond: RealResponder) {
+function mount(
+  respond: RealResponder,
+  withoutLoginName?: 'form' | 'explain',
+) {
   const rig = makeRealClientRig(respond)
   rig.store.set('access-1')
-  const rendered = renderWithProviders(<PasswordSection session={rig.session} />)
+  const rendered = renderWithProviders(
+    <PasswordSection session={rig.session} withoutLoginName={withoutLoginName} />,
+  )
   return { rig, ...rendered }
 }
 
@@ -91,6 +96,74 @@ describe('PasswordSection', () => {
     expect(enUS.password.new.helperFirst).toMatch(/long enough/i)
 
     await expectNoAxeViolations()
+  })
+
+  it('keeps the form by default for an account with no login name', async () => {
+    // The default 'form' mode leaves the server's 409 to answer: the form
+    // renders even though no identifier could serve as a login name.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({ password_set: false, identifiers: [] }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByLabelText(zhCN.password.new.label)).toBeTruthy()
+    expect(screen.queryByText(zhCN.password.loginNameRequired)).toBeNull()
+  })
+
+  it("explains the missing login name up front in 'explain' mode", async () => {
+    // Neither a username nor a verified email: the page that already knows
+    // the account cannot set a password yet gets the explanation instead of
+    // a form whose submit could only answer 409.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            password_set: false,
+            identifiers: [
+              identifier({ kind: 'email', verified_at: '', verified_via: '' }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond, 'explain')
+
+    expect(
+      await screen.findByText(zhCN.password.loginNameRequired),
+    ).toBeTruthy()
+    expect(screen.queryByLabelText(zhCN.password.new.label)).toBeNull()
+    // The section header stays: the explanation belongs under it.
+    expect(
+      screen.getByRole('heading', { name: zhCN.password.title }),
+    ).toBeTruthy()
+    await expectNoAxeViolations()
+  })
+
+  it("keeps the form in 'explain' mode once a verified login name exists", async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            password_set: false,
+            identifiers: [identifier({ kind: 'username', value: 'ada' })],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond, 'explain')
+
+    expect(await screen.findByLabelText(zhCN.password.new.label)).toBeTruthy()
+    expect(screen.queryByText(zhCN.password.loginNameRequired)).toBeNull()
   })
 
   it('states the password policy when the server refuses a new password', async () => {
@@ -323,7 +396,7 @@ describe('PasswordSection', () => {
 
     await screen.findByRole('button', { name: 'App' })
     await user.click(screen.getByRole('button', { name: 'App' }))
-    await user.type(await screen.findByLabelText('code'), '123456')
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )

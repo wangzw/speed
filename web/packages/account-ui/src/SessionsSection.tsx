@@ -44,6 +44,7 @@
  */
 
 import { useMemo, useState } from 'react'
+import { formatInstant, isSupportedTimeZone, resolveTimeZone } from '@speed/i18n'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -63,11 +64,11 @@ import {
   ConfirmDialog,
   errorCodeOf,
   ListSkeleton,
+  useDisplayTimeZone,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 import { useProfileQuery, useSessionsQuery } from './internal/queries.js'
-import { resolveTimeZone } from './internal/time-format.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { summarizeUserAgent } from './internal/ua-summary.js'
 
@@ -171,21 +172,30 @@ export function SessionsSection() {
   // leave the view on a page past the end.
   const [page, setPage] = useState(1)
 
-  // The display-timezone chain (stored profile preference -> device ->
-  // UTC): the rows render in the account's chosen zone, not whatever
-  // machine happens to run the client. The formatter always receives an
-  // explicit timeZone -- resolveTimeZone has validated it, so the
-  // constructor cannot throw on a stale stored value.
+  // The display-timezone chain: the account's stored preference wins, then
+  // the host's display-timezone context (which replaces only the device
+  // tier), then the device zone, then UTC. The rows render in the
+  // account's chosen zone, not whatever machine happens to run the
+  // client. Every candidate is validated through the shared i18n helper,
+  // so the formatter never receives a zone the engine refuses.
   const { data: profile } = useProfileQuery()
-  const formatTime = useMemo(
-    () =>
-      new Intl.DateTimeFormat(i18n.language, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-        timeZone: resolveTimeZone(profile?.time_zone),
-      }),
-    [i18n.language, profile?.time_zone],
-  )
+  const hostTimeZone = useDisplayTimeZone()
+  const timeZone = useMemo(() => {
+    const stored = profile?.time_zone?.trim() ?? ''
+    if (stored !== '' && isSupportedTimeZone(stored)) {
+      return stored
+    }
+    if (
+      hostTimeZone !== undefined &&
+      hostTimeZone !== '' &&
+      isSupportedTimeZone(hostTimeZone)
+    ) {
+      return hostTimeZone
+    }
+    return resolveTimeZone(undefined)
+  }, [profile?.time_zone, hostTimeZone])
+  const formatTime = (value: string | number | Date): string =>
+    formatInstant(value, i18n.language, { timeZone })
 
   const sessions = data?.sessions
   // The answer is unresolved whenever there is no data yet: the first
@@ -471,14 +481,14 @@ export function SessionsSection() {
                         {created !== null && (
                           <Typography variant="body2" color="text.secondary">
                             {t('sessions.signedIn', {
-                              time: formatTime.format(created),
+                              time: formatTime(created),
                             })}
                           </Typography>
                         )}
                         {showLastSeen && lastSeen !== null && (
                           <Typography variant="body2" color="text.secondary">
                             {t('sessions.lastSeen', {
-                              time: formatTime.format(lastSeen),
+                              time: formatTime(lastSeen),
                             })}
                           </Typography>
                         )}

@@ -49,15 +49,15 @@ import {
   useAuthnLoginVerifyPhone,
 } from '@speed/api-sdk'
 import type { AuthSession } from '@speed/auth-core'
+import { useStepUpGate } from '@speed/auth-core'
 import {
   PhoneNumberField,
-  defaultPhoneCountry,
   errorCodeOf,
   toE164,
+  usePhoneCountryDefault,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
-import { useStepUpGate } from './internal/step-up-gate.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 
@@ -78,8 +78,11 @@ export function PhoneSection({ session }: PhoneSectionProps) {
   const queryClient = useQueryClient()
   const startPhone = useAuthnLoginStartPhone()
   const verifyPhone = useAuthnLoginVerifyPhone()
+  // The host's preferred starting country when one is provided, otherwise
+  // the browser-locale answer (ui-kit's context does the fallback).
+  const defaultCountry = usePhoneCountryDefault()
 
-  const [country, setCountry] = useState(() => defaultPhoneCountry())
+  const [country, setCountry] = useState(defaultCountry)
   const [nationalNumber, setNationalNumber] = useState('')
   // Set by a submit that could not assemble a number, so the control
   // shows its per-country message only when the viewer asked to send.

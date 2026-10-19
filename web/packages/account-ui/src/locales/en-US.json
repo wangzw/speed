@@ -66,6 +66,8 @@
       "google": "Google",
       "github": "GitHub",
       "wechat": "WeChat",
+      "wechatOfficialAccount": "WeChat (Official Account)",
+      "wechatWeb": "WeChat (Web)",
       "dingtalk": "DingTalk",
       "feishu": "Feishu",
       "oidc": "Enterprise SSO",
@@ -122,6 +124,8 @@
       "sectionTitle": "Add a verification method",
       "totp": "Set up an authenticator app",
       "webauthn": "Add a passkey",
+      "sms": "Set up text-message verification",
+      "other": "Add another verification method",
       "confirmLabel": "Confirm",
       "cancelLabel": "Cancel"
     },
@@ -134,7 +138,8 @@
       "cannotElevate": "This deployment cannot complete this step-up. Sign in again for a stronger verification.",
       "relogin": "Sign in again",
       "firstFactorRelogin": "This action needs a recent sign-in, and this session cannot re-prove its first factor here. Sign in again, then try the action again.",
-      "noFactor": "This account has no two-step verification set up. Add a verification method in the account settings first."
+      "noFactor": "This account has no two-step verification set up. Add a verification method in the account settings first.",
+      "accountSettingsLink": "Go to account settings"
     },
     "error": {
       "title": "Could not load two-step verification",
@@ -148,7 +153,17 @@
     "enrollTotpHelp": "Add the content below to your authenticator app, then enter the 6-digit code the app shows.",
     "enrollTotpUriLabel": "Authenticator setup URI",
     "codeLabel": "6-digit code",
+    "field": {
+      "identifier": "Email or phone number",
+      "password": "Password",
+      "newPassword": "New password",
+      "phone": "Phone number"
+    },
     "passkeyPrompt": "Use your device to register or present a passkey.",
+    "passkeyRegisterPrompt": "Use your device to register a passkey.",
+    "passkeyWaiting": "Waiting for your device…",
+    "passkeyCancel": "Cancel",
+    "passkeyRetry": "Try again",
     "passkeyUnsupported": "This browser cannot carry out a passkey ceremony.",
     "passkeyCancelled": "The passkey prompt was dismissed. Try again.",
     "passkeyFailed": "The passkey ceremony did not complete."
@@ -209,6 +224,7 @@
     "policyFailure": "The new password does not meet the requirements. Its length must be suitable (neither too short nor too long), and it cannot be the same as your username, email address or phone number or, when changing a password, your current password.",
     "missingNew": "Enter a new password.",
     "mismatch": "The two passwords do not match.",
+    "loginNameRequired": "Add a username or a verified email address first, then set a password.",
     "error": {
       "title": "Could not load password settings",
       "description": "Something went wrong while loading your password settings. Please try again."

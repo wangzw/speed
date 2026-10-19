@@ -26,12 +26,14 @@
  * the callback handler reads that flow back and completes it
  * (session.readFlow / session.answerFlow), and the two-factor enroll
  * wizard and step-up dialog drive `purpose: 'enroll'` and `purpose:
- * 'step-up'` flows the same way. The provider vocabulary
- * (SocialProvider/SocialProviderConfig) is this package's own
- * definition, copied to match @speed/auth-ui's and kept in sync with it
- * -- same-layer packages never import each other, and a social channel
- * is a deployment login-method name (`SocialProvider` is a string, not a
- * closed set).
+ * 'step-up'` flows the same way. A social channel is the deployment's
+ * own login-method name, read from the discovery document; the package
+ * carries no host-supplied channel list.
+ *
+ * StepUpDialog is the dialog account-ui's own surfaces use, exported for
+ * a host that needs the same re-verification surface. It is deliberately
+ * not importable from the same-layer @speed/auth-ui and @speed/console-ui
+ * packages (the latter keeps its own copy); see ADR-web-auth-seams-2026-10-19.
  */
 
 export { ACCOUNT_UI_NAMESPACE, accountUiResources } from './resources.js'
@@ -48,16 +50,25 @@ export {
   IdentifiersSection,
   type IdentifiersSectionProps,
 } from './IdentifiersSection.js'
-export { PreferencesSection } from './PreferencesSection.js'
+export {
+  PreferencesSection,
+  type PreferencesSectionProps,
+} from './PreferencesSection.js'
 export { SessionsSection } from './SessionsSection.js'
 export {
   SocialBindingsSection,
   type SocialBindingsSectionProps,
-  type SocialProvider,
-  type SocialProviderConfig,
 } from './SocialBindingsSection.js'
 export {
   BindingCallbackHandler,
   type BindingCallbackHandlerProps,
 } from './BindingCallbackHandler.js'
 export { MfaSection, type MfaSectionProps } from './MfaSection.js'
+/**
+ * The step-up re-verification dialog, exported for the host. Its gate is
+ * `useStepUpGate` from @speed/auth-core; the host composes the two.
+ */
+export {
+  StepUpChallenge as StepUpDialog,
+  type StepUpChallengeProps as StepUpDialogProps,
+} from './internal/step-up-challenge.js'

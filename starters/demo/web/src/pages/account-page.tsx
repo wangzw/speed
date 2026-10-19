@@ -27,13 +27,12 @@
  * face may offer an email (a deployment without it records usernames only).
  *
  * The social-bindings section takes the assembled session (it starts the
- * `link` flow the callback completes) and the channels the host offers.
- * The skeleton offers none -- it configures no OAuth provider, and
- * offering a channel nothing can finish is a promise no phone keeps, the
- * same rule the sign-in surface follows -- so the section lists the
- * account's existing bindings and shows no add area. Its callback route
- * is mounted beside the page (src/routes.tsx) for a product that
- * configures a provider.
+ * `link` flow the callback completes) and the callback route the flow
+ * lands back on. The skeleton configures no OAuth provider, so the
+ * deployment's discovery document carries no redirect method and the
+ * add area stays empty; a product that configures one gets its channels
+ * from that same document. The callback route is mounted beside the page
+ * (src/routes.tsx) for that product.
  *
  * The callback page renders account-ui's BindingCallbackHandler: the flow
  * model completes the provider hand-off server-side and the handler reads
@@ -63,6 +62,7 @@ import { useNavigate } from '@speed/route-kit'
 import { PageHeader } from '@speed/ui-kit'
 import { useAppServices } from '../app-services.js'
 import { ACCOUNT_CALLBACK_PATH, ACCOUNT_PATH } from '../paths.js'
+import { navigateToAuthorizationUrl } from '../sign-in-navigation.js'
 import { NotFoundPage } from './not-found-page.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 
@@ -88,9 +88,13 @@ export function AccountSettingsPage(): ReactElement {
         session={session}
         emailAvailable={emailIdentifierServed}
       />
-      <PreferencesSection />
+      <PreferencesSection session={session} />
       <SessionsSection />
-      <SocialBindingsSection session={session} providers={[]} />
+      <SocialBindingsSection
+        session={session}
+        returnTo={ACCOUNT_CALLBACK_PATH}
+        onAuthorizeUrl={navigateToAuthorizationUrl}
+      />
       {mfaServed ? <MfaSection session={session} /> : null}
     </Box>
   )

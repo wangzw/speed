@@ -105,7 +105,7 @@ describe('BindingCallbackHandler', () => {
 
     // The parked challenge step is rendered and answered under the
     // flow's own first-factor answer step.
-    await user.type(await screen.findByLabelText('code'), '123456')
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.bindingCallback.continueLabel }),
     )

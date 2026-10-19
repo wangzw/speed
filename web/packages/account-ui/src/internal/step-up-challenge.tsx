@@ -55,9 +55,12 @@
  *
  * A failed session read is not read as a known method: the dialog offers
  * the re-login exit, which is the way out when the method cannot be
- * named. The sections ARE the account settings surface, so the dialog
- * renders text only in both no-factor branches: it never renders a link,
- * and nothing in this package navigates.
+ * named. The no-factor/multi-factor branch names the missing two-step
+ * verification; when the host supplies `accountHref` (the account
+ * settings route that registers one) the dialog renders it as a plain
+ * link beside that text. The package itself navigates nothing: the href
+ * is the host's, and a caller that has no such route omits the prop and
+ * gets the text alone.
  *
  * A refusal of the start itself, with factors registered, is the
  * deployment declining to raise this session at all, which no step can
@@ -81,6 +84,7 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
 import type { AuthnSessionView } from '@speed/api-sdk'
 import type { AuthSession, AuthnFlowAnswer } from '@speed/auth-core'
@@ -114,6 +118,12 @@ export interface StepUpChallengeProps {
   readonly onSuccess: () => void
   /** Fired on cancel while nothing is in flight. The host does not retry. */
   readonly onCancel: () => void
+  /**
+   * The host's account-settings route, rendered as a link beside the
+   * "register two-step verification first" explanation. Omit to render
+   * the explanation alone.
+   */
+  readonly accountHref?: string
 }
 
 export function StepUpChallenge({
@@ -121,6 +131,7 @@ export function StepUpChallenge({
   session,
   onSuccess,
   onCancel,
+  accountHref,
 }: StepUpChallengeProps) {
   const { t } = useAccountUiTranslation()
   const titleId = useId()
@@ -268,9 +279,16 @@ export function StepUpChallenge({
       <DialogTitle id={titleId}>{t('mfa.stepUp.title')}</DialogTitle>
       <DialogContent>
         {freshFirst ? (
-          <Typography variant="body2" color="text.secondary">
-            {t('mfa.stepUp.noFactor')}
-          </Typography>
+          <Box>
+            <Typography variant="body2" color="text.secondary">
+              {t('mfa.stepUp.noFactor')}
+            </Typography>
+            {accountHref !== undefined && (
+              <Link href={accountHref} variant="body2" sx={{ mt: 1 }}>
+                {t('mfa.stepUp.accountSettingsLink')}
+              </Link>
+            )}
+          </Box>
         ) : reloginOnly ? (
           <Typography variant="body2" color="text.secondary">
             {t('mfa.stepUp.firstFactorRelogin')}

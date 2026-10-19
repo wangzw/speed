@@ -43,7 +43,6 @@ import { IdentifiersSection } from './IdentifiersSection.js'
 import { PreferencesSection } from './PreferencesSection.js'
 import { SessionsSection } from './SessionsSection.js'
 import { SocialBindingsSection } from './SocialBindingsSection.js'
-import type { SocialProviderConfig } from './SocialBindingsSection.js'
 import { MfaSection } from './MfaSection.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
@@ -51,14 +50,13 @@ const SESSIONS_PATH = '/api/v1/auth/sessions'
 const FACTORS_PATH = '/api/v1/auth/factors'
 const METHODS_PATH = '/api/v1/auth/methods'
 
-const PROVIDERS: readonly SocialProviderConfig[] = [
-  { provider: 'github', redirectUri: 'https://app.example.test/cb/github' },
-  { provider: 'wechat', redirectUri: 'https://app.example.test/cb/wechat' },
-]
+/** The host's binding callback route: the flow's top-level return_to. */
+const ACCOUNT_CALLBACK = '/account/callback'
 
 /** The host's account page in the example: the sections the quick start
  * documents, under one signed-in session. The sections that drive a flow
- * (a bind, a step-up, an enroll) take the session; the rest take none. */
+ * (a bind, a step-up, an enroll) take the session; the preferences
+ * section takes it optionally, for the shared step-up gate. */
 function AccountPage({ session }: { readonly session: AuthSession }) {
   return (
     <div>
@@ -66,9 +64,12 @@ function AccountPage({ session }: { readonly session: AuthSession }) {
       <PasswordSection session={session} />
       <PhoneSection session={session} />
       <IdentifiersSection session={session} />
-      <PreferencesSection />
+      <PreferencesSection session={session} />
       <SessionsSection />
-      <SocialBindingsSection session={session} providers={PROVIDERS} />
+      <SocialBindingsSection
+        session={session}
+        returnTo={ACCOUNT_CALLBACK}
+      />
       <MfaSection session={session} />
     </div>
   )
@@ -148,10 +149,14 @@ describe('the README quick start, exercised over a real api-client', () => {
             ],
           })
         case METHODS_PATH:
-          // The deployment carries only an authenticator app: the enroll
-          // entries follow this answer (the passkey entry is not offered).
+          // The deployment's discovery document: its two redirect methods
+          // are the bindings add area's channels, and its mfa.factors are
+          // the enroll entries (the passkey entry is not offered).
           return jsonResponse(200, {
-            methods: [],
+            methods: [
+              { name: 'github', kind: 'redirect', label: 'GitHub' },
+              { name: 'wechat', kind: 'redirect', label: 'WeChat' },
+            ],
             signup: { enabled: false },
             mfa: { factors: ['totp'] },
           })

@@ -278,7 +278,7 @@ describe('MfaSection', () => {
     // The 401 opens the step-up dialog.
     await screen.findByRole('button', { name: 'App' })
     await user.click(screen.getByRole('button', { name: 'App' }))
-    await user.type(await screen.findByLabelText('code'), '123456')
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
@@ -503,6 +503,50 @@ describe('MfaSection', () => {
     expect(
       (answers[0]?.body as { input?: { credential?: string } }).input?.credential,
     ).toContain('AQID')
+  })
+
+  it('offers one entry per reported kind, translating known kinds and starting an unknown one', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        // The deployment reports a text-message factor and a kind this
+        // package has no wording for.
+        return jsonResponse(200, methodsDoc(['sms', 'magic']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'code', required: true }],
+          },
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    // The known kind renders its translated name; the unknown one gets the
+    // generic label but is still offered.
+    expect(
+      await screen.findByRole('button', { name: zhCN.mfa.enroll.sms }),
+    ).toBeTruthy()
+    const unknown = screen.getByRole('button', {
+      name: zhCN.mfa.enroll.other,
+    })
+    expect(unknown).toBeTruthy()
+
+    await user.click(unknown)
+    // The unknown kind's own flow starts; the generic label never hides
+    // the deployment's vocabulary from the request.
+    const start = rig.calls.find(
+      (call) => call.method === 'POST' && call.path === FLOW_START,
+    )
+    expect(start?.body).toEqual({ purpose: 'enroll', input: { kind: 'magic' } })
   })
 
   it('raises the factor remove control to the 44px floor under a coarse pointer', async () => {

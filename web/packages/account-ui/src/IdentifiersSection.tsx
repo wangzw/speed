@@ -70,6 +70,7 @@ import {
   useAuthnLoginVerifyIdentifier,
 } from '@speed/api-sdk'
 import type { AuthSession } from '@speed/auth-core'
+import { useStepUpGate } from '@speed/auth-core'
 import {
   AsyncSection,
   ConfirmDialog,
@@ -79,7 +80,6 @@ import {
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 import { useProfileQuery } from './internal/queries.js'
-import { useStepUpGate } from './internal/step-up-gate.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 
@@ -89,14 +89,20 @@ export interface IdentifiersSectionProps {
   /** The session whose step-up flow the dialog drives. */
   readonly session: AuthSession
   /**
-   * Whether the deployment serves the `authn.identifiers.email` feature.
-   * False removes the email option from the add face (usernames only,
-   * unless the profile already lists a username, which leaves nothing to
-   * add); the host reads the feature document and passes the answer.
-   * Defaults to true, so a host that does not gate identifiers keeps the
-   * full face.
+   * Whether the add surface offers the email kind. The host reads the
+   * deployment's `authn.identifiers.email` feature and passes the
+   * answer, optionally narrowing it by its own product choice; false
+   * removes the email option from the add face. Defaults to true, so a
+   * host that does not gate identifiers keeps the full face.
    */
   readonly emailAvailable?: boolean
+  /**
+   * Whether the add surface offers the username kind. False removes it
+   * (an email-only product), leaving the email kind alone. Defaults to
+   * true. An account that already lists a username never offers the kind
+   * regardless of this prop.
+   */
+  readonly offerUsername?: boolean
 }
 
 /** The identifier kinds the authn account module records
@@ -143,6 +149,7 @@ function IdentifierListSkeleton({ label }: { readonly label: string }) {
 export function IdentifiersSection({
   session,
   emailAvailable = true,
+  offerUsername = true,
 }: IdentifiersSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
@@ -202,7 +209,7 @@ export function IdentifiersSection({
   if (emailAvailable) {
     addKinds.push('email')
   }
-  if (!usernamePresent) {
+  if (offerUsername && !usernamePresent) {
     addKinds.push('username')
   }
   // The selector's value: the chosen kind while it is still offered, and

@@ -10,8 +10,8 @@
  * beside it; a completion in state 'elevated' fires onSuccess; a refused
  * answer renders its code text and stays retryable; an account with no
  * active factor is recognised from the caller's own factor read and the
- * dialog names the missing second factor, renders no link and starts no
- * flow at all; a 401 start refusal on an established
+ * dialog names the missing second factor, renders no link unless the host
+ * supplies accountHref, and starts no flow at all; a 401 start refusal on an established
  * session (factors exist, none may strengthen it) offers a re-login; a
  * 400 or any other start failure renders as its code, never as either of
  * those explanations; an account with no factor re-proves the first factor
@@ -133,7 +133,11 @@ function makeStepUpResponder(overrides: {
 
 function mount(
   respond: RealResponder,
-  handlers: { readonly onSuccess?: () => void; readonly onCancel?: () => void } = {},
+  handlers: {
+    readonly onSuccess?: () => void
+    readonly onCancel?: () => void
+    readonly accountHref?: string
+  } = {},
 ) {
   const rig = makeRealClientRig(respond)
   rig.store.set('access-1')
@@ -145,6 +149,7 @@ function mount(
       session={rig.session}
       onSuccess={onSuccess}
       onCancel={onCancel}
+      accountHref={handlers.accountHref}
     />,
   )
   return { rig, onSuccess, onCancel }
@@ -300,7 +305,7 @@ describe('StepUpChallenge', () => {
       ).toEqual({ seq: 1, step: 'factor', input: { factor: 'factor-1' } }),
     )
 
-    await user.type(await screen.findByLabelText('code'), '123456')
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
@@ -331,7 +336,7 @@ describe('StepUpChallenge', () => {
     await user.click(
       await screen.findByRole('button', { name: 'Authenticator app' }),
     )
-    await user.type(await screen.findByLabelText('code'), '000000')
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '000000')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
@@ -340,7 +345,7 @@ describe('StepUpChallenge', () => {
     expect(alert).toHaveTextContent(zhCN.errors.authn.login_failed)
     expect(onSuccess).not.toHaveBeenCalled()
     // The flow is still open: the answer stayed parked on the code step.
-    expect(screen.getByLabelText('code')).toBeTruthy()
+    expect(screen.getByLabelText(zhCN.flowStep.codeLabel)).toBeTruthy()
     expect(rig.calls.length).toBeGreaterThan(0)
     // The refused answer's 401 is the expected refresh-failure diagnostic.
     expect(warn).toHaveBeenCalledWith(
@@ -396,6 +401,29 @@ describe('StepUpChallenge', () => {
     expect(rig.calls.some((call) => call.path === FLOW_START)).toBe(false)
   })
 
+  it('renders the host account route as a link beside the missing-factor hint', async () => {
+    // A host that has an account route passes accountHref; the dialog
+    // renders the one link, pointing where the host said.
+    mount(
+      (call: RealCall) => {
+        if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
+          return jsonResponse(200, { factors: [] })
+        }
+        if (call.method === 'GET' && call.path === '/api/v1/auth/session') {
+          return jsonResponse(200, sessionBody())
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      },
+      { accountHref: '/account' },
+    )
+
+    expect(await screen.findByText(zhCN.mfa.stepUp.noFactor)).toBeTruthy()
+    const link = screen.getByRole('link', {
+      name: zhCN.mfa.stepUp.accountSettingsLink,
+    })
+    expect(link).toHaveAttribute('href', '/account')
+  })
+
   it('re-proves the first factor with the session method when the window is past', async () => {
     // An account opened by SMS sign-up has no factor, and its writes ask
     // for a first factor proved within five minutes. Past the window the
@@ -432,7 +460,7 @@ describe('StepUpChallenge', () => {
     })
     const user = userEvent.setup()
 
-    await user.type(await screen.findByLabelText('code'), '123456')
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
@@ -476,7 +504,7 @@ describe('StepUpChallenge', () => {
       throw new Error(`unexpected ${call.method} ${call.path}`)
     })
 
-    await screen.findByLabelText('identifier')
+    await screen.findByLabelText(zhCN.flowStep.field.identifier)
     const start = rig.calls.find((call) => call.path === FLOW_START)
     expect(start?.body).toEqual({ purpose: 'step-up', method: 'password' })
   })
@@ -540,7 +568,7 @@ describe('StepUpChallenge', () => {
     const control = renderControlled(rig.session, { onSuccess, onCancel })
 
     // The first opening re-proves the first factor on its `answer` step.
-    await screen.findByLabelText('code')
+    await screen.findByLabelText(zhCN.flowStep.codeLabel)
     expect(starts()).toHaveLength(1)
 
     // Cancel closes the dialog; the session is re-established while it is

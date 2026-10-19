@@ -27,16 +27,21 @@ import enUS from './locales/en-US.json' with { type: 'json' }
 import {
   errorResponse,
   jsonResponse,
+  makeRealClientRig,
   makeRealClientRigWithoutSession,
   type RealCall,
   type RealResponder,
 } from '../test-utils/real-client.js'
 import { profileBody } from '../test-utils/fixtures.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { PreferencesSection } from './PreferencesSection.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
+const FACTORS_PATH = '/api/v1/auth/factors'
+const FLOW_START = '/api/v1/auth/flows/authenticated'
+const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
 /** The language label the component computes for `tag` under `ui`, using
  * the same Intl.DisplayNames call (with the same raw-tag fallback), so
@@ -330,6 +335,119 @@ describe('PreferencesSection', () => {
     } finally {
       supportedValues.mockRestore()
     }
+  })
+
+  it('gates a step_up_required write behind the shared dialog and replays it once', async () => {
+    captureRefreshWarning()
+    let elevated = false
+    let storedLocale = ''
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ locale: storedLocale }))
+      }
+      if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
+        if (!elevated) {
+          return errorResponse(401, 'authn.insufficient_user_authentication')
+        }
+        storedLocale = (call.body as { locale?: string }).locale ?? ''
+        return jsonResponse(200, {})
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [
+            {
+              id: 'factor-1',
+              kind: 'totp',
+              label: 'App',
+              status: 'active',
+              created_at: '2026-01-01T00:00:00Z',
+            },
+          ],
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'second',
+          next: {
+            kind: 'factor',
+            factors: [{ id: 'factor-1', kind: 'totp', label: 'App' }],
+          },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number }
+        if (body.seq === 1) {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'second',
+            next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
+          })
+        }
+        elevated = true
+        return jsonResponse(200, {
+          state: 'elevated',
+          token_type: 'Bearer',
+          access_token: 'access-2',
+          expires_in: 3600,
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const { i18n } = renderWithProviders(
+      <PreferencesSection session={rig.session} />,
+    )
+    const user = userEvent.setup()
+
+    const language = await screen.findByRole('combobox', {
+      name: zhCN.preferences.language.label,
+    })
+    chooseOption(language, languageLabel('en-US', 'zh-CN'))
+
+    // The 401 opens the shared dialog; winning it replays the refused
+    // write exactly once.
+    await user.click(await screen.findByRole('button', { name: 'App' }))
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    await waitFor(() => expect(storedLocale).toBe('en-US'))
+    expect(i18n.language).toBe('en-US')
+    const patches = rig.calls.filter(
+      (call) => call.method === 'PATCH' && call.path === PROFILE_PATH,
+    )
+    expect(patches).toHaveLength(2)
+    expect(patches[1]?.body).toEqual({ locale: 'en-US' })
+  })
+
+  it('keeps the failure banner when a step-up refusal arrives without a session', async () => {
+    // The section cannot open a dialog it has no session to drive: the
+    // refusal renders the code's text and the host decides how to elevate.
+    const respond: RealResponder = async (call) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody())
+      }
+      if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
+        return errorResponse(401, 'authn.insufficient_user_authentication')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+
+    const language = await screen.findByRole('combobox', {
+      name: zhCN.preferences.language.label,
+    })
+    chooseOption(language, languageLabel('en-US', 'zh-CN'))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.preferences.saveFailed)
+    expect(alert).toHaveTextContent(
+      zhCN.errors.authn.insufficient_user_authentication,
+    )
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('renders the error state with a retry that refetches when the load fails', async () => {

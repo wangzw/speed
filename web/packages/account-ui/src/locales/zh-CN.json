@@ -66,6 +66,8 @@
       "google": "Google",
       "github": "GitHub",
       "wechat": "微信",
+      "wechatOfficialAccount": "微信（公众号）",
+      "wechatWeb": "微信（网页扫码）",
       "dingtalk": "钉钉",
       "feishu": "飞书",
       "oidc": "企业 SSO",
@@ -122,6 +124,8 @@
       "sectionTitle": "添加验证方式",
       "totp": "设置身份验证器应用",
       "webauthn": "添加通行密钥",
+      "sms": "设置短信验证",
+      "other": "添加其他验证方式",
       "confirmLabel": "确认",
       "cancelLabel": "取消"
     },
@@ -134,7 +138,8 @@
       "cannotElevate": "本部署无法完成此次升级，请重新登录以获得更高的验证强度。",
       "relogin": "重新登录",
       "firstFactorRelogin": "此操作需要最近一次的登录，而本会话无法在此重新证明第一因素。请重新登录后重试该操作。",
-      "noFactor": "此账户尚未配置两步验证，请先在账户设置中添加验证方式。"
+      "noFactor": "此账户尚未配置两步验证，请先在账户设置中添加验证方式。",
+      "accountSettingsLink": "前往账户设置"
     },
     "error": {
       "title": "无法加载两步验证",
@@ -148,7 +153,17 @@
     "enrollTotpHelp": "将下方内容添加进你的身份验证器应用，然后输入应用显示的 6 位验证码完成设置。",
     "enrollTotpUriLabel": "身份验证器设置 URI",
     "codeLabel": "6 位验证码",
+    "field": {
+      "identifier": "邮箱或手机号",
+      "password": "密码",
+      "newPassword": "新密码",
+      "phone": "手机号"
+    },
     "passkeyPrompt": "用你的设备登记或出示通行密钥。",
+    "passkeyRegisterPrompt": "用你的设备登记通行密钥。",
+    "passkeyWaiting": "正在等待你的设备…",
+    "passkeyCancel": "取消",
+    "passkeyRetry": "重试",
     "passkeyUnsupported": "此浏览器无法进行通行密钥仪式。",
     "passkeyCancelled": "通行密钥提示已取消，请重试。",
     "passkeyFailed": "通行密钥仪式未能完成。"
@@ -209,6 +224,7 @@
     "policyFailure": "新密码不符合要求：长度需合适（不能过短，也不能过长），且不能与用户名、邮箱、手机号相同；修改口令时还不能与当前口令相同。",
     "missingNew": "请输入新密码。",
     "mismatch": "两次输入的密码不一致。",
+    "loginNameRequired": "请先添加用户名或已验证的邮箱地址，再设置密码。",
     "error": {
       "title": "无法加载密码设置",
       "description": "加载密码设置时出了问题，请稍后重试。"

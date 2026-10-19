@@ -1,16 +1,19 @@
 /**
  * SocialBindingsSection behaviour: the bound identities read from the
  * profile's `links` (GET /api/v1/auth/me), the unlink route (DELETE
- * /api/v1/auth/links/{id}) and the add area's `purpose: 'link'` flow start
- * (POST /api/v1/auth/flows/authenticated).
+ * /api/v1/auth/links/{id}), the deployment's discovery document
+ * (GET /api/v1/auth/methods) and the add area's `purpose: 'link'` flow
+ * start (POST /api/v1/auth/flows/authenticated).
  *
- * What this suite pins: the links render with their provider label and
- * email and the add area offers only the configured providers that are
- * not already bound; an unlink DELETE-s the link and refetches the
- * profile; a refused unlink (the account's last sign-in method) renders
- * its code text above the list and leaves the row; and the add area's
- * click starts a link flow whose redirect step's URL is reported upward
- * (the section never navigates).
+ * What this suite pins: the links render with the provider label the
+ * discovery descriptor supplies (falling back to the family's closed
+ * vocabulary for a value no descriptor matches) and the add area offers
+ * only the deployment's unbound redirect methods, labelled by their
+ * descriptors; an unlink DELETE-s the link and refetches the profile; a
+ * refused unlink (the account's last sign-in method) renders its code
+ * text above the list and leaves the row; and the add area's click starts
+ * a link flow carrying the host's `return_to` at the top level, whose
+ * redirect step's URL is reported upward (the section never navigates).
  */
 
 import { describe, expect, it } from 'vitest'
@@ -27,21 +30,27 @@ import {
 import { renderWithProviders } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
-import {
-  SocialBindingsSection,
-  type SocialProviderConfig,
-} from './SocialBindingsSection.js'
+import { SocialBindingsSection } from './SocialBindingsSection.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
+const METHODS_PATH = '/api/v1/auth/methods'
 const LINK_FLOW_PATH = '/api/v1/auth/flows/authenticated'
+const ACCOUNT_CALLBACK = '/account/callback'
 
-const GITHUB_REDIRECT_URI = 'https://app.example.test/callback/social/github'
-const WECHAT_REDIRECT_URI = 'https://app.example.test/callback/social/wechat'
-const PROVIDERS: readonly SocialProviderConfig[] = [
-  { provider: 'github', redirectUri: GITHUB_REDIRECT_URI },
-  { provider: 'wechat', redirectUri: WECHAT_REDIRECT_URI },
-]
-const WECHAT_AUTHORIZE_URL = 'https://open.weixin.qq.com/connect/qrconnect?appid=x'
+/** The deployment's discovery document, carrying redirect methods. */
+function methodsDoc(
+  methods: readonly { name: string; label?: string }[],
+): Record<string, unknown> {
+  return {
+    methods: methods.map((method) => ({
+      name: method.name,
+      kind: 'redirect',
+      ...(method.label === undefined ? {} : { label: method.label }),
+    })),
+    signup: { enabled: false },
+    mfa: { factors: [] },
+  }
+}
 
 function profile(links: readonly Record<string, unknown>[]): Record<string, unknown> {
   return {
@@ -59,8 +68,10 @@ function profile(links: readonly Record<string, unknown>[]): Record<string, unkn
   }
 }
 
+const WECHAT_AUTHORIZE_URL = 'https://open.weixin.qq.com/connect/qrconnect?appid=x'
+
 describe('SocialBindingsSection', () => {
-  it('renders the bound links and offers only the unbound providers', async () => {
+  it('renders the bound links and offers only the unbound redirect methods', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -70,43 +81,108 @@ describe('SocialBindingsSection', () => {
           ]),
         )
       }
-      throw new Error(`unexpected ${call.method} ${call.path}`)
-    }
-    const rig = makeRealClientRig(respond)
-    rig.store.set('access-1')
-    renderWithProviders(
-      <SocialBindingsSection session={rig.session} providers={PROVIDERS} />,
-    )
-
-    expect(
-      await screen.findByRole('heading', { name: zhCN.bindings.title }),
-    ).toBeTruthy()
-    expect(await screen.findByText(zhCN.bindings.provider.github)).toBeTruthy()
-    expect(screen.getByText('ada@example.test')).toBeTruthy()
-    // The bound provider is not offered again; the unbound one is.
-    expect(
-      screen.queryByRole('button', { name: zhCN.bindings.provider.github }),
-    ).toBeNull()
-    expect(
-      screen.getByRole('button', { name: zhCN.bindings.provider.wechat }),
-    ).toBeTruthy()
-
-    await expectNoAxeViolations()
-  })
-
-  it('renders the empty placeholder headerless as a status region', async () => {
-    const respond: RealResponder = (call: RealCall) => {
-      if (call.method === 'GET' && call.path === PROFILE_PATH) {
-        return jsonResponse(200, profile([]))
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(
+          200,
+          methodsDoc([
+            // The bound provider's descriptor label deliberately differs
+            // from the closed vocabulary's own word for "github": the row
+            // must show what the descriptor says, not what the fallback
+            // table would have said.
+            { name: 'github', label: 'GitHub Org' },
+            { name: 'wechat', label: 'WeChat' },
+          ]),
+        )
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     const rig = makeRealClientRig(respond)
     rig.store.set('access-1')
-    // No configured channels and no bound links: the section's content is the
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
+    )
+
+    expect(
+      await screen.findByRole('heading', { name: zhCN.bindings.title }),
+    ).toBeTruthy()
+    // The bound row's provider label comes from the descriptor, not from
+    // the closed vocabulary ("GitHub"): a row rendering the vocabulary's
+    // word here would be indistinguishable from one that never resolved
+    // the descriptor at all.
+    expect(await screen.findByText('GitHub Org')).toBeTruthy()
+    expect(screen.getByText('ada@example.test')).toBeTruthy()
+    expect(
+      screen.queryByRole('button', { name: 'GitHub Org' }),
+    ).toBeNull()
+    expect(
+      await screen.findByRole('button', { name: 'WeChat' }),
+    ).toBeTruthy()
+
+    await expectNoAxeViolations()
+  })
+
+  it('gives two sign-in modes that share a descriptor label distinct accessible names', async () => {
+    // Both WeChat methods describe themselves as "WeChat". The package's
+    // mode-keyed wording must outrank the descriptor label, or the two
+    // buttons would be announced identically.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profile([]))
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(
+          200,
+          methodsDoc([
+            { name: 'wechat.web', label: 'WeChat' },
+            { name: 'wechat.mp', label: 'WeChat' },
+          ]),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
+    )
+
+    const web = await screen.findByRole('button', {
+      name: zhCN.bindings.provider.wechatWeb,
+    })
+    const officialAccount = screen.getByRole('button', {
+      name: zhCN.bindings.provider.wechatOfficialAccount,
+    })
+    // Two buttons, two distinct names: neither is reachable by the shared
+    // descriptor label alone.
+    expect(web).not.toBe(officialAccount)
+    expect(screen.queryAllByRole('button', { name: 'WeChat' })).toHaveLength(0)
+  })
+
+  it('renders the empty placeholder headerless when the deployment offers no channel', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profile([]))
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc([]))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    // No redirect method and no bound links: the section's content is the
     // empty placeholder alone.
     renderWithProviders(
-      <SocialBindingsSection session={rig.session} providers={[]} />,
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
     )
 
     const emptyTitle = await screen.findByText(zhCN.bindings.empty.title)
@@ -133,6 +209,12 @@ describe('SocialBindingsSection', () => {
           ),
         )
       }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(
+          200,
+          methodsDoc([{ name: 'github', label: 'GitHub' }]),
+        )
+      }
       if (call.method === 'DELETE' && call.path === '/api/v1/auth/links/github-1') {
         unlinked = true
         return new Response(null, { status: 204 })
@@ -142,16 +224,16 @@ describe('SocialBindingsSection', () => {
     const rig = makeRealClientRig(respond)
     rig.store.set('access-1')
     renderWithProviders(
-      <SocialBindingsSection session={rig.session} providers={PROVIDERS} />,
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
     )
     const user = userEvent.setup()
 
     await user.click(
       await screen.findByRole('button', {
-        name: zhCN.bindings.unbindAriaWithProvider.replace(
-          '{{provider}}',
-          zhCN.bindings.provider.github,
-        ),
+        name: zhCN.bindings.unbindAriaWithProvider.replace('{{provider}}', 'GitHub'),
       }),
     )
     const dialog = await screen.findByRole('dialog')
@@ -174,14 +256,11 @@ describe('SocialBindingsSection', () => {
     expect(await screen.findByText(zhCN.bindings.unlinked)).toBeTruthy()
     expect(
       screen.queryByRole('button', {
-        name: zhCN.bindings.unbindAriaWithProvider.replace(
-          '{{provider}}',
-          zhCN.bindings.provider.github,
-        ),
+        name: zhCN.bindings.unbindAriaWithProvider.replace('{{provider}}', 'GitHub'),
       }),
     ).toBeNull()
     expect(
-      screen.getByRole('button', { name: zhCN.bindings.provider.github }),
+      screen.getByRole('button', { name: 'GitHub' }),
     ).toBeTruthy()
     expect(
       rig.calls.filter(
@@ -198,6 +277,9 @@ describe('SocialBindingsSection', () => {
           profile([{ id: 'github-1', provider: 'github' }]),
         )
       }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc([]))
+      }
       if (call.method === 'DELETE' && call.path === '/api/v1/auth/links/github-1') {
         return errorResponse(409, 'authn.conflict')
       }
@@ -206,10 +288,15 @@ describe('SocialBindingsSection', () => {
     const rig = makeRealClientRig(respond)
     rig.store.set('access-1')
     renderWithProviders(
-      <SocialBindingsSection session={rig.session} providers={PROVIDERS} />,
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
     )
     const user = userEvent.setup()
 
+    // No descriptor matches "github", so the row falls back to the
+    // family's closed-set wording.
     await user.click(
       await screen.findByRole('button', {
         name: zhCN.bindings.unbindAriaWithProvider.replace(
@@ -231,10 +318,16 @@ describe('SocialBindingsSection', () => {
     expect(screen.getByText(zhCN.bindings.provider.github)).toBeTruthy()
   })
 
-  it('starts a link flow for an unbound provider and reports the redirect URL upward', async () => {
+  it('starts a link flow with the top-level return_to and reports the redirect URL upward', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profile([]))
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(
+          200,
+          methodsDoc([{ name: 'wechat', label: 'WeChat' }]),
+        )
       }
       if (call.method === 'POST' && call.path === LINK_FLOW_PATH) {
         return jsonResponse(200, {
@@ -255,7 +348,7 @@ describe('SocialBindingsSection', () => {
     renderWithProviders(
       <SocialBindingsSection
         session={rig.session}
-        providers={PROVIDERS}
+        returnTo={ACCOUNT_CALLBACK}
         onAuthorizeUrl={(url) => reports.push(url)}
       />,
     )
@@ -263,7 +356,7 @@ describe('SocialBindingsSection', () => {
 
     await user.click(
       await screen.findByRole('button', {
-        name: zhCN.bindings.provider.wechat,
+        name: 'WeChat',
       }),
     )
 
@@ -271,47 +364,88 @@ describe('SocialBindingsSection', () => {
     const start = rig.calls.find(
       (call) => call.method === 'POST' && call.path === LINK_FLOW_PATH,
     )
-    // The link flow starts with the purpose and the channel's redirect
-    // URI; the section reads the URL off the redirect step, it does not
-    // navigate.
+    // The link flow starts with the purpose, the method name and the
+    // host's callback route as the top-level return_to; the section reads
+    // the URL off the redirect step, it does not navigate.
     expect(start?.body).toEqual({
       purpose: 'link',
       method: 'wechat',
-      input: { redirect_uri: WECHAT_REDIRECT_URI },
+      return_to: ACCOUNT_CALLBACK,
     })
   })
 
-  it('renders a configured method by its brand label or bundle name, never a raw key', async () => {
+  it('falls back to the closed provider vocabulary when no descriptor matches', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profile([
+            { id: 'wechat-1', provider: 'wechat.web' },
+            { id: 'acme-1', provider: 'acme-sso' },
+          ]),
+        )
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        // The deployment offers two methods this family has no wording
+        // for; the add area still uses their own labels (or names).
+        return jsonResponse(
+          200,
+          methodsDoc([
+            { name: 'mystery', label: 'Mystery IdP' },
+            { name: 'unlabelled' },
+          ]),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
+    )
+
+    // A bound value no descriptor matches renders the family's own
+    // wording for a name it knows (the WeChat pair, mode-keyed) and the
+    // generic other label otherwise; the add area falls back to the
+    // method name, never a raw bundle key.
+    expect(
+      await screen.findByText(zhCN.bindings.provider.wechatWeb),
+    ).toBeTruthy()
+    expect(screen.getByText(zhCN.bindings.provider.other)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Mystery IdP' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'unlabelled' })).toBeTruthy()
+  })
+
+  it('renders provider icons supplied by the host', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profile([]))
       }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(
+          200,
+          methodsDoc([{ name: 'github', label: 'GitHub' }]),
+        )
+      }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
-    // A deployment's method names, not a closed set: the WeChat web channel
-    // is `wechat.web`, a host may give a channel a brand label, and a
-    // method the family has no wording for still must not leak a raw key.
-    const providers: readonly SocialProviderConfig[] = [
-      { provider: 'wechat.web', redirectUri: WECHAT_REDIRECT_URI },
-      { provider: 'acme-sso', label: 'Acme SSO', redirectUri: WECHAT_REDIRECT_URI },
-      { provider: 'mystery', redirectUri: WECHAT_REDIRECT_URI },
-    ]
     const rig = makeRealClientRig(respond)
     rig.store.set('access-1')
     renderWithProviders(
-      <SocialBindingsSection session={rig.session} providers={providers} />,
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+        providerIcon={(provider) => (
+          <span data-testid={`icon-${provider}`} aria-hidden="true" />
+        )}
+      />,
     )
 
-    // `wechat.web` resolves to the bundle's WeChat name, the host's brand
-    // label renders verbatim, and the unknown method falls to the generic
-    // other label -- never a raw bundle key.
-    expect(
-      await screen.findByRole('button', { name: zhCN.bindings.provider.wechat }),
-    ).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Acme SSO' })).toBeTruthy()
-    expect(
-      screen.getByRole('button', { name: zhCN.bindings.provider.other }),
-    ).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'GitHub' })).toBeTruthy()
+    expect(screen.getByTestId('icon-github')).toBeTruthy()
   })
 
   it('raises the unbind action to the 44px floor under a coarse pointer', async () => {
@@ -324,12 +458,18 @@ describe('SocialBindingsSection', () => {
           ]),
         )
       }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc([]))
+      }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     const rig = makeRealClientRig(respond)
     rig.store.set('access-1')
     renderWithProviders(
-      <SocialBindingsSection session={rig.session} providers={PROVIDERS} />,
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
     )
     const unbind = await screen.findByRole('button', {
       name: zhCN.bindings.unbindAriaWithProvider.replace(

@@ -6,46 +6,60 @@
  * signed-in account. The bound identities are the profile's `links`
  * (GET /api/v1/auth/me), which carries each binding's own identifier -- there is
  * no separate list endpoint, so the section reads the same profile query
- * the preferences and sessions surfaces read. Each row names the provider
- * (mapped through bindings.provider.<provider> for the five social
- * providers the spec hosts and through the bindings.provider.oidc family
- * label for the enterprise-SSO channel, whose live provider values are
- * the dynamic per-tenant names "oidc:<tenant>" -- the raw value renders
- * as the row's reference line so one tenant's binding never reads as
- * another's; a value outside both sets, a future channel, renders the
- * generic "other" label, never a raw value) and the provider account's
- * email when the answer carries one. A row whose link carries an id has a
- * row-end "unlink" action that sits behind the ui-kit danger
- * ConfirmDialog: unbinding is irreversible (the binding is re-established
- * only by walking the provider's flow again), so the row asks once before
- * the DELETE goes out. After a successful unbind the profile query is
+ * the preferences and sessions surfaces read. Each row resolves its
+ * provider through the deployment's discovery document
+ * (session.listMethods(), GET /api/v1/auth/methods): for a brand served
+ * through several sign-in modes whose descriptors carry the same brand
+ * label (WeChat's web and official-account methods), the package's
+ * mode-keyed wording wins so the modes stay distinguishable; otherwise a
+ * descriptor whose name matches the row's provider value supplies the
+ * method's own label. A value no descriptor matches falls back to the
+ * family's closed vocabulary (the five social names it has wording for,
+ * the enterprise-SSO family prefix and the generic "other" label), whose
+ * live oidc values are the dynamic per-tenant names "oidc:<tenant>" --
+ * the raw value renders as the row's reference line so one tenant's
+ * binding never reads as another's. A row whose link carries an id has a row-end
+ * "unlink" action that sits behind the ui-kit danger ConfirmDialog:
+ * unbinding is irreversible (the binding is re-established only by
+ * walking the provider's flow again), so the row asks once before the
+ * DELETE goes out. After a successful unbind the profile query is
  * invalidated, so the rows converge on the server's answer; a refused
- * unbind renders its code text above the list -- authn.conflict
- * when the account would be left with no sign-in method (the server
- * decides by its own login-method count, never computable client-side),
- * anything else through the whitelist.
+ * unbind renders its code text above the list -- authn.conflict when the
+ * account would be left with no sign-in method (the server decides by its
+ * own login-method count, never computable client-side), anything else
+ * through the whitelist.
  *
- * The add area renders one button per configured provider that is not
- * already bound; clicking starts a `purpose: 'link'` flow on the session
- * (session.startAuthenticatedFlow) whose first step is a `redirect` step
- * -- the provider's authorization URL, a pure request reported upward
- * through onAuthorizeUrl, never a navigation the package performs -- and
- * the host completes the flow at its callback route with
- * BindingCallbackHandler. A refused start renders its code text above the
- * add area (the same InlineError banner the unbind refusal uses) and the
- * provider button re-arms for another attempt. One bind flow at a time:
- * while a channel's flow is being started every provider button is
+ * The add area's channels come from the same discovery document: every
+ * method whose kind is `redirect` and that is not already bound gets one
+ * button, labelled with the package's mode-keyed wording for a brand's
+ * several sign-in modes, otherwise the descriptor's own `label`,
+ * defaulting to the method name. A deployment that configures no redirect
+ * method -- or
+ * whose discovery read failed -- offers no add area (fail closed): the
+ * section never offers a channel the deployment cannot finish. Clicking a
+ * button starts a `purpose: 'link'` flow on the session
+ * (session.startAuthenticatedFlow) whose request carries the host's
+ * `returnTo` as the flow's top-level `return_to`, and whose first step is
+ * a `redirect` step -- the provider's authorization URL, a pure request
+ * reported upward through onAuthorizeUrl, never a navigation the package
+ * performs. The backend lands the browser on `return_to` once the
+ * provider answers, and the host completes the flow there with
+ * BindingCallbackHandler. `returnTo` thus moves the round trip's landing
+ * point into the flow record itself; in a split-origin deployment it is
+ * an absolute URL under an origin the deployment trusts (the server
+ * accepts a path or such a URL). A refused start renders its code text
+ * above the add area (the same InlineError banner the unbind refusal
+ * uses) and the button re-arms for another attempt. One bind flow at a
+ * time: while a channel's flow is being started every provider button is
  * disabled, so a second start -- any channel's -- cannot begin before the
- * first answers. When every configured provider is already bound the add
- * area does not render.
+ * first answers. When every redirect method is already bound the add area
+ * does not render.
  *
- * The provider vocabulary is deliberately not imported from @speed/auth-ui
- * (same-layer packages never import each other): SocialProvider and
- * SocialProviderConfig are copied here, shaped identically to auth-ui's
- * own definitions, and must be kept in sync with them -- a social channel
- * is a deployment login-method name (a method-name string, not a closed
- * set; the WeChat pair arrives as `wechat.web` / `wechat.mp`), and the
- * same name lands in both packages' copies together.
+ * The section no longer takes a host-supplied channel list: a provider is
+ * the deployment's login-method name, and the discovery document is the
+ * one authority for which channels exist. The provider vocabulary is
+ * deliberately not imported from @speed/auth-ui (same-layer packages
+ * never import each other).
  *
  * An unresolved load -- the first load in flight, or parked by
  * react-query's default networkMode 'online' while the device is
@@ -58,12 +72,13 @@
  * answer that omits the optional links key, as unreadable as an error and
  * never grounds for a "no linked accounts" claim or an add area -- render
  * the error variant with a retry button.
- * The one exception is a first-run account with an unbound configured
- * provider: there a genuinely empty list is exactly the add area's cue,
- * so the header stays and the add area is the whole of the content.
+ * The one exception is a first-run account with an unbound redirect
+ * method: there a genuinely empty list is exactly the add area's cue, so
+ * the header stays and the add area is the whole of the content.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
@@ -74,7 +89,7 @@ import {
   getAuthnProfileGetQueryKey,
 } from '@speed/api-sdk'
 import { useMutation } from '@tanstack/react-query'
-import type { AuthSession } from '@speed/auth-core'
+import type { AuthnMethodDescriptor, AuthSession } from '@speed/auth-core'
 import {
   AsyncSection,
   ConfirmDialog,
@@ -86,41 +101,28 @@ import { InlineError } from './internal/inline-error.js'
 import { useProfileQuery } from './internal/queries.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 
-/**
- * A social sign-in method's name -- the account-ui copy of
- * @speed/auth-ui's SocialProvider, kept in sync with it (the same-layer
- * rule forbids importing the sign-in package). The set is the
- * deployment's: a social channel is a login-method name (the WeChat pair
- * arrives as `wechat.web` / `wechat.mp`), so this is a method name rather
- * than a closed union.
- */
-export type SocialProvider = string
-
-/**
- * One configured channel: which provider, the brand label to render it
- * with (empty for a name-keyed translation), and the redirect URI the
- * host's callback route listens on. The account-ui copy of auth-ui's
- * SocialProviderConfig, kept in sync with it.
- */
-export interface SocialProviderConfig {
-  readonly provider: SocialProvider
-  /** The method's brand name (a provider's own name, not translated)
-   * where the host supplies one. */
-  readonly label?: string
-  readonly redirectUri: string
-}
-
 export interface SocialBindingsSectionProps {
-  /** The session that starts the `link` flow for the add area. */
+  /** The session that reads the deployment's methods and starts the
+   * `link` flow for the add area. */
   readonly session: AuthSession
-  /** The channels the host offers for binding, in the order wanted. */
-  readonly providers: readonly SocialProviderConfig[]
+  /**
+   * The host's binding callback route, sent as the `link` flow's
+   * top-level `return_to`. The backend lands the browser there once the
+   * provider answers. A split-origin deployment passes an absolute URL
+   * under an origin the deployment trusts.
+   */
+  readonly returnTo: string
   /**
    * Receives the authorization URL from the started `link` flow's first
    * step; the host navigates. Omit to run the section without a follow-up
    * (a caller that only exercises the request path).
    */
   readonly onAuthorizeUrl?: (url: string) => void
+  /**
+   * Optional brand icon for a channel, by the provider's method name.
+   * Rendered beside the add-area button and the bound row's label.
+   */
+  readonly providerIcon?: (provider: string) => ReactNode
 }
 
 /** The transient outcome of an unbind action, rendered above the list. */
@@ -158,35 +160,43 @@ const OIDC_PROVIDER_PREFIX = 'oidc:'
 
 /**
  * The bundle keys of the social method names the family has wording for.
- * A configured channel is a deployment login-method name, so a name the
- * family knows renders its label and a name outside the map renders the
- * generic other label.
+ * A bound provider value no discovery descriptor matches renders its
+ * closed-set wording, and a name outside the map renders the generic
+ * other label.
  */
 const PROVIDER_LABEL_KEYS: Readonly<Record<string, string>> = {
   google: 'bindings.provider.google',
   github: 'bindings.provider.github',
   wechat: 'bindings.provider.wechat',
-  'wechat.web': 'bindings.provider.wechat',
-  'wechat.mp': 'bindings.provider.wechat',
   dingtalk: 'bindings.provider.dingtalk',
   feishu: 'bindings.provider.feishu',
 }
 
 /**
- * A configured channel's display label: the method's brand name where the
- * host supplies one, otherwise the bundle's wording for a method the
- * family knows, otherwise the generic other label -- the same guarded
- * vocabulary the bound rows render provider values with, never a raw
- * bundle key.
+ * The method names whose wording distinguishes one brand's sign-in modes.
+ * Every mode of a brand carries the same descriptor label (both WeChat
+ * methods say "WeChat"), so this wording outranks the descriptor label
+ * and keeps the buttons and rows distinguishable.
  */
-function configuredProviderLabel(
-  config: SocialProviderConfig,
+const METHOD_MODE_LABEL_KEYS: Readonly<Record<string, string>> = {
+  'wechat.mp': 'bindings.provider.wechatOfficialAccount',
+  'wechat.web': 'bindings.provider.wechatWeb',
+}
+
+/** A method's add-area display name: the mode-keyed wording for a brand
+ * served through several modes, otherwise the descriptor's own label,
+ * defaulting to the method name. */
+function methodLabel(
+  method: AuthnMethodDescriptor,
   t: (key: string) => string,
 ): string {
-  if (config.label !== undefined && config.label !== '') {
-    return config.label
+  const modeKey = METHOD_MODE_LABEL_KEYS[method.name]
+  if (modeKey !== undefined) {
+    return t(modeKey)
   }
-  return t(PROVIDER_LABEL_KEYS[config.provider] ?? 'bindings.provider.other')
+  return method.label !== undefined && method.label !== ''
+    ? method.label
+    : method.name
 }
 
 /** The pending-state placeholder: rows shaped like the content rows,
@@ -221,8 +231,9 @@ function BindingListSkeleton({ label }: { readonly label: string }) {
 
 export function SocialBindingsSection({
   session,
-  providers,
+  returnTo,
   onAuthorizeUrl,
+  providerIcon,
 }: SocialBindingsSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
@@ -232,9 +243,40 @@ export function SocialBindingsSection({
   })
 
   const [unbindTarget, setUnbindTarget] = useState<string | null>(null)
-  const [busyProvider, setBusyProvider] = useState<SocialProvider | null>(null)
+  const [busyProvider, setBusyProvider] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice>(null)
   const [authorizeError, setAuthorizeError] = useState<string | null>(null)
+  // The deployment's methods, as read once per session. null is
+  // unresolved (still reading, or the read failed): the add area is
+  // withheld rather than guessed, and the bound rows fall back to the
+  // family's closed vocabulary.
+  const [methods, setMethods] = useState<
+    readonly AuthnMethodDescriptor[] | null
+  >(null)
+
+  // Read the deployment's discovery document once per session (the same
+  // seam the enroll wizard and the sign-in surface read). A failed read
+  // offers no channel: a deployment whose methods cannot be read is not
+  // assumed to carry any.
+  useEffect(() => {
+    let active = true
+    setMethods(null)
+    void (async () => {
+      try {
+        const list = await session.listMethods()
+        if (active) {
+          setMethods(list.methods)
+        }
+      } catch {
+        if (active) {
+          setMethods([])
+        }
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [session])
 
   const links = data?.links
   // The answer is unresolved whenever there is no data yet: the first
@@ -248,6 +290,38 @@ export function SocialBindingsSection({
   const pending = isPending && data === undefined
   const rows = !pending && links !== undefined ? links : undefined
 
+  const methodsByName = new Map<string, AuthnMethodDescriptor>(
+    (methods ?? []).map((method) => [method.name, method]),
+  )
+
+  /**
+   * A binding's provider display label: the mode-keyed wording for a
+   * brand served through several sign-in modes, otherwise the discovery
+   * descriptor's own label when a method of that name carries one, else
+   * the family's closed-set wording (a social name, the enterprise-SSO
+   * family), else the generic other label -- never a raw bundle key.
+   */
+  function providerLabel(provider: string | null): string {
+    if (provider === null) {
+      return t('bindings.provider.other')
+    }
+    const modeKey = METHOD_MODE_LABEL_KEYS[provider]
+    if (modeKey !== undefined) {
+      return t(modeKey)
+    }
+    const descriptor = methodsByName.get(provider)
+    if (descriptor?.label !== undefined && descriptor.label !== '') {
+      return descriptor.label
+    }
+    if (KNOWN_PROVIDERS.has(provider)) {
+      return t(`bindings.provider.${provider}`)
+    }
+    if (provider.startsWith(OIDC_PROVIDER_PREFIX)) {
+      return t('bindings.provider.oidc')
+    }
+    return t(PROVIDER_LABEL_KEYS[provider] ?? 'bindings.provider.other')
+  }
+
   const boundProviders =
     rows === undefined
       ? new Set<string>()
@@ -256,8 +330,12 @@ export function SocialBindingsSection({
             .map((link) => link.provider)
             .filter((provider): provider is string => provider != null),
         )
-  const available = providers.filter(
-    (config) => !boundProviders.has(config.provider),
+  // The add area offers only the deployment's redirect methods, minus the
+  // ones already bound. A method whose kind is not redirect cannot start a
+  // `link` flow, and one the deployment does not configure is absent from
+  // the document entirely.
+  const available = (methods ?? []).filter(
+    (method) => method.kind === 'redirect' && !boundProviders.has(method.name),
   )
   const hasAddArea = rows !== undefined && available.length > 0
   // Empty list with nothing to offer: the EmptyState's own empty placeholder
@@ -283,7 +361,7 @@ export function SocialBindingsSection({
     }
   }
 
-  async function handleAuthorize(config: SocialProviderConfig): Promise<void> {
+  async function handleAuthorize(method: AuthnMethodDescriptor): Promise<void> {
     // One bind flow at a time, across every provider: the busy slot is
     // provider-wide, so a second authorize click while a flow is being
     // started -- this channel's or any other's -- is refused outright
@@ -292,12 +370,12 @@ export function SocialBindingsSection({
       return
     }
     setAuthorizeError(null)
-    setBusyProvider(config.provider)
+    setBusyProvider(method.name)
     try {
       const state = await session.startAuthenticatedFlow({
         purpose: 'link',
-        method: config.provider,
-        input: { redirect_uri: config.redirectUri },
+        method: method.name,
+        return_to: returnTo,
       })
       if ('next' in state && state.next.kind === 'redirect') {
         onAuthorizeUrl?.(state.next.url)
@@ -372,19 +450,18 @@ export function SocialBindingsSection({
                   provider.startsWith(OIDC_PROVIDER_PREFIX)
                     ? provider
                     : null
-                const providerLabel =
-                  provider !== null && KNOWN_PROVIDERS.has(provider)
-                    ? t(`bindings.provider.${provider}`)
-                    : oidcProvider !== null
-                      ? t('bindings.provider.oidc')
-                      : t('bindings.provider.other')
+                const label = providerLabel(provider)
                 // The row identity the unbind action is named after (the
                 // sessions twin names its revoke action after the row's
                 // device label): the raw provider value when the label
                 // is a shared family label, the label itself otherwise.
-                const unbindIdentity = oidcProvider ?? providerLabel
+                const unbindIdentity = oidcProvider ?? label
                 const email =
                   link.email != null && link.email !== '' ? link.email : null
+                const icon =
+                  provider !== null && providerIcon !== undefined
+                    ? providerIcon(provider)
+                    : null
                 return (
                   <Box
                     component="li"
@@ -405,9 +482,25 @@ export function SocialBindingsSection({
                       }}
                     >
                       <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                          {providerLabel}
-                        </Typography>
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1,
+                          }}
+                        >
+                          {icon !== null && (
+                            <Box
+                              component="span"
+                              sx={{ display: 'inline-flex', flexShrink: 0 }}
+                            >
+                              {icon}
+                            </Box>
+                          )}
+                          <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                            {label}
+                          </Typography>
+                        </Box>
                         {oidcProvider !== null && (
                           <Typography
                             variant="body2"
@@ -463,7 +556,7 @@ export function SocialBindingsSection({
                 busy={busyProvider !== null}
                 authorizeError={authorizeError}
                 sectionLabel={t('bindings.addSectionTitle')}
-                providerLabel={(config) => configuredProviderLabel(config, t)}
+                providerIcon={providerIcon}
                 onAuthorize={handleAuthorize}
               />
             )}
@@ -489,9 +582,11 @@ export function SocialBindingsSection({
   )
 }
 
-/** The add area: one button per unbound configured provider, plus the
- * authorize-path failure banner. Rendered only when the list has
- * loaded and at least one configured provider is unbound. While a bind
+/** The add area: one button per unbound redirect method, plus the
+ * authorize-path failure banner. Rendered only when the list has loaded
+ * and at least one redirect method is unbound. The button name is the
+ * mode-keyed wording for a brand's several sign-in modes, otherwise the
+ * descriptor's own label, defaulting to the method name. While a bind
  * flow is being started every button is disabled together -- the busy
  * flag is provider-wide, never one channel's alone. */
 function AddArea({
@@ -499,17 +594,18 @@ function AddArea({
   busy,
   authorizeError,
   sectionLabel,
-  providerLabel,
+  providerIcon,
   onAuthorize,
 }: {
-  readonly available: readonly SocialProviderConfig[]
+  readonly available: readonly AuthnMethodDescriptor[]
   /** True while any channel's link flow is being started. */
   readonly busy: boolean
   readonly authorizeError: string | null
   readonly sectionLabel: string
-  readonly providerLabel: (config: SocialProviderConfig) => string
-  readonly onAuthorize: (config: SocialProviderConfig) => void
+  readonly providerIcon?: (provider: string) => ReactNode
+  readonly onAuthorize: (method: AuthnMethodDescriptor) => void
 }) {
+  const { t } = useAccountUiTranslation()
   return (
     <Box sx={{ mt: 2, borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
       <Typography
@@ -527,16 +623,22 @@ function AddArea({
           gap: 1,
         }}
       >
-        {available.map((config) => (
-          <Button
-            key={config.provider}
-            variant="outlined"
-            disabled={busy}
-            onClick={() => onAuthorize(config)}
-          >
-            {providerLabel(config)}
-          </Button>
-        ))}
+        {available.map((method) => {
+          const label = methodLabel(method, t)
+          const icon =
+            providerIcon !== undefined ? providerIcon(method.name) : null
+          return (
+            <Button
+              key={method.name}
+              variant="outlined"
+              disabled={busy}
+              startIcon={icon ?? undefined}
+              onClick={() => onAuthorize(method)}
+            >
+              {label}
+            </Button>
+          )
+        })}
       </Box>
       <InlineError code={authorizeError} />
     </Box>

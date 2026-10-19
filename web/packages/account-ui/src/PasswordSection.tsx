@@ -44,10 +44,10 @@ import {
   useAuthnLoginChangePassword,
 } from '@speed/api-sdk'
 import type { AuthSession } from '@speed/auth-core'
+import { useStepUpGate } from '@speed/auth-core'
 import { AsyncSection, errorCodeOf, visuallyHiddenSx } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 import { useProfileQuery } from './internal/queries.js'
-import { useStepUpGate } from './internal/step-up-gate.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 
@@ -56,6 +56,16 @@ const STEP_UP_REQUIRED = 'authn.insufficient_user_authentication'
 export interface PasswordSectionProps {
   /** The session whose step-up flow the dialog drives. */
   readonly session: AuthSession
+  /**
+   * What to render when the account holds neither a username nor a
+   * verified email address -- the state in which `PUT
+   * /api/v1/auth/password` answers 409 `login-identifier-required`.
+   * `'form'` (the default) keeps the form: the server's refusal renders
+   * the code's text. `'explain'` renders the explanation up front
+   * instead of the form, for a page that already knows the account
+   * cannot set a password yet.
+   */
+  readonly withoutLoginName?: 'form' | 'explain'
 }
 
 /** The submit's typed values: what a won step-up re-runs. */
@@ -74,7 +84,10 @@ function PasswordSkeleton({ label }: { readonly label: string }) {
   )
 }
 
-export function PasswordSection({ session }: PasswordSectionProps) {
+export function PasswordSection({
+  session,
+  withoutLoginName = 'form',
+}: PasswordSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
   const { data, isPending, refetch } = useProfileQuery()
@@ -107,6 +120,25 @@ export function PasswordSection({ session }: PasswordSectionProps) {
   // did, so a scalar the surface cannot decide never hides the form -- the
   // server validates the current password regardless.
   const passwordSet = data?.password_set !== false
+  // A username or a verified email address can serve as the login name a
+  // password is set against. An answer that did not list identifiers is
+  // not read as "none": the explanation needs a settled, explicit answer,
+  // and the server's 409 remains the authority.
+  const loginNamePresent =
+    data?.identifiers === undefined
+      ? true
+      : data.identifiers.some(
+          (identifier) =>
+            identifier.kind === 'username' ||
+            (identifier.kind === 'email' &&
+              identifier.verified_at != null &&
+              identifier.verified_at !== ''),
+        )
+  const explainWithoutLoginName =
+    withoutLoginName === 'explain' &&
+    data !== undefined &&
+    data.identifiers !== undefined &&
+    !loginNamePresent
 
   function clearFields(): void {
     setCurrent('')
@@ -184,7 +216,12 @@ export function PasswordSection({ session }: PasswordSectionProps) {
           onRetry: () => void refetch(),
         }}
       >
-        {() => (
+        {() =>
+          explainWithoutLoginName ? (
+            <Typography variant="body2" color="text.secondary">
+              {t('password.loginNameRequired')}
+            </Typography>
+          ) : (
           <Box
             component="form"
             noValidate
@@ -275,7 +312,8 @@ export function PasswordSection({ session }: PasswordSectionProps) {
               {t(passwordSet ? 'password.submit' : 'password.submitFirst')}
             </Button>
           </Box>
-        )}
+          )
+        }
       </AsyncSection>
 
       <StepUpChallenge

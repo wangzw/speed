@@ -36,14 +36,24 @@
  * value, the transport codes when the request never landed). Both selects are disabled while a write is in flight, so a
  * change can never race its own predecessor.
  *
- * The section takes no props -- whose preferences these are comes from
- * the caller's bound client and its access token -- and follows the
- * account surfaces' settled-state paradigm: an unresolved load keeps a
- * loading placeholder (one announceable status row), a settled load with
- * no data renders the ui-kit EmptyState error variant with a retry, and
- * the settled-with-data state always renders both controls (a profile
- * answer with no stored locale or time zone renders both as "not
- * chosen").
+ * The write asks for a fresh authentication like the other self-service
+ * writes. The section accepts an OPTIONAL session: when the host passes
+ * one, a 401 `authn.insufficient_user_authentication` arms the shared
+ * @speed/auth-core step-up gate, the dialog opens, and a won challenge
+ * replays exactly that refused write once. Without a session the same
+ * refusal renders the failure banner (the host can gate another section
+ * on the same page -- elevation applies to the whole session -- or have
+ * the viewer sign in again); the section never opens a dialog it has no
+ * session to drive.
+ *
+ * Whose preferences these are comes from the caller's bound client and
+ * its access token, not from the session prop, which exists only for the
+ * step-up dialog. The section follows the account surfaces'
+ * settled-state paradigm: an unresolved load keeps a loading placeholder
+ * (one announceable status row), a settled load with no data renders the
+ * ui-kit EmptyState error variant with a retry, and the settled-with-data
+ * state always renders both controls (a profile answer with no stored
+ * locale or time zone renders both as "not chosen").
  */
 
 import { useMemo, useState } from 'react'
@@ -58,24 +68,34 @@ import {
   getAuthnProfileGetQueryKey,
   useAuthnProfilePatch,
 } from '@speed/api-sdk'
-import { readSupportedLanguages, switchLanguage } from '@speed/i18n'
+import type { AuthSession } from '@speed/auth-core'
+import { useStepUpGate } from '@speed/auth-core'
+import {
+  languageDisplayName,
+  readSupportedLanguages,
+  switchLanguage,
+} from '@speed/i18n'
 import { AsyncSection, errorCodeOf, InlineSuccess } from '@speed/ui-kit'
 import { useAccountUiErrorText } from './internal/error-text.js'
 import { useProfileQuery } from './internal/queries.js'
+import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 
-/** The language name to show for a tag, in the current UI language; the
- * raw tag is the fallback for an engine without DisplayNames (guarded --
- * an old engine throws on the constructor, and a missing name must never
- * crash a select). */
-function languageDisplayName(tag: string, uiLanguage: string): string {
-  try {
-    const names = new Intl.DisplayNames([uiLanguage], { type: 'language' })
-    return names.of(tag) ?? tag
-  } catch {
-    return tag
-  }
+export interface PreferencesSectionProps {
+  /**
+   * Optional: when given, a write refused for a missing step-up is
+   * remembered and replayed after the shared step-up dialog's flow
+   * succeeds. Without it the refusal renders the failure banner.
+   */
+  readonly session?: AuthSession
 }
+
+/** A refused write, kept so a won step-up can replay exactly it. */
+type PreferenceAction =
+  | { readonly kind: 'locale'; readonly locale: string }
+  | { readonly kind: 'timezone'; readonly timezone: string }
+
+const STEP_UP_REQUIRED = 'authn.insufficient_user_authentication'
 
 /** The engine's IANA timezone list, sorted, or [] when the environment
  * cannot produce one (Intl.supportedValuesOf is newer than the rest of
@@ -92,7 +112,7 @@ function supportedTimeZones(): readonly string[] {
   }
 }
 
-export function PreferencesSection() {
+export function PreferencesSection({ session }: PreferencesSectionProps = {}) {
   const { t, i18n } = useAccountUiTranslation()
   const errorText = useAccountUiErrorText()
   const queryClient = useQueryClient()
@@ -100,6 +120,14 @@ export function PreferencesSection() {
   const patchProfile = useAuthnProfilePatch()
   const [failureCode, setFailureCode] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+
+  const gate = useStepUpGate<PreferenceAction>((action) => {
+    if (action.kind === 'locale') {
+      void saveLocale(action.locale)
+    } else {
+      void saveTimezone(action.timezone)
+    }
+  })
 
   const languageOptions = useMemo(
     () => readSupportedLanguages(i18n),
@@ -147,7 +175,12 @@ export function PreferencesSection() {
       })
       setSaved(true)
     } catch (error) {
-      setFailureCode(errorCodeOf(error))
+      const code = errorCodeOf(error)
+      if (code === STEP_UP_REQUIRED && session !== undefined) {
+        gate.arm({ kind: 'locale', locale })
+        return
+      }
+      setFailureCode(code)
     }
   }
 
@@ -161,7 +194,12 @@ export function PreferencesSection() {
       })
       setSaved(true)
     } catch (error) {
-      setFailureCode(errorCodeOf(error))
+      const code = errorCodeOf(error)
+      if (code === STEP_UP_REQUIRED && session !== undefined) {
+        gate.arm({ kind: 'timezone', timezone })
+        return
+      }
+      setFailureCode(code)
     }
   }
 
@@ -289,6 +327,15 @@ export function PreferencesSection() {
           </Box>
         )}
       </AsyncSection>
+
+      {session !== undefined && (
+        <StepUpChallenge
+          open={gate.open}
+          session={session}
+          onSuccess={gate.succeed}
+          onCancel={gate.cancel}
+        />
+      )}
     </Box>
   )
 }

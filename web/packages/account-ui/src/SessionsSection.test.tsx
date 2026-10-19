@@ -12,12 +12,17 @@
  * revoked count; a refused revoke renders its code text above the list;
  * and the settled states split -- an answer listing zero sessions renders
  * the empty state, a load that failed (and an answer omitting the
- * sessions key) renders the error state with a retry.
+ * sessions key) renders the error state with a retry. The display-timezone
+ * cases pin the chain: a stored profile time zone outranks the host's
+ * display-timezone context, and with no stored preference the context
+ * replaces the device tier.
  */
 
 import { describe, expect, it } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { formatInstant } from '@speed/i18n'
+import { DisplayTimeZoneProvider } from '@speed/ui-kit'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
   errorResponse,
@@ -53,17 +58,56 @@ function session(overrides: Record<string, unknown>): Record<string, unknown> {
 }
 
 /** The transient listener is not needed here; the rig is created fresh
- * per test and the token planted before render. */
-function mountSection(respond: RealResponder) {
+ * per test and the token planted before render. The unit renders inside
+ * the caller's own tree when one is given (the display-timezone cases
+ * mount their host context above the section). */
+function mountSection(respond: RealResponder, ui = <SessionsSection />) {
   const rig = makeRealClientRigWithoutSession(respond)
   rig.store.set('access-1')
-  const rendered = renderWithProviders(<SessionsSection />)
+  const rendered = renderWithProviders(ui)
   return { rig, ...rendered }
 }
 
 /** The revoke aria-label the component builds for a row's device label. */
 function revokeAria(device: string): string {
   return zhCN.sessions.revokeAriaWithDevice.replace('{{device}}', device)
+}
+
+/** The instant the default row helper carries. */
+const SESSION_INSTANT = '2026-08-01T02:05:00.000Z'
+
+/** The row's "signed in" line for a pre-rendered time. */
+function signedInLine(time: string): string {
+  return zhCN.sessions.signedIn.replace('{{time}}', time)
+}
+
+/** The instant rendered in `zone` (the engine's own zone when absent). */
+function renderedIn(zone?: string): string {
+  return formatInstant(
+    SESSION_INSTANT,
+    'zh-CN',
+    zone === undefined ? {} : { timeZone: zone },
+  )
+}
+
+/**
+ * A zone whose rendering of the row's instant reads differently from
+ * `reference`. Picking it from the rendering, not from the zone name,
+ * keeps the assertion able to tell the two apart on any machine (two
+ * zone names can share an offset at one instant, and the device's own
+ * zone is whatever the test host happens to set).
+ */
+function zoneRenderingDifferentlyFrom(reference: string): string {
+  const zone = [
+    'Asia/Tokyo',
+    'America/New_York',
+    'Pacific/Kiritimati',
+    'UTC',
+  ].find((candidate) => renderedIn(candidate) !== reference)
+  if (zone === undefined) {
+    throw new Error('no candidate zone renders the instant differently')
+  }
+  return zone
 }
 
 describe('SessionsSection', () => {
@@ -104,6 +148,67 @@ describe('SessionsSection', () => {
     ).toBeTruthy()
 
     await expectNoAxeViolations()
+  })
+
+  it('prefers the profile timezone over the host display timezone', async () => {
+    // The chain's top tier: a stored preference outranks the host's
+    // display-timezone context. The two zones are chosen by their
+    // rendering of this instant, so the expected text cannot coincide
+    // with the other tier's (or with the device's own zone).
+    const storedZone = zoneRenderingDifferentlyFrom(renderedIn())
+    const hostZone = zoneRenderingDifferentlyFrom(renderedIn(storedZone))
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return jsonResponse(200, { time_zone: storedZone })
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: [session({ id: 'session-2', user_agent: '' })],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(
+      respond,
+      <DisplayTimeZoneProvider timeZone={hostZone}>
+        <SessionsSection />
+      </DisplayTimeZoneProvider>,
+    )
+
+    expect(
+      await screen.findByText(signedInLine(renderedIn(storedZone))),
+    ).toBeTruthy()
+    // The host context did not replace the stored tier.
+    expect(screen.queryByText(signedInLine(renderedIn(hostZone)))).toBeNull()
+  })
+
+  it('falls back to the host display timezone when the profile stores none', async () => {
+    // The context replaces only the device tier: with no stored
+    // preference, rows render in the host's zone, not the device's.
+    const hostZone = zoneRenderingDifferentlyFrom(renderedIn())
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: [session({ id: 'session-2', user_agent: '' })],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(
+      respond,
+      <DisplayTimeZoneProvider timeZone={hostZone}>
+        <SessionsSection />
+      </DisplayTimeZoneProvider>,
+    )
+
+    expect(
+      await screen.findByText(signedInLine(renderedIn(hostZone))),
+    ).toBeTruthy()
+    // The device tier was not consulted while the host supplied a zone.
+    expect(screen.queryByText(signedInLine(renderedIn()))).toBeNull()
   })
 
   it('raises the row revoke control to the 44px touch-target floor under a coarse pointer', async () => {
