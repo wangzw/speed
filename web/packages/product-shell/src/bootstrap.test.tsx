@@ -4,10 +4,22 @@
  *
  * bootstrapSpeedApp -- jsdom mounts of the whole composition: the
  * definition's namespaces register alongside the family's automatic
- * four, the provider chain wraps the declared view in declared order
- * with the assembled services, the client the assembly built answers
- * over the environment's own (stubbed) fetch, the session-end strategy
- * is wired (default and override), and unmount tears the page down.
+ * four, a framework namespace listed in the definition replaces its
+ * shipped bundle, resource overlays merge before registration (a leaf, a
+ * replacement and a whole added language), every definition option
+ * reaches what it configures (client, theme, i18n), the `<html lang>`
+ * binding follows the instance and its opt-out, the provider chain wraps
+ * the declared view in declared order with the assembled services, the
+ * client the assembly built answers over the environment's own (stubbed)
+ * fetch, the session-end strategy is wired (default and override), and
+ * unmount tears the page down.
+ *
+ * createSpeedI18n -- the exported instance construction: the family four
+ * and the platform error bundle registered, the definition namespaces and
+ * overlays applied.
+ *
+ * SpeedAppProviders -- the exported provider stack serving translations,
+ * theme and the supplied query client.
  *
  * createQueryClient -- the exported query policy: the read defaults are
  * written out on the client rather than inherited from the library.
@@ -24,21 +36,43 @@
  * concern.
  */
 
-import { QueryClient } from '@tanstack/react-query'
-import { act, waitFor } from '@testing-library/react'
+import { QueryClient, useQueryClient } from '@tanstack/react-query'
+import { useTheme } from '@mui/material/styles'
+import { act, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { isApiError } from '@speed/api-client'
-import { AUTH_UI_NAMESPACE } from '@speed/auth-ui'
-import { switchLanguage, useTranslation } from '@speed/i18n'
-import { PLATFORM_ERRORS_NAMESPACE } from '@speed/i18n/platform-errors'
-import { LAYOUT_KIT_NAMESPACE } from '@speed/layout-kit'
-import { UI_KIT_NAMESPACE } from '@speed/ui-kit'
-import { PRODUCT_SHELL_NAMESPACE } from './resources.js'
+import { AUTH_UI_NAMESPACE, authUiResources } from '@speed/auth-ui'
+import {
+  DEFAULT_SUPPORTED_LANGUAGES,
+  readSupportedLanguages,
+  switchLanguage,
+  useTranslation,
+} from '@speed/i18n'
+import type { ResourceBundle } from '@speed/i18n'
+import {
+  PLATFORM_ERRORS_NAMESPACE,
+  platformErrorResources,
+} from '@speed/i18n/platform-errors'
+import {
+  LAYOUT_KIT_NAMESPACE,
+  layoutKitResources,
+} from '@speed/layout-kit'
+import {
+  createAppTheme,
+  UI_KIT_NAMESPACE,
+  uiKitResources,
+} from '@speed/ui-kit'
+import {
+  PRODUCT_SHELL_NAMESPACE,
+  productShellResources,
+} from './resources.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
   bootstrapSpeedApp,
   createQueryClient,
+  createSpeedI18n,
+  SpeedAppProviders,
   watchSessionEnd,
 } from './bootstrap.js'
 import type { SpeedAppBootstrap, SpeedAppProvider } from './bootstrap.js'
@@ -156,6 +190,26 @@ async function mountApp(
   return boot
 }
 
+/** A copy of a bundle with every string leaf prefixed: a complete bundle
+ * for a language a package does not ship, with the shipped key set (the
+ * shape registration validates). */
+function prefixedBundle(bundle: ResourceBundle, prefix: string): ResourceBundle {
+  const copy: Record<string, string | ResourceBundle> = {}
+  for (const [key, value] of Object.entries(bundle)) {
+    copy[key] =
+      typeof value === 'string' ? `${prefix}${value}` : prefixedBundle(value, prefix)
+  }
+  return copy
+}
+
+/** Unmount a mounted app and drop its container. */
+async function teardown(boot: SpeedAppBootstrap, container: Element): Promise<void> {
+  await act(async () => {
+    boot.root.unmount()
+  })
+  container.remove()
+}
+
 describe('bootstrapSpeedApp', () => {
   let observed: Array<{
     readonly method: string
@@ -164,10 +218,12 @@ describe('bootstrapSpeedApp', () => {
     readonly acceptLanguage: string | null
     readonly tenant: string | null
     readonly credentials: RequestCredentials | null
+    readonly headers: Headers
   }>
   let realFetch: typeof globalThis.fetch
   let realLanguages: readonly string[] | undefined
   let realLocalStorage: PropertyDescriptor | undefined
+  let realHref: string
   /** The responder the mounted client's fetch consults; tests override
    * it to script a remembered session or another boot answer. */
   let activeResponder: RealResponder
@@ -177,6 +233,7 @@ describe('bootstrapSpeedApp', () => {
     activeResponder = respond
     realFetch = globalThis.fetch
     realLanguages = window.navigator.languages
+    realHref = window.location.href
     // Deterministic language: pin the navigator-languages leg of
     // createI18n's negotiation so the mounted view speaks the zh-CN
     // copy the assertions name (jsdom's own languages answer en-US).
@@ -210,18 +267,20 @@ describe('bootstrapSpeedApp', () => {
     Object.defineProperty(globalThis, 'fetch', {
       value: async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(String(input))
+        const headers = new Headers(init?.headers)
         observed.push({
           method: init?.method ?? 'GET',
           path: url.pathname,
           origin: url.origin,
-          acceptLanguage: new Headers(init?.headers).get('accept-language'),
-          tenant: new Headers(init?.headers).get('x-tenant'),
+          acceptLanguage: headers.get('accept-language'),
+          tenant: headers.get('x-tenant'),
           credentials: init?.credentials ?? null,
+          headers,
         })
         return activeResponder({
           method: init?.method ?? 'GET',
           path: url.pathname,
-          authorization: new Headers(init?.headers).get('authorization'),
+          authorization: headers.get('authorization'),
           body: typeof init?.body === 'string' ? init.body : null,
         })
       },
@@ -236,6 +295,7 @@ describe('bootstrapSpeedApp', () => {
         configurable: true,
       })
     }
+    window.history.replaceState({}, '', realHref)
     Object.defineProperty(globalThis, 'fetch', {
       value: realFetch,
       configurable: true,
@@ -243,6 +303,7 @@ describe('bootstrapSpeedApp', () => {
     if (realLocalStorage !== undefined) {
       Object.defineProperty(globalThis, 'localStorage', realLocalStorage)
     }
+    document.documentElement.lang = ''
     vi.restoreAllMocks()
     document.body.innerHTML = ''
   })
@@ -598,6 +659,547 @@ describe('bootstrapSpeedApp', () => {
     container.remove()
   })
 
+  it('accepts the include credential mode from the definition client table', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const boot = await mountApp(container, {
+      view: <div />,
+      client: { credentials: 'include' },
+    })
+    await act(async () => {
+      await signIn(boot.session)
+    })
+    expect(observed.length).toBeGreaterThan(0)
+    expect(observed.every((call) => call.credentials === 'include')).toBe(true)
+    await teardown(boot, container)
+  })
+
+  it('uses the fetch implementation from the definition client table', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    let delegated = 0
+    const customFetch: typeof globalThis.fetch = (input, init) => {
+      delegated += 1
+      return globalThis.fetch(input, init)
+    }
+    const boot = await mountApp(container, {
+      view: <div />,
+      client: { fetch: customFetch },
+    })
+    await act(async () => {
+      await signIn(boot.session)
+    })
+    // Every request the assembly's client issued went through the
+    // supplied implementation -- and reached the endpoint script.
+    expect(delegated).toBeGreaterThan(0)
+    expect(delegated).toBe(observed.length)
+    expect(observed.some((call) => call.path === '/api/v1/auth/flows')).toBe(true)
+    await teardown(boot, container)
+  })
+
+  it('announces the tenant under the definition client tenantHeader instead of x-tenant', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const boot = await mountApp(container, {
+      view: <div />,
+      tenantProvider: () => 'acme',
+      client: { tenantHeader: 'x-organization' },
+    })
+    await act(async () => {
+      await signIn(boot.session)
+    })
+    expect(observed.length).toBeGreaterThan(0)
+    expect(
+      observed.every((call) => call.headers.get('x-organization') === 'acme'),
+    ).toBe(true)
+    // The default name is replaced, not duplicated.
+    expect(observed.every((call) => call.headers.get('x-tenant') === null)).toBe(true)
+    await teardown(boot, container)
+  })
+
+  it('applies timeoutMs from the definition client table', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    // A fetch that never answers on its own but honours the abort signal,
+    // the way a real fetch does: only the client's own timeout can end
+    // the exchange.
+    const recordingFetch = globalThis.fetch
+    Object.defineProperty(globalThis, 'fetch', {
+      value: (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input))
+        if (url.pathname === '/notes') {
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => {
+              reject(new DOMException('The operation was aborted.', 'AbortError'))
+            })
+          })
+        }
+        return recordingFetch(input, init)
+      },
+      configurable: true,
+    })
+    let api: SpeedAppServices['api'] | undefined
+    const capture: SpeedAppProvider = (services, children) => {
+      api = services.api
+      return <>{children}</>
+    }
+    const boot = await mountApp(container, {
+      view: <div />,
+      providers: [capture],
+      client: { timeoutMs: 20 },
+    })
+    const drive = api
+    if (drive === undefined) {
+      throw new Error('the provider must receive the assembled client')
+    }
+    const caught = await drive<unknown>('/notes').then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+    expect(isApiError(caught)).toBe(true)
+    if (isApiError(caught)) {
+      expect(caught.code).toBe('client.timeout')
+    }
+    await teardown(boot, container)
+  })
+
+  it('applies retryPolicy from the definition client table, and keeps the shipped policy when none is given', async () => {
+    activeResponder = (call) => {
+      if (call.method === 'GET' && call.path === '/notes') {
+        return new Response(null, { status: 503 })
+      }
+      return respond(call)
+    }
+    const notesAttempts = async (definition: SpeedAppDefinition): Promise<number> => {
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+      let api: SpeedAppServices['api'] | undefined
+      const capture: SpeedAppProvider = (services, children) => {
+        api = services.api
+        return <>{children}</>
+      }
+      const boot = await mountApp(container, { ...definition, providers: [capture] })
+      const drive = api
+      if (drive === undefined) {
+        throw new Error('the provider must receive the assembled client')
+      }
+      const before = observed.filter((call) => call.path === '/notes').length
+      await drive<unknown>('/notes').catch(() => undefined)
+      const attempts =
+        observed.filter((call) => call.path === '/notes').length - before
+      await teardown(boot, container)
+      return attempts
+    }
+
+    expect(
+      await notesAttempts({
+        view: <div />,
+        client: {
+          retryPolicy: { maxAttempts: 1, initialDelayMs: 1, maxDelayMs: 1 },
+        },
+      }),
+    ).toBe(1)
+    // No policy declared: the shipped default (three transient attempts)
+    // is unchanged.
+    expect(await notesAttempts({ view: <div /> })).toBe(3)
+  })
+
+  it('routes client diagnostics through the reporter from the definition client table', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const reporter = { error: vi.fn(), warn: vi.fn() }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    let sessionReads = 0
+    activeResponder = (call) => {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/session') {
+        sessionReads += 1
+        return jsonResponse(
+          200,
+          sessionReads === 1
+            ? { authenticated: false }
+            : { authenticated: true, session_id: 's-1' },
+        )
+      }
+      if (call.method === 'GET' && call.path === '/api/v1/auth/me') {
+        return errorResponse(401, 'authn.session_expired', 'trace-me')
+      }
+      if (call.method === 'GET' && call.path === '/notes') {
+        return errorResponse(401, 'authn.session_expired', 'trace-notes')
+      }
+      return respond(call)
+    }
+    let api: SpeedAppServices['api'] | undefined
+    const capture: SpeedAppProvider = (services, children) => {
+      api = services.api
+      return <>{children}</>
+    }
+    const boot = await mountApp(container, {
+      view: <div />,
+      providers: [capture],
+      client: { reporter },
+    })
+    const drive = api
+    if (drive === undefined) {
+      throw new Error('the provider must receive the assembled client')
+    }
+    await drive<unknown>('/notes').catch(() => undefined)
+    // The client's own diagnostic (the failed silent refresh) reached the
+    // supplied sink, not the console default.
+    expect(reporter.warn).toHaveBeenCalledTimes(1)
+    expect(reporter.error).not.toHaveBeenCalled()
+    expect(consoleWarn).not.toHaveBeenCalled()
+    await teardown(boot, container)
+  })
+
+  it('forwards the definition theme options to the app theme provider', async () => {
+    function ThemeProbe(): ReactElement {
+      const theme = useTheme()
+      return (
+        <span data-testid="probe">{`${theme.palette.mode}:${theme.palette.primary.main}`}</span>
+      )
+    }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const boot = await mountApp(container, {
+      view: <ThemeProbe />,
+      theme: {
+        projectTokens: { color: { semantic: { primary: { main: '#123456' } } } },
+        defaultMode: 'dark',
+      },
+    })
+    expect(container.textContent).toBe('dark:#123456')
+    await teardown(boot, container)
+  })
+
+  it('keeps the shipped theme when the definition sets none', async () => {
+    function ThemeProbe(): ReactElement {
+      const theme = useTheme()
+      return (
+        <span data-testid="probe">{`${theme.palette.mode}:${theme.palette.primary.main}`}</span>
+      )
+    }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const boot = await mountApp(container, { view: <ThemeProbe /> })
+    // The assembly's default: light mode over the shipped project tokens.
+    const shipped = createAppTheme()
+    expect(container.textContent).toBe(`light:${shipped.theme.palette.primary.main}`)
+    await teardown(boot, container)
+  })
+
+  it('merges the definition i18n url parameter, storage key and profile language into instance creation', async () => {
+    // The URL parameter name: a custom parameter resolves the language
+    // even though the navigator leg is pinned to zh-CN.
+    window.history.replaceState({}, '', '/?hl=en-US')
+    const fromUrl = document.createElement('div')
+    document.body.appendChild(fromUrl)
+    const urlBoot = await mountApp(fromUrl, {
+      view: <div />,
+      i18n: { urlParameterName: 'hl' },
+    })
+    expect(urlBoot.i18n.language).toBe('en-US')
+    await teardown(urlBoot, fromUrl)
+
+    // The storage key: the stored choice is read under the configured
+    // key, and a store answering only that key proves the key is used.
+    window.history.replaceState({}, '', '/')
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: {
+        getItem: (key: string) => (key === 'app.locale' ? 'en-US' : null),
+        setItem: () => undefined,
+      },
+      configurable: true,
+      writable: true,
+    })
+    const fromStorage = document.createElement('div')
+    document.body.appendChild(fromStorage)
+    const storageBoot = await mountApp(fromStorage, {
+      view: <div />,
+      i18n: { storageKey: 'app.locale' },
+    })
+    expect(storageBoot.i18n.language).toBe('en-US')
+    await teardown(storageBoot, fromStorage)
+
+    // The profile language outranks the navigator leg (pinned zh-CN).
+    const fromProfile = document.createElement('div')
+    document.body.appendChild(fromProfile)
+    const profileBoot = await mountApp(fromProfile, {
+      view: <div />,
+      i18n: { profileLanguage: 'en-US' },
+    })
+    expect(profileBoot.i18n.language).toBe('en-US')
+    await teardown(profileBoot, fromProfile)
+  })
+
+  it('merges the definition i18n supported languages, default language and missing-key handler into instance creation', async () => {
+    // A narrowed supported set: registration covers only en-US, and the
+    // zh-CN bundles of the framework namespaces are reduced away.
+    const narrowed = document.createElement('div')
+    document.body.appendChild(narrowed)
+    const narrowedBoot = await mountApp(narrowed, {
+      view: <div />,
+      i18n: { supportedLanguages: ['en-US'], defaultLanguage: 'en-US' },
+    })
+    expect(narrowedBoot.i18n.language).toBe('en-US')
+    expect(
+      narrowedBoot.i18n.hasResourceBundle('en-US', PRODUCT_SHELL_NAMESPACE),
+    ).toBe(true)
+    expect(
+      narrowedBoot.i18n.hasResourceBundle('zh-CN', PRODUCT_SHELL_NAMESPACE),
+    ).toBe(false)
+    await teardown(narrowedBoot, narrowed)
+
+    // The default language: an unsupported navigator language falls to
+    // the configured one instead of the shipped en-US default.
+    Object.defineProperty(window.navigator, 'languages', {
+      value: ['fr-FR'],
+      configurable: true,
+    })
+    const fallback = document.createElement('div')
+    document.body.appendChild(fallback)
+    const fallbackBoot = await mountApp(fallback, {
+      view: <div />,
+      i18n: { defaultLanguage: 'zh-CN' },
+    })
+    expect(fallbackBoot.i18n.language).toBe('zh-CN')
+    await teardown(fallbackBoot, fallback)
+
+    // The missing-key handler reaches the instance's lookups.
+    const onMissingKey = vi.fn()
+    const missing = document.createElement('div')
+    document.body.appendChild(missing)
+    const missingBoot = await mountApp(missing, {
+      view: <div />,
+      i18n: { onMissingKey },
+    })
+    missingBoot.i18n.t('product-shell:no.such.key')
+    expect(onMissingKey).toHaveBeenCalledTimes(1)
+    expect(onMissingKey.mock.calls[0]?.[0]).toMatchObject({
+      namespace: 'product-shell',
+      key: 'no.such.key',
+    })
+    await teardown(missingBoot, missing)
+  })
+
+  it('keeps the shipped bilingual instance and negotiation defaults when the definition sets no i18n options', async () => {
+    // No source resolves (the navigator language is unsupported), so the
+    // default fallback decides: en-US, the platform default -- not the
+    // zh-CN the definition could have named.
+    Object.defineProperty(window.navigator, 'languages', {
+      value: ['fr-FR'],
+      configurable: true,
+    })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const boot = await mountApp(container, { view: <div /> })
+    expect(boot.i18n.language).toBe('en-US')
+    expect(
+      boot.i18n.hasResourceBundle('zh-CN', PRODUCT_SHELL_NAMESPACE),
+    ).toBe(true)
+    expect(
+      boot.i18n.hasResourceBundle('en-US', PRODUCT_SHELL_NAMESPACE),
+    ).toBe(true)
+    await teardown(boot, container)
+  })
+
+  it('merges a resourceOverrides leaf into a namespace before its registration', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const boot = await mountApp(container, {
+      view: <div />,
+      resourceOverrides: {
+        [PRODUCT_SHELL_NAMESPACE]: {
+          'zh-CN': { announcements: { sessionEnded: 'Host announcement' } },
+        },
+      },
+    })
+    expect(boot.i18n.t('product-shell:announcements.sessionEnded')).toBe(
+      'Host announcement',
+    )
+    // The untouched language keeps the shipped text.
+    expect(
+      boot.i18n.t('product-shell:announcements.sessionEnded', { lng: 'en-US' }),
+    ).not.toBe('Host announcement')
+    await teardown(boot, container)
+  })
+
+  it('replaces a framework namespace listed in the definition, instead of registering it twice', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const boot = await mountApp(container, {
+      view: <div />,
+      namespaces: [
+        {
+          namespace: UI_KIT_NAMESPACE,
+          resources: {
+            'zh-CN': { greeting: 'host zh' },
+            'en-US': { greeting: 'host en' },
+          },
+        },
+      ],
+      // The overlay merges into the replacement, not the shipped bundle:
+      // the host can still replace a leaf of what it supplied.
+      resourceOverrides: {
+        [UI_KIT_NAMESPACE]: { 'zh-CN': { greeting: 'overlaid zh' } },
+      },
+    })
+    // The listed bundle is the namespace's registration (no double
+    // registration throw), the overlay landed on it, and the shipped
+    // bundle is gone.
+    expect(boot.i18n.t('ui-kit:greeting')).toBe('overlaid zh')
+    expect(boot.i18n.exists('ui-kit:components')).toBe(false)
+    await teardown(boot, container)
+  })
+
+  it('adds a whole language through resourceOverrides, and leaves the default supported set untouched', async () => {
+    const french = (
+      base: Readonly<Record<string, ResourceBundle>>,
+    ): ResourceBundle => {
+      const shipped = base['zh-CN']
+      if (shipped === undefined) {
+        throw new Error('the shipped bundle must carry zh-CN')
+      }
+      return prefixedBundle(shipped, 'fr:')
+    }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const boot = await mountApp(container, {
+      view: <div />,
+      i18n: { supportedLanguages: ['zh-CN', 'en-US', 'fr-FR'] },
+      resourceOverrides: {
+        [UI_KIT_NAMESPACE]: { 'fr-FR': french(uiKitResources) },
+        [LAYOUT_KIT_NAMESPACE]: { 'fr-FR': french(layoutKitResources) },
+        [AUTH_UI_NAMESPACE]: { 'fr-FR': french(authUiResources) },
+        [PRODUCT_SHELL_NAMESPACE]: { 'fr-FR': french(productShellResources) },
+        [PLATFORM_ERRORS_NAMESPACE]: { 'fr-FR': french(platformErrorResources) },
+      },
+    })
+    // Every registered namespace now carries the supplied language, and
+    // its text is the host's.
+    expect(boot.i18n.hasResourceBundle('fr-FR', UI_KIT_NAMESPACE)).toBe(true)
+    expect(
+      boot.i18n.hasResourceBundle('fr-FR', PLATFORM_ERRORS_NAMESPACE),
+    ).toBe(true)
+    expect(
+      boot.i18n.t('product-shell:announcements.sessionEnded', { lng: 'fr-FR' }),
+    ).toBe(`fr:${zhCN.announcements.sessionEnded}`)
+    // The platform default set is a constant, not a side effect of the
+    // instance's configuration.
+    expect([...DEFAULT_SUPPORTED_LANGUAGES]).toEqual(['zh-CN', 'en-US'])
+    await teardown(boot, container)
+  })
+
+  it('reduces an overlaid language the instance does not support', async () => {
+    // The overlay supplies a whole third language, but the instance's
+    // supported set is the shipped pair: the registration is reduced to
+    // it, so the extra bundle is not dead weight and nothing throws.
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const boot = await mountApp(container, {
+      view: <div />,
+      resourceOverrides: {
+        [PRODUCT_SHELL_NAMESPACE]: {
+          'fr-FR': prefixedBundle(productShellResources['zh-CN']!, 'fr:'),
+        },
+      },
+    })
+    expect(boot.i18n.language).toBe('zh-CN')
+    expect(
+      boot.i18n.hasResourceBundle('fr-FR', PRODUCT_SHELL_NAMESPACE),
+    ).toBe(false)
+    expect(
+      boot.i18n.hasResourceBundle('zh-CN', PRODUCT_SHELL_NAMESPACE),
+    ).toBe(true)
+    expect([...DEFAULT_SUPPORTED_LANGUAGES]).toEqual(['zh-CN', 'en-US'])
+    await teardown(boot, container)
+  })
+
+  it('refuses a resourceOverrides leaf the base bundle does not carry', () => {
+    const container = document.createElement('div')
+    expect(() =>
+      bootstrapSpeedApp(container, {
+        view: <div />,
+        resourceOverrides: {
+          [PRODUCT_SHELL_NAMESPACE]: {
+            'zh-CN': { announcements: { unknown: 'x' } },
+          },
+        },
+      }),
+    ).toThrow(/unknown/)
+  })
+
+  it('refuses a platform-error override that drops a packaged code', () => {
+    // Reachable when the instance's supported set omits the shipped pair:
+    // the framework namespaces are replaced wholesale, the platform bundle
+    // arrives only through the override, and registerNamespace then sees a
+    // single language -- so nothing but the packaged reference can catch a
+    // bundle missing a code.
+    const fr = { a: 'x' }
+    expect(() =>
+      createSpeedI18n({
+        supportedLanguages: ['fr-FR'],
+        defaultLanguage: 'fr-FR',
+        namespaces: [
+          { namespace: UI_KIT_NAMESPACE, resources: { 'fr-FR': fr } },
+          { namespace: LAYOUT_KIT_NAMESPACE, resources: { 'fr-FR': fr } },
+          { namespace: AUTH_UI_NAMESPACE, resources: { 'fr-FR': fr } },
+          { namespace: PRODUCT_SHELL_NAMESPACE, resources: { 'fr-FR': fr } },
+        ],
+        resourceOverrides: {
+          [PLATFORM_ERRORS_NAMESPACE]: {
+            'fr-FR': { errors: { authn: { invalid_credentials: 'x' } } },
+          },
+        },
+      }),
+    ).toThrow(/packaged key set/)
+  })
+
+  it('refuses a framework namespace listed twice in the definition', async () => {
+        expect(() =>
+      createSpeedI18n({
+        namespaces: [
+          { namespace: PRODUCT_SHELL_NAMESPACE, resources: productShellResources },
+          { namespace: PRODUCT_SHELL_NAMESPACE, resources: productShellResources },
+        ],
+      }),
+    ).toThrow(/more than once/)
+  })
+
+  it('binds <html lang> to the instance language, follows a switch, and releases the binding on unmount', async () => {
+    document.documentElement.lang = 'initial'
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const boot = await mountApp(container, { view: <div /> })
+    expect(document.documentElement.lang).toBe('zh-CN')
+    await act(async () => {
+      await switchLanguage(boot.i18n, 'en-US')
+    })
+    expect(document.documentElement.lang).toBe('en-US')
+    await teardown(boot, container)
+    // The subscription went with the page: a later switch on the same
+    // instance no longer touches the document.
+    await act(async () => {
+      await switchLanguage(boot.i18n, 'zh-CN')
+    })
+    expect(document.documentElement.lang).toBe('en-US')
+  })
+
+  it('leaves <html lang> untouched when the definition disables the binding', async () => {
+    document.documentElement.lang = 'de-DE'
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const boot = await mountApp(container, {
+      view: <div />,
+      documentLanguage: false,
+    })
+    expect(document.documentElement.lang).toBe('de-DE')
+    await act(async () => {
+      await switchLanguage(boot.i18n, 'en-US')
+    })
+    expect(document.documentElement.lang).toBe('de-DE')
+    await teardown(boot, container)
+  })
+
   it('a declared sessionEnded replaces the shipped default, and evictAllQueries still empties the cache from the override', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -770,5 +1372,100 @@ describe('watchSessionEnd', () => {
     ).toBeDefined()
     expect(queryClient.getQueryData(['/api/v1/auth/sessions'])).toBeDefined()
     expect(queryClient.getQueryData(['preferences'])).toBeDefined()
+  })
+})
+
+describe('createSpeedI18n', () => {
+  it('creates the bilingual instance with the four framework namespaces and the platform error bundle registered', () => {
+    // The exported constructor is the production instance: same defaults
+    // as bootstrapSpeedApp's (the supported pair, the platform error
+    // fallback namespace) with the family four already registered.
+    const i18n = createSpeedI18n({
+      storage: null,
+      urlParameterName: null,
+      navigatorLanguages: [],
+      defaultLanguage: 'zh-CN',
+    })
+    expect(i18n.language).toBe('zh-CN')
+    expect([...readSupportedLanguages(i18n)]).toEqual(['zh-CN', 'en-US'])
+    expect(i18n.hasResourceBundle('zh-CN', UI_KIT_NAMESPACE)).toBe(true)
+    expect(i18n.hasResourceBundle('zh-CN', LAYOUT_KIT_NAMESPACE)).toBe(true)
+    expect(i18n.hasResourceBundle('zh-CN', AUTH_UI_NAMESPACE)).toBe(true)
+    expect(i18n.hasResourceBundle('zh-CN', PRODUCT_SHELL_NAMESPACE)).toBe(true)
+    expect(i18n.hasResourceBundle('zh-CN', PLATFORM_ERRORS_NAMESPACE)).toBe(true)
+  })
+
+  it('registers the definition namespaces and applies the overlays before that one registration', () => {
+    const i18n = createSpeedI18n({
+      storage: null,
+      urlParameterName: null,
+      navigatorLanguages: [],
+      defaultLanguage: 'zh-CN',
+      namespaces: [
+        {
+          namespace: 'app-probe',
+          resources: {
+            'zh-CN': { greeting: 'probe' },
+            'en-US': { greeting: 'probe' },
+          },
+        },
+      ],
+      resourceOverrides: {
+        'app-probe': { 'zh-CN': { greeting: 'overlaid' } },
+      },
+    })
+    expect(i18n.t('app-probe:greeting')).toBe('overlaid')
+    // The untouched language keeps the definition's text.
+    expect(i18n.t('app-probe:greeting', { lng: 'en-US' })).toBe('probe')
+  })
+  it('refuses a resourceOverrides key for a namespace the assembly never registers', () => {
+    // A misnamed namespace -- or a package whose override was written
+    // but never listed in `namespaces` -- would otherwise never be read:
+    // the host's copy would silently not apply.
+    expect(() =>
+      createSpeedI18n({
+        storage: null,
+        urlParameterName: null,
+        navigatorLanguages: [],
+        defaultLanguage: 'zh-CN',
+        resourceOverrides: {
+          ui_kit: { 'zh-CN': { greeting: 'host' } },
+        },
+      }),
+    ).toThrow(/ui_kit/)
+  })
+})
+
+describe('SpeedAppProviders', () => {
+  it('renders the standard stack: translations, theme and the supplied query client', () => {
+    const i18n = createSpeedI18n({
+      storage: null,
+      urlParameterName: null,
+      navigatorLanguages: [],
+      defaultLanguage: 'zh-CN',
+    })
+    const queryClient = createQueryClient()
+    function Probe(): ReactElement {
+      const { t } = useTranslation(PRODUCT_SHELL_NAMESPACE)
+      const client = useQueryClient()
+      const theme = useTheme()
+      return (
+        <span data-testid="probe">
+          {`${t('announcements.sessionEnded')}|${client === queryClient}|${theme.palette.mode}`}
+        </span>
+      )
+    }
+    const utils = render(
+      <SpeedAppProviders
+        i18n={i18n}
+        queryClient={queryClient}
+        theme={{ defaultMode: 'dark' }}
+      >
+        <Probe />
+      </SpeedAppProviders>,
+    )
+    expect(utils.getByTestId('probe').textContent).toBe(
+      `${zhCN.announcements.sessionEnded}|true|dark`,
+    )
   })
 })

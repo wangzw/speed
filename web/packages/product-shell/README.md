@@ -6,13 +6,16 @@ chrome (`@speed/layout-kit`'s `AppShell`), the sign-in family
 one ready-to-copy front door for a tenant-facing business application. The
 platform-staff shell of the same tier is not built.
 
-The package exports `ProductShell` (and its props type) plus the
+The package exports `ProductShell` (and its props type, together with the
+`sessionEnded` slot types those props name) plus the
 `PRODUCT_SHELL_NAMESPACE` / `productShellResources` pair every sibling
 ships for its own namespace, and it ships the app-entry assembly as a
 second entry — `@speed/product-shell/bootstrap`'s `bootstrapSpeedApp`,
 which takes one declarative definition and wires the whole page
-composition (see "The app-entry assembly" below). The shell itself
-renders one of three branches from the authenticated snapshot:
+composition, with `createSpeedI18n` and `SpeedAppProviders` exported so a
+test bench builds the same instance and provider stack (see "The
+app-entry assembly" below). The shell itself renders one of three
+branches from the authenticated snapshot:
 
 | Snapshot | Branch |
 | --- | --- |
@@ -155,7 +158,8 @@ import { clearMyDraft } from './views/my-draft.js'
 bootstrapSpeedApp(document.getElementById('root')!, {
   // The app's own namespaces. The family four the assembly composes —
   // ui-kit, layout-kit, auth-ui and product-shell's own — register
-  // automatically, so they must not be listed here.
+  // automatically; listing one of them here replaces that namespace's
+  // shipped bundle (see "Replacing platform copy").
   namespaces: [
     { namespace: TENANCY_UI_NAMESPACE, resources: tenancyUiResources },
     { namespace: MY_APP_NAMESPACE, resources: myAppResources },
@@ -179,16 +183,17 @@ bootstrapSpeedApp(document.getElementById('root')!, {
     context.evictAllQueries()
     clearMyDraft()
   },
-  // Optional: the tenant every request announces as the X-Tenant header
-  // — the host's current tenant (its routing fact), read per attempt.
+  // Optional: the tenant every request announces as the tenant header
+  // (X-Tenant unless client.tenantHeader renames it) — the tenant ALIAS
+  // the backend's resolution layer looks up by name, read per attempt.
   // Omit it when the app makes no tenant-scoped calls.
-  tenantProvider: () => currentTenantId,
+  tenantProvider: () => currentTenantAlias,
 })
 ```
 
 What the assembly wires in that one call: a fresh bilingual i18n
-instance (`?lang=` parameter, stored choice, navigator languages,
-zh-CN last) with the family four registered and the platform error-copy
+instance (`?lang=` parameter, stored choice, navigator languages, en-US
+last) with the family four registered and the platform error-copy
 bundle (`@speed/i18n/platform-errors`) named as the fallback namespace,
 so a backend error code no package namespace covers resolves to the
 module catalog's own words instead of the raw key; the cookie-delivered
@@ -197,13 +202,94 @@ render and restored from `GET /api/v1/auth/session` once at boot so a reload
 stays logged in; one `@speed/api-client` client
 over the environment's fetch with `credentials: 'same-origin'` (the
 session cookie on every request) and the session's `restore()` as its
-401-refresh leg, and the definition's `tenantProvider` as its `X-Tenant`
-source, bound into the api-sdk runtime seam; the no-retry
+401-refresh leg, and the definition's `tenantProvider` as its tenant
+header source, bound into the api-sdk runtime seam; the no-retry
 query client and the session-end strategy; then the provider stack —
-I18nextProvider around `AppThemeProvider` around
-`QueryClientProvider`, then your providers around your view. It
-returns `{ root, i18n, queryClient, session }` for hosts and harnesses
-that act on the composition.
+StrictMode around I18nextProvider around `AppThemeProvider` around
+`QueryClientProvider`, then your providers around your view. It also
+declares the page language: `<html lang>` follows the instance at boot
+and on every language change, and the subscription is released when the
+page unmounts. It returns `{ root, i18n, queryClient, session }` for
+hosts and harnesses that act on the composition.
+
+### Definition options
+
+Every field below except `view` is optional; a definition that sets none
+of them behaves exactly as the shipped defaults describe.
+
+| Field | What it configures |
+| --- | --- |
+| `namespaces` | The app's own i18n namespaces (each registered exactly once). Listing one of the four framework namespaces — `ui-kit`, `layout-kit`, `auth-ui`, `product-shell`'s own — replaces that namespace's shipped bundle instead of registering it twice; that is the documented way to replace platform copy wholesale. |
+| `resourceOverrides` | Host resources merged into a namespace's base bundle before its one registration, keyed by namespace then language. Applies to the four framework namespaces, the platform-errors namespace and every `namespaces` entry; a namespace key outside that set throws rather than being silently unread. Every leaf the overlay names must exist in the base (an unknown leaf throws); a language the base does not carry is taken whole, and is registered when it belongs to the instance's supported set. After the merge each namespace's language set is reduced to the instance's supported languages. |
+| `providers` / `view` | App-level providers (outermost first) between the standard stack and the view, and the view root itself. |
+| `sessionEnded` | Replaces the shipped session-end action; the context hands over `evictAllQueries()` so an override can compose it. |
+| `baseUrl` | The client's base URL; defaults to `window.location.origin`. |
+| `client` | Options merged into `createClient`: `credentials` (`'same-origin'` — the default — or `'include'`), `reporter`, `retryPolicy`, `timeoutMs`, `fetch`, `tenantHeader`. |
+| `theme` | `projectTokens` and `defaultMode`, forwarded to the `AppThemeProvider` inside the stack. |
+| `i18n` | Options merged into `createI18n`: `supportedLanguages`, `defaultLanguage`, `storageKey`, `urlParameterName`, `onMissingKey`, `profileLanguage`. |
+| `tenantProvider` | The tenant alias announced per request as the tenant header. See below for how it differs from the tenant id. |
+| `documentLanguage` | `false` disables the `<html lang>` binding. |
+
+**`client.credentials` and deployment topology.** The session cookie is
+the credential, so the definition offers only the two cookie-carrying
+modes. `'same-origin'` (the default) covers the single-origin
+deployment. A cross-origin **same-site** deployment (the API on
+`api.example.com`, the page on `app.example.com`) passes `'include'` and
+the backend must accept credentials from that origin. A cross-**site**
+deployment is not supported: the session cookie refuses `SameSite=None`.
+
+**`tenantProvider` is the alias, not the tenant id.** The value is
+transported as the tenant header (`x-tenant` unless `client.tenantHeader`
+renames it) and is the name the backend's tenant resolution layer looks a
+tenant up by; the roster turns it into an identifier. It is a different
+fact from the tenant id `@speed/auth-core`'s `TenantProvider` carries,
+which is what host query keys are scoped by. A host whose aliases differ
+from its ids answers with the alias here and keeps the id in
+`TenantProvider`.
+
+**Tenant white-labelling is runtime composition, not a definition
+field.** The definition's `theme` carries project-level tokens only. To
+apply tenant tokens at runtime, nest an `AppThemeProvider` with
+`tenantOverrides` inside the application's own tenant provider, around
+the views whose tenant is resolved:
+
+```tsx
+function TenantTheme({ tenant, children }: { tenant: Tenant; children: ReactNode }) {
+  return (
+    <AppThemeProvider i18n={i18n} projectTokens={projectTokens} tenantOverrides={tenant.tokens}>
+      {children}
+    </AppThemeProvider>
+  )
+}
+```
+
+### Replacing platform copy
+
+Two routes exist, and they compose:
+
+- **One leaf or a few** — `resourceOverrides` names the namespace and
+  language and the leaves to replace. An unknown leaf throws, so an
+  upgrade that renames a key surfaces immediately instead of silently
+  leaving the overlay pointing at nothing. A namespace key the assembly
+  never registers throws as well — a misnamed namespace, or an override
+  written for a package never listed in `namespaces`, would otherwise
+  never be read.
+- **A namespace wholesale** — list it in `namespaces` with a complete
+  bundle pair. For one of the four framework namespaces that replaces the
+  shipped bundle (registering it a second time is what throws).
+
+### `createSpeedI18n` and `SpeedAppProviders`
+
+`createSpeedI18n(options?)` builds the instance `bootstrapSpeedApp`
+renders with: `createI18n`'s options (the definition's `i18n` field is a
+subset), the app's `namespaces` and `resourceOverrides`, the four
+framework registrations, the platform-error registration and the
+per-namespace language reduction. `SpeedAppProviders({ i18n,
+queryClient, theme?, children })` renders the standard stack — StrictMode
+around `I18nextProvider` around `AppThemeProvider` around
+`QueryClientProvider` — so a host's view-level test bench and production
+share one construction. Both are exported beside `createQueryClient` and
+`watchSessionEnd` for hosts assembling by hand.
 
 **The shipped session-end default**: the moment the session ends — a
 sign-out or a cookie that no longer holds (a refused credentialed
@@ -213,15 +299,19 @@ principal and the identity-domain rows live under bare
 spec-path keys no tenant-scoped removal reaches, so nothing may
 outlive the session. A declared `sessionEnded` replaces that action
 (the context's `evictAllQueries()` is the default to compose it
-with). Two pieces are exported for hosts assembling by hand:
+with). Four pieces are exported for hosts assembling by hand:
 `watchSessionEnd(session, queryClient, handler?)` wires the strategy
-onto your own session and query client, and `createQueryClient()`
-builds the same no-retry client outside a full bootstrap.
+onto your own session and query client, `createQueryClient()` builds the
+same no-retry client outside a full bootstrap, `createSpeedI18n()` builds
+the same registered instance, and `SpeedAppProviders` renders the same
+provider stack.
 
 `src/bootstrap.test.tsx` compiles and runs this composition — jsdom
 mounts of `bootstrapSpeedApp` (automatic and declared registration,
-provider order, a declared baseUrl, the default's eviction, an
-override replacing it) plus the `watchSessionEnd` transition matrix
+framework-namespace replacement, resource overlays including a whole
+added language, provider order, the client and theme options, the
+document-language binding, a declared baseUrl, the default's eviction,
+an override replacing it) plus the `watchSessionEnd` transition matrix
 (sign-out evicts, a refused refresh evicts, a never-authenticated
 session and a tenant switch evict nothing) over a real session and a
 real QueryClient, so the assembly cannot drift from this section.
@@ -263,9 +353,11 @@ package whose strings render in the frame.
   carries the machine's own session-ended announcement; absent it, the
   shell still transfers focus and renders no raw key text), plus
   tenancy-ui's own whenever the `userMenu` composes the tenant switcher
-  (see above) — double registration throws. A host composing through
-  `bootstrapSpeedApp` skips the quartet: the assembly registers it and
-  the definition's `namespaces` list carries only the app's own extras.
+  (see above) — double registration throws when assembling by hand. A host
+  composing through `bootstrapSpeedApp` skips the quartet: the assembly
+  registers them, and the definition's `namespaces` list carries the app's
+  own extras plus any framework namespace whose shipped bundle the app
+  replaces wholesale (see "Replacing platform copy").
 - Attach your session once with `attachSession` before render. Before any
   attach, and after logout, the hooks ProductShell reads fail closed to the
   anonymous snapshot, so the shell can only show the sign-in branch.
@@ -281,13 +373,18 @@ package whose strings render in the frame.
   supply `signIn`, or supply a `sessionEnded` node that owns its own way
   out.
 - Any `AppShell` chrome prop (`navItems`, `header`, `headerActions`,
-  `userMenu`, `banner`, ...) is passed straight through; see
-  `@speed/layout-kit`'s `AppShell` for the full surface. `navItems` must
-  arrive host-computed, `selected` included — nothing here path-matches.
+  `userMenu`, `banner`, `navLabel`, `navHeader`, `navFooter`, the drawer
+  controls, `sx`) is passed straight through; see `@speed/layout-kit`'s
+  `AppShell` for the full surface. `navItems` must arrive host-computed,
+  `selected` included — nothing here path-matches.
 - The `sessionEnded` slot is optional: with no slot, the default
   `@speed/auth-ui` `SessionEndedScreen` renders, whose action returns the
   viewer to the sign-in view. A custom node renders as-is and owns its own
-  way back (signing in again flips the snapshot and the frame returns).
+  way back (signing in again flips the snapshot and the frame returns). A
+  render function receives `{ returnToSignIn }` — the same reset the
+  default screen's action runs, a no-op when no `signIn` view exists — so
+  a custom ended view can offer that way back without re-deriving the
+  machine's rule.
 - Don't fight the focus contract: every branch flip moves focus into the
   branch's own container (a focusable, non-tab-stop wrapper around the
   rendered view), and the session-ended flip announces itself through the

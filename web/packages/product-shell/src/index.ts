@@ -22,7 +22,12 @@
  * the session before render.
  */
 
-export { ProductShell, type ProductShellProps } from './components/ProductShell.js'
+export {
+  ProductShell,
+  type ProductShellProps,
+  type ProductShellSessionEndedActions,
+  type ProductShellSessionEndedSlot,
+} from './components/ProductShell.js'
 export {
   PRODUCT_SHELL_NAMESPACE,
   productShellResources,

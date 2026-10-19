@@ -231,7 +231,7 @@ classDiagram
 ## 扩展点
 
 - **授权来源经 `status` 接入。** 宿主按所用机制（真认证包背后的 hook、认证包落地前的 `useState` 桩、测试里的静态值）算出一个 `RouteGuardStatus` 传入即可，本包不改。
-- **占位与文案经 prop 与命名空间替换。** 等待态与拒绝态各可由 `pendingFallback` / `deniedFallback` 整体替换；宿主改本包文案的途径是装配入口（`@speed/product-shell`）的 `resourceOverrides`——按命名空间在唯一一次注册前合并宿主提供的语言包（[ADR-web-host-language-sets-2026-10-19](../../../adr/adr-web-host-language-sets-2026-10-19.md)）。该选项尚未在 `bootstrapSpeedApp` 上提供；在此之前自行再次注册 `LAYOUT_KIT_NAMESPACE` 不可行：同一实例上二次注册即抛错。
+- **占位与文案经 prop 与命名空间替换。** 等待态与拒绝态各可由 `pendingFallback` / `deniedFallback` 整体替换；宿主改本包文案的途径是装配入口（`@speed/product-shell` 的 `bootstrapSpeedApp`）的 `resourceOverrides` 选项——按命名空间在唯一一次注册前合并宿主提供的语言包；在 `namespaces` 里列出 `LAYOUT_KIT_NAMESPACE` 则整包替换本包的出厂语言包（[ADR-web-host-language-sets-2026-10-19](../../../adr/adr-web-host-language-sets-2026-10-19.md)）。同一实例上自行再次注册 `LAYOUT_KIT_NAMESPACE` 不可行：二次注册即抛错。
 - **槽位即扩展点。** 顶部栏、头部动作、用户菜单、横幅、抽屉头尾（`navHeader`/`navFooter`）、导航项与内容区都是宿主内容，本包不发明。
 
 ## 实现状态

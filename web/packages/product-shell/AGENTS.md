@@ -14,13 +14,15 @@ the one tier whose package code is allowed to consume `auth-core` hooks —
 there: the shell reads the snapshot and renders a branch; it never calls a
 session operation, never fetches, never navigates.
 
-The package ships two entries. The main entry is the view machine: four
-names — `ProductShell` and `ProductShellProps` plus the
+The package ships two entries. The main entry is the view machine: the two
+component names, `ProductShell` and `ProductShellProps`, the two
+`sessionEnded` slot types those props name, and the
 `PRODUCT_SHELL_NAMESPACE` / `productShellResources` pair every sibling
-ships for its namespace. The `./bootstrap` subpath is the app-entry
-assembly — `bootstrapSpeedApp` and the definition types it takes, plus
-`watchSessionEnd` and `createQueryClient` (see "The app-entry assembly"
-below). The shell renders one string of its own —
+ships for its namespace. The `./bootstrap` subpath is
+the app-entry assembly — `bootstrapSpeedApp` and the definition types it
+takes, plus `createSpeedI18n`, `SpeedAppProviders`, `watchSessionEnd` and
+`createQueryClient` (see "The app-entry assembly" below). The shell
+renders one string of its own —
 the polite `announcements.sessionEnded` announcement of the session-ended
 flip, read from the product-shell namespace through `@speed/i18n` — and no
 other copy: every built-in string on screen in the authenticated branch
@@ -62,20 +64,55 @@ is the only authority the machine reads.
 
 `bootstrapSpeedApp(container, definition)` is the one call a delivered
 app's main module makes: it takes the app's declarative definition —
-the app's own i18n namespaces, app-level providers, the view root, an
-optional session-end override, an optional baseUrl, an optional
-tenantProvider — and wires the
+the app's own i18n namespaces and resource overlays, app-level
+providers, the view root, an optional session-end override, an optional
+baseUrl, optional client options, optional theme options, optional i18n
+options, an optional tenantProvider and the document-language opt-out —
+and wires the
 whole entry composition a host used to hand-derive: a fresh bilingual
 i18n instance (the family's four namespaces registered automatically
 from the packages the assembly composes), the memory-token session
 attached over the generated authn operations, the one client bound
 into the api-sdk runtime binding with the session refresh as its
-401-refresh leg and the definition's tenantProvider as its `X-Tenant`
-source, the no-retry query client (`createQueryClient`, also
+401-refresh leg and the definition's tenantProvider as its tenant
+header source, the no-retry query client (`createQueryClient`, also
 exported), the session-end strategy (`watchSessionEnd`) and the
-provider stack — I18nextProvider around `AppThemeProvider` around
-`QueryClientProvider`, then the declared providers around the declared
-view. It returns the handles (root, i18n, queryClient, session).
+provider stack — StrictMode around I18nextProvider around
+`AppThemeProvider` around `QueryClientProvider`, then the declared
+providers around the declared view. It returns the handles (root, i18n,
+queryClient, session).
+
+The i18n construction is exported as `createSpeedI18n(options?)` and
+the provider stack as `SpeedAppProviders({ i18n, queryClient, theme?,
+children })`, so a view-level test bench builds the production instance
+and tree instead of a reconstructed copy. Two rules belong to the
+instance construction:
+
+- **A definition namespace naming a framework namespace replaces that
+  namespace's shipped bundle.** The four framework namespaces register
+  automatically; listing one in `namespaces` replaces it (the documented
+  way to replace platform copy wholesale) instead of hitting the
+  double-registration guard.
+- **`resourceOverrides` merge before the one registration.** Each
+  namespace's base — the shipped bundle, a replacement, or a
+  definition bundle — goes through `overlayResources` with the host's
+  overlay, and the result's language set is then reduced to the
+  instance's supported languages; a supported language the result lacks
+  still throws at registration. An unknown overlay leaf throws, and so
+  does an overlay keyed by a namespace the assembly never registers (it
+  would otherwise be silently unread).
+
+The client table is merged into `createClient` with `credentials`
+defaulting to `'same-origin'` and the base URL, refresh leg, language
+source and tenant source the assembly's own. `theme` forwards only
+`projectTokens` and `defaultMode`: tenant white-labelling is runtime host
+composition (a nested `AppThemeProvider tenantOverrides`), never a
+definition field. `documentLanguage: false` disables the `<html lang>`
+binding the assembly otherwise keeps in step with the instance.
+
+`tenantProvider` answers the tenant **alias** the backend's resolution
+layer looks up by name — the tenant header's value — never the tenant id
+`@speed/auth-core`'s `TenantProvider` carries for query-key scoping.
 
 The session-end strategy is the shipped default the definition may
 override: on the authenticated -> anonymous edge — a sign-out or a
@@ -170,7 +207,8 @@ the branch unchanged.
   must not reinterpret, reorder or path-match `navItems` — their
   `selected` state is host-computed, per layout-kit's contract, and a
   shell that starts deciding selection has begun routing. `navItems`,
-  `header`, `headerActions`, `userMenu`, the drawer controls and `sx`
+  `header`, `headerActions`, `userMenu`, `banner`, `navLabel`,
+  `navHeader`, `navFooter`, the drawer controls and `sx`
   are picked off the props and forwarded verbatim; adding a prop means
   adding it to the pass-through `Pick<AppShellProps, ...>`, never to a
   parallel interpretation.
@@ -280,9 +318,17 @@ layout-kit and tenancy-ui equivalents, and this package's own
 - `src/bootstrap.test.tsx` — the app-entry assembly. jsdom mounts of
   `bootstrapSpeedApp` over the environment fetch the client captures
   (the family four registered automatically, the declared namespaces on
-  top, the provider fold in declared order with the assembled services,
-  a declared baseUrl honoured, the shipped session-end default evicting
-  and a declared override replacing it); plus `watchSessionEnd`'s
+  top, a framework namespace listed in the definition replacing its
+  shipped bundle, resource overlays — a leaf, a replacement and a whole
+  added language — and an unknown leaf refused, the provider fold in
+  declared order with the assembled services, a declared baseUrl
+  honoured, every definition client option (credential mode, fetch,
+  tenant header, timeout, retry policy, reporter) and the theme options
+  reaching what they configure, the definition i18n options merged into
+  instance creation, the `<html lang>` binding following the instance
+  and its opt-out, the shipped session-end default evicting and a
+  declared override replacing it); the `createSpeedI18n` and
+  `SpeedAppProviders` exports on their own; plus `watchSessionEnd`'s
   transition matrix over a real session and a real QueryClient with no
   DOM tree — sign-out evicts every domain, a refused silent refresh
   (session death) evicts, a never-authenticated session and a tenant

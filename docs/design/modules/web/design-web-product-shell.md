@@ -33,6 +33,9 @@ export interface ProductShellProps {
   readonly headerActions?: ReactNode
   readonly userMenu?: ReactNode
   readonly banner?: ReactNode
+  readonly navLabel?: string
+  readonly navHeader?: AppShellNavSlot
+  readonly navFooter?: AppShellNavSlot
   readonly mobileOpen?: boolean
   readonly onMobileOpenChange?: (open: boolean) => void
   readonly sidebarCollapsed?: boolean
@@ -41,16 +44,22 @@ export interface ProductShellProps {
   readonly sx?: SxProps<Theme>
   // 本包自己的三个槽
   readonly signIn?: ReactNode
-  readonly sessionEnded?: ReactNode
+  readonly sessionEnded?:
+    | ReactNode
+    | ((actions: ProductShellSessionEndedActions) => ReactNode)
   readonly children: ReactNode
+}
+
+export interface ProductShellSessionEndedActions {
+  readonly returnToSignIn: () => void
 }
 
 export function ProductShell(props: ProductShellProps): ReactElement
 ```
 
-- **框架 prop 原样透传。** `navItems`、`header`、`headerActions`、`userMenu`、`banner`、抽屉控制（移动开合 `mobileOpen`/`onMobileOpenChange` 与桌面收起 `sidebarCollapsed`/`onSidebarCollapsedChange`）与 `sx` 被拾起后逐字转给 `AppShell`；本包不重解释、不重排序、不做路径匹配。加一个框架 prop 意味着加进那个 `Pick<AppShellProps, ...>`，而不是另建一套解释。`banner` 槽由 layout-kit 提供，用途见 [ADR-web-impersonation-shell-2026-10-18](../../../adr/adr-web-impersonation-shell-2026-10-18.md)。
+- **框架 prop 原样透传。** `navItems`、`header`、`headerActions`、`userMenu`、`banner`、导航地标的可访问名 `navLabel`、抽屉纸内导航前后的两个槽 `navHeader`/`navFooter`、抽屉控制（移动开合 `mobileOpen`/`onMobileOpenChange` 与桌面收起 `sidebarCollapsed`/`onSidebarCollapsedChange`）与 `sx` 被拾起后逐字转给 `AppShell`；本包不重解释、不重排序、不做路径匹配。加一个框架 prop 意味着加进那个 `Pick<AppShellProps, ...>`，而不是另建一套解释。`banner` 槽由 layout-kit 提供，用途见 [ADR-web-impersonation-shell-2026-10-18](../../../adr/adr-web-impersonation-shell-2026-10-18.md)。
 - **`signIn` 缺席时未登录分支什么都不渲染。** 缺省结束屏的「再次登录」动作需要这个视图存在：它把访问者送回登录分支，而视图机拒绝复位到一个什么都不渲染的分支，故没有 `signIn` 槽的宿主其会话中途结束时停在结束屏。
-- **`sessionEnded` 缺席时渲染 `auth-ui` 的 `SessionEndedScreen`**，并把它的「再次登录」动作接成返回登录分支。给出 `sessionEnded` 节点时原样渲染，视图机状态一并交给该节点，由它自持返回应用的出路。
+- **`sessionEnded` 缺席时渲染 `auth-ui` 的 `SessionEndedScreen`**，并把它的「再次登录」动作接成返回登录分支。给出 `sessionEnded` 节点时原样渲染，视图机状态一并交给该节点，由它自持返回应用的出路；给出渲染函数时把 `ProductShellSessionEndedActions` 交给它并渲染其返回值，其中的 `returnToSignIn` 就是缺省结束屏动作所用的那一次复位（`signIn` 槽缺席时为空操作）。
 - **`children` 只在快照为已认证时渲染进框架的 `main` 地标内。**
 
 ### 应用入口装配 `@speed/product-shell/bootstrap`
@@ -59,6 +68,37 @@ export function ProductShell(props: ProductShellProps): ReactElement
 export interface SpeedAppNamespace {
   readonly namespace: string
   readonly resources: Readonly<Record<string, ResourceBundle>>
+}
+
+export type SpeedAppResourceOverrides = Readonly<
+  Record<string, Readonly<Record<string, ResourceBundle>>>
+>
+
+export type SpeedAppClientOptions = Pick<
+  ClientOptions,
+  'reporter' | 'retryPolicy' | 'timeoutMs' | 'fetch' | 'tenantHeader'
+> & {
+  readonly credentials?: 'same-origin' | 'include'
+}
+
+export type SpeedAppThemeOptions = Pick<
+  AppThemeProviderProps,
+  'projectTokens' | 'defaultMode'
+>
+
+export type SpeedAppI18nOptions = Pick<
+  CreateI18nOptions,
+  | 'supportedLanguages'
+  | 'defaultLanguage'
+  | 'storageKey'
+  | 'urlParameterName'
+  | 'onMissingKey'
+  | 'profileLanguage'
+>
+
+export type CreateSpeedI18nOptions = CreateI18nOptions & {
+  readonly namespaces?: readonly SpeedAppNamespace[]
+  readonly resourceOverrides?: SpeedAppResourceOverrides
 }
 
 export interface SpeedAppServices {
@@ -82,11 +122,16 @@ export type SpeedSessionEndedHandler = (context: SpeedSessionEndContext) => void
 
 export interface SpeedAppDefinition {
   readonly namespaces?: readonly SpeedAppNamespace[]
+  readonly resourceOverrides?: SpeedAppResourceOverrides
   readonly providers?: readonly SpeedAppProvider[]
   readonly view: ReactNode
   readonly sessionEnded?: SpeedSessionEndedHandler
   readonly baseUrl?: string
+  readonly client?: SpeedAppClientOptions
+  readonly theme?: SpeedAppThemeOptions
+  readonly i18n?: SpeedAppI18nOptions
   readonly tenantProvider?: () => string | null
+  readonly documentLanguage?: false
 }
 
 export interface SpeedAppBootstrap {
@@ -101,6 +146,19 @@ export function bootstrapSpeedApp(
   definition: SpeedAppDefinition,
 ): SpeedAppBootstrap
 
+export function createSpeedI18n(
+  options?: CreateSpeedI18nOptions,
+): I18nInstance
+
+export interface SpeedAppProvidersProps {
+  readonly i18n: I18nInstance
+  readonly queryClient: QueryClient
+  readonly theme?: SpeedAppThemeOptions
+  readonly children?: ReactNode
+}
+
+export function SpeedAppProviders(props: SpeedAppProvidersProps): ReactElement
+
 export function watchSessionEnd(
   session: AuthSession,
   queryClient: QueryClient,
@@ -110,11 +168,15 @@ export function watchSessionEnd(
 export function createQueryClient(): QueryClient
 ```
 
-**`SpeedAppDefinition` 的各项即本包定义的可变面。** `namespaces` 是应用自己的命名空间（装配自身组合的四个族命名空间自动注册，不得在此重复列出，否则双重注册抛错）；`providers` 是标准 provider 栈与视图之间的应用级 provider，最外层在前；`view` 是视图根（通常是宿主槽齐备的 `ProductShell` 组合）；`sessionEnded` 覆盖出厂的会话结束动作；`baseUrl` 是客户端基地址；`tenantProvider` 是当前租户（宿主的路由事实），经客户端作 `X-Tenant` 播报，缺席即不发该头。
+**`SpeedAppDefinition` 的各项即本包定义的可变面。** `namespaces` 是应用自己的命名空间；`resourceOverrides` 是按命名空间再按语言的宿主覆盖资源，在每个命名空间唯一一次注册前经 `overlayResources` 合并，随后把该命名空间的注册语言集裁到实例的受支持集；`providers` 是标准 provider 栈与视图之间的应用级 provider，最外层在前；`view` 是视图根（通常是宿主槽齐备的 `ProductShell` 组合）；`sessionEnded` 覆盖出厂的会话结束动作；`baseUrl` 是客户端基地址；`client` 合并进 `createClient`（凭据模式缺省 `same-origin`，另有 reporter、重试策略、超时、fetch 与租户头名）；`theme` 只转发 `projectTokens` 与 `defaultMode`；`i18n` 合并进实例创建；`tenantProvider` 是当前租户别名，经客户端作租户头播报；`documentLanguage: false` 关闭 `<html lang>` 跟随。
+
+**列出四个族命名空间之一即替换其出厂资源。** 装配自身组合的四个族命名空间（ui-kit、layout-kit、auth-ui、product-shell 自己的）自动注册；在 `namespaces` 里列出其中之一时，它替换该命名空间的出厂语言包而不是被注册两次——这是整体替换平台文案的途径。平台错误包不经此途径替换，只经 `resourceOverrides` 覆盖。
 
 **`baseUrl` 缺省是 `window.location.origin`，即假设同源部署**——页面与 API 由同一个源提供。**跨域部署要在运行期给出该源地址**：产物在入口文档旁带一份 `runtime-config.json`，应用入口取它（按入口文档所在源下的根路径解析）、把其中的 origin 作为 `baseUrl` 传给本包；取不到时回落到同源。机制归 [design-web](design-web.md) 与 [ADR-web-runtime-config-2026-10-15](../../../adr/adr-web-runtime-config-2026-10-15.md)；本包只消费注入后的值，不自行发现源。
 
-**`watchSessionEnd` 与 `createQueryClient` 是给手工组装宿主的导出。** 一个不在 `bootstrapSpeedApp` 之下的视图级测试台或自定义组合，用同一份 `createQueryClient` 与同一条 `watchSessionEnd` 策略，而不是重建一份可能与本包漂移的副本。
+**`tenantProvider` 返回的是租户别名，不是租户标识。** 该值是请求的租户头（缺省 `x-tenant`，`client.tenantHeader` 可改名）的取值，后端租户解析层按名将它映射为租户标识；它与 [auth-core](design-web-auth-core.md) 的 `TenantProvider` 所持、用于查询键分域的租户标识是两个事实。别名与标识不同的宿主在此返回别名，并把标识留给 `TenantProvider`。
+
+**`createSpeedI18n` 与 `SpeedAppProviders` 是装配的两半。** 前者构造 `bootstrapSpeedApp` 所渲染的实例（`createI18n` 的选项、应用命名空间与覆盖资源、四个族命名空间注册、平台错误包注册、逐命名空间语言裁剪），后者渲染标准 provider 栈（StrictMode 包 `I18nextProvider` 包 `AppThemeProvider` 包 `QueryClientProvider`）；宿主自建的视图级测试台与生产共用这两处构造。二者与 `watchSessionEnd`、`createQueryClient` 都外导，供手工组装复用，而不是重建一份可能与本包漂移的副本。
 
 ### 命名空间
 
@@ -125,7 +187,7 @@ export const productShellResources: Readonly<Record<string, ResourceBundle>>
 
 本包自身只渲染一句文字：会话结束翻转的礼貌播报。框架的内建文字来自 layout-kit 命名空间，缺省结束屏的来自 auth-ui 命名空间；其余都是宿主内容。`bootstrapSpeedApp` 为它组合的包自动注册四个族命名空间（含本包自己的），故经装配启动的页面不会漏注册。
 
-**对外接口面。** `ProductShell`、`ProductShellProps`、`PRODUCT_SHELL_NAMESPACE`、`productShellResources`，以及 `SpeedAppDefinition`、`SpeedAppNamespace`、`SpeedAppProvider`、`SpeedAppServices`、`SpeedSessionEndContext`、`SpeedSessionEndedHandler`、`SpeedAppBootstrap`、`bootstrapSpeedApp`、`watchSessionEnd`、`createQueryClient` 的字段与方法集，是宿主可见面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。新增的可选字段在未被使用时宿主行为不变。
+**对外接口面。** `ProductShell`、`ProductShellProps`、`ProductShellSessionEndedActions`、`ProductShellSessionEndedSlot`、`PRODUCT_SHELL_NAMESPACE`、`productShellResources`，以及 `SpeedAppDefinition`、`SpeedAppNamespace`、`SpeedAppResourceOverrides`、`SpeedAppClientOptions`、`SpeedAppThemeOptions`、`SpeedAppI18nOptions`、`CreateSpeedI18nOptions`、`SpeedAppProvider`、`SpeedAppServices`、`SpeedSessionEndContext`、`SpeedSessionEndedHandler`、`SpeedAppBootstrap`、`SpeedAppProvidersProps`、`bootstrapSpeedApp`、`createSpeedI18n`、`SpeedAppProviders`、`watchSessionEnd`、`createQueryClient` 的字段与方法集，是宿主可见面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。新增的可选字段在未被使用时宿主行为不变。
 
 ## 依赖
 
@@ -161,8 +223,9 @@ stateDiagram-v2
 | 概念 | 类型 | 说明 |
 |---|---|---|
 | 分支 | 组件内部判别式 | `frame`（已认证）/ `ended`（曾进过应用）/ `signIn`（全新或未接会话） |
-| 外壳 prop | `ProductShellProps` | 框架 prop 透传加 `signIn`/`sessionEnded`/`children` 三槽 |
-| 应用定义 | `SpeedAppDefinition` | `namespaces`、`providers`、`view`、`sessionEnded`、`baseUrl`、`tenantProvider` |
+| 外壳 prop | `ProductShellProps` | 框架 prop 透传加 `signIn`/`sessionEnded`/`children` 三槽；`sessionEnded` 是节点或收 `returnToSignIn` 的渲染函数 |
+| 应用定义 | `SpeedAppDefinition` | `namespaces`、`resourceOverrides`、`providers`、`view`、`sessionEnded`、`baseUrl`、`client`、`theme`、`i18n`、`tenantProvider`、`documentLanguage` |
+| 覆盖资源 | `SpeedAppResourceOverrides` | 命名空间 → 语言 → 部分语言包，注册前经 `overlayResources` 合并 |
 | 装配服务 | `SpeedAppServices` | `session`、`api`（即 `SpeedClient`：`RequestFn` 加事件流开启器 `openEventStream`）、`queryClient`，交给定义的 provider |
 | 会话结束上下文 | `SpeedSessionEndContext` | `session`、`queryClient`、`evictAllQueries` 三项 |
 | 装配产物 | `SpeedAppBootstrap` | `root`、`i18n`、`queryClient`、`session` 四项 |
@@ -188,11 +251,12 @@ stateDiagram-v2
 
 `bootstrapSpeedApp` 按下列次序装配，不偏离：
 
-1. **i18n** —— 一份全新的双语实例（`?lang=` 参数、已存选择、navigator 语言、`en-US` 兜底），注册本包组合的四个族命名空间（ui-kit、layout-kit、auth-ui、product-shell），并以平台错误文案包（`@speed/i18n/platform-errors`）为实例的兜底命名空间；再把定义的 `namespaces` 逐个注册。注册先于渲染，且每个命名空间恰好一次。
+1. **i18n** —— 一份默认双语的实例（`?lang=` 参数、已存选择、navigator 语言、`en-US` 兜底），由 `createSpeedI18n` 构造：注册本包组合的四个族命名空间（ui-kit、layout-kit、auth-ui、product-shell），并以平台错误文案包（`@speed/i18n/platform-errors`）为实例的兜底命名空间。每个命名空间的基准语言包（出厂包、`namespaces` 中的替换包或应用自己的包）先与该命名空间的 `resourceOverrides` 经 `overlayResources` 合并，再把语言集裁到实例的受支持集，然后注册——每个命名空间恰好一次；受支持集里有而合并结果缺的语言由注册抛错。`namespaces` 中列出四个族命名空间之一即替换其出厂包，不触发双重注册。注册先于渲染。
 2. **会话** —— 一个内存访问令牌存储（凭据不落存储）喂给 auth-core 的会话状态机，跑在生成的 authn 操作上，经 `attachSession` 接上。一次刷新按约定转回匿名启动。
-3. **客户端** —— `createClient` 建立在环境的 `fetch` 上，以会话的静默刷新作 401 刷新腿，以 i18n 实例作语言源（每次尝试读一次，故语言切换后重试的请求播报用户当前所看的语言），以定义的 `tenantProvider` 作租户源（每次尝试读一次，接成 `X-Tenant`，故切租户后重试的请求播报用户当前所处的租户）；再经 `bindRequestFn` 绑进 api-sdk 的运行时接缝，此后一切 API 流量都是生成代码的流量。`createClient` 的产物是 `SpeedClient`：请求函数加事件流开启器 `openEventStream`，后者随 `SpeedAppServices.api` 交给宿主，供需要服务端推送的面打开一条长连接（同一组接缝，不另接一套传输）。
+3. **客户端** —— `createClient` 建立在环境的 `fetch` 上，合并定义的 `client`（缺省 `credentials: 'same-origin'`；`fetch`、`timeoutMs`、`retryPolicy`、`reporter`、`tenantHeader` 由该表给出），以会话的静默刷新作 401 刷新腿，以 i18n 实例作语言源（每次尝试读一次，故语言切换后重试的请求播报用户当前所看的语言），以定义的 `tenantProvider` 作租户源（每次尝试读一次，接成租户头，故切租户后重试的请求播报用户当前所处的租户）；再经 `bindRequestFn` 绑进 api-sdk 的运行时接缝，此后一切 API 流量都是生成代码的流量。`createClient` 的产物是 `SpeedClient`：请求函数加事件流开启器 `openEventStream`，后者随 `SpeedAppServices.api` 交给宿主，供需要服务端推送的面打开一条长连接（同一组接缝，不另接一套传输）。
 4. **QueryClient 与会话结束策略** —— 无重试的 `createQueryClient`，加 `watchSessionEnd` 的出厂缺省：会话一结束即逐出离任主体读过的全部缓存。
-5. **provider 栈** —— `I18nextProvider` 包 `AppThemeProvider` 包 `QueryClientProvider`，再加定义的 `providers`（最外层在前）包定义的 `view`。
+5. **provider 栈** —— `SpeedAppProviders` 把 StrictMode 包在 `I18nextProvider` 包 `AppThemeProvider`（收定义的 `theme`）包 `QueryClientProvider` 上；再加定义的 `providers`（最外层在前）包定义的 `view`。
+6. **文档语言** —— 未给 `documentLanguage: false` 时，装配在启动时把 `<html lang>` 置为实例语言，并订阅 `languageChanged` 使其跟随；卸载时解除订阅。无 `document` 的环境照常启动。
 
 ### 会话结束策略
 
@@ -209,19 +273,24 @@ stateDiagram-v2
 | 情形 | 表现 |
 |---|---|
 | 未接会话（`attachSession` 之前） | 视图机 fail-closed 到匿名快照，只渲染登录分支（或其空） |
-| `signIn` 槽缺席 | 未登录分支渲染空；缺省结束屏动作不复位，访问者停在结束屏 |
+| `signIn` 槽缺席 | 未登录分支渲染空；缺省结束屏动作与渲染函数形态的 `returnToSignIn` 都不复位，访问者停在结束屏 |
 | `product-shell` 命名空间未注册 | 播报区域不渲染，焦点转移照常，无原始键文本 |
 | 会话结束（登出或静默刷新被拒） | 缺省整体逐出 query 缓存；定义的 `sessionEnded` 覆盖它 |
 | 双重注册同名命名空间 | 装配期抛错（每个命名空间恰好注册一次） |
+| `namespaces` 列出四个族命名空间之一 | 替换该命名空间的出厂语言包，不注册两次 |
+| `resourceOverrides` 指向基准包没有的叶子 | 装配期抛错（升级后改名的键立即暴露） |
+| `resourceOverrides` 指向装配不注册的命名空间 | 装配期抛错（拼错的名字或漏列进 `namespaces` 的覆盖不会静默不生效） |
+| 合并后的命名空间缺一个受支持语言 | 装配期抛错（每个受支持语言都要有语言包） |
+| `documentLanguage: false` | 不读写 `<html lang>` |
 | 同一容器内二次 bootstrap | 双重挂载；一页只 bootstrap 一次 |
 
 **装配不降级、不重试。** 一次会话结束即触发一次策略动作；缺省策略是同步逐出，不等待网络。
 
 ## 扩展点
 
-- **定义即扩展面。** `namespaces` 追加应用自己的命名空间，`providers` 在标准栈与视图之间插入应用级 provider（收到装配后的 `session`、`api`、`queryClient`），`view` 换掉整个视图根，`sessionEnded` 覆盖会话结束动作（上下文里的 `evictAllQueries()` 供其组合），`baseUrl` 给出客户端基地址（跨域部署的运行期源地址），`tenantProvider` 给出当前租户（接成请求的 `X-Tenant` 头）。
-- **槽即扩展面。** `signIn` 与 `sessionEnded` 是宿主的视图，`children` 是宿主的业务内容（路由与 `RouteGuard` 门在此组装）；框架 prop 透传给 `AppShell`。
-- **手工组装经两个导出。** 不在 `bootstrapSpeedApp` 之下的宿主用 `createQueryClient` 与 `watchSessionEnd` 复用同一策略。
+- **定义即扩展面。** `namespaces` 追加应用自己的命名空间或替换某个族命名空间的出厂包，`resourceOverrides` 覆写装配所注册的命名空间（四个族命名空间、平台错误包与每个 `namespaces` 条目）的文案或补整种语言，`providers` 在标准栈与视图之间插入应用级 provider（收到装配后的 `session`、`api`、`queryClient`），`view` 换掉整个视图根，`sessionEnded` 覆盖会话结束动作（上下文里的 `evictAllQueries()` 供其组合），`baseUrl` 给出客户端基地址（跨域部署的运行期源地址），`client` 给出客户端选项，`theme` 给出项目级主题选项，`i18n` 给出实例选项，`tenantProvider` 给出当前租户别名（接成请求的租户头），`documentLanguage: false` 关闭 `<html lang>` 跟随。运行期租户白标不是定义字段：在应用自己的租户 provider 内嵌套 `AppThemeProvider tenantOverrides`。
+- **槽即扩展面。** `signIn` 与 `sessionEnded` 是宿主的视图（`sessionEnded` 还可收 `returnToSignIn` 由宿主决定放置），`children` 是宿主的业务内容（路由与 `RouteGuard` 门在此组装）；框架 prop 透传给 `AppShell`，含 `navLabel`、`navHeader`、`navFooter`。
+- **手工组装经四个导出。** 不在 `bootstrapSpeedApp` 之下的宿主用 `createQueryClient`、`watchSessionEnd`、`createSpeedI18n` 与 `SpeedAppProviders` 复用同一策略、同一实例构造与同一 provider 栈。
 
 ## 实现状态
 

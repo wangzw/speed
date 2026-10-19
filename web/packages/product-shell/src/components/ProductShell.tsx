@@ -34,7 +34,11 @@
  * never imported here), and sessionEnded may replace the default
  * ended screen wholesale -- a supplied node renders as-is and owns its
  * own way back (typically by signing in again, which the machine
- * observes through the snapshot flip). The shell itself renders one
+ * observes through the snapshot flip), and a supplied render function
+ * additionally receives the default screen's own `returnToSignIn`
+ * reset, so a custom ended view can hand the viewer back to the
+ * sign-in branch without re-deriving the machine's reset rule. The
+ * shell itself renders one
  * string of its own, the polite transition announcement of the
  * session-ended flip, from the product-shell namespace
  * (PRODUCT_SHELL_NAMESPACE, registered by the host like every
@@ -88,6 +92,9 @@ type AppShellChromeProps = Pick<
   | 'headerActions'
   | 'userMenu'
   | 'banner'
+  | 'navLabel'
+  | 'navHeader'
+  | 'navFooter'
   | 'mobileOpen'
   | 'onMobileOpenChange'
   | 'sidebarCollapsed'
@@ -95,6 +102,21 @@ type AppShellChromeProps = Pick<
   | 'sidebarWidth'
   | 'sx'
 >
+
+/** The actions a sessionEnded render function receives. `returnToSignIn`
+ * is the same reset the default ended screen's action runs: it returns
+ * the viewer to the sign-in branch, and is a no-op when the host supplied
+ * no `signIn` view (resetting into a branch that renders nothing would be
+ * a whitescreen dead end). */
+export interface ProductShellSessionEndedActions {
+  readonly returnToSignIn: () => void
+}
+
+/** The ended branch's slot: a node rendered as-is, or a render function
+ * given the actions the default ended screen wires. */
+export type ProductShellSessionEndedSlot =
+  | ReactNode
+  | ((actions: ProductShellSessionEndedActions) => ReactNode)
 
 export interface ProductShellProps extends AppShellChromeProps {
   /** The view for the anonymous-and-never-in-the-app branch (a fresh
@@ -112,8 +134,11 @@ export interface ProductShellProps extends AppShellChromeProps {
    * renders with its sign-in-again action wired to return to the
    * signIn branch. A supplied node renders as-is, machine state
    * included: it is the host's own ended view and it owns its own way
-   * out (signing in again flips the snapshot and the frame returns). */
-  readonly sessionEnded?: ReactNode
+   * out (signing in again flips the snapshot and the frame returns). A
+   * supplied render function receives `{ returnToSignIn }`, the same
+   * reset the default screen's action runs, and returns the node to
+   * render. */
+  readonly sessionEnded?: ProductShellSessionEndedSlot
   /** The app content, rendered inside the frame's main landmark only
    * while the snapshot is authenticated. Route-level gates (layout-kit
    * RouteGuard) and the tenant-switch affordance compose here, both
@@ -132,6 +157,9 @@ export function ProductShell({
   headerActions,
   userMenu,
   banner,
+  navLabel,
+  navHeader,
+  navFooter,
   mobileOpen,
   onMobileOpenChange,
   sidebarCollapsed,
@@ -208,6 +236,17 @@ export function ProductShell({
     PRODUCT_SHELL_NAMESPACE,
   )
 
+  // The one reset into the sign-in branch: the default ended screen's
+  // action and a sessionEnded render function's returnToSignIn are the
+  // same call. It only resets when that branch would render something --
+  // a host without a signIn view has no such destination (see the signIn
+  // prop's doc).
+  const returnToSignIn = (): void => {
+    if (signIn !== undefined) {
+      setReachedApp(false)
+    }
+  }
+
   if (snapshot.state === 'authenticated') {
     return (
       <Box ref={branchContainerRef} tabIndex={-1}>
@@ -217,6 +256,9 @@ export function ProductShell({
           headerActions={headerActions}
           userMenu={userMenu}
           banner={banner}
+          navLabel={navLabel}
+          navHeader={navHeader}
+          navFooter={navFooter}
           mobileOpen={mobileOpen}
           onMobileOpenChange={onMobileOpenChange}
           sidebarCollapsed={sidebarCollapsed}
@@ -244,23 +286,13 @@ export function ProductShell({
           </Box>
         )}
         {sessionEnded !== undefined ? (
-          sessionEnded
+          typeof sessionEnded === 'function' ? (
+            sessionEnded({ returnToSignIn })
+          ) : (
+            sessionEnded
+          )
         ) : (
-          <SessionEndedScreen
-            onSignIn={() => {
-              // Only reset into a branch that renders. The action's
-              // promise is "return to the sign-in view"; without a
-              // signIn view there is no such destination, and resetting
-              // would land the viewer on the deliberately-blank
-              // fresh-visitor branch -- a whitescreen dead end. Such a
-              // host's way back into the app is its own (see the signIn
-              // prop's doc), so the action keeps the viewer on the
-              // ended screen.
-              if (signIn !== undefined) {
-                setReachedApp(false)
-              }
-            }}
-          />
+          <SessionEndedScreen onSignIn={returnToSignIn} />
         )}
       </Box>
     )

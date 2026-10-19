@@ -20,18 +20,24 @@
  *
  *  1. i18n -- one fresh bilingual instance over the platform defaults
  *     (?lang= URL parameter, stored choice, navigator languages, en-US
- *     last). The namespaces of the four packages the assembly itself
- *     composes register automatically -- ui-kit, layout-kit, auth-ui
- *     and product-shell's own -- because the stack it renders always
- *     includes them; a host can no longer forget one and read raw keys.
- *     The platform error-copy bundle registers with them and is named as
- *     the instance's fallback namespace, so a backend error code no
- *     package namespace covers resolves to the module catalog's own
- *     words instead of the raw key. The definition's `namespaces` carry
- *     the app's own additions: the slot packages its views compose
- *     (tenancy-ui, account-ui, ...) and its own bundle. Registration
- *     happens before render; double registration throws, so each
- *     namespace appears exactly once.
+ *     last), built by the exported createSpeedI18n. The namespaces of
+ *     the four packages the assembly itself composes register
+ *     automatically -- ui-kit, layout-kit, auth-ui and product-shell's
+ *     own -- because the stack it renders always includes them; a host
+ *     can no longer forget one and read raw keys. The platform error-copy
+ *     bundle registers with them and is named as the instance's fallback
+ *     namespace, so a backend error code no package namespace covers
+ *     resolves to the module catalog's own words instead of the raw key.
+ *     The definition's `namespaces` carry the app's own additions: the
+ *     slot packages its views compose (tenancy-ui, account-ui, ...) and
+ *     its own bundle. Listing one of the four framework namespaces there
+ *     replaces its shipped bundle instead of being registered twice.
+ *     `resourceOverrides` merges host resources into every namespace's
+ *     base through overlayResources before that namespace's one
+ *     registration, and the registered language set is then reduced to
+ *     the instance's supported set. Registration happens before render;
+ *     double registration throws, so each namespace appears exactly
+ *     once.
  *
  *  2. The session -- the cookie-delivered auth-core session state
  *     machine over the generated authn operations, attached with
@@ -43,14 +49,17 @@
  *     sign-in surface.
  *
  *  3. The client -- createClient over the environment's own fetch, with
- *     `credentials: 'same-origin'` so the session cookie travels on every
- *     same-origin request (and a refused credentialed request engages the
- *     session's silent restore leg) and the i18n instance as the
- *     language source (every request announces the instance's current
- *     language through accept-language, read per attempt, so the
- *     backend's requester-language tiers see exactly what the frontend
- *     chain resolved), bound into the api-sdk runtime seam every
- *     generated operation calls through. All API traffic is
+ *     `credentials: 'same-origin'` by default so the session cookie
+ *     travels on every same-origin request (and a refused credentialed
+ *     request engages the session's silent restore leg) and the i18n
+ *     instance as the language source (every request announces the
+ *     instance's current language through accept-language, read per
+ *     attempt, so the backend's requester-language tiers see exactly what
+ *     the frontend chain resolved). The definition's `client` table
+ *     supplies any other createClient option -- the credential mode, a
+ *     reporter, a retry policy, a timeout, a fetch implementation and the
+ *     tenant header's name. The result is bound into the api-sdk runtime
+ *     seam every generated operation calls through. All API traffic is
  *     generated-code traffic from here on.
  *
  *  4. The query client and the session-end strategy -- the no-retry
@@ -59,12 +68,20 @@
  *     cached is evicted. The definition's `sessionEnded` overrides the
  *     default action.
  *
- *  5. The provider stack -- I18nextProvider around AppThemeProvider
- *     around QueryClientProvider, then the definition's `providers`
- *     (outermost first) around the definition's `view`. The reference
- *     composition: `view` is the app's shell composition (ProductShell
- *     with its host slots), and one provider hands the app's views the
- *     assembled session and client.
+ *  5. The provider stack -- StrictMode around I18nextProvider around
+ *     AppThemeProvider around QueryClientProvider, assembled by the
+ *     exported SpeedAppProviders (so a view-level test bench and
+ *     production share one construction), then the definition's
+ *     `providers` (outermost first) around the definition's `view`. The
+ *     reference composition: `view` is the app's shell composition
+ *     (ProductShell with its host slots), and one provider hands the
+ *     app's views the assembled session and client.
+ *
+ * The assembly also owns the document's language declaration: with
+ * `documentLanguage` left on (the default), `<html lang>` is set to the
+ * instance's language at boot and kept in step with language changes,
+ * cleaned up when the page unmounts. `documentLanguage: false` opts out.
+ * A document-less environment (a non-DOM test host) is tolerated.
  *
  * The returned handles (root, i18n, queryClient, session) are for
  * hosts and harnesses that act on the composition; unmount() tears the
@@ -72,20 +89,32 @@
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { StrictMode } from 'react'
+import { StrictMode, useEffect } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Root } from 'react-dom/client'
 import { createClient } from '@speed/api-client'
-import type { SpeedClient } from '@speed/api-client'
+import type { ClientOptions, SpeedClient } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { attachSession, createAuthSession } from '@speed/auth-core'
 import type { AuthSession } from '@speed/auth-core'
 import { AUTH_UI_NAMESPACE, authUiResources } from '@speed/auth-ui'
-import { createI18n, I18nextProvider, registerNamespace } from '@speed/i18n'
-import type { I18nInstance, ResourceBundle } from '@speed/i18n'
+import {
+  createI18n,
+  I18nextProvider,
+  overlayResources,
+  readSupportedLanguages,
+  registerNamespace,
+} from '@speed/i18n'
+import type {
+  CreateI18nOptions,
+  I18nInstance,
+  ResourceBundle,
+} from '@speed/i18n'
 import {
   PLATFORM_ERRORS_NAMESPACE,
+  assertPlatformErrorBundleKeySet,
+  platformErrorResources,
   registerPlatformErrors,
 } from '@speed/i18n/platform-errors'
 import { LAYOUT_KIT_NAMESPACE, layoutKitResources } from '@speed/layout-kit'
@@ -94,15 +123,78 @@ import {
   UI_KIT_NAMESPACE,
   uiKitResources,
 } from '@speed/ui-kit'
+import type { AppThemeProviderProps } from '@speed/ui-kit'
 import { PRODUCT_SHELL_NAMESPACE, productShellResources } from './resources.js'
 
 /** One i18n namespace the app registers itself: a package family its
  * views compose (each sibling ships its own pair) or the app's own
  * bundle. The four namespaces of the packages the assembly composes
- * register automatically and must not be listed here. */
+ * register automatically; listing one of them here replaces its shipped
+ * bundle instead of registering it twice. */
 export interface SpeedAppNamespace {
   readonly namespace: string
   readonly resources: Readonly<Record<string, ResourceBundle>>
+}
+
+/** Host resources merged into a namespace's base bundle before its one
+ * registration, keyed by namespace and then by language. Every leaf an
+ * overlay names must exist in the base bundle (a renamed or removed key
+ * is an incompatible base), and a language the base does not carry is
+ * taken whole; see overlayResources. A namespace key the assembly never
+ * registers is refused at construction: the overlay would never be read,
+ * so the host's copy would silently not apply. */
+export type SpeedAppResourceOverrides = Readonly<
+  Record<string, Readonly<Record<string, ResourceBundle>>>
+>
+
+/** The client options the definition may set. Everything else the
+ * assembly passes to createClient itself: the base URL (the definition's
+ * own `baseUrl`), the session's silent restore as the 401-refresh leg,
+ * the i18n instance as the language source and the definition's
+ * `tenantProvider` as the tenant source. */
+export type SpeedAppClientOptions = Pick<
+  ClientOptions,
+  'reporter' | 'retryPolicy' | 'timeoutMs' | 'fetch' | 'tenantHeader'
+> & {
+  /**
+   * The fetch credential mode, narrowed to the two cookie-carrying
+   * values: the session cookie IS the credential, so `'omit'` would
+   * silently end the session. Defaults to `'same-origin'` (the
+   * same-origin deployment shape). A cross-origin *same-site*
+   * deployment (api.example.com beside app.example.com) passes
+   * `'include'` and the backend must accept credentials; a cross-site
+   * deployment is not supported, because the session cookie refuses
+   * `SameSite=None`.
+   */
+  readonly credentials?: 'same-origin' | 'include'
+}
+
+/** The theme options the definition may set, forwarded to the
+ * AppThemeProvider the assembly renders. Tenant white-labelling is not
+ * part of the definition: it is runtime host composition -- nest an
+ * AppThemeProvider with `tenantOverrides` inside the application's
+ * tenant provider (see the README). */
+export type SpeedAppThemeOptions = Pick<
+  AppThemeProviderProps,
+  'projectTokens' | 'defaultMode'
+>
+
+/** The i18n options the definition may set, forwarded to createI18n. */
+export type SpeedAppI18nOptions = Pick<
+  CreateI18nOptions,
+  | 'supportedLanguages'
+  | 'defaultLanguage'
+  | 'storageKey'
+  | 'urlParameterName'
+  | 'onMissingKey'
+  | 'profileLanguage'
+>
+
+/** The options createSpeedI18n takes: everything createI18n takes, plus
+ * the app's own namespaces and the host resource overlays. */
+export type CreateSpeedI18nOptions = CreateI18nOptions & {
+  readonly namespaces?: readonly SpeedAppNamespace[]
+  readonly resourceOverrides?: SpeedAppResourceOverrides
 }
 
 /** The services the assembled composition passes to the definition's
@@ -158,8 +250,20 @@ export type SpeedSessionEndedHandler = (context: SpeedSessionEndContext) => void
  * strategy -- is the assembly's. */
 export interface SpeedAppDefinition {
   /** The app's own namespaces, beyond the family's automatic four (see
-   * the header). Each registers exactly once, before render. */
+   * the header). Each registers exactly once, before render. Listing one
+   * of the four framework namespaces (ui-kit, layout-kit, auth-ui,
+   * product-shell's own) replaces that namespace's shipped bundle -- the
+   * documented way to replace platform copy wholesale -- rather than
+   * registering it twice. */
   readonly namespaces?: readonly SpeedAppNamespace[]
+  /** Host resources merged into the base bundle of each namespace before
+   * its single registration: the four framework namespaces, the
+   * platform-errors namespace and every `namespaces` entry. The
+   * registered language set is then reduced to the instance's supported
+   * languages (a supported language the merged bundle lacks still
+   * throws at registration). A namespace key outside that set throws
+   * rather than being silently unread. */
+  readonly resourceOverrides?: SpeedAppResourceOverrides
   /** App-level providers between the standard stack and the view,
    * outermost first. */
   readonly providers?: readonly SpeedAppProvider[]
@@ -172,15 +276,38 @@ export interface SpeedAppDefinition {
   /** The client's base URL. Defaults to the page's own origin, the
    * same-origin deployment shape. */
   readonly baseUrl?: string
-  /** The tenant every request announces as the `X-Tenant` header: the
-   * host returns its current tenant identifier (its routing fact), read
-   * per attempt so a request after a tenant switch carries the tenant
-   * the user is now acting in. Passed straight to the client's
+  /** The client options merged into the createClient call (the credential
+   * mode, a reporter, a retry policy, a timeout, a fetch implementation
+   * and the tenant header's name). Absent, the shipped behaviour is
+   * unchanged: `credentials: 'same-origin'` over the environment's fetch,
+   * the client's own defaults for everything else. */
+  readonly client?: SpeedAppClientOptions
+  /** The theme options forwarded to the AppThemeProvider inside the
+   * provider stack. Absent, the provider's defaults apply (light mode,
+   * shipped tokens). */
+  readonly theme?: SpeedAppThemeOptions
+  /** The i18n options merged into the instance creation (the supported
+   * languages, the negotiation fallback, the storage key, the URL
+   * parameter name, the missing-key handler and the profile language). */
+  readonly i18n?: SpeedAppI18nOptions
+  /** The tenant every request announces as the tenant header (`X-Tenant`
+   * unless `client.tenantHeader` renames it): the host returns the
+   * tenant **alias** the backend's resolution layer looks up by name,
+   * read per attempt so a request after a tenant switch carries the
+   * tenant the user is now acting in. This is not the tenant id: the id
+   * is what `@speed/auth-core`'s TenantProvider carries for query-key
+   * scoping, while the transport announces the alias the resolution
+   * layer maps to a tenant on each request (the tenant is not a claim of
+   * the access token) -- so a host whose aliases differ from its ids
+   * must answer with the alias here. Passed straight to the client's
    * `tenantProvider`; absent, or answering null/empty, no tenant header
-   * is sent. This is the transport channel for tenant context -- the
-   * tenant is not a claim of the access token -- and the backend's
-   * tenant resolution layer reads it off the request surface. */
+   * is sent. */
   readonly tenantProvider?: () => string | null
+  /** `false` disables the `<html lang>` binding: by default the assembly
+   * sets the document's language from the i18n instance at boot and
+   * keeps it in step with language changes, removing the subscription
+   * when the page unmounts. */
+  readonly documentLanguage?: false
 }
 
 /** What the assembly produced, for hosts and harnesses that act on the
@@ -301,6 +428,254 @@ export function createQueryClient(): QueryClient {
   })
 }
 
+/** The four namespaces of the packages the assembly itself composes:
+ * registered automatically, or replaced wholesale when the definition
+ * lists one of them. */
+const FRAMEWORK_NAMESPACES: ReadonlyArray<{
+  readonly namespace: string
+  readonly resources: Readonly<Record<string, ResourceBundle>>
+}> = [
+  { namespace: UI_KIT_NAMESPACE, resources: uiKitResources },
+  { namespace: LAYOUT_KIT_NAMESPACE, resources: layoutKitResources },
+  { namespace: AUTH_UI_NAMESPACE, resources: authUiResources },
+  { namespace: PRODUCT_SHELL_NAMESPACE, resources: productShellResources },
+]
+
+/** Refuse an overlay keyed by a namespace the assembly never registers:
+ * its copy would never be read, so the host's text would silently not
+ * apply. The same "name drift surfaces immediately" discipline
+ * overlayResources applies to leaves. */
+function assertKnownOverrideNamespaces(
+  overrides: SpeedAppResourceOverrides,
+  registered: ReadonlySet<string>,
+): void {
+  const unknown = Object.keys(overrides)
+    .filter((namespace) => !registered.has(namespace))
+    .sort()
+  if (unknown.length === 0) {
+    return
+  }
+  throw new Error(
+    `[speed-product-shell] resourceOverrides names ${unknown
+      .map((namespace) => `"${namespace}"`)
+      .join(', ')}, which the assembly never registers. ` +
+      'An overlay applies only to a registered namespace -- the four ' +
+      'framework namespaces, the platform-errors namespace and every ' +
+      'namespaces entry -- so this copy would never be read. Check the ' +
+      'namespace name, or list the namespace in namespaces.',
+  )
+}
+
+/** A namespace's base bundles with the host's overlay for it merged on
+ * top, if the host supplied one. */
+function resourcesWithOverrides(
+  namespace: string,
+  base: Readonly<Record<string, ResourceBundle>>,
+  overrides: SpeedAppResourceOverrides,
+): Readonly<Record<string, ResourceBundle>> {
+  const overlay = overrides[namespace]
+  return overlay === undefined ? base : overlayResources(base, overlay)
+}
+
+/** The bundles of the languages the instance supports. A base shipping a
+ * language outside the set drops it; a supported language the result
+ * lacks is left to registration, which refuses the namespace with the
+ * missing-language message. */
+function supportedLanguageBundles(
+  resources: Readonly<Record<string, ResourceBundle>>,
+  supported: readonly string[],
+): Record<string, ResourceBundle> {
+  const reduced: Record<string, ResourceBundle> = {}
+  for (const language of supported) {
+    const bundle = resources[language]
+    if (bundle !== undefined) {
+      reduced[language] = bundle
+    }
+  }
+  return reduced
+}
+
+/**
+ * Create the assembly's i18n instance: the createI18n instance (same
+ * defaults, same negotiation chain), the four framework namespaces, the
+ * platform error bundle named as the fallback namespace, the definition's
+ * own namespaces, every namespace's host overlay merged in before its one
+ * registration, and each namespace reduced to the instance's supported
+ * languages.
+ *
+ * A definition namespace naming one of the four framework namespaces
+ * replaces that namespace's shipped bundle (the documented way to replace
+ * platform copy) instead of being registered twice; the platform error
+ * bundle is host-modifiable through `resourceOverrides` only. An override
+ * keyed by a namespace outside that registered set is refused, so a
+ * misnamed namespace cannot leave the host's copy silently unread.
+ * Exported so a view-level test bench builds the production instance
+ * instead of a reconstructed copy.
+ */
+export function createSpeedI18n(
+  options: CreateSpeedI18nOptions = {},
+): I18nInstance {
+  const { namespaces, resourceOverrides, ...createOptions } = options
+  const overrides = resourceOverrides ?? {}
+  assertKnownOverrideNamespaces(
+    overrides,
+    new Set([
+      ...FRAMEWORK_NAMESPACES.map(({ namespace }) => namespace),
+      PLATFORM_ERRORS_NAMESPACE,
+      ...(namespaces ?? []).map(({ namespace }) => namespace),
+    ]),
+  )
+  const i18n = createI18n({
+    ...createOptions,
+    fallbackNamespaces:
+      createOptions.fallbackNamespaces ?? [PLATFORM_ERRORS_NAMESPACE],
+  })
+  const supported = readSupportedLanguages(i18n)
+  const replacements = new Map<string, SpeedAppNamespace>()
+  for (const entry of namespaces ?? []) {
+    if (FRAMEWORK_NAMESPACES.some(({ namespace }) => namespace === entry.namespace)) {
+      if (replacements.has(entry.namespace)) {
+        // Every other duplicate is refused by registerNamespace; a
+        // framework namespace is registered once here, so the duplicate
+        // would otherwise silently ship the last bundle.
+        throw new Error(
+          `[speed-product-shell] the definition lists the framework ` +
+            `namespace "${entry.namespace}" more than once; it is ` +
+            'registered exactly once, so name it once with the bundle to ' +
+            'register.',
+        )
+      }
+      replacements.set(entry.namespace, entry)
+    }
+  }
+  for (const framework of FRAMEWORK_NAMESPACES) {
+    const base = replacements.get(framework.namespace)?.resources ?? framework.resources
+    registerNamespace(
+      i18n,
+      framework.namespace,
+      supportedLanguageBundles(
+        resourcesWithOverrides(framework.namespace, base, overrides),
+        supported,
+      ),
+    )
+  }
+  const platformOverrides = overrides[PLATFORM_ERRORS_NAMESPACE]
+  if (platformOverrides === undefined) {
+    registerPlatformErrors(i18n)
+  } else {
+    const platformBundles = supportedLanguageBundles(
+      overlayResources(platformErrorResources, platformOverrides),
+      supported,
+    )
+    // The registry path validates the packaged key set against the shipped
+    // reference; an overlaid registration goes through registerNamespace
+    // instead, so the same check runs here. Without it a host bundle
+    // missing a code would register and every omitted code would render as
+    // a raw key.
+    for (const [language, bundle] of Object.entries(platformBundles)) {
+      assertPlatformErrorBundleKeySet(language, bundle)
+    }
+    registerNamespace(i18n, PLATFORM_ERRORS_NAMESPACE, platformBundles)
+  }
+  for (const entry of namespaces ?? []) {
+    if (replacements.has(entry.namespace)) {
+      continue
+    }
+    registerNamespace(
+      i18n,
+      entry.namespace,
+      supportedLanguageBundles(
+        resourcesWithOverrides(entry.namespace, entry.resources, overrides),
+        supported,
+      ),
+    )
+  }
+  return i18n
+}
+
+/** The props of SpeedAppProviders. */
+export interface SpeedAppProvidersProps {
+  /** The instance the tree renders with. */
+  readonly i18n: I18nInstance
+  /** The query client the tree serves. */
+  readonly queryClient: QueryClient
+  /** Theme options for the AppThemeProvider inside the stack. */
+  readonly theme?: SpeedAppThemeOptions
+  readonly children?: ReactNode
+}
+
+/**
+ * The assembly's provider stack: StrictMode around I18nextProvider around
+ * AppThemeProvider around QueryClientProvider. Exported so a host's
+ * view-level test bench and production render under one construction
+ * instead of each rebuilding it (a drift there would make a test pass on
+ * a tree the app never renders).
+ */
+export function SpeedAppProviders({
+  i18n,
+  queryClient,
+  theme,
+  children,
+}: SpeedAppProvidersProps): ReactElement {
+  return (
+    <StrictMode>
+      <I18nextProvider i18n={i18n}>
+        <AppThemeProvider
+          i18n={i18n}
+          projectTokens={theme?.projectTokens}
+          defaultMode={theme?.defaultMode}
+        >
+          <QueryClientProvider client={queryClient}>
+            {children}
+          </QueryClientProvider>
+        </AppThemeProvider>
+      </I18nextProvider>
+    </StrictMode>
+  )
+}
+
+/** The document a browser environment provides, or null where there is
+ * none (a Node test host). */
+function currentDocument(): Document | null {
+  return typeof document === 'undefined' ? null : document
+}
+
+/** Declares the instance's language on `<html lang>` now, at boot, before
+ * the first render. */
+function applyDocumentLanguage(i18n: I18nInstance): void {
+  const doc = currentDocument()
+  if (doc !== null) {
+    doc.documentElement.lang = i18n.language
+  }
+}
+
+/** Keeps `<html lang>` in step with the instance for as long as the page
+ * is mounted: the effect applies the current language and subscribes to
+ * languageChanged, and the cleanup removes the subscription when the page
+ * unmounts (the document's value is left as it is -- the page belongs to
+ * the host). */
+function DocumentLanguageBinding({
+  i18n,
+}: {
+  readonly i18n: I18nInstance
+}): null {
+  useEffect(() => {
+    const doc = currentDocument()
+    if (doc === null) {
+      return undefined
+    }
+    const apply = (): void => {
+      doc.documentElement.lang = i18n.language
+    }
+    apply()
+    i18n.on('languageChanged', apply)
+    return () => {
+      i18n.off('languageChanged', apply)
+    }
+  }, [i18n])
+  return null
+}
+
 /**
  * Builds the whole app composition into the given container (the
  * header lists what is wired, in order). Calling it twice into one
@@ -310,25 +685,23 @@ export function bootstrapSpeedApp(
   container: Element,
   definition: SpeedAppDefinition,
 ): SpeedAppBootstrap {
-  const i18n = createI18n({ fallbackNamespaces: [PLATFORM_ERRORS_NAMESPACE] })
-  registerNamespace(i18n, UI_KIT_NAMESPACE, uiKitResources)
-  registerNamespace(i18n, LAYOUT_KIT_NAMESPACE, layoutKitResources)
-  registerNamespace(i18n, AUTH_UI_NAMESPACE, authUiResources)
-  registerNamespace(i18n, PRODUCT_SHELL_NAMESPACE, productShellResources)
-  registerPlatformErrors(i18n)
-  for (const { namespace, resources } of definition.namespaces ?? []) {
-    registerNamespace(i18n, namespace, resources)
-  }
+  const i18n = createSpeedI18n({
+    ...(definition.i18n ?? {}),
+    namespaces: definition.namespaces,
+    resourceOverrides: definition.resourceOverrides,
+  })
 
   const session = createAuthSession()
   attachSession(session)
 
+  const clientOptions = definition.client ?? {}
   const client = createClient({
     baseUrl: definition.baseUrl ?? window.location.origin,
+    ...clientOptions,
     // The session cookie is the credential: same-origin carries it on
     // every request, and declaring the mode also makes a refused
     // credentialed request engage the session hook below.
-    credentials: 'same-origin',
+    credentials: clientOptions.credentials ?? 'same-origin',
     // The silent-401 leg: on a refused credentialed request, re-read the
     // session (GET /api/v1/auth/session). A cookie that still holds keeps the
     // session and the request is retried once; one that does not ends the
@@ -344,8 +717,8 @@ export function bootstrapSpeedApp(
     // serves as "requester is recipient" content (an SMS code, the type
     // directory) renders in it.
     languageProvider: () => i18n.language,
-    // The host's current tenant (its routing fact), announced as X-Tenant
-    // on every request, read per attempt. Absent from the definition, no
+    // The host's current tenant alias, announced as the tenant header on
+    // every request, read per attempt. Absent from the definition, no
     // tenant header is sent -- a host with no tenant-scoped traffic leaves
     // it out.
     tenantProvider: definition.tenantProvider,
@@ -367,17 +740,21 @@ export function bootstrapSpeedApp(
     view = provide(services, view)
   }
 
+  const documentLanguage = definition.documentLanguage !== false
+  if (documentLanguage) {
+    applyDocumentLanguage(i18n)
+  }
+
   const root = createRoot(container)
   root.render(
-    <StrictMode>
-      <I18nextProvider i18n={i18n}>
-        <AppThemeProvider i18n={i18n}>
-          <QueryClientProvider client={queryClient}>
-            {view}
-          </QueryClientProvider>
-        </AppThemeProvider>
-      </I18nextProvider>
-    </StrictMode>,
+    <SpeedAppProviders
+      i18n={i18n}
+      queryClient={queryClient}
+      theme={definition.theme}
+    >
+      {documentLanguage ? <DocumentLanguageBinding i18n={i18n} /> : null}
+      {view}
+    </SpeedAppProviders>,
   )
   return { root, i18n, queryClient, session }
 }

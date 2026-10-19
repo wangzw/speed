@@ -449,4 +449,100 @@ describe('ProductShell view machine', () => {
     expect(document.activeElement?.textContent).toContain('app content')
     expect(utils.queryByRole('status')).not.toBeInTheDocument()
   })
+
+  it('passes navLabel, navHeader and navFooter through to the frame', async () => {
+    const rig = makeJourneyRig()
+    attachSession(rig.session)
+    const utils = renderWithProviders(
+      <ProductShell
+        navItems={NAV_ITEMS}
+        header="My App"
+        navLabel="Workspace navigation"
+        navHeader={<p>drawer header content</p>}
+        navFooter={<p>drawer footer content</p>}
+        signIn={<p>sign-in view</p>}
+      >
+        <p>app content</p>
+      </ProductShell>,
+    )
+    await signInTo(rig.session)
+    // The drawer's accessible name is the host's, not the shipped default
+    // -- the reason a host mounting a second shell supplies one.
+    expect(
+      utils.queryByRole('navigation', { name: layoutKitZhCN.appShell.navLabel }),
+    ).not.toBeInTheDocument()
+    expect(
+      utils.getByRole('navigation', { name: 'Workspace navigation' }),
+    ).toBeInTheDocument()
+    // Both slots render inside the drawer paper; the permanent drawer is
+    // the one mounted at the suite's desktop matchMedia default.
+    expect(utils.getAllByText('drawer header content').length).toBeGreaterThan(0)
+    expect(utils.getAllByText('drawer footer content').length).toBeGreaterThan(0)
+  })
+
+  it('calls a sessionEnded render function with returnToSignIn, which returns to the sign-in branch', async () => {
+    const rig = makeJourneyRig()
+    attachSession(rig.session)
+    const actions: Array<{ readonly returnToSignIn: () => void }> = []
+    const utils = renderWithProviders(
+      <ProductShell
+        navItems={NAV_ITEMS}
+        header="My App"
+        signIn={<p>sign-in view</p>}
+        sessionEnded={(received) => {
+          actions.push(received)
+          return (
+            <button type="button" onClick={received.returnToSignIn}>
+              back to sign-in
+            </button>
+          )
+        }}
+      >
+        <p>app content</p>
+      </ProductShell>,
+    )
+    await signInTo(rig.session)
+    await signOutOf(rig.session)
+    // The function's node replaced the default ended screen, and the
+    // action it was handed returns the shell to the sign-in branch.
+    expect(
+      utils.getByRole('button', { name: 'back to sign-in' }),
+    ).toBeInTheDocument()
+    expect(utils.queryByText(authUiZhCN.sessionEnded.title)).not.toBeInTheDocument()
+    expect(actions.length).toBeGreaterThan(0)
+    fireEvent.click(utils.getByRole('button', { name: 'back to sign-in' }))
+    expect(utils.getByText('sign-in view')).toBeInTheDocument()
+    expect(
+      utils.queryByRole('button', { name: 'back to sign-in' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('hands a no-op returnToSignIn to the function form when no sign-in view exists', async () => {
+    // The same reset rule the default screen uses: without a sign-in view
+    // there is no branch to return to, and resetting would land the
+    // viewer on the deliberately blank fresh-visitor page.
+    const rig = makeJourneyRig()
+    attachSession(rig.session)
+    const utils = renderWithProviders(
+      <ProductShell
+        navItems={NAV_ITEMS}
+        header="My App"
+        sessionEnded={(actions) => (
+          <button type="button" onClick={actions.returnToSignIn}>
+            stay here
+          </button>
+        )}
+      >
+        <p>app content</p>
+      </ProductShell>,
+    )
+    await signInTo(rig.session)
+    await signOutOf(rig.session)
+    fireEvent.click(utils.getByRole('button', { name: 'stay here' }))
+    expect(utils.getByRole('button', { name: 'stay here' })).toBeInTheDocument()
+    expect(utils.container).not.toBeEmptyDOMElement()
+    // Nor a dead end: the next authentication brings the frame back.
+    await signInTo(rig.session)
+    expect(utils.getByText('app content')).toBeInTheDocument()
+  })
 })

@@ -582,9 +582,15 @@ enforced by registration):
 | `impersonation.*` | the impersonation notice: the region name, the acting-as / tenant / expiry statements, the management-unavailable notice, the end action with its ending and ended messages, the hide control's name, and the header chip's visible text with its hide/show hints |
 | `errors.*` | code-to-text answers (see below) |
 
-Hosts reword the kit by registering their own identical-key bundle pair
-under `AUTH_UI_NAMESPACE` at bootstrap -- never by editing component text.
-`MUI` components themselves carry no speed text.
+Hosts reword the kit at bootstrap -- never by editing component text. Two
+routes exist, both on the app-entry assembly (`@speed/product-shell`'s
+`bootstrapSpeedApp`): the `resourceOverrides` option replaces individual
+leaves of `AUTH_UI_NAMESPACE` (an unknown leaf throws, so a renamed key
+surfaces immediately), and listing `AUTH_UI_NAMESPACE` in the definition's
+`namespaces` with a complete bundle pair replaces the namespace's shipped
+bundle wholesale. A host assembling by hand registers its bundle once on
+its own instance with the identical key set. `MUI` components themselves
+carry no speed text.
 
 ### Error text: the reachable-code whitelist
 
