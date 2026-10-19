@@ -37,7 +37,11 @@ orval emits the response models. This package's `AuthnFlowState`,
 `AuthnMethodList` are those generated types (or a client-side narrowing
 of them), and it guards each body at runtime (see the rules below).
 
-It is headless: no UI, no DOM. The React hooks in `src/hooks.ts`
+It is headless: no UI, and the main entry touches no DOM. The one
+exception is the `./webauthn` subpath (`src/webauthn.ts`), which drives a
+passkey ceremony through `navigator.credentials` and is deliberately not
+exported from the main entry, so a host that only reads the session never
+loads it. The React hooks in `src/hooks.ts`
 (`useAuthState`, `usePermission`, `useFeature`, `useFeatureState`,
 `featurePresence`, plus the `attachSession` call that
 binds them to one session, last bind wins) live on the same layer --
@@ -224,7 +228,10 @@ it calls). Never import either of those from below this layer.
 
 ## Public surface
 
-`src/index.ts` exports `createAuthSession(store?)`; the session types
+`src/index.ts` exports `createAuthSession(store?)`; the step-up gate
+(`useStepUpGate(onRetry, isShortfall?)` and its `StepUpGate` type) and the
+tenant-refusal predicate (`isTenantAdmissionRefusal(error)`); the session
+types
 (`AuthSession`, `AuthSnapshot`, `FeatureState`, `AuthSessionListener`,
 plus `AuthDomain` and `AuthPermissionSets`, the two names that
 parameterise the host-attached permission lists); the response models
@@ -237,7 +244,10 @@ hooks (`attachSession`, `useAuthState`, `usePermission`, `useFeature`,
 `useFeatureState`, `featurePresence`, `TenantProvider`,
 `useCurrentTenant`); and the
 tenant-scoped query-key convention (`tenantQueryKey`,
-`useTenantQueryKey`, `TenantQueryKey`, `evictTenantQueries`). Anything
+`useTenantQueryKey`, `TenantQueryKey`, `evictTenantQueries`). The
+`./webauthn` subpath exports its own surface (`runWebauthn(options,
+signal?)`, `webauthnStepOf(options)`, `WebauthnError`, `WebauthnStep`,
+`WebauthnFailure`); those names are not on the main entry. Anything
 else that grows here stays unexported until a consumer proves it needs
 to be public.
 
@@ -252,7 +262,12 @@ to be public.
   holds two tenants' subtrees plus an identity row, and after the
   departing tenant's eviction exactly that subtree is gone -- and the
   hook's key-and-enablement over a host-mounted TenantProvider) are the
-  behaviour suites. `src/usage-example.test.tsx` compiles and runs the
+  behaviour suites. `src/step-up-gate.test.ts` pins the gate's arm /
+  cancel / replay-once contract and both shortfall classifiers;
+  `src/tenant-refusal.test.ts` pins the admission-refusal predicate
+  against module-coded 404s; `src/webauthn.test.ts` (jsdom, with
+  `navigator.credentials` stubbed) pins the ceremony driver's decoding,
+  serialization and failure classification. `src/usage-example.test.tsx` compiles and runs the
   README's session-and-hooks flow and its tenant-scoped query-key flow
   through the same scripted harness (the real `createClient` composition
   is proven in session.test.ts), so the documented usage cannot drift
@@ -291,7 +306,13 @@ to be public.
   stays logged in. A host that passes an `AccessTokenStore` gets the
   token path instead, where the refresh token is JavaScript-visible in
   memory (the authn token responses set no refresh cookie to hide it in)
-  and a reload starts anonymous unless the host restores it itself.
+  and a reload starts anonymous unless the host restores it itself. The
+  host must also start the login flow itself with the generated
+  `authnLoginStart({ delivery: 'token' })` and hand its answers to
+  `answerFlow`: `startFlow` always forces the cookie delivery.
+- The browser cookie path requires the frontend and the API to be
+  same-site. The session cookie is `SameSite=Lax` (or `Strict`), and the
+  server refuses `None`; a cross-site frontend cannot send it.
 - The `delivery` a view passes to `startFlow` is normalized to the cookie
   session; a view that still names a token delivery is overridden.
   `startAuthenticatedFlow` leaves the delivery to the caller, whose

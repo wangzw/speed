@@ -88,7 +88,11 @@ session as a required prop; the read-only ones take no props.
    (`readFlow`) and takes a ready flow with `step: 'complete'`;
    `MfaSection` starts `purpose: 'enroll'` and the step-up dialog
    `purpose: 'step-up'`. A flow completion that does not touch the login
-   state (`linked`, `enrolled`) never signs anyone in.
+   state (`linked`, `enrolled`) never signs anyone in. The step renderer
+   (`src/internal/flow-step.tsx`) is one of three copies (`auth-ui`,
+   `account-ui`, `console-ui`) kept in lockstep by hand: a change to how a
+   step renders lands in all three in the same change. No compiler check
+   or test compares the copies.
 2. **State is discovered through the spec's own answers; the package
    renders exactly the operations that exist.** Registration is not a
    factor route — it is the login engine's enroll purpose — so

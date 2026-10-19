@@ -287,7 +287,7 @@ sequenceDiagram
 
 **仪式期间是显式的等待态，带取消。** 页面没有可用认证器时仪式会一直挂着，禁用的按钮不是可读的信号，所以点击后按钮换成一条 `role="status"` 的等待通知（`signInFlow.passkeyWaiting`）加一个取消按钮（`signInFlow.passkeyCancel`）。取消是一个立即的状态转换：显示取消文案（`signInFlow.passkeyCancelled`）并给出重试，不等仪式落定；它只尽力经 `AbortController` 让浏览器放弃仪式，晚到的凭据按尝试序号丢弃。取消之后、以及仪式以不受支持或失败告终之后，按钮的文字是 `signInFlow.passkeyRetry`，点击对同一仪式步重跑一次。三种失败各有自己的文案（`signInFlow.passkeyUnsupported`、`signInFlow.passkeyCancelled`、`signInFlow.passkeyFailed`），渲染为 `role="alert"` 横幅，不经错误码白名单。
 
-**仪式渲染在本包内实现**，不下沉到更低共享包，也不 import 同层的 account-ui——同层之间不互 import。
+**仪式驱动的归属由 [ADR-web-auth-seams-2026-10-19](../../../adr/adr-web-auth-seams-2026-10-19.md) 裁定为 `@speed/auth-core` 的 `./webauthn` 子路径**：本包只渲染仪式步与等待、取消界面，驱动凭据的那段逻辑迁出本包。迁移尚未落地，当前仍由本包的 `internal/webauthn.ts` 承担（见上一段）；本包也不 import 同层的 account-ui——同层之间不互 import。
 
 ### 邀请受理
 

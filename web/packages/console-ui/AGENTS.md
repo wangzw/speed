@@ -210,6 +210,10 @@ request body.
   `session.logout` for the challenge's re-login when this deployment
   cannot raise the session). That is the
   session operation, not a tenant read; `useCurrentTenant` stays unused.
+- **The step renderer has two siblings.** `src/internal/flow-step.tsx` is
+  one of three copies (`auth-ui`, `account-ui`, `console-ui`) kept in
+  lockstep by hand: a change to how a step renders lands in all three in
+  the same change. No compiler check or test compares the copies.
 - **No routing in package code.** No path matching, no `react-router`. The
   shell links each labelled entry to its declaration's path, and a page
   builds a detail link from its own matched path plus a row id; matching a

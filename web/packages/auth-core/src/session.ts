@@ -32,7 +32,16 @@
  * does not wire a store: it forces the cookie path, so this package
  * keeps no credential at all there. `delivery` is forced to 'session' on
  * every flow this package starts, so the browser path is always the
- * cookie one whatever a view asked for.
+ * cookie one whatever a view asked for. A host that wants the token path
+ * starts the login flow itself with the generated
+ * `authnLoginStart({ delivery: 'token' })` operation and hands the
+ * answers to answerFlow; that session is not rebuilt by restore() and is
+ * lost on reload.
+ *
+ * The session cookie is SameSite=Lax (an operator may tighten it to
+ * Strict; `none` is refused by the server), so a browser deployment's
+ * frontend and API must be same-site: a cross-site frontend cannot carry
+ * the cookie on its requests.
  *
  * Login is a server-side flow the client advances, not one request:
  * POST /api/v1/auth/flows starts `purpose: 'login'`, POST /api/v1/auth/flows/answer
@@ -337,7 +346,10 @@ export interface AuthSession {
   discoverSso(email: string): Promise<AuthnSsoProvider[]>
   /** Starts a `purpose: 'login'` flow and returns its first step. The
    * flow is always started as a cookie-delivered session, whatever
-   * `delivery` the request carries. Never changes the session: the start
+   * `delivery` the request carries, so this method never yields a token
+   * completion: a token host starts the flow with the generated
+   * `authnLoginStart({ delivery: 'token' })` operation itself and passes
+   * each answer to answerFlow. Never changes the session: the start
    * of a flow is not a session. A 2xx body that is not a valid flow
    * state rejects with `client.protocol` before anything else happens. */
   startFlow(request: AuthnLoginStartBody): Promise<AuthnFlowState>
@@ -390,6 +402,11 @@ export interface AuthSession {
    * over -- and a 401 from the read is treated the same). A transport or
    * server-side failure rethrows the raw ApiError and leaves the local
    * snapshot in place.
+   *
+   * A token session is not rebuilt here. The read is answered from the
+   * session cookie, and a token host sends none, so it answers nobody
+   * signed in; `refresh()` is that session's silent leg, and a host that
+   * must survive a reload re-establishes the token session itself.
    *
    * `issue` is the round-scoped request function @speed/api-client
    * hands its refresh hook: both of this method's reads then travel
@@ -1026,12 +1043,20 @@ function isRefreshRefusal(error: unknown): boolean {
 /**
  * Creates the session. The store is optional and is the bridge into
  * @speed/api-client for a token-delivered session: a host that starts
- * its flow with `delivery: 'token'` and passes a store gets the token
- * path, with `refreshAccessToken: () => session.refresh()` giving
- * silent refresh for free. A host that leaves the store out (the
- * platform's own composition) runs the cookie path: the login flow is
- * started as a cookie session, the credential is the server's httpOnly
- * cookie, and restore() re-establishes the session after a reload.
+ * its login flow itself with the generated
+ * `authnLoginStart({ delivery: 'token' })` operation and passes a store
+ * gets the token path, with `refreshAccessToken: () => session.refresh()`
+ * giving silent refresh for free. startFlow cannot be used to start that
+ * flow: it forces the cookie delivery. A token session is not rebuilt by
+ * restore() -- its requests carry no cookie -- and is lost on reload. A
+ * host that leaves the store out (the platform's own composition) runs
+ * the cookie path: the login flow is started as a cookie session, the
+ * credential is the server's httpOnly cookie, and restore()
+ * re-establishes the session after a reload.
+ *
+ * The browser cookie path requires the frontend and the API to be
+ * same-site: the session cookie is SameSite=Lax (or Strict; the server
+ * refuses None).
  */
 export function createAuthSession(store?: AccessTokenStore): AuthSession {
   let snapshot: AuthSnapshot = {

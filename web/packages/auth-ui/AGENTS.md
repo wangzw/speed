@@ -54,7 +54,10 @@ for, not a form it ships.
   steps (a forced password change, a second factor, a factor to register,
   a passkey ceremony) render through the shared step renderer
   (`src/internal/flow-step.tsx`) and the shared stepping driver
-  (`src/internal/use-flow-driver.ts`); the `webauthn` step drives the
+  (`src/internal/use-flow-driver.ts`). The renderer is one of three copies
+  (`auth-ui`, `account-ui`, `console-ui`) kept in lockstep by hand: a
+  change to how a step renders lands in all three in the same change. No
+  compiler check or test compares the copies. The `webauthn` step drives the
   browser's WebAuthn ceremony (`src/internal/webauthn.ts`) from its
   public-key options and reports the credential it returns, while a
   `redirect` step reaching the renderer renders an unavailable notice. A

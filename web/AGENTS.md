@@ -72,6 +72,16 @@ this file adds what is specific to the npm side.
   (`.github/workflows/browser.yml`) because Chromium is not part of the
   `.mise.toml` toolchain.
 
+## Cross-package duplication kept in lockstep
+
+The flow-step renderer (`src/internal/flow-step.*`) exists once in each of
+`auth-ui`, `account-ui` and `console-ui`. The copies are deliberate -- the
+renderer owns UI and each package owns its own step vocabulary -- and they
+carry a sync obligation: a change to how a step renders lands in all three
+copies in the same change. The obligation is documentation-only: no
+compiler check and no test compares the copies, so a copy that misses the
+change is not caught by the build.
+
 ## The strict typecheck
 
 `web/tsconfig.base.json` is strict: `strict`, `noUncheckedIndexedAccess`,

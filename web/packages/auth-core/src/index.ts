@@ -63,6 +63,15 @@
  * QueryClient carries it (the factory calls its removeQueries, never
  * constructs one).
  *
+ * Two smaller seams live here too: useStepUpGate remembers a
+ * step-up-refused action and replays exactly it once the challenge is
+ * won (step-up-gate.ts), and isTenantAdmissionRefusal tells the
+ * admission layer's bare 404 from a module's own typed 404
+ * (tenant-refusal.ts). The passkey ceremony driver (webauthn.ts) is the
+ * package's one DOM-touching module -- it calls navigator.credentials --
+ * and ships as the `./webauthn` subpath rather than through this entry,
+ * so the main entry stays DOM-free.
+ *
  * No storage is written anywhere: the credential is the server's
  * httpOnly session cookie, which the browser manages and scripts cannot
  * read; this package holds nothing of its own between requests.
@@ -95,6 +104,9 @@ export type {
   StepUpPhase,
   StepUpState,
 } from './step-up.js'
+export { useStepUpGate } from './step-up-gate.js'
+export type { StepUpGate } from './step-up-gate.js'
+export { isTenantAdmissionRefusal } from './tenant-refusal.js'
 export type {
   AuthDomain,
   AuthPermissionSets,

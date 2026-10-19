@@ -55,6 +55,10 @@ export const SPEED_PACKAGE_MAP = Object.freeze([
   },
   { specifier: '@speed/api-sdk', entry: 'packages/api-sdk/src/index.ts' },
   { specifier: '@speed/api-client', entry: 'packages/api-client/src/index.ts' },
+  {
+    specifier: '@speed/auth-core/webauthn',
+    entry: 'packages/auth-core/src/webauthn.ts',
+  },
   { specifier: '@speed/auth-core', entry: 'packages/auth-core/src/index.ts' },
   { specifier: '@speed/auth-ui', entry: 'packages/auth-ui/src/index.ts' },
   { specifier: '@speed/tenancy-ui', entry: 'packages/tenancy-ui/src/index.ts' },

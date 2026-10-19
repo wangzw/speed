@@ -21,10 +21,19 @@ longer holds. A host that passes an `AccessTokenStore` keeps the token
 path instead: a `delivery: 'token'` completion writes the access token
 into that store (the same store `@speed/api-client` reads on every send)
 and holds the minted refresh token only inside the session closure,
-refreshed through `refresh()`. No storage is written either way. React
-hooks (`useAuthState`, `useCurrentTenant`, `usePermission`) read one
-session the host attaches with `attachSession`; react is a peer
-dependency, so only a host that already renders React carries it.
+refreshed through `refresh()`. No storage is written either way. The
+token path starts outside this package: `session.startFlow` always starts
+a cookie session, so a token host calls the generated
+`authnLoginStart({ delivery: 'token' })` operation itself and hands each
+answer to `session.answerFlow` -- see "The token path". React hooks
+(`useAuthState`, `useCurrentTenant`, `usePermission`) read one session the
+host attaches with `attachSession`; react is a peer dependency, so only a
+host that already renders React carries it.
+
+The cookie this package relies on is same-site: `SameSite=Lax` (an
+operator may tighten it to `Strict`; `None` is refused). In a browser
+deployment the frontend and the API must therefore be same-site. A
+cross-site frontend cannot carry the session cookie on its requests.
 
 The generated authn fragments declare their 2xx response schemas, so
 orval emits the response models. This package re-exports those generated
@@ -39,8 +48,14 @@ guards".
 | `session.ts` | `createAuthSession(store?)`, `AuthSession`, `AuthSnapshot`, `FeatureState`, `AuthSessionListener`, `AuthDomain`, `AuthPermissionSets`, `AuthnPrincipal`, `AuthnFlowState`, `AuthnStep`, `AuthnField`, `AuthnFactorOption`, `AuthnMethodList`, `AuthnIdentifier`, `AuthnLink`, `OperationSupersededError`, `isOperationSuperseded` |
 | `hooks.ts` | `attachSession(session)`, `useAuthState()`, `usePermission(domain, permission)`, `useFeature(name)`, `useFeatureState()`, `featurePresence(state)`, `TenantProvider`, `useCurrentTenant()` |
 | `query-key.ts` | `tenantQueryKey(tenantId, ...tail)`, `useTenantQueryKey(bareKey)`, `TenantQueryKey`, `evictTenantQueries(queryClient, tenantId)` |
+| `step-up-gate.ts` | `useStepUpGate(onRetry, isShortfall?)`, `StepUpGate` |
+| `tenant-refusal.ts` | `isTenantAdmissionRefusal(error)` |
+| `webauthn.ts` (the `@speed/auth-core/webauthn` subpath, not the main entry) | `runWebauthn(options, signal?)`, `webauthnStepOf(options)`, `WebauthnError`, `WebauthnStep`, `WebauthnFailure` |
 
-`src/index.ts` re-exports these; everything else is internal.
+`src/index.ts` re-exports everything above except `webauthn.ts`; that file
+is the one DOM-touching module in the package (it calls
+`navigator.credentials`) and ships as its own subpath so a host that only
+reads the session never loads it.
 
 ## Quick start
 
@@ -116,6 +131,79 @@ one), and `link`/`enroll` completions leave the login state alone:
 // Enroll a second factor: start with purpose 'enroll', drive the steps.
 const enrollment = await session.startAuthenticatedFlow({ purpose: 'enroll' })
 ```
+
+## The token path
+
+`startFlow` starts every login flow as a cookie session (`delivery:
+'session'`), whatever the request carries, so it can never produce a token
+completion. A host that passes an `AccessTokenStore` starts the login flow
+itself with the generated operation, then hands each answer to the
+session:
+
+```ts
+import { authnLoginStart } from '@speed/api-sdk'
+import { createAuthSession } from '@speed/auth-core'
+
+const session = createAuthSession(store) // a host-held AccessTokenStore
+
+// The host starts the flow with the token delivery the session forces away
+// on its own startFlow path:
+const step = await authnLoginStart({
+  method: 'password',
+  purpose: 'login',
+  delivery: 'token',
+})
+
+// Every answer goes through the session, which commits a token completion
+// into the store and holds the minted refresh token in its closure:
+const next = await session.answerFlow({ seq: step.seq, step: 'answer', input })
+```
+
+A token session is not rebuilt by `restore()`. That method reads
+`GET /api/v1/auth/session`, whose answer comes from the session cookie,
+and a token host holds no such cookie: a reload starts anonymous. A host
+that must keep a token session across reloads persists it itself and
+re-establishes it before the first request; `refresh()` is the token
+session's silent leg, not `restore()`.
+
+In a browser deployment the frontend and the API must be same-site. The
+session cookie is `SameSite=Lax` (an operator may tighten it to `Strict`;
+`None` is refused by the server), so a cross-site frontend cannot carry
+it. A deployment that needs a cross-site frontend uses the token path and
+its own credentials.
+
+## Step-up gating
+
+A write whose route asks for a stronger or fresher authentication than
+the session proves is refused `401 authn.insufficient_user_authentication`.
+`useStepUpGate` remembers the refused action and replays it once the
+challenge is won:
+
+```ts
+const gate = useStepUpGate<{ id: string }>((action) => {
+  void save(action) // exactly the refused write, with the inputs it was told
+})
+
+// In a mutation's onError: arm and open the dialog only for the refusal.
+onError: (error, action) => {
+  if (gate.intercept(error, action)) {
+    mutation.reset() // the dialog now owns the failure
+  }
+}
+```
+
+The default classifier recognises the platform's step-up code, not every
+401: a 401 that ended the session leaves nothing to elevate. A caller
+whose session already tells the two apart passes
+`session.isStepUpShortfall` as the second argument.
+
+## Tenant admission refusals
+
+The admission layer refuses a tenant the caller may not enter with a bare
+404. `isTenantAdmissionRefusal(error)` recognises that answer and leaves a
+module's own typed 404 (`objectstore.not_found`) alone, so a surface can
+render "this tenant is unavailable" without mistaking a missing row for
+it.
 
 ## Restoring the session across a page load
 
@@ -393,14 +481,21 @@ into the discriminated view a form renders.
 
 ## Known limitations
 
-- **The token path is opt-in.** The default (and the platform's own
-  composition) is the cookie session: `createAuthSession()` with no
-  store, `credentials` on the client and `restore()` at boot. A host that
-  passes an `AccessTokenStore` gets the token path instead, where the
-  access token is a memory cell and the refresh token is readable by any
-  script on the page (no refresh cookie hides it, and the token responses
-  carry it in the body). A cookie session holds neither: the credential
-  is the server's httpOnly cookie, which scripts cannot read.
+- **The token path is opt-in and starts outside this package.** The
+  default (and the platform's own composition) is the cookie session:
+  `createAuthSession()` with no store, `credentials` on the client and
+  `restore()` at boot. A host that passes an `AccessTokenStore` must
+  start its login flow with the generated
+  `authnLoginStart({ delivery: 'token' })` itself -- `startFlow` always
+  forces the cookie delivery -- and hand the answers to `answerFlow`. On
+  that path the access token is a memory cell and the refresh token is
+  readable by any script on the page (no refresh cookie hides it, and the
+  token responses carry it in the body); the session is not rebuilt by
+  `restore()` and is lost on reload. A cookie session holds neither: the
+  credential is the server's httpOnly cookie, which scripts cannot read.
+- **The cookie path requires a same-site frontend and API.** The session
+  cookie is `SameSite=Lax` (or `Strict`), and the server refuses `None`:
+  a cross-site frontend cannot send it.
 - **The `delivery` a view passes is normalized.** The login flow
   (`startFlow`) is always started as a cookie session (`delivery:
   'session'`) whatever the request carries, so a view that still names a
