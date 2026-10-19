@@ -20,9 +20,10 @@ same discipline `ui-kit` established, and the workspace's
 
 | Module | Exports |
 |---|---|
-| `components/AppShell.tsx` | `AppShell`, `AppShellProps`, `AppShellNavItem`, `AppShellNavGroup`, `AppShellNavEntry` |
+| `components/AppShell.tsx` | `AppShell`, `AppShellProps`, `AppShellNavItem`, `AppShellNavGroup`, `AppShellNavEntry`, `AppShellNavSlot`, `AppShellNavSlotState` |
 | `components/Avatar.tsx` | `Avatar`, `AvatarProps` |
 | `components/RouteGuard.tsx` | `RouteGuard`, `RouteGuardProps`, `RouteGuardStatus` |
+| `isPlainPrimaryClick.ts` | `isPlainPrimaryClick` |
 | `resources.ts` | `LAYOUT_KIT_NAMESPACE`, `layoutKitResources` |
 
 Everything else (`src/internal/`) is shared component plumbing and is
@@ -123,6 +124,8 @@ byte-for-byte unchanged.
 | `userMenu` | `ReactNode` | far end-of-AppBar content (account menu trigger) |
 | `banner` | `ReactNode` | a full-width banner below the app bar, host content and already translated. It is part of the fixed shell head: one fixed container holds the app bar first and the banner after it in normal flow, the two never overlap, and the content spacers reserve the head's measured height (each height counted once); it stays in view with the app bar when the page scrolls, at every breakpoint, and the head sits above page content but below modal panels and dialogs. The slot adds no padding, border or minimum height -- an empty node adds no height. It belongs to the shell, so a route change never unmounts it. It adds no landmark and no live region -- the node the host passes carries the roles it needs, and the banner landmark remains the app bar. Absent, `null` or `false` renders no slot container and adds no height |
 | `navLabel` | `string` | the navigation landmark's accessible name (and the temporary drawer's dialog name); defaults to the `appShell.navLabel` string. A host mounting AppShell beside a second shell's navigation supplies a distinguishing name so the landmarks do not read alike |
+| `navHeader` | `ReactNode \| ((state: AppShellNavSlotState) => ReactNode)` | host content inside the drawer paper, immediately before the nav landmark, in both drawer variants. A render function receives `{ narrow, closeDrawer }`: `narrow` is true only in the collapsed rail (never in the temporary drawer), and `closeDrawer` closes an uncontrolled temporary drawer, reports `false` through `onMobileOpenChange` when the drawer is controlled, and is a no-op for the permanent drawer. The slot is a sibling of the landmark, so the landmark and its name are unchanged. Absent, `null` or `false` renders nothing and adds no height |
+| `navFooter` | `ReactNode \| ((state: AppShellNavSlotState) => ReactNode)` | host content inside the drawer paper, immediately after the nav landmark, with the same state and rendering contract as `navHeader` |
 | `children` | `ReactNode` (required) | the content region, rendered inside the `main` landmark |
 | `mobileOpen` / `onMobileOpenChange` | `boolean` / `(open: boolean) => void` | optional controlled pair for the mobile drawer; omit both to let AppShell manage the toggle itself (the one interaction-local exception, matching `ui-kit`'s `ConfirmDialog` double-confirm arm -- the same carve-out covers the uncontrolled temporary drawer closing itself when a nav item is activated; a controlled host keeps the existing contract, closing through its own next render) |
 | `sidebarCollapsed` / `onSidebarCollapsedChange` | `boolean` / `(collapsed: boolean) => void` | optional controlled pair for the desktop sidebar; omit both for the always-open permanent drawer (the drawer is what it was before the collapse existed; the one change that applies to every host is the touch-device floor on each nav entry, which follows the accessibility requirement rather than the collapse). Supplying `onSidebarCollapsedChange` renders the collapse/expand toggle in the AppBar. `sidebarCollapsed` (default `false`) is honored only at `md` and up -- the mobile drawer is unaffected -- and collapsing narrows the permanent drawer to the icon-only rail: it stays mounted and named, each entry keeps its icon with the label shown as a tooltip, and an icon-less entry keeps its (clipped) label rather than going blank |
@@ -134,6 +137,37 @@ nothing, never a placeholder. The desktop sidebar collapse is an
 explicit, host-controlled pair, not an implicit responsive behavior: a
 host that omits it keeps the always-open permanent drawer, and the toggle
 appears only when the host supplies the change callback.
+
+## Plain-primary-click judgement
+
+`isPlainPrimaryClick(event)` is the shared judgement in-app navigation
+links use to decide whether to intercept a click and route in place. It
+returns true only for the primary button (or an event carrying no button
+value), with no ctrl/meta/shift/alt modifier, on an activation whose
+nearest anchor has neither `target="_blank"` (matched case-insensitively)
+nor a `download` attribute, and on an event that is not already
+default-prevented. The anchor is the clicked element's nearest `a`
+ancestor, so a click on a child of the link is judged the same as one on
+the link itself.
+
+```ts
+onClick={(event) => {
+  if (isPlainPrimaryClick(event)) {
+    event.preventDefault()
+    router.navigate(href)
+  }
+}}
+```
+
+`@speed/console-ui` will consume this function. `@speed/route-kit` keeps a
+private variant by design -- it is independent of every sibling package and
+must not import this one -- and that variant is deliberately stricter:
+`button` must be exactly `0` (an absent value is rejected rather than read
+as the primary button), and every `target` other than absent, empty or
+`_self` is rejected, so `_top`, `_parent` and named windows are left to the
+browser. This function rejects only `target="_blank"` and reads an absent
+`button` as the primary button. A change to either set of criteria belongs
+in both copies in the same change.
 
 ## Avatar
 
@@ -298,7 +332,7 @@ package -- see the AGENTS.md non-negotiable rules.
 ## Development
 
 From `web/packages/layout-kit`: `pnpm lint`, `pnpm typecheck`, `pnpm
-test` (38 tests across 3 files), `pnpm build`. The test suite runs in
+test`, `pnpm build`. The test suite runs in
 jsdom (`vitest.config.ts`); shared helpers live in `test-utils/`
 (`renderWithProviders` mounts the unit under the real host tree --
 `I18nextProvider` plus `ui-kit`'s own `AppThemeProvider`, both

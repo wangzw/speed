@@ -28,6 +28,7 @@ import enUS from '../locales/en-US.json' with { type: 'json' }
 /** The shipped en-US app-shell strings the cases assert on. */
 const SKIP_TO_CONTENT = enUS.appShell.skipToContent
 const OPEN_NAV = enUS.appShell.openNav
+const NAV_LABEL = enUS.appShell.navLabel
 
 const VIEWPORT_HEIGHT = 900
 
@@ -252,8 +253,100 @@ describe('AppShell geometry in Chromium', () => {
   })
 })
 
-describe('AppShell focus order in Chromium', () => {
-  it('makes the skip link the first Tab stop and focuses main when activated', async () => {
+describe('AppShell drawer slots in Chromium', () => {
+  it('stacks the header and footer slots immediately around the nav landmark in the permanent drawer', async () => {
+    await page.viewport(900, VIEWPORT_HEIGHT)
+    renderShell(
+      <AppShell
+        navItems={NAV_ITEMS}
+        navHeader={<div data-testid="nav-header" style={{ height: 40 }}>header</div>}
+        navFooter={<div data-testid="nav-footer" style={{ height: 48 }}>footer</div>}
+      >
+        <div style={{ height: 240 }}>content</div>
+      </AppShell>,
+    )
+
+    const nav = screen.getByRole('navigation', { name: NAV_LABEL })
+    const header = screen.getByTestId('nav-header')
+    const footer = screen.getByTestId('nav-footer')
+    const paper = document.querySelector<HTMLElement>('.MuiDrawer-paper')
+    expect(paper).not.toBeNull()
+
+    const headerRect = header.getBoundingClientRect()
+    const navRect = nav.getBoundingClientRect()
+    const footerRect = footer.getBoundingClientRect()
+    const paperRect = (paper as HTMLElement).getBoundingClientRect()
+
+    // Each slot renders exactly its host height, and the two are adjacent
+    // to the landmark -- no wrapper gap between them.
+    expect(headerRect.height).toBeCloseTo(40, 0)
+    expect(footerRect.height).toBeCloseTo(48, 0)
+    expect(headerRect.bottom).toBeCloseTo(navRect.top, 0)
+    expect(footerRect.top).toBeCloseTo(navRect.bottom, 0)
+
+    // Both live inside the drawer paper and inside its width, and neither
+    // is part of the landmark.
+    for (const rect of [headerRect, navRect, footerRect]) {
+      expect(rect.left).toBeGreaterThanOrEqual(paperRect.left - 0.5)
+      expect(rect.right).toBeLessThanOrEqual(paperRect.right + 0.5)
+    }
+    expect(nav.contains(header)).toBe(false)
+    expect(nav.contains(footer)).toBe(false)
+  })
+
+  it('renders the slots in the open temporary drawer, where narrow is false, and closeDrawer closes it', async () => {
+    await page.viewport(480, VIEWPORT_HEIGHT)
+    renderShell(
+      <AppShell
+        navItems={NAV_ITEMS}
+        navHeader={({ narrow }) => (
+          <div data-testid="nav-header" style={{ height: 40 }}>
+            {narrow ? 'rail' : 'full'}
+          </div>
+        )}
+        navFooter={({ closeDrawer }) => (
+          <button type="button" data-testid="nav-footer" onClick={closeDrawer}>
+            Close
+          </button>
+        )}
+      >
+        <div style={{ height: 240 }}>content</div>
+      </AppShell>,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: OPEN_NAV }))
+    await waitFor(() => {
+      expect(
+        document
+          .querySelector<HTMLElement>('.MuiDrawer-paper')
+          ?.getBoundingClientRect().width ?? 0,
+      ).toBeGreaterThan(0)
+    })
+
+    const nav = screen.getByRole('navigation', { name: NAV_LABEL })
+    const header = screen.getByTestId('nav-header')
+    const footer = screen.getByTestId('nav-footer')
+    // The temporary drawer is never the collapsed rail.
+    expect(header.textContent).toBe('full')
+    expect(header.getBoundingClientRect().bottom).toBeCloseTo(
+      nav.getBoundingClientRect().top,
+      0,
+    )
+    expect(footer.getBoundingClientRect().top).toBeCloseTo(
+      nav.getBoundingClientRect().bottom,
+      0,
+    )
+
+    await userEvent.click(footer)
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: OPEN_NAV }),
+      ).toHaveAttribute('aria-expanded', 'false')
+    })
+  })
+})
+
+describe('AppShell focus order in Chromium', () => {  it('makes the skip link the first Tab stop and focuses main when activated', async () => {
     await page.viewport(900, VIEWPORT_HEIGHT)
     renderShell(
       <AppShell

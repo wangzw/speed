@@ -17,9 +17,23 @@
  * (uncontrolled by default, like ConfirmDialog's double-confirm arm),
  * promotable to fully controlled via `mobileOpen` / `onMobileOpenChange`.
  *
- * Slots (`header`, `headerActions`, `userMenu`, `banner`, `children`)
+ * Slots (`header`, `headerActions`, `userMenu`, `banner`, `navHeader`,
+ * `navFooter`, `children`)
  * render exactly the host content passed in and nothing implicit -- an
  * absent slot renders nothing, never a placeholder.
+ *
+ * `navHeader` and `navFooter` are the drawer paper's own leading and
+ * trailing content: each renders immediately before or after the
+ * navigation landmark, inside the drawer paper, in both the permanent and
+ * the temporary variant. They are siblings of the landmark, not part of
+ * it, so neither the `nav` landmark nor its accessible name changes. Each
+ * slot is either host content or a render function receiving the mounted
+ * drawer's state (`narrow`, `closeDrawer`): `narrow` is true only when the
+ * mounted drawer is the collapsed rail, and `closeDrawer` closes a
+ * temporary uncontrolled drawer, reports `false` through
+ * `onMobileOpenChange` when the drawer is controlled, and is a no-op for
+ * the permanent drawer. An absent, `null` or `false` slot renders nothing
+ * and adds no height.
  *
  * The `banner` slot is part of the shell's fixed head, below the AppBar:
  * the head is one fixed container pinned to the top of the viewport,
@@ -204,6 +218,35 @@ export interface AppShellNavGroup {
 /** One navigation entry or grouped section, as the host declares it. */
 export type AppShellNavEntry = AppShellNavItem | AppShellNavGroup
 
+/**
+ * The state a `navHeader` or `navFooter` render function receives: the
+ * mounted drawer's shape and its close channel.
+ */
+export interface AppShellNavSlotState {
+  /**
+   * Whether the mounted drawer is the collapsed icon-only rail. Always
+   * false in the temporary (mobile) drawer, which never collapses.
+   */
+  readonly narrow: boolean
+  /**
+   * Closes a temporary (mobile) drawer: it closes itself in uncontrolled
+   * mode and reports `false` through `onMobileOpenChange` in controlled
+   * mode. A no-op for the permanent (desktop) drawer, which is always
+   * open.
+   */
+  readonly closeDrawer: () => void
+}
+
+/**
+ * A drawer slot: host content, or a render function given the mounted
+ * drawer's state. A render function lets a host compose a compact header
+ * in the collapsed rail and a footer action that closes the mobile
+ * drawer.
+ */
+export type AppShellNavSlot =
+  | ReactNode
+  | ((state: AppShellNavSlotState) => ReactNode)
+
 export interface AppShellProps {
   /**
    * The navigation entries rendered in the drawer, in order. Each element
@@ -243,6 +286,26 @@ export interface AppShellProps {
    * landmark reads as the other in the accessibility tree.
    */
   readonly navLabel?: string
+  /**
+   * Host content rendered inside the drawer paper immediately before the
+   * navigation landmark, in both the permanent and the temporary drawer.
+   * A render function receives the mounted drawer's state
+   * (`AppShellNavSlotState`) so the host can compose a compact header in
+   * the collapsed rail. The slot is a sibling of the landmark, so the
+   * `nav` landmark and its accessible name are unchanged. Absent, `null`
+   * or `false` renders nothing and adds no height.
+   */
+  readonly navHeader?: AppShellNavSlot
+  /**
+   * Host content rendered inside the drawer paper immediately after the
+   * navigation landmark, in both the permanent and the temporary drawer.
+   * The same render-function state as `navHeader` applies; `closeDrawer`
+   * is the mobile drawer's close channel. The slot is a sibling of the
+   * landmark, so the `nav` landmark and its accessible name are
+   * unchanged. Absent, `null` or `false` renders nothing and adds no
+   * height.
+   */
+  readonly navFooter?: AppShellNavSlot
   /** The content region, rendered inside the `main` landmark. */
   readonly children: ReactNode
   /**
@@ -367,6 +430,21 @@ function RailTooltip({
 /** Narrows a declared entry to a grouped section. */
 function isNavGroup(entry: AppShellNavEntry): entry is AppShellNavGroup {
   return 'items' in entry
+}
+
+/**
+ * Renders a drawer slot: host content as given, or a render function
+ * resolved against the mounted drawer's state. An absent or explicitly
+ * empty slot renders nothing.
+ */
+function renderNavSlot(
+  slot: AppShellNavSlot | undefined,
+  state: AppShellNavSlotState,
+): ReactNode {
+  if (slot === undefined || slot === null || slot === false) {
+    return null
+  }
+  return typeof slot === 'function' ? slot(state) : slot
 }
 
 /**
@@ -654,6 +732,8 @@ export function AppShell({
   userMenu,
   banner,
   navLabel,
+  navHeader,
+  navFooter,
   children,
   mobileOpen: mobileOpenProp,
   onMobileOpenChange,
@@ -700,6 +780,27 @@ export function AppShell({
       setUncontrolledOpen(next)
     }
     onMobileOpenChange?.(next)
+  }
+
+  // The drawer slots' state. The permanent drawer is always open, so its
+  // closeDrawer is a deliberate no-op; the temporary drawer gets the
+  // close transition the navigation rows use -- the shell closes its own
+  // uncontrolled drawer, and a controlled host is told to close through
+  // the channel it already reads. Only one variant is mounted at a time,
+  // so each slot state is resolved against the variant it renders in.
+  const permanentSlotState: AppShellNavSlotState = {
+    narrow: sidebarCollapsed,
+    closeDrawer: () => undefined,
+  }
+  const temporarySlotState: AppShellNavSlotState = {
+    narrow: false,
+    closeDrawer: () => {
+      if (isControlled) {
+        onMobileOpenChange?.(false)
+      } else {
+        setUncontrolledOpen(false)
+      }
+    },
   }
 
   // The mobile drawer's open state belongs to the temporary variant: a
@@ -965,7 +1066,9 @@ export function AppShell({
             }}
           >
             {spacer}
+            {renderNavSlot(navHeader, permanentSlotState)}
             {navContent(undefined, sidebarCollapsed)}
+            {renderNavSlot(navFooter, permanentSlotState)}
           </Drawer>
         ) : (
           <Drawer
@@ -994,6 +1097,7 @@ export function AppShell({
             }}
           >
             {spacer}
+            {renderNavSlot(navHeader, temporarySlotState)}
             {navContent(() => {
               // The temporary drawer owns the close-on-navigation
               // transition when it owns the open state. In controlled
@@ -1004,6 +1108,7 @@ export function AppShell({
                 setUncontrolledOpen(false)
               }
             })}
+            {renderNavSlot(navFooter, temporarySlotState)}
           </Drawer>
         )}
       </Box>

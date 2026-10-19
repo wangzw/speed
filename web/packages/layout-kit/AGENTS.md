@@ -4,10 +4,13 @@
 
 Shared app chrome at the same architectural tier as `@speed/ui-kit`:
 `AppShell` (a responsive header, nav drawer and content region, plus an
-opt-in host-controlled desktop sidebar collapse), `RouteGuard` (a
-route/content gate driven entirely by a host-injected status) and `Avatar`
+opt-in host-controlled desktop sidebar collapse and host slots immediately
+before and after the drawer's nav landmark), `RouteGuard` (a
+route/content gate driven entirely by a host-injected status), `Avatar`
 (a presentational identity chip -- image or initials, off the accessibility
-tree on request). All are fully controlled and props-driven, carry no
+tree on request) and `isPlainPrimaryClick` (the shared judgement in-app
+navigation links use before intercepting a click). All are fully controlled
+and props-driven, carry no
 business or tenant semantics, and — the property that matters most for
 this package — carry no opinion about *how* a host authenticates or
 authorizes a user. `product-shell` (the tenant-facing shell) and the
@@ -46,6 +49,30 @@ rule. The public surface is `src/index.ts`; everything under
   (including each item's `selected` state) is entirely host-computed;
   different hosts use different routers, and this package must work
   with all of them identically.
+- **The drawer's `navHeader`/`navFooter` slots stay outside the nav
+  landmark.** Each renders inside the drawer paper immediately before or
+  after the `nav` element, in both drawer variants, as the landmark's
+  sibling -- never its child. The landmark and its accessible name must
+  not change when either slot is used, and an absent slot must render
+  nothing and add no height. A render-function slot's `narrow` reflects
+  only the mounted drawer (true just for the collapsed rail; the
+  temporary drawer is always false), and its `closeDrawer` closes an
+  uncontrolled temporary drawer, reports through `onMobileOpenChange`
+  when the drawer is controlled, and is a no-op for the permanent drawer.
+- **`isPlainPrimaryClick` is shared by convention, not by dependency.**
+  `@speed/console-ui` will consume it; `@speed/route-kit` keeps a
+  private variant because that package is independent of
+  every sibling package and must not import this one. The variant is
+  deliberately stricter: `button` must be exactly `0` (this function
+  treats an absent value as the primary button), and every `target` other
+  than absent, empty or `_self` is rejected (this function rejects only
+  `_blank`), so `_top`, `_parent` and named windows are left to the
+  browser. Both copies reject an anchor carrying `download` and an event
+  already default-prevented. A change to either copy's criteria --
+  primary button, no ctrl/meta/shift/alt, the anchor criteria, not already
+  default-prevented -- belongs in both copies in the same change. Do not
+  widen it here into routing behavior:
+  the function only judges the event; the caller intercepts and routes.
 - **Narrow-viewport protection is never a new host-facing
   behavior.** The mobile drawer's paper width cap (a CSS `min()`) and
   the AppBar Toolbar/`headerActions` `flexWrap: 'wrap'` are purely

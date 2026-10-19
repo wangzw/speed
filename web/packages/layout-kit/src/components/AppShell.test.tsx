@@ -699,6 +699,175 @@ describe('AppShell', () => {
     })
   })
 
+  describe('drawer header and footer slots', () => {
+    it('renders both slots immediately before and after the nav landmark inside the permanent drawer paper', () => {
+      mockMatchMedia(true)
+      const { getByRole, getByTestId } = renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          navHeader={<div data-testid="nav-header">Header</div>}
+          navFooter={<div data-testid="nav-footer">Footer</div>}
+        >
+          content
+        </AppShell>,
+      )
+      // The landmark keeps its name; the slots are its siblings, not its
+      // content, so they add no entries to the navigation and no name.
+      const nav = getByRole('navigation', { name: zhCN.appShell.navLabel })
+      const header = getByTestId('nav-header')
+      const footer = getByTestId('nav-footer')
+      expect(header.nextElementSibling).toBe(nav)
+      expect(nav.nextElementSibling).toBe(footer)
+      expect(nav.contains(header)).toBe(false)
+      expect(nav.contains(footer)).toBe(false)
+
+      const paper = document.querySelector('.MuiDrawer-paper')
+      expect(paper).not.toBeNull()
+      expect(paper).toContainElement(header)
+      expect(paper).toContainElement(footer)
+    })
+
+    it('passes narrow=true to the render functions only in the collapsed rail', () => {
+      mockMatchMedia(true)
+      const collapsed = renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          sidebarCollapsed
+          onSidebarCollapsedChange={() => undefined}
+          navHeader={({ narrow }) => (
+            <span data-testid="nav-header">{narrow ? 'rail' : 'full'}</span>
+          )}
+          navFooter={({ narrow }) => (
+            <span data-testid="nav-footer">{narrow ? 'rail' : 'full'}</span>
+          )}
+        >
+          content
+        </AppShell>,
+      )
+      expect(collapsed.getByTestId('nav-header')).toHaveTextContent('rail')
+      expect(collapsed.getByTestId('nav-footer')).toHaveTextContent('rail')
+      collapsed.unmount()
+
+      const expanded = renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          navHeader={({ narrow }) => (
+            <span data-testid="nav-header">{narrow ? 'rail' : 'full'}</span>
+          )}
+          navFooter={({ narrow }) => (
+            <span data-testid="nav-footer">{narrow ? 'rail' : 'full'}</span>
+          )}
+        >
+          content
+        </AppShell>,
+      )
+      expect(expanded.getByTestId('nav-header')).toHaveTextContent('full')
+      expect(expanded.getByTestId('nav-footer')).toHaveTextContent('full')
+    })
+
+    it('renders both slots in the temporary drawer, where narrow is false, and closeDrawer closes an uncontrolled drawer', async () => {
+      mockMatchMedia(false)
+      const user = userEvent.setup()
+      const { getByRole, getByTestId } = renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          navHeader={({ narrow }) => (
+            <span data-testid="nav-header">{narrow ? 'rail' : 'full'}</span>
+          )}
+          navFooter={({ closeDrawer }) => (
+            <button type="button" data-testid="nav-footer" onClick={closeDrawer}>
+              Close
+            </button>
+          )}
+        >
+          content
+        </AppShell>,
+      )
+
+      await user.click(getByRole('button', { name: zhCN.appShell.openNav }))
+      const nav = getByRole('navigation', { name: zhCN.appShell.navLabel })
+      expect(getByTestId('nav-header')).toHaveTextContent('full')
+      expect(getByTestId('nav-header').nextElementSibling).toBe(nav)
+      expect(nav.nextElementSibling).toBe(getByTestId('nav-footer'))
+
+      await user.click(getByTestId('nav-footer'))
+      // The uncontrolled temporary drawer closes itself, the same
+      // transition a nav-item activation performs.
+      await waitFor(() => {
+        expect(
+          getByRole('button', { name: zhCN.appShell.openNav }),
+        ).toHaveAttribute('aria-expanded', 'false')
+      })
+    })
+
+    it('reports the close through onMobileOpenChange for a controlled temporary drawer, leaving the close to the host', async () => {
+      mockMatchMedia(false)
+      const onMobileOpenChange = vi.fn()
+      const user = userEvent.setup()
+      const { getByRole, getByTestId } = renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          mobileOpen
+          onMobileOpenChange={onMobileOpenChange}
+          navFooter={({ closeDrawer }) => (
+            <button type="button" data-testid="nav-footer" onClick={closeDrawer}>
+              Close
+            </button>
+          )}
+        >
+          content
+        </AppShell>,
+      )
+
+      await user.click(getByTestId('nav-footer'))
+      expect(onMobileOpenChange).toHaveBeenCalledTimes(1)
+      expect(onMobileOpenChange).toHaveBeenCalledWith(false)
+      // Controlled: the prop did not change, so the shell stays open.
+      expect(
+        getByRole('button', { name: zhCN.appShell.closeNav, hidden: true }),
+      ).toHaveAttribute('aria-expanded', 'true')
+    })
+
+    it('makes closeDrawer a no-op for the permanent drawer', () => {
+      mockMatchMedia(true)
+      const onMobileOpenChange = vi.fn()
+      let captured: (() => void) | undefined
+      const { getByTestId } = renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          mobileOpen={false}
+          onMobileOpenChange={onMobileOpenChange}
+          navFooter={({ closeDrawer }) => {
+            captured = closeDrawer
+            return <span data-testid="nav-footer">Footer</span>
+          }}
+        >
+          content
+        </AppShell>,
+      )
+      // The slot must actually render and receive the state, or this case
+      // would pass with the slot removed entirely.
+      expect(getByTestId('nav-footer')).toBeInTheDocument()
+      expect(captured).toBeTypeOf('function')
+      act(() => {
+        captured?.()
+      })
+      expect(onMobileOpenChange).not.toHaveBeenCalled()
+    })
+
+    it('renders nothing for an absent slot and leaves the permanent drawer paper unchanged', () => {
+      mockMatchMedia(true)
+      const { getByRole } = renderWithProviders(
+        <AppShell navItems={NAV_ITEMS}>content</AppShell>,
+      )
+      const nav = getByRole('navigation', { name: zhCN.appShell.navLabel })
+      // Before the landmark there is only the head spacer; after it
+      // nothing at all -- an absent slot adds no container and no height.
+      expect(nav.previousElementSibling).toHaveClass('MuiToolbar-root')
+      expect(nav.nextElementSibling).toBeNull()
+    })
+  })
+
   describe('landmarks', () => {
     it('exposes header (banner), nav and main landmarks in zh-CN', () => {
       mockMatchMedia(true)
