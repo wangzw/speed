@@ -39,7 +39,7 @@
 | [auth-core](design-web-auth-core.md) | 部分实现 |
 | [auth-ui](design-web-auth-ui.md) | 部分实现 |
 | [account-ui](design-web-account-ui.md) | 部分实现 |
-| [tenancy-ui](design-web-tenancy-ui.md) | 部分实现 |
+| [tenancy-ui](design-web-tenancy-ui.md) | 已实现 |
 | [product-shell](design-web-product-shell.md) | 部分实现 |
 | [console-ui](design-web-console-ui.md) | 部分实现 |
 | [objectstore-ui](design-web-objectstore-ui.md) | 部分实现 |
