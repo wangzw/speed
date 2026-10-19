@@ -413,7 +413,11 @@ under `server/testdata/` names them:
   is not enabled answers 409 `tenant-unavailable` without writing anything. An
   alias collision or a derived identifier outside the roster domain answers 409
   `identifier-unavailable`. A dependency failure is a 503 with no part of the
-  result. The frontend calls it from the tenant frame when an
+  result. Those 409s carry `urn:speed:workspace:<code>` types, so a frontend
+  that must render them by code can distinguish them; `personal.go` demonstrates
+  that an application module's refusal a product frontend must render by code
+  needs that shape, since `@speed/api-client` degrades every other problem type
+  to `client.http.<status>`. The frontend calls it from the tenant frame when an
   authenticated, non-impersonating viewer has no current tenant and the feature
   is served; a registration completed through SMS lands on `/` (the tenant home)
   with a one-time setup notice, and without the feature it lands on

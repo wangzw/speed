@@ -13,9 +13,10 @@
 
 import type { AccessTokenStore } from './access-token.js'
 
-/** The header every tenant-scoped request announces the tenant under.
- * Lower case, the canonical form a `Headers` lookup and a Go
- * `r.Header.Get` both fold to. */
+/** The default header every tenant-scoped request announces the tenant
+ * under. Lower case, the canonical form a `Headers` lookup and a Go
+ * `r.Header.Get` both fold to. `ClientOptions.tenantHeader` renames it
+ * for a deployment whose gateway reads the tenant from another header. */
 export const TENANT_HEADER = 'x-tenant'
 
 /** The providers the seams read, per attempt. Any may be absent: an
@@ -26,15 +27,29 @@ export interface SeamProviders {
   /** The language the exchange announces as `accept-language`, or
    * null/empty for "none to announce". */
   readonly languageProvider?: () => string | null
-  /** The tenant the exchange announces as `X-Tenant` (a request-time
-   * routing fact, never a claim of the access token), or null/empty for
-   * "none to announce". */
+  /** The tenant the exchange announces (a request-time routing fact,
+   * never a claim of the access token), or null/empty for "none to
+   * announce". */
   readonly tenantProvider?: () => string | null
+  /** The header the tenant travels under; absent or empty means the
+   * `TENANT_HEADER` default (`x-tenant`). */
+  readonly tenantHeader?: string
 }
 
 /**
- * Applies the seam headers to a header set: `accept-language` and
- * `x-tenant` when their provider answers a non-empty value, and
+ * The header set the tenant seam announces under: the configured name,
+ * falling back to `TENANT_HEADER` for an absent or empty one. */
+function tenantHeaderOf(providers: SeamProviders): string {
+  const configured = providers.tenantHeader
+  return configured === undefined || configured === ''
+    ? TENANT_HEADER
+    : configured
+}
+
+/**
+ * Applies the seam headers to a header set: `accept-language` and the
+ * tenant header (`x-tenant` by default, `SeamProviders.tenantHeader`
+ * when configured) when their provider answers a non-empty value, and
  * `Authorization: Bearer <token>` from the store -- each only when the
  * caller did not already set the header, so a caller-supplied value
  * survives. `omitAccessToken` skips the store entirely: no token is
@@ -56,10 +71,11 @@ export function applySeamHeaders(
       headers.set('accept-language', language)
     }
   }
-  if (!headers.has(TENANT_HEADER)) {
+  const tenantHeader = tenantHeaderOf(providers)
+  if (!headers.has(tenantHeader)) {
     const tenant = providers.tenantProvider?.() ?? null
     if (tenant !== null && tenant !== '') {
-      headers.set(TENANT_HEADER, tenant)
+      headers.set(tenantHeader, tenant)
     }
   }
   if (options.omitAccessToken === true) {

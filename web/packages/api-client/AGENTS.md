@@ -28,7 +28,9 @@ this one may issue HTTP requests itself.
 - **The tenant travels as a transport header, read per attempt.**
   `ClientOptions.tenantProvider` (wired by the host -- product-shell's
   bootstrap passes its `SpeedAppDefinition.tenantProvider`) is read on
-  every attempt and announced as `X-Tenant` when set. The tenant is a
+  every attempt and announced under the configured tenant header when
+  set -- `X-Tenant` by default, renamable through
+  `ClientOptions.tenantHeader`. The tenant is a
   request-time routing fact, NOT a claim of the access token (the token
   carries no tenant): the backend's tenant resolution layer reads the
   tenant name off the request surface, so a request to a tenant-scoped
@@ -36,8 +38,8 @@ this one may issue HTTP requests itself.
   header. The per-attempt read is the point: a retry issued after a
   tenant switch must announce the tenant the user is now acting in, the
   same discipline the bearer-token and language reads observe. Never
-  overwrite a caller-supplied `x-tenant`; a null/empty answer (or no
-  provider) leaves the header absent.
+  overwrite a caller-supplied header of the configured name; a
+  null/empty answer (or no provider) leaves the header absent.
 - **fetch is injectable and never implicit at call time.** The client
   captures the environment's global `fetch` at construction (throwing a
   clear error when absent) and `ClientOptions.fetch` overrides it.
@@ -128,10 +130,12 @@ this one may issue HTTP requests itself.
   transport.** `createClient` returns a `SpeedClient` (a `RequestFn` plus
   `openEventStream`); the opener is built inside the same closure so it
   reads the identical seams (fetch, token store, tenant and language
-  providers, the single-flight refresh). Do not build a second wiring of
+  providers with the configured tenant header, the fetch credential
+  mode, the single-flight refresh). Do not build a second wiring of
   those seams, and do not fold streaming back into the request function:
   a stream has no per-exchange timeout and no idempotent retry budget.
-  The opener applies the seams per connection, refreshes and retries once
+  The opener applies the seams per connection, forwards the client's
+  `credentials` mode on its `GET`, refreshes and retries once
   on a bearer `401`, parses the `text/event-stream` framing, and -- by
   contract -- neither times out nor reconnects; reconnecting is the
   caller's policy.

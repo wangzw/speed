@@ -6,27 +6,27 @@
 
 - **它为什么存在。** 契约的生成面（[api-sdk](design-web-api-sdk.md)、orval 的产物）产出的是**形状**——类型与每端点的函数、Query hook——它不产出**传输**。生成面把每次调用交给一个手写的适配器（`@speed/api-sdk` 的 `./runtime` 接缝），由适配器转发给本包的请求函数；宿主在装配处（[product-shell](design-web-product-shell.md) 的 `bootstrapSpeedApp`）以 `bindRequestFn` 把客户端绑进那条接缝。传输（基地址、令牌、刷新、重试、超时、上报、语言、租户）因此只在一处定义。工作区里除本包外没有任何一处手写 `fetch`/`axios`，这条由 `web/eslint.config.mjs` 的 `speed/no-direct-http` 规则守住，而白名单里只有本包。
 - **每次尝试接凭据。** 配了访问令牌存储时，请求函数在每次发送时从存储读一次当前令牌，接成 `Authorization: Bearer <token>`；一次请求可声明 `omitAccessToken`，声明后完全不读存储、不接任何存储令牌。cookie 会话不需要这一路：凭据是服务端的 httpOnly 会话 cookie，由浏览器按 `credentials` 模式（同源缺省即带上）附上，故 cookie 宿主完全不配存储。令牌只在内存：本包没有任何存储 API，令牌不落 `localStorage`/`sessionStorage`/IndexedDB/cookie。
-- **租户按尝试播报，且不在令牌里。** 宿主交来一个租户提供者，本包每次尝试读一次，接成 `X-Tenant` 头；租户是请求期的路由事实，不在访问令牌的声明里，后端解析层正是从请求面（按配置取头、子域或路径）读它。未配提供者、或提供者答空时该头缺席；调用方自带的 `x-tenant` 不覆盖。
+- **租户按尝试播报，且不在令牌里。** 宿主交来一个租户提供者，本包每次尝试读一次，接成租户头；租户是请求期的路由事实，不在访问令牌的声明里，后端解析层正是从请求面（按配置取头、子域或路径）读它。租户头名缺省 `X-Tenant`，`tenantHeader` 可改名（部署的网关从别的头读租户时用）。未配提供者、或提供者答空时该头缺席；调用方自带的同名头不覆盖。
 - **静默的 401 单飞刷新。** 配了刷新钩子时，一次**带了凭据**（bearer 令牌，或凭据模式声明了 cookie 时会带的同源 cookie）的 401 触发一次刷新（并发的 401 共享同一次在飞刷新），随后原请求重试恰一次；凭据为空的 401 不经刷新路径，原样抛出。
 - **仅幂等、仅瞬时的重试。** `GET`／`HEAD`／`OPTIONS` 上的 429（honour `Retry-After`）、502／503／504、网络失败与超时按策略重试，其余一律不重试。
 - **每次交换一条超时，调用方取消原样透传。** `timeoutMs` 界定一次 HTTP 交换（一次发送加其正文读取）；调用方传入的 `AbortSignal` 取消时以原生 `AbortError` 拒绝，不包裹、不重试。
 - **`ApiError` 归一。** 后端以 RFC 9457 问题对象出行（机器可读的类在 `type`，取值 `urn:speed:<模块>:<码>`，正文不带 `code` 成员），本包从 `type` 推得模块码 `<模块>.<码>`（码段里的连字符归一为下划线，`urn:speed:objectstore:not-found` → `objectstore.not_found`），并保留后端给了的 `traceId`／`params`／`message`／`details`；带 `code` 成员的信封以 `code` 为准；两者都没有的应答取本包保留的 `client.*` 码。
 - **语言按尝试播报。** 宿主交来一个语言提供者，本包每次尝试读一次，接成 `accept-language`，是传输通道而非响应本地化开关。
 - **结构化上报。** 本包自身只在刷新失败时经 `Reporter` 报一条警告；终态失败以 `ApiError` 拒绝，由调用方决定是否上报。
-- **服务端事件流。** `createClient` 除请求函数外交出 `openEventStream`：经同一组接缝（fetch、令牌存储、租户与语言提供者、静默刷新）打开一条 `text/event-stream` 长连接，把 SSE 帧解析成事件交给调用方。它与请求函数分开承载，因为它不是一次请求/响应交换——无每次交换的超时、无幂等重试预算，也不重连。
+- **服务端事件流。** `createClient` 除请求函数外交出 `openEventStream`：经同一组接缝（fetch、令牌存储、租户与语言提供者及租户头名、凭据模式、静默刷新）打开一条 `text/event-stream` 长连接，把 SSE 帧解析成事件交给调用方。它与请求函数分开承载，因为它不是一次请求/响应交换——无每次交换的超时、无幂等重试预算，也不重连。
 
 ### 非职责
 
 - **不生成类型与端点函数。** 每端点的类型、函数与 Query hook 由 orval 从契约生成，落在 [api-sdk](design-web-api-sdk.md)。本包对 spec 无关：它不认识任何端点路径、请求体或响应类型，只接受一个路径串与一组请求选项。
 - **不取回部署配置或特性。** 本包不为任何端点手写取回：部署的 API origin 在运行期由应用入口注入（[web](design-web.md)），本进程服务哪些面由 [auth-core](design-web-auth-core.md) 经生成面取回特性文档得知，登录前的事实经拥有它的模块自己的发现面、同样经生成面读取。
 - **不交付 React 钩子。** 本包的代码出口只有主入口，不 import `react`，也不声明它为 peer。
-- **不认识租户，只播报宿主给的租户。** 本包不推导、不存租户标识，只在每次尝试把宿主经租户提供者交来的值接成 `X-Tenant` 头；租户从哪来（路由、会话）是宿主的事实，本包不决定。查询键的租户分段是框架别处的事（[ADR-web-tenant-query-key-2026-10-15](../../../adr/adr-web-tenant-query-key-2026-10-15.md)）。
+- **不认识租户，只播报宿主给的租户。** 本包不推导、不存租户标识，只在每次尝试把宿主经租户提供者交来的值接成租户头（缺省 `X-Tenant`，`tenantHeader` 可改名）；租户从哪来（路由、会话）是宿主的事实，本包不决定。查询键的租户分段是框架别处的事（[ADR-web-tenant-query-key-2026-10-15](../../../adr/adr-web-tenant-query-key-2026-10-15.md)）。
 - **不落存储。** 本包没有存储接缝，宿主因而无法配置令牌持久化；访问令牌只在内存，重载页面即登出直到会话层重建会话。刷新令牌的家在会话层（[auth-core](design-web-auth-core.md)），不在本包。
 - **不持会话状态、不驱动会话。** 401 时调用的刷新钩子由宿主提供（`@speed/auth-core` 的会话刷新）；本包不持有会话，不决定会话存续。
 - **不构造 QueryClient、不定义查询键。** 本包只交一个请求函数；server 状态的缓存归 TanStack Query，由宿主拥有。
 - **不含用户可见文本，不带 i18n 资源。** 错误 `code` 是数据，由消费包在自己的文案目录里译成双语文本；上报消息是固定的英文串加 snake_case 属性；本包不渲染任何面向用户的文字。
 - **带二进制正文与原始字节应答。** 请求正文为一个二进制值（`Blob`、`ArrayBuffer` 或类型化数组）时原样送出，不 JSON 序列化（对象存储的内容上传即此）；一次请求声明 `responseType: 'blob'` 时把 2xx 正文读成 `Blob`（对象存储的内容下载即此），错误应答仍按 JSON 信封解析。
-- **服务端事件流由 `openEventStream` 承载。** 流式应答不是一次请求/应答交换，故不骑请求函数（它有逐次交换的超时与幂等重试预算，流没有），而由独立成员 `openEventStream` 经同一套接缝（fetch、令牌、租户、语言、单飞刷新）开启（见职责与外部接口契约）。
+- **服务端事件流由 `openEventStream` 承载。** 流式应答不是一次请求/应答交换，故不骑请求函数（它有逐次交换的超时与幂等重试预算，流没有），而由独立成员 `openEventStream` 经同一套接缝（fetch、令牌、租户与租户头名、语言、凭据模式、单飞刷新）开启（见职责与外部接口契约）。
 
 ## 外部接口契约
 
@@ -88,13 +88,14 @@ export function createConsoleReporter(): Reporter
 | `baseUrl` | scheme 加 host 加可选前缀；请求路径必须以 `/` 开头并原样接在其后。缺省或空串即 `createClient` 抛错。尾斜杠剥除。 |
 | `fetch` | fetch 实现；缺省取构造时捕获的 `globalThis.fetch`，两处都无即抛错（环境无 fetch 时快速失败，而非每次请求失败） |
 | `accessTokenStore` | 可选的仅内存令牌存储；缺席即请求不带 `Authorization`（cookie 会话用这一档） |
-| `credentials` | fetch 的 `credentials` 模式，原样传给 fetch；缺席取浏览器缺省（`same-origin`，cookie 会话靠它带上同源 cookie）。声明 `'same-origin'`/`'include'` 同时把本客户端标为 cookie 带凭据：一次带了 cookie 的 401（除声明 `omitAccessToken` 者）与带了 bearer 令牌的请求同等触发刷新钩子 |
+| `credentials` | fetch 的 `credentials` 模式，原样传给 fetch，并转发给事件流的 `GET`；缺席取浏览器缺省（`same-origin`，cookie 会话靠它带上同源 cookie）。声明 `'same-origin'`/`'include'` 同时把本客户端标为 cookie 带凭据：一次带了 cookie 的 401（除声明 `omitAccessToken` 者）与带了 bearer 令牌的请求同等触发刷新钩子。转发给事件流只改其 `GET` 的凭据模式，不改事件流的刷新准入（仍只认 bearer 令牌） |
 | `refreshAccessToken` | 静默 401 刷新钩子：以本轮作用域的请求函数调用；成功返回 `true`（随后原请求重试一次）；只对带了凭据（bearer 令牌，或 cookie 模式下的同源 cookie）的请求触发；并发 401 共享一次在飞刷新；每请求至多调用一次 |
 | `timeoutMs` | 一次交换的超时毫秒；缺席即不装内部超时；`<= 0` 或非有限值抛错 |
 | `retryPolicy` | 瞬时重试的次数与延时；缺省 `DEFAULT_RETRY_POLICY`；`maxAttempts < 1` 或非整数、延时为负或非有限即抛错 |
 | `reporter` | 结构化诊断接收端；缺省 `createConsoleReporter()` |
 | `languageProvider` | 每次尝试读一次，返回当前语言或 `null`/空串表示「无可播报」；接成 `accept-language`，不覆盖调用方自带的该头 |
-| `tenantProvider` | 每次尝试读一次，返回当前租户或 `null`/空串表示「无可播报」；接成 `X-Tenant`，不覆盖调用方自带的 `x-tenant` |
+| `tenantProvider` | 每次尝试读一次，返回当前租户或 `null`/空串表示「无可播报」；接成租户头（缺省 `X-Tenant`），不覆盖调用方自带的同名头 |
+| `tenantHeader` | 租户头名；缺席或空串取缺省 `x-tenant`（`TENANT_HEADER`）。请求函数与事件流都按它播报 `tenantProvider` 的值，且都不覆盖调用方自带的同名头（头名大小写不敏感） |
 
 **`RequestFn` 的契约，约束的主体是它的每次调用**：2xx 的 JSON 正文解析为 `T`；2xx 的 `content-type` 是 HTML 文档（`text/html`、`application/xhtml+xml`）时以 `client.html` 拒绝，早于任何解析；空的 2xx（204 式）解析为 `undefined`，除非请求声明了 `requireJsonBody`（此时空 2xx 以携带真实状态与尝试次数的 `client.protocol` 拒绝）；非 2xx 一律以 `ApiError` 拒绝；带信封的失败保留其码——正文自带的 `code`，或后端 RFC 9457 问题对象的 `type` 推得的 `<模块>.<码>`（`code` 与 `urn:speed:` 的 `type` 任一即可，`traceId` 可选），其余取保留的 `client.*` 码；调用方取消以原生 `AbortError` 拒绝。请求路径必须是以 `/` 开头的绝对路径；带查询串的路径与 `query` 选项同时给出即按程序员错误拒绝。
 
@@ -112,10 +113,10 @@ export function createConsoleReporter(): Reporter
 
 ### 事件流的契约
 
-`openEventStream(path, options)` 对每个调用打开一次 `GET`：接同一组接缝头（`accept-language`、`X-Tenant`、bearer 令牌，按次读），再加 `accept: text/event-stream`。回应按下列规则处置：
+`openEventStream(path, options)` 对每个调用打开一次 `GET`：接同一组接缝头（`accept-language`、配置的租户头、bearer 令牌，按次读），再加 `accept: text/event-stream`。这次 `GET` 同时带上客户端自己的 `credentials` 模式（声明时原样转发给 fetch；缺席即 fetch 缺省），使 cookie 会话在事件流上与在请求函数上一样随请求发出。转发凭据模式不改变事件流的刷新准入：刷新仍是 bearer-only（见下）。回应按下列规则处置：
 
 - **2xx**：调 `onOpen`，读 `response.body` 流，按 `text/event-stream` 的组帧（空行分帧、字段首个冒号分键值、无 `data` 行的帧丢弃、事件名缺省 `message`）解析成 `ServerSentEvent`，逐帧调 `onEvent`；流被服务端正常收尾时调 `onClose`。
-- **401 且带了 bearer 令牌且配了刷新钩子且此前未刷新过**：调一次刷新，成功即以新令牌重试一次；失败则读信封、以 `onError` 上报，再调 `onClose`。
+- **401 且带了 bearer 令牌且配了刷新钩子且此前未刷新过**：调一次刷新，成功即以新令牌重试一次；失败则读信封、以 `onError` 上报，再调 `onClose`。刷新在这里只认 bearer 令牌：仅 cookie 带出的 401（未接令牌）不经刷新，按其余非 2xx 处置。
 - **其余非 2xx**：读信封（正文自带的 `code`，或 RFC 9457 问题对象 `type` 推得的模块码），以 `onError` 上报 `ApiError`（模块码或 `client.http.<status>`），再调 `onClose`。
 - **传输失败**：以 `client.network` 的 `ApiError` 上报，再调 `onClose`。
 
@@ -179,7 +180,7 @@ sequenceDiagram
 | 概念 | 类型 | 说明 |
 |---|---|---|
 | 请求函数 | `RequestFn` | `createClient` 的产物；泛型于解析结果类型 |
-| 客户端选项 | `ClientOptions` | 基地址、fetch、可选的令牌存储、凭据模式、刷新钩子、超时、重试策略、上报端、语言提供者、租户提供者 |
+| 客户端选项 | `ClientOptions` | 基地址、fetch、可选的令牌存储、凭据模式、刷新钩子、超时、重试策略、上报端、语言提供者、租户提供者与租户头名 |
 | 单次请求选项 | `RequestOptions` | 方法、头、`omitAccessToken`、查询、正文（JSON 或二进制）、`responseType`、`requireJsonBody`、取消信号 |
 | 归一错误 | `ApiError` | `status`、`code`、`traceId`、`params`、`details`、`attempts`、`auth`（`status === 401`） |
 | 令牌存储 | `AccessTokenStore` | 同步的 `get`/`set`，仅内存；`set(null)` 即登出 |
@@ -221,7 +222,7 @@ sequenceDiagram
 
 ### 租户的按尝试读取
 
-`tenantProvider` 在每次尝试读一次，接成 `X-Tenant`（`null`/空串即不设该头），且不覆盖调用方自带的 `x-tenant`。租户是请求期的路由事实，**不在访问令牌的声明里**：后端解析层按配置从请求面（头、子域或路径）读租户名，指向受租户保护的端点的请求因此必须带上它，demo 的栈正是从该头解析。每次尝试读是这条的设计点：切租户后重试的请求播报用户当前所处的租户，与令牌、语言同一纪律。租户从哪来（宿主的路由、会话）是宿主的事实，本包不推导。
+`tenantProvider` 在每次尝试读一次，接成租户头（`null`/空串即不设该头），且不覆盖调用方自带的同名头。头名缺省 `X-Tenant`，`tenantHeader` 可改；请求函数与事件流都按它播报。租户是请求期的路由事实，**不在访问令牌的声明里**：后端解析层按配置从请求面（头、子域或路径）读租户名，指向受租户保护的端点的请求因此必须带上它，demo 的栈正是从该头解析。每次尝试读是这条的设计点：切租户后重试的请求播报用户当前所处的租户，与令牌、语言同一纪律。租户从哪来（宿主的路由、会话）是宿主的事实，本包不推导。
 
 ## 错误与失败语义
 
@@ -258,7 +259,8 @@ sequenceDiagram
 
 - **`fetch`**：注入确定性替身（测试），或在无全局 fetch 的环境提供实现。
 - **`accessTokenStore`**：注入替换的令牌存储（仍须仅在内存，不落存储——本包没有存储接缝）；cookie 会话不注入。
-- **`credentials`**：声明客户端带 cookie（`'same-origin'`/`'include'`），使同源 cookie 随请求发送、且其 401 触发刷新钩子；跨源部署置 `'include'`。
+- **`credentials`**：声明客户端带 cookie（`'same-origin'`/`'include'`），使同源 cookie 随请求发送、且其 401 触发刷新钩子；跨源部署置 `'include'`。该模式同时转发给事件流的 `GET`（其刷新准入不因此改变，仍是 bearer-only）。
+- **`tenantHeader`**：把租户播报的头名从缺省 `x-tenant` 改成部署的网关所读的名字；请求函数与事件流共用它。
 - **`refreshAccessToken`**：把静默刷新接到宿主的会话（`@speed/auth-core`），钩子以本轮作用域的请求函数调用——cookie 会话接 `(issue) => session.restore(issue)`，`restore` 的两次读都经它发出；令牌会话接 `session.refresh()`。缺席即每个 401 原样浮出。
 - **`retryPolicy`**：改瞬时重试的预算与延时；`{ maxAttempts: 1, ... }` 关闭瞬时重试。
 - **`reporter`**：把诊断接到宿主的管道；`Reporter` 的 `error` 通道是宿主自身的调用点。

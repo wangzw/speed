@@ -35,9 +35,13 @@ interface Note {
 export async function loadNotes(): Promise<Note[]> {
   const api = createClient({
     // Scheme + host + optional prefix, or a same-origin '/api/...'
-    // path in development. The fetch implementation is injectable
-    // (tests pass a deterministic stand-in); when omitted, the
-    // environment's global fetch is captured at construction time.
+    // path in development. Paths are appended verbatim, so a
+    // hand-written layer may keep a prefix here ('/api/v1' below with
+    // '/notes' appended after it). Binding the generated
+    // @speed/api-sdk surface takes only the origin: its operation
+    // paths already carry their own '/api/v1'. The fetch implementation
+    // is injectable (tests pass a deterministic stand-in); when omitted,
+    // the environment's global fetch is captured at construction time.
     baseUrl: '/api/v1',
     // The fetch credential mode. A cookie-delivered session (the
     // platform default) relies on 'same-origin', which sends the
@@ -137,8 +141,9 @@ export async function loadNotes(): Promise<Note[]> {
   credential-less, and a caller-supplied one is the caller's own,
   untouched by the store. Tenant context does not travel in the token
   (the access token carries no tenant claim); the client announces it
-  as the `X-Tenant` header, read per attempt from
-  `ClientOptions.tenantProvider` -- see "Tenant announcement" below.
+  under the tenant header -- `X-Tenant` by default, renamable through
+  `ClientOptions.tenantHeader` -- read per attempt from
+  `ClientOptions.tenantProvider`; see "Tenant announcement" below.
 - **Silent 401 refresh, once per request -- credentialed-only.** When a
   request that *presented a credential* answers 401 and a
   `refreshAccessToken` hook is configured, the client runs one refresh
@@ -213,8 +218,11 @@ export async function loadNotes(): Promise<Note[]> {
   ```ts
   const api = createClient({
     baseUrl: '/api/v1',
-    // product-shell's bootstrap passes exactly this: the frontend
-    // negotiation chain's resolved value, read per attempt.
+    // The host's i18n instance, read per attempt: its current language
+    // travels as accept-language on every request (product-shell's
+    // bootstrap passes this same provider; its baseUrl is
+    // window.location.origin, since generated operation paths already
+    // carry '/api/v1').
     languageProvider: () => i18n.language,
   })
   ```
@@ -230,7 +238,9 @@ export async function loadNotes(): Promise<Note[]> {
   the client to translate.
 - **Tenant announcement (a transport channel, not a claim of the
   token).** `ClientOptions.tenantProvider` supplies the tenant every
-  request announces as the `X-Tenant` header:
+  request announces under the tenant header -- `X-Tenant` by default,
+  renamable through `ClientOptions.tenantHeader` for a deployment whose
+  gateway reads another header name:
 
   ```ts
   const api = createClient({
@@ -249,10 +259,12 @@ export async function loadNotes(): Promise<Note[]> {
   it from this header. The provider is read on EVERY attempt, the same
   per-attempt discipline the bearer-token and language reads observe, so
   a request retried after a tenant switch carries the tenant the user is
-  now acting in. It never overwrites a caller-supplied `x-tenant`
-  header, and a null/empty answer (or no provider at all) leaves the
-  header absent. A host with no tenant-scoped traffic leaves the
-  provider out.
+  now acting in. It never overwrites a caller-supplied header of the
+  configured name (`x-tenant` by default), and a null/empty answer (or
+  no provider at all) leaves the header absent. A host with no
+  tenant-scoped traffic leaves the provider out. `tenantHeader` renames
+  the header for both the request function and the event-stream opener;
+  an absent or empty value keeps the `x-tenant` default.
 
 ## Server-sent events (`openEventStream`)
 
@@ -266,6 +278,13 @@ on a bearer `401` (as the request loop does), then reads the
 per frame. Non-2xx answers, transport failures and protocol violations
 surface an `ApiError` through `onError`; the caller's own `close()` or an
 aborted `signal` fires nothing.
+
+The stream's `GET` carries the client's own `credentials` mode (so a
+cookie-delivered session travels on the stream exactly as it does on
+every request) and announces the tenant under the configured
+`tenantHeader` name. Forwarding the credential mode does not widen the
+stream's refresh admission: its `401` refresh still requires an attached
+bearer token, and a cookie-only refusal surfaces through `onError`.
 
 It is deliberately **not** the request function: a streaming response is
 not a request/response exchange, so it has no per-exchange timeout and no

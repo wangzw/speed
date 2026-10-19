@@ -16,6 +16,12 @@ import (
 // about:blank). Title and Detail are the text a client reads; a module that
 // answers in the request language fills them, and an empty Title falls back to
 // the standard status text.
+//
+// The frontend's @speed/api-client parses only the urn:speed:<module>:<code>
+// shape into a module code (<module>.<code>, each dash of the code part
+// normalized to an underscore); every other type -- about:blank, a vendor URI,
+// a bare token -- degrades to its client.http.<status> fallback. A refusal a
+// frontend has to render by code therefore carries this shape.
 type Fault struct {
 	// Status is the HTTP status the problem is answered with.
 	Status int

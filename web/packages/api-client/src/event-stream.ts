@@ -79,11 +79,17 @@ export type EventStreamOpener = (
 
 /** What the opener needs from the client's closure: the same seams and
  * fetch the request function uses, plus the single-flight refresh hook
- * so a 401 on the initial exchange can refresh and retry once. */
+ * so a 401 on the initial exchange can refresh and retry once, and the
+ * client's fetch credential mode. */
 export interface EventStreamContext extends SeamProviders {
   readonly baseUrl: string
   readonly fetch: typeof fetch
   readonly refresh?: () => Promise<boolean>
+  /** The fetch `credentials` mode the client was configured with;
+   * absent, fetch's own default (`same-origin`) applies. Forwarding it
+   * keeps a cookie-delivered session presented on the stream's own
+   * `GET`, exactly as it is on every request. */
+  readonly credentials?: RequestCredentials
 }
 
 /** A per-message incremental parser for the `text/event-stream` framing
@@ -215,8 +221,10 @@ export function createEventStreamOpener(
     accessTokenStore: context.accessTokenStore,
     languageProvider: context.languageProvider,
     tenantProvider: context.tenantProvider,
+    tenantHeader: context.tenantHeader,
   }
   const refresh = context.refresh
+  const credentials = context.credentials
 
   return (path: string, options: EventStreamOptions): EventStreamHandle => {
     if (typeof path !== 'string' || !path.startsWith('/')) {
@@ -293,6 +301,10 @@ export function createEventStreamOpener(
               method: 'GET',
               headers,
               signal: controller.signal,
+              // Only set when the client declared a mode: absent, fetch's
+              // own default (same-origin) applies, the same shape the
+              // request function sends.
+              ...(credentials === undefined ? {} : { credentials }),
             })
           } catch (cause) {
             if (cancelled || callerSignal?.aborted === true) {

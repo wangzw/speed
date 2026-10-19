@@ -79,13 +79,14 @@
  *      anything is sent.
  *
  * The tenant is a transport channel here, not a claim of the access
- * token: the client announces the host's current tenant as the
- * `X-Tenant` header, read per attempt from `tenantProvider` -- the
- * routing fact the backend's tenant resolution layer reads off the
- * request surface. A request declaring no provider, or whose provider
- * answers null/empty, carries no tenant header; a caller-supplied
- * `x-tenant` is the caller's own and is never overwritten. Nothing in
- * this file reads or stores data beyond the current request.
+ * token: the client announces the host's current tenant under the
+ * configured tenant header (`X-Tenant` by default), read per attempt
+ * from `tenantProvider` -- the routing fact the backend's tenant
+ * resolution layer reads off the request surface. A request declaring
+ * no provider, or whose provider answers null/empty, carries no tenant
+ * header; a caller-supplied header of the configured name is the
+ * caller's own and is never overwritten. Nothing in this file reads or
+ * stores data beyond the current request.
  */
 
 import {
@@ -363,26 +364,37 @@ export interface ClientOptions {
    */
   languageProvider?: () => string | null
   /**
-   * The tenant every request announces as the `X-Tenant` header: the
-   * host returns its current tenant identifier -- the routing fact the
-   * backend's tenant resolution layer reads on the endpoints it guards
-   * -- or null/empty for "none to announce". The tenant is not a claim
+   * The tenant every request announces: the host returns its current
+   * tenant identifier -- the routing fact the backend's tenant
+   * resolution layer reads on the endpoints it guards -- or
+   * null/empty for "none to announce". The tenant is not a claim
    * of the access token (the token carries none): the server resolves
    * it off the request surface (a header, a subdomain label or a path
    * segment, per its configuration), so a request to a tenant-scoped
    * endpoint must carry it. This is the transport channel for that
    * value; the skeleton's stacks resolve the tenant from this header
-   * (`X-Tenant` in the demo configuration).
+   * (`X-Tenant` in the demo configuration, the default name -- see
+   * `tenantHeader` below).
    *
    * Read per attempt, like the bearer token and the language, so a
    * retry issued after a tenant switch carries the tenant the user is
-   * now acting in. A caller-supplied `x-tenant` on the request's own
-   * headers is never overwritten (the same guard the accept/content-
-   * type and accept-language defaults observe): a request that names
-   * its own tenant keeps it. A null/empty answer leaves the header
-   * absent.
+   * now acting in. A caller-supplied header of the configured name is
+   * never overwritten (the same guard the accept/content-type and
+   * accept-language defaults observe): a request that names its own
+   * tenant keeps it. A null/empty answer leaves the header absent.
    */
   tenantProvider?: () => string | null
+  /**
+   * The header name the tenant travels under; absent or empty means
+   * the `x-tenant` default (`TENANT_HEADER` from seams.ts). A
+   * deployment whose gateway resolves the tenant from another header
+   * sets it here instead of hand-writing the header per request: the
+   * request function and the event-stream opener both announce the
+   * `tenantProvider` value under this name, and both leave a
+   * caller-supplied header of that name untouched. Header names are
+   * case-insensitive, so a caller's own casing matches too.
+   */
+  tenantHeader?: string
 }
 
 /** Statuses transient-retried on idempotent methods. */
@@ -905,6 +917,7 @@ export function createClient(options: ClientOptions): SpeedClient {
   const reporter = options.reporter ?? createConsoleReporter()
   const languageProvider = options.languageProvider
   const tenantProvider = options.tenantProvider
+  const tenantHeader = options.tenantHeader
   // The fetch credential mode (passed through per attempt, below). A mode
   // that carries cookies marks the client cookie-credentialed: a refused
   // request that presented the ambient cookie is then eligible for the
@@ -945,7 +958,12 @@ export function createClient(options: ClientOptions): SpeedClient {
     // presented one may refresh).
     const attachedToken = applySeamHeaders(
       headers,
-      { accessTokenStore: tokenStore, languageProvider, tenantProvider },
+      {
+        accessTokenStore: tokenStore,
+        languageProvider,
+        tenantProvider,
+        tenantHeader,
+      },
       { omitAccessToken: requestOptions.omitAccessToken === true },
     )
 
@@ -1609,7 +1627,9 @@ export function createClient(options: ClientOptions): SpeedClient {
     accessTokenStore: tokenStore,
     languageProvider,
     tenantProvider,
+    tenantHeader,
     refresh: refreshOnce,
+    credentials,
   })
 
   return Object.assign(request, { openEventStream })

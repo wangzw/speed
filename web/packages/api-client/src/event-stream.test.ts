@@ -114,6 +114,71 @@ describe('openEventStream', () => {
     expect(call.headers.get('accept-language')).toBe('zh-CN')
   })
 
+  it('announces the tenant under the configured header name', async () => {
+    const standin = createStandinFetch(
+      sequence(sseResponse(['event: message\ndata: {"message_id":"m1"}\n\n'])),
+    )
+    const api = createClient({
+      baseUrl: BASE_URL,
+      fetch: standin.fetch,
+      tenantProvider: () => 'acme',
+      tenantHeader: 'x-workspace',
+    })
+    api.openEventStream('/api/v1/notifications/stream', {
+      onEvent: () => undefined,
+    })
+    await tick()
+    await tick()
+    const call: StandinCall = standin.calls[0]!
+    expect(call.headers.get('x-workspace')).toBe('acme')
+    expect(call.headers.has('x-tenant')).toBe(false)
+  })
+
+  it('falls back to the default tenant header name when it is empty', async () => {
+    const standin = createStandinFetch(
+      sequence(sseResponse(['event: message\ndata: {"message_id":"m1"}\n\n'])),
+    )
+    const api = createClient({
+      baseUrl: BASE_URL,
+      fetch: standin.fetch,
+      tenantProvider: () => 'acme',
+      tenantHeader: '',
+    })
+    api.openEventStream('/api/v1/notifications/stream', {
+      onEvent: () => undefined,
+    })
+    await tick()
+    await tick()
+    expect(standin.calls[0]!.headers.get('x-tenant')).toBe('acme')
+  })
+
+  it('forwards the client credentials mode to the stream fetch, and omits it when unset', async () => {
+    const seen: Array<RequestCredentials | undefined> = []
+    const fetchStub: typeof fetch = async (_input, init) => {
+      seen.push(init?.credentials)
+      return sseResponse(['event: message\ndata: {}\n\n'])
+    }
+    const withCookies = createClient({
+      baseUrl: BASE_URL,
+      fetch: fetchStub,
+      credentials: 'include',
+    })
+    withCookies.openEventStream('/api/v1/notifications/stream', {
+      onEvent: () => undefined,
+    })
+    await tick()
+    await tick()
+    expect(seen[0]).toBe('include')
+
+    const withoutMode = createClient({ baseUrl: BASE_URL, fetch: fetchStub })
+    withoutMode.openEventStream('/api/v1/notifications/stream', {
+      onEvent: () => undefined,
+    })
+    await tick()
+    await tick()
+    expect(seen[1]).toBeUndefined()
+  })
+
   it('refreshes and retries once on a bearer 401, then streams', async () => {
     const tokenStore = createMemoryAccessTokenStore()
     tokenStore.set('stale')

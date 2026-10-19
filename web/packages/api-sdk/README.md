@@ -78,9 +78,16 @@ import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { createClient } from '@speed/api-client'
 
 bindRequestFn(
-  createClient({ baseUrl: '/api/v1', accessTokenStore: ... }),
+  createClient({ baseUrl: window.location.origin, accessTokenStore: ... }),
 )
 ```
+
+`baseUrl` is the origin alone when the client binds this generated
+surface: every generated operation path already carries its own
+`/api/v1`, and the client appends paths verbatim. A hand-written layer
+that uses `@speed/api-client` directly may instead keep an API prefix in
+`baseUrl` and pass prefix-less paths -- the two conventions belong to
+different callers of the same client.
 
 Transport concerns (base URL, access-token store, refresh, retry,
 timeout, reporter, the language and tenant headers) are entirely the

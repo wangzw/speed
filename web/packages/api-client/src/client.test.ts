@@ -448,6 +448,51 @@ describe('request shape', () => {
     expect(recorded(standin).headers.get('x-tenant')).toBe('globex')
   })
 
+  it('announces the tenant under the configured header name', async () => {
+    const standin = scriptedStandin(jsonResponse(200, { ok: true }))
+    const api = createClient({
+      baseUrl: BASE_URL,
+      fetch: standin.fetch,
+      tenantProvider: () => 'acme',
+      tenantHeader: 'x-workspace',
+    })
+    await api<{ ok: boolean }>('/objects')
+    const call = recorded(standin)
+    expect(call.headers.get('x-workspace')).toBe('acme')
+    // The default name is not announced as well.
+    expect(call.headers.has('x-tenant')).toBe(false)
+  })
+
+  it('falls back to the default name when the configured header is empty', async () => {
+    // An empty name cannot be set on a Headers object at all, so the
+    // option must normalise it to the default rather than pass it through.
+    const standin = scriptedStandin(jsonResponse(200, { ok: true }))
+    const api = createClient({
+      baseUrl: BASE_URL,
+      fetch: standin.fetch,
+      tenantProvider: () => 'acme',
+      tenantHeader: '',
+    })
+    await api<{ ok: boolean }>('/objects')
+    expect(recorded(standin).headers.get('x-tenant')).toBe('acme')
+  })
+
+  it('never overwrites a caller-supplied header of the configured tenant name', async () => {
+    const standin = scriptedStandin(jsonResponse(200, { ok: true }))
+    const api = createClient({
+      baseUrl: BASE_URL,
+      fetch: standin.fetch,
+      tenantProvider: () => 'acme',
+      tenantHeader: 'x-workspace',
+    })
+    await api<{ ok: boolean }>('/objects', {
+      headers: { 'X-Workspace': 'globex' },
+    })
+    const call = recorded(standin)
+    expect(call.headers.get('x-workspace')).toBe('globex')
+    expect(call.headers.has('x-tenant')).toBe(false)
+  })
+
   it('reads the tenant per attempt, so a retry carries the switched tenant', async () => {
     let tenant: string | null = 'acme'
     const standin = scriptedStandin(

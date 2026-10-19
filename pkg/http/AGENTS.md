@@ -116,6 +116,11 @@ a defect. The error body's shape is a declaration as well: `ErrorShape` names
 the media type and type the entry point writes, defaulting to the problem
 document. A host delivering its own `ErrorResponder` declares that responder's
 shape in its error responses, so the contract keeps describing what is written.
+A fault's `Type` is what a frontend can render by code: the web package
+`@speed/api-client` parses only type values of the shape
+`urn:speed:<module>:<code>` into a module code (`<module>.<code>`, dashes
+normalized to underscores) and degrades every other type to
+`client.http.<status>`.
 
 The declaration types are plain structs, `reflect.Type` values and generic
 handler signatures, so this package still imports only the standard library.
