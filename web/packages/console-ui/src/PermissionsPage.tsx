@@ -8,6 +8,11 @@
  * disabled until a tenant is chosen; the tenant is an argument of the
  * request, not the session's current tenant.
  *
+ * The tenant scope is optionally controlled: `tenant` locks the page to the
+ * given value and hides the selector, `defaultTenant` seeds the page's own
+ * selection ahead of the URL's `tenant` parameter, and `onTenantChange`
+ * reports each re-selection made through the page's own selector.
+ *
  * The page renders the surface in five sections:
  *
  *  - the role catalog: list a tenant's roles, create or rewrite one, and
@@ -26,6 +31,11 @@
  * unit, keeping the recorded identifier as the column's full value; the
  * unbind control names the account by that same readable identity when the
  * account read answers one, and by the recorded identifier otherwise.
+ *
+ * A role row carries the host's description key, never text this package
+ * ships: the shell's `describeRole` resolver renders it, and without one the
+ * raw key stands so the row is never blank. The permission catalog keeps the
+ * full permission code as its primary text.
  *
  * Every read and write is an operation on the console operations bundle,
  * so the page builds no client and writes no query key. A failed list
@@ -52,7 +62,7 @@
  * PageHeader.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import MenuItem from '@mui/material/MenuItem'
@@ -77,14 +87,15 @@ import {
 import { AccountSelector } from './internal/account-selector.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
+import { useConsoleDescribeRole } from './internal/describe-role.js'
 import { useConsoleUiErrorText } from './internal/error-text.js'
-import { RefreshButton } from './internal/refresh-button.js'
+import { RefreshButton } from '@speed/ui-kit'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
   pageRefreshRead,
   usePageRefresh,
-} from './internal/use-page-refresh.js'
+} from '@speed/ui-kit'
 import {
   failureTextOf,
   useFailureScroll,
@@ -168,11 +179,36 @@ function bindingErrorId(scope: string, binding: ConsoleBinding): string {
   return `permissions-${scope}-error-${encodeURIComponent(bindingKey(binding))}`
 }
 
-export function PermissionsPage() {
+export interface PermissionsPageProps {
+  /**
+   * A controlled tenant scope: when given, the page's reads and writes name
+   * this tenant and the selector is not rendered. An empty string is a
+   * controlled "no tenant".
+   */
+  readonly tenant?: string
+  /**
+   * The page's initial tenant when it is not controlled. Wins over the
+   * tenant query parameter.
+   */
+  readonly defaultTenant?: string
+  /** Reports each re-selection made through the page's own selector. */
+  readonly onTenantChange?: (tenant: string) => void
+}
+
+export function PermissionsPage({
+  tenant: controlledTenant,
+  defaultTenant,
+  onTenantChange,
+}: PermissionsPageProps = {}) {
   const { t } = useConsoleUiTranslation()
+  const describeRole = useConsoleDescribeRole()
   const operations = useConsoleOperations()
 
-  const [tenant, setTenant] = useState(tenantFromLocation)
+  const [innerTenant, setInnerTenant] = useState(
+    () => defaultTenant ?? tenantFromLocation(),
+  )
+  const tenant = controlledTenant ?? innerTenant
+  const tenantControlled = controlledTenant !== undefined
   const [selectedRole, setSelectedRole] = useState('')
   // A removal settles after the confirmation dialog has closed, and the
   // operator may have moved to another role in between. The settlement
@@ -274,7 +310,7 @@ export function PermissionsPage() {
   // change and the refresh action: it clears every slot and every row
   // marker, so a cleared slot never leaves a control carrying
   // `aria-invalid` and a description that no longer renders.
-  const resetPageFeedback = () => {
+  const resetPageFeedback = useCallback(() => {
     roleFeedback.reset()
     grantsFeedback.reset()
     bindingsFeedback.reset()
@@ -284,7 +320,18 @@ export function PermissionsPage() {
     setFailedBinding(null)
     setFailedLookupBinding(null)
     setRoleGone(false)
-  }
+  }, [
+    roleFeedback.reset,
+    grantsFeedback.reset,
+    bindingsFeedback.reset,
+    lookupFeedback.reset,
+  ])
+  // A controlled tenant arrives as a prop, so the reset cannot wait for the
+  // page's own selector: any change of the argument every write names
+  // clears the slots and the row markers.
+  useEffect(() => {
+    resetPageFeedback()
+  }, [tenant, resetPageFeedback])
 
   // The refresh action re-reads every read describing the page body that is
   // enabled at that moment: the roles, the permission catalog, the bindings,
@@ -328,7 +375,8 @@ export function PermissionsPage() {
   // clears every slot and every row marker: the old result would read as
   // describing the new tenant.
   const changeTenant = (next: string) => {
-    setTenant(next)
+    setInnerTenant(next)
+    onTenantChange?.(next)
     resetPageFeedback()
   }
 
@@ -534,7 +582,13 @@ export function PermissionsPage() {
       cellWrap: 'nowrap',
       cellFullValue: (role) =>
         role.description_key === '' ? undefined : role.description_key,
-      cell: (role) => role.description_key,
+      // The key names an entry in the host's own bundle, so only the host
+      // can render it; without a resolver the raw key stands rather than an
+      // empty cell.
+      cell: (role) =>
+        role.description_key === ''
+          ? ''
+          : (describeRole?.(role.description_key, role) ?? role.description_key),
     },
     {
       id: 'actions',
@@ -797,21 +851,34 @@ export function PermissionsPage() {
       </Box>
 
       <Box component="section" sx={{ mb: 3 }}>
-        <TenantScope
-          value={tenant}
-          onSelect={changeTenant}
-          disabled={anyPending}
-          trailing={
-            <RefreshButton
-              busy={pageRefresh.busy}
-              disabled={tenant === ''}
-              writePending={anyPending}
-              describedBy={TENANT_HINT_ID}
-              disabledReason={t('permissions.needTenant.description')}
-              onClick={pageRefresh.refresh}
-            />
-          }
-        />
+        {tenantControlled ? (
+          <RefreshButton
+            busy={pageRefresh.busy}
+            disabled={tenant === ''}
+            writePending={anyPending}
+            describedBy={TENANT_HINT_ID}
+            disabledReason={t('permissions.needTenant.description')}
+            label={t('common.refresh')}
+            onClick={pageRefresh.refresh}
+          />
+        ) : (
+          <TenantScope
+            value={tenant}
+            onSelect={changeTenant}
+            disabled={anyPending}
+            trailing={
+              <RefreshButton
+                busy={pageRefresh.busy}
+                disabled={tenant === ''}
+                writePending={anyPending}
+                describedBy={TENANT_HINT_ID}
+                disabledReason={t('permissions.needTenant.description')}
+                label={t('common.refresh')}
+                onClick={pageRefresh.refresh}
+              />
+            }
+          />
+        )}
       </Box>
 
       {tenant === '' ? (

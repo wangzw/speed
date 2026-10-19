@@ -16,8 +16,8 @@
 
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
+import { formatInstant } from '@speed/i18n'
 import { visuallyHiddenSx } from '@speed/ui-kit'
-import { formatUtcLong } from './datetime.js'
 import { useConsoleUiTranslation } from './translation.js'
 
 export type RefreshStatusProps = {
@@ -38,7 +38,10 @@ export function RefreshStatus({
       {updatedAt === undefined ? null : (
         <Typography component="span" variant="body2" color="text.secondary">
           {t('common.updatedAt', {
-            time: formatUtcLong(updatedAt, i18n.language),
+            time: formatInstant(updatedAt, i18n.language, {
+              timeZone: 'UTC',
+              style: 'long',
+            }),
           })}
         </Typography>
       )}

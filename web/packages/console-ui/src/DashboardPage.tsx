@@ -20,7 +20,18 @@
  * the same column set and priorities as the audit query page, and the same
  * account identity unit: the account's display name where the lookup
  * answers, the recorded value with an unresolved note where it is
- * refused. Nothing here invents an aggregate the contract does not carry.
+ * refused. When the page is given the console root path, each recent row's
+ * action links to that record's audit detail page, carrying the record id
+ * the detail route takes. Nothing here invents an aggregate the contract
+ * does not carry.
+ *
+ * The audit-backed half -- the platform-health row and the recent-activity
+ * list -- exists only where the process serves audit.admin. A deployment
+ * without it serves no audit query, so the page mounts neither section and
+ * issues no audit read at all: the gated half is a child component that is
+ * only mounted when the feature is present, rather than a set of reads the
+ * page skips, so the reads do not exist on that surface. The roster row and
+ * any host content still render.
  *
  * Each surface renders through the console async section, so a refused
  * read (403) shows the permission placeholder without a retry and every
@@ -31,6 +42,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { focusManager, onlineManager } from '@tanstack/react-query'
+import type { UseQueryResult } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Skeleton from '@mui/material/Skeleton'
@@ -42,18 +54,20 @@ import {
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
 } from '@speed/ui-kit'
-import type { DataTableColumn } from '@speed/ui-kit'
+import type { DataTableColumn, PageRefresh } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { AccountIdentity } from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
-import { formatUtc } from './internal/datetime.js'
-import { RefreshButton } from './internal/refresh-button.js'
+import { formatInstant } from '@speed/i18n'
+import { RefreshButton } from '@speed/ui-kit'
 import { RefreshStatus } from './internal/refresh-status.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
   pageRefreshRead,
   usePageRefresh,
-} from './internal/use-page-refresh.js'
+} from '@speed/ui-kit'
+import { useConsoleHasFeature } from './internal/features.js'
+import { ConsoleLink } from './internal/navigation.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleAuditRecord, ConsoleTenant } from './operations.js'
 
@@ -68,6 +82,14 @@ const HEALTH_WINDOW_MS = 24 * 60 * 60 * 1000
 
 /** The page size of the platform-health reads; a full page reports as a bound. */
 const HEALTH_LIMIT = 100
+
+/**
+ * The segment the audit pages sit under, below the console root the
+ * dashboard was given: a recent-activity row links to
+ * `${root}/audit/${record id}`, the path the audit detail declaration
+ * matches.
+ */
+const AUDIT_SEGMENT = 'audit'
 
 /**
  * The behaviour of the platform-health reads: the previous answer stays as
@@ -126,7 +148,13 @@ function useHealthWindow(): {
 }
 
 /** One KPI card: a label and a large count. */
-function KpiCard({ label, value }: { readonly label: string; readonly value: ReactNode }) {
+export function KpiCard({
+  label,
+  value,
+}: {
+  readonly label: string
+  readonly value: ReactNode
+}) {
   return (
     <Paper
       component="li"
@@ -149,7 +177,7 @@ function KpiCard({ label, value }: { readonly label: string; readonly value: Rea
  * length and flex lines break against the row's own available width -- so
  * the row follows its container without a breakpoint or a container query.
  */
-function KpiRow({ children }: { readonly children: ReactNode }) {
+export function KpiRow({ children }: { readonly children: ReactNode }) {
   return (
     <Box
       component="ul"
@@ -176,7 +204,162 @@ function countLabel(count: number, bounded: boolean): string {
   return bounded ? `${count}+` : String(count)
 }
 
-export function DashboardPage() {
+/**
+ * A sibling path below the console root the page was given. The console may
+ * be mounted at the origin, where the matched root path is '/', so that root
+ * contributes no prefix; a trailing slash never doubles. Undefined when the
+ * page has no root path, which leaves the link out.
+ */
+function joinRootHref(
+  rootHref: string | undefined,
+  path: string,
+): string | undefined {
+  if (rootHref === undefined) {
+    return undefined
+  }
+  const root = rootHref === '/' ? '' : rootHref.replace(/\/+$/, '')
+  return `${root}/${path.replace(/^\/+/, '')}`
+}
+
+/** The roster's KPI row, derived from the whole roster read. */
+function KpiSection({
+  tenants,
+}: {
+  readonly tenants: UseQueryResult<readonly ConsoleTenant[], unknown>
+}) {
+  const { t } = useConsoleUiTranslation()
+  const rows = tenants.data
+  // A load with no data yet -- the first fetch in flight, or one parked by
+  // react-query's default networkMode 'online' while offline -- keeps the
+  // loading branch: isPending alone tracks "no answer yet".
+  const pending = tenants.isPending && rows === undefined
+
+  const kpi = (settled: readonly ConsoleTenant[]) => {
+    const active = settled.filter((tenant) => tenant.status === 'active').length
+    const disabled = settled.filter(
+      (tenant) => tenant.status === 'disabled',
+    ).length
+    return (
+      <KpiRow>
+        <KpiCard label={t('dashboard.kpi.tenants')} value={settled.length} />
+        <KpiCard label={t('dashboard.kpi.active')} value={active} />
+        <KpiCard label={t('dashboard.kpi.disabled')} value={disabled} />
+      </KpiRow>
+    )
+  }
+
+  return (
+    <ConsoleAsyncSection
+      pending={pending}
+      payload={rows}
+      error={tenants.error}
+      refreshing={tenants.isFetching}
+      empty={false}
+      headingLevel="h2"
+      loading={
+        <ListSkeleton
+          label={t('dashboard.loading')}
+          rows={[<Skeleton key="a" variant="text" width="52%" />]}
+        />
+      }
+      errorState={{
+        title: t('dashboard.error.title'),
+        description: t('dashboard.error.description'),
+        retryLabel: t('dashboard.retry'),
+        onRetry: () => void tenants.refetch(),
+      }}
+    >
+      {kpi}
+    </ConsoleAsyncSection>
+  )
+}
+
+/**
+ * The frame both dashboard variants share: the page header with the refresh
+ * action, the roster KPI section, whatever sections the variant adds, and
+ * the host's children last.
+ */
+function DashboardFrame({
+  tenants,
+  pageRefresh,
+  onRefresh,
+  sections,
+  children,
+}: {
+  readonly tenants: UseQueryResult<readonly ConsoleTenant[], unknown>
+  readonly pageRefresh: PageRefresh
+  readonly onRefresh: () => void
+  readonly sections?: ReactNode
+  readonly children?: ReactNode
+}) {
+  const { t } = useConsoleUiTranslation()
+  return (
+    <Box>
+      <PageHeader
+        title={t('dashboard.title')}
+        breadcrumbs={[{ label: t('shell.title') }, { label: t('dashboard.title') }]}
+        actions={
+          <>
+            <RefreshStatus
+              updatedAt={pageRefresh.updatedAt}
+              announcements={pageRefresh.announcements}
+            />
+            <RefreshButton
+              label={t('common.refresh')}
+              busy={pageRefresh.busy}
+              onClick={onRefresh}
+            />
+          </>
+        }
+        sx={{ mb: 2 }}
+      />
+
+      <Box component="section" sx={{ mb: 3 }}>
+        <KpiSection tenants={tenants} />
+      </Box>
+
+      {sections}
+
+      {children}
+    </Box>
+  )
+}
+
+/**
+ * The dashboard where the process does not serve audit.admin: only the
+ * roster row, so no audit read is issued and neither audit-backed section
+ * exists.
+ */
+function DashboardWithoutAudit({ children }: { readonly children?: ReactNode }) {
+  const operations = useConsoleOperations()
+  const tenants = operations.useTenants()
+  const pageRefresh = usePageRefresh(
+    [pageRefreshRead('dashboard:tenants', tenants)],
+    () => undefined,
+  )
+  return (
+    <DashboardFrame
+      tenants={tenants}
+      pageRefresh={pageRefresh}
+      onRefresh={pageRefresh.refresh}
+    >
+      {children}
+    </DashboardFrame>
+  )
+}
+
+/**
+ * The dashboard where the process serves audit.admin: the roster row plus
+ * the platform-health row and the recent-activity list, whose reads live
+ * here so they mount only with the feature.
+ */
+function DashboardWithAudit({
+  rootHref,
+  children,
+}: {
+  readonly rootHref?: string
+  readonly children?: ReactNode
+}) {
   const { t, i18n } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const tenants = operations.useTenants()
@@ -215,17 +398,9 @@ export function DashboardPage() {
     () => undefined,
   )
 
-  const kpi = (settled: readonly ConsoleTenant[]) => {
-    const active = settled.filter((tenant) => tenant.status === 'active').length
-    const disabled = settled.filter((tenant) => tenant.status === 'disabled').length
-    return (
-      <KpiRow>
-        <KpiCard label={t('dashboard.kpi.tenants')} value={settled.length} />
-        <KpiCard label={t('dashboard.kpi.active')} value={active} />
-        <KpiCard label={t('dashboard.kpi.disabled')} value={disabled} />
-      </KpiRow>
-    )
-  }
+  // The audit detail page sits below the console root under the audit
+  // segment; without a root the action stays plain text.
+  const auditDetailBase = joinRootHref(rootHref, AUDIT_SEGMENT)
 
   // The same columns and priorities as the audit query page: the action
   // and its object carry the record's identity, while the actor and the
@@ -236,7 +411,8 @@ export function DashboardPage() {
       id: 'time',
       header: t('dashboard.recent.column.time'),
       cellWrap: 'nowrap',
-      cell: (record) => formatUtc(record.occurred_at, i18n.language) ?? '',
+      cell: (record) =>
+        formatInstant(record.occurred_at, i18n.language, { timeZone: 'UTC' }),
     },
     {
       id: 'action',
@@ -246,7 +422,15 @@ export function DashboardPage() {
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (record) => (
         <Typography variant="body2" noWrap>
-          {record.action}
+          {auditDetailBase === undefined ? (
+            record.action
+          ) : (
+            <ConsoleLink
+              href={`${auditDetailBase}/${encodeURIComponent(record.id)}`}
+            >
+              {record.action}
+            </ConsoleLink>
+          )}
         </Typography>
       ),
     },
@@ -283,9 +467,7 @@ export function DashboardPage() {
     },
   ]
 
-  const tenantsRows = tenants.data
   const recordsRows = records.data?.entries
-  const tenantsPending = tenants.isPending && tenantsRows === undefined
   const recordsPending = records.isPending && recordsRows === undefined
 
   const activityEntries = healthActivity.data?.entries
@@ -308,57 +490,8 @@ export function DashboardPage() {
         }
       : undefined
 
-  return (
-    <Box>
-      <PageHeader
-        title={t('dashboard.title')}
-        breadcrumbs={[{ label: t('shell.title') }, { label: t('dashboard.title') }]}
-        actions={
-          <>
-            <RefreshStatus
-              updatedAt={pageRefresh.updatedAt}
-              announcements={pageRefresh.announcements}
-            />
-            <RefreshButton
-              busy={pageRefresh.busy}
-              onClick={() => {
-                // Moving the window changes the health reads' key, which is
-                // what re-reads them; the roster and the recent-activity
-                // list re-read in place.
-                healthWindow.advance()
-                pageRefresh.refresh()
-              }}
-            />
-          </>
-        }
-        sx={{ mb: 2 }}
-      />
-
-      <Box component="section" sx={{ mb: 3 }}>
-        <ConsoleAsyncSection
-          pending={tenantsPending}
-          payload={tenantsRows}
-          error={tenants.error}
-          refreshing={tenants.isFetching}
-          empty={false}
-          headingLevel="h2"
-          loading={
-            <ListSkeleton
-              label={t('dashboard.loading')}
-              rows={[<Skeleton key="a" variant="text" width="52%" />]}
-            />
-          }
-          errorState={{
-            title: t('dashboard.error.title'),
-            description: t('dashboard.error.description'),
-            retryLabel: t('dashboard.retry'),
-            onRetry: () => void tenants.refetch(),
-          }}
-        >
-          {kpi}
-        </ConsoleAsyncSection>
-      </Box>
-
+  const sections = (
+    <>
       <Box component="section" sx={{ mb: 3 }}>
         <Typography component="h2" variant="h6" sx={{ mb: 1 }}>
           {t('dashboard.health.title')}
@@ -450,6 +583,50 @@ export function DashboardPage() {
           )}
         </ConsoleAsyncSection>
       </Box>
-    </Box>
+    </>
+  )
+
+  return (
+    <DashboardFrame
+      tenants={tenants}
+      pageRefresh={pageRefresh}
+      onRefresh={() => {
+        // Moving the window changes the health reads' key, which is what
+        // re-reads them; the roster and the recent-activity list re-read in
+        // place.
+        healthWindow.advance()
+        pageRefresh.refresh()
+      }}
+      sections={sections}
+    >
+      {children}
+    </DashboardFrame>
+  )
+}
+
+export interface DashboardPageProps {
+  /**
+   * The console root path the dashboard declaration matched. The recent
+   * activity's rows link to each record's audit detail page below it; the
+   * console may be mounted at the origin, where that root is '/', so it is
+   * normalised before the detail path is joined. Absent, the rows stay plain
+   * text.
+   */
+  readonly rootHref?: string
+  /** Host content rendered after the page's own sections. */
+  readonly children?: ReactNode
+}
+
+/**
+ * The console landing. It renders the roster row in every deployment; the
+ * platform-health row and the recent-activity list exist only where the
+ * process serves audit.admin, so the page mounts no audit read otherwise.
+ */
+export function DashboardPage({ rootHref, children }: DashboardPageProps) {
+  const hasFeature = useConsoleHasFeature()
+  return hasFeature('audit.admin') ? (
+    <DashboardWithAudit rootHref={rootHref}>{children}</DashboardWithAudit>
+  ) : (
+    <DashboardWithoutAudit>{children}</DashboardWithoutAudit>
   )
 }

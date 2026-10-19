@@ -12,8 +12,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { focusManager } from '@tanstack/react-query'
+import type { FeatureName } from '@speed/api-sdk/features'
 import { DashboardPage } from './DashboardPage.js'
+import type { DashboardPageProps } from './DashboardPage.js'
+import { ConsoleFeatureProvider } from './internal/features.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import type { RenderWithProvidersOptions } from '../test-utils/render.js'
 import {
   columnVisibility,
   containerMaxWidthOf,
@@ -43,12 +47,30 @@ const TENANTS = [
   { id: 'old', alias: 'Old', status: 'disabled' as const },
 ]
 
+/**
+ * Renders the page under the shell's feature answer. The audit-backed half
+ * of the dashboard exists only where audit.admin is present, so a suite
+ * that expects it must say so; the default answer serves every feature.
+ */
+function renderDashboard(
+  options: RenderWithProvidersOptions,
+  props: DashboardPageProps = {},
+  hasFeature: (name: FeatureName) => boolean = () => true,
+): ReturnType<typeof renderWithProviders> {
+  return renderWithProviders(
+    <ConsoleFeatureProvider hasFeature={hasFeature}>
+      <DashboardPage {...props} />
+    </ConsoleFeatureProvider>,
+    options,
+  )
+}
+
 describe('DashboardPage', () => {
   it('raises its refresh action to the 44px floor under a coarse pointer', async () => {
     const operations = createConsoleOperations(
       makeConsoleBackend({ listTenants: () => Promise.resolve(TENANTS) }),
     )
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
     const refresh = await screen.findByRole('button', { name: zhCN.common.refresh })
     expect(hasCoarsePointerTouchTarget(refresh)).toBe(true)
   })
@@ -57,7 +79,7 @@ describe('DashboardPage', () => {
     const operations = createConsoleOperations(
       makeConsoleBackend({ listTenants: () => Promise.resolve(TENANTS) }),
     )
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
 
     expect(await screen.findByText(zhCN.dashboard.kpi.tenants)).toBeInTheDocument()
     // total / active / disabled, derived from the whole roster read.
@@ -76,7 +98,7 @@ describe('DashboardPage', () => {
           }),
       }),
     )
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
     const recent = await screen.findByRole('heading', { level: 2, name: zhCN.dashboard.recent.title })
     expect(recent).toBeInTheDocument()
     expect(await screen.findByText('tenant.read')).toBeInTheDocument()
@@ -94,7 +116,7 @@ describe('DashboardPage', () => {
           Promise.resolve(accountFixture({ display_name: 'Ada Lovelace' })),
       }),
     )
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
     expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
     expect(screen.queryByText('acc-1')).not.toBeInTheDocument()
   })
@@ -110,7 +132,7 @@ describe('DashboardPage', () => {
         getAccount: () => Promise.reject(new Error('forbidden')),
       }),
     )
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
     // The cell keeps the recorded id but labels it unresolved rather than
     // passing it off as a resolved (or system) actor.
     const cell = await screen.findByLabelText(UNRESOLVED_ACTOR)
@@ -128,7 +150,7 @@ describe('DashboardPage', () => {
           }),
       }),
     )
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
     await screen.findByText('tenant.read')
     // The list carries the same set as the audit query page: action and
     // object identify the record, so the object column outranks the actor
@@ -167,7 +189,7 @@ describe('DashboardPage', () => {
           }),
       }),
     )
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
     await screen.findByText(action)
 
     // The action is the primary identity: its cap grows at md. The cap
@@ -219,7 +241,7 @@ describe('DashboardPage', () => {
               }),
       }),
     )
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
     const health = await screen.findByRole('heading', {
       level: 2,
       name: zhCN.dashboard.health.title,
@@ -245,7 +267,7 @@ describe('DashboardPage', () => {
             : Promise.resolve({ entries: [], next: '' }),
       }),
     )
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
     const health = await screen.findByRole('heading', {
       level: 2,
       name: zhCN.dashboard.health.title,
@@ -273,7 +295,7 @@ describe('DashboardPage', () => {
       }),
     )
     const user = userEvent.setup()
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
     const health = await screen.findByRole('heading', {
       level: 2,
       name: zhCN.dashboard.health.title,
@@ -316,7 +338,7 @@ describe('DashboardPage', () => {
         },
       }),
     )
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
     const health = await screen.findByRole('heading', {
       level: 2,
       name: zhCN.dashboard.health.title,
@@ -370,7 +392,7 @@ describe('DashboardPage', () => {
         },
       }),
     )
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
     const health = await screen.findByRole('heading', {
       level: 2,
       name: zhCN.dashboard.health.title,
@@ -449,7 +471,7 @@ describe('DashboardPage', () => {
       }),
     )
     const user = userEvent.setup()
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
     const health = await screen.findByRole('heading', {
       level: 2,
       name: zhCN.dashboard.health.title,
@@ -491,7 +513,7 @@ describe('DashboardPage', () => {
             : Promise.resolve({ entries: [], next: '' }),
       }),
     )
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
     expect(await screen.findByText(zhCN.dashboard.health.error.title)).toBeInTheDocument()
     expect(screen.getByText(zhCN.dashboard.health.error.description)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: zhCN.dashboard.retry })).toBeInTheDocument()
@@ -503,7 +525,7 @@ describe('DashboardPage', () => {
         listTenants: () => Promise.reject({ status: 403, code: 'client.http.403' }),
       }),
     )
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
     expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: zhCN.dashboard.retry })).toBeNull()
   })
@@ -514,7 +536,7 @@ describe('DashboardPage', () => {
         listTenants: () => Promise.reject(new Error('boom')),
       }),
     )
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
     expect(await screen.findByText(zhCN.dashboard.error.title)).toBeInTheDocument()
     expect(screen.getByText(zhCN.dashboard.error.description)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: zhCN.dashboard.retry })).toBeInTheDocument()
@@ -531,7 +553,7 @@ describe('DashboardPage', () => {
           }),
       }),
     )
-    const { queryClient } = renderWithProviders(<DashboardPage />, { operations })
+    const { queryClient } = renderDashboard({ operations })
     await screen.findByText('tenant.read')
 
     // The page's body reads: the roster and the three audit reads (the
@@ -578,7 +600,7 @@ describe('DashboardPage', () => {
         listRecords,
       }),
     )
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
     await waitFor(() => expect(listRecords).toHaveBeenCalledTimes(3))
 
     const header = screen.getByRole('banner')
@@ -600,11 +622,107 @@ describe('DashboardPage', () => {
     expect(status.textContent).toBe('')
   })
 
+  it('omits the audit-backed half and reads no audit records when audit.admin is absent', async () => {
+    const listRecords = vi.fn(() => Promise.resolve({ entries: [], next: '' }))
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () => Promise.resolve(TENANTS),
+        listRecords,
+      }),
+    )
+    renderDashboard({ operations }, {}, () => false)
+
+    // The roster row is not gated; the health row and the recent list are.
+    expect(
+      await screen.findByText(zhCN.dashboard.kpi.tenants),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', {
+        level: 2,
+        name: zhCN.dashboard.health.title,
+      }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('heading', {
+        level: 2,
+        name: zhCN.dashboard.recent.title,
+      }),
+    ).toBeNull()
+    // A feature-absent deployment serves no audit query, so the page issues
+    // no audit read: the reads live in the section that is not mounted.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(listRecords).not.toHaveBeenCalled()
+  })
+
+  it('links a recent-activity row to its audit detail below the console root', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listRecords: () =>
+          Promise.resolve({
+            entries: [recordFixture({ id: 'rec-9', action: 'tenant.read' })],
+            next: '',
+          }),
+      }),
+    )
+    renderDashboard({ operations }, { rootHref: '/console' })
+
+    expect(
+      await screen.findByRole('link', { name: 'tenant.read' }),
+    ).toHaveAttribute('href', '/console/audit/rec-9')
+  })
+
+  it('normalises an origin-mounted console root before appending the detail path', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listRecords: () =>
+          Promise.resolve({
+            entries: [recordFixture({ id: 'rec-9', action: 'tenant.read' })],
+            next: '',
+          }),
+      }),
+    )
+    // The console mounted at the origin matches the dashboard at '/', which
+    // contributes no prefix below it.
+    renderDashboard({ operations }, { rootHref: '/' })
+
+    expect(
+      await screen.findByRole('link', { name: 'tenant.read' }),
+    ).toHaveAttribute('href', '/audit/rec-9')
+  })
+
+  it('renders host content after the page sections', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () => Promise.resolve(TENANTS),
+        listRecords: () =>
+          Promise.resolve({
+            entries: [recordFixture({ id: 'rec-9' })],
+            next: '',
+          }),
+      }),
+    )
+    renderDashboard(
+      { operations },
+      { children: <p>Host section</p> },
+    )
+
+    const recent = await screen.findByRole('heading', {
+      level: 2,
+      name: zhCN.dashboard.recent.title,
+    })
+    const host = await screen.findByText('Host section')
+    expect(
+      recent.compareDocumentPosition(host) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
   it('has no axe violations', async () => {
     const operations = createConsoleOperations(
       makeConsoleBackend({ listTenants: () => Promise.resolve(TENANTS) }),
     )
-    renderWithProviders(<DashboardPage />, { operations })
+    renderDashboard({ operations })
     await screen.findByText(zhCN.dashboard.kpi.tenants)
     await expectNoAxeViolations()
   })

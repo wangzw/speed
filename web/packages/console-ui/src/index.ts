@@ -47,7 +47,10 @@
  * (CONSOLE_UI_NAMESPACE + consoleUiResources, which the host registers
  * alongside ui-kit's); the dialogs and empty/error states render through
  * ui-kit's shared primitives. Helpers shared between the components live
- * in src/internal/ and are deliberately not exported.
+ * in src/internal/ and are deliberately not exported, except the type-only
+ * callback types a host annotates its own handlers with and
+ * ConsoleSessionProvider, the provider the shell mounts from its `session`
+ * prop.
  */
 
 export { CONSOLE_UI_NAMESPACE, consoleUiResources } from './resources.js'
@@ -60,6 +63,10 @@ export type {
 } from './route.js'
 export { consoleNavGroups } from './nav-groups.js'
 export { ConsoleShell, type ConsoleShellProps } from './ConsoleShell.js'
+export { ConsoleProvider, type ConsoleProviderProps } from './ConsoleProvider.js'
+export type { ConsoleDescribeRole } from './internal/describe-role.js'
+export type { ConsoleImpersonationStarting } from './internal/impersonation-starting.js'
+export type { ConsoleImpersonationChange } from './internal/impersonation-change.js'
 export {
   ConsoleSessionProvider,
   type ConsoleSessionProviderProps,
@@ -149,10 +156,19 @@ export {
   auditAdminRoutes,
   consoleRoutes,
 } from './routes.js'
-export { DashboardPage } from './DashboardPage.js'
-export { TenantRosterPage } from './TenantRosterPage.js'
+export {
+  DashboardPage,
+  KpiCard,
+  KpiRow,
+  type DashboardPageProps,
+} from './DashboardPage.js'
+export {
+  TenantRosterPage,
+  type TenantRosterPageProps,
+} from './TenantRosterPage.js'
 export {
   TenantDetailPage,
+  type ConsoleTenantRelatedPage,
   type TenantDetailPageProps,
 } from './TenantDetailPage.js'
 export { SettingsPage } from './SettingsPage.js'
@@ -161,10 +177,24 @@ export {
   AuditDetailPage,
   type AuditDetailPageProps,
 } from './AuditDetailPage.js'
-export { PermissionsPage } from './PermissionsPage.js'
-export { AccountsPage } from './AccountsPage.js'
+export {
+  PermissionsPage,
+  type PermissionsPageProps,
+} from './PermissionsPage.js'
+export {
+  AccountsPage,
+  type AccountsPageProps,
+  type AccountsPageExtraColumn,
+  type AccountsPageAttributeField,
+} from './AccountsPage.js'
 export { SessionsPage } from './SessionsPage.js'
-export { ImpersonationsPage } from './ImpersonationsPage.js'
-export { InvitationsPage } from './InvitationsPage.js'
-export { SsoPage } from './SsoPage.js'
+export {
+  ImpersonationsPage,
+  type ImpersonationsPageProps,
+} from './ImpersonationsPage.js'
+export {
+  InvitationsPage,
+  type InvitationsPageProps,
+} from './InvitationsPage.js'
+export { SsoPage, type SsoPageProps } from './SsoPage.js'
 export { SmsPage } from './SmsPage.js'

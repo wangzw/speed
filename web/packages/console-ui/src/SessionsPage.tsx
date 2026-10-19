@@ -39,15 +39,15 @@ import type { DataTableColumn } from '@speed/ui-kit'
 import { AccountSelector } from './internal/account-selector.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
-import { formatUtc } from './internal/datetime.js'
+import { formatInstant } from '@speed/i18n'
 import { identifierPrefix } from './internal/identifier-prefix.js'
-import { RefreshButton } from './internal/refresh-button.js'
+import { RefreshButton } from '@speed/ui-kit'
 import { SelectorRow } from './internal/selector-row.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
   pageRefreshRead,
   usePageRefresh,
-} from './internal/use-page-refresh.js'
+} from '@speed/ui-kit'
 import {
   useFailureScroll,
   WriteFeedbackRegion,
@@ -148,14 +148,16 @@ export function SessionsPage() {
         // actions out of a narrow container. The current-session mark
         // rides here rather than in the low-priority id column, so the
         // revoke-your-own-session warning is visible at every tier.
-        const formatted = formatUtc(session.created_at, i18n.language)
+        const formatted = formatInstant(session.created_at, i18n.language, {
+          timeZone: 'UTC',
+        })
         return (
           <Box sx={{ display: 'flex', alignItems: 'center', columnGap: 1 }}>
             <Typography
               variant="body2"
               noWrap
               sx={primaryColumnMaxWidthSx}
-              title={formatted ?? undefined}
+              title={formatted === '' ? undefined : formatted}
             >
               {formatted}
             </Typography>
@@ -177,14 +179,16 @@ export function SessionsPage() {
       header: t('sessions.column.lastSeen'),
       priority: 'low',
       cellWrap: 'nowrap',
-      cell: (session) => formatUtc(session.last_seen_at, i18n.language),
+      cell: (session) =>
+        formatInstant(session.last_seen_at, i18n.language, { timeZone: 'UTC' }),
     },
     {
       id: 'expires',
       header: t('sessions.column.expires'),
       priority: 'low',
       cellWrap: 'nowrap',
-      cell: (session) => formatUtc(session.expires_at, i18n.language),
+      cell: (session) =>
+        formatInstant(session.expires_at, i18n.language, { timeZone: 'UTC' }),
     },
     {
       id: 'state',
@@ -259,6 +263,7 @@ export function SessionsPage() {
               writePending={feedback.pending}
               describedBy={ACCOUNT_HINT_ID}
               disabledReason={t('sessions.needAccount.description')}
+              label={t('common.refresh')}
               onClick={pageRefresh.refresh}
             />
           }

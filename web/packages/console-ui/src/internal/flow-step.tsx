@@ -20,9 +20,9 @@
  *    travels under `enroll` as the field `kind`.
  *  - `webauthn`: the factor's own JSON. TOTP's otpauth_uri is rendered as
  *    text beside a code field; a passkey's request options are driven by
- *    the WebAuthn ceremony (./webauthn), whose credential is reported
- *    under the answer step the CALLER names -- the record's state decides
- *    it, so the second factor of a step-up answers under `factor`.
+ *    the WebAuthn ceremony (@speed/auth-core/webauthn), whose credential is
+ *    reported under the answer step the CALLER names -- the record's state
+ *    decides it, so the second factor of a step-up answers under `factor`.
  *  - `complete`: a single confirm that takes the flow's result with
  *    `step: 'complete'`.
  *  - `redirect`: an external URL; the component never navigates.
@@ -37,8 +37,8 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import type { AuthnStep } from '@speed/auth-core'
 import type { AuthnFlowAnswer } from '@speed/auth-core'
+import { WebauthnError, runWebauthn, webauthnStepOf } from '@speed/auth-core/webauthn'
 import { useConsoleUiTranslation } from './translation.js'
-import { WebauthnError, runWebauthn, webauthnStepOf } from './webauthn.js'
 
 export interface FlowStepProps {
   /** The step to render. */

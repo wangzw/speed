@@ -20,6 +20,7 @@ import { AccountsPage } from './AccountsPage.js'
 import { consoleOperations } from './operations.js'
 import type {
   ConsoleAccount,
+  ConsoleAccountFactor,
   ConsoleAddIdentifierInput,
   ConsoleCreateAccountInput,
   ConsoleCreateSecretInput,
@@ -28,7 +29,9 @@ import type {
   ConsoleSetAccountStatusInput,
   ConsoleSetMFARequiredInput,
 } from './operations.js'
-import { renderWithProviders } from '../test-utils/render.js'
+import {
+  renderWithProviders,
+} from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { bindConsoleRequest } from '../test-utils/request-rig.js'
 import {
@@ -1570,6 +1573,14 @@ describe('AccountsPage', () => {
       HANDED_OVER_CI,
     )
     expect(display.closest('[role="status"]')).not.toBeNull()
+    // The secret itself is the panel's value, offered beside a copy
+    // control: the message states only what was handed out.
+    expect(within(panel).getByText('one-time-value')).toBeInTheDocument()
+    expect(
+      within(panel).getByRole('button', {
+        name: zhCN.accounts.createSecret.copy,
+      }),
+    ).toBeInTheDocument()
     // The explicit close control names the account it belongs to.
     const close = within(panel).getByRole('button', {
       name: fill(zhCN.accounts.createSecret.closeAria, {
@@ -2565,6 +2576,234 @@ describe('AccountsPage', () => {
     await waitFor(() =>
       expect(listAccounts.mock.calls.length).toBe(before + 1),
     )
+  })
+
+  it('mounts no factor, secret or session surface when their features are absent', async () => {
+    const user = userEvent.setup()
+    const listAccountFactors = vi.fn(() => Promise.resolve([]))
+    const listAccountSecrets = vi.fn(() => Promise.resolve([]))
+    const listAccountSessions = vi.fn(() => Promise.resolve([]))
+    const operations = withAccounts({
+      listAccountFactors,
+      listAccountSecrets,
+      listAccountSessions,
+    })
+    renderWithProviders(<AccountsPage />, {
+      operations,
+      hasFeature: () => false,
+    })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    // The account read itself is not gated here: the page's route is.
+    await within(panel).findByText(DISPLAY_NAME_OPERATOR)
+
+    // No heading, table or control belonging to the three faces, and none
+    // of their reads was issued.
+    for (const title of [
+      zhCN.accounts.factors.title,
+      zhCN.accounts.secrets.title,
+      zhCN.accounts.sessions.title,
+    ]) {
+      expect(within(panel).queryByRole('heading', { name: title })).toBeNull()
+    }
+    for (const label of [
+      zhCN.accounts.resetMFA,
+      zhCN.accounts.revokeSessions,
+      zhCN.accounts.mfa.submit,
+      zhCN.accounts.password.submit,
+      zhCN.accounts.createSecret.submit,
+    ]) {
+      expect(within(panel).queryByRole('button', { name: label })).toBeNull()
+    }
+    expect(listAccountFactors).not.toHaveBeenCalled()
+    expect(listAccountSecrets).not.toHaveBeenCalled()
+    expect(listAccountSessions).not.toHaveBeenCalled()
+
+    // The ungated write groups stay: status, patch and identifier add.
+    for (const label of [
+      zhCN.accounts.status.submit,
+      zhCN.accounts.patch.submit,
+      zhCN.accounts.addIdentifier.submit,
+    ]) {
+      expect(within(panel).getByRole('button', { name: label })).toBeInTheDocument()
+    }
+  })
+
+  it('renders the account kind and status through the namespace in the list and the detail', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts()
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    const row = (await screen.findByText('Ada Lovelace')).closest('tr')
+    expect(row).not.toBeNull()
+    expect(
+      within(row as HTMLElement).getByText(zhCN.accounts.create.kind.user),
+    ).toBeInTheDocument()
+    expect(
+      within(row as HTMLElement).getByText(zhCN.accounts.status.active),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: MANAGE_ACCOUNT_NAME }))
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    expect(
+      await within(panel).findByText(
+        fill(zhCN.accounts.detail.kindLine, {
+          value: zhCN.accounts.create.kind.user,
+        }),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('inserts a host column before the actions column under its own priority', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts()
+    renderWithProviders(
+      <AccountsPage
+        extraColumns={[
+          {
+            id: 'plan',
+            header: 'Plan',
+            priority: 'low',
+            cell: () => 'Pro',
+          },
+        ]}
+      />,
+      { operations },
+    )
+    await search(user)
+    await screen.findByText('Ada Lovelace')
+
+    const headers = screen
+      .getAllByRole('columnheader')
+      .map((header) => header.textContent)
+    const plan = headers.indexOf('Plan')
+    expect(plan).toBeGreaterThan(0)
+    expect(plan).toBe(headers.indexOf(zhCN.accounts.column.actions) - 1)
+    // The host's priority, not the page's, decides when it sheds.
+    expect(
+      columnVisibility(screen.getByRole('columnheader', { name: 'Plan' })),
+    ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
+  })
+
+  it('edits declared attributes as one text field each on the create form', async () => {
+    const user = userEvent.setup()
+    const created: ConsoleCreateAccountInput[] = []
+    const operations = withAccounts({
+      createAccount: (input) => {
+        created.push(input)
+        return Promise.resolve(accountFixture())
+      },
+    })
+    renderWithProviders(
+      <AccountsPage attributeFields={[{ key: 'tier', label: 'Tier' }]} />,
+      { operations },
+    )
+    const panel = await openCreate(user)
+    // The raw-JSON editor is replaced, not duplicated.
+    expect(
+      within(panel).queryByLabelText(zhCN.accounts.create.attributesLabel),
+    ).toBeNull()
+    await user.type(
+      within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel),
+      'Grace',
+    )
+    await user.type(
+      within(panel).getByLabelText(zhCN.accounts.create.usernameLabel),
+      'grace',
+    )
+    await user.type(within(panel).getByLabelText('Tier'), 'gold')
+    await user.click(
+      within(panel).getByRole('button', { name: zhCN.accounts.create.submit }),
+    )
+    await vi.waitFor(() => {
+      expect(created).toEqual([
+        {
+          kind: 'user',
+          display_name: 'Grace',
+          username: 'grace',
+          attributes: { tier: 'gold' },
+        },
+      ])
+    })
+  })
+
+  it('edits declared attributes on the patch and keeps the undeclared keys', async () => {
+    const user = userEvent.setup()
+    const patched: ConsolePatchAccountInput[] = []
+    const operations = withAccounts({
+      getAccount: () =>
+        Promise.resolve(
+          accountFixture({
+            attributes: { tier: 'gold', legacy: 'kept' },
+          }),
+        ),
+      patchAccount: (input) => {
+        patched.push(input)
+        return Promise.resolve(accountFixture())
+      },
+    })
+    renderWithProviders(
+      <AccountsPage attributeFields={[{ key: 'tier', label: 'Tier' }]} />,
+      { operations },
+    )
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    const tier = await within(panel).findByLabelText('Tier')
+    expect(tier).toHaveValue('gold')
+    expect(
+      within(panel).queryByLabelText(zhCN.accounts.patch.attributesLabel),
+    ).toBeNull()
+
+    await user.clear(tier)
+    await user.type(tier, 'platinum')
+    await user.click(
+      within(panel).getByRole('button', { name: zhCN.accounts.patch.submit }),
+    )
+    // The declared key takes the typed value; the key the host did not
+    // declare survives the patch.
+    await vi.waitFor(() => {
+      expect(patched).toEqual([
+        {
+          id: ACCOUNT_ID,
+          attributes: { tier: 'platinum', legacy: 'kept' },
+        },
+      ])
+    })
+  })
+
+  it('renders a factor kind and status through the namespace, falling back to the raw value', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      listAccountFactors: () =>
+        Promise.resolve([
+          { kind: 'totp', label: 'Authenticator', status: 'active' },
+          // Values the closed set does not carry stay readable as written.
+          {
+            kind: 'hardware',
+            label: 'Key',
+            status: 'retired' as ConsoleAccountFactor['status'],
+          },
+        ]),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    const factorRow = (await within(panel).findByText('Authenticator')).closest(
+      'tr',
+    )
+    expect(factorRow).not.toBeNull()
+    expect(
+      within(factorRow as HTMLElement).getByText(
+        zhCN.accounts.factors.kind.totp,
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(factorRow as HTMLElement).getByText(
+        zhCN.accounts.factors.status.active,
+      ),
+    ).toBeInTheDocument()
+    expect(within(panel).getByText('hardware')).toBeInTheDocument()
+    expect(within(panel).getByText('retired')).toBeInTheDocument()
   })
 
   it('has no axe violations', async () => {

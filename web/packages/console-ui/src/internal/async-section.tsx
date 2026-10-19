@@ -36,7 +36,7 @@
  */
 
 import type { ReactNode } from 'react'
-import { EmptyState } from '@speed/ui-kit'
+import { EmptyState, httpStatusOf } from '@speed/ui-kit'
 import {
   AsyncSection,
   type AsyncSectionEmptyState,
@@ -46,19 +46,14 @@ import type { EmptyStateHeadingLevel } from '@speed/ui-kit'
 import { useConsoleUiTranslation } from './translation.js'
 
 /**
- * Whether a read's failure carries the given HTTP status: the answer's
- * `status`, or the bare-HTTP code the transport synthesizes when the
- * response carried no readable envelope. A transport failure, a bug-shaped
- * throw and any other status are not this answer.
+ * Whether a read's failure carries the given HTTP status. The structural
+ * reading lives in @speed/ui-kit's `httpStatusOf`: the answer's `status`,
+ * or the bare-HTTP code the transport synthesizes when the response
+ * carried no readable envelope. A transport failure, a bug-shaped throw
+ * and any other status are not this answer.
  */
 function carriesStatus(error: unknown, status: number): boolean {
-  if (typeof error !== 'object' || error === null) {
-    return false
-  }
-  const candidate = error as { readonly status?: unknown; readonly code?: unknown }
-  return (
-    candidate.status === status || candidate.code === `client.http.${status}`
-  )
+  return httpStatusOf(error) === status
 }
 
 /**

@@ -65,12 +65,12 @@ import { ConsoleAsyncSection } from './internal/async-section.js'
 import { useConsoleUiErrorText } from './internal/error-text.js'
 import { ConsoleLink } from './internal/navigation.js'
 import { isRejectedIdentifier } from './internal/identifier.js'
-import { RefreshButton } from './internal/refresh-button.js'
+import { RefreshButton } from '@speed/ui-kit'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
   pageRefreshRead,
   usePageRefresh,
-} from './internal/use-page-refresh.js'
+} from '@speed/ui-kit'
 import {
   failureTextOf,
   useFailureScroll,
@@ -277,7 +277,25 @@ function TenantRowActions({
   )
 }
 
-export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
+export interface TenantRosterPageProps {
+  /**
+   * The roster's matched path, for the rows' detail links; absent leaves
+   * the identifier as plain text.
+   */
+  readonly basePath?: string
+  /**
+   * Host columns inserted after the roster's own identifier, alias and
+   * status and before the row-actions column. A host column that repeats
+   * across rows takes its own ui-kit priority so a narrow container sheds
+   * it in a chosen order; the page does not choose for it.
+   */
+  readonly extraColumns?: readonly DataTableColumn<ConsoleTenant>[]
+}
+
+export function TenantRosterPage({
+  basePath,
+  extraColumns,
+}: TenantRosterPageProps) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const tenants = operations.useTenants()
@@ -392,6 +410,9 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
         </Typography>
       ),
     },
+    // Host columns sit between the roster's own fields and the row's write
+    // controls, so the controls stay the last cell of every row.
+    ...(extraColumns ?? []),
     {
       id: 'actions',
       header: t('tenants.column.actions'),
@@ -426,6 +447,7 @@ export function TenantRosterPage({ basePath }: { readonly basePath?: string }) {
             // disabled while any scope on the page -- the create form's or
             // any row's rename/status slot -- has a write in flight.
             writePending={createFeedback.pending || pendingRowWrites.size > 0}
+            label={t('common.refresh')}
             onClick={pageRefresh.refresh}
           />
         }

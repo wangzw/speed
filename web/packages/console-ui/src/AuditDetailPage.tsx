@@ -39,10 +39,10 @@ import Typography from '@mui/material/Typography'
 import { ListSkeleton, PageHeader } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { AccountIdentity } from './internal/account-identity.js'
-import { formatUtc } from './internal/datetime.js'
+import { formatInstant } from '@speed/i18n'
 import { ConsoleLink } from './internal/navigation.js'
 import { DefinitionRow, DetailLayout } from './internal/layout.js'
-import { RefreshButton } from './internal/refresh-button.js'
+import { RefreshButton } from '@speed/ui-kit'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleAuditRecord } from './operations.js'
@@ -83,7 +83,9 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
   ]
 
   const main = (settled: ConsoleAuditRecord) => {
-    const occurred = formatUtc(settled.occurred_at, i18n.language)
+    const occurred = formatInstant(settled.occurred_at, i18n.language, {
+      timeZone: 'UTC',
+    })
     return (
       <Paper component="section" variant="outlined" sx={{ p: 2 }}>
         <Typography component="h2" variant="h6" sx={{ mb: 1 }}>
@@ -93,7 +95,7 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
           <DefinitionRow label={t('auditDetail.field.id')} value={settled.id} />
           <DefinitionRow
             label={t('auditDetail.field.occurredAt')}
-            value={shown(occurred ?? '')}
+            value={shown(occurred)}
           />
           <DefinitionRow
             label={t('auditDetail.field.actor')}
@@ -139,6 +141,7 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
         breadcrumbs={crumbs}
         actions={
           <RefreshButton
+            label={t('common.refresh')}
             busy={record.isFetching}
             onClick={() => void record.refetch()}
           />

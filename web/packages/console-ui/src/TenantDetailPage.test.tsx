@@ -8,11 +8,17 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import type { ReactElement } from 'react'
 import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { FeatureName } from '@speed/api-sdk/features'
 import { TenantDetailPage } from './TenantDetailPage.js'
 import type { ConsoleTenant } from './operations.js'
+import type { ConsoleRoute } from './route.js'
+import { ConsoleFeatureProvider } from './internal/features.js'
+import { ConsoleRouteTableProvider } from './internal/route-table.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import type { RenderWithProvidersOptions } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   createConsoleOperations,
@@ -22,10 +28,69 @@ import {
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
+/**
+ * The sibling declarations a host publishes, as its narrowed table carries
+ * them: the console mount prefix is already in each path.
+ */
+const RELATED_ROUTES: readonly ConsoleRoute[] = [
+  {
+    id: 'permissions',
+    path: '/console/permissions',
+    view: () => null,
+    requires: ['authz.admin', 'tenant.admin'],
+  },
+  {
+    id: 'invitations',
+    path: '/console/invitations',
+    view: () => null,
+    requires: ['authn.invitations', 'authn.admin', 'tenant.admin'],
+  },
+  {
+    id: 'sso',
+    path: '/console/sso',
+    view: () => null,
+    requires: ['authn.admin.sso', 'tenant.admin'],
+  },
+  {
+    id: 'impersonations',
+    path: '/console/impersonations',
+    view: () => null,
+    requires: ['authn.impersonation', 'authn.admin.impersonations', 'tenant.admin'],
+  },
+]
+
+/**
+ * Renders the page under the shell's two seams: the published (already
+ * narrowed) route table and the feature answer. Passing `routes: null`
+ * mounts no table at all, as a page rendered outside a shell has none.
+ */
+function renderDetail(
+  ui: ReactElement,
+  options: RenderWithProvidersOptions,
+  {
+    routes = RELATED_ROUTES,
+    hasFeature = () => true,
+  }: {
+    readonly routes?: readonly ConsoleRoute[] | null
+    readonly hasFeature?: (name: FeatureName) => boolean
+  } = {},
+): ReturnType<typeof renderWithProviders> {
+  const tree =
+    routes === null ? (
+      ui
+    ) : (
+      <ConsoleRouteTableProvider routes={routes}>{ui}</ConsoleRouteTableProvider>
+    )
+  return renderWithProviders(
+    <ConsoleFeatureProvider hasFeature={hasFeature}>{tree}</ConsoleFeatureProvider>,
+    options,
+  )
+}
+
 describe('TenantDetailPage', () => {
   it('links to the tenant-addressed pages carrying this tenant', async () => {
     const operations = createConsoleOperations(makeConsoleBackend())
-    renderWithProviders(
+    renderDetail(
       <TenantDetailPage
         id="acme"
         parentHref="/console/tenants"
@@ -35,8 +100,9 @@ describe('TenantDetailPage', () => {
     )
     await screen.findByText('Acme')
 
-    // Every link lands on the page's own path with the tenant in the query
-    // parameter those pages read their selection from.
+    // Every link lands on the path its sibling declaration publishes, with
+    // the tenant in the query parameter those pages read their selection
+    // from.
     const expected = [
       [zhCN.tenantDetail.related.permissions, '/console/permissions?tenant=acme'],
       [zhCN.tenantDetail.related.invitations, '/console/invitations?tenant=acme'],
@@ -51,9 +117,13 @@ describe('TenantDetailPage', () => {
     }
   })
 
-  it('hides the related-page links when it has no console root path', async () => {
+  it('hides the related-page links when no route table is published', async () => {
     const operations = createConsoleOperations(makeConsoleBackend())
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderDetail(
+      <TenantDetailPage id="acme" rootHref="/console" />,
+      { operations },
+      { routes: null },
+    )
     await screen.findByText('Acme')
     expect(
       screen.queryByRole('heading', {
@@ -61,6 +131,128 @@ describe('TenantDetailPage', () => {
         name: zhCN.tenantDetail.related.title,
       }),
     ).toBeNull()
+  })
+
+  it('hides a sibling link when no root is given to resolve a console-relative path', async () => {
+    const operations = createConsoleOperations(makeConsoleBackend())
+    // The declarations the package publishes are console-relative
+    // ('/permissions'), which is indistinguishable from an origin path
+    // without the root they hang under.
+    const relativeRoutes: readonly ConsoleRoute[] = [
+      { id: 'permissions', path: '/permissions', view: () => null },
+    ]
+    renderDetail(<TenantDetailPage id="acme" />, { operations }, {
+      routes: relativeRoutes,
+    })
+    await screen.findByText('Acme')
+    expect(
+      screen.queryByRole('link', { name: zhCN.tenantDetail.related.permissions }),
+    ).toBeNull()
+  })
+
+  it('hides a sibling link whose declaration is absent', async () => {
+    const operations = createConsoleOperations(makeConsoleBackend())
+    renderDetail(
+      <TenantDetailPage id="acme" rootHref="/console" />,
+      { operations },
+      { routes: RELATED_ROUTES.filter((route) => route.id !== 'sso') },
+    )
+    await screen.findByText('Acme')
+
+    expect(
+      screen.getByRole('link', { name: zhCN.tenantDetail.related.permissions }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: zhCN.tenantDetail.related.sso }),
+    ).toBeNull()
+  })
+
+  it('hides a sibling link whose target feature is absent', async () => {
+    const operations = createConsoleOperations(makeConsoleBackend())
+    renderDetail(
+      <TenantDetailPage id="acme" rootHref="/console" />,
+      { operations },
+      { hasFeature: (name) => name !== 'authn.admin.sso' },
+    )
+    await screen.findByText('Acme')
+
+    expect(
+      screen.queryByRole('link', { name: zhCN.tenantDetail.related.sso }),
+    ).toBeNull()
+    expect(
+      screen.getByRole('link', { name: zhCN.tenantDetail.related.permissions }),
+    ).toBeInTheDocument()
+  })
+
+  it('overrides a sibling link through relatedHref', async () => {
+    const operations = createConsoleOperations(makeConsoleBackend())
+    renderDetail(
+      <TenantDetailPage
+        id="acme"
+        rootHref="/console"
+        relatedHref={{ permissions: '/bespoke/permissions' }}
+      />,
+      { operations },
+    )
+    await screen.findByText('Acme')
+
+    expect(
+      screen.getByRole('link', { name: zhCN.tenantDetail.related.permissions }),
+    ).toHaveAttribute('href', '/bespoke/permissions?tenant=acme')
+  })
+
+  it('joins the tenant onto an override that already carries a query', async () => {
+    const operations = createConsoleOperations(makeConsoleBackend())
+    renderDetail(
+      <TenantDetailPage
+        id="acme"
+        rootHref="/console"
+        relatedHref={{ permissions: '/bespoke/permissions?scope=all' }}
+      />,
+      { operations },
+    )
+    await screen.findByText('Acme')
+
+    // The override's own query survives and the tenant is still a key, so
+    // the target page seeds its selection from it.
+    expect(
+      screen.getByRole('link', { name: zhCN.tenantDetail.related.permissions }),
+    ).toHaveAttribute('href', '/bespoke/permissions?scope=all&tenant=acme')
+  })
+
+  it('renders host sections after the page sections and the aside above the back link', async () => {
+    const operations = createConsoleOperations(makeConsoleBackend())
+    renderDetail(
+      <TenantDetailPage
+        id="acme"
+        parentHref="/console/tenants"
+        rootHref="/console"
+        sections={(tenant) => <p>{`Section ${tenant.alias}`}</p>}
+        aside={(tenant) => <p>{`Aside ${tenant.id}`}</p>}
+      />,
+      { operations },
+    )
+    await screen.findByText('Acme')
+
+    // Both slots receive the loaded tenant, and the host section follows
+    // the page's own sections in the main column.
+    const section = screen.getByText('Section Acme')
+    expect(section).toBeInTheDocument()
+    expect(screen.getByText('Aside acme')).toBeInTheDocument()
+    const related = screen.getByRole('heading', {
+      level: 2,
+      name: zhCN.tenantDetail.related.title,
+    })
+    expect(
+      related.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+
+    // The aside sits above the back link in the side column.
+    const aside = screen.getByText('Aside acme')
+    const back = screen.getByRole('link', { name: zhCN.tenantDetail.back })
+    expect(
+      aside.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 
   it('raises its refresh action to the 44px floor under a coarse pointer', async () => {

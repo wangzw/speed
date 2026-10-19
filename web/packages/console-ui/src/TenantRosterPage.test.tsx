@@ -383,6 +383,40 @@ describe('TenantRosterPage', () => {
     }
   })
 
+  it('inserts host columns before the row-actions column', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () =>
+          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+      }),
+    )
+    renderWithProviders(
+      <TenantRosterPage
+        extraColumns={[
+          {
+            id: 'region',
+            header: 'Region',
+            cell: () => <span>emea</span>,
+          },
+        ]}
+      />,
+      { operations },
+    )
+    await screen.findByText('Acme')
+
+    // The roster's own fields keep their order, the host column follows
+    // them, and the row's write controls stay the last cell.
+    expect(
+      screen.getAllByRole('columnheader').map((cell) => cell.textContent),
+    ).toEqual([
+      zhCN.tenants.column.id,
+      zhCN.tenants.column.alias,
+      zhCN.tenants.column.status,
+      'Region',
+      zhCN.tenants.column.actions,
+    ])
+  })
+
   it('caps the long alias and identifier at the shared primary width', async () => {
     const id = 'tenant-emea-production-000123'
     const alias = 'AcmeCorporationInternationalHoldingsEMEA'

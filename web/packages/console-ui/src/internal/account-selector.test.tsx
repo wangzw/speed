@@ -184,6 +184,30 @@ describe('AccountSelector', () => {
     expect(screen.queryByText(zhCN.accountSelector.failed)).toBeNull()
   })
 
+  it('reads a transport-synthesized 400 as not applicable, not as a failure', async () => {
+    const user = userEvent.setup()
+    // A response with no readable problem envelope is answered by the
+    // transport as `client.http.<status>` rather than as an object carrying
+    // `status`; the refusal means the same thing.
+    const listAccounts = vi.fn(
+      (params?: { readonly identifier_kind?: string }) =>
+        params?.identifier_kind === undefined
+          ? Promise.resolve({ accounts: [], next_cursor: '' })
+          : Promise.reject({ code: 'client.http.400' }),
+    )
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listAccounts }),
+    )
+    renderWithProviders(<Harness onChoose={() => {}} />, { operations })
+    await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ada')
+    // The name read plus the two applicable identifier reads.
+    await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledTimes(3))
+    await waitFor(() => {
+      expect(screen.getByText(zhCN.accountSelector.empty)).toBeInTheDocument()
+    })
+    expect(screen.queryByText(zhCN.accountSelector.failed)).toBeNull()
+  })
+
   it('hands the chosen account over when picked with the keyboard', async () => {
     const user = userEvent.setup()
     const chosen: (ConsoleAccount | null)[] = []

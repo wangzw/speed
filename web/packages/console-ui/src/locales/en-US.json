@@ -588,7 +588,8 @@
       "expiresLabel": "Expires",
       "expiresHelper": "RFC 3339 instant, or empty for no expiry",
       "submit": "Create secret",
-      "handedOver": "Service secret \"{{label}}\" (shown once): {{secret}}",
+      "handedOver": "Service secret \"{{label}}\" (shown once):",
+      "copy": "Copy service secret",
       "close": "Close",
       "closeAria": "Close the service secret \"{{label}}\" display for account \"{{name}}\" ({{id}})",
       "discardTitle": "Discard the unclosed service secret",
@@ -630,6 +631,16 @@
         "kind": "Kind",
         "label": "Label",
         "status": "Status"
+      },
+      "kind": {
+        "totp": "Authenticator app",
+        "sms": "SMS",
+        "webauthn": "Passkey"
+      },
+      "status": {
+        "pending": "Pending",
+        "active": "Active",
+        "disabled": "Disabled"
       }
     },
     "secrets": {
@@ -760,6 +771,16 @@
     },
     "inForce": "In force",
     "ended": "Ended ({{reason}})",
+    "endReason": {
+      "explicit": "explicitly",
+      "revoked": "revoked",
+      "expired": "expired",
+      "sessionEnded": "session ended",
+      "actorDisabled": "actor disabled",
+      "targetDisabled": "target disabled",
+      "membershipRemoved": "membership removed",
+      "startFailed": "start failed"
+    },
     "terminate": "Terminate",
     "terminated": "Terminated the impersonation of account {{account}}.",
     "recordsUnavailable": "Impersonation records cannot be read or terminated while impersonating. View them after ending it.",
@@ -861,6 +882,11 @@
       "source": "Source",
       "actions": "Actions"
     },
+    "source": {
+      "admin": "Added by an administrator",
+      "invite": "Invitation",
+      "jit": "JIT ({{provider}})"
+    },
     "activeYes": "Yes",
     "activeNo": "No",
     "ssoExemptYes": "Yes",
@@ -926,7 +952,8 @@
       "domainLabel": "Domain",
       "verify": "Verify",
       "claim": "Claim",
-      "claimToken": "Publish this token in DNS: {{token}}",
+      "claimToken": "Publish the token below in DNS",
+      "claimTokenCopy": "Copy claim token",
       "claimed": "Domain \"{{domain}}\" claimed for provider \"{{name}}\"",
       "verified": "Domain \"{{domain}}\" verified for provider \"{{name}}\"",
       "removed": "Domain \"{{domain}}\" removed from provider \"{{name}}\"",
@@ -982,6 +1009,16 @@
       "approvals": "Approvals",
       "enabled": "Sendable",
       "actions": "Actions"
+    },
+    "source": {
+      "config": "Configuration",
+      "runtime": "Runtime"
+    },
+    "approval": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "withdrawn": "Withdrawn"
     },
     "enabledYes": "Yes",
     "enabledNo": "No",

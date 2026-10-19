@@ -8,6 +8,8 @@
  * read-only: its list is visible and every write control is withheld.
  */
 
+import { useState } from 'react'
+import type { ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -23,6 +25,7 @@ import type {
   ConsoleWriteRoleInput,
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { ConsoleDescribeRoleProvider } from './internal/describe-role.js'
 import { containerMaxWidthOf } from '../test-utils/container-visibility.js'
 import { chooseAccount } from '../test-utils/account-selector.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
@@ -347,6 +350,62 @@ describe('PermissionsPage', () => {
       expect(screen.queryByText(zhCN.permissions.needTenant.title)).toBeNull()
       expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent('Acme')
       expect(listRoles).toHaveBeenCalledWith('acme')
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
+  it('locks the scope to a controlled tenant and hides the selector', async () => {
+    // The URL names a different tenant: a controlled page ignores it.
+    window.history.replaceState({}, '', '/console/permissions?tenant=globex')
+    try {
+      const listRoles = vi.fn(() => Promise.resolve([role()]))
+      const operations = withAuthz({ listRoles })
+      renderWithProviders(<PermissionsPage tenant="acme" />, { operations })
+
+      await vi.waitFor(() => {
+        expect(listRoles).toHaveBeenCalledWith('acme')
+      })
+      expect(screen.queryByLabelText(zhCN.common.tenant)).toBeNull()
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
+  it('seeds from defaultTenant ahead of the URL and reports a re-selection', async () => {
+    window.history.replaceState({}, '', '/console/permissions?tenant=globex')
+    try {
+      const user = userEvent.setup()
+      const listRoles = vi.fn(() => Promise.resolve([role()]))
+      const onTenantChange = vi.fn()
+      const operations = withAuthz({
+        listRoles,
+        listTenants: () =>
+          Promise.resolve([
+            TENANT,
+            { id: 'globex', alias: 'Globex', status: 'active' as const },
+          ]),
+      })
+      renderWithProviders(
+        <PermissionsPage defaultTenant="acme" onTenantChange={onTenantChange} />,
+        { operations },
+      )
+
+      await vi.waitFor(() => {
+        expect(listRoles).toHaveBeenCalledWith('acme')
+      })
+      await vi.waitFor(() => {
+        expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent(
+          'Acme',
+        )
+      })
+
+      await user.click(screen.getByLabelText(zhCN.common.tenant))
+      await user.click(await screen.findByRole('option', { name: 'Globex' }))
+      expect(onTenantChange).toHaveBeenCalledWith('globex')
+      await vi.waitFor(() => {
+        expect(listRoles).toHaveBeenCalledWith('globex')
+      })
     } finally {
       window.history.replaceState({}, '', '/')
     }
@@ -1215,6 +1274,48 @@ describe('PermissionsPage', () => {
     })
   })
 
+  it('resets the page scopes when a controlled tenant changes', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+    })
+    // A controlled page takes its tenant from the host, so the change
+    // arrives as a prop; the host-owned switch stands in for the host
+    // re-rendering the page under another tenant.
+    function Harness(): ReactElement {
+      const [tenant, setTenant] = useState('acme')
+      return (
+        <>
+          <button type="button" onClick={() => setTenant('globex')}>
+            switch-tenant
+          </button>
+          <PermissionsPage tenant={tenant} />
+        </>
+      )
+    }
+    renderWithProviders(<Harness />, { operations })
+    await screen.findByText('editor')
+
+    await user.type(
+      screen.getByLabelText(zhCN.permissions.roles.create.roleLabel),
+      'auditor',
+    )
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.permissions.roles.create.submit,
+      }),
+    )
+    const saved = text(zhCN.permissions.roles.saved, { role: 'auditor' })
+    expect(await screen.findByText(saved)).toBeInTheDocument()
+
+    // The tenant is an argument of every write: the confirmation written
+    // under the tenant left behind does not describe the new one.
+    await user.click(screen.getByRole('button', { name: 'switch-tenant' }))
+    await waitFor(() => {
+      expect(screen.queryByText(saved)).toBeNull()
+    })
+  })
+
   it('clears a selected role the refresh no longer lists and announces it', async () => {
     const user = userEvent.setup()
     let listed: ConsoleRole[] = [role()]
@@ -1301,6 +1402,39 @@ describe('PermissionsPage', () => {
     expect(
       screen.queryByText(zhCN.permissions.roles.selectionCleared),
     ).toBeNull()
+  })
+
+  it('resolves a role description through the host, falling back to the raw key', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+    })
+    const resolved = 'Editor of the tenant'
+    const first = renderWithProviders(
+      <ConsoleDescribeRoleProvider
+        describeRole={(_key, described) => `${resolved} (${described.role})`}
+      >
+        <PermissionsPage />
+      </ConsoleDescribeRoleProvider>,
+      { operations },
+    )
+    await pickTenant(user)
+    expect(
+      await within(section(zhCN.permissions.roles.title)).findByText(
+        `${resolved} (editor)`,
+      ),
+    ).toBeInTheDocument()
+    first.unmount()
+
+    // No resolver: the key is the host's, so the raw key stands rather than
+    // an empty cell.
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    expect(
+      await within(section(zhCN.permissions.roles.title)).findByText('role.editor'),
+    ).toBeInTheDocument()
+    // The permission catalog keeps the full code as the primary text.
+    expect(await screen.findByText('crm.deal.read')).toBeInTheDocument()
   })
 
   it('has no axe violations', async () => {

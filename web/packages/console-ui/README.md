@@ -78,6 +78,56 @@ The shell also takes the host's account settings destination as
 dialog's "no active factor" state renders it as a link when supplied and
 text only when absent; the dialog never holds a host path itself.
 
+The rest of the frame is passed through unchanged: `sidebarWidth`,
+`userMenu`, `banner`, `mobileOpen` / `onMobileOpenChange` and
+`navHeader` / `navFooter` reach `AppShell` as given, and `navLabel`
+overrides the package's own navigation-landmark name. The console adds no
+chrome to any of them.
+
+Selection is the host's, because this package does no path matching:
+supply `isSelected(path)` and each navigation entry's `selected` flag is
+read from it. Without it no entry is selected.
+
+Navigation entries and in-page links are real links whose `href` is
+always present. A plain primary click is handed to `onNavigate` when
+supplied; a Ctrl/Command/Shift/Alt click, a non-primary button, a link
+that asks for a new tab or a download, and an activation another handler
+already claimed keep the browser's own behavior.
+
+The shell's package-level seams (navigation, route table, session,
+account destination, invitation link, impersonation change and start,
+role descriptions, feature presence) are available without the frame.
+`ConsoleProvider` installs exactly the same contexts and renders no DOM:
+
+```tsx
+import { ConsoleProvider } from '@speed/console-ui'
+
+<ConsoleProvider
+  hasFeature={hasFeature}
+  routes={narrowedRoutes}
+  session={session}
+  onNavigate={navigate}
+>
+  <ConsolePage />
+</ConsoleProvider>
+```
+
+A host renders it when it wants a platform-staff frame of its own -- its
+own chrome, a dialog, a side panel, an overlay outside the console's main
+area -- while keeping the console pages' seams available. It remains a
+platform-staff surface: it must not host tenant-facing pages, and it
+carries no current-tenant affordance. `hasFeature` is required here too;
+every other prop is optional and its absence leaves the documented
+fallback in force.
+
+The pages whose routes carry the tenant as a path segment (authorization,
+invitations and membership, SSO) and the impersonation page read the
+`tenant` query parameter as their selector's initial value. Each of those
+pages also takes optional `tenant` (controlled: supplied locks the value
+and hides the selector), `defaultTenant` (initial value, winning over the
+URL) and `onTenantChange` (reported on every change); supplying none of
+them keeps the URL-seeded behavior.
+
 The navigation is a flat single column by default -- one entry per
 labelled declaration, in declaration order. Pass `navGroups` (the
 package's own `consoleNavGroups`, or a host-supplied table) to group the
@@ -112,19 +162,22 @@ feature-gated control without importing the host's session package.
 | Module | Exports |
 |---|---|
 | `ConsoleShell.tsx` | `ConsoleShell`, `ConsoleShellProps` |
+| `ConsoleProvider.tsx` | `ConsoleProvider`, `ConsoleProviderProps` |
+| `internal/describe-role.tsx`, `internal/impersonation-starting.tsx`, `internal/impersonation-change.tsx` | Type-only: `ConsoleDescribeRole`, `ConsoleImpersonationStarting`, `ConsoleImpersonationChange` (the callback types the shell and provider props reference) |
+| `internal/session.tsx` | `ConsoleSessionProvider`, `ConsoleSessionProviderProps` — the shell mounts it from its `session` prop; a host rendering pages without the shell mounts it itself |
 | `route.ts` | `ConsoleRoute`, `ConsoleRouteContext`, `ConsoleRouteParams`, `ConsoleRouteTable`, `ConsoleNavGroup` |
 | `nav-groups.tsx` | `consoleNavGroups` |
 | `operations.tsx` | `ConsoleOperations`, `consoleOperations`, `ConsoleOperationsProvider`, `useConsoleOperations`, `ConsoleAuditRecordsOptions`, `settingKeyRest`, the view row types, the write input types |
 | `routes.tsx` | `dashboardAdminRoutes`, `tenantAdminRoutes`, `accountsAdminRoutes`, `sessionsAdminRoutes`, `impersonationsAdminRoutes`, `permissionsAdminRoutes`, `invitationsAdminRoutes`, `ssoAdminRoutes`, `settingsAdminRoutes`, `smsAdminRoutes`, `auditAdminRoutes`, `consoleRoutes` |
-| `DashboardPage.tsx` | `DashboardPage` |
-| `TenantRosterPage.tsx` | `TenantRosterPage` |
-| `TenantDetailPage.tsx` | `TenantDetailPage`, `TenantDetailPageProps` |
-| `AccountsPage.tsx` | `AccountsPage` |
+| `DashboardPage.tsx` | `DashboardPage`, `KpiCard`, `KpiRow`, `DashboardPageProps` |
+| `TenantRosterPage.tsx` | `TenantRosterPage`, `TenantRosterPageProps` |
+| `TenantDetailPage.tsx` | `TenantDetailPage`, `ConsoleTenantRelatedPage`, `TenantDetailPageProps` |
+| `AccountsPage.tsx` | `AccountsPage`, `AccountsPageProps`, `AccountsPageExtraColumn`, `AccountsPageAttributeField` |
 | `SessionsPage.tsx` | `SessionsPage` |
-| `ImpersonationsPage.tsx` | `ImpersonationsPage` |
-| `PermissionsPage.tsx` | `PermissionsPage` |
-| `InvitationsPage.tsx` | `InvitationsPage` |
-| `SsoPage.tsx` | `SsoPage` |
+| `ImpersonationsPage.tsx` | `ImpersonationsPage`, `ImpersonationsPageProps` |
+| `PermissionsPage.tsx` | `PermissionsPage`, `PermissionsPageProps` |
+| `InvitationsPage.tsx` | `InvitationsPage`, `InvitationsPageProps` |
+| `SsoPage.tsx` | `SsoPage`, `SsoPageProps` |
 | `SettingsPage.tsx` | `SettingsPage` |
 | `SmsPage.tsx` | `SmsPage` |
 | `AuditPage.tsx` | `AuditPage` |
@@ -133,8 +186,15 @@ feature-gated control without importing the host's session package.
 
 Everything else (`src/internal/`) is shared plumbing -- the error-text
 resolver, the `InlineError` and `WriteFeedbackRegion` bindings, the
-translation hook, the tenant selector and the timestamp formatter -- and
-is deliberately not exported.
+translation hook, the tenant selector, the account identity unit, the
+zero-instant sentinel and the package's internal contexts -- and is
+deliberately not exported. The callback types above and the session
+provider are the exceptions: the types are type-only exports, because a
+host annotating the shell's `describeRole`, `onImpersonationStarting` or
+`onImpersonationChange` by hand needs them, and `ConsoleSessionProvider`
+is the public provider the shell mounts (a host composing pages without
+the shell mounts it itself); no other internal value or provider is
+re-exported.
 
 ## Quick start
 

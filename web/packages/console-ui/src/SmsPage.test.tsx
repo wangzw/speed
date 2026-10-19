@@ -19,7 +19,8 @@ import type {
   ConsoleSmsTemplate,
   ConsoleSmsTemplatePage,
 } from './operations.js'
-import { renderWithProviders } from '../test-utils/render.js'
+import { renderWithProviders, createConsoleUiI18n } from '../test-utils/render.js'
+import { CONSOLE_UI_NAMESPACE } from './resources.js'
 import {
   containerDeclarationsOf,
   containerMaxWidthOf,
@@ -42,6 +43,10 @@ function text(
     values[key] ?? match,
   )
 }
+
+/** The source and approval labels a test injects into the namespace. */
+const SOURCE_LABEL = 'sms-source-runtime'
+const APPROVAL_LABEL = 'sms-approval-approved'
 
 function template(overrides: Partial<ConsoleSmsTemplate> = {}): ConsoleSmsTemplate {
   return {
@@ -119,7 +124,9 @@ describe('SmsPage', () => {
     const operations = withTemplates()
     renderWithProviders(<SmsPage />, { operations })
     expect(await screen.findByText('login-code')).toBeInTheDocument()
-    expect(screen.getByText('zh-CN: approved')).toBeInTheDocument()
+    expect(
+      screen.getByText(`zh-CN: ${zhCN.sms.approval.approved}`),
+    ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) })).toBeInTheDocument()
   })
 
@@ -490,6 +497,48 @@ describe('SmsPage', () => {
     expect(
       await screen.findByText(text(zhCN.sms.removed, { name: 'login-code' })),
     ).toBeInTheDocument()
+  })
+
+  it('translates the sources and approval states it knows and leaves an unknown one as recorded', async () => {
+    const i18n = createConsoleUiI18n()
+    i18n.addResourceBundle(
+      'zh-CN',
+      CONSOLE_UI_NAMESPACE,
+      {
+        sms: {
+          source: { runtime: SOURCE_LABEL },
+          approval: { approved: APPROVAL_LABEL },
+        },
+      },
+      true,
+      true,
+    )
+    const operations = withTemplates({
+      listSmsTemplates: () =>
+        Promise.resolve(
+          page([
+            template({
+              name: 'known',
+              source: 'runtime',
+              approvals: { 'zh-CN': { state: 'approved' } },
+            }),
+            template({
+              name: 'unknown',
+              source: 'other',
+              approvals: { 'zh-CN': { state: 'other' } },
+            }),
+          ]),
+        ),
+    })
+    renderWithProviders(<SmsPage />, { operations, i18n })
+
+    expect(await screen.findByText(SOURCE_LABEL)).toBeInTheDocument()
+    expect(
+      screen.getByText(`zh-CN: ${APPROVAL_LABEL}`),
+    ).toBeInTheDocument()
+    // Values outside the closed sets keep the recorded text.
+    expect(screen.getByText('other')).toBeInTheDocument()
+    expect(screen.getByText('zh-CN: other')).toBeInTheDocument()
   })
 
   it('has no axe violations', async () => {

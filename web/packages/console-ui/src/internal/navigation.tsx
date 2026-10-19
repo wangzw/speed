@@ -18,6 +18,7 @@ import { createContext, useContext } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
 import type { SxProps, Theme } from '@mui/material/styles'
 import Link from '@mui/material/Link'
+import { isPlainPrimaryClick } from '@speed/layout-kit'
 
 const ConsoleNavigateContext = createContext<((href: string) => void) | undefined>(
   undefined,
@@ -56,7 +57,9 @@ export interface ConsoleLinkProps {
 /**
  * A console page link: a real link to `href`, whose plain click is handed
  * to the host's router when the shell published one (so the session is not
- * lost to a reload) and left alone otherwise.
+ * lost to a reload) and left alone otherwise. A click with a modifier, a
+ * non-primary button or one another handler claimed keeps the browser's
+ * own behavior.
  */
 export function ConsoleLink({ href, children, sx }: ConsoleLinkProps) {
   const navigate = useConsoleNavigate()
@@ -64,6 +67,9 @@ export function ConsoleLink({ href, children, sx }: ConsoleLinkProps) {
     navigate === undefined
       ? undefined
       : (event: MouseEvent<HTMLAnchorElement>) => {
+          if (!isPlainPrimaryClick(event)) {
+            return
+          }
           event.preventDefault()
           navigate(href)
         }

@@ -29,8 +29,13 @@ current-tenant kind.
 The package ships one entry (`src/index.ts`, the export set in the
 README's "What ships") and no subpath. Everything under `src/internal/`
 — the error-text resolver, the `InlineError` and `WriteFeedbackRegion`
-bindings, the translation hook, the tenant selector and the timestamp
-formatter — is family plumbing and is deliberately not exported.
+bindings, the translation hook, the tenant selector and the zero-instant
+sentinel — is family plumbing and is deliberately not exported, except
+the type-only callback types (`ConsoleDescribeRole`,
+`ConsoleImpersonationStarting`, `ConsoleImpersonationChange`) a host
+annotates its own handlers with, and `ConsoleSessionProvider` (with its
+props), the provider the shell mounts from its `session` prop and a host
+composing pages without the shell mounts itself.
 
 ## The second shell (the one thing this package's frame decides)
 
@@ -58,16 +63,42 @@ from a path and never decides which navigation entry is selected: the
 declarations are collected and rendered by the application's route layer
 (a consumer of `@speed/route-kit`, or the host's own), and the console's
 navigation entries are links to each labelled declaration's path. The
-entries stay real links, but when the host supplies `onNavigate` a plain
-click is intercepted and handed to it (with the entry's path) instead of
-reloading the page — that is how a host routes an entry in place without
-this package importing a router.
+host decides selection explicitly through `isSelected(path)`; without it
+no entry is selected. The entries stay real links, but when the host
+supplies `onNavigate` a plain primary click is intercepted and handed to
+it (with the entry's path) instead of reloading the page — that is how a
+host routes an entry in place without this package importing a router. A
+click with Ctrl/Command/Shift/Alt, a non-primary button, a link that asks
+for a new tab or a download, and an activation another handler already
+claimed keep the browser's behavior; the judgement is layout-kit's
+`isPlainPrimaryClick`, shared with the package's in-page links.
 
-The shell also publishes host-owned destinations to its routed content
-through package context: `invitationLink`, the acceptance-link builder,
-and `accountHref`, the host's account settings page. The step-up dialog
-renders `accountHref` as its enrolment link when the host supplies it and
-text only when it does not; the dialog never holds a host path.
+The frame's other slots and controlled props — `sidebarWidth`,
+`userMenu`, `banner`, `mobileOpen` / `onMobileOpenChange` and `navHeader`
+/ `navFooter` — pass straight through to `AppShell`, and `navLabel`
+overrides the package's own navigation-landmark name.
+
+The shell also publishes host-owned destinations and seams to its routed
+content through package context: `invitationLink`, the acceptance-link
+builder, `accountHref`, the host's account settings page,
+`onImpersonationChange`, the identity-change action,
+`onImpersonationStarting`, the attempt hook fired before an impersonation
+start is written, `describeRole`, which resolves a role's
+`description_key`, and the route table the host supplied (pages resolve
+sibling declarations by stable `id`). The step-up dialog renders
+`accountHref` as its enrolment link when the host supplies it and text
+only when it does not; the dialog never holds a host path. A release
+returned by `onImpersonationStarting` runs when the start attempt does
+not land (refused, taken over by the step-up gate, or thrown); a landed
+start is the host's to release after its `onImpersonationChange('started')`
+action settles.
+
+`ConsoleProvider` installs those contexts without the frame and renders
+no DOM. A host uses it when it wants a platform-staff frame of its own —
+its own chrome, a dialog, a side panel — while keeping the console pages'
+seams available. It is not a tenant shell: it must not host tenant-facing
+pages, and it carries no current-tenant affordance. `hasFeature` is
+required, as on the shell; every other prop is optional.
 
 `hasFeature` is a required prop: the host's synchronous answer to "does
 this process serve the named feature?", typed on the generated
@@ -88,9 +119,11 @@ declarative registration seam (`dashboardAdminRoutes`,
 `consoleRoutes`). A capability may contribute more than one declaration:
 a list page carries a navigation label and icon and a detail page (the
 tenant detail, the audit detail) carries neither, so it is reachable from
-a row without appearing in the navigation. A declaration carries a path
-pattern, a view, an optional navigation label, an optional decorative
-icon, the permission code the page's data is held to (`tenant.read`,
+a row without appearing in the navigation. A declaration carries an
+optional stable `id` (the sibling-link address) — this package's own
+declarations all carry one, a host's may omit it — a path pattern, a
+view, an optional navigation label, an optional decorative icon, the
+permission code the page's data is held to (`tenant.read`,
 `authn.account.read`, `authn.session.read`,
 `authn.impersonation.read`, `authz.role.read`, `authn.membership.manage`,
 `authn.idp.manage`, `settings.read`, `sms.template.read`, `audit.read`)
@@ -203,24 +236,37 @@ request body.
   on the pages whose routes carry the tenant as a **path segment** is not
   this: it names an argument of the request and is fed by the roster read.
   A change that wants to read "the current tenant" here is scope drift.
-  The console DOES depend on `@speed/auth-core` for one thing only: the
-  session whose step-up flow a privileged write elevates (the
-  `session` prop of `ConsoleShell`, published to the pages through
-  `ConsoleSessionProvider`, `session.isStepUpShortfall` for the gate, and
+  The console DOES depend on `@speed/auth-core` for the session, the
+  step-up gate and the WebAuthn ceremony (the `@speed/auth-core/webauthn`
+  subpath). The session is the `session` prop of `ConsoleShell`,
+  published to the pages through `ConsoleSessionProvider`, with
+  `session.isStepUpShortfall` as the gate's discriminator and
   `session.logout` for the challenge's re-login when this deployment
-  cannot raise the session). That is the
-  session operation, not a tenant read; `useCurrentTenant` stays unused.
+  cannot raise the session; the gate itself is auth-core's
+  `useStepUpGate`, and the flow-step renderer runs the ceremony through
+  the subpath. That is session and ceremony, not a tenant read;
+  `useCurrentTenant` stays unused.
+- **Shared units live in the lower packages.** The refresh control and
+  mechanism (`RefreshButton`, `usePageRefresh`, `pageRefreshRead`),
+  `httpStatusOf`, `CopyButton` and `OneTimeValuePanel` come from
+  `@speed/ui-kit`; the WebAuthn ceremony from `@speed/auth-core/webauthn`;
+  the step-up gate from `@speed/auth-core` (called with
+  `session.isStepUpShortfall` as the discriminator); instant formatting
+  from `@speed/i18n`'s `formatInstant`, fixed to UTC. This package keeps
+  no copy of any of them.
 - **The step renderer has two siblings.** `src/internal/flow-step.tsx` is
   one of three copies (`auth-ui`, `account-ui`, `console-ui`) kept in
   lockstep by hand: a change to how a step renders lands in all three in
   the same change. No compiler check or test compares the copies.
 - **No routing in package code.** No path matching, no `react-router`. The
-  shell links each labelled entry to its declaration's path, and a page
-  builds a detail link from its own matched path plus a row id; matching a
-  URL to a view is the application's route layer's. `onNavigate` is a host
-  callback the frame invokes on a click — and publishes to its routed pages
-  through an internal context, so a page's detail link routes in place
-  too — not a routing mechanism this package owns.
+  shell links each labelled entry to its declaration's path; a page builds
+  a row's detail link from its own matched path plus a row id, and a
+  sibling link by resolving the published route table by declaration id.
+  Matching a URL to a view is the application's route layer's.
+  `onNavigate` is a host callback the frame invokes on a plain click — and
+  publishes to its routed pages through an internal context, so a page's
+  detail link routes in place too — not a routing mechanism this package
+  owns.
 - **The pages read and write only through the operations bundle.** No
   page constructs a `QueryClient`, and none writes a query key. A query
   key is whatever a generated hook carries; a read's parameter is the
@@ -321,7 +367,7 @@ key-splitting helper); `routes` (the declarations' paths, permissions,
 `requires` names, icons and translated labels); `resources`,
 `internal/error-text`, `internal/identifier`, `internal/datetime`,
 `internal/async-section` and `internal/write-feedback` (bundle key parity,
-whitelist pairing, the identifier rule, the timestamp formatting, the
+whitelist pairing, the identifier rule, the zero-instant sentinel, the
 403/retry/stale split, and the region's resolver binding);
 `package.json` (the manifest contract); and `usage-example` (the README's
 composition, with the operations bundle substituted from test-utils).

@@ -45,13 +45,16 @@ import {
   ListSkeleton,
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
+  errorCodeOf,
+  httpStatusOf,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { useConsoleUiErrorText } from './internal/error-text.js'
-import { RefreshButton } from './internal/refresh-button.js'
+import { RefreshButton } from '@speed/ui-kit'
+import { CONSOLE_UI_NAMESPACE } from './resources.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
   failureTextOf,
@@ -61,10 +64,8 @@ import {
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleSmsTemplate } from './operations.js'
 
-/** The bare-HTTP code the transport synthesizes for a 404 with no readable envelope. */
-const NOT_FOUND_CODE = 'client.http.404'
-
-/** The code the transport synthesizes when a 2xx carries an HTML document:
+/** The bare-HTTP status a missing route answers with, and the code the
+ * transport synthesizes when a 2xx carries the front-end entry document:
  * on a deployment that serves this console from the API's endpoint, that is
  * the entry document answering a path no API route claims. */
 const ENTRY_DOCUMENT_CODE = 'client.html'
@@ -79,16 +80,21 @@ const ENTRY_DOCUMENT_CODE = 'client.html'
  * transport), which is a failure of the surface rather than its absence.
  */
 function isSurfaceAbsent(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) {
-    return false
-  }
-  const candidate = error as { readonly status?: unknown; readonly code?: unknown }
   return (
-    candidate.status === 404 ||
-    candidate.code === NOT_FOUND_CODE ||
-    candidate.code === ENTRY_DOCUMENT_CODE
+    httpStatusOf(error) === 404 || errorCodeOf(error) === ENTRY_DOCUMENT_CODE
   )
 }
+
+/** The template sources the registry names. */
+const SMS_SOURCES = new Set<string>(['config', 'runtime'])
+
+/** The vendor review states a template can carry. */
+const APPROVAL_STATES = new Set<string>([
+  'pending',
+  'approved',
+  'rejected',
+  'withdrawn',
+])
 
 /** Splits a comma- or whitespace-separated list into its non-empty parts. */
 function parseList(text: string): string[] {
@@ -114,7 +120,7 @@ function parseCodes(text: string): Record<string, string> {
 }
 
 export function SmsPage() {
-  const { t } = useConsoleUiTranslation()
+  const { t, i18n } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const confirm = usePendingConfirm()
 
@@ -229,6 +235,19 @@ export function SmsPage() {
   const [offerParams, setOfferParams] = useState('')
   const [offerRemark, setOfferRemark] = useState('')
 
+  // A closed-set source or review state renders its own label; a value the
+  // set does not name is shown as the record carries it.
+  const closedSetLabel = (key: string, value: string): string =>
+    i18n.exists(key, { ns: CONSOLE_UI_NAMESPACE }) ? t(key) : value
+  const sourceLabel = (source: string): string =>
+    SMS_SOURCES.has(source)
+      ? closedSetLabel(`sms.source.${source}`, source)
+      : source
+  const approvalLabel = (state: string): string =>
+    APPROVAL_STATES.has(state)
+      ? closedSetLabel(`sms.approval.${state}`, state)
+      : state
+
   const columns: DataTableColumn<ConsoleSmsTemplate>[] = [
     {
       id: 'name',
@@ -243,7 +262,7 @@ export function SmsPage() {
       header: t('sms.column.source'),
       priority: 'medium',
       cellWrap: 'nowrap',
-      cell: (template) => template.source,
+      cell: (template) => sourceLabel(template.source),
     },
     {
       id: 'locales',
@@ -259,7 +278,7 @@ export function SmsPage() {
       cellWrap: 'nowrap',
       cell: (template) =>
         Object.entries(template.approvals)
-          .map(([locale, approval]) => `${locale}: ${approval.state}`)
+          .map(([locale, approval]) => `${locale}: ${approvalLabel(approval.state)}`)
           .join(', '),
     },
     {
@@ -349,6 +368,7 @@ export function SmsPage() {
         breadcrumbs={[{ label: t('shell.title') }, { label: t('sms.title') }]}
         actions={
           <RefreshButton
+            label={t('common.refresh')}
             // A refresh changes the context the page's writes settle
             // against, so the control stays inert while any of the page's
             // scopes has a write in flight; only the read marks it busy.

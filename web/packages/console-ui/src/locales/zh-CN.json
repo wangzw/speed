@@ -588,7 +588,8 @@
       "expiresLabel": "过期时间",
       "expiresHelper": "RFC 3339 时刻，或留空表示不过期",
       "submit": "新建密钥",
-      "handedOver": "服务密钥「{{label}}」（仅显示这一次）：{{secret}}",
+      "handedOver": "服务密钥「{{label}}」（仅显示这一次）：",
+      "copy": "复制服务密钥",
       "close": "关闭",
       "closeAria": "关闭账户「{{name}}」（{{id}}）的服务密钥「{{label}}」显示",
       "discardTitle": "放弃未关闭的服务密钥",
@@ -630,6 +631,16 @@
         "kind": "类型",
         "label": "标签",
         "status": "状态"
+      },
+      "kind": {
+        "totp": "验证器应用",
+        "sms": "短信",
+        "webauthn": "通行密钥"
+      },
+      "status": {
+        "pending": "待确认",
+        "active": "已启用",
+        "disabled": "已停用"
       }
     },
     "secrets": {
@@ -760,6 +771,16 @@
     },
     "inForce": "生效中",
     "ended": "已结束（{{reason}}）",
+    "endReason": {
+      "explicit": "主动",
+      "revoked": "被撤销",
+      "expired": "已到期",
+      "sessionEnded": "会话结束",
+      "actorDisabled": "操作者停用",
+      "targetDisabled": "目标账户停用",
+      "membershipRemoved": "成员关系移除",
+      "startFailed": "发起失败"
+    },
     "terminate": "终止",
     "terminated": "已终止账户 {{account}} 的冒充记录。",
     "recordsUnavailable": "冒充期间不能读取或终止冒充记录；结束冒充后可在此查看。",
@@ -861,6 +882,11 @@
       "source": "来源",
       "actions": "操作"
     },
+    "source": {
+      "admin": "管理员添加",
+      "invite": "邀请",
+      "jit": "即时开通（{{provider}}）"
+    },
     "activeYes": "是",
     "activeNo": "否",
     "ssoExemptYes": "是",
@@ -926,7 +952,8 @@
       "domainLabel": "域名",
       "verify": "验证",
       "claim": "认领",
-      "claimToken": "请在 DNS 中发布该令牌：{{token}}",
+      "claimToken": "请在 DNS 中发布下方令牌",
+      "claimTokenCopy": "复制验证令牌",
       "claimed": "已为提供方「{{name}}」认领域名「{{domain}}」",
       "verified": "已验证提供方「{{name}}」的域名「{{domain}}」",
       "removed": "已从提供方「{{name}}」移除域名「{{domain}}」",
@@ -982,6 +1009,16 @@
       "approvals": "审核状态",
       "enabled": "可发送",
       "actions": "操作"
+    },
+    "source": {
+      "config": "配置",
+      "runtime": "运行期"
+    },
+    "approval": {
+      "pending": "待审核",
+      "approved": "已通过",
+      "rejected": "已拒绝",
+      "withdrawn": "已撤回"
     },
     "enabledYes": "是",
     "enabledNo": "否",

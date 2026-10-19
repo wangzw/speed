@@ -5,8 +5,8 @@
  * The platform console reuses the declarative registration seam the
  * tenant-facing product shell uses: each page exports one declaration --
  * a path pattern, a view callback, an optional navigation label, an
- * optional permission code and the console's own optional navigation
- * metadata (group and icon) -- and the application's composition layer
+ * optional permission code and the console's own optional metadata (a
+ * stable id, a navigation group and an icon) -- and the application's composition layer
  * collects the declarations and hands them to the route layer it chose.
  * This package does not import @speed/route-kit: it only exports values
  * shaped like RouteDeclaration, so a page is a declaration and nothing
@@ -42,6 +42,16 @@ export interface ConsoleRouteContext {
  * it). The route layer's authorization is the host's composition.
  */
 export interface ConsoleRoute {
+  /**
+   * A stable identity for this declaration, per administration area
+   * ('tenants', 'accounts', 'audit-detail', ...). A page that links to a
+   * sibling console page resolves that page's declaration by this id
+   * rather than by guessing its path, because the console may be mounted
+   * under any prefix. Absent, the declaration has no sibling address (a
+   * host-supplied page may omit it; the package's own declarations carry
+   * one) and the navigation entry falls back to the path as its React key.
+   */
+  readonly id?: string
   /** The path pattern, e.g. '/tenants' or '/audit/records/:id'. */
   readonly path: string
   /** The view rendered when a URL matches this declaration. */

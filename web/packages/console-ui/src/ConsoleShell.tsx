@@ -14,7 +14,10 @@
  * entries stay real links (so a middle-click or a copied URL reaches the
  * path), but when the host supplies `onNavigate` a plain click is handed
  * to it instead of reloading the page, which is how a host routes an
- * entry in place without this package importing a router.
+ * entry in place without this package importing a router. A click with a
+ * modifier, a non-primary button, a link that asks for a new tab and an
+ * activation another handler already claimed all keep the browser's own
+ * behavior (layout-kit's `isPlainPrimaryClick`).
  *
  * The frame is @speed/layout-kit's AppShell, the same frame the
  * tenant-facing shell builds on: a fixed `header` banner carrying the
@@ -27,13 +30,16 @@
  * region as the single scroll layer -- so this package derives the
  * navigation and hands it to the shared frame rather than re-implementing
  * the chrome. The console names its own navigation landmark
- * (`shell.navLabel`) through the frame's `navLabel` so the platform
- * navigation stays distinguishable from any other shell's. Beside the
- * navigation it passes the frame's desktop sidebar-collapse pair
- * (`sidebarCollapsed` / `onSidebarCollapsedChange`) straight through, so a
- * host that holds the collapse state gives the operator the same
- * host-controlled collapse in the console area that the tenant shell
- * carries.
+ * (`shell.navLabel`, unless the host supplies another name) through the
+ * frame's `navLabel` so the platform navigation stays distinguishable
+ * from any other shell's. Beside the navigation it passes the frame's
+ * desktop sidebar-collapse pair (`sidebarCollapsed` /
+ * `onSidebarCollapsedChange`) straight through, so a host that holds the
+ * collapse state gives the operator the same host-controlled collapse in
+ * the console area that the tenant shell carries. The frame's other
+ * slots -- `userMenu`, `banner`, the controlled mobile-drawer pair,
+ * `sidebarWidth`, `navHeader` and `navFooter` -- are passed through the
+ * same way: the console adds no chrome of its own to them.
  *
  * The navigation is flat by default -- one entry per labelled declaration
  * -- but a host may pass `navGroups` (the console's own group table,
@@ -45,10 +51,18 @@
  * entry alone, at the group's position, rather than a heading over one
  * link. Without the table the flat column is unchanged.
  *
+ * Selection is the host's too: the shell does not know which path is
+ * current, so a host that wants the current entry marked supplies
+ * `isSelected(path)`, which each entry's `selected` flag is read from.
+ * Absent, no entry is selected -- the shell's long-standing behavior.
+ *
  * The shell reads no data and holds no operations: the pages it hosts
  * reach their reads and writes through the operations bundle the host
  * mounted (see operations.tsx), and the permissions the declarations
- * carry are data the host reads to compose its own route guard.
+ * carry are data the host reads to compose its own route guard. The
+ * shell's package-level seams live in ConsoleProvider, which this
+ * component mounts around its content; a host that needs those seams
+ * without this frame mounts the provider itself.
  */
 
 import type { ReactNode } from 'react'
@@ -57,38 +71,45 @@ import Box from '@mui/material/Box'
 import type { SxProps, Theme } from '@mui/material/styles'
 import type { AuthSession } from '@speed/auth-core'
 import type { FeatureName } from '@speed/api-sdk/features'
-import { AppShell } from '@speed/layout-kit'
+import { AppShell, isPlainPrimaryClick } from '@speed/layout-kit'
 import type {
   AppShellNavEntry,
   AppShellNavItem,
   AppShellProps,
 } from '@speed/layout-kit'
 import type { ConsoleNavGroup, ConsoleRoute } from './route.js'
-import { ConsoleAccountHrefProvider } from './internal/account-href.js'
-import { ConsoleFeatureProvider } from './internal/features.js'
-import { ConsoleNavigationProvider } from './internal/navigation.js'
-import { ConsoleInvitationLinkProvider } from './internal/invitation-link.js'
-import { ConsoleImpersonationChangeProvider } from './internal/impersonation-change.js'
-import { ConsoleSessionProvider } from './internal/session.js'
+import type { ConsoleImpersonationChange } from './internal/impersonation-change.js'
+import type { ConsoleImpersonationStarting } from './internal/impersonation-starting.js'
+import type { ConsoleDescribeRole } from './internal/describe-role.js'
+import { ConsoleProvider } from './ConsoleProvider.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 
-/** The AppShell chrome the console opts into beside its own: the desktop
- * sidebar-collapse pair, re-declared by Pick so a chrome change lands in
- * AppShellProps only (single source of truth). The console carries the pair
- * so its frame has the same host-controlled collapse the tenant shell does --
- * the state is the host's, and the frame renders the toggle and reports each
- * flip. */
-type AppShellCollapseProps = Pick<
+/** The AppShell chrome the console opts into beside its own, re-declared
+ * by Pick so a chrome change lands in AppShellProps only (single source of
+ * truth). The collapse pair gives the console frame the same
+ * host-controlled collapse the tenant shell has; the remaining slots are
+ * the frame's own host-content slots, passed through untouched. */
+type AppShellPassthroughProps = Pick<
   AppShellProps,
-  'sidebarCollapsed' | 'onSidebarCollapsedChange'
+  | 'sidebarCollapsed'
+  | 'onSidebarCollapsedChange'
+  | 'sidebarWidth'
+  | 'userMenu'
+  | 'banner'
+  | 'mobileOpen'
+  | 'onMobileOpenChange'
+  | 'navHeader'
+  | 'navFooter'
 >
 
-export interface ConsoleShellProps extends AppShellCollapseProps {
+export interface ConsoleShellProps extends AppShellPassthroughProps {
   /**
    * The console's page declarations. The shell derives the platform
    * navigation from the declarations that carry a `label` and renders
    * nothing else of them: path matching and view selection are the
-   * route layer's, not the shell's.
+   * route layer's, not the shell's. The table is also published to the
+   * routed content unchanged, so a page can resolve a sibling declaration
+   * by its stable `id`.
    */
   readonly routes: readonly ConsoleRoute[]
   /**
@@ -117,15 +138,29 @@ export interface ConsoleShellProps extends AppShellCollapseProps {
   /** Banner content after the title, typically the account menu (host content). */
   readonly headerActions?: ReactNode
   /**
+   * The navigation landmark's accessible name. Absent, the console names
+   * it from its own namespace (`shell.navLabel`), keeping the platform
+   * navigation distinguishable from any other shell's.
+   */
+  readonly navLabel?: string
+  /**
    * Called with a navigation entry's path when that entry is activated by
    * a plain click. Supplying it routes the entry in place through the
    * host's router: the shell still renders the entry as a link (a
    * middle-click or a copied URL stays a real navigation), but a plain
    * click is intercepted and handed here instead of reloading the page.
-   * Absent, an entry is a plain link that navigates the browser -- a full
-   * page load, which a host whose session lives in memory loses.
+   * A click with a modifier, a non-primary button or one the entry's own
+   * target reserves for the browser is left alone. Absent, an entry is a
+   * plain link that navigates the browser -- a full page load, which a
+   * host whose session lives in memory loses.
    */
   readonly onNavigate?: (href: string) => void
+  /**
+   * Whether a navigation entry's path is the current one, computed by the
+   * host (the shell does no path matching). Each entry's `selected` flag
+   * is read from it. Absent, no entry is selected.
+   */
+  readonly isSelected?: (path: string) => boolean
   /**
    * Builds the acceptance link for an issued invitation's token -- a
    * host-relative path or an absolute URL. The console's invitation page
@@ -158,8 +193,22 @@ export interface ConsoleShellProps extends AppShellCollapseProps {
    * its own status and record reads.
    */
   readonly onImpersonationChange?: (
-    change: 'started' | 'ended',
+    change: ConsoleImpersonationChange,
   ) => void | Promise<void>
+  /**
+   * The host's hook fired synchronously before an impersonation start is
+   * written, so a host frame that speaks about the operator can enter its
+   * "starting" state before the request lands. The returned release runs
+   * when the write is refused, blocked by step-up, or throws; a write
+   * that lands is the host's to release after its
+   * `onImpersonationChange('started')` action settles.
+   */
+  readonly onImpersonationStarting?: ConsoleImpersonationStarting
+  /**
+   * Resolves a role's `description_key` to display content, with the role
+   * it belongs to. Absent, a page shows the raw key.
+   */
+  readonly describeRole?: ConsoleDescribeRole
   /** Extra styling merged onto the root layout box. */
   readonly sx?: SxProps<Theme>
 }
@@ -168,16 +217,25 @@ export interface ConsoleShellProps extends AppShellCollapseProps {
 function navItemFor(
   route: ConsoleRoute,
   onNavigate: ((href: string) => void) | undefined,
+  isSelected: ((path: string) => boolean) | undefined,
 ): AppShellNavItem {
   return {
-    id: route.path,
+    id: route.id ?? route.path,
     href: route.path,
     label: route.label,
     icon: route.icon,
+    selected: isSelected?.(route.path),
     onClick:
       onNavigate === undefined
         ? undefined
         : (event) => {
+            // Only a plain primary click is the host's to route in place.
+            // A modifier or middle click, a link asking for a new tab and
+            // an activation another handler claimed keep the browser's
+            // own behavior -- and the href is always there for them.
+            if (!isPlainPrimaryClick(event)) {
+              return
+            }
             event.preventDefault()
             onNavigate(route.path)
           },
@@ -200,10 +258,11 @@ function buildNavEntries(
   routes: readonly ConsoleRoute[],
   navGroups: readonly ConsoleNavGroup[] | undefined,
   onNavigate: ((href: string) => void) | undefined,
+  isSelected: ((path: string) => boolean) | undefined,
 ): readonly AppShellNavEntry[] {
   const labelled = routes.filter((route) => route.label !== undefined)
   if (navGroups === undefined) {
-    return labelled.map((route) => navItemFor(route, onNavigate))
+    return labelled.map((route) => navItemFor(route, onNavigate, isSelected))
   }
   const groupIds = new Set(navGroups.map((group) => group.id))
   const ungrouped = labelled.filter(
@@ -213,7 +272,7 @@ function buildNavEntries(
   for (const group of navGroups) {
     const items = labelled
       .filter((route) => route.group === group.id)
-      .map((route) => navItemFor(route, onNavigate))
+      .map((route) => navItemFor(route, onNavigate, isSelected))
     if (items.length === 0) {
       continue
     }
@@ -232,7 +291,10 @@ function buildNavEntries(
       items,
     })
   }
-  return [...ungrouped.map((route) => navItemFor(route, onNavigate)), ...grouped]
+  return [
+    ...ungrouped.map((route) => navItemFor(route, onNavigate, isSelected)),
+    ...grouped,
+  ]
 }
 
 export function ConsoleShell({
@@ -242,11 +304,22 @@ export function ConsoleShell({
   children,
   title,
   headerActions,
+  navLabel,
   onNavigate,
+  isSelected,
   invitationLink,
   accountHref,
   session,
   onImpersonationChange,
+  onImpersonationStarting,
+  describeRole,
+  userMenu,
+  banner,
+  mobileOpen,
+  onMobileOpenChange,
+  sidebarWidth,
+  navHeader,
+  navFooter,
   sidebarCollapsed,
   onSidebarCollapsedChange,
   sx,
@@ -257,55 +330,52 @@ export function ConsoleShell({
   // without a label is a page that is reachable but not listed (a detail
   // route, say), exactly as route-kit's registration seam defines. When a
   // group table is supplied they gather into their groups (see
-  // buildNavEntries); without one they stay the flat single column. No
-  // entry is selected here -- selection needs path matching, which is the
-  // route layer's. A plain click is intercepted for the host (onNavigate)
-  // but the entry keeps its href, so it stays a real link.
+  // buildNavEntries); without one they stay the flat single column. Which
+  // entry is selected is the host's answer (isSelected); this package does
+  // no path matching. A plain click is intercepted for the host
+  // (onNavigate) but the entry keeps its href, so it stays a real link.
   const navEntries = useMemo(
-    () => buildNavEntries(routes, navGroups, onNavigate),
-    [routes, navGroups, onNavigate],
+    () => buildNavEntries(routes, navGroups, onNavigate, isSelected),
+    [routes, navGroups, onNavigate, isSelected],
   )
 
   return (
     <AppShell
       navItems={navEntries}
-      navLabel={t('shell.navLabel')}
+      navLabel={navLabel ?? t('shell.navLabel')}
       header={title}
       headerActions={headerActions}
+      userMenu={userMenu}
+      banner={banner}
+      mobileOpen={mobileOpen}
+      onMobileOpenChange={onMobileOpenChange}
+      sidebarWidth={sidebarWidth}
+      navHeader={navHeader}
+      navFooter={navFooter}
       sidebarCollapsed={sidebarCollapsed}
       onSidebarCollapsedChange={onSidebarCollapsedChange}
       sx={sx}
     >
-      {/* The same in-place navigation seam the entries use, published to
-          the routed pages so a detail link routes in place rather than
-          reloading the page (see internal/navigation), and the host's
-          invitation-link builder, published so a page can show an issued
-          acceptance link the host knows how to build (see
-          internal/invitation-link). */}
-      <ConsoleNavigationProvider onNavigate={onNavigate}>
-        {/* The content area carries the same padding the tenant shell's own
-            content region applies (theme spacing 3 = 24px all round), so a
-            page's heading, breadcrumb, table and form sit clear of the
-            sidebar and the banner rather than against them. The session is
-            published to the routed pages so a step-up-gated write can raise
-            it, and the host's account settings destination so the step-up
-            dialog can link to it (see internal/account-href). */}
-        <Box sx={{ p: 3 }}>
-          <ConsoleSessionProvider session={session ?? null}>
-            <ConsoleAccountHrefProvider accountHref={accountHref}>
-              <ConsoleInvitationLinkProvider invitationLink={invitationLink}>
-                <ConsoleImpersonationChangeProvider
-                  onImpersonationChange={onImpersonationChange}
-                >
-                  <ConsoleFeatureProvider hasFeature={hasFeature}>
-                    {children}
-                  </ConsoleFeatureProvider>
-                </ConsoleImpersonationChangeProvider>
-              </ConsoleInvitationLinkProvider>
-            </ConsoleAccountHrefProvider>
-          </ConsoleSessionProvider>
-        </Box>
-      </ConsoleNavigationProvider>
+      {/* The package-level seams: navigation, route table, session,
+          account destination, invitation link, impersonation change and
+          start, role descriptions and feature presence. The content area
+          carries the same padding the tenant shell's own content region
+          applies (theme spacing 3 = 24px all round), so a page's heading,
+          breadcrumb, table and form sit clear of the sidebar and the
+          banner rather than against them. */}
+      <ConsoleProvider
+        hasFeature={hasFeature}
+        onNavigate={onNavigate}
+        session={session}
+        invitationLink={invitationLink}
+        accountHref={accountHref}
+        onImpersonationChange={onImpersonationChange}
+        onImpersonationStarting={onImpersonationStarting}
+        describeRole={describeRole}
+        routes={routes}
+      >
+        <Box sx={{ p: 3 }}>{children}</Box>
+      </ConsoleProvider>
     </AppShell>
   )
 }

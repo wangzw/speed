@@ -40,9 +40,18 @@
  * Every read and write is an operation on the console operations bundle,
  * so the page builds no client and writes no query key. The page opens
  * with ui-kit's PageHeader.
+ *
+ * The tenant scope is optionally controlled: `tenant` locks the page to the
+ * given value and hides the selector, `defaultTenant` seeds the page's own
+ * selection ahead of the URL's `tenant` parameter, and `onTenantChange`
+ * reports each re-selection. Given none of them the page opens on the URL's
+ * parameter and the selector changes it, as before.
+ *
+ * The row's metadata-refresh control renders only where
+ * `authn.admin.sso.metadata` is present.
  */
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import MenuItem from '@mui/material/MenuItem'
@@ -53,6 +62,7 @@ import {
   DataTable,
   EmptyState,
   ListSkeleton,
+  OneTimeValuePanel,
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   useWriteFeedback,
@@ -61,13 +71,15 @@ import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { useConsoleUiErrorText } from './internal/error-text.js'
-import { RefreshButton } from './internal/refresh-button.js'
+import { useConsoleHasFeature } from './internal/features.js'
+import { RefreshButton } from '@speed/ui-kit'
+import { CONSOLE_UI_NAMESPACE } from './resources.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
   pageRefreshRead,
   usePageRefresh,
-} from './internal/use-page-refresh.js'
+} from '@speed/ui-kit'
 import {
   failureTextOf,
   useFailureScroll,
@@ -96,11 +108,39 @@ interface ClaimToken {
   readonly domain: string
 }
 
-export function SsoPage() {
+export interface SsoPageProps {
+  /**
+   * A controlled tenant scope: when given, the page's reads and writes name
+   * this tenant and the selector is not rendered. An empty string is a
+   * controlled "no tenant".
+   */
+  readonly tenant?: string
+  /**
+   * The page's initial tenant when it is not controlled. Wins over the
+   * tenant query parameter.
+   */
+  readonly defaultTenant?: string
+  /** Reports each re-selection made through the page's own selector. */
+  readonly onTenantChange?: (tenant: string) => void
+}
+
+export function SsoPage({
+  tenant: controlledTenant,
+  defaultTenant,
+  onTenantChange,
+}: SsoPageProps = {}) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
+  const hasFeature = useConsoleHasFeature()
+  // A provider's metadata refresh is a separate capability of the SSO
+  // surface; without it the row keeps its other actions.
+  const metadataRefresh = hasFeature('authn.admin.sso.metadata')
 
-  const [tenant, setTenant] = useState(tenantFromLocation)
+  const [innerTenant, setInnerTenant] = useState(
+    () => defaultTenant ?? tenantFromLocation(),
+  )
+  const tenant = controlledTenant ?? innerTenant
+  const tenantControlled = controlledTenant !== undefined
   const [domainProvider, setDomainProvider] = useState('')
   const [domain, setDomain] = useState('')
   const [editProvider, setEditProvider] = useState('')
@@ -146,16 +186,17 @@ export function SsoPage() {
   const anyPending =
     listFeedback.pending || formFeedback.pending || domainsFeedback.pending
 
-  // The refresh action re-reads the provider list -- the one body read; the
-  // form's provider read belongs to the selected edit target and re-reads
-  // with its key -- and resets the three scopes and the row marker first.
-  // The provider selections and the one-time token panel stay.
-  const resetPageFeedback = () => {
+  // Clears the three scopes and the row marker; the refresh action and a
+  // tenant change both start from this.
+  const resetPageFeedback = useCallback(() => {
     listFeedback.reset()
     formFeedback.reset()
     domainsFeedback.reset()
     setFailedProvider(null)
-  }
+  }, [listFeedback.reset, formFeedback.reset, domainsFeedback.reset])
+  // The refresh action re-reads the provider list -- the one body read; the
+  // form's provider read belongs to the selected edit target and re-reads
+  // with its key. The provider selections and the one-time token panel stay.
   const pageRefresh = usePageRefresh(
     [pageRefreshRead('sso-providers', providers)],
     resetPageFeedback,
@@ -166,13 +207,17 @@ export function SsoPage() {
   // whose ids no longer name this tenant's providers. The one-time token
   // panel is page state, not a slot result, and stays: it names the tenant
   // it was claimed under.
-  const changeTenant = (next: string) => {
-    setTenant(next)
+  useEffect(() => {
     resetPageFeedback()
     setBusyProvider(null)
     setBusyDomainAction(null)
     setEditProvider('')
     setDomainProvider('')
+  }, [tenant, resetPageFeedback])
+
+  const changeTenant = (next: string) => {
+    setInnerTenant(next)
+    onTenantChange?.(next)
   }
 
   // The provider form scope follows the provider it edits: another target's
@@ -356,19 +401,21 @@ export function SsoPage() {
         return (
           <Box>
             <Box sx={{ display: 'flex', columnGap: 1 }}>
-              <Button
-                type="button"
-                size="small"
-                variant="outlined"
-                aria-label={t('sso.refreshMetadataAria', { name: provider.name })}
-                aria-invalid={failed === 'refresh'}
-                aria-describedby={failed === 'refresh' ? errorId : undefined}
-                disabled={listFeedback.pending}
-                loading={busy === 'refresh'}
-                onClick={() => requestRefreshMetadata(provider)}
-              >
-                {t('sso.refreshMetadata')}
-              </Button>
+              {metadataRefresh && (
+                <Button
+                  type="button"
+                  size="small"
+                  variant="outlined"
+                  aria-label={t('sso.refreshMetadataAria', { name: provider.name })}
+                  aria-invalid={failed === 'refresh'}
+                  aria-describedby={failed === 'refresh' ? errorId : undefined}
+                  disabled={listFeedback.pending}
+                  loading={busy === 'refresh'}
+                  onClick={() => requestRefreshMetadata(provider)}
+                >
+                  {t('sso.refreshMetadata')}
+                </Button>
+              )}
               <Button
                 type="button"
                 size="small"
@@ -426,22 +473,36 @@ export function SsoPage() {
       />
 
       <Box component="section" sx={{ mb: 3 }}>
-        <TenantScope
-          value={tenant}
-          onSelect={changeTenant}
-          disabled={anyPending}
-          trailing={
-            <RefreshButton
-              busy={pageRefresh.busy}
-              ariaLabel={t('sso.refreshProviderListAria')}
-              disabled={tenant === ''}
-              writePending={anyPending}
-              describedBy={TENANT_HINT_ID}
-              disabledReason={t('sso.needTenant.description')}
-              onClick={pageRefresh.refresh}
-            />
-          }
-        />
+        {tenantControlled ? (
+          <RefreshButton
+            busy={pageRefresh.busy}
+            ariaLabel={t('sso.refreshProviderListAria')}
+            disabled={tenant === ''}
+            writePending={anyPending}
+            describedBy={TENANT_HINT_ID}
+            disabledReason={t('sso.needTenant.description')}
+            label={t('common.refresh')}
+            onClick={pageRefresh.refresh}
+          />
+        ) : (
+          <TenantScope
+            value={tenant}
+            onSelect={changeTenant}
+            disabled={anyPending}
+            trailing={
+              <RefreshButton
+                busy={pageRefresh.busy}
+                ariaLabel={t('sso.refreshProviderListAria')}
+                disabled={tenant === ''}
+                writePending={anyPending}
+                describedBy={TENANT_HINT_ID}
+                disabledReason={t('sso.needTenant.description')}
+                label={t('common.refresh')}
+                onClick={pageRefresh.refresh}
+              />
+            }
+          />
+        )}
       </Box>
 
       {tenant === '' ? (
@@ -600,6 +661,7 @@ export function SsoPage() {
             </Box>
             {claimToken !== null && (
               <ClaimTokenNotice
+                key={claimToken.token}
                 notice={claimToken}
                 onClose={() => setClaimToken(null)}
               />
@@ -621,9 +683,10 @@ export function SsoPage() {
  * handed out once.
  *
  * Its state is the page's (`SsoPage` holds it), so a scope reset, a later
- * failure or a context change cannot drop the only copy. The notice is one
+ * failure or a context change cannot drop the only copy. The panel is one
  * polite live region with an explicit close control whose accessible name
- * names the tenant, the provider and the domain it belongs to.
+ * names the tenant, the provider and the domain it belongs to, and its copy
+ * control hands over the complete token.
  */
 function ClaimTokenNotice({
   notice,
@@ -632,37 +695,28 @@ function ClaimTokenNotice({
   readonly notice: ClaimToken
   readonly onClose: () => void
 }) {
-  const { t } = useConsoleUiTranslation()
+  const { t, i18n } = useConsoleUiTranslation()
+  // The panel requires a copy label; a dedicated claim-token label takes
+  // over once the namespace carries it, and the namespace's generic copy
+  // label stands in until then.
+  const copyKey = 'sso.domains.claimTokenCopy'
+  const copyLabel = i18n.exists(copyKey, { ns: CONSOLE_UI_NAMESPACE })
+    ? t(copyKey)
+    : t('invitations.issued.copy')
   return (
-    <Box
-      role="status"
-      sx={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        columnGap: 2,
-        mt: 1,
-        p: 2,
-        border: 1,
-        borderColor: 'divider',
-        borderRadius: 1,
-      }}
-    >
-      <Typography variant="body2" sx={{ flex: 1, wordBreak: 'break-all' }}>
-        {t('sso.domains.claimToken', { token: notice.token })}
-      </Typography>
-      <Button
-        type="button"
-        size="small"
-        variant="outlined"
-        aria-label={t('sso.domains.claimTokenCloseAria', {
+    <Box sx={{ mt: 1 }}>
+      <OneTimeValuePanel
+        message={t('sso.domains.claimToken')}
+        value={notice.token}
+        copyLabel={copyLabel}
+        closeLabel={t('sso.domains.claimTokenClose')}
+        closeAriaLabel={t('sso.domains.claimTokenCloseAria', {
           tenant: notice.tenant,
           name: notice.providerName,
           domain: notice.domain,
         })}
-        onClick={onClose}
-      >
-        {t('sso.domains.claimTokenClose')}
-      </Button>
+        onClose={onClose}
+      />
     </Box>
   )
 }

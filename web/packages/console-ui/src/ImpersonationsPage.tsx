@@ -68,6 +68,16 @@
  * through the shared account identity unit, with the recorded identifier
  * kept as the column's full value. The timestamps render in UTC through
  * Intl. The page opens with ui-kit's PageHeader.
+ *
+ * The tenant scope is optionally controlled: `tenant` locks the page to the
+ * given value and hides the selector, `defaultTenant` seeds the page's own
+ * selection ahead of the URL's `tenant` parameter, and `onTenantChange`
+ * reports each re-selection. Given none of them the page opens on the URL's
+ * parameter and the selector changes it, as before.
+ *
+ * The declaration carries the caller-session feature, so a host narrows
+ * the page out by feature presence; the page adds no gate of its own and
+ * both halves render together.
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -87,6 +97,9 @@ import {
   useAuthnImpersonationStatus,
 } from '@speed/api-sdk'
 import type { AuthnImpersonationGrant } from '@speed/api-sdk'
+import { useStepUpGate } from '@speed/auth-core'
+import type { StepUpGate } from '@speed/auth-core'
+import { formatInstant } from '@speed/i18n'
 import {
   DataTable,
   EmptyState,
@@ -94,26 +107,26 @@ import {
   LONG_TEXT_COLUMN_MAX_WIDTH,
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
+  RefreshButton,
+  httpStatusOf,
+  pageRefreshRead,
+  usePageRefresh,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
 import { AccountIdentity } from './internal/account-identity.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
-import { formatUtc, isZeroInstant } from './internal/datetime.js'
+import { isZeroInstant } from './internal/datetime.js'
 import {
   useConsoleImpersonationChange,
   type ConsoleImpersonationChange,
 } from './internal/impersonation-change.js'
-import { RefreshButton } from './internal/refresh-button.js'
-import { useConsoleStepUp } from './internal/step-up-gate.js'
-import type { ConsoleStepUp } from './internal/step-up-gate.js'
+import { useConsoleImpersonationStarting } from './internal/impersonation-starting.js'
+import { useConsoleSession } from './internal/session.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
+import { CONSOLE_UI_NAMESPACE } from './resources.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
-import {
-  pageRefreshRead,
-  usePageRefresh,
-} from './internal/use-page-refresh.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleImpersonation } from './operations.js'
@@ -127,15 +140,11 @@ interface ImpersonationStatusView {
 /**
  * Whether a failure is the status read's "no impersonation in force": the
  * endpoint answers a bare 404, which the transport surfaces either as an
- * HTTP 404 or as the client.http.404 code -- the same structural reading
- * the console's forbidden branch makes of a 403.
+ * HTTP 404 or as the client.http.404 code -- read structurally, the same
+ * reading the console's forbidden branch makes of a 403.
  */
 function isNotImpersonating(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) {
-    return false
-  }
-  const candidate = error as { readonly status?: unknown; readonly code?: unknown }
-  return candidate.status === 404 || candidate.code === 'client.http.404'
+  return httpStatusOf(error) === 404
 }
 
 /**
@@ -157,12 +166,51 @@ function notifyIdentityChange(
     .catch(() => undefined)
 }
 
-export function ImpersonationsPage() {
+/**
+ * The reasons a record ends, mapped from the wire value to the namespace
+ * leaf that names it. A reason outside this set renders as recorded.
+ */
+const END_REASON_KEYS: Readonly<Record<string, string>> = {
+  explicit: 'explicit',
+  revoked: 'revoked',
+  expired: 'expired',
+  'session-ended': 'sessionEnded',
+  'actor-disabled': 'actorDisabled',
+  'target-disabled': 'targetDisabled',
+  'membership-removed': 'membershipRemoved',
+  'start-failed': 'startFailed',
+}
+
+export interface ImpersonationsPageProps {
+  /**
+   * A controlled tenant scope: when given, the record read names this tenant
+   * and the selector is not rendered. An empty string is a controlled "no
+   * tenant".
+   */
+  readonly tenant?: string
+  /**
+   * The page's initial tenant when it is not controlled. Wins over the
+   * tenant query parameter.
+   */
+  readonly defaultTenant?: string
+  /** Reports each re-selection made through the page's own selector. */
+  readonly onTenantChange?: (tenant: string) => void
+}
+
+export function ImpersonationsPage({
+  tenant: controlledTenant,
+  defaultTenant,
+  onTenantChange,
+}: ImpersonationsPageProps = {}) {
   const { t, i18n } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const queryClient = useQueryClient()
 
-  const [tenant, setTenant] = useState(tenantFromLocation)
+  const [innerTenant, setInnerTenant] = useState(
+    () => defaultTenant ?? tenantFromLocation(),
+  )
+  const tenant = controlledTenant ?? innerTenant
+  const tenantControlled = controlledTenant !== undefined
 
   // The current-impersonation section's scope: the start and the end are
   // the same control group (one object, one result location), and the
@@ -171,7 +219,15 @@ export function ImpersonationsPage() {
   // The record table's scope: its terminate actions share one result
   // location under the table.
   const recordsFeedback = useWriteFeedback()
-  const stepUp = useConsoleStepUp()
+  // The console session, and the step-up gate over it: the gate treats a
+  // write as a shortfall exactly when the session says so (a 401 that ends
+  // the session is not a shortfall, and arming a step-up for it would
+  // offer a verification that cannot help).
+  const session = useConsoleSession()
+  const gate = useStepUpGate<() => void>(
+    (retry) => retry(),
+    (error) => session !== null && session.isStepUpShortfall(error),
+  )
   // The host's identity-change action (the shell publishes it). A start
   // and an end both swap whose identity every later read belongs to, so
   // each reports to the same seam once its write settles.
@@ -266,7 +322,7 @@ export function ImpersonationsPage() {
         // established is a strength shortfall: the gate takes the write
         // over and this attempt settles without touching the slot. The
         // replayed write is a new run.
-        if (stepUp.intercept(error, () => void endAttempt())) {
+        if (gate.intercept(error, () => void endAttempt())) {
           return null
         }
         // A bare 404 is the settled "there is no impersonation to end"
@@ -299,13 +355,23 @@ export function ImpersonationsPage() {
           void status.refetch()
           return t('impersonations.terminated', { account: record.target })
         } catch (error) {
-          if (stepUp.intercept(error, () => void attempt())) {
+          if (gate.intercept(error, () => void attempt())) {
             return null
           }
           throw error
         }
       })
     void attempt()
+  }
+
+  // A closed-set reason renders its own label; anything else (including an
+  // empty reason) is shown as the record carries it.
+  const endReasonLabel = (reason: string): string => {
+    const leaf = END_REASON_KEYS[reason]
+    const key = leaf === undefined ? '' : `impersonations.endReason.${leaf}`
+    return key !== '' && i18n.exists(key, { ns: CONSOLE_UI_NAMESPACE })
+      ? t(key)
+      : reason
   }
 
   const columns: DataTableColumn<ConsoleImpersonation>[] = [
@@ -349,14 +415,16 @@ export function ImpersonationsPage() {
       id: 'started',
       header: t('impersonations.column.started'),
       cellWrap: 'nowrap',
-      cell: (record) => formatUtc(record.started_at, i18n.language),
+      cell: (record) =>
+        formatInstant(record.started_at, i18n.language, { timeZone: 'UTC' }),
     },
     {
       id: 'ends',
       header: t('impersonations.column.ends'),
       priority: 'low',
       cellWrap: 'nowrap',
-      cell: (record) => formatUtc(record.ends_at, i18n.language),
+      cell: (record) =>
+        formatInstant(record.ends_at, i18n.language, { timeZone: 'UTC' }),
     },
     {
       id: 'state',
@@ -370,7 +438,9 @@ export function ImpersonationsPage() {
           </Typography>
         ) : (
           <Typography variant="body2" color="text.secondary">
-            {t('impersonations.ended', { reason: record.end_reason ?? '' })}
+            {t('impersonations.ended', {
+              reason: endReasonLabel(record.end_reason ?? ''),
+            })}
           </Typography>
         ),
     },
@@ -411,6 +481,7 @@ export function ImpersonationsPage() {
             writePending={
               currentFeedback.pending || recordsFeedback.pending
             }
+            label={t('common.refresh')}
             onClick={pageRefresh.refresh}
           />
         }
@@ -462,7 +533,9 @@ export function ImpersonationsPage() {
                   </Typography>
                   <Typography variant="body2">
                     {t('impersonations.current.ends', {
-                      ends: formatUtc(settled.grant.ends_at, i18n.language),
+                      ends: formatInstant(settled.grant.ends_at, i18n.language, {
+                        timeZone: 'UTC',
+                      }),
                     })}
                   </Typography>
                 </Stack>
@@ -494,7 +567,7 @@ export function ImpersonationsPage() {
             <StartImpersonationForm
               tenant={tenant}
               feedback={currentFeedback}
-              stepUp={stepUp}
+              gate={gate}
               identityChange={identityChange}
               // A start writes a record into the selected tenant's list as
               // well as onto the operator's own session.
@@ -520,13 +593,18 @@ export function ImpersonationsPage() {
         </Typography>
       ) : (
         <>
-          <Box component="section" sx={{ mb: 3 }}>
-            <TenantScope
-              value={tenant}
-              onSelect={setTenant}
-              disabled={currentFeedback.pending || recordsFeedback.pending}
-            />
-          </Box>
+          {!tenantControlled && (
+            <Box component="section" sx={{ mb: 3 }}>
+              <TenantScope
+                value={tenant}
+                onSelect={(next) => {
+                  setInnerTenant(next)
+                  onTenantChange?.(next)
+                }}
+                disabled={currentFeedback.pending || recordsFeedback.pending}
+              />
+            </Box>
+          )}
 
           {tenant === '' ? (
             <EmptyState
@@ -578,12 +656,12 @@ export function ImpersonationsPage() {
         </>
       )}
 
-      {stepUp.session !== null && (
+      {session !== null && (
         <StepUpChallenge
-          open={stepUp.gate.open}
-          session={stepUp.session}
-          onSuccess={stepUp.gate.succeed}
-          onCancel={stepUp.gate.cancel}
+          open={gate.open}
+          session={session}
+          onSuccess={gate.succeed}
+          onCancel={gate.cancel}
         />
       )}
     </Box>
@@ -606,17 +684,26 @@ export function ImpersonationsPage() {
  * states the factor-age requirement: the server answers an unmet
  * `MFA.Seasoned` with the same step-up refusal a weak session gets, and this
  * line is what keeps an operator from retrying a sign-in that cannot help.
+ *
+ * Before the write goes out it calls the host's `onImpersonationStarting`
+ * hook, so a host frame that speaks about the operator can enter its
+ * "starting" state ahead of the request. The returned release runs when
+ * the write does not land -- refused, intercepted by the step-up gate, or
+ * thrown. A write that lands is not released here: the host releases it
+ * once its `onImpersonationChange('started')` action settles, because the
+ * host is the one that decides how the new identity takes over.
  */
 function StartImpersonationForm({
   tenant,
   feedback,
-  stepUp,
+  gate,
   identityChange,
   onStarted,
 }: {
   readonly tenant: string
   readonly feedback: WriteFeedback
-  readonly stepUp: ConsoleStepUp
+  /** The step-up gate over that session. */
+  readonly gate: StepUpGate<() => void>
   /** The host's identity-change action (see ImpersonationsPage). */
   readonly identityChange:
     | ((change: ConsoleImpersonationChange) => void | Promise<void>)
@@ -625,6 +712,7 @@ function StartImpersonationForm({
   readonly onStarted: () => void
 }) {
   const { t } = useConsoleUiTranslation()
+  const onStarting = useConsoleImpersonationStarting()
   const queryClient = useQueryClient()
   const startImpersonation = useAuthnImpersonationStart({
     mutation: {
@@ -655,8 +743,12 @@ function StartImpersonationForm({
           : { ttl_seconds: ttlSeconds }),
       },
     }
-    const attempt = (): Promise<void> =>
-      feedback.run(async () => {
+    const attempt = (): Promise<void> => {
+      // The host enters its "starting" state before the request goes out;
+      // the returned release runs if this attempt does not land. A landed
+      // write is the host's to release once its change action settles.
+      const release = onStarting?.()
+      return feedback.run(async () => {
         try {
           const answer = await startImpersonation.mutateAsync(body)
           setAccount('')
@@ -672,13 +764,17 @@ function StartImpersonationForm({
         } catch (error) {
           // The gate takes a step-up refusal over; the attempt settles
           // without touching the slot, and a won challenge replays this
-          // body as a new run.
-          if (stepUp.intercept(error, () => void attempt())) {
+          // body as a new run. Either way this attempt did not land, so
+          // the host's starting state is released.
+          if (gate.intercept(error, () => void attempt())) {
+            release?.()
             return null
           }
+          release?.()
           throw error
         }
       })
+    }
     void attempt()
   }
 

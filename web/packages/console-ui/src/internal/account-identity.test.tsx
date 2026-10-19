@@ -8,11 +8,12 @@
  * actor is never read as a permission problem (or the reverse).
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import { AccountIdentity } from './account-identity.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import {
+  accountFixture,
   createConsoleOperations,
   makeConsoleBackend,
 } from '../../test-utils/operations.js'
@@ -52,6 +53,22 @@ describe('AccountIdentity', () => {
     renderWithProviders(<AccountIdentity account={ACCOUNT} />, { operations })
     expect(await screen.findByLabelText(UNRESOLVED_LABEL)).toBeInTheDocument()
     expect(screen.queryByLabelText(MISSING_LABEL)).toBeNull()
+  })
+
+  it('issues no account read when authn.admin is absent and marks the identity unresolved', async () => {
+    const getAccount = vi.fn(() => Promise.resolve(accountFixture()))
+    const operations = createConsoleOperations(makeConsoleBackend({ getAccount }))
+    renderWithProviders(<AccountIdentity account={ACCOUNT} />, {
+      operations,
+      // Every feature except account administration: the lookup is not part
+      // of this process, so there is nothing to read.
+      hasFeature: (name) => name !== 'authn.admin',
+    })
+    // The recorded value stands with the unresolved note -- never the 404
+    // "deleted" marker, which only a read could have answered.
+    expect(await screen.findByLabelText(UNRESOLVED_LABEL)).toBeInTheDocument()
+    expect(screen.queryByLabelText(MISSING_LABEL)).toBeNull()
+    expect(getAccount).not.toHaveBeenCalled()
   })
 
   it('uses two distinct markers for the two failures', async () => {

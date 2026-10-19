@@ -34,9 +34,18 @@
  * invitee or account it changed. The tenant seeds every write, so changing
  * it resets both scopes and disables the selector while either is in
  * flight. The page opens with ui-kit's PageHeader.
+ *
+ * The tenant scope is optionally controlled: `tenant` locks the page to the
+ * given value and hides the selector, `defaultTenant` seeds the page's own
+ * selection ahead of the URL's `tenant` parameter, and `onTenantChange`
+ * reports each re-selection. Given none of them the page opens on the URL's
+ * parameter and the selector changes it, as before.
+ *
+ * The member table's SSO-exemption column, its toggle and the membership
+ * form's exemption checkbox render only where `authn.admin.sso` is present.
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -49,6 +58,7 @@ import {
   EmptyState,
   ListSkeleton,
   LONG_TEXT_COLUMN_MAX_WIDTH,
+  OneTimeValuePanel,
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   useWriteFeedback,
@@ -58,16 +68,18 @@ import { AccountIdentity, useAccountIdentity } from './internal/account-identity
 import { AccountSelector } from './internal/account-selector.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
-import { formatUtc } from './internal/datetime.js'
+import { formatInstant } from '@speed/i18n'
 import { useConsoleUiErrorText } from './internal/error-text.js'
+import { useConsoleHasFeature } from './internal/features.js'
 import { useConsoleInvitationLink } from './internal/invitation-link.js'
-import { RefreshButton } from './internal/refresh-button.js'
+import { RefreshButton } from '@speed/ui-kit'
+import { CONSOLE_UI_NAMESPACE } from './resources.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
   pageRefreshRead,
   usePageRefresh,
-} from './internal/use-page-refresh.js'
+} from '@speed/ui-kit'
 import {
   failureTextOf,
   useFailureScroll,
@@ -93,6 +105,13 @@ type IssuedInvitation = ConsoleIssuedInvitation & { readonly tenant: string }
 /** The invitation status's label, guarding the closed set. */
 const INVITATION_STATUSES = new Set<string>(['pending', 'accepted', 'revoked'])
 
+/**
+ * The member sources the membership surface writes by name. A `jit:<id>`
+ * value names the provider a just-in-time membership came from.
+ */
+const MEMBER_SOURCES = new Set<string>(['admin', 'invite'])
+const JIT_SOURCE_PREFIX = 'jit:'
+
 function statusLabel(status: string, t: (key: string) => string): string {
   return INVITATION_STATUSES.has(status)
     ? t(`invitations.status.${status}`)
@@ -113,12 +132,40 @@ function toInviteExpiry(value: string): string | undefined {
   return Number.isNaN(instant.getTime()) ? undefined : instant.toISOString()
 }
 
-export function InvitationsPage() {
+export interface InvitationsPageProps {
+  /**
+   * A controlled tenant scope: when given, the page's reads and writes name
+   * this tenant and the selector is not rendered. An empty string is a
+   * controlled "no tenant".
+   */
+  readonly tenant?: string
+  /**
+   * The page's initial tenant when it is not controlled. Wins over the
+   * tenant query parameter.
+   */
+  readonly defaultTenant?: string
+  /** Reports each re-selection made through the page's own selector. */
+  readonly onTenantChange?: (tenant: string) => void
+}
+
+export function InvitationsPage({
+  tenant: controlledTenant,
+  defaultTenant,
+  onTenantChange,
+}: InvitationsPageProps = {}) {
   const { t, i18n } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const invitationLink = useConsoleInvitationLink()
+  const hasFeature = useConsoleHasFeature()
+  // The member table's exemption column, toggle and the write form's
+  // checkbox exist only where the SSO surface does.
+  const ssoExemption = hasFeature('authn.admin.sso')
 
-  const [tenant, setTenant] = useState(tenantFromLocation)
+  const [innerTenant, setInnerTenant] = useState(
+    () => defaultTenant ?? tenantFromLocation(),
+  )
+  const tenant = controlledTenant ?? innerTenant
+  const tenantControlled = controlledTenant !== undefined
   const [email, setEmail] = useState('')
   const [expiresAt, setExpiresAt] = useState('')
   // The invitation just issued, held with the tenant it was issued under so
@@ -162,15 +209,18 @@ export function InvitationsPage() {
   // The tenant is an argument of every write here: a change clears both
   // slots and every row marker, since the old result would read as
   // describing the tenant left behind.
-  const resetPageFeedback = () => {
+  const resetPageFeedback = useCallback(() => {
     invitationFeedback.reset()
     membersFeedback.reset()
     setFailedInvitation(null)
     setFailedMember(null)
-  }
-  const changeTenant = (next: string) => {
-    setTenant(next)
+  }, [invitationFeedback.reset, membersFeedback.reset])
+  useEffect(() => {
     resetPageFeedback()
+  }, [tenant, resetPageFeedback])
+  const changeTenant = (next: string) => {
+    setInnerTenant(next)
+    onTenantChange?.(next)
   }
 
   // The refresh action re-reads both body reads -- the invitation list and
@@ -273,6 +323,24 @@ export function InvitationsPage() {
     })
   }
 
+  // A source the surface names renders its own label; a `jit:<id>` value
+  // names the provider that provisioned the membership; anything else is
+  // shown as the record carries it.
+  const memberSourceLabel = (source: string): string => {
+    let key: string | null = null
+    let options: Record<string, string> | undefined
+    if (source.startsWith(JIT_SOURCE_PREFIX)) {
+      key = 'members.source.jit'
+      options = { provider: source.slice(JIT_SOURCE_PREFIX.length) }
+    } else if (MEMBER_SOURCES.has(source)) {
+      key = `members.source.${source}`
+    }
+    return key !== null &&
+      i18n.exists(key, { ns: CONSOLE_UI_NAMESPACE })
+      ? t(key, options)
+      : source
+  }
+
   const invitationColumns: DataTableColumn<ConsoleInvitation>[] = [
     {
       id: 'email',
@@ -312,7 +380,10 @@ export function InvitationsPage() {
       header: t('invitations.column.expires'),
       priority: 'low',
       cellWrap: 'nowrap',
-      cell: (invitation) => formatUtc(invitation.expires_at, i18n.language),
+      cell: (invitation) =>
+        formatInstant(invitation.expires_at, i18n.language, {
+          timeZone: 'UTC',
+        }),
     },
     {
       id: 'actions',
@@ -371,20 +442,26 @@ export function InvitationsPage() {
       cell: (member) =>
         member.active ? t('members.activeYes') : t('members.activeNo'),
     },
-    {
-      id: 'ssoExempt',
-      header: t('members.column.ssoExempt'),
-      priority: 'low',
-      cellWrap: 'nowrap',
-      cell: (member) =>
-        member.sso_exempt ? t('members.ssoExemptYes') : t('members.ssoExemptNo'),
-    },
+    ...(ssoExemption
+      ? [
+          {
+            id: 'ssoExempt',
+            header: t('members.column.ssoExempt'),
+            priority: 'low',
+            cellWrap: 'nowrap',
+            cell: (member: ConsoleMember) =>
+              member.sso_exempt
+                ? t('members.ssoExemptYes')
+                : t('members.ssoExemptNo'),
+          } satisfies DataTableColumn<ConsoleMember>,
+        ]
+      : []),
     {
       id: 'source',
       header: t('members.column.source'),
       priority: 'medium',
       cellWrap: 'nowrap',
-      cell: (member) => member.source,
+      cell: (member) => memberSourceLabel(member.source),
     },
     {
       id: 'actions',
@@ -400,6 +477,7 @@ export function InvitationsPage() {
           }
           failureText={memberFailureText}
           pending={membersFeedback.pending}
+          ssoExemption={ssoExemption}
           onRemove={requestRemoveMember}
           onToggleSsoExempt={toggleSsoExempt}
         />
@@ -433,23 +511,38 @@ export function InvitationsPage() {
       />
 
       <Box component="section" sx={{ mb: 3 }}>
-        <TenantScope
-          value={tenant}
-          onSelect={changeTenant}
-          disabled={invitationFeedback.pending || membersFeedback.pending}
-          trailing={
-            <RefreshButton
-              busy={pageRefresh.busy}
-              disabled={tenant === ''}
-              writePending={
-                invitationFeedback.pending || membersFeedback.pending
-              }
-              describedBy={TENANT_HINT_ID}
-              disabledReason={t('invitations.needTenant.description')}
-              onClick={pageRefresh.refresh}
-            />
-          }
-        />
+        {tenantControlled ? (
+          <RefreshButton
+            busy={pageRefresh.busy}
+            disabled={tenant === ''}
+            writePending={
+              invitationFeedback.pending || membersFeedback.pending
+            }
+            describedBy={TENANT_HINT_ID}
+            disabledReason={t('invitations.needTenant.description')}
+            label={t('common.refresh')}
+            onClick={pageRefresh.refresh}
+          />
+        ) : (
+          <TenantScope
+            value={tenant}
+            onSelect={changeTenant}
+            disabled={invitationFeedback.pending || membersFeedback.pending}
+            trailing={
+              <RefreshButton
+                busy={pageRefresh.busy}
+                disabled={tenant === ''}
+                writePending={
+                  invitationFeedback.pending || membersFeedback.pending
+                }
+                describedBy={TENANT_HINT_ID}
+                disabledReason={t('invitations.needTenant.description')}
+                label={t('common.refresh')}
+                onClick={pageRefresh.refresh}
+              />
+            }
+          />
+        )}
       </Box>
 
       {tenant === '' ? (
@@ -511,6 +604,7 @@ export function InvitationsPage() {
             </Box>
             {issued != null && (
               <InvitationLinkNotice
+                key={issuedValue}
                 notice={issued}
                 value={issuedValue}
                 hasBuilder={invitationLink !== undefined}
@@ -562,7 +656,11 @@ export function InvitationsPage() {
             >
               {t('members.title')}
             </Typography>
-            <MemberWriteForm tenant={tenant} feedback={membersFeedback} />
+            <MemberWriteForm
+              tenant={tenant}
+              feedback={membersFeedback}
+              ssoExemption={ssoExemption}
+            />
             <ConsoleAsyncSection
               pending={membersPending}
               payload={memberRows}
@@ -618,6 +716,7 @@ function MemberRowActions({
   failed,
   failureText,
   pending,
+  ssoExemption,
   onRemove,
   onToggleSsoExempt,
 }: {
@@ -625,6 +724,8 @@ function MemberRowActions({
   readonly failed: 'remove' | 'sso' | null
   readonly failureText: string | null
   readonly pending: boolean
+  /** Whether the SSO surface is present, so the toggle exists. */
+  readonly ssoExemption: boolean
   readonly onRemove: (member: ConsoleMember, accountName: string) => void
   readonly onToggleSsoExempt: (
     member: ConsoleMember,
@@ -640,20 +741,22 @@ function MemberRowActions({
   return (
     <Box>
       <Box sx={{ display: 'flex', columnGap: 1 }}>
-        <Button
-          type="button"
-          size="small"
-          variant="outlined"
-          aria-invalid={ssoFailed}
-          aria-describedby={ssoFailed ? errorId : undefined}
-          disabled={pending}
-          loading={pending}
-          onClick={() => onToggleSsoExempt(member, accountName)}
-        >
-          {member.sso_exempt
-            ? t('members.ssoExemptClear')
-            : t('members.ssoExemptSet')}
-        </Button>
+        {ssoExemption && (
+          <Button
+            type="button"
+            size="small"
+            variant="outlined"
+            aria-invalid={ssoFailed}
+            aria-describedby={ssoFailed ? errorId : undefined}
+            disabled={pending}
+            loading={pending}
+            onClick={() => onToggleSsoExempt(member, accountName)}
+          >
+            {member.sso_exempt
+              ? t('members.ssoExemptClear')
+              : t('members.ssoExemptSet')}
+          </Button>
+        )}
         <Button
           type="button"
           size="small"
@@ -696,9 +799,6 @@ function acceptanceUrl(link: string): string {
   }
 }
 
-/** How long the copy control keeps its copied state and announcement. */
-const COPY_FEEDBACK_MS = 2000
-
 /**
  * InvitationLinkNotice: the display of a just-issued invitation's acceptance
  * value -- the host-built link, or the bare token when the host supplies no
@@ -707,8 +807,9 @@ const COPY_FEEDBACK_MS = 2000
  * Its state is the page's (`InvitationsPage` holds it beside the tenant it
  * was issued under), so a scope reset, a later failure or a context change
  * cannot drop the only copy; a second issuance in the same group replaces
- * it. The notice is one polite live region with an explicit close control
- * whose accessible name names the tenant and the invitee.
+ * it. The panel is one polite live region with an explicit close control
+ * whose accessible name names the tenant and the invitee, and its copy
+ * control hands over the complete value.
  */
 function InvitationLinkNotice({
   notice,
@@ -723,115 +824,25 @@ function InvitationLinkNotice({
 }) {
   const { t } = useConsoleUiTranslation()
   return (
-    <Box
-      role="status"
-      sx={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        columnGap: 2,
-        mb: 2,
-        p: 2,
-        border: 1,
-        borderColor: 'divider',
-        borderRadius: 1,
-      }}
-    >
-      <Box sx={{ flex: 1 }}>
-        <Typography variant="body2">
-          {hasBuilder
-            ? t('invitations.issued.link', { email: notice.invitation.email })
-            : t('invitations.issued.token', { email: notice.invitation.email })}
-        </Typography>
-        <Box
-          sx={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            columnGap: 1,
-            rowGap: 0.5,
-          }}
-        >
-          <Typography
-            variant="body2"
-            sx={{ wordBreak: 'break-all', fontFamily: 'monospace' }}
-          >
-            {value}
-          </Typography>
-          <CopyControl
-            key={value}
-            value={value}
-            label={
-              hasBuilder
-                ? t('invitations.issued.copyLink')
-                : t('invitations.issued.copyToken')
-            }
-          />
-        </Box>
-      </Box>
-      <Button
-        type="button"
-        size="small"
-        variant="outlined"
-        aria-label={t('invitations.issued.closeAria', {
-          tenant: notice.tenant,
-          email: notice.invitation.email,
-        })}
-        onClick={onClose}
-      >
-        {t('invitations.issued.close')}
-      </Button>
-    </Box>
-  )
-}
-
-/**
- * The copy control for the one-time hand-off value: it writes the complete
- * value -- the acceptance link or the bare token -- to the clipboard and
- * announces the copy, so the operator hands over the exact value rather
- * than a truncated one. The stable `label` is the control's accessible
- * name. A context without the Clipboard API leaves the control silent
- * rather than failing the page.
- */
-function CopyControl({
-  value,
-  label,
-}: {
-  readonly value: string
-  readonly label: string
-}) {
-  const { t } = useConsoleUiTranslation()
-  const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    if (!copied) return undefined
-    const timer = window.setTimeout(() => setCopied(false), COPY_FEEDBACK_MS)
-    return () => window.clearTimeout(timer)
-  }, [copied])
-
-  const copy = (): void => {
-    const clipboard: Clipboard | undefined = navigator.clipboard
-    if (clipboard === undefined) return
-    void clipboard.writeText(value).then(
-      () => setCopied(true),
-      () => undefined,
-    )
-  }
-
-  return (
-    <Box sx={{ display: 'inline-flex', alignItems: 'center', columnGap: 1 }}>
-      <Button
-        type="button"
-        size="small"
-        variant="outlined"
-        aria-label={label}
-        onClick={copy}
-      >
-        {t('invitations.issued.copy')}
-      </Button>
-      <Typography role="status" variant="body2" color="text.secondary">
-        {copied ? t('invitations.issued.copied') : ''}
-      </Typography>
-    </Box>
+    <OneTimeValuePanel
+      message={
+        hasBuilder
+          ? t('invitations.issued.link', { email: notice.invitation.email })
+          : t('invitations.issued.token', { email: notice.invitation.email })
+      }
+      value={value}
+      copyLabel={
+        hasBuilder
+          ? t('invitations.issued.copyLink')
+          : t('invitations.issued.copyToken')
+      }
+      closeLabel={t('invitations.issued.close')}
+      closeAriaLabel={t('invitations.issued.closeAria', {
+        tenant: notice.tenant,
+        email: notice.invitation.email,
+      })}
+      onClose={onClose}
+    />
   )
 }
 
@@ -839,17 +850,21 @@ function CopyControl({
  * MemberWriteForm: the membership-write control (PUT
  * /api/v1/auth/admin/tenants/:tenant/members/:account) -- it adds, suspends or
  * resumes a membership, naming the account chosen through the account
- * search picker, its active state, an optional source and the SSO
- * exemption. A landed write clears the account and source and resets the
- * flags; a refused one keeps them to correct. The write reports through the
- * member section's scope, and a landed one names the account it changed.
+ * search picker, its active state, an optional source and, where the SSO
+ * surface is present, the SSO exemption. A landed write clears the account
+ * and source and resets the flags; a refused one keeps them to correct. The
+ * write reports through the member section's scope, and a landed one names
+ * the account it changed.
  */
 function MemberWriteForm({
   tenant,
   feedback,
+  ssoExemption,
 }: {
   readonly tenant: string
   readonly feedback: WriteFeedback
+  /** Whether the SSO surface is present, so the exemption is writable. */
+  readonly ssoExemption: boolean
 }) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
@@ -891,15 +906,17 @@ function MemberWriteForm({
           }
           label={t('members.write.activeLabel')}
         />
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={ssoExempt}
-              onChange={(event) => setSsoExempt(event.target.checked)}
-            />
-          }
-          label={t('members.write.ssoExemptLabel')}
-        />
+        {ssoExemption && (
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={ssoExempt}
+                onChange={(event) => setSsoExempt(event.target.checked)}
+              />
+            }
+            label={t('members.write.ssoExemptLabel')}
+          />
+        )}
         <Button
           type="button"
           variant="contained"
@@ -917,7 +934,7 @@ function MemberWriteForm({
                 account: target.id,
                 active,
                 ...(writtenSource === '' ? {} : { source: writtenSource }),
-                sso_exempt: ssoExempt,
+                ...(ssoExemption ? { sso_exempt: ssoExempt } : {}),
               })
               setAccount(null)
               setSource('')

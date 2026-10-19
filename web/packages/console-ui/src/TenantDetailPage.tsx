@@ -21,18 +21,26 @@
  * whitelist. The rename input
  * marks itself invalid while the alias breaks the identifier domain and
  * holds its submit disabled then, so an inadmissible alias is never sent.
- * When given the console's root path, the page also links to the
- * tenant-addressed administration pages (permissions, invitations and
- * members, SSO providers, impersonation records), carrying this tenant in
- * the `tenant` query parameter those pages seed their tenant selection
- * from -- so the detail page is not a dead end and the link does not drop
- * the tenant context. The page opens with ui-kit's PageHeader, so the
- * heading order never skips; its refresh action resets the actions scope
- * and re-reads the tenant, and is natively disabled while either of the
- * two writes is in flight.
+ * The page also links to the tenant-addressed administration pages
+ * (permissions, invitations and members, SSO providers, impersonation
+ * records), carrying this tenant in the `tenant` query parameter those
+ * pages seed their tenant selection from -- so the detail page is not a
+ * dead end and the link does not drop the tenant context. Those links are
+ * resolved through the route table the shell publishes: each sibling is
+ * looked up by its stable declaration id, because the console may be
+ * mounted under any prefix and the declaration is the authority on where
+ * the page lives. A sibling whose declaration is absent, or whose
+ * declaration needs a feature this process does not serve, renders no
+ * link; `relatedHref` overrides a resolved target. The page opens with
+ * ui-kit's PageHeader, so the heading order never skips; its refresh action
+ * resets the actions scope and re-reads the tenant, and is natively
+ * disabled while either of the two writes is in flight. A host may append
+ * its own sections to the main column and its own content to the side
+ * column, both of which receive the loaded tenant.
  */
 
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Paper from '@mui/material/Paper'
@@ -48,13 +56,18 @@ import { ConsoleAsyncSection } from './internal/async-section.js'
 import { ConsoleLink } from './internal/navigation.js'
 import { DefinitionRow, DetailLayout } from './internal/layout.js'
 import { isRejectedIdentifier } from './internal/identifier.js'
-import { RefreshButton } from './internal/refresh-button.js'
+import { RefreshButton } from '@speed/ui-kit'
+import { useConsoleHasFeature } from './internal/features.js'
+import {
+  consoleRouteById,
+  useConsoleRouteTable,
+} from './internal/route-table.js'
 import { TENANT_QUERY_PARAM } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
   pageRefreshRead,
   usePageRefresh,
-} from './internal/use-page-refresh.js'
+} from '@speed/ui-kit'
 import {
   useFailureScroll,
   WriteFeedbackRegion,
@@ -71,20 +84,88 @@ function statusLabel(status: string, t: (key: string) => string): string {
     : t('tenants.status.other')
 }
 
+/** The sibling administration pages this detail page links to, by declaration id. */
+export type ConsoleTenantRelatedPage =
+  | 'permissions'
+  | 'invitations'
+  | 'sso'
+  | 'impersonations'
+
+/** The sibling links in the order the related-page section lists them. */
+const RELATED_PAGES: readonly {
+  readonly id: ConsoleTenantRelatedPage
+  readonly labelKey: string
+}[] = [
+  { id: 'permissions', labelKey: 'tenantDetail.related.permissions' },
+  { id: 'invitations', labelKey: 'tenantDetail.related.invitations' },
+  { id: 'sso', labelKey: 'tenantDetail.related.sso' },
+  { id: 'impersonations', labelKey: 'tenantDetail.related.impersonations' },
+]
+
+/**
+ * One sibling declaration's published path as a link target. A path that
+ * already lies under the console root -- the host mounted the declaration
+ * onto its prefixed URL -- is used as published; any other path is a
+ * console-relative declaration pattern and is resolved against the root.
+ * Without a root nothing resolves: this package's own declarations are
+ * console-relative ('/permissions'), so a leading slash alone does not say
+ * the path is already at the origin. A path that still has to be joined
+ * gives no target, which leaves the link out.
+ */
+function siblingHref(
+  path: string,
+  rootHref: string | undefined,
+): string | undefined {
+  if (rootHref === undefined) {
+    return undefined
+  }
+  const root = rootHref === '/' ? '' : rootHref.replace(/\/+$/, '')
+  if (path === root || path.startsWith(`${root}/`)) {
+    return path
+  }
+  return `${root}/${path.replace(/^\/+/, '')}`
+}
+
 export interface TenantDetailPageProps {
   /** The tenant to show. */
   readonly id: string
   /** The roster's path, for the breadcrumb and the back link; absent hides them. */
   readonly parentHref?: string
   /**
-   * The console's root path, for the tenant-addressed pages' links; absent
-   * hides the related-page section (the page has no other way to build the
-   * sibling paths).
+   * The console's root path, used to resolve a sibling declaration whose
+   * published path is console-relative. A path the host already mounted
+   * under the root is used as published, so a host that prefixes its
+   * declarations costs nothing here. Absent, no sibling link resolves: a
+   * console-relative path cannot be told apart from an origin path.
    */
   readonly rootHref?: string
+  /**
+   * Overrides the href a sibling link points at, keyed by the target's
+   * declaration id. The target declaration must still be published with its
+   * features present, so an override changes where a link goes, never
+   * whether it exists.
+   */
+  readonly relatedHref?: Partial<Record<ConsoleTenantRelatedPage, string>>
+  /**
+   * Host sections appended to the main column after the page's own
+   * sections, rendered with the loaded tenant.
+   */
+  readonly sections?: (tenant: ConsoleTenant) => ReactNode
+  /**
+   * Host content for the side column, rendered with the loaded tenant and
+   * above the back link.
+   */
+  readonly aside?: (tenant: ConsoleTenant) => ReactNode
 }
 
-export function TenantDetailPage({ id, parentHref, rootHref }: TenantDetailPageProps) {
+export function TenantDetailPage({
+  id,
+  parentHref,
+  rootHref,
+  relatedHref,
+  sections,
+  aside,
+}: TenantDetailPageProps) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const tenant = operations.useTenant({ id })
@@ -113,27 +194,34 @@ export function TenantDetailPage({ id, parentHref, rootHref }: TenantDetailPageP
   // parameter (tenantFromLocation seeds their selector), so a link carries
   // this tenant into them instead of landing on an empty selection.
   const tenantParam = `${TENANT_QUERY_PARAM}=${encodeURIComponent(id)}`
-  const related =
-    rootHref === undefined
-      ? []
-      : [
-          {
-            href: `${rootHref}/permissions?${tenantParam}`,
-            label: t('tenantDetail.related.permissions'),
-          },
-          {
-            href: `${rootHref}/invitations?${tenantParam}`,
-            label: t('tenantDetail.related.invitations'),
-          },
-          {
-            href: `${rootHref}/sso?${tenantParam}`,
-            label: t('tenantDetail.related.sso'),
-          },
-          {
-            href: `${rootHref}/impersonations?${tenantParam}`,
-            label: t('tenantDetail.related.impersonations'),
-          },
-        ]
+  // Each sibling is found by its stable declaration id in the table the
+  // shell published: the declaration, not a guessed segment, says where the
+  // page lives. A sibling the host narrowed away -- its declaration absent,
+  // or one of its features absent -- has no link; an override only replaces
+  // the resolved target.
+  const routes = useConsoleRouteTable()
+  const hasFeature = useConsoleHasFeature()
+  const related = RELATED_PAGES.flatMap((page) => {
+    const target = consoleRouteById(routes, page.id)
+    if (target === undefined) {
+      return []
+    }
+    if (target.requires?.some((feature) => !hasFeature(feature)) === true) {
+      return []
+    }
+    const href = relatedHref?.[page.id] ?? siblingHref(target.path, rootHref)
+    if (href === undefined) {
+      return []
+    }
+    return [
+      {
+        // An override is an arbitrary href and may already carry a query, so
+        // the tenant joins with '&' instead of starting a second '?'.
+        href: `${href}${href.includes('?') ? '&' : '?'}${tenantParam}`,
+        label: t(page.labelKey),
+      },
+    ]
+  })
 
   const crumbs = [
     { label: t('shell.title') },
@@ -255,6 +343,9 @@ export function TenantDetailPage({ id, parentHref, rootHref }: TenantDetailPageP
             </Box>
           </Paper>
         )}
+
+        {/* Host sections follow the page's own, with the loaded tenant. */}
+        {sections?.(settled)}
       </>
     )
   }
@@ -271,6 +362,7 @@ export function TenantDetailPage({ id, parentHref, rootHref }: TenantDetailPageP
           <RefreshButton
             busy={pageRefresh.busy}
             writePending={feedback.pending}
+            label={t('common.refresh')}
             onClick={pageRefresh.refresh}
           />
         }
@@ -320,6 +412,9 @@ export function TenantDetailPage({ id, parentHref, rootHref }: TenantDetailPageP
             <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
               {id}
             </Typography>
+            {/* Host side content sits above the back link, once the tenant
+                has loaded so it can render the subject it was given. */}
+            {rows !== undefined && aside?.(rows)}
             {parentHref !== undefined && (
               <Box sx={{ mt: 2 }}>
                 <ConsoleLink href={parentHref}>{t('tenantDetail.back')}</ConsoleLink>

@@ -90,12 +90,12 @@ import type { DataTableColumn } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { useConsoleUiErrorText } from './internal/error-text.js'
-import { RefreshButton } from './internal/refresh-button.js'
+import { RefreshButton } from '@speed/ui-kit'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
   pageRefreshRead,
   usePageRefresh,
-} from './internal/use-page-refresh.js'
+} from '@speed/ui-kit'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { settingKeyRest, useConsoleOperations } from './operations.js'
 import type { ConsoleSetting } from './operations.js'
@@ -428,6 +428,7 @@ export function SettingsPage() {
             // while either body read is in flight it is marked busy.
             busy={pageRefresh.busy}
             writePending={feedback.pending}
+            label={t('common.refresh')}
             onClick={pageRefresh.refresh}
           />
         }

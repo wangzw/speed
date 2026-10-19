@@ -10,6 +10,9 @@
 
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
+import type { ConsoleRoute } from './route.js'
+import { ConsoleFeatureProvider } from './internal/features.js'
+import { ConsoleRouteTableProvider } from './internal/route-table.js'
 import {
   accountsAdminRoutes,
   auditAdminRoutes,
@@ -29,6 +32,7 @@ import { renderWithProviders } from '../test-utils/render.js'
 import {
   createConsoleOperations,
   makeConsoleBackend,
+  recordFixture,
 } from '../test-utils/operations.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
@@ -66,6 +70,128 @@ describe('console page declarations', () => {
     expect(
       consoleRoutes.find((route) => route.path === '/audit/:id')?.permission,
     ).toBe('audit.read')
+  })
+
+  it('carries the caller-session feature on the impersonation declaration', () => {
+    // The page holds no page-level gate for the caller-session surface: the
+    // declaration names the feature, and the host narrows the table by
+    // feature presence before it reaches the shell.
+    expect(impersonationsAdminRoutes[0]?.requires).toContain(
+      'authn.impersonation',
+    )
+  })
+
+  it('gives every declaration a unique stable id', () => {
+    const ids = consoleRoutes.map((route) => route.id)
+    for (const route of consoleRoutes) {
+      expect(route.id, `${route.path} carries no id`).toBeTruthy()
+    }
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('resolves the tenant detail sibling links through the published declarations', async () => {
+    // The console may be mounted under a host prefix, so the page looks the
+    // sibling up by declaration id instead of guessing a path from a
+    // literal segment.
+    const detail = tenantAdminRoutes.find((route) => route.path === '/tenants/:id')
+    expect(detail).toBeDefined()
+    const view = detail?.view({
+      path: '/admin/console/tenants/acme',
+      params: { id: 'acme' },
+    })
+    const published: readonly ConsoleRoute[] = [
+      { id: 'permissions', path: '/admin/console/permissions', view: () => null },
+      { id: 'sso', path: '/admin/console/sso', view: () => null },
+    ]
+    renderWithProviders(
+      <ConsoleFeatureProvider hasFeature={() => true}>
+        <ConsoleRouteTableProvider routes={published}>{view}</ConsoleRouteTableProvider>
+      </ConsoleFeatureProvider>,
+      { operations },
+    )
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: zhCN.tenantDetail.related.permissions }),
+    ).toHaveAttribute('href', '/admin/console/permissions?tenant=acme')
+    expect(
+      screen.getByRole('link', { name: zhCN.tenantDetail.related.sso }),
+    ).toHaveAttribute('href', '/admin/console/sso?tenant=acme')
+  })
+
+  it('resolves a console-relative sibling path against the matched console root', async () => {
+    // A host that publishes console-relative patterns makes the
+    // declaration's path resolve against the root the detail route computed
+    // from its matched path -- here the console mounted under /admin/console.
+    const published: readonly ConsoleRoute[] = [
+      { id: 'permissions', path: '/permissions', view: () => null },
+      { id: 'sso', path: '/sso', view: () => null },
+    ]
+    const detail = tenantAdminRoutes.find((route) => route.path === '/tenants/:id')
+    expect(detail).toBeDefined()
+    renderWithProviders(
+      <ConsoleFeatureProvider hasFeature={() => true}>
+        <ConsoleRouteTableProvider routes={published}>
+          {detail?.view({
+            path: '/admin/console/tenants/acme',
+            params: { id: 'acme' },
+          })}
+        </ConsoleRouteTableProvider>
+      </ConsoleFeatureProvider>,
+      { operations },
+    )
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: zhCN.tenantDetail.related.permissions }),
+    ).toHaveAttribute('href', '/admin/console/permissions?tenant=acme')
+    expect(
+      screen.getByRole('link', { name: zhCN.tenantDetail.related.sso }),
+    ).toHaveAttribute('href', '/admin/console/sso?tenant=acme')
+  })
+
+  it('resolves a console-relative sibling path at the origin when the console root is empty', async () => {
+    // A console mounted at the origin has an empty root: its last two path
+    // segments are the list segment and the id, and a console-relative
+    // pattern resolves to the path every host serves it at.
+    const published: readonly ConsoleRoute[] = [
+      { id: 'permissions', path: 'permissions', view: () => null },
+    ]
+    const detail = tenantAdminRoutes.find((route) => route.path === '/tenants/:id')
+    expect(detail).toBeDefined()
+    renderWithProviders(
+      <ConsoleFeatureProvider hasFeature={() => true}>
+        <ConsoleRouteTableProvider routes={published}>
+          {detail?.view({ path: '/tenants/acme', params: { id: 'acme' } })}
+        </ConsoleRouteTableProvider>
+      </ConsoleFeatureProvider>,
+      { operations },
+    )
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: zhCN.tenantDetail.related.permissions }),
+    ).toHaveAttribute('href', '/permissions?tenant=acme')
+  })
+
+  it('gives the dashboard its matched path as the console root for its detail links', async () => {
+    const dashboard = dashboardAdminRoutes[0]
+    expect(dashboard?.path).toBe('/')
+    const view = dashboard?.view({ path: '/console', params: {} })
+    renderWithProviders(
+      <ConsoleFeatureProvider hasFeature={() => true}>{view}</ConsoleFeatureProvider>,
+      {
+        operations: createConsoleOperations(
+          makeConsoleBackend({
+            listRecords: () =>
+              Promise.resolve({
+                entries: [recordFixture({ id: 'rec-9', action: 'tenant.read' })],
+                next: '',
+              }),
+          }),
+        ),
+      },
+    )
+    expect(
+      await screen.findByRole('link', { name: 'tenant.read' }),
+    ).toHaveAttribute('href', '/console/audit/rec-9')
   })
 
   it('gates every declaration, detail routes included, on a non-empty feature list', () => {

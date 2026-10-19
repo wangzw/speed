@@ -28,12 +28,11 @@
  * authn.account.read, which this page's audit.read does not imply: a viewer
  * holding audit.read without account.read is refused it and the cell marks
  * the value as unresolved rather than passing it off as a name. The
- * recorded time is rendered through Intl in the current language and
- * explicitly in UTC,
- * the zone the view carries it in, never the process-local default; a
- * malformed timestamp renders no time rather than throwing. The record's
- * own fields are journal data (not a closed vocabulary the surface
- * guards): they render as recorded.
+ * recorded time is rendered through @speed/i18n's formatInstant in the
+ * current language and explicitly in UTC, the zone the view carries it in,
+ * never the process-local default; a malformed timestamp renders no time
+ * rather than throwing. The record's own fields are journal data (not a
+ * closed vocabulary the surface guards): they render as recorded.
  *
  * The page opens with ui-kit's PageHeader: the page title as the level-one
  * heading, a breadcrumb trail from the console to this page, and a
@@ -55,32 +54,23 @@ import {
   PRIMARY_COLUMN_MAX_WIDTH,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
+import { formatInstant } from '@speed/i18n'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { AccountIdentity } from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { ConsoleLink } from './internal/navigation.js'
-import { RefreshButton } from './internal/refresh-button.js'
+import { RefreshButton } from '@speed/ui-kit'
 import { RefreshStatus } from './internal/refresh-status.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
   pageRefreshRead,
   usePageRefresh,
-} from './internal/use-page-refresh.js'
+} from '@speed/ui-kit'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleAuditRecord } from './operations.js'
 
 /** The default page size (rows per cursor page). */
 const DEFAULT_LIMIT = 25
-
-/** Parses a server timestamp; null for an absent or malformed value so a
- * bad row can never reach Intl and throw. */
-function parseDate(iso: string | undefined): Date | null {
-  if (iso === undefined) {
-    return null
-  }
-  const date = new Date(iso)
-  return Number.isNaN(date.getTime()) ? null : date
-}
 
 /**
  * Splits one filter's free text into the set the read takes: comma- or
@@ -170,18 +160,6 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
     })
   }, [pageData, page, cursors.length])
 
-  // The view carries each record's time in UTC, so it is formatted in UTC
-  // explicitly -- never the engine's implicit process-local default.
-  const formatTime = useMemo(
-    () =>
-      new Intl.DateTimeFormat(i18n.language, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-        timeZone: 'UTC',
-      }),
-    [i18n.language],
-  )
-
   // The columns the table renders: when it happened, what it was, to what,
   // who did it and how it ended. The object column carries the route the
   // action names, so it shares the record's identity with the action and
@@ -193,10 +171,10 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       id: 'time',
       header: t('audit.column.time'),
       cellWrap: 'nowrap',
-      cell: (record) => {
-        const occurred = parseDate(record.occurred_at)
-        return occurred === null ? null : formatTime.format(occurred)
-      },
+      cell: (record) =>
+        formatInstant(record.occurred_at, i18n.language, {
+          timeZone: 'UTC',
+        }) || null,
     },
     {
       id: 'action',
@@ -299,6 +277,7 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
             />
             <RefreshButton
               busy={pageRefresh.busy}
+              label={t('common.refresh')}
               onClick={pageRefresh.refresh}
             />
           </>

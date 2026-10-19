@@ -22,8 +22,10 @@ import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { ImpersonationsPage } from './ImpersonationsPage.js'
 import { ConsoleImpersonationChangeProvider } from './internal/impersonation-change.js'
+import { ConsoleImpersonationStartingProvider } from './internal/impersonation-starting.js'
 import type { ConsoleImpersonation } from './operations.js'
-import { renderWithProviders } from '../test-utils/render.js'
+import { renderWithProviders, createConsoleUiI18n } from '../test-utils/render.js'
+import { CONSOLE_UI_NAMESPACE } from './resources.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   columnVisibility,
@@ -42,6 +44,9 @@ import { uiKitResources } from '@speed/ui-kit'
 
 const ZERO = '0001-01-01T00:00:00Z'
 const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
+
+/** The end-reason labels a test injects into the namespace. */
+const END_REASON_LABELS = { revoked: 'end-reason-revoked' } as const
 
 /** Fills a locale template's placeholders with the values under test. */
 function fill(
@@ -416,7 +421,9 @@ describe('ImpersonationsPage', () => {
     await pickTenant(user)
     expect(
       await screen.findByText(
-        fill(zhCN.impersonations.ended, { reason: 'revoked' }),
+        fill(zhCN.impersonations.ended, {
+          reason: zhCN.impersonations.endReason.revoked,
+        }),
       ),
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: zhCN.impersonations.terminate })).toBeDisabled()
@@ -583,6 +590,123 @@ describe('ImpersonationsPage', () => {
     await vi.waitFor(() =>
       expect(listImpersonations.mock.calls.length).toBe(recordsBefore + 1),
     )
+  })
+
+  it('locks the record scope to a controlled tenant and hides the selector', async () => {
+    const listImpersonations = vi.fn(() => Promise.resolve([record()]))
+    renderWithProviders(<ImpersonationsPage tenant="acme" />, {
+      operations: withPage({ listImpersonations }),
+    })
+
+    expect(await screen.findByText('Staff One')).toBeInTheDocument()
+    expect(listImpersonations).toHaveBeenCalledWith({ tenant: 'acme' })
+    expect(screen.queryByLabelText(zhCN.common.tenant)).toBeNull()
+  })
+
+  it('seeds from defaultTenant ahead of the URL and reports a re-selection', async () => {
+    window.history.replaceState({}, '', '/console/impersonations?tenant=globex')
+    try {
+      const user = userEvent.setup()
+      const listImpersonations = vi.fn(() => Promise.resolve([record()]))
+      const onTenantChange = vi.fn()
+      renderWithProviders(
+        <ImpersonationsPage
+          defaultTenant="acme"
+          onTenantChange={onTenantChange}
+        />,
+        {
+          operations: withPage({
+            listTenants: () =>
+              Promise.resolve([
+                TENANT,
+                { id: 'globex', alias: 'Globex', status: 'active' as const },
+              ]),
+            listImpersonations,
+          }),
+        },
+      )
+
+      await vi.waitFor(() => {
+        expect(listImpersonations).toHaveBeenCalledWith({ tenant: 'acme' })
+      })
+      await user.click(screen.getByLabelText(zhCN.common.tenant))
+      await user.click(await screen.findByRole('option', { name: 'Globex' }))
+      expect(onTenantChange).toHaveBeenCalledWith('globex')
+      await vi.waitFor(() => {
+        expect(listImpersonations).toHaveBeenCalledWith({ tenant: 'globex' })
+      })
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
+  it('leaves the caller-session surface ungated by the feature judgement', async () => {
+    // The design's gating table is exhaustive, and the caller-session
+    // surface is not on it. The impersonation declaration names
+    // `authn.impersonation` in `requires`, so the host narrows the route
+    // table before this page renders; a page-level gate would be a second,
+    // half gate that leaves the status read and the end control running
+    // beside a hidden start form.
+    const user = userEvent.setup()
+    const operations = withPage({
+      listImpersonations: () => Promise.resolve([record()]),
+    })
+    renderWithProviders(<ImpersonationsPage />, {
+      operations,
+      hasFeature: (name) => name !== 'authn.impersonation',
+    })
+
+    expect(
+      await screen.findByText(zhCN.impersonations.current.none),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByLabelText(zhCN.impersonations.start.accountLabel),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: zhCN.impersonations.start.submit }),
+    ).toBeInTheDocument()
+
+    // The record half is a separate administration surface and still runs.
+    await pickTenant(user)
+    expect(await screen.findByText('Staff One')).toBeInTheDocument()
+  })
+
+  it('translates a reason it knows and leaves an unknown one as recorded', async () => {
+    const user = userEvent.setup()
+    const i18n = createConsoleUiI18n()
+    i18n.addResourceBundle(
+      'zh-CN',
+      CONSOLE_UI_NAMESPACE,
+      { impersonations: { endReason: END_REASON_LABELS } },
+      true,
+      true,
+    )
+    const operations = withPage({
+      listImpersonations: () =>
+        Promise.resolve([
+          record({ ended_at: '2026-10-15T12:30:00Z', end_reason: 'revoked' }),
+          record({
+            id: 'imp-2',
+            ended_at: '2026-10-15T12:40:00Z',
+            end_reason: 'mystery',
+          }),
+        ]),
+    })
+    renderWithProviders(<ImpersonationsPage />, { operations, i18n })
+    await pickTenant(user)
+
+    expect(
+      await screen.findByText(
+        fill(zhCN.impersonations.ended, {
+          reason: END_REASON_LABELS.revoked,
+        }),
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        fill(zhCN.impersonations.ended, { reason: 'mystery' }),
+      ),
+    ).toBeInTheDocument()
   })
 
   it('has no axe violations', async () => {
@@ -1083,6 +1207,171 @@ describe('ImpersonationsPage', () => {
     await vi.waitFor(() => expect(posts).toHaveLength(2))
     expect(posts[1]).toEqual(posts[0])
     expect(posts[0]).toEqual({ account: 'acc-9', tenant: 'acme' })
+  })
+
+  // --- The impersonation-starting seam -----------------------------------
+
+  it('fires the starting hook before the request and leaves a landed start to the host', async () => {
+    // The POST stays in flight until the test settles it: the starting hook
+    // must have been called by then, which pins "before mutateAsync"
+    // (a hook fired on settlement would still read zero here).
+    const pending = deferred<unknown>()
+    const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
+      const method = options?.method ?? 'GET'
+      if (path === '/api/v1/auth/impersonation' && method === 'GET') {
+        return Promise.reject({ status: 404, code: 'client.http.404' })
+      }
+      if (path === '/api/v1/auth/impersonation' && method === 'POST') {
+        return pending.promise as Promise<T>
+      }
+      return Promise.resolve(undefined as T)
+    }
+    bindRequestFn(fn)
+    const user = userEvent.setup()
+    const release = vi.fn()
+    const starting = vi.fn(() => release)
+    const onChange = vi.fn()
+    renderWithProviders(
+      <ConsoleImpersonationChangeProvider onImpersonationChange={onChange}>
+        <ConsoleImpersonationStartingProvider
+          onImpersonationStarting={starting}
+        >
+          <ImpersonationsPage />
+        </ConsoleImpersonationStartingProvider>
+      </ConsoleImpersonationChangeProvider>,
+      { operations: withPage() },
+    )
+
+    await screen.findByText(zhCN.impersonations.current.none)
+    await pickTenant(user)
+    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-1')
+    await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
+
+    await vi.waitFor(() => expect(starting).toHaveBeenCalledTimes(1))
+    expect(release).not.toHaveBeenCalled()
+
+    await act(async () => {
+      pending.resolve({
+        grant: {
+          id: 'imp-1',
+          target: 'acc-1',
+          tenant: 'acme',
+          starts_at: '2026-10-15T12:00:00Z',
+          ends_at: '2026-10-15T13:00:00Z',
+        },
+      })
+    })
+
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith('started'))
+    // A landed write is the host's to release once its change action
+    // settles; the page never releases it.
+    expect(release).not.toHaveBeenCalled()
+  })
+
+  it('releases the starting hook when the write is refused', async () => {
+    const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
+      const method = options?.method ?? 'GET'
+      if (path === '/api/v1/auth/impersonation' && method === 'GET') {
+        return Promise.reject({ status: 404, code: 'client.http.404' })
+      }
+      if (path === '/api/v1/auth/impersonation' && method === 'POST') {
+        return Promise.reject({
+          status: 403,
+          code: 'authn.forbidden',
+          message: 'denied',
+          auth: true,
+        })
+      }
+      return Promise.resolve(undefined as T)
+    }
+    bindRequestFn(fn)
+    const user = userEvent.setup()
+    const release = vi.fn()
+    const starting = vi.fn(() => release)
+    renderWithProviders(
+      <ConsoleImpersonationStartingProvider onImpersonationStarting={starting}>
+        <ImpersonationsPage />
+      </ConsoleImpersonationStartingProvider>,
+      { operations: withPage() },
+    )
+
+    await screen.findByText(zhCN.impersonations.current.none)
+    await pickTenant(user)
+    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
+
+    expect(await screen.findByText(zhCN.errors.authn.forbidden)).toBeInTheDocument()
+    await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1))
+  })
+
+  it('releases the blocked attempt and fires the hook again for the step-up replay', async () => {
+    const posts: unknown[] = []
+    const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
+      const method = options?.method ?? 'GET'
+      if (path === '/api/v1/auth/factors') {
+        return Promise.resolve({
+          factors: [
+            {
+              id: 'factor-1',
+              kind: 'totp',
+              label: 'Authenticator app',
+              status: 'active',
+              created_at: '2026-01-01T00:00:00Z',
+            },
+          ],
+        } as T)
+      }
+      if (path === '/api/v1/auth/impersonation' && method === 'GET') {
+        return Promise.reject({ status: 404, code: 'client.http.404' })
+      }
+      if (path === '/api/v1/auth/impersonation' && method === 'POST') {
+        posts.push(options?.body)
+        return posts.length === 1
+          ? Promise.reject({
+              status: 401,
+              code: 'authn.insufficient_user_authentication',
+              message: 'step up',
+              auth: true,
+            })
+          : Promise.resolve({
+              grant: {
+                id: 'imp-1',
+                target: 'acc-9',
+                tenant: 'acme',
+                starts_at: '2026-10-15T12:00:00Z',
+                ends_at: '2026-10-15T13:00:00Z',
+              },
+            } as T)
+      }
+      return Promise.resolve(undefined as T)
+    }
+    bindRequestFn(fn)
+    const user = userEvent.setup()
+    const releases: (() => void)[] = []
+    const starting = vi.fn(() => {
+      const release = vi.fn()
+      releases.push(release)
+      return release
+    })
+    renderWithProviders(
+      <ConsoleImpersonationStartingProvider onImpersonationStarting={starting}>
+        <ImpersonationsPage />
+      </ConsoleImpersonationStartingProvider>,
+      { operations: withPage(), session: createStepUpSession() },
+    )
+
+    await screen.findByText(zhCN.impersonations.current.none)
+    await pickTenant(user)
+    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
+
+    // The gate took the first refusal over and the replay is a new run, so
+    // the hook fired again; the blocked attempt's release ran, the landed
+    // replay's did not.
+    await vi.waitFor(() => expect(starting).toHaveBeenCalledTimes(2))
+    expect(releases[0]).toHaveBeenCalledTimes(1)
+    expect(releases[1]).not.toHaveBeenCalled()
+    expect(posts[1]).toEqual(posts[0])
   })
 
   // --- The refusal of an impersonation-restricted write ------------------

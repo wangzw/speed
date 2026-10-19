@@ -33,6 +33,7 @@ import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import { httpStatusOf } from '@speed/ui-kit'
 import { useConsoleUiTranslation } from './translation.js'
 import { useConsoleOperations } from '../operations.js'
 import type { ConsoleAccount } from '../operations.js'
@@ -131,13 +132,12 @@ function identifierReadsFor(query: string): IdentifierReads {
  * Whether a read failed because the listing refused its shape: HTTP 400,
  * the answer the account listing gives a prefix it cannot read. That
  * refusal says the kind does not apply to this text; a transport failure,
- * a 5xx or any other answer says the search itself failed.
+ * a 5xx or any other answer says the search itself failed. The status is
+ * read through ui-kit's `httpStatusOf`, which also recognizes the
+ * `client.http.400` an envelope-less refusal is synthesized as.
  */
 function isShapeRefusal(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) {
-    return false
-  }
-  return (error as { readonly status?: unknown }).status === 400
+  return httpStatusOf(error) === 400
 }
 
 export interface AccountSelectorProps {

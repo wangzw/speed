@@ -24,12 +24,19 @@
  * namespace (ConsoleShell renders @speed/layout-kit's AppShell frame,
  * whose banner skip link and nav landmark labels speak layout-kit-namespace
  * keys).
+ *
+ * The tree renders under the package's feature context by default, with
+ * every feature present: a page test that does not care about gating sees
+ * the whole page, not the fail-closed surface a provider-less render gets
+ * in production. A gating test supplies its own predicate, and `null`
+ * mounts no provider at all (the fail-closed default itself).
  */
 
 import { render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactElement } from 'react'
 import type { AuthSession } from '@speed/auth-core'
+import type { FeatureName } from '@speed/api-sdk/features'
 import { I18nextProvider, registerNamespace } from '@speed/i18n'
 import type { I18nInstance } from '@speed/i18n'
 import { LAYOUT_KIT_NAMESPACE, layoutKitResources } from '@speed/layout-kit'
@@ -49,6 +56,7 @@ import type {
 import { CONSOLE_UI_NAMESPACE, consoleUiResources } from '../src/resources.js'
 import { ConsoleOperationsProvider } from '../src/operations.js'
 import type { ConsoleOperations } from '../src/operations.js'
+import { ConsoleFeatureProvider } from '../src/internal/features.js'
 import { ConsoleSessionProvider } from '../src/internal/session.js'
 
 export interface RenderWithProvidersOptions extends BaseOptions {
@@ -66,6 +74,12 @@ export interface RenderWithProvidersOptions extends BaseOptions {
    * leaves the pages with no session to elevate.
    */
   readonly session?: AuthSession
+  /**
+   * The feature answer the tree renders with. Omitted, every feature is
+   * present; `null` mounts no provider, so the context keeps its
+   * fail-closed default.
+   */
+  readonly hasFeature?: ((name: FeatureName) => boolean) | null
 }
 
 export interface RenderWithProvidersResult extends BaseResult {
@@ -89,6 +103,8 @@ export function renderWithProviders(
   options: RenderWithProvidersOptions = {},
 ): RenderWithProvidersResult {
   const { language = 'zh-CN', i18n, operations, session } = options
+  const hasFeature =
+    options.hasFeature === undefined ? () => true : options.hasFeature
   const instance = i18n ?? createConsoleUiI18n(language)
   const queryClient = createTestQueryClient()
   let tree: ReactElement =
@@ -99,6 +115,9 @@ export function renderWithProviders(
     )
   if (session !== undefined) {
     tree = <ConsoleSessionProvider session={session}>{tree}</ConsoleSessionProvider>
+  }
+  if (hasFeature !== null) {
+    tree = <ConsoleFeatureProvider hasFeature={hasFeature}>{tree}</ConsoleFeatureProvider>
   }
   const result = render(
     <I18nextProvider i18n={instance}>

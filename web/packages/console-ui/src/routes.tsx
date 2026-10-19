@@ -67,8 +67,11 @@ import { SmsPage } from './SmsPage.js'
  */
 export const dashboardAdminRoutes: ConsoleRouteTable = [
   {
+    id: 'dashboard',
     path: '/',
-    view: () => <DashboardPage />,
+    // The dashboard sits at the console root, so the matched path is the
+    // root its recent-activity rows append the audit detail path to.
+    view: (context) => <DashboardPage rootHref={context.path} />,
     label: <ConsoleNavLabel labelKey="dashboard.title" />,
     icon: <DashboardIcon />,
     permission: 'tenant.read',
@@ -78,15 +81,28 @@ export const dashboardAdminRoutes: ConsoleRouteTable = [
 ] satisfies readonly ConsoleRoute[]
 
 /**
+ * The console root derived from a matched detail path: the path with its
+ * last two segments (the list segment and the id) removed. The console may
+ * be mounted under a host-chosen prefix, so the root is computed from the
+ * matched path rather than from a literal segment: '/tenants/abc' yields
+ * '', '/admin/tenants/abc' yields '/admin'.
+ */
+function consoleRootOf(path: string): string {
+  return path.split('/').slice(0, -2).join('/')
+}
+
+/**
  * The tenant pages: the roster and one tenant's detail. The detail
  * declaration is unlabelled (it is reached from a row, not the
  * navigation), and its view carries the roster's path (the matched path
  * with the tenant segment removed) so the detail page can link back, plus
- * the console's root path (the matched path with '/tenants/:id' removed)
- * for its links to the tenant-addressed sibling pages.
+ * the console's root path (the matched path with its last two segments
+ * removed), which resolves a published sibling declaration whose path is
+ * console-relative.
  */
 export const tenantAdminRoutes: ConsoleRouteTable = [
   {
+    id: 'tenants',
     path: '/tenants',
     view: (context) => <TenantRosterPage basePath={context.path} />,
     label: <ConsoleNavLabel labelKey="tenants.title" />,
@@ -96,12 +112,13 @@ export const tenantAdminRoutes: ConsoleRouteTable = [
     group: 'tenants',
   },
   {
+    id: 'tenant-detail',
     path: '/tenants/:id',
     view: (context) => (
       <TenantDetailPage
         id={context.params.id ?? ''}
         parentHref={context.path.replace(/\/[^/]+$/, '')}
-        rootHref={context.path.replace(/\/tenants\/[^/]+$/, '')}
+        rootHref={consoleRootOf(context.path)}
       />
     ),
     permission: 'tenant.read',
@@ -112,6 +129,7 @@ export const tenantAdminRoutes: ConsoleRouteTable = [
 /** The account page's declaration, held to authn.account.read. */
 export const accountsAdminRoutes: ConsoleRouteTable = [
   {
+    id: 'accounts',
     path: '/accounts',
     view: () => <AccountsPage />,
     label: <ConsoleNavLabel labelKey="accounts.title" />,
@@ -125,6 +143,7 @@ export const accountsAdminRoutes: ConsoleRouteTable = [
 /** The session page's declaration, held to authn.session.read. */
 export const sessionsAdminRoutes: ConsoleRouteTable = [
   {
+    id: 'sessions',
     path: '/sessions',
     view: () => <SessionsPage />,
     label: <ConsoleNavLabel labelKey="sessions.title" />,
@@ -138,6 +157,7 @@ export const sessionsAdminRoutes: ConsoleRouteTable = [
 /** The impersonation page's declaration, held to authn.impersonation.read. */
 export const impersonationsAdminRoutes: ConsoleRouteTable = [
   {
+    id: 'impersonations',
     path: '/impersonations',
     view: () => <ImpersonationsPage />,
     label: <ConsoleNavLabel labelKey="impersonations.title" />,
@@ -151,6 +171,7 @@ export const impersonationsAdminRoutes: ConsoleRouteTable = [
 /** The authorization page's declaration, held to authz.role.read. */
 export const permissionsAdminRoutes: ConsoleRouteTable = [
   {
+    id: 'permissions',
     path: '/permissions',
     view: () => <PermissionsPage />,
     label: <ConsoleNavLabel labelKey="permissions.title" />,
@@ -164,6 +185,7 @@ export const permissionsAdminRoutes: ConsoleRouteTable = [
 /** The invitation/membership page's declaration, held to authn.membership.manage. */
 export const invitationsAdminRoutes: ConsoleRouteTable = [
   {
+    id: 'invitations',
     path: '/invitations',
     view: () => <InvitationsPage />,
     label: <ConsoleNavLabel labelKey="invitations.title" />,
@@ -177,6 +199,7 @@ export const invitationsAdminRoutes: ConsoleRouteTable = [
 /** The SSO page's declaration, held to authn.idp.manage. */
 export const ssoAdminRoutes: ConsoleRouteTable = [
   {
+    id: 'sso',
     path: '/sso',
     view: () => <SsoPage />,
     label: <ConsoleNavLabel labelKey="sso.title" />,
@@ -190,6 +213,7 @@ export const ssoAdminRoutes: ConsoleRouteTable = [
 /** The settings read-write page's declaration, held to settings.read. */
 export const settingsAdminRoutes: ConsoleRouteTable = [
   {
+    id: 'settings',
     path: '/settings',
     view: () => <SettingsPage />,
     label: <ConsoleNavLabel labelKey="settings.title" />,
@@ -203,6 +227,7 @@ export const settingsAdminRoutes: ConsoleRouteTable = [
 /** The SMS-template page's declaration, held to sms.template.read. */
 export const smsAdminRoutes: ConsoleRouteTable = [
   {
+    id: 'sms',
     path: '/sms',
     view: () => <SmsPage />,
     label: <ConsoleNavLabel labelKey="sms.title" />,
@@ -220,6 +245,7 @@ export const smsAdminRoutes: ConsoleRouteTable = [
  */
 export const auditAdminRoutes: ConsoleRouteTable = [
   {
+    id: 'audit',
     path: '/audit',
     view: (context) => <AuditPage basePath={context.path} />,
     label: <ConsoleNavLabel labelKey="audit.title" />,
@@ -229,6 +255,7 @@ export const auditAdminRoutes: ConsoleRouteTable = [
     group: 'audit',
   },
   {
+    id: 'audit-detail',
     path: '/audit/:id',
     view: (context) => (
       <AuditDetailPage

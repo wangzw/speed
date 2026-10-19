@@ -20,7 +20,7 @@
 import { useCallback, useState } from 'react'
 import type { ReactElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { mockMatchMedia } from '@speed/test-utils/matchMedia'
 import layoutKitZhCN from '../../layout-kit/src/locales/zh-CN.json' with { type: 'json' }
@@ -32,6 +32,7 @@ import { consoleRoutes } from './routes.js'
 import type { ConsoleNavGroup, ConsoleRoute } from './route.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useConsoleImpersonationChange } from './internal/impersonation-change.js'
+import { useConsoleRouteTable } from './internal/route-table.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { bindConsoleRequest } from '../test-utils/request-rig.js'
 import { createStepUpSession } from '../test-utils/session.js'
@@ -49,6 +50,29 @@ function hasFeature(): boolean {
 /** ConsoleShell with the required feature answer filled in. */
 function Shell(props: Omit<ConsoleShellProps, 'hasFeature'>): ReactElement {
   return <ConsoleShell {...props} hasFeature={hasFeature} />
+}
+
+/**
+ * Dispatches a click and cancels its default action at the document, after
+ * React's delegated handler has run. jsdom implements no navigation, so an
+ * uncancelled link click logs "Not implemented"; cancelling here keeps the
+ * output clean without changing what the component saw -- the document
+ * listener runs after React's root listener, so the handler's own
+ * judgement was already made.
+ */
+function clickWithoutNavigating(
+  element: HTMLElement,
+  init: MouseEventInit,
+): void {
+  const cancel = (event: MouseEvent): void => {
+    event.preventDefault()
+  }
+  document.addEventListener('click', cancel)
+  try {
+    fireEvent.click(element, init)
+  } finally {
+    document.removeEventListener('click', cancel)
+  }
 }
 
 const operations = createConsoleOperations(makeConsoleBackend())
@@ -253,6 +277,127 @@ describe('ConsoleShell', () => {
     await user.click(within(nav).getByRole('link', { name: 'Settings' }))
     // The entry stays a link, but its click is the host's to route.
     expect(onNavigate).toHaveBeenCalledWith('/settings')
+  })
+
+  it('leaves a modifier click and a non-primary click to the browser', () => {
+    const onNavigate = vi.fn()
+    renderWithProviders(
+      <Shell routes={routes} title="Console" onNavigate={onNavigate}>
+        <h1>Home</h1>
+      </Shell>,
+      { operations },
+    )
+    const settings = within(screen.getByRole('navigation')).getByRole('link', {
+      name: 'Settings',
+    })
+    // A Ctrl/Command click asks the browser for a new tab, and a middle
+    // click is the browser's own: neither is the host's to route in place.
+    clickWithoutNavigating(settings, { ctrlKey: true })
+    clickWithoutNavigating(settings, { metaKey: true })
+    clickWithoutNavigating(settings, { button: 1 })
+    expect(onNavigate).not.toHaveBeenCalled()
+    // The entry is still a real link either way.
+    expect(settings).toHaveAttribute('href', '/settings')
+  })
+
+  it('marks the entry the host reports as current', () => {
+    renderWithProviders(
+      <Shell
+        routes={routes}
+        title="Console"
+        isSelected={(path) => path === '/settings'}
+      >
+        <h1>Home</h1>
+      </Shell>,
+      { operations },
+    )
+    const nav = screen.getByRole('navigation')
+    expect(
+      within(nav).getByRole('link', { name: 'Settings' }),
+    ).toHaveAttribute('aria-current', 'page')
+    expect(
+      within(nav).getByRole('link', { name: 'Tenants' }),
+    ).not.toHaveAttribute('aria-current')
+  })
+
+  it('marks no entry selected when the host supplies no predicate', () => {
+    renderWithProviders(
+      <Shell routes={routes} title="Console">
+        <h1>Home</h1>
+      </Shell>,
+      { operations },
+    )
+    for (const link of within(screen.getByRole('navigation')).getAllByRole('link')) {
+      expect(link).not.toHaveAttribute('aria-current')
+    }
+  })
+
+  it('publishes the route table it was given to the routed content', () => {
+    const withIds: readonly ConsoleRoute[] = [
+      { id: 'tenants', path: '/tenants', view: () => null, label: 'Tenants' },
+      { id: 'accounts', path: '/accounts', view: () => null, label: 'Accounts' },
+    ]
+    function Probe(): ReactElement {
+      const table = useConsoleRouteTable()
+      return <span>{table.map((route) => route.id).join(',')}</span>
+    }
+    renderWithProviders(
+      <Shell routes={withIds} title="Console">
+        <Probe />
+      </Shell>,
+      { operations },
+    )
+    expect(screen.getByText('tenants,accounts')).toBeInTheDocument()
+  })
+
+  it('passes the frame slots through', () => {
+    mockMatchMedia(true)
+    renderWithProviders(
+      <Shell
+        routes={routes}
+        title="Console"
+        navLabel="Platform navigation"
+        banner={<div>banner content</div>}
+        userMenu={<button type="button">operator menu</button>}
+        sidebarWidth={320}
+        navHeader={<span>drawer head</span>}
+        navFooter={<span>drawer foot</span>}
+      >
+        <h1>Home</h1>
+      </Shell>,
+      { operations },
+    )
+    // The host's nav label names the landmark instead of the package default.
+    expect(
+      screen.getByRole('navigation', { name: 'Platform navigation' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('banner content')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'operator menu' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('drawer head')).toBeInTheDocument()
+    expect(screen.getByText('drawer foot')).toBeInTheDocument()
+  })
+
+  it('reports the mobile drawer flip through onMobileOpenChange when controlled', async () => {
+    mockMatchMedia(false)
+    const user = userEvent.setup()
+    const onMobileOpenChange = vi.fn()
+    renderWithProviders(
+      <Shell
+        routes={routes}
+        title="Console"
+        mobileOpen={false}
+        onMobileOpenChange={onMobileOpenChange}
+      >
+        <h1>Home</h1>
+      </Shell>,
+      { operations },
+    )
+    await user.click(
+      screen.getByRole('button', { name: layoutKitZhCN.appShell.openNav }),
+    )
+    expect(onMobileOpenChange).toHaveBeenCalledWith(true)
   })
 
   it('moves focus to main from the skip link, without navigating', async () => {

@@ -23,7 +23,27 @@
  * and un-normalized), so the box sends the operator's text unchanged. Each
  * unset filter is left out of the request rather than sent empty.
  *
- * The list and the detail's four reads each stand behind their own
+ * The detail's factor, secret and session sections exist only while the
+ * process serves their features (authn.admin.factors, authn.admin.secrets
+ * and authn.admin.sessions): an absent feature unmounts the section and the
+ * read it carries, so the page neither renders the control nor issues the
+ * request. The reset-MFA, MFA-requirement, password-reset and secret-create
+ * controls follow the same answer. The page itself is gated on authn.admin
+ * by its route declaration; no page-level read depends on the answer, and
+ * the identity unit it shares with every other surface skips its account
+ * read when the feature is absent.
+ *
+ * The host may extend the list and the attribute editors without the page
+ * knowing what the columns or the attributes mean: `extraColumns` inserts
+ * its own columns (each declaring the priority that sheds it as the table's
+ * container narrows) before the actions column, and `attributeFields`
+ * replaces the raw-JSON attribute editors -- on the create form and on the
+ * detail's patch -- with one text field per declared key. The patch keeps
+ * the attributes it did not declare, so a host field edits its own keys
+ * without dropping another writer's. With neither supplied, the output is
+ * the page's own.
+ *
+ * The list and the detail's reads each stand behind their own
  * AsyncSection, so every one of them shows its loading, empty and
  * retryable-error states rather than settling a failed read into a
  * silently empty table. The detail and the create form are carried by
@@ -69,6 +89,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -81,33 +102,43 @@ import Typography from '@mui/material/Typography'
 import { useForm } from 'react-hook-form'
 import type { SubmitHandler, UseFormReturn } from 'react-hook-form'
 import type { UseMutationResult } from '@tanstack/react-query'
+import { useStepUpGate } from '@speed/auth-core'
+import { formatInstant } from '@speed/i18n'
 import {
   ConfirmDialog,
   DataTable,
   FormField,
   FormLayout,
   ListSkeleton,
+  OneTimeValuePanel,
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
+  RefreshButton,
   SidePanel,
+  pageRefreshRead,
   primaryColumnMaxWidthSx,
+  usePageRefresh,
   useWriteFeedback,
 } from '@speed/ui-kit'
-import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
+import type {
+  DataTableColumn,
+  DataTableColumnPriority,
+  WriteFeedback,
+} from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
-import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
-import { formatUtc } from './internal/datetime.js'
+import {
+  PendingConfirmDialog,
+  usePendingConfirm,
+} from './internal/confirm.js'
+import type { PendingConfirmState } from './internal/confirm.js'
+import { useConsoleHasFeature } from './internal/features.js'
 import { identifierPrefix } from './internal/identifier-prefix.js'
-import { RefreshButton } from './internal/refresh-button.js'
-import { useConsoleStepUp } from './internal/step-up-gate.js'
+import { useConsoleSession } from './internal/session.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
-import {
-  pageRefreshRead,
-  usePageRefresh,
-} from './internal/use-page-refresh.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { useConsoleOperations } from './operations.js'
+import { CONSOLE_UI_NAMESPACE } from './resources.js'
 import type {
   ConsoleAccount,
   ConsoleAccountSecret,
@@ -156,11 +187,69 @@ function statusLabel(status: string, t: (key: string) => string): string {
     : t('accounts.status.other')
 }
 
-export function AccountsPage() {
+/**
+ * One value of a closed set through this package's namespace, falling back
+ * to the raw value when the bundle declares no leaf for it. The fallback
+ * keeps a value the platform grows later readable instead of printing a
+ * resource key.
+ */
+function closedSetLabel(
+  prefix: string,
+  value: string,
+  t: (key: string) => string,
+  i18n: { exists: (key: string, options?: { ns?: string }) => boolean },
+): string {
+  const key = `${prefix}.${value}`
+  return i18n.exists(key, { ns: CONSOLE_UI_NAMESPACE }) ? t(key) : value
+}
+
+/** One host-supplied list column, inserted before the row-actions column.
+ * The priority is required: a host column that repeats across rows takes
+ * its own ui-kit priority so a narrow container sheds it in the host's
+ * chosen order; the page does not choose for it. */
+export type AccountsPageExtraColumn = DataTableColumn<ConsoleAccount> & {
+  readonly priority: DataTableColumnPriority
+}
+
+/** One account attribute the host offers as a plain text field. */
+export interface AccountsPageAttributeField {
+  /** The attribute's key in the account's attribute map. */
+  readonly key: string
+  /** The field's visible label. */
+  readonly label: ReactNode
+}
+
+export interface AccountsPageProps {
+  /**
+   * Host columns inserted after the page's own columns and before the
+   * row-actions column, so the controls stay the last cell of every row.
+   */
+  readonly extraColumns?: readonly AccountsPageExtraColumn[]
+  /**
+   * The account attributes the host declares, each edited as one text
+   * field in place of the raw-JSON attribute editor. Undeclared keys an
+   * edited account already carries are preserved. Absent, the page keeps
+   * the JSON editor.
+   */
+  readonly attributeFields?: readonly AccountsPageAttributeField[]
+}
+
+export function AccountsPage({
+  extraColumns,
+  attributeFields,
+}: AccountsPageProps = {}) {
   const { t, i18n } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
   const confirm = usePendingConfirm()
-  const stepUp = useConsoleStepUp()
+  const session = useConsoleSession()
+  const hasFeature = useConsoleHasFeature()
+  const factorsPresent = hasFeature('authn.admin.factors')
+  const secretsPresent = hasFeature('authn.admin.secrets')
+  const sessionsPresent = hasFeature('authn.admin.sessions')
+  const gate = useStepUpGate<() => void>(
+    (retry) => retry(),
+    (error) => session !== null && session.isStepUpShortfall(error),
+  )
 
   const [identifierDraft, setIdentifierDraft] = useState('')
   const [identifier, setIdentifier] = useState('')
@@ -235,14 +324,13 @@ export function AccountsPage() {
   const account = operations.useAccount({
     id: selectedId === '' ? undefined : selectedId,
   })
-  const factors = operations.useAccountFactors({
-    id: selectedId === '' ? undefined : selectedId,
-  })
-  const secrets = operations.useAccountSecrets({
-    id: selectedId === '' ? undefined : selectedId,
-  })
+  // The factors and secrets reads live in their feature-gated sections, so
+  // an absent feature takes the read with it. The sessions read stays here:
+  // the bulk revoke's confirmation in the action row needs to know whether
+  // the caller's own session is listed, and the read is disabled while the
+  // feature is absent.
   const sessions = operations.useAccountSessions({
-    id: selectedId === '' ? undefined : selectedId,
+    id: selectedId === '' || !sessionsPresent ? undefined : selectedId,
   })
   // Whether the listed sessions include the caller's own, so the bulk revoke's
   // confirmation can say the caller is signed out too.
@@ -356,7 +444,7 @@ export function AccountsPage() {
       try {
         await deleteAccount.mutateAsync({ id })
       } catch (error) {
-        if (stepUp.intercept(error, () => void deleteOne(id))) {
+        if (gate.intercept(error, () => void deleteOne(id))) {
           return null
         }
         throw error
@@ -373,7 +461,7 @@ export function AccountsPage() {
       try {
         await resetMFA.mutateAsync({ id: selectedId })
       } catch (error) {
-        if (stepUp.intercept(error, () => void resetAllFactors())) {
+        if (gate.intercept(error, () => void resetAllFactors())) {
           return null
         }
         throw error
@@ -387,7 +475,7 @@ export function AccountsPage() {
       try {
         await revokeSessions.mutateAsync({ id: selectedId })
       } catch (error) {
-        if (stepUp.intercept(error, () => void revokeAllSessions())) {
+        if (gate.intercept(error, () => void revokeAllSessions())) {
           return null
         }
         throw error
@@ -401,7 +489,7 @@ export function AccountsPage() {
       try {
         await removeIdentifier.mutateAsync({ id: selectedId, identifier })
       } catch (error) {
-        if (stepUp.intercept(error, () => void removeOne(identifier))) {
+        if (gate.intercept(error, () => void removeOne(identifier))) {
           return null
         }
         throw error
@@ -419,7 +507,7 @@ export function AccountsPage() {
       try {
         await revokeSecret.mutateAsync({ id: selectedId, secret: row.id })
       } catch (error) {
-        if (stepUp.intercept(error, () => void revokeOneSecret(row))) {
+        if (gate.intercept(error, () => void revokeOneSecret(row))) {
           return null
         }
         throw error
@@ -436,7 +524,7 @@ export function AccountsPage() {
           sessionId: row.id,
         })
       } catch (error) {
-        if (stepUp.intercept(error, () => void revokeOneSession(row))) {
+        if (gate.intercept(error, () => void revokeOneSession(row))) {
           return null
         }
         throw error
@@ -464,7 +552,8 @@ export function AccountsPage() {
       header: t('accounts.column.kind'),
       priority: 'medium',
       cellWrap: 'nowrap',
-      cell: (row) => row.kind,
+      cell: (row) =>
+        closedSetLabel('accounts.create.kind', row.kind, t, i18n),
     },
     {
       id: 'displayName',
@@ -499,6 +588,9 @@ export function AccountsPage() {
       cell: (row) =>
         row.mfa_required ? t('accounts.mfaYes') : t('accounts.mfaNo'),
     },
+    // Host columns sit between the page's own fields and the row's write
+    // controls, so the controls stay the last cell of every row.
+    ...(extraColumns ?? []),
     {
       id: 'actions',
       header: t('accounts.column.actions'),
@@ -548,65 +640,6 @@ export function AccountsPage() {
     },
   ]
 
-  const secretColumns: DataTableColumn<ConsoleAccountSecret>[] = [
-    {
-      id: 'label',
-      header: t('accounts.secrets.column.label'),
-      cellWrap: 'nowrap',
-      cell: (row) => (
-        <Typography
-          variant="body2"
-          noWrap
-          sx={primaryColumnMaxWidthSx}
-          title={row.label}
-        >
-          {row.label}
-        </Typography>
-      ),
-    },
-    {
-      id: 'expires',
-      header: t('accounts.secrets.column.expires'),
-      priority: 'low',
-      cellWrap: 'nowrap',
-      cell: (row) => formatUtc(row.expires_at, i18n.language),
-    },
-    {
-      id: 'state',
-      header: t('accounts.secrets.column.state'),
-      priority: 'high',
-      cellWrap: 'nowrap',
-      cell: (row) =>
-        row.revoked ? t('accounts.secrets.revoked') : t('accounts.secrets.active'),
-    },
-    {
-      id: 'actions',
-      header: t('accounts.secrets.column.actions'),
-      cellWrap: 'nowrap',
-      cell: (row) => (
-        <Button
-          type="button"
-          size="small"
-          variant="outlined"
-          color="error"
-          aria-label={t('accounts.secrets.revokeAria', { label: row.label })}
-          loading={detailSecretWrite.pending}
-          disabled={row.revoked || detailSecretWrite.pending}
-          onClick={() =>
-            confirm.ask({
-              title: t('accounts.secrets.revokeTitle'),
-              message: t('accounts.secrets.revokeMessage', { label: row.label }),
-              confirmLabel: t('common.confirm'),
-              run: () => void revokeOneSecret(row),
-            })
-          }
-        >
-          {t('accounts.secrets.revoke')}
-        </Button>
-      ),
-    },
-  ]
-
   const sessionColumns: DataTableColumn<ConsoleAccountSession>[] = [
     {
       id: 'id',
@@ -627,14 +660,16 @@ export function AccountsPage() {
         // The primary identity also carries the current-session mark:
         // this column never hides, so the safety hint survives every
         // tier instead of disappearing with the low-priority id column.
-        const formatted = formatUtc(row.created_at, i18n.language)
+        const formatted = formatInstant(row.created_at, i18n.language, {
+          timeZone: 'UTC',
+        })
         return (
           <Box sx={{ display: 'flex', alignItems: 'center', columnGap: 1 }}>
             <Typography
               variant="body2"
               noWrap
               sx={primaryColumnMaxWidthSx}
-              title={formatted ?? undefined}
+              title={formatted === '' ? undefined : formatted}
             >
               {formatted}
             </Typography>
@@ -692,38 +727,6 @@ export function AccountsPage() {
     },
   ]
 
-  const factorColumns: DataTableColumn<ConsoleAccountFactor>[] = [
-    {
-      id: 'kind',
-      header: t('accounts.factors.column.kind'),
-      priority: 'medium',
-      cellWrap: 'nowrap',
-      cell: (row) => row.kind,
-    },
-    {
-      id: 'label',
-      header: t('accounts.factors.column.label'),
-      cellWrap: 'nowrap',
-      cell: (row) => (
-        <Typography
-          variant="body2"
-          noWrap
-          sx={primaryColumnMaxWidthSx}
-          title={row.label}
-        >
-          {row.label}
-        </Typography>
-      ),
-    },
-    {
-      id: 'status',
-      header: t('accounts.factors.column.status'),
-      priority: 'high',
-      cellWrap: 'nowrap',
-      cell: (row) => row.status,
-    },
-  ]
-
   const rows = accounts.data?.accounts
   const pending = accounts.isPending && rows === undefined
 
@@ -744,6 +747,7 @@ export function AccountsPage() {
               // While the list read is in flight it is marked busy.
               busy={pageRefresh.busy}
               writePending={listWrite.pending}
+              label={t('common.refresh')}
               onClick={pageRefresh.refresh}
             />
             <Button
@@ -765,6 +769,7 @@ export function AccountsPage() {
 
       <AccountCreatePanel
         open={createOpen}
+        attributeFields={attributeFields}
         onClose={() => setCreateOpen(false)}
         onCreated={accountCreated}
         onExited={createPanelExited}
@@ -942,185 +947,153 @@ export function AccountsPage() {
                     })}
                   </Typography>
                   <Typography variant="body2">
-                    {t('accounts.detail.kindLine', { value: settled.kind })}
+                    {t('accounts.detail.kindLine', {
+                      value: closedSetLabel(
+                        'accounts.create.kind',
+                        settled.kind,
+                        t,
+                        i18n,
+                      ),
+                    })}
                   </Typography>
                 </Box>
               )}
             </ConsoleAsyncSection>
 
-            {/* The action row's two account-level actions share one scope:
-                they are the same control group and each message names the
-                account. */}
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 1, rowGap: 1 }}>
-              <Button
-                type="button"
-                variant="outlined"
-                loading={detailActionWrite.pending}
-                disabled={detailActionWrite.pending}
-                onClick={() =>
-                  confirm.ask({
-                    title: t('accounts.resetMFATitle'),
-                    message: t('accounts.resetMFAMessage'),
-                    confirmLabel: t('common.confirm'),
-                    run: () => void resetAllFactors(),
-                  })
-                }
-              >
-                {t('accounts.resetMFA')}
-              </Button>
-              <Button
-                type="button"
-                variant="outlined"
-                color="error"
-                loading={detailActionWrite.pending}
-                disabled={detailActionWrite.pending}
-                onClick={() =>
-                  confirm.ask({
-                    title: t('accounts.revokeSessionsTitle'),
-                    message: t(
-                      sessionsIncludeCurrent
-                        ? 'accounts.revokeSessionsMessageCurrent'
-                        : 'accounts.revokeSessionsMessage',
-                    ),
-                    confirmLabel: t('common.confirm'),
-                    run: () => void revokeAllSessions(),
-                  })
-                }
-              >
-                {t('accounts.revokeSessions')}
-              </Button>
-            </Box>
-            <WriteFeedbackRegion
-              outcome={detailActionWrite.outcome}
-              sx={{ mb: 2 }}
-            />
+            {/* The action row's account-level actions share one scope: they
+                are the same control group and each message names the
+                account. Each control follows its own feature: resetting
+                factors belongs to the factors face, the bulk revocation to
+                the sessions face. */}
+            {(factorsPresent || sessionsPresent) && (
+              <>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    columnGap: 1,
+                    rowGap: 1,
+                  }}
+                >
+                  {factorsPresent && (
+                    <Button
+                      type="button"
+                      variant="outlined"
+                      loading={detailActionWrite.pending}
+                      disabled={detailActionWrite.pending}
+                      onClick={() =>
+                        confirm.ask({
+                          title: t('accounts.resetMFATitle'),
+                          message: t('accounts.resetMFAMessage'),
+                          confirmLabel: t('common.confirm'),
+                          run: () => void resetAllFactors(),
+                        })
+                      }
+                    >
+                      {t('accounts.resetMFA')}
+                    </Button>
+                  )}
+                  {sessionsPresent && (
+                    <Button
+                      type="button"
+                      variant="outlined"
+                      color="error"
+                      loading={detailActionWrite.pending}
+                      disabled={detailActionWrite.pending}
+                      onClick={() =>
+                        confirm.ask({
+                          title: t('accounts.revokeSessionsTitle'),
+                          message: t(
+                            sessionsIncludeCurrent
+                              ? 'accounts.revokeSessionsMessageCurrent'
+                              : 'accounts.revokeSessionsMessage',
+                          ),
+                          confirmLabel: t('common.confirm'),
+                          run: () => void revokeAllSessions(),
+                        })
+                      }
+                    >
+                      {t('accounts.revokeSessions')}
+                    </Button>
+                  )}
+                </Box>
+                <WriteFeedbackRegion
+                  outcome={detailActionWrite.outcome}
+                  sx={{ mb: 2 }}
+                />
+              </>
+            )}
 
             {account.data !== undefined && (
               <AccountDetailWrites
                 key={selectedId}
                 account={account.data}
                 feedback={detailFeedback}
+                attributeFields={attributeFields}
                 oneTimeSecret={oneTimeSecret}
                 onSecretCreated={setOneTimeSecret}
                 onCloseSecret={() => setOneTimeSecret(null)}
               />
             )}
 
-            <Typography component="h3" variant="subtitle1" sx={{ mb: 1 }}>
-              {t('accounts.factors.title')}
-            </Typography>
-            <ConsoleAsyncSection
-              pending={factors.isPending && factors.data === undefined}
-              payload={factors.data}
-              error={factors.error}
-              refreshing={factors.isFetching}
-              empty={factors.data !== undefined && factors.data.length === 0}
-              headingLevel="h3"
-              loading={
-                <ListSkeleton
-                  label={t('accounts.factors.loading')}
-                  rows={[<Skeleton key="a" variant="text" width="48%" />]}
-                />
-              }
-              errorState={{
-                title: t('accounts.factors.error.title'),
-                description: t('accounts.factors.error.description'),
-                retryLabel: t('accounts.factors.retry'),
-                onRetry: () => void factors.refetch(),
-              }}
-              emptyState={{
-                title: t('accounts.factors.empty.title'),
-                description: t('accounts.factors.empty.description'),
-              }}
-            >
-              {(settled) => (
-                <DataTable
-                  rows={settled}
-                  columns={factorColumns}
-                  rowKey={(row) => `${row.kind}:${row.label}`}
-                />
-              )}
-            </ConsoleAsyncSection>
+            {factorsPresent && <AccountFactorsSection accountId={selectedId} />}
 
-            <Typography component="h3" variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
-              {t('accounts.secrets.title')}
-            </Typography>
-            <ConsoleAsyncSection
-              pending={secrets.isPending && secrets.data === undefined}
-              payload={secrets.data}
-              error={secrets.error}
-              refreshing={secrets.isFetching}
-              empty={secrets.data !== undefined && secrets.data.length === 0}
-              headingLevel="h3"
-              loading={
-                <ListSkeleton
-                  label={t('accounts.secrets.loading')}
-                  rows={[<Skeleton key="a" variant="text" width="48%" />]}
-                />
-              }
-              errorState={{
-                title: t('accounts.secrets.error.title'),
-                description: t('accounts.secrets.error.description'),
-                retryLabel: t('accounts.secrets.retry'),
-                onRetry: () => void secrets.refetch(),
-              }}
-              emptyState={{
-                title: t('accounts.secrets.empty.title'),
-                description: t('accounts.secrets.empty.description'),
-              }}
-            >
-              {(settled) => (
-                <DataTable
-                  rows={settled}
-                  columns={secretColumns}
-                  rowKey={(row) => row.id}
-                />
-              )}
-            </ConsoleAsyncSection>
-            <WriteFeedbackRegion
-              outcome={detailSecretWrite.outcome}
-              sx={{ mb: 2 }}
-            />
+            {secretsPresent && (
+              <AccountSecretsSection
+                accountId={selectedId}
+                feedback={detailSecretWrite}
+                confirm={confirm}
+                onRevoke={revokeOneSecret}
+              />
+            )}
 
-            <Typography component="h3" variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
-              {t('accounts.sessions.title')}
-            </Typography>
-            <ConsoleAsyncSection
-              pending={sessions.isPending && sessions.data === undefined}
-              payload={sessions.data}
-              error={sessions.error}
-              refreshing={sessions.isFetching}
-              empty={sessions.data !== undefined && sessions.data.length === 0}
-              headingLevel="h3"
-              loading={
-                <ListSkeleton
-                  label={t('accounts.sessions.loading')}
-                  rows={[<Skeleton key="a" variant="text" width="48%" />]}
+            {sessionsPresent && (
+              <>
+                <Typography
+                  component="h3"
+                  variant="subtitle1"
+                  sx={{ mt: 2, mb: 1 }}
+                >
+                  {t('accounts.sessions.title')}
+                </Typography>
+                <ConsoleAsyncSection
+                  pending={sessions.isPending && sessions.data === undefined}
+                  payload={sessions.data}
+                  error={sessions.error}
+                  refreshing={sessions.isFetching}
+                  empty={sessions.data !== undefined && sessions.data.length === 0}
+                  headingLevel="h3"
+                  loading={
+                    <ListSkeleton
+                      label={t('accounts.sessions.loading')}
+                      rows={[<Skeleton key="a" variant="text" width="48%" />]}
+                    />
+                  }
+                  errorState={{
+                    title: t('accounts.sessions.error.title'),
+                    description: t('accounts.sessions.error.description'),
+                    retryLabel: t('accounts.sessions.retry'),
+                    onRetry: () => void sessions.refetch(),
+                  }}
+                  emptyState={{
+                    title: t('accounts.sessions.empty.title'),
+                    description: t('accounts.sessions.empty.description'),
+                  }}
+                >
+                  {(settled) => (
+                    <DataTable
+                      rows={settled}
+                      columns={sessionColumns}
+                      rowKey={(row) => row.id}
+                    />
+                  )}
+                </ConsoleAsyncSection>
+                <WriteFeedbackRegion
+                  outcome={detailSessionWrite.outcome}
+                  sx={{ mb: 2 }}
                 />
-              }
-              errorState={{
-                title: t('accounts.sessions.error.title'),
-                description: t('accounts.sessions.error.description'),
-                retryLabel: t('accounts.sessions.retry'),
-                onRetry: () => void sessions.refetch(),
-              }}
-              emptyState={{
-                title: t('accounts.sessions.empty.title'),
-                description: t('accounts.sessions.empty.description'),
-              }}
-            >
-              {(settled) => (
-                <DataTable
-                  rows={settled}
-                  columns={sessionColumns}
-                  rowKey={(row) => row.id}
-                />
-              )}
-            </ConsoleAsyncSection>
-            <WriteFeedbackRegion
-              outcome={detailSessionWrite.outcome}
-              sx={{ mb: 2 }}
-            />
+              </>
+            )}
 
             <Box
               sx={{
@@ -1187,15 +1160,220 @@ export function AccountsPage() {
         onCancel={() => setDiscardSecretOpen(false)}
       />
 
-      {stepUp.session !== null && (
+      {session !== null && (
         <StepUpChallenge
-          open={stepUp.gate.open}
-          session={stepUp.session}
-          onSuccess={stepUp.gate.succeed}
-          onCancel={stepUp.gate.cancel}
+          open={gate.open}
+          session={session}
+          onSuccess={gate.succeed}
+          onCancel={gate.cancel}
         />
       )}
     </Box>
+  )
+}
+
+/**
+ * AccountFactorsSection: one account's registered factors.
+ *
+ * The page mounts it only while authn.admin.factors is present, so the
+ * factor read lives and dies with the section: an absent feature renders no
+ * heading and no table, and issues no request.
+ */
+function AccountFactorsSection({ accountId }: { readonly accountId: string }) {
+  const { t, i18n } = useConsoleUiTranslation()
+  const operations = useConsoleOperations()
+  const factors = operations.useAccountFactors({ id: accountId })
+  const columns: DataTableColumn<ConsoleAccountFactor>[] = [
+    {
+      id: 'kind',
+      header: t('accounts.factors.column.kind'),
+      priority: 'medium',
+      cellWrap: 'nowrap',
+      cell: (row) =>
+        closedSetLabel('accounts.factors.kind', row.kind, t, i18n),
+    },
+    {
+      id: 'label',
+      header: t('accounts.factors.column.label'),
+      cellWrap: 'nowrap',
+      cell: (row) => (
+        <Typography
+          variant="body2"
+          noWrap
+          sx={primaryColumnMaxWidthSx}
+          title={row.label}
+        >
+          {row.label}
+        </Typography>
+      ),
+    },
+    {
+      id: 'status',
+      header: t('accounts.factors.column.status'),
+      priority: 'high',
+      cellWrap: 'nowrap',
+      cell: (row) =>
+        closedSetLabel('accounts.factors.status', row.status, t, i18n),
+    },
+  ]
+  return (
+    <>
+      <Typography component="h3" variant="subtitle1" sx={{ mb: 1 }}>
+        {t('accounts.factors.title')}
+      </Typography>
+      <ConsoleAsyncSection
+        pending={factors.isPending && factors.data === undefined}
+        payload={factors.data}
+        error={factors.error}
+        refreshing={factors.isFetching}
+        empty={factors.data !== undefined && factors.data.length === 0}
+        headingLevel="h3"
+        loading={
+          <ListSkeleton
+            label={t('accounts.factors.loading')}
+            rows={[<Skeleton key="a" variant="text" width="48%" />]}
+          />
+        }
+        errorState={{
+          title: t('accounts.factors.error.title'),
+          description: t('accounts.factors.error.description'),
+          retryLabel: t('accounts.factors.retry'),
+          onRetry: () => void factors.refetch(),
+        }}
+        emptyState={{
+          title: t('accounts.factors.empty.title'),
+          description: t('accounts.factors.empty.description'),
+        }}
+      >
+        {(settled) => (
+          <DataTable
+            rows={settled}
+            columns={columns}
+            rowKey={(row) => `${row.kind}:${row.label}`}
+          />
+        )}
+      </ConsoleAsyncSection>
+    </>
+  )
+}
+
+/**
+ * AccountSecretsSection: one account's service secrets.
+ *
+ * The page mounts it only while authn.admin.secrets is present, so the
+ * secrets read, their table and the per-row revoke control all share the
+ * feature's answer. The scope and the revoke action stay on the page: the
+ * panel's busy state covers every scope inside it and the confirmation
+ * dialog is the page's own.
+ */
+function AccountSecretsSection({
+  accountId,
+  feedback,
+  confirm,
+  onRevoke,
+}: {
+  readonly accountId: string
+  readonly feedback: WriteFeedback
+  readonly confirm: PendingConfirmState
+  readonly onRevoke: (row: ConsoleAccountSecret) => Promise<void>
+}) {
+  const { t, i18n } = useConsoleUiTranslation()
+  const operations = useConsoleOperations()
+  const secrets = operations.useAccountSecrets({ id: accountId })
+  const columns: DataTableColumn<ConsoleAccountSecret>[] = [
+    {
+      id: 'label',
+      header: t('accounts.secrets.column.label'),
+      cellWrap: 'nowrap',
+      cell: (row) => (
+        <Typography
+          variant="body2"
+          noWrap
+          sx={primaryColumnMaxWidthSx}
+          title={row.label}
+        >
+          {row.label}
+        </Typography>
+      ),
+    },
+    {
+      id: 'expires',
+      header: t('accounts.secrets.column.expires'),
+      priority: 'low',
+      cellWrap: 'nowrap',
+      cell: (row) =>
+        formatInstant(row.expires_at, i18n.language, { timeZone: 'UTC' }),
+    },
+    {
+      id: 'state',
+      header: t('accounts.secrets.column.state'),
+      priority: 'high',
+      cellWrap: 'nowrap',
+      cell: (row) =>
+        row.revoked ? t('accounts.secrets.revoked') : t('accounts.secrets.active'),
+    },
+    {
+      id: 'actions',
+      header: t('accounts.secrets.column.actions'),
+      cellWrap: 'nowrap',
+      cell: (row) => (
+        <Button
+          type="button"
+          size="small"
+          variant="outlined"
+          color="error"
+          aria-label={t('accounts.secrets.revokeAria', { label: row.label })}
+          loading={feedback.pending}
+          disabled={row.revoked || feedback.pending}
+          onClick={() =>
+            confirm.ask({
+              title: t('accounts.secrets.revokeTitle'),
+              message: t('accounts.secrets.revokeMessage', { label: row.label }),
+              confirmLabel: t('common.confirm'),
+              run: () => void onRevoke(row),
+            })
+          }
+        >
+          {t('accounts.secrets.revoke')}
+        </Button>
+      ),
+    },
+  ]
+  return (
+    <>
+      <Typography component="h3" variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
+        {t('accounts.secrets.title')}
+      </Typography>
+      <ConsoleAsyncSection
+        pending={secrets.isPending && secrets.data === undefined}
+        payload={secrets.data}
+        error={secrets.error}
+        refreshing={secrets.isFetching}
+        empty={secrets.data !== undefined && secrets.data.length === 0}
+        headingLevel="h3"
+        loading={
+          <ListSkeleton
+            label={t('accounts.secrets.loading')}
+            rows={[<Skeleton key="a" variant="text" width="48%" />]}
+          />
+        }
+        errorState={{
+          title: t('accounts.secrets.error.title'),
+          description: t('accounts.secrets.error.description'),
+          retryLabel: t('accounts.secrets.retry'),
+          onRetry: () => void secrets.refetch(),
+        }}
+        emptyState={{
+          title: t('accounts.secrets.empty.title'),
+          description: t('accounts.secrets.empty.description'),
+        }}
+      >
+        {(settled) => (
+          <DataTable rows={settled} columns={columns} rowKey={(row) => row.id} />
+        )}
+      </ConsoleAsyncSection>
+      <WriteFeedbackRegion outcome={feedback.outcome} sx={{ mb: 2 }} />
+    </>
   )
 }
 
@@ -1221,6 +1399,32 @@ function parseStringMap(text: string): Record<string, string> | null {
   } catch {
     return null
   }
+}
+
+/**
+ * The value one declared attribute key holds in the JSON attribute text.
+ * Absent, empty or unparsable text reads as an empty value.
+ */
+function attributeValueOf(text: string, key: string): string {
+  const parsed = text.trim() === '' ? null : parseStringMap(text)
+  return parsed?.[key] ?? ''
+}
+
+/**
+ * Replaces one declared attribute key in the JSON attribute text, leaving
+ * every key the host did not declare untouched. A blank value removes the
+ * declared key, so an emptied field leaves no empty-string attribute
+ * behind.
+ */
+function withAttributeValue(text: string, key: string, value: string): string {
+  const parsed = text.trim() === '' ? {} : (parseStringMap(text) ?? {})
+  const next = { ...parsed }
+  if (value === '') {
+    delete next[key]
+  } else {
+    next[key] = value
+  }
+  return JSON.stringify(next)
 }
 
 /** The ways an administrator may state an identifier's verification. */
@@ -1275,7 +1479,10 @@ type CreateAccountMutation = UseMutationResult<
  * fields flow through ui-kit's form family (FormLayout's responsive grid of
  * FormField adapters), kept two columns wide in the panel and collapsed to
  * one when the panel itself is narrow. The attribute set is typed as a JSON
- * object and marks the field when it does not parse.
+ * object and marks the field when it does not parse; when the host declares
+ * its attribute fields, one text field per declared key replaces the JSON
+ * editor and writes back into the same JSON value, so the create path and
+ * its payload keep one shape.
  *
  * A refused create settles the create panel's own scope, whose region stands
  * under the form with the fields kept for correction. A landed create closes
@@ -1286,11 +1493,13 @@ function AccountCreateForm({
   form,
   feedback,
   createAccount,
+  attributeFields,
   onCreated,
 }: {
   readonly form: UseFormReturn<CreateAccountFields>
   readonly feedback: WriteFeedback
   readonly createAccount: CreateAccountMutation
+  readonly attributeFields?: readonly AccountsPageAttributeField[]
   readonly onCreated: (created: ConsoleAccount) => void
 }) {
   const { t } = useConsoleUiTranslation()
@@ -1480,27 +1689,58 @@ function AccountCreateForm({
             />
           )}
         />
-        <FormField
-          name="attributes"
-          rules={{
-            validate: (value) =>
-              value.trim() === '' ||
-              parseStringMap(value) !== null ||
-              t('accounts.create.attributesHelper'),
-          }}
-          render={({ field, invalid, errorText }) => (
-            <TextField
-              {...field}
-              size="small"
-              fullWidth
-              multiline
-              minRows={2}
-              label={t('accounts.create.attributesLabel')}
-              error={invalid}
-              helperText={errorText ?? t('accounts.create.attributesHelper')}
+        {attributeFields === undefined ? (
+          <FormField
+            name="attributes"
+            rules={{
+              validate: (value) =>
+                value.trim() === '' ||
+                parseStringMap(value) !== null ||
+                t('accounts.create.attributesHelper'),
+            }}
+            render={({ field, invalid, errorText }) => (
+              <TextField
+                {...field}
+                size="small"
+                fullWidth
+                multiline
+                minRows={2}
+                label={t('accounts.create.attributesLabel')}
+                error={invalid}
+                helperText={errorText ?? t('accounts.create.attributesHelper')}
+              />
+            )}
+          />
+        ) : (
+          attributeFields.map((declared) => (
+            <FormField
+              key={declared.key}
+              name="attributes"
+              render={({ field }) => (
+                <TextField
+                  size="small"
+                  fullWidth
+                  label={declared.label}
+                  value={attributeValueOf(
+                    typeof field.value === 'string' ? field.value : '',
+                    declared.key,
+                  )}
+                  onChange={(event) =>
+                    field.onChange(
+                      withAttributeValue(
+                        typeof field.value === 'string' ? field.value : '',
+                        declared.key,
+                        event.target.value,
+                      ),
+                    )
+                  }
+                  onBlur={field.onBlur}
+                  name={field.name}
+                />
+              )}
             />
-          )}
-        />
+          ))
+        )}
         <FormField
           name="mfaRequired"
           render={({ field }) => (
@@ -1542,11 +1782,13 @@ function AccountCreateForm({
  */
 function AccountCreatePanel({
   open,
+  attributeFields,
   onClose,
   onCreated,
   onExited,
 }: {
   readonly open: boolean
+  readonly attributeFields?: readonly AccountsPageAttributeField[]
   readonly onClose: () => void
   readonly onCreated: (created: ConsoleAccount) => void
   readonly onExited: () => void
@@ -1607,6 +1849,7 @@ function AccountCreatePanel({
           form={form}
           feedback={feedback}
           createAccount={createAccount}
+          attributeFields={attributeFields}
           onCreated={onCreated}
         />
       </SidePanel>
@@ -1645,39 +1888,21 @@ function OneTimeSecretNotice({
 }) {
   const { t } = useConsoleUiTranslation()
   return (
-    <Box
-      role="status"
-      sx={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        columnGap: 2,
-        mt: 1,
-        mb: 2,
-        p: 2,
-        border: 1,
-        borderColor: 'divider',
-        borderRadius: 1,
-      }}
-    >
-      <Typography variant="body2" sx={{ flex: 1, wordBreak: 'break-all' }}>
-        {t('accounts.createSecret.handedOver', {
+    <Box sx={{ mt: 1 }}>
+      <OneTimeValuePanel
+        message={t('accounts.createSecret.handedOver', {
           label: notice.label,
-          secret: notice.secret,
         })}
-      </Typography>
-      <Button
-        type="button"
-        size="small"
-        variant="outlined"
-        aria-label={t('accounts.createSecret.closeAria', {
+        value={notice.secret}
+        copyLabel={t('accounts.createSecret.copy')}
+        closeLabel={t('accounts.createSecret.close')}
+        closeAriaLabel={t('accounts.createSecret.closeAria', {
           id: notice.accountId,
           name: notice.accountName,
           label: notice.label,
         })}
-        onClick={onClose}
-      >
-        {t('accounts.createSecret.close')}
-      </Button>
+        onClose={onClose}
+      />
     </Box>
   )
 }
@@ -1695,23 +1920,38 @@ function OneTimeSecretNotice({
  * The one-time secret's state is the page's, passed in and reported back:
  * this component only renders the display under the create-secret group, so
  * remounting the panel content never loses the value.
+ *
+ * Three groups follow features rather than the page: the MFA requirement and
+ * the password reset live on the factors face (authn.admin.factors) and the
+ * secret creation on the secrets face (authn.admin.secrets). Their scopes
+ * stay with the page -- its busy state covers them -- but their controls and
+ * the one-time display render only while the feature is present.
  */
 function AccountDetailWrites({
   account,
   feedback,
+  attributeFields,
   oneTimeSecret,
   onSecretCreated,
   onCloseSecret,
 }: {
   readonly account: ConsoleAccount
   readonly feedback: AccountDetailFeedback
+  readonly attributeFields?: readonly AccountsPageAttributeField[]
   readonly oneTimeSecret: OneTimeSecret | null
   readonly onSecretCreated: (notice: OneTimeSecret) => void
   readonly onCloseSecret: () => void
 }) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
-  const stepUp = useConsoleStepUp()
+  const hasFeature = useConsoleHasFeature()
+  const factorsPresent = hasFeature('authn.admin.factors')
+  const secretsPresent = hasFeature('authn.admin.secrets')
+  const session = useConsoleSession()
+  const gate = useStepUpGate<() => void>(
+    (retry) => retry(),
+    (error) => session !== null && session.isStepUpShortfall(error),
+  )
   const patchAccount = operations.usePatchAccount()
   const setStatus = operations.useSetAccountStatus()
   const setMfaRequired = operations.useSetMFARequired()
@@ -1745,8 +1985,12 @@ function AccountDetailWrites({
   const [secretLabel, setSecretLabel] = useState('')
   const [secretExpires, setSecretExpires] = useState('')
 
+  // Declared attribute fields always hold serialized JSON the page wrote
+  // itself, so there is nothing to mark invalid there.
   const attributesInvalid =
-    attributes.trim() !== '' && parseStringMap(attributes) === null
+    attributeFields === undefined &&
+    attributes.trim() !== '' &&
+    parseStringMap(attributes) === null
   const statusUnchanged = statusDraft === currentStatus
   const mfaUnchanged = (mfaDraft === 'true') === account.mfa_required
   // The protected control keeps its 'unchanged' sentinel: selecting it, or
@@ -1769,7 +2013,7 @@ function AccountDetailWrites({
       try {
         await setStatus.mutateAsync({ id, status: statusDraft })
       } catch (error) {
-        if (stepUp.intercept(error, writeStatus)) {
+        if (gate.intercept(error, writeStatus)) {
           return null
         }
         throw error
@@ -1783,7 +2027,7 @@ function AccountDetailWrites({
       try {
         await setMfaRequired.mutateAsync({ id, required: mfaDraft === 'true' })
       } catch (error) {
-        if (stepUp.intercept(error, writeMfa)) {
+        if (gate.intercept(error, writeMfa)) {
           return null
         }
         throw error
@@ -1805,7 +2049,7 @@ function AccountDetailWrites({
           ...(protectedUnchanged ? {} : { protected: protectedDraft === 'true' }),
         })
       } catch (error) {
-        if (stepUp.intercept(error, writePatch)) {
+        if (gate.intercept(error, writePatch)) {
           return null
         }
         throw error
@@ -1819,7 +2063,7 @@ function AccountDetailWrites({
       try {
         await resetPassword.mutateAsync({ id, password: tempPassword })
       } catch (error) {
-        if (stepUp.intercept(error, writePassword)) {
+        if (gate.intercept(error, writePassword)) {
           return null
         }
         throw error
@@ -1838,7 +2082,7 @@ function AccountDetailWrites({
           value: identifierValue,
         })
       } catch (error) {
-        if (stepUp.intercept(error, addOne)) {
+        if (gate.intercept(error, addOne)) {
           return null
         }
         throw error
@@ -1861,7 +2105,7 @@ function AccountDetailWrites({
           ...(secretExpires === '' ? {} : { expires_at: secretExpires }),
         })
       } catch (error) {
-        if (stepUp.intercept(error, createOne)) {
+        if (gate.intercept(error, createOne)) {
           return null
         }
         throw error
@@ -1921,29 +2165,35 @@ function AccountDetailWrites({
       </Box>
       <WriteFeedbackRegion outcome={feedback.status.outcome} />
 
-      <Box sx={{ ...rowSx, mt: 1 }}>
-        <TextField
-          select
-          size="small"
-          value={mfaDraft}
-          onChange={(event) => setMfaDraft(event.target.value as 'true' | 'false')}
-          label={t('accounts.mfa.label')}
-          sx={{ minWidth: 160 }}
-        >
-          <MenuItem value="true">{t('accounts.mfa.required')}</MenuItem>
-          <MenuItem value="false">{t('accounts.mfa.notRequired')}</MenuItem>
-        </TextField>
-        <Button
-          type="button"
-          variant="outlined"
-          loading={feedback.mfa.pending}
-          disabled={feedback.mfa.pending || mfaUnchanged}
-          onClick={() => writeMfa()}
-        >
-          {t('accounts.mfa.submit')}
-        </Button>
-      </Box>
-      <WriteFeedbackRegion outcome={feedback.mfa.outcome} />
+      {factorsPresent && (
+        <>
+          <Box sx={{ ...rowSx, mt: 1 }}>
+            <TextField
+              select
+              size="small"
+              value={mfaDraft}
+              onChange={(event) =>
+                setMfaDraft(event.target.value as 'true' | 'false')
+              }
+              label={t('accounts.mfa.label')}
+              sx={{ minWidth: 160 }}
+            >
+              <MenuItem value="true">{t('accounts.mfa.required')}</MenuItem>
+              <MenuItem value="false">{t('accounts.mfa.notRequired')}</MenuItem>
+            </TextField>
+            <Button
+              type="button"
+              variant="outlined"
+              loading={feedback.mfa.pending}
+              disabled={feedback.mfa.pending || mfaUnchanged}
+              onClick={() => writeMfa()}
+            >
+              {t('accounts.mfa.submit')}
+            </Button>
+          </Box>
+          <WriteFeedbackRegion outcome={feedback.mfa.outcome} />
+        </>
+      )}
 
       <Box sx={{ ...rowSx, mt: 1 }}>
         <TextField
@@ -1952,17 +2202,38 @@ function AccountDetailWrites({
           onChange={(event) => setDisplayName(event.target.value)}
           label={t('accounts.patch.displayNameLabel')}
         />
-        <TextField
-          size="small"
-          value={attributes}
-          onChange={(event) => setAttributes(event.target.value)}
-          label={t('accounts.patch.attributesLabel')}
-          error={attributesInvalid}
-          helperText={t('accounts.patch.attributesHelper')}
-          multiline
-          minRows={1}
-          sx={{ minWidth: 240 }}
-        />
+        {attributeFields === undefined ? (
+          <TextField
+            size="small"
+            value={attributes}
+            onChange={(event) => setAttributes(event.target.value)}
+            label={t('accounts.patch.attributesLabel')}
+            error={attributesInvalid}
+            helperText={t('accounts.patch.attributesHelper')}
+            multiline
+            minRows={1}
+            sx={{ minWidth: 240 }}
+          />
+        ) : (
+          attributeFields.map((declared) => (
+            <TextField
+              key={declared.key}
+              size="small"
+              value={attributeValueOf(attributes, declared.key)}
+              onChange={(event) =>
+                setAttributes(
+                  withAttributeValue(
+                    attributes,
+                    declared.key,
+                    event.target.value,
+                  ),
+                )
+              }
+              label={declared.label}
+              sx={{ minWidth: 200 }}
+            />
+          ))
+        )}
         <TextField
           select
           size="small"
@@ -1993,25 +2264,29 @@ function AccountDetailWrites({
       </Box>
       <WriteFeedbackRegion outcome={feedback.patch.outcome} />
 
-      <Box sx={{ ...rowSx, mt: 1 }}>
-        <TextField
-          size="small"
-          type="password"
-          value={tempPassword}
-          onChange={(event) => setTempPassword(event.target.value)}
-          label={t('accounts.password.label')}
-        />
-        <Button
-          type="button"
-          variant="outlined"
-          loading={feedback.password.pending}
-          disabled={feedback.password.pending || tempPassword === ''}
-          onClick={() => writePassword()}
-        >
-          {t('accounts.password.submit')}
-        </Button>
-      </Box>
-      <WriteFeedbackRegion outcome={feedback.password.outcome} />
+      {factorsPresent && (
+        <>
+          <Box sx={{ ...rowSx, mt: 1 }}>
+            <TextField
+              size="small"
+              type="password"
+              value={tempPassword}
+              onChange={(event) => setTempPassword(event.target.value)}
+              label={t('accounts.password.label')}
+            />
+            <Button
+              type="button"
+              variant="outlined"
+              loading={feedback.password.pending}
+              disabled={feedback.password.pending || tempPassword === ''}
+              onClick={() => writePassword()}
+            >
+              {t('accounts.password.submit')}
+            </Button>
+          </Box>
+          <WriteFeedbackRegion outcome={feedback.password.outcome} />
+        </>
+      )}
 
       <Box sx={{ ...rowSx, mt: 1 }}>
         <TextField
@@ -2047,41 +2322,48 @@ function AccountDetailWrites({
       </Box>
       <WriteFeedbackRegion outcome={feedback.addIdentifier.outcome} />
 
-      <Box sx={{ ...rowSx, mt: 1 }}>
-        <TextField
-          size="small"
-          value={secretLabel}
-          onChange={(event) => setSecretLabel(event.target.value)}
-          label={t('accounts.createSecret.labelLabel')}
-        />
-        <TextField
-          size="small"
-          value={secretExpires}
-          onChange={(event) => setSecretExpires(event.target.value)}
-          label={t('accounts.createSecret.expiresLabel')}
-          helperText={t('accounts.createSecret.expiresHelper')}
-        />
-        <Button
-          type="button"
-          variant="outlined"
-          loading={feedback.createSecret.pending}
-          disabled={feedback.createSecret.pending || secretLabel === ''}
-          onClick={() => createOne()}
-        >
-          {t('accounts.createSecret.submit')}
-        </Button>
-      </Box>
-      <WriteFeedbackRegion outcome={feedback.createSecret.outcome} sx={{ mb: 2 }} />
-      {oneTimeSecret !== null && oneTimeSecret.accountId === id && (
-        <OneTimeSecretNotice notice={oneTimeSecret} onClose={onCloseSecret} />
+      {secretsPresent && (
+        <>
+          <Box sx={{ ...rowSx, mt: 1 }}>
+            <TextField
+              size="small"
+              value={secretLabel}
+              onChange={(event) => setSecretLabel(event.target.value)}
+              label={t('accounts.createSecret.labelLabel')}
+            />
+            <TextField
+              size="small"
+              value={secretExpires}
+              onChange={(event) => setSecretExpires(event.target.value)}
+              label={t('accounts.createSecret.expiresLabel')}
+              helperText={t('accounts.createSecret.expiresHelper')}
+            />
+            <Button
+              type="button"
+              variant="outlined"
+              loading={feedback.createSecret.pending}
+              disabled={feedback.createSecret.pending || secretLabel === ''}
+              onClick={() => createOne()}
+            >
+              {t('accounts.createSecret.submit')}
+            </Button>
+          </Box>
+          <WriteFeedbackRegion
+            outcome={feedback.createSecret.outcome}
+            sx={{ mb: 2 }}
+          />
+          {oneTimeSecret !== null && oneTimeSecret.accountId === id && (
+            <OneTimeSecretNotice notice={oneTimeSecret} onClose={onCloseSecret} />
+          )}
+        </>
       )}
 
-      {stepUp.session !== null && (
+      {session !== null && (
         <StepUpChallenge
-          open={stepUp.gate.open}
-          session={stepUp.session}
-          onSuccess={stepUp.gate.succeed}
-          onCancel={stepUp.gate.cancel}
+          open={gate.open}
+          session={session}
+          onSuccess={gate.succeed}
+          onCancel={gate.cancel}
         />
       )}
     </>

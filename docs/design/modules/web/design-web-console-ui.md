@@ -21,9 +21,9 @@
 
 **它是平台侧的壳（第二种壳）。** 上述管理面挂在**不解析租户**的端上：名册是平台资产、审计表持有全部租户的行、设置的全局层是平台操作。故本包没有**当前租户**切换器，也就没有租户作用域的查询键——它不认识「当前租户」这个概念。
 
-**外壳骨架是 [layout-kit](design-web-layout-kit.md) 的 `AppShell`。** 控制台壳把带标签的声明派生出的平台导航交给 `AppShell` 渲染：固定顶栏、随视口变化的导航抽屉（`md` 及以上常驻、以下为临时覆盖式）与内容区都由它提供（[layout](design-web-layout.md)），本包不另造一套帧。导航地标以本包的 `shell.navLabel` 命名（经 `AppShell` 的 `navLabel`），与其它外壳的导航地标可区分。两处外壳因此同一形状——侧栏不随内容滚走、窄视口是汉堡抽屉而非把导航堆在内容上方、桌面侧栏由宿主显式选择收起、内容区是唯一滚动层。
+**外壳骨架是 [layout-kit](design-web-layout-kit.md) 的 `AppShell`。** 控制台壳把带标签的声明派生出的平台导航交给 `AppShell` 渲染：固定顶栏、随视口变化的导航抽屉（`md` 及以上常驻、以下为临时覆盖式）与内容区都由它提供（[layout](design-web-layout.md)），本包不另造一套帧。导航地标默认以本包的 `shell.navLabel` 命名，宿主可经 `navLabel` 另给名字（经 `AppShell` 的 `navLabel`），与其它外壳的导航地标可区分。两处外壳因此同一形状——侧栏不随内容滚走、窄视口是汉堡抽屉而非把导航堆在内容上方、桌面侧栏由宿主显式选择收起、内容区是唯一滚动层。
 
-**按租户寻址的页面持租户选择器。** 权限面、邀请与成员面、SSO 提供方面把租户当作**路由段参数**（`/api/v1/authz/admin/tenants/:tenant/...`）；冒充面把租户当作读的**必填查询参数**（`/api/v1/auth/admin/impersonations?tenant=`）。这些页面仍是平台员工的页面，但每条请求指名它作用到的租户；租户是请求的一个实参，不是会话的当前租户。页面因此持一个租户选择器（数据来自平台名册读 `GET /api/v1/tenant/admin/tenants`），在其取值为空前禁用该页的租户作用域读。选择器的初值取自页面 URL 的 `tenant` 查询参数（缺省为空），故一条链接能把租户上下文带过页界；选择器仍是此后改变它的途径。冒充页的发起表单与被冒充记录共用这一个选择：目标租户是请求的必填字段，被冒充账户必须是该租户的成员，故发起表单不另设租户输入，未选租户时提交不可用。
+**按租户寻址的页面持租户选择器。** 权限面、邀请与成员面、SSO 提供方面把租户当作**路由段参数**（`/api/v1/authz/admin/tenants/:tenant/...`）；冒充面把租户当作读的**必填查询参数**（`/api/v1/auth/admin/impersonations?tenant=`）。这些页面仍是平台员工的页面，但每条请求指名它作用到的租户；租户是请求的一个实参，不是会话的当前租户。页面因此持一个租户选择器（数据来自平台名册读 `GET /api/v1/tenant/admin/tenants`），在其取值为空前禁用该页的租户作用域读。这四页各接受三个可选 prop：`tenant` 受控给出作用域（给出即锁定该值并隐藏选择器）、`defaultTenant` 作为初值（优先于 URL）与 `onTenantChange`（每次改选上报宿主）。三者都缺席时初值取自页面 URL 的 `tenant` 查询参数（缺省为空），故一条链接能把租户上下文带过页界；选择器仍是此后改变它的途径。这四页因此读 `tenant` 查询参数，README 写明这条。冒充页的发起表单与被冒充记录共用这一个选择：目标租户是请求的必填字段，被冒充账户必须是该租户的成员，故发起表单不另设租户输入，未选租户时提交不可用。
 
 **它复用声明式注册面。** 每个页面导出的一份声明即 [route-kit](design-web-route-kit.md) 的 `RouteDeclaration`：路径 pattern、视图回调、可选导航标签、可选权限码、该页依赖的特性名（`requires`）（[ADR-web-route-seam-2026-10-15](../../../adr/adr-web-route-seam-2026-10-15.md)）。`permission` 是数据，本包不据它判定；`label` 缺席即该页不进导航。`requires` 同样是数据，本包不据它判定：宿主经 route-kit 按特性在场收窄注册面，特性缺席的页面与未登记路径走同一个未命中回退，导航里也不出现（[ADR-web-route-seam-2026-10-17](../../../adr/adr-web-route-seam-2026-10-17.md)）。声明由应用的组合层收齐后交给路由层渲染；本包不 import `route-kit`，也不自己做路径匹配或导航。壳另交出一个 `onNavigate` 回调接缝：宿主给了它，帧内点一条导航项即把该项的路径交回调（由宿主的路由器就地跳转，不整页重载），不给则该项是整页链接。租户侧的 [product-shell](design-web-product-shell.md) 用同一份声明形状，两者只是壳不同。
 
@@ -46,10 +46,12 @@
 // 可选导航标签、可选权限码、可选特性名列表。本包不 import `route-kit`，导出满足
 // 该结构的值。`requires` 的元素类型是 `@speed/api-sdk/features` 的 `FeatureName`，
 // 比 route-kit 的字符串更窄，故声明仍可赋值给 `RouteDeclaration`。
-// `group` 与 `icon` 是本包自加的额外可选字段：前者指定该页归属的导航分组
-// （见下），后者是导航项的装饰性前导图标；两者都只是数据，不在 route-kit
-// 的形状里，故带这两者的声明仍可赋值给 `RouteDeclaration`。
+// `id`、`group` 与 `icon` 是本包自加的额外可选字段：`id` 是每个管理面的稳定
+// 身份（兄弟链接按它解析），`group` 指定该页归属的导航分组（见下），`icon` 是
+// 导航项的装饰性前导图标；三者都只是数据，不在 route-kit 的形状里，故带它们的
+// 声明仍可赋值给 `RouteDeclaration`。
 interface ConsoleRoute {
+  readonly id?: string
   readonly path: string
   readonly view: (context: ConsoleRouteContext) => ReactNode
   readonly label?: ReactNode
@@ -81,9 +83,16 @@ interface ConsoleShellProps {
   readonly children: ReactNode
   readonly title?: ReactNode
   readonly headerActions?: ReactNode
+  // 导航地标的可及名；不给时取本包的 `shell.navLabel`。
+  readonly navLabel?: string
   // 帧内导航的点击回调：给了它即把被激活条目的路径交回调（宿主的路由器
-  // 就地跳转）；不给即该项是整页链接。
+  // 就地跳转）；不给即该项是整页链接。只有纯主键点击交回调，带修饰键、
+  // 非主键或已由其它处理器声明的激活交给浏览器（layout-kit 的
+  // `isPlainPrimaryClick`）。
   readonly onNavigate?: (href: string) => void
+  // 某条路径是否是当前页，由宿主判定（本包不做路径匹配）；每个导航项的
+  // `selected` 取自它。不给即无选中项。
+  readonly isSelected?: (path: string) => boolean
   // 接受链接的构造器：给一条已签发邀请的令牌，返回接受链接（宿主相对的
   // 路径或绝对 URL）。邀请与成员页在签发成功后据此展示链接；不给则展示
   // 裸令牌。落点是宿主的公开路由，只有宿主知道，故路径由宿主给出。
@@ -99,35 +108,78 @@ interface ConsoleShellProps {
   // 宿主由冒充横幅与顶部栏的身份指示承担）；不给则页面只失效自己的状态读与记录读。身份变更
   // 之后每个读所属的身份都变了，这件事只有持有缓存与会话的宿主做得了。
   readonly onImpersonationChange?: (change: 'started' | 'ended') => void | Promise<void>
-  // 桌面侧边栏收起：AppShell 的受控 prop 对，原样透传给帧。给出后者即在帧的
-  // 顶栏渲染收起／展开按钮并回报每次翻转；不给即维持一直展开的常驻抽屉。
+  // 冒充写入发出之前的宿主动作：宿主的自有壳据此在请求落地前进入「正在开始」
+  // 状态。返回的函数在该次尝试未落地（被拒、被步进门控接管或抛错）时调用；
+  // 落地的那次由宿主在 `onImpersonationChange('started')` 落定后自行释放。
+  readonly onImpersonationStarting?: () => void | (() => void)
+  // 把角色的 `description_key` 连同角色本身解析成展示内容；不给时页面渲染裸键。
+  readonly describeRole?: (descriptionKey: string, role: ConsoleRole) => ReactNode
+  // AppShell 的帧槽与受控 prop，原样透传：桌面侧边栏收起对、抽屉宽度、
+  // 整体菜单、横幅、受控的窄视口抽屉开合、抽屉纸内的首尾内容。
   readonly sidebarCollapsed?: boolean
   readonly onSidebarCollapsedChange?: (collapsed: boolean) => void
+  readonly sidebarWidth?: number
+  readonly userMenu?: ReactNode
+  readonly banner?: ReactNode
+  readonly mobileOpen?: boolean
+  readonly onMobileOpenChange?: (open: boolean) => void
+  readonly navHeader?: AppShellNavSlot
+  readonly navFooter?: AppShellNavSlot
   readonly sx?: SxProps<Theme>
+}
+
+// 无帧的包级上下文：ConsoleShell 安装的同一组上下文，不带 AppShell 与内容
+// 内边距。给渲染自有平台壳（自有 chrome、对话框、侧边面板）的宿主使用。
+interface ConsoleProviderProps {
+  readonly hasFeature: (name: FeatureName) => boolean
+  readonly onNavigate?: (href: string) => void
+  readonly session?: AuthSession
+  readonly invitationLink?: (token: string) => string
+  readonly accountHref?: string
+  readonly onImpersonationChange?: (change: 'started' | 'ended') => void | Promise<void>
+  readonly onImpersonationStarting?: () => void | (() => void)
+  readonly describeRole?: (descriptionKey: string, role: ConsoleRole) => ReactNode
+  // 宿主交来的（已按特性在场收窄的）路由表；页面按声明的稳定 `id` 解析兄弟页。
+  readonly routes?: readonly ConsoleRoute[]
+  readonly children: ReactNode
 }
 ```
 
-- **框架 prop 原样透传。** `sidebarCollapsed` / `onSidebarCollapsedChange` 是 `AppShell` 的桌面侧边栏收起对，被拾起后逐字转给 `AppShell`，本包不重解释。给出后者即在帧的顶栏渲染收起／展开按钮并回报每次翻转，不给即维持一直展开的常驻抽屉；收起态是宿主持有的普通值。租户侧的 [product-shell](design-web-product-shell.md) 用同一对 prop，两处外壳在这条上也同形。
+- **框架 prop 原样透传。** `sidebarCollapsed` / `onSidebarCollapsedChange` 是 `AppShell` 的桌面侧边栏收起对，`sidebarWidth`、`userMenu`、`banner`、`mobileOpen` / `onMobileOpenChange` 与 `navHeader` / `navFooter` 是帧的宽度、顶栏槽、横幅槽、受控的窄视口抽屉与抽屉纸内的首尾槽。这些 prop 被拾起后逐字转给 `AppShell`，本包不重解释、不加自己的 chrome。给出收起回调即在帧的顶栏渲染收起／展开按钮并回报每次翻转，不给即维持一直展开的常驻抽屉；收起态是宿主持有的普通值。租户侧的 [product-shell](design-web-product-shell.md) 用同一组 prop，两处外壳在这条上同形。
+
+- **无帧的 `ConsoleProvider`。** `ConsoleShell` 是「`AppShell` ＋ 本 provider ＋ 内容」的一种组合；provider 本身只安装包级上下文、不渲染任何 DOM，供渲染自有平台外壳的宿主使用（自有 chrome、对话框、侧边面板）。它安装与壳相同的上下文：导航回调、路由表、会话、账户设置页、接受链接构造器、冒充变更与冒充开始、角色描述解析、特性判定。`hasFeature` 与壳一样必填；其余 prop 缺席时上下文缺席或为空，页面维持各自的回落。它仍是平台员工的接缝，不能承载租户侧页面，也不带任何当前租户设施。
+
+- **导航选中由宿主判定。** 本包不做路径匹配，故哪条导航项是当前页由宿主的 `isSelected(path)` 给出，壳把每条带标签声明的路径交给它，取其答案作为该项的 `selected`。不给该判定即没有选中项。
+
+- **只有纯主键点击就地路由。** 导航项与页内链接都是真链接，`href` 恒在；`onNavigate` 在场的普通左键点击被 `preventDefault` 并交回调，带 Ctrl／Command／Shift／Alt 的点击、非主键点击、自身带 `target="_blank"` 或 `download` 的链接、以及已被其它处理器声明过的激活都交给浏览器，判定用 layout-kit 的 `isPlainPrimaryClick`。
+
+- **稳定 id 与兄弟链接。** 每条声明可带一个按管理面取名的稳定 `id`（本包自己的声明都带）。壳与 provider 把宿主交来的（已按特性在场收窄的）路由表经包内上下文原样发布，页面按 `id` 找到兄弟声明再取它的路径，故控制台挂在任何前缀下都能构造兄弟链接；找不到声明时不渲染该链接。链接同样叠加目标声明的 `requires`：目标页依赖的特性缺席时，链接不出现。
+
+- **冒充开始前的宿主钩子。** `onImpersonationStarting` 在冒充发起写入发出之前同步调用，返回的函数在该次尝试未落地时调用：被服务端拒绝、被步进门控接管、或抛出。落地的那次不在此释放——宿主持有身份相关的帧，它在 `onImpersonationChange('started')` 的落定之后自行释放，因为新身份如何接管外壳由宿主决定。
+
+- **角色描述由宿主解析。** 权限页的角色行携带 `description_key`，它指向宿主自己的资源叶；`describeRole(descriptionKey, role)` 把它解析成展示内容。不给解析器时页面渲染裸键，角色行不会因此留空。
 
 - **导航按分组表聚合。** 页面声明可带 `group`，指向本包分组表里的一个组；壳把带标签的声明按其 `group` 聚成 [layout-kit](design-web-layout-kit.md) 的 `AppShellNavGroup`（组内是导航项、标题即折叠控件），组的顺序与标题来自宿主传入的分组表，组内顺序即声明顺序。分组表经 `navGroups` prop 传入，本包另导出 `consoleNavGroups` 作为缺省：概览（仪表盘）／身份与访问（账户、会话、冒充、权限、邀请与成员、SSO）／租户（租户名册）／平台配置（设置、短信）／审计（审计）。未传分组表即维持扁平单列——十一个带标签的声明按声明顺序排成一组，现有宿主零改动；`group` 此时是数据、不起作用。无 `group` 或指向表外组的声明作为导航项排在组之前，空组（无声明指向）不渲染标题；只有一个可见条目的组同样不渲染标题，该条目作为无分组的导航项排在该组本应占据的位置——某个组此时剩几个可见条目，取决于该部署服务哪些特性。组标题经 console-ui 命名空间解析（`nav.groups.*`），与页面标签同一套翻译路径；组标题可带装饰图标，收起的窄栏以它代替被裁剪的标题。
 
 ### 页面声明
 
-一个管理面导出一份页面声明表，全部汇总为 `consoleRoutes`（扁平导航顺序即下表顺序；按分组渲染时组的顺序由分组表给出）。路径是相对控制台根的 pattern，导航标签是一个在渲染时经 console-ui 命名空间解析的 `ConsoleNavLabel`，权限码是该页数据所持的平台权限（数据；本包不据它判定），`requires` 是该页依赖的特性名（数据；全部特性在场时该页才可渲染视图、可导航，本包不据它判定），`group` 是该页归属的导航分组（数据；见「导航按分组表聚合」），`icon` 是导航项的装饰性前导图标（数据；本包自己的管理面各带一个手绘 SVG 图标，见 `src/internal/icons.tsx`，随标签一起交给帧的 `AppShellNavItem.icon`，故收起态是[布局](design-web-layout.md)所说的图标窄栏，而不是把标签截半的文字栏；图标本身 `aria-hidden`，可及名仍是标签）。**一个管理面可含多于一条声明**：列表页携带标签与图标（进导航），详情页两者都不带（可达但不列出），由列表行链入；下表列出带标签的各页，与导航一一对应。
+一个管理面导出一份页面声明表，全部汇总为 `consoleRoutes`（扁平导航顺序即下表顺序；按分组渲染时组的顺序由分组表给出）。路径是相对控制台根的 pattern，`id` 是该管理面的稳定身份（兄弟链接按它解析），导航标签是一个在渲染时经 console-ui 命名空间解析的 `ConsoleNavLabel`，权限码是该页数据所持的平台权限（数据；本包不据它判定），`requires` 是该页依赖的特性名（数据；全部特性在场时该页才可渲染视图、可导航，本包不据它判定），`group` 是该页归属的导航分组（数据；见「导航按分组表聚合」），`icon` 是导航项的装饰性前导图标（数据；本包自己的管理面各带一个手绘 SVG 图标，见 `src/internal/icons.tsx`，随标签一起交给帧的 `AppShellNavItem.icon`，故收起态是[布局](design-web-layout.md)所说的图标窄栏，而不是把标签截半的文字栏；图标本身 `aria-hidden`，可及名仍是标签）。**一个管理面可含多于一条声明**：列表页携带标签与图标（进导航），详情页两者都不带（可达但不列出），由列表行链入；下表列出带标签的各页，与导航一一对应。
 
-| 声明 | 路径 | 导航标签键 | 权限码 | 依赖的特性（`requires`） | 分组 | 导航图标 |
-|---|---|---|---|---|---|---|
-| `dashboardAdminRoutes` | `/` | `dashboard.title` | `tenant.read` | `tenant.admin` | 概览 | `DashboardIcon`（四格仪表盘） |
-| `tenantAdminRoutes` | `/tenants` | `tenants.title` | `tenant.read` | `tenant.admin` | 租户 | `TenantsIcon`（楼宇） |
-| `accountsAdminRoutes` | `/accounts` | `accounts.title` | `authn.account.read` | `authn.admin` | 身份与访问 | `AccountsIcon`（人像） |
-| `sessionsAdminRoutes` | `/sessions` | `sessions.title` | `authn.session.read` | `authn.admin.sessions` | 身份与访问 | `SessionsIcon`（屏幕） |
-| `impersonationsAdminRoutes` | `/impersonations` | `impersonations.title` | `authn.impersonation.read` | `authn.impersonation`、`authn.admin.impersonations`、`tenant.admin` | 身份与访问 | `ImpersonationsIcon`（两个人像） |
-| `permissionsAdminRoutes` | `/permissions` | `permissions.title` | `authz.role.read` | `authz.admin`、`tenant.admin` | 身份与访问 | `PermissionsIcon`（盾牌） |
-| `invitationsAdminRoutes` | `/invitations` | `invitations.title` | `authn.membership.manage` | `authn.invitations`、`authn.admin`、`tenant.admin` | 身份与访问 | `InvitationsIcon`（信封） |
-| `ssoAdminRoutes` | `/sso` | `sso.title` | `authn.idp.manage` | `authn.admin.sso`、`tenant.admin` | 身份与访问 | `SsoIcon`（钥匙） |
-| `settingsAdminRoutes` | `/settings` | `settings.title` | `settings.read` | `settings.admin` | 平台配置 | `SettingsIcon`（齿轮） |
-| `smsAdminRoutes` | `/sms` | `sms.title` | `sms.template.read` | `sms.admin` | 平台配置 | `SmsIcon`（消息气泡） |
-| `auditAdminRoutes` | `/audit` | `audit.title` | `audit.read` | `audit.admin` | 审计 | `AuditIcon`（记录单） |
+| 声明 | `id` | 路径 | 导航标签键 | 权限码 | 依赖的特性（`requires`） | 分组 | 导航图标 |
+|---|---|---|---|---|---|---|---|
+| `dashboardAdminRoutes` | `dashboard` | `/` | `dashboard.title` | `tenant.read` | `tenant.admin` | 概览 | `DashboardIcon`（四格仪表盘） |
+| `tenantAdminRoutes` | `tenants` | `/tenants` | `tenants.title` | `tenant.read` | `tenant.admin` | 租户 | `TenantsIcon`（楼宇） |
+| `accountsAdminRoutes` | `accounts` | `/accounts` | `accounts.title` | `authn.account.read` | `authn.admin` | 身份与访问 | `AccountsIcon`（人像） |
+| `sessionsAdminRoutes` | `sessions` | `/sessions` | `sessions.title` | `authn.session.read` | `authn.admin.sessions` | 身份与访问 | `SessionsIcon`（屏幕） |
+| `impersonationsAdminRoutes` | `impersonations` | `/impersonations` | `impersonations.title` | `authn.impersonation.read` | `authn.impersonation`、`authn.admin.impersonations`、`tenant.admin` | 身份与访问 | `ImpersonationsIcon`（两个人像） |
+| `permissionsAdminRoutes` | `permissions` | `/permissions` | `permissions.title` | `authz.role.read` | `authz.admin`、`tenant.admin` | 身份与访问 | `PermissionsIcon`（盾牌） |
+| `invitationsAdminRoutes` | `invitations` | `/invitations` | `invitations.title` | `authn.membership.manage` | `authn.invitations`、`authn.admin`、`tenant.admin` | 身份与访问 | `InvitationsIcon`（信封） |
+| `ssoAdminRoutes` | `sso` | `/sso` | `sso.title` | `authn.idp.manage` | `authn.admin.sso`、`tenant.admin` | 身份与访问 | `SsoIcon`（钥匙） |
+| `settingsAdminRoutes` | `settings` | `/settings` | `settings.title` | `settings.read` | `settings.admin` | 平台配置 | `SettingsIcon`（齿轮） |
+| `smsAdminRoutes` | `sms` | `/sms` | `sms.title` | `sms.template.read` | `sms.admin` | 平台配置 | `SmsIcon`（消息气泡） |
+| `auditAdminRoutes` | `audit` | `/audit` | `audit.title` | `audit.read` | `audit.admin` | 审计 | `AuditIcon`（记录单） |
+
+详情声明的 `id` 是 `tenant-detail` 与 `audit-detail`；它们不进导航，兄弟链接也不指向它们。
 
 **本包导出的每条声明都带非空的 `requires`，含不进导航的详情声明。** 详情声明带与其列表页相同的特性与权限码：`/tenants/:id` 带 `tenant.admin` 与 `tenant.read`，`/audit/:id` 带 `audit.admin` 与 `audit.read`。宿主的路由守卫只取精确命中的那条声明的权限码，不经路径前缀继承（[starters](../design-starters.md)），详情声明因而各自带码。
 
@@ -141,12 +193,12 @@ interface ConsoleShellProps {
 
 - **仪表盘**（`DashboardPage`）：控制台根的路由（`/`）。一行等宽的租户指标卡、一行平台健康度指标卡，其下是最近活动列表。租户指标由名册读拼出——名册读返回完整的租户集，租户总数即其长度、启用与停用的计数即其状态分布。平台健康度由审计查询读拼出，它是唯一跨租户的读，两个读都以 `since` 为窗口起点：一读数出窗口内的全部记录，另一读以 `action=authn.login` 只数其中的成功登录。`since` 取发起读取的时刻往前 24 小时，挂载、刷新动作、标签页重新可见与重新联网各取一次新的起点，使「近 24 小时」始终成立；起点是查询键的一部分，读以新键发出。页面持有最近一次两个读都落定的那一对数值及其落定时刻：新键的读进行中继续渲染这一对、不渲染加载占位，两个新键读都落定后才一起换成新值，使同屏两个计数取自同一个窗口；新键的读失败时继续渲染旧的一对并给出陈旧提示，失败是 403 时按「读的失败面」以权限拒绝占位替换；首次尚无落定的数值时渲染加载占位。这一条不交给查询库的占位数据承担。两个计数取自窗口化读的最新一页，故应答带下一页游标时该计数按**下界**渲染（数值后带 `+`）。最近活动取审计查询读的最新一页（`useAuditRecords` 带 `limit`），其列与优先级与审计查询页同一套。平台不声明统计端点，也不声明失败登录的读，故页面不发明契约不携带的聚合值，也不把审计表不持有的失败登录计入。平台健康度与最近活动只在特性 `audit.admin` 在场时渲染，见「特性在场的接收」。
 - **列表页**（`TenantRosterPage`、`AccountsPage`、`SessionsPage`、`ImpersonationsPage`、`PermissionsPage`、`InvitationsPage`、`SsoPage`、`SmsPage`、`AuditPage`）：页头、工具栏或写入区、数据表、分页。行详情与创建表单在操作者需要参照列表时由侧边面板承载（`AccountsPage`），见「账户页的详情与创建面板」。
-- **详情页**（`TenantDetailPage`、`AuditDetailPage`）：标题区加主栏与固定宽侧栏。主栏承载主体与其写入，侧栏承载标识与回链。路径是列表页路径加一段 `:id`（`/tenants/:id`、`/audit/:id`），声明不带标签，故不进导航。列表页接收声明传入的该列表页匹配路径（`basePath`），据此为每行构造详情链接 `${basePath}/${id}`；详情页接收 `parentHref`（匹配路径去掉 id 段），据此回链列表页。租户详情页另接收控制台根路径（匹配路径去掉 `/tenants/:id`），据此给出通往按该租户寻址的兄弟页面的链接（权限与角色、邀请与成员、SSO 提供方、冒充记录），每条链接把租户放进 `tenant` 查询参数——目标页从该参数取得选择器初值。审计详情页对记录携带的空字段渲染占位符而不是只留标签：字段为空本身是记录的一部分（平台级事件没有租户、动作可以没有用途），省掉这一行会掩盖记录携带空值。
+- **详情页**（`TenantDetailPage`、`AuditDetailPage`）：标题区加主栏与固定宽侧栏。主栏承载主体与其写入，侧栏承载标识与回链。路径是列表页路径加一段 `:id`（`/tenants/:id`、`/audit/:id`），声明不带标签，故不进导航。列表页接收声明传入的该列表页匹配路径（`basePath`），据此为每行构造详情链接 `${basePath}/${id}`；详情页接收 `parentHref`（匹配路径去掉 id 段），据此回链列表页；详情声明另把匹配路径去掉最后两段得到的控制台根交给页面。租户详情页的兄弟链接按稳定 `id`（`permissions`、`invitations`、`sso`、`impersonations`）在壳发布的路由表里解析目标路径，不以字面 `/tenants` 匹配拼路径——控制台挂在任何前缀下都成立；声明缺席或目标页依赖的特性缺席时该链接不渲染，`relatedHref` 可逐条覆写目标链接。每条链接把租户放进 `tenant` 查询参数——目标页从该参数取得选择器初值。审计详情页对记录携带的空字段渲染占位符而不是只留标签：字段为空本身是记录的一部分（平台级事件没有租户、动作可以没有用途），省掉这一行会掩盖记录携带空值。
 - **设置页**（`SettingsPage`）：一条二级导航（按 namespace 分组，取出自全量设置读）、一张占满内容区的分页表（键／类型／当前值／状态／操作）、底部一条粘性保存条。行的状态取自该层视图的 `has_row`：该层没有行时值走回落（标「默认」），持有行时标「已覆盖」。`written` 只用于显示，不参与判定——显式写入的空串与无行在文本上不可区分，行是否存在由 `has_row` 单独给出。只有持有行的行渲染可点的移除控件，默认行不渲染它——默认值没有可撤的覆盖行，摆一个只能空转的开关只会误导读屏与操作者；204 的幂等删除语义不变。**敏感项**：[settings.admin](../settings/design-settings-admin.md) 在应答里把敏感项的 `written` 与 `value` 换成遮蔽串，`has_row` 照常报出行是否存在，故页面按同一判据统计状态，并只对持有行的敏感项渲染移除控件；键格的「敏感」标记说明该行的值是遮蔽串。
 
-**冒充页承载两个面。** 记录面是一个按租户寻址的列表页：它列出租户的冒充记录并终止一条。运营者自身会话面读调用方自己会话上的冒充（`GET /api/v1/auth/impersonation`，无冒充时是裸 404）、以 `POST /api/v1/auth/impersonation` 发起一条、以 `DELETE /api/v1/auth/impersonation` 结束它。自身会话面作用到调用方自己的会话，不按租户寻址，故它不随租户选择器启用，其读取的键也不分租户；发起控件只在当前会话没有生效中的冒充时呈现——模块对同一会话上的第二次发起答 409。这三个操作是生成的调用方会话操作（`useAuthnImpersonationStatus`、`useAuthnImpersonationStart`、`useAuthnImpersonationEnd`），页面直接调用它们并经生成键工厂（`getAuthnImpersonationStatusQueryKey`）失效状态读，与记录面的操作束不是同一组。**状态读落定为有冒充时，记录面不渲染、其读不发出。** 记录面包括租户选择器、记录列表与终止控件，换成一条说明（冒充期间不能读取或终止冒充记录，结束冒充后在此查看），页面只剩「当前冒充」节与结束控件。平台管理面对冒充身份一律被网关拒绝，记录面的读与名册读在冒充期间必被拒，渲染成空列表加陈旧提示会被读成「没有记录」。状态读未落定或失败时记录面照常渲染；结束成功后记录面恢复并重读，不需要刷新页面。宿主给了 `onImpersonationChange` 时，发起与结束成功后页面各调用它一次，页面不等待它，它的拒绝被页面包住；发起之后宿主重读会话并把页面带离控制台（[design-starters](../design-starters.md) 的「冒充期间的壳」），记录面的收起因此只在宿主不做这些的装配里、或重读尚未落定的短暂窗口里被看到；结束之后宿主重读会话，页面留在原处，记录面恢复并重读。决策见 [ADR-web-impersonation-shell-2026-10-18](../../../adr/adr-web-impersonation-shell-2026-10-18.md)。
+**冒充页承载两个面。** 记录面是一个按租户寻址的列表页：它列出租户的冒充记录并终止一条。运营者自身会话面读调用方自己会话上的冒充（`GET /api/v1/auth/impersonation`，无冒充时是裸 404）、以 `POST /api/v1/auth/impersonation` 发起一条、以 `DELETE /api/v1/auth/impersonation` 结束它。自身会话面作用到调用方自己的会话，不按租户寻址，故它不随租户选择器启用，其读取的键也不分租户；发起控件只在当前会话没有生效中的冒充时呈现——模块对同一会话上的第二次发起答 409。这三个操作是生成的调用方会话操作（`useAuthnImpersonationStatus`、`useAuthnImpersonationStart`、`useAuthnImpersonationEnd`），页面直接调用它们并经生成键工厂（`getAuthnImpersonationStatusQueryKey`）失效状态读，与记录面的操作束不是同一组。**状态读落定为有冒充时，记录面不渲染、其读不发出。** 记录面包括租户选择器、记录列表与终止控件，换成一条说明（冒充期间不能读取或终止冒充记录，结束冒充后在此查看），页面只剩「当前冒充」节与结束控件。平台管理面对冒充身份一律被网关拒绝，记录面的读与名册读在冒充期间必被拒，渲染成空列表加陈旧提示会被读成「没有记录」。状态读未落定或失败时记录面照常渲染；结束成功后记录面恢复并重读，不需要刷新页面。宿主给了 `onImpersonationChange` 时，发起与结束成功后页面各调用它一次，页面不等待它，它的拒绝被页面包住；发起之后宿主重读会话并把页面带离控制台（[design-starters](../design-starters.md) 的「冒充期间的壳」），记录面的收起因此只在宿主不做这些的装配里、或重读尚未落定的短暂窗口里被看到；结束之后宿主重读会话，页面留在原处，记录面恢复并重读。宿主给了 `onImpersonationStarting` 时，发起写入之前先同步调用它；这次尝试未落地（被拒、被步进门控接管或抛错）时页面调用其返回的释放函数，落地的尝试由宿主在 `onImpersonationChange('started')` 落定后自行释放。决策见 [ADR-web-impersonation-shell-2026-10-18](../../../adr/adr-web-impersonation-shell-2026-10-18.md)。
 
-**页内导航复用壳的接缝。** 控制台壳把它的 `onNavigate` 经内部上下文交给它渲染的页内容；页内的详情链接经该回调就地路由（不做整页重载，否则内存态会话会丢），壳未给回调时是普通链接。这条接缝与壳自身的导航项同一来源，故二者重载与否的行为一致。
+**页内导航复用壳的接缝。** 控制台壳把它的 `onNavigate` 经内部上下文交给它渲染的页内容；页内的详情链接经该回调就地路由（不做整页重载，否则内存态会话会丢），壳未给回调时是普通链接。这条接缝与壳自身的导航项同一来源，故二者重载与否的行为一致：只有纯主键点击交回调，带修饰键、非主键与已由其它处理器声明的激活保持浏览器的行为，链接的 `href` 恒在。
 
 ### 特性在场的接收
 
@@ -155,6 +207,8 @@ interface ConsoleShellProps {
 **壳不按 `requires` 过滤导航。** 宿主交给 `routes` 的是已按特性在场收窄的声明（route-kit 的 `presentDeclarations` 的结果），壳照常由其中带标签的声明派生导航。
 
 下表列出页内按特性门控的控件，是穷举的；表外的控件不受特性门控。
+
+**门控的实现形态是按特性挂载子组件。** 一个受控面由页面在特性在场时挂载、缺席时不挂载：子组件携带的读随组件一并不存在，故特性缺席的控件既不渲染，也不发出本应属于它的请求。门控因此不改变公开面——不新增「是否启用」选项，也不改变既有 prop 的含义。身份解析受 `authn.admin` 门控时，记录值照常渲染并标注身份未解析，不落入 404 的「已删除」分支。
 
 | 页面与控件 | 特性 | 特性缺席时 |
 |---|---|---|
@@ -170,6 +224,7 @@ interface ConsoleShellProps {
 | 账户详情的会话（列出、撤销全部会话） | `authn.admin.sessions` | 不渲染，不发会话读 |
 | SSO 页的元数据刷新控件 | `authn.admin.sso.metadata` | 不渲染 |
 | 邀请与成员页成员表的 SSO 豁免列与切换控件 | `authn.admin.sso` | 不渲染 |
+| 邀请与成员页成员写入表单的 SSO 豁免复选框 | `authn.admin.sso` | 不渲染，写入请求不带 `sso_exempt` |
 
 口令重置随因素组门控：它的路由挂在因素组的挂载分支之内（[authn-admin](../authn/design-authn-admin.md)）。
 
@@ -186,30 +241,34 @@ interface ConsoleShellProps {
 | 依赖 | 用途 |
 |---|---|
 | `@speed/api-sdk` | 各管理面端点的生成读钩子与写 mutation；子路径 `@speed/api-sdk/features` 的特性名类型 `FeatureName`，用作 `requires` 的元素类型与 `hasFeature` 的参数类型 |
-| `@speed/auth-core` | 会话：抬高会话的步进（step-up）流程由它驱动——宿主把会话交给 `ConsoleShell`，页面在特权写被答 401 步进时打开重认证对话框、重放该写。仅此一处：本包不读当前租户 |
-| `@speed/ui-kit` | 主题、表单、对话框、数据表与空态原语 |
-| `@speed/layout-kit` | 外壳骨架：`AppShell` 的固定顶栏、响应式导航抽屉与内容区 |
-| `@speed/i18n` | 命名空间注册与文案的翻译钩子 |
+| `@speed/auth-core` | 会话：宿主把会话交给壳，页面在特权写被答 401 步进时打开重认证对话框、重放该写；门控用 auth-core 的 `useStepUpGate`，控制台显式传入 `session.isStepUpShortfall` 作为判别。通行密钥仪式经子路径 `@speed/auth-core/webauthn`。本包不读当前租户 |
+| `@speed/ui-kit` | 主题、表单、对话框、数据表与空态原语；页的刷新控件与机制（`RefreshButton`、`usePageRefresh`、`pageRefreshRead`）、按状态读失败（`httpStatusOf`）、复制控件与一次性值面板（`CopyButton`、`OneTimeValuePanel`）也由它提供 |
+| `@speed/layout-kit` | 外壳骨架：`AppShell` 的固定顶栏、响应式导航抽屉与内容区，以及就地导航的纯点击判定 `isPlainPrimaryClick` |
+| `@speed/i18n` | 命名空间注册与文案的翻译钩子；时间渲染用 `formatInstant`（本包固定 UTC） |
 | `@tanstack/react-query` | peer（必需）：宿主供给的 QueryClient |
 | `react`、`react-dom`、`@mui/material`、`@emotion/*` | peer（必需）：宿主拥有的 React／MUI 树 |
 
 **本包不 import `route-kit` 与 `tenancy-ui`。** 页面声明即 route-kit 的 `RouteDeclaration`，收集方在应用的组合层；本包没有当前租户切换器，故租户侧的切换控件不在这里出现。按租户寻址的页面持的租户选择器由本包自造，取自平台名册读，与 tenancy-ui 的切换控件无关。壳交出的 `onNavigate` 是一个回调，由宿主接上它自己的路由器，本包与 `route-kit` 之间仍无 import 边。
 
+**共享件在下层包里只有一份。** 本包不自带刷新控件与刷新机制、HTTP 状态的结构判定、复制控件与一次性值面板、通行密钥仪式、步进门控与时间格式化的副本：这些由 ui-kit、auth-core 与 i18n 提供，本包按上表接线。本包只在包内保留管理面专用的管道（错误文案白名单、反馈区域绑定、租户选择器、账户身份单元、零时刻判定等）；`src/internal/` 只转出两样公开面——为宿主注解自己的回调而转出的纯类型导出，与壳用来把会话交给页面的 `ConsoleSessionProvider`（壳从其 `session` 属性挂载，不经壳组装页面的宿主自行挂载）。
+
 ## UML 图
 
-页面经生成操作打向管理面端；页面声明由应用的组合层收齐，特性判定由宿主交给壳、经壳交给页面。图里画不到的约束：本包所在的平台管理面挂在**不解析租户**的端上，故壳里没有当前租户切换器；按租户寻址的页面的租户是请求实参；判定在服务端做出，本包只渲染应答；声明形状即 route-kit 的 `RouteDeclaration`，但本包不 import `route-kit`；`requires` 由收集方据特性在场收窄，本包不据它判定。
+页面经生成操作打向管理面端；页面声明由应用的组合层收齐，特性判定、路由表、会话与冒充钩子由宿主交给壳或 provider、经包级上下文交给页面。图里画不到的约束：本包所在的平台管理面挂在**不解析租户**的端上，故壳里没有当前租户切换器；按租户寻址的页面的租户是请求实参；判定在服务端做出，本包只渲染应答；声明形状即 route-kit 的 `RouteDeclaration`，但本包不 import `route-kit`；`requires` 由收集方据特性在场收窄，本包不据它判定。
 
 ```mermaid
 graph TD
     pages["控制台页面\n概览 · 名册（含详情）· 审计（含详情）\n账户 · 会话 · 冒充 · 权限 · 邀请与成员 · SSO · 设置 · 短信"]
-    decl["页面声明\n路径 · 视图 · 标签 · 权限 · 特性"]
+    decl["页面声明\n路径 · 视图 · 标签 · 权限 · 特性 · 稳定 id"]
     collect["应用的组合层\nroute-kit 的收集方"]
-    host["宿主\n特性判定 hasFeature"]
+    host["宿主\n特性判定 · 路由表 · 会话 · 冒充钩子"]
+    frame["ConsoleShell / ConsoleProvider\n包级上下文"]
     api["@speed/api-sdk\n生成操作"]
     platform["平台管理面\n/tenant/admin · /api/v1/auth/admin\n/authz/admin · /api/v1/settings/admin\n/sms/admin · /api/v1/audit/admin"]
     pages --> decl
     decl --> collect
-    host --> pages
+    host --> frame
+    frame --> pages
     pages --> api
     api --> platform
 ```
@@ -237,7 +296,7 @@ graph TD
 
 签发一张邀请的应答里带一枚只交出一次的接受令牌（投递归签发者，见 [authn-invite](../authn/design-authn-invite.md)）。邀请与成员页不丢弃它：签发成功后，以宿主经 `ConsoleShell` 的 `invitationLink` 交出的构造器把令牌变成接受链接并展示，供签发者经自己的渠道交给被邀请人；宿主未给构造器时展示裸令牌。链接指向的落点（形如 `/invitations/:token`）是宿主的公开路由，本包不知道它，故路径由宿主给出；构造器返回宿主相对的路径时，页面按当前 origin 解析成绝对链接供复制。
 
-展示值旁是一个复制控件：它把完整的展示值——构造器在场的绝对链接，构造器缺席的裸令牌——写入剪贴板，故交出去的是完整值而不是被折行折断的可视片段；复制成功后控件旁的状态区播报「已复制」，两秒后清空。运行环境不提供 Clipboard API 时点击不写入、不播报，页面不为此失败。
+展示值旁是 [ui-kit](design-web-ui-kit.md) 的复制控件（`CopyButton`）：它把完整的展示值——构造器在场的绝对链接，构造器缺席的裸令牌——写入剪贴板，故交出去的是完整值而不是被折行折断的可视片段；复制成功后控件旁的状态区播报「已复制」，两秒后清空。运行环境不提供 Clipboard API 时点击不写入、不播报，页面不为此失败。
 
 ### 按租户寻址的请求
 
@@ -251,9 +310,9 @@ graph TD
 
 **页面不轮询、不推送，刷新动作是对账手段。** 页面的数据在自动重读时更新：页面重新挂载、标签页由隐藏变为可见（查询客户端的聚焦重读只监听可见性变化，标签页始终可见时窗口失焦再得焦不触发）、重新联网与写入成功后的失效重读（[ui-kit](design-web-ui-kit.md) 的「异步读的状态分支」）。刷新动作服务于标签页一直停在前台、数据在别处被改动的场景：它立即重读，不等任一自动重读。
 
-**刷新动作紧挨它所重读的对象。** 页面主体由选择器寻址的页（会话页的账户选择器，权限页、邀请页与 SSO 页的租户选择器），刷新动作在选择器所在的行内、紧贴选择器右侧：选择器收窄、刷新动作保持尺寸，窄视口下仍在同一行。其余页的刷新动作在页头操作里，页头是它最近的页级控件。冒充页的刷新动作也在页头：该页有状态面与记录面，记录面在冒充期间收起，选择器行不是稳定的落点。各页的刷新动作是同一个控件，可见文字、尺寸与状态规则相同，只有位置不同。这个页面清单是示例；判据是页面主体是否由一个选择器寻址。
+**刷新动作紧挨它所重读的对象。** 页面主体由选择器寻址的页（会话页的账户选择器，权限页、邀请页与 SSO 页的租户选择器），刷新动作在选择器所在的行内、紧贴选择器右侧：选择器收窄、刷新动作保持尺寸，窄视口下仍在同一行。其余页的刷新动作在页头操作里，页头是它最近的页级控件。冒充页的刷新动作也在页头：该页有状态面与记录面，记录面在冒充期间收起，选择器行不是稳定的落点。各页的刷新动作是 [ui-kit](design-web-ui-kit.md) 的同一个控件（`RefreshButton`），各页传入本包原有的「刷新」文案（`common.refresh`），可见文字、尺寸与状态规则因此不变，只有位置不同。这个页面清单是示例；判据是页面主体是否由一个选择器寻址。
 
-**刷新重读该页描述页面主体的每一个读。** 判据：页面上不在模态面板内、描述页面主体的读，只要此刻启用，都由刷新动作重读；解析到同一查询键的读只重读一次。行内的账户身份解析、账户选择器的检索读与租户选择器的名册读不描述页面主体，不在其内；模态面板内的读在面板关闭后重新打开时重读。刷新动作只重读此刻启用的读：重读不看读的启用条件，重读一个被禁用的读会发出缺实参的请求，所以因所选角色为空而被禁用的授权读、因没有已应用的查询账户而被禁用的账户绑定读、因特性缺席而不发出的审计读都被跳过。审计查询页重读当前筛选下当前游标指向的那一页，不回到首页。示例：仪表盘的名册读、健康度读与最近活动读；权限页的角色读、权限目录读、绑定列表读，以及仅在已选角色时存在的授权读、仅在已应用查询账户时存在的账户绑定查询；设置页所选命名空间的设置读与命名空间导航所用的全量设置读，选中全部命名空间时这两个读同键、只重读一次；邀请页的邀请读与成员读；冒充页的状态读，以及记录面渲染且租户已选时的记录读。这个列表是示例；判据是上述不在模态面板内、描述页面主体的读。
+**刷新重读该页描述页面主体的每一个读。** 机制是 [ui-kit](design-web-ui-kit.md) 的 `usePageRefresh`：页面以 `pageRefreshRead` 把每个体读的句柄与去重键配成一条，机制按结构读句柄，只依赖 React，从不发请求。判据：页面上不在模态面板内、描述页面主体的读，只要此刻启用，都由刷新动作重读；解析到同一查询键的读只重读一次。行内的账户身份解析、账户选择器的检索读与租户选择器的名册读不描述页面主体，不在其内；模态面板内的读在面板关闭后重新打开时重读。刷新动作只重读此刻启用的读：重读不看读的启用条件，重读一个被禁用的读会发出缺实参的请求，所以因所选角色为空而被禁用的授权读、因没有已应用的查询账户而被禁用的账户绑定读、因特性缺席而不发出的审计读都被跳过。审计查询页重读当前筛选下当前游标指向的那一页，不回到首页。示例：仪表盘的名册读、健康度读与最近活动读；权限页的角色读、权限目录读、绑定列表读，以及仅在已选角色时存在的授权读、仅在已应用查询账户时存在的账户绑定查询；设置页所选命名空间的设置读与命名空间导航所用的全量设置读，选中全部命名空间时这两个读同键、只重读一次；邀请页的邀请读与成员读；冒充页的状态读，以及记录面渲染且租户已选时的记录读。这个列表是示例；判据是上述不在模态面板内、描述页面主体的读。
 
 **忙态只看读，禁用只看写入与寻址取值。** 本页被刷新重读的读有任一在进行中时，刷新动作带 `aria-busy` 与自带的忙态指示，保持原生可聚焦，再次激活不发第二次请求；它不置原生 `disabled`，因为聚焦的控件被禁用会使焦点落回文档，键盘用户按下 Enter 后要从页首重新 Tab。本页任一反馈作用域有写入在途时，刷新动作原生禁用而不标忙：刷新之后不会有先前上下文发起的尝试落定（[ui-kit](design-web-ui-kit.md) 的「写入的反馈」）。页面的寻址取值为空、页面因此只剩选择提示而没有可重读的读时（会话页未选账户，权限页、邀请页与 SSO 页未选租户），刷新动作原生禁用，并带 `aria-describedby` 指向页面原有的选择提示，使禁用的原因可被感知；页面只有这一份可见文本，启用后该关联撤除，写入在途的禁用不带它。这个页面清单是示例；判据是页面此刻没有可重读的读。冒充页不在其内：状态读不按租户寻址，租户未选时仍在屏，刷新动作照常可用、只重读状态读，记录读不发出。
 
@@ -263,7 +322,7 @@ graph TD
 
 **SSO 页的刷新动作与行内元数据刷新有可区分的文字。** SSO 页的刷新动作在租户选择器行内，重读提供方列表，可见文字是「刷新」，可及名点名对象「刷新提供方列表」。行内元数据刷新是对 IdP 的一次写入，可见文字是「刷新元数据」，可及名是「刷新元数据（{{name}}）」。两种语言下两处的可见文字都不相同，可及名都以可见文字起头。
 
-**更新时间与完成播报只设在审计查询页与仪表盘。** 刷新动作所在的动作组里，刷新动作之前显示静态文字「更新于 {{time}}」：取页面渲染着、且落定过数据的各个读最近一次成功的落定时刻，有多个读时取其中最旧的一个；换键后以旧数值留在屏上的读沿用换键前最后一次落定的时刻，直到新值落定；特性缺席而未发出的读、从未落定过的读（含始终被权限拒绝的读）不计；没有任何读落定过时不渲染。`time` 带日期、时分秒与 UTC 标注，经 `Intl` 按活动语言以 `dateStyle: 'medium'`、`timeStyle: 'long'`、`timeZone: 'UTC'` 格式化；日期与显式 UTC 的约定同本包其余时间，不复用 `formatUtc`，它不带秒与区名。带秒使连续两次刷新可分辨，带日期使前台静止过夜的页面仍能看出数据是哪一天的；不做相对时间，不逐秒变化。刷新失败时落定时刻不变，所示仍是最近一次成功的时间。用户点击刷新动作时，页面记下点击时刻并清空页内一个随页面挂载的视觉隐藏 `role="status"` 区域，该区域先空后填，与「更新于」是否渲染无关；被刷新重读的每一个读都成功落定、且落定时刻不早于点击时刻之后，向该区域写入一次「数据已刷新」，连续两次点击得到相同文本时先清空再填入，使第二次同样播报；任一读失败时不播报，失败由陈旧提示承担。判定取各读的落定时刻，不取重读调用的返回值：换键发出的读没有可等待的重读结果。自动重读不播报。「更新于 {{time}}」与「数据已刷新」在 zh-CN 与 en-US 语言包里各一键。
+**更新时间与完成播报只设在审计查询页与仪表盘。** 刷新动作所在的动作组里，刷新动作之前显示静态文字「更新于 {{time}}」：取页面渲染着、且落定过数据的各个读最近一次成功的落定时刻，有多个读时取其中最旧的一个；换键后以旧数值留在屏上的读沿用换键前最后一次落定的时刻，直到新值落定；特性缺席而未发出的读、从未落定过的读（含始终被权限拒绝的读）不计；没有任何读落定过时不渲染。`time` 带日期、时分秒与 UTC 标注，经 [i18n](design-web-i18n.md) 的 `formatInstant` 按活动语言以 `dateStyle: 'medium'`、`timeStyle: 'long'`、`timeZone: 'UTC'` 格式化；本包其余时间同样经 `formatInstant` 固定 UTC 渲染，不由本包自带格式化器。带秒使连续两次刷新可分辨，带日期使前台静止过夜的页面仍能看出数据是哪一天的；不做相对时间，不逐秒变化。刷新失败时落定时刻不变，所示仍是最近一次成功的时间。用户点击刷新动作时，页面记下点击时刻并清空页内一个随页面挂载的视觉隐藏 `role="status"` 区域，该区域先空后填，与「更新于」是否渲染无关；被刷新重读的每一个读都成功落定、且落定时刻不早于点击时刻之后，向该区域写入一次「数据已刷新」，连续两次点击得到相同文本时先清空再填入，使第二次同样播报；任一读失败时不播报，失败由陈旧提示承担。判定取各读的落定时刻，不取重读调用的返回值：换键发出的读没有可等待的重读结果。自动重读不播报。「更新于 {{time}}」与「数据已刷新」在 zh-CN 与 en-US 语言包里各一键。
 
 ### 审计查询的筛选与分页
 
@@ -332,7 +391,7 @@ graph TD
 
 ### 步进验证对话框
 
-特权写被答 401 步进（会话仍成立、强度不足）时，页面打开步进对话框并记住被拒的写（`useStepUpGate`），挑战成功后重放该写恰好一次，取消不重放。对话框在发起流程之前读一次本人已登记的因素（`GET /api/v1/auth/factors`），按读的结果分阶段：
+特权写被答 401 步进（会话仍成立、强度不足）时，页面打开步进对话框并记住被拒的写（[auth-core](design-web-auth-core.md) 的 `useStepUpGate`；控制台显式传入 `session.isStepUpShortfall` 作为判别，故「会话已结束的 401」不被当成步进），挑战成功后重放该写恰好一次，取消不重放。对话框在发起流程之前读一次本人已登记的因素（`GET /api/v1/auth/factors`），按读的结果分阶段：
 
 - **读未落定**：渲染起手中的占位，不发起流程。
 - **读已落定且没有启用的因素**（读回的行里没有处于启用状态的）：控制台里被步进门控的写，其要求是多因素，与账户有没有因素无关（例如账户的停用与删除、因素与密钥的管理、冒充的发起）；没有因素的账户既不能经步进强化会话，重新登录与重新证明第一因素也只能得到单因素会话，都满足不了这个要求，对话框因此不区分会话是否新鲜，提示先在账户设置里添加验证方式，不发起流程。账户自助写则按账户有没有因素选要求，没有因素时要的是新鲜的第一因素，见 [account-ui](design-web-account-ui.md)。`accountHref` 给出时附一个前往账户设置的链接，缺省不渲染链接，只留文案。
@@ -356,7 +415,7 @@ graph TD
 
 **写入成功后失效它改变的每一个屏上可见的读。** 判据：这次写入成功后，屏上哪个读的结果不再成立，哪个读就失效重读，包括不在发起写入的那一节里的读。示例：移除角色连带撤销它的授权与绑定，故失效角色读、绑定列表读、该角色的授权读，以及该租户下任一账户的绑定查询（移除角色不知道页面正在查哪个账户，故按租户整体失效）；移除账户的登录标识改变按登录标识前缀与类别检索时账户列表的命中集合（账户行与账户视图本身都不携带登录标识），故失效账户列表，与添加登录标识对称；停用账户同步清理它的会话（[design-authn-admin](../authn/design-authn-admin.md)），故同时失效该账户的会话读。这个列表是示例；判据是这次写入成功后屏上结果不再成立的读。
 
-**一次性值的展示面板与区域并列，不属于槽。** 邀请的接受链接、SSO 域名认领令牌、新建的服务密钥是只交出一次的值。展示面板的状态由页面组件持有，不在 `useWriteFeedback` 的槽里，也不在随关闭卸载的面板内容里；它渲染在同一控件组之下、区域之侧，是单个 `role="status"` 的 live region，带一个显式关闭的按钮，可及名含所属的对象：邀请含租户与受邀人，SSO 认领令牌含租户、提供方与域名，服务密钥含账户。面板保留到操作者显式关闭或离开页面，不被 `reset`、下一次失败或上下文变化清掉；同一控件组再次发放时新值替换旧值，同一提供方与域名再次认领换发新令牌、旧令牌作废。
+**一次性值的展示面板与区域并列，不属于槽。** 邀请的接受链接、SSO 域名认领令牌、新建的服务密钥是只交出一次的值。呈现用 [ui-kit](design-web-ui-kit.md) 的 `OneTimeValuePanel`（带复制控件与显式关闭按钮）；面板的状态由页面组件持有，不在 `useWriteFeedback` 的槽里，也不在随关闭卸载的面板内容里；它渲染在同一控件组之下、区域之侧，是单个 `role="status"` 的 live region，关闭按钮的可及名含所属的对象：邀请含租户与受邀人，SSO 认领令牌含租户、提供方与域名，服务密钥含账户。面板保留到操作者显式关闭或离开页面，不被 `reset`、下一次失败或上下文变化清掉；同一控件组再次发放时新值替换旧值，同一提供方与域名再次认领换发新令牌、旧令牌作废。
 
 **批量保存是一次尝试。** 设置页的保存以一次 `run` 结算：逐项以 `mutateAsync` 发出并以 `Promise.allSettled` 等待，保存控件在整批落定之前保持忙态，忙态取自作用域的 `pending`，不取 mutation 观察者的 `isPending`。全部成功才落「设置已保存」；有失败时以提交顺序中第一个失败项的码落失败，失败项的草稿、行标记与待保存计数保留，成功项的草稿清掉，表格翻到第一个失败项所在的页，并把反馈区域滚入视野（用户偏好减少动效时不做平滑滚动）。部分落地的批量只报失败。
 
@@ -441,7 +500,7 @@ graph TD
 | 步进对话框先读本人因素，没有启用的因素时给出提示而不发起流程 | 已实现 | `web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`、`activeFactorCount` |
 | 前往账户设置的入口由宿主经 `accountHref` 给出 | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShellProps.accountHref`；`web/packages/console-ui/src/internal/account-href.tsx` `ConsoleAccountHrefProvider`、`useConsoleAccountHref`；`web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge` |
 | 各页的反馈作用域与成功确认 | 已实现 | `web/packages/console-ui/src/internal/write-feedback.tsx` `WriteFeedbackRegion`、`failureTextOf`、`useFailureScroll`；`web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`；`web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/SmsPage.tsx` `SmsPage`；`web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/console-ui/src/SsoPage.tsx` `SsoPage`、`SsoProviderWriteForm` |
-| 一次性值的展示面板（邀请链接、SSO 令牌、服务密钥） | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `OneTimeSecretNotice`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationLinkNotice`、`CopyControl`；`web/packages/console-ui/src/SsoPage.tsx` `ClaimTokenNotice` |
+| 一次性值的展示面板（邀请链接、SSO 令牌、服务密钥） | 已实现 | `web/packages/ui-kit/src/components/OneTimeValuePanel.tsx` `OneTimeValuePanel`；`web/packages/console-ui/src/AccountsPage.tsx` `OneTimeSecretNotice`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationLinkNotice`；`web/packages/console-ui/src/SsoPage.tsx` `ClaimTokenNotice` |
 | 设置页的批量保存按一次尝试 | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage` |
 | 创建成功后表单复位与必填为空时提交禁用 | 未实现 | — |
 | 确认对话框在确认点击时关闭（含权限页的角色删除） | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/internal/confirm.tsx` `usePendingConfirm` |
@@ -478,14 +537,14 @@ graph TD
 | 页面声明的 `requires`（每条声明非空，元素类型 `FeatureName`） | 已实现 | `web/packages/console-ui/src/routes.tsx` `consoleRoutes`；`web/packages/console-ui/src/route.ts` `ConsoleRoute` |
 | 详情声明的权限码（`/tenants/:id` 带 `tenant.read`，`/audit/:id` 带 `audit.read`） | 已实现 | `web/packages/console-ui/src/routes.tsx` `tenantAdminRoutes`、`auditAdminRoutes` |
 | `ConsoleShell` 的 `hasFeature` 与包内特性判定上下文 | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell`；`web/packages/console-ui/src/internal/features.tsx` `ConsoleFeatureProvider`、`useConsoleHasFeature` |
-| 页内控件按特性在场渲染（仪表盘、审计页操作者解析、账户详情、SSO 元数据刷新、成员 SSO 豁免） | 未实现 | — |
-| 刷新动作的放置（选择器寻址的页在选择器行内，其余在页头）、读忙态带 `aria-busy` 而不置原生 `disabled` 且再次激活不发第二次请求 | 已实现 | `web/packages/console-ui/src/internal/refresh-button.tsx` `RefreshButton`；`web/packages/console-ui/src/internal/selector-row.tsx` `SelectorRow`；`web/packages/console-ui/src/internal/tenant-scope.tsx` `TenantScope`；`web/packages/console-ui/src/internal/account-selector.tsx` `AccountSelector` |
+| 页内控件按特性在场渲染（仪表盘、审计页操作者解析、账户详情、SSO 元数据刷新、成员 SSO 豁免） | 已实现 | `web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage`；`web/packages/console-ui/src/internal/account-identity.tsx` `useAccountIdentity`；`web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`、`AccountDetailWrites`；`web/packages/console-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/console-ui/src/InvitationsPage.tsx` `ssoExemption` |
+| 刷新动作的放置（选择器寻址的页在选择器行内，其余在页头）、读忙态带 `aria-busy` 而不置原生 `disabled` 且再次激活不发第二次请求 | 已实现 | `web/packages/ui-kit/src/components/RefreshButton.tsx` `RefreshButton`；`web/packages/console-ui/src/internal/selector-row.tsx` `SelectorRow`；`web/packages/console-ui/src/internal/tenant-scope.tsx` `TenantScope`；`web/packages/console-ui/src/internal/account-selector.tsx` `AccountSelector` |
 | 页面寻址取值为空时刷新动作原生禁用并以 `aria-describedby` 指向选择提示（会话页、权限页、邀请页、SSO 页）；冒充页在租户为空时刷新动作保持可用 | 已实现 | `web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage` |
-| 刷新动作重读该页描述页面主体且此刻启用的每一个读，同键的读只重读一次（权限页、设置页、仪表盘） | 已实现 | `web/packages/console-ui/src/internal/use-page-refresh.ts` `usePageRefresh`、`pageRefreshRead` |
-| 刷新动作先 `reset` 本页描述页面主体的反馈作用域与页面标记，作用域写入在途时原生禁用（含租户名册行作用域的刷新世代） | 已实现 | `web/packages/console-ui/src/internal/use-page-refresh.ts` `usePageRefresh`；`web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage` |
+| 刷新动作重读该页描述页面主体且此刻启用的每一个读，同键的读只重读一次（权限页、设置页、仪表盘） | 已实现 | `web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh`、`pageRefreshRead` |
+| 刷新动作先 `reset` 本页描述页面主体的反馈作用域与页面标记，作用域写入在途时原生禁用（含租户名册行作用域的刷新世代） | 已实现 | `web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh`；`web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage` |
 | 会话页与租户详情页的写入反馈迁入反馈作用域，租户详情的重命名与启停落成功确认 | 已实现 | `web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
 | 权限页刷新后所选角色已不存在时清空选择并提示 | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage` |
 | 仪表盘健康度窗口起点随刷新动作、标签页重新可见与重新联网前移，旧数值保持到新值落定 | 已实现 | `web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage` |
-| SSO 页刷新动作与行内元数据刷新的可区分文字 | 已实现 | `web/packages/console-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/console-ui/src/internal/refresh-button.tsx` `RefreshButton` |
-| 审计查询页与仪表盘的更新时间与刷新完成播报 | 已实现 | `web/packages/console-ui/src/internal/refresh-status.tsx` `RefreshStatus`；`web/packages/console-ui/src/internal/use-page-refresh.ts` `usePageRefresh` |
+| SSO 页刷新动作与行内元数据刷新的可区分文字 | 已实现 | `web/packages/console-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/ui-kit/src/components/RefreshButton.tsx` `RefreshButton` |
+| 审计查询页与仪表盘的更新时间与刷新完成播报 | 已实现 | `web/packages/console-ui/src/internal/refresh-status.tsx` `RefreshStatus`；`web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh` |
 | 写入成功后失效它改变的每一个屏上可见的读 | 已实现 | `web/packages/console-ui/src/operations.tsx` `consoleOperations` |

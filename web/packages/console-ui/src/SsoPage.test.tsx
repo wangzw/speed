@@ -7,7 +7,7 @@
  * through the bundle.
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SsoPage } from './SsoPage.js'
@@ -159,6 +159,10 @@ async function expectRefreshInert(
 }
 
 describe('SsoPage', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, 'clipboard')
+  })
+
   it('prompts for a tenant before listing', () => {
     const operations = withProviders()
     renderWithProviders(<SsoPage />, { operations })
@@ -578,7 +582,7 @@ describe('SsoPage', () => {
       expect(claims).toEqual([{ id: 'idp-1', tenant: 'acme', domain: 'acme.com' }])
     })
     expect(
-      await screen.findByText(text(zhCN.sso.domains.claimToken, { token: 'tok-1' })),
+      await screen.findByText(zhCN.sso.domains.claimToken),
     ).toBeInTheDocument()
   })
 
@@ -791,8 +795,13 @@ describe('SsoPage', () => {
     await user.type(screen.getByLabelText(zhCN.sso.domains.domainLabel), 'acme.com')
     await user.click(screen.getByRole('button', { name: zhCN.sso.domains.claim }))
 
-    const token = await screen.findByText(text(zhCN.sso.domains.claimToken, { token: 'tok-1' }))
+    const token = await screen.findByText('tok-1')
     expect(token.closest('[role="status"]')).not.toBeNull()
+    // The token is the panel's value line only: the message above it names
+    // the DNS step without interpolating the value, so it reads once and the
+    // live region announces it once.
+    expect(screen.getAllByText('tok-1')).toHaveLength(1)
+    expect(screen.getByText(zhCN.sso.domains.claimToken)).toBeInTheDocument()
     await expectNoAxeViolations()
 
     // A second attempt in the domain scope resets its slot and settles as a
@@ -801,7 +810,7 @@ describe('SsoPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.forbidden,
     )
-    expect(screen.getByText(text(zhCN.sso.domains.claimToken, { token: 'tok-1' }))).toBeInTheDocument()
+    expect(screen.getByText('tok-1')).toBeInTheDocument()
 
     // The explicit close control names the tenant, provider and domain, and
     // is the only way the value goes away.
@@ -809,7 +818,7 @@ describe('SsoPage', () => {
       name: text(zhCN.sso.domains.claimTokenCloseAria, { tenant: 'acme', name: 'Acme IdP', domain: 'acme.com' }),
     })
     await user.click(close)
-    expect(screen.queryByText(text(zhCN.sso.domains.claimToken, { token: 'tok-1' }))).toBeNull()
+    expect(screen.queryByText('tok-1')).toBeNull()
   })
 
   it('disables the tenant and the driving provider selectors while the form write is pending', async () => {
@@ -927,6 +936,116 @@ describe('SsoPage', () => {
 
   it('keeps the two refresh controls distinguishable in en-US', async () => {
     await expectDistinguishableRefreshControls('en-US', enUS)
+  })
+
+  it('locks the scope to a controlled tenant and hides the selector', async () => {
+    window.history.replaceState({}, '', '/console/sso?tenant=globex')
+    try {
+      const listSsoProviders = vi.fn(() =>
+        Promise.resolve([providerFixture({ name: 'Acme IdP' })]),
+      )
+      const operations = withProviders({ listSsoProviders })
+      renderWithProviders(<SsoPage tenant="acme" />, { operations })
+
+      expect(await screen.findByText('Acme IdP')).toBeInTheDocument()
+      expect(listSsoProviders).toHaveBeenCalledWith('acme')
+      expect(screen.queryByLabelText(zhCN.common.tenant)).toBeNull()
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
+  it('seeds from defaultTenant ahead of the URL and reports a re-selection', async () => {
+    window.history.replaceState({}, '', '/console/sso?tenant=globex')
+    try {
+      const user = userEvent.setup()
+      const listSsoProviders = vi.fn(() =>
+        Promise.resolve([providerFixture({ name: 'Acme IdP' })]),
+      )
+      const onTenantChange = vi.fn()
+      const operations = withProviders({
+        listTenants: () =>
+          Promise.resolve([
+            TENANT,
+            { id: 'globex', alias: 'Globex', status: 'active' as const },
+          ]),
+        listSsoProviders,
+      })
+      renderWithProviders(
+        <SsoPage defaultTenant="acme" onTenantChange={onTenantChange} />,
+        { operations },
+      )
+
+      expect(await screen.findByText('Acme IdP')).toBeInTheDocument()
+      expect(listSsoProviders).toHaveBeenCalledWith('acme')
+      await vi.waitFor(() => {
+        expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent(
+          'Acme',
+        )
+      })
+
+      await user.click(screen.getByLabelText(zhCN.common.tenant))
+      await user.click(await screen.findByRole('option', { name: 'Globex' }))
+      expect(onTenantChange).toHaveBeenCalledWith('globex')
+      await vi.waitFor(() => {
+        expect(listSsoProviders).toHaveBeenCalledWith('globex')
+      })
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
+  it('hides the metadata refresh when its feature is absent and keeps the other row actions', async () => {
+    const user = userEvent.setup()
+    const operations = withProviders()
+    renderWithProviders(<SsoPage />, {
+      operations,
+      hasFeature: (name) => name !== 'authn.admin.sso.metadata',
+    })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+
+    expect(
+      screen.queryByRole('button', {
+        name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }),
+      }),
+    ).toBeNull()
+    expect(
+      screen.getByRole('button', {
+        name: text(zhCN.sso.reverifyDomainsAria, { name: 'Acme IdP' }),
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', {
+        name: text(zhCN.sso.deleteAria, { name: 'Acme IdP' }),
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('offers the claim token through a copy control', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const operations = withProviders({
+      claimSsoDomain: () => Promise.resolve({ verify_token: 'tok-1' }),
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await pickProvider(user)
+    await user.type(screen.getByLabelText(zhCN.sso.domains.domainLabel), 'acme.com')
+    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.claim }))
+    await screen.findByText('tok-1')
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.sso.domains.claimTokenCopy }),
+    )
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('tok-1')
+    })
   })
 
   it('has no axe violations', async () => {

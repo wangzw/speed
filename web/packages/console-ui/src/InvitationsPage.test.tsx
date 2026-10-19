@@ -24,7 +24,8 @@ import {
   columnVisibility,
   containerMaxWidthOf,
 } from '../test-utils/container-visibility.js'
-import { renderWithProviders } from '../test-utils/render.js'
+import { renderWithProviders, createConsoleUiI18n } from '../test-utils/render.js'
+import { CONSOLE_UI_NAMESPACE } from './resources.js'
 import { chooseAccount } from '../test-utils/account-selector.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { mockMatchMedia } from '@speed/test-utils/matchMedia'
@@ -41,6 +42,16 @@ import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import { uiKitResources } from '@speed/ui-kit'
 
 const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
+
+/**
+ * The member-source labels a test injects into the namespace, so a
+ * translated value is distinguishable from the raw one the record carries.
+ */
+const SOURCE_LABELS = {
+  admin: 'member-source-admin',
+  invite: 'member-source-invite',
+  jit: 'member-source-jit:{{provider}}',
+} as const
 
 /** Fills a locale template's placeholders with the values under test. */
 function fill(
@@ -1128,6 +1139,150 @@ describe('InvitationsPage', () => {
     await vi.waitFor(() =>
       expect(listMembers.mock.calls.length).toBe(memberBefore + 1),
     )
+  })
+
+  it('locks the scope to a controlled tenant and hides the selector', async () => {
+    // The URL names a different tenant: a controlled page ignores it.
+    window.history.replaceState({}, '', '/console/invitations?tenant=globex')
+    try {
+      const listInvitations = vi.fn(() =>
+        Promise.resolve({ invitations: [], next_cursor: '' }),
+      )
+      const listMembers = vi.fn(() => Promise.resolve([]))
+      const operations = withTenant({ listInvitations, listMembers })
+      renderWithProviders(<InvitationsPage tenant="acme" />, { operations })
+
+      await vi.waitFor(() => {
+        expect(listInvitations).toHaveBeenCalledWith('acme')
+      })
+      expect(listMembers).toHaveBeenCalledWith('acme')
+      expect(screen.queryByLabelText(zhCN.common.tenant)).toBeNull()
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
+  it('seeds from defaultTenant ahead of the URL and reports a re-selection', async () => {
+    window.history.replaceState({}, '', '/console/invitations?tenant=globex')
+    try {
+      const user = userEvent.setup()
+      const listInvitations = vi.fn(() =>
+        Promise.resolve({ invitations: [], next_cursor: '' }),
+      )
+      const listMembers = vi.fn(() => Promise.resolve([]))
+      const onTenantChange = vi.fn()
+      const operations = withTenant({
+        listTenants: () =>
+          Promise.resolve([
+            TENANT,
+            { id: 'globex', alias: 'Globex', status: 'active' as const },
+          ]),
+        listInvitations,
+        listMembers,
+      })
+      renderWithProviders(
+        <InvitationsPage defaultTenant="acme" onTenantChange={onTenantChange} />,
+        { operations },
+      )
+
+      await vi.waitFor(() => {
+        expect(listInvitations).toHaveBeenCalledWith('acme')
+      })
+      await vi.waitFor(() => {
+        expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent(
+          'Acme',
+        )
+      })
+
+      await user.click(screen.getByLabelText(zhCN.common.tenant))
+      await user.click(await screen.findByRole('option', { name: 'Globex' }))
+      expect(onTenantChange).toHaveBeenCalledWith('globex')
+      await vi.waitFor(() => {
+        expect(listInvitations).toHaveBeenCalledWith('globex')
+      })
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
+  it('keeps the SSO exemption out of the member surface when its feature is absent', async () => {
+    const user = userEvent.setup()
+    const written: ConsoleWriteMemberInput[] = []
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({ invitations: [], next_cursor: '' }),
+      listMembers: () => Promise.resolve([member()]),
+      getAccount: () =>
+        Promise.resolve(accountFixture({ display_name: 'Member One' })),
+      writeMember: (input) => {
+        written.push(input)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<InvitationsPage />, {
+      operations,
+      hasFeature: (name) => name !== 'authn.admin.sso',
+    })
+    await pickTenant(user)
+    await screen.findByText('Member One')
+
+    // The column, the row toggle and the form's checkbox all belong to the
+    // absent feature; nothing of the exemption remains.
+    expect(
+      screen.queryByRole('columnheader', {
+        name: zhCN.members.column.ssoExempt,
+      }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: zhCN.members.ssoExemptSet }),
+    ).toBeNull()
+    expect(
+      screen.queryByLabelText(zhCN.members.write.ssoExemptLabel),
+    ).toBeNull()
+
+    // The membership write still works, and carries no exemption field.
+    await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (acc-2)')
+    await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
+    await vi.waitFor(() => {
+      expect(written).toEqual([
+        { tenant: 'acme', account: 'acc-2', active: true },
+      ])
+    })
+  })
+
+  it('translates the member sources it knows and leaves an unknown one as recorded', async () => {
+    const user = userEvent.setup()
+    const i18n = createConsoleUiI18n()
+    i18n.addResourceBundle(
+      'zh-CN',
+      CONSOLE_UI_NAMESPACE,
+      { members: { source: SOURCE_LABELS } },
+      true,
+      true,
+    )
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({ invitations: [], next_cursor: '' }),
+      listMembers: () =>
+        Promise.resolve([
+          member({ account: 'acc-admin', source: 'admin' }),
+          member({ account: 'acc-invite', source: 'invite' }),
+          member({ account: 'acc-jit', source: 'jit:acme-idp' }),
+          member({ account: 'acc-import', source: 'import' }),
+        ]),
+      getAccount: ({ id }) =>
+        Promise.resolve(accountFixture({ id, display_name: id })),
+    })
+    renderWithProviders(<InvitationsPage />, { operations, i18n })
+    await pickTenant(user)
+
+    expect(await screen.findByText(SOURCE_LABELS.admin)).toBeInTheDocument()
+    expect(screen.getByText(SOURCE_LABELS.invite)).toBeInTheDocument()
+    expect(
+      screen.getByText(fill(SOURCE_LABELS.jit, { provider: 'acme-idp' })),
+    ).toBeInTheDocument()
+    // A source outside the closed set keeps the recorded text.
+    expect(screen.getByText('import')).toBeInTheDocument()
   })
 
   it('has no axe violations', async () => {

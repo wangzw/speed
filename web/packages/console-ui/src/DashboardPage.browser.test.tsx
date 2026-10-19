@@ -7,6 +7,7 @@ import { describe, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import { page } from 'vitest/browser'
 import { DashboardPage } from './DashboardPage.js'
+import { ConsoleFeatureProvider } from './internal/features.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
   accountFixture,
@@ -52,7 +53,14 @@ describe('DashboardPage horizontal overflow in Chromium', () => {
             Promise.resolve(accountFixture({ display_name: 'Ada Lovelace' })),
         }),
       )
-      renderWithProviders(<DashboardPage />, { operations, language: 'en-US' })
+      // The recent-activity table exists only where the process serves
+      // audit.admin, so the suite declares the feature present.
+      renderWithProviders(
+        <ConsoleFeatureProvider hasFeature={() => true}>
+          <DashboardPage />
+        </ConsoleFeatureProvider>,
+        { operations, language: 'en-US' },
+      )
 
       await screen.findAllByText('Ada Lovelace')
       await expectNoHorizontalOverflow()
